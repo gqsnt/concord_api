@@ -40,8 +40,8 @@ concord::api! {
         header("accept-language") lang?: String = "en",
     ) {
         base "https://catalog.example.com/v1";
-        request json;
-        response json;
+        request Json;
+        response Json;
 
         /// One shop.
         scope shop(shop: String) {

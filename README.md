@@ -12,8 +12,8 @@ Compared with a small handwritten reqwest client, the declaration replaces:
   names written as literals or as native `HeaderName` constants (`header(AUTHORIZATION)`, your own
   `X_API_KEY`), composed by the header they name, and checked by `http` itself;
 - bookkeeping of which optional parameters are present;
-- body encoding (stated once for a mostly-JSON API with `format json;`, and on an endpoint that
-  differs: `response text;`), the status check and response decoding;
+- body encoding (stated once for a mostly-JSON API with `format Json;`, and on an endpoint that
+  differs: `response Text;`), the status check and response decoding;
 - keeping secrets out of the client's `Debug` output and out of error messages.
 
 Mistakes in the declaration — an unknown value, an invalid header name or base URL, a type without
@@ -59,7 +59,7 @@ concord::api! {
     pub client Tasks(#[sensitive] token: String) {
         base "https://tasks.example.com/api";
         headers { AUTHORIZATION = "Bearer {token}"; }
-        format json;
+        format Json;
 
         scope project(project: String) {
             path "projects/{project}";
@@ -143,8 +143,8 @@ tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
 
 | Feature | Default | Effect |
 |---|---|---|
-| `json` | yes | the `json` format (`format json;`, `request json;`, `response json;`), using serde and serde_json |
-| `form` | no | the `form` format (`request form;`, `application/x-www-form-urlencoded`), using serde and serde_urlencoded |
+| `json` | yes | the `Json` format (`format Json;`, `request Json;`, `response Json;`), using serde and serde_json |
+| `form` | no | the `Form` format (`request Form;`, `application/x-www-form-urlencoded`), using serde and serde_urlencoded |
 | `reqwest-defaults` | yes | reqwest's own default features (TLS, HTTP/2, system proxy) |
 
 With `default-features = false`, choose reqwest's features yourself: depend on `reqwest` (the

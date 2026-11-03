@@ -1,6 +1,7 @@
 //! Request composition: paths, subdomains, query/header slots and their operations.
 //! Scenario IDs refer to `v4/TEST_MATRIX.md`; Qn/Hn refer to the composition research matrix.
 
+use concord::Text;
 mod support;
 
 use std::fmt;
@@ -447,7 +448,7 @@ concord::api! {
         GET overridden() { headers { override "X-TAG" = "c"; } }
         GET removed() { headers { remove "Authorization"; } }
         GET content_type(body payload: String) {
-            request text;
+            request Text;
             headers { "content-type" = "text/csv"; }
         }
     }
@@ -589,7 +590,7 @@ concord::api! {
             GET repo() { path "{repo.x}"; }
         }
         POST ordered(id: u64, body payload: String, tag: String) {
-            request text;
+            request Text;
             path "o/{id}";
             query { "tag" = tag; }
         }

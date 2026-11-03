@@ -7,6 +7,7 @@ example below is compiled and run as a doctest.
 ```rust
 use concord::reqwest::{self, header::{ACCEPT, AUTHORIZATION, HeaderName}};
 use serde::{Deserialize, Serialize};
+use concord::{Binary, Json, Text};
 
 /// A vendor header, as a native constant.
 pub const X_TENANT: HeaderName = HeaderName::from_static("x-tenant");
@@ -26,7 +27,7 @@ concord::api! {
     ) {
         base "https://api.docs.example/v1";
         headers { ACCEPT = "application/json"; "x-client" = "concord"; }
-        format json; // requests and responses below are JSON unless a nearer statement says otherwise
+        format Json; // requests and responses below are JSON unless a nearer statement says otherwise
 
         scope folder(id: u32) {
             path "folders/{id}";
@@ -37,15 +38,15 @@ concord::api! {
             POST create(body doc: NewDoc) -> Doc { path "docs"; }
             PATCH rename(doc: u64, body change: Rename) -> Doc {
                 path "docs/{doc}";
-                request json "application/merge-patch+json"; // format and media type together
+                request Json "application/merge-patch+json"; // format and media type together
             }
             PUT write(doc: u64, body markdown: String) {
                 path "docs/{doc}/content";
-                request text "text/markdown";
+                request Text "text/markdown";
             }
             GET raw(doc: u64) -> Vec<u8> {
                 path "docs/{doc}/raw";
-                response bytes;
+                response Binary;
             }
             DELETE remove(doc: u64) { path "docs/{doc}"; } // no `->`: any 2xx, body not decoded
             GET public(doc: u64) -> Doc {
@@ -91,7 +92,7 @@ fn main() -> Result<(), concord::Error> {
 | `query { "k" = v; }`, `headers { "k" = "t {x}"; KEY = v; }` | blocks. **Left of `=` is a key**: a literal, or for headers a Rust path to a `HeaderName`. **Right of `=` is a value**: a template, or a value's name | [§4.2](AUTHOR_GUIDE.md#42-blocks-templates-and-references), [§4.8](AUTHOR_GUIDE.md#48-header-names-and-values) |
 | `append`, `override`, `override .. else inherit`, `remove` | change a key set further up; anything else on an inherited key is an error | [§4.3](AUTHOR_GUIDE.md#43-what-an-owner-may-do-with-an-inherited-key) |
 | `format F;`, `request F;`, `request F "type/subtype";`, `response F;` | formats on a client, scope or endpoint; the nearest wins per direction; a media type comes with its format | [§5.2](AUTHOR_GUIDE.md#52-where-formats-come-from) |
-| `json`, `text`, `bytes`, `form`, or a path (`self::Csv`) | built-in formats, or a type implementing `Encode<T>`/`Decode<T>` | [§5.1](AUTHOR_GUIDE.md#51-the-formats), [§5.7](AUTHOR_GUIDE.md#57-custom-formats) |
+| `Json`, `Text`, `Binary`, `Form`, or any path (`self::Csv`) | a format type: one implementing `Encode<T>`/`Decode<T>` (Concord's or yours), named like any Rust type | [§5.1](AUTHOR_GUIDE.md#51-the-formats), [§5.7](AUTHOR_GUIDE.md#57-custom-formats) |
 | `#[sensitive]` | never printed by Concord; also every key, segment and label it feeds | [§7](AUTHOR_GUIDE.md#7-sensitive-values) |
 | `#[cfg(..)]`, `#[deprecated]`, `///` on scopes and endpoints | applied to the subtree or the navigation method; names are checked as if every `cfg` were on, so cfg-exclusive siblings need distinct names | [§8](AUTHOR_GUIDE.md#8-attributes) |
 
@@ -114,8 +115,8 @@ format statements, then children.
 
 ## Remember
 
-- The format, not the Rust type, decides the wire: `-> String` under `json` decodes a JSON string;
-  `request text;` sends raw text. An empty response is not JSON: an endpoint that returns nothing
+- The format, not the Rust type, decides the wire: `-> String` under `Json` decodes a JSON string;
+  `request Text;` sends raw text. An empty response is not JSON: an endpoint that returns nothing
   omits `->`; one that sometimes answers nothing needs a format that accepts an empty body
   ([recipes](RECIPES.md#patterns-from-other-apis)).
 - An optional body: `set_b(v)` always sends `v` encoded (`None` in an `Option<T>` body is `null`);

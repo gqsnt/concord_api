@@ -274,14 +274,14 @@ pub struct Item;
 concord::api! {
     pub client Api {
         base "http://x.test";
-        request json;
+        request concord::Json;
         GET item() -> Item;
     }
 }
 concord::api! {
     pub client Body {
         base "http://x.test";
-        response json;
+        response concord::Json;
         POST create(body item: Item);
     }
 }
@@ -291,20 +291,20 @@ fn main() {}
 Excerpt of [`representation_missing_via.stderr`](../crates/concord/tests/ui/representation_missing_via.stderr):
 
 ```text
-error: output `Item` has no format: say `response json;` on this endpoint, a scope or the client; omit `->` to drain
+error: output `Item` has no format: say `response F;` (`F` a type implementing `Decode`) on this endpoint, a scope or the client; omit `->` to drain
  --> tests/ui/representation_missing_via.rs:9:23
   |
 9 |         GET item() -> Item;
   |                       ^^^^
 
-error: body `item` has no format: say `request json;` on this endpoint, a scope or the client
+error: body `item` has no format: say `request F;` (`F` a type implementing `Encode`) on this endpoint, a scope or the client
   --> tests/ui/representation_missing_via.rs:16:32
    |
 16 |         POST create(body item: Item);
    |                                ^^^^
 ```
 
-**Fix:** say how it travels with a statement on the endpoint, an enclosing scope or the client: `response json;`, `request json;` (or `format json;` for both). The two directions are independent: a `request` statement gives outputs no format. An endpoint with no typed output has no `->` at all; `-> ()` is a typed output decoded with its format.
+**Fix:** say how it travels with a statement on the endpoint, an enclosing scope or the client: `response Json;`, `request Json;` (or `format Json;` for both). The two directions are independent: a `request` statement gives outputs no format. An endpoint with no typed output has no `->` at all; `-> ()` is a typed output decoded with its format.
 
 ### A removed in-place format
 
@@ -328,7 +328,7 @@ concord::api! {
 Excerpt of [`format_swapped_order.stderr`](../crates/concord/tests/ui/format_swapped_order.stderr):
 
 ```text
-error: removed output format: write `-> Vec<Item>` and `response json;` on this endpoint
+error: removed in-place output format: `-> Vec<Item> json` names two types; write the payload alone (`-> T`) and the format as a statement (`response F;`) on this endpoint
  --> tests/ui/format_swapped_order.rs:7:33
   |
 7 |         GET item() -> Vec<Item> json;
@@ -341,7 +341,7 @@ error: removed body format: write `body item: Item` and `request json;` on this 
    |                                ^^^^
 ```
 
-**Fix:** the payload position names the type only; write the format as a statement on the endpoint, as the message says (or rely on a statement of a scope or the client). The same message names the replacement for every removed spelling — `json b: T`, `json("m") b: T`, `body("m") b: T`, `-> text T`, `request json("m");` ([`format_removed_spellings.stderr`](../crates/concord/tests/ui/format_removed_spellings.stderr)), the V4-alpha `-> concord::Json<Item>` ([`representation_alpha_spelling.stderr`](../crates/concord/tests/ui/representation_alpha_spelling.stderr)); see [From in-place formats to statements](MIGRATION.md#from-in-place-formats-to-statements).
+**Fix:** the payload position names the type only; write the format as a statement on the endpoint, as the message says (or rely on a statement of a scope or the client). The same message names the replacement for every removed spelling — `json b: T`, `json("m") b: T`, `body("m") b: T`, `-> text T`, `request Json("m");` ([`format_removed_spellings.stderr`](../crates/concord/tests/ui/format_removed_spellings.stderr)), the V4-alpha `-> concord::Json<Item>` ([`representation_alpha_spelling.stderr`](../crates/concord/tests/ui/representation_alpha_spelling.stderr)); see [From in-place formats to statements](MIGRATION.md#from-in-place-formats-to-statements).
 
 ### A leftover `via`
 
@@ -366,7 +366,7 @@ error: `via` was removed: write `-> Item` and `response concord::Json;` on the e
   |                            ^^^
 ```
 
-**Fix:** write the statement the message names, keeping the path so it names the same type; where that type is Concord's own `Json`, `Text` or `Binary`, the word is the short form (`response json;`). See [From `via` to statements](MIGRATION.md#from-via-to-statements).
+**Fix:** write the statement the message names, keeping the path so it names the same type (an imported name is as good: `use concord::Json;` and `response Json;`). See [From `via` to statements](MIGRATION.md#from-via-to-statements).
 
 ### A statement with nothing to apply to
 
@@ -376,15 +376,13 @@ Excerpt of [`format_endpoint_statement.rs`](../crates/concord/tests/ui/format_en
 concord::api! {
     pub client RequestWithoutBody {
         base "http://x.test";
-        GET version() -> String { request text; response text; }
+        GET version() -> String { request concord::Text; response concord::Text; }
     }
 }
 concord::api! {
     pub client ResponseWithoutOutput {
         base "http://x.test";
-        POST note(body note: String) { request text; response text; }
-    }
-}
+        POST note(body note: String) { request concord::Text; response concord::Text; }
 ```
 
 Excerpt of [`format_endpoint_statement.stderr`](../crates/concord/tests/ui/format_endpoint_statement.stderr):
@@ -393,14 +391,14 @@ Excerpt of [`format_endpoint_statement.stderr`](../crates/concord/tests/ui/forma
 error: `request` statement has no body to apply to
  --> tests/ui/format_endpoint_statement.rs:7:35
   |
-7 |         GET version() -> String { request text; response text; }
+7 |         GET version() -> String { request concord::Text; response concord::Text; }
   |                                   ^^^^^^^
 
 error: `response` statement has no typed output (`-> T`) to apply to
-  --> tests/ui/format_endpoint_statement.rs:13:54
+  --> tests/ui/format_endpoint_statement.rs:13:63
    |
-13 |         POST note(body note: String) { request text; response text; }
-   |                                                      ^^^^^^^^
+13 |         POST note(body note: String) { request concord::Text; response concord::Text; }
+   |                                                               ^^^^^^^^
 ```
 
 **Fix:** on an endpoint, `request` needs a body (`body x: T`), `response` a typed output (`-> T`), and `format` at least one of the two; remove the statement or declare what it applies to. Each owner states each direction once (`format` counts as both). Statements on clients and scopes that no endpoint uses are fine.
@@ -414,13 +412,13 @@ pub struct Item;
 concord::api! {
     pub client OnTheEndpoint {
         base "http://x.test";
-        GET item() -> Item { response json "application/vnd.api+json"; }
+        GET item() -> Item { response concord::Json "application/vnd.api+json"; }
     }
 }
 concord::api! {
     pub client OnTheClient {
         base "http://x.test";
-        response json "application/vnd.api+json";
+        response concord::Json "application/vnd.api+json";
         GET item() -> Item;
     }
 ```
@@ -429,19 +427,18 @@ Excerpt of [`format_output_media_type.stderr`](../crates/concord/tests/ui/format
 
 ```text
 error: an output takes no media type: Concord sends no `Accept` and does not check the response `Content-Type`; to send an `Accept` header, declare it (`headers { "accept" = "..."; }`)
- --> tests/ui/format_output_media_type.rs:8:44
+ --> tests/ui/format_output_media_type.rs:8:53
   |
-8 |         GET item() -> Item { response json "application/vnd.api+json"; }
-  |                                            ^^^^^^^^^^^^^^^^^^^^^^^^^^
+8 |         GET item() -> Item { response concord::Json "application/vnd.api+json"; }
+  |                                                     ^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 error: an output takes no media type: Concord sends no `Accept` and does not check the response `Content-Type`; to send an `Accept` header, declare it (`headers { "accept" = "..."; }`)
-  --> tests/ui/format_output_media_type.rs:14:23
+  --> tests/ui/format_output_media_type.rs:14:32
    |
-14 |         response json "application/vnd.api+json";
-   |                       ^^^^^^^^^^^^^^^^^^^^^^^^^^
+14 |         response concord::Json "application/vnd.api+json";
 ```
 
-**Fix:** remove it: Concord sends no `Accept` and checks no response `Content-Type`. If the API needs an `Accept` header, declare it like any header. A body's media type is written on `request` (`request json "application/vnd.api+json";`); `format` takes none.
+**Fix:** remove it: Concord sends no `Accept` and checks no response `Content-Type`. If the API needs an `Accept` header, declare it like any header. A body's media type is written on `request` (`request Json "application/vnd.api+json";`); `format` takes none.
 
 ### A body media type and a `content-type` header
 
@@ -452,7 +449,7 @@ concord::api! {
     pub client InPlace {
         base "http://x.test";
         headers { "content-type" = "text/csv"; }
-        POST save(body p: String) { request text "text/plain; charset=utf-8"; }
+        POST save(body p: String) { request concord::Text "text/plain; charset=utf-8"; }
     }
 }
 ```
@@ -461,17 +458,17 @@ Excerpt of [`format_header_media_conflict.stderr`](../crates/concord/tests/ui/fo
 
 ```text
 error: body `p` has the media type "text/plain; charset=utf-8" (written in the endpoint request statement), and the `content-type` header set by `InPlace` reaches this endpoint: both would set `Content-Type`; keep one: remove the media type from the endpoint request statement, or add `remove "content-type";` to this endpoint's `headers` block
- --> tests/ui/format_header_media_conflict.rs:9:50
+ --> tests/ui/format_header_media_conflict.rs:9:59
   |
-9 |         POST save(body p: String) { request text "text/plain; charset=utf-8"; }
-  |                                                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+9 |         POST save(body p: String) { request concord::Text "text/plain; charset=utf-8"; }
+  |                                                           ^^^^^^^^^^^^^^^^^^^^^^^^^^^
 ```
 
 **Fix:** keep one. Either the body states its media type (and `remove "content-type";` drops the inherited header on this endpoint or an enclosing scope), or the header does (and the `request` statement names no media type, so the header replaces the format's own). A `content-type` header without a declared body media type is not an error: it replaces the format's media type when it is sent. With a native `CONTENT_TYPE` key the macro may not see that it is `content-type`; the conflict is then a build error from `prepare()`.
 
-### A misspelled or lowercase format
+### A missing or misspelled format
 
-Excerpt of [`format_reserved_words.rs`](../crates/concord/tests/ui/format_reserved_words.rs):
+Excerpt of [`format_type_paths.rs`](../crates/concord/tests/ui/format_type_paths.rs):
 
 ```rust
 pub struct Rows;
@@ -482,30 +479,27 @@ concord::api! {
     }
 }
 concord::api! {
-    pub client Lowercase {
+    pub client Typo {
         base "http://x.test";
-        GET rows() -> Rows { response csv; }
-    }
-}
 ```
 
-Excerpt of [`format_reserved_words.stderr`](../crates/concord/tests/ui/format_reserved_words.stderr):
+Excerpt of [`format_type_paths.stderr`](../crates/concord/tests/ui/format_type_paths.stderr):
 
 ```text
-error: expected a format: `json`, `text`, `bytes` or `form`, or a type path (`request Ndjson;`)
- --> tests/ui/format_reserved_words.rs:7:38
+error: expected a format type: a path to a type implementing `Encode` and/or `Decode` (`format F;`, `request F;`, `response F;`)
+ --> tests/ui/format_type_paths.rs:7:38
   |
 7 |         GET item() -> Rows { response; }
   |                                      ^
 
-error: `csv` is not a format: the built-in formats are `json`, `text`, `bytes` or `form`; a format type is written as a path (`self::csv`)
-  --> tests/ui/format_reserved_words.rs:13:39
+error: `qurey` is not a placement: a parameter is `name: T`, `query name: T`, `query("key") name: T`, `header(KEY) name: T` or `body name: T` (a body's format is a statement: `request F;`)
+  --> tests/ui/format_type_paths.rs:13:20
    |
-13 |         GET rows() -> Rows { response csv; }
-   |                                       ^^^
+13 |         GET search(qurey page: u32);
+   |                    ^^^^^
 ```
 
-**Fix:** a statement names a format: `json`, `text`, `bytes`, `form`, or a type path; a lowercase format type is written as a path (`self::csv`). In a parameter list a misspelled placement (`qurey`) is reported with the list of placements.
+**Fix:** a statement names a format type by its path (`response Json;`, `request codecs::Csv;`). Rust resolves it where it is written, like any type: an unknown or misspelled name, the old `json` word, or a format used without its import is Rust's own `cannot find type` error at the name ([`format_unknown_type.stderr`](../crates/concord/tests/ui/format_unknown_type.stderr), [`format_missing_import.stderr`](../crates/concord/tests/ui_json/format_missing_import.stderr)); Concord reserves no name, so it adds no suggestion of its own. Import the format (`use concord::Json;`) or write its path. With the `json` or `form` feature off, importing `Json` or `Form` fails at the import, and rustc names the feature ([`feature_disabled_formats.stderr`](../crates/concord/tests/ui_features/feature_disabled_formats.stderr)). In a parameter list a misspelled placement (`qurey`) is reported with the list of placements.
 
 ### A format that does not support the payload type
 
@@ -516,15 +510,15 @@ pub struct Item;
 concord::api! {
     pub client Api {
         base "http://x.test";
-        GET item() -> Item { response text; }
-        POST create(body item: Item) { request bytes; }
+        GET item() -> Item { response Text; }
+        POST create(body item: Item) { request Binary; }
     }
 }
 concord::api! {
     pub client Scalar {
         base "http://x.test";
-        POST count(body n: u64) { request text; }
-        GET total() -> u64 { response bytes; }
+        POST count(body n: u64) { request Text; }
+        GET total() -> u64 { response Binary; }
     }
 ```
 
@@ -532,13 +526,13 @@ Excerpt of [`representation_unsupported_payload.stderr`](../crates/concord/tests
 
 ```text
 error[E0277]: the format `Text` cannot decode a `Item` response
- --> tests/ui/representation_unsupported_payload.rs:8:39
+ --> tests/ui/representation_unsupported_payload.rs:9:39
   |
-8 |         GET item() -> Item { response text; }
+9 |         GET item() -> Item { response Text; }
   |                                       ^^^^ this output's format is `Text` (the nearest `response` statement: on the endpoint, a scope or the client); it needs `Text: Decode<Item>`
 ```
 
-**Fix:** pick a format that supports the type (`json` for a serde type), or implement `Decode<Item>`/`Encode<Item>` for your own format type. An inherited format is reported at the statement that gave it (`format_inherited_unsupported.stderr`). For `json`, an unmet serde bound is reported by rustc in its own words (`the trait bound .. Deserialize<'de> is not satisfied`, `tests/ui_json/format_serde_bound.stderr`).
+**Fix:** pick a format that supports the type (`Json` for a serde type), or implement `Decode<Item>`/`Encode<Item>` for your own format type. An inherited format is reported at the statement that gave it (`format_inherited_unsupported.stderr`). For `Json`, an unmet serde bound is reported by rustc in its own words (`the trait bound .. Deserialize<'de> is not satisfied`, `tests/ui_json/format_serde_bound.stderr`).
 
 ### An invalid media type in a format
 
@@ -754,14 +748,13 @@ error: use of deprecated method `Api::list`: use `items`
 | URL | `base_errors`, `base_invalid_port`, `path_errors`, `optional_in_path`, `scope_trailing_slash`, `subdomain_errors` |
 | Query and headers | `invalid_header_name`, `header_literal_value`, `header_name_exceeds_native_limit`, `reserved_header`, `reserved_headers_all`, `duplicate_header_case`, `duplicate_inherited_key`, `override_without_target`, `override_needs_else_inherit`, `else_inherit_needs_optional_source`, `override_after_remove`, `remove_without_target`, `remove_acts_on_inherited`, `each_and_scalar` |
 | Wire formatting | `option_has_no_wire_spelling`, `vec_needs_each` |
-| Formats | `representation_missing_via`, `representation_unsupported_payload`, `representation_alpha_spelling`, `format_via_removed`, `format_endpoint_statement`, `format_output_media_type`, `format_header_media_conflict`, `format_media_type_invalid`, `format_invalid_content_type`, `format_inherited_unsupported`, `format_reserved_words`, `format_swapped_order`; with `json`: `ui_json/format_serde_bound`; with `json` and `form` off: `ui_features/feature_disabled_formats` |
+| Formats | `representation_missing_via`, `representation_unsupported_payload`, `representation_alpha_spelling`, `format_via_removed`, `format_endpoint_statement`, `format_output_media_type`, `format_header_media_conflict`, `format_media_type_invalid`, `format_invalid_content_type`, `format_inherited_unsupported`, `format_type_paths`, `format_unknown_type`, `format_swapped_order`; with `json`: `ui_json/format_serde_bound`, `ui_json/format_missing_import`; with `json` and `form` off: `ui_features/feature_disabled_formats` |
 
 Known rough edges (compiler-origin): an over-long literal header name is rejected by the native
 validator as `E0080` ("evaluation panicked: HeaderName::from_static with invalid bytes") spanning
 the whole invocation, and so is a native constant whose `HeaderName::from_static` name is not
 lowercase (at the constant); an invalid `Encode::CONTENT_TYPE` is the same `E0080` for `HeaderValue`,
-pointing at the format. A format word whose feature is off is rustc's "cannot find type `Json` in
-crate `$crate`" at the word (one error per endpoint statement that names it, one per client or
-scope statement that endpoints use) with its note "the item is gated behind the `json` feature"
-(`ui_features/feature_disabled_formats.stderr`). Old-style `-> Json<Item>`, `Text`, `Binary` and
-`-> ()` get a precise replacement (`representation_alpha_spelling`).
+pointing at the format. A format named without its import gets no import suggestion from rustc
+(the name is resolved inside the expansion); the message is still at the name. Old-style
+`-> Json<Item>` and `-> ()` are reported as outputs without a format
+(`representation_alpha_spelling`).

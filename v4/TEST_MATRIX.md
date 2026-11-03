@@ -183,10 +183,10 @@ in `formats.rs` unless stated; `ui/`, `ui_json/`, `ui_features/` are trybuild ca
 | F10/F11 | required | native exits and status handling unchanged | `row11_status_and_native_decoder_unchanged`, `bodies.rs::r05_*`, `r08_*`, `examples/multipart`, `examples/native` | track |
 | F12a | required | `json`/`form` off: one error per in-place word, one per used default | `ui_features/feature_disabled_formats.rs` (no-default lanes) | track |
 | F12b | required | defaults reached only through aliases gated by consumers' `cfg`s; unused defaults never referenced | `row12b_unused_and_cfg_disabled_defaults_are_never_referenced`, `attributes.rs::cfg_and_deprecated`, `ui_features/feature_disabled_formats.rs` | track |
-| F12c | required | words need no import under a renamed dependency; paths resolve normally | `examples/renamed/src/lib.rs::formats_through_the_renamed_crate` | track |
+| F12c | required | words need no import under a renamed dependency; paths resolve normally *(modular: no words; format types resolve through the renamed crate's path)* | `examples/renamed/src/lib.rs::formats_through_the_renamed_crate` | track |
 | F12d | required | leftover `via` → exact replacement statement *(final: the migration script is withdrawn)* | `ui/format_via_removed.rs` | final |
 | F12e | required | rustdoc states format, media type and origin per endpoint, defaults per owner | `concord-macros` `emit::tests::format_docs_*` | track |
-| FL | required | lexical precedence table (values named like words, word-prefixed paths, `-> r#json`, reserved words, swapped order) | `lexical_precedence`, `lexical_raw_identifier_is_a_payload`, `ui/format_reserved_words.rs`, `ui/format_swapped_order.rs` | track |
+| FL | required | lexical precedence table (values named like words, word-prefixed paths, `-> r#json`, reserved words, swapped order) | `lexical_precedence`, `lexical_raw_identifier_is_a_payload`, `ui/format_type_paths.rs`, `ui/format_unknown_type.rs`, `ui/format_swapped_order.rs` *(modular: no reserved words)* | track |
 | FX | required | CHARTER §7 cross-feature: optional native headers vs body presence (H11), defaults vs header presence/inheritance (H12), natively sensitive header under defaults | `h11_*`, `h12_*`, `native_sensitive_header_stays_protected_under_defaults` | track |
 | FF | required | built-in `form` (feature `form`): encoding, pairs, defaults, responses, encode errors, form in / JSON out | `forms.rs` | track |
 

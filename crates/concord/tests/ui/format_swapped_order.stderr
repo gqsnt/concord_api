@@ -1,4 +1,4 @@
-error: removed output format: write `-> Vec<Item>` and `response json;` on this endpoint
+error: removed in-place output format: `-> Vec<Item> json` names two types; write the payload alone (`-> T`) and the format as a statement (`response F;`) on this endpoint
  --> tests/ui/format_swapped_order.rs:7:33
   |
 7 |         GET item() -> Vec<Item> json;

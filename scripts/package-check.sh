@@ -71,13 +71,13 @@ concord::api! {
         base "https://shop.example.test/v1";
         #[cfg(feature = "json")]
         scope json_api {
-            request json;
-            response json;
+            request concord::Json;
+            response concord::Json;
             GET item(id: u64) -> Item { path "items/{id}"; }
             POST create(body item: Item) -> Item { path "items"; }
         }
-        GET health() -> String { response text; path "health"; }
-        PUT upload(body png: concord::bytes::Bytes) { request bytes "image/png"; path "image"; }
+        GET health() -> String { response concord::Text; path "health"; }
+        PUT upload(body png: concord::bytes::Bytes) { request concord::Binary "image/png"; path "image"; }
     }
 }
 EOF
@@ -109,6 +109,10 @@ fn json_defaults_from_the_packaged_sources() {
 EOF
 cp "$root/Cargo.lock" "$out/consumer/Cargo.lock" 2>/dev/null || true
 cd "$out/consumer"
+# Outside the repository rust-toolchain.toml does not apply: build with the pinned toolchain (also
+# the minimum supported Rust) rather than whatever the machine's default is.
+RUSTUP_TOOLCHAIN=$(sed -n 's/^channel = "\(.*\)"/\1/p' "$root/rust-toolchain.toml")
+export RUSTUP_TOOLCHAIN
 export CARGO_TARGET_DIR="$out/target"
 # Each run must pass exactly the expected number of consumer tests (not just compile).
 run() {

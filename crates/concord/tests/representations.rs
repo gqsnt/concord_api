@@ -2,6 +2,7 @@
 //! transport errors — without the `json` feature, so these run in every feature combination.
 //! Scenario IDs refer to `v4/TEST_MATRIX.md`.
 
+use concord::{Binary, Text};
 mod support;
 
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -39,19 +40,19 @@ concord::api! {
         base "http://reps.invalid";
 
         PUT text(body value: String) {
-            request text;
+            request Text;
             path "text";
         }
         PUT binary(body value: concord::bytes::Bytes) {
-            request bytes;
+            request Binary;
             path "binary";
         }
         GET text_out() -> String {
-            response text;
+            response Text;
             path "text";
         }
         GET bytes_out() -> concord::bytes::Bytes {
-            response bytes;
+            response Binary;
             path "bytes";
         }
         DELETE remove(id: u32) { path "items/{id}"; }

@@ -1,5 +1,6 @@
 //! The one Concord declaration every recipe uses: a small inventory API.
 
+use concord::{Binary, Json};
 use serde::{Deserialize, Serialize};
 
 use crate::repr::{self, Ndjson};
@@ -42,8 +43,8 @@ concord::api! {
     /// A small inventory API. `key` is the full `Authorization` value (e.g. `Bearer ...`).
     pub client Inventory(#[sensitive] header("authorization") key: String) {
         base "http://inventory.invalid/v1";
-        request json;
-        response json;
+        request Json;
+        response Json;
 
         /// One item.
         GET item(id: u64) -> Item { path "items/{id}"; }
@@ -74,6 +75,6 @@ concord::api! {
 
         /// A long chunked event export. The declared `bytes` buffers everything; the streaming
         /// recipe uses `send_raw` instead.
-        GET events() -> concord::bytes::Bytes { response bytes; path "events"; }
+        GET events() -> concord::bytes::Bytes { response Binary; path "events"; }
     }
 }

@@ -3,7 +3,7 @@
 concord::api! {
     pub client OnTheEndpoint {
         base "http://x.test";
-        request json;
+        request concord::Json;
         POST a(body b: String) { request "application/merge-patch+json"; }
     }
 }
@@ -17,7 +17,7 @@ concord::api! {
 concord::api! {
     pub client OnAScope {
         base "http://x.test";
-        request json;
+        request concord::Json;
         scope s {
             request "application/vnd.api+json";
             POST a(body b: String);

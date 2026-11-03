@@ -3,6 +3,8 @@
 //! type (`concord4::Text`). Native header values are named through a renamed `reqwest` and an
 //! alias: Concord recognizes types by trait, never by spelling.
 
+use concord4::{Binary, Text};
+
 /// An alias of the native header value, through the renamed `reqwest` dependency.
 pub type Native = reqwest013::header::HeaderValue;
 
@@ -13,9 +15,9 @@ concord4::api! {
     /// A client declared through the renamed crate.
     pub client Renamed(query("v") version: u32 = 4) {
         base "http://renamed.invalid";
-        GET ping() -> String { response text; path "ping"; }
+        GET ping() -> String { response Text; path "ping"; }
         PUT upload(body data: Vec<u8>) -> Vec<u8> {
-            request bytes;
+            request Binary;
             response concord4::Binary;
             path "upload";
         }
@@ -29,8 +31,8 @@ concord4::api! {
         header("x-tag") each tags?: Vec<concord4::reqwest::header::HeaderValue>,
     ) {
         base "http://renamed.invalid";
-        request text;
-        response text;
+        request Text;
+        response Text;
         GET ping() -> String { path "ping"; }
         POST note(body note: String) { path "note"; }
     }

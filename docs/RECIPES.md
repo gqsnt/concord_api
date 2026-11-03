@@ -35,7 +35,7 @@ feed that must not be buffered.
 - **Assumes:** the per-chunk deadline (`tokio::time::timeout`) and the chunk limit are the
   application's. Dropping a response before its end closes that connection instead of returning it
   to the pool.
-- **Note:** any declared typed output (`-> Bytes` with `response bytes;`, `-> T`) buffers the whole body, as every
+- **Note:** any declared typed output (`-> Bytes` with `response Binary;`, `-> T`) buffers the whole body, as every
   `Decode` does; an endpoint without `->` drains it without buffering but discards it.
 
 ## Requests
@@ -61,7 +61,7 @@ Declare the endpoint with its fixed parameters and append the sequence to the na
 
 Excerpt of [`examples/native/src/native_edit.rs`](../examples/native/src/native_edit.rs) (the
 endpoint is `GET search() -> Vec<Item> { path "search"; query { "limit" = "10"; } }` under the
-client's `response json;`):
+client's `response Json;`):
 
 ```rust
 pub async fn search_filters(
@@ -97,7 +97,7 @@ pub async fn search_filters(
 directions.
 
 - **How:** a marker type implementing `Encode<Vec<T>>` and `Decode<Vec<T>>`; a statement names it
-  by path where `json` would be written (`format Ndjson;` on the endpoint, or on a scope for all
+  by its path, like `Json` (`format Ndjson;` on the endpoint, or on a scope for all
   its endpoints), with the payloads written as types (`body rows: Vec<StockRow>`,
   `-> Vec<StockRow>`).
 - **Assumes:** error descriptions name the line and column, never its content; the underlying
@@ -105,16 +105,16 @@ directions.
 
 ### Form-encoded bodies
 
-With the `form` feature, the built-in `form` format encodes any `Serialize` value with flat fields
-(`request form;` on the endpoint or a scope) through `serde_urlencoded`, and decodes form
-responses (`response form;`); see the [author guide](AUTHOR_GUIDE.md#56-forms).
+With the `form` feature, `Form` encodes any `Serialize` value with flat fields
+(`request Form;` on the endpoint or a scope) through `serde_urlencoded`, and decodes form
+responses (`response Form;`); see the [author guide](AUTHOR_GUIDE.md#56-forms).
 
 Without the feature, or without serde: [`repr::Form`](../examples/native/src/repr.rs), used by
 [`bodies::send_feedback`](../examples/native/src/bodies.rs) —
 `application/x-www-form-urlencoded` from ordered `(name, value)` pairs.
 
 - **How:** a custom `Encode<Vec<(String, String)>>` with `url::form_urlencoded`, named by path
-  (`request repr::Form;`) so it is not mistaken for the word `form`.
+  (`request repr::Form;`), a different type from `concord::Form`.
 - **When:** the body is fully determined by the value and its content type is constant.
 
 ### Multipart uploads
@@ -162,8 +162,8 @@ synthetic; a fake server proves nothing about the real service.
 | An error inside a 2xx (`{"ok": false}`) | a typed output that models the envelope, or a custom `Decode` returning a `BodyError` | `tests/application.rs` |
 | Nested or bracket form keys (`metadata[order]=7`) | a custom `Encode<T>` with the form media type; `form` itself is flat | `tests/forms.rs` |
 | A key spanning path segments (`docs/2026/report.md`) | `into_parts()`, then `url_mut().path_segments_mut()`; an ordinary path value is one segment (`/` is sent as `%2F`) | `tests/resource_key.rs` |
-| JSON or nothing (`200` with a document, `204` without) | a format of your own implementing `Decode<Option<T>>` that maps an empty body to `None` (`json` keeps it an error) | `tests/json_or_empty.rs` |
-| JSON under another media type (Kubernetes server-side apply) | `request json "application/apply-patch+yaml";` on the endpoint | `tests/apply.rs` |
+| JSON or nothing (`200` with a document, `204` without) | a format of your own implementing `Decode<Option<T>>` that maps an empty body to `None` (`Json` keeps it an error) | `tests/json_or_empty.rs` |
+| JSON under another media type (Kubernetes server-side apply) | `request Json "application/apply-patch+yaml";` on the endpoint | `tests/apply.rs` |
 | A fresh value per request (an idempotency key) | an initialized value on the endpoint; a `.clone()` of the request handle repeats it (a deliberate retry); a client initializer runs once, in `new` | `tests/idempotency.rs` |
 | A new base URL or credential | `with_base_url` and setters return new handles; scopes created earlier keep the old values | `tests/refresh.rs` |
 | Header aliases, `Content-Type` and secrets | native constants, re-exports and shadowed names compose and classify by resolved name | `tests/headers.rs` |

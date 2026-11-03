@@ -6,22 +6,22 @@ concord::api! {
     pub client InPlace {
         base "http://x.test";
         headers { "content-type" = "text/csv"; }
-        POST save(body p: String) { request text "text/plain; charset=utf-8"; }
+        POST save(body p: String) { request concord::Text "text/plain; charset=utf-8"; }
     }
 }
 concord::api! {
     pub client BodyMedia(header("content-type") ct?: concord::reqwest::header::HeaderValue) {
         base "http://x.test";
-        request text;
-        POST save(body p: String) { request text "text/markdown"; }
+        request concord::Text;
+        POST save(body p: String) { request concord::Text "text/markdown"; }
     }
 }
 concord::api! {
     pub client FromDefault(header("content-type") ct?: concord::reqwest::header::HeaderValue) {
         base "http://x.test";
-        request json "application/vnd.api+json";
+        request concord::Json "application/vnd.api+json";
         POST save(body p: String);
-        POST plain(body p: String) { request text; }
+        POST plain(body p: String) { request concord::Text; }
         scope clean {
             headers { remove "content-type"; }
             POST save(body p: String);
@@ -34,7 +34,7 @@ concord::api! {
         scope s(v?: String) {
             headers { "content-type" = "text/csv"; }
             POST save(body p: String) {
-                request text "text/plain";
+                request concord::Text "text/plain";
                 headers { override "content-type" = s.v else inherit; }
             }
         }

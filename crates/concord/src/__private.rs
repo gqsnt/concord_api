@@ -190,7 +190,7 @@ impl<T> BodyFormat<T> {
         }
     }
 
-    /// The format `E` with a declared media type (`request json "…";` on the endpoint, a scope
+    /// The format `E` with a declared media type (`request Json "…";` on the endpoint, a scope
     /// or the client). `E::CONTENT_TYPE` is not used.
     pub const fn with_media_type<E: Encode<T>>(media_type: HeaderValue) -> Self {
         Self {

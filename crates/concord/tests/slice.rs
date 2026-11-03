@@ -1,6 +1,7 @@
 //! Gate 2 vertical slice: declaration → generated client → native request → loopback HTTP →
 //! typed response. Scenario IDs refer to `v4/TEST_MATRIX.md`.
 
+use concord::Json;
 mod support;
 
 use concord::reqwest;
@@ -24,7 +25,7 @@ concord::api! {
     /// A tiny API.
     pub client Tiny {
         base "http://tiny.invalid/v1";
-        response json;
+        response Json;
 
         GET health() -> Health {
             path "health";

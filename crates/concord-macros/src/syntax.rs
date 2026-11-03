@@ -25,10 +25,6 @@ mod kw {
     syn::custom_keyword!(request);
     syn::custom_keyword!(response);
     syn::custom_keyword!(format);
-    syn::custom_keyword!(json);
-    syn::custom_keyword!(text);
-    syn::custom_keyword!(bytes);
-    syn::custom_keyword!(form);
 }
 
 /// HTTP methods accepted as endpoint keywords.
@@ -52,83 +48,24 @@ pub enum OwnerKind {
     },
 }
 
-/// A body or output format as written: a built-in word or a type path. It is chosen only by its
-/// spelling in format position, never by the payload type.
+/// A body or output format: an ordinary Rust type path (`Json`, `codecs::Csv`,
+/// `IgnoreContentType<Json>`), resolved by Rust where it is written. The macro attaches no meaning
+/// to its name: a format is chosen only by its statement, never by the payload type, and what it
+/// does is its `Encode`/`Decode` implementation.
 #[derive(Clone)]
-pub enum Format {
-    Word(Word, Span),
-    Path(syn::Path),
-}
+pub struct Format(pub syn::Path);
 
 impl Format {
     /// Where the format is written.
     pub fn span(&self) -> Span {
-        match self {
-            Format::Word(_, span) => *span,
-            Format::Path(path) => path.span(),
-        }
+        self.0.span()
     }
 
-    /// The format as written (`json`, `codecs::Csv`), for diagnostics and documentation.
+    /// The format as written (`Json`, `codecs::Csv`), for diagnostics and documentation.
     pub fn text(&self) -> String {
-        match self {
-            Format::Word(word, _) => word.as_str().to_owned(),
-            Format::Path(path) => type_text(path),
-        }
+        type_text(&self.0)
     }
 }
-
-/// The built-in format words. They resolve to `$crate::{Json, Text, Binary, Form}`, so they need
-/// no import and work under a renamed dependency.
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
-pub enum Word {
-    Json,
-    Text,
-    Bytes,
-    Form,
-}
-
-impl Word {
-    const ALL: [Word; 4] = [Word::Json, Word::Text, Word::Bytes, Word::Form];
-
-    pub fn as_str(self) -> &'static str {
-        match self {
-            Word::Json => "json",
-            Word::Text => "text",
-            Word::Bytes => "bytes",
-            Word::Form => "form",
-        }
-    }
-
-    /// The runtime marker type in the `concord` crate.
-    pub fn marker(self) -> &'static str {
-        match self {
-            Word::Json => "Json",
-            Word::Text => "Text",
-            Word::Bytes => "Binary",
-            Word::Form => "Form",
-        }
-    }
-
-    /// The marker's `Encode::CONTENT_TYPE`, for generated documentation only (kept in sync with
-    /// `concord/src/repr.rs`; the request itself uses the marker's constant).
-    pub fn media_type(self) -> &'static str {
-        match self {
-            Word::Json => "application/json",
-            Word::Text => "text/plain; charset=utf-8",
-            Word::Bytes => "application/octet-stream",
-            Word::Form => "application/x-www-form-urlencoded",
-        }
-    }
-
-    /// A raw identifier (`r#json`) is never a word.
-    fn of(ident: &Ident) -> Option<Self> {
-        let text = ident.to_string();
-        Self::ALL.into_iter().find(|w| text == w.as_str())
-    }
-}
-
-const WORDS: &str = "`json`, `text`, `bytes` or `form`";
 
 /// A typed output: `-> T`. Legacy format tokens are retained only for migration errors.
 pub struct Output {
@@ -161,28 +98,6 @@ pub fn type_text(t: &dyn quote::ToTokens) -> String {
         .replace("& ", "&")
 }
 
-/// A `via` representation written as a format path naming the same type: the path as written,
-/// except a bare lowercase identifier (a type named `text`, say), which becomes `self::text`
-/// because a bare word in format position is a built-in format. Which type a path names is
-/// decided by name resolution, so no path is turned into a word here (`codec::Text` and a local
-/// module named `concord` keep their meaning). Only used to word a diagnostic reported anyway.
-fn replacement(repr: &Type) -> String {
-    if let Type::Path(p) = repr
-        && p.qself.is_none()
-        && p.path.leading_colon.is_none()
-        && p.path.segments.len() == 1
-    {
-        let segment = &p.path.segments[0];
-        let name = segment.ident.to_string();
-        let bare = name.trim_start_matches("r#");
-        if segment.arguments.is_none() && bare.starts_with(|c: char| c.is_ascii_lowercase()) {
-            // As written: a raw identifier keeps its `r#` (`self::r#type`).
-            return format!("self::{name}");
-        }
-    }
-    type_text(repr)
-}
-
 /// `via R` after a payload type: the removed spelling, reported with its exact replacement.
 fn reject_via(input: ParseStream<'_>, ty: &Type, site: ViaSite<'_>) -> syn::Result<()> {
     if !input.peek(kw::via) {
@@ -190,7 +105,7 @@ fn reject_via(input: ParseStream<'_>, ty: &Type, site: ViaSite<'_>) -> syn::Resu
     }
     let via: kw::via = input.parse()?;
     let repr: Type = input.parse()?;
-    let format = replacement(&repr);
+    let format = type_text(&repr);
     let ty = type_text(ty);
     let message = match site {
         ViaSite::Output => {
@@ -209,44 +124,9 @@ enum ViaSite<'a> {
     Body { name: &'a Ident, optional: &'a str },
 }
 
-/// A built-in word in format position: the word not followed by `::` (`json::Codec` is a path).
-fn peek_word(input: ParseStream<'_>) -> bool {
-    (input.peek(kw::json) || input.peek(kw::text) || input.peek(kw::bytes) || input.peek(kw::form))
-        && !input.peek2(Token![::])
-}
-
-/// A word or a type path in format position. A bare lowercase identifier must be one of the
-/// words: a lowercase format type is written as a path (`self::csv`). In a parameter list the
-/// identifier may also be a misspelled placement (`qurey page: u32`), and the error says so.
-fn parse_format(input: ParseStream<'_>, in_params: bool) -> syn::Result<Format> {
-    if peek_word(input) {
-        let ident: Ident = input.parse()?;
-        let word = Word::of(&ident).expect("peeked a format word");
-        return Ok(Format::Word(word, ident.span()));
-    }
-    let path: syn::Path = input.parse()?;
-    if path.leading_colon.is_none() && path.segments.len() == 1 {
-        let segment = &path.segments[0];
-        let text = segment.ident.to_string();
-        if segment.arguments.is_none()
-            && !text.starts_with("r#")
-            && text
-                .trim_start_matches("r#")
-                .starts_with(|c: char| c.is_ascii_lowercase())
-        {
-            let what = if in_params {
-                format!(
-                    "`{text}` is not a placement: a parameter is `name: T`, `query name: T`, `query(\"key\") name: T`, `header(KEY) name: T` or `body name: T` (formats are statements: `request json;`)"
-                )
-            } else {
-                format!(
-                    "`{text}` is not a format: the built-in formats are {WORDS}; a format type is written as a path (`self::{text}`)"
-                )
-            };
-            return Err(syn::Error::new(segment.ident.span(), what));
-        }
-    }
-    Ok(Format::Path(path))
+/// A format in statement position: a type path, resolved by Rust where it is written.
+fn parse_format(input: ParseStream<'_>) -> syn::Result<Format> {
+    input.parse().map(Format)
 }
 
 /// `("media/type")` after a format or `body`: the body's media type, checked here.
@@ -256,7 +136,7 @@ fn parse_media(input: ParseStream<'_>) -> syn::Result<LitStr> {
     let lit: LitStr = content.parse().map_err(|e| {
         syn::Error::new(
             e.span(),
-            "expected the body's media type as a string, e.g. `json(\"application/merge-patch+json\") patch: Patch`",
+            "expected the body's media type as a string, e.g. `body(\"application/merge-patch+json\") patch: Patch`",
         )
     })?;
     if !content.is_empty() {
@@ -324,55 +204,28 @@ fn parse_output(input: ParseStream<'_>) -> syn::Result<Output> {
     let at_end = |input: ParseStream<'_>| {
         input.peek(syn::token::Brace) || input.peek(Token![;]) || input.is_empty()
     };
-    let explicit = if peek_word(input) {
-        let ident: Ident = input.parse()?;
-        let word = Word::of(&ident).expect("peeked a format word");
-        if at_end(input) {
-            // A single path is always a Rust payload type, even if spelled like a format word.
-            return Ok(Output {
-                ty: syn::parse_quote!(#ident),
-                format: None,
-            });
-        }
-        Some(Format::Word(word, ident.span()))
-    } else {
-        // A path followed by more type tokens is a format; a path that ends the output is the
-        // payload (inherited format); anything else (`()`, `[u8; 4]`, ...) is a payload.
-        let fork = input.fork();
-        match fork.parse::<syn::Path>() {
-            Ok(path) if !at_end(&fork) && !fork.peek(kw::via) => {
-                if let Ok(ident) = fork.fork().parse::<Ident>()
-                    && let Some(word) = Word::of(&ident).filter(|_| !fork.peek2(Token![::]))
-                {
-                    return Err(syn::Error::new(
-                        ident.span(),
-                        format!(
-                            "removed output format: write `-> {1}` and `response {0};` on this endpoint",
-                            word.as_str(),
-                            type_text(&path)
-                        ),
-                    ));
-                }
-                Some(parse_format(input, false)?)
-            }
-            _ => None,
-        }
+    // A path followed by more type tokens is the removed in-place format (`-> Csv Vec<Row>`,
+    // reported by the model with its replacement); a path that ends the output is the payload;
+    // anything else (`()`, `[u8; 4]`, ...) is a payload.
+    let fork = input.fork();
+    let explicit = match fork.parse::<syn::Path>() {
+        Ok(_) if !at_end(&fork) && !fork.peek(kw::via) => Some(parse_format(input)?),
+        _ => None,
     };
     if explicit.is_some() && input.peek(syn::token::Paren) && peek_media(input) {
         return Err(output_media(input));
     }
     let ty: Type = input.parse()?;
     reject_via(input, &ty, ViaSite::Output)?;
-    // `-> () json`: a word after a payload that is not a path (paths are checked above).
-    if let Ok(ident) = input.fork().parse::<Ident>()
-        && let Some(word) = Word::of(&ident).filter(|_| explicit.is_none())
-    {
+    // `-> () Csv`: a format after a payload that is not a path (paths are handled above).
+    if explicit.is_none() && !at_end(input) && input.fork().parse::<syn::Path>().is_ok() {
+        let format: syn::Path = input.parse()?;
         return Err(syn::Error::new(
-            ident.span(),
+            format.span(),
             format!(
-                "removed output format: write `-> {1}` and `response {0};` on this endpoint",
-                word.as_str(),
-                type_text(&ty)
+                "removed output format: write `-> {}` and `response {};` on this endpoint",
+                type_text(&ty),
+                type_text(&format)
             ),
         ));
     }
@@ -624,16 +477,16 @@ fn parse_default(input: ParseStream<'_>, stmts: &mut Stmts) -> syn::Result<()> {
         input.parse::<kw::response>()?.span
     };
     if input.peek(Token![;]) {
-        return Err(input.error(format!(
-            "expected a format: {WORDS}, or a type path (`request Ndjson;`)"
-        )));
+        return Err(input.error(
+            "expected a format type: a path to a type implementing `Encode` and/or `Decode` (`format F;`, `request F;`, `response F;`)",
+        ));
     }
     if input.peek(LitStr) {
         return Err(input.error(
-            "a media type follows its format, which the statement restates: `request json \"application/merge-patch+json\";` (a statement replaces the inherited format and media type together)",
+            "a media type follows its format, which the statement restates: `request F \"application/merge-patch+json\";` (a statement replaces the inherited format and media type together)",
         ));
     }
-    let format = parse_format(input, false)?;
+    let format = parse_format(input)?;
     if input.peek(syn::token::Paren) {
         let media = parse_media(input)?;
         return Err(syn::Error::new(
@@ -970,12 +823,27 @@ fn parse_params(
                 && !content.peek2(Token![::]);
         let starts_path = content.peek(Ident::peek_any) || content.peek(Token![::]);
         if !named && !placement && starts_path {
-            // A body: `body name: T`, `body("media") name: T`, `FORMAT name: T`,
-            // `FORMAT("media") name: T`.
+            // A body: `body name: T`; `body("media") name: T`, `F name: T` and
+            // `F("media") name: T` are removed spellings, reported with their replacement.
             let (format, at) = if content.peek(kw::body) && !content.peek2(Token![::]) {
                 (None, content.parse::<kw::body>()?.span)
-            } else if peek_word(&content) || allow_body {
-                let format = parse_format(&content, true)?;
+            } else if allow_body {
+                // A bare lowercase identifier is more likely a misspelled placement
+                // (`qurey page: u32`) than a format, which is a statement anyway.
+                let path: syn::Path = content.fork().parse()?;
+                if let Some(ident) = path.get_ident()
+                    && ident
+                        .to_string()
+                        .starts_with(|c: char| c.is_ascii_lowercase())
+                {
+                    return Err(syn::Error::new(
+                        ident.span(),
+                        format!(
+                            "`{ident}` is not a placement: a parameter is `name: T`, `query name: T`, `query(\"key\") name: T`, `header(KEY) name: T` or `body name: T` (a body's format is a statement: `request F;`)"
+                        ),
+                    ));
+                }
+                let format = parse_format(&content)?;
                 let at = format.span();
                 (Some(format), at)
             } else {
@@ -1053,17 +921,20 @@ fn parse_params(
                         optional: if optional { "?" } else { "" },
                     },
                 )?;
-                if let Ok(ident) = content.fork().parse::<Ident>()
-                    && let Some(word) = Word::of(&ident)
+                if !content.is_empty()
+                    && !content.peek(Token![=])
+                    && !content.peek(Token![,])
+                    && content.fork().parse::<syn::Path>().is_ok()
                 {
+                    let format: syn::Path = content.parse()?;
                     return Err(syn::Error::new(
-                        ident.span(),
+                        format.span(),
                         format!(
-                            "removed body format: write `body {1}{2}: {3}` and `request {0};` on this endpoint",
-                            word.as_str(),
+                            "removed body format: write `body {}{}: {}` and `request {};` on this endpoint",
                             plain(&name),
                             if optional { "?" } else { "" },
-                            type_text(&ty)
+                            type_text(&ty),
+                            type_text(&format)
                         ),
                     ));
                 }
@@ -1158,18 +1029,19 @@ fn parse_placement(input: ParseStream<'_>) -> syn::Result<Option<Placement>> {
 
 #[cfg(test)]
 mod tests {
-    use super::replacement;
+    use super::type_text;
 
-    /// A `via` path is suggested as written; a bare lowercase identifier gets `self::`, keeping a
-    /// raw identifier's `r#` (`self::type` would not parse) — re-check F3e.
+    /// A `via` path is suggested exactly as written: a format is an ordinary type path, so a
+    /// lowercase or raw identifier keeps its meaning (`response r#type;` parses) — re-check F3e.
     #[test]
     fn via_replacement_names_the_same_path() {
-        let text = |t: syn::Type| replacement(&t);
+        let text = |t: syn::Type| type_text(&t);
         assert_eq!(text(syn::parse_quote!(concord::Json)), "concord::Json");
         assert_eq!(text(syn::parse_quote!(Text)), "Text");
         assert_eq!(text(syn::parse_quote!(::c4::Text)), "::c4::Text");
-        assert_eq!(text(syn::parse_quote!(text)), "self::text");
-        assert_eq!(text(syn::parse_quote!(r#type)), "self::r#type");
-        assert_eq!(text(syn::parse_quote!(r#text)), "self::r#text");
+        assert_eq!(text(syn::parse_quote!(text)), "text");
+        assert_eq!(text(syn::parse_quote!(r#type)), "r#type");
+        let path: syn::Path = syn::parse_str("r#type").unwrap();
+        assert_eq!(type_text(&path), "r#type");
     }
 }

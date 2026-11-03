@@ -13,10 +13,11 @@ concord::api! {
         /// Always present.
         GET kept() { path "kept"; }
 
-        /// Disabled: its output type does not even exist.
+        /// Disabled: neither its output type nor its format type exists (A09: a disabled endpoint
+        /// resolves no format).
         #[cfg(any())]
         GET gone() -> DoesNotExist {
-            response text;
+            response NoSuchFormat;
             path "gone";
         }
 
@@ -25,6 +26,16 @@ concord::api! {
         scope hidden(id: AlsoMissing) {
             path "hidden/{id}";
             GET inner() { path "inner"; }
+        }
+
+        /// A default whose only consumer is disabled, and one with no consumer: neither format
+        /// type exists, and neither is resolved (A09).
+        scope defaults {
+            response NoSuchFormat;
+            request AlsoNoSuchFormat;
+            #[cfg(any())]
+            GET only_user() -> DoesNotExist { path "only"; }
+            GET ping() { path "ping"; }
         }
 
         /// Enabled through `cfg(all())`.

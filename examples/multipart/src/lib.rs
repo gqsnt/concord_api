@@ -20,6 +20,7 @@
 //! This crate is the only one in the workspace that enables reqwest's `multipart` feature; the
 //! `concord` crate itself has no multipart policy and does not depend on it.
 
+use concord::Json;
 use reqwest::multipart::{Form, Part};
 use serde::Deserialize;
 
@@ -38,7 +39,7 @@ concord::api! {
         base "http://files.invalid/v1";
 
         /// Upload into a folder; the multipart body is attached natively (see [`upload`]).
-        POST upload(folder: String) -> Stored { response json; path "folders/{folder}/files"; }
+        POST upload(folder: String) -> Stored { response Json; path "folders/{folder}/files"; }
     }
 }
 

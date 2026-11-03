@@ -11,7 +11,7 @@ concord::api! {
     pub client Riot(#[sensitive] header(X_RIOT_TOKEN) key: String) {
         base "https://api.riotgames.com";
         headers { ACCEPT = "application/json"; }
-        format json;
+        format Json;
 
         scope account(route: AccountRoute) {          // americas.api.riotgames.com, ...
             subdomain "{route}";

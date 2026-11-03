@@ -53,7 +53,8 @@ SHAPES (each varies one dimension; everything else is fixed)
                             (`query { "k_i" = v; }`): N distinct placement descriptions for one
                             value in the generated documentation.
   typed     --endpoints N   Typed bodies and outputs: N/10 scopes, 10 endpoints each. The client
-                            declares `request text; response text;`; per scope six `-> String`
+                            declares `request concord::Text; response concord::Text;` (words
+                            `text`/`bytes` with `--syntax statements`); per scope six `-> String`
                             and two `body note: String` + `-> String` endpoints inherit them, and
                             two are exceptions with an endpoint statement of their own (`-> Vec<u8>`
                             with `response bytes;`, `body data: Vec<u8>` without output with
@@ -104,9 +105,9 @@ GENERATOR_VERSION = 7
 #   "alpha"   (V4 alpha 8f7adc2): positional root constructor, no `else inherit`, `-> Text`.
 # "refined" is accepted as the former name of "via". Only the `typed` shape has bodies and
 # outputs; for the others "statements", "formats" and "via" produce the same bytes.
-DEFAULT_SYNTAX = "statements"
+DEFAULT_SYNTAX = "types"
 SYNTAX = DEFAULT_SYNTAX
-SYNTAXES = ["statements", "formats", "via", "alpha", "refined"]
+SYNTAXES = ["types", "statements", "formats", "via", "alpha", "refined"]
 KEYS = "literal"
 
 
@@ -149,6 +150,8 @@ def typed_output(fmt, ty):
         return f"-> {ty} via {marker[fmt or 'text']}", []
     if SYNTAX == "statements":
         return f"-> {ty}", [f"response {fmt};"] if fmt else []
+    if SYNTAX == "types":
+        return f"-> {ty}", [f"response {marker[fmt]};"] if fmt else []
     return (f"-> {fmt} {ty}" if fmt else f"-> {ty}"), []
 
 
@@ -162,6 +165,8 @@ def typed_body(fmt, name, ty):
         return f"body {name}: {ty} via {marker[fmt or 'text']}", []
     if SYNTAX == "statements":
         return f"body {name}: {ty}", [f"request {fmt};"] if fmt else []
+    if SYNTAX == "types":
+        return f"body {name}: {ty}", [f"request {marker[fmt]};"] if fmt else []
     return (f"{fmt} {name}: {ty}" if fmt else f"body {name}: {ty}"), []
 
 
@@ -291,6 +296,8 @@ def shape_typed(n):
              '        base "https://api.example.com/v1";']
     if SYNTAX in ("statements", "formats"):
         lines += ["        request text;", "        response text;"]
+    if SYNTAX == "types":
+        lines += ["        request concord::Text;", "        response concord::Text;"]
     scopes = max(1, n // 10)
     for s in range(scopes):
         lines.append(f'        scope s{s}(owner: String) {{')

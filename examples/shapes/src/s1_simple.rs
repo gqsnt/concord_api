@@ -1,5 +1,6 @@
 //! S1: a base URL, `GET /health` and `GET /items/{id}`, both JSON.
 
+use concord::Json;
 use serde::Deserialize;
 
 /// `GET /health` response.
@@ -22,7 +23,7 @@ concord::api! {
     /// The simple API.
     pub client SimpleApi {
         base "https://api.example.com/v1";
-        response json;
+        response Json;
 
         GET health() -> Health { path "health"; }
         GET item(id: String) -> Item { path "items/{id}"; }

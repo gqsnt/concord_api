@@ -1,6 +1,7 @@
 //! S3: a search endpoint with eight optional query parameters (one repeated, one defaulted), a JSON
 //! `POST` and a `DELETE` that answers 204, all with a bearer token.
 
+use concord::Json;
 use std::fmt;
 
 use serde::{Deserialize, Serialize};
@@ -65,8 +66,8 @@ concord::api! {
     pub client ShopApi(#[sensitive] token: String) {
         base "https://api.example.com/v1";
         headers { "authorization" = "Bearer {token}"; }
-        request json;
-        response json;
+        request Json;
+        response Json;
 
         GET search(
             query q?: String,

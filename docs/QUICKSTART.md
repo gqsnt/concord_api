@@ -24,7 +24,7 @@ serde = { version = "1", features = ["derive"] }
 tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
 ```
 
-- `concord`'s default features are `json` (the `json` format) and `reqwest-defaults`
+- `concord`'s default features are `json` (the `Json` format) and `reqwest-defaults`
   (reqwest's TLS, HTTP/2 and proxy support); `form` (URL-encoded form bodies) is opt-in. Concord re-exports reqwest as `concord::reqwest`;
   you only need your own `reqwest` dependency to choose its features.
 - `serde` derives your payload types.
@@ -72,7 +72,7 @@ concord::api! {
     pub client Tasks(#[sensitive] token: String) {
         base "https://tasks.example.com/api";
         headers { AUTHORIZATION = "Bearer {token}"; }
-        format json;
+        format Json;
 
         scope project(project: String) {
             path "projects/{project}";
@@ -98,22 +98,22 @@ Read it top-down:
   `AUTHORIZATION` is reqwest's own `HeaderName` constant (imported from `concord::reqwest::header`);
   a literal name works too (`"authorization" = ..`). `{token}` is a template hole that reads the
   client's value.
-- `format json;` — the **format** of the endpoints below, in both directions (`request json;` and
-  `response json;` say one direction each): a body declared `body x: T` is sent as JSON, a typed
+- `format Json;` — the **format** of the endpoints below, in both directions (`request Json;` and
+  `response Json;` say one direction each): a body declared `body x: T` is sent as JSON, a typed
   output `-> T` is decoded from JSON. An endpoint that differs says so with the same statements in its block —
-  `GET readme() -> String { path "readme"; response text; }`,
-  `PUT image(body png: Vec<u8>) { path "image"; request bytes "image/png"; }` — and the nearest
+  `GET readme() -> String { path "readme"; response Text; }`,
+  `PUT image(body png: Vec<u8>) { path "image"; request Binary "image/png"; }` — and the nearest
   statement wins; one without `->` decodes nothing and accepts any 2xx. A body's `Content-Type` is
   its format's (`application/json`, ...) unless its `request` statement names another
-  (`request json "application/merge-patch+json";`). Nothing checks that the server agrees — the
+  (`request Json "application/merge-patch+json";`). Nothing checks that the server agrees — the
   generated docs of each endpoint state the format and `Content-Type` it uses and where they come
   from. The format, not the Rust type, decides the wire: a `String` or `Vec<u8>` body left under
-  `format json;` is sent as a JSON string or array, without any error.
+  `format Json;` is sent as a JSON string or array, without any error.
 - `scope project(project: String)` — a navigation level, `api.project("demo")`, that adds the path
   `projects/demo`. The value is formatted with `Display` and percent-encoded as one segment.
 - `GET tasks(query done?: bool, query limit: u32 = 20) -> Vec<Task>` — an endpoint with an
   **optional** query parameter (`?`: absent unless set) and an **initialized** one (`= 20`: present
-  unless changed). The response is decoded from JSON (the client's `format json;`) as
+  unless changed). The response is decoded from JSON (the client's `format Json;`) as
   `Vec<Task>`.
 - `POST create(body task: NewTask) -> Task` — a JSON request body supplied as an argument (sent
   with `Content-Type: application/json`), and a JSON response.

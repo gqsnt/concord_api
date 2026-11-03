@@ -1,6 +1,7 @@
 //! Value semantics: required, optional and defaulted values, initializer timing, snapshots.
 //! Scenario IDs refer to `v4/TEST_MATRIX.md`.
 
+use concord::Text;
 mod support;
 
 use std::fmt;
@@ -395,7 +396,7 @@ concord::api! {
         base "http://cloning.invalid";
         /// Body + Clone values: `Clone`; the clone keeps the evaluated idempotency key.
         POST submit(header("idempotency-key") key: u32 = clone_key(), body text: String) {
-            request text;
+            request Text;
             path "submit";
         }
         /// A move-only value: accepted, the request is simply not `Clone`.
@@ -429,7 +430,7 @@ concord::api! {
         scope tenant(tenant: String) {
             path "t/{tenant}";
             GET item(id: u32, body note: String) {
-                request text;
+                request Text;
                 path "items/{id}";
             }
         }

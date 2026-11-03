@@ -5,14 +5,14 @@ pub struct Item;
 concord::api! {
     pub client Api {
         base "http://x.test";
-        request json;
+        request concord::Json;
         GET item() -> Item;
     }
 }
 concord::api! {
     pub client Body {
         base "http://x.test";
-        response json;
+        response concord::Json;
         POST create(body item: Item);
     }
 }

@@ -2246,7 +2246,7 @@ fn endpoint_body(
             .or_else(|| {
                 nearest(out, ancestor, true).map(|i| out[i].request.as_ref().unwrap().format.text())
             })
-            .unwrap_or("json".to_owned());
+            .unwrap_or("F".to_owned());
         let media = b
             .media
             .as_ref()
@@ -2272,7 +2272,7 @@ fn endpoint_body(
             None => {
                 let name = plain(&b.name);
                 let message = format!(
-                    "body `{name}` has no format: say `request json;` on this endpoint, a scope or the client"
+                    "body `{name}` has no format: say `request F;` (`F` a type implementing `Encode`) on this endpoint, a scope or the client"
                 );
                 errors.push(syn::Error::new(b.ty.span(), message));
                 return None;
@@ -2301,12 +2301,14 @@ fn endpoint_output(
     errors: &mut Errors,
 ) -> Option<Output> {
     if let Some(format) = &o.format {
+        // `-> A B`: two type paths. The removed spelling put the format first, but a swapped
+        // `-> T F` reads the same, and no name tells a format from a payload.
         errors.push(syn::Error::new(
             o.ty.span(),
             format!(
-                "removed in-place output format: write `-> {}` and `response {};` on this endpoint",
-                type_text(&o.ty),
-                format.text()
+                "removed in-place output format: `-> {} {}` names two types; write the payload alone (`-> T`) and the format as a statement (`response F;`) on this endpoint",
+                format.text(),
+                type_text(&o.ty)
             ),
         ));
         return None;
@@ -2327,7 +2329,7 @@ fn endpoint_output(
                     "; omit `->` to drain"
                 };
                 let message = format!(
-                    "output `{ty}` has no format: say `response json;` on this endpoint, a scope or the client{unit}"
+                    "output `{ty}` has no format: say `response F;` (`F` a type implementing `Decode`) on this endpoint, a scope or the client{unit}"
                 );
                 errors.push(syn::Error::new(o.ty.span(), message));
                 return None;

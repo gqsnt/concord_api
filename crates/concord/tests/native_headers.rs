@@ -7,6 +7,7 @@
 //! cases in `tests/ui/native_header_*.rs`.
 #![deny(warnings)]
 
+use concord::Text;
 mod support;
 
 use std::fmt;
@@ -136,9 +137,9 @@ concord::api! {
         }
 
         /// A native `Content-Type` wins over the body representation's.
-        POST upload(header("content-type") ct: HeaderValue, body b: String) { request text; }
+        POST upload(header("content-type") ct: HeaderValue, body b: String) { request Text; }
         /// An optional native header does not decide whether a body exists.
-        POST maybe_body(header("x-h") h?: HeaderValue, body b?: String) { request text; }
+        POST maybe_body(header("x-h") h?: HeaderValue, body b?: String) { request Text; }
 
         /// Disabled: its value type does not exist; its literal is still a valid static.
         #[cfg(any())]

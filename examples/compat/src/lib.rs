@@ -1,5 +1,6 @@
 //! Compact downstream compatibility declarations, exercised only on loopback.
 use concord::{reqwest, BodyError, Decode, Encode};
+use concord::{Form, Json};
 use serde::{Deserialize, Serialize};
 use std::sync::atomic::{AtomicU64, Ordering};
 
@@ -13,7 +14,7 @@ pub struct Document {
 concord::api! {
     client Metadata {
         base "http://compat.invalid";
-        response json;
+        response Json;
         GET get() -> Document { path "document"; }
     }
 }
@@ -51,7 +52,7 @@ concord::api! {
     /// Explicit application-error handling routes.
     pub client Application {
         base "http://compat.invalid";
-        response json;
+        response Json;
         GET explicit() -> Envelope { path "explicit"; }
         GET checked() -> Envelope { path "checked"; response Checked; }
     }
@@ -92,7 +93,7 @@ concord::api! {
     /// Flat and custom nested form bodies.
     pub client Forms {
         base "http://compat.invalid";
-        request form;
+        request Form;
         POST flat(body form: Flat) { path "flat"; }
         POST nested(body form: Nested) { path "nested"; }
         POST brackets(body form: Nested) { path "brackets"; request Brackets; }
@@ -111,7 +112,7 @@ concord::api! {
         base "http://compat.invalid";
         PATCH patch(query("fieldManager") manager: String, body document: serde_json::Value) {
             path "api/v1/namespaces/default/configmaps/demo";
-            request json "application/apply-patch+yaml";
+            request Json "application/apply-patch+yaml";
         }
     }
 }
@@ -160,7 +161,7 @@ concord::api! {
     /// Native and literal header composition and redaction.
     pub client Headers(#[sensitive] header(GATE) token: String) {
         base "http://compat.invalid";
-        request json;
+        request Json;
         headers { "content-type" = "text/plain"; local::AUTHORIZATION = "ordinary"; }
         #[cfg(any())]
         POST disabled(body value: DoesNotExist) { request MissingCodec; }
@@ -180,7 +181,7 @@ concord::api! {
     /// with or without a body, replacing the format's own media type (author guide, §5.3).
     pub client Relabel {
         base "http://compat.invalid";
-        request json;
+        request Json;
         headers { "content-type" = "application/vnd.compat+json"; }
         POST maybe(body value?: Flat) { path "maybe"; }
     }

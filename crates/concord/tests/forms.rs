@@ -6,7 +6,7 @@
 
 mod support;
 
-use concord::{ErrorKind, reqwest};
+use concord::{ErrorKind, Form, Text, reqwest};
 use serde::{Deserialize, Serialize};
 use support::{Reply, Server};
 
@@ -44,24 +44,24 @@ concord::api! {
         base "http://auth.invalid";
 
         POST login(body credentials: Login) -> String {
-            request form;
-            response text;
+            request Form;
+            response Text;
             path "login";
         }
         POST pairs(body fields: Vec<(String, String)>) {
-            request form;
+            request Form;
             path "pairs";
         }
         POST nested(body n: Nested) {
-            request form;
+            request Form;
             path "nested";
         }
         GET token() -> Token {
-            response form;
+            response Form;
             path "token";
         }
         scope forms {
-            request form;
+            request Form;
             POST submit(body credentials?: Login) { path "submit"; }
         }
     }
@@ -97,7 +97,7 @@ async fn form_in_text_out() {
     );
 }
 
-/// Pairs keep their order and repeated names; a `request form;` default reached through `body`
+/// Pairs keep their order and repeated names; a `request Form;` default reached through `body`
 /// behaves the same, and an absent optional form body sends no body and no `Content-Type`.
 #[tokio::test]
 async fn pairs_and_form_default() {
@@ -169,13 +169,14 @@ fn unencodable_form_is_a_build_error() {
 #[cfg(feature = "json")]
 mod with_json {
     use super::*;
+    use concord::Json;
 
     concord::api! {
         /// A token endpoint.
         pub client OAuth {
             base "http://oauth.invalid";
-            request form;
-            response json;
+            request Form;
+            response Json;
             POST token(body credentials: Login) -> Token { path "token"; }
         }
     }

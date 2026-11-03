@@ -1,6 +1,7 @@
 //! Native header names as keys (`header(AUTHORIZATION)`, `X_RIOT_TOKEN = v`): identity, composition
 //! and classification follow the resolved `HeaderName`, never the spelling of the path.
 
+use concord::Text;
 use std::fmt;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
@@ -188,9 +189,9 @@ concord::api! {
         base "http://policy.invalid";
         /// Declaring a transport-managed header is an error, present or not.
         GET host_set(header(HOST) h?: String);
-        POST typed(header(CONTENT_TYPE) ct: String, body b: String) { request text; }
+        POST typed(header(CONTENT_TYPE) ct: String, body b: String) { request Text; }
         POST conflict(header(CONTENT_TYPE) ct: String, body b: String) {
-            request text "text/markdown";
+            request Text "text/markdown";
         }
     }
 }

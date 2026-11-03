@@ -23,7 +23,7 @@ pub fn emit(model: &Model, krate: TokenStream) -> TokenStream {
     };
     let mut out = header_items;
     out.extend(withheld_fns(k, model, &headers));
-    out.extend(format_aliases(k, model));
+    out.extend(format_aliases(model));
     for (index, (owner, notes)) in model.owners.iter().zip(&notes).enumerate() {
         let cfgs = &owner.cfgs;
         if cfgs.is_empty() {
@@ -288,17 +288,11 @@ fn contrib_reads(model: &Model, id: ContribId) -> Vec<ValueRef> {
     }
 }
 
-/// The runtime type of a format named by an endpoint statement: a word is `$crate::{Json, Text, Binary, Form}`
-/// located at the word (hygiene kept), so a missing feature or an unsupported payload is reported
-/// there; a path is the user's tokens, resolved at the declaration like any type.
-fn format_type(k: &TokenStream, format: &Format) -> TokenStream {
-    match format {
-        Format::Word(word, span) => {
-            let marker = Ident::new(word.marker(), Span::call_site());
-            located(quote!(#k::#marker), *span)
-        }
-        Format::Path(path) => quote!(#path),
-    }
+/// The type of a format named by a statement: the user's path, resolved at the declaration like
+/// any type (a missing import or an unsupported payload is reported there).
+fn format_type(format: &Format) -> TokenStream {
+    let path = &format.0;
+    quote!(#path)
 }
 
 /// How an endpoint names its body's or output's format. An inherited default is named through
@@ -306,7 +300,6 @@ fn format_type(k: &TokenStream, format: &Format) -> TokenStream {
 /// missing format once, at the default, while an unsupported payload is reported at the endpoint
 /// that declares it.
 fn format_for(
-    k: &TokenStream,
     model: &Model,
     format: &Format,
     origin: Origin,
@@ -314,7 +307,7 @@ fn format_for(
     at: Span,
 ) -> TokenStream {
     match origin {
-        Origin::Endpoint => format_type(k, format),
+        Origin::Endpoint => format_type(format),
         Origin::Default(owner) => {
             let o = &model.owners[owner];
             let d = if request { &o.request } else { &o.response };
@@ -329,7 +322,7 @@ fn format_for(
 /// `#[cfg(any(all(<cfgs of consumer 1>), ...))]`, the union of its consuming endpoints' effective
 /// `cfg`s, so a default used only by cfg-disabled endpoints is never referenced, and an unused
 /// default (no consumer) is not emitted at all.
-fn format_aliases(k: &TokenStream, model: &Model) -> TokenStream {
+fn format_aliases(model: &Model) -> TokenStream {
     let mut out = TokenStream::new();
     for owner in &model.owners {
         for d in [&owner.request, &owner.response].into_iter().flatten() {
@@ -337,7 +330,7 @@ fn format_aliases(k: &TokenStream, model: &Model) -> TokenStream {
                 continue;
             }
             let alias = &d.alias;
-            let ty = format_type(k, &d.format);
+            let ty = format_type(&d.format);
             let cfg = consumers_cfg(model, d);
             out.extend(quote_spanned! {d.format.span()=>
                 #cfg
@@ -935,16 +928,8 @@ fn request_summary(model: &Model, endpoint: usize, method: &Ident) -> TokenStrea
                             format!("from the `request` default of {}", model.describe(*o)),
                     }
                 ),
-                (None, Format::Word(word, _)) if header => format!(
-                    " `Content-Type`: the declared `content-type` header when it is sent (with or without the body), otherwise `{}` with the body.",
-                    word.media_type()
-                ),
-                (None, Format::Word(word, _)) => format!(
-                    " `Content-Type: {}` is sent with the body.",
-                    word.media_type()
-                ),
-                (None, Format::Path(_)) if header => " `Content-Type`: the declared `content-type` header when it is sent (with or without the body), otherwise the format's `Encode::CONTENT_TYPE` with the body.".to_owned(),
-                (None, Format::Path(_)) => {
+                (None, _) if header => " `Content-Type`: the declared `content-type` header when it is sent (with or without the body), otherwise the format's `Encode::CONTENT_TYPE` with the body.".to_owned(),
+                (None, _) => {
                     " `Content-Type`: the format's `Encode::CONTENT_TYPE`, sent with the body."
                         .to_owned()
                 }
@@ -971,10 +956,7 @@ fn request_summary(model: &Model, endpoint: usize, method: &Ident) -> TokenStrea
         lines.push(lit(&match output {
             Some(o) => {
                 let unit = if matches!(&o.ty, syn::Type::Tuple(t) if t.elems.is_empty()) {
-                    match &o.format {
-                        Format::Word(crate::syntax::Word::Json, _) => " `()` is decoded like any output type: the response body must be JSON `null`, so an empty response (such as a 204) is a decode error. An endpoint without `->` decodes no output and accepts any 2xx.".to_owned(),
-                        f => format!(" `()` is decoded like any output type, with `{}`. An endpoint without `->` decodes no output and accepts any 2xx.", f.text()),
-                    }
+                    format!(" `()` is decoded like any output type, with `{}`. An endpoint without `->` decodes no output and accepts any 2xx.", o.format.text())
                 } else {
                     String::new()
                 };
@@ -1052,7 +1034,8 @@ fn format_origin(model: &Model, format: &Format, origin: Origin, request: bool) 
             model.describe(o)
         ),
     };
-    format!("`{}` ({origin})", format.text())
+    // An intra-doc link: the format's own documentation says what it sends and accepts.
+    format!("[`{0}`]({0}) ({origin})", format.text())
 }
 
 /// The format defaults that reach the endpoints below a client or scope, for its documentation.
@@ -2104,7 +2087,7 @@ fn prepare_body(
                 Origin::Endpoint => b.format.span(),
                 Origin::Default(_) => ty.span(),
             };
-            let format = format_for(k, model, &b.format, b.origin, true, at);
+            let format = format_for(model, &b.format, b.origin, true, at);
             let init = match &b.media {
                 // The payload type is named first, so an unsupported pair is reported as
                 // `Encode<T>` with its message, not as a mismatch of inferred `BodyFormat`s.
@@ -2158,7 +2141,7 @@ fn prepare_body(
                 Origin::Endpoint => o.format.span(),
                 Origin::Default(_) => t.span(),
             };
-            let r = format_for(k, model, &o.format, o.origin, false, at);
+            let r = format_for(model, &o.format, o.origin, false, at);
             quote_spanned!(at=> #k::__private::decoder::<#r, #t>(&__META))
         }
         None => quote!(#k::__private::drain(&__META)),
@@ -2296,10 +2279,10 @@ mod tests {
         let docs = docs(quote! {
             pub client Shop {
                 base "http://x.test";
-                request json;
-                response json;
+                request Json;
+                response Json;
                 POST create(body item: NewItem) -> Item;
-                PATCH patch(body p: Patch) -> String { request json "application/merge-patch+json"; response text; }
+                PATCH patch(body p: Patch) -> String { request Json "application/merge-patch+json"; response Text; }
                 PUT maybe(body p?: NewItem);
                 DELETE remove();
                 GET unit() -> ();
@@ -2311,16 +2294,16 @@ mod tests {
             }
         });
         for expected in [
-            " Formats of the endpoints below: request bodies `json` (declared here); typed outputs `json` (declared here).",
-            " Body (`item`): `NewItem`, encoded with the format `json` (the `request` default of the client `Shop`). `Content-Type: application/json` is sent with the body.",
-            " Output: `Item`, decoded from a 2xx response with the format `json` (the `response` default of the client `Shop`).",
-            " Body (`p`): `Patch`, encoded with the format `json` (the endpoint statement). `Content-Type: application/merge-patch+json` (declared by the endpoint request statement) is sent with the body.",
-            " Output: `String`, decoded from a 2xx response with the format `text` (the endpoint statement).",
+            " Formats of the endpoints below: request bodies `Json` (declared here); typed outputs `Json` (declared here).",
+            " Body (`item`): `NewItem`, encoded with the format [`Json`](Json) (the `request` default of the client `Shop`). `Content-Type`: the format's `Encode::CONTENT_TYPE`, sent with the body.",
+            " Output: `Item`, decoded from a 2xx response with the format [`Json`](Json) (the `response` default of the client `Shop`).",
+            " Body (`p`): `Patch`, encoded with the format [`Json`](Json) (the endpoint statement). `Content-Type: application/merge-patch+json` (declared by the endpoint request statement) is sent with the body.",
+            " Output: `String`, decoded from a 2xx response with the format [`Text`](Text) (the endpoint statement).",
             " Absent: no body, and the format adds no `Content-Type`.",
-            " Output: none (`()`): any 2xx succeeds and the response body is drained; the `response` default `json` of the client `Shop` does not apply.",
-            " `()` is decoded like any output type: the response body must be JSON `null`, so an empty response (such as a 204) is a decode error. An endpoint without `->` decodes no output and accepts any 2xx.",
+            " Output: none (`()`): any 2xx succeeds and the response body is drained; the `response` default `Json` of the client `Shop` does not apply.",
+            " `()` is decoded like any output type, with `Json`. An endpoint without `->` decodes no output and accepts any 2xx.",
             " Formats of the endpoints below: request bodies `crate::Csv` (declared here, media type `text/csv; header=present`); typed outputs `crate::Csv` (declared here).",
-            " Body (`rows`): `Rows`, encoded with the format `crate::Csv` (the `request` default of scope `Shop.csv`). `Content-Type: text/csv; header=present` (from the `request` default of scope `Shop.csv`) is sent with the body.",
+            " Body (`rows`): `Rows`, encoded with the format [`crate::Csv`](crate::Csv) (the `request` default of scope `Shop.csv`). `Content-Type: text/csv; header=present` (from the `request` default of scope `Shop.csv`) is sent with the body.",
         ] {
             // The expected text, escaped as in a doc literal of the token stream.
             let quoted = format!("{expected:?}");
@@ -2336,10 +2319,10 @@ mod tests {
         let docs = docs(quote! {
             pub client Api(header("content-type") ct?: String) {
                 base "http://x.test";
-                POST up(body data: Vec<u8>) { request bytes; }
+                POST up(body data: Vec<u8>) { request Binary; }
             }
         });
-        let expected = " Body (`data`): `Vec<u8>`, encoded with the format `bytes` (the endpoint statement). `Content-Type`: the declared `content-type` header when it is sent (with or without the body), otherwise `application/octet-stream` with the body.";
+        let expected = " Body (`data`): `Vec<u8>`, encoded with the format [`Binary`](Binary) (the endpoint statement). `Content-Type`: the declared `content-type` header when it is sent (with or without the body), otherwise the format's `Encode::CONTENT_TYPE` with the body.";
         assert!(
             docs.contains(&format!("{expected:?}")),
             "missing {expected:?}"

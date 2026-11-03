@@ -3,8 +3,9 @@
 //! from Concord-produced output (`Display`, `Debug`, `source()`).
 //!
 //! Ported from the core track's `d15_surfaces.rs` (written against 8f7adc2) to the current
-//! syntax: `Client::new(http, Config { .. })`, format statements (`request Quoting;`, `request json;`), `Encode<T>`.
+//! syntax: `Client::new(http, Config { .. })`, format statements (`request Quoting;`, `request Json;`), `Encode<T>`.
 
+use concord::Json;
 mod support;
 
 use std::error::Error as _;
@@ -208,7 +209,7 @@ concord::api! {
     pub client Enc {
         base "http://enc.invalid";
         POST quoting(body b: String) { request Quoting; }
-        POST json(body b: FailsWith) { request json; }
+        POST json(body b: FailsWith) { request Json; }
     }
 }
 

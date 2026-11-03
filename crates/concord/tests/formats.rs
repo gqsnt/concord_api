@@ -5,6 +5,7 @@
 //! `concord-macros` unit tests; `form` has its own suite (`tests/forms.rs`, feature `form`).
 #![deny(warnings)]
 
+use concord::{Binary, Json, Text};
 mod support;
 
 use concord::bytes::Bytes;
@@ -143,33 +144,33 @@ concord::api! {
     /// A mostly-JSON client: defaults once, exceptions written as endpoint statements.
     pub client Shop {
         base "http://shop.invalid";
-        request json;
-        response json;
+        request Json;
+        response Json;
 
         GET item(id: u64) -> Item { path "items/{id}"; }
         PUT discount(body d: Option<Discount>) { path "discount"; }
         POST search(body q?: NewItem) -> Vec<Item> { path "search"; }
         PUT note(body note: String) {
-            request text;
+            request Text;
             path "note";
         }
         PUT blob(body b: Bytes) {
-            request bytes;
+            request Binary;
             path "blob";
         }
         DELETE remove(id: u64) { path "items/{id}"; }
         GET ping() -> () { path "ping"; }
         GET ping_json() -> () {
-            response json;
+            response Json;
             path "ping";
         }
         GET version() -> String { path "version"; }
         GET readme() -> String {
-            response text;
+            response Text;
             path "readme";
         }
         PATCH patch(id: u64, body p: Patch) -> Item {
-            request json "application/merge-patch+json";
+            request Json "application/merge-patch+json";
             path "items/{id}";
         }
     }
@@ -259,7 +260,7 @@ async fn row3a_no_output_drains_under_a_response_default() {
     assert_eq!(error.kind(), ErrorKind::Status);
 }
 
-/// Rows 3b/3c: `-> ()` with the inherited format and `-> ()` with `response json;` on the endpoint
+/// Rows 3b/3c: `-> ()` with the inherited format and `-> ()` with `response Json;` on the endpoint
 /// decode a typed unit: JSON
 /// `null` is accepted, an empty 204 is a decode error — unlike no `->` (row 3a).
 #[tokio::test]
@@ -283,7 +284,7 @@ async fn row3b_3c_typed_unit_is_decoded() {
     let () = api.remove(1).send().await.unwrap();
 }
 
-/// Rows 4a/4b: `-> String` under `response json;` is a JSON string; with `response text;` on the
+/// Rows 4a/4b: `-> String` under `response Json;` is a JSON string; with `response Text;` on the
 /// endpoint it is raw text.
 #[tokio::test]
 async fn row4_json_string_versus_raw_text() {
@@ -312,8 +313,8 @@ concord::api! {
     /// Row 5: aliases and spellings. Behaviour follows the written format and the defaults only.
     pub client Aliases {
         base "http://aliases.invalid";
-        request json;
-        response json;
+        request Json;
+        response Json;
 
         GET raw() -> Raw { path "raw"; }
         GET raw_text() -> Raw {
@@ -381,7 +382,7 @@ mod migrated {
                 path "p";
             }
             POST by_word(body item: NewItem) -> Item {
-                format json;
+                format Json;
                 path "w";
             }
             PUT note(body n: String) -> String {
@@ -432,15 +433,15 @@ concord::api! {
     /// without its own default inherits (there is no clearing, row 6d).
     pub client Nested {
         base "http://nested.invalid";
-        request json;
-        response json;
+        request Json;
+        response Json;
 
         POST create(body b: NewItem) -> Item { path "create"; }
         scope legacy {
-            response text;
+            response Text;
             POST echo(body b: NewItem) -> String { path "echo"; }
             scope deeper {
-                request text;
+                request Text;
                 POST note(body n: String) -> String { path "note"; }
             }
         }
@@ -480,35 +481,35 @@ concord::api! {
     /// directions and needs only one of them to apply; `request` and `response` are independent.
     pub client OnTheEndpoint {
         base "http://endpoint.invalid";
-        request json;
-        response json;
+        request Json;
+        response Json;
 
         POST both(body b: String) -> String {
-            format text;
+            format Text;
             path "both";
         }
         POST only_body(body b: String) {
-            format text;
+            format Text;
             path "only-body";
         }
         GET only_output() -> String {
-            format text;
+            format Text;
             path "only-output";
         }
         POST request_only(body b: NewItem) -> Item {
-            request json "application/vnd.x+json";
+            request Json "application/vnd.x+json";
             path "request-only";
         }
         POST response_only(body b: NewItem) -> String {
-            response text;
+            response Text;
             path "response-only";
         }
         scope inner {
-            request bytes;
-            response bytes;
+            request Binary;
+            response Binary;
             POST swapped(body b: String) -> String {
-                request text;
-                response text;
+                request Text;
+                response Text;
                 path "swapped";
             }
             POST inherited(body b: Vec<u8>) -> Vec<u8> { path "inherited"; }
@@ -516,7 +517,7 @@ concord::api! {
     }
 }
 
-/// Row 6c: `format text;` on an endpoint replaces the client's `json` in both directions (body and
+/// Row 6c: `format Text;` on an endpoint replaces the client's `json` in both directions (body and
 /// output), and applies to whichever of the two the endpoint has.
 #[tokio::test]
 async fn row6c_endpoint_format_sets_both_directions() {
@@ -590,23 +591,23 @@ async fn row6c_endpoint_statements_override_per_direction() {
 
 concord::api! {
     /// Row 8a: the body's media type: a default's media type reached through `body`, an endpoint
-    /// `request json "…";` with a media type of its own, and an endpoint statement without a
+    /// `request Json "…";` with a media type of its own, and an endpoint statement without a
     /// media type that replaces the default's format and media type.
     pub client Media {
         base "http://media.invalid";
-        request json "application/vnd.api+json";
+        request Json "application/vnd.api+json";
 
         POST create(body b: NewItem) { path "a"; }
         POST problem(body b: NewItem) {
-            request json "application/problem+json";
+            request Json "application/problem+json";
             path "b";
         }
         POST plain(body b: NewItem) {
-            request json;
+            request Json;
             path "c";
         }
         POST note(body n: String) {
-            request text;
+            request Text;
             path "d";
         }
         POST maybe(body b?: NewItem) { path "e"; }
@@ -647,7 +648,7 @@ concord::api! {
     pub client Header {
         base "http://header.invalid";
         POST up(header("content-type") ct?: HeaderValue, body b?: Vec<u8>) {
-            request bytes;
+            request Binary;
             path "up";
         }
     }
@@ -657,7 +658,7 @@ concord::api! {
     /// Row 8b: an `each` contribution and a text contribution that cannot be converted.
     pub client HeaderEach(header("content-type") each cts?: Vec<HeaderValue>) {
         base "http://header.invalid";
-        request text;
+        request Text;
 
         POST up(body b: String) { path "up"; }
         scope typed(header("content-type") ct: String) {
@@ -732,10 +733,10 @@ concord::api! {
     /// default's media type.
     pub client Contract(header("content-type") ct?: HeaderValue) {
         base "http://contract.invalid";
-        request json "application/vnd.api+json";
+        request Json "application/vnd.api+json";
 
         POST plain(body p: String) {
-            request text;
+            request Text;
             path "plain";
         }
         scope clean {
@@ -777,7 +778,7 @@ concord::api! {
         scope removed {
             headers { remove "content-type"; }
             POST save(body p: NewItem) {
-                request json "application/x-declared";
+                request Json "application/x-declared";
                 path "removed";
             }
         }
@@ -850,7 +851,7 @@ concord::api! {
         GET done() -> () { path "done"; }
         POST import(body rows: Vec<(String, u32)>) -> Item {
             request codecs::Csv;
-            response json;
+            response Json;
             path "import";
         }
     }
@@ -931,7 +932,7 @@ fn row12b_unused_and_cfg_disabled_defaults_are_never_referenced() {
 /// payload named `json`.
 pub mod lexical {
     use concord::bytes::Bytes;
-    use concord::{BodyError, Decode, Encode, reqwest};
+    use concord::{Binary, BodyError, Decode, Encode, Json, reqwest};
 
     /// `json::Codec`: a path that starts with a word is a path, not the word.
     pub mod json {
@@ -969,7 +970,7 @@ pub mod lexical {
         /// Every row of the lexical table that compiles.
         pub client Lexical {
             base "http://lexical.invalid";
-            response bytes;
+            response Binary;
 
             /// `json: T` and `json?: T` are values named `json`.
             GET values(json: String, text?: String) {
@@ -980,7 +981,7 @@ pub mod lexical {
             GET header(header("x-json") json: String) { path "h"; }
             /// `body query: T` is a JSON body named `query`.
             POST body_named_query(body query: super::NewItem) {
-                request json;
+                request Json;
                 path "q";
             }
             /// `request self::csv;` and `request json::Codec;` are format paths.
@@ -1036,6 +1037,8 @@ async fn lexical_precedence() {
 /// `-> r#json`: a raw identifier is never a word; here it is the payload type, decoded with the
 /// inherited format.
 pub mod raw_word {
+    use concord::Json;
+
     /// A payload type named `json`.
     #[allow(non_camel_case_types)]
     #[derive(Debug, PartialEq, serde::Deserialize)]
@@ -1048,7 +1051,7 @@ pub mod raw_word {
         /// A payload named like a format word.
         pub client RawWord {
             base "http://raw.invalid";
-            response json;
+            response Json;
             GET get() -> r#json { path "g"; }
         }
     }
@@ -1073,8 +1076,8 @@ concord::api! {
     ) {
         base "http://cross.invalid";
         headers { "x-literal" = "l"; }
-        request json;
-        response json;
+        request Json;
+        response Json;
 
         POST create(body b?: NewItem, header("x-unlisted") secret?: HeaderValue) -> Item {
             path "c";
@@ -1095,12 +1098,12 @@ concord::api! {
         headers { "x-literal" = "l"; }
 
         POST create(body b?: NewItem, header("x-unlisted") secret?: HeaderValue) -> Item {
-            format json;
+            format Json;
             path "c";
             headers { override "x-static" = "o"; }
         }
         GET get() -> Item {
-            response json;
+            response Json;
             path "g";
         }
     }
@@ -1218,7 +1221,9 @@ fn compile_time_rows_have_ui_cases() {
         "ui_json/format_serde_bound.rs", // 9 (blanket bound)
         "ui_features/feature_disabled_formats.rs", // 12a/12b
         "ui/format_via_removed.rs", // 12d
-        "ui/format_reserved_words.rs", // lexical: words reserved in format position
+        "ui/format_type_paths.rs", // a statement without a format; a misspelled placement
+        "ui/format_unknown_type.rs", // an unknown format type is Rust's error (no reserved words)
+        "ui_json/format_missing_import.rs", // a format type used without its import
         "ui/format_swapped_order.rs", // swapped order
     ] {
         assert!(root.join(case).is_file(), "{case}");

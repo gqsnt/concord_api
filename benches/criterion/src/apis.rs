@@ -9,6 +9,7 @@
 /// inherited headers (one sensitive).
 pub mod tracker {
     use crate::payload::Issue;
+    use concord::Json;
 
     concord::api! {
         /// An issue tracker.
@@ -17,7 +18,7 @@ pub mod tracker {
             header("x-api-version") api_version: String = "2024-06-01",
         ) {
             base "https://api.example.com/v3";
-            response json;
+            response Json;
             headers { "accept" = "application/json"; "user-agent" = "concord-bench/1"; }
 
             scope org(org: String) {
@@ -218,6 +219,7 @@ pub mod compose {
 /// Request bodies (JSON, text, bytes) and typed responses of the same formats.
 pub mod bodies {
     use concord::bytes::Bytes;
+    use concord::{Binary, Json, Text};
 
     use crate::payload::Payload;
 
@@ -227,28 +229,28 @@ pub mod bodies {
             base "https://api.example.com/v1";
 
             POST post_json(body b: Payload) {
-                request json;
+                request Json;
                 path "json";
             }
             POST post_text(body b: String) {
-                request text;
+                request Text;
                 path "text";
             }
             POST post_bytes(body b: Bytes) {
-                request bytes;
+                request Binary;
                 path "bytes";
             }
 
             GET get_json() -> Payload {
-                response json;
+                response Json;
                 path "json";
             }
             GET get_text() -> String {
-                response text;
+                response Text;
                 path "text";
             }
             GET get_bytes() -> Bytes {
-                response bytes;
+                response Binary;
                 path "bytes";
             }
         }

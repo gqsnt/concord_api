@@ -27,7 +27,7 @@ Outside facts: **synthetic**, modelled on an envelope-based service and not veri
 
 ## 3. Flat versus nested forms (`tests/forms.rs`)
 
-Relies on opt-in `request form;` and a custom `Encode<Nested>` marker with
+Relies on opt-in `request Form;` and a custom `Encode<Nested>` marker with
 `CONTENT_TYPE = Some("application/x-www-form-urlencoded")`.
 The flat struct sends exactly `title=blue+pen%26ink&order=7`. The nested struct fails before
 another request reaches the server. The exact observed Display is:
@@ -58,7 +58,7 @@ Outside facts: **synthetic**, modelled on an object/document service and not ver
 
 ## 5. JSON with apply-patch YAML media type (`tests/apply.rs`)
 
-Shows a Kubernetes-style PATCH with `request json "application/apply-patch+yaml";` and a
+Shows a Kubernetes-style PATCH with `request Json "application/apply-patch+yaml";` and a
 `fieldManager` query value. The request uses the exact declared media type and body bytes
 `{"apiVersion":"v1","kind":"ConfigMap"}`. This minimal serialization fixture is not a valid
 complete apply object and does not exercise a Kubernetes server.

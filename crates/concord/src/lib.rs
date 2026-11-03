@@ -14,6 +14,7 @@
 //! ```
 //! # #[cfg(feature = "json")] mod quick_start {
 //! use concord::reqwest::{self, header::{AUTHORIZATION, HeaderName}};
+//! use concord::{Json, Text};
 //! use serde::{Deserialize, Serialize};
 //!
 //! /// A header of this API, declared the native way.
@@ -37,7 +38,7 @@
 //!         header(X_API_VERSION) version: String = "2024-01-01",
 //!     ) {
 //!         base "https://api.forge.example";
-//!         format json; // bodies `body x: T` and typed outputs `-> T` are JSON
+//!         format Json; // bodies `body x: T` and typed outputs `-> T` are JSON
 //!
 //!         scope repo(owner: String, name: String) {
 //!             path "repos/{owner}/{name}";
@@ -48,7 +49,7 @@
 //!             POST create_issue(body issue: NewIssue) -> Issue {
 //!                 path "issues";
 //!             }
-//!             GET readme() -> String { path "readme"; response text; } // an exception, on its endpoint
+//!             GET readme() -> String { path "readme"; response Text; } // an exception, on its endpoint
 //!             DELETE lock() { path "lock"; } // no `->`: any 2xx, the body is drained
 //!         }
 //!     }
@@ -103,7 +104,7 @@
 //! | [`Prepared<T>`](Prepared) | a built request, not yet sent: `request()`, `send()`, `send_raw()`, `into_parts()` |
 //! | [`Decoder<T>`](Decoder) | an endpoint's response handling, for a response you obtained natively: `decode`, `finish` |
 //! | [`Error`], [`ErrorKind`] | the one error type: `kind`, `endpoint`, `status`, `into_response`, `transport`, `body_source` |
-//! | [`Encode<T>`](Encode), [`Decode<T>`](Decode) | format traits: the words `json`, `text`, `bytes`, `form` name `Json` (feature `json`), [`Text`], [`Binary`], `Form` (feature `form`); any other format is your own type, named by its path |
+//! | [`Encode<T>`](Encode), [`Decode<T>`](Decode) | format traits, implemented by `Json` (feature `json`), [`Text`], [`Binary`], `Form` (feature `form`) and by your own types; a statement names a format by its type path (`format Json;`) |
 //! | [`BodyError`] | an encoding or decoding failure with a content-free description |
 //! | [`IntoValue<T>`](IntoValue) | the closed set of conversions accepted by arguments and setters |
 //! | [`ToHeaderValue`] | the closed set of header values: native `HeaderValue`, text, integers, `bool` (another type is sent through a template) |
@@ -147,7 +148,7 @@
 //! # Native requests
 //!
 //! ```no_run
-//! # concord::api! { pub client Api { base "http://x.test"; GET item(id: u64) -> String { path "items/{id}"; response text; } } }
+//! # concord::api! { pub client Api { base "http://x.test"; GET item(id: u64) -> String { path "items/{id}"; response concord::Text; } } }
 //! # async fn run(api: Api) -> Result<(), Box<dyn std::error::Error>> {
 //! let prepared = api.item(7).prepare()?; // no I/O
 //! println!("{prepared:?}"); // redacted rendering
@@ -192,8 +193,8 @@
 //!
 //! # Features
 //!
-//! - `json` (default): the `json` format (`Json`), via serde and serde_json.
-//! - `form`: the `form` format (`Form`), `application/x-www-form-urlencoded` via serde and
+//! - `json` (default): the `Json` format, via serde and serde_json.
+//! - `form`: the `Form` format, `application/x-www-form-urlencoded` via serde and
 //!   serde_urlencoded. Off by default, like reqwest's own `form` feature.
 //! - `reqwest-defaults` (default): reqwest's default features (TLS, HTTP/2, system proxy).
 //!   Disable it to choose reqwest's features in your own `Cargo.toml`.

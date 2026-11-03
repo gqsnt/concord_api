@@ -2,6 +2,7 @@
 //! A counting global allocator records the peak heap size while the request runs; the same body
 //! fetched as `Binary` (which buffers by design) shows that the measurement discriminates.
 
+use concord::Binary;
 use std::alloc::{GlobalAlloc, Layout, System};
 use std::sync::atomic::{AtomicUsize, Ordering::Relaxed};
 
@@ -76,7 +77,7 @@ concord::api! {
         base "http://big.invalid";
         GET drained() { path "big"; }
         GET buffered() -> concord::bytes::Bytes {
-            response bytes;
+            response Binary;
             path "big";
         }
     }

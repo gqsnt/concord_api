@@ -4,27 +4,27 @@
 concord::api! {
     pub client RequestWithoutBody {
         base "http://x.test";
-        GET version() -> String { request text; response text; }
+        GET version() -> String { request concord::Text; response concord::Text; }
     }
 }
 concord::api! {
     pub client ResponseWithoutOutput {
         base "http://x.test";
-        POST note(body note: String) { request text; response text; }
+        POST note(body note: String) { request concord::Text; response concord::Text; }
     }
 }
 concord::api! {
     pub client FormatWithNothing {
         base "http://x.test";
-        DELETE remove() { format json; }
+        DELETE remove() { format concord::Json; }
     }
 }
 concord::api! {
     pub client TwiceOnTheEndpoint {
         base "http://x.test";
         POST note(body note: String) {
-            request text;
-            request bytes;
+            request concord::Text;
+            request concord::Binary;
         }
     }
 }
@@ -32,8 +32,8 @@ concord::api! {
     pub client FormatAndRequest {
         base "http://x.test";
         POST note(body note: String) -> String {
-            format text;
-            request text;
+            format concord::Text;
+            request concord::Text;
         }
     }
 }
@@ -41,16 +41,16 @@ concord::api! {
     pub client RequestAndFormat {
         base "http://x.test";
         POST note(body note: String) -> String {
-            request text;
-            format text;
+            request concord::Text;
+            format concord::Text;
         }
     }
 }
 concord::api! {
     pub client Twice {
         base "http://x.test";
-        response json;
-        response text;
+        response concord::Json;
+        response concord::Text;
         GET version() -> String;
     }
 }
@@ -58,20 +58,20 @@ concord::api! {
     pub client AfterChild {
         base "http://x.test";
         GET version() -> String;
-        response json;
+        response concord::Json;
     }
 }
 // Accepted: `format` needs one of the two directions, not both.
 concord::api! {
     pub client OnlyABody {
         base "http://x.test";
-        POST note(body note: String) { format text; }
+        POST note(body note: String) { format concord::Text; }
     }
 }
 concord::api! {
     pub client OnlyAnOutput {
         base "http://x.test";
-        GET version() -> String { format text; }
+        GET version() -> String { format concord::Text; }
     }
 }
 fn main() {}

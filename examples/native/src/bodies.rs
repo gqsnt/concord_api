@@ -6,7 +6,7 @@ use crate::api::{Inventory, StockRow};
 /// [`Ndjson`](crate::repr::Ndjson) format (U16).
 ///
 /// Nothing here differs from a built-in format: the declaration writes `format Ndjson;` where it
-/// would write `format json;`, the generated method takes `Vec<StockRow>`, and a malformed
+/// would write `format Json;`, the generated method takes `Vec<StockRow>`, and a malformed
 /// response line is a [`concord::ErrorKind::Decode`] error whose `Display` names the
 /// line number, never its content.
 pub async fn import_stock(

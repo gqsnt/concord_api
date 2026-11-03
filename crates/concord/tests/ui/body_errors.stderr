@@ -13,7 +13,7 @@ error: only endpoints can declare a body
 error: an endpoint declares at most one body
   --> tests/ui/body_errors.rs:17:34
    |
-17 |         POST two(body a: String, body b: Vec<u8>) { request text; }
+17 |         POST two(body a: String, body b: Vec<u8>) { request concord::Text; }
    |                                  ^^^^
 
 error: a body cannot have a default

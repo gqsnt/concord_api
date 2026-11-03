@@ -5,26 +5,26 @@ pub struct Item;
 concord::api! {
     pub client OnTheEndpoint {
         base "http://x.test";
-        GET item() -> Item { response json "application/vnd.api+json"; }
+        GET item() -> Item { response concord::Json "application/vnd.api+json"; }
     }
 }
 concord::api! {
     pub client OnTheClient {
         base "http://x.test";
-        response json "application/vnd.api+json";
+        response concord::Json "application/vnd.api+json";
         GET item() -> Item;
     }
 }
 concord::api! {
     pub client FormatOnTheEndpoint {
         base "http://x.test";
-        POST item(body item: Item) -> Item { format json "application/vnd.api+json"; }
+        POST item(body item: Item) -> Item { format concord::Json "application/vnd.api+json"; }
     }
 }
 concord::api! {
     pub client FormatOnTheClient {
         base "http://x.test";
-        format json "application/vnd.api+json";
+        format concord::Json "application/vnd.api+json";
         POST item(body item: Item) -> Item;
     }
 }

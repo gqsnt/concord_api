@@ -1,31 +1,31 @@
 error[E0277]: the format `Text` cannot decode a `Item` response
- --> tests/ui/format_inherited_unsupported.rs:9:23
-  |
-9 |         GET item() -> Item;
-  |                       ^^^^ this output's format is `Text` (the nearest `response` statement: on the endpoint, a scope or the client); it needs `Text: Decode<Item>`
-  |
-  = note: built in: `json` (any `DeserializeOwned`, feature `json`), `text` (`String`), `bytes` (`Bytes`, `Vec<u8>`), `form` (any `DeserializeOwned`, feature `form`); the words name `Json`, `Text`, `Binary` and `Form`. Another format is a type implementing `concord::Decode<Item>`, named by its path: `response Csv;`; an endpoint without typed output omits `->`
+  --> tests/ui/format_inherited_unsupported.rs:10:23
+   |
+10 |         GET item() -> Item;
+   |                       ^^^^ this output's format is `Text` (the nearest `response` statement: on the endpoint, a scope or the client); it needs `Text: Decode<Item>`
+   |
+   = note: a format is a type implementing `Decode<Item>`, named by its path in a statement (`response Csv;`); an endpoint without typed output omits `->`
 help: the trait `Decode<Item>` is not implemented for `Text`
       but trait `Decode<String>` is implemented for it
- --> src/repr.rs
-  |
-  | impl Decode<String> for Text {
-  | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  = help: for that trait implementation, expected `String`, found `Item`
+  --> src/repr.rs
+   |
+   | impl Decode<String> for Text {
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   = help: for that trait implementation, expected `String`, found `Item`
 note: required by a bound in `concord::__private::decoder`
- --> src/__private.rs
-  |
-  | pub fn decoder<R: Decode<T>, T>(meta: &'static EndpointMeta) -> Decoder<T> {
-  |                   ^^^^^^^^^ required by this bound in `decoder`
+  --> src/__private.rs
+   |
+   | pub fn decoder<R: Decode<T>, T>(meta: &'static EndpointMeta) -> Decoder<T> {
+   |                   ^^^^^^^^^ required by this bound in `decoder`
 
 error[E0277]: the format `concord::Binary` cannot encode a `Item` request body
-  --> tests/ui/format_inherited_unsupported.rs:10:32
+  --> tests/ui/format_inherited_unsupported.rs:11:32
    |
-10 |         POST create(body item: Item);
+11 |         POST create(body item: Item);
    |                                ^^^^ this body's format is `concord::Binary` (the nearest `request` statement: on the endpoint, a scope or the client); it needs `concord::Binary: Encode<Item>`
    |
    = help: the trait `Encode<Item>` is not implemented for `concord::Binary`
-   = note: built in: `json` (any `Serialize`, feature `json`), `text` (`String`), `bytes` (`Bytes`, `Vec<u8>`), `form` (any `Serialize`, feature `form`); the words name `Json`, `Text`, `Binary` and `Form`. Another format is a type implementing `concord::Encode<Item>`, named by its path: `request Ndjson;`
+   = note: a format is a type implementing `Encode<Item>`, named by its path in a statement (`request Ndjson;`)
 help: `concord::Binary` implements trait `Encode<T>`
   --> src/repr.rs
    |

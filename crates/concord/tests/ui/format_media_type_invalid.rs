@@ -3,25 +3,25 @@
 concord::api! {
     pub client NoSlash {
         base "http://x.test";
-        POST a(body b: String) { request json "application json"; }
+        POST a(body b: String) { request concord::Json "application json"; }
     }
 }
 concord::api! {
     pub client BadParameter {
         base "http://x.test";
-        POST a(body b: String) { request text "text/plain; charset"; }
+        POST a(body b: String) { request concord::Text "text/plain; charset"; }
     }
 }
 concord::api! {
     pub client NotAscii {
         base "http://x.test";
-        POST a(body b: String) { request json "application/vnd.caf\u{e9}+json"; }
+        POST a(body b: String) { request concord::Json "application/vnd.caf\u{e9}+json"; }
     }
 }
 concord::api! {
     pub client Default {
         base "http://x.test";
-        request json " application/json";
+        request concord::Json " application/json";
         POST a(body b: String);
     }
 }

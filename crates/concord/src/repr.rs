@@ -2,9 +2,9 @@
 //!
 //! Every body (`body item: NewItem`) and every typed output (`-> Item`) has a format, given by the
 //! nearest `request`/`response`/`format` statement of its endpoint, an enclosing scope or the
-//! client (`format json;`, `response text;`, `request Csv;`). The words `json`, `text`, `bytes` and `form` name the
-//! built-in markers `Json`, `Text`, `Binary` and `Form`; any other format is a type implementing
-//! `Encode<T>` and/or `Decode<T>`, named by its path. Concord never chooses a
+//! client (`format Json;`, `response Text;`, `request Csv;`). A format is a type implementing
+//! `Encode<T>` and/or `Decode<T>`, named by its path like any Rust type: `Json`, `Text`, `Binary`
+//! and `Form` are ordinary such types, with no privilege over your own. Concord never chooses a
 //! format by looking at a Rust type name. An endpoint without `->` has no typed output: any 2xx
 //! succeeds and the body is drained without being buffered, whatever the defaults.
 
@@ -21,7 +21,7 @@ use bytes::Bytes;
 /// payload by value.
 ///
 /// `CONTENT_TYPE` is the media type sent as `Content-Type` with the body, unless the body's
-/// `request` statement declares its own (`request json "application/merge-patch+json";`) or the
+/// `request` statement declares its own (`request Json "application/merge-patch+json";`) or the
 /// endpoint sends a `content-type` header. It is validated when the declaration is compiled (visible ASCII, like
 /// `HeaderValue::from_static`): an invalid value is a compile error wherever it may be sent, and
 /// is not used at all where a declared media type replaces it. A media type that varies per body
@@ -30,7 +30,7 @@ use bytes::Bytes;
 #[diagnostic::on_unimplemented(
     message = "the format `{Self}` cannot encode a `{T}` request body",
     label = "this body's format is `{Self}` (the nearest `request` statement: on the endpoint, a scope or the client); it needs `{Self}: Encode<{T}>`",
-    note = "built in: `json` (any `Serialize`, feature `json`), `text` (`String`), `bytes` (`Bytes`, `Vec<u8>`), `form` (any `Serialize`, feature `form`); the words name `Json`, `Text`, `Binary` and `Form`. Another format is a type implementing `concord::Encode<{T}>`, named by its path: `request Ndjson;`"
+    note = "a format is a type implementing `Encode<{T}>`, named by its path in a statement (`request Ndjson;`)"
 )]
 pub trait Encode<T> {
     /// The media type sent as `Content-Type` with the body (see the trait documentation).
@@ -49,7 +49,7 @@ pub trait Encode<T> {
 #[diagnostic::on_unimplemented(
     message = "the format `{Self}` cannot decode a `{T}` response",
     label = "this output's format is `{Self}` (the nearest `response` statement: on the endpoint, a scope or the client); it needs `{Self}: Decode<{T}>`",
-    note = "built in: `json` (any `DeserializeOwned`, feature `json`), `text` (`String`), `bytes` (`Bytes`, `Vec<u8>`), `form` (any `DeserializeOwned`, feature `form`); the words name `Json`, `Text`, `Binary` and `Form`. Another format is a type implementing `concord::Decode<{T}>`, named by its path: `response Csv;`; an endpoint without typed output omits `->`"
+    note = "a format is a type implementing `Decode<{T}>`, named by its path in a statement (`response Csv;`); an endpoint without typed output omits `->`"
 )]
 pub trait Decode<T> {
     /// Decodes a complete response body.
@@ -115,9 +115,9 @@ impl fmt::Display for BodyError {
 /// No `source()`: the underlying error may quote body content (see the type documentation).
 impl StdError for BodyError {}
 
-/// JSON via `serde_json`, the format word `json` (feature `json`): `application/json` request
-/// bodies; responses are decoded regardless of their `Content-Type`. `format json;`,
-/// `request json;`, `response json;` on a client, a scope or an endpoint.
+/// JSON via `serde_json` (feature `json`): `application/json` request bodies; responses are
+/// decoded regardless of their `Content-Type`. `format Json;`, `request Json;`, `response Json;`
+/// on a client, a scope or an endpoint.
 #[cfg(feature = "json")]
 pub struct Json(());
 
@@ -151,8 +151,8 @@ impl<T: serde::de::DeserializeOwned> Decode<T> for Json {
                     .into()
             } else if e.classify() == Category::Syntax && e.line() == 1 && e.column() == 1 {
                 format!(
-                    "{}; if the response is not JSON, the endpoint may need `response text;` or \
-                     `response bytes;`",
+                    "{}; if the response is not JSON, the endpoint may need `response Text;` or \
+                     `response Binary;`",
                     json_description("decode", &e)
                 )
             } else {
@@ -183,8 +183,8 @@ fn json_description(action: &str, e: &serde_json::Error) -> String {
     }
 }
 
-/// UTF-8 text, the format word `text`: `text/plain; charset=utf-8` request bodies; responses must
-/// be valid UTF-8. `request text;`, `response text;`.
+/// UTF-8 text: `text/plain; charset=utf-8` request bodies; responses must be valid UTF-8.
+/// `request Text;`, `response Text;`.
 pub struct Text(());
 
 impl Encode<String> for Text {
@@ -206,8 +206,8 @@ impl Decode<String> for Text {
     }
 }
 
-/// Raw bytes, the format word `bytes`: `application/octet-stream` request bodies; responses are
-/// returned unchanged. `request bytes;`, `request bytes "image/png";`, `response bytes;`.
+/// Raw bytes: `application/octet-stream` request bodies; responses are returned unchanged.
+/// `request Binary;`, `request Binary "image/png";`, `response Binary;`.
 pub struct Binary(());
 
 impl Encode<Bytes> for Binary {
@@ -238,10 +238,10 @@ impl Decode<Vec<u8>> for Binary {
     }
 }
 
-/// URL-encoded forms via `serde_urlencoded`, the format word `form` (feature `form`):
+/// URL-encoded forms via `serde_urlencoded` (feature `form`):
 /// `application/x-www-form-urlencoded` request bodies from any `Serialize` struct, map or
 /// sequence of pairs (flat values only: nested structures and sequences are an encoding error);
-/// responses decode into any `DeserializeOwned`. `request form;`, `response form;`.
+/// responses decode into any `DeserializeOwned`. `request Form;`, `response Form;`.
 #[cfg(feature = "form")]
 pub struct Form(());
 

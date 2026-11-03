@@ -20,6 +20,7 @@ A declaration is one **client**, any number of nested **scopes**, and **endpoint
 ```rust
 use concord::reqwest::{self, header::{ACCEPT, AUTHORIZATION}};
 use serde::Deserialize;
+use concord::Json;
 
 #[derive(Deserialize)]
 pub struct Issue {
@@ -32,7 +33,7 @@ concord::api! {
     pub client Forge(#[sensitive] header(AUTHORIZATION) token: String) {
         base "https://api.forge.example";
         headers { ACCEPT = "application/json"; }
-        response json;
+        response Json;
 
         /// One repository.
         scope repo(owner: String, name: String) {
@@ -567,6 +568,7 @@ A mostly-JSON API says JSON once and writes each exception on the endpoint it co
 use concord::bytes::Bytes;
 use concord::reqwest;
 use serde::{Deserialize, Serialize};
+use concord::{Binary, Json, Text};
 
 #[derive(Deserialize)]
 pub struct Product {
@@ -586,21 +588,21 @@ pub struct ProductPatch {
 concord::api! {
     pub client Shop {
         base "https://shop.example.com/v1";
-        format json; // bodies and typed outputs below are JSON
+        format Json; // bodies and typed outputs below are JSON
 
         GET product(id: u64) -> Product { path "products/{id}"; }
         POST create(body product: NewProduct) -> Product { path "products"; }
         PATCH patch(id: u64, body patch: ProductPatch) -> Product {
             path "products/{id}";
-            request json "application/merge-patch+json";
+            request Json "application/merge-patch+json";
         }
         GET description(id: u64) -> String {
             path "products/{id}/description";
-            response text; // raw text, not a JSON string
+            response Text; // raw text, not a JSON string
         }
         PUT image(id: u64, body png: Bytes) {
             path "products/{id}/image";
-            request bytes "image/png";
+            request Binary "image/png";
         }
         DELETE delete(id: u64) { path "products/{id}"; }
     }
@@ -636,17 +638,18 @@ output's format, and which statement they come from.
 
 | Format | Body (`Encode<T>`) | Output (`Decode<T>`) |
 |---|---|---|
-| `json` (feature `json`, on by default) | any `T: Serialize`; `application/json` | any `T: DeserializeOwned`; the response `Content-Type` is ignored |
-| `text` | `String`; `text/plain; charset=utf-8` | `String`; invalid UTF-8 is a decode error |
-| `bytes` | `Bytes` or `Vec<u8>`; `application/octet-stream` | `Bytes` or `Vec<u8>`, unchanged |
-| `form` (feature `form`) | any `T: Serialize` with flat fields (a struct, a map, pairs); `application/x-www-form-urlencoded` | any `T: DeserializeOwned` |
+| `Json` (feature `json`, on by default) | any `T: Serialize`; `application/json` | any `T: DeserializeOwned`; the response `Content-Type` is ignored |
+| `Text` | `String`; `text/plain; charset=utf-8` | `String`; invalid UTF-8 is a decode error |
+| `Binary` | `Bytes` or `Vec<u8>`; `application/octet-stream` | `Bytes` or `Vec<u8>`, unchanged |
+| `Form` (feature `form`) | any `T: Serialize` with flat fields (a struct, a map, pairs); `application/x-www-form-urlencoded` | any `T: DeserializeOwned` |
 | a type path: `Csv`, `codecs::Csv` | your `Encode<T>` ([5.7](#57-custom-formats)) | your `Decode<T>` |
 
-The four words need no import and work under a renamed dependency; they name the types
-`concord::Json`, `Text`, `Binary` and `Form`. A format can also be any Rust path — an alias, a
-qualified, absolute or raw-identifier path — resolved by rustc; in format position a bare lowercase
-identifier must be one of the words, so a lowercase format type is written as a path (`self::csv`).
-Outside format position the words are ordinary names (a value may be called `json`).
+A format is named by its Rust type path, resolved by rustc where the statement is written, like any
+type: `Json` after `use concord::Json;`, `concord::Json`, an alias (`use concord::Json as Wire;`),
+a qualified, absolute or generic path (`codecs::Csv`, `::my_sdk::Vendor`). Concord's own formats
+have no privilege over yours and no name is reserved: a value or a payload type may be called
+`json`, and so may a format type of yours. A format that only `cfg`-disabled endpoints name is
+never resolved.
 
 ### 5.2 Where formats come from
 
@@ -654,11 +657,11 @@ Outside format position the words are ordinary names (a value may be called `jso
   own, then its scopes from the inside out, then the client. Siblings are unaffected by an
   endpoint's statement. `format F;` counts as both `request F;` and `response F;`; an owner states
   each direction at most once.
-- **A statement replaces format and media type together.** `request json;` on an endpoint under
-  `request json "application/vnd.api+json";` sends `application/json`; to keep a media type, restate
-  it (`request json "application/vnd.api+json";`).
+- **A statement replaces format and media type together.** `request Json;` on an endpoint under
+  `request Json "application/vnd.api+json";` sends `application/json`; to keep a media type, restate
+  it (`request Json "application/vnd.api+json";`).
 - **Mistakes are compile errors.** A body or typed output that no statement reaches is reported at
-  its type ("say `request json;` on this endpoint, a scope or the client"). On an endpoint, a
+  its type ("say `request Json;` on this endpoint, a scope or the client"). On an endpoint, a
   `request` without a body or a `response` without `->` has nothing to apply to and is an error;
   `format` needs one of the two. Statements on clients and scopes that nothing uses are fine (and
   resolve nothing, so a format behind a disabled feature costs nothing until used).
@@ -666,18 +669,18 @@ Outside format position the words are ordinary names (a value may be called `jso
   the defaults on the uniform scopes rather than on the client (or state the format on each
   endpoint).
 
-The format, not the Rust type, decides the wire: under `format json;`, `-> String` decodes a JSON
-string (`"2.4.1"`, not raw `2.4.1`) and `body note: String` sends one. Raw text is `response text;`
-/ `request text;`. Because a payload type such as `String` or `()` is accepted by several formats,
+The format, not the Rust type, decides the wire: under `format Json;`, `-> String` decodes a JSON
+string (`"2.4.1"`, not raw `2.4.1`) and `body note: String` sends one. Raw text is `response Text;`
+/ `request Text;`. Because a payload type such as `String` or `()` is accepted by several formats,
 moving an endpoint under another default can change its wire meaning without a compile error: when
-you move a group, state its formats on it (`response json;`) if they must not change, and check
+you move a group, state its formats on it (`response Json;`) if they must not change, and check
 the endpoint rustdoc, which names each format and its origin.
 
 ### 5.3 Media types and `Content-Type`
 
 A body's `Content-Type` is its media type, sent exactly when the body is sent: the format's own
 (`Encode::CONTENT_TYPE`: `application/json`, ...) or the one its `request` statement declares
-(`request json "application/merge-patch+json";`). Declared media types are checked by the macro
+(`request Json "application/merge-patch+json";`). Declared media types are checked by the macro
 (`type/subtype`, optional `; name=value` parameters, visible ASCII) and become compile-time
 constants; a format's `CONTENT_TYPE` is checked at compile time too, and not used where a declared
 media type replaces it.
@@ -704,18 +707,19 @@ sticky composition). Concord never sends `Accept` and never checks the response 
 ```rust
 use concord::reqwest;
 use concord::reqwest::header::{CONTENT_TYPE, HeaderValue};
+use concord::{Binary, Text};
 
 concord::api! {
     pub client Files(header(CONTENT_TYPE) content_type?: HeaderValue) {
         base "https://files.example.com";
-        request bytes;
+        request Binary;
 
         PUT upload(name: String, body data: Vec<u8>) { path "files/{name}"; }
         scope notes {
             headers { remove CONTENT_TYPE; }
             PUT note(name: String, body note: String) {
                 path "notes/{name}";
-                request text "text/markdown";
+                request Text "text/markdown";
             }
         }
     }
@@ -741,6 +745,7 @@ fn main() -> Result<(), concord::Error> {
 ```rust
 use concord::reqwest;
 use serde::Serialize;
+use concord::{Json, Text};
 
 #[derive(Serialize)]
 pub struct Discount {
@@ -750,11 +755,11 @@ pub struct Discount {
 concord::api! {
     pub client Store {
         base "https://store.example.com";
-        request json;
+        request Json;
 
         PUT discount(body discount: Option<Discount>) { path "discount"; }
         POST search(body filter?: Discount) { path "search"; }
-        PUT note(body note: String) { path "note"; request text; }
+        PUT note(body note: String) { path "note"; request Text; }
     }
 }
 
@@ -789,7 +794,7 @@ A body cannot have an initializer (`body b: T = ..` is a compile error): its pre
 - **No `->`**: the endpoint has no typed output. Any 2xx succeeds, the response body is drained
   without being buffered, and the output is `()`. A `response` statement does not apply (and is an
   error on the endpoint itself).
-- **`-> ()`** is a typed output like any other, decoded with its format: under `response json;` the
+- **`-> ()`** is a typed output like any other, decoded with its format: under `response Json;` the
   body must be JSON `null`, so an empty 204 is a decode error. `-> Unit` for `type Unit = ()`
   behaves the same. An endpoint that returns nothing omits `->`; one that answers either JSON or
   nothing (`200` or `204`) needs a format of its own that accepts an empty body
@@ -800,11 +805,12 @@ A body cannot have an initializer (`body b: T = ..` is a compile error): its pre
 
 ```rust
 use concord::reqwest;
+use concord::Json;
 
 concord::api! {
     pub client Jobs {
         base "https://jobs.example.com";
-        response json;
+        response Json;
 
         DELETE cancel(id: u64) { path "jobs/{id}"; }     // any 2xx; the body is drained
         POST ping() -> () { path "ping"; }               // the body must be `null`
@@ -821,9 +827,9 @@ fn main() -> Result<(), concord::Error> {
 
 ### 5.6 Forms
 
-`form` is built in behind the `form` feature (`concord = { .., features = ["form"] }`), like
-reqwest's own `form` feature: `request form;` encodes any `Serialize` value with flat fields,
-`Vec<(String, String)>` keeps pair order and repeated names, and `response form;` decodes a form
+`Form` is built in behind the `form` feature (`concord = { .., features = ["form"] }`), like
+reqwest's own `form` feature: `request Form;` encodes any `Serialize` value with flat fields,
+`Vec<(String, String)>` keeps pair order and repeated names, and `response Form;` decodes a form
 response. An OAuth token endpoint takes a form and returns JSON. Excerpt of
 [`crates/concord/tests/forms.rs`](../crates/concord/tests/forms.rs):
 
@@ -832,8 +838,8 @@ response. An OAuth token endpoint takes a form and returns JSON. Excerpt of
         /// A token endpoint.
         pub client OAuth {
             base "http://oauth.invalid";
-            request form;
-            response json;
+            request Form;
+            response Json;
             POST token(body credentials: Login) -> Token { path "token"; }
         }
     }

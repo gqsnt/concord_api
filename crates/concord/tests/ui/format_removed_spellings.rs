@@ -18,7 +18,7 @@ concord::api! {
 concord::api! {
     pub client BodyWithMedia {
         base "http://x.test";
-        request json;
+        request concord::Json;
         POST a(body("application/problem+json") b: Item);
     }
 }
@@ -43,14 +43,14 @@ concord::api! {
 concord::api! {
     pub client ParenthesizedMedia {
         base "http://x.test";
-        request json("application/vnd.api+json");
+        request concord::Json("application/vnd.api+json");
         POST a(body b: Item);
     }
 }
 concord::api! {
     pub client ParenthesizedMediaOnTheEndpoint {
         base "http://x.test";
-        POST a(body b: Item) { request text("text/markdown"); }
+        POST a(body b: Item) { request concord::Text("text/markdown"); }
     }
 }
 fn main() {}

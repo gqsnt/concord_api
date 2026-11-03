@@ -1,9 +1,18 @@
-error[E0425]: cannot find type `Json` in crate `$crate`
- --> tests/ui_features/feature_disabled_formats.rs:8:36
+error[E0432]: unresolved imports `concord::Form`, `concord::Json`
+ --> tests/ui_features/feature_disabled_formats.rs:5:15
   |
-8 |         GET a() -> Item { response json; }
-  |                                    ^^^^ not found in `$crate`
+5 | use concord::{Form, Json};
+  |               ^^^^  ^^^^ no `Json` in the root
+  |               |
+  |               no `Form` in the root
   |
+note: found an item that was configured out
+ --> src/lib.rs
+  |
+  | #[cfg(feature = "form")]
+  |       ---------------- the item is gated behind the `form` feature
+  | pub use repr::Form;
+  |               ^^^^
 note: found an item that was configured out
  --> src/lib.rs
   |
@@ -11,64 +20,3 @@ note: found an item that was configured out
   |       ---------------- the item is gated behind the `json` feature
   | pub use repr::Json;
   |               ^^^^
-  = note: this error originates in the macro `$crate::__private::api_impl` which comes from the expansion of the macro `concord::api` (in Nightly builds, run with -Z macro-backtrace for more info)
-
-error[E0425]: cannot find type `Json` in crate `$crate`
- --> tests/ui_features/feature_disabled_formats.rs:9:36
-  |
-9 |         GET b() -> Item { response json; }
-  |                                    ^^^^ not found in `$crate`
-  |
-note: found an item that was configured out
- --> src/lib.rs
-  |
-  | #[cfg(feature = "json")]
-  |       ---------------- the item is gated behind the `json` feature
-  | pub use repr::Json;
-  |               ^^^^
-  = note: this error originates in the macro `$crate::__private::api_impl` which comes from the expansion of the macro `concord::api` (in Nightly builds, run with -Z macro-backtrace for more info)
-
-error[E0425]: cannot find type `Form` in crate `$crate`
-  --> tests/ui_features/feature_disabled_formats.rs:10:44
-   |
-10 |         POST login(body f: Item) { request form; }
-   |                                            ^^^^ not found in `$crate`
-   |
-note: found an item that was configured out
-  --> src/lib.rs
-   |
-   | #[cfg(feature = "form")]
-   |       ---------------- the item is gated behind the `form` feature
-   | pub use repr::Form;
-   |               ^^^^
-   = note: this error originates in the macro `$crate::__private::api_impl` which comes from the expansion of the macro `concord::api` (in Nightly builds, run with -Z macro-backtrace for more info)
-
-error[E0425]: cannot find type `Form` in crate `$crate`
-  --> tests/ui_features/feature_disabled_formats.rs:16:17
-   |
-16 |         request form;
-   |                 ^^^^ not found in `$crate`
-   |
-note: found an item that was configured out
-  --> src/lib.rs
-   |
-   | #[cfg(feature = "form")]
-   |       ---------------- the item is gated behind the `form` feature
-   | pub use repr::Form;
-   |               ^^^^
-   = note: this error originates in the macro `$crate::__private::api_impl` which comes from the expansion of the macro `concord::api` (in Nightly builds, run with -Z macro-backtrace for more info)
-
-error[E0425]: cannot find type `Json` in crate `$crate`
-  --> tests/ui_features/feature_disabled_formats.rs:17:18
-   |
-17 |         response json;
-   |                  ^^^^ not found in `$crate`
-   |
-note: found an item that was configured out
-  --> src/lib.rs
-   |
-   | #[cfg(feature = "json")]
-   |       ---------------- the item is gated behind the `json` feature
-   | pub use repr::Json;
-   |               ^^^^
-   = note: this error originates in the macro `$crate::__private::api_impl` which comes from the expansion of the macro `concord::api` (in Nightly builds, run with -Z macro-backtrace for more info)

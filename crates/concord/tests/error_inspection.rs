@@ -3,7 +3,7 @@
 
 mod support;
 
-use concord::{BodyError, Decode, Error, ErrorKind, reqwest};
+use concord::{BodyError, Decode, Error, ErrorKind, Json, reqwest};
 use serde::Deserialize;
 use support::{Reply, Server};
 
@@ -40,7 +40,7 @@ concord::api! {
     /// Error-inspection fixture.
     pub client Api {
         base "http://inspect.invalid";
-        response json;
+        response Json;
 
         GET problem() -> Problem { path "problem"; }
         GET unit() -> () { path "unit"; }
@@ -122,7 +122,7 @@ async fn body_source_of_a_standalone_body_error() {
 
 const EMPTY_HINT: &str = "the response body is empty or only whitespace, which is not JSON; omit `->` if this endpoint never returns a body, or use a format that accepts an empty one";
 const TEXT_HINT: &str =
-    "if the response is not JSON, the endpoint may need `response text;` or `response bytes;`";
+    "if the response is not JSON, the endpoint may need `response Text;` or `response Binary;`";
 
 /// Empty, whitespace and `null` stay distinct; no output accepts anything.
 #[tokio::test]

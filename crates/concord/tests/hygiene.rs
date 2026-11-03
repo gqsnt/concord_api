@@ -95,7 +95,7 @@ mod no_prelude {
             base "http://bare.invalid";
             GET item(id: u32, header("x-n") n?: u32) -> ::std::string::String {
                 path "items/{id}";
-                response text;
+                response ::concord::Text;
             }
         }
     }

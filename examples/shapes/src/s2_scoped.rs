@@ -2,6 +2,7 @@
 //! shared `Accept` and an `X-Api-Version` header that has a default, can be changed on the client
 //! and overridden per call.
 
+use concord::Json;
 use std::fmt;
 
 use serde::Deserialize;
@@ -56,7 +57,7 @@ concord::api! {
     ) {
         base "https://api.example.com/v2";
         headers { "accept" = "application/json"; }
-        response json;
+        response Json;
 
         scope regional(region: Region) {
             subdomain "{region}";

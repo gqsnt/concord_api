@@ -37,7 +37,7 @@ concord::api! {
     pub client Tasks(#[sensitive] token: String) {
         base "https://tasks.example.com/api";
         headers { AUTHORIZATION = "Bearer {token}"; }
-        format json;
+        format Json;
 
         scope project(project: String) {
             path "projects/{project}";

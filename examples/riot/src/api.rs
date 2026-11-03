@@ -3,6 +3,7 @@
 
 use concord::bytes::Bytes;
 use concord::reqwest::header::{ACCEPT, AUTHORIZATION, HeaderName};
+use concord::{Binary, Json};
 
 use crate::routing::{AccountRoute, MatchRoute, Platform};
 use crate::types::*;
@@ -21,7 +22,7 @@ concord::api! {
     pub client Riot(#[sensitive] header(X_RIOT_TOKEN) key: String) {
         base "https://api.riotgames.com";
         headers { ACCEPT = "application/json"; }
-        format json;
+        format Json;
 
         /// account-v1, regional routing (americas, asia, europe; any account from any).
         scope account(route: AccountRoute) {
@@ -127,7 +128,7 @@ concord::api! {
     /// separate client, so the API key can never be sent there.
     pub client DataDragon {
         base "https://ddragon.leagueoflegends.com";
-        response json;
+        response Json;
 
         /// Every Data Dragon version, newest first.
         GET versions() -> Vec<String> { path "api/versions.json"; }
@@ -135,7 +136,7 @@ concord::api! {
         /// A champion's square image (PNG bytes).
         GET champion_square(version: String, champion: String) -> Bytes {
             path "cdn/{version}/img/champion/{champion}.png";
-            response bytes;
+            response Binary;
         }
     }
 }
