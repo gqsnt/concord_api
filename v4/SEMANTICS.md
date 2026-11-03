@@ -250,18 +250,20 @@ Each key has one **slot**, positioned at the key's first appearance on the chain
 ## 7. Bodies and responses
 
 Every body and every typed output has a **format**, given by a statement. `T` is the payload type
-the caller supplies or receives (generated signatures use it directly); the format's runtime is a
-marker type implementing `Encode<T>` (bodies) or `Decode<T>` (outputs). No format is chosen from
-the spelling of `T`.
+the caller supplies or receives (generated signatures use it directly); the format is a type
+implementing `Encode<T>` (bodies) or `Decode<T>` (outputs), named by its Rust path. No format is
+chosen from the spelling of `T`, and none is known to the macro: the standard formats
+(`concord-extras`, re-exported by `concord`) are ordinary implementations.
 
-| Format | Runtime | As body (`Encode<T>`) | As output (`Decode<T>`) |
+| Format | As body (`Encode<T>`) | As output (`Decode<T>`): head check, before the body is read | `Accept` suggestion |
 |---|---|---|---|
-| `json` (feature `json`) | `concord::Json` | any `T: Serialize`, `serde_json` bytes, `application/json` | any `T: DeserializeOwned`; `Content-Type` ignored |
-| `text` | `concord::Text` | `String`, `text/plain; charset=utf-8` | `String`; invalid UTF-8 is a decode error |
-| `bytes` | `concord::Binary` | `bytes::Bytes` or `Vec<u8>`, `application/octet-stream` | `bytes::Bytes` or `Vec<u8>`, unchanged |
-| `form` (feature `form`) | `concord::Form` | any `T: Serialize` (`serde_urlencoded`), `application/x-www-form-urlencoded` | any `T: DeserializeOwned` |
-| a type path | that type | its `Encode<T>` | its `Decode<T>` |
-| *(no `->`)* | — | — | output `()`: any 2xx; the body is drained chunk by chunk without buffering |
+| `Json` (feature `json`) | any `T: Serialize`, `application/json` | any `T: DeserializeOwned`; exactly one `Content-Type`, `application/json` or `application/*+json`, charset absent or UTF-8 | `application/json` |
+| `Text` | `String`, `text/plain; charset=utf-8` | `String` (UTF-8); any media type; a declared non-UTF-8 charset is refused | none |
+| `Binary` | `bytes::Bytes` or `Vec<u8>`, `application/octet-stream` | `bytes::Bytes` or `Vec<u8>`, unchanged; nothing checked | none |
+| `Form` (feature `form`) | any `T: Serialize` (`serde_urlencoded`), `application/x-www-form-urlencoded` | any `T: DeserializeOwned`; exactly one `application/x-www-form-urlencoded` | `application/x-www-form-urlencoded` |
+| `IgnoreContentType<F>` | `F`'s | `F`'s, without `F`'s `Content-Type` check | `F`'s |
+| a type path | its `Encode<T>` | its `Decode<T>` | its `Decode::ACCEPT` |
+| *(no `->`)* | — | output `()`: any 2xx; nothing checked; the body is drained chunk by chunk without buffering | none |
 
 **Resolution.**
 
@@ -273,10 +275,9 @@ the spelling of `T`.
   endpoint, `request` without a body or `response` without `->` is a compile error; `format`
   needs one of the two. Statements on clients and scopes that nothing uses are allowed. A default
   cannot be cleared.
-- The words resolve to `$crate::{Json, Text, Binary, Form}` (no import; renamed dependencies
-  work); a word whose feature is off is a compile error at the statement that a live endpoint
-  uses. A type path resolves at the declaration like any type; in format position a bare lowercase
-  identifier must be a word (`self::csv` for a lowercase type).
+- A format is a type path, resolved by Rust where the statement is written, like any type
+  (`Json` after `use concord::Json;`, `concord::Json`, an alias, a generic adapter). No name is
+  reserved; an unknown name is rustc's unresolved-type error at the name.
 - A client or scope statement is referenced through one hidden type alias, emitted only if some
   endpoint consumes it and gated by the union of its consumers' effective `cfg`s: a statement used
   by cfg-disabled endpoints only, or by none, is never resolved.
@@ -302,37 +303,59 @@ the spelling of `T`.
 - The inserted `Content-Type` is flagged sensitive when the `content-type` header is sensitive on
   the endpoint (marker or sticky composition, also after a `remove`), decided at compile time for
   literal chains and by the run-time plan otherwise.
-- Concord never adds `Accept` and never checks the response `Content-Type`; an output takes no media
-  type. Concord does not enforce the field's cardinality (repeated declared `content-type` values
-  are the author's choice).
+- An output takes no media type: the response `Content-Type` is the format's to check
+  (`Decode::check_content_type`), never compared with the request's `Accept`. Concord does not
+  enforce the request field's cardinality (repeated declared `content-type` values are the
+  author's choice).
+
+**Accept.**
+
+- A format may suggest an `Accept` (`Decode::ACCEPT`, a compile-time-checked static value). It is
+  sent only for an endpoint with a typed output, after the authored headers are composed, when no
+  `accept` header was composed and the chain's last `accept` contribution is not a `remove`. It
+  never takes part in composition (it is not a `remove` target, cannot collide, cannot make a
+  `remove` legal). An absent optional authored value leaves the suggestion; a removal suppresses
+  it; a contribution after the removal reopens it. Authored values (literal, native, empty,
+  repeated, with q-values) are sent as written. It is flagged sensitive when `accept` is sensitive
+  on the endpoint, like the inserted `Content-Type`.
+- At execution reqwest fills only header names the request lacks from the client's defaults (its
+  own default is `Accept: */*`): a composed or suggested `Accept` replaces a client default; when
+  Concord sends none, the client's default goes out.
 
 **Presence and decoding.**
 
-- `body b?: T` absent sends no body and no format media type; a required `Option` body under `json`
-  is `null`; an empty `text`/`bytes` body is present (with its media type). A body cannot be
+- `body b?: T` absent sends no body and no format media type; a required `Option` body under `Json`
+  is `null`; an empty `Text`/`Binary` body is present (with its media type). A body cannot be
   initialized.
 - Without `->` the output is `()`, any 2xx succeeds and the body is drained; a `response`
   statement does not apply. `-> ()` (or an alias of it) is a typed output decoded with its format: under
-  `json` the body must be `null` and an empty 204 is a decode error.
-- Response handling: a non-2xx status is `ErrorKind::Status` carrying the **unread**
-  `reqwest::Response` (`Error::into_response`); otherwise the body is read and decoded.
-  `Option<T>` outputs have no status meaning: a 404 is a status error, JSON `null` is `None`.
-- `Encode<T>` and `Decode<T>` are public traits; `<R as Decode<T>>::decode(bytes)` can also be
-  called directly (for example on the body of an error response).
+  `Json` the body must be `null`; an empty 204 without `Content-Type` is refused by the head check,
+  and labelled JSON it is a decode error.
+- Response handling, in order: a non-2xx status is `ErrorKind::Status` carrying the **unread**
+  `reqwest::Response`; on a 2xx the format checks the head (`check_content_type`, then `context`,
+  which produces the owned state the body decoder needs) and a refusal is `ErrorKind::Metadata`
+  carrying the unread response; then the body is read and `decode_body(context, bytes)` decodes it
+  (`ErrorKind::Decode` on failure). `Option<T>` outputs have no status meaning: a 404 is a status
+  error, JSON `null` is `None`. `send_raw()` checks nothing; `into_parts()` + `Decoder::finish` and
+  `Decoder::new::<F>()` apply the same rules.
+- `Encode<T>` and `Decode<T>` are public, open traits; `<F as Decode<T>>::decode_body(context, bytes)`
+  can be called directly (for example on the body of an error response), with no head check.
 - Observed transport detail: hyper sends a zero-length body without `Content-Length`, so "no body"
   and "empty `text` body" differ on the wire only by `Content-Type`.
 
 ## 8. Errors
 
-`concord::Error` has `kind()` ∈ {`Build`, `Transport`, `Status`, `Decode`}, `endpoint()`
-(`Client.scope.endpoint`), `status()`, `into_response()` (`Ok(unread response)` for a status
-error, `Err(self)` otherwise), `transport()` and `body_source()`.
+`concord::Error` has `kind()` ∈ {`Build`, `Transport`, `Status`, `Metadata`, `Decode`},
+`endpoint()` (`Client.scope.endpoint`), `status()` (`Status` only), `response()` and
+`into_response()` (the unread response of a `Status` or `Metadata` error; `Err(self)` otherwise),
+`codec_error()` (`CodecError`: a static label and up to three numeric positions) and `transport()`.
 
 - `Display` is `METHOD Client.scope.endpoint: <stage message>` and contains only static text: the
   failing placement's template (e.g. ``path segment `{id}` ``), the header name, the status code and
-  its canonical reason, a decoder's content-free description (JSON category and line/column).
+  its canonical reason, a format's static `CodecError` label and its numeric positions.
 - `source()` is always `None`. Underlying errors are reachable only through explicit accessors:
-  `transport()` (the reqwest error with its top-level URL removed) and `body_source()`. They are
+  `transport()` (the reqwest error with its top-level URL removed) and
+  `codec_error()?.source_unredacted()`. They are
   documented as unredacted: reqwest nests errors that keep URLs (a refused redirect keeps its
   target, which a server can build from any request value, headers included), TLS errors print
   host names, and decoders quote bodies.

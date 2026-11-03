@@ -2263,7 +2263,7 @@ fn endpoint_body(
             .as_ref()
             .map_or(String::new(), |m| format!(" {:?}", m.value()));
         errors.push(syn::Error::new(b.name.span(), format!(
-            "removed in-place body format: write `body {}{}: {}` and `request {format}{media};` on this endpoint",
+            "removed in-place body format: write `body {}{}: {}` and `request {format}{media};` on this endpoint (a format is a type path: `{format}` must name a format type in scope)",
             b.name, if b.optional { "?" } else { "" }, type_text(&b.ty))));
         return None;
     }

@@ -52,7 +52,10 @@ The bracket convention is synthetic, not a built-in nested-form behavior or a ve
 ## 4. A multi-segment resource key (`tests/resource_key.rs`)
 
 Relies on the native exit and `request.url_mut().path_segments_mut()` to replace a placeholder
-with separate segments. Ordinary Concord path values always occupy one segment. Exact targets:
+with separate segments. The maintained [`write_resource_segments`](src/lib.rs) helper accepts an
+explicit non-empty slice and rejects empty, `.` and `..` items and control characters; see the full
+[recipe](../../docs/RECIPES.md#a-resource-key-spanning-path-segments). Native request Debug
+exposes the complete URL. Ordinary Concord path values always occupy one segment. Exact targets:
 
 | Input | Ordinary path value | Native split into segments |
 |---|---|---|

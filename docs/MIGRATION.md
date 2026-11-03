@@ -66,6 +66,9 @@ on the first calls against a server or a test fixture.
 | `Json` ignores the response `Content-Type` | `Json` refuses a response without exactly one `application/json` or `application/*+json` `Content-Type` |
 | Concord sends no `Accept` | a typed output sends its format's suggestion, unless you declare an `accept` |
 | one crate | four crates; you still depend on `concord` only |
+| "a test that prepares every endpoint" finds header-name mistakes of native keys | `Client::validate_header_names()` checks every endpoint without building anything ([author guide §4.9](AUTHOR_GUIDE.md#49-checking-header-names-in-a-test)) |
+| `concord::__private::NativeKey` could be implemented downstream (hidden, unsupported) | sealed: a header key path must name a `HeaderName` itself |
+| the minimum Rust was 1.85 | the minimum Rust is 1.99.1 |
 
 ### What you may notice when you run
 
@@ -771,7 +774,7 @@ Refined — a non-status error is returned unchanged instead of being dropped:
 
 ```rust
 async fn problem_title(error: concord::Error) -> Result<String, Box<dyn std::error::Error>> {
-    let response = error.into_response()?; // any other kind of error propagates
+    let response = error.into_response()?; // an error without a response propagates
     let bytes = response.bytes().await?;
     Ok(String::from_utf8_lossy(&bytes).into_owned())
 }

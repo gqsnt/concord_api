@@ -120,6 +120,59 @@ pub async fn search_filters(
 - **Assumes:** the declared pairs come first; the appended ones follow in the given order.
   Declared sensitive query keys are no longer redacted in any native `Debug` output.
 
+### A resource key spanning path segments
+
+Concord has no multi-segment path value (a typed sequence was prototyped and deferred: its
+redaction would need run-time ranges). Declare the final path position as an ordinary value (for example,
+`PUT write(key: String) { path "objects/{key}"; }`). A value `a/b` supplied to that
+endpoint is **one** segment, sent as `a%2Fb`. If the service instead expects multiple
+segments, pass an explicit list to this application-level helper. Excerpt of
+[`write_resource_segments`](../examples/compat/src/lib.rs):
+
+```rust
+pub async fn write_resource_segments(
+    api: &Resources,
+    segments: &[&str],
+) -> Result<(), Box<dyn std::error::Error>> {
+    if segments.is_empty()
+        || segments
+            .iter()
+            .any(|s| s.is_empty() || *s == "." || *s == ".." || s.chars().any(char::is_control))
+    {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            "resource key needs non-empty segments other than . and .., without controls",
+        )
+        .into());
+    }
+    let (client, mut request, decoder) = api.write("placeholder").prepare()?.into_parts();
+    request
+        .url_mut()
+        .path_segments_mut()
+        .map_err(|_| std::io::Error::other("base URL cannot hold path segments"))?
+        .pop()
+        .extend(segments.iter().copied());
+    decoder.finish(client.execute(request).await).await?;
+    Ok(())
+}
+```
+
+This helper assumes the placeholder is the **last** segment, with no declared trailing slash;
+`pop()` removes it. It rejects an empty sequence, empty items, `.`/`..` and control characters
+before editing: the URL library discards dot segments and can discard newline and tab characters.
+It does not split strings: choose the
+segment boundaries in application code. Each item is data, not pre-escaped text: `a/b` becomes
+`a%2Fb` and `%2F` becomes `%252F`. Backslash and Unicode are encoded by the
+native URL library; its encoding policy need not match Concord's for every punctuation character.
+If a service requires an empty item or trailing slash, define and test that service's policy
+explicitly. A runtime base path is retained. The loopback
+[`resource_key` test](../examples/compat/tests/resource_key.rs) checks these cases.
+
+`into_parts()` hands out a native request: its `Debug` and URL access expose path and query
+values, including secrets. Do not log that request or URL when they contain secrets. Concord's
+`decoder.finish` still supplies the declared response handling and redacts its own error output;
+explicit native response and error accessors have their documented disclosure boundaries.
+
 ## Body formats
 
 ### A custom format: NDJSON

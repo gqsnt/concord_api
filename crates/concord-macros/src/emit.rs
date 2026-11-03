@@ -962,7 +962,7 @@ fn request_summary(model: &Model, endpoint: usize, method: &Ident) -> TokenStrea
                     String::new()
                 };
                 format!(
-                    " Output: `{}`, decoded from a 2xx response with the format {}.{unit}",
+                    " Output: `{}`, decoded from a 2xx response with the format {}: the format checks the response head before the body is read (a refusal is `ErrorKind::Metadata`, the response kept unread), and its `Decode::ACCEPT`, if any, is sent when this endpoint's headers leave no `accept` and do not end by removing it.{unit}",
                     type_text(&o.ty),
                     format_origin(model, &o.format, o.origin, false),
                 )
@@ -2434,9 +2434,9 @@ mod tests {
         for expected in [
             " Formats of the endpoints below: request bodies `Json` (declared here); typed outputs `Json` (declared here).",
             " Body (`item`): `NewItem`, encoded with the format [`Json`](Json) (the `request` default of the client `Shop`). `Content-Type`: the format's `Encode::CONTENT_TYPE`, sent with the body.",
-            " Output: `Item`, decoded from a 2xx response with the format [`Json`](Json) (the `response` default of the client `Shop`).",
+            " Output: `Item`, decoded from a 2xx response with the format [`Json`](Json) (the `response` default of the client `Shop`): the format checks the response head before the body is read (a refusal is `ErrorKind::Metadata`, the response kept unread), and its `Decode::ACCEPT`, if any, is sent when this endpoint's headers leave no `accept` and do not end by removing it.",
             " Body (`p`): `Patch`, encoded with the format [`Json`](Json) (the endpoint statement). `Content-Type: application/merge-patch+json` (declared by the endpoint request statement) is sent with the body.",
-            " Output: `String`, decoded from a 2xx response with the format [`Text`](Text) (the endpoint statement).",
+            " Output: `String`, decoded from a 2xx response with the format [`Text`](Text) (the endpoint statement): the format checks the response head before the body is read (a refusal is `ErrorKind::Metadata`, the response kept unread), and its `Decode::ACCEPT`, if any, is sent when this endpoint's headers leave no `accept` and do not end by removing it.",
             " Absent: no body, and the format adds no `Content-Type`.",
             " Output: none (`()`): any 2xx succeeds and the response body is drained; the `response` default `Json` of the client `Shop` does not apply.",
             " `()` is decoded like any output type, with `Json`. An endpoint without `->` decodes no output and accepts any 2xx.",

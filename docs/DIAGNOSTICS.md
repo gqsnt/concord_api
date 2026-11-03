@@ -334,7 +334,7 @@ error: removed in-place output format: `-> Vec<Item> json` names two types; writ
 7 |         GET item() -> Vec<Item> json;
   |                                 ^^^^
 
-error: removed body format: write `body item: Item` and `request json;` on this endpoint
+error: removed body format: write `body item: Item` and `request json;` on this endpoint (a format is a type path: `json` must name a format type in scope)
   --> tests/ui/format_swapped_order.rs:13:32
    |
 13 |         POST create(item: Item json);
@@ -636,7 +636,8 @@ second value is absent). From
 GET Keys.duplicate: request not built: `authorization` on `Keys.duplicate` sets a header that `AUTHORIZATION` on `Keys` already sets (both name the same header); use `override` or `append`, or `remove` it first
 ```
 
-**Fix:** the same as above. A test that prepares every endpoint finds these before a caller does.
+**Fix:** the same as above. `Keys::validate_header_names()` in a unit test reports every such
+problem, one per endpoint, without building a request (author guide §4.9).
 
 ## Generated names
 

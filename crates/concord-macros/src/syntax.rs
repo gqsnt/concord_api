@@ -930,7 +930,7 @@ fn parse_params(
                     return Err(syn::Error::new(
                         format.span(),
                         format!(
-                            "removed body format: write `body {}{}: {}` and `request {};` on this endpoint",
+                            "removed body format: write `body {}{}: {}` and `request {3};` on this endpoint (a format is a type path: `{3}` must name a format type in scope)",
                             plain(&name),
                             if optional { "?" } else { "" },
                             type_text(&ty),

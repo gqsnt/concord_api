@@ -72,9 +72,11 @@ impl From<concord::Error> for RenameError {
 /// document.
 ///
 /// Use this shape whenever an API documents an error body. Concord leaves a non-2xx response
-/// **unread** inside [`concord::ErrorKind::Status`]: [`concord::Error::into_response`] hands it back
-/// (any other error kind comes back unchanged as `Err`, so `?` propagates it), and the public
-/// [`Decode`] trait decodes the bytes with any representation regardless of status. The error
+/// **unread** inside [`concord::ErrorKind::Status`]: [`concord::Error::into_response`] hands it back,
+/// and the public [`Decode::decode_body`] decodes the bytes with any format, regardless of status
+/// and without a head check. Only status errors are error documents here: `into_response` also
+/// returns the 2xx response of a [`concord::ErrorKind::Metadata`] error, so other kinds are
+/// propagated first. The error
 /// body is read fully into memory; against an untrusted server, read it with
 /// `response.chunk()` up to your own limit instead.
 pub async fn rename_item(api: &Inventory, id: u64, name: &str) -> Result<Item, RenameError> {
@@ -83,9 +85,10 @@ pub async fn rename_item(api: &Inventory, id: u64, name: &str) -> Result<Item, R
     };
     let error = match api.rename(id, change).send().await {
         Ok(item) => return Ok(item),
+        Err(error) if error.status().is_none() => return Err(error.into()), // not an error document
         Err(error) => error,
     };
-    let response = error.into_response()?; // non-status errors propagate intact
+    let response = error.into_response()?; // a status error: always its response
     let status = response.status();
     let bytes = match response.bytes().await {
         Ok(bytes) => bytes,

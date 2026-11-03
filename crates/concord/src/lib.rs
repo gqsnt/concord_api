@@ -189,6 +189,8 @@
 //! - `docs/QUICKSTART.md` — from a new crate to a call against a local server;
 //! - `docs/AUTHOR_GUIDE.md` — writing declarations: values, paths, composition, formats;
 //! - `docs/CALLER_GUIDE.md` — using a generated client: snapshots, options, errors, native requests;
+//! - `docs/CUSTOM_FORMATS.md` — writing a format: `Encode`, `Decode`, response head checks,
+//!   `CodecError`, the `Accept` suggestion;
 //! - `docs/RECIPES.md` — error documents, streaming, custom formats, retries, pagination;
 //! - `docs/DIAGNOSTICS.md` — the compile errors and how to fix them;
 //! - `docs/MIGRATION.md` — from `via` to formats, from the V4 alpha and from V3;

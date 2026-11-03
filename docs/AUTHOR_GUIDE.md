@@ -478,8 +478,9 @@ header("x-request-id") id: String              headers { header::ACCEPT_LANGUAGE
   `"authorization"`, or `AUTHORIZATION` again, below `header(AUTHORIZATION)` without `override` —
   are a `Build` error from
   `prepare()` naming the declaration (and, for a header set twice, the earlier one). Names are
-  compared before values, so such an endpoint fails even when its value is absent: a test that
-  prepares every endpoint finds these mistakes. Which header each contribution names is decided on the names
+  compared before values, so such an endpoint fails even when its value is absent:
+  `Client::validate_header_names()` in a unit test finds these mistakes for every endpoint at
+  once, without building anything (§4.9). Which header each contribution names is decided on the names
   alone, before any value is converted: a removed or replaced value is never formatted.
 
 **Values.** A value placed directly (`header(K) x: T`, `K = x`, `K = each xs`) goes through
@@ -549,6 +550,48 @@ fn main() -> Result<(), concord::Error> {
     Ok(())
 }
 ```
+
+### 4.9 Checking header names in a test
+
+Every generated client has an associated function `validate_header_names()`. It checks, without
+a client, a configuration, endpoint values, a network or an async runtime — it reads only the
+native `HeaderName` constants — the header-name rules `prepare()` applies before converting any
+value, on every endpoint compiled under the current `cfg`: a header introduced twice, an
+`override`, `else inherit` or `remove` with nothing to act on, a header field reqwest manages,
+and a `content-type` header next to a body's declared media type. Their verdict does not depend
+on which optional values are present, so a problem it reports is the build error that endpoint's
+`prepare()` returns for every request, and `Ok(())` means no `prepare()` fails on header names.
+Values, their conversion, credentials and servers are not checked. Chains with literal names
+only were already checked when the declaration compiled.
+
+```rust
+use concord::reqwest::header::{AUTHORIZATION, HeaderName};
+
+/// The credential header, under another name.
+pub const AUTH: HeaderName = AUTHORIZATION;
+
+concord::api! {
+    pub client Vault(#[sensitive] header(AUTHORIZATION) token: String) {
+        base "https://vault.example.com";
+        GET status() { path "status"; headers { remove AUTH; } }
+        /// A mistake: `AUTH` is `authorization`, which the client already sets.
+        GET secrets() { path "secrets"; headers { AUTH = "Bearer other"; } }
+    }
+}
+
+fn main() {
+    // In a crate, `#[test] fn header_names() { Vault::validate_header_names().unwrap(); }`.
+    let errors = Vault::validate_header_names().unwrap_err();
+    let [problem] = errors.problems() else { panic!("{errors}") };
+    assert_eq!(problem.endpoint(), "Vault.secrets");
+    assert_eq!(problem.declaration(), "`AUTH` on `Vault.secrets`");
+    assert_eq!(problem.earlier(), Some("`AUTHORIZATION` on `Vault`"));
+}
+```
+
+It returns one problem per endpoint (the error that endpoint's `prepare()` reports), in
+declaration order; `Display` lists them one per line, with declarations and endpoint names, never
+values. An endpoint may not be named `validate_header_names`.
 
 ## 5. Bodies and responses: formats
 

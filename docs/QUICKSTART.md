@@ -181,12 +181,13 @@ pub async fn run(base_url: &str, token: String) -> Result<(), Box<dyn std::error
     // This API rejects an empty title: a non-2xx status is an error that keeps the response.
     match project.create(NewTask::default()).send().await {
         Ok(task) => println!("unexpectedly created task #{}", task.id),
-        Err(error) => {
-            let response = error.into_response()?; // any other kind of error propagates
+        Err(error) if error.status().is_some() => {
+            let response = error.into_response()?; // a status error keeps its response
             let status = response.status();
             let problem = <Json as Decode<Problem>>::decode_body((), response.bytes().await?)?;
             println!("rejected with {status}: {}", problem.title);
         }
+        Err(error) => return Err(error.into()), // any other kind of error propagates
     }
     Ok(())
 }

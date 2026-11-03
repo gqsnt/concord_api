@@ -177,7 +177,7 @@ impl Error {
     /// match request.await {
     ///     Ok(()) => {}
     ///     Err(e) => {
-    ///         let response = e.into_response()?; // not a status error: propagate it
+    ///         let response = e.into_response()?; // no response to take: propagate it
     ///         let status = response.status();
     ///         # let _ = status;
     ///     }

@@ -105,6 +105,7 @@ format statements, then children.
 | Generated | Use |
 |---|---|
 | `Docs::new(http, DocsConfig { .. })` | builds the client; initializers run once here |
+| `Docs::validate_header_names()` | in a unit test: every endpoint's header names checked without building anything ([§4.9](AUTHOR_GUIDE.md#49-checking-header-names-in-a-test)) |
 | `.set_x(v)`, `.maybe_x(Some(v) / None)` | return the updated handle (`#[must_use]`); handles are cheap snapshots |
 | `docs.folder(7)`, `folder.rename(3, change)` | navigation: required values are positional, in declaration order |
 | `.send().await` | `prepare`, one `execute`, require 2xx, check the response head, read and decode the body; never retries |

@@ -4,9 +4,9 @@
 //! [`concord::Decode<T>`] (2xx response bodies). It is chosen only by naming its path in a
 //! format statement (`format Ndjson;`, `request Ndjson;`, `response Ndjson;`) on the
 //! endpoint, a scope or the client; a payload (`body rows: Vec<StockRow>`, `-> Vec<StockRow>`)
-//! names only its Rust type. Error descriptions must stay content-free: they are shown by
-//! Concord's `Display`; the underlying error (which may quote the body) goes to `with_source` and is reachable only
-//! through `concord::Error::body_source`.
+//! names only its Rust type. A `CodecError` has a static label and numeric positions, shown by
+//! Concord's `Display`; the underlying error (which may quote the body) goes to `with_source` and
+//! is reachable only through `concord::Error::codec_error` and `CodecError::source_unredacted`.
 
 use concord::bytes::Bytes;
 use concord::{CodecError, Decode, Encode, ResponseHead, reqwest};
@@ -65,9 +65,9 @@ impl<T: DeserializeOwned> Decode<Vec<T>> for Ndjson {
 
 /// `application/x-www-form-urlencoded` request bodies from ordered `(name, value)` pairs.
 ///
-/// Concord's built-in `form` format (feature `form`, through serde) encodes the same pairs; this
-/// encoder shows the same thing downstream, without serde. Declarations name it by path,
-/// `request repr::Form;`, so it is never confused with the word `form`.
+/// Concord's `Form` (feature `form`, through serde) encodes the same pairs; this encoder shows the
+/// same thing downstream, without serde. Declarations name it by path, `request repr::Form;`, a
+/// different type from `concord::Form`.
 ///
 /// Encoding is `url::form_urlencoded` (space as `+`, everything outside `*-._` and
 /// alphanumerics percent-encoded), the same rules Concord and reqwest use for query strings.

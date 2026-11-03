@@ -10,13 +10,13 @@ error: `json` is not a placement: a parameter is `name: T`, `query name: T`, `qu
 15 |         POST a(json("application/merge-patch+json") b: Item);
    |                ^^^^
 
-error: removed in-place body format: write `body b: Item` and `request concord::Json "application/problem+json";` on this endpoint
+error: removed in-place body format: write `body b: Item` and `request concord::Json "application/problem+json";` on this endpoint (a format is a type path: `concord::Json` must name a format type in scope)
   --> tests/ui/format_removed_spellings.rs:22:49
    |
 22 |         POST a(body("application/problem+json") b: Item);
    |                                                 ^
 
-error: removed in-place body format: write `body b: Item` and `request Csv;` on this endpoint
+error: removed in-place body format: write `body b: Item` and `request Csv;` on this endpoint (a format is a type path: `Csv` must name a format type in scope)
   --> tests/ui/format_removed_spellings.rs:28:20
    |
 28 |         POST a(Csv b: Item);

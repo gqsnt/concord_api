@@ -4,7 +4,7 @@ error: removed in-place output format: `-> Vec<Item> json` names two types; writ
 7 |         GET item() -> Vec<Item> json;
   |                                 ^^^^
 
-error: removed body format: write `body item: Item` and `request json;` on this endpoint
+error: removed body format: write `body item: Item` and `request json;` on this endpoint (a format is a type path: `json` must name a format type in scope)
   --> tests/ui/format_swapped_order.rs:13:32
    |
 13 |         POST create(item: Item json);
