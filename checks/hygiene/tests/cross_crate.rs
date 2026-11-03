@@ -7,6 +7,8 @@ use concord_hygiene_check::Hygiene;
 fn equal_tokens_from_two_crates_are_two_headers() {
     assert_eq!(concord_hygiene_key_a::KEY.as_str(), "x-public");
     assert_eq!(concord_hygiene_key_b::KEY.as_str(), "authorization");
+    // H07: the validator resolves each occurrence too (two headers, nothing introduced twice).
+    Hygiene::validate_header_names().unwrap();
     let p = Hygiene::new(reqwest::Client::new())
         .get()
         .prepare()

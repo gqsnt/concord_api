@@ -1817,6 +1817,12 @@ impl Model {
                         "the built-in `with_base_url`".into(),
                         errors,
                     );
+                    add(
+                        "validate_header_names".into(),
+                        None,
+                        "the built-in `validate_header_names`".into(),
+                        errors,
+                    );
                 }
                 Kind::Endpoint { .. } => {
                     add("send".into(), None, "the built-in `send`".into(), errors);

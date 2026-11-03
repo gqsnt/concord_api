@@ -800,16 +800,15 @@ pub fn header_literal(
     })
 }
 
-/// One header contribution of an endpoint's chain, for [`HeaderPlan::compose`].
+/// The written shape of one header contribution of an endpoint's chain: what it does and its
+/// label. The generated code holds one `static` array of them per endpoint whose chain writes a
+/// native `HeaderName` constant, shared by the endpoint's `prepare()` ([`HeaderPlan::compose`]) and
+/// the client's `validate_header_names()` ([`NameCheck`]), so both apply the same rules to the same
+/// declarations.
 #[derive(Clone, Copy)]
-pub struct HeaderEntry {
+pub struct HeaderShape {
     pub op: HeaderOp,
-    /// For [`HeaderOp::OverrideElseInherit`]: whether its source is present (it then replaces
-    /// the inherited values; absent, they stay). Ignored otherwise.
-    pub present: bool,
-    /// The contribution's own classification (`#[sensitive]`, or a withheld value it reads).
-    pub marked: bool,
-    /// The declaration, for errors (`` `override AUTHORIZATION = token` on `Api.admin` ``).
+    /// The declaration, for errors (`` `override AUTHORIZATION` on `Api.admin` ``).
     pub label: &'static str,
 }
 
@@ -827,6 +826,83 @@ pub enum HeaderOp {
     OverrideElseInherit,
     /// Drops the inherited values; an error if nothing sets the header.
     Remove,
+}
+
+/// A structural rule a chain breaks: decided on resolved names and written operations alone.
+#[derive(Clone, Copy)]
+enum Violation {
+    /// A header field that reqwest/hyper manage is declared (other than by `remove`).
+    Reserved,
+    /// The header is introduced while an earlier contribution (its label) already sets it.
+    AlreadySet(&'static str),
+    /// `override`, `else inherit` or `remove` with nothing to act on.
+    NoTarget,
+    /// The body declares a media type while a `content-type` contribution survives.
+    MediaConflict,
+}
+
+impl Violation {
+    fn reason(self) -> &'static str {
+        match self {
+            Violation::Reserved => {
+                "names a header field that reqwest/hyper manage; it cannot be declared"
+            }
+            Violation::AlreadySet(_) => {
+                "sets a header that an earlier declaration already sets (both name the same header); use `override` or `append`, or `remove` it first"
+            }
+            Violation::NoTarget => "changes a header that no enclosing owner sets",
+            Violation::MediaConflict => {
+                "sets `content-type` while the body declares a media type: both would set `Content-Type`; keep one"
+            }
+        }
+    }
+}
+
+/// The structural rules of a chain (in composition order: root first, each owner's `remove`s
+/// before its other contributions), on resolved names and written operations only. No value is
+/// converted, formatted or read, and no presence is assumed: every rule holds or fails whatever
+/// optional values turn out to be present, so the verdict is the same for every request the
+/// endpoint can build. Returns the first violation in chain order (the media-type rule, which
+/// concerns the chain's last `content-type` contribution, last).
+fn structure<const N: usize>(
+    names: &[&HeaderName; N],
+    shapes: &[HeaderShape; N],
+    explicit_media: bool,
+) -> Result<(), (usize, Violation)> {
+    let mut last_content_type = None;
+    for i in 0..N {
+        let op = shapes[i].op;
+        if op != HeaderOp::Remove && reserved_name(names[i]) {
+            return Err((i, Violation::Reserved));
+        }
+        // Whether the header is set when this contribution applies: the latest earlier
+        // contribution to the same header was not a `remove`. (An `else inherit` or an optional
+        // value sets it as a declaration, present or not.)
+        let earlier = (0..i).rev().find(|&j| names[j] == names[i]);
+        let set_before = earlier.is_some_and(|j| shapes[j].op != HeaderOp::Remove);
+        match (op, earlier) {
+            (HeaderOp::Set, Some(j)) if set_before => {
+                return Err((i, Violation::AlreadySet(shapes[j].label)));
+            }
+            (HeaderOp::Override | HeaderOp::OverrideElseInherit | HeaderOp::Remove, _)
+                if !set_before =>
+            {
+                return Err((i, Violation::NoTarget));
+            }
+            _ => {}
+        }
+        if names[i] == CONTENT_TYPE {
+            last_content_type = Some(i);
+        }
+    }
+    // A `content-type` contribution survives exactly when the chain's last one is not a `remove`
+    // (a later `else inherit`, present or absent, leaves a `content-type` declaration in force).
+    match last_content_type {
+        Some(i) if explicit_media && shapes[i].op != HeaderOp::Remove => {
+            Err((i, Violation::MediaConflict))
+        }
+        _ => Ok(()),
+    }
 }
 
 /// Header composition of one endpoint whose chain writes a native `HeaderName` constant, decided
@@ -849,65 +925,51 @@ pub struct HeaderPlan<const N: usize> {
 }
 
 impl<const N: usize> HeaderPlan<N> {
-    /// Composes `entries` (in chain order: root first, each owner's `remove`s before its other
-    /// contributions) by native name equality. `explicit_media`: the body declares a media type,
-    /// which conflicts with a `content-type` header that survives.
+    /// Composes the chain by native name equality: first the structural rules (shared with
+    /// [`NameCheck`]), then which values are sent. `present`: for an `override ... else inherit`,
+    /// whether its source is present (ignored otherwise); `marked`: each contribution's own
+    /// classification (`#[sensitive]`, or a withheld value it reads). `explicit_media`: the body
+    /// declares a media type, which conflicts with a surviving `content-type` header.
     pub fn compose(
         names: [&HeaderName; N],
-        entries: [HeaderEntry; N],
+        shapes: &[HeaderShape; N],
+        present: [bool; N],
+        marked: [bool; N],
         explicit_media: bool,
         meta: &'static EndpointMeta,
     ) -> Result<Self, Error> {
+        if let Err((i, violation)) = structure(&names, shapes, explicit_media) {
+            return Err(match violation {
+                Violation::AlreadySet(earlier) => {
+                    Error::header_conflict(meta, shapes[i].label, earlier)
+                }
+                other => Error::build(Some(meta), shapes[i].label, other.reason()),
+            });
+        }
         let mut live = [false; N];
         let mut sensitive = [false; N];
         let mut content_type_sensitive = false;
         let mut accept_sensitive = false;
         let mut accept_removed = false;
         for i in 0..N {
-            let entry = entries[i];
-            let fail = |reason| Err(Error::build(Some(meta), entry.label, reason));
-            if entry.op != HeaderOp::Remove && reserved_name(names[i]) {
-                return fail(
-                    "names a header field that reqwest/hyper manage; it cannot be declared",
-                );
-            }
-            // Whether the header is set when this contribution applies: the latest earlier
-            // contribution to the same header was not a `remove`.
-            let earlier = (0..i).rev().find(|&j| names[j] == names[i]);
-            let set_before = earlier.is_some_and(|j| entries[j].op != HeaderOp::Remove);
-            match (entry.op, earlier) {
-                (HeaderOp::Set, Some(j)) if set_before => {
-                    return Err(Error::header_conflict(meta, entry.label, entries[j].label));
-                }
-                (HeaderOp::Override | HeaderOp::OverrideElseInherit | HeaderOp::Remove, _)
-                    if !set_before =>
-                {
-                    return fail("changes a header that no enclosing owner sets");
-                }
-                _ => {}
-            }
+            let op = shapes[i].op;
             // A value survives unless a later contribution to the same header replaces or
             // removes it.
-            let closes = |j: usize| match entries[j].op {
+            let closes = |j: usize| match shapes[j].op {
                 HeaderOp::Set | HeaderOp::Override | HeaderOp::Remove => true,
-                HeaderOp::OverrideElseInherit => entries[j].present,
+                HeaderOp::OverrideElseInherit => present[j],
                 HeaderOp::Append => false,
             };
-            live[i] = entry.op != HeaderOp::Remove
-                && !(i + 1..N).any(|j| names[j] == names[i] && closes(j));
-            sensitive[i] = sensitive_name(names[i])
-                || (0..N).any(|j| names[j] == names[i] && entries[j].marked);
+            live[i] =
+                op != HeaderOp::Remove && !(i + 1..N).any(|j| names[j] == names[i] && closes(j));
+            sensitive[i] =
+                sensitive_name(names[i]) || (0..N).any(|j| names[j] == names[i] && marked[j]);
             if names[i] == ACCEPT {
-                accept_sensitive |= entry.marked;
-                accept_removed = entry.op == HeaderOp::Remove;
+                accept_sensitive |= marked[i];
+                accept_removed = op == HeaderOp::Remove;
             }
             if names[i] == CONTENT_TYPE {
-                content_type_sensitive |= entry.marked;
-                if explicit_media && live[i] {
-                    return fail(
-                        "sets `content-type` while the body declares a media type: both would set `Content-Type`; keep one",
-                    );
-                }
+                content_type_sensitive |= marked[i];
             }
         }
         Ok(Self {
@@ -917,6 +979,52 @@ impl<const N: usize> HeaderPlan<N> {
             accept_sensitive,
             accept_removed,
         })
+    }
+}
+
+/// The checks of a client's `validate_header_names()`: the structural rules of
+/// [`HeaderPlan::compose`] on each endpoint whose chain writes a native constant, collected
+/// across endpoints. Nothing but the names is evaluated.
+#[derive(Default)]
+pub struct NameCheck {
+    problems: Vec<crate::HeaderNameError>,
+}
+
+impl NameCheck {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Checks one endpoint's chain; records its first violation (the one its `prepare()` would
+    /// report), if any.
+    pub fn endpoint<const N: usize>(
+        &mut self,
+        endpoint: &'static str,
+        names: [&HeaderName; N],
+        shapes: &[HeaderShape; N],
+        explicit_media: bool,
+    ) {
+        if let Err((i, violation)) = structure(&names, shapes, explicit_media) {
+            self.problems.push(crate::HeaderNameError {
+                endpoint,
+                declaration: shapes[i].label,
+                earlier: match violation {
+                    Violation::AlreadySet(earlier) => Some(earlier),
+                    _ => None,
+                },
+                reason: violation.reason(),
+            });
+        }
+    }
+
+    pub fn finish(self) -> Result<(), crate::HeaderNameErrors> {
+        if self.problems.is_empty() {
+            Ok(())
+        } else {
+            Err(crate::HeaderNameErrors {
+                problems: self.problems,
+            })
+        }
     }
 }
 

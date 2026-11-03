@@ -67,6 +67,14 @@ step ci-inventory "$python" -I scripts/check-ci.py --workflow
 step graph "$python" -I scripts/check-graph.py
 step fmt cargo fmt --all -- --check
 step records "$python" -I scripts/check-records.py
+# Generated test files (oracles, the synthetic SDK) match their generators.
+generated() {
+  local g
+  for g in oracle_composition oracle_sensitivity synthetic_sdk; do
+    "$python" -I "tests-gen/$g.py" --check || { echo "stale: tests-gen/$g.py"; return 1; }
+  done
+}
+step generated generated
 step clippy cargo clippy --locked --workspace --all-targets -- -D warnings
 step test cargo test --workspace --locked
 step test-no-default cargo test --locked -p concord --no-default-features

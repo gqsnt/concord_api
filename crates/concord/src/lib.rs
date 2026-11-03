@@ -206,8 +206,8 @@
 //!   Disable it to choose reqwest's features in your own `Cargo.toml`.
 
 pub use concord_core::{
-    CodecError, ContentTypeField, Decode, Decoder, Encode, Error, ErrorKind, IntoValue, Prepared,
-    ResponseHead, ToHeaderValue, bytes, reqwest,
+    CodecError, ContentTypeField, Decode, Decoder, Encode, Error, ErrorKind, HeaderNameError,
+    HeaderNameErrors, IntoValue, Prepared, ResponseHead, ToHeaderValue, bytes, reqwest,
 };
 #[cfg(feature = "form")]
 pub use concord_extras::Form;

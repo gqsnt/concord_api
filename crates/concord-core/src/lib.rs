@@ -18,6 +18,7 @@ pub use {bytes, reqwest};
 mod codec;
 mod error;
 mod header;
+mod names;
 mod prepared;
 mod value;
 
@@ -27,5 +28,6 @@ pub mod __private;
 pub use codec::{CODEC_ERROR_CONTEXT, CodecError, ContentTypeField, Decode, Encode, ResponseHead};
 pub use error::{Error, ErrorKind};
 pub use header::ToHeaderValue;
+pub use names::{HeaderNameError, HeaderNameErrors};
 pub use prepared::{Decoder, Prepared};
 pub use value::IntoValue;

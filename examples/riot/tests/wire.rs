@@ -258,3 +258,11 @@ async fn data_dragon_is_credential_free_json_and_bytes() {
         assert_eq!(request.header("authorization"), None);
     }
 }
+
+/// H12: every endpoint's header names (`X_RIOT_TOKEN`, the RSO `remove`, `ACCEPT`) are coherent,
+/// checked without a key, a client, a request or a network.
+#[test]
+fn header_names_validate_without_credentials() {
+    Riot::validate_header_names().unwrap();
+    DataDragon::validate_header_names().unwrap();
+}

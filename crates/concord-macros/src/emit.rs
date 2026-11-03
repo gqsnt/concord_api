@@ -24,6 +24,7 @@ pub fn emit(model: &Model, krate: TokenStream) -> TokenStream {
     let mut out = header_items;
     out.extend(withheld_fns(k, model, &headers));
     out.extend(format_aliases(model));
+    out.extend(validate_header_names(k, model, &headers));
     for (index, (owner, notes)) in model.owners.iter().zip(&notes).enumerate() {
         let cfgs = &owner.cfgs;
         if cfgs.is_empty() {
@@ -1421,7 +1422,10 @@ fn emit_owner(
                 output.as_ref(),
                 body.as_ref(),
             );
+            let shapes = shapes_static(k, model, index);
             quote! {
+                #shapes
+
                 #docs
                 #[must_use = "an endpoint request does nothing until `send` or `prepare` is called"]
                 #vis struct #ty {
@@ -1452,8 +1456,9 @@ fn emit_owner(
                     ///
                     /// # Errors
                     ///
-                    /// `Build` as for `prepare`, then `Transport`, `Status` or `Decode` (see
-                    /// `ErrorKind`).
+                    /// `Build` as for `prepare`, then `Transport`, `Status`, `Metadata` (the
+                    /// format refused the response head; the response is kept unread) or
+                    /// `Decode` (see `ErrorKind`).
                     #[inline] pub async fn send(self) -> ::core::result::Result<#out, #k::Error> {
                         self.prepare()?.send().await
                     }
@@ -1820,22 +1825,17 @@ fn items_code(
     out
 }
 
-/// A chain with a native `HeaderName` constant: every key is bound first (so a key's type error
-/// is never hidden by an absent value), `HeaderPlan` composes the contributions on names alone,
-/// and only then are the surviving values converted, in chain order.
-fn native_headers_code(
+/// The resolved names of a native chain, as `let` bindings (literal names are their validated
+/// statics; a native key path goes through its accessor) and the expressions naming them. Shared
+/// by `prepare()` and the client's `validate_header_names()`, which evaluate nothing else.
+fn native_names(
     k: &TokenStream,
     headers: &Headers,
     model: &Model,
-    places: &Places,
     seq: &[ContribId],
-    explicit_media: bool,
-) -> TokenStream {
-    let n = seq.len();
+) -> (TokenStream, Vec<TokenStream>) {
     let mut bindings = TokenStream::new();
     let mut names = Vec::new();
-    let mut entries = Vec::new();
-    let mut sends = TokenStream::new();
     for (i, &id) in seq.iter().enumerate() {
         let c = model.contrib(id);
         let name = key_ref(model, headers, &c.key);
@@ -1856,6 +1856,31 @@ fn native_headers_code(
             }
         }
         names.push(quote!(#var));
+    }
+    (bindings, names)
+}
+
+/// The `static` holding a native chain's contribution shapes (operation and label), shared by
+/// the endpoint's `prepare()` and the client's `validate_header_names()`.
+fn shapes_ident(model: &Model, endpoint: usize) -> Ident {
+    format_ident!(
+        "__CONCORD_{}_SHAPES_{}",
+        plain(&model.owners[0].type_name),
+        endpoint
+    )
+}
+
+/// The shapes `static` of an endpoint whose chain writes a native key (none otherwise).
+fn shapes_static(k: &TokenStream, model: &Model, endpoint: usize) -> TokenStream {
+    let Some(HeaderComposition::Dynamic(seq)) =
+        model.owners[endpoint].composed.as_ref().map(|c| &c.headers)
+    else {
+        return TokenStream::new();
+    };
+    let ident = shapes_ident(model, endpoint);
+    let n = seq.len();
+    let shapes = seq.iter().map(|&id| {
+        let c = model.contrib(id);
         let op = match (c.op, c.else_inherit) {
             (crate::syntax::Op::Introduce, _) => quote!(Set),
             (crate::syntax::Op::Append, _) => quote!(Append),
@@ -1863,21 +1888,6 @@ fn native_headers_code(
             (crate::syntax::Op::Override, true) => quote!(OverrideElseInherit),
             (crate::syntax::Op::Remove, _) => quote!(Remove),
         };
-        // Presence matters only for `override ... else inherit`; it is read without converting.
-        let present = if c.else_inherit {
-            let checks: Vec<TokenStream> = contrib_reads(model, id)
-                .into_iter()
-                .filter(|r| model.value(*r).optional)
-                .map(|r| {
-                    let place = places.value(model, r);
-                    quote!(#place.is_some())
-                })
-                .collect();
-            quote!((true #(&& #checks)*))
-        } else {
-            quote!(true)
-        };
-        let marked = flag_expr(model, c.sensitive, &[id]);
         let label = lit(&format!(
             "`{}{}` on `{}`",
             match c.op {
@@ -1889,12 +1899,50 @@ fn native_headers_code(
             model.key_text(&c.key),
             model.owners[id.owner].dotted
         ));
-        entries.push(quote!(#k::__private::HeaderEntry {
+        quote!(#k::__private::HeaderShape {
             op: #k::__private::HeaderOp::#op,
-            present: #present,
-            marked: #marked,
             label: #label,
-        }));
+        })
+    });
+    quote! {
+        #[doc(hidden)]
+        #[allow(non_upper_case_globals, dead_code)]
+        static #ident: [#k::__private::HeaderShape; #n] = [#(#shapes),*];
+    }
+}
+
+fn native_headers_code(
+    k: &TokenStream,
+    headers: &Headers,
+    model: &Model,
+    places: &Places,
+    endpoint: usize,
+    seq: &[ContribId],
+    explicit_media: bool,
+) -> TokenStream {
+    let n = seq.len();
+    let shapes = shapes_ident(model, endpoint);
+    let (bindings, names) = native_names(k, headers, model, seq);
+    let mut present = Vec::new();
+    let mut marked = Vec::new();
+    let mut sends = TokenStream::new();
+    for (i, &id) in seq.iter().enumerate() {
+        let c = model.contrib(id);
+        // Presence matters only for `override ... else inherit`; it is read without converting.
+        present.push(if c.else_inherit {
+            let checks: Vec<TokenStream> = contrib_reads(model, id)
+                .into_iter()
+                .filter(|r| model.value(*r).optional)
+                .map(|r| {
+                    let place = places.value(model, r);
+                    quote!(#place.is_some())
+                })
+                .collect();
+            quote!((true #(&& #checks)*))
+        } else {
+            quote!(true)
+        });
+        marked.push(flag_expr(model, c.sensitive, &[id]));
         if c.source.is_some() {
             let name = quote!(::core::clone::Clone::clone(__names[#i]));
             let sensitive = quote!(__plan.sensitive[#i]);
@@ -1908,13 +1956,83 @@ fn native_headers_code(
         let __names: [&#k::reqwest::header::HeaderName; #n] = [#(#names),*];
         let __plan = #k::__private::HeaderPlan::<#n>::compose(
             __names,
-            [#(#entries),*],
+            &#shapes,
+            [#(#present),*],
+            [#(#marked),*],
             #explicit_media,
             &__META,
         )?;
         __p.content_type_sensitive(__plan.content_type_sensitive);
         __p.accept(__plan.accept_sensitive, __plan.accept_removed);
         #sends
+    }
+}
+
+/// The client's `validate_header_names()`: the structural rules of every endpoint compiled
+/// under the current `cfg` whose chain writes a native key, evaluated on names only.
+fn validate_header_names(k: &TokenStream, model: &Model, headers: &Headers) -> TokenStream {
+    let client = &model.owners[0].type_name;
+    let mut blocks = TokenStream::new();
+    let mut checked = Vec::new();
+    for (index, owner) in model.owners.iter().enumerate() {
+        let Kind::Endpoint { body, .. } = &owner.kind else {
+            continue;
+        };
+        let Some(HeaderComposition::Dynamic(seq)) = owner.composed.as_ref().map(|c| &c.headers)
+        else {
+            continue;
+        };
+        let cfg = owners_cfg(model, &[index]);
+        let (bindings, names) = native_names(k, headers, model, seq);
+        let shapes = shapes_ident(model, index);
+        let name = lit(&owner.dotted);
+        let explicit_media = body.as_ref().is_some_and(|b| b.media.is_some());
+        blocks.extend(quote! {
+            #cfg
+            {
+                #bindings
+                __check.endpoint(#name, [#(#names),*], &#shapes, #explicit_media);
+            }
+        });
+        checked.push(format!("`{}`", owner.dotted));
+    }
+    let scope = if checked.is_empty() {
+        " No endpoint of this declaration writes a native `HeaderName` constant: every header name was checked when the declaration compiled, and this returns `Ok(())`.".to_owned()
+    } else {
+        format!(
+            " Endpoints whose header chain writes a native `HeaderName` constant (checked when compiled under their `cfg`): {}. The others use literal names only, checked when the declaration compiled.",
+            checked.join(", ")
+        )
+    };
+    let docs = [
+        " Checks the header names of every endpoint compiled under the current `cfg`, without a",
+        " client, a configuration, an endpoint value, a network or an async runtime: only the native",
+        " `HeaderName` constants are read. It applies the rules `prepare()` applies before any value",
+        " is converted (a header introduced twice, an `override`/`else inherit`/`remove` with",
+        " nothing to act on, a header field reqwest manages, a `content-type` header next to a",
+        " declared body media type); their verdict does not depend on which optional values are",
+        " present, so a problem reported here is the error that endpoint's `prepare()` returns for",
+        " every request, and `Ok(())` means no `prepare()` fails on header names. Values, their",
+        " conversion and servers are not checked.",
+        "",
+        " # Errors",
+        "",
+        " The endpoints whose header names break a rule, one problem per endpoint.",
+        "",
+    ]
+    .into_iter()
+    .chain(std::iter::once(scope.as_str()))
+    .map(lit);
+    quote! {
+        impl #client {
+            #(#[doc = #docs])*
+            pub fn validate_header_names() -> ::core::result::Result<(), #k::HeaderNameErrors> {
+                #[allow(unused_mut)]
+                let mut __check = #k::__private::NameCheck::new();
+                #blocks
+                __check.finish()
+            }
+        }
     }
 }
 
@@ -2069,6 +2187,7 @@ fn prepare_body(
                 headers,
                 model,
                 &places,
+                index,
                 seq,
                 explicit_media,
             ));
