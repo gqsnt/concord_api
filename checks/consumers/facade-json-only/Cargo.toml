@@ -1,0 +1,10 @@
+[package]
+name = "consumer-facade-json-only"
+version = "0.0.0"
+edition = "2024"
+publish = false
+
+[workspace]
+
+[dependencies]
+sdk = { package = "concord", path = "../../../crates/concord", default-features = false, features = ["json"] }

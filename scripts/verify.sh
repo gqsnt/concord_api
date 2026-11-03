@@ -90,6 +90,10 @@ step test-core cargo test --locked -p concord-core
 step test-extras-none cargo test --locked -p concord-extras --no-default-features
 step test-extras-json cargo test --locked -p concord-extras --no-default-features --features json
 step test-extras-form cargo test --locked -p concord-extras --no-default-features --features form
+# The architecture consumers (checks/consumers): core alone, the facade without extras (renamed),
+# extras + core without the macro, the full facade, the facade with `json` only; each its own
+# workspace, so feature unification cannot help them.
+step consumers scripts/consumers.sh
 # Separate consumers: reqwest's `multipart` feature belongs to examples/multipart only, so a
 # workspace-wide build (which unifies features) cannot hide a core dependency on it.
 step feature-isolation no_reqwest_multipart
@@ -110,6 +114,7 @@ fi
 
 if [[ $package == 1 ]]; then
   step package-check scripts/package-check.sh target/package-check
+  step consumers-packaged scripts/consumers.sh --packaged target/consumer-packages
 fi
 fi
 
