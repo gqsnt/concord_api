@@ -5,7 +5,7 @@ of [`examples/quickstart`](../examples/quickstart), a workspace member that is c
 checked on the wire by `cargo test -p concord-example-quickstart`; the same test fails if an
 excerpt here stops matching its source.
 
-You need Rust 1.85 or newer. The examples use edition 2024; other editions are not exercised.
+You need Rust 1.99.1 or newer. The examples use edition 2024; other editions are not exercised.
 
 ## 1. Create a crate and add the dependencies
 

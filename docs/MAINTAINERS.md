@@ -14,7 +14,7 @@ For people changing Concord itself. Users start at the [README](../README.md).
 | `examples/multipart` | multipart upload via reqwest's `multipart` feature (enabled only there; tested alone in `verify.sh`) |
 | `examples/renamed` | Concord depended on under another name (`$crate` paths) |
 | `checks/heap` | peak-heap check that `()` outputs drain without buffering (own crate: global allocator) |
-| `checks/clone-compat` | conditional request `Clone` (D08) on 1.85, current stable and nightly (non-blocking lane) |
+| `checks/clone-compat` | conditional request `Clone` (D08) on the pinned stable and nightly (non-blocking lane) |
 | `benches/baselines` | hand-written reqwest wrappers for the `examples/shapes` APIs |
 | `benches/criterion` | Criterion runtime suite and allocation counts, Concord vs hand-written reqwest (its `README.md`) |
 | `benches/scale` | synthetic-declaration generator and compile-time plan |
@@ -84,14 +84,21 @@ the request is built (names and presence only; no value is converted to find its
 ## Running the checks
 
 ```sh
-scripts/verify.sh          # fmt, clippy, workspace tests, feature combinations, rustdoc -D warnings
-scripts/verify.sh --msrv   # also the runtime suites and examples on Rust 1.85
+scripts/verify.sh                   # every gate that runs on all platforms
+scripts/verify.sh --package --bench # also the packaged-crate consumers and benchmark compilation
+scripts/verify.sh --nightly         # also the non-blocking nightly `Clone` checks
 ```
 
 It prints one `PASS`/`FAIL` line per step (logs in `target/verify-*.log`) and fails if a tracked
-file changed while it ran (for example `Cargo.lock`). Every cargo command uses `--locked`. The
-steps match `.github/workflows/ci.yml` (Linux and Windows jobs); which platforms ran for the
-current revision is recorded in `v4/finalization/STATUS.md`.
+file changed while it ran (for example `Cargo.lock`). Every cargo command uses `--locked`.
+
+`scripts/verify.sh` is the only list of gates: `.github/workflows/ci.yml` calls it (Linux with
+`--package --bench`, Windows without, a nightly lane with `--nightly-only`), and its
+`ci-inventory` step fails if the workflow names a cargo command of its own. The minimum supported
+Rust (`rust-version`) and the toolchain pinned in `rust-toolchain.toml` are the same release, so
+the ordinary run is also the minimum-version check; its `toolchain` step fails if they diverge,
+if a production package does not inherit the minimum, or if a script selects another stable
+release. Which platforms ran for a revision is recorded with that revision's campaign.
 
 Documentation checks run inside `cargo test --workspace`:
 
@@ -119,9 +126,9 @@ git diff crates/concord/tests/
 
 Review every changed snapshot before committing: a new message is a user-visible change
 ([`docs/DIAGNOSTICS.md`](DIAGNOSTICS.md) quotes several of them, and its excerpt check fails until
-the guide is updated). Snapshots are pinned to the toolchain in `rust-toolchain.toml` (1.97.1);
-rustc-origin messages change between compiler versions, which is why the MSRV job does not run
-the UI test.
+the guide is updated). Snapshots are pinned to the toolchain in `rust-toolchain.toml` (1.99.1, also
+the minimum supported Rust); rustc-origin messages change between compiler versions, so raising the
+pin means reviewing every changed snapshot.
 
 ## Benchmarks and scale
 

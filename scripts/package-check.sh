@@ -121,5 +121,4 @@ run() {
 }
 run 2 cargo test --offline
 run 1 cargo test --offline --no-default-features
-run 2 cargo +1.85 test --offline
 echo "PASS  package-check (consumer built against the extracted .crate files)"

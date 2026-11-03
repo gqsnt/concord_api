@@ -13,7 +13,7 @@ Two kinds of messages appear:
 - **Compiler messages** (`error[E....]`) come from rustc: missing struct fields, wrong argument
   counts, unmet trait bounds and lints. Concord shapes some of them (trait-bound messages for
   formats and values carry Concord's own text and notes) but their layout, wording and
-  sometimes their number depend on the compiler version. The snapshots are pinned to rustc 1.97.1
+  sometimes their number depend on the compiler version. The snapshots are pinned to rustc 1.99.1
   (`rust-toolchain.toml`); other versions print variations of them.
 
 None of these messages contains a runtime value: compile-time errors only quote the declaration.

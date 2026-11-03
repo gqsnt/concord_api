@@ -1,21 +1,31 @@
 #!/usr/bin/env bash
-# Runs every V4 quality gate and prints one PASS/FAIL line per step.
-# Usage: scripts/verify.sh [--msrv] [--nightly] [--package]
-#   --msrv     also runs the runtime suites on Rust 1.85
-#   --nightly  also runs the conditional-`Clone` checks on nightly (reported, never fails the run)
-#   --package  also builds and tests a consumer against the packaged .crate files (release check)
+# The one inventory of V4's quality gates, run locally and by CI (.github/workflows/ci.yml calls
+# this script; scripts/check-ci.py fails if the workflow lists its own cargo commands). Prints one
+# PASS/FAIL line per step.
+#
+# Usage: scripts/verify.sh [--package] [--bench] [--nightly | --nightly-only]
+#   (no flag)       every gate that runs on all platforms, on the pinned toolchain
+#   --package       also builds and tests consumers against the packaged .crate files
+#   --bench         also compiles the benchmarks (never runs them)
+#   --nightly       also runs the conditional-`Clone` checks on nightly (reported, never fails)
+#   --nightly-only  only the nightly checks (the non-blocking CI lane)
+#
+# The minimum supported Rust (`rust-version`) and the pin in rust-toolchain.toml are the same
+# release, so every step below is also the minimum-version check; `toolchain` verifies that.
 set -uo pipefail
 cd "$(dirname "$0")/.."
 
-msrv=0 nightly=0 package=0
+package=0 bench=0 nightly=0 only_nightly=0
 for arg in "$@"; do
   case "$arg" in
-    --msrv) msrv=1 ;;
-    --nightly) nightly=1 ;;
     --package) package=1 ;;
+    --bench) bench=1 ;;
+    --nightly) nightly=1 ;;
+    --nightly-only) nightly=1 only_nightly=1 ;;
     *) echo "unknown argument: $arg" >&2; exit 2 ;;
   esac
 done
+python=$(command -v python3 || command -v python) || { echo "python 3 is required" >&2; exit 2; }
 
 status=0
 step() {
@@ -49,8 +59,11 @@ rm -f target/verify-*.log  # the summary below reads only this run's logs
 echo "head: $(git rev-parse HEAD)  dirty: $(git status --porcelain --untracked-files=no | wc -l) file(s)"
 echo "rustc: $(rustc --version)"
 
+if [[ $only_nightly == 0 ]]; then
+step toolchain "$python" -I scripts/check-ci.py --toolchain
+step ci-inventory "$python" -I scripts/check-ci.py --workflow
 step fmt cargo fmt --all -- --check
-step records python3 -I scripts/check-records.py
+step records "$python" -I scripts/check-records.py
 step clippy cargo clippy --locked --workspace --all-targets -- -D warnings
 step test cargo test --workspace --locked
 step test-no-default cargo test --locked -p concord --no-default-features
@@ -70,23 +83,13 @@ step doc-json-only env RUSTDOCFLAGS="-D warnings" cargo doc --locked -p concord 
 step doc-form-only env RUSTDOCFLAGS="-D warnings" cargo doc --locked -p concord --no-deps --no-default-features --features form
 step doc-form env RUSTDOCFLAGS="-D warnings" cargo doc --locked -p concord --no-deps --features form
 
-if [[ $msrv == 1 ]]; then
-  # Every runtime suite (with `form`, for `forms`); the UI suites (ui, oracle_ui) pin rustc 1.97.1
-  # wording and are not run.
-  step msrv-concord cargo +1.85 test --locked -p concord --features form --lib \
-    --test slice --test values --test composition --test bodies --test representations \
-    --test sensitivity --test hygiene --test tls --test attributes --test display_errors \
-    --test native_limits --test native_headers --test d15_surfaces --test oracle_composition \
-    --test oracle_sensitivity --test formats --test forms --test native_keys --test header_plan \
-    --test error_inspection --test spelling_equivalence
-  step msrv-examples cargo +1.85 test --locked -p concord-macros -p concord-example-shapes \
-    -p concord-example-renamed -p concord-example-native -p concord-example-quickstart -p concord-example-riot -p concord-example-compat -p concord-hygiene-check -p concord-heap-check \
-    -p concord-clone-compat
-  step msrv-multipart-alone cargo +1.85 test --locked -p concord-example-multipart
+if [[ $bench == 1 ]]; then
+  step bench-build cargo bench --locked -p concord-bench --no-run
 fi
 
 if [[ $package == 1 ]]; then
   step package-check scripts/package-check.sh target/package-check
+fi
 fi
 
 if [[ $nightly == 1 ]]; then
@@ -97,7 +100,7 @@ if [[ $nightly == 1 ]]; then
   status=$saved
 fi
 
-for log in target/verify-test*.log target/verify-msrv*.log target/verify-nightly*.log; do
+for log in target/verify-test*.log target/verify-nightly*.log; do
   [[ -f "$log" ]] || continue
   passed=$(grep -o 'test result: ok. [0-9]* passed' "$log" | awk '{s+=$4} END {print s+0}')
   failed=$(grep -o '[0-9]* failed' "$log" | awk '{s+=$1} END {print s+0}')

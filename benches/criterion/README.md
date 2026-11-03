@@ -16,7 +16,6 @@ the comparisons are like for like.
 | `src/bin/alloc_count.rs` | deterministic allocation counts (counting global allocator) |
 | `summarize.py` | markdown summary of `target/criterion` (mean, 95% CI, change vs a named baseline) |
 
-Requires Rust ≥ 1.86 (criterion 0.8); the crate is outside the 1.85 MSRV gates.
 
 ## Benchmark IDs
 

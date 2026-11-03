@@ -69,7 +69,7 @@ fn record(i: u64) -> Record {
         name: format!("n{i}"),
         email: format!("u{i}@example.com"),
         score: i as f64 + 0.5,
-        active: i % 2 == 0,
+        active: i.is_multiple_of(2),
         tags: vec!["t".to_owned()],
     }
 }

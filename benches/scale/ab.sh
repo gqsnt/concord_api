@@ -6,12 +6,12 @@
 #        from row to row; each suite builds in its own target directory. Results: OUT/<row>.<suite>.json
 #        (hyperfine), OUT/sizes.tsv, OUT/env.txt. Summarize with benches/scale/ab_summary.py OUT.
 # Run alone on the machine (no concurrent builds). Environment: RUNS (3), WARMUP (1),
-# TOOLCHAIN (1.97.1), CARGO_BUILD_JOBS (6), ROWS (space-separated subset of row names),
+# TOOLCHAIN (1.99.1), CARGO_BUILD_JOBS (6), ROWS (space-separated subset of row names),
 # WARM (cargo package selection warmed before timing; default --workspace).
 set -euo pipefail
 out=$(realpath -m "$1"); shift
 suites=(); for s in "$@"; do suites+=("$(realpath "$s")"); done
-runs=${RUNS:-3}; warmup=${WARMUP:-1}; tc=${TOOLCHAIN:-1.97.1}
+runs=${RUNS:-3}; warmup=${WARMUP:-1}; tc=${TOOLCHAIN:-1.99.1}
 export CARGO_BUILD_JOBS=${CARGO_BUILD_JOBS:-6}
 mkdir -p "$out"
 {

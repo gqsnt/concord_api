@@ -15,7 +15,7 @@
 //!   only in using [`Cloneable`] instead of [`MoveOnly`] and must compile. A compile-fail case
 //!   therefore fails because the type is not `Clone`, on every toolchain. The `E0599` annotation
 //!   ("method exists but its trait bounds were not satisfied") is checked by nightly rustdoc only;
-//!   stable rustdoc (1.85, 1.97.1) ignores error codes, so on stable the twins carry the reason.
+//!   stable rustdoc (1.99.1) ignores error codes, so on stable the twins carry the reason.
 //!
 //! # Required path value
 //!

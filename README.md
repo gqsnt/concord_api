@@ -128,9 +128,9 @@ extra request. For anything the declaration does not cover there is a native exi
   checkout by path, or on a git dependency pinned to a commit. The declaration syntax and the
   generated API can still change between alpha revisions; breaking changes are listed in
   [`docs/MIGRATION.md`](docs/MIGRATION.md).
-- Verified on Linux x86_64 with rustc 1.97.1, the toolchain pinned in `rust-toolchain.toml`. The
-  minimum supported Rust version is 1.85 (`rust-version`, edition 2024), checked with rustc
-  1.85.1. The current state of each platform is in [`v4/finalization/STATUS.md`](v4/finalization/STATUS.md).
+- Requires Rust 1.99.1 or newer (`rust-version`, edition 2024); the same release is pinned in
+  `rust-toolchain.toml` for development. Verified on Linux x86_64; the state of each platform
+  for the current revision is recorded with its campaign under `v4/`.
 
 ## Installation and features
 
