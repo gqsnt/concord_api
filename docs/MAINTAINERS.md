@@ -6,7 +6,9 @@ For people changing Concord itself. Users start at the [README](../README.md).
 
 | Path | Contents |
 |---|---|
-| `crates/concord` | the runtime and the `api!` entry point (`macro_rules!` forwarding to the compiler) |
+| `crates/concord` | the public facade: re-exports `concord-core` and, by feature, `concord-extras`, and defines `api!` (a `macro_rules!` that hands `$crate::__macro::concord_core` to the compiler) |
+| `crates/concord-core` | the runtime: request composition, native headers, snapshots, the open `Encode`/`Decode`/`CodecError`/`ResponseHead` contracts, `Error`, `Prepared`/`Decoder`; knows no format |
+| `crates/concord-extras` | the standard formats (`Json`, `Text`, `Binary`, `Form`, `IgnoreContentType<F>`), written against the public traits only |
 | `crates/concord-macros` | the `api!` compiler (proc macro) |
 | `examples/quickstart` | the quick start; its tests also run the caller guide, doctest the author guide and the migration guide, and check every quoted excerpt in the documentation |
 | `examples/shapes` | three realistic API shapes with wire tests |
@@ -24,19 +26,25 @@ For people changing Concord itself. Users start at the [README](../README.md).
 
 ```text
 concord::api! { .. }                                  crates/concord/src/lib.rs
-  └─ __private::api_impl! { $crate; .. }              the proc macro receives the crate path first
-       crates/concord-macros/src/lib.rs               splits `$crate;`, then:
+  └─ $crate::__macro::api! { $crate::__macro::concord_core; .. }   the bridge: the runtime's path first
+       crates/concord-macros/src/lib.rs               splits the path at `;`, then:
        syntax.rs    parse into a syntax tree           structure only; no meaning
        template.rs  "literal {hole} {owner.hole}"      used by path, subdomain, query/header values
        model.rs     resolve, validate, compose         every rule decided at compile time
        emit.rs      generate Rust                      types, controls, navigation, prepare, Debug, docs
-  └─ generated code calls $crate::__private::*         crates/concord/src/__private.rs (runtime support)
+  └─ generated code calls <runtime path>::__private::* crates/concord-core/src/__private.rs (support)
        prepared.rs  Prepared<T>, Decoder<T>            send, send_raw, into_parts, decode, finish
        error.rs     Error, ErrorKind                   static Display, explicit raw accessors
-       repr.rs      Encode<T>, Decode<T>, Json/Text/Binary/Form, BodyError
+       codec.rs     Encode<T>, Decode<T>, ResponseHead, CodecError   the open format contracts
        value.rs     IntoValue<T>                       the sealed set of accepted conversions
        header.rs    ToHeaderValue (sealed)             how a value placed as a header becomes one
+  └─ a statement's format is a type path               resolved by rustc where it is written
+       crates/concord-extras/src/                      Json, Text, Binary, Form, IgnoreContentType
 ```
+
+The macro knows no format: it emits the path you wrote, and rustc resolves it. The runtime files
+named in the table below (`__private.rs`, `prepared.rs`, `error.rs`, `codec.rs`) are in
+`crates/concord-core/src/`.
 
 The generated code decides at runtime whether optional values are present (`if let`). Which
 contributions reach an endpoint's request is fixed by `model.rs`, except for header chains that
@@ -48,7 +56,7 @@ the request is built (names and presence only; no value is converted to find its
 | Rule (SEMANTICS section) | Compile time | Runtime |
 |---|---|---|
 | Grammar, keywords, statement order (§1) | `syntax.rs`: `Parse for Api`, `parse_child`, `parse_params`, `parse_entries` | — |
-| Formats: words, paths, statements, media types (`mime`), removed-form and `via`/alpha hints (§7) | `syntax.rs`: `parse_format`, `parse_output`, `parse_default`, `check_media_type`, `reject_via`; `model.rs`: `alpha` | — |
+| Formats: type paths (resolved by rustc, no codec table), statements, media types (`mime`), removed-form and `via`/alpha hints (§7) | `syntax.rs`: `parse_format`, `parse_output`, `parse_default`, `check_media_type`, `reject_via`; `model.rs`: `alpha` | — |
 | Format statements: nearest owner (endpoint first), consumers, statements with nothing to apply to, 8c conflict (§7) | `model.rs`: `nearest`, `endpoint_body`, `endpoint_output`, `flatten`, `check_media_conflict` | — |
 | Format codegen: hidden aliases gated by consumers' `cfg`s, body format statics (§7) | `emit.rs`: `format_aliases`, `consumers_cfg`, `format_for`, `prepare_body` | `__private.rs`: `BodyFormat`, `encode_body`, `Parts::finish` (`Content-Type` rule and flag) |
 | Accepted attributes (§1) | `syntax.rs`: `docs_only`, `child_attrs`, `parse_params` | — |
@@ -64,7 +72,7 @@ the request is built (names and presence only; no value is converted to find its
 | Header value routes: literal / formatted / `ToHeaderValue` (sealed), text follows `http` (§5) | `model.rs`: `Value::text`; `emit.rs`: `source_code`, `debug_fields` | `header.rs`: `ToHeaderValue`; `__private.rs`: `Parts::header`, `Text`, `text` |
 | Composition: slots, `append`/`override`/`else inherit`/`remove` (§5) | `model.rs`: `resolve_owner`, `compose`, `compose_family` | generated `prepare` (`emit.rs`: `prepare_body`) |
 | Build-check order, failing `Display` (§6) | `emit.rs`: `prepare_body` | `__private.rs`: `display_into`, `encode_segment`, `Parts` |
-| Execution, decoding (§6, §7) | `emit.rs`: endpoint `send`/`prepare` | `prepared.rs`, `__private.rs`: `decoder`, `drain`, `encode_body`; `repr.rs` |
+| Execution, decoding (§6, §7) | `emit.rs`: endpoint `send`/`prepare` | `prepared.rs`, `__private.rs`: `decoder`, `drain`, `encode_body`, `Parts::finish` (the `Accept` suggestion); `codec.rs` |
 | Errors (§8) | — | `error.rs` |
 | Sensitivity (§9) | `model.rs`: `SENSITIVE_NAMES`, `sensitive_name`, `refresh_sensitivity`, `propagate_sensitivity`, `native_conditions` (run-time conditions for native keys); `emit.rs`: `cond_expr`, `flag_expr` | `__private.rs`: `SENSITIVE_NAMES` (kept equal to the macro's by a unit test), `sensitive_name`, `Withheld`, `redacted_url`, `DebugDisplay`, `DebugHeader`, `Redacted`, `Parts::header` (flag OR), `HeaderPlan` (flags); `prepared.rs`: `Debug` |
 | Generated documentation | `emit.rs`: `owner_docs`, `defaults_line`, `request_summary`, `controls`, `argument_docs`, `override_notes`, `initially` | — |
@@ -75,8 +83,9 @@ the request is built (names and presence only; no value is converted to find its
 2. Implement it in the places above, compile-time first.
 3. Add or update an executable case: a runtime test in `crates/concord/tests/` and/or a UI test in
    `crates/concord/tests/ui/`; list it in `v4/TEST_MATRIX.md`.
-4. Update the guides that teach it (`docs/AUTHOR_GUIDE.md`, `docs/CALLER_GUIDE.md`) and the crate
-   documentation. Their code is compiled, so a stale example fails the build.
+4. Update the guides that teach it (`docs/AUTHOR_GUIDE.md`, `docs/CALLER_GUIDE.md`,
+   `docs/CUSTOM_FORMATS.md` for the format contracts) and the crate documentation. Their code is
+   compiled or checked against its source, so a stale example fails the build.
 5. A breaking change gets an old/new entry in `docs/MIGRATION.md` and, for a design decision, a
    record in `v4/finalization/DECISIONS.md`.
 6. Run `scripts/verify.sh` (below).
@@ -107,7 +116,8 @@ Documentation checks run inside `cargo test --workspace`:
 - `examples/quickstart`: the author and migration guides as doctests, the caller guide as tests,
   and `tests/doc_excerpts.rs`, which fails when a quoted excerpt in `README.md` or `docs/*.md`
   no longer matches its source, or when a Rust block there is neither compiled nor a labelled
-  excerpt.
+  excerpt. A document outside its `DOCTESTED` list (the format guide, for one) may hold Rust
+  blocks only as labelled excerpts of real files.
 
 ## UI snapshots
 
@@ -155,19 +165,22 @@ in `v4/evidence/PERF.md` (alpha) and `v4/refinement/evidence/tracks/compiler.md`
 
 ## The generated-code bridge
 
-Generated code calls `$crate::__private::*`: items that are public only so that expansions in
-other crates can reach them. They are `#[doc(hidden)]`, not part of the user API, and may change
-in any release. Consequences:
+Generated code calls `<runtime path>::__private::*`, where the runtime path is
+`$crate::__macro::concord_core` (the facade's `__macro` module re-exports `concord_core` and the
+proc macro): items that are public only so that expansions in other crates can reach them. They are
+`#[doc(hidden)]`, not part of the user API, and may change in any release. Consequences:
 
-- `concord` and `concord-macros` change together. `concord` depends on `concord-macros` with an
-  exact version requirement (`version = "=4.0.0-alpha.1"`), and both crates take the workspace
-  version, so a published pair can never mix.
+- `concord`, `concord-core` and `concord-macros` change together. `concord` depends on all three
+  and on `concord-extras`, and `concord-extras` on `concord-core`, with exact version
+  requirements (`version = "=4.0.0-alpha.1"`); every crate takes the workspace version, so a
+  published set can never mix. `concord-extras` uses only the public traits of `concord-core`.
 - Any change to a `__private` signature that `emit.rs` relies on is made in the same commit as the
-  `emit.rs` change, and both crates' versions move together.
+  `emit.rs` change, and the crates' versions move together.
 - Users never name `__private` items; a UI or doctest that needs one is a sign that a public API
   is missing.
-- The crate path reaches the proc macro explicitly (`$crate;` as the first tokens), so renamed
-  dependencies work (`examples/renamed`).
+- The runtime path reaches the proc macro explicitly (as the first tokens, ended by `;`), so
+  renamed dependencies work (`examples/renamed`). A format is not part of the bridge: its path is
+  the one the user wrote.
 
 ## Records and evidence
 

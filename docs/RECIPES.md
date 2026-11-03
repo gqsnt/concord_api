@@ -18,12 +18,44 @@ They use only the public surface: `Prepared::{send, send_raw, into_parts}`, `Dec
 (RFC 9457 problem details, a JSON error object).
 
 - **How:** `send()`; on error, `into_response()?` returns the unread response of a status error
-  (any other error propagates unchanged); decode its bytes with `<Json as Decode<Problem>>::decode`.
-  The status always stays with the document or with the reason it could not be read.
+  (any other error propagates unchanged); decode its bytes with
+  `<Json as Decode<Problem>>::decode_body((), bytes)`. That is a body-only decode: it checks no
+  response head, so the error document's `Content-Type` is not judged. The status always stays
+  with the document or with the reason it could not be read.
 - **Assumes:** the error body fits in memory. Against an untrusted server, read it with
   `response.chunk()` up to your own limit. A native read error is stored with `without_url()`.
+  `into_response()` also returns the response of a `Metadata` error (a 2xx whose head the format
+  refused); as written, the recipe would report it as a `Problem` or `ProblemUndecodable` with a
+  2xx status. Check `error.status()` first if a 2xx must not be taken for an error document.
 - **When not:** "404 means `None`" needs no document: `match` on `error.status()`
   ([caller guide](CALLER_GUIDE.md#6-errors)).
+
+### A response the format refuses
+
+A server labels its JSON `text/html` or `text/plain`, or does not label it, and `Json` refuses the
+response before parsing (`ErrorKind::Metadata`, the response kept unread).
+
+- **How:** fix the server or the test fixture first. Where that is impossible, write
+  `response IgnoreContentType<Json>;` on that endpoint (or on a scope of such endpoints). It skips
+  only `Json`'s `Content-Type` check: the status, the other head checks, the JSON decoding and the
+  `Accept` suggestion are unchanged. To look at what the server sent without decoding it,
+  `error.into_response()` returns the unread response.
+- **Assumes:** the exception is as narrow as the endpoint. On the client it would also accept a
+  proxy's HTML error page up to the point where the JSON parser fails.
+- **Evidence:** `r03_content_type_is_checked_unless_deliberately_ignored` in
+  [`crates/concord/tests/bodies.rs`](../crates/concord/tests/bodies.rs); the full rules are in
+  [Writing a format](CUSTOM_FORMATS.md#7-strict-json-and-the-explicit-adapter).
+
+### A response header that decides how to decode
+
+A service sends a schema version (or a format flag) in a header, and the body is only readable for
+the versions you support.
+
+- **How:** a format of your own reads the header in `context`, before the body is read, and hands
+  the parsed value to `decode_body` as its typed `Context`. A missing or unsupported value is a
+  `CodecError`, so the call fails with `ErrorKind::Metadata` and the body is never decoded.
+- **Where:** `Versioned` in [`crates/concord/tests/metadata.rs`](../crates/concord/tests/metadata.rs),
+  explained in [Writing a format](CUSTOM_FORMATS.md#5-a-vendor-format-that-checks-a-version-header).
 
 ### Streaming a large or endless body
 
@@ -100,8 +132,11 @@ directions.
   by its path, like `Json` (`format Ndjson;` on the endpoint, or on a scope for all
   its endpoints), with the payloads written as types (`body rows: Vec<StockRow>`,
   `-> Vec<StockRow>`).
-- **Assumes:** error descriptions name the line and column, never its content; the underlying
-  serde error (which may quote the body) is attached with `with_source`.
+- **Assumes:** error labels are static text; the position is numbers (`record`, `line`, `column`,
+  added with `CodecError::at`), never content. The underlying serde error (which may quote the
+  body) is attached with `with_source` and read with `source_unredacted()`. This `Ndjson` does
+  not override `check_content_type`, so it accepts any response `Content-Type`.
+  [Writing a format](CUSTOM_FORMATS.md#6-ndjson-with-positions) walks through it.
 
 ### Form-encoded bodies
 
@@ -159,10 +194,10 @@ synthetic; a fake server proves nothing about the real service.
 |---|---|---|
 | Read response headers (`ETag`, `Link`) and keep the typed decoding | `prepare()?.into_parts()`, execute, read the headers, then `decoder.decode(response)` | `tests/metadata.rs` |
 | Read a status error's headers without consuming it | `error.response()`; `into_response()` afterwards for the body | `tests/metadata.rs` |
-| An error inside a 2xx (`{"ok": false}`) | a typed output that models the envelope, or a custom `Decode` returning a `CodecError` | `tests/application.rs` |
+| An error inside a 2xx (`{"ok": false}`) | a typed output that models the envelope, or a custom `Decode` returning a `CodecError` (its detail goes to `with_source`, read with `source_unredacted()`) | `tests/application.rs` |
 | Nested or bracket form keys (`metadata[order]=7`) | a custom `Encode<T>` with the form media type; `form` itself is flat | `tests/forms.rs` |
 | A key spanning path segments (`docs/2026/report.md`) | `into_parts()`, then `url_mut().path_segments_mut()`; an ordinary path value is one segment (`/` is sent as `%2F`) | `tests/resource_key.rs` |
-| JSON or nothing (`200` with a document, `204` without) | a format of your own implementing `Decode<Option<T>>` that maps an empty body to `None` (`Json` keeps it an error) | `tests/json_or_empty.rs` |
+| JSON or nothing (`200` with a document, `204` without) | a format of your own implementing `Decode<Option<T>>` that decides on the status: a `204` needs no `Content-Type` and is `None`; any other 2xx must pass `Json`'s head check (`Json` stays strict; an empty `200` is a decode error) | `tests/json_or_empty.rs` |
 | JSON under another media type (Kubernetes server-side apply) | `request Json "application/apply-patch+yaml";` on the endpoint | `tests/apply.rs` |
 | A fresh value per request (an idempotency key) | an initialized value on the endpoint; a `.clone()` of the request handle repeats it (a deliberate retry); a client initializer runs once, in `new` | `tests/idempotency.rs` |
 | A new base URL or credential | `with_base_url` and setters return new handles; scopes created earlier keep the old values | `tests/refresh.rs` |

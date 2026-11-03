@@ -13,10 +13,10 @@ build on.
 
 | Task | Recipe (`src/`) | What it shows | Tests (`tests/`) |
 |---|---|---|---|
-| U14 | `errors::rename_item` | non-2xx → `into_response()?` → status + `<Json as Decode<Problem>>::decode(bytes)`; undecodable bodies keep the status and a content-free reason; non-status errors propagate unchanged | `errors.rs` |
+| U14 | `errors::rename_item` | non-2xx → `into_response()?` → status + `<Json as Decode<Problem>>::decode_body((), bytes)` (body-only: no response head check); undecodable bodies keep the status and a static label; non-status errors propagate unchanged (a `Metadata` error's 2xx response comes back too) | `errors.rs` |
 | U15, R07 | `native_edit::item_with_timeout` | `prepare()?.into_parts()`, per-request timeout and extra header, `decoder.finish(client.execute(req).await)`; a timeout is `ErrorKind::Transport` with `is_timeout()` | `native_edit.rs` |
 | U32 | `native_edit::search_filters` | interleaved repeated keys `f=..&op=..&v=..` appended with `url_mut().query_pairs_mut()` after the declared `limit=10` | `native_edit.rs` |
-| U16 | `repr::Ndjson`, `bodies::import_stock` | a downstream `Encode<Vec<T>>`/`Decode<Vec<T>>` format, named by path (`Ndjson rows: ..`, `-> Ndjson ..`); decode errors name the line, never its content | `bodies.rs` |
+| U16 | `repr::Ndjson`, `bodies::import_stock` | a downstream `Encode<Vec<T>>`/`Decode<Vec<T>>` format, named by path (`format Ndjson;`); decode errors carry `record`, `line` and `column` numbers under a static label, never the line's content (the serde error is the unredacted source) | `bodies.rs` |
 | U29, R09 | `repr::Form`, `bodies::send_feedback` | `application/x-www-form-urlencoded` through a custom `Encode` (`url::form_urlencoded`), written `request repr::Form;`; the built-in `form` format (feature `form`) does the same through serde | `bodies.rs` |
 | U28, R08 | `streaming::first_event_chunks` | `send_raw()` on a real `Transfer-Encoding: chunked` response, application-owned per-chunk `tokio::time::timeout`, early stop by dropping (the server observes the close) | `streaming.rs` |
 | U30, R12 | `policies::collect_items` | finite cursor loop with an application bound; exact query strings asserted; the unused cursor is returned | `policies.rs` |

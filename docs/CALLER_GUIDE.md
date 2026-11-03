@@ -240,10 +240,14 @@ local stand-in server.)
   error of kind `Build`. `Prepared`'s `Debug` is redacted; `request()` gives read-only access to
   the native request, whose own `Debug` prints the full URL (sensitive query values and path
   segments included; flagged header values show as `Sensitive`).
-- `send()` is `prepare()?.send()`: one `reqwest::Client::execute`, a 2xx check, then decoding with
-  the endpoint's format (the navigation method's documentation names it, with the body's
-  `Content-Type`). An endpoint without typed output accepts any 2xx and drains the body. No
-  retry, no extra request.
+- `send()` is `prepare()?.send()`: one `reqwest::Client::execute`, a 2xx check, the format's
+  check of the response head, then reading and decoding the body with the endpoint's format (the
+  navigation method's documentation names it, with the body's `Content-Type`). An endpoint without
+  typed output accepts any 2xx and drains the body. No retry, no extra request.
+- The request carries the format's `Accept` suggestion when the endpoint has a typed output and
+  you declared no `accept` (`Json` suggests `application/json`); `prepared.request().headers()`
+  shows what will be sent. A client default `Accept` of your `reqwest::Client` only goes out when
+  Concord sends none ([author guide, 5.8](AUTHOR_GUIDE.md#58-what-goes-on-the-wire-accept-and-content-type)).
 - `send_raw()` on a prepared request returns the native response, status unchecked, body unread.
 
 Excerpt of [`examples/quickstart/tests/caller_guide.rs`](../examples/quickstart/tests/caller_guide.rs):
@@ -282,10 +286,11 @@ Every call returns `Result<_, concord::Error>`.
 
 | `error.kind()` | Meaning | Useful accessors |
 |---|---|---|
-| `ErrorKind::Build` | the request could not be built from the values; nothing was sent | — |
+| `ErrorKind::Build` | the request could not be built from the values, or its body could not be encoded; nothing was sent | `codec_error()` (an encoding failure) |
 | `ErrorKind::Transport` | reqwest failed to send or to read the response (connect, timeout, ...) | `transport()` |
 | `ErrorKind::Status` | the server answered with a non-2xx status | `status()`, `response()`, `into_response()` |
-| `ErrorKind::Decode` | a 2xx body could not be decoded with the endpoint's format | `body_source()` |
+| `ErrorKind::Metadata` | the status was 2xx, but the endpoint's format refused the response head (for `Json`, its `Content-Type`) before the body was read | `response()`, `into_response()`, `codec_error()` |
+| `ErrorKind::Decode` | a 2xx body could not be decoded with the endpoint's format | `codec_error()` |
 
 `ErrorKind` is `#[non_exhaustive]`: keep a `_` arm when matching it. `error.endpoint()` names the
 endpoint (`Catalog.shop.product`). `Display` is `METHOD Client.scope.endpoint: <message>` and only
@@ -311,8 +316,9 @@ A status error keeps the **unread** response. `response()` borrows it, so its he
 `Fn(&concord::Error) -> bool`. `into_response()` returns it, and returns any other error unchanged
 as `Err`, so `?` propagates those. It consumes the error: read `status()` and `endpoint()` first if
 you need them. Reading the body is reqwest's (`response.bytes()` fails with a
-`reqwest::Error`, which does not convert into `concord::Error`). Decode the API's error document with any
-format's `Decode` impl. Excerpt of
+`reqwest::Error`, which does not convert into `concord::Error`). Decode the API's error document
+with a format's `decode_body`, which decodes bytes and checks no response head: the endpoint's
+format was never consulted for a non-2xx response. Excerpt of
 [`examples/quickstart/tests/caller_guide.rs`](../examples/quickstart/tests/caller_guide.rs):
 
 ```rust
@@ -353,17 +359,77 @@ assert_eq!(
 The error body is read into memory; against an untrusted server, read it with `chunk()` up to
 your own limit (see the [error-document recipe](RECIPES.md#error-documents)).
 
-`Error` has no `source()` chain on purpose. The underlying errors are reachable through
-`transport()` (the reqwest error, top-level URL removed) and `body_source()` (the decoder's
-error; `CodecError::body_source()` on a `CodecError` you decoded yourself); both are **not**
-redacted: reqwest's nested errors can contain URLs (a refused redirect keeps its target), TLS
-errors name hosts, and decoder errors quote the body. To log one, pass it explicitly
-(`error.transport().map(|e| e as &dyn std::error::Error)`) where that output may contain them.
+### A 2xx response the format refuses
+
+A 2xx status is not always enough: before it reads the body, Concord lets the endpoint's format
+check the response head. `Json` requires exactly one `Content-Type`, `application/json` or
+`application/*+json`; a response labelled `text/html`, or not labelled, is not parsed. That is an
+`ErrorKind::Metadata` error. Like a status error it keeps the response **unread**, so you can see
+what the server sent. `status()` is `Status`-only and is `None` here; `response()` and
+`into_response()` cover both kinds. `Display` shows the endpoint, a static label and never a
+header value or the body. Excerpt of
+[`crates/concord/tests/bodies.rs`](../crates/concord/tests/bodies.rs), a `Json` endpoint answered
+with `text/html`:
+
+```rust
+let (_server, api) = shop(html()).await;
+let error = api.item(2).send().await.unwrap_err();
+assert_eq!(error.kind(), ErrorKind::Metadata);
+assert_eq!(error.status(), None);
+assert_eq!(
+    error.to_string(),
+    "GET Shop.item: response metadata not accepted: the response Content-Type is not application/json or an application/*+json type"
+);
+assert_eq!(
+    error.response().unwrap().headers()["content-type"],
+    "text/html"
+);
+let body = error.into_response().unwrap().bytes().await.unwrap();
+assert_eq!(body.as_ref(), br#"{"id":2,"name":"y"}"#);
+```
+
+To find out why, read `error.codec_error().map(CodecError::label)` (a static text) and the
+headers in `error.response()`. To react, in this order of preference:
+
+1. Fix the server, or the test fixture, so that it labels what it sends. A response with a body
+   and no `Content-Type` is refused.
+2. Where the server cannot be fixed, select `IgnoreContentType<Json>` on that one endpoint
+   (`response IgnoreContentType<Json>;`). It skips the `Content-Type` check and nothing else.
+   Do not put it on the client to silence a few endpoints.
+3. Read the refused body yourself with `into_response()`.
+
+`into_response()` returns the response of a `Metadata` error too, and that response is a 2xx. A
+handler that treats every `Ok` from `into_response()` as an error document should look at
+`error.kind()` (or `status()`) first. The standard formats' rules are in the
+[format guide](CUSTOM_FORMATS.md#7-strict-json-and-the-explicit-adapter).
 
 Errors in documents a successful status carries (`{"ok": false}`) are the API's own: decode them
 as the typed output, or write a format that turns them into a `Decode` error (the
 [compatibility example](../examples/compat/README.md), case 2). Concord never inspects a body for
 error markers.
+
+### Reading the underlying error
+
+`Error` has no `source()` chain on purpose. The underlying errors are reachable through
+`transport()` (the reqwest error, top-level URL removed) and `codec_error()` (the format's
+`CodecError`: a static label, numeric positions such as `line` and `column`, and
+`source_unredacted()` for the parser's own error, if the format attached one); both are **not**
+redacted below the top level: reqwest's nested errors can contain URLs (a refused redirect keeps
+its target), TLS errors name hosts, and a parser's error quotes the body. `Display` and `Debug` of
+a `CodecError` show the label and the positions only. To read the unredacted source, ask for it;
+here the `Decode` error of a format that attached one. Excerpt of
+[`crates/concord/tests/error_inspection.rs`](../crates/concord/tests/error_inspection.rs):
+
+```rust
+let source = error
+    .codec_error()
+    .and_then(concord::CodecError::source_unredacted)
+    .unwrap();
+assert_eq!(source.to_string(), "refused: CONTENT");
+```
+
+To log a source, pass it explicitly (`error.transport().map(|e| e as &dyn std::error::Error)`)
+where that output may contain them.
 
 ## 7. Native requests
 
@@ -386,7 +452,10 @@ assert_eq!(product.id, 7);
 assert_eq!(server.requests()[0].header("x-request-id"), Some("req-1"));
 ```
 
-- `Decoder::decode(response)` applies the same handling to a response you already have.
+- `Decoder::decode(response)` applies the same handling to a response you already have: a
+  non-2xx status is a `Status` error, the format checks the head (`Metadata`), then the body is
+  read and decoded. `Decoder::<T>::new::<F>()` builds that handling for a format `F` and an
+  output `T` without any declaration, for a response you obtained yourself.
 - `reqwest::RequestBuilder::from_parts(client, request)` turns the pair back into a builder. Its
   `.header(..)` **appends** to the declared headers; `request.headers_mut().insert(..)` replaces
   one.
@@ -421,8 +490,8 @@ Not covered:
 - the native `reqwest::Request`, `Url` and `Response` `Debug` — including `prepared.request()` and
   anything after `into_parts()`. It prints the full URL, sensitive query values and path segments
   included; header values Concord flagged sensitive print as `Sensitive` (reqwest's own masking);
-- `Error::transport()` and `Error::body_source()`, and reqwest errors from requests you execute
-  yourself;
+- `Error::transport()` and the source of `Error::codec_error()`
+  (`CodecError::source_unredacted()`), and reqwest errors from requests you execute yourself;
 - redirects: reqwest forwards custom headers and sends a `Referer` with the query;
 - tracing, middleware, proxies and server logs;
 - the base URL, which is never treated as sensitive.

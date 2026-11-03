@@ -92,7 +92,8 @@ fn main() -> Result<(), concord::Error> {
 | `query { "k" = v; }`, `headers { "k" = "t {x}"; KEY = v; }` | blocks. **Left of `=` is a key**: a literal, or for headers a Rust path to a `HeaderName`. **Right of `=` is a value**: a template, or a value's name | [§4.2](AUTHOR_GUIDE.md#42-blocks-templates-and-references), [§4.8](AUTHOR_GUIDE.md#48-header-names-and-values) |
 | `append`, `override`, `override .. else inherit`, `remove` | change a key set further up; anything else on an inherited key is an error | [§4.3](AUTHOR_GUIDE.md#43-what-an-owner-may-do-with-an-inherited-key) |
 | `format F;`, `request F;`, `request F "type/subtype";`, `response F;` | formats on a client, scope or endpoint; the nearest wins per direction; a media type comes with its format | [§5.2](AUTHOR_GUIDE.md#52-where-formats-come-from) |
-| `Json`, `Text`, `Binary`, `Form`, or any path (`self::Csv`) | a format type: one implementing `Encode<T>`/`Decode<T>` (Concord's or yours), named like any Rust type | [§5.1](AUTHOR_GUIDE.md#51-the-formats), [§5.7](AUTHOR_GUIDE.md#57-custom-formats) |
+| `Json`, `Text`, `Binary`, `Form`, `IgnoreContentType<Json>`, or any path (`self::Csv`) | a format type: one implementing `Encode<T>`/`Decode<T>` (Concord's or yours), named like any Rust type | [§5.1](AUTHOR_GUIDE.md#51-the-formats), [§5.7](AUTHOR_GUIDE.md#57-custom-formats), [formats](CUSTOM_FORMATS.md) |
+| `ACCEPT = ".."`, `remove ACCEPT` | an authored `Accept` always wins over the format's suggestion; a chain ending in `remove` sends none from Concord | [§5.8](AUTHOR_GUIDE.md#58-what-goes-on-the-wire-accept-and-content-type) |
 | `#[sensitive]` | never printed by Concord; also every key, segment and label it feeds | [§7](AUTHOR_GUIDE.md#7-sensitive-values) |
 | `#[cfg(..)]`, `#[deprecated]`, `///` on scopes and endpoints | applied to the subtree or the navigation method; names are checked as if every `cfg` were on, so cfg-exclusive siblings need distinct names | [§8](AUTHOR_GUIDE.md#8-attributes) |
 
@@ -106,25 +107,34 @@ format statements, then children.
 | `Docs::new(http, DocsConfig { .. })` | builds the client; initializers run once here |
 | `.set_x(v)`, `.maybe_x(Some(v) / None)` | return the updated handle (`#[must_use]`); handles are cheap snapshots |
 | `docs.folder(7)`, `folder.rename(3, change)` | navigation: required values are positional, in declaration order |
-| `.send().await` | `prepare`, one `execute`, require 2xx, decode; never retries |
+| `.send().await` | `prepare`, one `execute`, require 2xx, check the response head, read and decode the body; never retries |
 | `.prepare()?` → `Prepared` | the native `reqwest::Request` (`request()`), `send()`, `send_raw()`, `into_parts()` |
 | `into_parts()` → `(Client, Request, Decoder)` | execute it yourself, then `decoder.finish(result)` or `decoder.decode(response)` |
-| `error.kind()`, `status()`, `endpoint()` | `Build`, `Transport`, `Status`, `Decode` |
-| `error.response()`, `error.into_response()` | a status error's unread response: borrowed (headers) or taken (body) |
-| `error.transport()`, `error.body_source()` | the underlying errors, which may contain URLs or body content |
+| `error.kind()`, `status()`, `endpoint()` | `Build`, `Transport`, `Status`, `Metadata`, `Decode`; `status()` is `Some` for `Status` only |
+| `error.response()`, `error.into_response()` | the unread response of a `Status` or a `Metadata` error: borrowed (headers) or taken (body) |
+| `error.codec_error()` | the format's `CodecError` (a `Metadata`, `Decode` or encoding `Build` error): static `label()`, `get("line")`, and `source_unredacted()` |
+| `error.transport()` | the reqwest error, which may contain URLs |
+| `<Json as Decode<T>>::decode_body((), bytes)` | decode an error document you read yourself: bytes only, no head check |
 
 ## Remember
 
 - The format, not the Rust type, decides the wire: `-> String` under `Json` decodes a JSON string;
   `request Text;` sends raw text. An empty response is not JSON: an endpoint that returns nothing
-  omits `->`; one that sometimes answers nothing needs a format that accepts an empty body
-  ([recipes](RECIPES.md#patterns-from-other-apis)).
+  omits `->`; one that sometimes answers nothing needs a format that decides on the status
+  ([formats](CUSTOM_FORMATS.md#7-strict-json-and-the-explicit-adapter)).
+- `Json` refuses a 2xx response that lacks exactly one `Content-Type` of `application/json` or
+  `application/*+json`, before reading the body (`ErrorKind::Metadata`, the response kept
+  unread). For a server you cannot fix, `response IgnoreContentType<Json>;` on that endpoint
+  skips only that check.
 - An optional body: `set_b(v)` always sends `v` encoded (`None` in an `Option<T>` body is `null`);
   `maybe_b(None)` sends no body.
 - Initializers run each time their owner is created: put a per-request value (an idempotency key)
   on the endpoint, not the client.
 - Handles are snapshots: after `with_base_url` or a setter on the client, create scopes again from
   the new handle.
-- Concord sends no `Accept` and never checks the response `Content-Type`; reqwest adds `accept:
-  */*`, `content-length` and `host` when it executes the request.
+- A typed output sends its format's `Accept` suggestion (`Json`: `application/json`) unless the
+  chain declares an `accept` or ends by removing one; an endpoint without `->` suggests nothing.
+  A request `Accept` replaces a `reqwest::Client` default; when Concord sends none, reqwest sends
+  its own (`*/*`). The response `Content-Type` is checked by the format and never compared with
+  `Accept`. reqwest also adds `content-length` and `host` when it executes the request.
 - The list of well-known secret names is a safety net; mark every secret `#[sensitive]`.

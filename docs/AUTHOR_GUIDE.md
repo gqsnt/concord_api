@@ -498,7 +498,9 @@ sensitivity flag; a `static` or `from_static` value is cloned without copying), 
   only value that can carry its own sensitivity flag is never written anywhere else, and a value's
   header and text placements are classified alike.
 - `remove` and an absent key concern Concord's own contributions: headers configured on the
-  `reqwest::Client` (default headers, user agent) are still added by reqwest.
+  `reqwest::Client` (default headers, user agent) are still added by reqwest. That holds for
+  `Accept` too: a request header, authored or suggested, replaces a client default, and when
+  Concord sends none, reqwest's own goes out (5.8).
 
 ```rust
 use concord::reqwest::{self, header::{self, ACCEPT, AUTHORIZATION, HeaderName, HeaderValue}};
@@ -636,13 +638,23 @@ output's format, and which statement they come from.
 
 ### 5.1 The formats
 
-| Format | Body (`Encode<T>`) | Output (`Decode<T>`) |
-|---|---|---|
-| `Json` (feature `json`, on by default) | any `T: Serialize`; `application/json` | any `T: DeserializeOwned`; the response `Content-Type` is ignored |
-| `Text` | `String`; `text/plain; charset=utf-8` | `String`; invalid UTF-8 is a decode error |
-| `Binary` | `Bytes` or `Vec<u8>`; `application/octet-stream` | `Bytes` or `Vec<u8>`, unchanged |
-| `Form` (feature `form`) | any `T: Serialize` with flat fields (a struct, a map, pairs); `application/x-www-form-urlencoded` | any `T: DeserializeOwned` |
-| a type path: `Csv`, `codecs::Csv` | your `Encode<T>` ([5.7](#57-custom-formats)) | your `Decode<T>` |
+| Format | Body (`Encode<T>`) | Output (`Decode<T>`) and its check of the response head | `Accept` it suggests |
+|---|---|---|---|
+| `Json` (feature `json`, on by default) | any `T: Serialize`; `application/json` | any `T: DeserializeOwned`; exactly one `Content-Type`, `application/json` or `application/*+json`, UTF-8; anything else is refused before the body is read | `application/json` |
+| `Text` (feature `extras`) | `String`; `text/plain; charset=utf-8` | `String`; any media type; only a declared non-UTF-8 `charset` is refused; invalid UTF-8 is a decode error | none |
+| `Binary` (feature `extras`) | `Bytes` or `Vec<u8>`; `application/octet-stream` | `Bytes` or `Vec<u8>`, unchanged; nothing is checked (`image/png` is fine) | none |
+| `Form` (feature `form`) | any `T: Serialize` with flat fields (a struct, a map, pairs); `application/x-www-form-urlencoded` | any `T: DeserializeOwned`; exactly one `application/x-www-form-urlencoded` | `application/x-www-form-urlencoded` |
+| `IgnoreContentType<F>` (feature `extras`) | `F`'s | `F`'s, without its `Content-Type` check | `F`'s |
+| a type path: `Csv`, `codecs::Csv` | your `Encode<T>` ([5.7](#57-custom-formats)) | your `Decode<T>` | your `ACCEPT`, if any |
+
+The check of the response head runs on a 2xx response **before the body is read**. A refusal is an
+error of kind `Metadata` that keeps the response unread; a body that does not decode is a
+`Decode` error ([caller guide](CALLER_GUIDE.md#6-errors)). `Json` is strict on purpose: a response
+labelled `text/html`, or not labelled at all, is not parsed as JSON. Where a server cannot be
+fixed, select the adapter on the one endpoint (or scope) that needs it, not on the client:
+`response IgnoreContentType<Json>;`. It skips only the `Content-Type` check; the status, the
+other head checks, the body decoding and the `Accept` suggestion are unchanged
+([5.8](#58-what-goes-on-the-wire-accept-and-content-type)).
 
 A format is named by its Rust type path, resolved by rustc where the statement is written, like any
 type: `Json` after `use concord::Json;`, `concord::Json`, an alias (`use concord::Json as Wire;`),
@@ -701,8 +713,9 @@ declared media type and a `content-type` header reaching the same endpoint are a
 ("keep one"), or a build error when the header is named by a native constant the macro cannot
 see through; `remove CONTENT_TYPE;` in the endpoint or an enclosing scope resolves it. The
 `Content-Type` Concord inserts carries the `content-type` header's sensitivity (`#[sensitive]`,
-sticky composition). Concord never sends `Accept` and never checks the response `Content-Type`, so
-`response` takes no media type; declare an `ACCEPT` header if the API needs one.
+sticky composition). The response is the other way round: its `Content-Type` is checked by the
+response format (5.1), never compared with any request header, so `response` takes no media type.
+A format may suggest an `Accept`, and an `ACCEPT` header you declare always wins (5.8).
 
 ```rust
 use concord::reqwest;
@@ -795,13 +808,15 @@ A body cannot have an initializer (`body b: T = ..` is a compile error): its pre
   without being buffered, and the output is `()`. A `response` statement does not apply (and is an
   error on the endpoint itself).
 - **`-> ()`** is a typed output like any other, decoded with its format: under `response Json;` the
-  body must be JSON `null`, so an empty 204 is a decode error. `-> Unit` for `type Unit = ()`
-  behaves the same. An endpoint that returns nothing omits `->`; one that answers either JSON or
-  nothing (`200` or `204`) needs a format of its own that accepts an empty body
-  ([recipes](RECIPES.md#patterns-from-other-apis)).
-- Any 2xx status is success; anything else is an error of kind `Status` with the unread response
-  (see the [caller guide](CALLER_GUIDE.md#6-errors)). `-> Option<T>` gives no meaning to 404:
-  `null` decodes to `None`, a 404 is still an error.
+  response must be labelled JSON and its body must be JSON `null`. A 204 without a `Content-Type`
+  is refused by the head check (`Metadata`), and an empty body labelled JSON is a decode error.
+  `-> Unit` for `type Unit = ()` behaves the same. An endpoint that returns nothing omits `->`;
+  one that answers either JSON or nothing (`200` or `204`) needs a format of its own that decides
+  on the status ([custom formats](CUSTOM_FORMATS.md#7-strict-json-and-the-explicit-adapter)).
+- Any 2xx status is success unless the format refuses the response head (`Metadata`); a non-2xx
+  status is an error of kind `Status`. Both keep the unread response (see the
+  [caller guide](CALLER_GUIDE.md#6-errors)). `-> Option<T>` gives no meaning to 404: `null`
+  decodes to `None`, a 404 is still an error.
 
 ```rust
 use concord::reqwest;
@@ -830,8 +845,9 @@ fn main() -> Result<(), concord::Error> {
 `Form` is built in behind the `form` feature (`concord = { .., features = ["form"] }`), like
 reqwest's own `form` feature: `request Form;` encodes any `Serialize` value with flat fields,
 `Vec<(String, String)>` keeps pair order and repeated names, and `response Form;` decodes a form
-response. An OAuth token endpoint takes a form and returns JSON. Excerpt of
-[`crates/concord/tests/forms.rs`](../crates/concord/tests/forms.rs):
+response, once its head is checked: exactly one `Content-Type`,
+`application/x-www-form-urlencoded`. An OAuth token endpoint takes a form and returns JSON.
+Excerpt of [`crates/concord/tests/forms.rs`](../crates/concord/tests/forms.rs):
 
 ```rust,ignore
     concord::api! {
@@ -851,10 +867,24 @@ error before anything is sent.
 ### 5.7 Custom formats
 
 Any other format is a type of your own implementing `Encode<T>` and/or `Decode<T>`, named by its
-path in a statement (`format Lines;`, `request codecs::Ndjson;`). There is no registry.
-Descriptions in `CodecError::new` must not contain body content: they are shown by Concord's
-`Display`. Attach the underlying error with `with_source`; it is reachable only through
-`Error::body_source`.
+path in a statement (`format Lines;`, `request codecs::Ndjson;`). There is no registry. The
+[format guide](CUSTOM_FORMATS.md) covers encoders, decoders, a format that reads a header,
+NDJSON with positions and testing; the essentials:
+
+- On a 2xx response a decoder runs in this order: `check_content_type` (its checks of the response
+  `Content-Type`; accepts by default), `context` (every other check of the head, producing an
+  owned `Context`), then Concord reads the body and calls `decode_body(context, bytes)`.
+  `decode_body` never sees the head. A refusal in the first two steps is `ErrorKind::Metadata`
+  and keeps the response unread; a failure in `decode_body` is `ErrorKind::Decode`.
+- A failure is a `CodecError`. `CodecError::new` takes a `&'static str` (a `String` does not
+  compile), `.at("line", n)` adds a numeric position, and `.with_source(e)` attaches the
+  underlying error, which may quote the body. `Display` and `Debug` never show it; it is
+  reachable only through `Error::codec_error()` and `CodecError::source_unredacted()`. Static
+  labels are a safer default, not a proof: a format is trusted code.
+- `const ACCEPT` suggests a request `Accept` (5.8). `decode_body` called directly decodes bytes
+  without any head check: the route for an API's error document.
+
+A stateless format names its context `()`:
 
 ```rust
 use concord::bytes::Bytes;
@@ -910,6 +940,109 @@ A format whose media type varies per body (a multipart boundary), a streamed bod
 response is not a format: use the native exits (`into_parts`, `send_raw`, reqwest's multipart).
 `examples/native` has NDJSON and pair-encoded form formats, and `examples/multipart` a multipart
 upload ([recipes](RECIPES.md)).
+
+### 5.8 What goes on the wire: `Accept` and `Content-Type`
+
+**The request `Accept`.** Concord adds a format's suggestion (`Decode::ACCEPT`) after the headers
+you declared are composed, and only as a fallback. The cases, as `crates/concord/tests/accept.rs`
+checks them on prepared requests and on the wire:
+
+| Endpoint and header chain | `Accept` Concord sends |
+|---|---|
+| typed output (`-> T`), the format suggests one (`Json`, `Form`), no `accept` declared | the suggestion (`application/json`) |
+| typed output, the format suggests none (`Text`, `Binary`, a format of yours without `ACCEPT`) | none |
+| no `->`, whatever the inherited format | none |
+| an `accept` value survives the chain: a literal, a native `HeaderValue`, an empty value, repeated values, q-values | exactly what you declared, in order, as written; never merged with the suggestion |
+| the chain ends with `remove accept` (below an authored value too) | none |
+| `remove accept`, then set again from an optional value | the value when present; the suggestion when absent (the chain no longer ends with a removal) |
+| the suggestion, when `accept` is sensitive on this endpoint (a `#[sensitive]` value is placed under it, even one that is absent) | the suggestion, flagged sensitive: `accept: <redacted>` in Concord's `Debug` |
+
+The suggestion is a request preference. The response is judged by the format's own check (5.1),
+never by comparing its `Content-Type` with `Accept`, and the suggestion never selects another
+format.
+
+**The reqwest boundary.** Concord's `Accept`, authored or suggested, replaces a default `Accept`
+of your `reqwest::Client` when the request is executed. When Concord sends none, reqwest sends its
+own: `*/*`, or the default you configured on the client. So suppressing Concord's suggestion does
+not mean that no `Accept` reaches the wire. To drop only the suggestion for an endpoint, give it a
+format that suggests none (a small wrapper of yours, see the
+[format guide](CUSTOM_FORMATS.md#8-the-accept-suggestion)); `remove ACCEPT` on a header nobody set
+is an error, as for any key (4.3).
+
+**The request `Content-Type`** (5.3), when a body is sent or a `content-type` header is declared:
+
+| Body sent | `request F "media/type";` | `content-type` header reaches the endpoint | `Content-Type` sent |
+|---|---|---|---|
+| no | — | no | none |
+| no | — | yes | the header |
+| yes | no | no | `F`'s `CONTENT_TYPE` (none when it is `None`) |
+| yes | yes | no | the declared media type |
+| yes | no | yes | the header, once |
+| yes | yes | yes | a compile error ("keep one"), or a build error with a native constant |
+
+**The response `Content-Type`** is checked by the response format on a 2xx before the body is
+read (the last column of 5.1). `IgnoreContentType<F>` skips that check and nothing else. A non-2xx
+status is a `Status` error before any format is consulted.
+
+Declarations checked on prepared requests (the example is compiled and run):
+
+```rust
+use concord::reqwest::{self, header::ACCEPT};
+use concord::{Binary, IgnoreContentType, Json, Text};
+use serde::Deserialize;
+
+#[derive(Deserialize)]
+pub struct Item {
+    pub id: u64,
+}
+
+concord::api! {
+    pub client Catalog {
+        base "https://catalog.example.com";
+        response Json;
+
+        GET item() -> Item { path "item"; }                    // the suggestion
+        GET legacy() -> Item {                                 // check skipped, suggestion kept
+            path "legacy";
+            response IgnoreContentType<Json>;
+        }
+        GET text() -> String { path "text"; response Text; }   // Text suggests nothing
+        GET blob() -> Vec<u8> { path "blob"; response Binary; }
+        GET ping() { path "ping"; }                            // no `->`: no suggestion
+        GET vendor() -> Item {                                 // authored: sent as written
+            path "vendor";
+            headers { ACCEPT = "application/vnd.acme.v2+json"; }
+        }
+
+        scope acme {
+            headers { "accept" = "application/vnd.acme.v2+json"; }
+            GET item() -> Item { path "acme"; }
+            GET raw() -> Item {                                // removed: nothing from Concord
+                path "raw";
+                headers { remove "accept"; }
+            }
+        }
+    }
+}
+
+fn accepts<T>(prepared: &concord::Prepared<T>) -> Vec<&str> {
+    let values = prepared.request().headers().get_all("accept");
+    values.iter().map(|v| v.to_str().unwrap()).collect()
+}
+
+fn main() -> Result<(), concord::Error> {
+    let api = Catalog::new(reqwest::Client::new());
+    assert_eq!(accepts(&api.item().prepare()?), ["application/json"]);
+    assert_eq!(accepts(&api.legacy().prepare()?), ["application/json"]);
+    assert!(accepts(&api.text().prepare()?).is_empty());
+    assert!(accepts(&api.blob().prepare()?).is_empty());
+    assert!(accepts(&api.ping().prepare()?).is_empty());
+    assert_eq!(accepts(&api.vendor().prepare()?), ["application/vnd.acme.v2+json"]);
+    assert_eq!(accepts(&api.acme().item().prepare()?), ["application/vnd.acme.v2+json"]);
+    assert!(accepts(&api.acme().raw().prepare()?).is_empty());
+    Ok(())
+}
+```
 
 ## 6. Wire formatting: `Display` and newtypes
 
@@ -1157,7 +1290,7 @@ each edit does to code that calls the endpoint:
 | Add a required body (`body b: T`) | breaks: a new positional argument, where the body is declared |
 | Add an optional body (`body b?: T`) | unchanged; no body is sent until `set_b` |
 | Change the body or output type | breaks where the old type was used |
-| Change a format or media type (`request`, `response`) | unchanged code; **different bytes on the wire** |
+| Change a format or media type (`request`, `response`) | unchanged code; **different bytes on the wire**, a different check of the response, and possibly a different `Accept` |
 | Move an endpoint to another scope | breaks: navigation goes through the new scope |
 | Rename an endpoint, scope or value | breaks: the method names follow |
 | Move a value between owners | breaks: it is supplied where it is now declared |

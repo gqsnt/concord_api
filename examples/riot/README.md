@@ -38,7 +38,9 @@ The whole declaration is [`src/api.rs`](src/api.rs). The key is a native `Header
 marked `#[sensitive]`: it is sent in `x-riot-token` (not as `Authorization`) and withheld from
 Concord's `Debug` output and errors. Each scope takes the route type its operations accept
 (account and match routing differ; see [`SOURCES.md`](SOURCES.md)). Data Dragon is a separate,
-credential-free client, so the key can never reach that host.
+credential-free client, so the key can never reach that host. The declaration states `Accept`
+itself; `format Json;` alone would make Concord suggest the same value, and a declared `Accept` is
+sent as written.
 
 ```rust,ignore
 let riot = Riot::new(reqwest::Client::new(), RiotConfig { key });
@@ -59,7 +61,29 @@ cargo test -p concord-example-riot
 
 The tests resolve Riot's routed host names to a loopback server and assert exact methods, hosts,
 paths, queries, headers and body bytes, decoding of the fixtures, non-success bodies (JSON, empty,
-HTML), `429` handling, and that the key appears on the wire but not in Concord's output.
+HTML), `429` handling, redirects, and that the key appears on the wire but not in Concord's output.
+
+The fixture replies carry realistic `Content-Type`s (`application/json`, `text/plain`,
+`application/octet-stream` for the PNG), because `Json` checks the response head before it parses
+the body. A `200` that is not labelled JSON (a proxy's HTML page) is an `ErrorKind::Metadata` error
+whose response stays readable; a body labelled JSON that is not JSON is an `ErrorKind::Decode`
+error (`tests/errors.rs`). Neither prints the key.
+
+## Why the client refuses redirects
+
+The `reqwest::Client` that `Riot` uses is built with [`http_policy`](src/lib.rs) (live mode:
+`live_http_client()`, which adds HTTPS-only): redirects are never followed and each request has a
+10-second timeout. reqwest follows up to ten redirects by default and, on a cross-origin redirect,
+removes only a fixed list of credential headers (`Authorization`, cookies, proxy credentials).
+`X-Riot-Token` is not on that list, so a followed redirect would send the API key to the new
+origin. With the policy a `3xx` reaches the caller: `send()` reports it as an `ErrorKind::Status`
+error that holds the unread response, and `send_raw()` returns it.
+
+This is the application's transport choice, made where the `reqwest::Client` is built; Concord
+itself has no redirect policy and never configures your client. [`tests/redirects.rs`](tests/redirects.rs)
+shows both sides on two loopback origins: with the policy the second origin receives nothing, and
+a control with reqwest's default policy shows the key arriving there. If a future reqwest strips
+that header, the control fails and the comment on `http_policy` must change.
 
 Optional, read-only live mode (your key, in the environment; at most `4 + 5` GET requests, no
 retries, never the tournament stub):

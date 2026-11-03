@@ -12,17 +12,21 @@ Shows a private `client Metadata`, declared and used inside the library. Its wra
 `Prepared<Document>`. The caller uses `into_parts()`, executes the native request, reads `ETag:
 v7`, and calls the endpoint's `Decoder::decode(response)` to retain its declared JSON decoding.
 A 409 is retained as an error: `Error::response()` borrows status and `ETag: v8`, then
-`into_response()` supplies the unread body for `<Json as Decode<Document>>::decode`.
+`into_response()` supplies the unread body for `<Json as Decode<Document>>::decode_body((), bytes)`,
+a body-only decode that checks no response head.
 Outside facts: **synthetic**, modelled on a document service and not verified here.
 
 ## 2. An application error inside a 2xx (`tests/application.rs`)
 
 Shows both explicit routes for `{"ok":false,"error":"synthetic-detail"}` with HTTP 200.
 The JSON endpoint returns a typed envelope for the caller to check; `response Checked;` names
-our `Decode<Envelope>` marker, which returns a `BodyError` with the content-free description
-`application rejected request`. The detail is accessible through `Error::body_source()` and
+our `Decode<Envelope>` marker, which returns a `CodecError` with the static label
+`application rejected request` (an `ErrorKind::Decode` error). The detail goes to `with_source`
+and is accessible through `Error::codec_error()` and `CodecError::source_unredacted()`; it is
 absent from error Display/Debug. The custom decoder also accepts an `ok: true` envelope.
-Concord does not inspect bodies for error markers; this policy is entirely our decoder's.
+`Checked` implements neither `check_content_type` nor `ACCEPT`: it accepts any `Content-Type` and
+suggests no `Accept`, and calls `Json`'s `decode_body` for the bytes. Concord does not inspect
+bodies for error markers; this policy is entirely our decoder's.
 Outside facts: **synthetic**, modelled on an envelope-based service and not verified here.
 
 ## 3. Flat versus nested forms (`tests/forms.rs`)
@@ -33,11 +37,13 @@ The flat struct sends exactly `title=blue+pen%26ink&order=7`. The nested struct 
 another request reaches the server. The exact observed Display is:
 
 ```text
-POST Forms.nested: request not built: body: form encode error
+POST Forms.nested: request not built: body: the value cannot be encoded as a form
 ```
 
-The underlying source says `unsupported value`. Initial triage expected the same error without
-`body:`; the test now records the actual complete output, without relaxing the assertion.
+The sentence after `body:` is the `CodecError` label of `Form` (static text); the underlying
+source, reachable through `Error::codec_error()` and `CodecError::source_unredacted()`, says
+`unsupported value`. Initial triage expected the same error without `body:`; the test records the
+actual complete output, without relaxing the assertion.
 `request Brackets;` explicitly writes the bracket key and sends exactly
 `metadata%5Border%5D=7` (decoded key `metadata[order]`).
 Outside facts: **synthetic**, modelled on a metadata-accepting form service and not verified here.
@@ -112,11 +118,15 @@ header is the compile error.
 
 ## 9. JSON or nothing (`tests/json_or_empty.rs`, added by the coordinator)
 
-An endpoint that answers `200` with a JSON document or `204` with no body. Concord's `json`
-format keeps an empty body an error (JSON has no empty document), so the application declares a
-small format of its own: `JsonOrEmpty` implements `Decode<Option<T>>`, maps an empty or
-whitespace-only body to `None` and decodes anything else as JSON; the endpoint names it with
-`response JsonOrEmpty;` and returns `-> Option<Playback>`. A malformed body is still an error.
+An endpoint that answers `200` with a JSON document or `204` with no body. `Json` has no empty
+document and requires a JSON `Content-Type`, so the application declares a small format of its
+own: `JsonOrEmpty` implements `Decode<Option<T>>` and decides on the status, in the head, before
+the body is read. A `204` needs no `Content-Type` and is `None` (its context says so). Any other
+2xx must pass `Json`'s head check, so a `200` without a JSON `Content-Type` is an
+`ErrorKind::Metadata` error, and then decodes as JSON: `null` is `None`, an empty `200` and a
+malformed body are `ErrorKind::Decode` errors. The format keeps `Json`'s `Accept` suggestion. The
+endpoint names it with `response JsonOrEmpty;` and returns `-> Option<Playback>`; `Json` itself
+stays strict.
 Outside facts: **synthetic**, modelled on a media player service and not verified here.
 
 ## Validation
@@ -127,7 +137,9 @@ Run offline from the workspace root after updating the lock entry:
 cargo test -p concord-example-compat --locked --offline
 cargo clippy -p concord-example-compat --locked --offline --all-targets -- -D warnings
 cargo fmt -p concord-example-compat -- --check
-cargo +1.85 test -p concord-example-compat --locked --offline
 ```
 
+The toolchain is the one pinned in `rust-toolchain.toml`, which is also the minimum supported Rust
+(`rust-version`), so this run is the minimum-version check too. The crate is edition 2021 on
+purpose (a downstream consumer of the public API).
 The lock change adds only this workspace package, using already locked dependencies.

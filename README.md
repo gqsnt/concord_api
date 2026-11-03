@@ -13,7 +13,8 @@ Compared with a small handwritten reqwest client, the declaration replaces:
   `X_API_KEY`), composed by the header they name, and checked by `http` itself;
 - bookkeeping of which optional parameters are present;
 - body encoding (stated once for a mostly-JSON API with `format Json;`, and on an endpoint that
-  differs: `response Text;`), the status check and response decoding;
+  differs: `response Text;`), the status check and response decoding, with the format checking a
+  response's `Content-Type` before it parses the body;
 - keeping secrets out of the client's `Debug` output and out of error messages.
 
 Mistakes in the declaration — an unknown value, an invalid header name or base URL, a type without
@@ -108,6 +109,24 @@ pub async fn run(base_url: &str, token: String) -> Result<(), Box<dyn std::error
 `cargo run -p concord-example-quickstart` runs it against a server on 127.0.0.1; the
 [quick start](docs/QUICKSTART.md) walks through it.
 
+## Formats
+
+A format is an ordinary Rust type that implements `Encode<T>` and/or `Decode<T>`, named by its
+path in a statement: `format Json;`, `response Text;`, `request my_sdk::Csv;`. Concord ships
+`Json`, `Text`, `Binary`, `Form` and the adapter `IgnoreContentType<F>`; they have no privilege
+over a format of yours.
+
+- On a successful response the format checks the response head **before the body is read**.
+  `Json` requires exactly one `Content-Type`, `application/json` or `application/*+json`; a
+  response labelled `text/html`, or not labelled, is an `ErrorKind::Metadata` error that keeps the
+  response unread. Where a server cannot be fixed, `response IgnoreContentType<Json>;` on that
+  endpoint skips only that check.
+- An endpoint with a typed output sends its format's `Accept` suggestion (`Json`:
+  `application/json`) unless you declare an `accept` header, which is sent as written. The
+  response `Content-Type` is never compared with it.
+- Your own format reads the head (a version header, say), keeps typed state for its body decoder
+  and reports positions without content: [Writing a format](docs/CUSTOM_FORMATS.md).
+
 ## The transport boundary
 
 You build the `reqwest::Client` and pass it to `new`; Concord uses it for every request of that
@@ -144,14 +163,15 @@ tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
 | Feature | Default | Effect |
 |---|---|---|
 | `json` | yes | the `Json` format (`format Json;`, `request Json;`, `response Json;`), using serde and serde_json; implies `extras` |
-| `extras` | yes (through `json`) | the standard formats without serializer dependencies: `Text` and `Binary` |
+| `extras` | yes (through `json`) | the standard formats without serializer dependencies: `Text`, `Binary` and the adapter `IgnoreContentType<F>` |
 | `form` | no | the `Form` format (`request Form;`, `application/x-www-form-urlencoded`), using serde and serde_urlencoded; implies `extras` |
 | `reqwest-defaults` | yes | reqwest's own default features (TLS, HTTP/2, system proxy) |
 
-The standard formats live in `concord-extras` and the runtime in `concord-core`; `concord`
+The runtime lives in `concord-core` and the standard formats in `concord-extras`; `concord`
 re-exports both with the `api!` macro, so an application depends on `concord` only. With
 `default-features = false` there is no standard format at all (a format of your own works the
 same: implement `concord::Encode`/`concord::Decode`); enable `extras`, `json` or `form` for them.
+A crate that only offers formats can depend on `concord-core` instead.
 
 With `default-features = false`, choose reqwest's features yourself: depend on `reqwest` (the
 same major version that Concord re-exports as `concord::reqwest`) with the features you need.
@@ -168,9 +188,11 @@ breaking Concord release.
 | The whole language on one page | [Cheat sheet](docs/CHEATSHEET.md) |
 | Write a declaration: scopes, values, paths, query and headers, body and response formats | [Author guide](docs/AUTHOR_GUIDE.md) |
 | Use a generated client: construction, options, errors, native requests | [Caller guide](docs/CALLER_GUIDE.md) |
-| Error documents, timeouts, streaming, custom formats, retries, pagination; patterns from other APIs | [Recipes](docs/RECIPES.md), [`examples/compat`](examples/compat) |
+| Write your own `Encode`/`Decode` format; read the response head; test it | [Writing a format](docs/CUSTOM_FORMATS.md) |
+| What goes on the wire: `Accept` and `Content-Type` | [Author guide, 5.8](docs/AUTHOR_GUIDE.md#58-what-goes-on-the-wire-accept-and-content-type) |
+| Error documents, timeouts, streaming, retries, pagination; patterns from other APIs | [Recipes](docs/RECIPES.md), [`examples/compat`](examples/compat) |
 | Read a compile error | [Diagnostics](docs/DIAGNOSTICS.md) |
-| Upgrade from in-place formats, from `via`, from the V4 alpha or from V3 | [Migration](docs/MIGRATION.md) |
+| Upgrade from format words and the body-only codec traits, from in-place formats, from `via`, from the V4 alpha or from V3 | [Migration](docs/MIGRATION.md) |
 | A complete real-world client (Riot Games), offline tests, sources | [`examples/riot`](examples/riot) |
 | The precise rules (truth tables, ordering, sensitivity) | [Semantics](v4/SEMANTICS.md) |
 | Work on Concord itself | [Maintainers](docs/MAINTAINERS.md) |

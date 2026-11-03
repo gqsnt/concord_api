@@ -1,10 +1,14 @@
 # Migration
 
-Five independent paths:
+Six paths: the first two are one release (the modular V4), the others are older, newest first:
 
 - [From format words to format types](#from-format-words-to-format-types) — the modular V4
   (`concord-v4-modular`), coming from `concord-v4-final`. Manual, guided by the compiler; callers
   need no change.
+- [From body-only codecs to the codec contract](#from-body-only-codecs-to-the-codec-contract) —
+  the same release. A custom `Decode` is rewritten, `BodyError` becomes `CodecError`, and callers
+  can meet new errors: a response is checked before it is parsed, and typed JSON endpoints send
+  an `Accept`.
 - [From in-place formats to statements](#from-in-place-formats-to-statements) — the body and
   response syntax and the header names of the final V4 (`concord-v4-final`), coming from
   `concord-v4-native-repr`. Manual, guided by the compiler; callers need no change.
@@ -43,6 +47,224 @@ code are unchanged.
 There is no automatic rewriter (the earlier regex script stays withdrawn): the compiler lists every
 statement to change, and each change is one word.
 
+## From body-only codecs to the codec contract
+
+The same release as the format types above. `Decode` now reads the response head, a format's
+failure is a `CodecError`, and the standard formats check a response before they parse it. The
+compiler finds every place that names the old API. The changes in behaviour show up at run time,
+on the first calls against a server or a test fixture.
+
+| Before | After |
+|---|---|
+| `Decode<T>`: `fn decode(body: Bytes) -> Result<T, BodyError>` | `type Context`, `fn context(&ResponseHead) -> Result<Self::Context, CodecError>`, `fn decode_body(Self::Context, Bytes) -> Result<T, CodecError>`; optional `check_content_type` and `ACCEPT` |
+| `Encode<T>`: `fn encode(T) -> Result<Body, BodyError>` | `fn encode(T) -> Result<Body, CodecError>` |
+| `BodyError::new(impl Into<Cow<'static, str>>)`, `description()` | `CodecError::new(&'static str)`, `label()`; numbers with `.at("line", n)` |
+| `BodyError::body_source()`, `Error::body_source()` | `CodecError::source_unredacted()`, `Error::codec_error()` |
+| `<Json as Decode<T>>::decode(bytes)` | `<Json as Decode<T>>::decode_body((), bytes)` |
+| `ErrorKind::{Build, Transport, Status, Decode}` | plus `ErrorKind::Metadata` |
+| `Error::response()`, `into_response()`: the response of a `Status` error | the response of a `Status` **or** a `Metadata` error |
+| `Json` ignores the response `Content-Type` | `Json` refuses a response without exactly one `application/json` or `application/*+json` `Content-Type` |
+| Concord sends no `Accept` | a typed output sends its format's suggestion, unless you declare an `accept` |
+| one crate | four crates; you still depend on `concord` only |
+
+### What you may notice when you run
+
+The first two items change what a working program does; the others change what it reads or
+matches.
+
+**A response is refused before it is parsed.** A 2xx response whose head the endpoint's format
+refuses is an `ErrorKind::Metadata` error, and its body is not read. `Json` refuses a response
+that has no `Content-Type`, more than one (even equal), a comma-joined or malformed one, a media
+range, a type other than `application/json` or `application/*+json`, or a `charset` other than
+`utf-8` or `us-ascii`. `Form` is as strict about `application/x-www-form-urlencoded`. `Text` refuses only a
+declared non-UTF-8 `charset`. `Binary` checks nothing. Typical causes: a mock server or fixture
+that sends a bare body, a `204` or `201` without a `Content-Type` on an endpoint with `->`, a
+proxy's HTML page, a service that labels JSON `text/plain`.
+
+- *Inspect.* `error.kind() == ErrorKind::Metadata`; `error.codec_error().map(CodecError::label)`
+  is a static text such as ``the response Content-Type is not application/json or an
+  application/*+json type``; `error.response()` borrows the response (its `Content-Type`), and
+  `error.into_response()` takes it with the body unread.
+- *React.* Fix the server or the fixture so that it labels what it sends. Where it cannot be
+  fixed, select the adapter on **that endpoint** (or a scope of such endpoints), not on the
+  client: `response IgnoreContentType<Json>;` skips the `Content-Type` check and nothing else
+  (status, other head checks, JSON decoding and the `Accept` suggestion stay). An endpoint that
+  answers nothing omits `->`; one that answers JSON or nothing needs a format of its own
+  ([Writing a format](CUSTOM_FORMATS.md#7-strict-json-and-the-explicit-adapter)).
+- *Check your handlers.* `into_response()` returned only non-2xx responses before; it now also
+  returns the 2xx response of a `Metadata` error. Code that treats every `Ok` as an error
+  document should look at `error.kind()` or `error.status()` (`Some` for `Status` only) first.
+  `ErrorKind` is `#[non_exhaustive]`, so a `match` with a `_` arm compiles and sends a `Metadata`
+  error there.
+
+**Typed endpoints send an `Accept`.** An endpoint with `-> T` under `Json` now sends `Accept:
+application/json` (under `Form`, `application/x-www-form-urlencoded`) unless the header chain
+declares an `accept`, which is sent as written. Before, Concord sent none and reqwest added its
+`*/*`. Endpoints without `->` and the `Text` and `Binary` formats suggest nothing, as before.
+A `headers { ACCEPT = "application/json"; }` that you already had is unchanged.
+
+- *Inspect.* `prepared.request().headers()["accept"]`. A test server that matches the exact header
+  set sees a new header.
+- *React.* Declare the `Accept` you want; it wins. To drop only the suggestion, use a format that
+  suggests none (a small wrapper, [Writing a format](CUSTOM_FORMATS.md#8-the-accept-suggestion)).
+  `remove ACCEPT` is for a header you declared. When Concord sends no `Accept`, reqwest sends its
+  own, so no declaration makes the header disappear from the wire. The full table is in the
+  [author guide](AUTHOR_GUIDE.md#58-what-goes-on-the-wire-accept-and-content-type).
+
+**JSON error text.** The messages of a failed JSON decode are static labels with positions
+(`the body is not valid JSON`, `the JSON does not match the expected type`, `the JSON ends early`;
+`line` and `column` through `CodecError::get`). serde_json's own message, which quotes the input,
+is only in `source_unredacted()`. A test that matches the old message text matches the label now.
+An empty or whitespace-only body is a decode error for every target type (`()` and `Option<T>`
+included), with a label that says so; `null` is valid.
+
+**Names.** `concord::BodyError` is gone (`CodecError`), `Error::body_source()` is gone
+(`Error::codec_error()`, then `CodecError::source_unredacted()`), and `Decode::decode` is gone
+(`decode_body`). `Error::status()` is still `Some` for `Status` only.
+
+**Crates and features.** `concord-core` (the runtime and the open `Encode`/`Decode`/`CodecError`
+contracts), `concord-extras` (`Json`, `Text`, `Binary`, `Form`, `IgnoreContentType<F>`, written
+against the public traits) and `concord-macros` sit behind `concord`, which re-exports them with
+`api!`. Applications keep one dependency. `json` (default) implies `extras`; `Text`, `Binary` and
+`IgnoreContentType` need `extras`, `Form` needs `form`.
+
+### A custom `Decode`
+
+Before (`concord-v4-final`, does not compile any more):
+
+```rust,ignore
+use concord::bytes::Bytes;
+use concord::{BodyError, Decode, Encode, reqwest};
+
+pub struct Lines;
+
+impl Encode<Vec<String>> for Lines {
+    const CONTENT_TYPE: Option<&'static str> = Some("text/plain; charset=utf-8");
+
+    fn encode(value: Vec<String>) -> Result<reqwest::Body, BodyError> {
+        Ok(reqwest::Body::from(value.join("\n")))
+    }
+}
+
+impl Decode<Vec<String>> for Lines {
+    fn decode(body: Bytes) -> Result<Vec<String>, BodyError> {
+        let text = String::from_utf8(body.into())
+            .map_err(|e| BodyError::new("the response is not UTF-8").with_source(e))?;
+        Ok(text.lines().map(str::to_owned).collect())
+    }
+}
+```
+
+rustc reports three errors for the `Decode` impl and points at each: ``unresolved import
+`concord::BodyError` `` (it suggests `CodecError`), ``method `decode` is not a member of trait
+`Decode` `` and ``not all trait items implemented, missing: `Context`, `context`, `decode_body` ``
+(it prints a skeleton for each).
+
+After:
+
+```rust
+use concord::bytes::Bytes;
+use concord::{CodecError, ContentTypeField, Decode, Encode, ResponseHead, reqwest};
+
+pub struct Lines;
+
+impl Encode<Vec<String>> for Lines {
+    const CONTENT_TYPE: Option<&'static str> = Some("text/plain; charset=utf-8");
+
+    fn encode(value: Vec<String>) -> Result<reqwest::Body, CodecError> {
+        Ok(reqwest::Body::from(value.join("\n")))
+    }
+}
+
+impl Decode<Vec<String>> for Lines {
+    type Context = ();
+
+    // New and optional: the format's checks of the response `Content-Type`.
+    fn check_content_type(head: &ResponseHead<'_>) -> Result<(), CodecError> {
+        match head.content_type() {
+            ContentTypeField::One(value) if value.as_bytes().starts_with(b"text/") => Ok(()),
+            _ => Err(CodecError::new("the response is not text")),
+        }
+    }
+
+    // New: every other check of the head, and the state `decode_body` needs. Nothing here.
+    fn context(_: &ResponseHead<'_>) -> Result<(), CodecError> {
+        Ok(())
+    }
+
+    // The old `decode`, with the context in front.
+    fn decode_body((): (), body: Bytes) -> Result<Vec<String>, CodecError> {
+        let text = String::from_utf8(body.into())
+            .map_err(|e| CodecError::new("the response is not UTF-8").with_source(e))?;
+        Ok(text.lines().map(str::to_owned).collect())
+    }
+}
+
+fn main() {
+    let body = Bytes::from_static(b"x\ny\n");
+    let lines = <Lines as Decode<Vec<String>>>::decode_body((), body).unwrap();
+    assert_eq!(lines, ["x", "y"]);
+}
+```
+
+A translation that keeps the old behaviour is `type Context = ();`, a `context` that returns
+`Ok(())`, and the old body renamed `decode_body` with `(): ()` in front; a format that did not
+check headers needs no `check_content_type`, and the default accepts every `Content-Type`.
+
+- `CodecError::new` takes a `&'static str`. ``CodecError::new(e.to_string())`` and
+  ``CodecError::new(format!(..))`` do not compile (rustc: `expected &str, found String`; its hint
+  to borrow only moves the error to `E0716`, a temporary that must live for `'static`). Put the
+  dynamic part in a number (`.at("line", n)`, up to three) or in the underlying error
+  (`.with_source(e)`), which `Display` and `Debug` never show. A static label is a safer default,
+  not a proof: a `String::leak` still compiles.
+- Put checks of the `Content-Type` field in `check_content_type` and nothing else there: the
+  adapter skips exactly that step. Everything else that needs the head goes in `context`, which
+  hands an owned value to `decode_body`. `decode_body` never sees the head.
+- `decode_body` called directly performs no head check, by name. Replace
+  `<Json as Decode<T>>::decode(bytes)` with `<Json as Decode<T>>::decode_body((), bytes)` where you
+  decode an error document yourself.
+- `Decoder::new::<F>()` builds a handling for a response you obtained yourself, and
+  `ResponseHead::new(status, version, &headers)` lets a unit test build a head
+  ([Writing a format](CUSTOM_FORMATS.md#9-testing-a-format)).
+
+### An endpoint whose server mislabels its responses
+
+The deliberate exception, on the one endpoint that needs it:
+
+```rust
+use concord::reqwest;
+use concord::{IgnoreContentType, Json};
+use serde::Deserialize;
+
+#[derive(Deserialize)]
+pub struct Report {
+    pub id: u64,
+}
+
+concord::api! {
+    pub client Reports {
+        base "https://reports.example.com";
+        format Json;
+
+        GET latest() -> Report { path "latest"; }
+        /// This server sends its JSON as `text/plain`.
+        GET legacy() -> Report {
+            path "legacy";
+            response IgnoreContentType<Json>;
+        }
+    }
+}
+
+fn main() -> Result<(), concord::Error> {
+    let api = Reports::new(reqwest::Client::new());
+    // Both still suggest `Accept: application/json`; only the response check differs.
+    for prepared in [api.latest().prepare()?, api.legacy().prepare()?] {
+        assert_eq!(prepared.request().headers()["accept"], "application/json");
+    }
+    Ok(())
+}
+```
+
 ## From in-place formats to statements
 
 A body or output no longer carries its format in place. Payload positions name Rust types only
@@ -53,7 +275,7 @@ and the native exits are unchanged, so callers need no change.
 
 | In place (does not compile any more) | Statements |
 |---|---|
-| `json b: T` | `body b: T`, plus `request Json;` on the endpoint unless the nearest statement already says `json` (without a media type) |
+| `json b: T` | `body b: T`, plus `request Json;` on the endpoint unless the nearest statement already says `Json` (without a media type) |
 | `json("application/merge-patch+json") b: T` | `body b: T` and `request Json "application/merge-patch+json";` |
 | `body("application/problem+json") b: T` | `body b: T` and `request Json "application/problem+json";` — a statement restates its format |
 | `Ndjson rows: Vec<Row>`, `text note: String` | `body rows: Vec<Row>` and `request Ndjson;`; `body note: String` and `request Text;` |
@@ -172,11 +394,11 @@ traits, status handling and the native exits are unchanged, so callers need no c
 
 | `via` | Statements | Note |
 |---|---|---|
-| `-> T via Json` | `-> T` under `response Json;` (or `format Json;`) | the words `json`, `text`, `bytes`, `form` need no import |
+| `-> T via Json` | `-> T` under `response Json;` (or `format Json;`) | the format is a type: `use concord::Json;` (or write `concord::Json`) |
 | `-> String via Text`, `-> Bytes via Binary` | `-> String` with `response Text;`, `-> Bytes` with `response Binary;` | on the endpoint, or on a scope that is uniform |
 | `body b: T via Json` | `body b: T` under `request Json;` | |
 | `body b?: T via my::Csv` | `body b?: T` with `request my::Csv;` | any other format is its type path |
-| `use concord::{Binary, Json, Text};` | — | remove: unused imports are reported by rustc |
+| `use concord::{Binary, Json, Text};` | keep | a statement names the format type, so the import stays (rustc reports an unused one) |
 | `headers { "content-type" = "application/merge-patch+json"; }` for one body | `request Json "application/merge-patch+json";` | the media type belongs to the body: sent exactly when the body is |
 | a downstream form encoder | `request Form;` (feature `form`) | `serde_urlencoded`, `application/x-www-form-urlencoded` |
 | no `->` | no `->` | unchanged: any 2xx, the body is drained, whatever the statements |
@@ -267,8 +489,10 @@ Behaviour changes:
   media type and is still sent with or without a body.
 - The `Content-Type` Concord inserts for a body now carries the `content-type` key's sensitivity
   (`#[sensitive]` or sticky composition); it was never flagged before.
-- A custom format with a lowercase single-word name is written as a path (`self::csv`): in format
-  position a bare lowercase word must be `json`, `text`, `bytes` or `form`.
+- A custom format with a lowercase single-word name was written as a path (`self::csv`), because a
+  bare lowercase word in format position meant `json`, `text`, `bytes` or `form`. That is no longer
+  so: a format is an ordinary type path (see
+  [From format words to format types](#from-format-words-to-format-types)).
 - A leftover `via` is a compile error naming the replacement statement.
 
 ## From the V4 alpha (4.0.0-alpha.1 at 8f7adc2) to the refined V4
@@ -292,8 +516,8 @@ statements, which replaced the intermediate `T via R` and in-place spellings):
 | no setter for required values | `set_x` for every value | rename an endpoint that is called `set_<value>` |
 
 Additions that need no change: `#[cfg(..)]` and `#[deprecated(..)]` on scopes and endpoints,
-`Decoder::finish`, `CodecError` implements `std::error::Error`, endpoint requests are `Clone`
-exactly when their values and body are.
+`Decoder::finish`, the format error implements `std::error::Error` (then `BodyError`, now
+`CodecError`), endpoint requests are `Clone` exactly when their values and body are.
 
 ### Root construction: `{Client}Config`
 
@@ -404,22 +628,20 @@ pub struct Lines;
 impl Encode for Lines {
     type Value = Vec<String>;
     const CONTENT_TYPE: Option<&'static str> = Some("text/plain; charset=utf-8");
-    fn encode(value: Vec<String>) -> Result<reqwest::Body, CodecError> { .. }
+    fn encode(value: Vec<String>) -> Result<reqwest::Body, BodyError> { .. }
 }
 
 impl Decode for Lines {
     type Output = Vec<String>;
-    type Context = ();
-    fn context(_: &ResponseHead<'_>) -> Result<(), CodecError> {
-        Ok(())
-    }
-    fn decode_body((): (), body: Bytes) -> Result<Vec<String>, CodecError> { .. }
+    fn decode(body: Bytes) -> Result<Vec<String>, BodyError> { .. }
 }
 
 // declaration: POST normalize(body words: Lines) -> Lines;
 ```
 
-Refined:
+Refined, written for today's `Decode` (the refined V4 had `fn decode(body: Bytes)` and `BodyError`;
+what changed since is in
+[From body-only codecs to the codec contract](#from-body-only-codecs-to-the-codec-contract)):
 
 ```rust
 use concord::bytes::Bytes;
@@ -653,7 +875,7 @@ There is no converter; declarations are short enough to rewrite by hand. V3 is p
 | built-in base URL only | `base "..."` plus `with_base_url(..)` at runtime. |
 | `Client::builder()...build()?` | `Client::new(http, ClientConfig { .. })` — required values are fields of the generated config struct, checked by the compiler. |
 | `.await` on a request | `.send().await` (explicit verb). |
-| `response Json;` defaults, `via Json` | `format Json;` (or `request Json;` / `response Json;`, lowercase words) on the client, a scope or an endpoint, the nearest one winning; payloads name types only (`body b: T`, `-> T`). Without `->` nothing is decoded. |
+| `response Json;` defaults, `via Json` | `format Json;` (or `request Json;` / `response Json;`, with `use concord::Json;`) on the client, a scope or an endpoint, the nearest one winning; payloads name types only (`body b: T`, `-> T`). Without `->` nothing is decoded. |
 | `absent on 404` | `match` on `e.status()` ([caller guide](CALLER_GUIDE.md#6-errors)), or `send_raw()`. |
 | `status [...]` | any 2xx is success; other statuses are `ErrorKind::Status` with the unread response. |
 | `plan()` | `prepare()` gives a native `reqwest::Request`; `Prepared`'s `Debug` is redacted. |
@@ -754,6 +976,6 @@ concord4::api! {
 }
 ```
 
-The format words need no import under a renamed dependency; a format type is a path
-(`concord4::Binary`). Compiler notes still spell the crate `concord` (`concord::Encode<T>`): read
-it as your dependency's name.
+A format is a type path like any other, so under a renamed dependency it is imported from the
+renamed crate (`use concord4::{Binary, Text};`) or written in full (`concord4::Binary`). Compiler
+notes still spell the crate `concord` (`concord::Encode<T>`): read it as your dependency's name.

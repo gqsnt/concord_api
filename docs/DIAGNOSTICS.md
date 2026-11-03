@@ -341,7 +341,7 @@ error: removed body format: write `body item: Item` and `request json;` on this 
    |                                ^^^^
 ```
 
-**Fix:** the payload position names the type only; write the format as a statement on the endpoint, as the message says (or rely on a statement of a scope or the client). The same message names the replacement for every removed spelling — `json b: T`, `json("m") b: T`, `body("m") b: T`, `-> text T`, `request Json("m");` ([`format_removed_spellings.stderr`](../crates/concord/tests/ui/format_removed_spellings.stderr)), the V4-alpha `-> concord::Json<Item>` ([`representation_alpha_spelling.stderr`](../crates/concord/tests/ui/representation_alpha_spelling.stderr)); see [From in-place formats to statements](MIGRATION.md#from-in-place-formats-to-statements).
+**Fix:** the payload position names the type only; write the format as a statement on the endpoint, as the message says (or rely on a statement of a scope or the client). The message repeats the format the way the removed form spelled it (`request json;`); a format is a type now, so write `request Json;` with `use concord::Json;` ([From format words to format types](MIGRATION.md#from-format-words-to-format-types)). The same message names the replacement for every removed spelling — `json b: T`, `json("m") b: T`, `body("m") b: T`, `-> text T`, `request Json("m");` ([`format_removed_spellings.stderr`](../crates/concord/tests/ui/format_removed_spellings.stderr)), the V4-alpha `-> concord::Json<Item>` ([`representation_alpha_spelling.stderr`](../crates/concord/tests/ui/representation_alpha_spelling.stderr)); see [From in-place formats to statements](MIGRATION.md#from-in-place-formats-to-statements).
 
 ### A leftover `via`
 
@@ -531,7 +531,7 @@ error[E0277]: the format `Lines` cannot decode a `Item` response
    |                                       ^^^^^ this output's format is `Lines` (the nearest `response` statement: on the endpoint, a scope or the client); it needs `Lines: Decode<Item>`
 ```
 
-**Fix:** pick a format that supports the type (`Json` for a serde type), or implement `Decode<Item>`/`Encode<Item>` for your own format type. An inherited format is reported at the statement that gave it (`format_inherited_unsupported.stderr`). For `Json`, an unmet serde bound is reported by rustc in its own words (`the trait bound .. Deserialize<'de> is not satisfied`, `tests/ui_json/format_serde_bound.stderr`).
+**Fix:** pick a format that supports the type (`Json` for a serde type), or implement `Decode<Item>`/`Encode<Item>` for your own format type ([Writing a format](CUSTOM_FORMATS.md)). An inherited format is reported at the statement that gave it (`format_inherited_unsupported.stderr`). For `Json`, an unmet serde bound is reported by rustc in its own words (`the trait bound .. Deserialize<'de> is not satisfied`, `tests/ui_json/format_serde_bound.stderr`).
 
 ### An invalid media type in a format
 
@@ -754,6 +754,10 @@ validator as `E0080` ("evaluation panicked: HeaderName::from_static with invalid
 the whole invocation, and so is a native constant whose `HeaderName::from_static` name is not
 lowercase (at the constant); an invalid `Encode::CONTENT_TYPE` is the same `E0080` for `HeaderValue`,
 pointing at the format. A format named without its import gets no import suggestion from rustc
-(the name is resolved inside the expansion); the message is still at the name. Old-style
+(the name is resolved inside the expansion); the message is still at the name. A `Decode`
+implementation written for the earlier `fn decode(body: Bytes)` contract is rustc's own `E0407`
+(`decode` is not a member of the trait) and `E0046` (missing `Context`, `context`, `decode_body`),
+and `BodyError` is `E0432`: see [From body-only codecs to the codec
+contract](MIGRATION.md#from-body-only-codecs-to-the-codec-contract). Old-style
 `-> Json<Item>` and `-> ()` are reported as outputs without a format
 (`representation_alpha_spelling`).

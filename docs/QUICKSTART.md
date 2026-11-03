@@ -24,9 +24,12 @@ serde = { version = "1", features = ["derive"] }
 tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
 ```
 
-- `concord`'s default features are `json` (the `Json` format, with `Text` and `Binary`) and `reqwest-defaults`
-  (reqwest's TLS, HTTP/2 and proxy support); `form` (URL-encoded form bodies) is opt-in. Concord re-exports reqwest as `concord::reqwest`;
-  you only need your own `reqwest` dependency to choose its features.
+- `concord`'s default features are `json` (the `Json` format, with `Text`, `Binary` and
+  `IgnoreContentType`) and `reqwest-defaults` (reqwest's TLS, HTTP/2 and proxy support); `form`
+  (URL-encoded form bodies) is opt-in. Concord re-exports reqwest as `concord::reqwest`; you only
+  need your own `reqwest` dependency to choose its features. `concord` is the one crate you
+  depend on: it re-exports the runtime (`concord-core`) and the standard formats
+  (`concord-extras`) next to the `api!` macro.
 - `serde` derives your payload types.
 - `tokio` runs the async calls (reqwest needs a Tokio runtime).
 
@@ -105,10 +108,13 @@ Read it top-down:
   `PUT image(body png: Vec<u8>) { path "image"; request Binary "image/png"; }` — and the nearest
   statement wins; one without `->` decodes nothing and accepts any 2xx. A body's `Content-Type` is
   its format's (`application/json`, ...) unless its `request` statement names another
-  (`request Json "application/merge-patch+json";`). Nothing checks that the server agrees — the
-  generated docs of each endpoint state the format and `Content-Type` it uses and where they come
-  from. The format, not the Rust type, decides the wire: a `String` or `Vec<u8>` body left under
-  `format Json;` is sent as a JSON string or array, without any error.
+  (`request Json "application/merge-patch+json";`). The generated docs of each endpoint state the
+  format and `Content-Type` it uses and where they come from. The format, not the Rust type,
+  decides the wire: a `String` or `Vec<u8>` body left under `format Json;` is sent as a JSON
+  string or array, without any error. The format also judges the response: `Json` accepts a
+  2xx response only when it has exactly one `Content-Type`, `application/json` or
+  `application/*+json`, and checks that before reading the body. A response labelled `text/html`,
+  or not labelled, is an `ErrorKind::Metadata` error, not a parse failure.
 - `scope project(project: String)` — a navigation level, `api.project("demo")`, that adds the path
   `projects/demo`. The value is formatted with `Display` and percent-encoded as one segment.
 - `GET tasks(query done?: bool, query limit: u32 = 20) -> Vec<Task>` — an endpoint with an
@@ -122,8 +128,11 @@ Read it top-down:
   `reqwest::header::HeaderName` constant instead of a literal — `header(AUTHORIZATION) token: String`,
   `headers { ACCEPT = "application/json"; }`, or your own
   `const X_API_KEY: HeaderName = HeaderName::from_static("x-api-key")`. A value can be a native
-  `HeaderValue`, sent as is with its sensitivity flag. Concord adds no `Accept` header: declare one
-  if the API needs it (a reqwest client without one sends its default, `accept: */*`).
+  `HeaderValue`, sent as is with its sensitivity flag. An endpoint with a typed output sends its
+  format's `Accept` suggestion (`Json`: `accept: application/json`) unless you declare an
+  `accept` header, which is then sent as written; an endpoint without `->` suggests nothing, and
+  then a reqwest client sends its own default (`accept: */*`). The exact rules are in the
+  [author guide](AUTHOR_GUIDE.md#58-what-goes-on-the-wire-accept-and-content-type).
 
 The macro generates ordinary types: `Tasks`, `TasksConfig`, `TasksProject` (the scope) and one
 request type per endpoint, `TasksProjectTasks` and `TasksProjectCreate`. Their main signatures, as
@@ -189,9 +198,12 @@ pub async fn run(base_url: &str, token: String) -> Result<(), Box<dyn std::error
   setters such as `set_done(false)` return the changed request; `send()` executes it once and
   decodes a 2xx response.
 - **Errors.** Every call returns `Result<_, concord::Error>`. `error.kind()` tells the stage
-  (`Build`, `Transport`, `Status`, `Decode`). A non-2xx status keeps the **unread** response:
-  `into_response()` returns it (and returns any other error unchanged, so `?` propagates it), and
-  `Decode` reads the API's error document with any format. The
+  (`Build`, `Transport`, `Status`, `Metadata`, `Decode`). A non-2xx status keeps the **unread**
+  response: `into_response()` returns it (and returns any other error unchanged, so `?`
+  propagates it), and `<Json as Decode<Problem>>::decode_body((), bytes)` reads the API's error
+  document: it decodes bytes and checks no response head. A 2xx response whose head the format
+  refuses (`Metadata`) keeps its response unread too, and `into_response()` returns that one as
+  well; look at `error.kind()` first if a 2xx must not be taken for an error document. The
   [caller guide](CALLER_GUIDE.md#6-errors) covers the rest.
 
 ## 5. Run it locally
@@ -224,8 +236,10 @@ rejected with 422 Unprocessable Entity: a task needs a title
 
 The stand-in (`examples/quickstart/src/local_server.rs`) is example scaffolding, not part of
 Concord: a short Tokio program that answers one request per connection, keeps the tasks in memory
-and records what reqwest sent. In your own crate, point `with_base_url` at whatever local or staging server you use, or
-leave it out to call the declared base.
+and records what reqwest sent. It labels its JSON responses `application/json`, which is what
+`Json` requires of a real service too; a stand-in or a test fixture that sends a bare body is
+refused with `ErrorKind::Metadata`. In your own crate, point `with_base_url` at whatever local or
+staging server you use, or leave it out to call the declared base.
 
 ## 6. When the API uses subdomains
 
@@ -264,6 +278,8 @@ Excerpt of [`examples/shapes/tests/wire.rs`](../examples/shapes/tests/wire.rs):
 - [Author guide](AUTHOR_GUIDE.md): scopes, the three kinds of values, paths and subdomains, query
   and header composition, body and response formats, sensitivity.
 - [Caller guide](CALLER_GUIDE.md): handles and snapshots, optional values, errors, native requests.
+- [Writing a format](CUSTOM_FORMATS.md): your own `Encode`/`Decode`, a header-checking format,
+  the strict `Json` and `IgnoreContentType`.
 - [Recipes](RECIPES.md): per-request timeouts, streaming, custom body formats, retries,
   pagination, rate admission — written as application code.
 - [Diagnostics](DIAGNOSTICS.md): what the compile errors look like and how to fix them.
