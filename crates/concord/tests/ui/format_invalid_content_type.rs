@@ -3,7 +3,7 @@
 pub struct Odd;
 impl concord::Encode<String> for Odd {
     const CONTENT_TYPE: Option<&'static str> = Some("application/x\u{2011}odd");
-    fn encode(value: String) -> Result<concord::reqwest::Body, concord::BodyError> {
+    fn encode(value: String) -> Result<concord::reqwest::Body, concord::CodecError> {
         Ok(value.into())
     }
 }

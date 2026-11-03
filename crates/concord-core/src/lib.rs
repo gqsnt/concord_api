@@ -24,7 +24,7 @@ mod value;
 #[doc(hidden)]
 pub mod __private;
 
-pub use codec::{BodyError, Decode, Encode};
+pub use codec::{CODEC_ERROR_CONTEXT, CodecError, ContentTypeField, Decode, Encode, ResponseHead};
 pub use error::{Error, ErrorKind};
 pub use header::ToHeaderValue;
 pub use prepared::{Decoder, Prepared};

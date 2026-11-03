@@ -125,7 +125,7 @@
 
 use std::fmt;
 
-use concord::{BodyError, Encode};
+use concord::{CodecError, Encode};
 
 /// A value that is never `Clone` (otherwise identical to [`Cloneable`]).
 #[derive(Debug, PartialEq, Eq)]
@@ -157,7 +157,7 @@ macro_rules! value {
         impl Encode<$t> for Raw {
             const CONTENT_TYPE: Option<&'static str> = Some("text/plain");
 
-            fn encode(value: $t) -> Result<concord::reqwest::Body, BodyError> {
+            fn encode(value: $t) -> Result<concord::reqwest::Body, CodecError> {
                 Ok(value.0.into())
             }
         }

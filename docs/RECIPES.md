@@ -159,7 +159,7 @@ synthetic; a fake server proves nothing about the real service.
 |---|---|---|
 | Read response headers (`ETag`, `Link`) and keep the typed decoding | `prepare()?.into_parts()`, execute, read the headers, then `decoder.decode(response)` | `tests/metadata.rs` |
 | Read a status error's headers without consuming it | `error.response()`; `into_response()` afterwards for the body | `tests/metadata.rs` |
-| An error inside a 2xx (`{"ok": false}`) | a typed output that models the envelope, or a custom `Decode` returning a `BodyError` | `tests/application.rs` |
+| An error inside a 2xx (`{"ok": false}`) | a typed output that models the envelope, or a custom `Decode` returning a `CodecError` | `tests/application.rs` |
 | Nested or bracket form keys (`metadata[order]=7`) | a custom `Encode<T>` with the form media type; `form` itself is flat | `tests/forms.rs` |
 | A key spanning path segments (`docs/2026/report.md`) | `into_parts()`, then `url_mut().path_segments_mut()`; an ordinary path value is one segment (`/` is sent as `%2F`) | `tests/resource_key.rs` |
 | JSON or nothing (`200` with a document, `204` without) | a format of your own implementing `Decode<Option<T>>` that maps an empty body to `None` (`Json` keeps it an error) | `tests/json_or_empty.rs` |

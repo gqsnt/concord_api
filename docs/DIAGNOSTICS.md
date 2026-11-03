@@ -525,9 +525,9 @@ Excerpt of [`representation_unsupported_payload.stderr`](../crates/concord/tests
 
 ```text
 error[E0277]: the format `Lines` cannot decode a `Item` response
-  --> tests/ui/representation_unsupported_payload.rs:34:39
+  --> tests/ui/representation_unsupported_payload.rs:42:39
    |
-34 |         GET item() -> Item { response Lines; }
+42 |         GET item() -> Item { response Lines; }
    |                                       ^^^^^ this output's format is `Lines` (the nearest `response` statement: on the endpoint, a scope or the client); it needs `Lines: Decode<Item>`
 ```
 
@@ -541,7 +541,7 @@ Excerpt of [`format_invalid_content_type.rs`](../crates/concord/tests/ui/format_
 pub struct Odd;
 impl concord::Encode<String> for Odd {
     const CONTENT_TYPE: Option<&'static str> = Some("application/x\u{2011}odd");
-    fn encode(value: String) -> Result<concord::reqwest::Body, concord::BodyError> {
+    fn encode(value: String) -> Result<concord::reqwest::Body, concord::CodecError> {
         Ok(value.into())
     }
 }

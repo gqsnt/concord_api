@@ -40,6 +40,8 @@ mod header_map_capacity {
         sensitive_segments: &[],
         sensitive_query: &[],
         sensitive_content_type: false,
+        sensitive_accept: false,
+        accept_removed: false,
     };
 
     /// Adds distinct header names until the native map refuses one; returns how many fit.
@@ -81,6 +83,7 @@ mod header_map_capacity {
                 &reqwest::Client::new(),
                 body,
                 concord_core::__private::drain(&META),
+                None,
             )
             .unwrap_err();
         assert_eq!(e.kind(), ErrorKind::Build);

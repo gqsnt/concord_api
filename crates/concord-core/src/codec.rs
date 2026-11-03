@@ -1,31 +1,36 @@
-//! Body and response formats.
+//! The open format contracts: [`Encode`], [`Decode`], the response head they read, and
+//! [`CodecError`].
 //!
 //! Every body (`body item: NewItem`) and every typed output (`-> Item`) has a format, given by the
 //! nearest `request`/`response`/`format` statement of its endpoint, an enclosing scope or the
-//! client (`format Json;`, `response Text;`, `request Csv;`). A format is a type implementing
-//! `Encode<T>` and/or `Decode<T>`, named by its path like any Rust type: `Json`, `Text`, `Binary`
-//! and `Form` are ordinary such types, with no privilege over your own. Concord never chooses a
-//! format by looking at a Rust type name. An endpoint without `->` has no typed output: any 2xx
-//! succeeds and the body is drained without being buffered, whatever the defaults.
+//! client. A format is any type implementing `Encode<T>` and/or `Decode<T>`, named by its Rust
+//! path (`format Json;`, `response my_sdk::Csv;`). This crate implements none: the standard
+//! formats are ordinary implementations in another crate, with no privilege over yours. Concord
+//! never chooses a format by looking at a Rust type name. An endpoint without `->` has no typed
+//! output: any 2xx succeeds and the body is drained without being buffered, whatever the
+//! defaults.
 
-use std::borrow::Cow;
 use std::error::Error as StdError;
 use std::fmt;
 
 use bytes::Bytes;
+use reqwest::header::{CONTENT_TYPE, HeaderMap, HeaderValue};
+use reqwest::{StatusCode, Version};
 
 /// Encodes a request body of type `T` with the format `Self`.
 ///
 /// Implement it on your own marker type for a custom format, then name the type in a statement
-/// (`request Csv;`, `format Csv;`). The encoder runs when the request is prepared; it receives the
-/// payload by value.
+/// (`request Csv;`, `format Csv;`). The local marker type satisfies the orphan rules whatever `T`
+/// is. The encoder runs when the request is prepared; it receives the payload **by value**, so a
+/// one-shot, non-`Clone` payload can be moved into a native streaming body
+/// (`reqwest::Body::wrap_stream`, `Body::wrap`).
 ///
 /// `CONTENT_TYPE` is the media type sent as `Content-Type` with the body, unless the body's
-/// `request` statement declares its own (`request Json "application/merge-patch+json";`) or the
-/// endpoint sends a `content-type` header. It is validated when the declaration is compiled (visible ASCII, like
-/// `HeaderValue::from_static`): an invalid value is a compile error wherever it may be sent, and
-/// is not used at all where a declared media type replaces it. A media type that varies per body
-/// (a multipart boundary) is set on the native request after
+/// `request` statement declares its own (`request Csv "text/csv; header=present";`) or the
+/// endpoint sends a `content-type` header. It is validated when the declaration is compiled
+/// (visible ASCII, like `HeaderValue::from_static`): an invalid value is a compile error wherever
+/// it may be sent, and is not used at all where a declared media type replaces it. A media type
+/// that varies per body (a multipart boundary) is set on the native request after
 /// [`Prepared::into_parts`](crate::Prepared::into_parts).
 #[diagnostic::on_unimplemented(
     message = "the format `{Self}` cannot encode a `{T}` request body",
@@ -37,80 +42,334 @@ pub trait Encode<T> {
     const CONTENT_TYPE: Option<&'static str>;
 
     /// Encodes the payload into a request body.
-    fn encode(value: T) -> Result<reqwest::Body, BodyError>;
+    ///
+    /// # Errors
+    ///
+    /// A [`CodecError`] when the payload cannot be encoded: the request is not built
+    /// ([`ErrorKind::Build`](crate::ErrorKind::Build)).
+    fn encode(value: T) -> Result<reqwest::Body, CodecError>;
 }
 
-/// Decodes the complete body of a 2xx response into `T` with the format `Self`.
+/// Decodes a successful response into `T` with the format `Self`.
 ///
 /// Implement it on your own marker type for a custom format, then name the type in a statement
-/// (`response Csv;`). It is also usable directly, for example
-/// on the body of an error response: `<Json as Decode<Problem>>::decode(bytes)`. Concord never
-/// checks the response `Content-Type` and sends no `Accept`.
+/// (`response Csv;`). On a **2xx** response, Concord calls, in this order:
+///
+/// 1. [`check_content_type`](Self::check_content_type) on the borrowed [`ResponseHead`]: the
+///    format's checks of the `Content-Type` field — and nothing else, because the
+///    `IgnoreContentType` adapter of the standard formats skips exactly this step;
+/// 2. [`context`](Self::context) on the borrowed head: every other check of the head (a version
+///    header, a status the format treats specially), producing the owned
+///    [`Context`](Self::Context) the body decoder needs;
+/// 3. reads the body (only now);
+/// 4. [`decode_body`](Self::decode_body) with that context and the bytes.
+///
+/// A failure in step 1 or 2 is an [`ErrorKind::Metadata`](crate::ErrorKind::Metadata) error that
+/// keeps the native response **unread** ([`Error::into_response`](crate::Error::into_response));
+/// a failure in step 4 is [`ErrorKind::Decode`](crate::ErrorKind::Decode). A non-2xx response is
+/// a [`Status`](crate::ErrorKind::Status) error before any of this: the format is not consulted.
+/// Because `decode_body` never receives the head, a decision that depends on the head cannot be
+/// made after the body was consumed.
+///
+/// The response `Content-Type` is the format's to check; Concord never compares it with the
+/// request's `Accept`. A format may suggest an `Accept` ([`ACCEPT`](Self::ACCEPT)); the suggestion
+/// never selects another format.
+///
+/// A stateless format names its context `()`:
+///
+/// ```
+/// use concord_core::bytes::Bytes;
+/// use concord_core::{CodecError, Decode, ResponseHead};
+///
+/// /// Line count of a text body.
+/// pub struct Lines;
+///
+/// impl Decode<usize> for Lines {
+///     type Context = ();
+///     fn context(_: &ResponseHead<'_>) -> Result<(), CodecError> {
+///         Ok(())
+///     }
+///     fn decode_body((): (), body: Bytes) -> Result<usize, CodecError> {
+///         Ok(body.split(|b| *b == b'\n').count())
+///     }
+/// }
+/// ```
+///
+/// `decode_body` is also the body-only route for a document you obtained yourself (the body of
+/// a [`Status`](crate::ErrorKind::Status) error, say): calling it performs **no** head check, by
+/// name. It cannot look at the head:
+///
+/// ```compile_fail,E0050
+/// use concord_core::{CodecError, Decode, ResponseHead};
+/// struct Late;
+/// impl Decode<u32> for Late {
+///     type Context = ();
+///     fn context(_: &ResponseHead<'_>) -> Result<(), CodecError> { Ok(()) }
+///     fn decode_body(
+///         (): (),
+///         body: concord_core::bytes::Bytes,
+///         head: &ResponseHead<'_>, // no: the head is gone once the body is read
+///     ) -> Result<u32, CodecError> {
+///         let _ = (body, head);
+///         Ok(0)
+///     }
+/// }
+/// ```
 #[diagnostic::on_unimplemented(
     message = "the format `{Self}` cannot decode a `{T}` response",
     label = "this output's format is `{Self}` (the nearest `response` statement: on the endpoint, a scope or the client); it needs `{Self}: Decode<{T}>`",
     note = "a format is a type implementing `Decode<{T}>`, named by its path in a statement (`response Csv;`); an endpoint without typed output omits `->`"
 )]
 pub trait Decode<T> {
-    /// Decodes a complete response body.
-    fn decode(body: Bytes) -> Result<T, BodyError>;
+    /// Owned per-response state taken from the head and consumed by
+    /// [`decode_body`](Self::decode_body): `()` for a stateless format, a parsed version, a
+    /// charset. It lives across the body read, so it is `Send` (the request future stays `Send`)
+    /// and `'static` (it cannot borrow the response).
+    type Context: Send + 'static;
+
+    /// A request `Accept` value this format suggests, sent only as a fallback: for an endpoint
+    /// with a typed output whose header chain leaves no `accept` value and does not end by
+    /// removing one. An authored `Accept` (literal or native, present or empty) always wins.
+    /// Validated when the declaration is compiled, like [`Encode::CONTENT_TYPE`]. The suggestion
+    /// is a request preference: the response is still checked by
+    /// [`check_content_type`](Self::check_content_type), not compared with it.
+    const ACCEPT: Option<&'static str> = None;
+
+    /// The format's checks of the response `Content-Type` field. Accepts everything unless
+    /// overridden. Put every `Content-Type`-derived check here (media type, charset), and only
+    /// those: the standard `IgnoreContentType` adapter skips exactly this step.
+    ///
+    /// # Errors
+    ///
+    /// A [`CodecError`] when the format refuses the field: the call becomes an
+    /// [`ErrorKind::Metadata`](crate::ErrorKind::Metadata) error and the body stays unread.
+    fn check_content_type(head: &ResponseHead<'_>) -> Result<(), CodecError> {
+        let _ = head;
+        Ok(())
+    }
+
+    /// Every other check of the response head, and the state the body decoder needs.
+    ///
+    /// # Errors
+    ///
+    /// A [`CodecError`] when the head is not acceptable: an
+    /// [`ErrorKind::Metadata`](crate::ErrorKind::Metadata) error, body unread.
+    fn context(head: &ResponseHead<'_>) -> Result<Self::Context, CodecError>;
+
+    /// Decodes a complete body with the context produced from its head. Called directly, it
+    /// decodes bytes **without** any head check.
+    ///
+    /// # Errors
+    ///
+    /// A [`CodecError`] when the body does not decode: an
+    /// [`ErrorKind::Decode`](crate::ErrorKind::Decode) error.
+    fn decode_body(context: Self::Context, body: Bytes) -> Result<T, CodecError>;
 }
 
-/// A body could not be encoded or decoded.
+/// The head of a response — status, version and header fields — borrowed from the native
+/// response before its body is read. Nothing is cloned.
 ///
-/// `description` must not contain body content or request values: it is shown by
-/// [`Error`](crate::Error)'s `Display`, and it is this type's own `Display`. The optional underlying
-/// error is reachable only through [`body_source`](Self::body_source) and
-/// [`Error::body_source`](crate::Error::body_source), never through
-/// [`std::error::Error::source`], because decoder messages often quote the input (for example
-/// serde's `invalid type: string "..."`).
-pub struct BodyError {
-    description: Cow<'static, str>,
+/// The fields are those reqwest delivers: a body reqwest decompressed itself (its `gzip`/`brotli`/
+/// `deflate`/`zstd` features) has already lost its `Content-Encoding` and `Content-Length`
+/// fields, and its bytes arrive decompressed. `Content-Encoding` is not a media type.
+///
+/// `Debug` prints the status, the version and the header **names**: header values may be
+/// credentials (`Set-Cookie`) and are reachable only through [`headers`](Self::headers).
+#[derive(Clone, Copy)]
+pub struct ResponseHead<'a> {
+    status: StatusCode,
+    version: Version,
+    headers: &'a HeaderMap,
+}
+
+impl<'a> ResponseHead<'a> {
+    /// A head made of its parts: for a response obtained another way, or a format's unit test.
+    pub fn new(status: StatusCode, version: Version, headers: &'a HeaderMap) -> Self {
+        Self {
+            status,
+            version,
+            headers,
+        }
+    }
+
+    /// The head of a native response, borrowed.
+    pub fn of(response: &'a reqwest::Response) -> Self {
+        Self::new(response.status(), response.version(), response.headers())
+    }
+
+    /// The status code (a 2xx when Concord calls a format).
+    pub fn status(&self) -> StatusCode {
+        self.status
+    }
+
+    /// The HTTP version.
+    pub fn version(&self) -> Version {
+        self.version
+    }
+
+    /// The header fields, as received. Unredacted.
+    pub fn headers(&self) -> &'a HeaderMap {
+        self.headers
+    }
+
+    /// The `Content-Type` field lines, without interpretation: which forms are acceptable is the
+    /// format's policy, and media types are parsed by the format (this crate has no media-type
+    /// parser).
+    pub fn content_type(&self) -> ContentTypeField<'a> {
+        let mut values = self.headers.get_all(CONTENT_TYPE).iter();
+        match (values.next(), values.next()) {
+            (None, _) => ContentTypeField::Missing,
+            (Some(one), None) => ContentTypeField::One(one),
+            (Some(_), Some(_)) => ContentTypeField::Repeated,
+        }
+    }
+}
+
+impl fmt::Debug for ResponseHead<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("ResponseHead")
+            .field("status", &self.status.as_u16())
+            .field("version", &self.version)
+            .field(
+                "header_names",
+                &self.headers.keys().map(|k| k.as_str()).collect::<Vec<_>>(),
+            )
+            .finish()
+    }
+}
+
+/// The `Content-Type` field lines of a [`ResponseHead`].
+#[derive(Clone, Copy, Debug)]
+pub enum ContentTypeField<'a> {
+    /// No `Content-Type` field.
+    Missing,
+    /// Exactly one field line (whose value may still be malformed or comma-joined).
+    One(&'a HeaderValue),
+    /// More than one field line, equal or not. A format that accepts some repetitions reads them
+    /// through [`ResponseHead::headers`].
+    Repeated,
+}
+
+/// How many numeric positions a [`CodecError`] keeps; later ones are ignored.
+pub const CODEC_ERROR_CONTEXT: usize = 3;
+
+/// A format could not encode a body, accept a response head, or decode a body.
+///
+/// It is built from **static** text: [`new`](Self::new) takes a `&'static str` label, so the
+/// common accident of formatting the underlying error into the message
+/// (`CodecError::new(e.to_string())`, `CodecError::new(format!(..))`) does not compile:
+///
+/// ```compile_fail,E0308
+/// let e = std::io::Error::other("token=s3cr3t");
+/// let _ = concord_core::CodecError::new(e.to_string()); // `String`, not `&'static str`
+/// ```
+///
+/// Positions are numbers under static names ([`at`](Self::at)): `record`, `line`, `column`,
+/// `byte`. The underlying error, which may quote the input, is attached with
+/// [`with_source`](Self::with_source) and reachable only through
+/// [`source_unredacted`](Self::source_unredacted): `Display` and `Debug` never format it and it is
+/// not this type's [`std::error::Error::source`].
+///
+/// ```
+/// use concord_core::CodecError;
+/// let e = CodecError::new("an NDJSON record does not decode")
+///     .at("record", 2)
+///     .at("column", 7)
+///     .with_source(std::io::Error::other("near \"token=s3cr3t\""));
+/// assert_eq!(e.to_string(), "an NDJSON record does not decode (record 2, column 7)");
+/// assert!(!format!("{e:?}").contains("s3cr3t"));
+/// assert_eq!(e.get("record"), Some(2));
+/// assert!(e.source_unredacted().unwrap().to_string().contains("s3cr3t"));
+/// ```
+///
+/// Static text and numbers make the ordinary route safe; they are not a proof. An implementation
+/// can still leak a string on purpose (`String::leak`), put a secret in a literal, or encode data
+/// in numbers: format code is trusted code.
+pub struct CodecError {
+    label: &'static str,
+    context: [(&'static str, u64); CODEC_ERROR_CONTEXT],
+    len: u8,
     source: Option<Box<dyn StdError + Send + Sync>>,
 }
 
-impl BodyError {
-    /// Creates an error with a content-free description.
-    pub fn new(description: impl Into<Cow<'static, str>>) -> Self {
+impl CodecError {
+    /// An error described by a static, content-free label.
+    pub const fn new(label: &'static str) -> Self {
         Self {
-            description: description.into(),
+            label,
+            context: [("", 0); CODEC_ERROR_CONTEXT],
+            len: 0,
             source: None,
         }
     }
 
-    /// Attaches the underlying error (which may quote body content).
+    /// Adds a numeric position under a static name (`.at("record", 3).at("column", 7)`). Up to
+    /// [`CODEC_ERROR_CONTEXT`] entries are kept, in order.
+    #[must_use]
+    pub fn at(mut self, name: &'static str, value: u64) -> Self {
+        if usize::from(self.len) < CODEC_ERROR_CONTEXT {
+            self.context[usize::from(self.len)] = (name, value);
+            self.len += 1;
+        }
+        self
+    }
+
+    /// Attaches the underlying error (which may quote the input).
+    #[must_use]
     pub fn with_source(mut self, source: impl Into<Box<dyn StdError + Send + Sync>>) -> Self {
         self.source = Some(source.into());
         self
     }
 
-    /// The content-free description.
-    pub fn description(&self) -> &str {
-        &self.description
+    /// The static label.
+    pub fn label(&self) -> &'static str {
+        self.label
     }
 
-    /// The attached underlying error, if any. Like [`Error::body_source`](crate::Error::body_source),
-    /// which returns the same for an error from a Concord call, it **may quote body content**
-    /// (serde_json does), so it is not this type's `source()`.
-    pub fn body_source(&self) -> Option<&(dyn StdError + Send + Sync + 'static)> {
+    /// The numeric positions, in the order they were added.
+    pub fn context(&self) -> &[(&'static str, u64)] {
+        &self.context[..usize::from(self.len)]
+    }
+
+    /// One numeric position by name.
+    pub fn get(&self, name: &str) -> Option<u64> {
+        self.context()
+            .iter()
+            .find(|(n, _)| *n == name)
+            .map(|&(_, v)| v)
+    }
+
+    /// The attached underlying error, **unredacted**: it may quote body content or header
+    /// values (serde_json's messages quote the input). Read it deliberately; Concord never
+    /// formats or chains it.
+    pub fn source_unredacted(&self) -> Option<&(dyn StdError + Send + Sync + 'static)> {
         self.source.as_deref()
     }
 }
 
-impl fmt::Debug for BodyError {
+impl fmt::Display for CodecError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("BodyError")
-            .field("description", &self.description)
+        f.write_str(self.label)?;
+        for (i, (name, value)) in self.context().iter().enumerate() {
+            f.write_str(if i == 0 { " (" } else { ", " })?;
+            write!(f, "{name} {value}")?;
+        }
+        if self.len > 0 {
+            f.write_str(")")?;
+        }
+        Ok(())
+    }
+}
+
+impl fmt::Debug for CodecError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("CodecError")
+            .field("label", &self.label)
+            .field("context", &self.context())
             .field("source", &self.source.as_ref().map(|_| "<withheld>"))
             .finish()
     }
 }
 
-impl fmt::Display for BodyError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(&self.description)
-    }
-}
-
-/// No `source()`: the underlying error may quote body content (see the type documentation).
-impl StdError for BodyError {}
+/// No `source()`: the underlying error may quote the input (see the type documentation).
+impl StdError for CodecError {}

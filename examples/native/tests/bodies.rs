@@ -50,12 +50,14 @@ async fn ndjson_decode_error_is_content_free() {
     assert_eq!(error.kind(), ErrorKind::Decode);
     let shown = error.to_string();
     assert!(
-        shown.contains("NDJSON line 2 is not a valid record"),
+        shown.contains("an NDJSON line is not a valid record (record 2, line 2, column"),
         "{shown}"
     );
     assert!(!shown.contains("TOPSECRET"), "{shown}");
+    let codec = error.codec_error().unwrap();
+    assert_eq!((codec.get("record"), codec.get("line")), (Some(2), Some(2)));
     // The detailed serde error is available on request, unredacted.
-    assert!(error.body_source().is_some());
+    assert!(codec.source_unredacted().is_some());
 }
 
 #[test]
@@ -65,7 +67,8 @@ fn representations_are_usable_directly() {
         Some("application/x-ndjson")
     );
     let rows: Vec<StockRow> =
-        <Ndjson as Decode<Vec<StockRow>>>::decode("{\"sku\":\"x\",\"qty\":1}".into()).unwrap();
+        <Ndjson as Decode<Vec<StockRow>>>::decode_body((), "{\"sku\":\"x\",\"qty\":1}".into())
+            .unwrap();
     assert_eq!(rows, [row("x", 1)]);
     assert_eq!(
         <Form as Encode<Vec<(String, String)>>>::CONTENT_TYPE,

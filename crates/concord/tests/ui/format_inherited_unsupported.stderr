@@ -1,7 +1,7 @@
 error[E0277]: the format `Lines` cannot decode a `Item` response
-  --> tests/ui/format_inherited_unsupported.rs:36:23
+  --> tests/ui/format_inherited_unsupported.rs:44:23
    |
-36 |         GET item() -> Item;
+44 |         GET item() -> Item;
    |                       ^^^^ this output's format is `Lines` (the nearest `response` statement: on the endpoint, a scope or the client); it needs `Lines: Decode<Item>`
    |
    = note: a format is a type implementing `Decode<Item>`, named by its path in a statement (`response Csv;`); an endpoint without typed output omits `->`
@@ -12,24 +12,24 @@ help: the trait `Decode<Item>` is not implemented for `Lines`
 13 | impl Decode<String> for Lines {
    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
    = help: for that trait implementation, expected `String`, found `Item`
-note: required by a bound in `concord::__macro::concord_core::__private::decoder`
+note: required by a bound in `concord::__macro::concord_core::__private::DecodeFormat::<T>::new`
   --> $WORKSPACE/crates/concord-core/src/__private.rs
    |
-   | pub fn decoder<R: Decode<T>, T>(meta: &'static EndpointMeta) -> Decoder<T> {
-   |                   ^^^^^^^^^ required by this bound in `decoder`
+   |     pub const fn new<F: Decode<T> + 'static>() -> Self {
+   |                         ^^^^^^^^^ required by this bound in `DecodeFormat::<T>::new`
 
 error[E0277]: the format `Raw` cannot encode a `Item` request body
-  --> tests/ui/format_inherited_unsupported.rs:37:32
+  --> tests/ui/format_inherited_unsupported.rs:45:32
    |
-37 |         POST create(body item: Item);
+45 |         POST create(body item: Item);
    |                                ^^^^ this body's format is `Raw` (the nearest `request` statement: on the endpoint, a scope or the client); it needs `Raw: Encode<Item>`
    |
    = note: a format is a type implementing `Encode<Item>`, named by its path in a statement (`request Ndjson;`)
 help: the trait `Encode<Item>` is not implemented for `Raw`
       but trait `Encode<concord::bytes::Bytes>` is implemented for it
-  --> tests/ui/format_inherited_unsupported.rs:19:1
+  --> tests/ui/format_inherited_unsupported.rs:23:1
    |
-19 | impl Encode<Bytes> for Raw {
+23 | impl Encode<Bytes> for Raw {
    | ^^^^^^^^^^^^^^^^^^^^^^^^^^
    = help: for that trait implementation, expected `concord::bytes::Bytes`, found `Item`
 note: required by a bound in `concord::__macro::concord_core::__private::BodyFormat::<T>::new`

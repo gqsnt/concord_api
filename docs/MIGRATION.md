@@ -292,7 +292,7 @@ statements, which replaced the intermediate `T via R` and in-place spellings):
 | no setter for required values | `set_x` for every value | rename an endpoint that is called `set_<value>` |
 
 Additions that need no change: `#[cfg(..)]` and `#[deprecated(..)]` on scopes and endpoints,
-`Decoder::finish`, `BodyError` implements `std::error::Error`, endpoint requests are `Clone`
+`Decoder::finish`, `CodecError` implements `std::error::Error`, endpoint requests are `Clone`
 exactly when their values and body are.
 
 ### Root construction: `{Client}Config`
@@ -404,12 +404,16 @@ pub struct Lines;
 impl Encode for Lines {
     type Value = Vec<String>;
     const CONTENT_TYPE: Option<&'static str> = Some("text/plain; charset=utf-8");
-    fn encode(value: Vec<String>) -> Result<reqwest::Body, BodyError> { .. }
+    fn encode(value: Vec<String>) -> Result<reqwest::Body, CodecError> { .. }
 }
 
 impl Decode for Lines {
     type Output = Vec<String>;
-    fn decode(body: Bytes) -> Result<Vec<String>, BodyError> { .. }
+    type Context = ();
+    fn context(_: &ResponseHead<'_>) -> Result<(), CodecError> {
+        Ok(())
+    }
+    fn decode_body((): (), body: Bytes) -> Result<Vec<String>, CodecError> { .. }
 }
 
 // declaration: POST normalize(body words: Lines) -> Lines;
@@ -419,21 +423,25 @@ Refined:
 
 ```rust
 use concord::bytes::Bytes;
-use concord::{BodyError, Decode, Encode, reqwest};
+use concord::{CodecError, Decode, Encode, ResponseHead, reqwest};
 
 pub struct Lines;
 
 impl Encode<Vec<String>> for Lines {
     const CONTENT_TYPE: Option<&'static str> = Some("text/plain; charset=utf-8");
 
-    fn encode(value: Vec<String>) -> Result<reqwest::Body, BodyError> {
+    fn encode(value: Vec<String>) -> Result<reqwest::Body, CodecError> {
         Ok(reqwest::Body::from(value.join("\n")))
     }
 }
 
 impl Decode<Vec<String>> for Lines {
-    fn decode(body: Bytes) -> Result<Vec<String>, BodyError> {
-        let text = String::from_utf8(body.into()).map_err(|_| BodyError::new("not UTF-8"))?;
+    type Context = ();
+    fn context(_: &ResponseHead<'_>) -> Result<(), CodecError> {
+        Ok(())
+    }
+    fn decode_body((): (), body: Bytes) -> Result<Vec<String>, CodecError> {
+        let text = String::from_utf8(body.into()).map_err(|_| CodecError::new("not UTF-8"))?;
         Ok(text.lines().map(str::to_owned).collect())
     }
 }

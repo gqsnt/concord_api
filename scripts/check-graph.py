@@ -18,7 +18,7 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 # Allowed direct normal dependencies of each production package.
 ALLOWED = {
     "concord-core": {"bytes", "percent-encoding", "reqwest", "url"},
-    "concord-extras": {"concord-core", "serde", "serde_json", "serde_urlencoded"},
+    "concord-extras": {"concord-core", "mime", "serde", "serde_json", "serde_urlencoded"},
     "concord-macros": {"http", "mime", "proc-macro2", "quote", "syn"},
     "concord": {"concord-core", "concord-extras", "concord-macros"},
 }

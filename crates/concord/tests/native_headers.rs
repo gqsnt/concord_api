@@ -702,6 +702,8 @@ fn full_header_map_with_native_values() {
         sensitive_segments: &[],
         sensitive_query: &[],
         sensitive_content_type: false,
+        sensitive_accept: false,
+        accept_removed: false,
     };
     let base = Base::parse("http://capacity.example.test").unwrap();
     let mut parts = Parts::new(&META, &base);

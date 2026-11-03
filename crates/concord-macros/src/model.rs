@@ -312,6 +312,9 @@ pub struct Slot {
     /// Every contribution ever applied to the slot, overridden and removed ones included:
     /// sensitivity is sticky along the chain.
     pub history: Vec<ContribId>,
+    /// The last contribution to the slot is a `remove` (for `accept`: a format's suggestion is
+    /// then not sent).
+    pub removed: bool,
 }
 
 pub struct Composed {
@@ -1352,6 +1355,7 @@ impl Model {
                                 sensitive: c.sensitive || c.key.lit().is_some_and(sensitive_name),
                                 items: vec![Item::Emit(id)],
                                 history: Vec::new(),
+                                removed: false,
                             },
                             live: true,
                             last_writer: writer,
@@ -1420,6 +1424,7 @@ impl Model {
             .into_iter()
             .map(|s| Slot {
                 history: s.history,
+                removed: !s.live,
                 ..s.slot
             })
             .collect()

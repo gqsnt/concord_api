@@ -55,10 +55,7 @@ async fn non_problem_error_body_keeps_status_and_a_content_free_reason() {
         panic!("expected undecodable, got {error:?}");
     };
     assert_eq!(status.as_u16(), 502);
-    assert!(
-        error.description().starts_with("JSON decode error"),
-        "{error}"
-    );
+    assert_eq!(error.label(), "the body is not valid JSON", "{error}");
     assert!(!error.to_string().contains("secret"));
 }
 

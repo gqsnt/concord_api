@@ -338,7 +338,7 @@ assert_eq!(
 
 // The API's error document: the response of a status error is unread.
 let response = error.into_response()?; // any other kind of error is returned as Err
-let problem = <Json as Decode<Problem>>::decode(response.bytes().await?)?;
+let problem = <Json as Decode<Problem>>::decode_body((), response.bytes().await?)?;
 assert_eq!(problem.title, "no such product");
 
 // A value that cannot form a request is a build error; nothing is sent.
@@ -355,7 +355,7 @@ your own limit (see the [error-document recipe](RECIPES.md#error-documents)).
 
 `Error` has no `source()` chain on purpose. The underlying errors are reachable through
 `transport()` (the reqwest error, top-level URL removed) and `body_source()` (the decoder's
-error; `BodyError::body_source()` on a `BodyError` you decoded yourself); both are **not**
+error; `CodecError::body_source()` on a `CodecError` you decoded yourself); both are **not**
 redacted: reqwest's nested errors can contain URLs (a refused redirect keeps its target), TLS
 errors name hosts, and decoder errors quote the body. To log one, pass it explicitly
 (`error.transport().map(|e| e as &dyn std::error::Error)`) where that output may contain them.

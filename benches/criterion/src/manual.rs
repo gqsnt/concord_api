@@ -35,10 +35,14 @@ impl Simple {
         }
     }
 
-    /// `GET health`.
+    /// `GET health`, with the `Accept` that Concord's `Json` suggests for a typed JSON output.
     pub fn health(&self) -> reqwest::Result<Request> {
         self.http
             .get(with_segments(&self.base, &["health"]))
+            .header(
+                reqwest::header::ACCEPT,
+                HeaderValue::from_static("application/json"),
+            )
             .build()
     }
 }

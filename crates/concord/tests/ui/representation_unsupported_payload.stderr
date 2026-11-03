@@ -1,7 +1,7 @@
 error[E0277]: the format `Lines` cannot decode a `Item` response
-  --> tests/ui/representation_unsupported_payload.rs:34:39
+  --> tests/ui/representation_unsupported_payload.rs:42:39
    |
-34 |         GET item() -> Item { response Lines; }
+42 |         GET item() -> Item { response Lines; }
    |                                       ^^^^^ this output's format is `Lines` (the nearest `response` statement: on the endpoint, a scope or the client); it needs `Lines: Decode<Item>`
    |
    = note: a format is a type implementing `Decode<Item>`, named by its path in a statement (`response Csv;`); an endpoint without typed output omits `->`
@@ -12,24 +12,24 @@ help: the trait `Decode<Item>` is not implemented for `Lines`
 13 | impl Decode<String> for Lines {
    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
    = help: for that trait implementation, expected `String`, found `Item`
-note: required by a bound in `concord::__macro::concord_core::__private::decoder`
+note: required by a bound in `concord::__macro::concord_core::__private::DecodeFormat::<T>::new`
   --> $WORKSPACE/crates/concord-core/src/__private.rs
    |
-   | pub fn decoder<R: Decode<T>, T>(meta: &'static EndpointMeta) -> Decoder<T> {
-   |                   ^^^^^^^^^ required by this bound in `decoder`
+   |     pub const fn new<F: Decode<T> + 'static>() -> Self {
+   |                         ^^^^^^^^^ required by this bound in `DecodeFormat::<T>::new`
 
 error[E0277]: the format `Raw` cannot encode a `Item` request body
-  --> tests/ui/representation_unsupported_payload.rs:35:48
+  --> tests/ui/representation_unsupported_payload.rs:43:48
    |
-35 |         POST create(body item: Item) { request Raw; }
+43 |         POST create(body item: Item) { request Raw; }
    |                                                ^^^ this body's format is `Raw` (the nearest `request` statement: on the endpoint, a scope or the client); it needs `Raw: Encode<Item>`
    |
    = note: a format is a type implementing `Encode<Item>`, named by its path in a statement (`request Ndjson;`)
 help: the trait `Encode<Item>` is not implemented for `Raw`
       but trait `Encode<concord::bytes::Bytes>` is implemented for it
-  --> tests/ui/representation_unsupported_payload.rs:19:1
+  --> tests/ui/representation_unsupported_payload.rs:23:1
    |
-19 | impl Encode<Bytes> for Raw {
+23 | impl Encode<Bytes> for Raw {
    | ^^^^^^^^^^^^^^^^^^^^^^^^^^
    = help: for that trait implementation, expected `concord::bytes::Bytes`, found `Item`
 note: required by a bound in `concord::__macro::concord_core::__private::BodyFormat::<T>::new`
@@ -39,9 +39,9 @@ note: required by a bound in `concord::__macro::concord_core::__private::BodyFor
    |                         ^^^^^^^^^ required by this bound in `BodyFormat::<T>::new`
 
 error[E0277]: the format `Lines` cannot encode a `u64` request body
-  --> tests/ui/representation_unsupported_payload.rs:41:43
+  --> tests/ui/representation_unsupported_payload.rs:49:43
    |
-41 |         POST count(body n: u64) { request Lines; }
+49 |         POST count(body n: u64) { request Lines; }
    |                                           ^^^^^ this body's format is `Lines` (the nearest `request` statement: on the endpoint, a scope or the client); it needs `Lines: Encode<u64>`
    |
    = note: a format is a type implementing `Encode<u64>`, named by its path in a statement (`request Ndjson;`)
@@ -59,49 +59,29 @@ note: required by a bound in `concord::__macro::concord_core::__private::BodyFor
    |                         ^^^^^^^^^ required by this bound in `BodyFormat::<T>::new`
 
 error[E0277]: the format `Raw` cannot decode a `u64` response
-  --> tests/ui/representation_unsupported_payload.rs:42:39
+  --> tests/ui/representation_unsupported_payload.rs:50:39
    |
-42 |         GET total() -> u64 { response Raw; }
+50 |         GET total() -> u64 { response Raw; }
    |                                       ^^^ this output's format is `Raw` (the nearest `response` statement: on the endpoint, a scope or the client); it needs `Raw: Decode<u64>`
    |
    = note: a format is a type implementing `Decode<u64>`, named by its path in a statement (`response Csv;`); an endpoint without typed output omits `->`
 help: the trait `Decode<u64>` is not implemented for `Raw`
       but trait `Decode<concord::bytes::Bytes>` is implemented for it
-  --> tests/ui/representation_unsupported_payload.rs:25:1
+  --> tests/ui/representation_unsupported_payload.rs:29:1
    |
-25 | impl Decode<Bytes> for Raw {
+29 | impl Decode<Bytes> for Raw {
    | ^^^^^^^^^^^^^^^^^^^^^^^^^^
    = help: for that trait implementation, expected `concord::bytes::Bytes`, found `u64`
-note: required by a bound in `concord::__macro::concord_core::__private::decoder`
+note: required by a bound in `concord::__macro::concord_core::__private::DecodeFormat::<T>::new`
   --> $WORKSPACE/crates/concord-core/src/__private.rs
    |
-   | pub fn decoder<R: Decode<T>, T>(meta: &'static EndpointMeta) -> Decoder<T> {
-   |                   ^^^^^^^^^ required by this bound in `decoder`
-
-error[E0277]: the format `Raw` cannot decode a `Item` response
-  --> tests/ui/representation_unsupported_payload.rs:51:41
-   |
-51 |             POST create(body n: u64) -> Item;
-   |                                         ^^^^ this output's format is `Raw` (the nearest `response` statement: on the endpoint, a scope or the client); it needs `Raw: Decode<Item>`
-   |
-   = note: a format is a type implementing `Decode<Item>`, named by its path in a statement (`response Csv;`); an endpoint without typed output omits `->`
-help: the trait `Decode<Item>` is not implemented for `Raw`
-      but trait `Decode<concord::bytes::Bytes>` is implemented for it
-  --> tests/ui/representation_unsupported_payload.rs:25:1
-   |
-25 | impl Decode<Bytes> for Raw {
-   | ^^^^^^^^^^^^^^^^^^^^^^^^^^
-   = help: for that trait implementation, expected `concord::bytes::Bytes`, found `Item`
-note: required by a bound in `concord::__macro::concord_core::__private::decoder`
-  --> $WORKSPACE/crates/concord-core/src/__private.rs
-   |
-   | pub fn decoder<R: Decode<T>, T>(meta: &'static EndpointMeta) -> Decoder<T> {
-   |                   ^^^^^^^^^ required by this bound in `decoder`
+   |     pub const fn new<F: Decode<T> + 'static>() -> Self {
+   |                         ^^^^^^^^^ required by this bound in `DecodeFormat::<T>::new`
 
 error[E0277]: the format `Lines` cannot encode a `u64` request body
-  --> tests/ui/representation_unsupported_payload.rs:51:33
+  --> tests/ui/representation_unsupported_payload.rs:59:33
    |
-51 |             POST create(body n: u64) -> Item;
+59 |             POST create(body n: u64) -> Item;
    |                                 ^^^ this body's format is `Lines` (the nearest `request` statement: on the endpoint, a scope or the client); it needs `Lines: Encode<u64>`
    |
    = note: a format is a type implementing `Encode<u64>`, named by its path in a statement (`request Ndjson;`)
@@ -117,3 +97,23 @@ note: required by a bound in `concord::__macro::concord_core::__private::BodyFor
    |
    |     pub const fn new<E: Encode<T>>() -> Self {
    |                         ^^^^^^^^^ required by this bound in `BodyFormat::<T>::new`
+
+error[E0277]: the format `Raw` cannot decode a `Item` response
+  --> tests/ui/representation_unsupported_payload.rs:59:41
+   |
+59 |             POST create(body n: u64) -> Item;
+   |                                         ^^^^ this output's format is `Raw` (the nearest `response` statement: on the endpoint, a scope or the client); it needs `Raw: Decode<Item>`
+   |
+   = note: a format is a type implementing `Decode<Item>`, named by its path in a statement (`response Csv;`); an endpoint without typed output omits `->`
+help: the trait `Decode<Item>` is not implemented for `Raw`
+      but trait `Decode<concord::bytes::Bytes>` is implemented for it
+  --> tests/ui/representation_unsupported_payload.rs:29:1
+   |
+29 | impl Decode<Bytes> for Raw {
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^
+   = help: for that trait implementation, expected `concord::bytes::Bytes`, found `Item`
+note: required by a bound in `concord::__macro::concord_core::__private::DecodeFormat::<T>::new`
+  --> $WORKSPACE/crates/concord-core/src/__private.rs
+   |
+   |     pub const fn new<F: Decode<T> + 'static>() -> Self {
+   |                         ^^^^^^^^^ required by this bound in `DecodeFormat::<T>::new`

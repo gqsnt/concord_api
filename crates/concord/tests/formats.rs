@@ -10,7 +10,7 @@ mod support;
 
 use concord::bytes::Bytes;
 use concord::reqwest::header::HeaderValue;
-use concord::{BodyError, Decode, Encode, ErrorKind, reqwest};
+use concord::{CodecError, Decode, Encode, ErrorKind, reqwest};
 use serde::{Deserialize, Serialize};
 use support::{Recorded, Reply, Server};
 
@@ -63,7 +63,7 @@ pub mod formats {
 /// Row 9: a downstream format, named by its path on an endpoint and in a default.
 pub mod codecs {
     use concord::bytes::Bytes;
-    use concord::{BodyError, Decode, Encode, reqwest};
+    use concord::{CodecError, Decode, Encode, ResponseHead, reqwest};
 
     /// `a,b` lines: one row per line.
     pub struct Csv;
@@ -71,19 +71,23 @@ pub mod codecs {
     impl Encode<Vec<(String, u32)>> for Csv {
         const CONTENT_TYPE: Option<&'static str> = Some("text/csv");
 
-        fn encode(rows: Vec<(String, u32)>) -> Result<reqwest::Body, BodyError> {
+        fn encode(rows: Vec<(String, u32)>) -> Result<reqwest::Body, CodecError> {
             let text: Vec<String> = rows.iter().map(|(k, v)| format!("{k},{v}")).collect();
             Ok(reqwest::Body::from(text.join("\n")))
         }
     }
 
     impl Decode<Vec<(String, u32)>> for Csv {
-        fn decode(body: Bytes) -> Result<Vec<(String, u32)>, BodyError> {
-            let text = String::from_utf8(body.into()).map_err(|_| BodyError::new("not UTF-8"))?;
+        type Context = ();
+        fn context(_: &ResponseHead<'_>) -> Result<(), CodecError> {
+            Ok(())
+        }
+        fn decode_body((): (), body: Bytes) -> Result<Vec<(String, u32)>, CodecError> {
+            let text = String::from_utf8(body.into()).map_err(|_| CodecError::new("not UTF-8"))?;
             text.lines()
                 .map(|line| {
-                    let (k, v) = line.split_once(',').ok_or(BodyError::new("not a row"))?;
-                    let v = v.parse().map_err(|_| BodyError::new("not a number"))?;
+                    let (k, v) = line.split_once(',').ok_or(CodecError::new("not a row"))?;
+                    let v = v.parse().map_err(|_| CodecError::new("not a number"))?;
                     Ok((k.to_owned(), v))
                 })
                 .collect()
@@ -92,11 +96,15 @@ pub mod codecs {
 
     /// A typed unit through a custom format: the body must be `ok`.
     impl Decode<()> for Csv {
-        fn decode(body: Bytes) -> Result<(), BodyError> {
+        type Context = ();
+        fn context(_: &ResponseHead<'_>) -> Result<(), CodecError> {
+            Ok(())
+        }
+        fn decode_body((): (), body: Bytes) -> Result<(), CodecError> {
             if body.as_ref() == b"ok" {
                 Ok(())
             } else {
-                Err(BodyError::new("expected `ok`"))
+                Err(CodecError::new("expected `ok`"))
             }
         }
     }
@@ -108,7 +116,7 @@ pub struct Private;
 impl Encode<String> for Private {
     const CONTENT_TYPE: Option<&'static str> = Some("application/x-private");
 
-    fn encode(value: String) -> Result<reqwest::Body, BodyError> {
+    fn encode(value: String) -> Result<reqwest::Body, CodecError> {
         Ok(value.into())
     }
 }
@@ -119,7 +127,7 @@ pub struct Untyped;
 impl Encode<String> for Untyped {
     const CONTENT_TYPE: Option<&'static str> = None;
 
-    fn encode(value: String) -> Result<reqwest::Body, BodyError> {
+    fn encode(value: String) -> Result<reqwest::Body, CodecError> {
         Ok(value.into())
     }
 }
@@ -262,7 +270,8 @@ async fn row3a_no_output_drains_under_a_response_default() {
 
 /// Rows 3b/3c: `-> ()` with the inherited format and `-> ()` with `response Json;` on the endpoint
 /// decode a typed unit: JSON
-/// `null` is accepted, an empty 204 is a decode error — unlike no `->` (row 3a).
+/// `null` is accepted; a bodyless 204 is refused by `Json`'s head check (no `Content-Type`), and
+/// an empty body labelled JSON is a decode error — unlike no `->` (row 3a).
 #[tokio::test]
 async fn row3b_3c_typed_unit_is_decoded() {
     let (_server, api) = shop(Reply::json(200, "null")).await;
@@ -273,15 +282,22 @@ async fn row3b_3c_typed_unit_is_decoded() {
         api.ping().send().await.unwrap_err(),
         api.ping_json().send().await.unwrap_err(),
     ] {
+        assert_eq!(error.kind(), ErrorKind::Metadata);
+    }
+    let () = api.remove(1).send().await.unwrap();
+    let (_server, api) = shop(Reply::new(204).header("content-type", "application/json")).await;
+    for error in [
+        api.ping().send().await.unwrap_err(),
+        api.ping_json().send().await.unwrap_err(),
+    ] {
         assert_eq!(error.kind(), ErrorKind::Decode);
         assert!(
             error
                 .to_string()
-                .contains("the response body is empty or only whitespace"),
+                .contains("the body is empty or only whitespace"),
             "{error}"
         );
     }
-    let () = api.remove(1).send().await.unwrap();
 }
 
 /// Rows 4a/4b: `-> String` under `response Json;` is a JSON string; with `response Text;` on the
@@ -293,6 +309,11 @@ async fn row4_json_string_versus_raw_text() {
     assert_eq!(api.readme().send().await.unwrap(), r#""2.4.1""#);
     let (_server, api) = shop(Reply::text(200, "2.4.1")).await;
     assert_eq!(api.readme().send().await.unwrap(), "2.4.1");
+    // `Json` refuses a `text/plain` response before reading it; labelled JSON, `2.4.1` is not
+    // JSON and fails as a decode error.
+    let error = api.version().send().await.unwrap_err();
+    assert_eq!(error.kind(), ErrorKind::Metadata);
+    let (_server, api) = shop(Reply::json(200, "2.4.1")).await;
     let error = api.version().send().await.unwrap_err();
     assert_eq!(error.kind(), ErrorKind::Decode);
 }
@@ -360,7 +381,7 @@ async fn row5_aliases_follow_the_written_format() {
         (&b"x"[..], ct("text/plain; charset=utf-8"))
     );
 
-    let empty = Server::reply(Reply::new(204)).await;
+    let empty = Server::reply(Reply::new(204).header("content-type", "application/json")).await;
     let api = Aliases::new(http()).with_base_url(empty.url()).unwrap();
     assert_eq!(
         api.unit().send().await.unwrap_err().kind(),
@@ -831,14 +852,23 @@ async fn row8f_inserted_content_type_is_classified() {
     assert!(format!("{open:?}").contains("content-type: application/x-private"));
 }
 
-/// Row 8d: Concord adds no `Accept` (the server sees reqwest's own `*/*`) and does not check the
-/// response `Content-Type`.
+/// Row 8d (modular): `Json` suggests `Accept: application/json` when none is declared, and checks
+/// the response `Content-Type` before reading the body; the two are not compared.
 #[tokio::test]
-async fn row8d_no_accept_and_no_response_type_check() {
-    let (server, api) =
-        shop(Reply::text(200, r#"{"id":2}"#).header("content-type", "text/html")).await;
+async fn row8d_json_suggests_accept_and_checks_the_response_type() {
+    let (server, api) = shop(
+        Reply::new(200)
+            .header("content-type", "text/html")
+            .body(r#"{"id":2}"#),
+    )
+    .await;
+    assert_eq!(
+        api.item(2).send().await.unwrap_err().kind(),
+        ErrorKind::Metadata
+    );
+    assert_eq!(server.single().header_all("accept"), ["application/json"]);
+    let (_server, api) = shop(Reply::json(200, r#"{"id":2}"#)).await;
     assert_eq!(api.item(2).send().await.unwrap(), Item { id: 2 });
-    assert_eq!(server.single().header_all("accept"), ["*/*"]);
 }
 
 concord::api! {
@@ -932,7 +962,7 @@ fn row12b_unused_and_cfg_disabled_defaults_are_never_referenced() {
 /// payload named `json`.
 pub mod lexical {
     use concord::bytes::Bytes;
-    use concord::{Binary, BodyError, Decode, Encode, Json, reqwest};
+    use concord::{Binary, CodecError, Decode, Encode, Json, ResponseHead, reqwest};
 
     /// `json::Codec`: a path that starts with a word is a path, not the word.
     pub mod json {
@@ -943,7 +973,7 @@ pub mod lexical {
 
         impl Encode<String> for Codec {
             const CONTENT_TYPE: Option<&'static str> = Some("text/x-upper");
-            fn encode(value: String) -> Result<reqwest::Body, BodyError> {
+            fn encode(value: String) -> Result<reqwest::Body, CodecError> {
                 Ok(value.to_uppercase().into())
             }
         }
@@ -955,13 +985,17 @@ pub mod lexical {
 
     impl Encode<Vec<u8>> for csv {
         const CONTENT_TYPE: Option<&'static str> = Some("text/csv");
-        fn encode(value: Vec<u8>) -> Result<reqwest::Body, BodyError> {
+        fn encode(value: Vec<u8>) -> Result<reqwest::Body, CodecError> {
             Ok(value.into())
         }
     }
 
     impl Decode<Vec<u8>> for csv {
-        fn decode(body: Bytes) -> Result<Vec<u8>, BodyError> {
+        type Context = ();
+        fn context(_: &ResponseHead<'_>) -> Result<(), CodecError> {
+            Ok(())
+        }
+        fn decode_body((): (), body: Bytes) -> Result<Vec<u8>, CodecError> {
             Ok(body.into())
         }
     }
@@ -1234,6 +1268,6 @@ fn compile_time_rows_have_ui_cases() {
 /// Decoding through `Decode` directly is unchanged (error documents).
 #[test]
 fn decode_is_usable_directly() {
-    let item = <concord::Json as Decode<Item>>::decode(Bytes::from_static(br#"{"id":1}"#));
+    let item = <concord::Json as Decode<Item>>::decode_body((), Bytes::from_static(br#"{"id":1}"#));
     assert_eq!(item.unwrap(), Item { id: 1 });
 }

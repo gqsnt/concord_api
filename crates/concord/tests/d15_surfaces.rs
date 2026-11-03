@@ -11,7 +11,7 @@ mod support;
 use std::error::Error as _;
 use std::sync::Arc;
 
-use concord::{BodyError, ErrorKind, reqwest};
+use concord::{CodecError, ErrorKind, reqwest};
 use rustls_pki_types::pem::PemObject;
 use rustls_pki_types::{CertificateDer, PrivateKeyDer};
 use support::{Reply, Server};
@@ -185,13 +185,15 @@ async fn s07_runtime_base_is_shown_but_not_echoed_by_errors() {
     assert!(format!("{raw} {raw:?}").contains("/u/PRIVATE"), "{raw:?}");
 }
 
-/// A user encoder whose description quotes the value (violating the `BodyError` contract).
+/// A user encoder whose label quotes the value (violating the `CodecError` contract). A label is
+/// `&'static str`, so the accidental `CodecError::new(format!(..))` does not compile (E01); this
+/// one leaks a formatted string on purpose to show the trust boundary.
 pub struct Quoting(());
 
 impl concord::Encode<String> for Quoting {
     const CONTENT_TYPE: Option<&'static str> = Some("text/plain");
-    fn encode(value: String) -> Result<reqwest::Body, BodyError> {
-        Err(BodyError::new(format!("cannot encode {value}")))
+    fn encode(value: String) -> Result<reqwest::Body, CodecError> {
+        Err(CodecError::new(format!("cannot encode {value}").leak()))
     }
 }
 
@@ -213,7 +215,8 @@ concord::api! {
     }
 }
 
-/// S09: a custom `BodyError` description is shown verbatim — the trust contract, not a guarantee.
+/// S09: a custom `CodecError` label is shown verbatim — the trust contract, not a guarantee: the
+/// static-label route makes a dynamic label deliberate (`leak`), it cannot forbid one.
 #[test]
 fn s09_custom_encoder_description_is_trusted_text() {
     let error = Enc::new(reqwest::Client::new())
@@ -227,7 +230,7 @@ fn s09_custom_encoder_description_is_trusted_text() {
     );
 }
 
-/// Json encode error: positive control in `body_source`, negative in `Display`/`Debug`.
+/// Json encode error: positive control in `source_unredacted`, negative in `Display`/`Debug`.
 #[test]
 fn json_encode_error_is_content_free() {
     let error = Enc::new(reqwest::Client::new())
@@ -239,7 +242,8 @@ fn json_encode_error_is_content_free() {
     assert!(!shown.contains("S3CR3T"), "{shown}");
     assert!(
         error
-            .body_source()
+            .codec_error()
+            .and_then(CodecError::source_unredacted)
             .unwrap()
             .to_string()
             .contains("S3CR3T-BODY")
@@ -248,18 +252,20 @@ fn json_encode_error_is_content_free() {
 }
 
 /// S08: callers can classify without printing anything: kind, status, and the native transport
-/// predicates. Encode-vs-construction is the one split only `Display` (static text) shows.
+/// predicates. An encoding failure carries the format's error (`codec_error`), a construction
+/// failure does not.
 #[tokio::test]
 async fn s08_classification_without_printing() {
     fn class(e: &concord::Error) -> &'static str {
         match e.kind() {
-            ErrorKind::Build if e.body_source().is_some() => "encode (with source)",
-            ErrorKind::Build => "build (construction, or an encode without source)",
+            ErrorKind::Build if e.codec_error().is_some() => "encode",
+            ErrorKind::Build => "construction",
             ErrorKind::Transport if e.transport().is_some_and(|t| t.is_connect()) => "connect",
             ErrorKind::Transport if e.transport().is_some_and(|t| t.is_timeout()) => "timeout",
             ErrorKind::Transport => "transport",
             ErrorKind::Status if e.status().is_some_and(|s| s.is_server_error()) => "5xx",
             ErrorKind::Status => "4xx",
+            ErrorKind::Metadata => "response head refused",
             ErrorKind::Decode => "decode",
             _ => "other",
         }
@@ -282,15 +288,12 @@ async fn s08_classification_without_printing() {
         .json(FailsWith("x".to_owned()))
         .prepare()
         .unwrap_err();
-    assert_eq!(class(&e), "encode (with source)");
+    assert_eq!(class(&e), "encode");
     let e = Enc::new(reqwest::Client::new())
         .quoting("x")
         .prepare()
         .unwrap_err();
-    assert_eq!(
-        class(&e),
-        "build (construction, or an encode without source)"
-    );
+    assert_eq!(class(&e), "encode");
 }
 
 concord::api! {

@@ -18,11 +18,11 @@ error[E0277]: the trait bound `concord::bytes::Bytes: serde::Deserialize<'de>` i
           and $N others
   = note: required for `concord::bytes::Bytes` to implement `serde_core::de::DeserializeOwned`
   = note: required for `Json` to implement `concord::Decode<concord::bytes::Bytes>`
-note: required by a bound in `concord::__macro::concord_core::__private::decoder`
+note: required by a bound in `concord::__macro::concord_core::__private::DecodeFormat::<T>::new`
  --> $WORKSPACE/crates/concord-core/src/__private.rs
   |
-  | pub fn decoder<R: Decode<T>, T>(meta: &'static EndpointMeta) -> Decoder<T> {
-  |                   ^^^^^^^^^ required by this bound in `decoder`
+  |     pub const fn new<F: Decode<T> + 'static>() -> Self {
+  |                         ^^^^^^^^^ required by this bound in `DecodeFormat::<T>::new`
 
 error[E0277]: the trait bound `concord::bytes::Bytes: serde::Deserialize<'de>` is not satisfied
   --> tests/ui_json/format_serde_bound.rs:10:61
@@ -44,8 +44,8 @@ error[E0277]: the trait bound `concord::bytes::Bytes: serde::Deserialize<'de>` i
            and $N others
    = note: required for `concord::bytes::Bytes` to implement `serde_core::de::DeserializeOwned`
    = note: required for `Json` to implement `concord::Decode<concord::bytes::Bytes>`
-note: required by a bound in `concord::__macro::concord_core::__private::decoder`
+note: required by a bound in `concord::__macro::concord_core::__private::DecodeFormat::<T>::new`
   --> $WORKSPACE/crates/concord-core/src/__private.rs
    |
-   | pub fn decoder<R: Decode<T>, T>(meta: &'static EndpointMeta) -> Decoder<T> {
-   |                   ^^^^^^^^^ required by this bound in `decoder`
+   |     pub const fn new<F: Decode<T> + 'static>() -> Self {
+   |                         ^^^^^^^^^ required by this bound in `DecodeFormat::<T>::new`

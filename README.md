@@ -97,7 +97,7 @@ pub async fn run(base_url: &str, token: String) -> Result<(), Box<dyn std::error
         Err(error) => {
             let response = error.into_response()?; // any other kind of error propagates
             let status = response.status();
-            let problem = <Json as Decode<Problem>>::decode(response.bytes().await?)?;
+            let problem = <Json as Decode<Problem>>::decode_body((), response.bytes().await?)?;
             println!("rejected with {status}: {}", problem.title);
         }
     }

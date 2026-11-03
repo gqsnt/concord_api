@@ -2,7 +2,7 @@
 
 use std::fmt;
 
-use concord::{BodyError, Decode, Json, reqwest};
+use concord::{CodecError, Decode, Json, reqwest};
 use serde::Deserialize;
 
 use crate::api::{Inventory, Item, Rename};
@@ -45,7 +45,7 @@ pub enum RenameError {
         /// The response status.
         status: reqwest::StatusCode,
         /// The content-free decode error (its source may quote the body).
-        error: BodyError,
+        error: CodecError,
     },
 }
 
@@ -97,7 +97,7 @@ pub async fn rename_item(api: &Inventory, id: u64, name: &str) -> Result<Item, R
             });
         }
     };
-    match <Json as Decode<Problem>>::decode(bytes) {
+    match <Json as Decode<Problem>>::decode_body((), bytes) {
         Ok(problem) => Err(RenameError::Problem { status, problem }),
         Err(error) => Err(RenameError::ProblemUndecodable { status, error }),
     }

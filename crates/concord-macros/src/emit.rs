@@ -1913,6 +1913,7 @@ fn native_headers_code(
             &__META,
         )?;
         __p.content_type_sensitive(__plan.content_type_sensitive);
+        __p.accept(__plan.accept_sensitive, __plan.accept_removed);
         #sends
     }
 }
@@ -2127,6 +2128,15 @@ fn prepare_body(
             .any(|slot| slot.key.lit() == Some("content-type") && slot.sensitive),
         HeaderComposition::Dynamic(_) => false,
     };
+    // The same for a format's `Accept` suggestion, plus whether the chain removed `accept` last
+    // (the suggestion is then not sent). Native chains decide both in `HeaderPlan`.
+    let (sensitive_accept, accept_removed) = match &composed.headers {
+        HeaderComposition::Static(slots) => slots
+            .iter()
+            .find(|slot| slot.key.lit() == Some("accept"))
+            .map_or((false, false), |slot| (slot.sensitive, slot.removed)),
+        HeaderComposition::Dynamic(_) => (false, false),
+    };
 
     let name = lit(&owner.dotted);
     let method_str = lit(&method.to_string());
@@ -2142,9 +2152,15 @@ fn prepare_body(
                 Origin::Default(_) => t.span(),
             };
             let r = format_for(model, &o.format, o.origin, false, at);
-            quote_spanned!(at=> #k::__private::decoder::<#r, #t>(&__META))
+            // A static: the format's `Accept` suggestion is a compile-time-checked value. The
+            // output type is named first, so an unsupported pair is reported as `Decode<T>`.
+            let init = located(quote!(#k::__private::DecodeFormat::<#t>::new::<#r>()), at);
+            quote!({
+                static __DECODE: #k::__private::DecodeFormat<#t> = #init;
+                (__DECODE.decoder(&__META), __DECODE.accept())
+            })
         }
-        None => quote!(#k::__private::drain(&__META)),
+        None => quote!((#k::__private::drain(&__META), ::core::option::Option::None)),
     };
     quote! {
         static __META: #k::__private::EndpointMeta = #k::__private::EndpointMeta {
@@ -2156,12 +2172,15 @@ fn prepare_body(
             sensitive_segments: &[#(#sensitive_segments),*],
             sensitive_query: &[#(#sensitive_query),*],
             sensitive_content_type: #sensitive_content_type,
+            sensitive_accept: #sensitive_accept,
+            accept_removed: #accept_removed,
         };
         let __body = #body_code;
         #bindings
         let mut __p = #k::__private::Parts::new(&__META, &#root.__base);
         #code
-        __p.finish(#k::reqwest::Method::#method, &#root.__http, __body, #decoder)
+        let (__decoder, __accept) = #decoder;
+        __p.finish(#k::reqwest::Method::#method, &#root.__http, __body, __decoder, __accept)
     }
 }
 

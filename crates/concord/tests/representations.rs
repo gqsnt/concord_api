@@ -17,7 +17,11 @@ static DECODED_LEN: AtomicUsize = AtomicUsize::new(usize::MAX);
 pub struct Measured;
 
 impl concord::Decode<usize> for Measured {
-    fn decode(body: Bytes) -> Result<usize, concord::BodyError> {
+    type Context = ();
+    fn context(_: &concord::ResponseHead<'_>) -> Result<(), concord::CodecError> {
+        Ok(())
+    }
+    fn decode_body((): (), body: Bytes) -> Result<usize, concord::CodecError> {
         DECODED_LEN.store(body.len(), Ordering::SeqCst);
         Ok(body.len())
     }
@@ -29,7 +33,7 @@ pub struct BadType;
 
 impl concord::Encode<String> for BadType {
     const CONTENT_TYPE: Option<&'static str> = Some("application/x\u{2011}custom");
-    fn encode(value: String) -> Result<reqwest::Body, concord::BodyError> {
+    fn encode(value: String) -> Result<reqwest::Body, concord::CodecError> {
         Ok(value.into())
     }
 }
@@ -114,7 +118,7 @@ async fn r07_text_and_binary_responses() {
     assert!(
         error
             .to_string()
-            .contains("not valid UTF-8 (valid up to byte 1)"),
+            .ends_with("the body is not valid UTF-8 (byte 1)"),
         "{error}"
     );
 }

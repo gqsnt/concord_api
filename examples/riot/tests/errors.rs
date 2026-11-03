@@ -96,9 +96,30 @@ async fn a_429_without_retry_after_still_stops() {
     );
 }
 
+/// A 200 that is not JSON (a proxy's HTML page) is refused by `Json`'s head check before its body
+/// is read, and stays readable; a body labelled with Riot's JSON type that is not JSON is a decode
+/// error. Neither prints the key.
 #[tokio::test]
-async fn malformed_success_body_is_a_decode_error() {
-    let server = Server::reply(Reply::new(200).body("<html>not json</html>")).await;
+async fn non_json_success_responses_are_refused_or_fail_to_decode() {
+    let page = Reply::new(200)
+        .header("content-type", "text/html")
+        .body("<html>not json</html>");
+    let server = Server::reply(page).await;
+    let error = riot(&server)
+        .platform(Platform::Na1)
+        .rotation()
+        .send()
+        .await
+        .unwrap_err();
+    assert_eq!(error.kind(), ErrorKind::Metadata);
+    assert!(!format!("{error} {error:?}").contains(KEY));
+    let page = error.into_response().unwrap().text().await.unwrap();
+    assert_eq!(page, "<html>not json</html>");
+
+    let mislabelled = Reply::new(200)
+        .header("content-type", "application/json;charset=utf-8")
+        .body("<html>not json</html>");
+    let server = Server::reply(mislabelled).await;
     let error = riot(&server)
         .platform(Platform::Na1)
         .rotation()
@@ -106,7 +127,7 @@ async fn malformed_success_body_is_a_decode_error() {
         .await
         .unwrap_err();
     assert_eq!(error.kind(), ErrorKind::Decode);
-    assert!(!format!("{error:?}").contains(KEY));
+    assert!(!format!("{error} {error:?}").contains(KEY));
 }
 
 #[test]

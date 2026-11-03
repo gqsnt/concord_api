@@ -26,7 +26,8 @@ async fn metadata_and_typed_bodies() {
     assert_eq!(response.headers()["etag"], "v8");
     // The borrowed observation leaves the error available to consume.
     let response = error.into_response().unwrap();
-    let document = <Json as Decode<Document>>::decode(response.bytes().await.unwrap()).unwrap();
+    let document =
+        <Json as Decode<Document>>::decode_body((), response.bytes().await.unwrap()).unwrap();
     assert_eq!(document.value, "conflict");
     assert_eq!(server.single().target, "/document");
 }

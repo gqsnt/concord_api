@@ -15,6 +15,8 @@ static META: EndpointMeta = EndpointMeta {
     sensitive_segments: &[],
     sensitive_query: &[],
     sensitive_content_type: false,
+    sensitive_accept: false,
+    accept_removed: false,
 };
 
 const OPS: [HeaderOp; 5] = [

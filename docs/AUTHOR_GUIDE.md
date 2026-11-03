@@ -852,13 +852,13 @@ error before anything is sent.
 
 Any other format is a type of your own implementing `Encode<T>` and/or `Decode<T>`, named by its
 path in a statement (`format Lines;`, `request codecs::Ndjson;`). There is no registry.
-Descriptions in `BodyError::new` must not contain body content: they are shown by Concord's
+Descriptions in `CodecError::new` must not contain body content: they are shown by Concord's
 `Display`. Attach the underlying error with `with_source`; it is reachable only through
 `Error::body_source`.
 
 ```rust
 use concord::bytes::Bytes;
-use concord::{BodyError, Decode, Encode, reqwest};
+use concord::{CodecError, Decode, Encode, ResponseHead, reqwest};
 
 /// One item per line.
 pub struct Lines;
@@ -866,15 +866,19 @@ pub struct Lines;
 impl Encode<Vec<String>> for Lines {
     const CONTENT_TYPE: Option<&'static str> = Some("text/plain; charset=utf-8");
 
-    fn encode(value: Vec<String>) -> Result<reqwest::Body, BodyError> {
+    fn encode(value: Vec<String>) -> Result<reqwest::Body, CodecError> {
         Ok(reqwest::Body::from(value.join("\n")))
     }
 }
 
 impl Decode<Vec<String>> for Lines {
-    fn decode(body: Bytes) -> Result<Vec<String>, BodyError> {
+    type Context = ();
+    fn context(_: &ResponseHead<'_>) -> Result<(), CodecError> {
+        Ok(())
+    }
+    fn decode_body((): (), body: Bytes) -> Result<Vec<String>, CodecError> {
         let text = String::from_utf8(body.into())
-            .map_err(|e| BodyError::new("the response is not UTF-8").with_source(e))?;
+            .map_err(|e| CodecError::new("the response is not UTF-8").with_source(e))?;
         Ok(text.lines().map(str::to_owned).collect())
     }
 }
@@ -896,7 +900,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     assert_eq!(request.headers()["content-type"], "text/plain; charset=utf-8");
     assert_eq!(request.body().and_then(|b| b.as_bytes()), Some(&b"b\na"[..]));
 
-    let decoded = <Lines as Decode<Vec<String>>>::decode(Bytes::from_static(b"x\ny\n"))?;
+    let decoded = <Lines as Decode<Vec<String>>>::decode_body((), Bytes::from_static(b"x\ny\n"))?;
     assert_eq!(decoded, ["x", "y"]);
     Ok(())
 }

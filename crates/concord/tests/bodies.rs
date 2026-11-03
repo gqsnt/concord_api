@@ -3,7 +3,7 @@
 //! statements.
 //! Scenario IDs refer to `v4/TEST_MATRIX.md`.
 
-use concord::{Binary, Json, Text};
+use concord::{Binary, IgnoreContentType, Json, Text};
 mod support;
 
 use concord::{ErrorKind, reqwest};
@@ -55,6 +55,11 @@ concord::api! {
         }
         DELETE remove(id: u64) { path "items/{id}"; }
         HEAD exists(id: u64) { path "items/{id}"; }
+        /// A server that mislabels its JSON: the check is skipped deliberately, here only.
+        GET legacy(id: u64) -> Item {
+            response IgnoreContentType<Json>;
+            path "legacy/{id}";
+        }
     }
 }
 
@@ -91,8 +96,8 @@ async fn r01_post_json() {
     assert_eq!(request.body, br#"{"name":"pen","note":null}"#);
     assert_eq!(
         request.header("accept"),
-        Some("*/*"),
-        "Concord sets no Accept; this is reqwest's default"
+        Some("application/json"),
+        "no Accept is declared: `Json` suggests one"
     );
 }
 
@@ -141,7 +146,8 @@ async fn optional_body_controls() {
     assert!(r[1].body.is_empty());
 }
 
-/// R03: malformed JSON is a decode error naming the position, not the content.
+/// R03: malformed JSON under a JSON media type is a decode error naming the position, not the
+/// content.
 #[tokio::test]
 async fn r03_malformed_json_is_a_decode_error() {
     let (_server, api) = shop(Reply::json(200, r#"{"id":"SECRET-BODY","name":"x"}"#)).await;
@@ -149,7 +155,9 @@ async fn r03_malformed_json_is_a_decode_error() {
     assert_eq!(error.kind(), ErrorKind::Decode);
     let shown = format!("{error} {error:?}");
     assert!(
-        shown.contains("JSON decode error (data) at line 1, column"),
+        shown.contains(
+            "response not decoded: the JSON does not match the expected type (line 1, column"
+        ),
         "{shown}"
     );
     assert!(!shown.contains("SECRET-BODY"), "{shown}");
@@ -157,38 +165,76 @@ async fn r03_malformed_json_is_a_decode_error() {
     // The decoder's own message is available explicitly, and may quote the body.
     assert!(
         error
-            .body_source()
+            .codec_error()
+            .and_then(concord::CodecError::source_unredacted)
             .unwrap()
             .to_string()
             .contains("SECRET-BODY")
     );
 }
 
-/// R03: the response `Content-Type` is not consulted: JSON is decoded by declaration.
+/// R03 (C03): JSON bytes labelled `text/html` are refused by `Json`'s head check, before the body
+/// is read; the body stays available. `IgnoreContentType<Json>`, selected on one endpoint, accepts
+/// them and still decodes them as JSON.
 #[tokio::test]
-async fn r03_content_type_is_not_checked() {
-    let (_server, api) =
-        shop(Reply::text(200, r#"{"id":2,"name":"y"}"#).header("content-type", "text/html")).await;
-    assert_eq!(api.item(2).send().await.unwrap().id, 2);
+async fn r03_content_type_is_checked_unless_deliberately_ignored() {
+    let html = || {
+        Reply::new(200)
+            .header("content-type", "text/html")
+            .body(r#"{"id":2,"name":"y"}"#)
+    };
+    let (_server, api) = shop(html()).await;
+    let error = api.item(2).send().await.unwrap_err();
+    assert_eq!(error.kind(), ErrorKind::Metadata);
+    assert_eq!(error.status(), None);
+    assert_eq!(
+        error.to_string(),
+        "GET Shop.item: response metadata not accepted: the response Content-Type is not application/json or an application/*+json type"
+    );
+    assert_eq!(
+        error.response().unwrap().headers()["content-type"],
+        "text/html"
+    );
+    let body = error.into_response().unwrap().bytes().await.unwrap();
+    assert_eq!(body.as_ref(), br#"{"id":2,"name":"y"}"#);
+
+    let (_server, api) = shop(html()).await;
+    assert_eq!(api.legacy(2).send().await.unwrap().id, 2);
+    // Only the media check is skipped: malformed JSON is still a decode error.
+    let (_server, api) = shop(
+        Reply::new(200)
+            .header("content-type", "text/html")
+            .body("<html>"),
+    )
+    .await;
+    assert_eq!(
+        api.legacy(2).send().await.unwrap_err().kind(),
+        ErrorKind::Decode
+    );
 }
 
-/// R04: no output accepts 204 and any 2xx body; JSON on 204 fails (an empty body is not JSON),
-/// with a static hint and the serde error as the body source.
+/// R04: no output accepts 204 and any 2xx body. A bodyless 204 to a JSON output has no
+/// `Content-Type`, so `Json` refuses its head; labelled JSON, it fails as a decode error (an empty
+/// body is not JSON), with a static label and the serde error as the unredacted source.
 #[tokio::test]
 async fn r04_empty_responses() {
     let (_server, api) = shop(Reply::new(204)).await;
     api.clone().remove(1).send().await.unwrap();
     let error = api.item(1).send().await.unwrap_err();
+    assert_eq!(error.kind(), ErrorKind::Metadata);
+    let (_server, api) = shop(Reply::new(204).header("content-type", "application/json")).await;
+    let error = api.item(1).send().await.unwrap_err();
     assert_eq!(error.kind(), ErrorKind::Decode);
     assert!(
         error
             .to_string()
-            .ends_with("the response body is empty or only whitespace, which is not JSON; omit `->` if this endpoint never returns a body, or use a format that accepts an empty one"),
+            .ends_with("the body is empty or only whitespace, which is not JSON; omit `->` if this endpoint returns no body, or use a format that accepts an empty one"),
         "{error}"
     );
     assert!(
         error
-            .body_source()
+            .codec_error()
+            .and_then(concord::CodecError::source_unredacted)
             .unwrap()
             .to_string()
             .contains("EOF while parsing")

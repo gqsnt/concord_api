@@ -1,9 +1,10 @@
-//! Inspecting errors without consuming them (`Error::response`, `BodyError::body_source`), the
-//! static hints of the JSON decoder, the base-URL message, and the auto traits of the runtime types.
+//! Inspecting errors without consuming them (`Error::response`, `Error::codec_error`,
+//! `CodecError::source_unredacted`), the static labels of the JSON format (its strict response
+//! head check, and empty bodies), the base-URL message, and the auto traits of the runtime types.
 
 mod support;
 
-use concord::{BodyError, Decode, Error, ErrorKind, Json, reqwest};
+use concord::{CodecError, Decode, Error, ErrorKind, Json, reqwest};
 use serde::Deserialize;
 use support::{Reply, Server};
 
@@ -30,8 +31,12 @@ impl std::fmt::Display for Refused {
 impl std::error::Error for Refused {}
 
 impl Decode<String> for Strict {
-    fn decode(body: concord::bytes::Bytes) -> Result<String, BodyError> {
-        Err(BodyError::new("strict format refused the body")
+    type Context = ();
+    fn context(_: &concord::ResponseHead<'_>) -> Result<(), CodecError> {
+        Ok(())
+    }
+    fn decode_body((): (), body: concord::bytes::Bytes) -> Result<String, CodecError> {
+        Err(CodecError::new("strict format refused the body")
             .with_source(Refused(String::from_utf8_lossy(&body).into_owned())))
     }
 }
@@ -91,7 +96,7 @@ async fn response_is_borrowed_and_the_body_stays_unread() {
     // The body is still there for the error document.
     let response = error.into_response().unwrap();
     let bytes = response.bytes().await.unwrap();
-    let problem = <concord::Json as Decode<Problem>>::decode(bytes).unwrap();
+    let problem = <concord::Json as Decode<Problem>>::decode_body((), bytes).unwrap();
     assert_eq!(problem.title, "slow down");
 }
 
@@ -104,30 +109,36 @@ async fn response_is_none_for_other_errors() {
 }
 
 #[tokio::test]
-async fn body_source_of_a_standalone_body_error() {
+async fn source_of_a_codec_error() {
     // Through a Concord call.
     let (_server, api) = api(Reply::text(200, "CONTENT")).await;
     let error = api.strict().send().await.unwrap_err();
     assert_eq!(error.kind(), ErrorKind::Decode);
     assert!(!format!("{error} {error:?}").contains("CONTENT"));
-    let source = error.body_source().unwrap();
+    let source = error
+        .codec_error()
+        .and_then(concord::CodecError::source_unredacted)
+        .unwrap();
     assert_eq!(source.to_string(), "refused: CONTENT");
     // Directly, as when decoding an error document yourself.
-    let error = <Strict as Decode<String>>::decode("CONTENT".into()).unwrap_err();
+    let error = <Strict as Decode<String>>::decode_body((), "CONTENT".into()).unwrap_err();
     assert_eq!(error.to_string(), "strict format refused the body");
     assert!(!format!("{error:?}").contains("CONTENT"));
-    assert_eq!(error.body_source().unwrap().to_string(), "refused: CONTENT");
+    assert_eq!(
+        error.source_unredacted().unwrap().to_string(),
+        "refused: CONTENT"
+    );
     assert!(std::error::Error::source(&error).is_none());
 }
 
-const EMPTY_HINT: &str = "the response body is empty or only whitespace, which is not JSON; omit `->` if this endpoint never returns a body, or use a format that accepts an empty one";
-const TEXT_HINT: &str =
-    "if the response is not JSON, the endpoint may need `response Text;` or `response Binary;`";
+const EMPTY: &str = "response not decoded: the body is empty or only whitespace, which is not JSON; omit `->` if this endpoint returns no body, or use a format that accepts an empty one";
 
-/// Empty, whitespace and `null` stay distinct; no output accepts anything.
+/// Empty, whitespace and `null` stay distinct under a JSON media type; no output accepts
+/// anything. Without a JSON `Content-Type`, the same bodies are refused by the head check first.
 #[tokio::test]
 async fn empty_responses_are_not_null() {
-    for reply in [Reply::new(204), Reply::text(200, " \r\n\t")] {
+    let json_204 = Reply::new(204).header("content-type", "application/json");
+    for reply in [json_204, Reply::json(200, " \r\n\t")] {
         let (_server, api) = api(reply).await;
         for error in [
             api.unit().send().await.unwrap_err(),
@@ -135,44 +146,63 @@ async fn empty_responses_are_not_null() {
             api.value().send().await.map(drop).unwrap_err(),
         ] {
             assert_eq!(error.kind(), ErrorKind::Decode);
-            assert!(error.to_string().ends_with(EMPTY_HINT), "{error}");
+            assert!(error.to_string().ends_with(EMPTY), "{error}");
         }
         api.nothing().send().await.unwrap();
     }
+    // A bodyless 204 without `Content-Type`: refused before any body is read (C10: a format of
+    // your own decides what a 204 means; `Json` is not lenient).
+    let (_bare, bare) = api(Reply::new(204)).await;
+    let error = bare.maybe().send().await.unwrap_err();
+    assert_eq!(error.kind(), ErrorKind::Metadata);
+    assert_eq!(
+        error.codec_error().map(CodecError::label),
+        Some("the response has no Content-Type")
+    );
     let (_server, api) = api(Reply::json(200, "null")).await;
     api.unit().send().await.unwrap();
     assert!(api.maybe().send().await.unwrap().is_none());
     assert_eq!(api.value().send().await.unwrap(), serde_json::Value::Null);
 }
 
-/// The not-JSON hint appears for a syntax error at the first byte only, and never quotes the
-/// body.
+/// A response that is not labelled JSON is refused by its head, before its body is read, whatever
+/// the body looks like; the error keeps the response unread and never quotes it. A JSON-labelled
+/// body that is not JSON is a decode error with a static label and positions.
 #[tokio::test]
-async fn not_json_hint_is_static_and_only_at_the_first_byte() {
+async fn non_json_responses_are_refused_by_the_head_and_never_quoted() {
     let png: &[u8] = b"\x89PNG\r\n\x1a\n";
-    let cases: [(&[u8], bool); 5] = [
-        (b"hello", true),
-        (b"<html><body>SECRET</body></html>", true),
-        (png, true),
-        (b"2.4.1", false),
-        (b"{\"title\": 1}", false),
+    let bodies: [&[u8]; 4] = [
+        b"hello",
+        b"<html><body>SECRET</body></html>",
+        png,
+        b"{\"title\": \"looks like JSON\"}",
     ];
-    for (body, hinted) in cases {
-        let (_server, api) = api(Reply::new(200).body(body)).await;
-        for error in [
-            api.text().send().await.map(drop).unwrap_err(),
-            api.raw().send().await.map(drop).unwrap_err(),
-            api.problem().send().await.map(drop).unwrap_err(),
-        ] {
-            let shown = error.to_string();
-            assert_eq!(error.kind(), ErrorKind::Decode, "{shown}");
-            assert_eq!(shown.ends_with(TEXT_HINT), hinted, "{body:?}: {shown}");
+    for body in bodies {
+        for content_type in [None, Some("text/html"), Some("text/plain; charset=utf-8")] {
+            let reply = match content_type {
+                Some(ct) => Reply::new(200).header("content-type", ct).body(body),
+                None => Reply::new(200).body(body),
+            };
+            let (_server, api) = api(reply).await;
+            let error = api.problem().send().await.unwrap_err();
+            let shown = format!("{error} {error:?}");
+            assert_eq!(error.kind(), ErrorKind::Metadata, "{shown}");
             assert!(
                 !shown.contains("SECRET") && !shown.contains("hello"),
                 "{shown}"
             );
+            let response = error.into_response().unwrap();
+            assert_eq!(response.bytes().await.unwrap().as_ref(), body);
         }
     }
+    let (_server, api) = api(Reply::json(200, "<html>SECRET</html>")).await;
+    let error = api.problem().send().await.unwrap_err();
+    assert_eq!(error.kind(), ErrorKind::Decode);
+    let codec = error.codec_error().unwrap();
+    assert_eq!(codec.label(), "the body is not valid JSON");
+    assert_eq!((codec.get("line"), codec.get("column")), (Some(1), Some(1)));
+    assert!(!format!("{error} {error:?}").contains("SECRET"));
+    assert!(codec.source_unredacted().is_some());
 }
 
 #[test]
@@ -195,11 +225,11 @@ fn runtime_types_are_send_and_sync() {
     fn send_sync<T: Send + Sync>() {}
     fn send<T: Send>(_: &T) {}
     send_sync::<Error>();
-    send_sync::<BodyError>();
+    send_sync::<CodecError>();
     send_sync::<concord::Prepared<Problem>>();
     send_sync::<concord::Decoder<Problem>>();
     send_sync::<Api>();
-    let boxed: Box<dyn std::error::Error + Send + Sync> = Box::new(BodyError::new("x"));
+    let boxed: Box<dyn std::error::Error + Send + Sync> = Box::new(CodecError::new("x"));
     drop(boxed);
     let api = Api::new(reqwest::Client::new());
     send(&api.problem().send());

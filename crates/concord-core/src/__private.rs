@@ -4,13 +4,13 @@
 use std::fmt::{self, Display, Write as _};
 
 use percent_encoding::{AsciiSet, NON_ALPHANUMERIC};
-use reqwest::header::{CONTENT_TYPE, HeaderMap, HeaderName, HeaderValue};
+use reqwest::header::{ACCEPT, CONTENT_TYPE, HeaderMap, HeaderName, HeaderValue};
 use reqwest::{Method, Url};
 
-use crate::codec::{BodyError, Decode, Encode};
+use crate::codec::{CodecError, Decode, Encode};
 use crate::error::Error;
 use crate::header::ToHeaderValue;
-use crate::prepared::{Decoder, Prepared};
+use crate::prepared::{Decoder, HeadStep, Prepared, head_step};
 
 pub use crate::value::IntoValue;
 
@@ -35,6 +35,12 @@ pub struct EndpointMeta {
     /// composition): the body's media type inserted by Concord is then flagged like a declared
     /// `content-type` value would be.
     pub sensitive_content_type: bool,
+    /// Whether the `accept` key is sensitive on this endpoint: a format's `Accept` suggestion
+    /// inserted by Concord is then flagged like a declared value.
+    pub sensitive_accept: bool,
+    /// Whether the chain's last `accept` contribution is a `remove` (literal chains; a native
+    /// chain decides it in [`HeaderPlan`]): the format's suggestion is then not sent.
+    pub accept_removed: bool,
 }
 
 /// A value written as text: path segments, subdomain labels, query values and template holes
@@ -173,7 +179,7 @@ pub fn display_into<T: Text + ?Sized>(
 /// `Encode::CONTENT_TYPE` or a declared media type, through `HeaderValue::from_static`: an invalid
 /// one fails the static's evaluation, a compile error) and each request only clones it.
 pub struct BodyFormat<T> {
-    encode: fn(T) -> Result<reqwest::Body, BodyError>,
+    encode: fn(T) -> Result<reqwest::Body, CodecError>,
     content_type: Option<HeaderValue>,
 }
 
@@ -210,6 +216,39 @@ pub fn encode_body<T>(
     Ok((body, format.content_type.clone()))
 }
 
+/// An endpoint's response format. The generated code holds one in a `static` per endpoint with a
+/// typed output, so the format's `Accept` suggestion is a compile-time-validated `HeaderValue`
+/// (through `HeaderValue::from_static`: an invalid one fails the static's evaluation).
+pub struct DecodeFormat<T> {
+    head: HeadStep<T>,
+    accept: Option<HeaderValue>,
+}
+
+impl<T: 'static> DecodeFormat<T> {
+    /// The format `F` for the output `T`.
+    pub const fn new<F: Decode<T> + 'static>() -> Self {
+        Self {
+            head: head_step::<F, T>,
+            accept: match F::ACCEPT {
+                Some(text) => Some(HeaderValue::from_static(text)),
+                None => None,
+            },
+        }
+    }
+}
+
+impl<T> DecodeFormat<T> {
+    /// The endpoint's response handling.
+    pub fn decoder(&self, meta: &'static EndpointMeta) -> Decoder<T> {
+        Decoder::typed(meta, self.head)
+    }
+
+    /// The format's `Accept` suggestion.
+    pub fn accept(&self) -> Option<&HeaderValue> {
+        self.accept.as_ref()
+    }
+}
+
 /// The request being composed by one endpoint's generated code.
 pub struct Parts<'a> {
     meta: &'static EndpointMeta,
@@ -222,6 +261,10 @@ pub struct Parts<'a> {
     headers: HeaderMap,
     /// Set by [`HeaderPlan`] when a native key classified `content-type` as sensitive.
     content_type_sensitive: bool,
+    /// Set by [`HeaderPlan`] when a native key classified `accept` as sensitive.
+    accept_sensitive: bool,
+    /// Set by [`HeaderPlan`] when a native chain's last `accept` contribution is a `remove`.
+    accept_removed: bool,
 }
 
 impl<'a> Parts<'a> {
@@ -237,7 +280,17 @@ impl<'a> Parts<'a> {
             query: Vec::new(),
             headers: HeaderMap::new(),
             content_type_sensitive: false,
+            accept_sensitive: false,
+            accept_removed: false,
         }
+    }
+
+    /// Applies what a [`HeaderPlan`] found about `accept`: whether the format's suggestion would
+    /// be sensitive, and whether the chain removed `accept` last (the suggestion is then not
+    /// sent).
+    pub fn accept(&mut self, sensitive: bool, removed: bool) {
+        self.accept_sensitive |= sensitive;
+        self.accept_removed |= removed;
     }
 
     /// Applies what a [`HeaderPlan`] found about `content-type`: the media type Concord inserts
@@ -392,13 +445,17 @@ impl<'a> Parts<'a> {
         Ok(())
     }
 
-    /// Assembles the native request.
+    /// Assembles the native request. `accept`: the format's `Accept` suggestion (`None` for an
+    /// endpoint without typed output), sent only when no `accept` header was composed and the
+    /// chain did not end by removing one. It is applied after the authored headers, so it never
+    /// takes part in their composition (no conflict, no `remove` target).
     pub fn finish<T>(
         self,
         method: Method,
         client: &reqwest::Client,
         body: Option<(reqwest::Body, Option<HeaderValue>)>,
         decoder: Decoder<T>,
+        accept: Option<&HeaderValue>,
     ) -> Result<Prepared<T>, Error> {
         let mut url = self.url;
         if !self.segments.is_empty() || self.trailing_slash {
@@ -441,6 +498,18 @@ impl<'a> Parts<'a> {
                     })?;
             }
             *request.body_mut() = Some(body);
+        }
+        if let Some(accept) = accept
+            && !(self.meta.accept_removed || self.accept_removed)
+            && !headers.contains_key(ACCEPT)
+        {
+            let mut accept = accept.clone();
+            if self.meta.sensitive_accept || self.accept_sensitive {
+                accept.set_sensitive(true);
+            }
+            headers.try_insert(ACCEPT, accept).map_err(|_| {
+                Error::build(Some(self.meta), "accept", "does not fit in the header map")
+            })?;
         }
         *request.headers_mut() = headers;
         Ok(Prepared::new(client.clone(), request, decoder))
@@ -771,6 +840,12 @@ pub struct HeaderPlan<const N: usize> {
     pub sensitive: [bool; N],
     /// Whether some contribution to `content-type` is marked.
     pub content_type_sensitive: bool,
+    /// Whether some contribution to `accept` is marked (the format's suggestion, if Concord
+    /// inserts one, is then flagged sensitive).
+    pub accept_sensitive: bool,
+    /// Whether the last contribution to `accept` is a `remove` (the format's suggestion is then
+    /// not sent).
+    pub accept_removed: bool,
 }
 
 impl<const N: usize> HeaderPlan<N> {
@@ -786,6 +861,8 @@ impl<const N: usize> HeaderPlan<N> {
         let mut live = [false; N];
         let mut sensitive = [false; N];
         let mut content_type_sensitive = false;
+        let mut accept_sensitive = false;
+        let mut accept_removed = false;
         for i in 0..N {
             let entry = entries[i];
             let fail = |reason| Err(Error::build(Some(meta), entry.label, reason));
@@ -820,6 +897,10 @@ impl<const N: usize> HeaderPlan<N> {
                 && !(i + 1..N).any(|j| names[j] == names[i] && closes(j));
             sensitive[i] = sensitive_name(names[i])
                 || (0..N).any(|j| names[j] == names[i] && entries[j].marked);
+            if names[i] == ACCEPT {
+                accept_sensitive |= entry.marked;
+                accept_removed = entry.op == HeaderOp::Remove;
+            }
             if names[i] == CONTENT_TYPE {
                 content_type_sensitive |= entry.marked;
                 if explicit_media && live[i] {
@@ -833,6 +914,8 @@ impl<const N: usize> HeaderPlan<N> {
             live,
             sensitive,
             content_type_sensitive,
+            accept_sensitive,
+            accept_removed,
         })
     }
 }
@@ -843,16 +926,10 @@ impl fmt::Debug for Redacted {
     }
 }
 
-/// The response handling of an endpoint declared `-> T` (format `R`, from the nearest `response`
-/// statement).
-pub fn decoder<R: Decode<T>, T>(meta: &'static EndpointMeta) -> Decoder<T> {
-    Decoder::new(meta, R::decode, false)
-}
-
 /// The response handling of an endpoint without `->`: any 2xx, body drained unbuffered (a
 /// `response` default does not apply).
 pub fn drain(meta: &'static EndpointMeta) -> Decoder<()> {
-    Decoder::new(meta, |_| Ok(()), true)
+    Decoder::drained(meta, || ())
 }
 
 /// Formats a query or header template; a failing `Display` is a build error naming the placement.

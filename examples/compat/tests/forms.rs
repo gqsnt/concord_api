@@ -22,10 +22,14 @@ async fn flat_nested_and_brackets() {
     assert_eq!(error.kind(), ErrorKind::Build);
     assert_eq!(
         error.to_string(),
-        "POST Forms.nested: request not built: body: form encode error"
+        "POST Forms.nested: request not built: body: the value cannot be encoded as a form"
     );
     assert_eq!(
-        error.body_source().unwrap().to_string(),
+        error
+            .codec_error()
+            .and_then(concord::CodecError::source_unredacted)
+            .unwrap()
+            .to_string(),
         "unsupported value"
     );
     assert_eq!(server.requests().len(), 1); // nested form never reached the server

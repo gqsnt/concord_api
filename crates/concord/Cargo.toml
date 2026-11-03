@@ -99,3 +99,11 @@ required-features = ["extras"]
 [[test]]
 name = "values"
 required-features = ["extras"]
+
+[[test]]
+name = "metadata"
+required-features = ["json"]
+
+[[test]]
+name = "accept"
+required-features = ["json"]

@@ -223,7 +223,7 @@ async fn handling_errors() -> Result<(), Box<dyn std::error::Error>> {
 
     // The API's error document: the response of a status error is unread.
     let response = error.into_response()?; // any other kind of error is returned as Err
-    let problem = <Json as Decode<Problem>>::decode(response.bytes().await?)?;
+    let problem = <Json as Decode<Problem>>::decode_body((), response.bytes().await?)?;
     assert_eq!(problem.title, "no such product");
 
     // A value that cannot form a request is a build error; nothing is sent.

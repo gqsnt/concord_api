@@ -102,10 +102,11 @@
 //! |---|---|
 //! | [`api!`] | the declaration macro |
 //! | [`Prepared<T>`](Prepared) | a built request, not yet sent: `request()`, `send()`, `send_raw()`, `into_parts()` |
-//! | [`Decoder<T>`](Decoder) | an endpoint's response handling, for a response you obtained natively: `decode`, `finish` |
-//! | [`Error`], [`ErrorKind`] | the one error type: `kind`, `endpoint`, `status`, `into_response`, `transport`, `body_source` |
-//! | [`Encode<T>`](Encode), [`Decode<T>`](Decode) | format traits, implemented by `Json` (feature `json`), `Text`, `Binary` (feature `extras`), `Form` (feature `form`) and by your own types; a statement names a format by its type path (`format Json;`) |
-//! | [`BodyError`] | an encoding or decoding failure with a content-free description |
+//! | [`Decoder<T>`](Decoder) | a response handling (an endpoint's, or [`Decoder::new`] for a format of your choice), for a response you obtained natively: `decode`, `finish` |
+//! | [`Error`], [`ErrorKind`] | the one error type: `kind`, `endpoint`, `status`, `response`, `into_response`, `codec_error`, `transport` |
+//! | [`Encode<T>`](Encode), [`Decode<T>`](Decode) | the open format traits, implemented by `Json` (feature `json`), `Text`, `Binary`, `IgnoreContentType<F>` (feature `extras`), `Form` (feature `form`) and by your own types; a statement names a format by its type path (`format Json;`) |
+//! | [`ResponseHead`], [`ContentTypeField`] | what a [`Decode`] implementation reads before the body: status, version, header fields |
+//! | [`CodecError`] | a format's failure: a static label, numeric positions, an unredacted source |
 //! | [`IntoValue<T>`](IntoValue) | the closed set of conversions accepted by arguments and setters |
 //! | [`ToHeaderValue`] | the closed set of header values: native `HeaderValue`, text, integers, `bool` (another type is sent through a template) |
 //! | `concord::reqwest`, `concord::bytes` | the re-exported [`reqwest`](https://docs.rs/reqwest/0.13) and [`bytes`](https://docs.rs/bytes/1) crates |
@@ -171,8 +172,10 @@
 //! [`Error`]'s `Display` and `Debug`. Keys named `authorization`, `cookie`, `x-api-key`, `token`,
 //! `password` and a few more are treated as sensitive without the marker. A native `HeaderValue`
 //! whose own sensitivity flag is set stays flagged and is withheld the same way, marker or not.
-//! `Error` has no `source()` chain: the underlying reqwest or decoder error is reachable only through
-//! [`Error::transport`] and [`Error::body_source`], which are not redacted.
+//! `Error` has no `source()` chain: the underlying reqwest or format error is reachable only through
+//! [`Error::transport`] and [`CodecError::source_unredacted`] (from [`Error::codec_error`]), and the
+//! unread response of a status or metadata error through [`Error::response`]; none of them is
+//! redacted. A format's [`CodecError`] label is static text by construction, not a secrecy proof.
 //!
 //! **Not covered:** the native `reqwest::Request`, `Url` and `Response` `Debug` output (it prints
 //! full URLs), reqwest errors from requests you execute yourself, redirects (reqwest forwards
@@ -203,15 +206,15 @@
 //!   Disable it to choose reqwest's features in your own `Cargo.toml`.
 
 pub use concord_core::{
-    BodyError, Decode, Decoder, Encode, Error, ErrorKind, IntoValue, Prepared, ToHeaderValue,
-    bytes, reqwest,
+    CodecError, ContentTypeField, Decode, Decoder, Encode, Error, ErrorKind, IntoValue, Prepared,
+    ResponseHead, ToHeaderValue, bytes, reqwest,
 };
 #[cfg(feature = "form")]
 pub use concord_extras::Form;
 #[cfg(feature = "json")]
 pub use concord_extras::Json;
 #[cfg(feature = "extras")]
-pub use concord_extras::{Binary, Text};
+pub use concord_extras::{Binary, IgnoreContentType, Text};
 
 /// Declares an HTTP API as a client → scopes → endpoints tree and generates its typed client.
 ///

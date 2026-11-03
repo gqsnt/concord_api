@@ -144,12 +144,22 @@ async fn form_response() {
             expires_in: 60
         }
     );
+    // `Form` checks the response head: no `Content-Type` is refused before the body is read.
     let (_server, api) = auth(Reply::new(200).body("access_token=SECRET&expires_in=soon")).await;
+    let error = api.token().send().await.unwrap_err();
+    assert_eq!(error.kind(), ErrorKind::Metadata);
+    assert!(!format!("{error} {error:?}").contains("SECRET"));
+    let (_server, api) = auth(
+        Reply::new(200)
+            .header("content-type", "application/x-www-form-urlencoded")
+            .body("access_token=SECRET&expires_in=soon"),
+    )
+    .await;
     let error = api.token().send().await.unwrap_err();
     assert_eq!(error.kind(), ErrorKind::Decode);
     assert_eq!(
         error.to_string(),
-        "GET Auth.token: response not decoded: form decode error"
+        "GET Auth.token: response not decoded: the body is not a valid form"
     );
     assert!(!format!("{error:?}").contains("SECRET"));
 }
@@ -162,7 +172,12 @@ fn unencodable_form_is_a_build_error() {
         .prepare()
         .unwrap_err();
     assert_eq!(error.kind(), ErrorKind::Build);
-    assert!(error.to_string().contains("form encode error"), "{error}");
+    assert!(
+        error
+            .to_string()
+            .ends_with("body: the value cannot be encoded as a form"),
+        "{error}"
+    );
 }
 
 /// Form in, JSON out (an OAuth token endpoint): request and response formats are independent.

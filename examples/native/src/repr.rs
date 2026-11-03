@@ -9,7 +9,7 @@
 //! through `concord::Error::body_source`.
 
 use concord::bytes::Bytes;
-use concord::{BodyError, Decode, Encode, reqwest};
+use concord::{CodecError, Decode, Encode, ResponseHead, reqwest};
 use serde::Serialize;
 use serde::de::DeserializeOwned;
 
@@ -23,11 +23,12 @@ pub struct Ndjson(());
 impl<T: Serialize> Encode<Vec<T>> for Ndjson {
     const CONTENT_TYPE: Option<&'static str> = Some("application/x-ndjson");
 
-    fn encode(value: Vec<T>) -> Result<reqwest::Body, BodyError> {
+    fn encode(value: Vec<T>) -> Result<reqwest::Body, CodecError> {
         let mut out = Vec::new();
         for (index, record) in value.iter().enumerate() {
             serde_json::to_writer(&mut out, record).map_err(|e| {
-                BodyError::new(format!("NDJSON record {} could not be encoded", index + 1))
+                CodecError::new("an NDJSON record could not be encoded")
+                    .at("record", index as u64 + 1)
                     .with_source(e)
             })?;
             out.push(b'\n');
@@ -37,7 +38,11 @@ impl<T: Serialize> Encode<Vec<T>> for Ndjson {
 }
 
 impl<T: DeserializeOwned> Decode<Vec<T>> for Ndjson {
-    fn decode(body: Bytes) -> Result<Vec<T>, BodyError> {
+    type Context = ();
+    fn context(_: &ResponseHead<'_>) -> Result<(), CodecError> {
+        Ok(())
+    }
+    fn decode_body((): (), body: Bytes) -> Result<Vec<T>, CodecError> {
         let mut records = Vec::new();
         for (index, line) in body.split(|b| *b == b'\n').enumerate() {
             let line = line.strip_suffix(b"\r").unwrap_or(line);
@@ -45,13 +50,12 @@ impl<T: DeserializeOwned> Decode<Vec<T>> for Ndjson {
                 continue;
             }
             let record = serde_json::from_slice(line).map_err(|e| {
-                // Line number and column only: never the line's content.
-                BodyError::new(format!(
-                    "NDJSON line {} is not a valid record (column {})",
-                    index + 1,
-                    e.column()
-                ))
-                .with_source(e)
+                // Positions only: never the line's content (it is in the unredacted source).
+                CodecError::new("an NDJSON line is not a valid record")
+                    .at("record", records.len() as u64 + 1)
+                    .at("line", index as u64 + 1)
+                    .at("column", e.column() as u64)
+                    .with_source(e)
             })?;
             records.push(record);
         }
@@ -73,7 +77,7 @@ pub struct Form(());
 impl Encode<Vec<(String, String)>> for Form {
     const CONTENT_TYPE: Option<&'static str> = Some("application/x-www-form-urlencoded");
 
-    fn encode(value: Vec<(String, String)>) -> Result<reqwest::Body, BodyError> {
+    fn encode(value: Vec<(String, String)>) -> Result<reqwest::Body, CodecError> {
         let encoded = url::form_urlencoded::Serializer::new(String::new())
             .extend_pairs(value)
             .finish();

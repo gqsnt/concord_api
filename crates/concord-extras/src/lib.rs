@@ -1,27 +1,33 @@
 //! The standard formats of Concord, written against the public contracts of
 //! [`concord_core`]: [`Encode`](concord_core::Encode) and [`Decode`](concord_core::Decode).
 //!
-//! | Format | Feature | Body (`Encode<T>`) | Output (`Decode<T>`) |
-//! |---|---|---|---|
-//! | `Json` | `json` | any `T: Serialize`, `application/json` | any `T: DeserializeOwned` |
-//! | [`Text`] | — | `String`, `text/plain; charset=utf-8` | `String` (UTF-8) |
-//! | [`Binary`] | — | `Bytes`, `Vec<u8>`, `application/octet-stream` | `Bytes`, `Vec<u8>` |
-//! | `Form` | `form` | any `T: Serialize` (flat), `application/x-www-form-urlencoded` | any `T: DeserializeOwned` |
+//! | Format | Feature | Body (`Encode<T>`) | Output (`Decode<T>`): response head check | `Accept` suggestion |
+//! |---|---|---|---|---|
+//! | `Json` | `json` | any `T: Serialize`, `application/json` | any `T: DeserializeOwned`; exactly one `Content-Type`, `application/json` or `application/*+json`, UTF-8 | `application/json` |
+//! | [`Text`] | — | `String`, `text/plain; charset=utf-8` | `String` (UTF-8); any media type; a declared non-UTF-8 charset is refused | none |
+//! | [`Binary`] | — | `Bytes`, `Vec<u8>`, `application/octet-stream` | `Bytes`, `Vec<u8>`; nothing checked (`image/png` is fine) | none |
+//! | `Form` | `form` | any `T: Serialize` (flat), `application/x-www-form-urlencoded` | any `T: DeserializeOwned`; exactly one `application/x-www-form-urlencoded` | `application/x-www-form-urlencoded` |
+//! | [`IgnoreContentType<F>`] | — | `F`'s | `F`'s, without its `Content-Type` check | `F`'s |
 //!
-//! None of them is known to the `api!` macro: a statement names them by their type path
-//! (`format Json;`), exactly like a format of your own. Applications normally get them through
-//! the `concord` crate.
+//! Head checks run before the body is read; a refusal is an
+//! [`ErrorKind::Metadata`](concord_core::ErrorKind::Metadata) error that keeps the response
+//! unread. None of these formats is known to the `api!` macro: a statement names them by their
+//! type path (`format Json;`), exactly like a format of your own. Applications normally get them
+//! through the `concord` crate.
 
 mod binary;
 #[cfg(feature = "form")]
 mod form;
+mod ignore;
 #[cfg(feature = "json")]
 mod json;
+mod media;
 mod text;
 
 pub use binary::Binary;
 #[cfg(feature = "form")]
 pub use form::Form;
+pub use ignore::IgnoreContentType;
 #[cfg(feature = "json")]
 pub use json::Json;
 pub use text::Text;

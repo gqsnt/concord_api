@@ -337,9 +337,11 @@ name = "concord-extras"
 version = "4.0.0-alpha.1"
 dependencies = [
  "concord-core",
+ "mime",
  "serde",
  "serde_json",
  "serde_urlencoded",
+ "tokio",
 ]
 
 [[package]]

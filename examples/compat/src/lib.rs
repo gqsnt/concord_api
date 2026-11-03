@@ -1,5 +1,5 @@
 //! Compact downstream compatibility declarations, exercised only on loopback.
-use concord::{reqwest, BodyError, Decode, Encode};
+use concord::{reqwest, CodecError, Decode, Encode};
 use concord::{Form, Json};
 use serde::{Deserialize, Serialize};
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -39,10 +39,14 @@ pub struct Envelope {
 /// Checks the synthetic envelope after JSON decoding.
 pub struct Checked;
 impl Decode<Envelope> for Checked {
-    fn decode(body: concord::bytes::Bytes) -> Result<Envelope, BodyError> {
-        let envelope = <concord::Json as Decode<Envelope>>::decode(body)?;
+    type Context = ();
+    fn context(_: &concord::ResponseHead<'_>) -> Result<(), CodecError> {
+        Ok(())
+    }
+    fn decode_body((): (), body: concord::bytes::Bytes) -> Result<Envelope, CodecError> {
+        let envelope = <concord::Json as Decode<Envelope>>::decode_body((), body)?;
         if !envelope.ok {
-            return Err(BodyError::new("application rejected request")
+            return Err(CodecError::new("application rejected request")
                 .with_source(std::io::Error::other(envelope.error.unwrap_or_default())));
         }
         Ok(envelope)
@@ -82,7 +86,7 @@ pub struct Order {
 pub struct Brackets;
 impl Encode<Nested> for Brackets {
     const CONTENT_TYPE: Option<&'static str> = Some("application/x-www-form-urlencoded");
-    fn encode(value: Nested) -> Result<reqwest::Body, BodyError> {
+    fn encode(value: Nested) -> Result<reqwest::Body, CodecError> {
         let bytes = url::form_urlencoded::Serializer::new(String::new())
             .append_pair("metadata[order]", &value.metadata.order.to_string())
             .finish();
@@ -188,19 +192,33 @@ concord::api! {
 }
 
 /// A response format for an endpoint that answers either JSON or nothing (`200` with a document,
-/// `204` without): an empty or whitespace-only body is `None`, anything else is decoded as JSON.
-/// JSON itself has no empty document, so this is a format of the application's own.
+/// `204 No Content` without). JSON itself has no empty document and `Json` requires a JSON
+/// `Content-Type`, so this policy is the application's own: a `204` needs no `Content-Type` and
+/// decodes to `None`; any other 2xx must pass `Json`'s head check and decode as JSON (`null` is
+/// `None` too). The head decides, before the body is read; `Json` itself stays strict.
 pub struct JsonOrEmpty;
+
 impl<T: serde::de::DeserializeOwned> Decode<Option<T>> for JsonOrEmpty {
-    fn decode(body: concord::bytes::Bytes) -> Result<Option<T>, BodyError> {
-        // JSON whitespace (RFC 8259): space, tab, line feed, carriage return.
-        if body
-            .iter()
-            .all(|b| matches!(b, b' ' | b'\t' | b'\n' | b'\r'))
-        {
+    /// Whether the response was a `204 No Content`.
+    type Context = bool;
+    const ACCEPT: Option<&'static str> = <concord::Json as Decode<Option<T>>>::ACCEPT;
+
+    fn check_content_type(head: &concord::ResponseHead<'_>) -> Result<(), CodecError> {
+        if head.status() == concord::reqwest::StatusCode::NO_CONTENT {
+            return Ok(());
+        }
+        <concord::Json as Decode<Option<T>>>::check_content_type(head)
+    }
+
+    fn context(head: &concord::ResponseHead<'_>) -> Result<bool, CodecError> {
+        Ok(head.status() == concord::reqwest::StatusCode::NO_CONTENT)
+    }
+
+    fn decode_body(no_content: bool, body: concord::bytes::Bytes) -> Result<Option<T>, CodecError> {
+        if no_content {
             return Ok(None);
         }
-        <concord::Json as Decode<T>>::decode(body).map(Some)
+        <concord::Json as Decode<Option<T>>>::decode_body((), body)
     }
 }
 
