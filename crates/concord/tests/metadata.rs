@@ -337,3 +337,68 @@ fn futures_stay_send() {
     send(&api.versioned().prepare().unwrap().send());
     copy::<Decoder<Item>>();
 }
+
+/// A payload that can be sent once: not `Clone`, consumed by its encoder.
+pub struct OneShot(Vec<u8>);
+
+/// An encoder-only downstream format over a one-shot payload (C14).
+pub struct Upload;
+
+impl concord::Encode<OneShot> for Upload {
+    const CONTENT_TYPE: Option<&'static str> = Some("application/x-upload");
+    fn encode(value: OneShot) -> Result<reqwest::Body, CodecError> {
+        Ok(reqwest::Body::from(value.0))
+    }
+}
+
+concord::api! {
+    /// Encoder-only and transport-metadata fixtures.
+    pub client Transfer {
+        base "http://transfer.invalid";
+        PUT upload(body file: OneShot) { path "u"; request Upload; }
+        GET packed() -> Vec<u8> { path "p"; response concord::Binary; }
+        GET packed_json() -> Item { path "p"; response Json; }
+    }
+}
+
+/// C14: the payload is moved into the body; no `Clone` is required of it (the request type is
+/// then not `Clone` either), and the bytes arrive as encoded.
+#[tokio::test]
+async fn a_one_shot_payload_is_moved_into_the_body() {
+    let server = Server::reply(Reply::new(204)).await;
+    let api = Transfer::new(reqwest::Client::new())
+        .with_base_url(server.url())
+        .unwrap();
+    api.upload(OneShot(b"once".to_vec())).send().await.unwrap();
+    let request = server.single();
+    assert_eq!(request.body, b"once");
+    assert_eq!(request.header("content-type"), Some("application/x-upload"));
+}
+
+/// C19: `Content-Encoding` is not a media type, and Concord decompresses nothing (reqwest's own
+/// decompression features are off in this build): `Binary` returns the encoded bytes unchanged,
+/// and `Json` accepts the JSON media type but cannot decode gzip bytes (a decode error, not a
+/// metadata one).
+#[tokio::test]
+async fn content_encoding_is_not_a_media_type() {
+    let gzip: &[u8] = b"\x1f\x8b\x08\x00\x00\x00\x00\x00\x00\x03";
+    let reply = || {
+        Reply::new(200)
+            .header("content-type", "application/json")
+            .header("content-encoding", "gzip")
+            .body(gzip)
+    };
+    let server = Server::reply(reply()).await;
+    let api = Transfer::new(reqwest::Client::new())
+        .with_base_url(server.url())
+        .unwrap();
+    assert_eq!(api.packed().send().await.unwrap(), gzip);
+    let server = Server::reply(reply()).await;
+    let api = Transfer::new(reqwest::Client::new())
+        .with_base_url(server.url())
+        .unwrap();
+    assert_eq!(
+        api.packed_json().send().await.unwrap_err().kind(),
+        ErrorKind::Decode
+    );
+}

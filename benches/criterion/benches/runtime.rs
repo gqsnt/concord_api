@@ -227,7 +227,13 @@ fn plan_scaling(c: &mut Criterion) {
             (
                 "removals",
                 std::array::from_fn(|_| &names[0]),
-                shapes(&|i| if i % 2 == 0 { HeaderOp::Set } else { HeaderOp::Remove }),
+                shapes(&|i| {
+                    if i % 2 == 0 {
+                        HeaderOp::Set
+                    } else {
+                        HeaderOp::Remove
+                    }
+                }),
             ),
         ];
         for (shape, refs, shapes) in cases {
