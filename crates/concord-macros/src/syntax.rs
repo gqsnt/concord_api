@@ -173,7 +173,7 @@ fn output_media(input: ParseStream<'_>) -> syn::Error {
     let span = literal(&input.fork()).map_or_else(|_| input.span(), |lit| lit.span());
     syn::Error::new(
         span,
-        "an output takes no media type: Concord sends no `Accept` and does not check the response `Content-Type`; to send an `Accept` header, declare it (`headers { \"accept\" = \"...\"; }`)",
+        "an output takes no media type: the response format checks the response `Content-Type` itself and may suggest an `Accept`; to send a specific `Accept`, declare the header (`headers { \"accept\" = \"...\"; }`), and for other response media types use a format that accepts them",
     )
 }
 
@@ -506,7 +506,7 @@ fn parse_default(input: ParseStream<'_>, stmts: &mut Stmts) -> syn::Result<()> {
         }
         if !request {
             return Err(input.error(
-                "an output takes no media type: Concord sends no `Accept` and does not check the response `Content-Type`; to send an `Accept` header, declare it (`headers { \"accept\" = \"...\"; }`)",
+                "an output takes no media type: the response format checks the response `Content-Type` itself and may suggest an `Accept`; to send a specific `Accept`, declare the header (`headers { \"accept\" = \"...\"; }`), and for other response media types use a format that accepts them",
             ));
         }
         let lit: LitStr = input.parse()?;

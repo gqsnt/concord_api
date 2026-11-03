@@ -426,19 +426,19 @@ concord::api! {
 Excerpt of [`format_output_media_type.stderr`](../crates/concord/tests/ui/format_output_media_type.stderr):
 
 ```text
-error: an output takes no media type: Concord sends no `Accept` and does not check the response `Content-Type`; to send an `Accept` header, declare it (`headers { "accept" = "..."; }`)
+error: an output takes no media type: the response format checks the response `Content-Type` itself and may suggest an `Accept`; to send a specific `Accept`, declare the header (`headers { "accept" = "..."; }`), and for other response media types use a format that accepts them
  --> tests/ui/format_output_media_type.rs:8:53
   |
 8 |         GET item() -> Item { response concord::Json "application/vnd.api+json"; }
   |                                                     ^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-error: an output takes no media type: Concord sends no `Accept` and does not check the response `Content-Type`; to send an `Accept` header, declare it (`headers { "accept" = "..."; }`)
+error: an output takes no media type: the response format checks the response `Content-Type` itself and may suggest an `Accept`; to send a specific `Accept`, declare the header (`headers { "accept" = "..."; }`), and for other response media types use a format that accepts them
   --> tests/ui/format_output_media_type.rs:14:32
    |
 14 |         response concord::Json "application/vnd.api+json";
 ```
 
-**Fix:** remove it: Concord sends no `Accept` and checks no response `Content-Type`. If the API needs an `Accept` header, declare it like any header. A body's media type is written on `request` (`request Json "application/vnd.api+json";`); `format` takes none.
+**Fix:** remove it. The response format checks the response `Content-Type` itself (`Json` accepts `application/json` and `application/*+json`, so `application/vnd.api+json` needs nothing more) and may suggest an `Accept`; to send a specific one, declare the header like any header. For a response labelled with a type the format refuses, choose a format that accepts it (one of yours, or `IgnoreContentType<Json>` deliberately). A body's media type is written on `request` (`request Json "application/vnd.api+json";`); `format` takes none.
 
 ### A body media type and a `content-type` header
 
