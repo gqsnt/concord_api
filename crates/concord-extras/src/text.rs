@@ -10,7 +10,7 @@ use crate::media;
 /// - **Requests:** `String`, sent as `text/plain; charset=utf-8`.
 /// - **Responses:** `String`. `Text` names the decoder, not a media type: any `Content-Type` is
 ///   accepted (`text/plain`, `text/csv`, `application/xml`), and so is a missing or malformed
-///   one. The one refusal, made before the body is read, is a single well-formed `Content-Type`
+///   one, including one with bytes outside visible ASCII (RFC 9110 obs-text, read as opaque). The one refusal, made before the body is read, is a single well-formed `Content-Type`
 ///   whose `charset` parameter names something other than UTF-8 (`us-ascii` is accepted) or
 ///   appears more than once: the bytes are not transcoded. Invalid UTF-8 is a decode error with
 ///   the byte offset.

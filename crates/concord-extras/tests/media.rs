@@ -300,17 +300,15 @@ mod vendor {
 
         fn check_content_type(head: &ResponseHead<'_>) -> Result<(), CodecError> {
             <Json as Decode<T>>::check_content_type(head)?;
-            let ContentTypeField::One(value) = head.content_type() else {
-                return Err(CodecError::new("the response has no single Content-Type"));
-            };
-            let media: mime::Mime = value
-                .to_str()
-                .ok()
-                .and_then(|text| text.parse().ok())
-                .ok_or(CodecError::new(
-                    "the response Content-Type is not a media type",
-                ))?;
-            if media.essence_str() != ACME_V2 {
+            // `Json` accepted exactly one visible-ASCII field: compare its type and subtype, the
+            // text before any parameter, case-insensitively.
+            let essence = match head.content_type() {
+                ContentTypeField::One(value) => value.to_str().ok(),
+                _ => None,
+            }
+            .and_then(|text| text.split(';').next())
+            .map(|essence| essence.trim_end_matches([' ', '\t']));
+            if !essence.is_some_and(|essence| essence.eq_ignore_ascii_case(ACME_V2)) {
                 return Err(CodecError::new(
                     "the response Content-Type is not application/vnd.acme.v2+json",
                 ));
