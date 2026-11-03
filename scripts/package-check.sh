@@ -27,6 +27,7 @@ done
 # Cargo's effective target directory (it honours CARGO_TARGET_DIR and configuration).
 read -r version target_dir < <(cargo metadata --format-version 1 --no-deps --locked \
   | python3 -I -c 'import json,sys; m=json.load(sys.stdin); print(next(p["version"] for p in m["packages"] if p["name"]=="concord"), m["target_directory"])')
+target_dir=${target_dir%$'\r'}  # Python on Windows ends its line with CR LF
 # The archive is read from standard input: on Windows the target directory is `D:\...`, and GNU
 # tar takes a name with a colon before its first slash for a remote `host:path`.
 for crate in $crates; do
