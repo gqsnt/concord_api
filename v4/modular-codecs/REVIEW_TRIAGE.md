@@ -5,7 +5,7 @@
 | ID | Proposal | Disposition | Implemented | Evidence (fails on the old behaviour) |
 |---|---|---|---|---|
 | R1 | Riot's live client must not follow redirects | Done | `93f9b0e`: `http_policy` (`redirect::Policy::none()`, timeout) and `live_http_client` (HTTPS only), used by `main` | `examples/riot/tests/redirects.rs`: `send()` → `Status` 302 with the unread response; `send_raw()` → 302; the second origin receives nothing. Control: reqwest's default policy forwards `X-Riot-Token` to the second origin |
-| R2 | Validate all native header names without calling endpoints | Done | `25a52f7`: `Client::validate_header_names()`; `HeaderPlan` split into a presence-free structural pass shared with `prepare()` | `crates/concord-core/tests/header_plan.rs::the_validator_and_prepare_share_one_verdict`; `crates/concord/tests/validate_names.rs` (counters: no default, `Display` or encoder runs; uninhabited body type; each problem equals `prepare()`'s error); Riot; a 480-endpoint generated SDK |
+| R2 | Validate all native header names without calling endpoints | Done | `25a52f7`: `Client::validate_header_names()`; `HeaderPlan` split into a presence-free structural pass shared with `prepare()` | `crates/concord-core/tests/header_plan.rs::the_validator_and_prepare_share_one_verdict`; `crates/concord/tests/validate_names.rs` (counters: no default, `Display` or encoder runs; uninhabited body type; each problem equals `prepare()`'s header-composition error; an earlier build step can fail first: `earlier_build_steps_fail_first`); Riot; a 480-endpoint generated SDK |
 | R3 | Seal `NativeKey` | Done | `3a836e7`: private supertrait, `HeaderName` only | `ui/native_key_sealed.rs` (the same downstream impl compiles against `dfdeed8`; its snapshot degenerated to an import error at the crate split `7ec1f4b` and was repaired after the final semantic review, S1), `ui/native_key_deref.rs` |
 | R4 | Static codec-error labels, numeric context, explicit source | Done | `ca545f0`: `CodecError::new(&'static str)`, `.at(name, u64)` (3 positions), `.with_source`, `source_unredacted()`; every creation site migrated (a dynamic label no longer compiles) | `concord-core` `compile_fail,E0308` doctest; `crates/concord-extras/tests/media.rs::decode_errors_show_positions_not_content`; `examples/native/tests/bodies.rs` (NDJSON record/line/column); `d15_surfaces.rs` S09 shows a deliberate `leak` is still possible (trust boundary) |
 | R5 | Index native-key occurrence provenance | Done | `a4b465a`: each `KeyPath` records its owner when its contribution is recorded | `emit::tests::key_occurrence_owner_matches_a_scan_of_every_owner`; expansion timings in PERF |
@@ -81,3 +81,19 @@ semantic-review corrections, while `mime` still parsed the parameters.
 The vendor example (`AcmeV2`, CUSTOM_FORMATS §5) re-parsed the whole field with `mime`, inheriting
 its parameter limits; it now compares the text before the first `;`, which `Json` has already
 validated.
+
+## Re-review of the semantic-review corrections (side Opus, `530b6c1`)
+
+Observed model `claude-opus-5-5`; report [`rereview-opus-REPORT.md`](reports/rereview-opus-REPORT.md).
+S1–S4 and M1–M8: all closed (S1 checked with the real UI suite on a pristine copy, 77/77, and on an
+unsealed mutant, 76/77 with `native_key_sealed` failing; P1–P6 rerun; a 55-input comparison of the
+parameter scanner with `mime` found the scanner right wherever they differ). No blocking finding.
+
+| ID | Severity | Finding | Disposition | Evidence |
+|---|---|---|---|---|
+| S2 residual | minor | four places still said the problem equals `prepare()`'s error without the qualifier | Fixed (AUTHOR_GUIDE §4.9, `NameCheck::endpoint` docs, the test comment, row R2) | — |
+| MC19 | note | outcome accepted; the rationale understated the cost (values decide which error an unbuildable endpoint reports; an encoder runs first) | MC19 rewritten to state the trade-off and the disagreement | — |
+| MC17 | note | the scanner is a second, hand-written parser; say so | MC17 says so | — |
+| N1 | minor | AUTHOR_GUIDE §5.1, MIGRATION, SEMANTICS §7 and the extras crate table did not mention the repeated-charset rule | Fixed (`Json`, `Form`: charset absent or once and UTF-8) | — |
+| N2 | minor | `Text` refused a repeated equal UTF-8 charset while accepting more ambiguous fields it cannot read | Fixed: `Text` refuses a readable non-UTF-8 charset, repeated or not, and nothing else (MC17) | `crates/concord-extras/tests/media.rs` (`charset::a_repeated_charset_is_refused`) |
+| N3 | minor | CUSTOM_FORMATS §5 suggested a wrapper named like the format (`Versioned<T>`) and split an excerpt from its follow-up | Fixed: `WithVersion<T>`, paragraph moved after the follow-up | — |
