@@ -2,7 +2,7 @@
 //!
 //! A format is a marker type implementing [`concord::Encode<T>`] (request bodies) and/or
 //! [`concord::Decode<T>`] (2xx response bodies). It is chosen only by naming its path in a
-//! representation statement (`format Ndjson;`, `request Ndjson;`, `response Ndjson;`) on the
+//! format statement (`format Ndjson;`, `request Ndjson;`, `response Ndjson;`) on the
 //! endpoint, a scope or the client; a payload (`body rows: Vec<StockRow>`, `-> Vec<StockRow>`)
 //! names only its Rust type. Error descriptions must stay content-free: they are shown by
 //! Concord's `Display`; the underlying error (which may quote the body) goes to `with_source` and is reachable only

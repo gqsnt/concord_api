@@ -469,7 +469,7 @@ fn the_same_constant_twice_is_decided_when_the_request_is_built() {
     assert_eq!(error.kind(), ErrorKind::Build);
     let text = format!("{error} {error:?}");
     assert!(
-        text.contains("`AUTHORIZATION` on `Twice.again` sets a header that `AUTHORIZATION` on `Twice` already sets"),
+        text.contains("`AUTHORIZATION` on `Twice.again` sets a header that `AUTHORIZATION` on `Twice` already sets (both name the same header)"),
         "{text}"
     );
     assert!(!text.contains("TOK") && !text.contains("AGAIN"), "{text}");

@@ -1530,7 +1530,8 @@ impl Model {
             }
         }
         // The pairs (a, b) of contributions sharing a chain, each once: endpoints of one scope
-        // share most of their chain, and the fixpoint below depends only on the pairs. For each
+        // share most of their chain; soundness depends only on the closure over these pairs, though
+        // the order of visits can leave out some redundant `Same` conditions (see `implied`). For each
         // `a`, statically sensitive contributions come first: their conditions are the ones the
         // others' conditions most often reduce to (see `implied`).
         let mut pairs: Vec<(ContribId, ContribId)> = Vec::new();

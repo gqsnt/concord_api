@@ -86,12 +86,34 @@ the right trade-off). Neither found a release-blocking defect.
 | Id | Reviewer | Severity | Finding | Disposition |
 |---|---|---|---|---|
 | X2-1 / N1 | both | should-fix (Opus), minor (Sol) | The chain-order header list deduplicated by text, dropping a reintroduced key after `remove` and repeated appends | FIXED: every operation listed; unit test extended (`KEY`, `remove KEY`, `KEY`, `append KEY`) |
-| X2-2, X2-3 | Sol | note | O-P1 and O-P7 reproduced: two cases where one spelling redacts more | Recorded limits; the claims are now "native spelling never redacts less" (`spelling_equivalence.rs`, K11) |
+| X2-2, X2-3 | Sol | note | O-P1 and O-P7 reproduced: two cases where one spelling redacts more | Recorded limits; the claims are now "native spelling never redacts less" (`spelling_equivalence.rs`, K14) |
 | N2 | Opus | should-fix | The run-time conflict said "written differently" also for the same constant written twice | FIXED: "(both name the same header)"; DIAGNOSTICS |
 | N3 | Opus | should-fix | X-R1 doubled macro expansion time on the native shared suite (`native_conditions` iterated every pair of every endpoint's chain; more distinct keys after X-R1); PERF claimed no code change since `d884461` | FIXED: the fixpoint visits each pair of contributions once (endpoints of one scope share their chain); the generated code of the deep and shared native suites is byte-identical, `cargo check` of the shared suite 5.2 s → 1.7–2.1 s; re-measured in PERF §5 |
-| N4 | Opus | should-fix | TEST_MATRIX K4 still listed "same constant twice" as a compile error; no rows for the new checks; stale test name in P4; old hint quoted in RECONCILIATION | FIXED: K4 corrected, K10 (`checks/hygiene`), K11 (`spelling_equivalence.rs`); records updated |
+| N4 | Opus | should-fix | TEST_MATRIX K4 still listed "same constant twice" as a compile error; no rows for the new checks; stale test name in P4; old hint quoted in RECONCILIATION | FIXED: K4 corrected, K13 (`checks/hygiene`), K14 (`spelling_equivalence.rs`); records updated |
 | P-a | Opus | preference | A provable duplicate named the native contribution in between instead of the owner that set the header | FIXED: the proved setter is kept; `ui/native_chain_duplicate_names_the_setter` |
 | P-b, P-c | Opus | preference | SEMANTICS §5 overstated completeness ("whatever the unknown pairs turn out to be"); stale wording in SEMANTICS §9, DIAGNOSTICS, MIGRATION | FIXED (per-pair analysis stated; wording) |
 | P-d | Opus | preference | The native `content-type` hedge appears on every body endpoint of a native chain | KEPT: accurate; the macro cannot name which key resolves to `content-type` |
 | P-e | Opus | preference | MSRV lane omitted `spelling_equivalence`; `JsonOrEmpty` treated form feed as whitespace | FIXED |
 | D2 | Opus | deferred (trigger lowered) | X-R1 makes the most common identity mistake run-time only; a generated name-only plan check per client would automate "prepare every endpoint in a test" | DEFERRED, first item of the backlog |
+
+## Confirmations (`5195cd1`)
+
+Sol XHigh re-ran its 32 generated native/literal pairs and 96 fixpoint cases on 1.97.1 and
+1.85.1: all 4,928 observations match `0f559d8`, so nothing is redacted less. Both mutations of the
+blocking fixes are still killed, and X2-1, N2 and P-a are confirmed. It reproduced no new finding.
+Opus confirmed N1, N2, N3 (code), P-a, P-b, P-c and P-e:
+- it reran its probes;
+- it measured `macro_expand_crate` for the shared suite at 2.3 s (`d884461`), 4.8 s (`0f559d8`)
+  and 1.2 s (`5195cd1`);
+- it checked that the expansions are byte-identical;
+- it judged the pair-visiting change sound;
+- a three-way differential fuzz found no under-redaction against the literal-spelling ground
+  truth in about 440 declarations (about 15,000 observations).
+
+| Id | Reviewer | Severity | Finding | Disposition |
+|---|---|---|---|---|
+| NF1 | Opus | should-fix (records) | The new TEST_MATRIX rows reused the IDs K10 and K11 | FIXED: renumbered K13 (`checks/hygiene`) and K14 (`spelling_equivalence.rs`), placed after K12 |
+| NF2 | Opus | should-fix (records) | FINDINGS cited a PERF §5 that did not exist yet; PERF §4 still said "code unchanged since `d884461`" | FIXED with the final measurement (PERF §5, STATUS) |
+| NF3 | Opus | note | Visiting each pair once can leave out redundant `Same` conditions that the per-chain order added. In 7 of about 440 random declarations the generated disjunct sets are strict subsets; at run time this is less over-redaction, never below the literal-spelling result. The comment "depends only on the pairs" was imprecise | DOCUMENTED here; comment corrected. Soundness rests on the closure over the pairs (re-argued by the reviewer) |
+| NF4 | Opus | low | No test pinned the N2 wording | FIXED: `native_keys::the_same_constant_twice_*` asserts "(both name the same header)" |
+| P-c residue | Opus | trivial | `examples/native/src/repr.rs` said "representation statement" | FIXED |
