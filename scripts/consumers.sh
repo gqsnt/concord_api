@@ -40,7 +40,7 @@ if [[ -n $packaged ]]; then
       exit 1
     fi
     version=$("$python" -I -c 'import json,sys; m=json.load(sys.stdin); print(next(p["version"] for p in m["packages"] if p["name"]==sys.argv[1]))' "$crate" <<<"$metadata")
-    tar -xzf "$target_dir/package/$crate-$version.crate" -C "$packaged"
+    tar -xzf - -C "$packaged" <"$target_dir/package/$crate-$version.crate"  # see package-check.sh
   done
   source_dir="$packaged"
 fi

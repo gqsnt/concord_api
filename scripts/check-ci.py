@@ -6,7 +6,8 @@
              stable release with `cargo +X.Y` (only `+nightly`, for the non-blocking lane).
 --workflow   .github/workflows/ci.yml runs the gates through scripts/verify.sh and lists no cargo
              command of its own, so local and CI runs select the same suites; Linux and Windows
-             run the same complete inventory (--package --bench).
+             run the same complete inventory (--package --bench); scripts give tar its archive
+             on standard input.
 
 Usage: python3 -I scripts/check-ci.py --toolchain | --workflow
 """
@@ -83,6 +84,15 @@ def workflow():
         problems.append("the verify job must run scripts/verify.sh --package --bench")
     if "RUNNER_OS" in text or "runner.os" in text:
         problems.append("ci.yml selects gates by platform")
+    # GNU tar takes an archive name with a colon before its first slash (a Windows `D:\\...` path)
+    # for a remote host, so the scripts give tar its archive on standard input (`-f -`).
+    for path in sorted(glob.glob(os.path.join(ROOT, "scripts", "*.sh"))):
+        with open(path, encoding="utf-8") as f:
+            for n, line in enumerate(f, 1):
+                code = line.split("#", 1)[0]
+                for m in re.finditer(r"\btar\s+-[A-Za-z]*f\s+(\S+)", code):
+                    if m.group(1) != "-":
+                        problems.append(f"{os.path.relpath(path, ROOT)}:{n}: tar reads an archive by name; use -f - with a redirect")
     print(f"ci.yml refers to scripts/verify.sh {len(calls)} time(s)")
     return problems
 
