@@ -590,8 +590,15 @@ fn main() {
 ```
 
 It returns one problem per endpoint (the error that endpoint's `prepare()` reports), in
-declaration order; `Display` lists them one per line, with declarations and endpoint names, never
-values. An endpoint may not be named `validate_header_names`.
+declaration order, each with `endpoint()`, `declaration()`, `earlier()` (for a header introduced
+twice) and `reason()`. `Display` lists them one per line, and `Debug` (what `unwrap()` prints)
+shows the same lines, with declarations and endpoint names, never values:
+
+```text
+Vault.secrets: `AUTH` on `Vault.secrets` sets a header that an earlier declaration already sets (both name the same header); use `override` or `append`, or `remove` it first (earlier: `AUTHORIZATION` on `Vault`)
+```
+
+An endpoint may not be named `validate_header_names`.
 
 ## 5. Bodies and responses: formats
 

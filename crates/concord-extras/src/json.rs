@@ -45,7 +45,7 @@ impl<T: serde::de::DeserializeOwned> Decode<T> for Json {
     const ACCEPT: Option<&'static str> = Some("application/json");
 
     fn check_content_type(head: &ResponseHead<'_>) -> Result<(), CodecError> {
-        let Some(media) = media::single(head)? else {
+        let Some((media, text)) = media::single(head)? else {
             return Err(CodecError::new("the response has no Content-Type"));
         };
         if media.type_() == mime::STAR || media.subtype() == mime::STAR {
@@ -65,12 +65,10 @@ impl<T: serde::de::DeserializeOwned> Decode<T> for Json {
                 "the response Content-Type is not application/json or an application/*+json type",
             ));
         }
-        if !media::utf8_charset(&media) {
-            return Err(CodecError::new(
-                "the JSON response declares a charset other than utf-8",
-            ));
-        }
-        Ok(())
+        media::check_charset(
+            text,
+            "the JSON response declares a charset other than utf-8",
+        )
     }
 
     fn context(_: &ResponseHead<'_>) -> Result<(), CodecError> {

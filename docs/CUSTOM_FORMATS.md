@@ -229,6 +229,11 @@ concord::api! {
 }
 ```
 
+`Decode<T>` returns only `T`. When the caller needs what the head said (the version itself),
+decode into a wrapper output type of yours, such as `Versioned<T> { version, value }`, and declare
+that as the endpoint's output (`-> Versioned<Item>`); the context carries the version from
+`context` to `decode_body`.
+
 The same test sends a missing, unsupported and non-numeric version through `versioned()` and
 through `versioned_any_type()`, and every one is `ErrorKind::Metadata`: the adapter skips the
 `Content-Type` check only (section 7).
@@ -533,8 +538,11 @@ sends none, reqwest sends its own (`*/*`, or the default of your `reqwest::Clien
 
 ## 9. Testing a format
 
-**On a head built by hand**, with no server: `ResponseHead::new(status, version, &headers)`. The
-standard formats' tests use one helper for every case. In an application crate, import
+**On a head built by hand**, with no server: `ResponseHead::new(status, version, &headers)`. A
+format generic over its payload (`impl<T: DeserializeOwned> Decode<T> for AcmeV2`) is called
+through the trait with the payload named, `<AcmeV2 as Decode<Item>>::check_content_type(&head)`:
+`AcmeV2::check_content_type(&head)` alone cannot choose `T` (rustc's E0283). The standard formats'
+tests use one helper for every case. In an application crate, import
 `ResponseHead` from `concord`, `StatusCode` and `Version` from `concord::reqwest`. Excerpt of
 [`crates/concord-extras/tests/media.rs`](../crates/concord-extras/tests/media.rs):
 

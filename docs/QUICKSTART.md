@@ -96,7 +96,9 @@ Read it top-down:
 - `pub client Tasks(#[sensitive] token: String)` — the client and its one **required** value. You
   supply it through the generated `TasksConfig { token }` when creating the client.
   `#[sensitive]` keeps it out of Concord's `Debug` output and error messages; it is still sent.
-- `base` — the URL every path is appended to; `with_base_url` replaces it at runtime.
+- `base` — the URL every path is appended to; `with_base_url` replaces it at runtime, path
+  included: pass `https://staging.example.com/api`, not just the host, if the API lives under
+  `/api`.
 - `headers { AUTHORIZATION = "Bearer {token}"; }` — sent with every request of this client.
   `AUTHORIZATION` is reqwest's own `HeaderName` constant (imported from `concord::reqwest::header`);
   a literal name works too (`"authorization" = ..`). `{token}` is a template hole that reads the

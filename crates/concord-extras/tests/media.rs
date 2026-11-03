@@ -352,3 +352,72 @@ mod vendor {
         );
     }
 }
+
+/// Review F1/F2 (final executable audit): `charset` parameters are read correctly whatever their
+/// position and quoting (the pinned `mime` 0.3.17 misreads a quoted value followed by another
+/// parameter), and a repeated `charset` is refused as ambiguous, by every format that checks it.
+#[cfg(all(feature = "json", feature = "form"))]
+mod charset {
+    use super::*;
+    use concord_extras::{Form, Json};
+    use std::collections::BTreeMap;
+
+    #[test]
+    fn quoted_utf8_before_another_parameter_is_accepted() {
+        for ct in [
+            &b"application/json; charset=\"utf-8\"; profile=x"[..],
+            b"application/json; profile=x; charset=\"utf-8\"",
+            b"application/json; charset=\"UTF-8\" ; profile=\"a;b\"",
+            b"application/json; charset=\"utf\\-8\"",
+        ] {
+            assert_eq!(
+                verdict::<Json, u8>(&[ct]),
+                Ok(()),
+                "{}",
+                String::from_utf8_lossy(ct)
+            );
+        }
+        assert_eq!(
+            verdict::<Text, String>(&[b"text/plain; charset=\"utf-8\"; format=flowed"]),
+            Ok(())
+        );
+        assert_eq!(
+            verdict::<Form, BTreeMap<String, String>>(&[
+                b"application/x-www-form-urlencoded; charset=\"utf-8\"; x=y"
+            ]),
+            Ok(())
+        );
+    }
+
+    #[test]
+    fn a_repeated_charset_is_refused() {
+        let repeated = Err("the response Content-Type declares charset more than once");
+        for ct in [
+            &b"application/json; charset=utf-8; charset=iso-8859-1"[..],
+            b"application/json; charset=iso-8859-1; charset=utf-8",
+            b"application/json; charset=utf-8; charset=utf-8",
+        ] {
+            assert_eq!(
+                verdict::<Json, u8>(&[ct]),
+                repeated,
+                "{}",
+                String::from_utf8_lossy(ct)
+            );
+        }
+        assert_eq!(
+            verdict::<Text, String>(&[b"text/plain; charset=utf-8; charset=iso-8859-1"]),
+            repeated
+        );
+        assert_eq!(
+            verdict::<Form, BTreeMap<String, String>>(&[
+                b"application/x-www-form-urlencoded; charset=utf-8; charset=latin1"
+            ]),
+            repeated
+        );
+        // A foreign charset after another parameter is still seen.
+        assert_eq!(
+            verdict::<Json, u8>(&[b"application/json; profile=x; charset=\"iso-8859-1\""]),
+            Err("the JSON response declares a charset other than utf-8")
+        );
+    }
+}

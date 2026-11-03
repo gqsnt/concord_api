@@ -402,3 +402,26 @@ async fn content_encoding_is_not_a_media_type() {
         ErrorKind::Decode
     );
 }
+
+/// Review F1 on the wire: a quoted UTF-8 `charset` followed by another parameter is accepted
+/// (the pinned `mime` misreads it), and a repeated `charset` is refused before the body is read.
+#[tokio::test]
+async fn charset_parameters_are_read_exactly() {
+    let reply = |ct: &str| {
+        Reply::new(200)
+            .header("content-type", ct)
+            .body(r#"{"id":7}"#)
+    };
+    let server = Server::reply(reply("application/json; charset=\"utf-8\"; profile=x")).await;
+    assert_eq!(
+        meta(server.url()).item().send().await.unwrap(),
+        Item { id: 7 }
+    );
+    let server = Server::reply(reply("application/json; charset=utf-8; charset=iso-8859-1")).await;
+    let error = meta(server.url()).item().send().await.unwrap_err();
+    assert_eq!(error.kind(), ErrorKind::Metadata);
+    assert_eq!(
+        error.codec_error().map(CodecError::label),
+        Some("the response Content-Type declares charset more than once")
+    );
+}

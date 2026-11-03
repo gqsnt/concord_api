@@ -191,3 +191,14 @@ fn literal_and_coherent_clients_validate() {
     Literal::validate_header_names().unwrap();
     Coherent::validate_header_names().unwrap();
 }
+
+/// `unwrap()` on the validator's result prints `Debug`: the problems as readable lines.
+#[test]
+fn debug_lists_the_problems_readably() {
+    let shown = format!("{:?}", Broken::validate_header_names().unwrap_err());
+    assert!(
+        shown.starts_with("[Broken.twice: `AUTH` on `Broken.twice` sets a header"),
+        "{shown}"
+    );
+    assert!(shown.matches("Broken.").count() >= 5, "{shown}");
+}

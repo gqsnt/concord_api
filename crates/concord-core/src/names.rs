@@ -18,8 +18,7 @@ use std::fmt;
 /// their conversion, credentials and what servers do are not checked.
 ///
 /// `Display` lists the problems, one per line; it shows declarations and endpoint names, never
-/// values.
-#[derive(Debug)]
+/// values. `Debug` (what `unwrap()` prints) shows the same lines as a list.
 pub struct HeaderNameErrors {
     pub(crate) problems: Vec<HeaderNameError>,
 }
@@ -40,6 +39,21 @@ impl fmt::Display for HeaderNameErrors {
             write!(f, "{problem}")?;
         }
         Ok(())
+    }
+}
+
+impl fmt::Debug for HeaderNameErrors {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        /// A problem rendered by its `Display`, inside the list.
+        struct Line<'a>(&'a HeaderNameError);
+        impl fmt::Debug for Line<'_> {
+            fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+                fmt::Display::fmt(self.0, f)
+            }
+        }
+        f.debug_list()
+            .entries(self.problems.iter().map(Line))
+            .finish()
     }
 }
 

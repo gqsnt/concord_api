@@ -28,10 +28,13 @@ impl Decode<String> for Text {
     type Context = ();
 
     fn check_content_type(head: &ResponseHead<'_>) -> Result<(), CodecError> {
-        match media::single(head) {
-            Ok(Some(media)) if !media::utf8_charset(&media) => Err(CodecError::new(
+        // A missing, repeated or malformed `Content-Type` is accepted: `Text` names a decoder,
+        // not a media type. A declared charset that is not UTF-8, or a repeated one, is refused.
+        match media::single(head).map(|m| m.and_then(|(_, text)| media::charsets(text))) {
+            Ok(Some(charsets)) => media::charset_verdict(
+                &charsets,
                 "the text response declares a charset other than utf-8",
-            )),
+            ),
             _ => Ok(()),
         }
     }
