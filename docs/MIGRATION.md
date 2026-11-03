@@ -1,6 +1,7 @@
 # Migration
 
-Six paths: the first two are one release (the modular V4), the others are older, newest first:
+Six paths: the first two are one release (4.1.0, the modular V4; summary in the
+[changelog](../CHANGELOG.md)), the others are older, newest first:
 
 - [From format words to format types](#from-format-words-to-format-types) — the modular V4
   (`concord-v4-modular`), coming from `concord-v4-final`. Manual, guided by the compiler; callers
