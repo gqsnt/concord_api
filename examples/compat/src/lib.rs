@@ -110,6 +110,39 @@ concord::api! {
         PUT write(key: String) { path "objects/{key}"; }
     }
 }
+
+/// Writes a non-empty sequence of resource-key segments using the native request exit.
+///
+/// Empty items, `.`/`..` and control characters are rejected before URL mutation, to avoid
+/// URL normalization or discarded input.
+/// The native URL segment API encodes each item as data. After `into_parts`, native request
+/// debugging exposes the URL, including any secret path or query values.
+pub async fn write_resource_segments(
+    api: &Resources,
+    segments: &[&str],
+) -> Result<(), Box<dyn std::error::Error>> {
+    if segments.is_empty()
+        || segments
+            .iter()
+            .any(|s| s.is_empty() || *s == "." || *s == ".." || s.chars().any(char::is_control))
+    {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            "resource key needs non-empty segments other than . and .., without controls",
+        )
+        .into());
+    }
+    let (client, mut request, decoder) = api.write("placeholder").prepare()?.into_parts();
+    request
+        .url_mut()
+        .path_segments_mut()
+        .map_err(|_| std::io::Error::other("base URL cannot hold path segments"))?
+        .pop()
+        .extend(segments.iter().copied());
+    decoder.finish(client.execute(request).await).await?;
+    Ok(())
+}
+
 concord::api! {
     /// Kubernetes-style server-side apply serialization.
     pub client Apply {

@@ -1,6 +1,6 @@
 //! Loopback compatibility evidence for resource_key.
 mod support;
-use concord_example_compat::Resources;
+use concord_example_compat::{write_resource_segments, Resources};
 use support::{http, Reply, Server};
 
 #[tokio::test]
@@ -9,15 +9,9 @@ async fn segments_and_literal_percent_escapes() {
     let api = Resources::new(http()).with_base_url(server.url()).unwrap();
     for key in ["docs/2026/report.md", "docs/encoded%2Fname.md"] {
         api.write(key).send().await.unwrap();
-        let (client, mut request, decoder) =
-            api.write("placeholder").prepare().unwrap().into_parts();
-        request
-            .url_mut()
-            .path_segments_mut()
-            .unwrap()
-            .pop()
-            .extend(key.split('/'));
-        decoder.finish(client.execute(request).await).await.unwrap();
+        write_resource_segments(&api, &key.split('/').collect::<Vec<_>>())
+            .await
+            .unwrap();
     }
     assert_eq!(
         server
@@ -31,5 +25,33 @@ async fn segments_and_literal_percent_escapes() {
             "/objects/docs%2Fencoded%252Fname.md",
             "/objects/docs/encoded%252Fname.md",
         ]
+    );
+}
+
+#[tokio::test]
+async fn native_recipe_rejects_ambiguous_items_and_encodes_data() {
+    let server = Server::reply(Reply::new(204)).await;
+    let api = Resources::new(http())
+        .with_base_url(format!("{}/base", server.url()))
+        .unwrap();
+    for segments in [
+        &[][..],
+        &[""][..],
+        &["."][..],
+        &[".."][..],
+        &["a", ""][..],
+        &["\n"][..],
+        &["x\ty"][..],
+        &["\0"][..],
+    ] {
+        assert!(write_resource_segments(&api, segments).await.is_err());
+    }
+    assert!(server.requests().is_empty());
+    write_resource_segments(&api, &["a/b", "%2F", "\\", "é"])
+        .await
+        .unwrap();
+    assert_eq!(
+        server.single().target,
+        "/base/objects/a%2Fb/%252F/%5C/%C3%A9"
     );
 }
