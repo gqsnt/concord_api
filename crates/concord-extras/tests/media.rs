@@ -279,3 +279,76 @@ fn response_head_debug_withholds_values() {
         "{shown}"
     );
 }
+
+/// A format narrowed to one exact vendor media type: `Json`'s own head checks first (one field, a
+/// `+json` type, UTF-8), then the exact essence, so `application/problem+json` is refused too.
+/// Parameters (`; profile=...`) are allowed; the body is decoded by `Json`.
+#[cfg(feature = "json")]
+mod vendor {
+    use super::*;
+    use concord_core::{CodecError, ContentTypeField};
+    use concord_extras::Json;
+
+    /// `application/vnd.acme.v2+json` and nothing else.
+    pub struct AcmeV2;
+
+    const ACME_V2: &str = "application/vnd.acme.v2+json";
+
+    impl<T: serde::de::DeserializeOwned> Decode<T> for AcmeV2 {
+        type Context = ();
+        const ACCEPT: Option<&'static str> = Some(ACME_V2);
+
+        fn check_content_type(head: &ResponseHead<'_>) -> Result<(), CodecError> {
+            <Json as Decode<T>>::check_content_type(head)?;
+            let ContentTypeField::One(value) = head.content_type() else {
+                return Err(CodecError::new("the response has no single Content-Type"));
+            };
+            let media: mime::Mime = value
+                .to_str()
+                .ok()
+                .and_then(|text| text.parse().ok())
+                .ok_or(CodecError::new(
+                    "the response Content-Type is not a media type",
+                ))?;
+            if media.essence_str() != ACME_V2 {
+                return Err(CodecError::new(
+                    "the response Content-Type is not application/vnd.acme.v2+json",
+                ));
+            }
+            Ok(())
+        }
+
+        fn context(_: &ResponseHead<'_>) -> Result<(), CodecError> {
+            Ok(())
+        }
+
+        fn decode_body((): (), body: Bytes) -> Result<T, CodecError> {
+            <Json as Decode<T>>::decode_body((), body)
+        }
+    }
+
+    #[test]
+    fn an_exact_vendor_media_type() {
+        type V = Vec<u8>;
+        assert_eq!(
+            verdict::<AcmeV2, V>(&[b"application/vnd.acme.v2+json"]),
+            Ok(())
+        );
+        assert_eq!(
+            verdict::<AcmeV2, V>(&[b"Application/Vnd.Acme.V2+JSON; profile=full"]),
+            Ok(())
+        );
+        let other = Err("the response Content-Type is not application/vnd.acme.v2+json");
+        assert_eq!(verdict::<AcmeV2, V>(&[b"application/json"]), other);
+        assert_eq!(
+            verdict::<AcmeV2, V>(&[b"application/vnd.acme.v3+json"]),
+            other
+        );
+        assert_eq!(verdict::<AcmeV2, V>(&[b"application/problem+json"]), other);
+        // `Json`'s own refusals come first.
+        assert_eq!(
+            verdict::<AcmeV2, V>(&[b"text/html"]),
+            Err("the response Content-Type is not application/json or an application/*+json type")
+        );
+    }
+}

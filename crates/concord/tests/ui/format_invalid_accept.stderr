@@ -1,0 +1,21 @@
+error[E0080]: evaluation panicked: HeaderValue::from_static with invalid bytes
+  --> tests/ui/format_invalid_accept.rs:19:40
+   |
+19 |         GET odd() -> String { response Odd; }
+   |                                        ^^^ evaluation of `ApiOdd::prepare::__DECODE` failed inside this call
+   |
+note: inside `concord::__macro::concord_core::__private::DecodeFormat::<String>::new::<Odd>`
+  --> $WORKSPACE/crates/concord-core/src/__private.rs
+   |
+   |                 Some(text) => Some(HeaderValue::from_static(text)),
+   |                                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+note: inside `HeaderValue::from_static`
+  --> $RUST/core/src/panic.rs
+   |
+   |         $crate::panicking::panic_fmt($crate::const_format_args!($($t)+));
+   |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ the failure occurred here
+   |
+  ::: $CARGO/http-$VERSION/src/header/value.rs
+   |
+   |                 panic!("HeaderValue::from_static with invalid bytes")
+   |                 ----------------------------------------------------- in this macro invocation

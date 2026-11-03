@@ -233,6 +233,54 @@ The same test sends a missing, unsupported and non-numeric version through `vers
 through `versioned_any_type()`, and every one is `ErrorKind::Metadata`: the adapter skips the
 `Content-Type` check only (section 7).
 
+### Narrowing to one exact vendor media type
+
+`Json`'s check accepts the whole `application/*+json` family. A format for one vendor type runs
+`Json`'s checks first, then compares the parsed essence (type and subtype, case-insensitive,
+parameters ignored) with its own. Media types are parsed with the `mime` crate (add it to your
+own dependencies; Concord does not re-export a parser). Excerpt of
+[`crates/concord-extras/tests/media.rs`](../crates/concord-extras/tests/media.rs):
+
+```rust
+impl<T: serde::de::DeserializeOwned> Decode<T> for AcmeV2 {
+    type Context = ();
+    const ACCEPT: Option<&'static str> = Some(ACME_V2);
+
+    fn check_content_type(head: &ResponseHead<'_>) -> Result<(), CodecError> {
+        <Json as Decode<T>>::check_content_type(head)?;
+        let ContentTypeField::One(value) = head.content_type() else {
+            return Err(CodecError::new("the response has no single Content-Type"));
+        };
+        let media: mime::Mime = value
+            .to_str()
+            .ok()
+            .and_then(|text| text.parse().ok())
+            .ok_or(CodecError::new(
+                "the response Content-Type is not a media type",
+            ))?;
+        if media.essence_str() != ACME_V2 {
+            return Err(CodecError::new(
+                "the response Content-Type is not application/vnd.acme.v2+json",
+            ));
+        }
+        Ok(())
+    }
+
+    fn context(_: &ResponseHead<'_>) -> Result<(), CodecError> {
+        Ok(())
+    }
+
+    fn decode_body((): (), body: Bytes) -> Result<T, CodecError> {
+        <Json as Decode<T>>::decode_body((), body)
+    }
+}
+```
+
+The same test accepts `Application/Vnd.Acme.V2+JSON; profile=full` and refuses
+`application/json`, `application/vnd.acme.v3+json` and `application/problem+json` before any
+body is read. A version header, as in `Versioned` above, would go in `context`, so that
+`IgnoreContentType<AcmeV2>` still checks it.
+
 ## 6. NDJSON with positions
 
 A line-oriented format reports where a record failed, with numbers and without content.
