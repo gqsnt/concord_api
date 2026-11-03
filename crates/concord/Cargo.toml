@@ -74,3 +74,28 @@ required-features = ["reqwest-defaults"]
 [[test]]
 name = "d15_surfaces"
 required-features = ["reqwest-defaults", "json"]
+
+# Uses the standard `Text`/`Binary` formats.
+[[test]]
+name = "composition"
+required-features = ["extras"]
+
+[[test]]
+name = "hygiene"
+required-features = ["extras"]
+
+[[test]]
+name = "native_headers"
+required-features = ["extras"]
+
+[[test]]
+name = "native_keys"
+required-features = ["extras"]
+
+[[test]]
+name = "representations"
+required-features = ["extras"]
+
+[[test]]
+name = "values"
+required-features = ["extras"]

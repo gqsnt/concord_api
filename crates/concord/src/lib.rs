@@ -148,16 +148,16 @@
 //! # Native requests
 //!
 //! ```no_run
-//! # concord::api! { pub client Api { base "http://x.test"; GET item(id: u64) -> String { path "items/{id}"; response concord::Text; } } }
+//! # concord::api! { pub client Api { base "http://x.test"; GET item(id: u64) { path "items/{id}"; } } }
 //! # async fn run(api: Api) -> Result<(), Box<dyn std::error::Error>> {
 //! let prepared = api.item(7).prepare()?; // no I/O
 //! println!("{prepared:?}"); // redacted rendering
 //! let (client, mut request, decoder) = prepared.into_parts();
 //! *request.timeout_mut() = Some(std::time::Duration::from_secs(2));
-//! let text = decoder.finish(client.execute(request).await).await?; // decoded as declared
+//! decoder.finish(client.execute(request).await).await?; // handled as declared (here: any 2xx)
 //!
 //! let raw: concord::reqwest::Response = api.item(8).prepare()?.send_raw().await?;
-//! # let _ = (text, raw); Ok(()) }
+//! # let _ = raw; Ok(()) }
 //! ```
 //!
 //! One `send()` is one `reqwest::Client::execute`: Concord performs no retry, and a request's
