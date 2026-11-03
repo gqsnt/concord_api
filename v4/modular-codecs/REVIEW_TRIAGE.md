@@ -97,3 +97,19 @@ parameter scanner with `mime` found the scanner right wherever they differ). No 
 | N1 | minor | AUTHOR_GUIDE §5.1, MIGRATION, SEMANTICS §7 and the extras crate table did not mention the repeated-charset rule | Fixed (`Json`, `Form`: charset absent or once and UTF-8) | — |
 | N2 | minor | `Text` refused a repeated equal UTF-8 charset while accepting more ambiguous fields it cannot read | Fixed: `Text` refuses a readable non-UTF-8 charset, repeated or not, and nothing else (MC17) | `crates/concord-extras/tests/media.rs` (`charset::a_repeated_charset_is_refused`) |
 | N3 | minor | CUSTOM_FORMATS §5 suggested a wrapper named like the format (`Versioned<T>`) and split an excerpt from its follow-up | Fixed: `WithVersion<T>`, paragraph moved after the follow-up | — |
+
+## Second targeted re-review of all corrections (fresh Sol 6.1 XHigh, `3fa14b7`)
+
+Observed settings `gpt-6.1-sol`, `xhigh`; report [`rereview2-sol-REPORT.md`](reports/rereview2-sol-REPORT.md).
+X-F1, X-F2, RR-1..RR-3: resolved. The gate passed (650 tests); the sealing mutation discriminates
+(exit 0 / 101 / 0); 231 further wire requests and 6,550 essence-split checks admitted no non-JSON
+type through `Json`; refused responses unread, no header content in errors; the unpacked
+`concord-macros` package carries its README. It ran before `abdad04` (the side Opus re-review's
+`Text` change), so its matrix still expected a repeated UTF-8 charset to be refused by `Text`.
+
+| ID | Severity | Finding | Disposition | Evidence |
+|---|---|---|---|---|
+| RR2-1 | should fix | `Text` treated a field with an empty subtype (`text/; charset=latin1`) as readable, because `mime` accepts it, and refused it, contradicting "malformed is accepted" | Fixed: the type and subtype must be non-empty RFC 9110 tokens before `mime` parses them (MC17) | `charset::the_parameter_grammar_is_rfc_9110`; the reviewer's extended probe on the fix: all 24 empty-subtype rows as documented (work directory evidence/rereview2-probe-extended-final.log; its remaining differences are `abdad04`'s deliberate `Text` change) |
+| RR2-2 | minor | `Form`'s docs omitted the accepted `us-ascii` | Fixed (`Form` rustdoc, CUSTOM_FORMATS, the summary tables: UTF-8 or US-ASCII) | — |
+| RR2-3 | minor | MIGRATION said typed `Form` endpoints send `application/json` | Fixed: each format's own suggestion | `accept.rs` |
+| RR2-4 | minor | DIAGNOSTICS still said a duplicate native header fails `prepare()` on every call unconditionally | Fixed: unless an earlier build step fails first | `validate_names.rs::earlier_build_steps_fail_first` |

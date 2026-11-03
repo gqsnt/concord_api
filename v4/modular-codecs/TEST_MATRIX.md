@@ -31,7 +31,7 @@ command), **partial** (what is missing is said), **NOT_RUN** (environment), **de
 | C01 | met | `metadata.rs`, `bodies.rs::r01_post_json` |
 | C02 | met | `crates/concord-extras/tests/media.rs::accepted_media_types`; `metadata.rs::a_downstream_format_uses_response_metadata` |
 | C03 | met | `bodies.rs::r03_content_type_is_checked_unless_deliberately_ignored`, `metadata.rs::the_head_is_refused_before_the_body_exists` |
-| C04 | met | `crates/concord-extras/tests/media.rs::refused_media_types_with_their_labels` (missing, repeated equal/conflicting, comma-joined, malformed, obs-text); `charset::the_parameter_grammar_is_rfc_9110` (RFC 9110 forms `mime` refused alone are accepted; what the grammar excludes stays refused) |
+| C04 | met | `crates/concord-extras/tests/media.rs::refused_media_types_with_their_labels` (missing, repeated equal/conflicting, comma-joined, malformed, obs-text); `charset::the_parameter_grammar_is_rfc_9110` (RFC 9110 forms `mime` refused alone are accepted; what the grammar excludes, an empty subtype included, stays refused) |
 | C05 | met | `crates/concord-extras/tests/media.rs` (case, parameters, `charset`: quoted before another parameter, repeated refused); `metadata.rs::charset_parameters_are_read_exactly`; no transcoding (Json, Text docs). Closes final-audit X-F1/X-F2 |
 | C06 | met | `metadata.rs::metadata_errors_print_no_response_content` |
 | C07 | met | `metadata.rs::status_comes_before_the_format` |
