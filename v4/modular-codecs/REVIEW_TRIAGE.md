@@ -62,3 +62,22 @@ finding.
 | M7 | minor | a stray empty file `A` tracked at the root since `df37383` | Removed | — |
 | M8 | minor | `concord-macros` had no README | Added, with the `readme` field | `scripts/package-check.sh` lists packaged files |
 | notes | note | `each` over an empty `accept` list sends the suggestion; strict `Json`'s charset policy is stricter than RFC 8259 requires; `ContentTypeField` `Debug` prints its value; the path deferral had no decision row | Row added to AUTHOR_GUIDE §5.8 and `accept.rs`; the charset policy is deliberate (owner: strict by default, `IgnoreContentType` as the explicit escape); `Content-Type` is not a secret; MC16 | — |
+
+## Targeted re-review of the audit corrections (fresh Sol 6.1 XHigh, `4ce3d01`)
+
+Observed settings `gpt-6.1-sol`, `xhigh`; report [`rereview-sol-REPORT.md`](reports/rereview-sol-REPORT.md).
+X-F1 and X-F2: resolved (the auditor's original reproducers pass; 58 cases × 3 formats on the
+wire, 24,576 stress inputs, no panic or hang; refused responses unread, no header content in
+errors; `HeaderNameErrors` `Debug`/`Display` agree). The re-review ran on `4ce3d01`, before the
+semantic-review corrections, while `mime` still parsed the parameters.
+
+| ID | Severity | Finding | Disposition | Evidence |
+|---|---|---|---|---|
+| RR-1 | should fix | `Text` accepted a readable foreign charset when `mime` refused valid parameter syntax (`text/plain;\tcharset=iso-8859-1`, `charset=""`) | Fixed by `d98e4cf` (MC17: `mime` parses type and subtype only) | the re-reviewer's probe, re-pointed at `530b6c1`: 7/7 (was 5/7); `charset::the_parameter_grammar_is_rfc_9110` |
+| RR-2 | should fix | `Json`/`Form` refused valid UTF-8 metadata (`;\tcharset=utf-8`, empty parameters, `audit=""`) | Fixed by `d98e4cf` (same) | same |
+| RR-3 | minor | `Text` docs did not mention the repeated-charset refusal | Fixed by `d98e4cf` | `Text` rustdoc, CUSTOM_FORMATS |
+| matrix | note | after the fix, the only cases where the scanner's verdict and a format's decision differ are two `Text` cases whose field has a non-ASCII byte (`audit="é"`): `Text` reads such a field as opaque and accepts it, as it does any malformed field | Kept; documented (`Text` rustdoc, CUSTOM_FORMATS) | the probe's matrix on `530b6c1` (work directory evidence/rereview-sol-probe_530b6c1.log) |
+
+The vendor example (`AcmeV2`, CUSTOM_FORMATS §5) re-parsed the whole field with `mime`, inheriting
+its parameter limits; it now compares the text before the first `;`, which `Json` has already
+validated.
