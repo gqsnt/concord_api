@@ -1,0 +1,60 @@
+    Checking focused-rereview v0.0.0 (/home/canarit/projects/concord_v4_native_work/snapshots/rereview-1174d5d/target/probes/focused)
+error[E0277]: `Option<Dual>` is written as text here and has no `Display`
+   --> src/bin/optional_type.rs:13:56
+    |
+13  | pub client Api { base "http://example.test"; GET go(v: Option<Dual>) { query { "q" = v; } headers { "x-dual" = v; } } }
+    |                                                        ^^^^^^ used in a path, subdomain, query value or template
+    |
+    = help: the trait `std::fmt::Display` is not implemented for `Option<Dual>`
+    = note: path segments, subdomain labels, query values and template holes are written with `Display`; a value that may be absent is declared `x?: T`, and a list is placed with `each`
+    = note: a native `HeaderValue` is not text: it can only be placed as a whole header value; to reuse its text elsewhere, convert it explicitly (for example `to_str()`) into a `String` value
+    = note: required for `Option<Dual>` to implement `concord::__private::Text`
+note: required by a bound in `Parts::<'a>::query`
+   --> /home/canarit/projects/concord_v4_native_work/snapshots/rereview-1174d5d/crates/concord/src/__private.rs:317:21
+    |
+317 |     pub fn query<T: Text + ?Sized>(
+    |                     ^^^^ required by this bound in `Parts::<'a>::query`
+    = note: this error originates in the macro `$crate::__private::api_impl` which comes from the expansion of the macro `wire::api` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0277]: `Option<Dual>` is placed both as a header value and as text
+   --> src/bin/optional_type.rs:13:56
+    |
+13  | pub client Api { base "http://example.test"; GET go(v: Option<Dual>) { query { "q" = v; } headers { "x-dual" = v; } } }
+    |                                                        ^^^^^^ used as a whole header value and in a path, subdomain, query value or template
+    |
+    = help: the trait `TextHeader` is not implemented for `Option<Dual>`
+    = note: a header value that is also written as text must be text itself (`String`, `&str`, an integer or `bool`): a type's own `ToHeaderValue` can mark its header value sensitive, which a path, query value or template cannot see
+    = note: send this header as text through a template (`headers { "name" = "{value}"; }`), use a separate value for the header, or mark the value `#[sensitive]`
+    = help: the following other types implement trait `TextHeader`:
+              &T
+              Arc<T>
+              Box<T>
+              Cow<'_, T>
+              Rc<T>
+              String
+              bool
+              i16
+            and 10 others
+note: required by a bound in `Parts::<'a>::header_text`
+   --> /home/canarit/projects/concord_v4_native_work/snapshots/rereview-1174d5d/crates/concord/src/__private.rs:392:27
+    |
+392 |     pub fn header_text<T: TextHeader + ?Sized>(
+    |                           ^^^^^^^^^^ required by this bound in `Parts::<'a>::header_text`
+    = note: this error originates in the macro `$crate::__private::api_impl` which comes from the expansion of the macro `wire::api` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0277]: `Option<Dual>` doesn't implement `std::fmt::Display`
+  --> src/bin/optional_type.rs:13:56
+   |
+13 | pub client Api { base "http://example.test"; GET go(v: Option<Dual>) { query { "q" = v; } headers { "x-dual" = v; } } }
+   |                                                        ^^^^^^ `Option<Dual>` cannot be formatted with the default formatter
+   |
+   = help: the trait `std::fmt::Display` is not implemented for `Option<Dual>`
+   = note: in format strings you may be able to use `{:?}` (or {:#?} for pretty-print) instead
+   = help: the trait `Debug` is implemented for `DebugDisplay<'_, T>`
+   = note: required for `Option<Dual>` to implement `concord::__private::Text`
+   = note: required for `DebugDisplay<'_, Option<Dual>>` to implement `Debug`
+   = note: required for the cast from `&DebugDisplay<'_, Option<Dual>>` to `&dyn Debug`
+   = note: this error originates in the macro `wire::api` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+For more information about this error, try `rustc --explain E0277`.
+error: could not compile `focused-rereview` (bin "optional_type") due to 3 previous errors

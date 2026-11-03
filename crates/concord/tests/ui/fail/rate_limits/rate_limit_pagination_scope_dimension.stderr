@@ -1,5 +1,0 @@
-error: [C3-PAGE] cursor destination `cursor` is not an endpoint-owned value of endpoint `Api::pages::list`; destinations are bare endpoint slots, never client or scope values, so declare `cursor` as a parameter of the endpoint
-  --> tests/ui/fail/rate_limits/rate_limit_pagination_scope_dimension.rs:22:31
-   |
-22 |                     cursor -> cursor;
-   |                               ^^^^^^

@@ -1,0 +1,10 @@
+[package]
+name = "consumer-facade-no-extras"
+version = "0.0.0"
+edition = "2024"
+publish = false
+
+[workspace]
+
+[dependencies]
+sdk = { package = "concord", path = "../../../crates/concord", default-features = false, features = ["reqwest-defaults"] }

@@ -1,0 +1,33 @@
+    Checking design_a v0.0.0 (/home/canarit/projects/concord_v4_native_work/snapshots/headers-a915c8d/exp/coherence/design_a)
+error[E0119]: conflicting implementations of trait `ToHeaderValue` for type `&_`
+   --> design_a/src/lib.rs:75:9
+    |
+ 75 |         impl<T: ToHeaderValue + ?Sized> ToHeaderValue for $ptr {
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ conflicting implementation for `&_`
+...
+ 83 | forward!(&T, Box<T>, Rc<T>, Arc<T>);
+    | ----------------------------------- in this macro invocation
+...
+150 | impl<T: HeaderText + ?Sized> ToHeaderValue for T {
+    | ------------------------------------------------ first implementation here
+    |
+    = note: downstream crates may implement trait `HeaderText` for type `&_`
+    = note: this error originates in the macro `forward` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0119]: conflicting implementations of trait `ToHeaderValue` for type `Box<_>`
+   --> design_a/src/lib.rs:75:9
+    |
+ 75 |         impl<T: ToHeaderValue + ?Sized> ToHeaderValue for $ptr {
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ conflicting implementation for `Box<_>`
+...
+ 83 | forward!(&T, Box<T>, Rc<T>, Arc<T>);
+    | ----------------------------------- in this macro invocation
+...
+150 | impl<T: HeaderText + ?Sized> ToHeaderValue for T {
+    | ------------------------------------------------ first implementation here
+    |
+    = note: downstream crates may implement trait `HeaderText` for type `std::boxed::Box<_>`
+    = note: this error originates in the macro `forward` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+For more information about this error, try `rustc --explain E0119`.
+error: could not compile `design_a` (lib) due to 2 previous errors

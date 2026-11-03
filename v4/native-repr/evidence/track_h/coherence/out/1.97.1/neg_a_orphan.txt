@@ -1,0 +1,15 @@
+    Checking user v0.0.0 (/home/canarit/projects/concord_v4_native_work/snapshots/headers-a915c8d/exp/coherence/user)
+error[E0117]: only traits defined in the current crate can be implemented for types defined outside of the crate
+   --> user/src/lib.rs:210:5
+    |
+210 |     impl ToHeaderValue for std::net::IpAddr {
+    |     ^^^^^^^^^^^^^^^^^^^^^^^----------------
+    |                            |
+    |                            `IpAddr` is not defined in the current crate
+    |
+    = note: impl doesn't have any local type before any uncovered type parameters
+    = note: for more information see https://doc.rust-lang.org/reference/items/implementations.html#orphan-rules
+    = note: define and implement a trait or new type instead
+
+For more information about this error, try `rustc --explain E0117`.
+error: could not compile `user` (lib) due to 1 previous error

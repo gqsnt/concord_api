@@ -1,0 +1,34 @@
+error[E0277]: `Option<String>` is written as text here and has no `Display`
+ --> tests/ui/option_has_no_wire_spelling.rs:4:32
+  |
+4 |         GET list(query filter: Option<String>);
+  |                                ^^^^^^ used in a path, subdomain, query value or template
+  |
+  = help: the trait `std::fmt::Display` is not implemented for `Option<String>`
+  = note: path segments, subdomain labels, query values and template holes are written with `Display`; a value that may be absent is declared `x?: T`, and a list is placed with `each`
+  = note: a native `HeaderValue` is not text: it can only be placed as a whole header value; to reuse its text elsewhere, convert it explicitly (for example `to_str()`) into a `String` value
+  = note: required for `Option<String>` to implement `concord::__macro::concord_core::__private::Text`
+note: required by a bound in `concord::__macro::concord_core::__private::Parts::<'a>::query`
+ --> $WORKSPACE/crates/concord-core/src/__private.rs
+  |
+  |     pub fn query<T: Text + ?Sized>(
+  |                     ^^^^ required by this bound in `Parts::<'a>::query`
+  = note: this error originates in the macro `$crate::__macro::api` which comes from the expansion of the macro `concord::api` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0277]: `Option<String>` doesn't implement `std::fmt::Display`
+ --> tests/ui/option_has_no_wire_spelling.rs:4:32
+  |
+4 |         GET list(query filter: Option<String>);
+  |                                ^^^^^^ the trait `std::fmt::Display` is not implemented for `Option<String>`
+  |
+help: the trait `Debug` is conditionally implemented for `concord::__macro::concord_core::__private::DebugDisplay<'_, T>`
+ --> $WORKSPACE/crates/concord-core/src/__private.rs
+  |
+  | impl<T: Text + ?Sized> fmt::Debug for DebugDisplay<'_, T> {
+  | ^^^^^^^^----^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  |         |
+  |         unsatisfied requirement introduced here: `Option<String>: concord::__macro::concord_core::__private::Text`
+  = note: required for `Option<String>` to implement `concord::__macro::concord_core::__private::Text`
+  = note: required for `concord::__macro::concord_core::__private::DebugDisplay<'_, Option<String>>` to implement `Debug`
+  = note: required for the cast from `&concord::__macro::concord_core::__private::DebugDisplay<'_, Option<String>>` to `&dyn Debug`
+  = note: this error originates in the macro `concord::api` (in Nightly builds, run with -Z macro-backtrace for more info)

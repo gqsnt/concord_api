@@ -1,0 +1,8 @@
+    Checking independent-compile v0.0.0 (/home/canarit/projects/concord_v4_native_work/snapshots/final-66a4478/target/probes/compile-work)
+error: a body cannot have a default
+ --> src/lib.rs:2:79
+  |
+2 | wire::api! { pub client Api { base "http://127.0.0.1";  POST p(json p: String = String::new()); } }
+  |                                                                               ^
+
+error: could not compile `independent-compile` (lib) due to 1 previous error

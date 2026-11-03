@@ -1,0 +1,33 @@
+[package]
+name = "concord-bench"
+description = "Criterion runtime benchmarks and an allocation-count runner: Concord V4 vs hand-written reqwest (see README.md)."
+version = "0.0.0"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish = false
+
+[dependencies]
+bytes.workspace = true
+concord = { path = "../../crates/concord" }
+# H14: the native name plan is benchmarked directly (hidden API).
+concord-core = { path = "../../crates/concord-core" }
+concord-example-shapes = { path = "../../examples/shapes" }
+concord-baselines = { path = "../baselines" }
+http = "1"
+reqwest = { workspace = true, features = ["json", "query"] }
+serde = { workspace = true, features = ["derive"] }
+serde_json.workspace = true
+tokio = { workspace = true, features = ["macros", "rt", "net", "io-util"] }
+url.workspace = true
+
+[dev-dependencies]
+criterion = { version = "0.8.2", default-features = false, features = ["cargo_bench_support", "async_tokio"] }
+
+[[bench]]
+name = "runtime"
+harness = false
+
+[[bin]]
+name = "alloc-count"
+path = "src/bin/alloc_count.rs"

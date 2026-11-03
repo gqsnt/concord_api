@@ -1,0 +1,13 @@
+diff --git a/crates/concord-macros/src/emit.rs b/crates/concord-macros/src/emit.rs
+index f917c83..dda2672 100644
+--- a/crates/concord-macros/src/emit.rs
++++ b/crates/concord-macros/src/emit.rs
+@@ -678,7 +678,7 @@ fn emit_owner(k: &TokenStream, model: &Model, index: usize, vis: &syn::Visibilit
+                     #controls
+ 
+                     /// Builds the native request without sending it.
+-                    #[inline] pub fn prepare(self) -> ::core::result::Result<#k::Prepared<#out>, #k::Error> {
++                    pub fn prepare(self) -> ::core::result::Result<#k::Prepared<#out>, #k::Error> {
+                         #prepare
+                     }
+ 

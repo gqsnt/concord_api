@@ -1,0 +1,32 @@
+    Checking user v0.0.0 (/home/canarit/projects/concord_v4_native_work/snapshots/headers-a915c8d/exp/coherence/user)
+error[E0277]: the trait bound `HeaderValue: TryFrom<&u64>` is not satisfied
+   --> user/src/lib.rs:316:57
+    |
+316 |         let _ = p.header_each_ref(NAME.clone(), "nums", nums, false);
+    |                   ---------------                       ^^^^ the trait `From<&u64>` is not implemented for `HeaderValue`
+    |                   |
+    |                   required by a bound introduced by this call
+    |
+    = help: the following other types implement trait `From<T>`:
+              `HeaderValue` implements `From<&HeaderValue>`
+              `HeaderValue` implements `From<&Sort>`
+              `HeaderValue` implements `From<HeaderName>`
+              `HeaderValue` implements `From<i16>`
+              `HeaderValue` implements `From<i32>`
+              `HeaderValue` implements `From<i64>`
+              `HeaderValue` implements `From<isize>`
+              `HeaderValue` implements `From<u16>`
+            and 3 others
+    = note: required for `&u64` to implement `Into<HeaderValue>`
+    = note: required for `HeaderValue` to implement `TryFrom<&u64>`
+note: required by a bound in `design_b::Parts::header_each_ref`
+   --> /home/canarit/projects/concord_v4_native_work/snapshots/headers-a915c8d/exp/coherence/design_b/src/lib.rs:51:22
+    |
+48  |     pub fn header_each_ref<I>(&mut self, name: HeaderName, what: &'static str, values: I, sensitive: bool) -> Result<(), Invalid>
+    |            --------------- required by a bound in this associated function
+...
+51  |         HeaderValue: TryFrom<I::Item>,
+    |                      ^^^^^^^^^^^^^^^^ required by this bound in `Parts::header_each_ref`
+
+For more information about this error, try `rustc --explain E0277`.
+error: could not compile `user` (lib) due to 1 previous error

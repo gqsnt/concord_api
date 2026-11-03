@@ -1,0 +1,47 @@
+error: `host` is managed by the HTTP transport (reqwest/hyper) and cannot be declared
+ --> tests/ui/reserved_headers_all.rs:4:29
+  |
+4 |         GET a() { headers { "Host" = "x"; } }
+  |                             ^^^^^^
+
+error: `content-length` is managed by the HTTP transport (reqwest/hyper) and cannot be declared
+ --> tests/ui/reserved_headers_all.rs:5:29
+  |
+5 |         GET b() { headers { "Content-Length" = "0"; } }
+  |                             ^^^^^^^^^^^^^^^^
+
+error: `transfer-encoding` is managed by the HTTP transport (reqwest/hyper) and cannot be declared
+ --> tests/ui/reserved_headers_all.rs:6:29
+  |
+6 |         GET c() { headers { "Transfer-Encoding" = "chunked"; } }
+  |                             ^^^^^^^^^^^^^^^^^^^
+
+error: `connection` is managed by the HTTP transport (reqwest/hyper) and cannot be declared
+ --> tests/ui/reserved_headers_all.rs:7:29
+  |
+7 |         GET d() { headers { "Connection" = "close"; } }
+  |                             ^^^^^^^^^^^^
+
+error: `te` is managed by the HTTP transport (reqwest/hyper) and cannot be declared
+ --> tests/ui/reserved_headers_all.rs:8:29
+  |
+8 |         GET e() { headers { "TE" = "trailers"; } }
+  |                             ^^^^
+
+error: `trailer` is managed by the HTTP transport (reqwest/hyper) and cannot be declared
+ --> tests/ui/reserved_headers_all.rs:9:29
+  |
+9 |         GET f() { headers { "Trailer" = "x"; } }
+  |                             ^^^^^^^^^
+
+error: `upgrade` is managed by the HTTP transport (reqwest/hyper) and cannot be declared
+  --> tests/ui/reserved_headers_all.rs:10:29
+   |
+10 |         GET g() { headers { "Upgrade" = "h2c"; } }
+   |                             ^^^^^^^^^
+
+error: `keep-alive` is managed by the HTTP transport (reqwest/hyper) and cannot be declared
+  --> tests/ui/reserved_headers_all.rs:11:29
+   |
+11 |         GET h() { headers { "Keep-Alive" = "timeout=5"; } }
+   |                             ^^^^^^^^^^^^

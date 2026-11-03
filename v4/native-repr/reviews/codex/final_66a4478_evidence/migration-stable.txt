@@ -1,0 +1,22 @@
+   Compiling independent-acceptance v0.0.0 (/home/canarit/projects/concord_v4_native_work/snapshots/final-66a4478/target/probes/acceptance)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.26s
+     Running tests/migration.rs (target/probe-build/debug/deps/migration-d2d3cdd916d7e966)
+
+running 1 test
+expected body: Some([67, 85, 83, 84, 79, 77, 58, 118, 97, 108, 117, 101]); migrated body: Some([118, 97, 108, 117, 101])
+
+thread 'migration_preserves_the_downstream_codec' (93) panicked at tests/migration.rs:23:5:
+assertion `left == right` failed
+  left: Some([118, 97, 108, 117, 101])
+ right: Some([67, 85, 83, 84, 79, 77, 58, 118, 97, 108, 117, 101])
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+test migration_preserves_the_downstream_codec ... FAILED
+
+failures:
+
+failures:
+    migration_preserves_the_downstream_codec
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+error: test failed, to rerun pass `--test migration`

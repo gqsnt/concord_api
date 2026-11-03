@@ -1,0 +1,23 @@
+error: body `p` has the media type "text/plain; charset=utf-8" (written in the endpoint request statement), and the `content-type` header set by `InPlace` reaches this endpoint: both would set `Content-Type`; keep one: remove the media type from the endpoint request statement, or add `remove "content-type";` to this endpoint's `headers` block
+ --> tests/ui/format_header_media_conflict.rs:9:59
+  |
+9 |         POST save(body p: String) { request concord::Text "text/plain; charset=utf-8"; }
+  |                                                           ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+error: body `p` has the media type "text/markdown" (written in the endpoint request statement), and the `content-type` header set by `BodyMedia` reaches this endpoint: both would set `Content-Type`; keep one: remove the media type from the endpoint request statement, or add `remove "content-type";` to this endpoint's `headers` block
+  --> tests/ui/format_header_media_conflict.rs:16:59
+   |
+16 |         POST save(body p: String) { request concord::Text "text/markdown"; }
+   |                                                           ^^^^^^^^^^^^^^^
+
+error: body `p` has the media type "application/vnd.api+json" (from the `request` default of the client `FromDefault`), and the `content-type` header set by `FromDefault` reaches this endpoint: both would set `Content-Type`; keep one: write `request concord::Json;` on this endpoint without a media type, or add `remove "content-type";` to this endpoint's `headers` block
+  --> tests/ui/format_header_media_conflict.rs:23:24
+   |
+23 |         POST save(body p: String);
+   |                        ^
+
+error: body `p` has the media type "text/plain" (written in the endpoint request statement), and the `content-type` header set by `Conditional.s.save` reaches this endpoint: both would set `Content-Type`; keep one: remove the media type from the endpoint request statement, or add `remove "content-type";` to this endpoint's `headers` block
+  --> tests/ui/format_header_media_conflict.rs:37:39
+   |
+37 |                 request concord::Text "text/plain";
+   |                                       ^^^^^^^^^^^^

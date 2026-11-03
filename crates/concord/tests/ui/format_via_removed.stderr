@@ -1,0 +1,23 @@
+error: `via` was removed: write `-> Item` and `response concord::Json;` on the endpoint
+ --> tests/ui/format_via_removed.rs:7:28
+  |
+7 |         GET item() -> Item via concord::Json;
+  |                            ^^^
+
+error: `via` was removed: write `-> Vec<Item>` and `response Csv;` on the endpoint
+  --> tests/ui/format_via_removed.rs:13:33
+   |
+13 |         GET rows() -> Vec<Item> via Csv;
+   |                                 ^^^
+
+error: `via` was removed: write `body note?: String` and `request Text;` on the endpoint
+  --> tests/ui/format_via_removed.rs:19:37
+   |
+19 |         PUT note(body note?: String via Text);
+   |                                     ^^^
+
+error: `via` was removed: write `body data: Vec<u8>` and `request concord::Binary;` on the endpoint
+  --> tests/ui/format_via_removed.rs:25:34
+   |
+25 |         PUT upload(data: Vec<u8> via concord::Binary);
+   |                                  ^^^

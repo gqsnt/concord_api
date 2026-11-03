@@ -1,0 +1,33 @@
+error[E0599]: the method `clone` exists for struct `ApiOnce`, but its trait bounds were not satisfied
+  --> tests/ui/endpoint_clone_needs_clone_values.rs:13:21
+   |
+ 1 |   pub struct Nonce(pub String);
+   |   ---------------- doesn't satisfy `Nonce: Clone`
+...
+ 5 | / concord::api! {
+ 6 | |     pub client Api {
+ 7 | |         base "http://x.test";
+ 8 | |         GET once(query nonce: Nonce) { path "once"; }
+ 9 | |     }
+10 | | }
+   | |_- method `clone` not found for this struct because it doesn't satisfy `ApiOnce: Clone`
+...
+13 |       let _ = request.clone();
+   |                       ^^^^^ method cannot be called on `ApiOnce` due to unsatisfied trait bounds
+   |
+note: trait bound `Nonce: Clone` was not satisfied
+  --> tests/ui/endpoint_clone_needs_clone_values.rs:8:31
+   |
+ 5 | / concord::api! {
+ 6 | |     pub client Api {
+ 7 | |         base "http://x.test";
+ 8 | |         GET once(query nonce: Nonce) { path "once"; }
+   | |             ----              ^^^^^ unsatisfied trait bound introduced here
+ 9 | |     }
+10 | | }
+   | |_-
+help: consider annotating `Nonce` with `#[derive(Clone)]`
+   |
+ 1 + #[derive(Clone)]
+ 2 | pub struct Nonce(pub String);
+   |

@@ -1,0 +1,467 @@
+{
+  "d_unit_response_buffered": {
+    "description": "an endpoint without `->` buffers the response body instead of draining it",
+    "stages": {
+      "baseline": [
+        {
+          "command": [
+            "cargo",
+            "test",
+            "--locked",
+            "--offline",
+            "-p",
+            "concord-heap-check"
+          ],
+          "exit": 0,
+          "test_results": [
+            "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+            "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.06s",
+            "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s"
+          ],
+          "log": "target/probes/receipts/mutation-d_unit_response_buffered-baseline-0.log"
+        }
+      ],
+      "mutant": [
+        {
+          "command": [
+            "cargo",
+            "test",
+            "--locked",
+            "--offline",
+            "-p",
+            "concord-heap-check"
+          ],
+          "exit": 101,
+          "test_results": [
+            "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+            "test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.10s"
+          ],
+          "log": "target/probes/receipts/mutation-d_unit_response_buffered-mutant-0.log"
+        }
+      ],
+      "restored": [
+        {
+          "command": [
+            "cargo",
+            "test",
+            "--locked",
+            "--offline",
+            "-p",
+            "concord-heap-check"
+          ],
+          "exit": 0,
+          "test_results": [
+            "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+            "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.06s",
+            "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s"
+          ],
+          "log": "target/probes/receipts/mutation-d_unit_response_buffered-restored-0.log"
+        }
+      ]
+    }
+  },
+  "e_error_source_transport": {
+    "description": "`concord::Error::source()` returns the transport error again",
+    "stages": {
+      "baseline": [
+        {
+          "command": [
+            "cargo",
+            "test",
+            "--locked",
+            "--offline",
+            "-p",
+            "concord",
+            "--test",
+            "d15_surfaces"
+          ],
+          "exit": 0,
+          "test_results": [
+            "test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.05s"
+          ],
+          "log": "target/probes/receipts/mutation-e_error_source_transport-baseline-0.log"
+        },
+        {
+          "command": [
+            "cargo",
+            "test",
+            "--locked",
+            "--offline",
+            "-p",
+            "concord",
+            "--test",
+            "tls"
+          ],
+          "exit": 0,
+          "test_results": [
+            "test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s"
+          ],
+          "log": "target/probes/receipts/mutation-e_error_source_transport-baseline-1.log"
+        },
+        {
+          "command": [
+            "cargo",
+            "test",
+            "--locked",
+            "--offline",
+            "-p",
+            "concord",
+            "--test",
+            "sensitivity"
+          ],
+          "exit": 0,
+          "test_results": [
+            "test result: ok. 13 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s"
+          ],
+          "log": "target/probes/receipts/mutation-e_error_source_transport-baseline-2.log"
+        }
+      ],
+      "mutant": [
+        {
+          "command": [
+            "cargo",
+            "test",
+            "--locked",
+            "--offline",
+            "-p",
+            "concord",
+            "--test",
+            "d15_surfaces"
+          ],
+          "exit": 101,
+          "test_results": [
+            "test result: FAILED. 6 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.04s"
+          ],
+          "log": "target/probes/receipts/mutation-e_error_source_transport-mutant-0.log"
+        },
+        {
+          "command": [
+            "cargo",
+            "test",
+            "--locked",
+            "--offline",
+            "-p",
+            "concord",
+            "--test",
+            "tls"
+          ],
+          "exit": 101,
+          "test_results": [
+            "test result: FAILED. 0 passed; 2 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s"
+          ],
+          "log": "target/probes/receipts/mutation-e_error_source_transport-mutant-1.log"
+        },
+        {
+          "command": [
+            "cargo",
+            "test",
+            "--locked",
+            "--offline",
+            "-p",
+            "concord",
+            "--test",
+            "sensitivity"
+          ],
+          "exit": 101,
+          "test_results": [
+            "test result: FAILED. 12 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s"
+          ],
+          "log": "target/probes/receipts/mutation-e_error_source_transport-mutant-2.log"
+        }
+      ],
+      "restored": [
+        {
+          "command": [
+            "cargo",
+            "test",
+            "--locked",
+            "--offline",
+            "-p",
+            "concord",
+            "--test",
+            "d15_surfaces"
+          ],
+          "exit": 0,
+          "test_results": [
+            "test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.04s"
+          ],
+          "log": "target/probes/receipts/mutation-e_error_source_transport-restored-0.log"
+        },
+        {
+          "command": [
+            "cargo",
+            "test",
+            "--locked",
+            "--offline",
+            "-p",
+            "concord",
+            "--test",
+            "tls"
+          ],
+          "exit": 0,
+          "test_results": [
+            "test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s"
+          ],
+          "log": "target/probes/receipts/mutation-e_error_source_transport-restored-1.log"
+        },
+        {
+          "command": [
+            "cargo",
+            "test",
+            "--locked",
+            "--offline",
+            "-p",
+            "concord",
+            "--test",
+            "sensitivity"
+          ],
+          "exit": 0,
+          "test_results": [
+            "test result: ok. 13 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s"
+          ],
+          "log": "target/probes/receipts/mutation-e_error_source_transport-restored-2.log"
+        }
+      ]
+    }
+  },
+  "f_header_append_unchecked": {
+    "description": "headers use `HeaderMap::append` instead of `try_append` (no capacity check)",
+    "stages": {
+      "baseline": [
+        {
+          "command": [
+            "cargo",
+            "test",
+            "--locked",
+            "--offline",
+            "-p",
+            "concord",
+            "--test",
+            "native_limits"
+          ],
+          "exit": 0,
+          "test_results": [
+            "test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s"
+          ],
+          "log": "target/probes/receipts/mutation-f_header_append_unchecked-baseline-0.log"
+        }
+      ],
+      "mutant": [
+        {
+          "command": [
+            "cargo",
+            "test",
+            "--locked",
+            "--offline",
+            "-p",
+            "concord",
+            "--test",
+            "native_limits"
+          ],
+          "exit": 101,
+          "test_results": [
+            "test result: FAILED. 1 passed; 2 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s"
+          ],
+          "log": "target/probes/receipts/mutation-f_header_append_unchecked-mutant-0.log"
+        }
+      ],
+      "restored": [
+        {
+          "command": [
+            "cargo",
+            "test",
+            "--locked",
+            "--offline",
+            "-p",
+            "concord",
+            "--test",
+            "native_limits"
+          ],
+          "exit": 0,
+          "test_results": [
+            "test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s"
+          ],
+          "log": "target/probes/receipts/mutation-f_header_append_unchecked-restored-0.log"
+        }
+      ]
+    }
+  },
+  "h_else_inherit_fallback_empty": {
+    "description": "`override ... else inherit` with an absent source emits nothing instead of the inherited value",
+    "stages": {
+      "baseline": [
+        {
+          "command": [
+            "cargo",
+            "test",
+            "--locked",
+            "--offline",
+            "-p",
+            "concord",
+            "--test",
+            "oracle_composition"
+          ],
+          "exit": 0,
+          "test_results": [
+            "test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s"
+          ],
+          "log": "target/probes/receipts/mutation-h_else_inherit_fallback_empty-baseline-0.log"
+        },
+        {
+          "command": [
+            "cargo",
+            "test",
+            "--locked",
+            "--offline",
+            "-p",
+            "concord",
+            "--test",
+            "composition"
+          ],
+          "exit": 0,
+          "test_results": [
+            "test result: ok. 37 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.11s"
+          ],
+          "log": "target/probes/receipts/mutation-h_else_inherit_fallback_empty-baseline-1.log"
+        }
+      ],
+      "mutant": [
+        {
+          "command": [
+            "cargo",
+            "test",
+            "--locked",
+            "--offline",
+            "-p",
+            "concord",
+            "--test",
+            "oracle_composition"
+          ],
+          "exit": 101,
+          "test_results": [
+            "test result: FAILED. 0 passed; 6 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s"
+          ],
+          "log": "target/probes/receipts/mutation-h_else_inherit_fallback_empty-mutant-0.log"
+        },
+        {
+          "command": [
+            "cargo",
+            "test",
+            "--locked",
+            "--offline",
+            "-p",
+            "concord",
+            "--test",
+            "composition"
+          ],
+          "exit": 101,
+          "test_results": [
+            "test result: FAILED. 34 passed; 3 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.13s"
+          ],
+          "log": "target/probes/receipts/mutation-h_else_inherit_fallback_empty-mutant-1.log"
+        }
+      ],
+      "restored": [
+        {
+          "command": [
+            "cargo",
+            "test",
+            "--locked",
+            "--offline",
+            "-p",
+            "concord",
+            "--test",
+            "oracle_composition"
+          ],
+          "exit": 0,
+          "test_results": [
+            "test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s"
+          ],
+          "log": "target/probes/receipts/mutation-h_else_inherit_fallback_empty-restored-0.log"
+        },
+        {
+          "command": [
+            "cargo",
+            "test",
+            "--locked",
+            "--offline",
+            "-p",
+            "concord",
+            "--test",
+            "composition"
+          ],
+          "exit": 0,
+          "test_results": [
+            "test result: ok. 37 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.11s"
+          ],
+          "log": "target/probes/receipts/mutation-h_else_inherit_fallback_empty-restored-1.log"
+        }
+      ]
+    }
+  },
+  "multipart_backslash": {
+    "description": "remove quoted parameter backslash escaping",
+    "stages": {
+      "baseline": [
+        {
+          "command": [
+            "cargo",
+            "test",
+            "--locked",
+            "--offline",
+            "-p",
+            "concord-example-native",
+            "--test",
+            "bodies",
+            "multipart_parameters_survive_quoted_string_parsing"
+          ],
+          "exit": 0,
+          "test_results": [
+            "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 6 filtered out; finished in 0.03s"
+          ],
+          "log": "target/probes/receipts/mutation-multipart_backslash-baseline-0.log"
+        }
+      ],
+      "mutant": [
+        {
+          "command": [
+            "cargo",
+            "test",
+            "--locked",
+            "--offline",
+            "-p",
+            "concord-example-native",
+            "--test",
+            "bodies",
+            "multipart_parameters_survive_quoted_string_parsing"
+          ],
+          "exit": 101,
+          "test_results": [
+            "test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 6 filtered out; finished in 0.01s"
+          ],
+          "log": "target/probes/receipts/mutation-multipart_backslash-mutant-0.log"
+        }
+      ],
+      "restored": [
+        {
+          "command": [
+            "cargo",
+            "test",
+            "--locked",
+            "--offline",
+            "-p",
+            "concord-example-native",
+            "--test",
+            "bodies",
+            "multipart_parameters_survive_quoted_string_parsing"
+          ],
+          "exit": 0,
+          "test_results": [
+            "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 6 filtered out; finished in 0.03s"
+          ],
+          "log": "target/probes/receipts/mutation-multipart_backslash-restored-0.log"
+        }
+      ]
+    }
+  }
+}

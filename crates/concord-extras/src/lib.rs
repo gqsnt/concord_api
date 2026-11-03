@@ -1,19 +1,33 @@
-//! Optional first-party implementations of Concord's public semantic contracts.
+//! The standard formats of Concord, written against the public contracts of
+//! [`concord_core`]: [`Encode`](concord_core::Encode) and [`Decode`](concord_core::Decode).
 //!
-//! This implementation package intentionally depends only on `concord_core`
-//! and has no access to native transport values. Applications select these
-//! implementations through features and domain modules on the `concord`
-//! façade.
+//! | Format | Feature | Body (`Encode<T>`) | Output (`Decode<T>`): response head check | `Accept` suggestion |
+//! |---|---|---|---|---|
+//! | `Json` | `json` | any `T: Serialize`, `application/json` | any `T: DeserializeOwned`; exactly one `Content-Type`, `application/json` or `application/*+json`, charset absent or once and UTF-8 or US-ASCII | `application/json` |
+//! | [`Text`] | — | `String`, `text/plain; charset=utf-8` | `String` (UTF-8); any media type; a declared non-UTF-8 charset (repeated or not) is refused | none |
+//! | [`Binary`] | — | `Bytes`, `Vec<u8>`, `application/octet-stream` | `Bytes`, `Vec<u8>`; nothing checked (`image/png` is fine) | none |
+//! | `Form` | `form` | any `T: Serialize` (flat), `application/x-www-form-urlencoded` | any `T: DeserializeOwned`; exactly one `application/x-www-form-urlencoded`, charset absent or once and UTF-8 or US-ASCII | `application/x-www-form-urlencoded` |
+//! | [`IgnoreContentType<F>`] | — | `F`'s | `F`'s, without its `Content-Type` check | `F`'s |
+//!
+//! Head checks run before the body is read; a refusal is an
+//! [`ErrorKind::Metadata`](concord_core::ErrorKind::Metadata) error that keeps the response
+//! unread. None of these formats is known to the `api!` macro: a statement names them by their
+//! type path (`format Json;`), exactly like a format of your own. Applications normally get them
+//! through the `concord` crate.
 
-#![forbid(unsafe_code)]
-#![deny(missing_docs)]
+mod binary;
+#[cfg(feature = "form")]
+mod form;
+mod ignore;
+#[cfg(feature = "json")]
+mod json;
+mod media;
+mod text;
 
-pub mod atom;
-#[cfg(feature = "oauth2-client")]
-pub mod auth;
-pub mod codec;
-pub mod pagination;
-#[cfg(feature = "rate-limit")]
-pub mod rate_limit;
-#[cfg(any(feature = "csv", feature = "ndjson"))]
-pub mod records;
+pub use binary::Binary;
+#[cfg(feature = "form")]
+pub use form::Form;
+pub use ignore::IgnoreContentType;
+#[cfg(feature = "json")]
+pub use json::Json;
+pub use text::Text;

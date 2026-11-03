@@ -1,0 +1,38 @@
+    Checking design_a v0.0.0 (/home/canarit/projects/concord_v4_native_work/snapshots/headers-a915c8d/exp/coherence/design_a)
+error[E0119]: conflicting implementations of trait `TextFirst` for type `str`
+   --> design_a/src/lib.rs:114:1
+    |
+108 | impl<T: fmt::Display + ?Sized> TextFirst for T {
+    | ---------------------------------------------- first implementation here
+...
+114 | impl TextFirst for str {
+    | ^^^^^^^^^^^^^^^^^^^^^^ conflicting implementation for `str`
+
+error[E0034]: multiple applicable items in scope
+   --> design_a/src/lib.rs:49:23
+    |
+49  |         self.as_str().to_header_value()
+    |                       ^^^^^^^^^^^^^^^ multiple `to_header_value` found
+    |
+note: candidate #1 is defined in the trait `TextFirst`
+   --> design_a/src/lib.rs:105:5
+    |
+105 |     fn to_header_value(&self) -> Option<HeaderValue>;
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+note: candidate #2 is defined in an impl of the trait `ToHeaderValue` for the type `str`
+   --> design_a/src/lib.rs:40:5
+    |
+40  |     fn to_header_value(&self) -> Option<HeaderValue> {
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+help: disambiguate the method for candidate #1
+    |
+49  |         TextFirst::to_header_value(&self.as_str())
+    |
+help: disambiguate the method for candidate #2
+    |
+49  |         ToHeaderValue::to_header_value(&self.as_str())
+    |
+
+Some errors have detailed explanations: E0034, E0119.
+For more information about an error, try `rustc --explain E0034`.
+error: could not compile `design_a` (lib) due to 2 previous errors

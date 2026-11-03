@@ -1,0 +1,22 @@
+[package]
+name = "concord-example-native"
+description = "Downstream example: application-owned native integration recipes around Concord V4 (error documents, native edits, custom representations, streaming, form-encoded bodies, retry, cursor, admission, auth rotation, interleaved query keys)."
+version = "0.0.0"
+edition = "2024"
+rust-version.workspace = true
+license.workspace = true
+publish = false
+
+[dependencies]
+concord = { path = "../../crates/concord" }
+serde = { workspace = true, features = ["derive"] }
+serde_json.workspace = true
+# Already in the lockfile (Concord depends on it): used for `form_urlencoded`.
+url.workspace = true
+tokio = { workspace = true, features = ["sync", "time"] }
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["macros", "rt", "rt-multi-thread", "net", "io-util", "sync", "time"] }
+
+[lints]
+workspace = true

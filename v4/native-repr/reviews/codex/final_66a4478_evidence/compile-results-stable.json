@@ -1,0 +1,219 @@
+[
+  {
+    "name": "missing_request",
+    "expected_pass": false,
+    "returncode": 101,
+    "oracle": "no `request` default",
+    "ok": true
+  },
+  {
+    "name": "missing_response",
+    "expected_pass": false,
+    "returncode": 101,
+    "oracle": "no `response` default",
+    "ok": true
+  },
+  {
+    "name": "body_default",
+    "expected_pass": false,
+    "returncode": 101,
+    "oracle": "body cannot have a default",
+    "ok": true
+  },
+  {
+    "name": "endpoint_statement",
+    "expected_pass": false,
+    "returncode": 101,
+    "oracle": "write the format",
+    "ok": true
+  },
+  {
+    "name": "explicit_optional_ct",
+    "expected_pass": false,
+    "returncode": 101,
+    "oracle": "keep one",
+    "ok": true
+  },
+  {
+    "name": "composed_ct_remove_readd",
+    "expected_pass": false,
+    "returncode": 101,
+    "oracle": "keep one",
+    "ok": true
+  },
+  {
+    "name": "owner_media_ct",
+    "expected_pass": false,
+    "returncode": 101,
+    "oracle": "keep one",
+    "ok": true
+  },
+  {
+    "name": "remove_conflict",
+    "expected_pass": true,
+    "returncode": 0,
+    "oracle": "",
+    "ok": true
+  },
+  {
+    "name": "local_discards_media",
+    "expected_pass": true,
+    "returncode": 0,
+    "oracle": "",
+    "ok": true
+  },
+  {
+    "name": "invalid_media",
+    "expected_pass": false,
+    "returncode": 101,
+    "oracle": "media type",
+    "ok": true
+  },
+  {
+    "name": "invalid_constant",
+    "expected_pass": false,
+    "returncode": 101,
+    "oracle": "error[E0080]",
+    "ok": true
+  },
+  {
+    "name": "replaced_constant",
+    "expected_pass": true,
+    "returncode": 0,
+    "oracle": "",
+    "ok": true
+  },
+  {
+    "name": "output_media",
+    "expected_pass": false,
+    "returncode": 101,
+    "oracle": "media type",
+    "ok": true
+  },
+  {
+    "name": "removed_via",
+    "expected_pass": false,
+    "returncode": 101,
+    "oracle": "via",
+    "ok": true
+  },
+  {
+    "name": "reserved_payload",
+    "expected_pass": false,
+    "returncode": 101,
+    "oracle": "payload",
+    "ok": true
+  },
+  {
+    "name": "lexical_vec",
+    "expected_pass": true,
+    "returncode": 0,
+    "oracle": "",
+    "ok": true
+  },
+  {
+    "name": "lexical_names",
+    "expected_pass": true,
+    "returncode": 0,
+    "oracle": "",
+    "ok": true
+  },
+  {
+    "name": "raw_payload",
+    "expected_pass": true,
+    "returncode": 0,
+    "oracle": "",
+    "ok": true
+  },
+  {
+    "name": "native_path",
+    "expected_pass": false,
+    "returncode": 101,
+    "oracle": "written as text",
+    "ok": true
+  },
+  {
+    "name": "native_query",
+    "expected_pass": false,
+    "returncode": 101,
+    "oracle": "written as text",
+    "ok": true
+  },
+  {
+    "name": "native_template",
+    "expected_pass": false,
+    "returncode": 101,
+    "oracle": "written as text",
+    "ok": true
+  },
+  {
+    "name": "native_subdomain",
+    "expected_pass": false,
+    "returncode": 101,
+    "oracle": "written as text",
+    "ok": true
+  },
+  {
+    "name": "native_each_query",
+    "expected_pass": false,
+    "returncode": 101,
+    "oracle": "written as text",
+    "ok": true
+  },
+  {
+    "name": "native_borrowed",
+    "expected_pass": true,
+    "returncode": 0,
+    "oracle": "",
+    "ok": true
+  },
+  {
+    "name": "feature_off_in_place",
+    "expected_pass": false,
+    "returncode": 101,
+    "oracle": "gated behind",
+    "ok": true
+  },
+  {
+    "name": "feature_off_default",
+    "expected_pass": false,
+    "returncode": 101,
+    "oracle": "gated behind",
+    "ok": true
+  },
+  {
+    "name": "unused_defaults",
+    "expected_pass": true,
+    "returncode": 0,
+    "oracle": "",
+    "ok": true
+  },
+  {
+    "name": "disabled_consumers",
+    "expected_pass": true,
+    "returncode": 0,
+    "oracle": "",
+    "ok": true
+  },
+  {
+    "name": "cfg_union_live",
+    "expected_pass": false,
+    "returncode": 101,
+    "oracle": "gated behind",
+    "ok": true
+  },
+  {
+    "name": "nonclone_declaration",
+    "expected_pass": true,
+    "returncode": 0,
+    "oracle": "",
+    "ok": true
+  },
+  {
+    "name": "nonclone_call",
+    "expected_pass": false,
+    "returncode": 101,
+    "oracle": "Clone",
+    "ok": true
+  }
+]

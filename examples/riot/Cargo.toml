@@ -1,0 +1,20 @@
+[package]
+name = "concord-example-riot"
+description = "Downstream example: a typed, sourced Riot Games API client (League of Legends subset) and a credential-free Data Dragon client, tested offline against synthetic fixtures."
+version = "0.0.0"
+edition = "2024"
+rust-version.workspace = true
+license.workspace = true
+publish = false
+
+[dependencies]
+concord = { path = "../../crates/concord" }
+serde = { workspace = true, features = ["derive"] }
+tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
+
+[dev-dependencies]
+serde_json.workspace = true
+tokio = { workspace = true, features = ["macros", "rt", "rt-multi-thread", "net", "io-util", "sync", "time"] }
+
+[lints]
+workspace = true

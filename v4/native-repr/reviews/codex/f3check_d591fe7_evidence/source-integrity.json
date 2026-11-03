@@ -1,0 +1,17 @@
+{
+  "snapshot_head": "4a39e42e59aa5d36e4d83d3055521b7a2be6121c",
+  "tracked_files_checked": 984,
+  "changed_original_files": [],
+  "missing_original_files": [],
+  "cargo_lock_unchanged": true,
+  "git_status": "",
+  "active_probe_processes": [],
+  "probe_server_cleanup": "All 158 independent one-shot wire exchanges completed; helper finish() joined each thread before semantic assertions. Drop also joins on unwinding. Integration-suite server tasks ended with the completed test process.",
+  "production_changes": false,
+  "external_services_contacted": false,
+  "push_or_publish": false,
+  "global_settings_modified": false,
+  "sandbox_bypass": false,
+  "documentation_or_background_server_started": false,
+  "recorded_utc": "2026-11-02T07:46:42.542224+00:00"
+}

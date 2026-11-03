@@ -1,0 +1,26 @@
+    Checking independent-compile v0.0.0 (/home/canarit/projects/concord_v4_native_work/snapshots/final-66a4478/target/probes/compile-work)
+error[E0080]: could not evaluate static initializer
+   --> /home/canarit/projects/concord_v4_native_work/codex/final/cargo-home/registry/src/index.crates.io-1949cf8c6b5b557f/http-1.5.0/src/header/value.rs:67:17
+    |
+67  |                 panic!("HeaderValue::from_static with invalid bytes")
+    |                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ the evaluated program panicked at 'HeaderValue::from_static with invalid bytes', /home/canarit/projects/concord_v4_native_work/codex/final/cargo-home/registry/src/index.crates.io-1949cf8c6b5b557f/http-1.5.0/src/header/value.rs:67:17
+    |
+note: inside `HeaderValue::from_static`
+   --> /home/canarit/projects/concord_v4_native_work/codex/final/cargo-home/registry/src/index.crates.io-1949cf8c6b5b557f/http-1.5.0/src/header/value.rs:67:17
+    |
+67  |                 panic!("HeaderValue::from_static with invalid bytes")
+    |                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+note: inside `BodyFormat::<String>::new::<Bad>`
+   --> /home/canarit/projects/concord_v4_native_work/snapshots/final-66a4478/crates/concord/src/__private.rs:187:36
+    |
+187 |                 Some(text) => Some(HeaderValue::from_static(text)),
+    |                                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+note: inside `__FORMAT`
+   --> src/lib.rs:2:64
+    |
+2   | wire::api! { pub client Api { base "http://127.0.0.1";  POST p(Bad b: String); } }
+    |                                                                ^^^
+    = note: this error originates in the macro `$crate::panic::panic_2021` which comes from the expansion of the macro `wire::api` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+For more information about this error, try `rustc --explain E0080`.
+error: could not compile `independent-compile` (lib) due to 1 previous error

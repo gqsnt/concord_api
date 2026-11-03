@@ -1,0 +1,2 @@
+kept: `via r#type` (write `self::r#type` or the word yourself)
+kept: `via r#type` (write `self::r#type` or the word yourself)

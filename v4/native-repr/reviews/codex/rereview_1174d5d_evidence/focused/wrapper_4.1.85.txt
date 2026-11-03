@@ -1,0 +1,30 @@
+    Checking focused-rereview v0.0.0 (/home/canarit/projects/concord_v4_native_work/snapshots/rereview-1174d5d/target/probes/focused)
+error[E0277]: `Dual` is placed both as a header value and as text
+   --> src/bin/wrapper_4.rs:13:56
+    |
+13  | .../example.test"; GET go(v: Cow<'static, Dual>) { path "{v}"; query { "q" = v; } headers { "x-dual" = v; "x-copy" = "{v}"; } } }
+    |                              ^^^ used as a whole header value and in a path, subdomain, query value or template
+    |
+    = help: the trait `TextHeader` is not implemented for `Dual`
+    = note: a header value that is also written as text must be text itself (`String`, `&str`, an integer or `bool`): a type's own `ToHeaderValue` can mark its header value sensitive, which a path, query value or template cannot see
+    = note: send this header as text through a template (`headers { "name" = "{value}"; }`), use a separate value for the header, or mark the value `#[sensitive]`
+    = help: the following other types implement trait `TextHeader`:
+              &T
+              Arc<T>
+              Box<T>
+              Cow<'_, T>
+              Rc<T>
+              String
+              bool
+              i16
+            and 10 others
+    = note: required for `Cow<'_, Dual>` to implement `TextHeader`
+note: required by a bound in `Parts::<'a>::header_text`
+   --> /home/canarit/projects/concord_v4_native_work/snapshots/rereview-1174d5d/crates/concord/src/__private.rs:392:27
+    |
+392 |     pub fn header_text<T: TextHeader + ?Sized>(
+    |                           ^^^^^^^^^^ required by this bound in `Parts::<'a>::header_text`
+    = note: this error originates in the macro `$crate::__private::api_impl` which comes from the expansion of the macro `wire::api` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+For more information about this error, try `rustc --explain E0277`.
+error: could not compile `focused-rereview` (bin "wrapper_4") due to 1 previous error

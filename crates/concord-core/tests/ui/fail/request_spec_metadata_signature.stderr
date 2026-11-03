@@ -1,7 +1,0 @@
-error[E0407]: method `metadata` is not a member of trait `RequestRepresentation`
-  --> tests/ui/fail/request_spec_metadata_signature.rs:9:5
-   |
- 9 | /     fn metadata(_input: &String, _context: RequestBodyContext<'_>) -> Result<(), BodyError> {
-10 | |         Ok(())
-11 | |     }
-   | |_____^ not a member of trait `RequestRepresentation`

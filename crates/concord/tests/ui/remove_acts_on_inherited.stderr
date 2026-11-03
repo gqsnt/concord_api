@@ -1,0 +1,5 @@
+error: cannot remove query key `k`: no enclosing owner sets it
+ --> tests/ui/remove_acts_on_inherited.rs:6:48
+  |
+6 |         GET page(a: String) { query { "k" = a; remove "k"; } }
+  |                                                ^^^^^^

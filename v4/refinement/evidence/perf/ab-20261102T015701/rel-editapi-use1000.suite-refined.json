@@ -1,0 +1,24 @@
+{
+  "results": [
+    {
+      "command": "cargo +1.97.1 build --release -p use1000 --manifest-path /home/canarit/projects/concord_v4_refine_work/perf/suite-refined/Cargo.toml --offline --locked -q",
+      "mean": 51.487445993666675,
+      "stddev": 0.2485450808015078,
+      "median": 51.39655622,
+      "user": 50.785585,
+      "system": 1.3569019999999998,
+      "min": 51.297139011,
+      "max": 51.76864275,
+      "times": [
+        51.76864275,
+        51.39655622,
+        51.297139011
+      ],
+      "exit_codes": [
+        0,
+        0,
+        0
+      ]
+    }
+  ]
+}

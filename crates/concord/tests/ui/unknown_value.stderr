@@ -1,0 +1,5 @@
+error: `idd` is not a value of `Api.item`; did you mean `id`?
+ --> tests/ui/unknown_value.rs:4:37
+  |
+4 |         GET item(id: String) { path "items/{idd}"; query { "id" = id; } }
+  |                                     ^^^^^^^^^^^^^

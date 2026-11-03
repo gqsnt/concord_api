@@ -1,0 +1,47 @@
+error: `json` is not a placement: a parameter is `name: T`, `query name: T`, `query("key") name: T`, `header(KEY) name: T` or `body name: T` (a body's format is a statement: `request F;`)
+ --> tests/ui/format_removed_spellings.rs:9:16
+  |
+9 |         POST a(json b: Item);
+  |                ^^^^
+
+error: `json` is not a placement: a parameter is `name: T`, `query name: T`, `query("key") name: T`, `header(KEY) name: T` or `body name: T` (a body's format is a statement: `request F;`)
+  --> tests/ui/format_removed_spellings.rs:15:16
+   |
+15 |         POST a(json("application/merge-patch+json") b: Item);
+   |                ^^^^
+
+error: removed in-place body format: write `body b: Item` and `request concord::Json "application/problem+json";` on this endpoint (a format is a type path: `concord::Json` must name a format type in scope)
+  --> tests/ui/format_removed_spellings.rs:22:49
+   |
+22 |         POST a(body("application/problem+json") b: Item);
+   |                                                 ^
+
+error: removed in-place body format: write `body b: Item` and `request Csv;` on this endpoint (a format is a type path: `Csv` must name a format type in scope)
+  --> tests/ui/format_removed_spellings.rs:28:20
+   |
+28 |         POST a(Csv b: Item);
+   |                    ^
+
+error: removed in-place output format: `-> json Item` names two types; write the payload alone (`-> T`) and the format as a statement (`response F;`) on this endpoint
+  --> tests/ui/format_removed_spellings.rs:34:25
+   |
+34 |         GET a() -> json Item;
+   |                         ^^^^
+
+error: removed in-place output format: `-> Csv Item` names two types; write the payload alone (`-> T`) and the format as a statement (`response F;`) on this endpoint
+  --> tests/ui/format_removed_spellings.rs:40:24
+   |
+40 |         GET a() -> Csv Item;
+   |                        ^^^^
+
+error: removed parenthesized media type: write `request concord::Json "application/vnd.api+json";`
+  --> tests/ui/format_removed_spellings.rs:46:31
+   |
+46 |         request concord::Json("application/vnd.api+json");
+   |                               ^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+error: removed parenthesized media type: write `request concord::Text "text/markdown";`
+  --> tests/ui/format_removed_spellings.rs:53:54
+   |
+53 |         POST a(body b: Item) { request concord::Text("text/markdown"); }
+   |                                                      ^^^^^^^^^^^^^^^

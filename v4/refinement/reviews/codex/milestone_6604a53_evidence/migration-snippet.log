@@ -1,0 +1,54 @@
+    Blocking waiting for file lock on package cache
+    Blocking waiting for file lock on package cache
+    Blocking waiting for file lock on package cache
+    Blocking waiting for file lock on build directory
+    Checking concord-review-probes v0.0.0 (/home/canarit/projects/concord_v4_refine_work/snapshots/milestone-6604a53/target/probes/downstream)
+warning: unused import: `co::reqwest`
+ --> src/lib.rs:2:5
+  |
+2 | use co::reqwest;
+  |     ^^^^^^^^^^^
+  |
+  = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: enum `Op` is never used
+  --> src/lib.rs:44:6
+   |
+44 | enum Op { Put, Add, Replace, Remove }
+   |      ^^
+   |
+   = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: function `expected` is never used
+  --> src/lib.rs:45:4
+   |
+45 | fn expected(ops: &[(Op, &'static str, Option<Vec<String>>)]) -> Vec<(&'static str, Vec<String>)> {
+   |    ^^^^^^^^
+
+warning: `concord-review-probes` (lib) generated 3 warnings (run `cargo fix --lib -p concord-review-probes` to apply 1 suggestion)
+error[E0308]: mismatched types
+ --> src/bin/migration.rs:9:55
+  |
+9 |     let _api=ShopApi::new(co::reqwest::Client::new(), token);
+  |              ------------                             ^^^^^ expected `ShopApiConfig`, found `String`
+  |              |
+  |              arguments to this function are incorrect
+  |
+note: associated function defined here
+ --> src/bin/migration.rs:1:1
+  |
+1 | / co::api! {
+2 | |     pub client ShopApi(#[sensitive] header("authorization") token: String) {
+3 | |         base "http://probe.invalid/v1";
+4 | |         GET search(query q?: String);
+5 | |     }
+6 | | }
+  | |_^
+  = note: this error originates in the macro `$crate::__private::api_impl` which comes from the expansion of the macro `co::api` (in Nightly builds, run with -Z macro-backtrace for more info)
+help: try wrapping the expression in `ShopApiConfig`
+  |
+9 |     let _api=ShopApi::new(co::reqwest::Client::new(), ShopApiConfig { token: token });
+  |                                                       ++++++++++++++++++++++       +
+
+For more information about this error, try `rustc --explain E0308`.
+error: could not compile `concord-review-probes` (bin "migration") due to 1 previous error

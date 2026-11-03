@@ -1,0 +1,19 @@
+    Blocking waiting for file lock on package cache
+    Blocking waiting for file lock on package cache
+    Blocking waiting for file lock on package cache
+   Compiling migration-rereview v0.0.0 (/home/canarit/projects/concord_v4_native_work/snapshots/f3check-d591fe7/target/probes/migration)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.40s
+     Running unittests src/lib.rs (target/probe-msrv/debug/deps/migration_rereview-7ab25b60041b7292)
+
+running 4 tests
+test tests::commented_import ... commented_import: expected Some([67, 85, 83, 84, 79, 77, 58, 118, 97, 108, 117, 101]); migrated Some([67, 85, 83, 84, 79, 77, 58, 118, 97, 108, 117, 101])
+ok
+test tests::disabled_import ... disabled_import: expected Some([67, 85, 83, 84, 79, 77, 58, 118, 97, 108, 117, 101]); migrated Some([67, 85, 83, 84, 79, 77, 58, 118, 97, 108, 117, 101])
+ok
+test tests::qualified ... qualified: expected Some([67, 85, 83, 84, 79, 77, 58, 118, 97, 108, 117, 101]); migrated Some([67, 85, 83, 84, 79, 77, 58, 118, 97, 108, 117, 101])
+ok
+test tests::scoped_import ... scoped_import: expected Some([67, 85, 83, 84, 79, 77, 58, 118, 97, 108, 117, 101]); migrated Some([67, 85, 83, 84, 79, 77, 58, 118, 97, 108, 117, 101])
+ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+

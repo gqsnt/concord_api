@@ -1,0 +1,11 @@
+error: cannot remove query key `k`: no enclosing owner sets it
+ --> tests/oracle_ui/remove_acts_first_within_owner.rs:7:40
+  |
+7 |         query { "a" = "1"; "k" = "cr"; remove "k"; } headers { "x-k" = "cr"; remove "x-k"; }
+  |                                        ^^^^^^
+
+error: cannot remove header `x-k`: no enclosing owner sets it
+ --> tests/oracle_ui/remove_acts_first_within_owner.rs:7:78
+  |
+7 |         query { "a" = "1"; "k" = "cr"; remove "k"; } headers { "x-k" = "cr"; remove "x-k"; }
+  |                                                                              ^^^^^^

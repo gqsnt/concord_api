@@ -1,0 +1,19 @@
+[package]
+name = "concord-example-shapes"
+description = "Downstream example: three representative API shapes declared with Concord V4."
+version = "0.0.0"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish = false
+
+[dependencies]
+concord = { path = "../../crates/concord" }
+serde = { workspace = true, features = ["derive"] }
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["macros", "rt", "net", "io-util", "sync", "time"] }
+serde_json.workspace = true
+
+[lints]
+workspace = true

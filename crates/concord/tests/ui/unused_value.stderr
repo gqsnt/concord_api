@@ -1,0 +1,11 @@
+error: value `tenant` is never used; place it (`query`, `header("..")`) or reference it from `path`, `subdomain`, `query` or `headers`
+ --> tests/ui/unused_value.rs:2:20
+  |
+2 |     pub client Api(tenant: String) {
+  |                    ^^^^^^
+
+error: value `limit` is never used; place it (`query`, `header("..")`) or reference it from `path`, `subdomain`, `query` or `headers`
+ --> tests/ui/unused_value.rs:4:18
+  |
+4 |         GET list(limit?: u32);
+  |                  ^^^^^

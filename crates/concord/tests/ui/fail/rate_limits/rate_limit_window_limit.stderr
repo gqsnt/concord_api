@@ -1,5 +1,0 @@
-error: [C3-RATE] inline policy `concord.rate_limit_window_limit.1` of client `RateWindowLimitApi` declares 17 windows; at most 16 are allowed, so split the windows across several policies
- --> tests/ui/fail/rate_limits/rate_limit_window_limit.rs:9:9
-  |
-9 |         rate_limit {
-  |         ^^^^^^^^^^

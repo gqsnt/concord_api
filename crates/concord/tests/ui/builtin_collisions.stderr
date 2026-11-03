@@ -1,0 +1,17 @@
+error: `Api` would have two methods named `with_base_url`: the navigation method for `Api.with_base_url` and the built-in `with_base_url`; rename one of them
+ --> tests/ui/builtin_collisions.rs:4:13
+  |
+4 |         GET with_base_url();
+  |             ^^^^^^^^^^^^^
+
+error: `Api` would have two methods named `validate_header_names`: the navigation method for `Api.validate_header_names` and the built-in `validate_header_names`; rename one of them
+ --> tests/ui/builtin_collisions.rs:5:13
+  |
+5 |         GET validate_header_names();
+  |             ^^^^^^^^^^^^^^^^^^^^^
+
+error: `Api` would have two methods named `clone`: the navigation method for `Api.clone` and `Clone::clone`; rename one of them
+ --> tests/ui/builtin_collisions.rs:6:13
+  |
+6 |         GET clone();
+  |             ^^^^^

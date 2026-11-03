@@ -1,0 +1,65 @@
+[
+  {
+    "probe": "migration",
+    "lane": "msrv",
+    "command": [
+      "cargo",
+      "+1.85",
+      "test",
+      "--locked",
+      "--offline",
+      "--manifest-path",
+      "/home/canarit/projects/concord_v4_native_work/snapshots/f3check-d591fe7/target/probes/migration/Cargo.toml",
+      "--lib",
+      "--",
+      "--nocapture",
+      "--test-threads=1"
+    ],
+    "cargo_target_dir": "/home/canarit/projects/concord_v4_native_work/snapshots/f3check-d591fe7/target/probe-msrv",
+    "exit_code": 0,
+    "elapsed_seconds": 0.42176099499920383,
+    "log": "/home/canarit/projects/concord_v4_native_work/snapshots/f3check-d591fe7/target/probes/migration-msrv.txt"
+  },
+  {
+    "probe": "matrix",
+    "lane": "msrv",
+    "command": [
+      "cargo",
+      "+1.85",
+      "test",
+      "--locked",
+      "--offline",
+      "--manifest-path",
+      "/home/canarit/projects/concord_v4_native_work/snapshots/f3check-d591fe7/target/probes/matrix/Cargo.toml",
+      "--lib",
+      "--",
+      "--nocapture",
+      "--test-threads=1"
+    ],
+    "cargo_target_dir": "/home/canarit/projects/concord_v4_native_work/snapshots/f3check-d591fe7/target/probe-msrv",
+    "exit_code": 101,
+    "elapsed_seconds": 2.27431481199892,
+    "log": "/home/canarit/projects/concord_v4_native_work/snapshots/f3check-d591fe7/target/probes/matrix-msrv.txt"
+  },
+  {
+    "probe": "renamed",
+    "lane": "msrv",
+    "command": [
+      "cargo",
+      "+1.85",
+      "test",
+      "--locked",
+      "--offline",
+      "--manifest-path",
+      "/home/canarit/projects/concord_v4_native_work/snapshots/f3check-d591fe7/target/probes/renamed/Cargo.toml",
+      "--lib",
+      "--",
+      "--nocapture",
+      "--test-threads=1"
+    ],
+    "cargo_target_dir": "/home/canarit/projects/concord_v4_native_work/snapshots/f3check-d591fe7/target/probe-msrv",
+    "exit_code": 0,
+    "elapsed_seconds": 0.6616257970017614,
+    "log": "/home/canarit/projects/concord_v4_native_work/snapshots/f3check-d591fe7/target/probes/renamed-msrv.txt"
+  }
+]

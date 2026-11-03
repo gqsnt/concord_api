@@ -1,0 +1,23 @@
+error: "application json" is not a media type: mime parse error: an invalid token was encountered, 20 at position 11 (expected `type/subtype` with optional `; name=value` parameters, e.g. "application/merge-patch+json")
+ --> tests/ui/format_media_type_invalid.rs:6:56
+  |
+6 |         POST a(body b: String) { request concord::Json "application json"; }
+  |                                                        ^^^^^^^^^^^^^^^^^^
+
+error: "text/plain; charset" is not a media type: mime parse error: an equals sign (=) was missing between a parameter and its value (expected `type/subtype` with optional `; name=value` parameters, e.g. "application/merge-patch+json")
+  --> tests/ui/format_media_type_invalid.rs:12:56
+   |
+12 |         POST a(body b: String) { request concord::Text "text/plain; charset"; }
+   |                                                        ^^^^^^^^^^^^^^^^^^^^^
+
+error: "application/vnd.café+json" is not a media type: mime parse error: an invalid token was encountered, C3 at position 19 (expected `type/subtype` with optional `; name=value` parameters, e.g. "application/merge-patch+json")
+  --> tests/ui/format_media_type_invalid.rs:18:56
+   |
+18 |         POST a(body b: String) { request concord::Json "application/vnd.caf\u{e9}+json"; }
+   |                                                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+error: " application/json" is not a media type: mime parse error: an invalid token was encountered, 20 at position 0 (expected `type/subtype` with optional `; name=value` parameters, e.g. "application/merge-patch+json")
+  --> tests/ui/format_media_type_invalid.rs:24:31
+   |
+24 |         request concord::Json " application/json";
+   |                               ^^^^^^^^^^^^^^^^^^^

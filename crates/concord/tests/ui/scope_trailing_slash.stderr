@@ -1,0 +1,5 @@
+error: a trailing `/` is only allowed on an endpoint's own path
+ --> tests/ui/scope_trailing_slash.rs:4:24
+  |
+4 |         scope s { path "items/"; GET list(); }
+  |                        ^^^^^^^^

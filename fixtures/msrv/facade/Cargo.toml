@@ -1,9 +1,0 @@
-[package]
-license = "MIT OR Apache-2.0"
-name = "concord-msrv-facade"
-version = "0.0.0"
-edition = "2024"
-publish = false
-
-[dependencies]
-concord = { path = "../../../crates/concord", default-features = false }

@@ -1,0 +1,8 @@
+[package]
+name = "f3e-raw-keyword"
+version = "0.0.0"
+edition = "2024"
+rust-version = "1.85"
+[dependencies]
+concord = { path = "/home/canarit/projects/concord_v4_native_work/snapshots/f3e-1d9ffe7/crates/concord", default-features = false }
+[workspace]

@@ -1,0 +1,47 @@
+error: `request` statement has no body to apply to
+ --> tests/ui/format_endpoint_statement.rs:7:35
+  |
+7 |         GET version() -> String { request concord::Text; response concord::Text; }
+  |                                   ^^^^^^^
+
+error: `response` statement has no typed output (`-> T`) to apply to
+  --> tests/ui/format_endpoint_statement.rs:13:63
+   |
+13 |         POST note(body note: String) { request concord::Text; response concord::Text; }
+   |                                                               ^^^^^^^^
+
+error: `format` statement has neither a body nor a typed output (`-> T`) to apply to
+  --> tests/ui/format_endpoint_statement.rs:19:27
+   |
+19 |         DELETE remove() { format concord::Json; }
+   |                           ^^^^^^
+
+error: duplicate `request` statement; each owner declares it at most once
+  --> tests/ui/format_endpoint_statement.rs:27:13
+   |
+27 |             request concord::Binary;
+   |             ^^^^^^^
+
+error: duplicate `request` direction: `format` counts as both `request` and `response`, at most once each per owner; for a different media type write `request F "type/subtype";` and `response F;` instead of `format`
+  --> tests/ui/format_endpoint_statement.rs:36:13
+   |
+36 |             request concord::Text;
+   |             ^^^^^^^
+
+error: duplicate `request` direction: `format` counts as both `request` and `response`, at most once each per owner; for a different media type write `request F "type/subtype";` and `response F;` instead of `format`
+  --> tests/ui/format_endpoint_statement.rs:45:13
+   |
+45 |             format concord::Text;
+   |             ^^^^^^
+
+error: duplicate `response` statement; each owner declares it at most once
+  --> tests/ui/format_endpoint_statement.rs:53:9
+   |
+53 |         response concord::Text;
+   |         ^^^^^^^^
+
+error: owner statements (`path`, `subdomain`, `query`, `headers`, `format`, `request`, `response`) must precede child declarations (first child: `version`)
+  --> tests/ui/format_endpoint_statement.rs:61:9
+   |
+61 |         response concord::Json;
+   |         ^^^^^^^^

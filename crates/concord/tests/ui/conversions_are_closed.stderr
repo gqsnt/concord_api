@@ -1,0 +1,79 @@
+error[E0277]: `u8` is not accepted for a value of type `u32`
+ --> tests/ui/conversions_are_closed.rs:9:34
+  |
+9 |     let _ = api.list().set_limit(5u8);
+  |                        --------- ^^^ expected `u32`
+  |                        |
+  |                        required by a bound introduced by this call
+  |
+  = help: the trait `IntoValue<u32>` is not implemented for `u8`
+  = note: Concord accepts the exact declared type, `&str`/`&String` for `String`, or `&HeaderValue` for `HeaderValue`; construct newtypes and `Option`s explicitly
+help: the following other types implement trait `IntoValue<T>`
+ --> $WORKSPACE/crates/concord-core/src/value.rs
+  |
+  | impl IntoValue<String> for &str {
+  | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `&str` implements `IntoValue<String>`
+...
+  | impl IntoValue<String> for &String {
+  | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `&String` implements `IntoValue<String>`
+...
+  | impl IntoValue<HeaderValue> for &HeaderValue {
+  | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `&HeaderValue` implements `IntoValue<HeaderValue>`
+note: required by a bound in `ApiList::set_limit`
+ --> tests/ui/conversions_are_closed.rs:1:1
+  |
+1 | / concord::api! {
+2 | |     pub client Api {
+3 | |         base "http://x.test";
+4 | |         GET list(query limit: u32 = 20, query cursor?: String);
+5 | |     }
+6 | | }
+  | |_^ required by this bound in `ApiList::set_limit`
+  = note: this error originates in the macro `concord::api` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0308]: mismatched types
+  --> tests/ui/conversions_are_closed.rs:10:42
+   |
+10 |     let _ = api.list().maybe_cursor(Some("x"));
+   |                                     ---- ^^^ expected `String`, found `&str`
+   |                                     |
+   |                                     arguments to this enum variant are incorrect
+   |
+help: the type constructed contains `&'static str` due to the type of the argument passed
+  --> tests/ui/conversions_are_closed.rs:10:37
+   |
+10 |     let _ = api.list().maybe_cursor(Some("x"));
+   |                                     ^^^^^---^
+   |                                          |
+   |                                          this argument influences the type of `Some`
+note: tuple variant defined here
+  --> $RUST/core/src/option.rs
+   |
+   |     Some(#[stable(feature = "rust1", since = "1.0.0")] T),
+   |     ^^^^
+help: try using a conversion method
+   |
+10 |     let _ = api.list().maybe_cursor(Some("x".to_string()));
+   |                                             ++++++++++++
+
+error[E0308]: mismatched types
+  --> tests/ui/conversions_are_closed.rs:11:37
+   |
+11 |     let _ = api.list().maybe_cursor("x");
+   |                        ------------ ^^^ expected `Option<String>`, found `&str`
+   |                        |
+   |                        arguments to this method are incorrect
+   |
+   = note:   expected enum `Option<String>`
+           found reference `&'static str`
+note: method defined here
+  --> tests/ui/conversions_are_closed.rs:1:1
+   |
+ 1 | / concord::api! {
+ 2 | |     pub client Api {
+ 3 | |         base "http://x.test";
+ 4 | |         GET list(query limit: u32 = 20, query cursor?: String);
+ 5 | |     }
+ 6 | | }
+   | |_^
+   = note: this error originates in the macro `$crate::__macro::api` which comes from the expansion of the macro `concord::api` (in Nightly builds, run with -Z macro-backtrace for more info)

@@ -1,0 +1,26 @@
+{
+  "snapshots": {
+    "src-alpha": {
+      "original_commit": "8f7adc2019f3ee31af087c69286d559bca1c173a",
+      "mismatches": []
+    },
+    "src-refined": {
+      "original_commit": "de6471f0aad355490a504242d0043a9b98e98227",
+      "mismatches": []
+    },
+    "src-noinline": {
+      "original_commit": "de6471f0aad355490a504242d0043a9b98e98227",
+      "mismatches": [
+        "crates/concord-macros/src/emit.rs"
+      ]
+    },
+    "src-final": {
+      "original_commit": "d1844be613f94cd8442031bf23002e338fc204e8",
+      "mismatches": []
+    }
+  },
+  "current_vs_measured_differences": [
+    "crates/concord-macros/src/emit.rs",
+    "crates/concord/src/prepared.rs"
+  ]
+}

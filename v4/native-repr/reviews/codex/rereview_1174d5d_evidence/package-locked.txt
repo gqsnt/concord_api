@@ -1,0 +1,71 @@
+cargo test --locked --offline
+    Blocking waiting for file lock on package cache
+    Blocking waiting for file lock on package cache
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.08s
+     Running unittests src/lib.rs (/home/canarit/projects/concord_v4_native_work/snapshots/rereview-1174d5d/target/probes/package-check/target/debug/deps/package_consumer-c89df573ca87b39a)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/consumer.rs (/home/canarit/projects/concord_v4_native_work/snapshots/rereview-1174d5d/target/probes/package-check/target/debug/deps/consumer-4363126e4d6a268d)
+
+running 2 tests
+test json_defaults_from_the_packaged_sources ... ok
+test builds_requests_from_the_packaged_sources ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+
+   Doc-tests package_consumer
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+
+cargo test --locked --offline --no-default-features
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.05s
+     Running unittests src/lib.rs (/home/canarit/projects/concord_v4_native_work/snapshots/rereview-1174d5d/target/probes/package-check/target/debug/deps/package_consumer-1f52f603d8c99c8e)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/consumer.rs (/home/canarit/projects/concord_v4_native_work/snapshots/rereview-1174d5d/target/probes/package-check/target/debug/deps/consumer-f67c160ee6484dff)
+
+running 1 test
+test builds_requests_from_the_packaged_sources ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+
+   Doc-tests package_consumer
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+
+cargo +1.85 test --locked --offline
+    Blocking waiting for file lock on package cache
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.09s
+     Running unittests src/lib.rs (/home/canarit/projects/concord_v4_native_work/snapshots/rereview-1174d5d/target/probes/package-check/target/debug/deps/package_consumer-ead9ddffc886a673)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/consumer.rs (/home/canarit/projects/concord_v4_native_work/snapshots/rereview-1174d5d/target/probes/package-check/target/debug/deps/consumer-913e4199b77c41c9)
+
+running 2 tests
+test json_defaults_from_the_packaged_sources ... ok
+test builds_requests_from_the_packaged_sources ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+
+   Doc-tests package_consumer
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+

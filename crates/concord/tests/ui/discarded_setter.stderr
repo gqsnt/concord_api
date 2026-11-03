@@ -1,0 +1,40 @@
+error: unused return value of `Api::set_lang` that must be used
+  --> tests/ui/discarded_setter.rs:16:5
+   |
+16 |     api.clone().set_lang("de");
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+   = note: a setter returns the updated handle; discarding it discards the change
+note: the lint level is defined here
+  --> tests/ui/discarded_setter.rs:1:9
+   |
+ 1 | #![deny(unused_must_use)]
+   |         ^^^^^^^^^^^^^^^
+help: use `let _ = ...` to ignore the resulting value
+   |
+16 |     let _ = api.clone().set_lang("de");
+   |     +++++++
+
+error: unused return value of `Api::maybe_lang` that must be used
+  --> tests/ui/discarded_setter.rs:17:5
+   |
+17 |     api.clone().maybe_lang(None);
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+   = note: a setter returns the updated handle; discarding it discards the change
+help: use `let _ = ...` to ignore the resulting value
+   |
+17 |     let _ = api.clone().maybe_lang(None);
+   |     +++++++
+
+error: unused return value of `Api::v2` that must be used
+  --> tests/ui/discarded_setter.rs:18:5
+   |
+18 |     api.v2();
+   |     ^^^^^^^^
+   |
+   = note: entering a scope only returns its handle
+help: use `let _ = ...` to ignore the resulting value
+   |
+18 |     let _ = api.v2();
+   |     +++++++

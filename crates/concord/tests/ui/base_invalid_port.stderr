@@ -1,0 +1,35 @@
+error: invalid base URL "http://example.test:not-a-port": the port must be a decimal number from 1 to 65535
+ --> tests/ui/base_invalid_port.rs:3:14
+  |
+3 |         base "http://example.test:not-a-port";
+  |              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+error: invalid base URL "http://exa mple.test": the host must be an ASCII DNS name, an IPv4 address or a bracketed IPv6 address
+ --> tests/ui/base_invalid_port.rs:9:14
+  |
+9 |         base "http://exa mple.test";
+  |              ^^^^^^^^^^^^^^^^^^^^^^
+
+error: invalid base URL "http://[::g]/": invalid IPv6 address
+  --> tests/ui/base_invalid_port.rs:15:14
+   |
+15 |         base "http://[::g]/";
+   |              ^^^^^^^^^^^^^^^
+
+error: invalid base URL "http://example.test/a%20b": '%' is not allowed in the base path (RFC 3986 `pchar` without `%`)
+  --> tests/ui/base_invalid_port.rs:21:14
+   |
+21 |         base "http://example.test/a%20b";
+   |              ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+error: invalid base URL "http://api.0x10": the last label of a host name cannot be numeric (it would be parsed as an IPv4 address)
+  --> tests/ui/base_invalid_port.rs:28:14
+   |
+28 |         base "http://api.0x10";
+   |              ^^^^^^^^^^^^^^^^^
+
+error: invalid base URL "http://a.b.c.xn--pokxncvks": `xn--` (punycode) labels are not accepted in a declared base; pass such a host to `with_base_url` at runtime
+  --> tests/ui/base_invalid_port.rs:34:14
+   |
+34 |         base "http://a.b.c.xn--pokxncvks";
+   |              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^

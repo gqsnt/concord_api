@@ -1,0 +1,48 @@
+{
+  "scope": "Narrow confirmation of F3e on supplied source 1d9ffe73960c3cb33792e1b916c66105f7e56dd7; independent snapshot HEAD 9fa9229024288ec61774ebdffec09a3fec23c537",
+  "finding": {
+    "id": "F3e",
+    "priority": "P3",
+    "status": "RESOLVED",
+    "reason": "replacement, parse_format, and script suggestions retain the identifier as written, including r#. Actual compiler and script suggestions compile when applied verbatim on stable 1.99.0 and 1.85.1.",
+    "evidence": [
+      "reconciliation.json",
+      "execution-results.json",
+      "script-reconciliation.json",
+      "keyword_suggested-stable.rs",
+      "keyword_suggested-1.85.rs"
+    ]
+  },
+  "new_findings": [],
+  "verdict": "ACCEPT \u2014 F3e narrow confirmation only",
+  "personally_executed": {
+    "toolchains": [
+      "stable 1.99.0",
+      "1.85.1"
+    ],
+    "per_toolchain": {
+      "raw_keyword_reproducer": "leftover diagnostic checked, live compiler suggestion applied verbatim and compiled as keyword_suggested; corrected control also compiled",
+      "leftover_via_matrix": "33 diagnostic cases: 11 raw/non-raw lowercase spellings \u00d7 required body, optional body, output; all expected diagnostics and via spans checked; every live suggestion applied verbatim and compiled",
+      "lowercase_format_errors": "r#type in body/output: 2 diagnostics checked; both live suggested paths applied and compiled",
+      "macro_library": "cargo test --locked --offline -p concord-macros --lib: 8 passed, including syntax::tests::via_replacement_names_the_same_path",
+      "script_printed_path": "self::r#type applied in body and output; both compile"
+    },
+    "toolchain_independent_python": "script --self-test: 11 cases passed; CLI via r#type body/output prints self::r#type twice; zero rewrites, input unchanged",
+    "command_invocations": 21
+  },
+  "inspected_only": [
+    "Supplied prior report and historical raw-keyword reproducer/control; historical failure logs located but not executed against old source",
+    "F3\u2013F3d and historical F1/F2/F4 dispositions from supplied prior report; no renewed acceptance of those findings",
+    "Changed hint constructors and regression-test source in current snapshot"
+  ],
+  "not_executed": [
+    "Pinned 1.97.1, nightly, wider formats/UI suite, wire/HTTP tests, historical library builds"
+  ],
+  "integrity_evidence": [
+    "baseline-integrity.json",
+    "source-provenance.json",
+    "source-integrity.json"
+  ],
+  "settings_evidence": "environment-receipt.json",
+  "triage_complete": true
+}

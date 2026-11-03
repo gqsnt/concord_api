@@ -1,0 +1,13 @@
+
+running 8 tests
+test emit::tests::initializer_text_is_spaced_like_rust ... ok
+test syntax::tests::via_replacement_names_the_same_path ... ok
+test emit::tests::placement_notes_are_distinct_in_first_seen_order ... ok
+test model::base_consistency::corpus ... ok
+test emit::tests::format_docs_state_the_header_rule ... ok
+test emit::tests::per_call_note_names_the_actual_default ... ok
+test emit::tests::format_docs_state_format_media_type_and_origin ... ok
+test model::base_consistency::random_structured_bases ... ok
+
+test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.27s
+

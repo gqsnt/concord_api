@@ -1,0 +1,119 @@
+# Findings and dispositions — final V4
+
+Every substantive observation from the fresh-use trials and the independent reviews, with its
+disposition: FIXED (commit), DOCUMENTED (where), KEPT (by design, with the reason), or NOT A
+CONCORD DEFECT (harness, brief or fixture). Trial reports: `trials/terra-xhigh.md`,
+`trials/sonnet.md`; review reports: see `MODEL_RUNS.md`.
+
+## Fresh-use trials (candidate `389392f`)
+
+| Id | Source | Observation | Disposition |
+|---|---|---|---|
+| U1 | Terra T6, Sonnet T6 | Two spellings of one header on the **same** owner: the run-time `Build` error said "an enclosing owner already sets" it | FIXED `23c21d6`: the error names both declarations (`` `authorization` on `Keys.duplicate` sets a header that `AUTHORIZATION` on `Keys` already sets ``); asserted by `native_keys::identity_errors_are_deferred_build_errors` |
+| U2 | Sonnet T6 | A collision involving a native constant is found only by `prepare()`, also when the second value is absent (names are compared before values); DIAGNOSTICS showed only the compile-time variant | DOCUMENTED `3b5c5ed`: DIAGNOSTICS "Setting an inherited key again" (run-time form, message, "prepare every endpoint in a test"), AUTHOR_GUIDE §4.8. The deferral itself is F06 |
+| U3 | Sonnet T6 | The fragment error gave a byte offset but not the byte | FIXED `3b5c5ed`: `rejects (0x0A at byte 1)`; `ui/header_literal_value.stderr` |
+| U4 | Sonnet T3 | Generated docs of `set_x`/`maybe_x` for an optional body did not say that `set_x(None)` on an `Option<T>` body sends JSON `null` while `maybe_x(None)` sends no body | FIXED `3b5c5ed`: the generated docs say `set_x` always sends `value` encoded by the request format (even `null` or nothing), `maybe_x(None)` sends no body (generic wording: no rule from the type's spelling) |
+| U5 | Sonnet T2, T4 | A `String`/`Vec<u8>` payload left under a JSON default is JSON-encoded without an error | DOCUMENTED `3b5c5ed` (QUICKSTART, next to the exceptions); already AUTHOR_GUIDE §5.2. KEPT as semantics (F03: the format, not the type spelling, decides the wire) |
+| U6 | Sonnet T5, T10 | Messages and generated docs name a native key as written (`X_NOTES_TENANT`), the wire uses the name | DOCUMENTED `3b5c5ed` (AUTHOR_GUIDE §4.8). KEPT: the spelling is what the author can find in the declaration |
+| U7 | Sonnet T5 | `HeaderName::from_static("X-Notes-Tenant")` is rustc's `E0080` from `http` | DOCUMENTED `3b5c5ed` (AUTHOR_GUIDE §4.8, DIAGNOSTICS rough edges). `http`'s const check, not Concord's |
+| U8 | Sonnet T7 | Under a renamed dependency the compiler notes still say `concord::Encode<T>` | DOCUMENTED `3b5c5ed` (MIGRATION, renamed dependency). The notes are static `on_unimplemented` text |
+| U9 | Sonnet T1 | `accept: */*` is on the wire (reqwest's default) but not in the prepared request | DOCUMENTED `3b5c5ed` (QUICKSTART) |
+| U10 | Sonnet T8 | `into_response()` consumes the error; `response.bytes()` fails with `reqwest::Error`, which does not convert into `concord::Error` | DOCUMENTED `3b5c5ed` (CALLER_GUIDE §6) |
+| U11 | Sonnet T9 | `RequestBuilder::from_parts(..).header(..)` appends to a declared header; `headers_mut().insert` replaces | DOCUMENTED `3b5c5ed` (CALLER_GUIDE §7) |
+| U12 | Sonnet T5 | A scope handle cached across a token rotation keeps the old token | KEPT: handles are snapshots (CALLER_GUIDE §3, RECIPES `Session`) |
+| U13 | Terra, Sonnet setup | A copied `Cargo.lock` fails `--locked` in a new workspace until regenerated offline | NOT A CONCORD DEFECT (cargo; trial brief) |
+| U14 | Sonnet setup | `examples/riot/tests/support/mod.rs` ends with Riot helpers, so a verbatim copy elsewhere does not compile | NOT A CONCORD DEFECT (example test support; the brief said to copy it) |
+| U15 | Terra T3, Sonnet T1–T10 | Task ambiguities (PATCH response, bare or prefixed token, "change the default", which collision) | Preserved in the reports; no change |
+| U16 | coordinator, while triaging U1–U11 | Stale prose in `DIAGNOSTICS` rough edges ("written in place") and stale spellings (`json b: T` in the AUTHOR_GUIDE table, `form credentials: Login` in `Form`'s docs, "implement `ToHeaderValue`" in DIAGNOSTICS) | FIXED `4e01aa4`, `663dbe9`, `3b5c5ed` |
+
+| U17 | Terra (short trial on `ab3cb85`, `trials/terra-delta.md`) | Mutually exclusive `#[cfg]` siblings may not share a name; the participant did not find where this is said | DOCUMENTED: already in AUTHOR_GUIDE §8; repeated in the cheat sheet's `#[cfg]` row. The trial confirmed the decode hints, `Error::response` and the declaration-change table with no wrong prediction |
+
+## Measurement and review-pack reconciliation (coordinator)
+
+The full item-by-item reconciliation of the owner's review pack is in `RECONCILIATION.md`. Items
+found or reproduced here:
+
+| Id | Source | Observation | Disposition |
+|---|---|---|---|
+| P1 | compile-time measurement (`PERF.md` §3) | With native header keys, generated code grew with the square of the native keys on a chain. Every value's run-time sensitivity condition compared its key with every other native key (34,816 comparisons in the deep suite); release builds were 11× slower | FIXED `0e56a65` (F09 amended): only conditions not already implied are added; 1,088 comparisons. Re-measured on the frozen candidate (`PERF.md` §3) |
+| P2 | re-measurement of `d3e26e4` (`PERF.md` §4) | `scale_shared` with native keys still compiled 2.6× (release) and 4.1× (check) slower: per-value conditions were inlined in each of 200 endpoints | FIXED: one cached function per value (F09, amended again) |
+| P3 | coordinator, while fixing P2 | A sensitive contribution under a native key that only a `#[cfg]`-disabled owner writes made the client's `Debug` call an accessor removed by that `cfg`: E0425 `cannot find function __concord_Api_key_1`, a compile failure (present since F06) | FIXED: condition terms are gated by their keys' `cfg`; `native_keys::native_conditions_follow_cfg` |
+| R1 | pack D-REP-2/D-REP-5; Sonnet T2 and the 204 probe | A JSON decode failure on an empty body or a non-JSON body said only "unexpected end of input" or "syntax at line 1, column 1" | FIXED `0e56a65`: static hints; empty, whitespace and `null` stay distinct |
+| R2 | pack D-SURF-1 | Discarding a setter's result on a clone or temporary loses the change silently | FIXED `0e56a65`: `#[must_use]` |
+| R3 | pack D-SURF-2 | No borrowing access to a status error's response; a standalone `BodyError`'s source unreachable | FIXED `0e56a65` |
+| R4 | pack D-HDR-1 | A Rust constant on the right of `=` gave "not a value" without saying why; a typo gave no suggestion | FIXED: boundary and remedy in the message, did-you-mean |
+| R5 | pack D-ED-1 | A value declared before it is placed removed the whole client: unresolved names elsewhere (rustc), unknown types (rust-analyzer) | FIXED (narrow): reported next to the full expansion; other errors unchanged |
+| R6 | pack D-DIAG-2 | Two errors per missing `Display`/`ToHeaderValue`; the second, from `Debug`, names `DebugDisplay` | DEFERRED: reproduced; the first error carries Concord's notes at the value's type. Removing the second needs a dyn witness on measured runtime paths |
+| P4 | coordinator, rendering Riot's rustdoc for the final record | The request summary of `account.me` listed `X_RIOT_TOKEN`, which that endpoint removes through the same constant | FIXED `aa9819c`, then superseded by X-R1 (no two native paths are provably the same key): native chains list their header operations in chain order, removals and repeats included (`request_summary_lists_native_header_operations_in_order`) |
+| R7 | pack D-SURF-3 | Generated `#[derive(Clone)]` needs the prelude; base-URL error said "request not built" | FIXED `0e56a65` |
+
+## Independent final reviews (`ab3cb85`, code of `d884461`)
+
+Executable audit: Sol 6.1 XHigh (106 own tests, 16 negative compile probes, 5 mutants all
+killed, packaged consumers on 1.97.1 and 1.85.1). Semantic review: Claude Opus (probes, rustdoc,
+the three pack rejections). Reports: `/home/canarit/projects/concord_v4_finish_work/evidence/reviews-final/`
+(SHA256SUMS). "Own" means the reviewer's own finding; none came from the review pack.
+
+| Id | Reviewer | Severity | Finding | Disposition |
+|---|---|---|---|---|
+| X-R1 | Sol XHigh | release-blocking | Native paths were merged by tokens: two crates' `macro_rules` passing `$crate::KEY` (`x-public`, `authorization`) were one header; the secret was sent as `x-public` and printed by `Prepared`'s `Debug`. The known limit recorded in F06 breaks identity-by-resolved-name | FIXED: one key per path occurrence, compared by `HeaderName` when the request is built; the same constant set twice is now a `Build` error from `prepare()`. `checks/hygiene` (two helper crates; fails on `d884461`, passes now), `native_keys::the_same_constant_twice_*`, `ui/native_key_static_errors` updated; F06, SEMANTICS §5, AUTHOR_GUIDE §4.8 |
+| X-R2 | Sol XHigh | should-fix | Riot `player_summary` fetched up to `MAX_MATCHES` details whatever the caller's smaller budget | FIXED: one limit for `count` and for the details; `workflows::the_caller_budget_bounds_the_details_fetched` (0 and 1 with a longer id list) |
+| X-R3 | Sol XHigh | minor | MIGRATION's V3 table still recommended `-> json T`, `json b: T`, `json("…") b: T` | FIXED: statements and `request F "m";` |
+| X-R4 | Sol XHigh | minor | Riot SOURCES said 415 is "tournament only"; every archived operation lists it | FIXED |
+| O-R1 | Opus | release-blocking | A value conditionally withheld on a chain with a native key was not withheld on chains with literal keys only (cross-chain shared slot; sticky override): classification depended on spelling | FIXED: run-time conditions are computed over every endpoint chain once the declaration has a native key, so native spelling never redacts less than literal spelling. `spelling_equivalence.rs` (both tests fail with the old chain filter); the re-review's 32 generated native/literal pairs agree. Not exact equality: O-P1 and O-P7 redact more under one spelling (recorded) |
+| O-S1 | Opus | should-fix | Request rustdoc on native chains: listed a header the endpoint removes (Riot `account.me`, cheat sheet `public`), stated the format's `Content-Type` where a native `content-type` key replaces it, no "(sensitive)" | FIXED: operations listed in chain order with removals and "(sensitive)"; the `Content-Type` sentence says a native `content-type` key replaces it; unit test `request_summary_lists_native_header_operations_in_order` |
+| O-S2 | Opus | should-fix | SEMANTICS listed 18 sensitive names (25 in code) and the removed `FORMAT b: T` rows | FIXED: one list (AUTHOR_GUIDE §7), rows removed |
+| O-S3 | Opus | should-fix | No route for "JSON or empty" (200/204); the empty-body hint told such endpoints to omit `->` | FIXED: hint reworded ("omit `->` if this endpoint never returns a body, or use a format that accepts an empty one"); `examples/compat` case 9 (`JsonOrEmpty`, tested), RECIPES, AUTHOR_GUIDE §5.5, cheat sheet |
+| O-S4 | Opus | should-fix | "has no representation" and "representation statement" in user-facing text | FIXED: "format"; fixtures and DIAGNOSTICS/MIGRATION excerpts updated |
+| O-P1 | Opus | preference | A public alias whose partner carries its own condition is still withheld (`Same` added without its conjunct); DECISIONS overclaimed | DOCUMENTED (F09 amendment text corrected); safe direction. Exact classification is D1 |
+| O-P2 | Opus | preference | A literal override after a conditionally sensitive value: the outgoing flag ignored the overridden value (static stickiness covers it) | FIXED: static slot flags are computed over the slot's whole history (`spelling_equivalence::stickiness_*`) |
+| O-P3 | Opus | preference | `format json; request json "application/vnd.api+json";` fails with no replacement | FIXED: the message says to write `request F "type/subtype";` and `response F;` instead of `format` |
+| O-P4 | Opus | preference | Long repeated setter docs (`ToHeaderValue` paragraph, native-name hedge) | DEFERRED: wording only; trigger: the next generated-docs pass |
+| O-P5 | Opus | preference | D-REP-3's recorded counterexample was weak; the spelling argument is the decisive one | DOCUMENTED (RECONCILIATION D-REP-3) |
+| O-P6 | Opus | preference | Stale internal comments (`FORMAT("…")`, `body("…")`), an unused `Site` parameter, an incomplete statement list in a message, a wrong comment in `examples/riot/src/main.rs` | FIXED |
+| O-P7 | Opus | preference | A literal key in a compiled-out owner still classifies (over-approximation) | DOCUMENTED (AUTHOR_GUIDE §7) |
+| O-D1 | Opus | deferred | One static table and one run-time fixpoint instead of `Cond`/`implied`/per-value functions: exact by construction | DEFERRED; trigger: the next change to classification or divergence |
+| O-D2 | Opus | deferred | A generated name-only check of all deferred header plans per client, instead of "prepare every endpoint in a test" | DEFERRED; trigger: friction with deferred errors |
+
+## Re-reviews (`0f559d8`)
+
+Both reviewers re-checked their own findings and the other review's blocking fix: Sol XHigh by
+execution (483 tests on 1.97.1, 480 on 1.85.1, its 106-test consumer, 32 generated native/literal
+pairs, both blocking fixes mutated back and caught by `checks/hygiene` and
+`spelling_equivalence`), Opus semantically (all earlier findings resolved as recorded; X-R1 judged
+the right trade-off). Neither found a release-blocking defect.
+
+| Id | Reviewer | Severity | Finding | Disposition |
+|---|---|---|---|---|
+| X2-1 / N1 | both | should-fix (Opus), minor (Sol) | The chain-order header list deduplicated by text, dropping a reintroduced key after `remove` and repeated appends | FIXED: every operation listed; unit test extended (`KEY`, `remove KEY`, `KEY`, `append KEY`) |
+| X2-2, X2-3 | Sol | note | O-P1 and O-P7 reproduced: two cases where one spelling redacts more | Recorded limits; the claims are now "native spelling never redacts less" (`spelling_equivalence.rs`, K14) |
+| N2 | Opus | should-fix | The run-time conflict said "written differently" also for the same constant written twice | FIXED: "(both name the same header)"; DIAGNOSTICS |
+| N3 | Opus | should-fix | X-R1 doubled macro expansion time on the native shared suite (`native_conditions` iterated every pair of every endpoint's chain; more distinct keys after X-R1); PERF claimed no code change since `d884461` | FIXED: the fixpoint visits each pair of contributions once (endpoints of one scope share their chain); the generated code of the deep and shared native suites is byte-identical, `cargo check` of the shared suite 5.2 s → 1.7–2.1 s; re-measured in PERF §5 |
+| N4 | Opus | should-fix | TEST_MATRIX K4 still listed "same constant twice" as a compile error; no rows for the new checks; stale test name in P4; old hint quoted in RECONCILIATION | FIXED: K4 corrected, K13 (`checks/hygiene`), K14 (`spelling_equivalence.rs`); records updated |
+| P-a | Opus | preference | A provable duplicate named the native contribution in between instead of the owner that set the header | FIXED: the proved setter is kept; `ui/native_chain_duplicate_names_the_setter` |
+| P-b, P-c | Opus | preference | SEMANTICS §5 overstated completeness ("whatever the unknown pairs turn out to be"); stale wording in SEMANTICS §9, DIAGNOSTICS, MIGRATION | FIXED (per-pair analysis stated; wording) |
+| P-d | Opus | preference | The native `content-type` hedge appears on every body endpoint of a native chain | KEPT: accurate; the macro cannot name which key resolves to `content-type` |
+| P-e | Opus | preference | MSRV lane omitted `spelling_equivalence`; `JsonOrEmpty` treated form feed as whitespace | FIXED |
+| D2 | Opus | deferred (trigger lowered) | X-R1 makes the most common identity mistake run-time only; a generated name-only plan check per client would automate "prepare every endpoint in a test" | DEFERRED, first item of the backlog |
+
+## Confirmations (`5195cd1`)
+
+Sol XHigh re-ran its 32 generated native/literal pairs and 96 fixpoint cases on 1.97.1 and
+1.85.1: all 4,928 observations match `0f559d8`, so nothing is redacted less. Both mutations of the
+blocking fixes are still killed, and X2-1, N2 and P-a are confirmed. It reproduced no new finding.
+Opus confirmed N1, N2, N3 (code), P-a, P-b, P-c and P-e:
+- it reran its probes;
+- it measured `macro_expand_crate` for the shared suite at 2.3 s (`d884461`), 4.8 s (`0f559d8`)
+  and 1.2 s (`5195cd1`);
+- it checked that the expansions are byte-identical;
+- it judged the pair-visiting change sound;
+- a three-way differential fuzz found no under-redaction against the literal-spelling ground
+  truth in about 440 declarations (about 15,000 observations).
+
+| Id | Reviewer | Severity | Finding | Disposition |
+|---|---|---|---|---|
+| NF1 | Opus | should-fix (records) | The new TEST_MATRIX rows reused the IDs K10 and K11 | FIXED: renumbered K13 (`checks/hygiene`) and K14 (`spelling_equivalence.rs`), placed after K12 |
+| NF2 | Opus | should-fix (records) | FINDINGS cited a PERF §5 that did not exist yet; PERF §4 still said "code unchanged since `d884461`" | FIXED with the final measurement (PERF §5, STATUS) |
+| NF3 | Opus | note | Visiting each pair once can leave out redundant `Same` conditions that the per-chain order added. In 7 of about 440 random declarations the generated disjunct sets are strict subsets; at run time this is less over-redaction, never below the literal-spelling result. The comment "depends only on the pairs" was imprecise | DOCUMENTED here; comment corrected. Soundness rests on the closure over the pairs (re-argued by the reviewer) |
+| NF4 | Opus | low | No test pinned the N2 wording | FIXED: `native_keys::the_same_constant_twice_*` asserts "(both name the same header)" |
+| P-c residue | Opus | trivial | `examples/native/src/repr.rs` said "representation statement" | FIXED |

@@ -1,38 +1,35 @@
 [package]
 name = "concord-extras"
-description = "First-party implementations of Concord semantic extension contracts"
+description = "Concord's standard formats (Json, Text, Binary, Form), written against the public Encode/Decode contracts of concord-core."
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
-publish = false
+publish.workspace = true
+readme = "README.md"
+include = ["/src/**/*.rs", "/Cargo.toml", "/README.md", "/LICENSE-APACHE", "/LICENSE-MIT"]
+
+[package.metadata.docs.rs]
+all-features = true
 
 [features]
-default = []
-json = ["dep:mime", "dep:serde", "dep:serde_json"]
-csv = ["concord_core/records", "dep:csv", "dep:mime", "dep:serde"]
-ndjson = ["concord_core/records", "dep:mime", "dep:serde", "dep:serde_json"]
-rate-limit = ["dep:http", "dep:tokio"]
-rate-limit-conformance = ["rate-limit"]
-oauth2-client = ["dep:bytes", "dep:http", "dep:serde_json", "dep:url"]
+## `Json`, via serde and serde_json.
+json = ["dep:serde", "dep:serde_json"]
+## `Form` (`application/x-www-form-urlencoded`), via serde and serde_urlencoded.
+form = ["dep:serde", "dep:serde_urlencoded"]
 
 [dependencies]
-bytes = { workspace = true, optional = true }
-concord_core = { package = "concord-core", version = "=3.0.0-beta.1", path = "../concord-core", default-features = false }
-csv = { workspace = true, optional = true }
-http = { workspace = true, optional = true }
-mime = { workspace = true, optional = true }
+concord-core = { path = "../concord-core", version = "=4.1.0" }
+# Response media types are parsed by `mime` (the formats' own policy; core parses none).
+mime.workspace = true
 serde = { workspace = true, optional = true }
 serde_json = { workspace = true, optional = true }
-tokio = { workspace = true, optional = true, features = ["time"] }
-url = { workspace = true, optional = true }
+serde_urlencoded = { workspace = true, optional = true }
 
 [dev-dependencies]
-concord_test_support = { package = "concord-test-support", path = "../concord-test-support", default-features = false }
 serde = { workspace = true, features = ["derive"] }
-serde_json.workspace = true
-tokio = { workspace = true, features = ["macros", "rt-multi-thread", "test-util", "time"] }
+tokio = { workspace = true, features = ["macros", "rt", "net", "io-util", "time", "sync"] }
 
 [lints]
 workspace = true

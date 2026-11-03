@@ -1,0 +1,9 @@
+running 1 test
+prepare() without headers: 1 allocations, 22 bytes
+route (4 values)      allocations    bytes       vs literal
+literal                        11      741               +0
+integer                        11      720               +0
+text String                    11      741               +0
+formatted template             15      781               +4
+test header_payload_allocations_by_route ... ok
+

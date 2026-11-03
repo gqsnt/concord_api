@@ -1,747 +1,1052 @@
-//! Unstable integration surface for Concord-generated Rust.
+//! Support code for `api!` expansions. Not a public API: names and signatures may change in any
+//! release.
 
-#[doc(hidden)]
-pub const GENERATED_CONTRACT_VERSION: u32 = crate::generated_contract::VERSION;
+use std::fmt::{self, Display, Write as _};
 
-/// Verifies the semantic generated-code contract during const evaluation.
-#[doc(hidden)]
-pub const fn assert_generated_contract(expected: u32) {
-    assert!(
-        GENERATED_CONTRACT_VERSION == expected,
-        "concord macro/core contract mismatch"
-    );
+use percent_encoding::{AsciiSet, NON_ALPHANUMERIC};
+use reqwest::header::{ACCEPT, CONTENT_TYPE, HeaderMap, HeaderName, HeaderValue};
+use reqwest::{Method, Url};
+
+use crate::codec::{CodecError, Decode, Encode};
+use crate::error::Error;
+use crate::header::ToHeaderValue;
+use crate::prepared::{Decoder, HeadStep, Prepared, head_step};
+
+pub use crate::value::IntoValue;
+
+/// Static facts about one endpoint, produced by the macro.
+#[derive(Debug)]
+pub struct EndpointMeta {
+    /// `Client.scope.endpoint`.
+    pub name: &'static str,
+    /// The HTTP method, as written.
+    pub method: &'static str,
+    /// Number of generated host labels (they are the leftmost labels).
+    pub labels: usize,
+    /// Indices (from the left) of generated labels that contain a sensitive value.
+    pub sensitive_labels: &'static [usize],
+    /// Number of generated path segments (they are the last segments; a trailing slash counts).
+    pub segments: usize,
+    /// Indices of generated segments that contain a sensitive value.
+    pub sensitive_segments: &'static [usize],
+    /// Query keys whose values are withheld from Concord output.
+    pub sensitive_query: &'static [&'static str],
+    /// Whether the `content-type` key is sensitive on this endpoint (marker or sticky
+    /// composition): the body's media type inserted by Concord is then flagged like a declared
+    /// `content-type` value would be.
+    pub sensitive_content_type: bool,
+    /// Whether the `accept` key is sensitive on this endpoint: a format's `Accept` suggestion
+    /// inserted by Concord is then flagged like a declared value.
+    pub sensitive_accept: bool,
+    /// Whether the chain's last `accept` contribution is a `remove` (literal chains; a native
+    /// chain decides it in [`HeaderPlan`]): the format's suggestion is then not sent.
+    pub accept_removed: bool,
 }
 
-#[doc(hidden)]
-pub use http::{HeaderName, Method};
-#[doc(hidden)]
-pub use url::Url;
+/// A value written as text: path segments, subdomain labels, query values and template holes
+/// (`Display`). The trait only carries the diagnostic; every `Display` type implements it.
+#[diagnostic::on_unimplemented(
+    message = "`{Self}` is written as text here and has no `Display`",
+    label = "used in a path, subdomain, query value or template",
+    note = "path segments, subdomain labels, query values and template holes are written with `Display`; a value that may be absent is declared `x?: T`, and a list is placed with `each`",
+    note = "a native `HeaderValue` is not text: it can only be placed as a whole header value; to reuse its text elsewhere, convert it explicitly (for example `to_str()`) into a `String` value"
+)]
+pub trait Text: Display {}
 
-#[doc(hidden)]
-pub use crate::atom::{AtomEncoder, BoundedAtomWriter, OrderedValues, RequestAtom};
-#[doc(hidden)]
-pub use crate::auth::Auth;
-#[doc(hidden)]
-pub use crate::body::{
-    BodyDescription, EmptyBody, OptionalRequestRepresentation, PageRequestRepresentation,
-    PreparedBody, RequestBodyContext, RequestRepresentation,
-};
-#[doc(hidden)]
-pub use crate::client::ClientCore;
-#[doc(hidden)]
-pub use crate::controls::{AnyCancelled, RequestControlState};
-#[doc(hidden)]
-pub use crate::endpoint::{
-    AbsentStatus, AcceptedStatus, Effect, EffectSource, EndpointCapabilities, EndpointDescription,
-    EndpointId, RequestBodyCategory, RequestPlan, ResponseAcquisition, StatusSource,
-    TimeoutSelection,
-};
-#[doc(hidden)]
-pub use crate::error::{ApiError, ClientBuildError, ClientInputKind};
-#[doc(hidden)]
-pub use crate::hooks::DebugLevel;
-#[doc(hidden)]
-pub use crate::limits::{
-    MAX_REQUEST_HEAD_COMPONENTS, MAX_REQUEST_HEADER_BYTES, MAX_REQUEST_HEADER_COUNT,
-    MAX_REQUEST_URL_BYTES,
-};
-#[doc(hidden)]
-pub use crate::pagination::{
-    ControllerCursor, ControllerInit, PageItem, PageableEndpoint, collect_all_request,
-    collect_prefix_request, pages_request,
-};
-#[doc(hidden)]
-pub use crate::rate_limit::{
-    RateKeyEncoder, RateKeyPart, RateLimitDeclaration, RateLimitId, RateLimitKey, RateLimitKeyPart,
-    RateLimitPolicy, RateLimitWindow,
-};
-#[doc(hidden)]
-pub use crate::request::{
-    EndpointSpec, HeadBuilder, HeadEmissions, NO_EMISSION, OccurrenceSink, OwnerProjection,
-    PatchFamily, PatchKind, PatchOp, PreparedHead, ProgramSegment, ProgramVisitor, RequestMeta,
-    RequestOptions, TimeoutOverride, apply_head_program, surviving_keys, visit_extended_program,
-};
-#[doc(hidden)]
-pub use crate::response::{
-    ApiResponse, Buffered, ExpectedAbsence, HeadAbsence, OptionalOutcome, ResponseRepresentation,
-};
-#[doc(hidden)]
-pub use crate::runtime::defaults::{
-    DEFAULT_AUTH_FAILURE_COOLDOWN_SECONDS, DEFAULT_PAGINATION_IDENTITY_BYTES,
-    DEFAULT_PAGINATION_MAX_ITEMS, DEFAULT_PAGINATION_MAX_PAGES,
-    DEFAULT_PAGINATION_TOTAL_RESPONSE_BYTES, DEFAULT_PROVIDER_MAX_ORIGINS,
-    DEFAULT_PROVIDER_MAX_SENDS, DEFAULT_PROVIDER_REQUEST_BYTES, DEFAULT_PROVIDER_RESPONSE_BYTES,
-    DEFAULT_PROVIDER_TIMEOUT_SECONDS, DEFAULT_RATE_LIMIT_COOLDOWN_SECONDS,
-    DEFAULT_RATE_LIMIT_KEY_BYTES, DEFAULT_REQUEST_BODY_BYTES, DEFAULT_RESPONSE_BODY_BYTES,
-    DEFAULT_STATUS_BODY_BYTES, DEFAULT_STREAM_FRAME_BYTES, DEFAULT_STREAM_IDLE_SECONDS,
-    DEFAULT_STREAM_LIFETIME_SECONDS, DEFAULT_STREAM_MAX_RECORDS, DEFAULT_STREAM_RESPONSE_BYTES,
-};
+impl<T: Display + ?Sized> Text for T {}
 
-/// Constructs the absent value of a head-only expected-absence result.
-///
-/// Implemented only through the sealed [`OptionalOutcome`] relationship, so
-/// it is available for `Option<T>` (and aliases of it) and nothing else.
-/// Core itself constructs absence on a declared status; generated code only
-/// needs this for type assertions and documentation examples.
-#[doc(hidden)]
-#[must_use]
-pub fn absent_outcome<O>() -> O
-where
-    O: OptionalOutcome,
-{
-    crate::response::absent_outcome::<O>()
+/// A template hole: checks [`Text`] (for its diagnostic) and returns the value unchanged.
+#[inline]
+pub fn text<T: Text + ?Sized>(value: &T) -> &T {
+    value
 }
 
-/// Wraps one present value into a head-only expected-absence result.
-#[doc(hidden)]
-#[must_use]
-pub fn present_outcome<O>(value: O::Present) -> O
-where
-    O: OptionalOutcome,
-{
-    crate::response::present_outcome::<O>(value)
+/// A validated base URL: `http`/`https`, a host, an optional port and path, nothing else.
+#[derive(Clone)]
+pub struct Base {
+    url: Url,
+    /// The base path with at most one trailing slash removed; generated segments follow it.
+    prefix: String,
 }
 
-/// Compile-time validation of a representation's static `Accept` constant.
-///
-/// Generated code emits, once per endpoint response representation,
-/// `const _: () = __private::assert_response_accept(<R as ResponseRepresentation<O>>::ACCEPT);`
-/// so an invalid value (for example one containing a line break) is a
-/// compile error rather than a runtime surprise.
-///
-/// # Panics
-///
-/// Panics — at compile time in a constant — when the value is not a valid
-/// HTTP `Accept` value.
-#[doc(hidden)]
-pub const fn assert_response_accept(accept: Option<&'static str>) {
-    if let Some(accept) = accept {
-        assert!(
-            crate::response::accept_is_valid(accept),
-            "invalid static response representation Accept value"
-        );
+impl Base {
+    /// Validates a base URL supplied at runtime.
+    pub fn parse(input: &str) -> Result<Self, Error> {
+        let fail = |reason| Error::build(None, "base URL", reason);
+        let url = Url::parse(input).map_err(|_| fail("is not an absolute URL"))?;
+        if url.scheme() != "http" && url.scheme() != "https" {
+            return Err(fail("must use http or https"));
+        }
+        if url.host().is_none() {
+            return Err(fail("must have a host"));
+        }
+        if url.port() == Some(0) {
+            return Err(fail("must not use port 0"));
+        }
+        if !url.username().is_empty() || url.password().is_some() {
+            return Err(fail("must not contain user information"));
+        }
+        if url.query().is_some() {
+            return Err(fail("must not contain a query"));
+        }
+        if url.fragment().is_some() {
+            return Err(fail("must not contain a fragment"));
+        }
+        let path = url.path();
+        let prefix = path.strip_suffix('/').unwrap_or(path).to_owned();
+        Ok(Self { url, prefix })
+    }
+
+    /// The base declared in `api!`, already validated by the macro.
+    pub fn from_static(input: &'static str) -> Self {
+        match Self::parse(input) {
+            Ok(base) => base,
+            Err(e) => panic!("api! accepted an invalid base URL {input:?}: {e}"),
+        }
+    }
+
+    /// The validated URL.
+    pub fn url(&self) -> &Url {
+        &self.url
     }
 }
 
-/// Runtime validation of a representation's static `Accept` constant at
-/// client build.
-///
-/// Generated builders may call this once per endpoint response
-/// representation; it runs no representation code.
-#[doc(hidden)]
-pub fn validate_response_accept<R, Output>() -> Result<(), ClientBuildError>
+impl fmt::Debug for Base {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        fmt::Debug::fmt(self.url.as_str(), f)
+    }
+}
+
+/// Everything except RFC 3986 unreserved characters (`A-Z a-z 0-9 - . _ ~`).
+const PATH_VALUE: &AsciiSet = &NON_ALPHANUMERIC
+    .remove(b'-')
+    .remove(b'.')
+    .remove(b'_')
+    .remove(b'~');
+
+struct EncodeInto<'a>(&'a mut String);
+
+impl fmt::Write for EncodeInto<'_> {
+    fn write_str(&mut self, s: &str) -> fmt::Result {
+        self.0
+            .extend(percent_encoding::utf8_percent_encode(s, PATH_VALUE));
+        Ok(())
+    }
+}
+
+/// The build error for a value whose `Display` implementation returned an error.
+fn unformattable(meta: &'static EndpointMeta, what: &'static str) -> Error {
+    Error::build(
+        Some(meta),
+        what,
+        "could not be formatted: a `Display` implementation returned an error",
+    )
+}
+
+/// A value's `Display` text, or the build error if its implementation fails.
+fn display<T: Display + ?Sized>(
+    value: &T,
+    meta: &'static EndpointMeta,
+    what: &'static str,
+) -> Result<String, Error> {
+    let mut out = String::new();
+    write!(out, "{value}").map_err(|_| unformattable(meta, what))?;
+    Ok(out)
+}
+
+/// Appends a value to a path segment, percent-encoding everything but unreserved characters.
+pub fn encode_segment<T: Text + ?Sized>(
+    out: &mut String,
+    value: &T,
+    meta: &'static EndpointMeta,
+    what: &'static str,
+) -> Result<(), Error> {
+    write!(EncodeInto(out), "{value}").map_err(|_| unformattable(meta, what))
+}
+
+/// Appends a value's `Display` text.
+pub fn display_into<T: Text + ?Sized>(
+    out: &mut String,
+    value: &T,
+    meta: &'static EndpointMeta,
+    what: &'static str,
+) -> Result<(), Error> {
+    write!(out, "{value}").map_err(|_| unformattable(meta, what))
+}
+
+/// An endpoint's body format and media type. The generated code holds one in a `static` per
+/// endpoint with a body, so the media type is a compile-time-validated `HeaderValue` (the format's
+/// `Encode::CONTENT_TYPE` or a declared media type, through `HeaderValue::from_static`: an invalid
+/// one fails the static's evaluation, a compile error) and each request only clones it.
+pub struct BodyFormat<T> {
+    encode: fn(T) -> Result<reqwest::Body, CodecError>,
+    content_type: Option<HeaderValue>,
+}
+
+impl<T> BodyFormat<T> {
+    /// The format `E` with its own media type, `E::CONTENT_TYPE`.
+    pub const fn new<E: Encode<T>>() -> Self {
+        Self {
+            encode: E::encode,
+            content_type: match E::CONTENT_TYPE {
+                Some(text) => Some(HeaderValue::from_static(text)),
+                None => None,
+            },
+        }
+    }
+
+    /// The format `E` with a declared media type (`request Json "…";` on the endpoint, a scope
+    /// or the client). `E::CONTENT_TYPE` is not used.
+    pub const fn with_media_type<E: Encode<T>>(media_type: HeaderValue) -> Self {
+        Self {
+            encode: E::encode,
+            content_type: Some(media_type),
+        }
+    }
+}
+
+/// Encodes a body with its declared format and returns it with its media type. The media type
+/// was validated at compile time; a failing encoder is an `Encode` error.
+pub fn encode_body<T>(
+    format: &'static BodyFormat<T>,
+    value: T,
+    meta: &'static EndpointMeta,
+) -> Result<(reqwest::Body, Option<HeaderValue>), Error> {
+    let body = (format.encode)(value).map_err(|e| Error::from_encode(meta, e))?;
+    Ok((body, format.content_type.clone()))
+}
+
+/// An endpoint's response format. The generated code holds one in a `static` per endpoint with a
+/// typed output, so the format's `Accept` suggestion is a compile-time-validated `HeaderValue`
+/// (through `HeaderValue::from_static`: an invalid one fails the static's evaluation).
+pub struct DecodeFormat<T> {
+    head: HeadStep<T>,
+    accept: Option<HeaderValue>,
+}
+
+impl<T: 'static> DecodeFormat<T> {
+    /// The format `F` for the output `T`.
+    pub const fn new<F: Decode<T> + 'static>() -> Self {
+        Self {
+            head: head_step::<F, T>,
+            accept: match F::ACCEPT {
+                Some(text) => Some(HeaderValue::from_static(text)),
+                None => None,
+            },
+        }
+    }
+}
+
+impl<T> DecodeFormat<T> {
+    /// The endpoint's response handling.
+    pub fn decoder(&self, meta: &'static EndpointMeta) -> Decoder<T> {
+        Decoder::typed(meta, self.head)
+    }
+
+    /// The format's `Accept` suggestion.
+    pub fn accept(&self) -> Option<&HeaderValue> {
+        self.accept.as_ref()
+    }
+}
+
+/// The request being composed by one endpoint's generated code.
+pub struct Parts<'a> {
+    meta: &'static EndpointMeta,
+    base: &'a Base,
+    url: Url,
+    labels: Vec<String>,
+    segments: Vec<String>,
+    trailing_slash: bool,
+    query: Vec<(&'static str, String)>,
+    headers: HeaderMap,
+    /// Set by [`HeaderPlan`] when a native key classified `content-type` as sensitive.
+    content_type_sensitive: bool,
+    /// Set by [`HeaderPlan`] when a native key classified `accept` as sensitive.
+    accept_sensitive: bool,
+    /// Set by [`HeaderPlan`] when a native chain's last `accept` contribution is a `remove`.
+    accept_removed: bool,
+}
+
+impl<'a> Parts<'a> {
+    /// Starts composing a request for `meta` against `base`.
+    pub fn new(meta: &'static EndpointMeta, base: &'a Base) -> Self {
+        Self {
+            meta,
+            base,
+            url: base.url.clone(),
+            labels: Vec::new(),
+            segments: Vec::new(),
+            trailing_slash: false,
+            query: Vec::new(),
+            headers: HeaderMap::new(),
+            content_type_sensitive: false,
+            accept_sensitive: false,
+            accept_removed: false,
+        }
+    }
+
+    /// Applies what a [`HeaderPlan`] found about `accept`: whether the format's suggestion would
+    /// be sensitive, and whether the chain removed `accept` last (the suggestion is then not
+    /// sent).
+    pub fn accept(&mut self, sensitive: bool, removed: bool) {
+        self.accept_sensitive |= sensitive;
+        self.accept_removed |= removed;
+    }
+
+    /// Applies what a [`HeaderPlan`] found about `content-type`: the media type Concord inserts
+    /// for the body is then flagged like a declared `content-type` value would be.
+    pub fn content_type_sensitive(&mut self, sensitive: bool) {
+        self.content_type_sensitive |= sensitive;
+    }
+
+    /// Adds the next host label (leftmost first). `what` names the template for errors.
+    pub fn label(&mut self, mut label: String, what: &'static str) -> Result<(), Error> {
+        label.make_ascii_lowercase();
+        let bytes = label.as_bytes();
+        let valid = !bytes.is_empty()
+            && bytes.len() <= 63
+            && bytes
+                .iter()
+                .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || *b == b'-')
+            && bytes[0] != b'-'
+            && bytes[bytes.len() - 1] != b'-';
+        if !valid {
+            return Err(Error::build(
+                Some(self.meta),
+                what,
+                "is not a DNS label (1-63 ASCII letters, digits or interior hyphens)",
+            ));
+        }
+        self.labels.push(label);
+        Ok(())
+    }
+
+    /// Adds a path segment containing values (already encoded).
+    pub fn segment(&mut self, segment: String, what: &'static str) -> Result<(), Error> {
+        if segment.is_empty() || segment == "." || segment == ".." {
+            return Err(Error::build(Some(self.meta), what, "is empty, `.` or `..`"));
+        }
+        self.segments.push(segment);
+        Ok(())
+    }
+
+    /// Adds a literal path segment (validated by the macro).
+    pub fn segment_static(&mut self, segment: &'static str) {
+        self.segments.push(segment.to_owned());
+    }
+
+    /// Ends the path with `/`.
+    pub fn trailing_slash(&mut self) {
+        self.trailing_slash = true;
+    }
+
+    /// Adds one query occurrence. `what` names the parameter for errors.
+    pub fn query<T: Text + ?Sized>(
+        &mut self,
+        key: &'static str,
+        value: &T,
+        what: &'static str,
+    ) -> Result<(), Error> {
+        let text = display(value, self.meta, what)?;
+        self.query.push((key, text));
+        Ok(())
+    }
+
+    /// Adds one query occurrence per item, in iteration order.
+    pub fn query_each<I>(
+        &mut self,
+        key: &'static str,
+        values: I,
+        what: &'static str,
+    ) -> Result<(), Error>
+    where
+        I: IntoIterator,
+        I::Item: Text,
+    {
+        for value in values {
+            self.query(key, &value, what)?;
+        }
+        Ok(())
+    }
+
+    /// Adds one header line. The name is native: a `HeaderName` constant written in the
+    /// declaration, or a literal name the macro checked with `http` and lowered to a validated
+    /// static; `what` names the placement for errors.
+    ///
+    /// The outgoing sensitivity flag is the value's own flag OR the declaration's classification
+    /// (`sensitive`): a flag already set on a native value is never cleared.
+    pub fn header<T: ToHeaderValue + ?Sized>(
+        &mut self,
+        name: HeaderName,
+        what: &'static str,
+        value: &T,
+        sensitive: bool,
+    ) -> Result<(), Error> {
+        let mut value = value.to_header_value().ok_or_else(|| {
+            Error::build(
+                Some(self.meta),
+                what,
+                "value is not a valid header value (rejected by `http::HeaderValue`)",
+            )
+        })?;
+        if sensitive {
+            value.set_sensitive(true);
+        }
+        self.headers
+            .try_append(name, value)
+            .map_err(|_| Error::build(Some(self.meta), what, "does not fit in the header map"))?;
+        Ok(())
+    }
+
+    /// Adds one header line per item, in iteration order.
+    pub fn header_each<I>(
+        &mut self,
+        name: HeaderName,
+        what: &'static str,
+        values: I,
+        sensitive: bool,
+    ) -> Result<(), Error>
+    where
+        I: IntoIterator,
+        I::Item: ToHeaderValue,
+    {
+        for value in values {
+            self.header(name.clone(), what, &value, sensitive)?;
+        }
+        Ok(())
+    }
+
+    /// Prepends the labels to the base host and validates the result. Called once, right after
+    /// the last label, so host errors precede path errors.
+    pub fn host(&mut self) -> Result<(), Error> {
+        if !self.labels.is_empty() {
+            let domain = match self.url.host() {
+                Some(url::Host::Domain(domain)) => domain,
+                _ => {
+                    return Err(Error::build(
+                        Some(self.meta),
+                        "subdomain",
+                        "requires a base URL with a domain name, not an IP address",
+                    ));
+                }
+            };
+            let host = format!("{}.{}", self.labels.join("."), domain);
+            if host.len() > 253 {
+                return Err(Error::build(
+                    Some(self.meta),
+                    "host",
+                    "is longer than 253 bytes",
+                ));
+            }
+            self.url
+                .set_host(Some(&host))
+                .map_err(|_| Error::build(Some(self.meta), "host", "is not a valid host name"))?;
+        }
+        Ok(())
+    }
+
+    /// Assembles the native request. `accept`: the format's `Accept` suggestion (`None` for an
+    /// endpoint without typed output), sent only when no `accept` header was composed and the
+    /// chain did not end by removing one. It is applied after the authored headers, so it never
+    /// takes part in their composition (no conflict, no `remove` target).
+    pub fn finish<T>(
+        self,
+        method: Method,
+        client: &reqwest::Client,
+        body: Option<(reqwest::Body, Option<HeaderValue>)>,
+        decoder: Decoder<T>,
+        accept: Option<&HeaderValue>,
+    ) -> Result<Prepared<T>, Error> {
+        let mut url = self.url;
+        if !self.segments.is_empty() || self.trailing_slash {
+            let mut path = self.base.prefix.clone();
+            for segment in &self.segments {
+                path.push('/');
+                path.push_str(segment);
+            }
+            if self.trailing_slash {
+                path.push('/');
+            }
+            url.set_path(&path);
+        }
+        if !self.query.is_empty() {
+            let mut pairs = url.query_pairs_mut();
+            for (key, value) in &self.query {
+                pairs.append_pair(key, value);
+            }
+        }
+        let mut request = reqwest::Request::new(method, url);
+        let mut headers = self.headers;
+        // The body's media type is sent exactly when the body is, unless a `content-type` header
+        // contribution was sent (it wins, body or not; an empty value counts as sent). The
+        // inserted value carries the key's static classification, like a declared value would.
+        if let Some((body, content_type)) = body {
+            if let Some(mut content_type) = content_type
+                && !headers.contains_key(CONTENT_TYPE)
+            {
+                if self.meta.sensitive_content_type || self.content_type_sensitive {
+                    content_type.set_sensitive(true);
+                }
+                headers
+                    .try_insert(CONTENT_TYPE, content_type)
+                    .map_err(|_| {
+                        Error::build(
+                            Some(self.meta),
+                            "content-type",
+                            "does not fit in the header map",
+                        )
+                    })?;
+            }
+            *request.body_mut() = Some(body);
+        }
+        if let Some(accept) = accept
+            && !(self.meta.accept_removed || self.accept_removed)
+            && !headers.contains_key(ACCEPT)
+        {
+            let mut accept = accept.clone();
+            if self.meta.sensitive_accept || self.accept_sensitive {
+                accept.set_sensitive(true);
+            }
+            headers.try_insert(ACCEPT, accept).map_err(|_| {
+                Error::build(Some(self.meta), "accept", "does not fit in the header map")
+            })?;
+        }
+        *request.headers_mut() = headers;
+        Ok(Prepared::new(client.clone(), request, decoder))
+    }
+}
+
+/// Renders a URL built by `meta`'s endpoint with sensitive placements replaced by `<redacted>`.
+pub(crate) fn redacted_url(url: &Url, meta: &EndpointMeta) -> String {
+    const REDACTED: &str = "<redacted>";
+    let mut out = String::new();
+    out.push_str(url.scheme());
+    out.push_str("://");
+    if let Some(host) = url.host_str() {
+        if meta.sensitive_labels.is_empty() {
+            out.push_str(host);
+        } else {
+            for (i, label) in host.split('.').enumerate() {
+                if i > 0 {
+                    out.push('.');
+                }
+                out.push_str(if i < meta.labels && meta.sensitive_labels.contains(&i) {
+                    REDACTED
+                } else {
+                    label
+                });
+            }
+        }
+    }
+    if let Some(port) = url.port() {
+        let _ = write!(out, ":{port}");
+    }
+    let path = url.path();
+    if meta.sensitive_segments.is_empty() {
+        out.push_str(path);
+    } else {
+        let pieces: Vec<&str> = path.split('/').collect();
+        // `pieces[0]` is the empty string before the leading slash.
+        let first_generated = pieces.len().saturating_sub(meta.segments);
+        for (i, piece) in pieces.iter().enumerate() {
+            if i > 0 {
+                out.push('/');
+            }
+            let generated = i.checked_sub(first_generated);
+            let hide = generated.is_some_and(|g| meta.sensitive_segments.contains(&g));
+            out.push_str(if hide { REDACTED } else { piece });
+        }
+    }
+    if let Some(query) = url.query() {
+        out.push('?');
+        for (i, pair) in query.split('&').enumerate() {
+            if i > 0 {
+                out.push('&');
+            }
+            let raw_key = pair.split('=').next().unwrap_or("");
+            let key = url::form_urlencoded::parse(raw_key.as_bytes())
+                .next()
+                .map(|(k, _)| k);
+            let sensitive = key.is_some_and(|k| meta.sensitive_query.contains(&k.as_ref()));
+            if sensitive {
+                out.push_str(raw_key);
+                out.push('=');
+                out.push_str(REDACTED);
+            } else {
+                out.push_str(pair);
+            }
+        }
+    }
+    out
+}
+
+/// `Debug` through `Display`, for generated `Debug` impls.
+pub struct DebugDisplay<'a, T: ?Sized>(pub &'a T);
+
+impl<T: Text + ?Sized> fmt::Debug for DebugDisplay<'_, T> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        fmt::Debug::fmt(&Shown::of(self.0), f)
+    }
+}
+
+/// A value's `Display` text for `Debug`; a failing `Display` is shown as `<Display failed>`
+/// rather than propagated (propagating would make `format!` panic).
+struct Shown(Option<String>);
+
+impl Shown {
+    fn of<T: Display + ?Sized>(value: &T) -> Self {
+        let mut text = String::new();
+        Self(write!(text, "{value}").ok().map(|()| text))
+    }
+}
+
+impl fmt::Debug for Shown {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match &self.0 {
+            Some(text) => fmt::Debug::fmt(text, f),
+            None => f.write_str("<Display failed>"),
+        }
+    }
+}
+
+/// `Debug` of an `each` value: the `Display` text of every item.
+pub struct DebugEach<'a, T: ?Sized>(pub &'a T);
+
+impl<'a, T: ?Sized> fmt::Debug for DebugEach<'a, T>
 where
-    R: ResponseRepresentation<Output>,
-    Output: Send + 'static,
+    &'a T: IntoIterator,
+    <&'a T as IntoIterator>::Item: Text,
 {
-    match R::ACCEPT {
-        Some(accept) if !crate::response::accept_is_valid(accept) => Err(ClientBuildError::new(
-            crate::error::ClientBuildErrorKind::RuntimeConfiguration,
-        )),
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_list()
+            .entries(self.0.into_iter().map(|item| Shown::of(&item)))
+            .finish()
+    }
+}
+
+/// `Debug` of a value placed only as a header (no `Display` needed): its header value, or
+/// `<redacted>` when that value carries the native sensitivity flag.
+pub struct DebugHeader<'a, T: ?Sized>(pub &'a T);
+
+impl<T: ToHeaderValue + ?Sized> fmt::Debug for DebugHeader<'_, T> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        fmt::Debug::fmt(&ShownHeader::of(self.0), f)
+    }
+}
+
+/// `Debug` of an `each` value placed only as a header: every item's header value.
+pub struct DebugHeaderEach<'a, T: ?Sized>(pub &'a T);
+
+impl<'a, T: ?Sized> fmt::Debug for DebugHeaderEach<'a, T>
+where
+    &'a T: IntoIterator,
+    <&'a T as IntoIterator>::Item: ToHeaderValue,
+{
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_list()
+            .entries(self.0.into_iter().map(|item| ShownHeader::of(&item)))
+            .finish()
+    }
+}
+
+/// A value's header value for `Debug`: `<redacted>` when flagged sensitive, the text when it is
+/// visible ASCII, the escaped bytes otherwise (`"caf\xe9"`), `<invalid header value>` when the
+/// value has none.
+struct ShownHeader(Option<HeaderValue>);
+
+impl ShownHeader {
+    fn of<T: ToHeaderValue + ?Sized>(value: &T) -> Self {
+        Self(value.to_header_value())
+    }
+}
+
+impl fmt::Debug for ShownHeader {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match &self.0 {
+            None => f.write_str("<invalid header value>"),
+            Some(value) if value.is_sensitive() => f.write_str("<redacted>"),
+            Some(value) => match value.to_str() {
+                Ok(text) => fmt::Debug::fmt(text, f),
+                Err(_) => fmt::Debug::fmt(value, f),
+            },
+        }
+    }
+}
+
+/// `Debug` placeholder for sensitive values.
+pub struct Redacted;
+
+/// `Debug` of a value whose classification depends on native header names (known only at run
+/// time): `<redacted>` when `self.0` holds, the value otherwise.
+pub struct Withheld<T>(pub bool, pub T);
+
+impl<T: fmt::Debug> fmt::Debug for Withheld<T> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        if self.0 {
+            f.write_str("<redacted>")
+        } else {
+            fmt::Debug::fmt(&self.1, f)
+        }
+    }
+}
+
+/// Header and query names whose values Concord withholds from its output even when they are not
+/// marked `#[sensitive]`, compared after mapping `_` to `-` (the macro classifies literal names
+/// with the same list; a test keeps the two equal).
+pub const SENSITIVE_NAMES: &[&str] = &[
+    "authorization",
+    "proxy-authorization",
+    "cookie",
+    "set-cookie",
+    "x-api-key",
+    "api-key",
+    "apikey",
+    "x-auth-token",
+    "auth-token",
+    "access-token",
+    "refresh-token",
+    "id-token",
+    "token",
+    "client-secret",
+    "secret",
+    "password",
+    "signature",
+    "session",
+    "api-token",
+    "x-api-token",
+    "x-access-token",
+    "private-token",
+    "x-goog-api-key",
+    "ocp-apim-subscription-key",
+    "x-amz-security-token",
+];
+
+/// The type a header key path must have: a native `HeaderName` (constant or static). Only the
+/// diagnostic is Concord's; the name itself is used as it is.
+///
+/// Sealed: implemented for `HeaderName` only. The generated code resolves each key path once
+/// and caches what it decides from the name (the per-value sensitivity conditions), which is
+/// sound because a `HeaderName` constant or static cannot change. A downstream implementation
+/// (a type whose `native_key` returns different names over time) would break that assumption, so
+/// none is accepted.
+#[diagnostic::on_unimplemented(
+    message = "`{Self}` is not a native header name",
+    label = "a header key path names a `HeaderName` constant or static",
+    note = "write a literal name, `header(\"x-name\")`, or define `const X_NAME: HeaderName = HeaderName::from_static(\"x-name\");`"
+)]
+pub trait NativeKey: sealed::Sealed {
+    fn native_key(&self) -> &HeaderName;
+}
+
+mod sealed {
+    /// Not nameable outside this crate, so [`NativeKey`](super::NativeKey) cannot be implemented
+    /// there.
+    pub trait Sealed {}
+
+    impl Sealed for reqwest::header::HeaderName {}
+}
+
+impl NativeKey for HeaderName {
+    #[inline]
+    fn native_key(&self) -> &HeaderName {
+        self
+    }
+}
+
+/// Whether a native header name is on [`SENSITIVE_NAMES`]. Native names are lowercase.
+pub fn sensitive_name(name: &HeaderName) -> bool {
+    let name = name.as_str();
+    SENSITIVE_NAMES.iter().any(|listed| {
+        listed.len() == name.len()
+            && listed
+                .bytes()
+                .zip(name.bytes())
+                .all(|(l, n)| l == if n == b'_' { b'-' } else { n })
+    })
+}
+
+/// Header fields owned by HTTP framing (reqwest/hyper set them); declaring one is an error (a
+/// compile error for a literal name, a build error for a native constant).
+pub const RESERVED_NAMES: &[&str] = &[
+    "host",
+    "content-length",
+    "transfer-encoding",
+    "connection",
+    "te",
+    "trailer",
+    "upgrade",
+    "keep-alive",
+];
+
+/// Whether a native header name is on [`RESERVED_NAMES`].
+pub fn reserved_name(name: &HeaderName) -> bool {
+    RESERVED_NAMES.contains(&name.as_str())
+}
+
+/// A literal header value that is not visible ASCII (so not lowered to a `from_static` static):
+/// built through the checked native constructor. The macro already checked it with `http`; the
+/// downstream `http` stays authoritative.
+pub fn header_literal(
+    bytes: &'static [u8],
+    meta: &'static EndpointMeta,
+    what: &'static str,
+) -> Result<HeaderValue, Error> {
+    HeaderValue::from_bytes(bytes).map_err(|_| {
+        Error::build(
+            Some(meta),
+            what,
+            "literal is not a valid header value (rejected by `http::HeaderValue::from_bytes`)",
+        )
+    })
+}
+
+/// The written shape of one header contribution of an endpoint's chain: what it does and its
+/// label. The generated code holds one `static` array of them per endpoint whose chain writes a
+/// native `HeaderName` constant, shared by the endpoint's `prepare()` ([`HeaderPlan::compose`]) and
+/// the client's `validate_header_names()` ([`NameCheck`]), so both apply the same rules to the same
+/// declarations.
+#[derive(Clone, Copy)]
+pub struct HeaderShape {
+    pub op: HeaderOp,
+    /// The declaration, for errors (`` `override AUTHORIZATION` on `Api.admin` ``).
+    pub label: &'static str,
+}
+
+/// What a header contribution does to the header it names.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum HeaderOp {
+    /// Introduces the header; an error if an earlier contribution (on this owner or an enclosing
+    /// one) already sets it.
+    Set,
+    /// Adds a value after the inherited ones.
+    Append,
+    /// Replaces the inherited values; an error if nothing sets the header.
+    Override,
+    /// `override ... else inherit`: replaces them only when its source is present.
+    OverrideElseInherit,
+    /// Drops the inherited values; an error if nothing sets the header.
+    Remove,
+}
+
+/// A structural rule a chain breaks: decided on resolved names and written operations alone.
+#[derive(Clone, Copy)]
+enum Violation {
+    /// A header field that reqwest/hyper manage is declared (other than by `remove`).
+    Reserved,
+    /// The header is introduced while an earlier contribution (its label) already sets it.
+    AlreadySet(&'static str),
+    /// `override`, `else inherit` or `remove` with nothing to act on.
+    NoTarget,
+    /// The body declares a media type while a `content-type` contribution survives.
+    MediaConflict,
+}
+
+impl Violation {
+    fn reason(self) -> &'static str {
+        match self {
+            Violation::Reserved => {
+                "names a header field that reqwest/hyper manage; it cannot be declared"
+            }
+            Violation::AlreadySet(_) => {
+                "sets a header that an earlier declaration already sets (both name the same header); use `override` or `append`, or `remove` it first"
+            }
+            Violation::NoTarget => "changes a header that no enclosing owner sets",
+            Violation::MediaConflict => {
+                "sets `content-type` while the body declares a media type: both would set `Content-Type`; keep one"
+            }
+        }
+    }
+}
+
+/// The structural rules of a chain (in composition order: root first, each owner's `remove`s
+/// before its other contributions), on resolved names and written operations only. No value is
+/// converted, formatted or read, and no presence is assumed: every rule holds or fails whatever
+/// optional values turn out to be present, so the verdict is the same for every request of the
+/// endpoint. Returns the first violation in chain order (the media-type rule, which
+/// concerns the chain's last `content-type` contribution, last).
+fn structure<const N: usize>(
+    names: &[&HeaderName; N],
+    shapes: &[HeaderShape; N],
+    explicit_media: bool,
+) -> Result<(), (usize, Violation)> {
+    let mut last_content_type = None;
+    for i in 0..N {
+        let op = shapes[i].op;
+        if op != HeaderOp::Remove && reserved_name(names[i]) {
+            return Err((i, Violation::Reserved));
+        }
+        // Whether the header is set when this contribution applies: the latest earlier
+        // contribution to the same header was not a `remove`. (An `else inherit` or an optional
+        // value sets it as a declaration, present or not.)
+        let earlier = (0..i).rev().find(|&j| names[j] == names[i]);
+        let set_before = earlier.is_some_and(|j| shapes[j].op != HeaderOp::Remove);
+        match (op, earlier) {
+            (HeaderOp::Set, Some(j)) if set_before => {
+                return Err((i, Violation::AlreadySet(shapes[j].label)));
+            }
+            (HeaderOp::Override | HeaderOp::OverrideElseInherit | HeaderOp::Remove, _)
+                if !set_before =>
+            {
+                return Err((i, Violation::NoTarget));
+            }
+            _ => {}
+        }
+        if names[i] == CONTENT_TYPE {
+            last_content_type = Some(i);
+        }
+    }
+    // A `content-type` contribution survives exactly when the chain's last one is not a `remove`
+    // (a later `else inherit`, present or absent, leaves a `content-type` declaration in force).
+    match last_content_type {
+        Some(i) if explicit_media && shapes[i].op != HeaderOp::Remove => {
+            Err((i, Violation::MediaConflict))
+        }
         _ => Ok(()),
     }
 }
 
-/// Creates one allocation-free, compile-time-validated generated endpoint ID.
-#[doc(hidden)]
-#[must_use]
-pub const fn endpoint_id_from_static(value: &'static str) -> EndpointId {
-    EndpointId::from_static(value)
+/// Header composition of one endpoint whose chain writes a native `HeaderName` constant, decided
+/// on names alone: no value is converted, formatted or evaluated to find which header a
+/// contribution names. Chains with literal names only are composed by the macro instead.
+pub struct HeaderPlan<const N: usize> {
+    /// Whether each contribution's value is sent (when present).
+    pub live: [bool; N],
+    /// Each contribution's outgoing classification: its header's name is on
+    /// [`SENSITIVE_NAMES`], or some contribution to the same header is marked.
+    pub sensitive: [bool; N],
+    /// Whether some contribution to `content-type` is marked.
+    pub content_type_sensitive: bool,
+    /// Whether some contribution to `accept` is marked (the format's suggestion, if Concord
+    /// inserts one, is then flagged sensitive).
+    pub accept_sensitive: bool,
+    /// Whether the last contribution to `accept` is a `remove` (the format's suggestion is then
+    /// not sent).
+    pub accept_removed: bool,
 }
 
-/// Generated-private owner for one credential source selection.
-///
-/// One value is created per declared credential when the generated client is
-/// built and shared by every clone of that client. Every method is
-/// synchronous and local: none performs network work, revokes a remote
-/// session or recalls already dispatched requests. No lock is held across
-/// application code; poisoning or counter exhaustion fails closed with a
-/// value-free [`AuthError`](crate::auth::AuthError).
-///
-/// Bridge for the macro:
-///
-/// * construction: [`Self::static_value`], [`Self::endpoint`],
-///   [`Self::provider`] / [`Self::provider_arc`] (fallible: the provider's
-///   declared helper origins are validated at build);
-/// * placements: [`Self::credential`];
-/// * `client.credentials().clear_<name>()?` → [`Self::clear`];
-/// * `client.credentials().replace_<name>(material)?` → [`Self::replace`]
-///   (or [`Self::replace_result`] for built-in fallible constructors);
-/// * `store_as_<name>()` → [`store_request`].
-#[doc(hidden)]
-pub struct GeneratedCredential<M>
-where
-    M: crate::auth::CredentialMaterial,
-{
-    selector: std::sync::Arc<crate::auth::SlotSelector<M>>,
+impl<const N: usize> HeaderPlan<N> {
+    /// Composes the chain by native name equality: first the structural rules (shared with
+    /// [`NameCheck`]), then which values are sent. `present`: for an `override ... else inherit`,
+    /// whether its source is present (ignored otherwise); `marked`: each contribution's own
+    /// classification (`#[sensitive]`, or a withheld value it reads). `explicit_media`: the body
+    /// declares a media type, which conflicts with a surviving `content-type` header.
+    pub fn compose(
+        names: [&HeaderName; N],
+        shapes: &[HeaderShape; N],
+        present: [bool; N],
+        marked: [bool; N],
+        explicit_media: bool,
+        meta: &'static EndpointMeta,
+    ) -> Result<Self, Error> {
+        if let Err((i, violation)) = structure(&names, shapes, explicit_media) {
+            return Err(match violation {
+                Violation::AlreadySet(earlier) => {
+                    Error::header_conflict(meta, shapes[i].label, earlier)
+                }
+                other => Error::build(Some(meta), shapes[i].label, other.reason()),
+            });
+        }
+        let mut live = [false; N];
+        let mut sensitive = [false; N];
+        let mut content_type_sensitive = false;
+        let mut accept_sensitive = false;
+        let mut accept_removed = false;
+        for i in 0..N {
+            let op = shapes[i].op;
+            // A value survives unless a later contribution to the same header replaces or
+            // removes it.
+            let closes = |j: usize| match shapes[j].op {
+                HeaderOp::Set | HeaderOp::Override | HeaderOp::Remove => true,
+                HeaderOp::OverrideElseInherit => present[j],
+                HeaderOp::Append => false,
+            };
+            live[i] =
+                op != HeaderOp::Remove && !(i + 1..N).any(|j| names[j] == names[i] && closes(j));
+            sensitive[i] =
+                sensitive_name(names[i]) || (0..N).any(|j| names[j] == names[i] && marked[j]);
+            if names[i] == ACCEPT {
+                accept_sensitive |= marked[i];
+                accept_removed = op == HeaderOp::Remove;
+            }
+            if names[i] == CONTENT_TYPE {
+                content_type_sensitive |= marked[i];
+            }
+        }
+        Ok(Self {
+            live,
+            sensitive,
+            content_type_sensitive,
+            accept_sensitive,
+            accept_removed,
+        })
+    }
 }
 
-impl<M> Clone for GeneratedCredential<M>
-where
-    M: crate::auth::CredentialMaterial,
-{
-    fn clone(&self) -> Self {
-        Self {
-            selector: std::sync::Arc::clone(&self.selector),
+/// The checks of a client's `validate_header_names()`: the structural rules of
+/// [`HeaderPlan::compose`] on each endpoint whose chain writes a native constant, collected
+/// across endpoints. Nothing but the names is evaluated.
+#[derive(Default)]
+pub struct NameCheck {
+    problems: Vec<crate::HeaderNameError>,
+}
+
+impl NameCheck {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Checks one endpoint's chain; records its first violation (the one its `prepare()` reports
+    /// when it composes the headers), if any.
+    pub fn endpoint<const N: usize>(
+        &mut self,
+        endpoint: &'static str,
+        names: [&HeaderName; N],
+        shapes: &[HeaderShape; N],
+        explicit_media: bool,
+    ) {
+        if let Err((i, violation)) = structure(&names, shapes, explicit_media) {
+            self.problems.push(crate::HeaderNameError {
+                endpoint,
+                declaration: shapes[i].label,
+                earlier: match violation {
+                    Violation::AlreadySet(earlier) => Some(earlier),
+                    _ => None,
+                },
+                reason: violation.reason(),
+            });
+        }
+    }
+
+    pub fn finish(self) -> Result<(), crate::HeaderNameErrors> {
+        if self.problems.is_empty() {
+            Ok(())
+        } else {
+            Err(crate::HeaderNameErrors {
+                problems: self.problems,
+            })
         }
     }
 }
 
-impl<M> GeneratedCredential<M>
-where
-    M: crate::auth::CredentialMaterial,
-{
-    /// Creates a static source whose initial material is installed version 1.
-    #[doc(hidden)]
-    pub fn static_value(core: &ClientCore, value: M) -> Self {
-        Self {
-            selector: crate::auth::SlotSelector::static_value_in_context(
-                value,
-                core.auth_failure_cooldown_cap(),
-                core.credential_context().clone(),
-            ),
-        }
-    }
-
-    /// Creates an initially empty endpoint-backed source.
-    #[doc(hidden)]
-    pub fn endpoint(core: &ClientCore) -> Self {
-        Self {
-            selector: crate::auth::SlotSelector::endpoint_in_context(
-                core.auth_failure_cooldown_cap(),
-                core.credential_context().clone(),
-            ),
-        }
-    }
-
-    /// Creates a provider source, validating the provider's declared helper
-    /// origins against the client's configured capacity. `field` names the
-    /// generated provider input for the build error.
-    #[doc(hidden)]
-    pub fn provider<P>(
-        core: &ClientCore,
-        field: &'static str,
-        provider: P,
-    ) -> Result<Self, ClientBuildError>
-    where
-        P: crate::auth::CredentialProvider<Material = M>,
-    {
-        crate::auth::SlotSelector::provider_in_context(
-            provider,
-            core.auth_failure_cooldown_cap(),
-            core.credential_context().clone(),
-            core.provider_max_origins(),
-        )
-        .map(|selector| Self { selector })
-        .map_err(|_: crate::auth::OriginSetError| ClientBuildError::invalid_provider_origins(field))
-    }
-
-    /// Shared-provider form of [`Self::provider`].
-    #[doc(hidden)]
-    pub fn provider_arc(
-        core: &ClientCore,
-        field: &'static str,
-        provider: std::sync::Arc<dyn crate::auth::CredentialProvider<Material = M>>,
-    ) -> Result<Self, ClientBuildError> {
-        crate::auth::SlotSelector::provider_arc_in_context(
-            provider,
-            core.auth_failure_cooldown_cap(),
-            core.credential_context().clone(),
-            core.provider_max_origins(),
-        )
-        .map(|selector| Self { selector })
-        .map_err(|_: crate::auth::OriginSetError| ClientBuildError::invalid_provider_origins(field))
-    }
-
-    #[doc(hidden)]
-    pub fn credential(&self) -> crate::auth::CredentialRef<M> {
-        crate::auth::CredentialRef::new(std::sync::Arc::clone(&self.selector))
-    }
-
-    #[doc(hidden)]
-    pub fn endpoint_handle(&self) -> crate::auth::CredentialHandle<M> {
-        crate::auth::CredentialHandle::new(std::sync::Arc::clone(&self.selector))
-    }
-
-    /// Manual local clear: advances the installation intent even when empty,
-    /// removes ready material and supersedes in-flight acquisition.
-    #[doc(hidden)]
-    pub fn clear(&self) -> Result<(), crate::auth::AuthError> {
-        self.selector.clear()
-    }
-
-    /// Manual local replacement: advances the installation intent and
-    /// installs `value` as a new version.
-    #[doc(hidden)]
-    pub fn replace(
-        &self,
-        value: M,
-    ) -> Result<crate::auth::CredentialVersion, crate::auth::AuthError> {
-        self.selector.replace(value)
-    }
-
-    /// [`Self::replace`] for a built-in fallible material constructor; a
-    /// construction error leaves the current material and version unchanged.
-    #[doc(hidden)]
-    pub fn replace_result(
-        &self,
-        value: Result<M, crate::auth::CredentialMaterialError>,
-    ) -> Result<crate::auth::CredentialVersion, crate::auth::AuthError> {
-        self.selector.replace_result(value)
-    }
-
-    /// Complete provider replacement. The replacement's declared origins are
-    /// validated against the client's capacity; pending intents of the old
-    /// provider are superseded.
-    #[doc(hidden)]
-    pub fn replace_provider<P>(&self, provider: P) -> Result<(), crate::auth::AuthError>
-    where
-        P: crate::auth::CredentialProvider<Material = M>,
-    {
-        self.selector.replace_provider(provider)
-    }
-
-    #[doc(hidden)]
-    pub fn is_set(&self) -> bool {
-        self.selector.is_set()
-    }
-
-    /// Returns the currently installed, unrejected version, if any.
-    #[doc(hidden)]
-    pub fn installed_version(&self) -> Option<crate::auth::CredentialVersion> {
-        self.selector.installed_version()
+impl fmt::Debug for Redacted {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str("<redacted>")
     }
 }
 
-/// Wraps one bound source-endpoint request as the `store_as_<credential>()`
-/// terminal for `credential`.
-///
-/// The request keeps every control it already carries; the terminal executes
-/// it through the ordinary managed executor on first poll. The endpoint's
-/// declared output must be exactly the credential material type.
-#[doc(hidden)]
-#[must_use]
-pub fn store_request<E, M>(
-    request: crate::Request<E>,
-    credential: &GeneratedCredential<M>,
-) -> crate::StoreRequest
-where
-    E: EndpointSpec<Output = M>,
-    M: crate::auth::CredentialMaterial,
-{
-    crate::execute::store_request(request, std::sync::Arc::clone(&credential.selector))
+/// The response handling of an endpoint without `->`: any 2xx, body drained unbuffered (a
+/// `response` default does not apply).
+pub fn drain(meta: &'static EndpointMeta) -> Decoder<()> {
+    Decoder::drained(meta, || ())
 }
 
-/// Borrows a generated endpoint through the opaque request wrapper without
-/// starting execution.
-#[doc(hidden)]
-pub fn inspect_endpoint<E, T>(request: &crate::Request<E>, inspect: impl FnOnce(&E) -> T) -> T {
-    inspect(&request.endpoint)
-}
-
-/// Creates the ordinary generated-client HTTP configuration baseline.
-#[doc(hidden)]
-#[must_use]
-pub fn default_http_config() -> crate::http::HttpConfigBuilder {
-    crate::http::HttpConfigBuilder::new()
-}
-
-/// Creates the ordinary generated-client runtime configuration baseline.
-#[doc(hidden)]
-#[must_use]
-pub fn default_runtime_config() -> crate::runtime::RuntimeConfigBuilder {
-    crate::runtime::RuntimeConfigBuilder::new()
-}
-
-/// Internal generated-builder selection state.
-///
-/// `UseDeclaration` means that `build` must either evaluate the declaration
-/// default or report a missing required value. `Set` preserves the exact
-/// effective value, including an outer Concord-owned `Option` when present.
-#[doc(hidden)]
-pub enum Override<T> {
-    /// Select declaration behavior at the next build boundary.
-    UseDeclaration,
-    /// Use one caller-selected effective value.
-    Set(T),
-}
-
-/// Applies generated static rate-limit requirements without constructing a
-/// custom observer.
-#[doc(hidden)]
-pub fn prepare_generated_rate_limits(
-    runtime: crate::runtime::RuntimeConfigBuilder,
-    requires_limiter: bool,
-) -> Result<crate::runtime::RuntimeConfigBuilder, ClientBuildError> {
-    runtime.prepare_generated_rate_limits(requires_limiter)
-}
-
-/// Validates generated missing inputs and independent configuration selections.
-///
-/// Must run before generated value/provider resolution or native construction.
-/// Names are static declaration identifiers. The primary error identity is
-/// preserved while safe additional diagnostics remain available to callers.
-#[doc(hidden)]
-pub fn preflight_generated_build(
-    fixed_base: &str,
-    http: &crate::http::HttpConfigBuilder,
-    runtime: &crate::runtime::RuntimeConfigBuilder,
-    requires_limiter: bool,
-    missing: Vec<(&'static str, ClientInputKind)>,
-) -> Result<(), ClientBuildError> {
-    ClientCore::preflight_build(fixed_base, http, runtime, requires_limiter, missing)
-}
-
-/// Builds one private shared core for generated client storage.
-#[doc(hidden)]
-pub fn build_client_core(
-    fixed_base: &str,
-    http: crate::http::HttpConfigBuilder,
-    runtime: crate::runtime::RuntimeConfigBuilder,
-) -> Result<ClientCore, ClientBuildError> {
-    ClientCore::build(fixed_base, http, runtime)
-}
-
-/// Produces a safe generated-builder error for one missing required input.
-#[doc(hidden)]
-pub const fn missing_input_error(
-    field: &'static str,
-    input_kind: ClientInputKind,
-) -> ClientBuildError {
-    ClientBuildError::missing_input(field, input_kind)
-}
-
-/// Produces one safe generated-builder error accumulating every missing
-/// required input (values, secrets, providers) in declaration order.
-#[doc(hidden)]
-pub fn missing_inputs_error(missing: Vec<(&'static str, ClientInputKind)>) -> ClientBuildError {
-    ClientBuildError::missing_inputs(missing)
-}
-
-/// Produces a safe generated-builder error for one invalid single-string credential input.
-#[doc(hidden)]
-pub fn credential_input_error(
-    field: &'static str,
-    _error: crate::auth::CredentialMaterialError,
-) -> ClientBuildError {
-    ClientBuildError::invalid_credential(field)
-}
-
-/// Produces a safe generated-builder error for one invalid Basic credential input.
-#[doc(hidden)]
-pub fn basic_credential_input_error(
-    username_field: &'static str,
-    password_field: &'static str,
-    error: crate::auth::CredentialMaterialError,
-) -> ClientBuildError {
-    let field = match error.kind() {
-        crate::auth::CredentialMaterialErrorKind::BasicPasswordTooLarge => password_field,
-        crate::auth::CredentialMaterialErrorKind::SecretStringTooLarge
-        | crate::auth::CredentialMaterialErrorKind::CredentialSecretTooLarge
-        | crate::auth::CredentialMaterialErrorKind::BasicUsernameTooLarge
-        | crate::auth::CredentialMaterialErrorKind::BasicUsernameContainsColon => username_field,
-    };
-    ClientBuildError::invalid_credential(field)
-}
-
-/// Creates one side-effect-free stable pending request wrapper.
-#[doc(hidden)]
-#[must_use]
-pub fn request<E>(core: &ClientCore, endpoint: E) -> crate::Request<E> {
-    crate::Request::new(core.clone(), endpoint)
-}
-
-/// Creates one inert unbound-intent plan through real public-head preparation.
-///
-/// Planning never dispatches (EXEC-03): every failure reports
-/// `FailureStage::Preparation`, `DispatchKnowledge::NotDispatched` and no
-/// operation identity.
-#[doc(hidden)]
-pub fn plan_unbound_request(
-    core: &ClientCore,
-    description: &EndpointDescription,
-    response_accept: Option<&'static str>,
-    prepare_head: impl FnOnce(HeadBuilder) -> Result<PreparedHead, ApiError>,
-) -> Result<RequestPlan, ApiError> {
-    plan_unbound_request_inner(core, description, response_accept, prepare_head)
-        .map_err(ApiError::before_operation)
-}
-
-fn plan_unbound_request_inner(
-    core: &ClientCore,
-    description: &EndpointDescription,
-    response_accept: Option<&'static str>,
-    prepare_head: impl FnOnce(HeadBuilder) -> Result<PreparedHead, ApiError>,
-) -> Result<RequestPlan, ApiError> {
-    let meta = RequestMeta::from_description(description);
-    let builder = HeadBuilder::new(
-        core.base_url(),
-        meta,
-        &RequestOptions::new(),
-        core.default_debug(),
-        core.default_runtime_endpoint_timeout(),
-    );
-    let mut head = prepare_head(builder)?;
-    head.validate_auth_context(core.credential_context())?;
-    if head.endpoint_id() != description.endpoint_id() || head.method() != description.method() {
-        return Err(ApiError::classified(
-            description.endpoint_id().clone(),
-            description.method().clone(),
-            crate::error::ErrorCategory::Internal,
-        ));
-    }
-    head.validate_rate_limit_key_limit(core.rate_limit_key_limit())?;
-    // Planning never prepares a body (the exact Content-Type is deferred to
-    // preparation), but the response representation's static Accept constant
-    // is part of every finalized head and consumes the same aggregate budget
-    // as execution.
-    head.apply_media_headers(response_accept, None, false)?;
-    head.validate_auth()?;
-    if head.auth().is_empty() {
-        core.preflight_url(head.endpoint_id(), head.method(), head.logical_url())?;
-    } else {
-        core.preflight_protected_url(head.endpoint_id(), head.method(), head.logical_url())?;
-    }
-    let public_headers = crate::redaction::SanitizedHeaderMap::from_headers_with_sensitive(
-        head.public_headers(),
-        Some(head.pagination_sensitive_headers()),
-    );
-    Ok(RequestPlan::new(
-        description.clone(),
-        std::sync::Arc::from(head.observed_url()),
-        public_headers,
-        head.timeout(),
-        0,
-        core.rate_plan_summary(head.rate_limit_plan()),
-    ))
-}
-
-/// Plans one already-bound inert generated request without inspecting or
-/// materializing its body and without allocating an execution lifecycle.
-///
-/// Planning never dispatches (EXEC-03): every failure reports
-/// `FailureStage::Preparation`, `DispatchKnowledge::NotDispatched` and no
-/// operation identity.
-#[doc(hidden)]
-pub fn request_plan<E>(
-    request: &crate::Request<E>,
-    description: &EndpointDescription,
-) -> Result<RequestPlan, ApiError>
-where
-    E: EndpointSpec,
-{
-    request_plan_inner(request, description).map_err(ApiError::before_operation)
-}
-
-fn request_plan_inner<E>(
-    request: &crate::Request<E>,
-    description: &EndpointDescription,
-) -> Result<RequestPlan, ApiError>
-where
-    E: EndpointSpec,
-{
-    let meta = request.endpoint.request_meta();
-    let builder = HeadBuilder::new(
-        request.core.base_url(),
-        meta,
-        &request.options,
-        request.core.default_debug(),
-        request.core.default_runtime_endpoint_timeout(),
-    );
-    let mut head = request.endpoint.prepare_head(builder)?;
-    head.validate_auth_context(request.core.credential_context())?;
-    head.validate_rate_limit_key_limit(request.core.rate_limit_key_limit())?;
-    head.apply_media_headers(
-        <E::Response as ResponseRepresentation<E::Output>>::ACCEPT,
-        None,
-        false,
-    )?;
-    head.validate_auth()?;
-    if head.auth().is_empty() {
-        request
-            .core
-            .preflight_url(head.endpoint_id(), head.method(), head.logical_url())?;
-    } else {
-        request.core.preflight_protected_url(
-            head.endpoint_id(),
-            head.method(),
-            head.logical_url(),
-        )?;
-    }
-    let public_headers = crate::redaction::SanitizedHeaderMap::from_headers_with_sensitive(
-        head.public_headers(),
-        Some(head.pagination_sensitive_headers()),
-    );
-    Ok(RequestPlan::new(
-        description.clone(),
-        std::sync::Arc::from(head.observed_url()),
-        public_headers,
-        head.timeout(),
-        0,
-        request.core.rate_plan_summary(head.rate_limit_plan()),
-    ))
-}
-
-/// Generated named-request bridge for `request.timeout(duration)`.
-///
-/// Forwards to the inherent [`crate::Request::timeout`]: replaces only the
-/// selected finite timeout; caps are retained. Generated wrappers may call
-/// either this function or the inherent method.
-#[doc(hidden)]
-pub fn request_timeout<E>(
-    request: crate::Request<E>,
-    duration: std::time::Duration,
-) -> Result<crate::Request<E>, crate::contracts::ControlError> {
-    request.timeout(duration)
-}
-
-/// Generated named-request bridge for `request.reset_timeout()`
-/// ([`crate::Request::reset_timeout`]); caps are retained.
-#[doc(hidden)]
-#[must_use]
-pub fn request_reset_timeout<E>(request: crate::Request<E>) -> crate::Request<E> {
-    request.reset_timeout()
-}
-
-/// Generated named-request bridge for `request.cancel_with(token)`
-/// ([`crate::Request::cancel_with`]); at most eight distinct signals.
-#[doc(hidden)]
-pub fn request_cancel_with<E>(
-    request: crate::Request<E>,
-    token: crate::contracts::CancellationToken,
-) -> Result<crate::Request<E>, crate::contracts::ControlError> {
-    request.cancel_with(token)
-}
-
-/// Generated named-request bridge for `request.with_options(&options)`
-/// ([`crate::Request::with_options`]); caps intersect componentwise.
-#[doc(hidden)]
-#[must_use]
-pub fn request_with_options<E>(
-    request: crate::Request<E>,
-    options: &crate::contracts::CallOptions,
-) -> crate::Request<E> {
-    request.with_options(options)
-}
-
-/// Generated named-request bridge for `request.control_summary()`
-/// ([`crate::Request::control_summary`]); the declared timeout comes from the
-/// endpoint's effective metadata.
-#[doc(hidden)]
-#[must_use]
-pub fn request_control_summary<E>(request: &crate::Request<E>) -> crate::contracts::ControlSummary
-where
-    E: EndpointSpec,
-{
-    request.control_summary()
-}
-
-/// Selects universal response metadata for one generated named request wrapper.
-#[doc(hidden)]
-#[must_use]
-pub fn response_request<E>(request: crate::Request<E>) -> crate::ResponseRequest<E::Output>
-where
-    E: EndpointSpec,
-{
-    crate::execute::response_request(request)
-}
-
-/// Selects complete bounded bytes for one generated named request wrapper.
-#[doc(hidden)]
-#[must_use]
-pub fn accepted_bytes_request<E>(request: crate::Request<E>) -> crate::AcceptedBytesRequest
-where
-    E: EndpointSpec,
-    <E::Response as ResponseRepresentation<E::Output>>::Driver:
-        crate::response::AcceptedBytesDriver,
-{
-    crate::execute::accepted_bytes_request(request)
-}
-
-/// Consumes a pending request, maps its endpoint value, and preserves every
-/// generic request-local and runtime field without starting execution.
-#[doc(hidden)]
-#[must_use]
-pub fn map_endpoint<E, F>(request: crate::Request<E>, map: F) -> crate::Request<E>
-where
-    F: FnOnce(E) -> E,
-{
-    let crate::Request {
-        core,
-        endpoint,
-        options,
-    } = request;
-    crate::Request {
-        core,
-        endpoint: map(endpoint),
-        options,
-    }
-}
-
-/// Binds one runtime endpoint at a generated owner projection
-/// (`owner.bind(endpoint)`); see [`crate::RuntimeEndpoint`].
-#[doc(hidden)]
-pub fn bind_runtime_endpoint<R, O>(
-    projection: std::sync::Arc<dyn OwnerProjection>,
-    endpoint: crate::request::RuntimeEndpoint<R, O>,
-) -> Result<crate::request::BoundRuntimeRequest<R, O>, ApiError>
-where
-    R: ResponseRepresentation<O>,
-    O: Send + 'static,
-{
-    crate::request::bind_runtime_at_owner(&projection, endpoint).map_err(ApiError::before_operation)
-}
-
-/// Plans one runtime endpoint at a generated owner projection without
-/// binding it (`owner.plan_runtime(&endpoint)`).
-#[doc(hidden)]
-pub fn plan_runtime_endpoint<R, O>(
-    projection: std::sync::Arc<dyn OwnerProjection>,
-    endpoint: &crate::request::RuntimeEndpoint<R, O>,
-) -> Result<RequestPlan, ApiError>
-where
-    R: ResponseRepresentation<O>,
-    O: Send + 'static,
-{
-    crate::request::plan_runtime_at_owner(&projection, endpoint).map_err(ApiError::before_operation)
-}
-
-/// Builds the head-only expected absence of one generated endpoint from its
-/// macro-validated status codes (`absent on 404;`).
-///
-/// # Panics
-///
-/// Panics only if the codes are not a valid final-status set, which the
-/// declaration compiler rejects before emitting this call.
-#[doc(hidden)]
-#[must_use]
-pub fn expected_absence<O, R>(codes: &'static [u16]) -> ExpectedAbsence<O, HeadAbsence<R>>
-where
-    O: OptionalOutcome,
-    R: ResponseRepresentation<O::Present, Driver = Buffered>,
-{
-    let statuses = AbsentStatus::codes(
-        codes
-            .iter()
-            .map(|code| http::StatusCode::from_u16(*code).expect("macro-validated status")),
-    )
-    .expect("macro-validated absence statuses");
-    ExpectedAbsence::new(statuses)
-}
-
-/// Derives one generated endpoint's runtime description from its client's
-/// built contract (the single source of meaning for executor facts).
-///
-/// # Panics
-///
-/// Panics with a contract-mismatch message if the contract has no endpoint
-/// with this operational ID, which indicates a macro/core version mismatch.
-#[doc(hidden)]
-#[must_use]
-pub fn endpoint_description(
-    contract: &'static crate::inspection::ContractDescription,
-    endpoint_id: &str,
-) -> EndpointDescription {
-    EndpointDescription::from_contract(contract, endpoint_id)
-        .expect("concord macro/core contract mismatch: generated endpoint missing from contract")
+/// Formats a query or header template; a failing `Display` is a build error naming the placement.
+pub fn format_template(
+    args: fmt::Arguments<'_>,
+    meta: &'static EndpointMeta,
+    what: &'static str,
+) -> Result<String, Error> {
+    let mut out = String::new();
+    out.write_fmt(args).map_err(|_| unformattable(meta, what))?;
+    Ok(out)
 }

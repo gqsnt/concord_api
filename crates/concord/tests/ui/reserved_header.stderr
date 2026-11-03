@@ -1,0 +1,5 @@
+error: `content-length` is managed by the HTTP transport (reqwest/hyper) and cannot be declared
+ --> tests/ui/reserved_header.rs:4:19
+  |
+4 |         headers { "Content-Length" = "0"; }
+  |                   ^^^^^^^^^^^^^^^^

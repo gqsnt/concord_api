@@ -1,306 +1,243 @@
-//! The user-facing Concord contract compiler and managed HTTP runtime.
+//! Typed HTTP API clients over [`reqwest`](https://docs.rs/reqwest/0.13), generated from one
+//! declaration.
 //!
-//! Applications depend on this crate to declare APIs with [`api`], use the
-//! generated Rust surface, and access semantic runtime extension contracts.
-//! Ordinary default features include the bounded process-local rate-limit
-//! policy exposed as `rate_limit::LocalRateLimiter`.
+//! One [`api!`] declaration describes an HTTP API as a tree — **client → scopes → endpoints** —
+//! and generates ordinary Rust types whose methods build native `reqwest::Request`s and decode
+//! typed responses. Concord owns the structure of the API, the meaning of required, optional and
+//! initialized values, how paths, subdomains, query parameters and headers compose, the formats
+//! of bodies and typed responses, and its own redacted output. You supply the `reqwest::Client`;
+//! authentication flows, retries, rate limiting, pagination and transport configuration stay in
+//! your code.
 //!
-//! Generated construction and navigation use declaration-domain method names.
-//! Value controls follow the declared shape, never Rust type spelling:
-//! `set_*` selects a payload (`impl IntoValue<T>`), `set_*_if_some` takes an
-//! exact `Option<T>` whose `None` means "no new opinion", optional (`?`) values
-//! add the exact slot replacement `replace_*(Option<T>)` and `omit_*`, and
-//! initialized values add `reset_*`.
+//! # Quick start
+//!
+//! ```
+//! # #[cfg(feature = "json")] mod quick_start {
+//! use concord::reqwest::{self, header::{AUTHORIZATION, HeaderName}};
+//! use concord::{Json, Text};
+//! use serde::{Deserialize, Serialize};
+//!
+//! /// A header of this API, declared the native way.
+//! pub const X_API_VERSION: HeaderName = HeaderName::from_static("x-api-version");
+//!
+//! #[derive(Debug, Deserialize)]
+//! pub struct Issue {
+//!     pub number: u64,
+//!     pub title: String,
+//! }
+//!
+//! #[derive(Serialize)]
+//! pub struct NewIssue {
+//!     pub title: String,
+//! }
+//!
+//! concord::api! {
+//!     /// A slice of a code-hosting API.
+//!     pub client Forge(
+//!         #[sensitive] header(AUTHORIZATION) token: String,
+//!         header(X_API_VERSION) version: String = "2024-01-01",
+//!     ) {
+//!         base "https://api.forge.example";
+//!         format Json; // bodies `body x: T` and typed outputs `-> T` are JSON
+//!
+//!         scope repo(owner: String, name: String) {
+//!             path "repos/{owner}/{name}";
+//!
+//!             GET issues(query state?: String, query per_page: u32 = 30) -> Vec<Issue> {
+//!                 path "issues";
+//!             }
+//!             POST create_issue(body issue: NewIssue) -> Issue {
+//!                 path "issues";
+//!             }
+//!             GET readme() -> String { path "readme"; response Text; } // an exception, on its endpoint
+//!             DELETE lock() { path "lock"; } // no `->`: any 2xx, the body is drained
+//!         }
+//!     }
+//! }
+//!
+//! # pub fn main() -> Result<(), concord::Error> {
+//! let http = reqwest::Client::new(); // your client: timeouts, proxies, TLS, default headers
+//! let forge = Forge::new(http, ForgeConfig { token: "Bearer <token>".into() });
+//! let repo = forge.repo("rust-lang", "rust");
+//!
+//! // Build a request without sending it:
+//! let prepared = repo.issues().set_state("open").prepare()?;
+//! assert_eq!(
+//!     prepared.request().url().as_str(),
+//!     "https://api.forge.example/repos/rust-lang/rust/issues?state=open&per_page=30",
+//! );
+//!
+//! // Send: one request, a 2xx check, JSON decoding.
+//! async fn open_issues(repo: &ForgeRepo) -> Result<Vec<Issue>, concord::Error> {
+//!     repo.issues().set_state("open").send().await
+//! }
+//! # Ok(()) }
+//! # }
+//! # #[cfg(feature = "json")] fn main() -> Result<(), concord::Error> { quick_start::main() }
+//! # #[cfg(not(feature = "json"))] fn main() {}
+//! ```
+//!
+//! `concord::reqwest` is the reqwest crate Concord is built on; depend on reqwest directly (same
+//! major version) to choose its features.
+//!
+//! # What a declaration generates
+//!
+//! For the declaration above:
+//!
+//! | Declared | Generated | Main methods |
+//! |---|---|---|
+//! | `client Forge(..)` | `Forge`, a cheap-to-clone handle | `Forge::new(http, ForgeConfig { .. })` (`Forge::new(http)` without required values), `with_base_url`, `set_*`/`maybe_*`, `repo(..)` |
+//! | its required values | `ForgeConfig`, one public field per value | — |
+//! | `scope repo(..)` | `ForgeRepo`, a handle | `set_*`/`maybe_*`, `issues()`, `create_issue(..)` |
+//! | `GET issues(..)` | `ForgeRepoIssues`, a request value | `set_*`/`maybe_*`, `prepare()`, `send()` |
+//!
+//! Each value `x` gets `set_x(v)`; an optional value (`x?: T`) also gets `maybe_x(Option<T>)`.
+//! Required scope and endpoint values are positional arguments of the navigation method, in
+//! declaration order. Generated items carry documentation: which values are required, the initial
+//! value of each and what absence means.
+//!
+//! # Runtime types
+//!
+//! | Item | Role |
+//! |---|---|
+//! | [`api!`] | the declaration macro |
+//! | [`Prepared<T>`](Prepared) | a built request, not yet sent: `request()`, `send()`, `send_raw()`, `into_parts()` |
+//! | [`Decoder<T>`](Decoder) | a response handling (an endpoint's, or [`Decoder::new`] for a format of your choice), for a response you obtained natively: `decode`, `finish` |
+//! | [`Error`], [`ErrorKind`] | the one error type: `kind`, `endpoint`, `status`, `response`, `into_response`, `codec_error`, `transport` |
+//! | [`Encode<T>`](Encode), [`Decode<T>`](Decode) | the open format traits, implemented by `Json` (feature `json`), `Text`, `Binary`, `IgnoreContentType<F>` (feature `extras`), `Form` (feature `form`) and by your own types; a statement names a format by its type path (`format Json;`) |
+//! | [`ResponseHead`], [`ContentTypeField`] | what a [`Decode`] implementation reads before the body: status, version, header fields |
+//! | [`CodecError`] | a format's failure: a static label, numeric positions, an unredacted source |
+//! | [`IntoValue<T>`](IntoValue) | the closed set of conversions accepted by arguments and setters |
+//! | [`ToHeaderValue`] | the closed set of header values: native `HeaderValue`, text, integers, `bool` (another type is sent through a template) |
+//! | `concord::reqwest`, `concord::bytes` | the re-exported [`reqwest`](https://docs.rs/reqwest/0.13) and [`bytes`](https://docs.rs/bytes/1) crates |
+//!
+//! # The declaration at a glance
+//!
+//! ```text
+//! client Name(values) { base "https://..."; statements; children }
+//! scope name(values) { statements; children }
+//! GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS name(values) [-> T] { statements }
+//!
+//! values:      x: T  |  x: T = expr  |  x?: T  |  x?: T = expr
+//! placements:  query x  |  query("name") x  |  header(KEY) x  |  ... each x
+//! KEY:         "x-name"  |  a native HeaderName constant or static: AUTHORIZATION, X_API_KEY, ...
+//! body:        body b: T  |  body b?: T   (at most one, endpoints only)
+//! output:      -> T  (no `->`: no typed output, any 2xx, the body is drained)
+//! FORMAT:      a type path implementing Encode and/or Decode: Json, Text, Binary, Form, yours
+//! attributes:  /// docs  |  #[sensitive] (values)  |  #[cfg(..)], #[deprecated] (scopes, endpoints)
+//! statements:  path "a/{x}";  subdomain "{x}";  query { .. }  headers { .. }
+//!              format FORMAT;  request FORMAT;  request FORMAT "media/type";  response FORMAT;
+//!              (on clients, scopes and endpoints; the nearest one wins)
+//!
+//! query / headers blocks (a header key is a literal or a native constant):
+//!     KEY = v;                        set a key no enclosing owner sets
+//!     append KEY = v;                 add occurrences after the inherited ones
+//!     override KEY = v;               replace the inherited occurrences (v always present)
+//!     override KEY = v else inherit;  v can be absent: replace when present, keep when absent
+//!     remove KEY;                     drop the inherited occurrences (acts first in its owner)
+//! ```
+//!
+//! `?` is Concord's presence marker; no meaning is inferred from type names. Every body and typed
+//! output has a format: the nearest `request`/`response` (or `format`) statement of the endpoint,
+//! an enclosing scope or the client. Path segments, subdomain labels, query values and template
+//! holes are written with `Display`; a value placed directly as a header goes through
+//! [`ToHeaderValue`], so a native `HeaderValue` is sent as is. Header names and values are checked
+//! by `http` itself. A bare name refers to the current owner; `client.x` or `scope.x` reaches an
+//! enclosing owner. Composition is decided at compile time, except which header a native
+//! `HeaderName` constant names, compared by name when the request is built.
+//!
+//! # Native requests
+//!
+//! ```no_run
+//! # concord::api! { pub client Api { base "http://x.test"; GET item(id: u64) { path "items/{id}"; } } }
+//! # async fn run(api: Api) -> Result<(), Box<dyn std::error::Error>> {
+//! let prepared = api.item(7).prepare()?; // no I/O
+//! println!("{prepared:?}"); // redacted rendering
+//! let (client, mut request, decoder) = prepared.into_parts();
+//! *request.timeout_mut() = Some(std::time::Duration::from_secs(2));
+//! decoder.finish(client.execute(request).await).await?; // handled as declared (here: any 2xx)
+//!
+//! let raw: concord::reqwest::Response = api.item(8).prepare()?.send_raw().await?;
+//! # let _ = raw; Ok(()) }
+//! ```
+//!
+//! One `send()` is one `reqwest::Client::execute`: Concord performs no retry, and a request's
+//! `Clone` says nothing about whether sending it again is safe.
+//!
+//! # Sensitive values
+//!
+//! `#[sensitive]` marks a value. It is sent as is, but Concord withholds it — and every key, path
+//! segment or host label it feeds — from the output **Concord itself produces**: the generated
+//! `Debug` of clients, config structs, scopes and requests, [`Prepared`]'s `Debug`, and
+//! [`Error`]'s `Display` and `Debug`. Keys named `authorization`, `cookie`, `x-api-key`, `token`,
+//! `password` and a few more are treated as sensitive without the marker. A native `HeaderValue`
+//! whose own sensitivity flag is set stays flagged and is withheld the same way, marker or not.
+//! `Error` has no `source()` chain: the underlying reqwest or format error is reachable only through
+//! [`Error::transport`] and [`CodecError::source_unredacted`] (from [`Error::codec_error`]), and the
+//! unread response of a status or metadata error through [`Error::response`]; none of them is
+//! redacted. A format's [`CodecError`] label is static text by construction, not a secrecy proof.
+//!
+//! **Not covered:** the native `reqwest::Request`, `Url` and `Response` `Debug` output (it prints
+//! full URLs), reqwest errors from requests you execute yourself, redirects (reqwest forwards
+//! custom headers and a `Referer` with the query), tracing, middleware, proxies, server logs and
+//! the base URL itself.
+//!
+//! # Guides
+//!
+//! In the source repository:
+//!
+//! - `docs/QUICKSTART.md` — from a new crate to a call against a local server;
+//! - `docs/AUTHOR_GUIDE.md` — writing declarations: values, paths, composition, formats;
+//! - `docs/CALLER_GUIDE.md` — using a generated client: snapshots, options, errors, native requests;
+//! - `docs/CUSTOM_FORMATS.md` — writing a format: `Encode`, `Decode`, response head checks,
+//!   `CodecError`, the `Accept` suggestion;
+//! - `docs/RECIPES.md` — error documents, streaming, custom formats, retries, pagination;
+//! - `docs/DIAGNOSTICS.md` — the compile errors and how to fix them;
+//! - `docs/MIGRATION.md` — from `via` to formats, from the V4 alpha and from V3;
+//! - `v4/SEMANTICS.md` — the precise rules.
+//!
+//! # Features
+//!
+//! - `json` (default): the `Json` format, via serde and serde_json. Implies `extras`.
+//! - `extras`: the standard formats without serializer dependencies, `Text` and `Binary`, and
+//!   the `IgnoreContentType` adapter.
+//!   Without `extras` (`default-features = false`), the facade has no standard format: formats
+//!   of your own work the same way.
+//! - `form`: the `Form` format, `application/x-www-form-urlencoded` via serde and
+//!   serde_urlencoded. Off by default, like reqwest's own `form` feature. Implies `extras`.
+//! - `reqwest-defaults` (default): reqwest's default features (TLS, HTTP/2, system proxy).
+//!   Disable it to choose reqwest's features in your own `Cargo.toml`.
 
-#![forbid(unsafe_code)]
-#![deny(missing_docs)]
+pub use concord_core::{
+    CODEC_ERROR_CONTEXT, CodecError, ContentTypeField, Decode, Decoder, Encode, Error, ErrorKind,
+    HeaderNameError, HeaderNameErrors, IntoValue, Prepared, ResponseHead, ToHeaderValue, bytes,
+    reqwest,
+};
+#[cfg(feature = "form")]
+pub use concord_extras::Form;
+#[cfg(feature = "json")]
+pub use concord_extras::Json;
+#[cfg(feature = "extras")]
+pub use concord_extras::{Binary, IgnoreContentType, Text};
 
-/// Declares a generated Concord client and its typed endpoints.
+/// Declares an HTTP API as a client → scopes → endpoints tree and generates its typed client.
 ///
-/// Generated constructors and navigation retain declaration-domain names.
-/// `set_*` selects a payload through the closed `IntoValue<T>` conversions;
-/// optional values add the exact `replace_*(Option<T>)` and `omit_*`,
-/// `set_*_if_some(Option<T>)` keeps the current selection for `None`, and
-/// initialized values add `reset_*`. See the generated method docs of each
-/// client for its exact controls.
+/// See the [crate documentation](crate) for the language.
+///
+/// The expansion refers to `concord_core` through this crate's own path (`$crate`), so the macro
+/// works under a renamed dependency and needs no other import. Format types are not part of the
+/// bridge: a statement's format is the path you write, resolved where you write it.
 #[macro_export]
 macro_rules! api {
-    ($($declaration:tt)*) => {
-        $crate::__concord_api! {
-            @concord_facade($crate)
-            $($declaration)*
-        }
+    ($($tokens:tt)*) => {
+        $crate::__macro::api! { $crate::__macro::concord_core; $($tokens)* }
     };
 }
 
+/// The bridge used by [`api!`]: the procedural macro and the runtime crate its expansion names.
+/// Not a public API.
 #[doc(hidden)]
-pub use concord_macros::__api as __concord_api;
-
-#[cfg(feature = "records")]
-pub use concord_core::contracts::ItemStream;
-pub use concord_core::contracts::{
-    ApiError, ApiResponse, AtomEncoder, AtomError, AtomErrorKind, Binary, BoundedAtomWriter,
-    ByteStream, Bytes, CallOptions, CancellationToken, ClientBuildDiagnostic, ClientBuildError,
-    ControlError, ControlSummary, Discard, DispatchKnowledge, Empty, ExecutionMeta, IntoValue,
-    OperationId, OrderedValues, RequestAtom, RequestControls, RequestStream, SecretString,
-    StoreOutcome, Text,
-};
-pub use concord_extras::atom::DisplayAtom;
-
-/// Explicit scalar protocol adapters.
-pub mod atom {
-    pub use concord_core::contracts::{
-        AtomEncoder, AtomError, AtomErrorKind, BoundedAtomWriter, OrderedValues, RequestAtom,
-    };
-    pub use concord_extras::atom::DisplayAtom;
-}
-#[cfg(feature = "json")]
-pub use concord_extras::codec::Json;
-
-/// Credential material, provider contracts, and enabled first-party providers.
-pub mod auth {
-    pub use concord_core::contracts::{AccessToken, ApiKey, BasicCredential, SecretString};
-    pub use concord_core::contracts::{
-        Auth, AuthError, AuthErrorKind, AuthTarget, BoxFuture, ChallengePolicy, CredentialHandle,
-        CredentialMaterial, CredentialMaterialError, CredentialMaterialErrorKind,
-        CredentialProvider, CredentialReason, CredentialRef, CredentialRequest,
-        MAX_AUTH_PLACEMENT_NAME_BYTES, MAX_AUTH_PLACEMENTS, MAX_AUTH_QUERY_VALUE_BYTES,
-        MAX_AUTHORIZATION_SCHEME_BYTES, MAX_AUTHORIZATION_VALUE_BYTES, MAX_BASIC_PASSWORD_BYTES,
-        MAX_BASIC_USERNAME_BYTES, MAX_CREDENTIAL_SECRET_BYTES, MAX_SECRET_STRING_BYTES,
-        ProviderBody, ProviderBodyFactory, ProviderHttp, ProviderRequest, ProviderResponse,
-        ProviderRetry, RecoveryMode, SecretCredential,
-    };
-    pub use concord_core::contracts::{
-        ChallengeRecovery, CredentialVersion, MAX_CREDENTIAL_FLIGHT_WAITERS,
-        MAX_PROVIDER_ORIGIN_BYTES, MAX_PROVIDER_ORIGINS, MAX_PROVIDER_SENDS, ProviderOrigin,
-        ProviderOriginError, ProviderOriginErrorKind, StoreOutcome, StoreRequest,
-    };
-    #[cfg(feature = "oauth2-client")]
-    pub use concord_extras::auth::{
-        MAX_OAUTH2_AUTHORIZATION_HEADER_BYTES, MAX_OAUTH2_CLIENT_ID_BYTES,
-        MAX_OAUTH2_CLIENT_SECRET_BYTES, MAX_OAUTH2_SCOPE_BYTES, MAX_OAUTH2_TOKEN_URL_BYTES,
-        OAuth2ClientCredentials, OAuth2ClientCredentialsBuildError,
-        OAuth2ClientCredentialsBuildErrorKind, OAuth2ClientCredentialsBuilder,
-    };
-}
-
-/// Request representations, the one prepared body, factories, and bounded
-/// streaming primitives.
-pub mod body {
-    pub use concord_core::body::BodyDescription;
-    pub use concord_core::contracts::{
-        BodyError, BodyErrorKind, BodyFactory, BodyKind, LengthHint, MAX_BODY_MEDIA_HINT_BYTES,
-        MAX_EMPTY_REQUEST_CHUNKS, MAX_REQUEST_CONTENT_TYPE_BYTES, PageRequestRepresentation,
-        PreparedBody, RequestBodyContext, RequestRepresentation, RequestStream,
-    };
-    #[cfg(feature = "multipart")]
-    pub use concord_core::contracts::{
-        MAX_MULTIPART_CONTENT_TYPE_BYTES, MAX_MULTIPART_FILENAME_BYTES,
-        MAX_MULTIPART_INLINE_TEXT_BYTES, MAX_MULTIPART_METADATA_BYTES, MAX_MULTIPART_NAME_BYTES,
-        MAX_MULTIPART_PARTS, Multipart, MultipartBody, MultipartFactory, MultipartPart,
-    };
-}
-
-/// Buffered codec contracts, primitives, and enabled ecosystem codecs.
-pub mod codec {
-    pub use concord_core::codec::{
-        Binary, CodecError, CodecErrorKind, DecodeBody, DecodeContext, EncodeBody, EncodeContext,
-        Text,
-    };
-    pub use concord_core::contracts::{Bytes, BytesMut};
-    #[cfg(feature = "json")]
-    pub use concord_extras::codec::Json;
-    pub use concord_extras::codec::NotFound;
-}
-
-/// Explicit endpoint values and typed pending request contracts.
-pub mod endpoint {
-    pub use concord_core::contracts::{
-        AbsentStatus, AcceptedStatus, Effect, EffectSource, EndpointCapabilities,
-        EndpointDescription, EndpointId, MAX_ENDPOINT_ID_BYTES, MAX_FORMATTED_PUBLIC_VALUE_BYTES,
-        MAX_REQUEST_HEAD_COMPONENTS, MAX_REQUEST_HEADER_BYTES, MAX_REQUEST_HEADER_COUNT,
-        MAX_REQUEST_URL_BYTES, MAX_RUNTIME_ENDPOINT_COMPONENTS, MAX_RUNTIME_ENDPOINT_METHOD_BYTES,
-        MAX_RUNTIME_ENDPOINT_PUBLIC_BYTES, RequestBodyCategory, RequestPlan, ResponseAcquisition,
-        StatusSource, TimeoutSelection,
-    };
-    pub use concord_core::contracts::{
-        BoundRuntimeRequest, MAX_RUNTIME_KEY_BYTES, RuntimeAuthDisposition, RuntimeBindingFacts,
-        RuntimeEndpoint, RuntimeEndpointBuilder, RuntimeFamily, RuntimeFamilyMode,
-        RuntimeOperation, RuntimeOperationFact, RuntimeRouteMode,
-    };
-    pub use concord_core::{AcceptedBytesRequest, Request, ResponseRequest, StoreRequest};
-}
-
-/// Complete, value-free effective contract descriptions (§18).
-///
-/// `Client::contract()` returns a `&'static ContractDescription` without an
-/// executable client, secret or network. Descriptions are immutable,
-/// `Send + Sync` and built once; constructing one never evaluates defaults,
-/// converters or encoders, and sensitive literals are held only as redacted
-/// markers. The versioned JSON format `concord.contract/3`, semantic diffing
-/// and the `contract export|check|diff` tooling live in the `concord-inspect`
-/// companion crate so this facade carries no JSON dependency.
-pub mod inspection {
-    pub use concord_core::inspection::*;
-}
-
-/// Sanitized runtime, configuration, lifecycle, and decoding errors.
-pub mod error {
-    pub use concord_core::contracts::{
-        ApiError, AttemptFacts, AuthError, AuthErrorKind, BodyError, BodyErrorKind,
-        ClientBuildDiagnostic, ClientBuildError, ClientBuildErrorKind, ClientInputKind, CodecError,
-        CodecErrorKind, ConfigurationError, ConfigurationErrorKind, DispatchKnowledge,
-        ErrorCategory, FailureStage, HttpResponseFailure, OperationCounts, PaginationError,
-        PaginationErrorKind, ProviderAcquisitionFacts, ProviderAcquisitionOutcome, RateLimitError,
-        RateLimitErrorKind, ResponseBodyError, ResponseBodyErrorKind, StatusBody,
-        StatusBodyDecodeError, StatusBodyDecodeErrorKind, StatusBodyState,
-    };
-}
-
-/// Read-only bounded and sanitized operational observation.
-pub mod observation {
-    pub use concord_core::contracts::{
-        AttemptInfo, AttemptStarted, BodyKind, CompletionOutcome, DebugLevel, OperationEvent,
-        OperationFinished, OperationObserver, PaginationFinished, ProviderAcquisitionFinished,
-        RequestTarget, ResponseHeadObserved, SanitizedHeaderMap, SanitizedHeaderValue,
-        SanitizedHeaders, StreamFinished, StreamKind, StreamOutcome,
-    };
-}
-
-/// HTTP value types and safe managed-transport configuration.
-pub mod http {
-    pub use concord_core::contracts::{
-        HeaderMap, HeaderName, HeaderValue, HttpConfigBuilder, MAX_IDENTITY_PEM_BYTES,
-        MAX_PROXY_URL_BYTES, MAX_ROOT_CERTIFICATE_BYTES, MAX_ROOT_CERTIFICATES,
-        MAX_ROOT_CERTIFICATES_TOTAL_BYTES, Method, SafeProxy, StatusCode, Url, Version,
-    };
-}
-
-/// Pagination contracts, traversal terminals and summaries, and built-in
-/// controllers.
-pub mod pagination {
-    pub use concord_core::pagination::{
-        CollectAll, CollectPrefix, ContinuationKnowledge, DEFAULT_TRAVERSAL_MAX_HANDOFFS,
-        MAX_PAGE_ATTEMPTS, MAX_PAGINATION_HEADER_BYTES, MAX_PAGINATION_HEADER_INTERESTS, Page,
-        PageCorrelation, PageDecisionLimits, PageResponse, PageStep, Pages, PaginationController,
-        PaginationDescription, PaginationError, PaginationErrorKind, Prefix, StopReason,
-        TraversalSummary,
-    };
-    pub use concord_extras::pagination::{
-        CursorInit, CursorPagination, HasNextCursor, LinkCursorPagination, NEXT_CURSOR_HEADER,
-        NextHeaderPagination, OffsetInit, OffsetPagination, PageInit, PagePagination,
-    };
-}
-
-/// Core rate-limit contracts and the enabled first-party implementation.
-///
-/// A declaration's lexical location selects applicability; ordered `key [...]`
-/// dimensions select bucket partitioning. With the `rate-limit` feature,
-/// `LocalRateLimiter` is available here. Any generated
-/// client with an effective policy still requires explicit limiter selection.
-///
-/// Policy IDs are authored stable identities. Sharing one limiter across
-/// generated contracts therefore requires intentionally compatible policy
-/// namespaces.
-pub mod rate_limit {
-    pub use concord_core::contracts::{BoxFuture, RateLimitErrorKind};
-    pub use concord_core::rate_limit::{
-        CanonicalKeyWriter, CooldownOrigin, DEFAULT_RATE_LIMIT_KEY_BYTES,
-        DEFAULT_RATE_SCHEMA_REGISTRATIONS, ENDPOINT_LABEL, EncodedKeyPart, Enforcement,
-        LimiterCapability, MAX_RATE_KEY_ENCODING_ID_BYTES, MAX_RATE_LIMIT_ID_BYTES,
-        MAX_RATE_LIMIT_KEY_BYTES, MAX_RATE_LIMIT_KEY_PART_NAME_BYTES, MAX_RATE_LIMIT_KEY_PARTS,
-        MAX_RATE_LIMIT_POLICIES_PER_PLAN, MAX_RATE_LIMIT_WINDOWS_PER_POLICY,
-        MAX_RATE_LIMITER_NAMESPACE_BYTES, NoopRateLimiter, ORIGIN_LABEL, RATE_KEY_FRAMING_VERSION,
-        RateDimensionKind, RateDimensionSchema, RateKeyEncoder, RateKeyPart, RateLimitDeclaration,
-        RateLimitError, RateLimitId, RateLimitKey, RateLimitKeyPart, RateLimitPermit,
-        RateLimitPlan, RateLimitPolicy, RateLimitRequest, RateLimitResponse, RateLimitWindow,
-        RateLimiter, RatePlanSummary, RatePolicySchema, RatePolicySummary, RateWindowSchema,
-        UTF8_ENCODING_ID, encode_canonical, encode_canonical_with, is_valid_encoding_id,
-    };
-    #[cfg(feature = "rate-limit")]
-    pub use concord_extras::rate_limit::LocalRateLimiter;
-}
-
-/// Common imports for declarations and ordinary generated-client use.
-pub mod prelude {
-    #[cfg(feature = "records")]
-    pub use crate::ItemStream;
-    #[cfg(feature = "json")]
-    pub use crate::Json;
-    #[cfg(feature = "multipart")]
-    pub use crate::body::Multipart;
-    pub use crate::body::RequestStream;
-    pub use crate::codec::Binary;
-    #[cfg(feature = "csv")]
-    pub use crate::records::Csv;
-    #[cfg(feature = "ndjson")]
-    pub use crate::records::NdJson;
-    pub use crate::{
-        ApiError, ApiResponse, ByteStream, Bytes, ClientBuildError, Discard, Empty, SecretString,
-        Text, api,
-    };
-}
-
-/// Generic bounded record-stream contracts and enabled concrete decoders.
-#[cfg(feature = "records")]
-pub mod records {
-    pub use concord_core::records::{
-        ItemBatches, ItemStream, RecordDecoder, RecordError, RecordErrorKind,
-    };
-    #[doc(hidden)]
-    pub use concord_core::records::{decode_complete_records, validate_record_decoder};
-    #[cfg(feature = "ndjson")]
-    pub use concord_extras::records::NdJson;
-    #[cfg(feature = "csv")]
-    pub use concord_extras::records::{
-        CommaDelimiter, Csv, CsvDelimiter, CsvHeaderMode, HasHeader, NoHeader, SemicolonDelimiter,
-        TabDelimiter,
-    };
-}
-
-/// Bounded response specifications, acquisition modes, and response metadata.
-pub mod response {
-    pub use concord_core::contracts::{
-        AcceptedBytesDriver, ApiResponse, BodyDisposition, Buffered, ByteStream, Discard,
-        DiscardDriver, Empty, ExecutionMeta, MAX_ACCEPT_BYTES, MAX_EMPTY_RESPONSE_CHUNKS,
-        OptionalOutcome, ResponseBodyError, ResponseBodyErrorKind, ResponseDriver, ResponseHead,
-        ResponseRepresentation, StreamErrorKind, StreamState, StreamSummary, Streaming,
-    };
-    pub use concord_extras::codec::NotFound;
-}
-
-/// Concord-managed application retry policy and classifier contracts.
-pub mod retry {
-    pub use concord_core::contracts::{
-        MAX_POLICY_RETRIES_PER_OPERATION, MAX_VISIBLE_ATTEMPTS_PER_OPERATION, RetryAttempt,
-        RetryBackoff, RetryBackoffError, RetryClassifier, RetryDecision, RetryFailure, RetryJitter,
-        RetryPolicy, RetryPolicyBuildError, RetryPolicyBuildErrorKind, RetryPolicyBuilder,
-    };
-}
-
-/// Immutable client-runtime configuration and safe operation identity.
-pub mod runtime {
-    pub use concord_core::contracts::{OperationId, RuntimeConfigBuilder};
-}
-
-/// Generated-code bridge. This is not a user extension surface.
-#[doc(hidden)]
-pub mod __private {
-    #[doc(hidden)]
-    pub use concord_core::__private::*;
-    /// Creates the façade-owned generated-client runtime baseline.
-    #[doc(hidden)]
-    #[must_use]
-    pub fn default_runtime_config() -> concord_core::contracts::RuntimeConfigBuilder {
-        concord_core::__private::default_runtime_config()
-    }
-
-    /// Applies generated rate-limit requirements to the selected runtime.
-    #[doc(hidden)]
-    pub fn prepare_generated_rate_limits(
-        runtime: concord_core::contracts::RuntimeConfigBuilder,
-        requires_limiter: bool,
-    ) -> Result<concord_core::contracts::RuntimeConfigBuilder, ClientBuildError> {
-        concord_core::__private::prepare_generated_rate_limits(runtime, requires_limiter)
-    }
+pub mod __macro {
+    pub use concord_core;
+    pub use concord_macros::api;
 }

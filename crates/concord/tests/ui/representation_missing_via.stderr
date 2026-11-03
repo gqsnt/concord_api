@@ -1,0 +1,11 @@
+error: output `Item` has no format: say `response F;` (`F` a type implementing `Decode`) on this endpoint, a scope or the client; omit `->` to drain
+ --> tests/ui/representation_missing_via.rs:9:23
+  |
+9 |         GET item() -> Item;
+  |                       ^^^^
+
+error: body `item` has no format: say `request F;` (`F` a type implementing `Encode`) on this endpoint, a scope or the client
+  --> tests/ui/representation_missing_via.rs:16:32
+   |
+16 |         POST create(body item: Item);
+   |                                ^^^^

@@ -1,0 +1,10 @@
+
+running 1 test
+test format_presence_aliases_independent_defaults_lexical_and_media ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 5 filtered out; finished in 0.00s
+
+   Compiling concord v4.0.0-alpha.1 (/home/canarit/projects/concord_v4_native_work/snapshots/final-66a4478/target/probes/mutation-source/crates/concord)
+   Compiling independent-acceptance v0.0.0 (/home/canarit/projects/concord_v4_native_work/snapshots/final-66a4478/target/probes/mutation-consumer)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.31s
+     Running tests/contract.rs (target/mutation-build/debug/deps/contract-1e2d1bc04b9cc4d9)

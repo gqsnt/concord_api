@@ -1,0 +1,8 @@
+    Checking independent-compile v0.0.0 (/home/canarit/projects/concord_v4_native_work/snapshots/final-66a4478/target/probes/compile-work)
+error: an endpoint has no `response` statement: write the format where the output is declared (`-> text String`, `-> bytes Bytes`); `response FORMAT;` is a default on a client or scope
+ --> src/lib.rs:2:67
+  |
+2 | wire::api! { pub client Api { base "http://127.0.0.1";  GET p() { response text; } } }
+  |                                                                   ^^^^^^^^
+
+error: could not compile `independent-compile` (lib) due to 1 previous error

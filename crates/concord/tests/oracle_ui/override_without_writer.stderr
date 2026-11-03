@@ -1,0 +1,11 @@
+error: cannot override query key `k`: no enclosing owner sets it
+ --> tests/oracle_ui/override_without_writer.rs:9:21
+  |
+9 |             query { override "k" = "so"; "z" = "1"; } headers { override "x-k" = "so"; }
+  |                     ^^^^^^^^
+
+error: cannot override header `x-k`: no enclosing owner sets it
+ --> tests/oracle_ui/override_without_writer.rs:9:65
+  |
+9 |             query { override "k" = "so"; "z" = "1"; } headers { override "x-k" = "so"; }
+  |                                                                 ^^^^^^^^

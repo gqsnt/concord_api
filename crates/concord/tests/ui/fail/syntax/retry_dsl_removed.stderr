@@ -1,5 +1,0 @@
-error: [C3-OWNER] the `retry` DSL clause was removed from client `RemovedRetryApi`; install a managed `RetryPolicy` through `configure_runtime(|runtime| runtime.retry_policy(policy))`
-  --> tests/ui/fail/syntax/retry_dsl_removed.rs:10:9
-   |
-10 |         retry reqwest_default;
-   |         ^^^^^

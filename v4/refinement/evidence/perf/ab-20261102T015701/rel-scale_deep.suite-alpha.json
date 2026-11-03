@@ -1,0 +1,24 @@
+{
+  "results": [
+    {
+      "command": "cargo +1.97.1 build --release -p scale_deep --manifest-path /home/canarit/projects/concord_v4_refine_work/perf/suite-alpha/Cargo.toml --offline --locked -q",
+      "mean": 0.784384019,
+      "stddev": 0.022371687661734946,
+      "median": 0.7789259270000001,
+      "user": 0.7157286666666666,
+      "system": 0.07312099999999999,
+      "min": 0.765246439,
+      "max": 0.808979691,
+      "times": [
+        0.765246439,
+        0.7789259270000001,
+        0.808979691
+      ],
+      "exit_codes": [
+        0,
+        0,
+        0
+      ]
+    }
+  ]
+}

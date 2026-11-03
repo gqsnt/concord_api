@@ -1,0 +1,17 @@
+error: `Api` already has a child named `list`
+ --> tests/ui/duplicate_names.rs:5:13
+  |
+5 |         GET list();
+  |             ^^^^
+
+error: first declared here
+ --> tests/ui/duplicate_names.rs:4:13
+  |
+4 |         GET list(a: u32) { query { "a" = a; } }
+  |             ^^^^
+
+error: scope `s` has the same name as an enclosing scope; qualified references would be ambiguous
+ --> tests/ui/duplicate_names.rs:6:25
+  |
+6 |         scope s { scope s { GET deep(); } }
+  |                         ^

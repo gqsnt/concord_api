@@ -1,0 +1,23 @@
+error: this header value contains a byte that `http::HeaderValue::from_bytes` rejects (0x0A at byte 1)
+ --> tests/ui/header_literal_value.rs:8:41
+  |
+8 |         GET ctl() { headers { "x-ctl" = "a\nb"; } }
+  |                                         ^^^^^^
+
+error: this header value contains a byte that `http::HeaderValue::from_bytes` rejects (0x00 at byte 1)
+ --> tests/ui/header_literal_value.rs:9:41
+  |
+9 |         GET nul() { headers { "x-nul" = "a\0b"; } }
+  |                                         ^^^^^^
+
+error: this header value contains a byte that `http::HeaderValue::from_bytes` rejects (0x7F at byte 1)
+  --> tests/ui/header_literal_value.rs:10:41
+   |
+10 |         GET del() { headers { "x-del" = "a\u{7f}"; } }
+   |                                         ^^^^^^^^^
+
+error: this header value contains a byte that `http::HeaderValue::from_bytes` rejects (0x0D at byte 6 of literal fragment 0; no value can repair it)
+  --> tests/ui/header_literal_value.rs:11:46
+   |
+11 |         GET fragment() { headers { "x-tpl" = "Bearer\r{client.v}"; } }
+   |                                              ^^^^^^^^^^^^^^^^^^^^

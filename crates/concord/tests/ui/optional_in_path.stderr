@@ -1,0 +1,5 @@
+error: `id` is optional (`?`) and cannot be part of a path; there is no optional URL structure
+ --> tests/ui/optional_in_path.rs:4:38
+  |
+4 |         GET item(id?: String) { path "items/{id}"; }
+  |                                      ^^^^^^^^^^^^

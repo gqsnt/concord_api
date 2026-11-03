@@ -1,0 +1,19 @@
+head: 321a032770cf8ac566475de9b0f5d953479ac479  dirty: 0 file(s)
+rustc: rustc 1.97.1 (8bab26f4f 2026-07-14)
+PASS  fmt
+PASS  clippy
+PASS  test
+PASS  test-no-default
+PASS  test-json-only
+PASS  test-reqwest-defaults-only
+PASS  doc
+PASS  doc-no-default
+PASS  doc-json-only
+PASS  msrv-concord
+PASS  msrv-examples
+      verify-test-json-only: 365 passed, 0 failed
+      verify-test-no-default: 349 passed, 0 failed
+      verify-test-reqwest-defaults-only: 351 passed, 0 failed
+      verify-test: 442 passed, 0 failed
+      verify-msrv-concord: 368 passed, 0 failed
+      verify-msrv-examples: 68 passed, 0 failed

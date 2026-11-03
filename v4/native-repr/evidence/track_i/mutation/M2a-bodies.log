@@ -1,0 +1,137 @@
+== M2-ct-without-body   cmd: cargo test --offline --locked -p concord --test formats --test bodies   head: ef0de89
+   Compiling concord v4.0.0-alpha.1 (/home/canarit/projects/concord_v4_native_work/wt/formats/crates/concord)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.35s
+     Running tests/bodies.rs (target/debug/deps/bodies-c074f730c62e9ee7)
+
+running 9 tests
+test r05_status_error_keeps_the_response ... ok
+test r08_raw_response_streaming ... ok
+test r03_malformed_json_is_a_decode_error ... ok
+test r01_post_json ... ok
+test optional_body_controls ... ok
+test r02_no_body_vs_empty_vs_null ... ok
+test r03_content_type_is_not_checked ... ok
+test r06_option_output_has_no_status_magic ... ok
+test r04_empty_responses ... ok
+
+test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+
+     Running tests/formats.rs (target/debug/deps/formats-d2d1b8835ccc4f74)
+
+running 26 tests
+test decode_is_usable_directly ... ok
+test compile_time_rows_have_ui_cases ... ok
+test row2a_required_option_body_is_json_null ... ok
+test row1_no_body_under_a_request_default ... ok
+test row2c_empty_text_and_bytes_bodies_are_present ... ok
+test row12b_unused_and_cfg_disabled_defaults_are_never_referenced ... ok
+test row6b_in_place_exception_with_media_type ... ok
+test lexical_raw_identifier_is_a_payload ... ok
+test row8b_four_runtime_cases ... ok
+test native_sensitive_header_stays_protected_under_defaults ... ok
+test row8a_body_media_types ... ok
+test h12_format_defaults_do_not_affect_header_presence_or_inheritance ... ok
+test row8c_remove_resolves_the_conflict ... ok
+test row8d_no_accept_and_no_response_type_check ... ok
+test row8b_empty_value_empty_each_and_conversion_failure ... ok
+test row11_status_and_native_decoder_unchanged ... ok
+test row8f_inserted_content_type_is_classified ... ok
+test row3a_no_output_drains_under_a_response_default ... ok
+test h11_optional_native_headers_do_not_affect_body_presence ... ok
+test row3b_3c_typed_unit_is_decoded ... ok
+test row2b_absent_optional_body_sends_nothing ... ok
+test row9_custom_codec_in_place_and_as_default ... ok
+test row4_json_string_versus_raw_text ... ok
+test row6a_nearest_owner_per_direction ... ok
+test row5_aliases_follow_the_written_format ... ok
+test lexical_precedence ... ok
+
+test result: ok. 26 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.31s
+
+baseline: PASS
+ 2 files changed, 6 insertions(+), 1 deletion(-)
+   Compiling concord-macros v4.0.0-alpha.1 (/home/canarit/projects/concord_v4_native_work/wt/formats/crates/concord-macros)
+   Compiling concord v4.0.0-alpha.1 (/home/canarit/projects/concord_v4_native_work/wt/formats/crates/concord)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.90s
+     Running tests/bodies.rs (target/debug/deps/bodies-c074f730c62e9ee7)
+
+running 9 tests
+test r03_malformed_json_is_a_decode_error ... ok
+test r08_raw_response_streaming ... ok
+test optional_body_controls ... ok
+test r02_no_body_vs_empty_vs_null ... FAILED
+test r05_status_error_keeps_the_response ... ok
+test r01_post_json ... ok
+test r03_content_type_is_not_checked ... ok
+test r04_empty_responses ... ok
+test r06_option_output_has_no_status_magic ... ok
+
+failures:
+
+---- r02_no_body_vs_empty_vs_null stdout ----
+
+thread 'r02_no_body_vs_empty_vs_null' (1377155) panicked at crates/concord/tests/bodies.rs:96:5:
+assertion `left == right` failed
+  left: Some("application/json")
+ right: None
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    r02_no_body_vs_empty_vs_null
+
+test result: FAILED. 8 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+
+error: test failed, to rerun pass `-p concord --test bodies`
+mutant:   FAIL
+   Compiling concord-macros v4.0.0-alpha.1 (/home/canarit/projects/concord_v4_native_work/wt/formats/crates/concord-macros)
+   Compiling concord v4.0.0-alpha.1 (/home/canarit/projects/concord_v4_native_work/wt/formats/crates/concord)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.85s
+     Running tests/bodies.rs (target/debug/deps/bodies-c074f730c62e9ee7)
+
+running 9 tests
+test r01_post_json ... ok
+test r03_malformed_json_is_a_decode_error ... ok
+test r02_no_body_vs_empty_vs_null ... ok
+test optional_body_controls ... ok
+test r08_raw_response_streaming ... ok
+test r05_status_error_keeps_the_response ... ok
+test r03_content_type_is_not_checked ... ok
+test r04_empty_responses ... ok
+test r06_option_output_has_no_status_magic ... ok
+
+test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+
+     Running tests/formats.rs (target/debug/deps/formats-d2d1b8835ccc4f74)
+
+running 26 tests
+test decode_is_usable_directly ... ok
+test compile_time_rows_have_ui_cases ... ok
+test row2a_required_option_body_is_json_null ... ok
+test native_sensitive_header_stays_protected_under_defaults ... ok
+test lexical_raw_identifier_is_a_payload ... ok
+test row1_no_body_under_a_request_default ... ok
+test row2c_empty_text_and_bytes_bodies_are_present ... ok
+test row8a_body_media_types ... ok
+test row12b_unused_and_cfg_disabled_defaults_are_never_referenced ... ok
+test row6b_in_place_exception_with_media_type ... ok
+test row8b_four_runtime_cases ... ok
+test h12_format_defaults_do_not_affect_header_presence_or_inheritance ... ok
+test row8b_empty_value_empty_each_and_conversion_failure ... ok
+test row8d_no_accept_and_no_response_type_check ... ok
+test row8c_remove_resolves_the_conflict ... ok
+test row11_status_and_native_decoder_unchanged ... ok
+test row8f_inserted_content_type_is_classified ... ok
+test row3a_no_output_drains_under_a_response_default ... ok
+test h11_optional_native_headers_do_not_affect_body_presence ... ok
+test row3b_3c_typed_unit_is_decoded ... ok
+test row2b_absent_optional_body_sends_nothing ... ok
+test row9_custom_codec_in_place_and_as_default ... ok
+test row4_json_string_versus_raw_text ... ok
+test row6a_nearest_owner_per_direction ... ok
+test row5_aliases_follow_the_written_format ... ok
+test lexical_precedence ... ok
+
+test result: ok. 26 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.32s
+
+restored: PASS  (dirty: 0)

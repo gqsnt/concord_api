@@ -1,0 +1,33 @@
+    Checking baseline-probe v0.0.0 (/home/canarit/projects/concord_v4_native_work/exp/baseline_probe)
+error[E0277]: `HeaderValue` doesn't implement `std::fmt::Display`
+   --> src/lib.rs:6:45
+    |
+  6 |     pub client Api(header("accept") accept: HeaderValue = ACCEPT_JSON.clone()) {
+    |                                             ^^^^^^^^^^^ the trait `std::fmt::Display` is not implemented for `HeaderValue`
+    |
+help: the trait `Debug` is conditionally implemented for `concord::__private::DebugDisplay<'_, T>`
+   --> <snapshot>/crates/concord/src/__private.rs:467:1
+    |
+467 | impl<T: Display + ?Sized> fmt::Debug for DebugDisplay<'_, T> {
+    | ^^^^^^^^-------^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |         |
+    |         unsatisfied requirement introduced here: `HeaderValue: std::fmt::Display`
+    = note: required for `concord::__private::DebugDisplay<'_, HeaderValue>` to implement `Debug`
+    = note: required for the cast from `&concord::__private::DebugDisplay<'_, HeaderValue>` to `&dyn Debug`
+    = note: this error originates in the macro `concord::api` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0277]: `HeaderValue` doesn't implement `std::fmt::Display`
+   --> src/lib.rs:6:45
+    |
+  6 |     pub client Api(header("accept") accept: HeaderValue = ACCEPT_JSON.clone()) {
+    |                                             ^^^^^^^^^^^ the trait `std::fmt::Display` is not implemented for `HeaderValue`
+    |
+note: required by a bound in `concord::__private::Parts::<'a>::header`
+   --> <snapshot>/crates/concord/src/__private.rs:277:22
+    |
+277 |     pub fn header<T: Display + ?Sized>(
+    |                      ^^^^^^^ required by this bound in `Parts::<'a>::header`
+    = note: this error originates in the macro `$crate::__private::api_impl` which comes from the expansion of the macro `concord::api` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+For more information about this error, try `rustc --explain E0277`.
+error: could not compile `baseline-probe` (lib) due to 2 previous errors

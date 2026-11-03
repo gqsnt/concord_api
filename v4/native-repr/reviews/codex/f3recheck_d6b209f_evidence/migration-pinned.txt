@@ -1,0 +1,26 @@
+   Compiling slab v0.4.12
+   Compiling tokio v1.54.1
+   Compiling concord-macros v4.0.0-alpha.1 (/home/canarit/projects/concord_v4_native_work/snapshots/f3recheck-d6b209f/crates/concord-macros)
+   Compiling futures-util v0.3.34
+   Compiling tower v0.5.3
+   Compiling hyper v1.12.0
+   Compiling tower-http v0.6.11
+   Compiling hyper-util v0.1.21
+   Compiling reqwest v0.13.5
+   Compiling concord v4.0.0-alpha.1 (/home/canarit/projects/concord_v4_native_work/snapshots/f3recheck-d6b209f/crates/concord)
+   Compiling migration-rereview v0.0.0 (/home/canarit/projects/concord_v4_native_work/snapshots/f3recheck-d6b209f/target/probes/migration)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 2.54s
+     Running unittests src/lib.rs (target/review-build/debug/deps/migration_rereview-749ea4e07a71c28b)
+
+running 4 tests
+disabled_import: expected Some([67, 85, 83, 84, 79, 77, 58, 118, 97, 108, 117, 101]); migrated Some([67, 85, 83, 84, 79, 77, 58, 118, 97, 108, 117, 101])
+scoped_import: expected Some([67, 85, 83, 84, 79, 77, 58, 118, 97, 108, 117, 101]); migrated Some([67, 85, 83, 84, 79, 77, 58, 118, 97, 108, 117, 101])
+qualified: expected Some([67, 85, 83, 84, 79, 77, 58, 118, 97, 108, 117, 101]); migrated Some([67, 85, 83, 84, 79, 77, 58, 118, 97, 108, 117, 101])
+commented_import: expected Some([67, 85, 83, 84, 79, 77, 58, 118, 97, 108, 117, 101]); migrated Some([67, 85, 83, 84, 79, 77, 58, 118, 97, 108, 117, 101])
+test tests::disabled_import ... ok
+test tests::scoped_import ... ok
+test tests::qualified ... ok
+test tests::commented_import ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+

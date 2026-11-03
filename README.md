@@ -1,160 +1,206 @@
-# Concord v3
+# Concord
 
-Concord is a Rust library and `api!` declaration language for **typed, managed
-HTTP clients**. You describe one client-shaped domain tree. Callers hold a
-client or scope, construct an inert typed request, select a terminal and
-receive a typed result, through one bounded managed runtime.
+Concord turns one declaration of an HTTP API into typed Rust methods that build native
+[`reqwest`](https://docs.rs/reqwest) requests and decode typed responses.
 
-This checkout is the **Concord v3 unpublished beta**, version `3.0.0-beta.1`.
-Publication is disabled. Local beta integration and stable publication are
-separate decisions; the single current disposition is the
-[release-gate status](dev_doc/release_gate_status.md).
+Compared with a small handwritten reqwest client, the declaration replaces:
 
-Windows and Linux are supported and mandatory for integration. macOS is not a
-supported or release-gated platform for this decision.
+- URL assembly for every endpoint: joining the base URL, percent-encoding each path value as
+  exactly one segment, building subdomain labels;
+- the plumbing of shared query parameters and headers (an API version, an authorization header)
+  into every endpoint, with explicit rules for overriding or removing them further down — header
+  names written as literals or as native `HeaderName` constants (`header(AUTHORIZATION)`, your own
+  `X_API_KEY`), composed by the header they name, and checked by `http` itself;
+- bookkeeping of which optional parameters are present;
+- body encoding (stated once for a mostly-JSON API with `format Json;`, and on an endpoint that
+  differs: `response Text;`), the status check and response decoding, with the format checking a
+  response's `Content-Type` before it parses the body;
+- keeping secrets out of the client's `Debug` output and out of error messages.
 
-## One declaration, one caller tree
+Mistakes in the declaration — an unknown value, an invalid header name or base URL, a type without
+a wire spelling — are compile errors that point at the declaration.
 
-The declaration below is compiled in the maintained examples crate. Its host is
-a fixture, not a live service.
+Concord deliberately does **not** manage authentication flows (obtaining or refreshing
+credentials), retries, rate limiting, pagination or transport configuration (timeouts, proxies,
+TLS, redirects, connection pools). Those stay in your code and in the `reqwest::Client` you pass
+in; [`examples/native`](examples/native) shows how to compose them, and
+[`examples/riot`](examples/riot) is a complete, sourced client for part of the Riot Games API,
+tested offline.
 
-<!-- concord-source: crates/concord-examples/src/getting_started/domain_tree.rs#domain_tree_contract -->
-<!-- concord-dsl -->
+## Example
+
+Excerpt of [`examples/quickstart/src/lib.rs`](examples/quickstart/src/lib.rs), compiled and run
+against a local stand-in server by `cargo test -p concord-example-quickstart`:
+
 ```rust
-api! {
-    client CatalogApi {
-        base "http://catalog.example.test/";
-        timeout 30s;
-        response Json;
+use concord::reqwest::{self, header::AUTHORIZATION};
+use concord::{Decode, Json};
+use serde::{Deserialize, Serialize};
 
-        values {
-            query tenant: String;
-        }
+#[derive(Debug, Deserialize)]
+pub struct Task {
+    pub id: u64,
+    pub title: String,
+    pub done: bool,
+}
 
-        path "api";
+#[derive(Debug, Default, Serialize)]
+pub struct NewTask {
+    pub title: String,
+}
 
-        scope regional(region: String) {
-            subdomain replace [region, "api"];
-            path "v1/catalog";
+/// The error document the API sends with a non-2xx status.
+#[derive(Debug, Deserialize)]
+pub struct Problem {
+    pub title: String,
+}
 
-            GET item_summaries(
-                query category?: String,
-                query offset: u64 = 0,
-                query count: NonZeroU32 = DEFAULT_PAGE_SIZE,
-            ) -> Vec<ItemSummary> {
-                path "items";
-                paginate via OffsetPagination {
-                    init OffsetInit { offset: offset, page_size: count };
-                    cursor -> offset;
-                }
+concord::api! {
+    /// A small task-tracking API.
+    pub client Tasks(#[sensitive] token: String) {
+        base "https://tasks.example.com/api";
+        headers { AUTHORIZATION = "Bearer {token}"; }
+        format Json;
+
+        scope project(project: String) {
+            path "projects/{project}";
+
+            GET tasks(query done?: bool, query limit: u32 = 20) -> Vec<Task> {
+                path "tasks";
+            }
+            POST create(body task: NewTask) -> Task {
+                path "tasks";
             }
         }
     }
 }
-```
 
-The authored tree is the caller tree. Building the client performs no I/O and
-reports every missing input in one `ClientBuildError`:
+pub async fn run(base_url: &str, token: String) -> Result<(), Box<dyn std::error::Error>> {
+    // Transport settings (timeouts, proxies, TLS) belong to your reqwest::Client.
+    let http = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(10))
+        .build()?;
+    // `with_base_url` points the client at the local stand-in; leave it out for the real API.
+    let api = Tasks::new(http, TasksConfig { token }).with_base_url(base_url)?;
+    println!("{api:?}"); // the token is shown as <redacted>
 
-<!-- concord-source: crates/concord-examples/src/getting_started/domain_tree.rs#domain_tree_builder -->
-```rust
-pub fn build_client() -> Result<CatalogApi, concord::ClientBuildError> {
-    CatalogApi::builder().set_tenant("acme").build()
+    let project = api.project("demo");
+    let title = "Write the quick start".to_owned();
+    let task = project.create(NewTask { title }).send().await?; // POST .../projects/demo/tasks
+    println!("created task #{}: {}", task.id, task.title);
+
+    let open = project.tasks().set_done(false).send().await?; // GET ...?done=false&limit=20
+    println!("{} open task(s)", open.len());
+
+    // This API rejects an empty title: a non-2xx status is an error that keeps the response.
+    match project.create(NewTask::default()).send().await {
+        Ok(task) => println!("unexpectedly created task #{}", task.id),
+        Err(error) if error.status().is_some() => {
+            let response = error.into_response()?; // a status error keeps its response
+            let status = response.status();
+            let problem = <Json as Decode<Problem>>::decode_body((), response.bytes().await?)?;
+            println!("rejected with {status}: {}", problem.title);
+        }
+        Err(error) => return Err(error.into()), // any other kind of error propagates
+    }
+    Ok(())
 }
 ```
 
-An ordinary `.await` executes exactly one managed operation and returns one
-decoded page. It never paginates:
+`cargo run -p concord-example-quickstart` runs it against a server on 127.0.0.1; the
+[quick start](docs/QUICKSTART.md) walks through it.
 
-<!-- concord-source: crates/concord-examples/src/getting_started/domain_tree.rs#domain_tree_await_request -->
-```rust
-pub async fn fetch_one_page(client: &CatalogApi) -> Result<Vec<ItemSummary>, concord::ApiError> {
-    client
-        .regional("eu")
-        .item_summaries()
-        .set_category("hardware")
-        .await
-}
+## Formats
+
+A format is an ordinary Rust type that implements `Encode<T>` and/or `Decode<T>`, named by its
+path in a statement: `format Json;`, `response Text;`, `request my_sdk::Csv;`. Concord ships
+`Json`, `Text`, `Binary`, `Form` and the adapter `IgnoreContentType<F>`; they have no privilege
+over a format of yours.
+
+- On a successful response the format checks the response head **before the body is read**.
+  `Json` requires exactly one `Content-Type`, `application/json` or `application/*+json`; a
+  response labelled `text/html`, or not labelled, is an `ErrorKind::Metadata` error that keeps the
+  response unread. Where a server cannot be fixed, `response IgnoreContentType<Json>;` on that
+  endpoint skips only that check.
+- An endpoint with a typed output sends its format's `Accept` suggestion (`Json`:
+  `application/json`) unless you declare an `accept` header, which is sent as written. The
+  response `Content-Type` is never compared with it.
+- Your own format reads the head (a version header, say), keeps typed state for its body decoder
+  and reports positions without content: [Writing a format](docs/CUSTOM_FORMATS.md).
+
+## The transport boundary
+
+You build the `reqwest::Client` and pass it to `new`; Concord uses it for every request of that
+client and never configures it. One `send()` is one `reqwest::Client::execute` — no retry, no
+extra request. For anything the declaration does not cover there is a native exit:
+
+- `prepare()` builds the native `reqwest::Request` without any I/O;
+- `prepare()?.into_parts()` returns your client, that request and the endpoint's decoder, so you
+  can change the request (a per-request timeout with `*request.timeout_mut() = Some(..)`, an extra
+  header, another body), execute it yourself and still decode the response as declared
+  (`decoder.finish(client.execute(request).await).await`). The native request's `Debug` is
+  reqwest's: it prints the full URL and every header value not flagged sensitive;
+- `prepare()?.send_raw()` returns the native `reqwest::Response`, unchecked and unread.
+
+## Status
+
+- Version `4.1.0` ([changelog](CHANGELOG.md)), **not published** on crates.io
+  (`publish = false`). Depend on a checkout by path, or on a git dependency pinned to the
+  `v4.1.0` tag or a commit. Breaking changes and upgrade steps are in
+  [`docs/MIGRATION.md`](docs/MIGRATION.md).
+- Requires Rust 1.99.1 or newer (`rust-version`, edition 2024); the same release is pinned in
+  `rust-toolchain.toml` for development. CI runs the complete gate
+  (`scripts/verify.sh --package --bench`) natively on Linux x86_64 and Windows x86_64; the
+  evidence of each release is recorded under `v4/`.
+
+## Installation and features
+
+```toml
+[dependencies]
+concord = { path = "../concord_api/crates/concord" } # a checkout of this repository
+serde = { version = "1", features = ["derive"] }     # for your JSON payload types
+tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
 ```
 
-`query category?: String` is optional: `set_category(v)` selects a payload,
-`replace_category(Option<String>)` replaces the slot exactly,
-`set_category_if_some(None)` keeps the current value and `omit_category()`
-removes it. `query offset: u64 = 0` is initialized: `reset_offset()` restores
-the retained initializer without evaluating it again. More pages are always an
-explicit choice: `.collect_prefix(n)`, `.collect_all(NonZeroU32)` or the lazy
-`.pages(n)`.
-
-## What the managed runtime guarantees
-
-- **One meaning per spelling.** A bare name means the current owner only;
-  ancestors are qualified (`client.tenant`, `regional.region`). Keys already
-  owned by an ancestor need an explicit `replace`, `when_present`, `append` or
-  `remove`.
-- **Fixed logical origins.** The base owns scheme, host suffix, port and base
-  path. Routes are relative templates; DNS labels are typed list atoms. No
-  request or runtime operation can supply another origin.
-- **Inert requests and plans.** Holding a request or planning it
-  (`request.plan()`) never prepares a body, obtains credentials, reserves quota
-  or sends.
-- **Truthful outcomes.** Errors carry the failure stage and aggregate dispatch
-  knowledge (`NotDispatched`, `PossiblyDispatched`, `ResponseObserved`). A page
-  bound is never reported as exhaustion and an acquired stream is never
-  reported as complete.
-- **Explicit authority.** Credentials, rate policies, retries, pagination and
-  streams have separate, finite, documented authorities. Sensitive values are
-  sent but withheld from plans, errors and observers.
-
-## Cargo features
-
-The facade `concord` crate's features. Features add integrations; they never
-change the meaning of an enabled declaration.
-
-| Feature | Default | Adds |
+| Feature | Default | Effect |
 |---|---|---|
-| `default-tls` | yes | TLS for `https` bases (required to build a client with an `https` base) |
-| `http2` | yes | HTTP/2 transport support |
-| `rate-limit` | yes | The first-party `rate_limit::LocalRateLimiter` |
-| `json` | no | The `Json` representation (serde) |
-| `oauth2-client` | no | The `auth::OAuth2ClientCredentials` provider |
-| `records` | no | Framed record streams (`ItemStream`) |
-| `csv` | no | CSV records (implies `records`) |
-| `ndjson` | no | NDJSON records (implies `records`) |
-| `multipart` | no | Request-only `body::Multipart` bodies |
-| `gzip` | no | gzip response decompression |
-| `brotli` | no | Brotli response decompression |
-| `deflate` | no | deflate response decompression |
+| `json` | yes | the `Json` format (`format Json;`, `request Json;`, `response Json;`), using serde and serde_json; implies `extras` |
+| `extras` | yes (through `json`) | the standard formats without serializer dependencies: `Text`, `Binary` and the adapter `IgnoreContentType<F>` |
+| `form` | no | the `Form` format (`request Form;`, `application/x-www-form-urlencoded`), using serde and serde_urlencoded; implies `extras` |
+| `reqwest-defaults` | yes | reqwest's own default features (TLS, HTTP/2, system proxy) |
+
+The runtime lives in `concord-core` and the standard formats in `concord-extras`; `concord`
+re-exports both with the `api!` macro, so an application depends on `concord` only. With
+`default-features = false` there is no standard format at all (a format of your own works the
+same: implement `concord::Encode`/`concord::Decode`); enable `extras`, `json` or `form` for them.
+A crate that only offers formats can depend on `concord-core` instead.
+
+With `default-features = false`, choose reqwest's features yourself: depend on `reqwest` (the
+same major version that Concord re-exports as `concord::reqwest`) with the features you need.
+
+reqwest is part of Concord's public API (`concord::reqwest`, `Prepared::request`, the native
+exits). A Concord release keeps one reqwest minor series (0.13 for 4.x); moving to another is a
+breaking Concord release.
 
 ## Documentation
 
-Start with the [documentation index](docs/README.md) and the
-[quick start](docs/quick_start.md). The [DSL specification](docs/spec.md) is
-normative. [V3 is the only supported product version](docs/version_policy.md).
-Maintainers should also read the
-[release-gate status](dev_doc/release_gate_status.md) and the
-[claim/evidence ledger](dev_doc/claim_evidence_ledger.md).
+| Task | Guide |
+|---|---|
+| Set up a crate and make a first call | [Quick start](docs/QUICKSTART.md) |
+| The whole language on one page | [Cheat sheet](docs/CHEATSHEET.md) |
+| Write a declaration: scopes, values, paths, query and headers, body and response formats | [Author guide](docs/AUTHOR_GUIDE.md) |
+| Use a generated client: construction, options, errors, native requests | [Caller guide](docs/CALLER_GUIDE.md) |
+| Write your own `Encode`/`Decode` format; read the response head; test it | [Writing a format](docs/CUSTOM_FORMATS.md) |
+| What goes on the wire: `Accept` and `Content-Type` | [Author guide, 5.8](docs/AUTHOR_GUIDE.md#58-what-goes-on-the-wire-accept-and-content-type) |
+| Error documents, timeouts, streaming, retries, pagination; patterns from other APIs | [Recipes](docs/RECIPES.md), [`examples/compat`](examples/compat) |
+| Read a compile error | [Diagnostics](docs/DIAGNOSTICS.md) |
+| Upgrade from format words and the body-only codec traits, from in-place formats, from `via`, from the V4 alpha or from V3 | [Migration](docs/MIGRATION.md) |
+| A complete real-world client (Riot Games), offline tests, sources | [`examples/riot`](examples/riot) |
+| The precise rules (truth tables, ordering, sensitivity) | [Semantics](v4/SEMANTICS.md) |
+| Work on Concord itself | [Maintainers](docs/MAINTAINERS.md) |
 
-## Verification
-
-The complete maintained gate is:
-
-```text
-just verify
-```
-
-The documentation truth check alone is:
-
-```text
-cargo run -p concord-xtask -- docs-check
-```
-
-The workspace targets Rust 1.86 (edition 2024). All intended public package
-manifests retain `publish = false`. The source license is selected below. Final registry names, ownership and
-publication remain separate release actions recorded in the canonical
-release-gate status.
+The API reference is the crate documentation: `cargo doc -p concord --open`.
 
 ## License
 
-Concord is available under either the [MIT license](LICENSE-MIT) or the
-[Apache License, Version 2.0](LICENSE-APACHE), at your option
-(`MIT OR Apache-2.0`). Third-party dependencies retain their own licenses.
+MIT OR Apache-2.0, at your option.

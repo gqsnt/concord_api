@@ -1,0 +1,25 @@
+error: `JSON` is not a value of `Api`; the right of `=` and `{..}` holes name values declared in a parameter list (a Rust constant is not one: declare a value initialized from it, `json: T = ..`)
+  --> tests/ui/header_constant_as_value.rs:10:28
+   |
+10 |         headers { ACCEPT = JSON; }
+   |                            ^^^^
+
+error[E0277]: `&str` is not a native header name
+  --> tests/ui/header_constant_as_value.rs:18:19
+   |
+15 | / concord::api! {
+16 | |     pub client Other {
+17 | |         base "http://other.invalid";
+18 | |         headers { JSON = "x"; }
+   | |                   ^^^^ a header key path names a `HeaderName` constant or static
+...  |
+21 | | }
+   | |_- required by a bound introduced by this call
+   |
+   = help: the trait `concord::__macro::concord_core::__private::NativeKey` is not implemented for `&str`
+   = note: write a literal name, `header("x-name")`, or define `const X_NAME: HeaderName = HeaderName::from_static("x-name");`
+help: the trait `concord::__macro::concord_core::__private::NativeKey` is implemented for `HeaderName`
+  --> $WORKSPACE/crates/concord-core/src/__private.rs
+   |
+   | impl NativeKey for HeaderName {
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^

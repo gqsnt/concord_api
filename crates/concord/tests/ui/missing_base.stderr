@@ -1,0 +1,5 @@
+error: the client must declare `base "https://...";`
+ --> tests/ui/missing_base.rs:2:16
+  |
+2 |     pub client NoBase {
+  |                ^^^^^^

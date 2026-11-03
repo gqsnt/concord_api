@@ -1,0 +1,7 @@
+ 03:07:55 up  4:00,  1 user,  load average: 3.39, 3.65, 3.66
+%CPU COMMAND
+ 128 cstrike_linux64
+38.8 python3
+19.2 gnome-shell
+11.3 firefox
+ 9.5 localsearch-3

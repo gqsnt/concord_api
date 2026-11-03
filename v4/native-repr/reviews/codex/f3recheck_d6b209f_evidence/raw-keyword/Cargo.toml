@@ -1,0 +1,8 @@
+[package]
+name = "f3check-raw-keyword"
+version = "0.0.0"
+edition = "2024"
+[dependencies]
+concord = { path = "/home/canarit/projects/concord_v4_native_work/snapshots/f3recheck-d6b209f/crates/concord", default-features = false, features = ["json"] }
+tokio = { version = "=1.54.1", features = ["macros", "rt", "time"] }
+[workspace]

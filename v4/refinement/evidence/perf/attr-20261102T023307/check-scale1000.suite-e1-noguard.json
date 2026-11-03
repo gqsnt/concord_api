@@ -1,0 +1,24 @@
+{
+  "results": [
+    {
+      "command": "cargo +1.97.1 check -p scale1000 --manifest-path /home/canarit/projects/concord_v4_refine_work/perf/suite-e1-noguard/Cargo.toml --offline --locked -q",
+      "mean": 1.8379985063333333,
+      "stddev": 0.032210821188996534,
+      "median": 1.821773759,
+      "user": 1.5910909999999998,
+      "system": 0.22695166666666666,
+      "min": 1.817126312,
+      "max": 1.8750954480000002,
+      "times": [
+        1.8750954480000002,
+        1.821773759,
+        1.817126312
+      ],
+      "exit_codes": [
+        0,
+        0,
+        0
+      ]
+    }
+  ]
+}

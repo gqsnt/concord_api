@@ -1,7 +1,0 @@
-error[E0432]: unresolved imports `concord::codec::AnyMedia`, `concord::codec::MediaType`
- --> tests/ui/fail/capabilities/any_media_is_not_media_type.rs:3:22
-  |
-3 | use concord::codec::{AnyMedia, MediaType};
-  |                      ^^^^^^^^  ^^^^^^^^^ no `MediaType` in `codec`
-  |                      |
-  |                      no `AnyMedia` in `codec`
