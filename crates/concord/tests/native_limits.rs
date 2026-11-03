@@ -27,9 +27,9 @@ fn longest_native_header_name_is_accepted() {
 /// Drives the generated-code bridge directly (white-box): a declaration with tens of thousands of
 /// distinct header names would be needed to reach `HeaderMap`'s capacity through `api!`.
 mod header_map_capacity {
-    use concord::__private::{Base, EndpointMeta, Parts};
     use concord::reqwest::header::{HeaderName, HeaderValue};
     use concord::{ErrorKind, reqwest};
+    use concord_core::__private::{Base, EndpointMeta, Parts};
 
     static META: EndpointMeta = EndpointMeta {
         name: "Capacity.fill",
@@ -80,7 +80,7 @@ mod header_map_capacity {
                 reqwest::Method::POST,
                 &reqwest::Client::new(),
                 body,
-                concord::__private::drain(&META),
+                concord_core::__private::drain(&META),
             )
             .unwrap_err();
         assert_eq!(e.kind(), ErrorKind::Build);

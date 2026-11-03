@@ -3,8 +3,8 @@
 //! every operation and presence. The reference applies the declaration rules step by step, the
 //! way the macro composes literal chains; the plan uses a closed form over name equality.
 
-use concord::__private::{EndpointMeta, HeaderEntry, HeaderOp, HeaderPlan};
-use concord::reqwest::header::HeaderName;
+use concord_core::__private::{EndpointMeta, HeaderEntry, HeaderOp, HeaderPlan};
+use concord_core::reqwest::header::HeaderName;
 
 static META: EndpointMeta = EndpointMeta {
     name: "Plan.endpoint",

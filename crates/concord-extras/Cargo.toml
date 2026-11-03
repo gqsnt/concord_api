@@ -1,0 +1,29 @@
+[package]
+name = "concord-extras"
+description = "Concord's standard formats (Json, Text, Binary, Form), written against the public Encode/Decode contracts of concord-core."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+readme = "README.md"
+include = ["/src/**/*.rs", "/Cargo.toml", "/README.md", "/LICENSE-APACHE", "/LICENSE-MIT"]
+
+[package.metadata.docs.rs]
+all-features = true
+
+[features]
+## `Json`, via serde and serde_json.
+json = ["dep:serde", "dep:serde_json"]
+## `Form` (`application/x-www-form-urlencoded`), via serde and serde_urlencoded.
+form = ["dep:serde", "dep:serde_urlencoded"]
+
+[dependencies]
+concord-core = { path = "../concord-core", version = "=4.0.0-alpha.1" }
+serde = { workspace = true, optional = true }
+serde_json = { workspace = true, optional = true }
+serde_urlencoded = { workspace = true, optional = true }
+
+[lints]
+workspace = true

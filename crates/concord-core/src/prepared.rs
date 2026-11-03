@@ -5,8 +5,8 @@ use std::fmt;
 use bytes::Bytes;
 
 use crate::__private::{EndpointMeta, redacted_url};
+use crate::codec::BodyError;
 use crate::error::Error;
-use crate::repr::BodyError;
 
 /// A request built by an endpoint, not yet sent. `T` is the endpoint's output type (`()` when it
 /// declares none).
@@ -180,7 +180,7 @@ impl<T> Decoder<T> {
     /// [`Decode`](crate::ErrorKind::Decode) if the body does not decode.
     ///
     /// ```no_run
-    /// # async fn run(prepared: concord::Prepared<String>) -> Result<(), concord::Error> {
+    /// # async fn run(prepared: concord_core::Prepared<String>) -> Result<(), concord_core::Error> {
     /// let (client, mut request, decoder) = prepared.into_parts();
     /// *request.timeout_mut() = Some(std::time::Duration::from_secs(2));
     /// let text = decoder.finish(client.execute(request).await).await?;

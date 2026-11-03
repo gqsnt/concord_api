@@ -16,10 +16,10 @@ error[E0277]: `&str` is not a native header name
 10 | | }
    | |_- required by a bound introduced by this call
    |
-   = help: the trait `concord::__private::NativeKey` is not implemented for `&str`
+   = help: the trait `concord::__macro::concord_core::__private::NativeKey` is not implemented for `&str`
    = note: write a literal name, `header("x-name")`, or define `const X_NAME: HeaderName = HeaderName::from_static("x-name");`
-help: the trait `concord::__private::NativeKey` is implemented for `HeaderName`
-  --> src/__private.rs
+help: the trait `concord::__macro::concord_core::__private::NativeKey` is implemented for `HeaderName`
+  --> $WORKSPACE/crates/concord-core/src/__private.rs
    |
    | impl NativeKey for HeaderName {
    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^

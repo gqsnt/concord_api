@@ -9,7 +9,7 @@ error[E0277]: `u8` is not accepted for a value of type `u32`
   = help: the trait `IntoValue<u32>` is not implemented for `u8`
   = note: Concord accepts the exact declared type, `&str`/`&String` for `String`, or `&HeaderValue` for `HeaderValue`; construct newtypes and `Option`s explicitly
 help: the following other types implement trait `IntoValue<T>`
- --> src/value.rs
+ --> $WORKSPACE/crates/concord-core/src/value.rs
   |
   | impl IntoValue<String> for &str {
   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `&str` implements `IntoValue<String>`
@@ -76,4 +76,4 @@ note: method defined here
  5 | |     }
  6 | | }
    | |_^
-   = note: this error originates in the macro `$crate::__private::api_impl` which comes from the expansion of the macro `concord::api` (in Nightly builds, run with -Z macro-backtrace for more info)
+   = note: this error originates in the macro `$crate::__macro::api` which comes from the expansion of the macro `concord::api` (in Nightly builds, run with -Z macro-backtrace for more info)

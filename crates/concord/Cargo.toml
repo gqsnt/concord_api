@@ -18,24 +18,23 @@ all-features = true
 
 [features]
 default = ["json", "reqwest-defaults"]
-## The `json` format (`format json;`, `request json;`, `response json;`), via serde/serde_json.
-json = ["dep:serde", "dep:serde_json"]
-## The `form` format (`request form;`, `application/x-www-form-urlencoded`), via serde/serde_urlencoded.
+## The standard formats without serializer dependencies: `Text` and `Binary` (from `concord-extras`).
+extras = ["dep:concord-extras"]
+## `Json`, via serde/serde_json (implies `extras`).
+json = ["extras", "concord-extras/json"]
+## `Form` (`application/x-www-form-urlencoded`), via serde/serde_urlencoded (implies `extras`).
 ## Off by default, like reqwest's own `form` feature.
-form = ["dep:serde", "dep:serde_urlencoded"]
+form = ["extras", "concord-extras/form"]
 ## Enables reqwest's own default features (TLS, HTTP/2, charset, system proxy).
 ## Disable it to choose reqwest features yourself in your own Cargo.toml.
-reqwest-defaults = ["reqwest/default"]
+reqwest-defaults = ["concord-core/reqwest-defaults"]
 
 [dependencies]
-bytes.workspace = true
+# The facade, the runtime and the macro are released together: the macro's expansion uses the
+# runtime's hidden support API, so the versions are pinned exactly.
+concord-core = { path = "../concord-core", version = "=4.0.0-alpha.1" }
+concord-extras = { path = "../concord-extras", version = "=4.0.0-alpha.1", optional = true }
 concord-macros = { path = "../concord-macros", version = "=4.0.0-alpha.1" }
-percent-encoding.workspace = true
-reqwest.workspace = true
-serde = { workspace = true, optional = true }
-serde_json = { workspace = true, optional = true }
-serde_urlencoded = { workspace = true, optional = true }
-url.workspace = true
 
 [dev-dependencies]
 serde = { workspace = true, features = ["derive"] }

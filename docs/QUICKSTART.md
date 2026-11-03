@@ -24,7 +24,7 @@ serde = { version = "1", features = ["derive"] }
 tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
 ```
 
-- `concord`'s default features are `json` (the `Json` format) and `reqwest-defaults`
+- `concord`'s default features are `json` (the `Json` format, with `Text` and `Binary`) and `reqwest-defaults`
   (reqwest's TLS, HTTP/2 and proxy support); `form` (URL-encoded form bodies) is opt-in. Concord re-exports reqwest as `concord::reqwest`;
   you only need your own `reqwest` dependency to choose its features.
 - `serde` derives your payload types.

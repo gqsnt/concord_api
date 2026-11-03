@@ -4,8 +4,8 @@ error[E0080]: evaluation panicked: HeaderValue::from_static with invalid bytes
 13 |         POST odd(body b: String) { request Odd; }
    |                                            ^^^ evaluation of `ApiOdd::prepare::__FORMAT` failed inside this call
    |
-note: inside `concord::__private::BodyFormat::<String>::new::<Odd>`
-  --> src/__private.rs
+note: inside `concord::__macro::concord_core::__private::BodyFormat::<String>::new::<Odd>`
+  --> $WORKSPACE/crates/concord-core/src/__private.rs
    |
    |                 Some(text) => Some(HeaderValue::from_static(text)),
    |                                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^

@@ -4,7 +4,7 @@ use std::error::Error as StdError;
 use std::fmt;
 
 use crate::__private::EndpointMeta;
-use crate::repr::BodyError;
+use crate::codec::BodyError;
 
 /// Why a Concord call failed.
 ///
@@ -125,7 +125,7 @@ impl Error {
     /// The headers are the server's, not Concord's output: Concord does not redact them.
     ///
     /// ```
-    /// fn retry_after(e: &concord::Error) -> Option<u64> {
+    /// fn retry_after(e: &concord_core::Error) -> Option<u64> {
     ///     e.response()?
     ///         .headers()
     ///         .get(reqwest::header::RETRY_AFTER)?
@@ -147,8 +147,8 @@ impl Error {
     /// document, for example with `<Json as Decode<Problem>>::decode(response.bytes().await?)`.
     ///
     /// ```no_run
-    /// # async fn run(request: impl std::future::Future<Output = Result<(), concord::Error>>)
-    /// # -> Result<(), concord::Error> {
+    /// # async fn run(request: impl std::future::Future<Output = Result<(), concord_core::Error>>)
+    /// # -> Result<(), concord_core::Error> {
     /// match request.await {
     ///     Ok(()) => {}
     ///     Err(e) => {

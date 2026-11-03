@@ -14,7 +14,7 @@ note: associated function defined here
 ... |
 7 | | }
   | |_^
-  = note: this error originates in the macro `$crate::__private::api_impl` which comes from the expansion of the macro `concord::api` (in Nightly builds, run with -Z macro-backtrace for more info)
+  = note: this error originates in the macro `$crate::__macro::api` which comes from the expansion of the macro `concord::api` (in Nightly builds, run with -Z macro-backtrace for more info)
 help: provide the argument
   |
 9 |     let api = Api::new(concord::reqwest::Client::new(), /* ApiConfig */);

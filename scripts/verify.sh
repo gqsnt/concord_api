@@ -42,7 +42,8 @@ step() {
 # if the pattern stops matching the crate that does enable it.
 no_reqwest_multipart() {
   local args tree
-  for args in "-p concord" "-p concord --no-default-features" "-p concord-example-native"; do
+  for args in "-p concord" "-p concord --no-default-features" "-p concord-core" \
+    "-p concord-extras --all-features" "-p concord-example-native"; do
     # shellcheck disable=SC2086
     tree=$(cargo tree --locked -e features -i reqwest $args) || return 1
     if grep -q 'reqwest feature "multipart"' <<<"$tree"; then
@@ -62,6 +63,8 @@ echo "rustc: $(rustc --version)"
 if [[ $only_nightly == 0 ]]; then
 step toolchain "$python" -I scripts/check-ci.py --toolchain
 step ci-inventory "$python" -I scripts/check-ci.py --workflow
+# The production edges of the four crates (manifests, then one resolved graph per package).
+step graph "$python" -I scripts/check-graph.py
 step fmt cargo fmt --all -- --check
 step records "$python" -I scripts/check-records.py
 step clippy cargo clippy --locked --workspace --all-targets -- -D warnings
@@ -73,6 +76,12 @@ step test-reqwest-defaults-only cargo test --locked -p concord --no-default-feat
 # because `form` is on) and with the default features for form in / JSON out.
 step test-form-only cargo test --locked -p concord --no-default-features --features form
 step test-form-json cargo test --locked -p concord --features form --test forms
+step test-extras-only cargo test --locked -p concord --no-default-features --features extras
+# The runtime and the standard formats on their own, each feature separately.
+step test-core cargo test --locked -p concord-core
+step test-extras-none cargo test --locked -p concord-extras --no-default-features
+step test-extras-json cargo test --locked -p concord-extras --no-default-features --features json
+step test-extras-form cargo test --locked -p concord-extras --no-default-features --features form
 # Separate consumers: reqwest's `multipart` feature belongs to examples/multipart only, so a
 # workspace-wide build (which unifies features) cannot hide a core dependency on it.
 step feature-isolation no_reqwest_multipart
@@ -82,6 +91,10 @@ step doc-no-default env RUSTDOCFLAGS="-D warnings" cargo doc --locked -p concord
 step doc-json-only env RUSTDOCFLAGS="-D warnings" cargo doc --locked -p concord --no-deps --no-default-features --features json
 step doc-form-only env RUSTDOCFLAGS="-D warnings" cargo doc --locked -p concord --no-deps --no-default-features --features form
 step doc-form env RUSTDOCFLAGS="-D warnings" cargo doc --locked -p concord --no-deps --features form
+step doc-extras-only env RUSTDOCFLAGS="-D warnings" cargo doc --locked -p concord --no-deps --no-default-features --features extras
+step doc-core env RUSTDOCFLAGS="-D warnings" cargo doc --locked -p concord-core --no-deps
+step doc-extras env RUSTDOCFLAGS="-D warnings" cargo doc --locked -p concord-extras --no-deps --all-features
+step doc-extras-none env RUSTDOCFLAGS="-D warnings" cargo doc --locked -p concord-extras --no-deps --no-default-features
 
 if [[ $bench == 1 ]]; then
   step bench-build cargo bench --locked -p concord-bench --no-run

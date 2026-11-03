@@ -10,28 +10,34 @@ rm -rf "$out"
 mkdir -p "$out"
 out=$(cd "$out" && pwd)
 
-# concord-macros is not on crates.io, so concord is packaged with a crates.io patch pointing at the
-# local crate (packaging resolves dependencies even with `--no-verify`), and without cargo's own
-# verification build: the consumer below builds both packaged crates together instead. The
-# "ignoring test" warnings list the test targets deliberately left out of the package.
-cargo package --offline --locked --no-verify -p concord-macros --allow-dirty >"$out/package.log" 2>&1 \
-  || { cat "$out/package.log"; exit 1; }
-cargo package --offline --locked --no-verify -p concord --allow-dirty \
-  --config 'patch.crates-io.concord-macros.path="crates/concord-macros"' >>"$out/package.log" 2>&1 \
-  || { cat "$out/package.log"; exit 1; }
+# The four crates are not on crates.io, so each is packaged with crates.io patches pointing at the
+# local crates it depends on (packaging resolves dependencies even with `--no-verify`), and without
+# cargo's own verification build: the consumers below build the packaged crates together instead.
+# The "ignoring test" warnings list the test targets deliberately left out of the packages.
+crates="concord-core concord-macros concord-extras concord"
+patches=()
+for crate in $crates; do
+  patches+=(--config "patch.crates-io.$crate.path=\"crates/$crate\"")
+done
+for crate in $crates; do
+  cargo package --offline --locked --no-verify -p "$crate" --allow-dirty "${patches[@]}" \
+    >>"$out/package.log" 2>&1 || { cat "$out/package.log"; exit 1; }
+done
 # Cargo's effective target directory (it honours CARGO_TARGET_DIR and configuration).
 read -r version target_dir < <(cargo metadata --format-version 1 --no-deps --locked \
   | python3 -I -c 'import json,sys; m=json.load(sys.stdin); print(next(p["version"] for p in m["packages"] if p["name"]=="concord"), m["target_directory"])')
-for crate in concord-macros concord; do
+for crate in $crates; do
   tar -xzf "$target_dir/package/$crate-$version.crate" -C "$out"
 done
 echo "packaged files:"
-for crate in concord-macros concord; do
+for crate in $crates; do
   (cd "$out/$crate-$version" && find . -type f | sort | sed "s#^\./#  $crate/#")
 done
-if find "$out/concord-$version" -path '*/tests/*' | grep -q .; then
-  echo "FAIL: test-only material in the concord package"; exit 1
-fi
+for crate in $crates; do
+  if find "$out/$crate-$version" -path '*/tests/*' | grep -q .; then
+    echo "FAIL: test-only material in the $crate package"; exit 1
+  fi
+done
 
 mkdir -p "$out/consumer/src" "$out/consumer/tests"
 cat >"$out/consumer/Cargo.toml" <<EOF
@@ -46,10 +52,12 @@ default = ["json"]
 json = ["concord/json"]
 
 [dependencies]
-concord = { path = "../concord-$version", default-features = false, features = ["reqwest-defaults"] }
+concord = { path = "../concord-$version", default-features = false, features = ["reqwest-defaults", "extras"] }
 serde = { version = "1", features = ["derive"] }
 
 [patch.crates-io]
+concord-core = { path = "../concord-core-$version" }
+concord-extras = { path = "../concord-extras-$version" }
 concord-macros = { path = "../concord-macros-$version" }
 
 [workspace]

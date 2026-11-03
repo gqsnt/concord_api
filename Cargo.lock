@@ -207,18 +207,15 @@ dependencies = [
 name = "concord"
 version = "4.0.0-alpha.1"
 dependencies = [
- "bytes",
+ "concord-core",
+ "concord-extras",
  "concord-macros",
- "percent-encoding",
- "reqwest",
  "rustls-pki-types",
  "serde",
  "serde_json",
- "serde_urlencoded",
  "tokio",
  "tokio-rustls",
  "trybuild",
- "url",
 ]
 
 [[package]]
@@ -252,6 +249,17 @@ name = "concord-clone-compat"
 version = "0.0.0"
 dependencies = [
  "concord",
+]
+
+[[package]]
+name = "concord-core"
+version = "4.0.0-alpha.1"
+dependencies = [
+ "bytes",
+ "percent-encoding",
+ "reqwest",
+ "tokio",
+ "url",
 ]
 
 [[package]]
@@ -325,6 +333,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "concord-extras"
+version = "4.0.0-alpha.1"
+dependencies = [
+ "concord-core",
+ "serde",
+ "serde_json",
+ "serde_urlencoded",
+]
+
+[[package]]
 name = "concord-heap-check"
 version = "0.0.0"
 dependencies = [
@@ -359,7 +377,7 @@ dependencies = [
 name = "concord-macros"
 version = "4.0.0-alpha.1"
 dependencies = [
- "concord",
+ "concord-core",
  "http",
  "mime",
  "proc-macro2",

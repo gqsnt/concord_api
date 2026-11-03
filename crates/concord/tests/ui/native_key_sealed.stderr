@@ -1,24 +1,5 @@
-error[E0277]: the trait bound `Shifting: concord::__private::sealed::Sealed` is not satisfied
-  --> tests/ui/native_key_sealed.rs:14:20
-   |
-14 | impl NativeKey for Shifting {
-   |                    ^^^^^^^^ unsatisfied trait bound
-   |
-help: the trait `concord::__private::sealed::Sealed` is not implemented for `Shifting`
-  --> tests/ui/native_key_sealed.rs:12:1
-   |
-12 | pub struct Shifting;
-   | ^^^^^^^^^^^^^^^^^^^
-help: the trait `concord::__private::sealed::Sealed` is implemented for `HeaderName`
-  --> src/__private.rs
-   |
-   |     impl Sealed for reqwest::header::HeaderName {}
-   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-note: required by a bound in `concord::__private::NativeKey`
-  --> src/__private.rs
-   |
-   | pub trait NativeKey: sealed::Sealed {
-   |                      ^^^^^^^^^^^^^^ required by this bound in `NativeKey`
-   = note: `NativeKey` is a "sealed trait", because to implement it you also need to implement `concord::__private::sealed::Sealed`, which is not accessible; this is usually done to force you to use one of the provided types that already implement it
-   = help: the following type implements the trait:
-             concord::reqwest::header::HeaderName
+error[E0432]: unresolved import `concord::__private`
+ --> tests/ui/native_key_sealed.rs:5:14
+  |
+5 | use concord::__private::NativeKey;
+  |              ^^^^^^^^^ could not find `__private` in `concord`

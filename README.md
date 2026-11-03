@@ -143,9 +143,15 @@ tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
 
 | Feature | Default | Effect |
 |---|---|---|
-| `json` | yes | the `Json` format (`format Json;`, `request Json;`, `response Json;`), using serde and serde_json |
-| `form` | no | the `Form` format (`request Form;`, `application/x-www-form-urlencoded`), using serde and serde_urlencoded |
+| `json` | yes | the `Json` format (`format Json;`, `request Json;`, `response Json;`), using serde and serde_json; implies `extras` |
+| `extras` | yes (through `json`) | the standard formats without serializer dependencies: `Text` and `Binary` |
+| `form` | no | the `Form` format (`request Form;`, `application/x-www-form-urlencoded`), using serde and serde_urlencoded; implies `extras` |
 | `reqwest-defaults` | yes | reqwest's own default features (TLS, HTTP/2, system proxy) |
+
+The standard formats live in `concord-extras` and the runtime in `concord-core`; `concord`
+re-exports both with the `api!` macro, so an application depends on `concord` only. With
+`default-features = false` there is no standard format at all (a format of your own works the
+same: implement `concord::Encode`/`concord::Decode`); enable `extras`, `json` or `form` for them.
 
 With `default-features = false`, choose reqwest's features yourself: depend on `reqwest` (the
 same major version that Concord re-exports as `concord::reqwest`) with the features you need.

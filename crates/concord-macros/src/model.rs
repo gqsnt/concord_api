@@ -2350,13 +2350,13 @@ fn endpoint_output(
 #[cfg(test)]
 mod base_consistency {
     use super::{RESERVED_HEADERS, SENSITIVE_NAMES, validate_base};
-    use concord::__private::Base;
+    use concord_core::__private::Base;
 
     /// The macro classifies literal names, the runtime native constants: one list each, kept equal.
     #[test]
     fn name_lists_match_the_runtime() {
-        assert_eq!(SENSITIVE_NAMES, concord::__private::SENSITIVE_NAMES);
-        assert_eq!(RESERVED_HEADERS, concord::__private::RESERVED_NAMES);
+        assert_eq!(SENSITIVE_NAMES, concord_core::__private::SENSITIVE_NAMES);
+        assert_eq!(RESERVED_HEADERS, concord_core::__private::RESERVED_NAMES);
     }
     use proc_macro2::Span;
     use syn::LitStr;

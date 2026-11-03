@@ -510,26 +510,25 @@ pub struct Item;
 concord::api! {
     pub client Api {
         base "http://x.test";
-        GET item() -> Item { response Text; }
-        POST create(body item: Item) { request Binary; }
+        GET item() -> Item { response Lines; }
+        POST create(body item: Item) { request Raw; }
     }
 }
 concord::api! {
     pub client Scalar {
         base "http://x.test";
-        POST count(body n: u64) { request Text; }
-        GET total() -> u64 { response Binary; }
-    }
+        POST count(body n: u64) { request Lines; }
+        GET total() -> u64 { response Raw; }
 ```
 
 Excerpt of [`representation_unsupported_payload.stderr`](../crates/concord/tests/ui/representation_unsupported_payload.stderr):
 
 ```text
-error[E0277]: the format `Text` cannot decode a `Item` response
- --> tests/ui/representation_unsupported_payload.rs:9:39
-  |
-9 |         GET item() -> Item { response Text; }
-  |                                       ^^^^ this output's format is `Text` (the nearest `response` statement: on the endpoint, a scope or the client); it needs `Text: Decode<Item>`
+error[E0277]: the format `Lines` cannot decode a `Item` response
+  --> tests/ui/representation_unsupported_payload.rs:34:39
+   |
+34 |         GET item() -> Item { response Lines; }
+   |                                       ^^^^^ this output's format is `Lines` (the nearest `response` statement: on the endpoint, a scope or the client); it needs `Lines: Decode<Item>`
 ```
 
 **Fix:** pick a format that supports the type (`Json` for a serde type), or implement `Decode<Item>`/`Encode<Item>` for your own format type. An inherited format is reported at the statement that gave it (`format_inherited_unsupported.stderr`). For `Json`, an unmet serde bound is reported by rustc in its own words (`the trait bound .. Deserialize<'de> is not satisfied`, `tests/ui_json/format_serde_bound.stderr`).

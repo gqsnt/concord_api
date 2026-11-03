@@ -1,0 +1,28 @@
+[package]
+name = "concord-core"
+description = "Concord's runtime: request composition, native headers, snapshots, the open Encode/Decode contracts and the error type. Most users depend on `concord`."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+readme = "README.md"
+# The release artifact is the library; tests stay in the repository.
+include = ["/src/**/*.rs", "/Cargo.toml", "/README.md", "/LICENSE-APACHE", "/LICENSE-MIT"]
+
+[features]
+## Enables reqwest's own default features (TLS, HTTP/2, charset, system proxy).
+reqwest-defaults = ["reqwest/default"]
+
+[dependencies]
+bytes.workspace = true
+percent-encoding.workspace = true
+reqwest.workspace = true
+url.workspace = true
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["macros", "rt", "net", "io-util"] }
+
+[lints]
+workspace = true

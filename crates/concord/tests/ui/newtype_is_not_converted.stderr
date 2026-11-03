@@ -9,7 +9,7 @@ error[E0277]: `u64` is not accepted for a value of type `UserId`
    = help: the trait `IntoValue<UserId>` is not implemented for `u64`
    = note: Concord accepts the exact declared type, `&str`/`&String` for `String`, or `&HeaderValue` for `HeaderValue`; construct newtypes and `Option`s explicitly
 help: the following other types implement trait `IntoValue<T>`
-  --> src/value.rs
+  --> $WORKSPACE/crates/concord-core/src/value.rs
    |
    | impl IntoValue<String> for &str {
    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `&str` implements `IntoValue<String>`

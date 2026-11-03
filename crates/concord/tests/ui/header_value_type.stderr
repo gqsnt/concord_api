@@ -17,12 +17,12 @@ error[E0277]: `IpAddr` cannot be sent as a header value
              String
              bool
            and $N others
-note: required by a bound in `concord::__private::Parts::<'a>::header`
-  --> src/__private.rs
+note: required by a bound in `concord::__macro::concord_core::__private::Parts::<'a>::header`
+  --> $WORKSPACE/crates/concord-core/src/__private.rs
    |
    |     pub fn header<T: ToHeaderValue + ?Sized>(
    |                      ^^^^^^^^^^^^^ required by this bound in `Parts::<'a>::header`
-   = note: this error originates in the macro `$crate::__private::api_impl` which comes from the expansion of the macro `concord::api` (in Nightly builds, run with -Z macro-backtrace for more info)
+   = note: this error originates in the macro `$crate::__macro::api` which comes from the expansion of the macro `concord::api` (in Nightly builds, run with -Z macro-backtrace for more info)
 
 error[E0277]: `IpAddr` cannot be sent as a header value
   --> tests/ui/header_value_type.rs:14:40
@@ -43,8 +43,8 @@ error[E0277]: `IpAddr` cannot be sent as a header value
              String
              bool
            and $N others
-   = note: required for `concord::__private::DebugHeader<'_, IpAddr>` to implement `Debug`
-   = note: required for the cast from `&concord::__private::DebugHeader<'_, IpAddr>` to `&dyn Debug`
+   = note: required for `concord::__macro::concord_core::__private::DebugHeader<'_, IpAddr>` to implement `Debug`
+   = note: required for the cast from `&concord::__macro::concord_core::__private::DebugHeader<'_, IpAddr>` to `&dyn Debug`
    = note: this error originates in the macro `concord::api` (in Nightly builds, run with -Z macro-backtrace for more info)
 
 error[E0277]: `Region` cannot be sent as a header value
@@ -70,12 +70,12 @@ help: the trait `ToHeaderValue` is not implemented for `Region`
              String
              bool
            and $N others
-note: required by a bound in `concord::__private::Parts::<'a>::header`
-  --> src/__private.rs
+note: required by a bound in `concord::__macro::concord_core::__private::Parts::<'a>::header`
+  --> $WORKSPACE/crates/concord-core/src/__private.rs
    |
    |     pub fn header<T: ToHeaderValue + ?Sized>(
    |                      ^^^^^^^^^^^^^ required by this bound in `Parts::<'a>::header`
-   = note: this error originates in the macro `$crate::__private::api_impl` which comes from the expansion of the macro `concord::api` (in Nightly builds, run with -Z macro-backtrace for more info)
+   = note: this error originates in the macro `$crate::__macro::api` which comes from the expansion of the macro `concord::api` (in Nightly builds, run with -Z macro-backtrace for more info)
 
 error[E0277]: `Region` cannot be sent as a header value
   --> tests/ui/header_value_type.rs:15:46
@@ -100,8 +100,8 @@ help: the trait `ToHeaderValue` is not implemented for `Region`
              String
              bool
            and $N others
-   = note: required for `concord::__private::DebugHeader<'_, Region>` to implement `Debug`
-   = note: required for the cast from `&concord::__private::DebugHeader<'_, Region>` to `&dyn Debug`
+   = note: required for `concord::__macro::concord_core::__private::DebugHeader<'_, Region>` to implement `Debug`
+   = note: required for the cast from `&concord::__macro::concord_core::__private::DebugHeader<'_, Region>` to `&dyn Debug`
    = note: this error originates in the macro `concord::api` (in Nightly builds, run with -Z macro-backtrace for more info)
 
 error[E0277]: `Option<String>` cannot be sent as a header value
@@ -123,12 +123,12 @@ error[E0277]: `Option<String>` cannot be sent as a header value
              String
              bool
            and $N others
-note: required by a bound in `concord::__private::Parts::<'a>::header`
-  --> src/__private.rs
+note: required by a bound in `concord::__macro::concord_core::__private::Parts::<'a>::header`
+  --> $WORKSPACE/crates/concord-core/src/__private.rs
    |
    |     pub fn header<T: ToHeaderValue + ?Sized>(
    |                      ^^^^^^^^^^^^^ required by this bound in `Parts::<'a>::header`
-   = note: this error originates in the macro `$crate::__private::api_impl` which comes from the expansion of the macro `concord::api` (in Nightly builds, run with -Z macro-backtrace for more info)
+   = note: this error originates in the macro `$crate::__macro::api` which comes from the expansion of the macro `concord::api` (in Nightly builds, run with -Z macro-backtrace for more info)
 
 error[E0277]: `Option<String>` cannot be sent as a header value
   --> tests/ui/header_value_type.rs:16:41
@@ -149,8 +149,8 @@ error[E0277]: `Option<String>` cannot be sent as a header value
              String
              bool
            and $N others
-   = note: required for `concord::__private::DebugHeader<'_, Option<String>>` to implement `Debug`
-   = note: required for the cast from `&concord::__private::DebugHeader<'_, Option<String>>` to `&dyn Debug`
+   = note: required for `concord::__macro::concord_core::__private::DebugHeader<'_, Option<String>>` to implement `Debug`
+   = note: required for the cast from `&concord::__macro::concord_core::__private::DebugHeader<'_, Option<String>>` to `&dyn Debug`
    = note: this error originates in the macro `concord::api` (in Nightly builds, run with -Z macro-backtrace for more info)
 
 error[E0277]: `f64` cannot be sent as a header value
@@ -172,12 +172,12 @@ error[E0277]: `f64` cannot be sent as a header value
              u32
              u64
            and $N others
-note: required by a bound in `concord::__private::Parts::<'a>::header`
-  --> src/__private.rs
+note: required by a bound in `concord::__macro::concord_core::__private::Parts::<'a>::header`
+  --> $WORKSPACE/crates/concord-core/src/__private.rs
    |
    |     pub fn header<T: ToHeaderValue + ?Sized>(
    |                      ^^^^^^^^^^^^^ required by this bound in `Parts::<'a>::header`
-   = note: this error originates in the macro `$crate::__private::api_impl` which comes from the expansion of the macro `concord::api` (in Nightly builds, run with -Z macro-backtrace for more info)
+   = note: this error originates in the macro `$crate::__macro::api` which comes from the expansion of the macro `concord::api` (in Nightly builds, run with -Z macro-backtrace for more info)
 
 error[E0277]: `f64` cannot be sent as a header value
   --> tests/ui/header_value_type.rs:17:44
@@ -198,6 +198,6 @@ error[E0277]: `f64` cannot be sent as a header value
              u32
              u64
            and $N others
-   = note: required for `concord::__private::DebugHeader<'_, f64>` to implement `Debug`
-   = note: required for the cast from `&concord::__private::DebugHeader<'_, f64>` to `&dyn Debug`
+   = note: required for `concord::__macro::concord_core::__private::DebugHeader<'_, f64>` to implement `Debug`
+   = note: required for the cast from `&concord::__macro::concord_core::__private::DebugHeader<'_, f64>` to `&dyn Debug`
    = note: this error originates in the macro `concord::api` (in Nightly builds, run with -Z macro-backtrace for more info)

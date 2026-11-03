@@ -104,7 +104,7 @@
 //! | [`Prepared<T>`](Prepared) | a built request, not yet sent: `request()`, `send()`, `send_raw()`, `into_parts()` |
 //! | [`Decoder<T>`](Decoder) | an endpoint's response handling, for a response you obtained natively: `decode`, `finish` |
 //! | [`Error`], [`ErrorKind`] | the one error type: `kind`, `endpoint`, `status`, `into_response`, `transport`, `body_source` |
-//! | [`Encode<T>`](Encode), [`Decode<T>`](Decode) | format traits, implemented by `Json` (feature `json`), [`Text`], [`Binary`], `Form` (feature `form`) and by your own types; a statement names a format by its type path (`format Json;`) |
+//! | [`Encode<T>`](Encode), [`Decode<T>`](Decode) | format traits, implemented by `Json` (feature `json`), `Text`, `Binary` (feature `extras`), `Form` (feature `form`) and by your own types; a statement names a format by its type path (`format Json;`) |
 //! | [`BodyError`] | an encoding or decoding failure with a content-free description |
 //! | [`IntoValue<T>`](IntoValue) | the closed set of conversions accepted by arguments and setters |
 //! | [`ToHeaderValue`] | the closed set of header values: native `HeaderValue`, text, integers, `bool` (another type is sent through a template) |
@@ -122,7 +122,7 @@
 //! KEY:         "x-name"  |  a native HeaderName constant or static: AUTHORIZATION, X_API_KEY, ...
 //! body:        body b: T  |  body b?: T   (at most one, endpoints only)
 //! output:      -> T  (no `->`: no typed output, any 2xx, the body is drained)
-//! FORMAT:      json  |  text  |  bytes  |  form  |  a type path implementing Encode/Decode
+//! FORMAT:      a type path implementing Encode and/or Decode: Json, Text, Binary, Form, yours
 //! attributes:  /// docs  |  #[sensitive] (values)  |  #[cfg(..)], #[deprecated] (scopes, endpoints)
 //! statements:  path "a/{x}";  subdomain "{x}";  query { .. }  headers { .. }
 //!              format FORMAT;  request FORMAT;  request FORMAT "media/type";  response FORMAT;
@@ -193,39 +193,44 @@
 //!
 //! # Features
 //!
-//! - `json` (default): the `Json` format, via serde and serde_json.
+//! - `json` (default): the `Json` format, via serde and serde_json. Implies `extras`.
+//! - `extras`: the standard formats without serializer dependencies, `Text` and `Binary`.
+//!   Without `extras` (`default-features = false`), the facade has no standard format: formats
+//!   of your own work the same way.
 //! - `form`: the `Form` format, `application/x-www-form-urlencoded` via serde and
-//!   serde_urlencoded. Off by default, like reqwest's own `form` feature.
+//!   serde_urlencoded. Off by default, like reqwest's own `form` feature. Implies `extras`.
 //! - `reqwest-defaults` (default): reqwest's default features (TLS, HTTP/2, system proxy).
 //!   Disable it to choose reqwest's features in your own `Cargo.toml`.
 
-pub use {bytes, reqwest};
-
-mod error;
-mod header;
-mod prepared;
-mod repr;
-mod value;
-
-#[doc(hidden)]
-pub mod __private;
+pub use concord_core::{
+    BodyError, Decode, Decoder, Encode, Error, ErrorKind, IntoValue, Prepared, ToHeaderValue,
+    bytes, reqwest,
+};
+#[cfg(feature = "form")]
+pub use concord_extras::Form;
+#[cfg(feature = "json")]
+pub use concord_extras::Json;
+#[cfg(feature = "extras")]
+pub use concord_extras::{Binary, Text};
 
 /// Declares an HTTP API as a client → scopes → endpoints tree and generates its typed client.
 ///
 /// See the [crate documentation](crate) for the language.
+///
+/// The expansion refers to `concord_core` through this crate's own path (`$crate`), so the macro
+/// works under a renamed dependency and needs no other import. Format types are not part of the
+/// bridge: a statement's format is the path you write, resolved where you write it.
 #[macro_export]
 macro_rules! api {
     ($($tokens:tt)*) => {
-        $crate::__private::api_impl! { $crate; $($tokens)* }
+        $crate::__macro::api! { $crate::__macro::concord_core; $($tokens)* }
     };
 }
 
-pub use error::{Error, ErrorKind};
-pub use header::ToHeaderValue;
-pub use prepared::{Decoder, Prepared};
-#[cfg(feature = "form")]
-pub use repr::Form;
-#[cfg(feature = "json")]
-pub use repr::Json;
-pub use repr::{Binary, BodyError, Decode, Encode, Text};
-pub use value::IntoValue;
+/// The bridge used by [`api!`]: the procedural macro and the runtime crate its expansion names.
+/// Not a public API.
+#[doc(hidden)]
+pub mod __macro {
+    pub use concord_core;
+    pub use concord_macros::api;
+}

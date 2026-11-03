@@ -690,8 +690,8 @@ async fn native_headers_and_bodies() {
 /// `native_limits.rs`).
 #[test]
 fn full_header_map_with_native_values() {
-    use concord::__private::{Base, EndpointMeta, Parts};
     use concord::reqwest::header::HeaderName;
+    use concord_core::__private::{Base, EndpointMeta, Parts};
 
     static META: EndpointMeta = EndpointMeta {
         name: "Native.fill",

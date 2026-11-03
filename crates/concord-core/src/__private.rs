@@ -7,13 +7,12 @@ use percent_encoding::{AsciiSet, NON_ALPHANUMERIC};
 use reqwest::header::{CONTENT_TYPE, HeaderMap, HeaderName, HeaderValue};
 use reqwest::{Method, Url};
 
+use crate::codec::{BodyError, Decode, Encode};
 use crate::error::Error;
 use crate::header::ToHeaderValue;
 use crate::prepared::{Decoder, Prepared};
-use crate::repr::{BodyError, Decode, Encode};
 
 pub use crate::value::IntoValue;
-pub use concord_macros::api as api_impl;
 
 /// Static facts about one endpoint, produced by the macro.
 #[derive(Debug)]
