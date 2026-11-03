@@ -4,8 +4,8 @@ Branch `concord-v4-final`, worktree `/home/canarit/projects/concord_v4_final`. S
 `625ac49` (`concord-v4-native-repr`, code `1d9ffe7`). Not pushed, not merged, nothing published.
 Preserved unchanged: V3 (`concord-v3`), `concord-v4` (`8f7adc2`), `concord-v4-refine`
 (`a915c8d`), `concord-v4-native-repr` (`625ac49`; `6bc5032` on the remote), the native-repr side
-branches, and the untracked `.claude/`, `concord_v4_handoff/` and `concord_v4_finish_handoff/` in
-the V3 worktree. The migration side branch `concord-v4-final-migrate` was merged here (`70f24a8`)
+branches, and the untracked `.claude/` and `concord_v4_handoff/` in the V3 worktree (the
+finalization handoff was extracted into the work directory). The migration side branch `concord-v4-final-migrate` was merged here (`70f24a8`)
 and left in place. The work directory with snapshots, proposals, trials, reviews and raw
 measurements is `/home/canarit/projects/concord_v4_finish_work/`.
 
