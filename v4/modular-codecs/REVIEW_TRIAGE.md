@@ -123,3 +123,19 @@ and probes passed (extras, the facade's `metadata`, `accept` and `validate_names
 re-review's probes with two expectations adjusted to the deliberate `Text` change, a new delta
 probe: 2,025 wire requests, 0 mismatches); 55 withheld-body refusals stayed unread; no header
 content in errors. It did not run the full gate (the coordinator's gate on `d28ad34`: 34/34, 650).
+
+## Findings of the measurement, and a static review of their fix (`fcf343f`)
+
+The compile-time measurement could not build the generated type-path suites, and its compile check
+of the final candidate showed two lints. Fixed in `fcf343f`:
+
+| ID | Severity | Finding | Disposition | Evidence |
+|---|---|---|---|---|
+| P-1 | should fix | `concord-extras` built with `extras` alone (no `json`, no `form`) warned twice (`check_charset` unused, `essence` never read) since the parameter-parsing corrections; the workspace clippy step unifies features and could not see it | Fixed; new gate step `clippy-features` lints `concord-extras` with no, `json` and `form` features (all targets) and the facade with `extras` only, `-D warnings` | `scripts/verify.sh` |
+| P-2 | minor (tooling) | `benches/scale/gen.py` generated type-path suites with `default-features = false`, without the `extras` that `Text` and `Binary` need since the split | Fixed (generator version 8) | PERF §3 |
+
+A fresh `gpt-6.1-sol` session at medium effort, read-only (report
+[`rereview4-sol-REPORT.md`](reports/rereview4-sol-REPORT.md)), reviewed the delta `2cbac44..fcf343f`
+statically: no finding; the feature gates match every caller in each combination, the new step
+propagates failures (the script runs without `-e`, explicitly), the older generator syntaxes are
+unchanged. The gate on `fcf343f` passed 35/35.

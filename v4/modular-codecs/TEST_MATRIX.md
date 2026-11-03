@@ -11,7 +11,7 @@ command), **partial** (what is missing is said), **NOT_RUN** (environment), **de
 |---|---|---|
 | T01 | met | `scripts/check-ci.py --toolchain` (minimum = pin = 1.99.1; every production crate inherits it) |
 | T02 | met | state 1 (`dfdeed8`, 1.97.1) and state 2 (`686cd24`, 1.99.1) gate runs in STATUS; PERF compares state 2 with the split and the candidate on 1.99.1 |
-| T03 | met | `scripts/verify.sh` is the inventory; `scripts/check-ci.py --workflow`; previously omitted suites run in the ordinary lane |
+| T03 | met | `scripts/verify.sh` is the inventory; `scripts/check-ci.py --workflow`; previously omitted suites run in the ordinary lane; `clippy-features` lints the feature subsets the workspace build unifies away |
 | T04 | met | UI snapshots reviewed on 1.99.1 (`686cd24`); nightly lane `scripts/verify.sh --nightly-only` (`checks/clone-compat`) |
 | A01 | met | `checks/consumers/core-only` |
 | A02 | met | `checks/consumers/facade-no-extras` (graph without extras); `scripts/check-graph.py` |
