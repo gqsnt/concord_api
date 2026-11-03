@@ -101,9 +101,12 @@ scripts/verify.sh --nightly         # also the non-blocking nightly `Clone` chec
 It prints one `PASS`/`FAIL` line per step (logs in `target/verify-*.log`) and fails if a tracked
 file changed while it ran (for example `Cargo.lock`). Every cargo command uses `--locked`.
 
-`scripts/verify.sh` is the only list of gates: `.github/workflows/ci.yml` calls it (Linux with
-`--package --bench`, Windows without, a nightly lane with `--nightly-only`), and its
-`ci-inventory` step fails if the workflow names a cargo command of its own. The minimum supported
+`scripts/verify.sh` is the only list of gates: `.github/workflows/ci.yml` calls it (Linux and
+Windows both with `--package --bench`, a nightly lane with `--nightly-only`), and its
+`ci-inventory` step fails if the workflow names a cargo command of its own or selects gates by
+platform. Every step runs `python`, `cargo` and `tar` behind `scripts/argv-guard.sh`, which
+refuses a command line longer than Windows allows (32,767 characters) on every platform, so a
+script that passes bulk data as an argument fails locally too. The minimum supported
 Rust (`rust-version`) and the toolchain pinned in `rust-toolchain.toml` are the same release, so
 the ordinary run is also the minimum-version check; its `toolchain` step fails if they diverge,
 if a production package does not inherit the minimum, or if a script selects another stable

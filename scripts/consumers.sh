@@ -21,6 +21,9 @@ target_dir=$("$python" -I -c 'import json,sys; print(json.load(sys.stdin)["targe
 mkdir -p "$target_dir"
 scratch=$(mktemp -d "$target_dir/consumers.XXXXXXXX")
 echo "consumer logs: $scratch"
+# The metadata (about 50 KB) goes to Python as a file, never as an argument: Windows limits a
+# whole command line to 32,767 characters.
+printf '%s' "$metadata" >"$scratch/metadata.json"
 crates=(concord-core concord-macros concord-extras concord)
 source_dir="$root/crates"
 if [[ -n $packaged ]]; then
@@ -50,10 +53,10 @@ for consumer in core-only facade-no-extras extras-core facade-full facade-json-o
   destination="$scratch/$consumer"
   cp -R "$root/checks/consumers/$consumer" "$destination"
   # Rewrite only Concord dependency paths; retain the fixture's authored feature selection.
-  "$python" -I - "$destination/Cargo.toml" "$source_dir" "$metadata" "${packaged:+packaged}" <<'PY'
+  "$python" -I - "$destination/Cargo.toml" "$source_dir" "$scratch/metadata.json" "${packaged:+packaged}" <<'PY'
 import json, pathlib, re, sys
 manifest, source, metadata, packaged = sys.argv[1:]
-versions = {p['name']: p['version'] for p in json.loads(metadata)['packages']}
+versions = {p['name']: p['version'] for p in json.loads(pathlib.Path(metadata).read_text())['packages']}
 paths = {name: str(pathlib.Path(source) / (name + '-' + versions[name] if packaged else name))
          for name in ('concord-core', 'concord-macros', 'concord-extras', 'concord')}
 p = pathlib.Path(manifest)

@@ -20,15 +20,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - run: rustup show
-      # Linux also compiles the benchmarks (timed runs are in bench.yml) and checks the packages.
+      # The same complete inventory on both platforms: the packages are checked and the benchmarks
+      # compiled (timed runs are in bench.yml).
       - name: scripts/verify.sh
         shell: bash
-        run: |
-          if [[ "$RUNNER_OS" == "Linux" ]]; then
-            scripts/verify.sh --package --bench
-          else
-            scripts/verify.sh
-          fi
+        run: scripts/verify.sh --package --bench
       - name: logs of failed steps
         if: failure()
         shell: bash

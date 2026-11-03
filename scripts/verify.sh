@@ -57,6 +57,21 @@ no_reqwest_multipart() {
 
 mkdir -p target
 rm -f target/verify-*.log  # the summary below reads only this run's logs
+
+# Every step runs python, cargo and tar through scripts/argv-guard.sh, which refuses a command line
+# over the Windows limit on every platform (a consumers.sh argument once failed only on Windows).
+argv_guard() {
+  local dir="$PWD/target/argv-guard" name real
+  rm -rf "$dir" && mkdir -p "$dir" || return 1
+  for name in python3 python cargo tar; do
+    real=$(command -v "$name") || continue
+    printf '%s' "$real" >"$dir/$name.real"
+    cp scripts/argv-guard.sh "$dir/$name" && chmod +x "$dir/$name" || return 1
+  done
+  PATH="$dir:$PATH"
+}
+argv_guard || { echo "argv-guard could not be installed" >&2; exit 2; }
+python=$(command -v python3 || command -v python)  # now the guarded one
 echo "head: $(git rev-parse HEAD)  dirty: $(git status --porcelain --untracked-files=no | wc -l) file(s)"
 echo "rustc: $(rustc --version)"
 

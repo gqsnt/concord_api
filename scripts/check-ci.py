@@ -5,7 +5,8 @@
              production package inherits it, and no living script or workflow selects another
              stable release with `cargo +X.Y` (only `+nightly`, for the non-blocking lane).
 --workflow   .github/workflows/ci.yml runs the gates through scripts/verify.sh and lists no cargo
-             command of its own, so local and CI runs select the same suites.
+             command of its own, so local and CI runs select the same suites; Linux and Windows
+             run the same complete inventory (--package --bench).
 
 Usage: python3 -I scripts/check-ci.py --toolchain | --workflow
 """
@@ -75,6 +76,13 @@ def workflow():
         problems.append("ci.yml has no non-blocking nightly lane (scripts/verify.sh --nightly-only)")
     if "windows-latest" not in text:
         problems.append("ci.yml has no native Windows job")
+    # Every platform runs the same complete inventory: no gate is selected by operating system.
+    runs = re.findall(r"run:\s*scripts/verify\.sh([^\n]*)", text)
+    full = [r for r in runs if "--nightly-only" not in r]
+    if not full or any("--package" not in r or "--bench" not in r for r in full):
+        problems.append("the verify job must run scripts/verify.sh --package --bench")
+    if "RUNNER_OS" in text or "runner.os" in text:
+        problems.append("ci.yml selects gates by platform")
     print(f"ci.yml refers to scripts/verify.sh {len(calls)} time(s)")
     return problems
 
