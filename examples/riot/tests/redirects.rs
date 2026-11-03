@@ -48,7 +48,11 @@ async fn send_reports_the_redirect_and_the_second_origin_receives_nothing() {
     assert!(response.headers().contains_key("location"));
     assert_eq!(origin.requests().len(), 1);
     assert_eq!(origin.single().header("x-riot-token"), Some(KEY));
-    assert!(elsewhere.requests().is_empty(), "{:#?}", elsewhere.requests());
+    assert!(
+        elsewhere.requests().is_empty(),
+        "{:#?}",
+        elsewhere.requests()
+    );
 }
 
 #[tokio::test]
@@ -91,12 +95,9 @@ async fn control_the_default_policy_forwards_the_key_to_the_second_origin() {
 async fn the_live_client_refuses_plain_http() {
     let (origin, elsewhere) = origins().await;
     let port = origin.addr.port();
-    let riot = Riot::new(
-        live_http_client().unwrap(),
-        RiotConfig { key: KEY.into() },
-    )
-    .with_base_url(format!("http://api.riotgames.invalid:{port}"))
-    .unwrap();
+    let riot = Riot::new(live_http_client().unwrap(), RiotConfig { key: KEY.into() })
+        .with_base_url(format!("http://api.riotgames.invalid:{port}"))
+        .unwrap();
     let error = riot
         .account(AccountRoute::Americas)
         .by_riot_id("Fixture Player", "EUW")

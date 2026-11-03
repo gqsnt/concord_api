@@ -45,6 +45,11 @@ pub struct KeyPath {
     pub path: syn::Path,
     /// The path's tokens, as written (for documentation and error labels).
     pub text: String,
+    /// The owner whose header contribution holds this occurrence, set when the contribution is
+    /// recorded. Each occurrence belongs to exactly one contribution of one owner (inheriting
+    /// owners reach it through their chain, not as a copy); `None` only when the declaration
+    /// failed before its contribution was recorded.
+    pub owner: Option<usize>,
 }
 
 /// Whether two keys name the same header, as far as the macro can tell.
@@ -1010,6 +1015,13 @@ impl Model {
     }
 
     fn push_contrib(&mut self, at: usize, family: Family, contrib: Contrib) {
+        if let KeyName::Path(i) = contrib.key {
+            debug_assert!(
+                self.key_paths[i].owner.is_none(),
+                "one contribution per occurrence"
+            );
+            self.key_paths[i].owner = Some(at);
+        }
         match family {
             Family::Query => self.owners[at].query.push(contrib),
             Family::Header => self.owners[at].headers.push(contrib),
@@ -1069,6 +1081,7 @@ impl Model {
                 self.key_paths.push(KeyPath {
                     path: path.clone(),
                     text,
+                    owner: None,
                 });
                 Some(KeyName::Path(self.key_paths.len() - 1))
             }

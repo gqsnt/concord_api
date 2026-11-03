@@ -99,7 +99,7 @@ fn header_statics(k: &TokenStream, model: &Model) -> (TokenStream, Headers) {
     // One accessor per native key path, under the union of its declaring owners' `cfg`s: the
     // path is resolved (and type-checked, with Concord's message) once, where it is written.
     for (i, key) in model.key_paths.iter().enumerate() {
-        let cfg = owners_cfg(model, &key_users(model, i));
+        let cfg = owners_cfg(model, key_owner(model, i));
         let ident = key_fn(model, i);
         let path = &key.path;
         let check = quote_spanned!(path.span()=> #k::__private::NativeKey::native_key(&#path));
@@ -208,16 +208,11 @@ fn withheld_fns(k: &TokenStream, model: &Model, headers: &Headers) -> TokenStrea
     out
 }
 
-/// The owners whose headers name native key path `i`.
-fn key_users(model: &Model, i: usize) -> Vec<usize> {
-    (0..model.owners.len())
-        .filter(|&o| {
-            model.owners[o]
-                .headers
-                .iter()
-                .any(|c| c.key == KeyName::Path(i))
-        })
-        .collect()
+/// The owner whose headers name native key path `i` (the occurrence's provenance, recorded when
+/// the model is built); empty for an occurrence whose declaration failed, whose accessor is then
+/// never compiled.
+fn key_owner(model: &Model, i: usize) -> &[usize] {
+    model.key_paths[i].owner.as_slice()
 }
 
 /// A run-time withholding condition as a `bool` expression. A key path written only under
@@ -244,7 +239,7 @@ fn cond_expr(k: &TokenStream, model: &Model, headers: &Headers, cond: &Cond) -> 
     };
     let present: Vec<TokenStream> = keys
         .into_iter()
-        .filter_map(|i| owners_cfg_predicate(model, &key_users(model, i)))
+        .filter_map(|i| owners_cfg_predicate(model, key_owner(model, i)))
         .collect();
     if present.is_empty() {
         return expr;
@@ -2191,8 +2186,8 @@ fn prepare_body(
 mod tests {
     use quote::quote;
 
-    use super::emit;
-    use crate::model::Model;
+    use super::{emit, key_owner};
+    use crate::model::{KeyName, Model};
     use crate::syntax::Api;
 
     /// The generated rustdoc text of a declaration.
@@ -2201,6 +2196,45 @@ mod tests {
         let (model, unused) = Model::build(api).unwrap_or_else(|e| panic!("model: {e}"));
         assert!(unused.is_none(), "unused values in a unit fixture");
         emit(&model, quote!(::concord)).to_string()
+    }
+
+    /// The provenance recorded for each native key occurrence (R5) is the one owner that the old
+    /// scan over every owner's contributions found: per occurrence (equal tokens stay distinct),
+    /// across nested and `cfg` scopes, client parameters, removals and repeated operations.
+    #[test]
+    fn key_occurrence_owner_matches_a_scan_of_every_owner() {
+        let api: Api = syn::parse2(quote! {
+            pub client Api(#[sensitive] header(X_KEY) key: String) {
+                base "http://x.test";
+                headers { ACCEPT = "application/json"; X_TRACE = "t"; }
+                #[cfg(feature = "a")]
+                scope a {
+                    headers { X_TRACE = "a"; }
+                    scope deep {
+                        GET one() { headers { remove X_KEY; X_KEY = "TWO"; append X_KEY = "3"; } }
+                    }
+                }
+                scope b {
+                    GET two() { headers { remove ACCEPT; ACCEPT = "text/plain"; } }
+                }
+                GET three();
+            }
+        })
+        .expect("declaration parses");
+        let (model, _) = Model::build(api).unwrap_or_else(|e| panic!("model: {e}"));
+        assert_eq!(model.key_paths.len(), 9, "one entry per written path");
+        for (i, key) in model.key_paths.iter().enumerate() {
+            let scanned: Vec<usize> = (0..model.owners.len())
+                .filter(|&o| {
+                    model.owners[o]
+                        .headers
+                        .iter()
+                        .any(|c| c.key == KeyName::Path(i))
+                })
+                .collect();
+            assert_eq!(scanned.len(), 1, "{}: {scanned:?}", key.text);
+            assert_eq!(key_owner(&model, i), &scanned[..], "{}", key.text);
+        }
     }
 
     /// With a native key on the chain, the header operations are listed in chain order, removals
