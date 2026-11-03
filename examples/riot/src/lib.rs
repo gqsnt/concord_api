@@ -19,8 +19,39 @@ pub use api::{DataDragon, Riot, RiotConfig, X_RIOT_TOKEN};
 pub use routing::{AccountRoute, MatchRoute, Platform};
 pub use types::*;
 
-use concord::reqwest::StatusCode;
+use std::time::Duration;
+
 use concord::reqwest::header::RETRY_AFTER;
+use concord::reqwest::{ClientBuilder, StatusCode, redirect};
+
+/// The HTTP policy of this application's Riot client: redirects are never followed, and each
+/// request has a 10-second timeout.
+///
+/// Riot's documented API answers without redirects. reqwest follows up to ten by default and, on a
+/// cross-origin redirect, removes only a fixed list of credential headers (`Authorization`,
+/// cookies, proxy credentials); `X-Riot-Token` is not on it, so a followed redirect would carry
+/// the key to the new origin. With this policy a `3xx` reaches the caller instead: `send()` reports
+/// it as an [`ErrorKind::Status`](concord::ErrorKind::Status) error holding the unread response,
+/// and `send_raw()` returns it. This is the application's transport choice, made where the
+/// `reqwest::Client` is built; Concord itself has no redirect policy.
+///
+/// [`live_http_client`] adds HTTPS-only; the tests apply this same policy to loopback origins.
+pub fn http_policy(builder: ClientBuilder) -> ClientBuilder {
+    builder
+        .redirect(redirect::Policy::none())
+        .timeout(Duration::from_secs(10))
+}
+
+/// The client used by live mode: [`http_policy`], HTTPS only.
+///
+/// # Errors
+///
+/// When reqwest cannot build the client (for example, no TLS backend is available).
+pub fn live_http_client() -> concord::reqwest::Result<concord::reqwest::Client> {
+    http_policy(concord::reqwest::Client::builder())
+        .https_only(true)
+        .build()
+}
 
 /// At most this many match details are fetched by [`player_summary`].
 pub const MAX_MATCHES: u32 = 5;

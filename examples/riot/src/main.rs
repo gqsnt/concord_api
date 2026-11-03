@@ -7,10 +7,12 @@
 //! Without `live` it only prints this usage: the example is meant to be run offline through its
 //! tests (`cargo test -p concord-example-riot`). Live mode needs an explicit key in the
 //! environment (never on the command line or in a URL), makes at most `4 + 5` GET requests,
-//! stops on the first `429` and reports Riot's `Retry-After`, and never calls the tournament stub.
+//! stops on the first `429` and reports Riot's `Retry-After`, never follows a redirect (the key
+//! would go with it), and never calls the tournament stub.
 
 use concord_example_riot::{
-    AccountRoute, MAX_MATCHES, MatchRoute, Platform, Riot, RiotConfig, Stop, player_summary,
+    AccountRoute, MAX_MATCHES, MatchRoute, Platform, Riot, RiotConfig, Stop, live_http_client,
+    player_summary,
 };
 
 const USAGE: &str = "usage: RIOT_API_KEY=<key> concord-example-riot live <gameName> <tagLine> <accountRoute: americas|asia|europe> <platform: euw1|na1|kr|…> <matchRoute: americas|asia|europe|sea> [matches (≤ 5)]\nThe tests run everything offline: cargo test -p concord-example-riot";
@@ -40,11 +42,8 @@ async fn main() {
         .unwrap_or(3)
         .min(MAX_MATCHES);
 
-    let http = concord::reqwest::Client::builder()
-        .https_only(true)
-        .timeout(std::time::Duration::from_secs(10))
-        .build()
-        .expect("HTTP client");
+    // HTTPS only, no redirects followed (the key would follow them), a 10-second timeout.
+    let http = live_http_client().expect("HTTP client");
     let riot = Riot::new(http, RiotConfig { key });
     match player_summary(
         &riot,
