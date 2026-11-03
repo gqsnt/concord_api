@@ -68,12 +68,23 @@ impl Fixture {
     }
 
     fn request_has(&self, line: &str) -> bool {
-        self.request.lock().unwrap().lines().any(|l| l.trim() == line)
+        self.request
+            .lock()
+            .unwrap()
+            .lines()
+            .any(|l| l.trim() == line)
     }
 }
 
 const GZIP_JSON: &str = "HTTP/1.1 200 OK\r\ncontent-type: application/json; charset=utf-8\r\n\
                          content-encoding: gzip\r\nvary: accept-encoding";
+
+/// Bounds a whole test, so that no request, response read or task join can hang it.
+async fn bounded(test: impl std::future::Future<Output = ()>) {
+    timeout(Duration::from_secs(20), test)
+        .await
+        .expect("the test finished within 20 s");
+}
 
 fn expected() -> Catalog {
     let plain = concord::bytes::Bytes::from_static(PLAIN);
@@ -86,33 +97,41 @@ fn expected() -> Catalog {
 /// and the packed length, which no longer describe the bytes the format receives.
 #[tokio::test]
 async fn gzip_json_is_decoded_from_the_unpacked_body() {
-    let server = Fixture::start(GZIP_JSON, PACKED, false).await;
-    let catalog = timeout(LIMIT, server.shop(reqwest::Client::new()).catalog().send())
-        .await
-        .unwrap()
-        .unwrap();
-    assert_eq!(catalog, expected());
-    assert!(server.request_has("accept-encoding: gzip"));
+    bounded(async {
+        let server = Fixture::start(GZIP_JSON, PACKED, false).await;
+        let catalog = timeout(LIMIT, server.shop(reqwest::Client::new()).catalog().send())
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(catalog, expected());
+        assert!(server.request_has("accept-encoding: gzip"));
 
-    let server = Fixture::start(GZIP_JSON, PACKED, false).await;
-    let (catalog, seen) = timeout(LIMIT, server.shop(reqwest::Client::new()).observed().send())
-        .await
-        .unwrap()
-        .unwrap();
-    assert_eq!(catalog, expected());
-    assert_eq!(
-        seen,
-        Seen {
-            content_type: Some("application/json; charset=utf-8".into()),
-            content_encoding: None,
-            content_length: None,
-        }
-    );
+        let server = Fixture::start(GZIP_JSON, PACKED, false).await;
+        let (catalog, seen) = timeout(LIMIT, server.shop(reqwest::Client::new()).observed().send())
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(catalog, expected());
+        assert_eq!(
+            seen,
+            Seen {
+                content_type: Some("application/json; charset=utf-8".into()),
+                content_encoding: None,
+                content_length: None,
+            }
+        );
 
-    // The fixture is correctly compressed: reqwest unpacks it to exactly the plain JSON.
-    let server = Fixture::start(GZIP_JSON, PACKED, false).await;
-    let raw = server.shop(reqwest::Client::new()).raw().send().await.unwrap();
-    assert_eq!(raw.as_ref(), PLAIN);
+        // The fixture is correctly compressed: reqwest unpacks it to exactly the plain JSON.
+        let server = Fixture::start(GZIP_JSON, PACKED, false).await;
+        let raw = server
+            .shop(reqwest::Client::new())
+            .raw()
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(raw.as_ref(), PLAIN);
+    })
+    .await;
 }
 
 /// An incompatible `Content-Type` on a compressed response is refused from the head, while the
@@ -121,32 +140,44 @@ async fn gzip_json_is_decoded_from_the_unpacked_body() {
 /// uses the same server with a compatible head: `send()` waits for the body.
 #[tokio::test]
 async fn an_incompatible_type_is_refused_before_the_body() {
-    let mut server = Fixture::start(
-        "HTTP/1.1 200 OK\r\ncontent-type: text/html\r\ncontent-encoding: gzip",
-        PACKED,
-        true,
-    )
-    .await;
-    let error = timeout(LIMIT, server.shop(reqwest::Client::new()).catalog().send())
-        .await
-        .expect("refused without waiting for the body")
-        .unwrap_err();
-    assert_eq!(error.kind(), ErrorKind::Metadata);
-    assert_eq!(server.written.load(Ordering::SeqCst), 0, "the body was not sent yet");
-    let response = error.into_response().expect("the unread response is retained");
-    assert_eq!(response.headers()["content-type"], "text/html");
-    server.release.take().unwrap().send(()).unwrap();
-    let body = timeout(LIMIT, response.bytes()).await.unwrap().unwrap();
-    assert_eq!(body.as_ref(), PLAIN);
+    bounded(async {
+        let mut server = Fixture::start(
+            "HTTP/1.1 200 OK\r\ncontent-type: text/html\r\ncontent-encoding: gzip",
+            PACKED,
+            true,
+        )
+        .await;
+        let error = timeout(LIMIT, server.shop(reqwest::Client::new()).catalog().send())
+            .await
+            .expect("refused without waiting for the body")
+            .unwrap_err();
+        assert_eq!(error.kind(), ErrorKind::Metadata);
+        assert_eq!(
+            server.written.load(Ordering::SeqCst),
+            0,
+            "the body was not sent yet"
+        );
+        let response = error
+            .into_response()
+            .expect("the unread response is retained");
+        assert_eq!(response.headers()["content-type"], "text/html");
+        server.release.take().unwrap().send(()).unwrap();
+        let body = timeout(LIMIT, response.bytes()).await.unwrap().unwrap();
+        assert_eq!(body.as_ref(), PLAIN);
 
-    let mut server = Fixture::start(GZIP_JSON, PACKED, true).await;
-    let shop = server.shop(reqwest::Client::new());
-    let pending = tokio::spawn(async move { shop.catalog().send().await });
-    tokio::time::sleep(Duration::from_millis(300)).await;
-    assert!(!pending.is_finished(), "a compatible head waits for the body");
-    server.release.take().unwrap().send(()).unwrap();
-    let catalog = timeout(LIMIT, pending).await.unwrap().unwrap().unwrap();
-    assert_eq!(catalog, expected());
+        let mut server = Fixture::start(GZIP_JSON, PACKED, true).await;
+        let shop = server.shop(reqwest::Client::new());
+        let pending = tokio::spawn(async move { shop.catalog().send().await });
+        tokio::time::sleep(Duration::from_millis(300)).await;
+        assert!(
+            !pending.is_finished(),
+            "a compatible head waits for the body"
+        );
+        server.release.take().unwrap().send(()).unwrap();
+        let catalog = timeout(LIMIT, pending).await.unwrap().unwrap().unwrap();
+        assert_eq!(catalog, expected());
+    })
+    .await;
 }
 
 /// Control, decompression disabled on the client: the request offers no gzip, the packed bytes
@@ -155,18 +186,21 @@ async fn an_incompatible_type_is_refused_before_the_body() {
 /// bytes unchanged.
 #[tokio::test]
 async fn decompression_disabled_control() {
-    let client = || reqwest::Client::builder().no_gzip().build().unwrap();
-    let server = Fixture::start(GZIP_JSON, PACKED, false).await;
-    let error = timeout(LIMIT, server.shop(client()).catalog().send())
-        .await
-        .unwrap()
-        .unwrap_err();
-    assert_eq!(error.kind(), ErrorKind::Decode);
-    assert!(!server.request_has("accept-encoding: gzip"));
+    bounded(async {
+        let client = || reqwest::Client::builder().no_gzip().build().unwrap();
+        let server = Fixture::start(GZIP_JSON, PACKED, false).await;
+        let error = timeout(LIMIT, server.shop(client()).catalog().send())
+            .await
+            .unwrap()
+            .unwrap_err();
+        assert_eq!(error.kind(), ErrorKind::Decode);
+        assert!(!server.request_has("accept-encoding: gzip"));
 
-    let server = Fixture::start(GZIP_JSON, PACKED, false).await;
-    let raw = server.shop(client()).raw().send().await.unwrap();
-    assert_eq!(raw.as_ref(), PACKED);
+        let server = Fixture::start(GZIP_JSON, PACKED, false).await;
+        let raw = server.shop(client()).raw().send().await.unwrap();
+        assert_eq!(raw.as_ref(), PACKED);
+    })
+    .await;
 }
 
 /// `Content-Type: application/gzip` without `Content-Encoding` is a gzip file, not packed JSON:
@@ -174,17 +208,25 @@ async fn decompression_disabled_control() {
 /// `Binary` returns the file as sent.
 #[tokio::test]
 async fn a_gzip_media_type_is_not_a_content_encoding() {
-    let head = "HTTP/1.1 200 OK\r\ncontent-type: application/gzip";
-    let server = Fixture::start(head, PACKED, false).await;
-    let error = timeout(LIMIT, server.shop(reqwest::Client::new()).catalog().send())
-        .await
-        .unwrap()
-        .unwrap_err();
-    assert_eq!(error.kind(), ErrorKind::Metadata);
-    let response = error.into_response().unwrap();
-    assert_eq!(response.bytes().await.unwrap().as_ref(), PACKED);
+    bounded(async {
+        let head = "HTTP/1.1 200 OK\r\ncontent-type: application/gzip";
+        let server = Fixture::start(head, PACKED, false).await;
+        let error = timeout(LIMIT, server.shop(reqwest::Client::new()).catalog().send())
+            .await
+            .unwrap()
+            .unwrap_err();
+        assert_eq!(error.kind(), ErrorKind::Metadata);
+        let response = error.into_response().unwrap();
+        assert_eq!(response.bytes().await.unwrap().as_ref(), PACKED);
 
-    let server = Fixture::start(head, PACKED, false).await;
-    let raw = server.shop(reqwest::Client::new()).raw().send().await.unwrap();
-    assert_eq!(raw.as_ref(), PACKED);
+        let server = Fixture::start(head, PACKED, false).await;
+        let raw = server
+            .shop(reqwest::Client::new())
+            .raw()
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(raw.as_ref(), PACKED);
+    })
+    .await;
 }

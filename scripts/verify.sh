@@ -64,6 +64,7 @@ rm -f target/verify-*.log  # the summary below reads only this run's logs
 argv_guard() {
   local dir="$PWD/target/argv-guard" name real
   rm -rf "$dir" && mkdir -p "$dir" || return 1
+  printf '%s' "$python" >"$dir/interpreter" && cp scripts/argv-length.py "$dir/" || return 1
   for name in python3 python cargo tar; do
     real=$(command -v "$name") || continue
     printf '%s' "$real" >"$dir/$name.real"
@@ -77,6 +78,8 @@ echo "head: $(git rev-parse HEAD)  dirty: $(git status --porcelain --untracked-f
 echo "rustc: $(rustc --version)"
 
 if [[ $only_nightly == 0 ]]; then
+# The guard's length model (MSVC quoting, UTF-16 units) against known exact lengths.
+step argv-length "$python" -I scripts/argv-length.py --self-test
 step toolchain "$python" -I scripts/check-ci.py --toolchain
 step ci-inventory "$python" -I scripts/check-ci.py --workflow
 # The production edges of the four crates (manifests, then one resolved graph per package).

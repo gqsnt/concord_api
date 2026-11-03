@@ -49,12 +49,17 @@ The four crates share one version and require each other exactly (`=4.1.0`); upd
 No library behaviour differs on Windows. The verification scripts did: `scripts/consumers.sh`
 passed about 50 KB of `cargo metadata` output as one command-line argument, beyond Windows'
 32,767-character limit, so the gate failed there while passing on Linux. It now passes the data as
-a file, every gate step runs behind a wrapper that enforces the Windows limit on all platforms, and
-CI runs the same complete inventory (packages and benchmarks included) on Linux and Windows.
+a file, and every gate step runs `python`, `cargo` and `tar` behind a wrapper that measures each
+command line as Windows would quote it (UTF-16 units) and refuses one over the limit on all
+platforms. CI now runs the same complete inventory (packages and benchmarks included) on Linux and
+Windows; doing so exposed two more Windows-only script defects, also fixed: GNU tar read the
+`D:\...` archive path as a remote `host:path`, and a carriage return from Windows Python ended a
+path read with `read`.
 
 ### Tests and checks added in this release
 
 - `checks/consumers/facade-gzip`: an application with reqwest's gzip support, against compressed
   fixtures, a withheld body and a decompression-disabled control.
 - `crates/concord/tests/accept.rs::no_suggestion_keeps_the_metadata_checks`.
-- `scripts/argv-guard.sh`, installed by `scripts/verify.sh`.
+- `scripts/argv-guard.sh` and `scripts/argv-length.py` (with a self-test gate step), installed by
+  `scripts/verify.sh`; `scripts/check-ci.py` refuses platform-selected gates and `tar -f NAME`.

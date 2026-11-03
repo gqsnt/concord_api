@@ -105,8 +105,9 @@ file changed while it ran (for example `Cargo.lock`). Every cargo command uses `
 Windows both with `--package --bench`, a nightly lane with `--nightly-only`), and its
 `ci-inventory` step fails if the workflow names a cargo command of its own or selects gates by
 platform. Every step runs `python`, `cargo` and `tar` behind `scripts/argv-guard.sh`, which
-refuses a command line longer than Windows allows (32,767 characters) on every platform, so a
-script that passes bulk data as an argument fails locally too. The `consumers` steps need the
+measures the command line as Windows would quote it (`scripts/argv-length.py`, in UTF-16 units)
+and refuses one over the Windows limit (32,767) on every platform, so a script that passes bulk
+data as an argument fails locally too. The `consumers` steps need the
 network once for `checks/consumers/facade-gzip`, which keeps its own `Cargo.lock` and fetches
 reqwest's compression dependencies (`cargo fetch --locked`); the other consumers build offline. The minimum supported
 Rust (`rust-version`) and the toolchain pinned in `rust-toolchain.toml` are the same release, so
