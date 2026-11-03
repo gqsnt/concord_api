@@ -655,13 +655,27 @@ pub const SENSITIVE_NAMES: &[&str] = &[
 
 /// The type a header key path must have: a native `HeaderName` (constant or static). Only the
 /// diagnostic is Concord's; the name itself is used as it is.
+///
+/// Sealed: implemented for `HeaderName` only. The generated code resolves each key path once
+/// and caches what it decides from the name (the per-value sensitivity conditions), which is
+/// sound because a `HeaderName` constant or static cannot change. A downstream implementation
+/// (a type whose `native_key` returns different names over time) would break that assumption, so
+/// none is accepted.
 #[diagnostic::on_unimplemented(
     message = "`{Self}` is not a native header name",
     label = "a header key path names a `HeaderName` constant or static",
     note = "write a literal name, `header(\"x-name\")`, or define `const X_NAME: HeaderName = HeaderName::from_static(\"x-name\");`"
 )]
-pub trait NativeKey {
+pub trait NativeKey: sealed::Sealed {
     fn native_key(&self) -> &HeaderName;
+}
+
+mod sealed {
+    /// Not nameable outside this crate, so [`NativeKey`](super::NativeKey) cannot be implemented
+    /// there.
+    pub trait Sealed {}
+
+    impl Sealed for reqwest::header::HeaderName {}
 }
 
 impl NativeKey for HeaderName {
