@@ -112,7 +112,8 @@ concord::api! {
 
 /// H01–H05 in one test (the counter is shared): validation runs no default, `Display` or encoder,
 /// needs no endpoint value (one body type is uninhabited), reports every endpoint's problem once in
-/// declaration order, and each problem is the error that endpoint's `prepare()` returns.
+/// declaration order, and each problem is the error that endpoint's `prepare()` returns (no
+/// earlier build step fails in this fixture; `earlier_build_steps_fail_first` covers that).
 #[test]
 fn validation_runs_nothing_and_matches_prepare() {
     let errors = Broken::validate_header_names().unwrap_err();

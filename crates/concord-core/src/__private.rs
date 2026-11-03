@@ -995,8 +995,8 @@ impl NameCheck {
         Self::default()
     }
 
-    /// Checks one endpoint's chain; records its first violation (the one its `prepare()` would
-    /// report), if any.
+    /// Checks one endpoint's chain; records its first violation (the one its `prepare()` reports
+    /// when it composes the headers), if any.
     pub fn endpoint<const N: usize>(
         &mut self,
         endpoint: &'static str,

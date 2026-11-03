@@ -231,14 +231,15 @@ concord::api! {
 }
 ```
 
-`Decode<T>` returns only `T`. When the caller needs what the head said (the version itself),
-decode into a wrapper output type of yours, such as `Versioned<T> { version, value }`, and declare
-that as the endpoint's output (`-> Versioned<Item>`); the context carries the version from
-`context` to `decode_body`.
-
 The same test sends a missing, unsupported and non-numeric version through `versioned()` and
 through `versioned_any_type()`, and every one is `ErrorKind::Metadata`: the adapter skips the
 `Content-Type` check only (section 7).
+
+`Decode<T>` returns only `T`. When the caller needs what the head said (the version itself),
+decode into an output type of yours that carries it, such as `WithVersion<T> { version, value }`,
+and declare that as the endpoint's output (`-> WithVersion<Item>`, with
+`impl Decode<WithVersion<Item>> for Versioned`); the context carries the version from `context`
+to `decode_body`.
 
 ### Narrowing to one exact vendor media type
 
@@ -412,7 +413,7 @@ The other standard formats, for comparison:
 | Format | Response head check | `Accept` suggestion |
 |---|---|---|
 | `Json` | the table above | `application/json` |
-| `Text` | refuses only a single well-formed `Content-Type` whose `charset` is not UTF-8 (`us-ascii` is fine) or appears twice; any media type, a missing or a malformed field (bytes outside visible ASCII included) is accepted | none |
+| `Text` | refuses only a single well-formed `Content-Type` with a `charset` that is not UTF-8 (`us-ascii` is fine), repeated or not; any media type, a missing or a malformed field (bytes outside visible ASCII included) is accepted | none |
 | `Binary` | none (`image/png` is fine) | none |
 | `Form` | exactly one `application/x-www-form-urlencoded`, `charset` UTF-8 or absent | `application/x-www-form-urlencoded` |
 | `IgnoreContentType<F>` | `F`'s, without its `check_content_type` | `F`'s |

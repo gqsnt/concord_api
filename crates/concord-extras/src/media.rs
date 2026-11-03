@@ -41,15 +41,18 @@ pub(crate) fn single(head: &ResponseHead<'_>) -> Result<Option<Media>, CodecErro
     Ok(Some(Media { essence, charsets }))
 }
 
+/// Whether a `charset` value names UTF-8 (`us-ascii` is a subset); case-insensitive.
+pub(crate) fn is_utf8(charset: &str) -> bool {
+    charset.eq_ignore_ascii_case("utf-8") || charset.eq_ignore_ascii_case("us-ascii")
+}
+
 /// Whether a media type's `charset` parameters, if any, name UTF-8 (`us-ascii` is a subset, so it
 /// is accepted too); charset names are case-insensitive. A repeated `charset` is refused as
 /// ambiguous, whatever its values.
 pub(crate) fn check_charset(charsets: &[String], foreign: &'static str) -> Result<(), CodecError> {
     match charsets {
         [] => Ok(()),
-        [one] if one.eq_ignore_ascii_case("utf-8") || one.eq_ignore_ascii_case("us-ascii") => {
-            Ok(())
-        }
+        [one] if is_utf8(one) => Ok(()),
         [_] => Err(CodecError::new(foreign)),
         _ => Err(CodecError::new(
             "the response Content-Type declares charset more than once",

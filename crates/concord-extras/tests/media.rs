@@ -402,10 +402,32 @@ mod charset {
                 String::from_utf8_lossy(ct)
             );
         }
-        assert_eq!(
-            verdict::<Text, String>(&[b"text/plain; charset=utf-8; charset=iso-8859-1"]),
-            repeated
-        );
+        // `Text` refuses a foreign charset wherever it appears, and nothing else: a repeated
+        // UTF-8 charset is not ambiguous for a UTF-8 decoder (re-review N2).
+        let foreign = Err("the text response declares a charset other than utf-8");
+        for ct in [
+            &b"text/plain; charset=utf-8; charset=iso-8859-1"[..],
+            b"text/plain; charset=iso-8859-1; charset=utf-8",
+            b"text/plain; charset=utf-8; CHARSET=\"latin1\"",
+        ] {
+            assert_eq!(
+                verdict::<Text, String>(&[ct]),
+                foreign,
+                "{}",
+                String::from_utf8_lossy(ct)
+            );
+        }
+        for ct in [
+            &b"text/plain; charset=utf-8; charset=UTF-8"[..],
+            b"text/plain; charset=us-ascii; charset=\"utf-8\"",
+        ] {
+            assert_eq!(
+                verdict::<Text, String>(&[ct]),
+                Ok(()),
+                "{}",
+                String::from_utf8_lossy(ct)
+            );
+        }
         assert_eq!(
             verdict::<Form, BTreeMap<String, String>>(&[
                 b"application/x-www-form-urlencoded; charset=utf-8; charset=latin1"

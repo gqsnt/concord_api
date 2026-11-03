@@ -3,10 +3,10 @@
 //!
 //! | Format | Feature | Body (`Encode<T>`) | Output (`Decode<T>`): response head check | `Accept` suggestion |
 //! |---|---|---|---|---|
-//! | `Json` | `json` | any `T: Serialize`, `application/json` | any `T: DeserializeOwned`; exactly one `Content-Type`, `application/json` or `application/*+json`, UTF-8 | `application/json` |
-//! | [`Text`] | — | `String`, `text/plain; charset=utf-8` | `String` (UTF-8); any media type; a declared non-UTF-8 charset is refused | none |
+//! | `Json` | `json` | any `T: Serialize`, `application/json` | any `T: DeserializeOwned`; exactly one `Content-Type`, `application/json` or `application/*+json`, charset absent or once and UTF-8 | `application/json` |
+//! | [`Text`] | — | `String`, `text/plain; charset=utf-8` | `String` (UTF-8); any media type; a declared non-UTF-8 charset (repeated or not) is refused | none |
 //! | [`Binary`] | — | `Bytes`, `Vec<u8>`, `application/octet-stream` | `Bytes`, `Vec<u8>`; nothing checked (`image/png` is fine) | none |
-//! | `Form` | `form` | any `T: Serialize` (flat), `application/x-www-form-urlencoded` | any `T: DeserializeOwned`; exactly one `application/x-www-form-urlencoded` | `application/x-www-form-urlencoded` |
+//! | `Form` | `form` | any `T: Serialize` (flat), `application/x-www-form-urlencoded` | any `T: DeserializeOwned`; exactly one `application/x-www-form-urlencoded`, charset absent or once and UTF-8 | `application/x-www-form-urlencoded` |
 //! | [`IgnoreContentType<F>`] | — | `F`'s | `F`'s, without its `Content-Type` check | `F`'s |
 //!
 //! Head checks run before the body is read; a refusal is an

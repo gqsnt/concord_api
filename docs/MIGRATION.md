@@ -79,7 +79,7 @@ matches.
 refuses is an `ErrorKind::Metadata` error, and its body is not read. `Json` refuses a response
 that has no `Content-Type`, more than one (even equal), a comma-joined or malformed one, a media
 range, a type other than `application/json` or `application/*+json`, or a `charset` other than
-`utf-8` or `us-ascii`. `Form` is as strict about `application/x-www-form-urlencoded`. `Text` refuses only a
+`utf-8` or `us-ascii` (or declared twice). `Form` is as strict about `application/x-www-form-urlencoded`. `Text` refuses only a
 declared non-UTF-8 `charset`. `Binary` checks nothing. Typical causes: a mock server or fixture
 that sends a bare body, a `204` or `201` without a `Content-Type` on an endpoint with `->`, a
 proxy's HTML page, a service that labels JSON `text/plain`.

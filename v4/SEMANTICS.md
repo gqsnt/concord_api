@@ -257,10 +257,10 @@ chosen from the spelling of `T`, and none is known to the macro: the standard fo
 
 | Format | As body (`Encode<T>`) | As output (`Decode<T>`): head check, before the body is read | `Accept` suggestion |
 |---|---|---|---|
-| `Json` (feature `json`) | any `T: Serialize`, `application/json` | any `T: DeserializeOwned`; exactly one `Content-Type`, `application/json` or `application/*+json`, charset absent or UTF-8 | `application/json` |
-| `Text` | `String`, `text/plain; charset=utf-8` | `String` (UTF-8); any media type; a declared non-UTF-8 charset is refused | none |
+| `Json` (feature `json`) | any `T: Serialize`, `application/json` | any `T: DeserializeOwned`; exactly one `Content-Type`, `application/json` or `application/*+json`, charset absent or once and UTF-8 | `application/json` |
+| `Text` | `String`, `text/plain; charset=utf-8` | `String` (UTF-8); any media type; a declared non-UTF-8 charset (repeated or not) is refused | none |
 | `Binary` | `bytes::Bytes` or `Vec<u8>`, `application/octet-stream` | `bytes::Bytes` or `Vec<u8>`, unchanged; nothing checked | none |
-| `Form` (feature `form`) | any `T: Serialize` (`serde_urlencoded`), `application/x-www-form-urlencoded` | any `T: DeserializeOwned`; exactly one `application/x-www-form-urlencoded` | `application/x-www-form-urlencoded` |
+| `Form` (feature `form`) | any `T: Serialize` (`serde_urlencoded`), `application/x-www-form-urlencoded` | any `T: DeserializeOwned`; exactly one `application/x-www-form-urlencoded`, charset absent or once and UTF-8 | `application/x-www-form-urlencoded` |
 | `IgnoreContentType<F>` | `F`'s | `F`'s, without `F`'s `Content-Type` check | `F`'s |
 | a type path | its `Encode<T>` | its `Decode<T>` | its `Decode::ACCEPT` |
 | *(no `->`)* | — | output `()`: any 2xx; nothing checked; the body is drained chunk by chunk without buffering | none |
