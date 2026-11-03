@@ -34,7 +34,7 @@ toolchain.
 | `ee0117c` | final-audit corrections X-F1/X-F2 (charset parameters) and the fresh-use notes | the 34 steps passed, 648; the closing clean-tree check failed because the coordinator edited a records file during the run (work directory evidence/verify_ee0117c-4ce3d01.txt); superseded by the next rows |
 | `d98e4cf` | semantic-review corrections S1–S4, M1–M8 (RFC 9110 parameters, the sealing test, validator wording) | 34/34 with `--nightly`, 650 (`530b6c1`) |
 | `3f42a32` | `Text` and vendor-example documentation after the targeted re-review | 34/34 with `--nightly`, 650 (`3fa14b7`) |
-| `abdad04` | re-review corrections: `Text` refuses only a readable non-UTF-8 charset; documentation (N1–N3) | final gate below |
+| `abdad04`, `2cbac44` | re-review corrections: `Text` refuses only a readable non-UTF-8 charset (N2); type and subtype must be tokens (RR2-1); documentation (N1, N3, RR2-2..4). **`2cbac44` is the final code commit** | 34/34 with `--nightly`, 650 (`d28ad34`) |
 
 Gate counts are the facade's default workspace lane (`verify-test`); each run also passes every
 feature, consumer, package and documentation lane listed by `scripts/verify.sh`.

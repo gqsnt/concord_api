@@ -113,3 +113,13 @@ type through `Json`; refused responses unread, no header content in errors; the 
 | RR2-2 | minor | `Form`'s docs omitted the accepted `us-ascii` | Fixed (`Form` rustdoc, CUSTOM_FORMATS, the summary tables: UTF-8 or US-ASCII) | — |
 | RR2-3 | minor | MIGRATION said typed `Form` endpoints send `application/json` | Fixed: each format's own suggestion | `accept.rs` |
 | RR2-4 | minor | DIAGNOSTICS still said a duplicate native header fails `prepare()` on every call unconditionally | Fixed: unless an earlier build step fails first | `validate_names.rs::earlier_build_steps_fail_first` |
+
+## Third targeted re-review of the last delta (fresh Sol 6.1 XHigh, `d28ad34`, narrow)
+
+Observed settings `gpt-6.1-sol`, `xhigh`; report [`rereview3-sol-REPORT.md`](reports/rereview3-sol-REPORT.md).
+Scope: `3fa14b7..d28ad34` (`Text`'s charset rule, the token check of type and subtype, the
+documentation delta). No blocking, should-fix or minor finding. RR2-1..RR2-4 resolved. 46 tests
+and probes passed (extras, the facade's `metadata`, `accept` and `validate_names`, the previous
+re-review's probes with two expectations adjusted to the deliberate `Text` change, a new delta
+probe: 2,025 wire requests, 0 mismatches); 55 withheld-body refusals stayed unread; no header
+content in errors. It did not run the full gate (the coordinator's gate on `d28ad34`: 34/34, 650).

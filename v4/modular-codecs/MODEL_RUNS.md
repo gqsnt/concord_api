@@ -22,6 +22,7 @@ NOT_OBSERVABLE. Reports are frozen (SHA-256 below) before any synthesis; copies 
 | rereview-sol | targeted re-review of the audit corrections (fresh session) | `gpt-6.1-sol`, xhigh | `gpt-6.1-sol`, `xhigh` | execute, loopback | `4ce3d01` | [`rereview-sol-REPORT.md`](reports/rereview-sol-REPORT.md) `9af50bf4` |
 | rereview-opus | re-review of the semantic-review corrections (the same side Opus session, resumed) | Claude Opus | `claude-opus-5-5` | subagent, private target | `530b6c1` | [`rereview-opus-REPORT.md`](reports/rereview-opus-REPORT.md) `8907739e` |
 | rereview2-sol | second targeted re-review of all corrections (fresh session) | `gpt-6.1-sol`, xhigh | `gpt-6.1-sol`, `xhigh` | execute, loopback | `3fa14b7` | [`rereview2-sol-REPORT.md`](reports/rereview2-sol-REPORT.md) `29cfcd8f` |
+| rereview3-sol | narrow re-review of the last correction delta (fresh session) | `gpt-6.1-sol`, xhigh | `gpt-6.1-sol`, `xhigh` | execute, loopback | `d28ad34` | [`rereview3-sol-REPORT.md`](reports/rereview3-sol-REPORT.md) `8d2a5e5f` |
 | path-terra | bounded hierarchical-path prototype (optional gate) | `gpt-6.1-terra`, xhigh | `gpt-6.1-terra`, `xhigh` | execute, loopback | `25a52f7` | [`path-terra-report.md`](reports/path-terra-report.md) `ba7a1b02`; recipe imported as `1f26e91` |
 
 The two architecture challengers worked from the same brief and source, without the other's
