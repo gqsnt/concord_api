@@ -47,3 +47,13 @@ feature, consumer, package and documentation lane listed by `scripts/verify.sh`.
   not authorize. `ci.yml` runs `scripts/verify.sh` on `windows-latest`; the scripts use bash and
   fall back to `python` when `python3` is absent, but that path has not run on Windows.
 - Nightly: the non-blocking `Clone` lane (`scripts/verify.sh --nightly`) runs locally.
+
+## Final gate
+
+`scripts/verify.sh --package --bench --nightly` on `dd08c48` (the records commit that adds FINAL.md;
+code identical to `fcf343f`), rustc 1.99.1, Linux x86_64: **35/35 PASS**, exit 0, no tracked file
+changed. Test counts per lane: facade default 650, json-only 450, form-only 388, extras-only 385,
+reqwest-defaults-only 292, no-default 290, form+json 5, multipart 11, core 11, extras none 3 /
+json 9 / form 4, nightly `Clone` lane 16 (feature lanes repeat tests; they are not unique counts).
+Work directory evidence: evidence/verify_final_dd08c48.txt. The commit recording this section
+changes STATUS.md only; it is validated by `scripts/check-records.py` and its diff.
