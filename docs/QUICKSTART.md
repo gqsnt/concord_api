@@ -94,7 +94,9 @@ concord::api! {
 Read it top-down:
 
 - `pub client Tasks(#[sensitive] token: String)` — the client and its one **required** value. You
-  supply it through the generated `TasksConfig { token }` when creating the client.
+  supply it through the generated `TasksConfig { token }` when creating the client. Only required
+  client values become config fields; a client without any has no config struct and is created
+  with `Client::new(http)` alone.
   `#[sensitive]` keeps it out of Concord's `Debug` output and error messages; it is still sent.
 - `base` — the URL every path is appended to; `with_base_url` replaces it at runtime, path
   included: pass `https://staging.example.com/api`, not just the host, if the API lives under
@@ -105,14 +107,17 @@ Read it top-down:
   client's value.
 - `format Json;` — the **format** of the endpoints below, in both directions (`request Json;` and
   `response Json;` say one direction each): a body declared `body x: T` is sent as JSON, a typed
-  output `-> T` is decoded from JSON. An endpoint that differs says so with the same statements in its block —
+  output `-> T` is decoded from JSON. `Json` is an ordinary type, imported in §2
+  (`use concord::Json;`); `Text` and `Binary` are imported the same way where you name them. An
+  endpoint that differs says so with the same statements in its block —
   `GET readme() -> String { path "readme"; response Text; }`,
   `PUT image(body png: Vec<u8>) { path "image"; request Binary "image/png"; }` — and the nearest
-  statement wins; one without `->` decodes nothing and accepts any 2xx. A body's `Content-Type` is
-  its format's (`application/json`, ...) unless its `request` statement names another
-  (`request Json "application/merge-patch+json";`). The generated docs of each endpoint state the
-  format and `Content-Type` it uses and where they come from. The format, not the Rust type,
-  decides the wire: a `String` or `Vec<u8>` body left under `format Json;` is sent as a JSON
+  statement wins; one without `->` decodes nothing and accepts any 2xx (unlike `-> ()`, which its
+  format decodes: [author guide, 5.5](AUTHOR_GUIDE.md#55-no-output-versus---)). A body's
+  `Content-Type` is its format's (`application/json`, ...) unless its `request` statement names
+  another (`request Json "application/merge-patch+json";`). The generated docs of each endpoint
+  state the format and `Content-Type` it uses and where they come from. The format, not the Rust
+  type, decides the wire: a `String` or `Vec<u8>` body left under `format Json;` is sent as a JSON
   string or array, without any error. The format also judges the response: `Json` accepts a
   2xx response only when it has exactly one `Content-Type`, `application/json` or
   `application/*+json`, and checks that before reading the body. A response labelled `text/html`,
@@ -202,9 +207,10 @@ pub async fn run(base_url: &str, token: String) -> Result<(), Box<dyn std::error
   decodes a 2xx response.
 - **Errors.** Every call returns `Result<_, concord::Error>`. `error.kind()` tells the stage
   (`Build`, `Transport`, `Status`, `Metadata`, `Decode`). A non-2xx status keeps the **unread**
-  response: `into_response()` returns it (and returns any other error unchanged, so `?`
-  propagates it), and `<Json as Decode<Problem>>::decode_body((), bytes)` reads the API's error
-  document: it decodes bytes and checks no response head. A 2xx response whose head the format
+  response: `into_response()` returns it (a `Build`, `Transport` or `Decode` error has no response
+  and comes back unchanged as `Err`, so `?` propagates it), and
+  `<Json as Decode<Problem>>::decode_body((), bytes)` reads the API's error document: it decodes
+  bytes and checks no response head. A 2xx response whose head the format
   refuses (`Metadata`) keeps its response unread too, and `into_response()` returns that one as
   well; look at `error.kind()` first if a 2xx must not be taken for an error document. The
   [caller guide](CALLER_GUIDE.md#6-errors) covers the rest.

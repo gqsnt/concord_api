@@ -167,7 +167,10 @@ benches/scale/timing_plan.sh /tmp/concord-scale run      # runs them; JSON in /t
 `--syntax via` or `--syntax alpha` generates the same workloads for an older Concord, for A/B
 suites. Timing needs an
 otherwise idle machine; record the toolchain and commit with the results. Earlier measurements are
-in `v4/evidence/PERF.md` (alpha) and `v4/refinement/evidence/tracks/compiler.md`.
+in `v4/evidence/PERF.md` (alpha) and `v4/refinement/evidence/tracks/compiler.md`, both taken with
+rustc 1.97.1 (the second also with a nightly for expansion), before the 1.99.1 pin: compare new
+results with them only on the same compiler, and pass `TOOLCHAIN=` to `timing_plan.sh`
+explicitly so the plan names the compiler you measure.
 
 ## The generated-code bridge
 

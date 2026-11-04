@@ -81,7 +81,8 @@ refuses is an `ErrorKind::Metadata` error, and its body is not read. `Json` refu
 that has no `Content-Type`, more than one (even equal), a comma-joined or malformed one, a media
 range, a type other than `application/json` or `application/*+json`, or a `charset` other than
 `utf-8` or `us-ascii` (or declared twice). `Form` is as strict about `application/x-www-form-urlencoded`. `Text` refuses only a
-declared non-UTF-8 `charset`. `Binary` checks nothing. Typical causes: a mock server or fixture
+single well-formed `Content-Type` declaring a `charset` other than UTF-8 or US-ASCII (a missing,
+repeated or malformed one is accepted). `Binary` checks nothing. Typical causes: a mock server or fixture
 that sends a bare body, a `204` or `201` without a `Content-Type` on an endpoint with `->`, a
 proxy's HTML page, a service that labels JSON `text/plain`.
 
@@ -169,7 +170,8 @@ impl Decode<Vec<String>> for Lines {
 }
 ```
 
-rustc reports three errors for the `Decode` impl and points at each: ``unresolved import
+rustc reports errors for the `Decode` impl and points at each (their number and grouping depend
+on the compiler version): ``unresolved import
 `concord::BodyError` `` (it suggests `CodecError`), ``method `decode` is not a member of trait
 `Decode` `` and ``not all trait items implemented, missing: `Context`, `context`, `decode_body` ``
 (it prints a skeleton for each).
@@ -395,8 +397,9 @@ text" are gone: only a `HeaderValue` can carry its own sensitivity flag, and it 
 
 Header text follows `http` (`HeaderValue::from_str`) instead of Concord's visible-ASCII rule:
 UTF-8 beyond ASCII (`café`) is now sent where it used to be a build error (or, as a literal, a
-compile error). Control bytes are still rejected — at compile time for a literal or a template's
-literal fragment, as a build error for formatted text.
+compile error). Control bytes other than horizontal tab are still rejected, as `http` decides —
+at compile time for a literal or a template's literal fragment, as a build error for formatted
+text.
 
 ## From `via` to statements
 
@@ -782,7 +785,8 @@ if let Some(response) = error.into_response() {
 }
 ```
 
-Refined — a non-status error is returned unchanged instead of being dropped:
+Refined — an error without a response is returned unchanged instead of being dropped (since
+4.1, a `Metadata` error has one too: [the codec contract](#from-body-only-codecs-to-the-codec-contract)):
 
 ```rust
 async fn problem_title(error: concord::Error) -> Result<String, Box<dyn std::error::Error>> {

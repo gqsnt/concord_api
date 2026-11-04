@@ -18,8 +18,10 @@ Two kinds of messages appear:
 
 None of these messages contains a runtime value: compile-time errors only quote the declaration.
 
-A declaration with an error generates nothing, so code that uses the client elsewhere reports
-unresolved names too: fix the `api!` error first. One exception, for the usual state while you
+A declaration with an error generates nothing, so fix the `api!` error first. Whether code that
+uses the client elsewhere also reports unresolved names depends on the compiler: in the cases
+checked with rustc 1.99.1 (uses in the same and in another module) it reported only the `api!`
+error; other versions can add `cannot find` errors. One exception, for the usual state while you
 write a declaration: a value that is declared but not yet used is reported and rejected, but the
 client is still generated, so its uses keep resolving
 ([`unused_value_keeps_the_client.rs`](../crates/concord/tests/ui/unused_value_keeps_the_client.rs)).
@@ -148,6 +150,12 @@ error[E0277]: `u64` is not accepted for a value of type `UserId`
 exactly `Option<T>`, and only optional values have one
 ([`only_optional_values_have_maybe.stderr`](../crates/concord/tests/ui/only_optional_values_have_maybe.stderr)).
 
+Because arguments and setters are generic, an argument whose type comes from its target —
+`set_name("x".into())`, `set_limit(s.parse().unwrap())`, `set_limit(Default::default())` — is
+rustc's `E0283` ("type annotations needed") instead. Pass the value itself (`set_name("x")`) or
+name the type (`s.parse::<u64>()`, `u64::default()`); config fields take exactly `T`, where
+`.into()` works.
+
 ## Base, headers and wire formatting
 
 ### An invalid base URL
@@ -174,8 +182,8 @@ error: invalid base URL "http://example.test:not-a-port": the port must be a dec
 ```
 
 **Fix:** declare `http[s]://host[:port][/path]` with an ASCII host; put query parameters in a
-`query` block. A URL outside the static subset (an IDN or punycode host, `%` in the path) can be
-passed at runtime with `with_base_url`. A client without `base` is also an error
+`query` block. A URL outside the static subset (an IDN or punycode host, `%` escapes in the path,
+kept as written) can be passed at runtime with `with_base_url`. A client without `base` is also an error
 ([`missing_base.stderr`](../crates/concord/tests/ui/missing_base.stderr)).
 
 ### An invalid header name or value
@@ -201,8 +209,9 @@ error: this header value contains a byte that `http::HeaderValue::from_bytes` re
 ```
 
 **Fix:** literal names and values are checked by `http` itself when the macro expands
-(`HeaderName::from_bytes`, `HeaderValue::from_bytes`, after Rust escapes and `{{ }}` are decoded):
-UTF-8 beyond ASCII is a valid value, control bytes are not, and a hole cannot repair an invalid
+(`HeaderName::from_bytes`, `HeaderValue::from_bytes`, after Rust escapes and `{{ }}` are decoded),
+and `http`'s rule is the authority: UTF-8 beyond ASCII and a horizontal tab are valid in a value,
+every other control byte (a line break, NUL, DEL) is not, and a hole cannot repair an invalid
 literal fragment. Transport-owned names such as `host` or `content-length` are rejected too
 ([`reserved_headers_all.stderr`](../crates/concord/tests/ui/reserved_headers_all.stderr)). A value
 formatted at runtime that `http` rejects is a build error from `prepare()`, naming the header. A
@@ -224,7 +233,7 @@ concord::api! {
 ```
 
 Excerpt of [`option_has_no_wire_spelling.stderr`](../crates/concord/tests/ui/option_has_no_wire_spelling.stderr)
-(compiler message; it is reported twice, once for the request and once for the generated `Debug`):
+(compiler message; rustc 1.99.1 reports it twice, once for the request and once for the generated `Debug`):
 
 ```text
 error[E0277]: `Option<String>` is written as text here and has no `Display`
@@ -531,7 +540,7 @@ error[E0277]: the format `Lines` cannot decode a `Item` response
    |                                       ^^^^^ this output's format is `Lines` (the nearest `response` statement: on the endpoint, a scope or the client); it needs `Lines: Decode<Item>`
 ```
 
-**Fix:** pick a format that supports the type (`Json` for a serde type), or implement `Decode<Item>`/`Encode<Item>` for your own format type ([Writing a format](CUSTOM_FORMATS.md)). An inherited format is reported at the statement that gave it (`format_inherited_unsupported.stderr`). For `Json`, an unmet serde bound is reported by rustc in its own words (`the trait bound .. Deserialize<'de> is not satisfied`, `tests/ui_json/format_serde_bound.stderr`).
+**Fix:** pick a format that supports the type (`Json` for a serde type), or implement `Decode<Item>`/`Encode<Item>` for your own format type ([Writing a format](CUSTOM_FORMATS.md)). An inherited format is reported at the endpoint's payload type (its `->` type or body type), not at the distant statement that gave it; the label names the format and says it comes from the nearest statement (`format_inherited_unsupported.stderr`). For `Json`, an unmet serde bound is reported by rustc in its own words (`the trait bound .. Deserialize<'de> is not satisfied`, `tests/ui_json/format_serde_bound.stderr`).
 
 ### An invalid media type in a format
 
@@ -762,4 +771,7 @@ implementation written for the earlier `fn decode(body: Bytes)` contract is rust
 and `BodyError` is `E0432`: see [From body-only codecs to the codec
 contract](MIGRATION.md#from-body-only-codecs-to-the-codec-contract). Old-style
 `-> Json<Item>` and `-> ()` are reported as outputs without a format
-(`representation_alpha_spelling`).
+(`representation_alpha_spelling`). A very deep scope chain can exceed rustc's recursion limit:
+`E0320` (or `E0275` from `cargo doc`), spanning the whole invocation and naming generated or
+reqwest-internal types; raise `#![recursion_limit]` in each crate that reports it, the declaring
+one and the ones that use the deep handles ([author guide §10](AUTHOR_GUIDE.md#10-limits)).
