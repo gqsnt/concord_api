@@ -15,8 +15,8 @@ use std::time::Duration;
 use concord::bytes::Bytes;
 use concord_example_kubernetes_app::collect::OnExpired;
 use concord_example_kubernetes_app::list_watch::{
-    Change, ChangeKind, ConnectionEnd, ConnectionRecord, ResetBoundary, ResetCause,
-    ResourceSelector, WatchFailure, WatchOutcome, WatchPolicy, watch_deployments, watch_pods,
+    Change, ChangeKind, ConnectionEnd, ResetBoundary, ResetCause, ResourceSelector, WatchFailure,
+    WatchOutcome, WatchPolicy, watch_deployments, watch_pods,
 };
 use concord_example_kubernetes_sdk::model::{Pod, PodPhase};
 use concord_example_kubernetes_sdk::{LabelSelector, ObjectKey, ObjectName, ResourceVersion};
@@ -34,6 +34,17 @@ fn key(name: &str) -> ObjectKey {
         namespace: Some(ns("team-a")),
         name: ObjectName::new(name).unwrap(),
     }
+}
+
+/// Each connection as (start resource version, events, end).
+fn connections<T>(
+    report: &concord_example_kubernetes_app::list_watch::WatchReport<T>,
+) -> Vec<(ResourceVersion, u64, ConnectionEnd)> {
+    report
+        .connections
+        .iter()
+        .map(|c| (c.from.clone(), c.events, c.end))
+        .collect()
 }
 
 fn watch_policy(max_events: u64) -> WatchPolicy {
@@ -191,18 +202,10 @@ async fn ku_b_list_watch_applies_typed_changes_and_reconnects_after_normal_end()
     assert_eq!(report.counts.deleted, 1);
     assert_eq!(report.counts.bookmarks, 1);
     assert_eq!(
-        report.connections,
+        connections(&report),
         [
-            ConnectionRecord {
-                from: rv("8000"),
-                events: 4,
-                end: ConnectionEnd::Normal
-            },
-            ConnectionRecord {
-                from: rv("8004"),
-                events: 1,
-                end: ConnectionEnd::EventBudget
-            },
+            (rv("8000"), 4, ConnectionEnd::Normal),
+            (rv("8004"), 1, ConnectionEnd::EventBudget),
         ]
     );
     assert_eq!(report.resets.len(), 1);
@@ -304,18 +307,10 @@ async fn ku_b_transport_loss_reconnects_from_the_last_resource_version() {
         report.outcome
     );
     assert_eq!(
-        report.connections,
+        connections(&report),
         [
-            ConnectionRecord {
-                from: rv("8000"),
-                events: 2,
-                end: ConnectionEnd::TransportLost
-            },
-            ConnectionRecord {
-                from: rv("8002"),
-                events: 2,
-                end: ConnectionEnd::EventBudget
-            },
+            (rv("8000"), 2, ConnectionEnd::TransportLost),
+            (rv("8002"), 2, ConnectionEnd::EventBudget),
         ]
     );
     // Nothing applied twice, nothing lost: each of the four events exactly once.
@@ -485,18 +480,10 @@ async fn ku_b_malformed_events_end_the_connection_and_reconnect() {
         report.outcome
     );
     assert_eq!(
-        report.connections,
+        connections(&report),
         [
-            ConnectionRecord {
-                from: rv("8000"),
-                events: 1,
-                end: ConnectionEnd::Malformed
-            },
-            ConnectionRecord {
-                from: rv("8001"),
-                events: 0,
-                end: ConnectionEnd::Malformed
-            },
+            (rv("8000"), 1, ConnectionEnd::Malformed),
+            (rv("8001"), 0, ConnectionEnd::Malformed),
         ]
     );
     // The good event stays applied.
@@ -839,8 +826,17 @@ async fn ku_b_a_long_watch_keeps_bounded_state() {
         report.resource_version,
         Some(rv(&(10_000 + EVENTS - 1).to_string()))
     );
+    // Incremental decoding: the decoder never held more than one event's bytes, although the
+    // server sent hundreds of kilobytes on one connection.
+    let peak = report.connections[0].peak_retained_bytes;
+    let largest_event = 220;
+    assert!(
+        peak > 0 && peak <= largest_event,
+        "peak retained {peak} bytes"
+    );
     eprintln!(
-        "long watch: {EVENTS} events, {} body bytes sent by the server, {elapsed:?}",
+        "long watch: {EVENTS} events, {} body bytes sent by the server, decoder peak retained \
+         {peak} bytes, {elapsed:?}",
         server.body_bytes_sent()
     );
     finish(server).await;

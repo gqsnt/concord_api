@@ -59,7 +59,7 @@ pub mod watch;
 
 pub use api::*;
 pub use context::{KubeContext, NamespaceContext};
-pub use error::{ApiError, KubeError};
+pub use error::{ApiError, KubeError, STATUS_BODY_LIMIT};
 pub use ids::{
     BearerToken, ContinueToken, InvalidToken, NameError, NamespaceName, ObjectName,
     ResourceVersion, Uid,

@@ -188,6 +188,8 @@ pub struct ConnectionRecord {
     pub events: u64,
     /// How it ended.
     pub end: ConnectionEnd,
+    /// The decoder's peak retained bytes on this connection (0 when it never opened).
+    pub peak_retained_bytes: usize,
 }
 
 /// Counts of applied events over the run.
@@ -519,56 +521,61 @@ where
             Some(opened) => opened,
         };
         let mut events = 0u64;
+        let mut peak_retained_bytes = 0;
         let next = match opened {
-            Ok(mut stream) => loop {
-                if run.counts.total() >= policy.max_events {
-                    break Next::End(WatchOutcome::EventBudget, ConnectionEnd::EventBudget);
-                }
-                let Some(item) = stop.race(stream.next()).await else {
-                    break Next::End(WatchOutcome::Cancelled, ConnectionEnd::Cancelled);
-                };
-                let flow = match item {
-                    None => break Next::Reconnect(ConnectionEnd::Normal),
-                    Some(Err(error)) => {
-                        break Next::Reconnect(match error.kind() {
-                            ReadErrorKind::Transport => ConnectionEnd::TransportLost,
-                            ReadErrorKind::Limit => ConnectionEnd::Oversized,
-                            _ => ConnectionEnd::Malformed,
-                        });
+            Ok(mut stream) => {
+                let next = loop {
+                    if run.counts.total() >= policy.max_events {
+                        break Next::End(WatchOutcome::EventBudget, ConnectionEnd::EventBudget);
                     }
-                    Some(Ok(WatchEvent::Error(status))) => {
-                        if status.is_expired() {
-                            break Next::Relist(ResetCause::ExpiredEvent);
+                    let Some(item) = stop.race(stream.next()).await else {
+                        break Next::End(WatchOutcome::Cancelled, ConnectionEnd::Cancelled);
+                    };
+                    let flow = match item {
+                        None => break Next::Reconnect(ConnectionEnd::Normal),
+                        Some(Err(error)) => {
+                            break Next::Reconnect(match error.kind() {
+                                ReadErrorKind::Transport => ConnectionEnd::TransportLost,
+                                ReadErrorKind::Limit => ConnectionEnd::Oversized,
+                                _ => ConnectionEnd::Malformed,
+                            });
                         }
-                        break Next::Reconnect(ConnectionEnd::ErrorEvent { code: status.code });
-                    }
-                    Some(Ok(WatchEvent::Bookmark(bookmark))) => {
-                        events += 1;
-                        run.counts.bookmarks += 1;
-                        run.resource_version = Some(bookmark.metadata.resource_version);
-                        let rv = run.resource_version.as_ref().expect("just set");
-                        (run.sink)(Change::Bookmark(rv))
-                    }
-                    Some(Ok(WatchEvent::Added(object))) => {
-                        events += 1;
-                        run.apply(ChangeKind::Added, object)
-                    }
-                    Some(Ok(WatchEvent::Modified(object))) => {
-                        events += 1;
-                        run.apply(ChangeKind::Modified, object)
-                    }
-                    Some(Ok(WatchEvent::Deleted(object))) => {
-                        events += 1;
-                        run.apply(ChangeKind::Deleted, object)
+                        Some(Ok(WatchEvent::Error(status))) => {
+                            if status.is_expired() {
+                                break Next::Relist(ResetCause::ExpiredEvent);
+                            }
+                            break Next::Reconnect(ConnectionEnd::ErrorEvent { code: status.code });
+                        }
+                        Some(Ok(WatchEvent::Bookmark(bookmark))) => {
+                            events += 1;
+                            run.counts.bookmarks += 1;
+                            run.resource_version = Some(bookmark.metadata.resource_version);
+                            let rv = run.resource_version.as_ref().expect("just set");
+                            (run.sink)(Change::Bookmark(rv))
+                        }
+                        Some(Ok(WatchEvent::Added(object))) => {
+                            events += 1;
+                            run.apply(ChangeKind::Added, object)
+                        }
+                        Some(Ok(WatchEvent::Modified(object))) => {
+                            events += 1;
+                            run.apply(ChangeKind::Modified, object)
+                        }
+                        Some(Ok(WatchEvent::Deleted(object))) => {
+                            events += 1;
+                            run.apply(ChangeKind::Deleted, object)
+                        }
+                    };
+                    if flow.is_break() {
+                        break Next::End(
+                            WatchOutcome::ConsumerStopped,
+                            ConnectionEnd::ConsumerStopped,
+                        );
                     }
                 };
-                if flow.is_break() {
-                    break Next::End(
-                        WatchOutcome::ConsumerStopped,
-                        ConnectionEnd::ConsumerStopped,
-                    );
-                }
-            },
+                peak_retained_bytes = stream.peak_retained_bytes();
+                next
+            }
             Err(WatchOpenError::Api(api)) if api.is_expired() => {
                 Next::Relist(ResetCause::ExpiredOnOpen)
             }
@@ -596,6 +603,7 @@ where
             from: from.clone(),
             events,
             end,
+            peak_retained_bytes,
         });
         match next {
             Next::End(outcome, _) => return run.finish(outcome),

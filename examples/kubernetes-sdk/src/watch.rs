@@ -230,6 +230,12 @@ impl<T: Resource, S: ByteSource> WatchStream<T, S> {
     pub fn position(&self) -> Position {
         self.values.position()
     }
+
+    /// The most bytes the decoder retained at once on this connection (an unfinished event,
+    /// excluding the shared transport chunk), at most the reader's `max_value_bytes`.
+    pub fn peak_retained_bytes(&self) -> usize {
+        self.values.peak_retained_bytes()
+    }
 }
 
 impl<T, S> fmt::Debug for WatchStream<T, S> {
