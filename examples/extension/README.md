@@ -2,7 +2,8 @@
 
 Downstream example (not published): an independent crate adds a Catalog operation that the SDK
 ([`examples/sdk`](../sdk)) does not declare — a tenant's CSV export,
-`GET tenants/{tenant}/exports/{export}` — without editing the SDK and without any Concord change.
+`GET tenants/{tenant}/exports/{export}` — without editing the SDK and without any Concord change. Its representation is Concord's reusable
+CSV codec (`concord::csv`, feature `csv`) with a small provider profile.
 It is tested against the fake Catalog service of [`examples/fixture`](../fixture), whose export
 route exists only there.
 
@@ -13,8 +14,10 @@ route exists only there.
 | `export(&tenant, id)` | one request; returns `Vec<CsvRow>` |
 | `export_with(&tenant, id, \|request\| ..)` | the same, with a native edit (a header, a timeout) before its one execution |
 | `export_parts(&tenant, id)` | `(reqwest::Client, reqwest::Request, Decoder<Vec<CsvRow>>)`, for a caller that executes the request itself (to read `x-export-id` before decoding, say) |
-| `Csv`, `CsvRow` | the operation's own representation: a `concord::Decode<Vec<CsvRow>>` that refuses a non-`text/csv` `Content-Type` before the body is read and reports static labels with line/column numbers |
-| `ExtensionError` | the operation's error: its name (`catalog-extension: tenant export`) plus either the SDK's `ContextError` (nothing sent) or Concord's `Error` |
+| `export_rows(&tenant, id)` | the same export read incrementally: `concord::csv::CsvRecords<CsvRow>`, rows as the body arrives, same rules |
+| `CatalogExport` | the provider profile: header exactly `id,name` (validated, not substituted), `#` comment records (the service's trailer) |
+| `Csv`, `CsvRow` | the operation's own representation: `concord::csv::Csv<HasHeader, Comma, CatalogExport>`, a `concord::Decode<Vec<CsvRow>>` that refuses a non-`text/csv` `Content-Type` before the body is read and reports static labels with record/field numbers |
+| `ExtensionError` | the operation's error: its name (`catalog-extension: tenant export`) plus the SDK's `ContextError` (nothing sent), Concord's `Error`, or the incremental reader's `OpenError` (response kept unread) |
 
 The request is built by the SDK's tenant context, gets `Accept: text/csv`, is executed once with
 the context's `reqwest::Client`, and is finished by `Decoder::<Vec<CsvRow>>::new::<Csv>()`:
@@ -22,10 +25,54 @@ the context's `reqwest::Client`, and is finished by `Decoder::<Vec<CsvRow>>::new
 Concord's conversion (URL removed), a non-2xx is a `Status` error, a JSON-labelled 2xx is a
 `Metadata` error with the response unread, and a malformed body is a `Decode` error.
 
+## The CSV profile (migration from the handwritten parser)
+
+Until 4.4 this crate carried its own handwritten `Decode` implementation that split the body on `\n`
+and `,`. It now profiles the reusable codec instead; only the Catalog export's own rules stay
+here:
+
+```rust
+pub struct CatalogExport;
+
+impl CsvProfile for CatalogExport {
+    fn options() -> CsvProfileOptions {
+        CsvProfileOptions::default()
+            .comment(Some(b'#'))
+            .columns(["id", "name"])
+    }
+}
+
+pub type Csv = concord::csv::Csv<HasHeader, Comma, CatalogExport>;
+```
+
+The public API is unchanged in shape (`export`, `export_with`, `export_parts`, `Csv`, `CsvRow`,
+`TEXT_CSV`, `ExtensionError`); `Csv` is now a type alias of the generic format rather than a unit
+struct (it is still named as `Decoder::new::<Csv>()` and `<Csv as Decode<_>>`; it is no longer a
+value). `CsvRow` derives `serde::Deserialize`. Intentional behaviour changes, each tested
+(`x04_*`, `x07_*`):
+
+| Input | Before | Now |
+|---|---|---|
+| quoted fields (`"Note, A5"`, doubled quotes, a newline inside quotes) | refused: `quoted CSV fields are not supported` | read as RFC 4180 fields |
+| a leading UTF-8 BOM | part of the first header name (header refused) | stripped |
+| `\r` alone as a line ending | part of the field | a record terminator |
+| a final `# trailer` without a line ending | skipped | skipped (unchanged; see the codec's note on `csv-core`) |
+| a header other than `id,name` | `the CSV header is not \`id,name\`` (line) | `the CSV header does not match the expected columns` (field) |
+| a row without two fields | `a CSV row does not have 2 fields` (line, fields) | `a CSV record does not have as many fields as the header` (record, fields, expected) |
+| invalid UTF-8 | `the CSV body is not UTF-8` (byte) | `a CSV field is not valid UTF-8` (record, field) |
+| `Content-Type: text/csv; header=absent` | accepted (parameter ignored) | refused before the body is read (it contradicts the header) |
+| `charset=us-ascii` | refused | accepted (a subset of UTF-8) |
+| other head refusals | `the response is not text/csv`, `the response repeats Content-Type`, `the CSV charset is not utf-8` | the codec's labels: `the response Content-Type is not text/csv`, `the response has more than one Content-Type field`, `the CSV response declares a charset other than utf-8` |
+
+Positions are now record and field numbers (the codec frames records, not lines). The earlier
+parser's limitations (no quotes, comma and LF only) were properties of that example, not of CSV;
+they do not constrain the codec.
+
 ## The boundary it relies on
 
 Only public items: the SDK's [`context`](../sdk/src/context.rs) module (frozen before this crate
-was written) and Concord's `Decoder::new`, `Decode`, `CodecError` and `Error`.
+was written) and Concord's `Decoder::new`, `Decode`, `CodecError`, `Error`, and the `csv` and
+`stream` modules (`Csv`, `CsvProfile`, `CsvReader`, `CsvRecords`, `OpenError`).
 
 - `CatalogContext::new(http, CatalogConfig { .. })`, `with_base_url`, `set_region`/`maybe_region`
   configure one context; `catalog()` and `tenant(t).catalog_tenant()` are the generated handles
@@ -61,7 +108,7 @@ route that extends a declared URL and inherits the seed's identity:
 ## Tests
 
 `cargo test -p concord-example-extension` — `tests/extension.rs`, every test against the fixture
-with request counts:
+with request counts, and `tests/dsl.rs`:
 
 | Acceptance | Tests |
 |---|---|
@@ -70,6 +117,14 @@ with request counts:
 | X03 independent contexts, headers on the wire | `x03_contexts_from_one_base_stay_independent` |
 | X04 own representation, retained decoder, identity | `x04_the_csv_decoder_is_kept_when_the_caller_changes_accept`, `x04_a_json_labelled_response_is_refused_unread_with_a_truthful_identity`, `x04_a_malformed_body_is_a_decode_error_with_positions_only`, `x04_the_csv_format_checks_its_head_and_body` |
 | X05 native edit, transport failure | `x05_a_native_edit_adds_a_header_before_one_execution`, `x05_a_transport_failure_does_not_restore_the_url` |
+| X06 the profile read incrementally | `x06_rows_arrive_incrementally_with_the_same_rules`, `x06_a_refused_head_keeps_the_response_unread`, `x06_a_malformed_row_after_good_rows_keeps_them_and_names_the_operation` |
+| X07 documented changes from the handwritten parser | `x07_quoted_fields_and_other_csv_records_are_now_read`, `x04_the_csv_format_checks_its_head_and_body` |
+
+`tests/dsl.rs` declares a small `api!` client whose statements name CSV dialects by path — an
+alias (`Csv<NoHeader, Delimiter<0x1f>>`), a direct generic path (`response Csv<HasHeader,
+Semicolon>;`), this crate's profile, `IgnoreContentType<Csv<..>>`, a finite body (`Vec<Row>`,
+`Rows<_>` with columns) and a one-shot `StreamRows<_>` body — and runs them against the fixture:
+no CSV-specific grammar is involved.
 
 The tenant `acme/east?x=1%20+ü #` reaches the service as the single segment
 `acme%2Feast%3Fx%3D1%2520%2B%C3%BC%20%23` under `/edge/catalog/v1/tenants/`, the same segment the
