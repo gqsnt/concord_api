@@ -61,7 +61,8 @@ impl<S: ByteSource> Driver<S> {
     }
 
     /// Takes `n` bytes of [`input`](Self::input) as an owned (shared, not copied) buffer.
-    #[cfg_attr(not(feature = "jsonl"), allow(dead_code))]
+    // Not used by the CSV reader (it copies fields into owned records).
+    #[allow(dead_code)]
     pub(crate) fn take(&mut self, n: usize) -> Bytes {
         self.consumed += n as u64;
         self.chunk.split_to(n)

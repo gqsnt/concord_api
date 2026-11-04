@@ -99,6 +99,8 @@ fn the_static_type_is_the_whole_finite_format() {
     encodes::<ProviderExport>();
 
     // Finite routes need no `Clone`, `Send`, `'static` or `Unpin` on rows.
+    // Borrowed, `!Unpin`, `!Send`, not `Clone`.
+    #[allow(dead_code)]
     struct Borrowing<'a>(&'a str, std::marker::PhantomPinned, std::rc::Rc<()>);
     impl serde::Serialize for Borrowing<'_> {
         fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {

@@ -24,30 +24,47 @@ pub(crate) struct Shape {
     pub(crate) matches: bool,
 }
 
-/// Why a row's shape cannot be a CSV record. The text is static.
+/// Why a row's shape cannot be a CSV record: a static label, and for a failure of the row's own
+/// `Serialize` implementation its message (which may quote the value: kept only as the
+/// unredacted source).
 #[derive(Debug)]
-pub(crate) struct ShapeError(&'static str);
+pub(crate) struct ShapeError {
+    label: &'static str,
+    message: Option<String>,
+}
+
+const fn shape_error(label: &'static str) -> ShapeError {
+    ShapeError {
+        label,
+        message: None,
+    }
+}
 
 impl ShapeError {
     pub(crate) fn label(&self) -> &'static str {
-        self.0
+        self.label
+    }
+
+    /// Whether the row's own `Serialize` failed (rather than its shape being unsupported).
+    pub(crate) fn is_custom(&self) -> bool {
+        self.message.is_some()
     }
 }
 
 impl fmt::Display for ShapeError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(self.0)
+        f.write_str(self.message.as_deref().unwrap_or(self.label))
     }
 }
 
 impl std::error::Error for ShapeError {}
 
 impl ser::Error for ShapeError {
-    fn custom<T: fmt::Display>(_: T) -> Self {
-        // A `Serialize` implementation's own failure: its message may quote the value, so it is
-        // not kept (the real serializer reports it again, with its source, when the row is
-        // written).
-        ShapeError("the row's Serialize implementation failed")
+    fn custom<T: fmt::Display>(message: T) -> Self {
+        ShapeError {
+            label: "a CSV row cannot be written",
+            message: Some(message.to_string()),
+        }
     }
 }
 
@@ -117,13 +134,13 @@ impl Capture<'_> {
                 self.fields += 1;
                 Ok(())
             }
-            State::Named => Err(ShapeError(MIXED)),
+            State::Named => Err(shape_error(MIXED)),
         }
     }
 
     fn container(&mut self) -> Result<&mut Self, ShapeError> {
         if self.state == State::InField {
-            Err(ShapeError(NESTED))
+            Err(shape_error(NESTED))
         } else {
             Ok(self)
         }
@@ -135,8 +152,8 @@ impl Capture<'_> {
         value: &T,
     ) -> Result<(), ShapeError> {
         match self.state {
-            State::Positional => return Err(ShapeError(MIXED)),
-            State::InField => return Err(ShapeError(NESTED)),
+            State::Positional => return Err(shape_error(MIXED)),
+            State::InField => return Err(shape_error(NESTED)),
             State::Start | State::Named => {}
         }
         match self.expect {
@@ -152,7 +169,7 @@ impl Capture<'_> {
         let before = self.fields;
         value.serialize(&mut *self)?;
         if self.fields != before + 1 {
-            return Err(ShapeError(NESTED));
+            return Err(shape_error(NESTED));
         }
         self.state = State::Named;
         Ok(())
@@ -270,10 +287,10 @@ impl ser::Serializer for &mut Capture<'_> {
         _: &'static str,
         _: usize,
     ) -> Result<Self::SerializeTupleVariant, ShapeError> {
-        Err(ShapeError(VARIANT))
+        Err(shape_error(VARIANT))
     }
     fn serialize_map(self, _: Option<usize>) -> Result<Self::SerializeMap, ShapeError> {
-        Err(ShapeError(MAP))
+        Err(shape_error(MAP))
     }
     fn serialize_struct(self, _: &'static str, _: usize) -> Result<Self, ShapeError> {
         self.container()
@@ -285,7 +302,7 @@ impl ser::Serializer for &mut Capture<'_> {
         _: &'static str,
         _: usize,
     ) -> Result<Self::SerializeStructVariant, ShapeError> {
-        Err(ShapeError(VARIANT))
+        Err(shape_error(VARIANT))
     }
 }
 

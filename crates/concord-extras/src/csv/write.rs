@@ -394,8 +394,14 @@ impl Encoder {
             Schema::Named(names) => Some(names.as_slice()),
             _ => None,
         };
-        let shape =
-            shape(row, expect).map_err(|e| CodecError::new(e.label()).at("record", number))?;
+        let shape = shape(row, expect).map_err(|e| {
+            let codec = CodecError::new(e.label()).at("record", number);
+            if e.is_custom() {
+                codec.with_source(e)
+            } else {
+                codec
+            }
+        })?;
         self.check_shape(&shape, number, out)?;
         if let Err(e) = self.writer.serialize(row) {
             self.sink.clear();

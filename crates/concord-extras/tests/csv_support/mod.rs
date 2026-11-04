@@ -375,6 +375,11 @@ fn parse_chunked(raw: &[u8]) -> Option<Vec<u8>> {
     }
 }
 
+/// The data of the complete chunks received so far.
+pub fn chunked_data(raw: &[u8]) -> Vec<u8> {
+    parse_chunked(raw).unwrap_or_else(|| decode_partial_chunked(raw))
+}
+
 /// The data of the complete chunks of a truncated chunked body.
 fn decode_partial_chunked(raw: &[u8]) -> Vec<u8> {
     let mut data = Vec::new();
