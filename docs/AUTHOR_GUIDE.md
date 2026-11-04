@@ -110,7 +110,8 @@ concord::api! {
 
 fn main() -> Result<(), concord::Error> {
     // The generated signatures, checked here by the compiler. Positional arguments and `set_*`
-    // take `impl IntoValue<T>`: the exact `T`, or `&str`/`&String` where `T` is `String`.
+    // take `impl IntoValue<T>`: the exact `T`, `&str`/`&String` where `T` is `String`, or
+    // `&HeaderValue` where `T` is `HeaderValue`.
     let _: fn(reqwest::Client, ShopConfig) -> Shop = Shop::new;
     let _: fn(Shop, String) -> Shop = Shop::set_key;
     let _: fn(Shop, String) -> Shop = Shop::set_lang;

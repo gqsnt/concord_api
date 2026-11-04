@@ -143,8 +143,9 @@ Read it top-down:
 
 The macro generates ordinary types: `Tasks`, `TasksConfig`, `TasksProject` (the scope) and one
 request type per endpoint, `TasksProjectTasks` and `TasksProjectCreate`. Their main signatures, as
-rustdoc shows them (`impl IntoValue<T>` accepts a `T`, or a `&str`/`&String` where `T` is
-`String`; `examples/quickstart/tests/quickstart.rs` checks these signatures):
+rustdoc shows them (`impl IntoValue<T>` accepts a `T`, a `&str`/`&String` where `T` is
+`String`, or a `&HeaderValue` where `T` is `HeaderValue`; `examples/quickstart/tests/quickstart.rs`
+checks these signatures):
 
 ```text
 Tasks::new(http: reqwest::Client, config: TasksConfig) -> Tasks
@@ -212,8 +213,9 @@ pub async fn run(base_url: &str, token: String) -> Result<(), Box<dyn std::error
   `<Json as Decode<Problem>>::decode_body((), bytes)` reads the API's error document: it decodes
   bytes and checks no response head. A 2xx response whose head the format
   refuses (`Metadata`) keeps its response unread too, and `into_response()` returns that one as
-  well; look at `error.kind()` first if a 2xx must not be taken for an error document. The
-  [caller guide](CALLER_GUIDE.md#6-errors) covers the rest.
+  well; look at `error.kind()` first if a 2xx must not be taken for an error document
+  (`status()` is `Some` only for a `Status` error, so the match above never takes a `Metadata`
+  error for one). The [caller guide](CALLER_GUIDE.md#6-errors) covers the rest.
 
 ## 5. Run it locally
 

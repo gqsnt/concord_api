@@ -80,8 +80,8 @@ CatalogShopRename::set_change(self, value: impl IntoValue<Rename>) -> Self
 async CatalogShopDelete::send(self) -> Result<(), concord::Error>
 ```
 
-`impl IntoValue<T>` accepts exactly `T`, or `&str`/`&String` when `T` is `String`. Nothing else
-converts: no `Into`, no numeric widening, no wrapping into `Option`; construct newtypes and
+`impl IntoValue<T>` accepts exactly `T`, `&str`/`&String` when `T` is `String`, or `&HeaderValue`
+when `T` is `HeaderValue` (cloned). Nothing else converts: no `Into`, no numeric widening, no wrapping into `Option`; construct newtypes and
 `Option`s yourself. Because the parameter is generic, an expression that takes its type from the
 target has none to take: `shop("acme".into())`, `set_limit(s.parse().unwrap())` and
 `set_limit(Default::default())` are rustc's `E0283` ("type annotations needed"). Pass the value
