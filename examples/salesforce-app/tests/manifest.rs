@@ -122,6 +122,7 @@ fn every_fixture_is_listed_with_its_hash_and_provenance() {
     let mut present = BTreeSet::new();
     collect(&root, &root, &mut present);
     present.remove("MANIFEST.json");
+    present.remove(".gitattributes");
     assert_eq!(listed, present);
 }
 
