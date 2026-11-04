@@ -1,6 +1,6 @@
 [package]
 name = "concord-example-kubernetes-sdk"
-description = "A bounded, read-only Kubernetes API SDK slice (core/v1, apps/v1, batch/v1 get/list/watch) declared with concord::api!, with a chunked-list adapter for concord-pagination and a typed watch stream over the consecutive-JSON-values reader."
+description = "A bounded, read-only Kubernetes API SDK slice (core/v1, apps/v1, batch/v1, networking.k8s.io/v1 get/list/watch) declared with concord::api!, with a chunked-list adapter for concord-pagination and a typed watch stream over the consecutive-JSON-values reader."
 version = "0.0.0"
 edition = "2024"
 rust-version.workspace = true

@@ -36,12 +36,13 @@ use crate::{
     KubeAppsV1Deployments, KubeAppsV1NamespacedDeployments, KubeBatchV1Jobs,
     KubeBatchV1NamespacedJobs, KubeCoreV1ConfigMaps, KubeCoreV1NamespacedConfigMaps,
     KubeCoreV1NamespacedPods, KubeCoreV1NamespacedServices, KubeCoreV1Namespaces, KubeCoreV1Pods,
-    KubeCoreV1Services, ResourceVersionMatch,
+    KubeCoreV1Services, KubeNetworkingV1Ingresses, KubeNetworkingV1NamespacedIngresses,
+    ResourceVersionMatch,
 };
 
 pub use concord_pagination::Page;
 
-/// A generated list operation (one of the eleven `GET .../{plural}` endpoints), seen through the
+/// A generated list operation (one of the thirteen `GET .../{plural}` endpoints), seen through the
 /// parameters every Kubernetes list shares. Each method forwards to the generated `maybe_*`
 /// setter of the same parameter, so the request stays an ordinary generated operation.
 pub trait ListOperation: Clone + Send + Sync + 'static {
@@ -118,6 +119,8 @@ list_operation! {
     KubeAppsV1NamespacedDeployments => crate::model::Deployment,
     KubeBatchV1Jobs => crate::model::Job,
     KubeBatchV1NamespacedJobs => crate::model::Job,
+    KubeNetworkingV1Ingresses => crate::model::Ingress,
+    KubeNetworkingV1NamespacedIngresses => crate::model::Ingress,
 }
 
 /// The page key of a chunked list: the server's `continue` token **and** the collection

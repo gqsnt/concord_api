@@ -1,6 +1,6 @@
 [package]
 name = "concord-check-maintenance-kubernetes"
-description = "Staged maintenance exercise for the kubernetes SDK: the frozen initial consumer and the updated consumer, both compiled against the current SDK (placeholder until the exercise lands)."
+description = "Staged maintenance exercise for the Kubernetes SDK: the frozen initial consumer and the updated consumer, both compiled against the current SDK and run against the loopback test server."
 version = "0.0.0"
 edition = "2024"
 rust-version.workspace = true
@@ -8,6 +8,13 @@ license.workspace = true
 publish = false
 
 [dependencies]
+concord = { path = "../../crates/concord", features = ["jsonl"] }
+concord-example-kubernetes-sdk = { path = "../../examples/kubernetes-sdk" }
+concord-pagination = { path = "../../crates/concord-pagination" }
+
+[dev-dependencies]
+concord-example-testserver = { path = "../../examples/testserver" }
+tokio = { workspace = true, features = ["macros", "rt", "rt-multi-thread"] }
 
 [lints]
 workspace = true

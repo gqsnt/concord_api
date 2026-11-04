@@ -1,4 +1,4 @@
-//! The six resource kinds of this slice, with the spec/status subsets the SDK reads.
+//! The seven resource kinds of this slice, with the spec/status subsets the SDK reads.
 //!
 //! Field names and types follow the pinned OpenAPI v3 schemas (Kubernetes v1.37.2, see
 //! `PROVIDER.md`). Only the listed fields are modelled; every other field is ignored on decode.
@@ -408,3 +408,180 @@ impl Job {
 }
 
 resource!(Job, "Job", "batch/v1", true);
+
+// ---------------------------------------------------------------------------------------------
+// networking.k8s.io/v1 Ingress
+
+/// `networking.k8s.io/v1` Ingress: HTTP(S) routing rules from hosts and paths to Services.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Deserialize)]
+#[serde(default)]
+pub struct Ingress {
+    /// `metadata`.
+    pub metadata: ObjectMeta,
+    /// `spec`.
+    pub spec: IngressSpec,
+    /// `status`.
+    pub status: IngressStatus,
+}
+
+/// `IngressSpec`, the fields this SDK reads.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct IngressSpec {
+    /// `ingressClassName`: the IngressClass (a cluster resource) whose controller serves this
+    /// Ingress. Absent: the cluster's default class, or the deprecated
+    /// `kubernetes.io/ingress.class` annotation (kept in `metadata.annotations`).
+    pub ingress_class_name: Option<String>,
+    /// `defaultBackend`: where requests that match no rule go.
+    pub default_backend: Option<IngressBackend>,
+    /// `rules`, in order.
+    pub rules: Vec<IngressRule>,
+    /// `tls`.
+    pub tls: Vec<IngressTls>,
+}
+
+/// `IngressRule`: one host (or every host) and its HTTP paths.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Deserialize)]
+#[serde(default)]
+pub struct IngressRule {
+    /// `host`: a fully qualified domain name, possibly with a leading `*.` wildcard label.
+    /// Absent: every host.
+    pub host: Option<String>,
+    /// `http`.
+    pub http: Option<HttpIngressRuleValue>,
+}
+
+/// `HTTPIngressRuleValue`.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Deserialize)]
+#[serde(default)]
+pub struct HttpIngressRuleValue {
+    /// `paths` (required by the schema).
+    pub paths: Vec<HttpIngressPath>,
+}
+
+/// `HTTPIngressPath`: a path and its backend.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct HttpIngressPath {
+    /// `path`.
+    pub path: Option<String>,
+    /// `pathType` (required by the schema).
+    pub path_type: Option<PathType>,
+    /// `backend` (required by the schema).
+    pub backend: IngressBackend,
+}
+
+/// `HTTPIngressPath.pathType`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize)]
+pub enum PathType {
+    /// `Exact`.
+    Exact,
+    /// `Prefix`: element-wise prefix match on `/`-separated path elements.
+    Prefix,
+    /// `ImplementationSpecific`: interpreted by the IngressClass.
+    ImplementationSpecific,
+    /// A path type this SDK does not know.
+    #[serde(other)]
+    Other,
+}
+
+/// `IngressBackend`: a Service port or another resource.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Deserialize)]
+#[serde(default)]
+pub struct IngressBackend {
+    /// `service`.
+    pub service: Option<IngressServiceBackend>,
+    /// `resource` (mutually exclusive with `service`).
+    pub resource: Option<TypedLocalObjectReference>,
+}
+
+/// `IngressServiceBackend`: a Service in the Ingress's namespace and one of its ports.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Deserialize)]
+#[serde(default)]
+pub struct IngressServiceBackend {
+    /// `name` of the Service (required by the schema).
+    pub name: String,
+    /// `port`.
+    pub port: Option<ServiceBackendPort>,
+}
+
+/// `ServiceBackendPort`: a port by name or by number (mutually exclusive).
+#[derive(Clone, Debug, Default, PartialEq, Eq, Deserialize)]
+#[serde(default)]
+pub struct ServiceBackendPort {
+    /// `name`: a `ServicePort.name`.
+    pub name: Option<String>,
+    /// `number`: a `ServicePort.port`.
+    pub number: Option<i32>,
+}
+
+/// `TypedLocalObjectReference` (core/v1): an object in the same namespace.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct TypedLocalObjectReference {
+    /// `apiGroup` (absent: the core group).
+    pub api_group: Option<String>,
+    /// `kind`.
+    pub kind: String,
+    /// `name`.
+    pub name: String,
+}
+
+/// `IngressTLS`.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct IngressTls {
+    /// `hosts` covered by the certificate.
+    pub hosts: Vec<String>,
+    /// `secretName`: the Secret holding the certificate (its contents are never read here).
+    pub secret_name: Option<String>,
+}
+
+/// `IngressStatus`.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct IngressStatus {
+    /// `loadBalancer`.
+    pub load_balancer: IngressLoadBalancerStatus,
+}
+
+/// `IngressLoadBalancerStatus`.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Deserialize)]
+#[serde(default)]
+pub struct IngressLoadBalancerStatus {
+    /// `ingress`: the addresses the controller published.
+    pub ingress: Vec<IngressLoadBalancerIngress>,
+}
+
+/// `IngressLoadBalancerIngress`, the fields this SDK reads.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Deserialize)]
+#[serde(default)]
+pub struct IngressLoadBalancerIngress {
+    /// `ip`.
+    pub ip: Option<String>,
+    /// `hostname`.
+    pub hostname: Option<String>,
+}
+
+impl Ingress {
+    /// Every Service backend this Ingress routes to: the default backend first, then each rule's
+    /// paths in order (duplicates kept).
+    pub fn service_backends(&self) -> impl Iterator<Item = &IngressServiceBackend> {
+        let default = self.spec.default_backend.iter();
+        let paths = self
+            .spec
+            .rules
+            .iter()
+            .filter_map(|rule| rule.http.as_ref())
+            .flat_map(|http| &http.paths)
+            .map(|path| &path.backend);
+        default.chain(paths).filter_map(|b| b.service.as_ref())
+    }
+
+    /// Whether the controller published at least one address.
+    pub fn has_address(&self) -> bool {
+        !self.status.load_balancer.ingress.is_empty()
+    }
+}
+
+resource!(Ingress, "Ingress", "networking.k8s.io/v1", true);

@@ -1,12 +1,12 @@
 //! One configured client and namespace contexts across API groups.
 //!
 //! Kubernetes repeats the namespace in every group's path (`/api/v1/namespaces/{ns}/pods`,
-//! `/apis/apps/v1/namespaces/{ns}/deployments`, `/apis/batch/v1/namespaces/{ns}/jobs`). The
-//! declaration models that honestly — each group/version scope has its own
-//! `namespaced(namespace)` scope — and [`NamespaceContext`] binds one namespace across the three,
-//! so callers name it once. Everything here returns the **generated** handles: callers keep the
-//! operations' setters, `prepare()` and `send()`. Like Concord's handles, contexts are immutable
-//! snapshots and cheap to clone.
+//! `/apis/apps/v1/namespaces/{ns}/deployments`, `/apis/batch/v1/namespaces/{ns}/jobs`,
+//! `/apis/networking.k8s.io/v1/namespaces/{ns}/ingresses`). The declaration models that honestly —
+//! each group/version scope has its own `namespaced(namespace)` scope — and [`NamespaceContext`]
+//! binds one namespace across the four, so callers name it once. Everything here returns the
+//! **generated** handles: callers keep the operations' setters, `prepare()` and `send()`. Like
+//! Concord's handles, contexts are immutable snapshots and cheap to clone.
 
 use std::fmt;
 
@@ -16,7 +16,7 @@ use crate::error::KubeError;
 use crate::ids::{BearerToken, NamespaceName};
 use crate::{
     Kube, KubeAppsV1, KubeAppsV1Namespaced, KubeBatchV1, KubeBatchV1Namespaced, KubeCoreV1,
-    KubeCoreV1Namespaced,
+    KubeCoreV1Namespaced, KubeNetworkingV1, KubeNetworkingV1Namespaced,
 };
 
 /// The configured Kubernetes client: base URL, credentials and the `reqwest::Client` (whose TLS
@@ -80,12 +80,18 @@ impl KubeContext {
         self.client.batch_v1()
     }
 
+    /// `networking.k8s.io/v1`, cluster-wide collections.
+    pub fn networking(&self) -> KubeNetworkingV1 {
+        self.client.networking_v1()
+    }
+
     /// The namespace context of `namespace`: its scope in each group/version.
     pub fn namespace(&self, namespace: NamespaceName) -> NamespaceContext {
         NamespaceContext {
             core: self.client.core_v1().namespaced(namespace.clone()),
             apps: self.client.apps_v1().namespaced(namespace.clone()),
             batch: self.client.batch_v1().namespaced(namespace.clone()),
+            networking: self.client.networking_v1().namespaced(namespace.clone()),
             namespace,
         }
     }
@@ -100,13 +106,14 @@ impl fmt::Debug for KubeContext {
     }
 }
 
-/// One namespace bound across `core/v1`, `apps/v1` and `batch/v1`.
+/// One namespace bound across `core/v1`, `apps/v1`, `batch/v1` and `networking.k8s.io/v1`.
 #[derive(Clone)]
 pub struct NamespaceContext {
     namespace: NamespaceName,
     core: KubeCoreV1Namespaced,
     apps: KubeAppsV1Namespaced,
     batch: KubeBatchV1Namespaced,
+    networking: KubeNetworkingV1Namespaced,
 }
 
 impl NamespaceContext {
@@ -128,6 +135,11 @@ impl NamespaceContext {
     /// `batch/v1` in this namespace (Jobs).
     pub fn batch(&self) -> &KubeBatchV1Namespaced {
         &self.batch
+    }
+
+    /// `networking.k8s.io/v1` in this namespace (Ingresses).
+    pub fn networking(&self) -> &KubeNetworkingV1Namespaced {
+        &self.networking
     }
 }
 

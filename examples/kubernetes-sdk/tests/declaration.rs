@@ -1,7 +1,8 @@
 //! Every declared operation, prepared (no I/O): method, path, query, headers and redaction,
 //! checked against the paths and parameter names of the pinned OpenAPI v3 documents
 //! (Kubernetes v1.37.2: `api__v1_openapi.json`, `apis__apps__v1_openapi.json`,
-//! `apis__batch__v1_openapi.json`, `version_openapi.json`).
+//! `apis__batch__v1_openapi.json`, `apis__networking.k8s.io__v1_openapi.json`,
+//! `version_openapi.json`).
 
 use concord::reqwest::{self, Method};
 use concord_example_kubernetes_sdk::{
@@ -165,6 +166,67 @@ fn every_operation_has_the_schema_path() -> Result<(), concord::Error> {
         "/apis/batch/v1/namespaces/team-a/jobs/migrate-42",
         JSON,
     );
+
+    // networking.k8s.io/v1: the dotted group name is a literal path segment, sent unescaped.
+    check(
+        kube.networking().ingresses().prepare()?,
+        "/apis/networking.k8s.io/v1/ingresses",
+        JSON,
+    );
+    check(
+        kube.networking().watch_ingresses().prepare()?,
+        "/apis/networking.k8s.io/v1/ingresses?allowWatchBookmarks=true&watch=1",
+        JSON,
+    );
+    check(
+        a.networking().ingresses().prepare()?,
+        "/apis/networking.k8s.io/v1/namespaces/team-a/ingresses",
+        JSON,
+    );
+    check(
+        a.networking()
+            .ingress(name("storefront.public"))
+            .prepare()?,
+        "/apis/networking.k8s.io/v1/namespaces/team-a/ingresses/storefront.public",
+        JSON,
+    );
+    check(
+        a.networking().watch_ingresses().prepare()?,
+        "/apis/networking.k8s.io/v1/namespaces/team-a/ingresses?allowWatchBookmarks=true&watch=1",
+        JSON,
+    );
+    Ok(())
+}
+
+#[test]
+fn ingress_lists_share_the_list_parameters() -> Result<(), concord::Error> {
+    let continued = kube()
+        .namespace(ns("team-b"))
+        .networking()
+        .ingresses()
+        .set_label_selector(
+            LabelSelector::builder()
+                .in_set("app.kubernetes.io/part-of", ["shop", "checkout"])
+                .build()
+                .unwrap(),
+        )
+        .set_field_selector(
+            FieldSelector::builder()
+                .not_equals("metadata.name", "legacy")
+                .build()
+                .unwrap(),
+        )
+        .set_limit(20)
+        .set_continue_token(ContinueToken::from_server("synthetic-ingress-continue"))
+        .prepare()?;
+    assert_eq!(
+        target(&continued),
+        "/apis/networking.k8s.io/v1/namespaces/team-b/ingresses\
+         ?labelSelector=app.kubernetes.io%2Fpart-of+in+%28checkout%2Cshop%29\
+         &fieldSelector=metadata.name%21%3Dlegacy&limit=20&continue=synthetic-ingress-continue"
+    );
+    let shown = format!("{continued:?}");
+    assert!(!shown.contains("synthetic-ingress-continue"), "{shown}");
     Ok(())
 }
 
@@ -263,6 +325,10 @@ fn two_namespaces_do_not_share_scope() -> Result<(), concord::Error> {
     assert_eq!(
         target(&a.batch().jobs().prepare()?),
         "/apis/batch/v1/namespaces/team-a/jobs"
+    );
+    assert_eq!(
+        target(&b.networking().ingresses().prepare()?),
+        "/apis/networking.k8s.io/v1/namespaces/team-b/ingresses"
     );
     assert_eq!(a.namespace().as_str(), "team-a");
     assert_eq!(b.namespace().as_str(), "team-b");
