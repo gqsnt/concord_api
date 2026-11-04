@@ -114,6 +114,51 @@ input is added; ownership, sensitive `Debug`, cfg, renamed-facade, hygiene and c
 controls pass; and the added public surface and generated-code cost are proportionate. Otherwise
 the prototype is retained as an evaluated experiment and excluded from the supported surface.
 
+## G1 outcome — evaluated, **not adopted** (post-implementation)
+
+The prototype was built with the real macro (branch `concord-v4.3-dx-generated-inputs`,
+commits `6f204ae`, `214980d`, `9e4c0ef`), evaluated on the same runtime and SDK as the existing
+interface, and reviewed independently. It meets most of the ADR — identical wire output, no
+initializer/format/encode work on inspection, conditional `Clone`, redacted `Debug`, byte-identical
+existing diagnostics, the optional-field evolution promise — and gives real benefits for two task
+families: a stored or handed-over input can be read back as typed values and rebound to another
+tenant, and a saved search needs no hand-written mirror struct. It is not adopted, for these
+reasons, each reproduced:
+
+1. **It is not additive.** New generated names enter the caller's namespace: a user type named
+   `ShopListInput` next to `GET list` (`E0428`/`E0119`), a user `impl Shop { fn list_with }`
+   (`E0592`), an `import` of such a name (`E0255`), and declarations with both `search` and
+   `search_with`, or an endpoint `order` beside a scope `order_input`, all compile on V4.2 and fail
+   with the prototype. Shipping it unconditionally breaks valid code in a 4.x release (D02, and
+   the ADR's own "additive" constraint). An opt-in switch would be new DSL surface and a new
+   evaluation, not a defect correction, so it was not pursued here.
+2. **New breaking edits for SDK authors.** The record exposes each value's presence kind and exact
+   type as a public field type. `x: T = e` → `x?: T = e` (and the reverse) is invisible to setter
+   callers but breaks field users (`E0308`, version v3 of the experiment's evolution check); fields take exactly `T`, not
+   `IntoValue<T>` (`&str` for `String`); adding a non-`Clone` value removes the `Clone` that
+   branching relies on. `#[non_exhaustive]` + `new(..)` protects only "add an optional or
+   initialized value".
+3. **Universal cost, concentrated benefit.** Every declaration pays: +27% expanded lines (+36%
+   bytes; +14.5% without docs) and +16% compile time on the 480-endpoint synthetic SDK, and one
+   type and four methods per endpoint, whether or not its callers use records. The benefit is
+   clear for rebinding (T3), modest for storing/branching (T1), absent for one-call clearing (T2),
+   and the record invites new mistakes: `input().tags == None` while the request sends the
+   inherited tags; `tags.get_or_insert_with(Vec::new).push(..)` silently drops them.
+4. **Provenance docs are approximate.** "Declared by" is derived by matching key text along the
+   chain, not from the resolved composition: an upstream value removed by a later `remove` is still
+   listed, and a native `HeaderName` constant is not matched. Three other doc defects found by the
+   review were corrected (`9e4c0ef`); this one is recorded, not fixed, since the surface is not
+   adopted.
+
+The supported branch keeps V4.2's generated interface unchanged. The prototype stays runnable
+(branch and `experiments/generated-inputs/generated-inputs.patch`), with its evaluation in
+`experiments/generated-inputs/EVALUATION.md`. Two observations remain useful for later work and
+are *not* implemented here: field hover naming the declaring owner, and go-to-definition landing
+on the value's declaration (setters currently navigate into `concord-macros`) — both are
+properties of generated docs and spans, not of records; and a narrower opt-in experiment (a
+`rebind(self, &Parent)` on request types plus read access) would target the rebinding benefit
+without a second type per endpoint.
+
 ## S1 — Request streams and media types: guidance corrected, example added (maintained)
 
 `docs/CUSTOM_FORMATS.md` §1 and `docs/AUTHOR_GUIDE.md` §5.7 called a streamed request body "not a

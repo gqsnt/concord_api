@@ -2,8 +2,9 @@
 
 Files named without code formatting below exist on the experiment branch only (and in the
 patch). Contract: [`../../DECISIONS.md`](../../DECISIONS.md), G1 (written before the code). Prototype:
-branch `concord-v4.3-dx-generated-inputs`, commits `6f204ae` (generator) and `214980d` (caller
-tasks, evolution check, editor probe, evidence), on top of the ADR commit `0a91ce5`; the same
+branch `concord-v4.3-dx-generated-inputs`, commits `6f204ae` (generator), `214980d` (caller
+tasks, evolution check, editor probe, evidence) and `9e4c0ef` (doc corrections from the review),
+on top of the ADR commit `0a91ce5`; the same
 commits as a patch series: [`generated-inputs.patch`](generated-inputs.patch). Re-run
 instructions: [`README.md`](README.md). Raw outputs: [`evidence/`](evidence).
 
@@ -52,7 +53,7 @@ it, e.g. "declared by `Catalog.tenant.listing` (value `default_tags`)".)
 | C01 existing consumers unchanged | all 683 tests at the time of the change, then all 746 of the integrated branch, pass unmodified with the prototype (754 with its own 8) | `evidence/inputs-test-workspace-3.summary.log` (at `6f204ae`), `evidence/inputs-test-workspace-merged.summary.log` (prototype merged with the integrated branch, `76f23f5`) |
 | C02 optional input added, saved consumer unchanged | v1→v2 builds unchanged; struct literal rejected downstream (E0639) | evolution/run.sh, `evidence/g1-evolution.log` |
 | C03 names, cfg, facade, hygiene, Clone | new collisions reported (ui/input_name_collisions.rs); a `#[cfg(any())]` endpoint's input is gated with it; `examples/renamed`, `checks/hygiene`, `checks/clone-hygiene` pass; nightly `concord-clone-compat` passes (`evidence/inputs-nightly-clone-compat.log`); the 162 existing UI diagnostics are byte-identical | test suite, `ui.rs` |
-| C04 features/packaging | workspace tests under all feature sets of the maintained gate; packaged consumers not run on the prototype (not adopted) | — |
+| C04 features/packaging | the full maintained gate, packaged consumers included, passes on the prototype merged with the integrated branch | `evidence/inputs-verify.summary.log` |
 | C05 generation cost | see §4 | `evidence/g1-compile-time-noinc.log` |
 
 Defects found and corrected during the evaluation (each re-verified):
@@ -63,6 +64,10 @@ Defects found and corrected during the evaluation (each re-verified):
 2. Bound errors for a value type (missing `Display`/`ToHeaderValue`) were reported twice, once
    per generated `Debug`. Fixed: both `Debug` impls share one private helper, emitted after the
    request's impls, so the diagnostics and their order are byte-identical to V4.2's.
+3. From the independent review (`9e4c0ef`): a template override with `else inherit` was documented
+   as "absent: not sent" although the inherited value is sent; `new`'s doc said every optional
+   value starts absent (an initialized one starts `Some`); the `_with` doc contained runs of
+   spaces. Corrected and re-checked by expansion.
 
 ## 3. Matched caller tasks (DX01–DX03)
 
@@ -155,8 +160,31 @@ performance claim is made either way.
 
 ## 5. Independent review (DX05)
 
-Pending.
+An independent Claude reviewer, given the code and the contract (not this evaluation), rebuilt
+reproducers against both trees. Its findings, each re-checked by the coordinator where decisive:
+
+- **Not additive (high).** Six valid V4.2 programs fail with the prototype: a user type or import
+  named `{Endpoint}Input`, a user `{endpoint}_with` method, `x` beside `x_with`, an endpoint beside
+  a scope `{endpoint}_input`, and a body type named like the record (with a confusing `E0275`). The
+  coordinator reproduced the first two on the pinned toolchain (`E0428`/`E0119`, `E0592`).
+- **New breaking edits (medium-high).** Presence kind and exact type become public (both
+  directions of `x: T = e` ↔ `x?: T = e`; no `IntoValue` on fields; `Clone` lost when a non-`Clone`
+  value is added).
+- **Doc defects (medium).** Template `else inherit` mis-documented, composition-unaware "declared
+  by", native constant keys unmatched, `new` doc, spacing — three corrected, provenance recorded.
+- **Caller experience.** T3 the clearest gain, T1 modest, T2 none; three new mistakes reproduced.
+- **Cost.** Matches §4; docs are about two thirds of the byte growth (field docs repeat setter
+  notes).
+- **Checked fine:** raw identifiers, values named `input`/`new`/`with`/`clone`, deprecated and
+  cfg'd owners, deep scopes, non-`Display` header values, sensitive values, required/optional
+  non-`Clone` bodies (identical `Debug` and wire output on both trees); clone bounds; no hidden
+  work on inspection.
+- **Recommendation:** do not adopt as is.
 
 ## 6. Decision
 
-Pending.
+**Evaluated, not adopted.** See DECISIONS.md, "G1 outcome": the surface is not additive (it breaks
+valid V4.2 code), it adds breaking edits SDK authors do not have today, and its cost falls on
+every declaration while its benefit is concentrated in rebinding and stored inputs. The prototype
+remains runnable on its branch and through `generated-inputs.patch`; nothing of it is in the
+supported branch's code.

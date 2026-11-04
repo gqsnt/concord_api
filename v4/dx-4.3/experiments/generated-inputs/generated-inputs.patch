@@ -5736,3 +5736,88 @@ index 0000000..990ae6f
 -- 
 2.53.0
 
+From 9e4c0efe3896223c8a29e366c5c47cd070a70c20 Mon Sep 17 00:00:00 2001
+From: canarit <gaqu1994@gmail.com>
+Date: Wed, 4 Nov 2026 20:26:16 +0100
+Subject: [PATCH] experiment(G1): correct generated docs found by the
+ independent review
+
+- a template override with else inherit reading the value now documents
+  that None keeps the inherited key (was: "placements are not sent");
+- new()'s doc states that an initialized optional value starts as Some;
+- the _with doc no longer contains runs of spaces.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ crates/concord-macros/src/emit.rs | 28 +++++++++++++++++++++++-----
+ 1 file changed, 23 insertions(+), 5 deletions(-)
+
+diff --git a/crates/concord-macros/src/emit.rs b/crates/concord-macros/src/emit.rs
+index 1bb2770..4d293f0 100644
+--- a/crates/concord-macros/src/emit.rs
++++ b/crates/concord-macros/src/emit.rs
+@@ -711,8 +711,18 @@ fn input_field_docs(model: &Model, endpoint: usize, vi: usize, notes: &[String])
+             .iter()
+             .filter(|c| c.op == Op::Override && c.else_inherit)
+         {
++            // `Some(each)` for a direct reference to this value, `None` for a template that
++            // reads it (the whole template is sent instead of the inherited key when every
++            // value it reads is present).
+             let each = match &c.source {
+-                Some(Source::Ref { value, each }) if *value == me => *each,
++                Some(Source::Ref { value, each }) if *value == me => Some(*each),
++                Some(Source::Template { pieces })
++                    if pieces
++                        .iter()
++                        .any(|p| matches!(p, Piece::Hole(r) if *r == me)) =>
++                {
++                    None
++                }
+                 _ => continue,
+             };
+             inherits = true;
+@@ -738,13 +748,18 @@ fn input_field_docs(model: &Model, endpoint: usize, vi: usize, notes: &[String])
+                 " `None`: the inherited `{key}` {what} is sent unchanged — declared by {origins}; \
+                  its current value is whatever the handle this input is bound to holds."
+             ));
+-            lines.push(if each {
++            lines.push(if each == Some(true) {
+                 format!(
+                     " `Some(v)`: one `{key}` per item of `v` instead, and no `{key}` at all when \
+                      `v` has no items (an empty collection, or `None` for an `Option`)."
+                 )
+-            } else {
++            } else if each == Some(false) {
+                 format!(" `Some(v)`: `v` instead of the inherited `{key}`.")
++            } else {
++                format!(
++                    " `Some(v)`: the declared template, written with `v`, instead of the \
++                     inherited `{key}` (when the template's other values are present too)."
++                )
+             });
+         }
+     }
+@@ -851,7 +866,8 @@ fn input_record(
+     );
+     let new_doc = lit(&format!(
+         " The input `{}` starts with: required values as given (in declaration order, as for \
+-         the navigation method), initializers evaluated here once, optional values absent.",
++         the navigation method), initializers evaluated here once (an optional value with an \
++         initializer starts as `Some`), other optional values absent.",
+         owner.dotted
+     ));
+     quote! {
+@@ -1861,7 +1877,9 @@ fn navigation(k: &TokenStream, model: &Model, index: usize) -> TokenStream {
+                 let with = format_ident!("{}_with", plain(name), span = name.span());
+                 let call_args = positional_args(&c.values, body);
+                 let with_line = lit(&format!(
+-                    " `{}` endpoint `{}`, from an input record ([`{input_ty}`]): the same request                      as [`{}`](Self::{}) with that input's values. This handle supplies the rest                      (client and scope values, static headers); nothing is evaluated or sent here.",
++                    " `{}` endpoint `{}`, from an input record ([`{input_ty}`]): the same request \
++                     as [`{}`](Self::{}) with that input's values. This handle supplies the rest \
++                     (client and scope values, static headers); nothing is evaluated or sent here.",
+                     method,
+                     c.dotted,
+                     plain(name),
+-- 
+2.53.0
+

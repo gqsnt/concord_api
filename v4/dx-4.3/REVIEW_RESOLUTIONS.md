@@ -19,10 +19,41 @@ claimed. Agreement between reviewers is not used as evidence.
 | R1-2 | Prototype: a value type's missing `Display`/`ToHeaderValue` was reported twice more (once per generated `Debug`), changing four UI expectations. | fixed (experiment) | one shared private `Debug` helper, emitted after the request's impls; all 162 UI expectations byte-identical (`6f204ae`) | `cargo test --locked -p concord --test ui` |
 | R1-3 | Integration: the three helper branches each added workspace members on the same line of `Cargo.toml`. | resolved | union of members (`9aa570f`) | `cargo metadata --locked` |
 
-## R2 — generated-input prototype
+## R2 — generated-input prototype (experiment branch)
 
-Pending.
+| # | Finding (severity) | Disposition | Change / evidence |
+|---|---|---|---|
+| R2-1 | Not additive: generated `{Endpoint}Input`/`{endpoint}_with` names break valid V4.2 code (user types, imports, methods, sibling names) (high) | **confirmed** (coordinator reproduced `E0428`/`E0119`, `E0592` on 1.99.1); decisive for non-adoption | DECISIONS G1 outcome, reason 1 |
+| R2-2 | Presence kind and exact type become public field types: new breaking edits (medium-high) | confirmed (evolution check v3, experiment branch); decisive | G1 outcome, reason 2 |
+| R2-3a | Template `else inherit` documented as "not sent" (medium) | fixed | `9e4c0ef`; checked by expansion |
+| R2-3b/c | "Declared by" not derived from the resolved composition; native constants unmatched (medium) | recorded as a limitation of the rejected prototype, not fixed | G1 outcome, reason 4 |
+| R2-3d | `new` doc: initialized optional values start `Some` (low) | fixed | `9e4c0ef` |
+| R2-3e | runs of spaces in the `_with` doc (low) | fixed | `9e4c0ef` |
+| R2-4 | two collision checks can never fire (`Input` vs `Config`; `input*` built-ins) (info) | accepted as harmless in the prototype | — |
+| R2-5 | caller footguns (`None` tags vs inherited; pushing onto `None`; stored initializer values repeat) (medium) | confirmed; part of the decision | G1 outcome, reason 3 |
+| R2-6 | cost; cheaper `rebind` alternative (info) | recorded as possible later work, not implemented | G1 outcome |
+
+After the fixes: `cargo test --locked -p concord --test inputs --test ui --test attributes` passes
+on `9e4c0ef`; the full maintained gate on the experiment branch is in
+`experiments/generated-inputs/evidence/`.
 
 ## R3 — supported examples and guides
 
-Pending.
+No high-severity finding. Every package passed alone; clippy clean.
+
+| # | Finding (severity) | Disposition | Change |
+|---|---|---|---|
+| R3-1 | `examples/sdk/src/context.rs` said the contexts' `Debug` never contains path data, yet shows the tenant (as the generated handle does) (low-medium) | fixed wording | `a42ef99` |
+| R3-2 | `Meta::capture` duplicated values when `keep` names a header twice (low) | fixed: a repeated name is kept once | `a42ef99` |
+| R3-3 | the extension's `compile_fail` doc test had no compiling control (rustdoc does not check error codes on stable) (low) | fixed: control doc test added | `a42ef99` |
+| R3-4 | the empty-source upload test did not assert chunked framing (low) | fixed | `a42ef99` |
+| R3-5 | the fixture's RFC 3339 oracle accepted impossible dates (low) | fixed: days-in-month check, century leap anchors | `a42ef99` |
+| R3-6 | a test pinned reqwest's internal `is_decode()` classification (low) | fixed: `is_decode() || is_body()` | `a42ef99` |
+| R3-7 | doc slips (traversal comment, RECIPES setter example, `Prepared` `Clone` wording) (low) | fixed | `a42ef99` |
+| R3-8 | the feature-isolation step does not refuse reqwest `stream` for Concord (info) | not changed: true today (`cargo tree -i reqwest -p concord`, `--all-features`, `-p concord-core` show no `stream`); the maintained inventory is changed only where a new supported surface requires it, and none does | — |
+| R3-9 | derived `Debug` of application types (`Interrupted`, `Traversal`, `Outcome`) prints records and cursors (info) | accepted: application data, matching the generated `Debug` (the cursor is not declared sensitive); the metadata recipe's stricter stance concerns response headers and URLs | — |
+| R3-10 | example tests use `reqwest::Client::new()` (system proxy) against loopback (info) | accepted: a proxy environment makes them fail, not pass falsely; same as the existing examples | — |
+
+After the fixes: each affected package passes alone (fixture 4, SDK 12, extension 17, native 47,
+app 21 tests) and `cargo clippy --locked --workspace --all-targets -- -D warnings` is clean; the
+final gate is in VERIFICATION.md.

@@ -172,6 +172,53 @@ The tenant `acme/east?x=1%20+ü #` under base `…/edge/catalog/v1` goes out as
 segment bytes the generated `tenant.item(..)` sends. Errors name the extension's operation and
 have `endpoint() == None` (no borrowed identity). Concord's core is unchanged.
 
-## 5. Generated input records — evaluated experiment
+## 5. Generated input records — evaluated, not adopted
 
-See `experiments/generated-inputs/EVALUATION.md` and decision G1.
+The macro was changed (on branch `concord-v4.3-dx-generated-inputs` only) to emit an editable
+input record per endpoint. The clearest gain, from the matched task T3 — requests handed over as
+values, read back and re-run for another tenant:
+
+Existing interface (the experiment's tasks/src/baseline.rs):
+
+```rust
+for request in &handed_over {
+    let prepared = request.clone().prepare()?;
+    let limit = prepared
+        .request()
+        .url()
+        .query_pairs()
+        .find(|(k, _)| k == "limit")
+        .and_then(|(_, v)| v.parse().ok())
+        .expect("the declaration always sends limit");
+    limits.push(limit);
+}
+let mut counts = Vec::new();
+for request in crate::lamp_searches(other) {
+    counts.push(request.send().await?.items.len());
+}
+```
+
+With records (the experiment's tasks/src/candidate.rs):
+
+```rust
+let limits = handed_over.iter().map(|r| r.input().limit).collect();
+let mut counts = Vec::new();
+for request in handed_over {
+    counts.push(other.list_with(request.into_input()).send().await?.items.len());
+}
+```
+
+Both send byte-identical requests. It is **not** in the supported surface because, reproduced:
+the new generated names break valid V4.2 code (a user `ShopListInput` type or `list_with`
+method no longer compiles); fields make a value's `?`/`= expr` kind part of the public type, so
+edits that setter callers never notice break record users; and every declaration pays +27%
+generated code and +16% compile time (480-endpoint SDK) for a benefit concentrated in this kind of
+rebinding. Details: `experiments/generated-inputs/EVALUATION.md`, decision "G1 outcome".
+
+## What is where
+
+| State | Item |
+|---|---|
+| Maintained (supported branch) | streaming guidance + `examples/native/src/upload.rs`; domain adapters, independent outcomes, named workflow, bounded traversal (`examples/app`); metadata recipe (`examples/native/src/metadata.rs`); SDK context + outside operation (`examples/sdk/src/context.rs`, `examples/extension`); recipes index (`docs/RECIPES.md`) |
+| Evaluated, not adopted | generated input records (G1); public metadata convenience in core (M1); core/generated context primitive (X1) |
+| Supported API changes | none (crates unchanged, version 4.2.0) |
