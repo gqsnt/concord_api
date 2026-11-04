@@ -43,9 +43,19 @@ trait Decode<T> {
   `CodecError`, `ResponseHead`, `ContentTypeField`, `concord::bytes`, `concord::reqwest`). A crate
   that only offers formats and does not use `api!` can depend on `concord-core`, which has the
   same items and implements no format.
-- Not a format: a media type that changes with every body (a multipart boundary), a streamed
-  request body, a streamed response. Use the native exits (`into_parts`, `send_raw`); see
-  [recipes](RECIPES.md).
+- A request stream with a fixed media type can use `Encode<T>`: the by-value payload may become
+  a streaming `reqwest::Body` (`Body::wrap_stream`, which needs reqwest's `stream` feature,
+  enabled in your own `Cargo.toml`). Preparing the request need not read the payload; executing
+  it reads it once. [`examples/native/src/upload.rs`](../examples/native/src/upload.rs) moves a
+  non-`Clone` one-shot source this way.
+- `Encode::CONTENT_TYPE` is static, and `Encode::encode` does not return per-body media headers.
+  For a media type that changes with the body (a multipart boundary), use the native
+  request-construction route (`into_parts`, then reqwest's multipart support, as in
+  [`examples/multipart`](../examples/multipart)). An explicit matching `content-type` header is
+  also possible when the endpoint or SDK controls that body/header pair: it replaces the format's
+  static value ([author guide](AUTHOR_GUIDE.md#53-media-types-and-content-type)).
+- For a response read incrementally, use `send_raw` and native reads: typed `Decode` receives
+  the collected body bytes. See [recipes](RECIPES.md) for the native routes.
 
 ## 2. An encoder only
 

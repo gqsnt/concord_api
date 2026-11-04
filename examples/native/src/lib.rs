@@ -13,3 +13,4 @@ pub mod native_edit;
 pub mod policies;
 pub mod repr;
 pub mod streaming;
+pub mod upload;

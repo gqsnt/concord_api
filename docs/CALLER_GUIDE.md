@@ -483,7 +483,8 @@ assert_eq!(server.requests()[0].header("x-request-id"), Some("req-1"));
   masked (reqwest prints them as `Sensitive`). Mark extra secret headers with
   `HeaderValue::set_sensitive(true)` yourself.
 
-More: the [recipes](RECIPES.md) (streaming, multipart, interleaved query parameters).
+More: the [recipes](RECIPES.md) (streaming responses and request bodies, multipart, interleaved
+query parameters).
 
 ## 8. What Concord redacts, and what it does not
 

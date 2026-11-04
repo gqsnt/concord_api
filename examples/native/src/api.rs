@@ -4,6 +4,7 @@ use concord::{Binary, Json};
 use serde::{Deserialize, Serialize};
 
 use crate::repr::{self, Ndjson};
+use crate::upload::{self, OneShot, UploadReceipt};
 
 /// An inventory item.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -76,5 +77,12 @@ concord::api! {
         /// A long chunked event export. The declared `bytes` buffers everything; the streaming
         /// recipe uses `send_raw` instead.
         GET events() -> concord::bytes::Bytes { response Binary; path "events"; }
+
+        /// Uploads an attachment from a one-shot source, streamed with this crate's
+        /// [`Streamed`](crate::upload::Streamed) format (fixed media type, chunked body).
+        PUT upload(id: u64, body source: OneShot) -> UploadReceipt {
+            path "items/{id}/upload";
+            request upload::Streamed;
+        }
     }
 }

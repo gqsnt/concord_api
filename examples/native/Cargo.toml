@@ -1,6 +1,6 @@
 [package]
 name = "concord-example-native"
-description = "Downstream example: application-owned native integration recipes around Concord V4 (error documents, native edits, custom representations, streaming, form-encoded bodies, retry, cursor, admission, auth rotation, interleaved query keys)."
+description = "Downstream example: application-owned native integration recipes around Concord V4 (error documents, native edits, custom representations, response and request streaming, form-encoded bodies, retry, cursor, admission, auth rotation, interleaved query keys)."
 version = "0.0.0"
 edition = "2024"
 rust-version.workspace = true
@@ -14,6 +14,11 @@ serde_json.workspace = true
 # Already in the lockfile (Concord depends on it): used for `form_urlencoded`.
 url.workspace = true
 tokio = { workspace = true, features = ["sync", "time"] }
+# The application's own reqwest (the same version Concord re-exports): reqwest's `stream` feature
+# (`Body::wrap_stream`, for the one-shot upload recipe) is enabled here, not by Concord.
+reqwest = { workspace = true, features = ["stream"] }
+# Already in the lockfile (reqwest depends on it): the `Stream` trait the upload source implements.
+futures-core = "0.3.34"
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["macros", "rt", "rt-multi-thread", "net", "io-util", "sync", "time"] }

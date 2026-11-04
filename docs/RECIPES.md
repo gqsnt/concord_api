@@ -70,6 +70,13 @@ feed that must not be buffered.
   to the pool.
 - **Note:** any declared typed output (`-> Bytes` with `response Binary;`, `-> T`) buffers the whole body, as every
   `Decode` does; an endpoint without `->` drains it without buffering but discards it.
+- **Request bodies** go the other way: a body produced while it is sent, with one fixed media
+  type, is a format. [`upload::Streamed`](../examples/native/src/upload.rs) implements
+  `Encode<OneShot>` and moves a non-`Clone` one-shot source into `reqwest::Body::wrap_stream`
+  (reqwest's `stream` feature, enabled in that example's `Cargo.toml`); `prepare()` does not poll
+  it, one `send()` reads it once, chunked. The request cannot be cloned or replayed: another
+  upload needs a fresh source. Evidence:
+  [`examples/native/tests/upload.rs`](../examples/native/tests/upload.rs).
 
 ## Requests
 
@@ -215,8 +222,12 @@ through reqwest's own `multipart` feature, enabled in that example crate only.
   `reqwest::RequestBuilder::from_parts(client, request).multipart(form).send().await` and
   `decoder.finish(result).await`. The declared path, headers and decoder still apply; reqwest
   writes the boundary, `Content-Type` and (for parts of known length) `Content-Length`.
-- **Why native:** `Encode::CONTENT_TYPE` is a constant, while a multipart boundary is chosen per
-  body; Concord has no multipart policy.
+- **Why native:** `Encode::CONTENT_TYPE` is a constant and `encode` returns no headers, while a
+  multipart boundary is chosen per body; Concord has no multipart policy. (A `content-type` header
+  on the endpoint replaces the format's media type, so an SDK that chooses the boundary itself and
+  passes the matching header can also use a format; reqwest's multipart support does both for
+  you.) A fixed-media stream needs neither: see the request side of
+  [streaming](#streaming-a-large-or-endless-body).
 - **Assumes:** field names use `Form::percent_encode_attr_chars()` (reqwest's default leaves `\`
   raw inside `name="..."`); file names with CR/LF are escaped by reqwest in a form a strict
   RFC 9110 recipient may reject, so sanitize them if the server is unknown.
