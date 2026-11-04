@@ -6,7 +6,9 @@
 //!
 //! Copied from `crates/concord/tests/support/mod.rs`, then extended for these recipes: a reply
 //! can be delayed or replaced by dropping the connection, the server tracks its peak number of
-//! requests in flight, and [`chunked`] serves a real `Transfer-Encoding: chunked` body.
+//! requests in flight, and [`chunked`] serves a real `Transfer-Encoding: chunked` body. A request
+//! body sent with `Transfer-Encoding: chunked` is decoded (and flagged); a reply can declare a
+//! longer `Content-Length` than it sends and then close (a truncated body).
 #![allow(dead_code, missing_docs)]
 
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
@@ -24,7 +26,12 @@ pub struct Recorded {
     pub target: String,
     /// Header lines in wire order, names lowercased.
     pub headers: Vec<(String, String)>,
+    /// The body bytes (a chunked body decoded).
     pub body: Vec<u8>,
+    /// Whether the body arrived with `transfer-encoding: chunked`.
+    pub chunked: bool,
+    /// The sizes of the non-empty chunks of a chunked body, in wire order (empty otherwise).
+    pub chunk_sizes: Vec<usize>,
 }
 
 impl Recorded {
@@ -63,6 +70,9 @@ pub struct Reply {
     pub delay: Option<Duration>,
     /// Close the connection after reading the request, without answering.
     pub drop_connection: bool,
+    /// Declare this `Content-Length` instead of the body's, send the body, then close the
+    /// connection: a body shorter than declared.
+    pub declared_length: Option<usize>,
 }
 
 impl Reply {
@@ -73,6 +83,7 @@ impl Reply {
             body: Vec::new(),
             delay: None,
             drop_connection: false,
+            declared_length: None,
         }
     }
 
@@ -82,6 +93,12 @@ impl Reply {
             drop_connection: true,
             ..Self::new(0)
         }
+    }
+
+    /// Declares `length` bytes but sends only the body, then closes the connection.
+    pub fn truncated(mut self, length: usize) -> Self {
+        self.declared_length = Some(length);
+        self
     }
 
     pub fn delay(mut self, delay: Duration) -> Self {
@@ -232,25 +249,59 @@ async fn serve_connection(
             .filter_map(|line| line.split_once(':'))
             .map(|(n, v)| (n.trim().to_ascii_lowercase(), v.trim().to_owned()))
             .collect();
-        let len: usize = headers
+        let chunked = headers
             .iter()
-            .find(|(n, _)| n == "content-length")
-            .and_then(|(_, v)| v.parse().ok())
-            .unwrap_or(0);
-        while buf.len() < len {
-            let mut chunk = [0u8; 4096];
-            let n = stream.read(&mut chunk).await?;
-            if n == 0 {
-                return Ok(());
+            .any(|(n, v)| n == "transfer-encoding" && v.eq_ignore_ascii_case("chunked"));
+        let mut chunk_sizes = Vec::new();
+        let body: Vec<u8> = if chunked {
+            // `<hex size>[;ext]\r\n<data>\r\n` ... `0\r\n\r\n` (no trailers).
+            let mut body = Vec::new();
+            loop {
+                let line_end = loop {
+                    if let Some(pos) = find(&buf, b"\r\n") {
+                        break pos;
+                    }
+                    if !read_more(&mut stream, &mut buf).await? {
+                        return Ok(());
+                    }
+                };
+                let size_line = String::from_utf8_lossy(&buf[..line_end]).into_owned();
+                buf.drain(..line_end + 2);
+                let size =
+                    usize::from_str_radix(size_line.split(';').next().unwrap_or("").trim(), 16)
+                        .expect("chunk size");
+                while buf.len() < size + 2 {
+                    if !read_more(&mut stream, &mut buf).await? {
+                        return Ok(());
+                    }
+                }
+                body.extend(buf.drain(..size));
+                assert_eq!(buf.drain(..2).as_slice(), b"\r\n", "chunk terminator");
+                if size == 0 {
+                    break body;
+                }
+                chunk_sizes.push(size);
             }
-            buf.extend_from_slice(&chunk[..n]);
-        }
-        let body: Vec<u8> = buf.drain(..len).collect();
+        } else {
+            let len: usize = headers
+                .iter()
+                .find(|(n, _)| n == "content-length")
+                .and_then(|(_, v)| v.parse().ok())
+                .unwrap_or(0);
+            while buf.len() < len {
+                if !read_more(&mut stream, &mut buf).await? {
+                    return Ok(());
+                }
+            }
+            buf.drain(..len).collect()
+        };
         let recorded = Recorded {
             method,
             target,
             headers,
             body,
+            chunked,
+            chunk_sizes,
         };
         let reply = respond(&recorded);
         log.lock().unwrap().push(recorded);
@@ -268,11 +319,24 @@ async fn serve_connection(
         for (n, v) in &reply.headers {
             out.push_str(&format!("{n}: {v}\r\n"));
         }
-        out.push_str(&format!("content-length: {}\r\n\r\n", reply.body.len()));
+        let declared = reply.declared_length.unwrap_or(reply.body.len());
+        out.push_str(&format!("content-length: {declared}\r\n\r\n"));
         stream.write_all(out.as_bytes()).await?;
         stream.write_all(&reply.body).await?;
         stream.flush().await?;
+        if reply.declared_length.is_some() {
+            // The rest of the declared body never comes.
+            stream.shutdown().await?;
+            return Ok(());
+        }
     }
+}
+
+async fn read_more(stream: &mut tokio::net::TcpStream, buf: &mut Vec<u8>) -> std::io::Result<bool> {
+    let mut chunk = [0u8; 4096];
+    let n = stream.read(&mut chunk).await?;
+    buf.extend_from_slice(&chunk[..n]);
+    Ok(n > 0)
 }
 
 fn find(haystack: &[u8], needle: &[u8]) -> Option<usize> {
