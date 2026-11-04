@@ -22,6 +22,8 @@ mod ignore;
 #[cfg(feature = "json")]
 mod json;
 mod media;
+#[cfg(feature = "stream")]
+pub mod stream;
 mod text;
 
 pub use binary::Binary;

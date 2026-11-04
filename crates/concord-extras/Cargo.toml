@@ -1,6 +1,6 @@
 [package]
 name = "concord-extras"
-description = "Concord's standard formats (Json, Text, Binary, Form), written against the public Encode/Decode contracts of concord-core."
+description = "Concord's standard formats (Json, Text, Binary, Form, Csv, JSON Lines), finite and incremental, written against the public Encode/Decode contracts of concord-core."
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -18,6 +18,13 @@ all-features = true
 json = ["dep:serde", "dep:serde_json"]
 ## `Form` (`application/x-www-form-urlencoded`), via serde and serde_urlencoded.
 form = ["dep:serde", "dep:serde_urlencoded"]
+## The incremental-body infrastructure shared by the streaming formats: response opening with
+## unread refusals, byte sources, safe read errors and lazily produced upload bodies.
+stream = ["dep:futures-core", "dep:http-body"]
+## `Csv<HasHeader, Delimiter>`: finite and incremental CSV, via `csv`/`csv-core` and serde.
+csv = ["stream", "dep:csv", "dep:csv-core", "dep:serde"]
+## JSON Lines / NDJSON (finite and incremental) and consecutive JSON values, via serde_json.
+jsonl = ["stream", "dep:serde", "dep:serde_json"]
 
 [dependencies]
 concord-core = { path = "../concord-core", version = "=4.2.0" }
@@ -26,6 +33,10 @@ mime.workspace = true
 serde = { workspace = true, optional = true }
 serde_json = { workspace = true, optional = true }
 serde_urlencoded = { workspace = true, optional = true }
+csv = { workspace = true, optional = true }
+csv-core = { workspace = true, optional = true }
+futures-core = { workspace = true, optional = true }
+http-body = { workspace = true, optional = true }
 
 [dev-dependencies]
 serde = { workspace = true, features = ["derive"] }
