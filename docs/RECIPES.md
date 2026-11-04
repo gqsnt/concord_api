@@ -237,6 +237,77 @@ recommended default for every API. All are in [`policies.rs`](../examples/native
 A request value's `Clone` (available when its values and body are `Clone`) only means it can be
 copied. The retry recipe deliberately takes a request **factory** instead.
 
+## SDK and application patterns
+
+[`examples/app`](../examples/app) is an application over a shared SDK
+([`examples/sdk`](../examples/sdk): two independent clients, Catalog and Ledger). Each pattern
+below is application code with its policy stated in the module; the tests run against the
+loopback fake services of [`examples/fixture`](../examples/fixture)
+(`cargo test -p concord-example-app`), and the [README](../examples/app/README.md) maps modules
+to tests.
+
+### Domain values into a service's representation
+
+[`catalog_repr::activity`](../examples/app/src/catalog_repr.rs) and
+[`ledger_repr::entries`](../examples/app/src/ledger_repr.rs) — the application has its own
+[`AccountId` and `Moment`](../examples/app/src/domain.rs), and each service writes them
+differently (decimal and whole-second RFC 3339; `acct-` hex and milliseconds).
+
+- **How:** one module per service converts the domain values into that service's text and returns
+  the **generated operation**: `activity(&Catalog, AccountId, Option<Moment>) ->
+  Result<CatalogActivity, CatalogReprError>`. It is synchronous and sends nothing; the caller keeps
+  the setters (`.set_page_size(2)`), `prepare()` and `send()`.
+- **Assumes:** each service has its own precise error enum (a fractional second, a year outside
+  0000–9999; sub-millisecond precision, an instant before 1970, `u64` overflow). Nothing is
+  rounded, wrapped or truncated, and a refused value never creates a request.
+- **When not:** a value the application already holds as the service's text needs no adapter. A
+  `Display` on the domain type tuned to one service would put that service's rule in the domain.
+
+### Independent outcomes per service
+
+[`report::account_report`](../examples/app/src/report.rs) — one domain query touches two services,
+and one service refusing or failing must not hide the other's answer.
+
+- **How:** `Outcome::attempt(conversion, Operation::send)` per service, kept in one `Outcome` each:
+  `Rejected(E)` (nothing sent), `Failed(concord::Error)` or `Succeeded(T)`. No aggregate `?`.
+- **Assumes:** this aggregation is application policy, not a Concord rule: Concord returns one
+  result per `send()` and has no notion of a report. The services are attempted one after the
+  other.
+- **When not:** when the result means nothing unless both parts exist, short-circuiting with `?`
+  is the honest policy.
+
+### A named workflow
+
+[`workflow::Browser`](../examples/app/src/workflow.rs) — a call with application intent
+(`unfiltered_page`: the featured listing without its tag filter) that would otherwise be spelled
+`list().set_tags(Vec::new())` at each call site.
+
+- **How:** a struct holding the configured scope handle (a `CatalogTenantListing` with default
+  tags) whose methods return the generated `CatalogTenantListingList`, so callers still chain
+  setters, `prepare()` and `send()`. The per-request `set_tags` leaves the handle's defaults
+  intact for sibling calls.
+- **Assumes:** only calls that carry intent get a name; everything else goes through the SDK
+  handle (`Browser::listing()`).
+- **When not:** wrapping every generated endpoint in a same-named method adds a layer without
+  meaning.
+
+### Bounded traversal with a continuation
+
+[`traversal::traverse`](../examples/app/src/traversal.rs) — two services page differently
+(`next_cursor`, `paging.next`) and the application walks both.
+
+- **How:** one walk over `fetch(token) -> Page<T>`, with a `NonZeroUsize` page bound; small
+  per-service adapters (`catalog_items`, `ledger_entries`) set the token on a clone of a request
+  template and map the page. The result is `Complete` or `Bounded` with a `Continuation`, and every
+  call takes `from: Option<Continuation>` to resume.
+- **Assumes:** a failed page stops the walk with `Interrupted`: the error, the records collected in
+  that call and `retry_from`, the position of the failed page. The caller keeps the records and
+  resumes, or discards them and restarts; nothing is retried. A continuation belongs to the
+  template it came from, and "no duplicates, no gaps" holds only if the listing does not change
+  between calls.
+- **When not:** a single page needs no walk. Unlike `collect_items` above, which drops collected
+  pages on error, this walk hands them back; pick the policy your caller needs.
+
 ## Patterns from other APIs
 
 [`examples/compat`](../examples/compat) is a downstream crate (edition 2021, a private client) with

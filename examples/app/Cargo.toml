@@ -1,0 +1,19 @@
+[package]
+name = "concord-example-app"
+description = "Downstream example: an application over the shared SDK (Catalog and Ledger) that converts its own domain values into generated operations, reports per-service outcomes, names a listing workflow and walks both services' pages with one bounded traversal."
+version = "0.0.0"
+edition = "2024"
+rust-version.workspace = true
+license.workspace = true
+publish = false
+
+[dependencies]
+concord = { path = "../../crates/concord" }
+concord-example-sdk = { path = "../sdk" }
+
+[dev-dependencies]
+concord-example-fixture = { path = "../fixture" }
+tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
+
+[lints]
+workspace = true
