@@ -333,6 +333,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "concord-example-github-app"
+version = "0.0.0"
+
+[[package]]
+name = "concord-example-github-sdk"
+version = "0.0.0"
+
+[[package]]
+name = "concord-example-kubernetes-app"
+version = "0.0.0"
+
+[[package]]
+name = "concord-example-kubernetes-sdk"
+version = "0.0.0"
+
+[[package]]
 name = "concord-example-multipart"
 version = "0.0.0"
 dependencies = [
@@ -384,6 +400,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "concord-example-salesforce-app"
+version = "0.0.0"
+
+[[package]]
+name = "concord-example-salesforce-sdk"
+version = "0.0.0"
+
+[[package]]
 name = "concord-example-sdk"
 version = "0.0.0"
 dependencies = [
@@ -400,6 +424,31 @@ dependencies = [
  "concord",
  "serde",
  "serde_json",
+ "tokio",
+]
+
+[[package]]
+name = "concord-example-shopify-app"
+version = "0.0.0"
+
+[[package]]
+name = "concord-example-shopify-sdk"
+version = "0.0.0"
+
+[[package]]
+name = "concord-example-stripe-app"
+version = "0.0.0"
+
+[[package]]
+name = "concord-example-stripe-sdk"
+version = "0.0.0"
+
+[[package]]
+name = "concord-example-testserver"
+version = "0.0.0"
+dependencies = [
+ "bytes",
+ "reqwest",
  "tokio",
 ]
 

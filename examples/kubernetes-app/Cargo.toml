@@ -1,0 +1,13 @@
+[package]
+name = "concord-example-kubernetes-app"
+description = "Placeholder: the kubernetes app package of the 4.4 provider integrations (implementation in progress)."
+version = "0.0.0"
+edition = "2024"
+rust-version.workspace = true
+license.workspace = true
+publish = false
+
+[dependencies]
+
+[lints]
+workspace = true
