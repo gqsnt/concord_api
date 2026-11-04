@@ -119,6 +119,27 @@ transport setting or a header the declaration does not carry (a request id, a ti
   (sensitive query values and path segments included) and every header value not flagged
   sensitive. Mark a secret extra header with `HeaderValue::set_sensitive(true)` yourself.
 
+### An operation the SDK does not declare
+
+[`concord-example-extension`](../examples/extension) — another crate needs an endpoint the SDK's
+declaration lacks (here a tenant's CSV export, `GET tenants/{tenant}/exports/{export}`), and
+cannot or should not edit the SDK.
+
+- **How:** the SDK publishes a [context](../examples/sdk/src/context.rs), configured once
+  (client, base URL, credentials), that yields both the generated handles and native requests:
+  `tenant.request(Method::GET, &["exports", id])?` keeps the base path prefix, encodes each
+  segment like a Concord path value and adds the service headers (the key flagged sensitive).
+  Add `Accept`, execute once with the context's client, finish with your own format —
+  `Decoder::<Vec<CsvRow>>::new::<Csv>().finish(client.execute(request).await)` — and name the
+  operation in your own error type.
+- **Assumes:** the SDK keeps the context in step with its declaration (base, header names,
+  encoding); the example's SDK tests compare it with the generated endpoints. The decoder is
+  unlabeled (`endpoint()` is `None`), and the request is native: its `Debug` and URL show path
+  data, so do not log it when that data is secret.
+- **When not:** do not prepare a declared endpoint as a seed and rewrite its URL: it only reaches
+  suffixes of declared routes, and its decoder, `Accept` and name belong to the other endpoint.
+  If you own the SDK, declare the endpoint.
+
 ### Interleaved query parameters
 
 An API that wants repeated groups across keys — `f=a&op=eq&v=1&f=b&op=gt&v=2` — cannot be

@@ -6,7 +6,7 @@
 //! - `examples/app` converts application domain values into these operations, names
 //!   application workflows and walks both services' pages;
 //! - `examples/extension` adds a Catalog operation this SDK does not declare, from another crate,
-//!   through the public `context` boundary;
+//!   through the public [`context`] boundary;
 //! - the generated-input experiment (`v4/dx-4.3/experiments/generated-inputs`) compiles the same
 //!   declaration with an experimental macro.
 //!
@@ -14,6 +14,8 @@
 //! a time as whole-second RFC 3339 UTC; Ledger writes an account as `acct-` plus lowercase hex
 //! and a time as nonnegative milliseconds. This crate takes them as already-formatted text: which
 //! domain types an application converts from is the application's business.
+
+pub mod context;
 
 use concord::bytes::Bytes;
 use concord::reqwest;
