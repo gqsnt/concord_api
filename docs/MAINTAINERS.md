@@ -181,7 +181,7 @@ proc macro): items that are public only so that expansions in other crates can r
 
 - `concord`, `concord-core` and `concord-macros` change together. `concord` depends on all three
   and on `concord-extras`, and `concord-extras` on `concord-core`, with exact version
-  requirements (`version = "=4.1.0"`); every crate takes the workspace version, so a
+  requirements (`version = "=4.2.0"`); every crate takes the workspace version, so a
   published set can never mix. `concord-extras` uses only the public traits of `concord-core`.
 - Any change to a `__private` signature that `emit.rs` relies on is made in the same commit as the
   `emit.rs` change, and the crates' versions move together.

@@ -205,7 +205,7 @@ dependencies = [
 
 [[package]]
 name = "concord"
-version = "4.1.0"
+version = "4.2.0"
 dependencies = [
  "concord-core",
  "concord-extras",
@@ -283,7 +283,7 @@ version = "0.0.0"
 
 [[package]]
 name = "concord-core"
-version = "4.1.0"
+version = "4.2.0"
 dependencies = [
  "bytes",
  "percent-encoding",
@@ -364,7 +364,7 @@ dependencies = [
 
 [[package]]
 name = "concord-extras"
-version = "4.1.0"
+version = "4.2.0"
 dependencies = [
  "concord-core",
  "mime",
@@ -407,7 +407,7 @@ dependencies = [
 
 [[package]]
 name = "concord-macros"
-version = "4.1.0"
+version = "4.2.0"
 dependencies = [
  "concord-core",
  "http",
