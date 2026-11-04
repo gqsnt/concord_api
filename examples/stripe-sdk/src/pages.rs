@@ -9,8 +9,32 @@
 //! [`CursorList`] holds one list request (a generated operation with its filters, page size and
 //! expansions — the *template*) and one [`Direction`]. [`CursorList::fetch`] builds the request
 //! for a cursor (a fresh clone of the template; nothing is shared between pages), sends it once
-//! through [`crate::send`] and projects the envelope into a [`CursorPage`]: the items, the next
-//! [`Cursor`] and the page's [`ResponseMeta`].
+//! through [`crate::send`] and projects the envelope into a `concord_pagination::Page`
+//! ([`StripePage`]): the items, the next [`Cursor`] and the page's [`ResponseMeta`].
+//!
+//! It is the page factory of `concord_pagination::sequential`:
+//!
+//! ```no_run
+//! use std::num::NonZeroUsize;
+//! use concord_example_stripe_sdk::pages::CursorList;
+//! use concord_example_stripe_sdk::{Limit, StripeContext};
+//! use concord_pagination::{Budget, Resume, sequential};
+//!
+//! # async fn run(stripe: StripeContext) -> Result<(), concord_example_stripe_sdk::Error> {
+//! let limit = Limit::new(100).expect("1-100");
+//! let list = CursorList::forward(stripe.api().invoices().list().set_limit(limit))?;
+//! let budget = Budget::new(NonZeroUsize::new(20).unwrap());
+//! let mut pages = sequential(Resume::Start, budget, |cursor| list.fetch(cursor));
+//! while let Some(page) = pages.next().await {
+//!     let page = page?; // a failure ends the chain; `pages.finish()` keeps the restart point
+//!     println!("{} invoices (request {:?})", page.items.len(), page.meta.request_id);
+//! }
+//! let report = pages.finish();
+//! # let _ = report; Ok(()) }
+//! ```
+//!
+//! The SDK hands out the factory (`|cursor| list.fetch(cursor)`) rather than a ready-made
+//! traversal: a returned `Sequential` would have to name the closure and future types.
 //!
 //! # Protocol rules the projection enforces
 //!
@@ -52,6 +76,7 @@ use std::hash::{DefaultHasher, Hash, Hasher};
 
 use concord::Prepared;
 use concord::reqwest::Url;
+use concord_pagination::Page;
 
 use crate::expandable::{List, Object};
 use crate::send::{Error, ProtocolError, ResponseMeta, send};
@@ -167,16 +192,8 @@ impl<I> fmt::Debug for Cursor<I> {
     }
 }
 
-/// One projected page.
-#[derive(Clone, Debug)]
-pub struct CursorPage<T: Object> {
-    /// The page's objects, in Stripe's order.
-    pub items: Vec<T>,
-    /// The next cursor; `None` when `has_more` was `false`.
-    pub next: Option<Cursor<T::Id>>,
-    /// The page's response metadata (request id, rate-limit reason).
-    pub meta: ResponseMeta,
-}
+/// One projected page: `concord_pagination`'s page with Stripe cursors and response metadata.
+pub type StripePage<T> = Page<T, Cursor<<T as Object>::Id>, ResponseMeta>;
 
 /// One list request and a direction. See the [module documentation](self).
 #[derive(Clone)]
@@ -276,7 +293,7 @@ impl<R: ListRequest> CursorList<R> {
     pub fn fetch(
         &self,
         cursor: Option<Cursor<<R::Item as Object>::Id>>,
-    ) -> impl Future<Output = Result<CursorPage<R::Item>, Error>> + use<R> {
+    ) -> impl Future<Output = Result<StripePage<R::Item>, Error>> + use<R> {
         let prepared = self
             .request(cursor.as_ref())
             .and_then(|request| request.prepare_list().map_err(Error::from));
@@ -315,7 +332,7 @@ pub fn project<T: Object>(
     binding: u64,
     requested: Option<&Cursor<T::Id>>,
     meta: ResponseMeta,
-) -> Result<CursorPage<T>, Error> {
+) -> Result<StripePage<T>, Error> {
     let next = if list.has_more {
         let edge = match direction {
             Direction::Forward => list.data.last(),
@@ -342,7 +359,7 @@ pub fn project<T: Object>(
     } else {
         None
     };
-    Ok(CursorPage {
+    Ok(Page {
         items: list.data,
         next,
         meta,
