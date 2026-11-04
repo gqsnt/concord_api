@@ -13,8 +13,9 @@ For people changing Concord itself. Users start at the [README](../README.md).
 | `examples/quickstart` | the quick start; its tests also run the caller guide, doctest the author guide and the migration guide, and check every quoted excerpt in the documentation |
 | `examples/shapes` | three realistic API shapes with wire tests |
 | `examples/native` | application-owned native recipes (errors, timeouts, streaming, formats, policies) |
-| `examples/multipart` | multipart upload via reqwest's `multipart` feature (enabled only there; tested alone in `verify.sh`) |
+| `examples/multipart` | multipart upload via reqwest's `multipart` feature (enabled only there) |
 | `examples/renamed` | Concord depended on under another name (`$crate` paths) |
+| `checks/clone-hygiene` | types written with the same tokens by two crates' macros (`$crate::Payload`): conditional `Clone` bounds per occurrence, type-macro outputs from another crate |
 | `checks/heap` | peak-heap check that `()` outputs drain without buffering (own crate: global allocator) |
 | `checks/clone-compat` | conditional request `Clone` (D08) on the pinned stable and nightly (non-blocking lane) |
 | `benches/baselines` | hand-written reqwest wrappers for the `examples/shapes` APIs |
@@ -102,9 +103,18 @@ It prints one `PASS`/`FAIL` line per step (logs in `target/verify-*.log`) and fa
 file changed while it ran (for example `Cargo.lock`). Every cargo command uses `--locked`.
 
 `scripts/verify.sh` is the only list of gates: `.github/workflows/ci.yml` calls it (Linux and
-Windows both with `--package --bench`, a nightly lane with `--nightly-only`), and its
-`ci-inventory` step fails if the workflow names a cargo command of its own or selects gates by
-platform. Every step runs `python`, `cargo` and `tar` behind `scripts/argv-guard.sh`, which
+Windows both with `--package --bench`, a nightly lane with `--nightly-only`). Its `ci-inventory`
+step (`scripts/check-ci.py --workflow`) parses `ci.yml` with the YAML subset documented in the
+script and requires an enabled, blocking `scripts/verify.sh --package --bench` step on Linux and on
+Windows plus the nightly lane; a commented, echoed, disabled or failure-swallowing invocation does
+not count, and a workflow that names a cargo command of its own or selects gates by platform
+fails. This is static inspection: the CI job logs, not this step, show that the gate ran. The
+`tool-tests` step runs the guard's own positive and negative cases (`scripts/tests/`), and
+`output-dirs` checks that `scripts/package-check.sh` and `scripts/consumers.sh --packaged`
+recreate only their own marked output (`target/packaged/...`), refuse any other directory and never
+build from stale extracted sources. Every example package is tested alone
+(`test-examples-isolated`, one `cargo test -p` each), so no other member can supply a feature an
+example forgot to declare. Every step runs `python`, `cargo` and `tar` behind `scripts/argv-guard.sh`, which
 measures the command line as Windows would quote it (`scripts/argv-length.py`, in UTF-16 units)
 and refuses one over the Windows limit (32,767) on every platform, so a script that passes bulk
 data as an argument fails locally too. The `consumers` steps need the

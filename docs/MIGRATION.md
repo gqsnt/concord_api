@@ -1002,7 +1002,7 @@ async fn search(token: String) -> Result<SearchPage, concord::Error> {
 Depend on V4 under another name; `api!` refers to its own crate through `$crate`:
 
 ```toml
-concord4 = { package = "concord", path = "...", version = "4.1.0" }
+concord4 = { package = "concord", path = "...", version = "4.2.0", default-features = false, features = ["extras"] }
 ```
 
 Excerpt of [`examples/renamed/src/lib.rs`](../examples/renamed/src/lib.rs), which compiles and

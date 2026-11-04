@@ -35,8 +35,37 @@ share one version and require each other exactly (`=4.2.0`).
 
 ### Maintenance
 
-(filled in at integration: benchmark equivalence, examples, workflow guard, mutation helper,
-metadata-stage test, documentation)
+- **Fair benchmarks.** The S3 construction pair compared unequal work (only Concord prepared
+  `Accept: application/json`); the manual side now prepares it too. Every promised equal-work pair
+  is registered with its measured stage and compared before timing by an ordinary test (47
+  comparisons, with negative controls for a changed or missing `Accept`, repeated values and their
+  order, URL, method and body). The 4.1 S3 ratios stay in `benches/criterion/README.md`, marked as
+  unequal work; no corrected figure is derived from them.
+- **Examples declare their own features.** `examples/renamed` enables `extras`; the gate tests each
+  example package alone (`test-examples-isolated`), so workspace feature unification cannot hide a
+  missing feature, and checks that the no-extras consumer really has none.
+- **Workflow guard inspects structure.** `scripts/check-ci.py --workflow` parses `ci.yml` (a
+  documented YAML subset) and counts only an enabled, blocking gate step on Linux and Windows; a
+  commented, echoed, disabled or failure-swallowing invocation no longer satisfies it. It is static
+  inspection; CI logs remain the evidence that the gate ran.
+- **Fresh package extraction.** `scripts/package-check.sh` and `scripts/consumers.sh --packaged`
+  recreate only their own marked output, refuse other directories, never build from stale extracted
+  sources, and build one packaged consumer from a deep, non-ASCII path.
+- **Retired mutation helper.** `tests-gen/m4_mutations.py` refuses to run: it had no maintained
+  caller and could report a build failure as a kill.
+- **Metadata stage tested.** `examples/native` asserts that a 2xx head the format refuses is a
+  `Metadata` error before its withheld body is read, with the response recoverable; removing the
+  head check fails this test. Lifecycle (cancellation, drop, one request per send) and
+  multi-owner composition controls were added.
+- **Documentation.** Header text accepts horizontal tab (as `http` does); `into_response()` returns
+  the response of a `Status` or a `Metadata` error; runtime bases keep percent escapes and whole
+  segments may not come out empty, `.` or `..`; `Text`'s `Content-Type` policy; compiler-dependent
+  diagnostics and recursion limits; `&HeaderValue` among the `IntoValue` conversions; short task
+  notes (Config, format imports, `Accept`, inference, no output vs `-> ()`, scope reuse, copying
+  the Riot example) and a compiled example of moving a default into a scope.
+- **Performance experiments (nothing adopted).** An allocation-free long-chain header planner and
+  a selective response media scanner were measured and independently reviewed; both are deferred
+  until workloads show the cases matter. Records: `v4/release-4.2/PERF.md`.
 
 
 The modular V4: four crates, formats as ordinary Rust types, and response metadata checked before
