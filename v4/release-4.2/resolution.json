@@ -2,7 +2,7 @@
   "release": "4.2.0",
   "starting_commit": "07dcdd03c61a1822341e92d3820e66117f1aef14",
   "reviewed_release_control": "afcec400f7bdb044b0f9dd3c42c0575091f9e26f",
-  "candidate_commit": null,
+  "candidate_commit": "ed6703a29d6f798f13e06379d488feeac33410f4",
   "findings": [
     {
       "id": "F01",
@@ -20,7 +20,7 @@
         "F01#1-4 controls",
         "qualification F01-dedup"
       ],
-      "review": "rv-compiler..rv-compiler4: no F01 finding",
+      "review": "no finding in any review; final ACCEPT at ed6703a",
       "limitations": [
         "cross-crate hygiene sampled with four helper crates"
       ]
@@ -41,7 +41,7 @@
         "UI output_type_macro_errors",
         "qualification F02-guard"
       ],
-      "review": "no F02 finding in four rounds",
+      "review": "no finding in any review; final ACCEPT at ed6703a",
       "limitations": [
         "type-first parse rejected to keep legacy diagnostics"
       ]
@@ -63,10 +63,11 @@
       "controls": [
         "qualification F03-replace, F03-rustdoc, R1-R9"
       ],
-      "review": "widened in four review rounds; see REVIEWS.md",
+      "review": "rv-compiler..rv-compiler6, rv-final-sol..rv-final4-sol; final ACCEPT at ed6703a",
       "limitations": [
         "rustdoc checked by HTML text extraction, not visually",
-        "forwarded-fragment advice names T instead of spelling"
+        "forwarded-fragment advice names T instead of spelling",
+        "forwarded let-statement fragment in an initializer block rejected (pre-existing, as on 4.1)"
       ]
     },
     {
@@ -84,7 +85,7 @@
       "controls": [
         "qualification F04-plain"
       ],
-      "review": "no F04 finding",
+      "review": "no finding in any review; final ACCEPT at ed6703a",
       "limitations": []
     },
     {
@@ -101,7 +102,7 @@
       "controls": [
         "six comparator negative controls"
       ],
-      "review": "Brief B review via final executable review",
+      "review": "rv-final-sol..rv-final4-sol (final ACCEPT at ed6703a)",
       "limitations": [
         "historical S3 ratios retained with notice; no corrected figure"
       ]
@@ -122,7 +123,7 @@
         "no-extras consumer feature check",
         "output-dirs 14 controls"
       ],
-      "review": "via final executable review",
+      "review": "rv-final-sol..rv-final4-sol (final ACCEPT at ed6703a)",
       "limitations": [
         "standalone-workspace translation of every example not done"
       ]
@@ -140,7 +141,7 @@
       "controls": [
         "8 real-workflow mutants"
       ],
-      "review": "via final executable review",
+      "review": "rv-final-sol..rv-final4-sol (final ACCEPT at ed6703a)",
       "limitations": [
         "static inspection does not prove CI ran"
       ]
@@ -158,7 +159,7 @@
       "controls": [
         "old helper restored / planted caller fail"
       ],
-      "review": "via final executable review",
+      "review": "rv-final-sol..rv-final4-sol (final ACCEPT at ed6703a)",
       "limitations": []
     },
     {
@@ -174,7 +175,7 @@
       "controls": [
         "Decode and Status controls"
       ],
-      "review": "via final executable review",
+      "review": "rv-final-sol..rv-final4-sol (final ACCEPT at ed6703a)",
       "limitations": [
         "no claim about transport prefetch"
       ]
@@ -203,9 +204,10 @@
     }
   ],
   "platforms": {
-    "linux": "PENDING_FINAL_GATE",
-    "windows": "PENDING_NATIVE_CI",
-    "nightly": "PENDING_NATIVE_CI"
+    "linux": "PASS: local gate ed6703a 37/37 (676 tests); CI ubuntu-latest run 41786978999 job 126431257072 success",
+    "windows": "PASS: CI windows-latest run 41786978999 job 126431257049 success on ed6703a (37 steps, 676 tests, native)",
+    "nightly": "PASS (non-blocking): run 41786978999 job 126431256718, nightly-clone-compat 16 passed"
   },
-  "final_status": "IN_PROGRESS"
+  "final_status": "ACCEPTED_NATIVE_LINUX_AND_WINDOWS",
+  "receipt": "records-only commit adding FINAL.md on top of the candidate commit"
 }

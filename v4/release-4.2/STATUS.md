@@ -10,8 +10,10 @@ published by this work, except the branch push for native Windows CI authorized 
 Stage 6 (see below). Handoff: `Concord_V4_2_Opus_Implementation_Handoff/concord_v42_opus_handoff`
 (its handoff check script, outside this repository: PASS, 184 files). Work directory: `/home/canarit/projects/concord-v42/`.
 
-**State: IN_PROGRESS** until the final gate, the final executable review and native Windows CI are
-recorded below (records-only receipt).
+**State: ACCEPTED_NATIVE_LINUX_AND_WINDOWS** for the code at
+`ed6703a29d6f798f13e06379d488feeac33410f4`: mandatory work and all six stage dispositions complete,
+native Linux and Windows gates passed on that exact source, independent reviews completed (final:
+ACCEPT). No authority to publish, merge into `main` or tag. Final report: [FINAL.md](FINAL.md).
 
 ## Stages
 
@@ -51,6 +53,8 @@ recorded below (records-only receipt).
 | `67006bb` | code | negative literal fragments grouped before a postfix operator (found by the coordinator rerunning the review's matrix) |
 | `4619334` | records | candidate records (third final gate: 37/37 PASS; pushed for CI) |
 | `c80bf40` | code, tooling | third re-review C3, T2 |
+| `ed6703a` | records | candidate records (fourth final gate: 37/37 PASS; pushed for CI; final review ACCEPT) |
+| receipt | records only | this receipt: final gate, CI and review results; `FINAL.md` |
 
 ## Gate inventory change
 
@@ -61,4 +65,27 @@ changelog named the retired helper's file — corrected in `1dad499`); `verify-t
 
 ## Final gate, final review, platforms
 
-(records-only receipt appended after the frozen-candidate runs)
+Every gate below is `scripts/verify.sh --package --bench` (37 steps) on rustc 1.99.1 (`58cf8f9c3`),
+tracked tree clean (`dirty: 0`), except the nightly lane (`--nightly-only`, non-blocking, as in 4.1).
+
+| Where | Source | Run / job | Result |
+|---|---|---|---|
+| Local Linux x86_64 (gate worktree) | `9c32294` | log SHA-256 `c54d914e…` | 37/37 PASS; 676 workspace tests; 126 isolated-example tests |
+| Local Linux x86_64 | `a6b78a1` | `83761861…` | 37/37 PASS; 676 |
+| Local Linux x86_64 | `4619334` | `cc893e96…` | 37/37 PASS; 676 |
+| Local Linux x86_64 | **`ed6703a`** | [log](evidence/final-gate-ed6703a.log) `1e2ba226…` | **37/37 PASS; 676; 126** |
+| CI ubuntu-latest | `9c32294` / `a6b78a1` / `4619334` | 41781326873 / 41782844691 / 41785255822 | success ×3 |
+| CI windows-latest, native | `9c32294` / `a6b78a1` / `4619334` | jobs 126413304131 / 126418142558 / 126425808805 | success ×3 |
+| CI ubuntu-latest | **`ed6703a`** | run 41786978999, job 126431257072 ([log](evidence/ci/run41786978999-job126431257072.log)) | **success: 37 PASS, 676, 126** |
+| CI windows-latest, native | **`ed6703a`** | run 41786978999, job 126431257049 ([log](evidence/ci/run41786978999-job126431257049.log)) | **success: 37 PASS, 676, 126** |
+| CI nightly lane | **`ed6703a`** | run 41786978999, job 126431256718 ([log](evidence/ci/run41786978999-job126431256718.log)) | success: `nightly-clone-compat` 16 passed |
+
+The Windows job runs every step natively, including the new `tool-tests`, `output-dirs`,
+`test-examples-isolated` and the `package-check` build from a deep non-ASCII extraction path (the
+I22-A/P08-A follow-up); the workflow prints a step's detailed log only on failure, so the CI log
+shows each step's PASS line. Full CI logs: [evidence/ci/](evidence/ci/) (SHA-256 in
+`evidence/ci/full-logs.sha256`).
+
+Final independent review: `rv-final4-sol` (fresh `gpt-6.1-sol`, `xhigh`) on `ed6703a` — ACCEPT for
+the compiler/tooling scope, no new finding, no polish item; it inspected the central Linux gate and
+noted native Windows as the remaining prerequisite, supplied by run 41786978999 above.

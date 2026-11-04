@@ -23,6 +23,7 @@ the originals and their logs are in `/home/canarit/projects/concord-v42/lanes/`)
 | rv-compiler5 | re-review | `gpt-6.1-terra`, xhigh | `gpt-6.1-terra`, `xhigh` | `9c32294` | REVISE (2 findings, introduced by `1dad499`/`0670240`) |
 | rv-final-sol | final executable review (Brief D) | `gpt-6.1-sol`, xhigh | `gpt-6.1-sol`, `xhigh` | `9c32294` | REVISE (2 findings + 1 polish) |
 | rv-compiler6 | re-review | `gpt-6.1-terra`, xhigh | `gpt-6.1-terra`, `xhigh` | `c69b9b4` | REVISE (1 finding, since `e5082c4`) |
+| rv-final4-sol | re-review of `4619334..ed6703a` (final) | `gpt-6.1-sol`, xhigh | `gpt-6.1-sol`, `xhigh` | `ed6703a` | **ACCEPT** (no new finding; 75-step replay, 43 denied-warning reruns, 89-case matrix 86/89 — the let boundary; no-fragment docs unchanged) |
 | rv-final3-sol | re-review of `a6b78a1..4619334` | `gpt-6.1-sol`, xhigh | `gpt-6.1-sol`, `xhigh` | `4619334` | REVISE (1 docs finding introduced by `67006bb`, 1 tooling pre-existing; 89-case matrix 86/89 — the 3 let-statement boundary cases; 150 replay steps) |
 | rv-final2-sol | combined re-review after the final review | `gpt-6.1-sol`, xhigh | `gpt-6.1-sol`, `xhigh` | `a6b78a1` | REVISE (2 compiler findings, 1 tooling; 74-case fragment matrix, 75-step replay) |
 | rv-stage5 | Stage 5 adoption review (Brief C) | Claude Opus, xhigh (Agent) | `claude-opus-5-5`; effort n/o | `4874405` + patches | concur DEFER_WITH_EVIDENCE ×2 |
