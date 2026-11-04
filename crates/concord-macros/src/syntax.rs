@@ -190,7 +190,7 @@ fn token_text(tokens: proc_macro2::TokenStream, types: bool) -> String {
             Delimiter::Bracket => ("[", "]"),
             Delimiter::Brace => ("{ ", " }"),
             Delimiter::None if types && bare_fragment(g) => ("", ""),
-            Delimiter::None if g.stream().into_iter().nth(1).is_none() => ("", ""),
+            Delimiter::None if !types && !expression_fragment(g) => ("", ""),
             Delimiter::None => ("(", ")"),
         }
     }
@@ -1275,6 +1275,19 @@ fn parse_type(input: ParseStream<'_>) -> syn::Result<Type> {
     })
 }
 
+/// Whether a fragment forwarded by `macro_rules!`, where an expression is expected, needs its
+/// grouping as parentheses: an expression of several tokens that is not a path. A path is one
+/// primary expression and may head a struct literal (`$p { n: 7 }`); a lifetime, a pattern or a
+/// type that is no expression (`'static`, `&'static str`, `Vec<u8>`) cannot be parenthesized or
+/// needs no parentheses; a type that also reads as an expression (`[u8; 3]`, `&T`) means the same
+/// in parentheses.
+fn expression_fragment(g: &proc_macro2::Group) -> bool {
+    let stream = g.stream();
+    stream.clone().into_iter().nth(1).is_some()
+        && syn::parse::Parser::parse2(syn::Path::parse, stream.clone()).is_err()
+        && syn::parse::Parser::parse2(Expr::parse, stream).is_ok()
+}
+
 /// Whether a fragment forwarded by `macro_rules!` (a group without delimiters) means the same
 /// without its group: one token, or a type without `+`.
 fn bare_fragment(g: &proc_macro2::Group) -> bool {
@@ -1287,13 +1300,12 @@ fn bare_fragment(g: &proc_macro2::Group) -> bool {
 /// a fragment back as rustc made it, and rustc reads a group without delimiters from a proc macro
 /// as ungrouped: `$e * 2` with `$e = 1 + 2` would be 5, not 6, and `$e.len()` with `$e = &DATA`
 /// would be `&DATA.len()`. Where an expression is expected (`expr`: an initializer, a braced const
-/// argument, an array length) every fragment of several tokens that is not a path is put in
-/// parentheses, a type fragment too (`size_of::<(&str)>()`, `x as *const (T)` mean the same): no
-/// guess about which tokens of an expression are types. A path stays bare: it is one primary
-/// expression, and the head of a struct literal must be one. Where a type is expected only a fragment that is not a
-/// [type](bare_fragment) is. The added parentheses carry the macro's call-site span, so rustc does
-/// not report them as unneeded in the user's code. A macro's input (`name!(..)`) is kept as it
-/// came: there the fragment is still one, opaque to that macro's matcher.
+/// argument, an array length) a fragment that is an [expression](expression_fragment) is put in
+/// parentheses; a lifetime, a path or a type that is no expression is left as it came. Where a
+/// type is expected only a fragment that is not a [type](bare_fragment) is. The added parentheses
+/// carry the macro's call-site span, so rustc does not report them as unneeded in the user's code
+/// (`size_of::<([u8; 3])>()`). A macro's input (`name!(..)`) is kept as it came: there the
+/// fragment is still one, opaque to that macro's matcher.
 fn regroup(tokens: proc_macro2::TokenStream, expr: bool) -> proc_macro2::TokenStream {
     regroup_in(tokens, expr, false)
 }
@@ -1322,11 +1334,8 @@ fn regroup_in(
         out.extend([match tt {
             TokenTree::Group(g) if macro_input => TokenTree::Group(g),
             TokenTree::Group(g) if g.delimiter() == Delimiter::None => {
-                // A path (`$p:path`) is one primary expression and the head of a struct literal
-                // (`$p { n: 7 }`), which parentheses would break.
                 let bare = if expr {
-                    g.stream().into_iter().nth(1).is_none()
-                        || syn::parse::Parser::parse2(syn::Path::parse, g.stream()).is_ok()
+                    !expression_fragment(&g)
                 } else {
                     bare_fragment(&g)
                 };

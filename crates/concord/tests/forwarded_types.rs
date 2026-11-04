@@ -109,7 +109,7 @@ macro_rules! pick {
     };
 }
 macro_rules! declare {
-    ($e:expr, $t:ty, $r:expr, $d:expr, $s:ty, $v:ty, $w:ty, $p:path) => {
+    ($e:expr, $t:ty, $r:expr, $d:expr, $s:ty, $v:ty, $w:ty, $p:path, $l:lifetime) => {
         concord::api! {
             pub client Forwarded {
                 base "http://x.test";
@@ -130,6 +130,7 @@ macro_rules! declare {
                 GET shift(query n: usize = 1usize << $r.weight());
                 GET pointer(query n: usize = (core::ptr::null::<u8>() as *const $w).is_null() as usize);
                 GET holder(query h: Holder = $p { n: 7 });
+                GET lifetime(query n: usize = core::mem::size_of::<&$l str>() + core::mem::size_of::<Option<&$l [u8; 3]>>());
                 scope owner(h: Holder = $p { n: 8 }) {
                     GET get() { query { "h" = owner.h; } }
                 }
@@ -145,7 +146,8 @@ declare!(
     &'static str,
     Vec<u8>,
     core::primitive::u64,
-    crate::Holder
+    crate::Holder,
+    'static
 );
 
 #[test]
@@ -215,4 +217,8 @@ fn forwarded_fragments_keep_their_grouping() {
     assert_eq!(p.request().url().query(), Some("h=7"));
     let p = api.owner().get().prepare().unwrap();
     assert_eq!(p.request().url().query(), Some("h=8"));
+    // A forwarded lifetime is no expression: left as written in a type within an initializer.
+    let p = api.lifetime().prepare().unwrap();
+    let n = core::mem::size_of::<&'static str>() + core::mem::size_of::<Option<&'static [u8; 3]>>();
+    assert_eq!(p.request().url().query(), Some(format!("n={n}").as_str()));
 }
