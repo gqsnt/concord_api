@@ -1,249 +1,239 @@
-//! The benchmarks compare like with like: each Concord request equals its hand-written
-//! counterpart (method, URL, header multiset, body). Not a correctness suite for Concord.
+//! Equivalence at the registered consuming boundary, plus comparator discrimination controls.
 
 use std::collections::BTreeMap;
+use std::time::Duration;
+
+use reqwest::header::{ACCEPT, HeaderValue};
 
 use super::*;
-
-fn header_multiset(r: &reqwest::Request) -> BTreeMap<String, Vec<Vec<u8>>> {
-    let mut map: BTreeMap<String, Vec<Vec<u8>>> = BTreeMap::new();
-    for (k, v) in r.headers() {
-        map.entry(k.as_str().to_owned())
-            .or_default()
-            .push(v.as_bytes().to_vec());
-    }
-    map
-}
-
-fn body(r: &reqwest::Request) -> Option<Vec<u8>> {
-    r.body()
-        .map(|b| b.as_bytes().expect("buffered body").to_vec())
-}
-
-#[track_caller]
-fn same<T>(concord: concord::Prepared<T>, manual: reqwest::Request) {
-    let c = concord.request();
-    assert_eq!(c.method(), manual.method());
-    assert_eq!(c.url().as_str(), manual.url().as_str());
-    assert_eq!(header_multiset(c), header_multiset(&manual));
-    assert_eq!(body(c), body(&manual));
-}
+use crate::contract::{Observation, Observe, Prepared};
 
 fn fx() -> Fixtures {
     Fixtures::new(http_client())
 }
 
+/// A test runner for the existing registry. Neither benchmark runner calls `observe`.
 #[test]
-fn realistic_requests_match() {
-    let fx = fx();
-    same(
-        fx.s1.health().prepare().unwrap(),
-        fx.simple_manual.health().unwrap(),
-    );
-    same(
-        tracker_full(&fx).prepare().unwrap(),
-        tracker_full_manual(&fx).build().unwrap(),
-    );
-    same(
-        fx.tracker
-            .org("acme")
-            .project("rocket")
-            .issues(42)
-            .prepare()
-            .unwrap(),
-        fx.tracker_manual
-            .org("acme")
-            .project("rocket")
-            .issues(42)
-            .build()
-            .unwrap(),
-    );
-    let full = tracker_full(&fx).prepare().unwrap();
-    assert_eq!(full.request().url().query().unwrap().split('&').count(), 10);
-}
-
-#[test]
-fn header_requests_match() {
-    let fx = fx();
-    let h = &fx.headers;
-    let m = &fx.headers_manual;
-    let [a, b, c, d] = texts::<4>();
-    same(
-        h.text_4(a, b, c, d).prepare().unwrap(),
-        m.text(texts::<4>()).unwrap(),
-    );
-    same(
-        h.text_4(
-            s(manual::HEADER_TEXT[0]),
-            s(manual::HEADER_TEXT[1]),
-            s(manual::HEADER_TEXT[2]),
-            s(manual::HEADER_TEXT[3]),
-        )
-        .prepare()
-        .unwrap(),
-        m.prebuilt(4).unwrap(),
-    );
-    same(
-        h.text_1(s(manual::HEADER_TEXT[0])).prepare().unwrap(),
-        m.from_static(1).unwrap(),
-    );
-    let v = numbers::<16>();
-    same(
-        h.numeric_16(
-            v[0], v[1], v[2], v[3], v[4], v[5], v[6], v[7], v[8], v[9], v[10], v[11], v[12], v[13],
-            v[14], v[15],
-        )
-        .prepare()
-        .unwrap(),
-        m.numeric(v).unwrap(),
-    );
-    let t = texts::<16>();
-    let [a, b, c, d, e, f, g, h0, i, j, k, l, mm, n, o, p] = t.clone();
-    same(
-        h.text_16(a, b, c, d, e, f, g, h0, i, j, k, l, mm, n, o, p)
-            .prepare()
-            .unwrap(),
-        m.text(t).unwrap(),
-    );
-}
-
-#[test]
-fn native_and_literal_header_requests_match() {
-    let fx = fx();
-    let h = &fx.headers;
-    let m = &fx.headers_manual;
-    let v = &m.prebuilt;
-    same(h.native_1(&v[0]).prepare().unwrap(), m.prebuilt(1).unwrap());
-    same(
-        h.native_4(&v[0], &v[1], &v[2], &v[3]).prepare().unwrap(),
-        m.prebuilt(4).unwrap(),
-    );
-    same(
-        h.native_16(
-            &v[0], &v[1], &v[2], &v[3], &v[4], &v[5], &v[6], &v[7], &v[8], &v[9], &v[10], &v[11],
-            &v[12], &v[13], &v[14], &v[15],
-        )
-        .prepare()
-        .unwrap(),
-        m.prebuilt(16).unwrap(),
-    );
-    same(h.literal_1().prepare().unwrap(), m.from_static(1).unwrap());
-    same(h.literal_4().prepare().unwrap(), m.from_static(4).unwrap());
-    same(
-        h.literal_16().prepare().unwrap(),
-        m.from_static(16).unwrap(),
-    );
-}
-
-#[test]
-fn composition_requests_match() {
-    let fx = fx();
-    let [a, b, c, d, e, f, g, h] = deep_values();
-    let scope = fx.deep.l1(a).l2(b).l3(c).l4(d).l5(e).l6(f).l7(g).l8(h);
-    same(
-        scope.leaf().prepare().unwrap(),
-        fx.deep_manual.leaf(deep_values()).unwrap(),
-    );
-    same(
-        scope.leaf().prepare().unwrap(),
-        fx.deep_manual.scope(deep_values()).leaf().unwrap(),
-    );
-
-    let team = fx.compose.team("core");
-    let tm = fx.compose_manual.team("core");
-    same(
-        team.inherit().prepare().unwrap(),
-        tm.request(manual::Op::Inherit).unwrap(),
-    );
-    same(
-        team.override_value().set_v("endpoint-a").prepare().unwrap(),
-        tm.request(manual::Op::Override(Some(s("endpoint-a"))))
-            .unwrap(),
-    );
-    same(
-        team.override_value().prepare().unwrap(),
-        tm.request(manual::Op::Override(None)).unwrap(),
-    );
-    same(
-        team.append_value("endpoint-b").prepare().unwrap(),
-        tm.request(manual::Op::Append(s("endpoint-b"))).unwrap(),
-    );
-    same(
-        team.remove_value().prepare().unwrap(),
-        tm.request(manual::Op::Remove).unwrap(),
-    );
-    let appended = team.append_value("endpoint-b").prepare().unwrap();
-    assert_eq!(
-        appended.request().headers().get_all("x-b").iter().count(),
-        3
-    );
-}
-
-#[test]
-fn body_requests_match() {
-    let fx = fx();
-    let p = payload::payload(payload::MEDIUM.target);
-    same(
-        fx.bodies.post_json(p.clone()).prepare().unwrap(),
-        fx.bodies_manual.post_json(&p).unwrap(),
-    );
-    let t = payload::text(100);
-    same(
-        fx.bodies.post_text(t.clone()).prepare().unwrap(),
-        fx.bodies_manual.post_text(t).unwrap(),
-    );
-    let b = payload::binary(100);
-    same(
-        fx.bodies.post_bytes(b.clone()).prepare().unwrap(),
-        fx.bodies_manual.post_bytes(b).unwrap(),
-    );
-}
-
-#[test]
-fn in_memory_decoding_completes_and_matches() {
-    let fx = fx();
-    let decoder = fx.bodies.get_json().prepare().unwrap().into_parts().2;
-    let json = payload::json_bytes(payload::MEDIUM.target);
-    let a = complete(decoder.decode(response("application/json", json.clone()))).unwrap();
-    let b = complete(manual::decode::json(response("application/json", json))).unwrap();
-    assert_eq!(a, b);
-    assert_eq!(a, payload::payload(payload::MEDIUM.target));
-}
-
-/// Every group runs every case once (smoke check of the scenario code the benches execute).
-#[test]
-fn every_case_runs() {
-    struct Once(Vec<String>, &'static str);
-    impl Runner for Once {
-        fn case<I, O>(
+fn registered_pairs_match() {
+    #[derive(Default)]
+    struct Pairs {
+        group: &'static str,
+        outputs: BTreeMap<String, Vec<(Case, Observation)>>,
+        ids: Vec<String>,
+    }
+    impl Runner for Pairs {
+        fn case<I, O: Observe>(
             &mut self,
             case: Case,
             mut input: impl FnMut() -> I,
             mut run: impl FnMut(I) -> O,
         ) {
-            let _ = run(input());
-            self.0.push(format!("{}/{}", self.1, case.id));
+            let id = format!("{}/{}", self.group, case.id);
+            let observed = run(input()).observe();
+            // Reconstruct each input: one-shot responses and owned bodies must do fresh work.
+            assert_eq!(observed, run(input()).observe(), "fresh input: {id}");
+            assert!(!case.setup.is_empty(), "setup inventory: {id}");
+            let mut stages = vec![case.run_stage.to_owned()];
+            if !case.trivial_input {
+                println!(
+                    "INVENTORY {id}/input | {} | different features: input representation | no equal-work claim",
+                    case.setup
+                );
+            }
+            if case.total {
+                stages.push(format!("input_{}", case.run_stage));
+            }
+            for stage in stages {
+                println!(
+                    "INVENTORY {id}/{stage} | {} | equal-work group {}/{} | {}",
+                    case.setup,
+                    self.group,
+                    case.pair,
+                    case.comparator()
+                );
+            }
+            self.ids.push(id);
+            self.outputs
+                .entry(format!("{}/{}", self.group, case.pair))
+                .or_default()
+                .push((case, observed));
         }
     }
     let fx = fx();
-    let mut once = Once(Vec::new(), "");
-    for g in GROUPS {
-        once.1 = g;
-        run_group(g, &fx, &mut once);
+    let mut pairs = Pairs::default();
+    for group in GROUPS {
+        pairs.group = group;
+        run_group(group, &fx, &mut pairs);
     }
-    let mut ids = once.0.clone();
+    let mut ids = pairs.ids.clone();
     ids.sort();
     ids.dedup();
-    assert_eq!(ids.len(), once.0.len(), "benchmark IDs are unique");
-    assert_eq!(
-        ids.len(),
-        92,
-        "the suite's case list changed: update README.md"
+    assert_eq!(ids.len(), pairs.ids.len(), "benchmark IDs must be unique");
+    assert_eq!(ids.len(), 92, "update the inventory if cases change");
+    assert_eq!(pairs.outputs.len(), 45, "every equal-work group is covered");
+    let mut comparisons = 0;
+    for (pair, members) in pairs.outputs {
+        assert!(members.len() >= 2, "unpaired equal-work case: {pair}");
+        let (reference, expected) = &members[0];
+        for (case, actual) in &members[1..] {
+            assert_eq!(reference.run_stage, case.run_stage, "{pair}");
+            assert_eq!(reference.comparator(), case.comparator(), "{pair}");
+            assert_eq!(
+                expected, actual,
+                "{pair}: {} versus {}",
+                reference.id, case.id
+            );
+            comparisons += 1;
+        }
+        println!("PAIR {pair}: {} registered outputs equal", members.len());
+    }
+    assert_eq!(comparisons, 47);
+    println!(
+        "EQUIVALENCE: 92 registered cases; 45 groups; 47 comparisons; fresh inputs checked twice"
     );
 }
 
+/// Pin the S3 prepared contract independently of the pair's implementation.
 #[test]
-fn loopback_round_trip_matches() {
+fn s3_prepares_json_accept_before_client_defaults() {
+    let mut defaults = reqwest::header::HeaderMap::new();
+    defaults.insert(ACCEPT, HeaderValue::from_static("text/plain"));
+    let http = reqwest::Client::builder()
+        .no_proxy()
+        .default_headers(defaults)
+        .build()
+        .unwrap();
+    let fx = Fixtures::new(http);
+    let c = fx.s3.search().prepare().unwrap();
+    let m = fx.s3_manual.search().into_request().build().unwrap();
+    assert_eq!(Prepared::observe(c.request()), Prepared::observe(&m));
+    for request in [c.request(), &m] {
+        assert_eq!(request.method(), reqwest::Method::GET);
+        assert_eq!(
+            request.url().as_str(),
+            "https://api.example.com/v1/items/search?limit=20"
+        );
+        assert_eq!(request.headers()[ACCEPT], "application/json");
+        assert!(request.headers()["authorization"].is_sensitive());
+        assert!(request.body().is_none());
+    }
+}
+
+fn control() -> reqwest::Request {
+    let mut request = reqwest::Request::new(
+        reqwest::Method::POST,
+        "https://example.invalid/control?a=1&b=2".parse().unwrap(),
+    );
+    request
+        .headers_mut()
+        .insert(ACCEPT, HeaderValue::from_static("application/json"));
+    for value in ["first", "second", "second"] {
+        request
+            .headers_mut()
+            .append("x-repeat", HeaderValue::from_static(value));
+    }
+    *request.body_mut() = Some("body".into());
+    request
+}
+
+#[track_caller]
+fn detected(original: &reqwest::Request, changed: &reqwest::Request) {
+    assert_ne!(Prepared::observe(original), Prepared::observe(changed));
+}
+
+#[test]
+fn comparator_detects_altered_and_missing_accept() {
+    let original = control();
+    let mut changed = original.try_clone().unwrap();
+    changed
+        .headers_mut()
+        .insert(ACCEPT, HeaderValue::from_static("text/plain"));
+    detected(&original, &changed);
+    changed.headers_mut().remove(ACCEPT);
+    detected(&original, &changed);
+}
+
+#[test]
+fn comparator_detects_repeated_value_order_and_multiplicity() {
+    let original = control();
+    for values in [
+        ["first", "changed", "second"].as_slice(),
+        ["second", "first", "second"].as_slice(),
+        ["first", "second"].as_slice(),
+    ] {
+        let mut changed = original.try_clone().unwrap();
+        changed.headers_mut().remove("x-repeat");
+        for value in values {
+            changed
+                .headers_mut()
+                .append("x-repeat", HeaderValue::from_static(value));
+        }
+        detected(&original, &changed);
+    }
+}
+
+#[test]
+fn comparator_detects_exact_url_and_method() {
+    let original = control();
+    let mut changed = original.try_clone().unwrap();
+    // Same query multiset, different exact URL.
+    changed.url_mut().set_query(Some("b=2&a=1"));
+    detected(&original, &changed);
+    changed = original.try_clone().unwrap();
+    *changed.method_mut() = reqwest::Method::GET;
+    detected(&original, &changed);
+}
+
+#[test]
+fn comparator_detects_body_changes_and_absence_versus_empty() {
+    let original = control();
+    let mut changed = original.try_clone().unwrap();
+    for body in [Some("changed"), Some(""), None] {
+        *changed.body_mut() = body.map(reqwest::Body::from);
+        detected(&original, &changed);
+    }
+    let absent = changed.try_clone().unwrap();
+    *changed.body_mut() = Some("".into());
+    detected(&absent, &changed);
+}
+
+#[test]
+fn comparator_detects_native_configuration_and_sensitivity() {
+    let original = control();
+    let mut changed = original.try_clone().unwrap();
+    *changed.timeout_mut() = Some(Duration::from_secs(1));
+    detected(&original, &changed);
+    changed = original.try_clone().unwrap();
+    *changed.version_mut() = reqwest::Version::HTTP_2;
+    detected(&original, &changed);
+    changed = original.try_clone().unwrap();
+    changed
+        .headers_mut()
+        .get_mut(ACCEPT)
+        .unwrap()
+        .set_sensitive(true);
+    detected(&original, &changed);
+}
+
+#[test]
+fn comparator_accepts_reconstruction_and_cross_name_insertion_order() {
+    let original = control();
+    assert_eq!(Prepared::observe(&original), Prepared::observe(&control()));
+    let mut reordered = original.try_clone().unwrap();
+    reordered.headers_mut().clear();
+    for value in original.headers().get_all("x-repeat") {
+        reordered.headers_mut().append("x-repeat", value.clone());
+    }
+    reordered
+        .headers_mut()
+        .insert(ACCEPT, original.headers()[ACCEPT].clone());
+    assert_eq!(Prepared::observe(&original), Prepared::observe(&reordered));
+}
+
+/// These send benchmarks are explicitly partial floors, with equal decoded values on the
+/// selected successful fixture. Their prepared requests and general metadata/error paths differ.
+#[test]
+fn loopback_partial_floors_return_the_same_values() {
     let rt = tokio::runtime::Builder::new_current_thread()
         .enable_all()
         .build()
@@ -251,46 +241,60 @@ fn loopback_round_trip_matches() {
     rt.block_on(async {
         let large = payload::json_bytes(ROUNDTRIP_LARGE.target);
         let addr = server::serve(&large).await;
-        let http = http_client();
-        let base = format!("http://{addr}/v1");
+        let http = reqwest::Client::builder()
+            .no_proxy()
+            .timeout(Duration::from_secs(5))
+            .build()
+            .unwrap();
+        let base_url = format!("http://{addr}/v1");
         let s1 = shapes::s1_simple::SimpleApi::new(http.clone())
-            .with_base_url(base.clone())
+            .with_base_url(base_url.clone())
             .unwrap();
-        assert_eq!(s1.health().send().await.unwrap().status, "ok");
+        let s1_manual = base::s1_simple::SimpleApi::with_client(
+            http.clone(),
+            format!("{base_url}/").parse().unwrap(),
+        );
+        assert_eq!(
+            s1.health().send().await.unwrap().status,
+            s1_manual.health().await.unwrap().status
+        );
+        let prepared = s1.health().prepare().unwrap();
+        let request = http.get(format!("{base_url}/health")).build().unwrap();
+        assert!(prepared.request().headers().contains_key(ACCEPT));
+        assert!(!request.headers().contains_key(ACCEPT));
+        let c = prepared.send().await.unwrap();
+        let m = http
+            .execute(request)
+            .await
+            .unwrap()
+            .error_for_status()
+            .unwrap()
+            .json::<base::s1_simple::Health>()
+            .await
+            .unwrap();
+        assert_eq!(c.status, m.status);
+        assert_eq!(c.status, "ok");
         let bodies = apis::bodies::Bodies::new(http.clone())
-            .with_base_url(base.clone())
+            .with_base_url(base_url.clone())
             .unwrap();
-        let manual = manual::Bodies::new(http, &base);
-        let large = bodies.get_json().send().await.unwrap();
-        assert_eq!(large, manual.get_json().await.unwrap());
-        assert_eq!(large, payload::payload(ROUNDTRIP_LARGE.target));
+        let manual = manual::Bodies::new(http.clone(), &base_url);
+        assert_eq!(
+            bodies.get_json().send().await.unwrap(),
+            manual.get_json().await.unwrap()
+        );
+        let c = bodies.get_json().prepare().unwrap().send().await.unwrap();
+        let request = http.get(format!("{base_url}/json")).build().unwrap();
+        let m = http
+            .execute(request)
+            .await
+            .unwrap()
+            .error_for_status()
+            .unwrap()
+            .json::<payload::Payload>()
+            .await
+            .unwrap();
+        assert_eq!(c, m);
+        assert_eq!(c, payload::payload(ROUNDTRIP_LARGE.target));
     });
-}
-
-#[test]
-fn native_key_requests_match() {
-    let fx = fx();
-    let literal = fx.keys_literal.team("rocket");
-    let native = fx.keys_native.team("rocket");
-    for concord in [
-        literal.get().prepare().unwrap(),
-        native.get().prepare().unwrap(),
-    ] {
-        same(concord, fx.keys_manual.items("rocket", None).unwrap());
-    }
-    for concord in [
-        literal.replaced("v").prepare().unwrap(),
-        native.replaced("v").prepare().unwrap(),
-    ] {
-        same(concord, fx.keys_manual.items("rocket", Some("v")).unwrap());
-    }
-    let riot = fx
-        .riot
-        .matches("europe")
-        .ids(PUUID)
-        .set_count(5)
-        .prepare()
-        .unwrap();
-    assert!(riot.request().headers()["x-riot-token"].is_sensitive());
-    same(riot, fx.riot_manual.ids("europe", PUUID, Some(5)).unwrap());
+    // Dropping this owned runtime stops its loopback listener and connection tasks.
 }

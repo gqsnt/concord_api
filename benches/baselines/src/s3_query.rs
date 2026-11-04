@@ -1,6 +1,6 @@
 //! S3 baseline: search with 8 optional query params (repeated `tag`, defaulted
 //! `limit=20`), `POST` JSON create (201), `DELETE` (204). Bearer token header.
-use reqwest::header::{AUTHORIZATION, HeaderValue};
+use reqwest::header::{ACCEPT, AUTHORIZATION, HeaderValue};
 use reqwest::{Client, Method, RequestBuilder, Url};
 use serde::{Deserialize, Serialize};
 
@@ -186,6 +186,8 @@ impl SearchItems<'_> {
         pairs.push(("limit", self.limit.to_string()));
         self.api
             .request(Method::GET, &["items", "search"])
+            // Match Json's prepared-stage suggestion, before client defaults at send time.
+            .header(ACCEPT, HeaderValue::from_static("application/json"))
             .query(&pairs)
     }
 
