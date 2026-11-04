@@ -115,14 +115,54 @@ fn token_text(tokens: proc_macro2::TokenStream, types: bool) -> String {
         Punct(char, bool),
     }
 
+    /// Whether `a` written right before `b` would lex differently than the two apart (one token,
+    /// `..`, `&&`, `<-`, or a comment opener `//`, `/*`).
+    fn lexes_with(a: char, b: char) -> bool {
+        matches!(
+            (a, b),
+            (':', ':')
+                | ('-' | '=', '>')
+                | (
+                    '=' | '!' | '<' | '>' | '+' | '-' | '*' | '/' | '%' | '^' | '&' | '|',
+                    '='
+                )
+                | ('&', '&')
+                | ('|', '|')
+                | ('<', '<' | '-')
+                | ('>', '>')
+                | ('.', '.')
+                | ('/', '/' | '*')
+        )
+    }
+
     fn walk(tokens: proc_macro2::TokenStream, types: bool, out: &mut String) {
         let mut prev = Prev::Start;
         // Open generics (`Vec<`, or a turbofish `::<` in an expression): their `>` closes
         // without a space.
         let mut generics = 0usize;
+        // The previous token, when it was a punctuation written apart from the next token.
+        let mut alone: Option<char> = None;
+        // An unsuffixed integer literal keeps its space before `.` (`1 . 2` is not the float
+        // `1.`), and a literal after that `.` stays apart too.
+        let mut integer = false;
+        let mut dot_after_integer = false;
         for tt in tokens {
             let space = match (&tt, prev) {
                 (_, Prev::Start) => false,
+                // Punctuation written apart stays apart when joining it would change the tokens
+                // (closing generics aside: `>>` and `> >` close the same brackets).
+                (TokenTree::Punct(p), _)
+                    if alone.is_some_and(|a| lexes_with(a, p.as_char()))
+                        && !(p.as_char() == '>' && alone == Some('>') && generics > 0) =>
+                {
+                    true
+                }
+                (TokenTree::Punct(p), _)
+                    if integer && p.as_char() == '.' && p.spacing() == Spacing::Alone =>
+                {
+                    true
+                }
+                (TokenTree::Literal(_), _) if dot_after_integer => true,
                 // `< -1>` stays apart: `<-` is one token.
                 (TokenTree::Punct(p), Prev::Punct('<', _)) if types && p.as_char() == '-' => true,
                 (TokenTree::Punct(p), _) if p.as_char() == '>' && generics > 0 => false,
@@ -145,13 +185,30 @@ fn token_text(tokens: proc_macro2::TokenStream, types: bool) -> String {
             if space {
                 out.push(' ');
             }
+            dot_after_integer = integer && matches!(&tt, TokenTree::Punct(p) if p.as_char() == '.');
+            integer = matches!(&tt, TokenTree::Literal(l)
+                if l.to_string().bytes().all(|b| b.is_ascii_digit() || b == b'_'));
+            alone = match &tt {
+                TokenTree::Punct(p) if p.spacing() == Spacing::Alone => Some(p.as_char()),
+                _ => None,
+            };
             prev = match tt {
                 TokenTree::Group(g) => {
                     let (open, close) = match g.delimiter() {
                         Delimiter::Parenthesis => ("(", ")"),
                         Delimiter::Bracket => ("[", "]"),
                         Delimiter::Brace => ("{ ", " }"),
-                        Delimiter::None => ("", ""),
+                        // A fragment forwarded by `macro_rules!` (`$e:expr`, `$t:ty`) groups its
+                        // tokens without delimiters: bare when it is one token or a type,
+                        // parenthesized otherwise (`(1 + 2) * 2`, `&(dyn A + B)`), so the text
+                        // groups as the tokens did.
+                        Delimiter::None => {
+                            let stream = g.stream();
+                            let bare = stream.clone().into_iter().nth(1).is_none()
+                                || syn::parse::Parser::parse2(syn::Type::without_plus, stream)
+                                    .is_ok();
+                            if bare { ("", "") } else { ("(", ")") }
+                        }
                     };
                     out.push_str(open);
                     // A braced const argument (`Payload<{ N + 1 }>`) is an expression.
@@ -1224,5 +1281,74 @@ mod tests {
         ] {
             assert_eq!(text(written), shown, "{written}");
         }
+    }
+
+    /// Review of F03 (4.2): punctuation written apart is never joined into another token, so a
+    /// macro matching `(. .)` is not shown as `(..)`; literals after `1 .` stay apart.
+    #[test]
+    fn separate_punctuation_stays_separate() {
+        let text = |s: &str| type_text(&syn::parse_str::<syn::Type>(s).unwrap());
+        for (written, shown) in [
+            ("choose!(. .)", "choose!(. .)"),
+            ("choose!(..)", "choose!(..)"),
+            ("m!(& &x)", "m!(& &x)"),
+            ("m!(&&x)", "m!(&&x)"),
+            ("m!(a / / b)", "m!(a / / b)"),
+            ("m!(a / *b)", "m!(a / *b)"),
+            ("m!(a < - b)", "m!(a< -b)"),
+            ("m!(a = > b)", "m!(a = > b)"),
+            ("m!(a => b)", "m!(a => b)"),
+            ("m!(a ! = b)", "m!(a! = b)"),
+            ("m!(a : : b)", "m!(a: : b)"),
+            ("m!(1 . 2)", "m!(1 . 2)"),
+            ("m!(1 .max(2))", "m!(1 .max(2))"),
+            ("m!(\"s\" . len())", "m!(\"s\".len())"),
+            ("m!(x . 0)", "m!(x.0)"),
+        ] {
+            let shown_text = text(written);
+            assert_eq!(shown_text, shown, "{written}");
+            // Same tokens back, spacing included where it matters.
+            let back: syn::Type = syn::parse_str(&shown_text).unwrap();
+            let original: syn::Type = syn::parse_str(written).unwrap();
+            let tokens = |t: &syn::Type| {
+                quote::quote!(#t)
+                    .into_iter()
+                    .flat_map(|tt| match tt {
+                        proc_macro2::TokenTree::Group(g) => g.stream().into_iter().collect(),
+                        tt => vec![tt],
+                    })
+                    .map(|tt| match tt {
+                        proc_macro2::TokenTree::Punct(p) => {
+                            format!("{}{:?}", p.as_char(), p.spacing())
+                        }
+                        tt => tt.to_string(),
+                    })
+                    .collect::<Vec<_>>()
+            };
+            assert_eq!(tokens(&back).len(), tokens(&original).len(), "{written}");
+        }
+    }
+
+    /// Review of F03 (4.2): a fragment forwarded by `macro_rules!` is a group without delimiters;
+    /// its text keeps the grouping (`(1 + 2) * 2`, not `1 + 2 * 2`), and a type or a single token
+    /// stays bare.
+    #[test]
+    fn invisible_groups_keep_their_grouping() {
+        use proc_macro2::{Delimiter, Group, TokenStream, TokenTree};
+        let group = |tokens: TokenStream| TokenTree::Group(Group::new(Delimiter::None, tokens));
+        let sum = group(quote::quote!(1 + 2));
+        assert_eq!(
+            type_text(&quote::quote!(Payload<{ pick!(#sum * 2) }>)),
+            "Payload<{ pick!((1 + 2) * 2) }>"
+        );
+        assert_eq!(super::expr_text(quote::quote!(#sum * 2)), "(1 + 2) * 2");
+        let ty = group(quote::quote!(Vec<u8>));
+        assert_eq!(type_text(&quote::quote!(Option<#ty>)), "Option<Vec<u8>>");
+        let path = group(quote::quote!(crate::Fmt));
+        assert_eq!(type_text(&path), "crate::Fmt");
+        let object = group(quote::quote!(dyn Send + Sync));
+        assert_eq!(type_text(&quote::quote!(&#object)), "&(dyn Send + Sync)");
+        let one = group(quote::quote!(3));
+        assert_eq!(type_text(&quote::quote!([u8; #one])), "[u8; 3]");
     }
 }

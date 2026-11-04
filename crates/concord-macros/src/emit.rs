@@ -739,10 +739,28 @@ fn controls(
 
 /// `tokens` with every span moved to `at`'s location, keeping each token's own hygiene, so a
 /// trait-bound error in generated code points at the declaration that caused it.
+///
+/// A group holding a group without delimiters (a fragment forwarded by `macro_rules!`,
+/// `$e:expr`), or that group itself, is kept as it came: rebuilt from its tokens, rustc would
+/// parse the fragment as if ungrouped, and `pick!($e * 2)` with `$e = 1 + 2` would name
+/// `Payload<5>` here and `Payload<6>` elsewhere.
 fn located(tokens: TokenStream, at: Span) -> TokenStream {
+    fn invisible(stream: TokenStream) -> bool {
+        stream.into_iter().any(|tt| match tt {
+            proc_macro2::TokenTree::Group(g) => {
+                g.delimiter() == proc_macro2::Delimiter::None || invisible(g.stream())
+            }
+            _ => false,
+        })
+    }
     tokens
         .into_iter()
         .map(|tt| match tt {
+            proc_macro2::TokenTree::Group(g)
+                if g.delimiter() == proc_macro2::Delimiter::None || invisible(g.stream()) =>
+            {
+                proc_macro2::TokenTree::Group(g)
+            }
             proc_macro2::TokenTree::Group(g) => {
                 let mut group = proc_macro2::Group::new(g.delimiter(), located(g.stream(), at));
                 group.set_span(g.span().located_at(at));

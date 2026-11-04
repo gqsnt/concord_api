@@ -18,6 +18,19 @@ impl<const N: usize> Encode<Payload<N>> for Fmt {
         Ok(reqwest::Body::from(N.to_string()))
     }
 }
+macro_rules! choose {
+    (. .) => {
+        Payload<1>
+    };
+    (..) => {
+        Payload<2>
+    };
+}
+macro_rules! pick {
+    ($e:expr) => {
+        Payload<{ $e }>
+    };
+}
 pub struct Utf8;
 impl Encode<String> for Utf8 {
     const CONTENT_TYPE: Option<&'static str> = None;
@@ -33,11 +46,14 @@ concord::api! {
         POST trailing_literal(body p: Payload<{ count(r#"x , y"#) }>) { request Fmt; }
         POST raw(body r#type?: String) { request Utf8; }
         POST raw_via(body r#match: String) { request Utf8; }
+        POST separate(body p: choose!(. .)) { request Fmt; }
+        POST forwarded(body p: pick!((1 + 2) * 2)) { request Fmt; }
     }
 }
 
 const LITERAL_ADVICE: &str = include_str!("ui/migration_literal_advice.stderr");
 const RAW_ADVICE: &str = include_str!("ui/migration_raw_advice.stderr");
+const TOKEN_ADVICE: &str = include_str!("ui/migration_token_advice.stderr");
 
 #[test]
 fn applied_literal_advice_keeps_the_const_value() {
@@ -84,5 +100,28 @@ fn applied_raw_advice_keeps_the_raw_name() {
     assert_eq!(
         p.request().body().unwrap().as_bytes(),
         Some(b"m".as_slice())
+    );
+}
+
+/// Review of F03: the applied advice selects the same macro arm (`choose!(. .)` is `Payload<1>`,
+/// `choose!(..)` would be `Payload<2>`) and keeps the forwarded grouping (`Payload<6>`, not `<5>`).
+#[test]
+fn applied_token_advice_keeps_the_payload_type() {
+    for applied in [
+        "write `body p: choose!(. .)` and `request Fmt;`",
+        "write `body p: pick!((1 + 2) * 2)` and `request Fmt;`",
+    ] {
+        assert!(TOKEN_ADVICE.contains(applied), "{applied}\n{TOKEN_ADVICE}");
+    }
+    let api = Applied::new(reqwest::Client::new());
+    let p = api.separate(Payload::<1>).prepare().unwrap();
+    assert_eq!(
+        p.request().body().unwrap().as_bytes(),
+        Some(b"1".as_slice())
+    );
+    let p = api.forwarded(Payload::<6>).prepare().unwrap();
+    assert_eq!(
+        p.request().body().unwrap().as_bytes(),
+        Some(b"6".as_slice())
     );
 }

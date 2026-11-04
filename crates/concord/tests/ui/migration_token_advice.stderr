@@ -1,0 +1,30 @@
+error: `via` was removed: write `body p: choose!(. .)` and `request Fmt;` on the endpoint
+  --> tests/ui/migration_token_advice.rs:19:42
+   |
+19 |         POST broken(body p: choose!(. .) via Fmt);
+   |                                          ^^^
+
+error: `via` was removed: write `body p: pick!((1 + 2) * 2)` and `request Fmt;` on the endpoint
+  --> tests/ui/migration_token_advice.rs:27:51
+   |
+27 |                 POST broken(body p: pick!($e * 2) via Fmt);
+   |                                                   ^^^
+...
+32 | declare!(1 + 2);
+   | --------------- in this macro invocation
+   |
+   = note: this error originates in the macro `declare` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+warning: unused macro definition: `choose`
+  --> tests/ui/migration_token_advice.rs:11:14
+   |
+11 | macro_rules! choose {
+   |              ^^^^^^
+   |
+   = note: `#[warn(unused_macros)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused macro definition: `pick`
+  --> tests/ui/migration_token_advice.rs:15:14
+   |
+15 | macro_rules! pick { ($e:expr) => { Payload<{ $e }> }; }
+   |              ^^^^
