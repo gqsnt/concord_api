@@ -125,3 +125,74 @@ async fn jsonl_upload_cancellation_stops_polling_the_source() {
     );
     assert!(at < 10_000_000, "{m:?}");
 }
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn csv_read_complete_bounded_and_in_order() {
+    let m = csv_read("smoke-csv-read", plan(20_000)).await;
+    assert_eq!(m.records_delivered, 20_000);
+    assert_eq!(
+        m.bytes_consumed,
+        CSV_HEADER.len() as u64 + 20_000 * RECORD_BYTES as u64
+    );
+    assert!(m.peak_retained_bytes <= 2 * MAX_RECORD_BYTES, "{m:?}");
+    assert!(m.error_kind.is_none(), "{m:?}");
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn csv_read_late_failure_and_cancellation() {
+    let m = csv_read(
+        "smoke-csv-late-failure",
+        ReadPlan {
+            ending: Ending::FailAfter(1_000),
+            ..plan(20_000)
+        },
+    )
+    .await;
+    assert_eq!(m.records_delivered, 1_000, "{m:?}");
+    assert_eq!(m.error_kind.as_deref(), Some("Transport"), "{m:?}");
+    let m = csv_read(
+        "smoke-csv-cancel",
+        ReadPlan {
+            cancel_after: Some(500),
+            ..plan(2_000_000)
+        },
+    )
+    .await;
+    assert_eq!(m.records_delivered, 500);
+    assert_eq!(m.progress_at_cancel, m.progress_after_cancel, "{m:?}");
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn csv_upload_zero_preparation_polls_one_pass_and_late_error() {
+    let ok = csv_upload(
+        "smoke-csv-upload",
+        UploadPlan {
+            rows: 20_000,
+            fail_at: None,
+            receiver_delay: None,
+            cancel_after: None,
+        },
+    )
+    .await;
+    assert_eq!(ok.source_polls_before_send, Some(0));
+    assert!(ok.error_kind.is_none(), "{ok:?}");
+    assert_eq!(ok.records_delivered, 20_000, "{ok:?}");
+    assert_eq!(ok.bytes_consumed, ok.bytes_generated, "{ok:?}");
+    let failed = csv_upload(
+        "smoke-csv-upload-late-error",
+        UploadPlan {
+            rows: 20_000,
+            fail_at: Some(5_000),
+            receiver_delay: None,
+            cancel_after: None,
+        },
+    )
+    .await;
+    assert_eq!(
+        failed.error_kind.as_deref(),
+        Some("Transport"),
+        "{failed:?}"
+    );
+    assert_eq!(failed.source_polls_total, Some(5_001));
+    assert!(failed.records_delivered <= 5_000, "{failed:?}");
+}
