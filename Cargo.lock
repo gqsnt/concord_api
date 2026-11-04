@@ -304,6 +304,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "concord-example-fixture"
+version = "0.0.0"
+dependencies = [
+ "percent-encoding",
+ "serde_json",
+ "tokio",
+]
+
+[[package]]
 name = "concord-example-multipart"
 version = "0.0.0"
 dependencies = [
@@ -349,6 +358,16 @@ dependencies = [
  "concord",
  "serde",
  "serde_json",
+ "tokio",
+]
+
+[[package]]
+name = "concord-example-sdk"
+version = "0.0.0"
+dependencies = [
+ "concord",
+ "concord-example-fixture",
+ "serde",
  "tokio",
 ]
 
