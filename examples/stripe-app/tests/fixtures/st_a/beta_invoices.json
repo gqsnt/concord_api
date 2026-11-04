@@ -1,0 +1,142 @@
+{
+  "object": "list",
+  "url": "/v1/invoices",
+  "has_more": false,
+  "data": [
+    {
+      "id": "in_B1",
+      "object": "invoice",
+      "account_country": "FR",
+      "account_name": "Synthetic Platform Connected",
+      "amount_due": 900,
+      "amount_paid": 900,
+      "amount_overpaid": 0,
+      "amount_remaining": 0,
+      "amount_shipping": 0,
+      "attempt_count": 1,
+      "attempted": true,
+      "auto_advance": false,
+      "billing_reason": "subscription_cycle",
+      "collection_method": "charge_automatically",
+      "created": 1767657600,
+      "currency": "eur",
+      "customer": "cus_B1",
+      "customer_email": null,
+      "default_payment_method": null,
+      "description": null,
+      "discounts": [],
+      "due_date": null,
+      "lines": {
+        "object": "list",
+        "data": [
+          {
+            "id": "il_B1a",
+            "object": "line_item",
+            "amount": 500,
+            "currency": "eur",
+            "description": "Synthetic line il_B1a",
+            "discount_amounts": [],
+            "discountable": true,
+            "discounts": [],
+            "invoice": "in_B9",
+            "livemode": false,
+            "metadata": {},
+            "parent": {
+              "type": "subscription_item_details",
+              "subscription_item_details": {
+                "invoice_item": null,
+                "proration": false,
+                "proration_details": {
+                  "credited_items": null
+                },
+                "subscription": "sub_B2",
+                "subscription_item": "si_B2"
+              }
+            },
+            "period": {
+              "end": 1769904000,
+              "start": 1767225600
+            },
+            "pricing": {
+              "price_details": {
+                "price": "price_Agold",
+                "product": "prod_Agold"
+              },
+              "type": "price_details",
+              "unit_amount_decimal": "500"
+            },
+            "quantity": 1,
+            "quantity_decimal": "1",
+            "subtotal": 500,
+            "taxes": []
+          },
+          {
+            "id": "il_B1b",
+            "object": "line_item",
+            "amount": 500,
+            "currency": "eur",
+            "description": "Synthetic line il_B1b",
+            "discount_amounts": [],
+            "discountable": true,
+            "discounts": [],
+            "invoice": "in_B1",
+            "livemode": false,
+            "metadata": {},
+            "parent": {
+              "type": "subscription_item_details",
+              "subscription_item_details": {
+                "invoice_item": null,
+                "proration": false,
+                "proration_details": {
+                  "credited_items": null
+                },
+                "subscription": "sub_B1",
+                "subscription_item": "si_B1"
+              }
+            },
+            "period": {
+              "end": 1769904000,
+              "start": 1767225600
+            },
+            "pricing": {
+              "price_details": {
+                "price": "price_Agold",
+                "product": "prod_Agold"
+              },
+              "type": "price_details",
+              "unit_amount_decimal": "500"
+            },
+            "quantity": 1,
+            "quantity_decimal": "1",
+            "subtotal": 500,
+            "taxes": []
+          }
+        ],
+        "has_more": false,
+        "total_count": 2,
+        "url": "/v1/invoices/in_B1/lines"
+      },
+      "livemode": false,
+      "metadata": {},
+      "number": "SYN-B001",
+      "parent": {
+        "type": "subscription_details",
+        "subscription_details": {
+          "metadata": {},
+          "subscription": "sub_B1",
+          "subscription_proration_date": null
+        },
+        "quote_details": null
+      },
+      "period_end": 1767657600,
+      "period_start": 1764979200,
+      "status": "paid",
+      "subtotal": 900,
+      "subtotal_excluding_tax": 900,
+      "total": 900,
+      "total_excluding_tax": 900,
+      "total_taxes": [],
+      "webhooks_delivered_at": 1767657600
+    }
+  ]
+}

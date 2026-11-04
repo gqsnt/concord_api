@@ -1,0 +1,59 @@
+{
+  "object": "list",
+  "url": "/v1/balance_transactions",
+  "has_more": true,
+  "data": [
+    {
+      "id": "txn_A4",
+      "object": "balance_transaction",
+      "amount": 2400,
+      "available_on": 1769126400,
+      "balance_type": "payments",
+      "created": 1768953600,
+      "currency": "usd",
+      "description": null,
+      "exchange_rate": null,
+      "fee": 100,
+      "fee_details": [
+        {
+          "amount": 100,
+          "application": null,
+          "currency": "usd",
+          "description": "Stripe processing fees",
+          "type": "stripe_fee"
+        }
+      ],
+      "net": 2300,
+      "reporting_category": "charge",
+      "source": "ch_A4",
+      "status": "available",
+      "type": "charge"
+    },
+    {
+      "id": "txn_A3",
+      "object": "balance_transaction",
+      "amount": 1500,
+      "available_on": 1768262400,
+      "balance_type": "payments",
+      "created": 1768089600,
+      "currency": "eur",
+      "description": null,
+      "exchange_rate": null,
+      "fee": 60,
+      "fee_details": [
+        {
+          "amount": 60,
+          "application": null,
+          "currency": "eur",
+          "description": "Stripe processing fees",
+          "type": "stripe_fee"
+        }
+      ],
+      "net": 1440,
+      "reporting_category": "charge",
+      "source": "ch_A3",
+      "status": "available",
+      "type": "charge"
+    }
+  ]
+}
