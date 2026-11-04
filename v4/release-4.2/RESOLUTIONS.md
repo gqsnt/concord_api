@@ -131,7 +131,8 @@ lane; 17 positive and 49 negative maintained cases (`scripts/tests/test_check_ci
 the real workflow pass the 4.1 checker and fail the new one. The final executable review found a
 gate step disabled by `set -n`/`set -o noexec` still accepted; the gate's step may now only turn on
 `-e`, `-u`, `-x` and `-o errexit|nounset|pipefail|xtrace` (`c2cf3a9`, qualified R13), looking
-through leading assignments and `builtin`/`command` (`81b4ce2`, qualified R17). Static inspection only: CI logs remain
+through leading assignments and `builtin`/`command` (`81b4ce2`, qualified R17), also for the
+control-command refusal (`exit`, `exec`: `c80bf40`, qualified R20). Static inspection only: CI logs remain
 the execution evidence. Correction note for 4.1: its `ci-inventory` step was a text search (D24,
 Z01); the 4.1 CI runs themselves are not invalidated.
 

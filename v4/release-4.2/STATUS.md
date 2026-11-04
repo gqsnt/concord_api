@@ -49,6 +49,8 @@ recorded below (records-only receipt).
 | `a6b78a1` | records | candidate records (second final gate: 37/37 PASS; pushed for CI) |
 | `81b4ce2` | code, tooling | combined re-review C1, C2, T1 |
 | `67006bb` | code | negative literal fragments grouped before a postfix operator (found by the coordinator rerunning the review's matrix) |
+| `4619334` | records | candidate records (third final gate: 37/37 PASS; pushed for CI) |
+| `c80bf40` | code, tooling | third re-review C3, T2 |
 
 ## Gate inventory change
 
