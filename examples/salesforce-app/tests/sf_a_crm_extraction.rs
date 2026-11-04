@@ -641,3 +641,37 @@ async fn sf_a_diagnostics_never_show_tokens_locators_literals_or_record_values()
     }
     server.shutdown().await;
 }
+
+#[test]
+fn sf_a_official_query_more_example_parses_and_validates() {
+    use concord_example_salesforce_sdk::model::{DynamicRecord, QueryResponse};
+    let doc: QueryResponse<DynamicRecord> =
+        serde_json::from_str(&fixture("sf_a/official_query_more_example.json")).unwrap();
+    assert_eq!(doc.total_size, 3222);
+    assert!(!doc.done);
+    let addr: std::net::SocketAddr = "127.0.0.1:9".parse().unwrap();
+    let ctx = concord_example_salesforce_sdk::OrgContext::new(
+        concord::reqwest::Client::builder()
+            .resolve("example.my.salesforce.com", addr)
+            .build()
+            .unwrap(),
+        concord_example_salesforce_sdk::ids::InstanceUrl::parse(
+            "https://example.my.salesforce.com",
+        )
+        .unwrap(),
+        concord_example_salesforce_sdk::ids::ApiVersion::PINNED,
+        concord_example_salesforce_sdk::ids::AccessToken::new("synthetic").unwrap(),
+    )
+    .unwrap();
+    let locator = ctx
+        .query_link(doc.next_records_url.as_deref().unwrap())
+        .unwrap();
+    assert_eq!(locator.expose(), "01gRO0000016PIAYA2-500");
+    let (object, id) = ctx
+        .record_link(doc.records[0].attributes.url.as_deref().unwrap())
+        .unwrap();
+    assert_eq!(
+        (object.as_str(), id.as_str()),
+        ("Contact", "003RO0000035WQgYAM")
+    );
+}
