@@ -299,7 +299,7 @@ fn token_text(tokens: proc_macro2::TokenStream, types: bool) -> String {
             bang = matches!(&tt, TokenTree::Punct(p) if p.as_char() == '!') && prev == Prev::Word;
             prev = match tt {
                 TokenTree::Group(g) => {
-                    let (open, close) = delimiters(&g, types || generics > 0);
+                    let (open, close) = delimiters(&g, types);
                     out.push_str(open);
                     if macro_input {
                         verbatim(g.stream(), out);
@@ -1287,28 +1287,24 @@ fn bare_fragment(g: &proc_macro2::Group) -> bool {
 /// a fragment back as rustc made it, and rustc reads a group without delimiters from a proc macro
 /// as ungrouped: `$e * 2` with `$e = 1 + 2` would be 5, not 6, and `$e.len()` with `$e = &DATA`
 /// would be `&DATA.len()`. Where an expression is expected (`expr`: an initializer, a braced const
-/// argument, an array length) every fragment of several tokens is put in parentheses; where a type
-/// is expected only one that is not a [type](bare_fragment) is (parentheses around a type would be
-/// noise, and a type has no precedence to lose). A macro's input (`name!(..)`) is kept as it came:
-/// there the fragment is still one, opaque to that macro's matcher.
+/// argument, an array length) every fragment of several tokens is put in parentheses, a type
+/// fragment too (`size_of::<(&str)>()`, `x as *const (T)` mean the same): no guess about which
+/// tokens of an expression are types. Where a type is expected only a fragment that is not a
+/// [type](bare_fragment) is. The added parentheses carry the macro's call-site span, so rustc does
+/// not report them as unneeded in the user's code. A macro's input (`name!(..)`) is kept as it
+/// came: there the fragment is still one, opaque to that macro's matcher.
 fn regroup(tokens: proc_macro2::TokenStream, expr: bool) -> proc_macro2::TokenStream {
     regroup_in(tokens, expr, false)
 }
 
-/// [`regroup`]; `array`: the contents of `[T; N]` in a type, an expression after its `;`. Within an
-/// expression the types are a turbofish's or a qualified path's angle brackets (`size_of::<T>()`,
-/// `<T as Trait>::f()`) and the type after `as`: a fragment there is grouped as a type.
+/// [`regroup`]; `array`: the contents of `[T; N]` in a type, an expression after its `;`.
 fn regroup_in(
     tokens: proc_macro2::TokenStream,
     mut expr: bool,
     array: bool,
 ) -> proc_macro2::TokenStream {
-    use proc_macro2::{Delimiter, Group, Spacing, TokenTree};
+    use proc_macro2::{Delimiter, Group, Span, TokenTree};
     let (mut word, mut bang) = (false, false);
-    // Within an expression: open type brackets, whether the last token was an operand (`<` after
-    // one compares), a joined `-` (the `>` of `->` closes nothing), `::` and `as` just written.
-    let (mut angles, mut operand, mut arrow, mut colons, mut cast) =
-        (0usize, false, false, 0, false);
     let mut out = proc_macro2::TokenStream::new();
     for tt in tokens {
         let macro_input = bang;
@@ -1317,57 +1313,35 @@ fn regroup_in(
         if array && matches!(&tt, TokenTree::Punct(p) if p.as_char() == ';') {
             expr = true;
         }
-        let after_cast = cast;
-        if let TokenTree::Punct(p) = &tt {
-            match p.as_char() {
-                '<' if expr && (angles > 0 || colons == 2 || !operand) => angles += 1,
-                '>' if angles > 0 && !arrow => angles -= 1,
-                _ => {}
-            }
-        }
-        // A type is expected here (outside an expression, or in its type positions).
-        let types = !expr || angles > 0 || after_cast;
-        colons = match &tt {
-            TokenTree::Punct(p) if p.as_char() == ':' && p.spacing() == Spacing::Joint => 1,
-            TokenTree::Punct(p) if p.as_char() == ':' && colons == 1 => 2,
-            _ => 0,
-        };
-        arrow = matches!(&tt, TokenTree::Punct(p) if p.as_char() == '-' && p.spacing() == Spacing::Joint);
-        cast = matches!(&tt, TokenTree::Ident(i) if i == "as");
-        operand = match &tt {
-            TokenTree::Ident(i) => {
-                !matches!(i.to_string().as_str(), "return" | "in" | "as" | "move")
-            }
-            TokenTree::Literal(_) | TokenTree::Group(_) => true,
-            TokenTree::Punct(p) => p.as_char() == '?' || (p.as_char() == '>' && angles > 0),
-        };
-        let rebuilt = |g: &Group, delimiter: Delimiter, expr: bool, array: bool| {
+        let rebuilt = |g: &Group, delimiter: Delimiter, span: Span, expr: bool, array: bool| {
             let mut group = Group::new(delimiter, regroup_in(g.stream(), expr, array));
-            group.set_span(g.span());
+            group.set_span(span);
             TokenTree::Group(group)
         };
         out.extend([match tt {
             TokenTree::Group(g) if macro_input => TokenTree::Group(g),
             TokenTree::Group(g) if g.delimiter() == Delimiter::None => {
-                let grouped = if types {
-                    bare_fragment(&g)
-                } else {
+                let bare = if expr {
                     g.stream().into_iter().nth(1).is_none()
+                } else {
+                    bare_fragment(&g)
                 };
-                match (grouped, forwarded(&g.stream())) {
+                match (bare, forwarded(&g.stream())) {
                     (true, false) => TokenTree::Group(g),
                     // A type that itself holds fragments (`Payload<{ $e * 2 }>` as `$t`).
-                    (true, true) => rebuilt(&g, Delimiter::None, !types, false),
-                    (false, _) => rebuilt(&g, Delimiter::Parenthesis, true, false),
+                    (true, true) => rebuilt(&g, Delimiter::None, g.span(), expr, false),
+                    (false, _) => {
+                        rebuilt(&g, Delimiter::Parenthesis, Span::call_site(), true, false)
+                    }
                 }
             }
             TokenTree::Group(g) if !forwarded(&g.stream()) => TokenTree::Group(g),
             TokenTree::Group(g) => {
-                let delimiter = g.delimiter();
+                let (delimiter, span) = (g.delimiter(), g.span());
                 match delimiter {
-                    Delimiter::Brace => rebuilt(&g, delimiter, true, false),
-                    Delimiter::Bracket if types => rebuilt(&g, delimiter, false, true),
-                    _ => rebuilt(&g, delimiter, !types, false),
+                    Delimiter::Brace => rebuilt(&g, delimiter, span, true, false),
+                    Delimiter::Bracket if !expr => rebuilt(&g, delimiter, span, false, true),
+                    _ => rebuilt(&g, delimiter, span, expr, false),
                 }
             }
             other => other,

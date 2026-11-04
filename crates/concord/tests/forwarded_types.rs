@@ -64,6 +64,20 @@ impl Meaning for &Foo {
         "borrowed".into()
     }
 }
+/// `1` for a value, `2` for a reference: `1usize << $e.weight()` with `$e = &VALUE` is 4 in Rust.
+pub trait Weight {
+    fn weight(self) -> usize;
+}
+impl Weight for Foo {
+    fn weight(self) -> usize {
+        1
+    }
+}
+impl Weight for &Foo {
+    fn weight(self) -> usize {
+        2
+    }
+}
 pub static VALUE: Foo = Foo;
 pub const DATA: [u8; 3] = [7, 8, 9];
 
@@ -102,6 +116,8 @@ macro_rules! declare {
                 GET sized(query n: usize = core::mem::size_of::<$s>());
                 GET qualified(query n: usize = <$v>::new().len());
                 GET cast(query n: u64 = $e as $w);
+                GET shift(query n: usize = 1usize << $r.weight());
+                GET pointer(query n: usize = (core::ptr::null::<u8>() as *const $w).is_null() as usize);
             }
         }
     };
@@ -171,4 +187,10 @@ fn forwarded_fragments_keep_their_grouping() {
     assert_eq!(p.request().url().query(), Some("n=0"));
     let p = api.cast().prepare().unwrap();
     assert_eq!(p.request().url().query(), Some("n=3"));
+    // No guess about which tokens of an expression are types: `<<` is not an opening bracket
+    // (`1 << (&VALUE).weight()` is 4), and a type behind `as *const` raises no lint either.
+    let p = api.shift().prepare().unwrap();
+    assert_eq!(p.request().url().query(), Some("n=4"));
+    let p = api.pointer().prepare().unwrap();
+    assert_eq!(p.request().url().query(), Some("n=1"));
 }
