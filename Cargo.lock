@@ -442,6 +442,7 @@ dependencies = [
  "concord",
  "concord-example-stripe-sdk",
  "concord-example-testserver",
+ "concord-pagination",
  "serde_json",
  "tokio",
 ]

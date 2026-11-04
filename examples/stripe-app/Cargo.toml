@@ -10,6 +10,7 @@ publish = false
 [dependencies]
 concord = { path = "../../crates/concord", features = ["json"] }
 concord-example-stripe-sdk = { path = "../stripe-sdk" }
+concord-pagination = { path = "../../crates/concord-pagination" }
 # Only the binaries (`src/bin/`) start a runtime; the library workflows are runtime-agnostic.
 tokio = { workspace = true, features = ["rt"] }
 

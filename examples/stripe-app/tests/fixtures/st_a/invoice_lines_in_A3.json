@@ -1,0 +1,88 @@
+{
+  "object": "list",
+  "url": "/v1/invoices/in_A3/lines",
+  "has_more": false,
+  "data": [
+    {
+      "id": "il_A3c",
+      "object": "line_item",
+      "amount": 600,
+      "currency": "usd",
+      "description": "Synthetic line il_A3c",
+      "discount_amounts": [],
+      "discountable": true,
+      "discounts": [],
+      "invoice": "in_A3",
+      "livemode": false,
+      "metadata": {},
+      "parent": {
+        "type": "subscription_item_details",
+        "subscription_item_details": {
+          "invoice_item": null,
+          "proration": false,
+          "proration_details": {
+            "credited_items": null
+          },
+          "subscription": "sub_A1",
+          "subscription_item": "si_A1"
+        }
+      },
+      "period": {
+        "end": 1769904000,
+        "start": 1767225600
+      },
+      "pricing": {
+        "price_details": {
+          "price": "price_Agold",
+          "product": "prod_Agold"
+        },
+        "type": "price_details",
+        "unit_amount_decimal": "600"
+      },
+      "quantity": 1,
+      "quantity_decimal": "1",
+      "subtotal": 600,
+      "taxes": []
+    },
+    {
+      "id": "il_A3d",
+      "object": "line_item",
+      "amount": 600,
+      "currency": "usd",
+      "description": "Synthetic line il_A3d",
+      "discount_amounts": [],
+      "discountable": true,
+      "discounts": [],
+      "invoice": "in_A3",
+      "livemode": false,
+      "metadata": {},
+      "parent": {
+        "type": "invoice_item_details",
+        "invoice_item_details": {
+          "invoice_item": "ii_A3",
+          "proration": false,
+          "proration_details": {
+            "credited_items": null
+          },
+          "subscription": null
+        }
+      },
+      "period": {
+        "end": 1769904000,
+        "start": 1767225600
+      },
+      "pricing": {
+        "price_details": {
+          "price": "price_Aone",
+          "product": "prod_Aone"
+        },
+        "type": "price_details",
+        "unit_amount_decimal": "600"
+      },
+      "quantity": 1,
+      "quantity_decimal": "1",
+      "subtotal": 600,
+      "taxes": []
+    }
+  ]
+}

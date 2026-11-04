@@ -257,6 +257,33 @@ impl<R: ListRequest> CursorList<R> {
         }
     }
 
+    /// The cursor continuing a first page obtained another way — an invoice's embedded `lines`
+    /// list continues `GET /v1/invoices/{id}/lines` — under the same rules as a fetched page:
+    /// `None` when `has_more` is false, the edge item's id otherwise.
+    ///
+    /// # Errors
+    ///
+    /// [`ProtocolError::EmptyNonTerminalPage`] for `has_more: true` with no item.
+    pub fn after_embedded(
+        &self,
+        list: &List<R::Item>,
+    ) -> Result<Option<Cursor<<R::Item as Object>::Id>>, Error> {
+        if !list.has_more {
+            return Ok(None);
+        }
+        let edge = match self.direction {
+            Direction::Forward => list.data.last(),
+            Direction::Backward => list.data.first(),
+        };
+        match edge {
+            Some(item) => Ok(Some(self.continue_from(item.id().clone()))),
+            None => Err(Error::protocol_error(
+                ProtocolError::EmptyNonTerminalPage,
+                None,
+            )),
+        }
+    }
+
     /// The request for the page at `cursor` (`None`: the first page).
     ///
     /// # Errors
