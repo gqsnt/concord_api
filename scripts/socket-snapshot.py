@@ -50,7 +50,9 @@ WINDOWS = os.name == "nt"
 COMMAND_TIMEOUT = 10.0
 SNAPSHOT_BUDGET = 20.0
 DISABLED = os.path.join("target", "socket-snapshot.disabled")
-_started = time.monotonic()
+# When the current snapshot started (set by `snapshot`); None outside a snapshot, where a command
+# gets only its own timeout. The budget is per snapshot, not per process or import.
+_snapshot_started = None
 
 
 class Disabled(Exception):
@@ -59,13 +61,14 @@ class Disabled(Exception):
 
 def run(args):
     """The command's output, or None if it is missing, fails or exceeds its time."""
-    remaining = SNAPSHOT_BUDGET - (time.monotonic() - _started)
-    if remaining <= 0:
-        return None
+    timeout = COMMAND_TIMEOUT
+    if _snapshot_started is not None:
+        remaining = SNAPSHOT_BUDGET - (time.monotonic() - _snapshot_started)
+        if remaining <= 0:
+            return None
+        timeout = min(timeout, remaining)
     try:
-        done = subprocess.run(
-            args, capture_output=True, timeout=min(COMMAND_TIMEOUT, remaining), check=False
-        )
+        done = subprocess.run(args, capture_output=True, timeout=timeout, check=False)
     except subprocess.TimeoutExpired:
         try:
             with open(DISABLED, "w", encoding="ascii") as f:
@@ -259,6 +262,8 @@ def collect_linux(details):
 
 
 def snapshot(label, details):
+    global _snapshot_started
+    _snapshot_started = time.monotonic()
     if os.path.exists(DISABLED):
         print(f"socket-snapshot {label} disabled (an earlier collector timed out)")
         return

@@ -126,6 +126,17 @@ class Arithmetic(unittest.TestCase):
 
 
 class Commands(unittest.TestCase):
+    def setUp(self):
+        # The snapshot budget is per snapshot: no deadline is inherited from import time or from
+        # another test.
+        snap._snapshot_started = None
+
+    def test_an_exhausted_snapshot_budget_skips_commands(self):
+        snap._snapshot_started = snap.time.monotonic() - snap.SNAPSHOT_BUDGET - 1
+        self.assertIsNone(snap.run([sys.executable, "-c", "print('never run')"]))
+        snap._snapshot_started = None
+        self.assertEqual(snap.run([sys.executable, "-c", "print('ran')"]).strip(), "ran")
+
     def test_a_failing_command_is_unavailable(self):
         self.assertIsNone(snap.run([sys.executable, "-c", "import sys; print('x'); sys.exit(3)"]))
         self.assertIsNone(snap.run(["definitely-not-a-command-socket-snapshot"]))

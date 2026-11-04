@@ -110,3 +110,10 @@ xhigh`, `sandbox: read-only`. Scope: `git diff d4ebd34 2cdecd3` in a detached ch
 | 6 | IPv6 rows mixed into the IPv4 range (minor) | the diagnostic is IPv4-only on both platforms |
 | 7 | 60 s per command, no snapshot budget (minor) | 10 s per command, 20 s per snapshot; a timeout disables later snapshots of the run (`target/socket-snapshot.disabled`, removed at gate start) |
 | 8 | STATUS points at verification that does not cover the correction head (minor) | STATUS marks the correction head's verification pending until its exact-commit results are recorded |
+
+Re-check of the resolutions (same reviewer, settings and observed header; scope `git diff
+2cdecd3 f9d8d2d`): all eight findings **RESOLVED**; one new finding (medium): the 20 s snapshot
+budget started at module import, so the timeout control could fail when the earlier tool tests
+took longer than 20 s. Resolved in the commit after `f9d8d2d`: the budget starts with each
+snapshot; the command controls reset it, and a control checks that an exhausted budget skips
+commands while a fresh one runs them.

@@ -22,7 +22,8 @@ resolved and verified; the integration receipt is recorded under "Integration".
 | Records-only successor head | `d4ebd34e88a4698f9e936b53884ba50106643adb` — its PR run [41904216870](https://github.com/gqsnt/concord_api/actions/runs/41904216870) **failed** on Windows (job 126834420624, fixture bind WSAENOBUFS); its push run [41904212230](https://github.com/gqsnt/concord_api/actions/runs/41904212230) passed. See CI_FAILURE_RESOLUTION.md |
 | CI diagnostics | `7eefdeedcc1ee0646525b6e02ac3f1ba0e02b90b` — socket-pressure snapshots in the gate (diagnostic only) |
 | CI correction | `2cdecd30ae526c9c89e28ebcb59965e6091c9305` (Riot fixture lifecycle control, records); its local gate passed (37/37, nightly 16/0) |
-| CI correction head | the commit after `2cdecd3`: review fixes (CI_FAILURE_RESOLUTION.md, "Independent review") |
+| CI review fixes | `f9d8d2d6f33b1e89c387670990d74e5471a2f34e`: local gate 37/37 and nightly 16/0; CI runs 41927326927 and 41927331498 green on Linux, native Windows (two runners) and nightly (16/0) |
+| CI correction head | the commit after `f9d8d2d`: re-check fix (snapshot budget per snapshot) |
 
 The campaign's B0 trial sources (`FINAL_EVIDENCE.zip`, the handoff's `reference/campaign/`) are
 historical evidence of an older source. Nothing here relabels them as tests of this branch; every
