@@ -6,6 +6,7 @@
 #![allow(missing_docs)]
 
 pub mod apis;
+pub mod contract;
 pub mod manual;
 pub mod payload;
 pub mod server;
@@ -39,6 +40,11 @@ pub struct Case {
     pub id: String,
     /// Name of the measured consuming stage (`prepare`, `decode`).
     pub run_stage: &'static str,
+    /// Equal-work comparison group within this family. All members must have the same
+    /// consuming-stage observation; `input` stages describe different input representations.
+    pub pair: String,
+    /// Reused fixture and fresh per-call input setup, outside the consuming stage.
+    pub setup: &'static str,
     /// Throughput unit for the case, if sizes vary within the group.
     pub throughput: Option<Throughput>,
     /// Inputs are large (≥ 1 MB): batch them sparingly.
@@ -51,14 +57,30 @@ pub struct Case {
 }
 
 impl Case {
-    fn new(id: impl Into<String>, run_stage: &'static str) -> Self {
+    fn new(id: impl Into<String>, run_stage: &'static str, setup: &'static str) -> Self {
+        let id = id.into();
+        let (pair, _) = id.rsplit_once('/').expect("scenario/implementation");
         Self {
-            id: id.into(),
+            pair: pair.to_owned(),
+            id,
             run_stage,
+            setup,
             throughput: None,
             large_input: false,
             total: false,
             trivial_input: false,
+        }
+    }
+
+    /// Comparator for the promised equal-work consuming boundary, exercised by ordinary tests.
+    /// This says nothing about equal internal validation or error behavior on other inputs.
+    pub fn comparator(&self) -> &'static str {
+        match self.run_stage {
+            "prepare" => {
+                "Prepared: method, exact URL, headers (same-name order/flags), optional body, version, timeout"
+            }
+            "decode" => "decoded Rust value on the registered 200/content-type/body fixture",
+            _ => panic!("unclassified consuming stage {}", self.run_stage),
         }
     }
 
@@ -87,7 +109,12 @@ impl Case {
 /// and by the allocation counter.
 pub trait Runner {
     /// Measures one case.
-    fn case<I, O>(&mut self, case: Case, input: impl FnMut() -> I, run: impl FnMut(I) -> O);
+    fn case<I, O: contract::Observe>(
+        &mut self,
+        case: Case,
+        input: impl FnMut() -> I,
+        run: impl FnMut(I) -> O,
+    );
 }
 
 /// Completes a future that needs no I/O (a response built in memory), polling it once.
@@ -239,21 +266,26 @@ fn s(v: &str) -> String {
 /// Minimal (S1 health), S3 search (9 query values), S2 product (2 scopes + subdomain + 3
 /// headers), realistic tracker (all optional values present / absent).
 pub fn construct(fx: &Fixtures, r: &mut impl Runner) {
+    let case = |id, stage| {
+        Case::new(
+            id,
+            stage,
+            "reused clients; fresh endpoint/navigation/setters or manual arguments (borrowed constants when trivial_input)",
+        )
+    };
     r.case(
-        Case::new("minimal/concord", "prepare").total(),
+        case("minimal/concord", "prepare").total(),
         || fx.s1.health(),
         |i| i.prepare().expect("valid"),
     );
     r.case(
-        Case::new("minimal/manual", "prepare")
-            .total()
-            .trivial_input(),
+        case("minimal/manual", "prepare").total().trivial_input(),
         || (),
         |()| fx.simple_manual.health().expect("valid"),
     );
 
     r.case(
-        Case::new("s3_search_9_query/concord", "prepare").total(),
+        case("s3_search_9_query/concord", "prepare").total(),
         || {
             fx.s3
                 .search()
@@ -270,7 +302,7 @@ pub fn construct(fx: &Fixtures, r: &mut impl Runner) {
         |i| i.prepare().expect("valid"),
     );
     r.case(
-        Case::new("s3_search_9_query/manual", "prepare").total(),
+        case("s3_search_9_query/manual", "prepare").total(),
         || {
             fx.s3_manual
                 .search()
@@ -289,7 +321,7 @@ pub fn construct(fx: &Fixtures, r: &mut impl Runner) {
     );
 
     r.case(
-        Case::new("s2_product_scoped/concord", "prepare").total(),
+        case("s2_product_scoped/concord", "prepare").total(),
         || {
             fx.s2
                 .regional(shapes::s2_scoped::Region::Eu)
@@ -299,7 +331,7 @@ pub fn construct(fx: &Fixtures, r: &mut impl Runner) {
         |i| i.prepare().expect("valid"),
     );
     r.case(
-        Case::new("s2_product_scoped/manual", "prepare")
+        case("s2_product_scoped/manual", "prepare")
             .total()
             .trivial_input(),
         // The baseline takes borrowed arguments: nothing to construct per call.
@@ -317,22 +349,22 @@ pub fn construct(fx: &Fixtures, r: &mut impl Runner) {
     );
 
     r.case(
-        Case::new("realistic_all_present/concord", "prepare").total(),
+        case("realistic_all_present/concord", "prepare").total(),
         || tracker_full(fx),
         |i| i.prepare().expect("valid"),
     );
     r.case(
-        Case::new("realistic_all_present/manual", "prepare").total(),
+        case("realistic_all_present/manual", "prepare").total(),
         || tracker_full_manual(fx),
         |i| i.build().expect("valid"),
     );
     r.case(
-        Case::new("realistic_optional_absent/concord", "prepare").total(),
+        case("realistic_optional_absent/concord", "prepare").total(),
         || fx.tracker.org("acme").project("rocket").issues(42),
         |i| i.prepare().expect("valid"),
     );
     r.case(
-        Case::new("realistic_optional_absent/manual", "prepare").total(),
+        case("realistic_optional_absent/manual", "prepare").total(),
         || fx.tracker_manual.org("acme").project("rocket").issues(42),
         |i| i.build().expect("valid"),
     );
@@ -385,7 +417,23 @@ fn numbers<const N: usize>() -> [u64; N] {
 }
 
 fn header_case(n: usize, variant: &str) -> Case {
-    Case::new(format!("{n}/{variant}"), "prepare").throughput(Throughput::Elements(n as u64))
+    let (representation, setup) = match variant {
+        "concord_text" | "manual_from_str" => ("text", "reused clients; fresh owned Strings"),
+        "concord_numeric" | "manual_numeric" => ("numeric", "reused clients; copied u64 values"),
+        "concord_native" | "manual_prebuilt_clone" => (
+            "native",
+            "reused clients and validated HeaderValues; borrowed per-call input",
+        ),
+        "concord_literal" | "manual_from_static" => (
+            "literal",
+            "reused clients and literal statics; trivial per-call input",
+        ),
+        _ => panic!("unclassified header variant {variant}"),
+    };
+    let mut case = Case::new(format!("{n}/{variant}"), "prepare", setup)
+        .throughput(Throughput::Elements(n as u64));
+    case.pair = format!("{n}/{representation}");
+    case
 }
 
 /// Every header variant, for each count. A variant is one function.
@@ -552,8 +600,15 @@ fn deep_values() -> [String; 8] {
 /// Deep chain (navigated per call, and from a reused level-8 scope handle) and the inherited
 /// override / append / remove operations from a reused scope handle.
 pub fn compose(fx: &Fixtures, r: &mut impl Runner) {
+    let case = |id, stage| {
+        Case::new(
+            id,
+            stage,
+            "reused clients; fresh navigation values for deep8_navigate; otherwise reused scope and fresh endpoint/operation",
+        )
+    };
     r.case(
-        Case::new("deep8_navigate/concord", "prepare").total(),
+        case("deep8_navigate/concord", "prepare").total(),
         || {
             let [a, b, c, d, e, f, g, h] = deep_values();
             fx.deep
@@ -570,7 +625,7 @@ pub fn compose(fx: &Fixtures, r: &mut impl Runner) {
         |i| i.prepare().expect("valid"),
     );
     r.case(
-        Case::new("deep8_navigate/manual", "prepare").total(),
+        case("deep8_navigate/manual", "prepare").total(),
         deep_values,
         |v| fx.deep_manual.leaf(v).expect("valid"),
     );
@@ -579,12 +634,12 @@ pub fn compose(fx: &Fixtures, r: &mut impl Runner) {
     let scope = fx.deep.l1(a).l2(b).l3(c).l4(d).l5(e).l6(f).l7(g).l8(h);
     let scope_manual = fx.deep_manual.scope(deep_values());
     r.case(
-        Case::new("deep8_reused_scope/concord", "prepare").total(),
+        case("deep8_reused_scope/concord", "prepare").total(),
         || scope.leaf(),
         |i| i.prepare().expect("valid"),
     );
     r.case(
-        Case::new("deep8_reused_scope/manual", "prepare")
+        case("deep8_reused_scope/manual", "prepare")
             .total()
             .trivial_input(),
         || &scope_manual,
@@ -594,54 +649,54 @@ pub fn compose(fx: &Fixtures, r: &mut impl Runner) {
     let team = fx.compose.team("core");
     let team_manual = fx.compose_manual.team("core");
     r.case(
-        Case::new("inherit/concord", "prepare"),
+        case("inherit/concord", "prepare"),
         || team.inherit(),
         |i| i.prepare().expect("valid"),
     );
     r.case(
-        Case::new("override_present/concord", "prepare"),
+        case("override_present/concord", "prepare"),
         || team.override_value().set_v("endpoint-a"),
         |i| i.prepare().expect("valid"),
     );
     r.case(
-        Case::new("override_absent/concord", "prepare"),
+        case("override_absent/concord", "prepare"),
         || team.override_value(),
         |i| i.prepare().expect("valid"),
     );
     r.case(
-        Case::new("append/concord", "prepare"),
+        case("append/concord", "prepare"),
         || team.append_value("endpoint-b"),
         |i| i.prepare().expect("valid"),
     );
     r.case(
-        Case::new("remove/concord", "prepare"),
+        case("remove/concord", "prepare"),
         || team.remove_value(),
         |i| i.prepare().expect("valid"),
     );
 
     let build = |op: manual::Op| team_manual.request(op).expect("valid");
     r.case(
-        Case::new("inherit/manual", "prepare"),
+        case("inherit/manual", "prepare"),
         || manual::Op::Inherit,
         build,
     );
     r.case(
-        Case::new("override_present/manual", "prepare"),
+        case("override_present/manual", "prepare"),
         || manual::Op::Override(Some(s("endpoint-a"))),
         build,
     );
     r.case(
-        Case::new("override_absent/manual", "prepare"),
+        case("override_absent/manual", "prepare"),
         || manual::Op::Override(None),
         build,
     );
     r.case(
-        Case::new("append/manual", "prepare"),
+        case("append/manual", "prepare"),
         || manual::Op::Append(s("endpoint-b")),
         build,
     );
     r.case(
-        Case::new("remove/manual", "prepare"),
+        case("remove/manual", "prepare"),
         || manual::Op::Remove,
         build,
     );
@@ -657,7 +712,7 @@ pub fn body_encode(fx: &Fixtures, r: &mut impl Runner) {
         let json = payload::payload(size.target);
         let json_len = serde_json::to_vec(&json).expect("serializable").len() as u64;
         let case = |id: String, len: u64| {
-            Case::new(id, "prepare")
+            Case::new(id, "prepare", "reused clients/payload seeds; fresh cloned owned payload or Bytes handle, never a consumed body")
                 .throughput(Throughput::Bytes(len))
                 .large(large)
         };
@@ -730,7 +785,7 @@ pub fn decode(fx: &Fixtures, r: &mut impl Runner) {
     for size in SIZES {
         let large = size.target >= payload::LARGE.target;
         let case = |id: String, len: usize| {
-            Case::new(id, "decode")
+            Case::new(id, "decode", "reused decoder/payload bytes; fresh 200 response with matching content type/length for every call")
                 .throughput(Throughput::Bytes(len as u64))
                 .large(large)
         };
@@ -782,45 +837,52 @@ pub fn decode(fx: &Fixtures, r: &mut impl Runner) {
 /// native names, composed by `HeaderPlan` when the request is built; hand-written), the same with
 /// one header replaced through another spelling, and a Riot-shaped request from the client.
 pub fn keys(fx: &Fixtures, r: &mut impl Runner) {
+    let case = |id, stage| {
+        Case::new(
+            id,
+            stage,
+            "reused clients and team scopes; fresh endpoint/owned arguments versus borrowed manual arguments",
+        )
+    };
     let literal = fx.keys_literal.team("rocket");
     let native = fx.keys_native.team("rocket");
     r.case(
-        Case::new("six_inherited/concord_literal", "prepare").total(),
+        case("six_inherited/concord_literal", "prepare").total(),
         || literal.get(),
         |i| i.prepare().expect("valid"),
     );
     r.case(
-        Case::new("six_inherited/concord_native", "prepare").total(),
+        case("six_inherited/concord_native", "prepare").total(),
         || native.get(),
         |i| i.prepare().expect("valid"),
     );
     r.case(
-        Case::new("six_inherited/manual", "prepare").trivial_input(),
+        case("six_inherited/manual", "prepare").trivial_input(),
         || (),
         |()| fx.keys_manual.items("rocket", None).expect("valid"),
     );
     r.case(
-        Case::new("one_replaced/concord_literal", "prepare").total(),
+        case("one_replaced/concord_literal", "prepare").total(),
         || literal.replaced(s("v")),
         |i| i.prepare().expect("valid"),
     );
     r.case(
-        Case::new("one_replaced/concord_native", "prepare").total(),
+        case("one_replaced/concord_native", "prepare").total(),
         || native.replaced(s("v")),
         |i| i.prepare().expect("valid"),
     );
     r.case(
-        Case::new("one_replaced/manual", "prepare").trivial_input(),
+        case("one_replaced/manual", "prepare").trivial_input(),
         || (),
         |()| fx.keys_manual.items("rocket", Some("v")).expect("valid"),
     );
     r.case(
-        Case::new("riot_match_ids/concord", "prepare").total(),
+        case("riot_match_ids/concord", "prepare").total(),
         || fx.riot.matches(s("europe")).ids(s(PUUID)).set_count(5),
         |i| i.prepare().expect("valid"),
     );
     r.case(
-        Case::new("riot_match_ids/manual", "prepare").trivial_input(),
+        case("riot_match_ids/manual", "prepare").trivial_input(),
         || (),
         |()| fx.riot_manual.ids("europe", PUUID, Some(5)).expect("valid"),
     );
