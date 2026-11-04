@@ -1,6 +1,6 @@
 # GitHub SDK maintenance exercise (DX-01)
 
-Status: stage 1 committed; stages 2 and 3 pending.
+Status: stages 1–3 committed; the findings of stages 2 and 3 are recorded in the commit after stage 3.
 
 ## Task statement
 

@@ -8,9 +8,10 @@ license.workspace = true
 publish = false
 
 [dependencies]
-concord = { path = "../../crates/concord" }
+concord = { path = "../../crates/concord", features = ["json"] }
 concord-example-github-sdk = { path = "../../examples/github-sdk" }
 concord-pagination = { path = "../../crates/concord-pagination" }
+serde = { workspace = true, features = ["derive"] }
 
 [dev-dependencies]
 concord-example-testserver = { path = "../../examples/testserver" }
