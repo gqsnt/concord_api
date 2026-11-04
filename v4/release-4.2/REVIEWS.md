@@ -23,6 +23,7 @@ the originals and their logs are in `/home/canarit/projects/concord-v42/lanes/`)
 | rv-compiler5 | re-review | `gpt-6.1-terra`, xhigh | `gpt-6.1-terra`, `xhigh` | `9c32294` | REVISE (2 findings, introduced by `1dad499`/`0670240`) |
 | rv-final-sol | final executable review (Brief D) | `gpt-6.1-sol`, xhigh | `gpt-6.1-sol`, `xhigh` | `9c32294` | REVISE (2 findings + 1 polish) |
 | rv-compiler6 | re-review | `gpt-6.1-terra`, xhigh | `gpt-6.1-terra`, `xhigh` | `c69b9b4` | REVISE (1 finding, since `e5082c4`) |
+| rv-final2-sol | combined re-review after the final review | `gpt-6.1-sol`, xhigh | `gpt-6.1-sol`, `xhigh` | `a6b78a1` | REVISE (2 compiler findings, 1 tooling; 74-case fragment matrix, 75-step replay) |
 | rv-stage5 | Stage 5 adoption review (Brief C) | Claude Opus, xhigh (Agent) | `claude-opus-5-5`; effort n/o | `4874405` + patches | concur DEFER_WITH_EVIDENCE ×2 |
 | trial-opus | documentation-first trial (Brief E) | Claude Opus, medium (Agent) | `claude-opus-5-5`; effort n/o | `7a2819a` | 7 doc issues, 0 library defects |
 | trial-terra | documentation-first trial (Brief E) | `gpt-6.1-terra`, xhigh | `gpt-6.1-terra`, `xhigh` | `7a2819a` | 1 doc issue, 0 library defects |
@@ -50,6 +51,11 @@ The final executable review (fresh Sol, Brief D) and the last compiler re-review
 | rv-final-sol R2 | workflow guard accepted `set -n` / `set -o noexec` in the gate step | fixed `c2cf3a9` (only safe `set` options); qualified R13 |
 | rv-final-sol R3 | changelog lost its `## 4.1.0` heading | fixed `c2cf3a9` |
 | rv-compiler6 1 | forwarded lifetime parenthesized in an initializer (since `e5082c4`) | fixed `033e08e` (only expression fragments parenthesized); qualified R14 |
+| rv-final2-sol C1 | forwarded `dyn A + B` bare inside an initializer's turbofish (regression from `9c32294` by `033e08e`) | fixed `81b4ce2` (a type with `+` is grouped in expression positions); qualified R15 |
+| rv-final2-sol C2 | negative literal fragment parenthesized as a range-pattern bound (since `e5082c4`) | fixed `81b4ce2` (literal fragments left as written, as 4.1); qualified R16 |
+| coordinator check | rv-final2-sol's 74-case matrix and 75-step replay rerun on `81b4ce2`: `matrix_literal_negative` and `round4_matrix` regressed (literal fragments bare before a method call) | fixed `67006bb` (grouped before a postfix operator only); qualified R18; rerun on `67006bb`: replay 75/75, matrix 71/74 (the 3 let-statement boundary cases) — [summary](evidence/coordinator-matrix-67006bb.json) |
+| rv-final2-sol T1 | `builtin set -n`, `command set -o noexec`, `NAME=1 set -n` bypassed the guard | fixed `81b4ce2` (prefixes looked through); qualified R17 |
+| rv-final2-sol (boundary) | forwarded `let` statement fragment rejected in an initializer block (`syn` parse, identical on 4.1) | not changed: pre-existing initializer-grammar boundary, recorded as a limitation |
 | trials | `&HeaderValue` missing from the `IntoValue` list; `status()` None for Metadata unstated | fixed `c621b6c` |
 | trial-opus | unused `Json` import warning undocumented; no Config rationale; §11 table row; README version (snapshot predates bump); guides cite `v4/SEMANTICS.md` | not changed: lint behaviour of Rust, design rationale, covered by §11.1, already fixed in `bd5d25e`, existing design |
 | docs lane | `v4/SEMANTICS.md` HTAB wording, caller-guide excerpt comment, `timing_plan.sh` toolchain | fixed `7a2819a` |

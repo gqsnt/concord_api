@@ -81,12 +81,17 @@ type, so no `unused_parens`), then without any guess (`c69b9b4`: every expressio
 expression position is parenthesized, the added parentheses spanned at the call site so rustc does
 not report them; `c2cf3a9`: a path stays bare, so it can head a struct literal; `033e08e`: only a
 fragment that parses as an expression is parenthesized, so lifetimes, patterns and non-expression
-types are left as written). Effects: `pick!($e * 2)` body/output, `Payload<{ $e * 2 }>` and
+types are left as written; `81b4ce2`: a type with `+` is grouped there too, and a negative literal
+fragment is left as written so it can bound a range pattern; `67006bb`: grouped only before a
+postfix operator, `(-1isize).unsigned_abs()`). Pre-existing boundary kept:
+a forwarded `let` statement inside an initializer block is rejected by the initializer parse (as on
+4.1). Effects: `pick!($e * 2)` body/output, `Payload<{ $e * 2 }>` and
 `= $e * 2` mean 6 (4.1: 5 or a type mismatch); `$e.meaning()` with `$e = &VALUE` calls the `&Foo`
 impl; `[u8; $e.len()]` compiles; a forwarded `dyn A + B` behind `&` is accepted. Maintained:
 `crates/concord/tests/forwarded_types.rs` (under `deny(unused_parens)`: shifts, casts, pointer casts,
-turbofish, qualified paths, struct-literal paths in endpoint and owner initializers, lifetimes).
-Qualified: R3, R7–R12, R14.
+turbofish, qualified paths, struct-literal paths in endpoint and owner initializers, lifetimes,
+trait objects, negative literals as range bounds and before a method call). Qualified: R3, R7–R12,
+R14–R16, R18.
 
 ## F04 — raw identifiers in executable advice — RESOLVED
 
@@ -125,7 +130,8 @@ enabled, blocking `scripts/verify.sh --package --bench` step on Linux and Window
 lane; 17 positive and 49 negative maintained cases (`scripts/tests/test_check_ci.py`); 8 mutants of
 the real workflow pass the 4.1 checker and fail the new one. The final executable review found a
 gate step disabled by `set -n`/`set -o noexec` still accepted; the gate's step may now only turn on
-`-e`, `-u`, `-x` and `-o errexit|nounset|pipefail|xtrace` (`c2cf3a9`, qualified R13). Static inspection only: CI logs remain
+`-e`, `-u`, `-x` and `-o errexit|nounset|pipefail|xtrace` (`c2cf3a9`, qualified R13), looking
+through leading assignments and `builtin`/`command` (`81b4ce2`, qualified R17). Static inspection only: CI logs remain
 the execution evidence. Correction note for 4.1: its `ci-inventory` step was a text search (D24,
 Z01); the 4.1 CI runs themselves are not invalidated.
 

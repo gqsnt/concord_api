@@ -46,6 +46,9 @@ recorded below (records-only receipt).
 | `c69b9b4` | code | review round 5 correction |
 | `c2cf3a9` | code, tooling, records | final executable review R1–R3 |
 | `033e08e` | code | review round 6 correction |
+| `a6b78a1` | records | candidate records (second final gate: 37/37 PASS; pushed for CI) |
+| `81b4ce2` | code, tooling | combined re-review C1, C2, T1 |
+| `67006bb` | code | negative literal fragments grouped before a postfix operator (found by the coordinator rerunning the review's matrix) |
 
 ## Gate inventory change
 
