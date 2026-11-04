@@ -1,6 +1,43 @@
 # Changelog
 
-## 4.1.0
+## 4.2.0
+
+A focused maintenance release: compiler correctness and exact advice text, fair benchmarks and
+trustworthy maintained checks, and corrected caller documentation. The statement DSL, the four
+crates, the codec contracts and metadata policies, request types, `IntoValue` borrowing and the
+Rust 1.99.1 minimum and pin are unchanged; no edit is needed except where an expression fragment
+forwarded by your own `macro_rules!` into a type or initializer now means what Rust says
+([migration notes](docs/MIGRATION.md#from-41-to-42)). Not published on crates.io; the four crates
+share one version and require each other exactly (`=4.2.0`).
+
+### Fixes
+
+- **Conditional `Clone` keeps every bound.** Types that two crates' macros write with the same
+  tokens (`$crate::Payload`) are different types; the bounds of an endpoint request's conditional
+  `Clone` were deduplicated by their printed text, so the bound of a non-`Clone` one could be
+  dropped and the declaration failed with E0277 without any `.clone()`. Each value and body keeps
+  its own bound: such declarations compile, and cloning a request that holds a non-`Clone` value is
+  still rejected.
+- **Type macros are output types.** `-> payload!()`, `-> m::payload![]` and `-> ::c::payload! {}` are
+  ordinary payload types; they were read as the removed in-place format. The removed spellings
+  around a type macro still report their replacement, and a braced type macro that takes the
+  endpoint's block gets a direct hint.
+- **Exact advice and generated documentation.** Types in diagnostics and generated rustdoc are
+  rendered token by token: literal contents are kept (`Payload<{ count("a :: b") }>` was suggested
+  as `"a::b"`, changing a six-byte length to four), a raw name stays raw (`body r#type?: String`,
+  not `body type?`), punctuation written apart stays apart and a macro's input is shown token for
+  token, so applied advice selects the same macro arm. A payload holding a `macro_rules!` fragment
+  is named `T` instead of spelled.
+- **Forwarded `macro_rules!` fragments keep their grouping.** Value, body and output types and
+  value initializers that contain an expression fragment (`Payload<{ $e * 2 }>`, `= $e * 2`) mean
+  what Rust says (6 for `$e = 1 + 2`, where 4.1 computed 5, or named different types for the body's
+  format and the signature); a forwarded `dyn A + B` behind `&` is accepted.
+
+### Maintenance
+
+(filled in at integration: benchmark equivalence, examples, workflow guard, mutation helper,
+metadata-stage test, documentation)
+
 
 The modular V4: four crates, formats as ordinary Rust types, and response metadata checked before
 a body is read. Not published on crates.io; depend on a checkout or a git revision. Rust 1.99.1 is

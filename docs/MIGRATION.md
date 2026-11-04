@@ -1,8 +1,11 @@
 # Migration
 
-Six paths: the first two are one release (4.1.0, the modular V4; summary in the
-[changelog](../CHANGELOG.md)), the others are older, newest first:
+Seven paths, newest first: 4.1 to 4.2 (a maintenance release; summary in the
+[changelog](../CHANGELOG.md)), then the two parts of 4.1.0 (the modular V4), then older ones:
 
+- [From 4.1 to 4.2](#from-41-to-42) — same DSL, crates, codec contracts and toolchain; some
+  declarations that 4.1 rejected compile, advice is exact, and one rare `macro_rules!` case changes
+  meaning.
 - [From format words to format types](#from-format-words-to-format-types) — the modular V4
   (`concord-v4-modular`), coming from `concord-v4-final`. Manual, guided by the compiler; callers
   need no change.
@@ -22,6 +25,31 @@ Six paths: the first two are one release (4.1.0, the modular V4; summary in the
 Code blocks marked "does not compile" show the old form. Every other Rust block in this file is
 compiled and run as a doctest of `examples/quickstart` (`cargo test --doc -p
 concord-example-quickstart`).
+
+## From 4.1 to 4.2
+
+Update the four crates together (`=4.2.0`). The statement DSL, the request types, `IntoValue`,
+the formats and their metadata policies, `prepare()`'s order and the Rust 1.99.1 minimum are
+unchanged. Declarations and call sites need no edit, except where an expression fragment from
+your own `macro_rules!` changes meaning (second point). What changes:
+
+- **Declarations that 4.1 rejected compile.** A type macro is an output type like any other
+  (`-> payload!()`, `-> m::payload![]`, `-> ::c::payload! {}`), where 4.1 read it as the removed
+  in-place format ("expected curly braces"). Two crates' macros that pass types written with the
+  same tokens (`$crate::Payload`) no longer make a declaration fail with E0277 when only one of the
+  types is `Clone`: the request type is simply not `Clone`, and cloning it is the error. A
+  `dyn A + B` forwarded by `macro_rules!` behind `&` is `&(dyn A + B)`, as in Rust, not an
+  ambiguous `+`.
+- **Forwarded expressions mean what Rust says.** A declaration produced by your own
+  `macro_rules!`, with an expression fragment inside a value's type or initializer
+  (`Payload<{ $e * 2 }>`, `= $e * 2` with `$e = 1 + 2`), keeps the fragment's grouping: 6, where
+  4.1 computed 5. If you relied on the 4.1 value, write the expression you mean explicitly.
+- **Migration advice is exact.** The messages for the removed spellings (`via`, in-place and
+  trailing formats) quote the payload type token for token: literals keep their contents
+  (`"a :: b"`, not `"a::b"`), a raw name stays raw (`body r#type`), and a macro's input keeps its
+  spacing (`choose!(. .)` is not `choose!(..)`). A payload holding a `macro_rules!` fragment is
+  named `T` instead of spelled, since no written text is that fragment. Generated documentation
+  shows types and initializers the same way.
 
 ## From format words to format types
 
