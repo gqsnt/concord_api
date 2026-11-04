@@ -246,6 +246,33 @@ dependencies = [
 ]
 
 [[package]]
+name = "concord-check-maintenance-github"
+version = "0.0.0"
+dependencies = [
+ "concord",
+ "concord-example-github-sdk",
+ "concord-example-testserver",
+ "concord-pagination",
+ "tokio",
+]
+
+[[package]]
+name = "concord-check-maintenance-kubernetes"
+version = "0.0.0"
+
+[[package]]
+name = "concord-check-maintenance-salesforce"
+version = "0.0.0"
+
+[[package]]
+name = "concord-check-maintenance-shopify"
+version = "0.0.0"
+
+[[package]]
+name = "concord-check-maintenance-stripe"
+version = "0.0.0"
+
+[[package]]
 name = "concord-check-stream-stress"
 version = "0.0.0"
 dependencies = [
