@@ -1,0 +1,13 @@
+[package]
+name = "concord-check-dx03-csv-runtime"
+description = "DX-03 independent caller task (dx03-csv-runtime): written by a reader who did not author the abstraction (placeholder until the task lands)."
+version = "0.0.0"
+edition = "2024"
+rust-version.workspace = true
+license.workspace = true
+publish = false
+
+[dependencies]
+
+[lints]
+workspace = true
