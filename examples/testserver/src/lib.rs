@@ -215,7 +215,9 @@ impl Reply {
     }
 
     pub fn text(status: u16, content_type: &str, body: impl AsRef<[u8]>) -> Self {
-        Self::new(status).header("content-type", content_type).body(body)
+        Self::new(status)
+            .header("content-type", content_type)
+            .body(body)
     }
 
     pub fn header(mut self, name: &str, value: impl Into<String>) -> Self {
@@ -432,6 +434,9 @@ async fn accept_loop(
             _ = stopped.changed() => break,
             accepted = listener.accept() => {
                 let Ok((stream, _)) = accepted else { break };
+                // The head and body are written separately: without TCP_NODELAY, Nagle's
+                // algorithm plus the client's delayed ACK adds ~40 ms to each response.
+                let _ = stream.set_nodelay(true);
                 shared.connections.fetch_add(1, Ordering::SeqCst);
                 shared.live_connections.fetch_add(1, Ordering::SeqCst);
                 shared.changed.notify_waiters();
@@ -519,10 +524,26 @@ async fn serve(
         let mut body = Vec::new();
         let mut body_len = 0u64;
         if chunked {
-            read_chunked(&mut stream, &mut buf, shared, receive, &mut body, &mut body_len).await?;
+            read_chunked(
+                &mut stream,
+                &mut buf,
+                shared,
+                receive,
+                &mut body,
+                &mut body_len,
+            )
+            .await?;
         } else if let Some(len) = get("content-length").and_then(|v| v.parse::<u64>().ok()) {
-            read_exact_body(&mut stream, &mut buf, shared, receive, len, &mut body, &mut body_len)
-                .await?;
+            read_exact_body(
+                &mut stream,
+                &mut buf,
+                shared,
+                receive,
+                len,
+                &mut body,
+                &mut body_len,
+            )
+            .await?;
         }
         let recorded = Recorded {
             method,
@@ -586,7 +607,11 @@ async fn write_frame(stream: &mut TcpStream, shared: &Shared, chunk: &[u8]) -> s
 }
 
 /// Writes a chunked body; `Ok(false)` when it deliberately ends without the final chunk.
-async fn write_chunked(stream: &mut TcpStream, shared: &Shared, body: Body) -> std::io::Result<bool> {
+async fn write_chunked(
+    stream: &mut TcpStream,
+    shared: &Shared,
+    body: Body,
+) -> std::io::Result<bool> {
     match body {
         Body::Full(_) => unreachable!(),
         Body::Chunks(chunks) => {
@@ -622,7 +647,11 @@ async fn write_chunked(stream: &mut TcpStream, shared: &Shared, body: Body) -> s
     Ok(true)
 }
 
-async fn fill(stream: &mut TcpStream, buf: &mut Vec<u8>, receive: Receive) -> std::io::Result<bool> {
+async fn fill(
+    stream: &mut TcpStream,
+    buf: &mut Vec<u8>,
+    receive: Receive,
+) -> std::io::Result<bool> {
     let mut chunk = vec![0u8; receive.read_size.max(1)];
     let n = stream.read(&mut chunk).await?;
     if n == 0 {
