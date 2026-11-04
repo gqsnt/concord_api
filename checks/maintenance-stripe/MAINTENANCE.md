@@ -21,7 +21,7 @@ write it and did not read its author's friction notes".
 |---|---|---|
 | 1 frozen consumer | `6a7ed00521b93129e0cb879accbdbf2347ba91eb` | `src/before.rs`, `tests/before.rs`, `Cargo.lock` |
 | 2 SDK change | `f90923e4b310472477165f017c9e67e65e606b3e` | `examples/stripe-sdk/{src,tests,PROVIDER.md}` |
-| 3 updated consumer | the commit adding `src/after.rs` (`git log --format=%H -1 -- checks/maintenance-stripe/src/after.rs`) | `src/after.rs`, `tests/after.rs`, this file |
+| 3 updated consumer | `ca6c7b0cda6914a9c8104903fd6edb0853189793` | `src/after.rs`, `tests/after.rs`, this file |
 
 Executable check: `cargo test --locked -p concord-check-maintenance-stripe` — at stage 1 runs
 `tests/before.rs` (3 tests); at stage 2 the same 3 unchanged tests against the changed SDK; at
@@ -345,3 +345,23 @@ response type cannot record whether an expansion was requested.
 
 Live Stripe: not run (no credentials; the exercise is offline by design). Timings were not
 measured.
+
+## After stage 3: comparison with the SDK author's `FRICTION.md`
+
+Read for the first time after `ca6c7b0` was committed (this section and the stage-3 SHA above are
+the only later edits). The author's entries and what this exercise observed about them:
+
+| Author entry | Exercised here? | Observation |
+|---|---|---|
+| F1 custom bracketed form format (`form.rs`, 728 lines) | yes | Its maintenance payoff: the new nesting needed zero encoder lines, and omitted-field compatibility followed from its `None` rule. Supports the author's "flexibility" half; adds no new friction to F1. |
+| F2 per-endpoint `Stripe-Account` override + `OnAccount` macro list | no | No operation was added. A new operation (e.g. `GET /v1/payment_methods/{id}`) would repeat the two declaration lines and need a line in `context.rs`'s `on_account!` list — not tested. |
+| F3 no common trait over generated list requests | no | No list added; the existing customer list took the new `expand[]` value unchanged. |
+| F4 SDK copy of the native response-metadata recipe (`send()`) | used, unchanged | Kept `Request-Id`/replay metadata and the typed error document for both consumers. |
+| F5, F6, F7 | no | Not touched by the change. |
+| "the declaration itself was uneventful" | yes | Consistent: zero declaration code lines changed. |
+
+Not in the author's log (found only by maintaining): the exhaustive-literal/pattern break when a
+field is added (E0063/E0027); Stripe error `param` values in wire spelling with no SDK mapping to
+Rust fields; expansion paths as unchecked text with the `data.` list rule and no link to the
+`Expandable` field they affect; no `const` constructor for static `ExpandPath`s. All four are
+SDK-design or provider-vocabulary issues; none points at a Concord library change.
