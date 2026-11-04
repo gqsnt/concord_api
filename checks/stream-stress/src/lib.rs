@@ -327,15 +327,7 @@ fn server_reply(
     };
     let body = match ending {
         Ending::Complete => Body::Generate(Box::new(body), None),
-        Ending::FailAfter(_) => {
-            // Generate the prefix lazily into chunks, then drop the connection.
-            let mut gen_body = body;
-            let mut chunks = Vec::new();
-            while let Some(c) = gen_body() {
-                chunks.push(c);
-            }
-            Body::FailAfter(chunks)
-        }
+        Ending::FailAfter(_) => Body::GenerateThenFail(Box::new(body)),
     };
     Reply::new(200)
         .header("content-type", format.content_type())

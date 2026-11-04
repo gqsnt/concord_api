@@ -163,6 +163,10 @@ pub enum Body {
     FailAfter(Vec<Bytes>),
     /// The head (with `transfer-encoding: chunked`), then nothing until the server shuts down.
     Stall,
+    /// `transfer-encoding: chunked`, chunks produced on demand until the generator returns
+    /// `None`; then the connection is dropped without the terminating chunk (a lazily generated
+    /// prefix followed by a transport failure).
+    GenerateThenFail(Generator),
 }
 
 impl std::fmt::Debug for Body {
@@ -173,6 +177,7 @@ impl std::fmt::Debug for Body {
             Body::Generate(..) => f.write_str("Generate"),
             Body::FailAfter(c) => write!(f, "FailAfter({})", c.len()),
             Body::Stall => f.write_str("Stall"),
+            Body::GenerateThenFail(..) => f.write_str("GenerateThenFail"),
         }
     }
 }
@@ -641,6 +646,13 @@ async fn write_chunked(
         Body::Stall => {
             stream.flush().await?;
             std::future::pending::<()>().await;
+        }
+        Body::GenerateThenFail(mut next) => {
+            while let Some(chunk) = next() {
+                write_frame(stream, shared, &chunk).await?;
+            }
+            stream.flush().await?;
+            return Ok(false);
         }
     }
     stream.write_all(b"0\r\n\r\n").await?;
