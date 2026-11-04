@@ -113,3 +113,82 @@ example passes unchanged; the unchanged saved downstream consumer compiles after
 input is added; ownership, sensitive `Debug`, cfg, renamed-facade, hygiene and conditional-`Clone`
 controls pass; and the added public surface and generated-code cost are proportionate. Otherwise
 the prototype is retained as an evaluated experiment and excluded from the supported surface.
+
+## S1 — Request streams and media types: guidance corrected, example added (maintained)
+
+`docs/CUSTOM_FORMATS.md` §1 and `docs/AUTHOR_GUIDE.md` §5.7 called a streamed request body "not a
+format". That contradicted `Encode`'s own contract (payload by value, any `reqwest::Body`). Both
+passages now separate three cases: a fixed-media request stream *is* an `Encode<T>` (moving a
+non-`Clone` source into `Body::wrap_stream`, reqwest's `stream` feature enabled by the
+application); a body-dependent media type is not expressible by `Encode` alone (static
+`CONTENT_TYPE`, no per-body headers) and uses the native multipart route or an explicit matching
+`content-type` header that the endpoint/SDK controls; an incrementally read response uses
+`send_raw`. The supplied patch was applied and extended with links to the new example.
+
+Evidence: `examples/native/src/upload.rs` and `tests/upload.rs` — zero polls/bytes through
+building, `Debug`, `prepare()` and inspection; one `send()` delivers the exact bytes chunked with
+the fixed media type; replay needs a fresh source (`compile_fail` doc tests show the request and
+`Prepared` are not `Clone`); a declared media type or a `content-type` header replaces the static
+one. reqwest's `stream` feature is declared by `examples/native` only (`cargo tree -i reqwest -p
+concord` shows no `stream`). No core change.
+
+## D1/W1 — Domain adapters, named workflows, bounded traversal (maintained, application-owned)
+
+`examples/app`: synchronous, fallible, service-specific conversions from the application's
+`AccountId`/`Moment` that return the **generated operation** (`CatalogActivity`,
+`LedgerEntries`), so callers keep setters, `prepare` and `send`, and representation errors are
+typed and raised before any request. Each service owns its wire form (Catalog: decimal id,
+whole-second RFC 3339; Ledger: `acct-` hex, exact nonnegative milliseconds). `report.rs` attempts
+each service independently (no aggregate `?`); this aggregation is application policy, not a core
+rule. `Browser::{featured_page, unfiltered_page}` names a real application intent and returns the
+ordinary operation; nothing mirrors the whole generated API. `traversal.rs` is one shared,
+bounded loop with per-service adapters: it returns a continuation when the bound is reached,
+accepts one to resume, and on a failed page returns the records collected so far with the
+continuation that refetches the failed page (keep or discard is the caller's choice; nothing is
+retried). No pagination, retry or representation trait was added to the core: none was needed.
+
+## M1 — Metadata with the typed value: maintained recipe; public convenience rejected
+
+`examples/native/src/metadata.rs` is the corrected recipe: prepared → `into_parts` → the caller's
+native edit → exactly one `execute` → selected head metadata copied before the body is read → the
+endpoint's own `Decoder`. A failure before any head is converted by `decoder.finish(Err(e))`
+(Concord's documented transport conversion: no URL), never returned raw. `MetaError` carries the
+`concord::Error` and `Option<Meta>`: `None` when no head arrived; `Some` for `Status`/`Metadata`
+(the unread response stays inside the Concord error), body-read `Transport` and `Decode` (only the
+captured head survives; the body is gone). `Debug`/`Display` of `Meta`, `WithMeta`, `Received` and
+`MetaError` are written by hand: status, version and kept header *names* only; values, the URL
+and the decoded value only through explicitly named `raw_*` accessors and the public field.
+
+It is not the archived `Pending` helper: that one executed internally (no edit point), returned a
+raw `reqwest::Error` (the M02 control test shows that route printing the synthetic secret URL
+while the recipe's does not) and derived `Debug` over a full `HeaderMap`.
+
+**Public convenience: rejected.** Everything the recipe needs is public (`into_parts`,
+`Decoder::{decode, finish}`, `Error::{response, into_response, transport}`). The only awkward line
+is `let Err(error) = decoder.finish(Err(e)).await else { unreachable!() }` (also present in the
+archived A099 check). A `Decoder::transport_error` would save those three lines once per helper
+but adds a second route for something documented and working; a core `send_with_meta`/`Reply<T>`
+would fix which headers survive, the `Debug` policy and the error wrapper — application policy the
+core deliberately does not own (D03). The caller guide now points at `finish(Err(e))`.
+
+## X1 — Outside operations: SDK-owned context (maintained); core primitive rejected
+
+`examples/sdk/src/context.rs` is the public boundary, frozen (commit `cf3c9fc`) before the
+consumer was written and not changed afterwards: one `CatalogContext` (client, base, key, region)
+yields both the generated handles and native requests for undeclared routes, so they cannot
+drift; `TenantContext::request(method, segments)` keeps the base prefix, encodes each segment as
+Concord encodes a path value, refuses empty/`.`/`..` before I/O, and adds `x-client`, the key with
+the sensitive flag and the region. `examples/extension` (depending only on `concord` and the SDK)
+adds `GET tenants/{tenant}/exports/{export}` — not a suffix of any declared route — with its own
+`Csv` format and `Decoder::new`, so its errors are truthfully unlabeled (`endpoint()` is `None`)
+and its wrapper names the extension operation; no seed endpoint, no `__private`.
+
+**Core/generated primitive: rejected for now.** All X01–X05 checks pass with no change under
+`crates/`. The SDK duplicates about 35 lines (segment encoding, dot-segment refusal, base joining,
+header composition), guarded by agreement tests that compare 1,450 context-built requests with the
+generated endpoints' output and fail on drift (a mutation of the encoder fails two of them). A
+generated per-scope native-request builder is the only option that would remove the duplication,
+but it adds surface on every scope and has open questions (inherited query/header chains,
+build-error identity without an endpoint, redaction of path data it cannot classify); exposing
+`Prepared::new` or reassembly with a stale decoder would re-attach generated identity and
+redaction metadata to requests it no longer describes. Revisit if several SDKs need such contexts.
