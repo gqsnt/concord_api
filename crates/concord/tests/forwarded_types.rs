@@ -109,7 +109,7 @@ macro_rules! pick {
     };
 }
 macro_rules! declare {
-    ($e:expr, $t:ty, $r:expr, $d:expr, $s:ty, $v:ty, $w:ty, $p:path, $l:lifetime) => {
+    ($e:expr, $t:ty, $r:expr, $d:expr, $s:ty, $v:ty, $w:ty, $p:path, $l:lifetime, $n:literal) => {
         concord::api! {
             pub client Forwarded {
                 base "http://x.test";
@@ -131,6 +131,8 @@ macro_rules! declare {
                 GET pointer(query n: usize = (core::ptr::null::<u8>() as *const $w).is_null() as usize);
                 GET holder(query h: Holder = $p { n: 7 });
                 GET lifetime(query n: usize = core::mem::size_of::<&$l str>() + core::mem::size_of::<Option<&$l [u8; 3]>>());
+                GET object_size(query n: usize = core::mem::size_of::<&$t>(), query p?: Payload<{ core::mem::size_of::<&$t>() }>);
+                GET range(query n: usize = match 0isize { $n..=1 => 7, _ => 8 } + match 2isize { -5..=$n => 1, _ => 2 });
                 scope owner(h: Holder = $p { n: 8 }) {
                     GET get() { query { "h" = owner.h; } }
                 }
@@ -147,7 +149,8 @@ declare!(
     Vec<u8>,
     core::primitive::u64,
     crate::Holder,
-    'static
+    'static,
+    -1isize
 );
 
 #[test]
@@ -221,4 +224,14 @@ fn forwarded_fragments_keep_their_grouping() {
     let p = api.lifetime().prepare().unwrap();
     let n = core::mem::size_of::<&'static str>() + core::mem::size_of::<Option<&'static [u8; 3]>>();
     assert_eq!(p.request().url().query(), Some(format!("n={n}").as_str()));
+    // A forwarded type with `+` keeps its grouping inside an expression too (`&(dyn A + B)`).
+    let size = core::mem::size_of::<&(dyn core::fmt::Display + Sync)>();
+    let p = api.object_size().prepare().unwrap();
+    assert_eq!(
+        p.request().url().query(),
+        Some(format!("n={size}").as_str())
+    );
+    // A forwarded literal stays as written: it can bound a range pattern (no parentheses there).
+    let p = api.range().prepare().unwrap();
+    assert_eq!(p.request().url().query(), Some("n=9"));
 }

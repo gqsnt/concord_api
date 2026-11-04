@@ -279,6 +279,15 @@ class Fails(unittest.TestCase):
                 self.assertFails(gate(f"        run: |\n          set {option}\n          scripts/verify.sh --package --bench\n"),
                                  *self.NO_GATE, "turns on noexec: the step reads its commands without running them")
 
+    def test_set_noexec_behind_prefixes(self):
+        # Re-review T1: a leading assignment or `builtin`/`command` still runs `set`.
+        for line in ("builtin set -n", "command set -o noexec", "REVIEW_OPTION=1 set -n", "command -p set -n"):
+            with self.subTest(line=line):
+                self.assertFails(gate(f"        run: |\n          {line}\n          scripts/verify.sh --package --bench\n"),
+                                 *self.NO_GATE, "turns on noexec: the step reads its commands without running them")
+        self.assertFails(gate("        run: |\n          builtin set +e\n          scripts/verify.sh --package --bench\n"),
+                         *self.NO_GATE, "disables errexit")
+
     def test_set_unmodelled_option(self):
         self.assertFails(gate("        run: |\n          set -f\n          scripts/verify.sh --package --bench\n"),
                          *self.NO_GATE, "changes shell option `-f`, which the guard does not model")

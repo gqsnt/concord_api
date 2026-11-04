@@ -588,8 +588,21 @@ def gate_invocation(command):
     return words[1:]
 
 
-def disables_errexit(command):
+def shell_words(command):
+    """The command's words after the prefixes that still run it: leading assignments
+    (`NAME=value set -n`) and `builtin`/`command` (`builtin set -n`, `command set -o noexec`)."""
     words = [w.text for w in command.words]
+    while words and re.match(r"[A-Za-z_][A-Za-z0-9_]*=", words[0]):
+        words = words[1:]
+    while words and words[0] in ("builtin", "command"):
+        words = words[1:]
+        while words and words[0].startswith("-"):
+            words = words[1:]
+    return words
+
+
+def disables_errexit(command):
+    words = shell_words(command)
     if words[:1] != ["set"]:
         return False
     for k, w in enumerate(words[1:], 1):
@@ -609,8 +622,9 @@ def unsupported_set(command):
     """Why a `set` in the gate's step is refused, or None. Only `-e`, `-u`, `-x` and `-o` with
     errexit, nounset, pipefail or xtrace are accepted (`set -eo pipefail`); anything else changes
     behaviour the guard does not model: `-n`/`-o noexec` reads the commands without running them
-    (the gate would never run), `+...` turns checks off (errexit: `disables_errexit`)."""
-    words = [w.text for w in command.words]
+    (the gate would never run), `+...` turns checks off (errexit: `disables_errexit`). Prefixes
+    that still run `set` are looked through (`shell_words`)."""
+    words = shell_words(command)
     if words[:1] != ["set"]:
         return None
     k = 1
