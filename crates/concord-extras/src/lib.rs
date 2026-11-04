@@ -8,6 +8,7 @@
 //! | [`Binary`] | — | `Bytes`, `Vec<u8>`, `application/octet-stream` | `Bytes`, `Vec<u8>`; nothing checked (`image/png` is fine) | none |
 //! | `Form` | `form` | any `T: Serialize` (flat), `application/x-www-form-urlencoded` | any `T: DeserializeOwned`; exactly one `application/x-www-form-urlencoded`, charset absent or once and UTF-8 or US-ASCII | `application/x-www-form-urlencoded` |
 //! | [`IgnoreContentType<F>`] | — | `F`'s | `F`'s, without its `Content-Type` check | `F`'s |
+//! | `csv::Csv<H, D, P>` | `csv` | `Vec<T: Serialize>`, `csv::Rows`, a lazy `csv::StreamRows`, `csv::RawTable`; `text/csv; header=present\|absent` from `H` | `Vec<T: DeserializeOwned>`, `csv::RawTable`; exactly one `text/csv` (profile can relax), charset absent or UTF-8/US-ASCII, a `header=` parameter agreeing with `H`; also an incremental reader | `text/csv` |
 //!
 //! Head checks run before the body is read; a refusal is an
 //! [`ErrorKind::Metadata`](concord_core::ErrorKind::Metadata) error that keeps the response

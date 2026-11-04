@@ -390,6 +390,10 @@ fn raw_tables_round_trip_bytes() {
     .unwrap();
     assert_eq!(back, table);
 
+    // `Debug` shows field counts, never values.
+    let shown = format!("{table:?}");
+    assert!(!shown.contains("bytes") && !shown.contains("id"), "{shown}");
+
     // A header-less table must not carry a header, and a headed one needs it.
     assert_eq!(
         <Csv<NoHeader> as Encode<RawTable>>::encode(table.clone())

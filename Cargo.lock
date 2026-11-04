@@ -320,6 +320,7 @@ dependencies = [
  "concord",
  "concord-example-fixture",
  "concord-example-sdk",
+ "serde",
  "tokio",
 ]
 

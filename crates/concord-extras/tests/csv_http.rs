@@ -368,6 +368,74 @@ async fn an_open_succeeds_immediately_and_the_first_record_arrives_before_the_bo
 }
 
 #[tokio::test]
+async fn cancelling_a_pending_next_loses_nothing_and_a_drop_releases_the_connection() {
+    let (go_tx, go_rx) = oneshot::channel::<()>();
+    let go = Arc::new(Mutex::new(Some(go_rx)));
+    let closed = Arc::new(Notify::new());
+    let c = Arc::clone(&closed);
+    let server = Loopback::start(move |mut stream| {
+        let go = go.lock().unwrap().take();
+        let closed = Arc::clone(&c);
+        async move {
+            read_head(&mut stream).await;
+            write_head(&mut stream, &[("content-type", "text/csv")])
+                .await
+                .unwrap();
+            write_chunk(&mut stream, b"id,name\n1,a").await.unwrap();
+            if let Some(go) = go {
+                let _ = go.await;
+            }
+            write_chunk(&mut stream, b"\n2,b\n").await.unwrap();
+            // Keep writing until the client goes away.
+            while write_chunk(&mut stream, b"3,c\n").await.is_ok() {
+                tokio::time::sleep(Duration::from_millis(5)).await;
+            }
+            closed.notify_one();
+        }
+    })
+    .await;
+    let response = client().get(&server.url).send().await.unwrap();
+    let mut records = Csv::<HasHeader>::reader()
+        .unwrap()
+        .open::<Row>(response)
+        .unwrap();
+    // `1,a` is unfinished: the call waits for more input; the caller gives up on it.
+    assert!(
+        timeout(Duration::from_millis(100), records.next())
+            .await
+            .is_err()
+    );
+    assert!(
+        timeout(Duration::from_millis(50), records.next())
+            .await
+            .is_err()
+    );
+    assert_eq!(records.position().records, 0);
+    // The reader is intact: the record completes when the data arrives.
+    go_tx.send(()).unwrap();
+    assert_eq!(
+        records.next().await.unwrap().unwrap(),
+        Row {
+            id: 1,
+            name: "a".into()
+        }
+    );
+    assert_eq!(
+        records.next().await.unwrap().unwrap(),
+        Row {
+            id: 2,
+            name: "b".into()
+        }
+    );
+    // Dropping it mid-body closes the connection: the server's writes start failing.
+    drop(records);
+    timeout(Duration::from_secs(5), closed.notified())
+        .await
+        .expect("the connection is released after the drop");
+    server.stop().await;
+}
+
+#[tokio::test]
 async fn a_late_transport_failure_keeps_the_delivered_prefix_and_fuses() {
     let server = Loopback::start(|mut stream| async move {
         read_head(&mut stream).await;

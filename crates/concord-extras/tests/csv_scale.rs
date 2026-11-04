@@ -32,8 +32,11 @@ struct Row {
 
 /// Row `i` as CSV text (with a quoted field every 7th row).
 fn line(i: u64) -> String {
-    if i % 7 == 0 {
-        format!("{i},name-{i},{}.25,\"a, quoted \"\"note\"\"\"\r\n", i % 1000)
+    if i.is_multiple_of(7) {
+        format!(
+            "{i},name-{i},{}.25,\"a, quoted \"\"note\"\"\"\r\n",
+            i % 1000
+        )
     } else {
         format!("{i},name-{i},{}.5,plain note\r\n", i % 1000)
     }
@@ -77,7 +80,9 @@ async fn read_generated(rows: u64) -> Measured {
         let row = row.unwrap();
         first.get_or_insert_with(|| start.elapsed());
         assert_eq!(row.id, count);
-        checksum = checksum.wrapping_mul(31).wrapping_add(row.id ^ row.note.len() as u64);
+        checksum = checksum
+            .wrapping_mul(31)
+            .wrapping_add(row.id ^ row.note.len() as u64);
         count += 1;
     }
     Measured {
@@ -92,7 +97,11 @@ async fn read_generated(rows: u64) -> Measured {
 
 fn expected_checksum(rows: u64) -> u64 {
     (0..rows).fold(0u64, |acc, i| {
-        let note = if i % 7 == 0 { "a, quoted \"note\"".len() } else { "plain note".len() };
+        let note = if i.is_multiple_of(7) {
+            "a, quoted \"note\"".len()
+        } else {
+            "plain note".len()
+        };
         acc.wrapping_mul(31).wrapping_add(i ^ note as u64)
     })
 }

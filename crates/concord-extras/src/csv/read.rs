@@ -27,7 +27,7 @@ use crate::stream::{
 /// #[derive(serde::Deserialize, Debug, PartialEq)]
 /// struct Row { id: u32, name: String }
 ///
-/// # async fn run() -> Result<(), Box<dyn std::error::Error>> {
+/// # tokio::runtime::Builder::new_current_thread().build().unwrap().block_on(async {
 /// let selected = b';'; // chosen per job
 /// let reader = CsvReader::new(
 ///     CsvOptions::new(HeaderMode::Absent, selected).read_mapping(ReadMapping::columns(["id", "name"])),
@@ -36,7 +36,7 @@ use crate::stream::{
 /// assert_eq!(rows.next().await.transpose()?, Some(Row { id: 1, name: "Alice".into() }));
 /// assert_eq!(rows.next().await.transpose()?, Some(Row { id: 2, name: "Bob".into() }));
 /// assert!(rows.next().await.is_none());
-/// # Ok(()) }
+/// # Ok::<(), Box<dyn std::error::Error>>(()) }).unwrap();
 /// ```
 #[derive(Clone)]
 pub struct CsvReader {
