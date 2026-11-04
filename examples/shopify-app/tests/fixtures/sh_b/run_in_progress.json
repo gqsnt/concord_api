@@ -1,0 +1,25 @@
+{
+  "data": {
+    "bulkOperationRunQuery": {
+      "bulkOperation": null,
+      "userErrors": [
+        {
+          "field": null,
+          "message": "A bulk query operation for this app and shop is already in progress: gid://shopify/BulkOperation/9000.",
+          "code": "OPERATION_IN_PROGRESS"
+        }
+      ]
+    }
+  },
+  "extensions": {
+    "cost": {
+      "requestedQueryCost": 10,
+      "actualQueryCost": 10,
+      "throttleStatus": {
+        "maximumAvailable": 2000.0,
+        "currentlyAvailable": 1990,
+        "restoreRate": 100.0
+      }
+    }
+  }
+}
