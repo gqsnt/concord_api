@@ -1,0 +1,5 @@
+{"id":"gid://shopify/Product/101","title":"Café crème — tasse 👕","handle":"cafe-creme","status":"ACTIVE","vendor":"Synthetic Vendor","updatedAt":"2026-10-20T09:30:00Z"}
+{"id":"gid://shopify/Product/104","title":"cut
+{"id":"gid://shopify/ProductVariant/1101","title":"S","sku":"SYN-CC-S","price":"19.90","inventoryQuantity":5,"inventoryItem":{"id":"gid://shopify/InventoryItem/2101","tracked":true},"__parentId":"gid://shopify/Product/101"}
+{"id":"gid://shopify/Collection/501","title":"not selected"}
+{"id":"gid://shopify/Product/102","title":"Synthetic Cap","handle":"synthetic-cap","status":"ACTIVE","vendor":"O'Brien \"Hats\"","updatedAt":"2026-10-20T09:30:00Z"}

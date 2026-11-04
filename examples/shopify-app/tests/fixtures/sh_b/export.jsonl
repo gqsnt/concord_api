@@ -1,0 +1,7 @@
+{"id":"gid://shopify/Product/101","title":"Café crème — tasse 👕","handle":"cafe-creme","status":"ACTIVE","vendor":"Synthetic Vendor","updatedAt":"2026-10-20T09:30:00Z"}
+{"id":"gid://shopify/Product/102","title":"Synthetic Cap","handle":"synthetic-cap","status":"ACTIVE","vendor":"O'Brien \"Hats\"","updatedAt":"2026-10-20T09:30:00Z"}
+{"id":"gid://shopify/ProductVariant/1101","title":"S","sku":"SYN-CC-S","price":"19.90","inventoryQuantity":5,"inventoryItem":{"id":"gid://shopify/InventoryItem/2101","tracked":true},"__parentId":"gid://shopify/Product/101"}
+{"id":"gid://shopify/Product/103","title":"日本語の商品","handle":"nihongo","status":"DRAFT","vendor":"Synthetic Vendor","updatedAt":"2026-10-20T09:30:00Z"}
+{"id":"gid://shopify/ProductVariant/1102","title":"M","sku":null,"price":"19.90","inventoryQuantity":null,"inventoryItem":{"id":"gid://shopify/InventoryItem/2102","tracked":false},"__parentId":"gid://shopify/Product/101"}
+{"id":"gid://shopify/ProductVariant/1201","title":"Default Title","sku":"SYN-CAP","price":"12.00","inventoryQuantity":7,"inventoryItem":{"id":"gid://shopify/InventoryItem/2201","tracked":true},"__parentId":"gid://shopify/Product/102"}
+{"id":"gid://shopify/ProductVariant/1301","title":"Default Title","sku":"SYN-JP","price":"1000.00","inventoryQuantity":0,"inventoryItem":{"id":"gid://shopify/InventoryItem/2301","tracked":true},"__parentId":"gid://shopify/Product/103"}

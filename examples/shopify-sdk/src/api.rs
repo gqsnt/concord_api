@@ -4,20 +4,13 @@
 use concord::Json;
 use concord::reqwest::header::HeaderName;
 
-use crate::graphql::{GraphQl, GraphqlResponse};
-use crate::ops::bulk::{
-    BulkOperationData, BulkOperationQuery, CancelBulkOperation, CancelBulkOperationData,
-    RunBulkQuery, RunBulkQueryData,
-};
+use crate::graphql::{Answer, GraphQl};
+use crate::ops::bulk::{BulkOperationQuery, CancelBulkOperation, RunBulkQuery};
 use crate::ops::catalog::{
-    CollectionProductsData, CollectionProductsQuery, CollectionsData, CollectionsQuery,
-    ProductData, ProductQuery, ProductVariantsData, ProductVariantsQuery, ProductsData,
-    ProductsQuery,
+    CollectionProductsQuery, CollectionsQuery, ProductQuery, ProductVariantsQuery, ProductsQuery,
 };
-use crate::ops::inventory::{
-    LocationInventoryData, LocationInventoryQuery, LocationsData, LocationsQuery,
-};
-use crate::ops::shop::{ShopData, ShopQuery};
+use crate::ops::inventory::{LocationInventoryQuery, LocationsQuery};
+use crate::ops::shop::ShopQuery;
 use crate::scalars::{ApiVersion, ShopDomain};
 
 /// `X-Shopify-Access-Token`: the Admin API credential. Not on Concord's list of well-known secret
@@ -29,7 +22,9 @@ concord::api! {
     ///
     /// Every operation is `POST https://{shop}.myshopify.com/admin/api/{version}/graphql.json`
     /// with a JSON body (`GraphQl`: `query`, `operationName`, `variables`) and a JSON envelope
-    /// (`GraphqlResponse<Data>`) that keeps `errors` and `extensions.cost` beside `data`.
+    /// (`Answer<Op>`, the `GraphqlResponse` of the operation's own `Data`) that keeps `errors`
+    /// and `extensions.cost` beside `data`. Each endpoint names its operation twice, as the body
+    /// type and in `Answer<..>`, so the output type is derived from the operation, not restated.
     pub client ShopifyAdmin(
         /// The API version in the path; pinned to `2026-10` unless replaced.
         version: ApiVersion = ApiVersion::PINNED,
@@ -48,32 +43,31 @@ concord::api! {
             path "admin/api/{client.version}/graphql.json";
 
             /// `ShopIdentity`: which shop answered.
-            POST shop_info(body variables: ShopQuery) -> GraphqlResponse<ShopData>;
+            POST shop_info(body variables: ShopQuery) -> Answer<ShopQuery>;
             /// `CatalogProducts`: a page of products with their first variants.
-            POST products(body variables: ProductsQuery) -> GraphqlResponse<ProductsData>;
+            POST products(body variables: ProductsQuery) -> Answer<ProductsQuery>;
             /// `CatalogProduct`: one product by id.
-            POST product(body variables: ProductQuery) -> GraphqlResponse<ProductData>;
+            POST product(body variables: ProductQuery) -> Answer<ProductQuery>;
             /// `ProductVariants`: a page of one product's variants.
             POST product_variants(body variables: ProductVariantsQuery)
-                -> GraphqlResponse<ProductVariantsData>;
+                -> Answer<ProductVariantsQuery>;
             /// `CatalogCollections`: a page of collections with their first member products.
-            POST collections(body variables: CollectionsQuery) -> GraphqlResponse<CollectionsData>;
+            POST collections(body variables: CollectionsQuery) -> Answer<CollectionsQuery>;
             /// `CollectionProducts`: a page of one collection's member products.
             POST collection_products(body variables: CollectionProductsQuery)
-                -> GraphqlResponse<CollectionProductsData>;
+                -> Answer<CollectionProductsQuery>;
             /// `Locations`: a page of locations.
-            POST locations(body variables: LocationsQuery) -> GraphqlResponse<LocationsData>;
+            POST locations(body variables: LocationsQuery) -> Answer<LocationsQuery>;
             /// `LocationInventory`: a page of one location's inventory levels.
             POST location_inventory(body variables: LocationInventoryQuery)
-                -> GraphqlResponse<LocationInventoryData>;
+                -> Answer<LocationInventoryQuery>;
             /// `BulkRunQuery` (**mutation**: creates a bulk job on the shop).
-            POST run_bulk_query(body variables: RunBulkQuery) -> GraphqlResponse<RunBulkQueryData>;
+            POST run_bulk_query(body variables: RunBulkQuery) -> Answer<RunBulkQuery>;
             /// `BulkOperationStatus`: one bulk operation by id.
-            POST bulk_operation(body variables: BulkOperationQuery)
-                -> GraphqlResponse<BulkOperationData>;
+            POST bulk_operation(body variables: BulkOperationQuery) -> Answer<BulkOperationQuery>;
             /// `BulkOperationCancel` (**mutation**: starts canceling a bulk job).
             POST cancel_bulk_operation(body variables: CancelBulkOperation)
-                -> GraphqlResponse<CancelBulkOperationData>;
+                -> Answer<CancelBulkOperation>;
         }
     }
 }

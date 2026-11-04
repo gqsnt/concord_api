@@ -192,6 +192,10 @@ where
     Ok(Option::<Vec<T>>::deserialize(deserializer)?.unwrap_or_default())
 }
 
+/// The response of operation `O`: the envelope of its own `Data`. Endpoints declare
+/// `-> Answer<ProductsQuery>` so their output follows the operation's `Data` type.
+pub type Answer<O> = GraphqlResponse<<O as Operation>::Data>;
+
 /// A GraphQL response: `data`, `errors` and `extensions`, all kept.
 ///
 /// `Debug` prints the shape of `data`, the errors (codes and paths, messages redacted) and the

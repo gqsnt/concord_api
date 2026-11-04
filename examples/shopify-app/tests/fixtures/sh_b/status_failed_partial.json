@@ -1,0 +1,28 @@
+{
+  "data": {
+    "bulkOperation": {
+      "id": "gid://shopify/BulkOperation/9001",
+      "status": "FAILED",
+      "errorCode": "TIMEOUT",
+      "createdAt": "2026-10-22T10:00:00Z",
+      "completedAt": "2026-10-22T10:30:00Z",
+      "objectCount": "2",
+      "rootObjectCount": "1",
+      "fileSize": null,
+      "url": null,
+      "partialDataUrl": "__STORAGE__/bulk/9001-partial.jsonl?X-Goog-Algorithm=GOOG4-RSA-SHA256&X-Goog-Credential=synthetic%40example.iam&X-Goog-Expires=604800&X-Goog-SignedHeaders=host&X-Goog-Signature=5yn7h371c51gn47ur3",
+      "type": "QUERY"
+    }
+  },
+  "extensions": {
+    "cost": {
+      "requestedQueryCost": 1,
+      "actualQueryCost": 1,
+      "throttleStatus": {
+        "maximumAvailable": 2000.0,
+        "currentlyAvailable": 1988,
+        "restoreRate": 100.0
+      }
+    }
+  }
+}

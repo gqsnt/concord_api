@@ -457,6 +457,14 @@ dependencies = [
 [[package]]
 name = "concord-example-shopify-app"
 version = "0.0.0"
+dependencies = [
+ "concord",
+ "concord-example-shopify-sdk",
+ "concord-example-testserver",
+ "concord-pagination",
+ "serde_json",
+ "tokio",
+]
 
 [[package]]
 name = "concord-example-shopify-sdk"

@@ -1,0 +1,111 @@
+{
+  "data": {
+    "location": {
+      "id": "gid://shopify/Location/1001",
+      "name": "Synthetic Warehouse",
+      "inventoryLevels": {
+        "nodes": [
+          {
+            "id": "gid://shopify/InventoryLevel/31?inventory_item_id=2101",
+            "updatedAt": "2026-10-21T08:00:00Z",
+            "quantities": [
+              {
+                "name": "available",
+                "quantity": 5
+              },
+              {
+                "name": "on_hand",
+                "quantity": 5
+              }
+            ],
+            "item": {
+              "id": "gid://shopify/InventoryItem/2101",
+              "sku": "SYN-TEE-S",
+              "tracked": true,
+              "unitCost": null
+            }
+          },
+          {
+            "id": "gid://shopify/InventoryLevel/32?inventory_item_id=2102",
+            "updatedAt": "2026-10-21T08:00:00Z",
+            "quantities": [
+              {
+                "name": "available",
+                "quantity": 2
+              },
+              {
+                "name": "on_hand",
+                "quantity": 2
+              }
+            ],
+            "item": {
+              "id": "gid://shopify/InventoryItem/2102",
+              "sku": "SYN-TEE-M",
+              "tracked": true,
+              "unitCost": null
+            }
+          }
+        ],
+        "pageInfo": {
+          "hasNextPage": true,
+          "endCursor": "aW52LTI="
+        }
+      }
+    }
+  },
+  "errors": [
+    {
+      "message": "Access denied for unitCost field. Required access: `read_product_costs`.",
+      "locations": [
+        {
+          "line": 1,
+          "column": 236
+        }
+      ],
+      "path": [
+        "location",
+        "inventoryLevels",
+        "nodes",
+        0,
+        "item",
+        "unitCost"
+      ],
+      "extensions": {
+        "code": "ACCESS_DENIED",
+        "documentation": "https://shopify.dev/api/usage/access-scopes"
+      }
+    },
+    {
+      "message": "Access denied for unitCost field. Required access: `read_product_costs`.",
+      "locations": [
+        {
+          "line": 1,
+          "column": 236
+        }
+      ],
+      "path": [
+        "location",
+        "inventoryLevels",
+        "nodes",
+        1,
+        "item",
+        "unitCost"
+      ],
+      "extensions": {
+        "code": "ACCESS_DENIED",
+        "documentation": "https://shopify.dev/api/usage/access-scopes"
+      }
+    }
+  ],
+  "extensions": {
+    "cost": {
+      "requestedQueryCost": 104,
+      "actualQueryCost": 12,
+      "throttleStatus": {
+        "maximumAvailable": 2000.0,
+        "currentlyAvailable": 1943,
+        "restoreRate": 100.0
+      }
+    }
+  }
+}

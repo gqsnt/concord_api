@@ -1,0 +1,29 @@
+{
+  "data": {
+    "collection": {
+      "id": "gid://shopify/Collection/501",
+      "products": {
+        "nodes": [
+          {
+            "id": "gid://shopify/Product/103"
+          }
+        ],
+        "pageInfo": {
+          "hasNextPage": false,
+          "endCursor": "Y29sLTUwMS0y"
+        }
+      }
+    }
+  },
+  "extensions": {
+    "cost": {
+      "requestedQueryCost": 102,
+      "actualQueryCost": 3,
+      "throttleStatus": {
+        "maximumAvailable": 2000.0,
+        "currentlyAvailable": 1955,
+        "restoreRate": 100.0
+      }
+    }
+  }
+}

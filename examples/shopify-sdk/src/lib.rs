@@ -48,8 +48,8 @@ pub use bulk_export::{BulkRecord, CatalogExport};
 pub use connection::{Connection, PageError, PageInfo, PageMeta, connection_page};
 pub use context::{RequestError, ShopContext, ShopifyContext};
 pub use graphql::{
-    Data, ErrorCode, GraphQl, GraphqlError, GraphqlResponse, Operation, QueryCost, ThrottleStatus,
-    Var,
+    Answer, Data, ErrorCode, GraphQl, GraphqlError, GraphqlResponse, Operation, QueryCost,
+    ThrottleStatus, Var,
 };
 pub use scalars::{AccessToken, ApiVersion, Cursor, ShopDomain, SignedUrl};
 pub use search::SearchQuery;

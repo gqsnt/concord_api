@@ -1,0 +1,58 @@
+{
+  "data": {
+    "collections": {
+      "nodes": [
+        {
+          "id": "gid://shopify/Collection/501",
+          "title": "Synthetic Summer",
+          "handle": "synthetic-summer",
+          "updatedAt": "2026-10-01T00:00:00Z",
+          "productsCount": {
+            "count": 2,
+            "precision": "EXACT"
+          },
+          "products": {
+            "nodes": [
+              {
+                "id": "gid://shopify/Product/101"
+              }
+            ],
+            "pageInfo": {
+              "hasNextPage": true,
+              "endCursor": "Y29sLTUwMS0x"
+            }
+          }
+        },
+        {
+          "id": "gid://shopify/Collection/502",
+          "title": "Synthetic Empty",
+          "handle": "synthetic-empty",
+          "updatedAt": "2026-10-02T00:00:00Z",
+          "productsCount": null,
+          "products": {
+            "nodes": [],
+            "pageInfo": {
+              "hasNextPage": false,
+              "endCursor": null
+            }
+          }
+        }
+      ],
+      "pageInfo": {
+        "hasNextPage": false,
+        "endCursor": "Y29sLTUwMg=="
+      }
+    }
+  },
+  "extensions": {
+    "cost": {
+      "requestedQueryCost": 102,
+      "actualQueryCost": 9,
+      "throttleStatus": {
+        "maximumAvailable": 2000.0,
+        "currentlyAvailable": 1958,
+        "restoreRate": 100.0
+      }
+    }
+  }
+}
