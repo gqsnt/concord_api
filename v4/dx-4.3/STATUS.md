@@ -29,14 +29,17 @@ claim below is credited only to commands run on this branch's commits.
 
 ## Work packages
 
-| WP | Scope | Status |
-|---|---|---|
-| W0 | base, branch, ledger, baseline | done |
-| W1 | streaming guidance and example; domain adapters; named workflow; bounded traversal | in progress |
-| W2 | metadata-preserving native-edit recipe; public convenience decision | in progress |
-| W3 | SDK context boundary; independent outside-endpoint crate; core decision | in progress |
-| W4 | generated-input ADR; macro prototype; matched evaluation; adoption decision | in progress |
-| W5 | integration, review, verification, delivery | pending |
+| WP | Scope | Status | Where |
+|---|---|---|---|
+| W0 | base, branch, ledger, baseline | done | this file |
+| W1 | streaming guidance and example; domain adapters; named workflow; bounded traversal | done, maintained | `examples/native/src/upload.rs`, `examples/app`, guides; DECISIONS S1, D1/W1 |
+| W2 | metadata-preserving native-edit recipe; public convenience decision | done, maintained recipe; convenience rejected | `examples/native/src/metadata.rs`; DECISIONS M1 |
+| W3 | SDK context boundary; independent outside-endpoint crate; core decision | done, maintained; core primitive rejected | `examples/sdk/src/context.rs`, `examples/extension`; DECISIONS X1 |
+| W4 | generated-input ADR; macro prototype; matched evaluation; adoption decision | prototype and evaluation done; decision pending review | branch `concord-v4.3-dx-generated-inputs`; `experiments/generated-inputs/` |
+| W5 | integration, review, verification, delivery | in progress | REVIEW_RESOLUTIONS.md, VERIFICATION.md |
+
+Helper branches merged into the implementation branch: `dx43/native` (`e73838e`, `d226b3f`),
+`dx43/app` (`4c01954`), `dx43/ext` (`cf3c9fc` = frozen SDK context, `b077e7e`).
 
 ## Shared example infrastructure
 

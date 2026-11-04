@@ -125,7 +125,7 @@ application); a body-dependent media type is not expressible by `Encode` alone (
 `content-type` header that the endpoint/SDK controls; an incrementally read response uses
 `send_raw`. The supplied patch was applied and extended with links to the new example.
 
-Evidence: `examples/native/src/upload.rs` and `tests/upload.rs` — zero polls/bytes through
+Evidence: `examples/native/src/upload.rs` and `examples/native/tests/upload.rs` — zero polls/bytes through
 building, `Debug`, `prepare()` and inspection; one `send()` delivers the exact bytes chunked with
 the fixed media type; replay needs a fresh source (`compile_fail` doc tests show the request and
 `Prepared` are not `Clone`); a declared media type or a `content-type` header replaces the static
@@ -141,7 +141,7 @@ typed and raised before any request. Each service owns its wire form (Catalog: d
 whole-second RFC 3339; Ledger: `acct-` hex, exact nonnegative milliseconds). `report.rs` attempts
 each service independently (no aggregate `?`); this aggregation is application policy, not a core
 rule. `Browser::{featured_page, unfiltered_page}` names a real application intent and returns the
-ordinary operation; nothing mirrors the whole generated API. `traversal.rs` is one shared,
+ordinary operation; nothing mirrors the whole generated API. `examples/app/src/traversal.rs` is one shared,
 bounded loop with per-service adapters: it returns a continuation when the bound is reached,
 accepts one to resume, and on a failed page returns the records collected so far with the
 continuation that refetches the failed page (keep or discard is the caller's choice; nothing is

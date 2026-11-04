@@ -38,7 +38,7 @@ PUT upload(id: u64, body source: OneShot) -> UploadReceipt {
 ```
 
 `OneShot` is not `Clone`; building the request, its `Debug`, `prepare()` and inspection poll it
-zero times; one `send()` streams it once (`tests/upload.rs`: exactly one chunked `PUT` whose body
+zero times; one `send()` streams it once (`examples/native/tests/upload.rs`: exactly one chunked `PUT` whose body
 is the source's 16 bytes, `alpha-beta-gamma`); a second upload needs a new source, and
 `.clone()` on the request does not compile (doc test). The media type is static: a per-body
 media type still takes the native multipart route, or a `content-type` header the SDK sets
@@ -97,7 +97,7 @@ so far and the continuation that refetches the failed page.
 
 ## 3. Response metadata with the typed value (corrected recipe)
 
-Before — the campaign's helper (`Pending::receive`, archived `arms/amber/sdk/src/policy.rs`) executed
+Before — the campaign's helper (`Pending::receive`, archived campaign file arms/amber/sdk/src/policy.rs) executed
 internally, with no edit point, and returned reqwest's error:
 
 ```rust
@@ -132,7 +132,7 @@ only the captured head metadata remains.
 
 ## 4. An operation the SDK does not declare, from another crate
 
-Before — the campaign's suffix helper (archived `arms/amber/consumer/src/external.rs`) borrowed a
+Before — the campaign's suffix helper (archived campaign file arms/amber/consumer/src/external.rs) borrowed a
 declared endpoint and edited it:
 
 ```rust
