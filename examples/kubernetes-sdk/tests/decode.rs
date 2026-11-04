@@ -4,11 +4,94 @@
 
 use concord_example_kubernetes_sdk::list::{ListError, into_page};
 use concord_example_kubernetes_sdk::model::{
-    ConfigMap, Deployment, IntOrString, Job, JobState, Namespace, NamespacePhase, Pod, PodList,
-    PodPhase, Service, ServiceType, Status,
+    ConfigMap, Deployment, Ingress, IngressList, IntOrString, Job, JobState, Namespace,
+    NamespacePhase, PathType, Pod, PodList, PodPhase, Resource, Service, ServiceType, Status,
 };
 use concord_example_kubernetes_sdk::watch::WatchEvent;
 use concord_example_kubernetes_sdk::{ObjectKey, ResourceVersion};
+
+#[test]
+fn ingress_decodes_rules_backends_tls_and_status() {
+    // Field names of `io.k8s.api.networking.v1.Ingress` in
+    // `apis__networking.k8s.io__v1_openapi.json` (v1.37.2); values synthetic.
+    let ingress: Ingress = json(
+        r#"{"kind":"Ingress","apiVersion":"networking.k8s.io/v1",
+            "metadata":{"name":"storefront","namespace":"team-a","resourceVersion":"5201",
+                        "annotations":{"nginx.ingress.kubernetes.io/rewrite-target":"/"}},
+            "spec":{"ingressClassName":"nginx",
+                    "defaultBackend":{"service":{"name":"storefront","port":{"number":80}}},
+                    "tls":[{"hosts":["shop.example.test"],"secretName":"shop-tls"}],
+                    "rules":[{"host":"shop.example.test","http":{"paths":[
+                        {"path":"/","pathType":"Prefix","backend":{"service":{"name":"storefront","port":{"name":"http"}}}},
+                        {"path":"/cart","pathType":"Exact","backend":{"service":{"name":"cart","port":{"number":8080}}}},
+                        {"path":"/static","pathType":"ImplementationSpecific",
+                         "backend":{"resource":{"apiGroup":"k8s.example.test","kind":"StorageBucket","name":"assets"}}}]}},
+                             {"http":{"paths":[{"path":"/x","pathType":"RegularExpression",
+                                                "backend":{"service":{"name":"other"}}}]}}]},
+            "status":{"loadBalancer":{"ingress":[{"ip":"192.0.2.10","ports":[{"port":443,"protocol":"TCP"}]}]}}}"#,
+    );
+    assert_eq!(ingress.spec.ingress_class_name.as_deref(), Some("nginx"));
+    assert_eq!(ingress.spec.tls[0].secret_name.as_deref(), Some("shop-tls"));
+    let rule = &ingress.spec.rules[0];
+    assert_eq!(rule.host.as_deref(), Some("shop.example.test"));
+    let paths = &rule.http.as_ref().unwrap().paths;
+    assert_eq!(paths[0].path_type, Some(PathType::Prefix));
+    assert_eq!(paths[1].path_type, Some(PathType::Exact));
+    assert_eq!(paths[2].path_type, Some(PathType::ImplementationSpecific));
+    assert_eq!(
+        paths[2].backend.resource.as_ref().unwrap().kind,
+        "StorageBucket"
+    );
+    // A rule without a host matches every host; an unknown path type still decodes.
+    assert_eq!(ingress.spec.rules[1].host, None);
+    assert_eq!(
+        ingress.spec.rules[1].http.as_ref().unwrap().paths[0].path_type,
+        Some(PathType::Other)
+    );
+    let backends: Vec<_> = ingress
+        .service_backends()
+        .map(|b| {
+            let port = b.port.as_ref();
+            (
+                b.name.as_str(),
+                port.and_then(|p| p.name.as_deref()),
+                port.and_then(|p| p.number),
+            )
+        })
+        .collect();
+    assert_eq!(
+        backends,
+        [
+            ("storefront", None, Some(80)),
+            ("storefront", Some("http"), None),
+            ("cart", None, Some(8080)),
+            ("other", None, None),
+        ]
+    );
+    assert!(ingress.has_address());
+    assert_eq!(
+        ObjectKey::of(&ingress).unwrap().to_string(),
+        "team-a/storefront"
+    );
+    assert_eq!(Ingress::API_VERSION, "networking.k8s.io/v1");
+    const { assert!(Ingress::NAMESPACED) };
+
+    let list: IngressList = json(
+        r#"{"kind":"IngressList","apiVersion":"networking.k8s.io/v1",
+            "metadata":{"resourceVersion":"5300","continue":"T"},
+            "items":[{"metadata":{"name":"storefront","namespace":"team-a"}}]}"#,
+    );
+    let page = into_page(list, None).unwrap();
+    assert_eq!(page.items.len(), 1);
+    assert_eq!(page.next.unwrap().snapshot().as_str(), "5300");
+
+    let event: WatchEvent<Ingress> = json(
+        r#"{"type":"DELETED","object":{"kind":"Ingress","apiVersion":"networking.k8s.io/v1",
+            "metadata":{"name":"storefront","namespace":"team-a","resourceVersion":"5310"}}}"#,
+    );
+    assert_eq!(event.type_name(), "DELETED");
+    assert_eq!(event.resource_version().unwrap().as_str(), "5310");
+}
 
 fn json<T: serde::de::DeserializeOwned>(text: &str) -> T {
     serde_json::from_str(text).unwrap()

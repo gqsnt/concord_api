@@ -1,4 +1,4 @@
-//! Typed object models: `meta/v1` shapes, the six resource kinds and their list envelopes.
+//! Typed object models: `meta/v1` shapes, the seven resource kinds and their list envelopes.
 
 mod meta;
 mod resources;
@@ -9,8 +9,11 @@ pub use meta::{
 };
 pub use resources::{
     ConfigMap, Container, ContainerStatus, Deployment, DeploymentSpec, DeploymentStatus,
-    IntOrString, Job, JobSpec, JobState, JobStatus, Namespace, NamespacePhase, NamespaceStatus,
-    Pod, PodPhase, PodSpec, PodStatus, Resource, Service, ServicePort, ServiceSpec, ServiceType,
+    HttpIngressPath, HttpIngressRuleValue, Ingress, IngressBackend, IngressLoadBalancerIngress,
+    IngressLoadBalancerStatus, IngressRule, IngressServiceBackend, IngressSpec, IngressStatus,
+    IngressTls, IntOrString, Job, JobSpec, JobState, JobStatus, Namespace, NamespacePhase,
+    NamespaceStatus, PathType, Pod, PodPhase, PodSpec, PodStatus, Resource, Service,
+    ServiceBackendPort, ServicePort, ServiceSpec, ServiceType, TypedLocalObjectReference,
 };
 
 /// `NamespaceList`.
@@ -25,6 +28,8 @@ pub type ConfigMapList = ObjectList<ConfigMap>;
 pub type DeploymentList = ObjectList<Deployment>;
 /// `JobList`.
 pub type JobList = ObjectList<Job>;
+/// `IngressList` (`networking.k8s.io/v1`).
+pub type IngressList = ObjectList<Ingress>;
 
 /// Where an object lives: its namespace (absent for cluster-scoped kinds) and name. The key of a
 /// current-state map.

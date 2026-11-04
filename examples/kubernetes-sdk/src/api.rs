@@ -13,8 +13,8 @@ use concord::reqwest::header::{ACCEPT, AUTHORIZATION, HeaderValue};
 
 use crate::ids::{ContinueToken, NamespaceName, ObjectName, ResourceVersion};
 use crate::model::{
-    ConfigMap, ConfigMapList, Deployment, DeploymentList, Job, JobList, Namespace, NamespaceList,
-    Pod, PodList, Service, ServiceList, VersionInfo,
+    ConfigMap, ConfigMapList, Deployment, DeploymentList, Ingress, IngressList, Job, JobList,
+    Namespace, NamespaceList, Pod, PodList, Service, ServiceList, VersionInfo,
 };
 use crate::selector::{FieldSelector, LabelSelector};
 
@@ -38,8 +38,8 @@ impl fmt::Display for ResourceVersionMatch {
 
 concord::api! {
     /// A read-only slice of the Kubernetes API: get/list of Namespaces, Pods, Services,
-    /// ConfigMaps (core/v1), Deployments (apps/v1) and Jobs (batch/v1); watch of Pods and
-    /// Deployments; the server version.
+    /// ConfigMaps (core/v1), Deployments (apps/v1), Jobs (batch/v1) and Ingresses
+    /// (networking.k8s.io/v1); watch of Pods, Deployments and Ingresses; the server version.
     ///
     /// List endpoints share one parameter set (`labelSelector`, `fieldSelector`, `limit`,
     /// `continue`, `resourceVersion`, `resourceVersionMatch`, `timeoutSeconds`); the `continue`
@@ -277,6 +277,67 @@ concord::api! {
 
                 /// `readBatchV1NamespacedJob`.
                 GET job(name: ObjectName) -> Job { path "jobs/{name}"; }
+            }
+        }
+
+        /// The `networking.k8s.io/v1` group (`/apis/networking.k8s.io/v1`).
+        scope networking_v1 {
+            path "apis/networking.k8s.io/v1";
+
+            /// `listNetworkingV1IngressForAllNamespaces`: `GET /apis/networking.k8s.io/v1/ingresses`.
+            GET ingresses(
+                query("labelSelector") label_selector?: LabelSelector,
+                query("fieldSelector") field_selector?: FieldSelector,
+                query limit?: u32,
+                #[sensitive] query("continue") continue_token?: ContinueToken,
+                query("resourceVersion") resource_version?: ResourceVersion,
+                query("resourceVersionMatch") resource_version_match?: ResourceVersionMatch,
+                query("timeoutSeconds") timeout_seconds?: u32,
+            ) -> IngressList { path "ingresses"; }
+
+            /// `listNetworkingV1IngressForAllNamespaces` with `watch=1`.
+            GET watch_ingresses(
+                query("labelSelector") label_selector?: LabelSelector,
+                query("fieldSelector") field_selector?: FieldSelector,
+                query("resourceVersion") resource_version?: ResourceVersion,
+                query("allowWatchBookmarks") allow_watch_bookmarks?: bool = true,
+                query("timeoutSeconds") timeout_seconds?: u32,
+            ) {
+                path "ingresses";
+                query { "watch" = "1"; }
+                headers { ACCEPT = "application/json"; }
+            }
+
+            /// One namespace of `networking.k8s.io/v1`.
+            scope namespaced(namespace: NamespaceName) {
+                path "namespaces/{namespace}";
+
+                /// `listNetworkingV1NamespacedIngress`.
+                GET ingresses(
+                    query("labelSelector") label_selector?: LabelSelector,
+                    query("fieldSelector") field_selector?: FieldSelector,
+                    query limit?: u32,
+                    #[sensitive] query("continue") continue_token?: ContinueToken,
+                    query("resourceVersion") resource_version?: ResourceVersion,
+                    query("resourceVersionMatch") resource_version_match?: ResourceVersionMatch,
+                    query("timeoutSeconds") timeout_seconds?: u32,
+                ) -> IngressList { path "ingresses"; }
+
+                /// `readNetworkingV1NamespacedIngress`.
+                GET ingress(name: ObjectName) -> Ingress { path "ingresses/{name}"; }
+
+                /// `listNetworkingV1NamespacedIngress` with `watch=1`.
+                GET watch_ingresses(
+                    query("labelSelector") label_selector?: LabelSelector,
+                    query("fieldSelector") field_selector?: FieldSelector,
+                    query("resourceVersion") resource_version?: ResourceVersion,
+                    query("allowWatchBookmarks") allow_watch_bookmarks?: bool = true,
+                    query("timeoutSeconds") timeout_seconds?: u32,
+                ) {
+                    path "ingresses";
+                    query { "watch" = "1"; }
+                    headers { ACCEPT = "application/json"; }
+                }
             }
         }
     }

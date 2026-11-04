@@ -6,13 +6,14 @@
 //!
 //! # Layout
 //!
-//! - [`Kube`] — the generated client: `core_v1()`, `apps_v1()`, `batch_v1()` group/version scopes,
-//!   each with a `namespaced(namespace)` scope. Every operation is an ordinary generated request
-//!   with its setters, `prepare()` and `send()`.
+//! - [`Kube`] — the generated client: `core_v1()`, `apps_v1()`, `batch_v1()`, `networking_v1()`
+//!   group/version scopes, each with a `namespaced(namespace)` scope. Every operation is an
+//!   ordinary generated request with its setters, `prepare()` and `send()`.
 //! - [`KubeContext`] / [`NamespaceContext`] — one configured client (base URL, bearer token) and a
-//!   namespace bound across the three group/version scopes.
-//! - [`model`] — typed objects (`Pod`, `Deployment`, ...), list envelopes ([`ObjectList`]) with
-//!   `items` extraction, the `Status` error document.
+//!   namespace bound across the four group/version scopes (`core()`, `apps()`, `batch()`,
+//!   `networking()`).
+//! - [`model`] — typed objects (`Pod`, `Deployment`, `Ingress`, ...), list envelopes
+//!   ([`ObjectList`]) with `items` extraction, the `Status` error document.
 //! - [`LabelSelector`] / [`FieldSelector`] — typed selectors rendered in Kubernetes syntax.
 //! - [`list`] — the chunked-list adapter for `concord-pagination` (opaque `continue`, consistent
 //!   snapshot check, typed `410 Expired`).

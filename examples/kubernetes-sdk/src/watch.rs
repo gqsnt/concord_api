@@ -35,7 +35,8 @@ use crate::model::{Resource, Status};
 use crate::selector::{FieldSelector, LabelSelector};
 use crate::{
     KubeAppsV1NamespacedWatchDeployments, KubeAppsV1WatchDeployments,
-    KubeCoreV1NamespacedWatchPods, KubeCoreV1WatchPods,
+    KubeCoreV1NamespacedWatchPods, KubeCoreV1WatchPods, KubeNetworkingV1NamespacedWatchIngresses,
+    KubeNetworkingV1WatchIngresses,
 };
 
 /// One watch event, decoded by its `type` into the watched object, a bookmark or a `Status`.
@@ -120,7 +121,7 @@ impl Bookmark {
     }
 }
 
-/// A generated watch operation (the four `GET .../{plural}?watch=1` endpoints), seen through the
+/// A generated watch operation (the six `GET .../{plural}?watch=1` endpoints), seen through the
 /// parameters every watch shares; each method forwards to the generated `maybe_*` setter.
 pub trait WatchOperation: Clone + Send + Sync + 'static {
     /// The watched object type.
@@ -175,6 +176,10 @@ watch_operation! {
     KubeAppsV1WatchDeployments => crate::model::Deployment, "Kube.apps_v1.watch_deployments";
     KubeAppsV1NamespacedWatchDeployments => crate::model::Deployment,
         "Kube.apps_v1.namespaced.watch_deployments";
+    KubeNetworkingV1WatchIngresses => crate::model::Ingress,
+        "Kube.networking_v1.watch_ingresses";
+    KubeNetworkingV1NamespacedWatchIngresses => crate::model::Ingress,
+        "Kube.networking_v1.namespaced.watch_ingresses";
 }
 
 /// Why a watch could not be opened: the complete classification (no response, non-2xx, refused
