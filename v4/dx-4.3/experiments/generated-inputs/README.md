@@ -7,7 +7,7 @@ commits as a patch series (`git am` onto `0a91ce5`, the ADR commit), not the mac
 
 ## What the macro change does
 
-`concord-macros` (`emit.rs`, `model.rs`) emits, for every endpoint, a `#[non_exhaustive]`
+`concord-macros` (`crates/concord-macros/src/emit.rs`, `crates/concord-macros/src/model.rs`) emits, for every endpoint, a `#[non_exhaustive]`
 `{Endpoint}Input` with the endpoint's own values and body as public fields and
 `new(required..)`; the request type holds `__parent` plus that input and gains
 `input()`/`input_mut()`/`into_input()`; the parent handle gains `{endpoint}_with(input)`.
@@ -26,8 +26,8 @@ repository root:
 | New collision diagnostics (C03) | `cargo test --locked -p concord --test ui` (case input_name_collisions) |
 | Matched caller tasks (DX01, DX02, T3) | `cd v4/dx-4.3/experiments/generated-inputs/tasks && cargo test --features candidate` |
 | Baseline tasks alone (any Concord) | `cd .../tasks && cargo test` |
-| Downstream evolution (C02, DX03) | `v4/dx-4.3/experiments/generated-inputs/evolution/run.sh` |
-| Editor observations (DX04) | `python3 -I v4/dx-4.3/experiments/generated-inputs/ra_probe.py` |
+| Downstream evolution (C02, DX03) | v4/dx-4.3/experiments/generated-inputs/evolution/run.sh |
+| Editor observations (DX04) | python3 -I v4/dx-4.3/experiments/generated-inputs/ra_probe.py |
 | Generated size (C05) | `cargo +nightly rustc --locked -p concord --test synthetic_sdk -- -Zunpretty=expanded \| wc -l` on both branches |
 
 `tasks/` and `evolution/` are standalone Cargo workspaces (not members of the repository's
