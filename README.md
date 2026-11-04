@@ -25,7 +25,7 @@ credentials), retries, rate limiting, pagination or transport configuration (tim
 TLS, redirects, connection pools). Those stay in your code and in the `reqwest::Client` you pass
 in; [`examples/native`](examples/native) shows how to compose them, and
 [`examples/riot`](examples/riot) is a complete, sourced client for part of the Riot Games API,
-tested offline.
+tested offline (its README says how to copy it out of this workspace).
 
 ## Example
 

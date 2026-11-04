@@ -69,6 +69,40 @@ the body. A `200` that is not labelled JSON (a proxy's HTML page) is an `ErrorKi
 whose response stays readable; a body labelled JSON that is not JSON is an `ErrorKind::Decode`
 error (`tests/errors.rs`). Neither prints the key.
 
+## Copying it into a project of your own
+
+This directory is a member of the Concord workspace: its manifest inherits `rust-version`,
+`license`, the `serde`/`tokio`/`serde_json` requirements and the lints from the root `Cargo.toml`,
+and a workspace build unifies features across all members, which can hide a feature a member
+forgets. A copy elsewhere is its own workspace and states everything itself:
+
+```toml
+[package]
+name = "riot-client"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.99.1"
+publish = false
+
+[workspace] # its own root, also when it sits inside another workspace's directory
+
+[dependencies]
+# Default features: `json` (which brings `Binary`) and reqwest's defaults (TLS for live mode).
+concord = { path = "../concord_api/crates/concord" }
+serde = { version = "1", features = ["derive"] }
+tokio = { version = "1", default-features = false, features = ["macros", "rt-multi-thread"] }
+
+[dev-dependencies]
+serde_json = "1"
+tokio = { version = "1", default-features = false, features = ["macros", "rt", "rt-multi-thread", "net", "io-util", "sync", "time"] }
+```
+
+Copy `src/`, `tests/` and `fixtures/` (the tests read the fixtures from the package directory).
+`src/main.rs` and the tests import the library as `concord_example_riot`: rename those imports to
+your package's name (`riot_client` here). The workspace lints are not needed; copy the root's `[workspace.lints]` tables as `[lints]` if you
+want them. With `default-features = false` on `concord`, enable `json` yourself and choose
+reqwest's TLS through your own `reqwest` dependency.
+
 ## Why the client refuses redirects
 
 The `reqwest::Client` that `Riot` uses is built with [`http_policy`](src/lib.rs) (live mode:

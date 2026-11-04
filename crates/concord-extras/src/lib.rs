@@ -4,7 +4,7 @@
 //! | Format | Feature | Body (`Encode<T>`) | Output (`Decode<T>`): response head check | `Accept` suggestion |
 //! |---|---|---|---|---|
 //! | `Json` | `json` | any `T: Serialize`, `application/json` | any `T: DeserializeOwned`; exactly one `Content-Type`, `application/json` or `application/*+json`, charset absent or once and UTF-8 or US-ASCII | `application/json` |
-//! | [`Text`] | — | `String`, `text/plain; charset=utf-8` | `String` (UTF-8); any media type; a declared non-UTF-8 charset (repeated or not) is refused | none |
+//! | [`Text`] | — | `String`, `text/plain; charset=utf-8` | `String` (UTF-8); any `Content-Type`, also a missing, repeated or malformed one; refused only when a single well-formed one declares a charset other than UTF-8 or US-ASCII (also among repeated charset parameters) | none |
 //! | [`Binary`] | — | `Bytes`, `Vec<u8>`, `application/octet-stream` | `Bytes`, `Vec<u8>`; nothing checked (`image/png` is fine) | none |
 //! | `Form` | `form` | any `T: Serialize` (flat), `application/x-www-form-urlencoded` | any `T: DeserializeOwned`; exactly one `application/x-www-form-urlencoded`, charset absent or once and UTF-8 or US-ASCII | `application/x-www-form-urlencoded` |
 //! | [`IgnoreContentType<F>`] | — | `F`'s | `F`'s, without its `Content-Type` check | `F`'s |

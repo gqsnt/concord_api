@@ -413,7 +413,7 @@ The other standard formats, for comparison:
 | Format | Response head check | `Accept` suggestion |
 |---|---|---|
 | `Json` | the table above | `application/json` |
-| `Text` | refuses only a single well-formed `Content-Type` with a `charset` that is not UTF-8 (`us-ascii` is fine), repeated or not; any media type, a missing or a malformed field (bytes outside visible ASCII included) is accepted | none |
+| `Text` | refuses only a single well-formed `Content-Type` with a `charset` that is not UTF-8 (`us-ascii` is fine), repeated or not; any media type, a missing field, several fields or a malformed one (bytes outside visible ASCII included) is accepted | none |
 | `Binary` | none (`image/png` is fine) | none |
 | `Form` | exactly one `application/x-www-form-urlencoded`; no `charset`, or one `utf-8` or `us-ascii` | `application/x-www-form-urlencoded` |
 | `IgnoreContentType<F>` | `F`'s, without its `check_content_type` | `F`'s |
