@@ -362,7 +362,7 @@ assert_eq!(
 );
 
 // The API's error document: the response of a status error is unread.
-let response = error.into_response()?; // any other kind of error is returned as Err
+let response = error.into_response()?; // Build, Transport and Decode errors are Err
 let problem = <Json as Decode<Problem>>::decode_body((), response.bytes().await?)?;
 assert_eq!(problem.title, "no such product");
 
