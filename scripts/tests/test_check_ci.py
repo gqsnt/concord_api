@@ -139,6 +139,11 @@ class Passes(unittest.TestCase):
         self.assertPasses(text)
         self.assertPasses(variant("      - name: gate\n", "      - name: gate\n        if: always()\n"))
 
+    def test_safe_shell_options(self):
+        for options in ("-e", "-eu", "-eux", "-o pipefail", "-eo pipefail", "-euo pipefail", "-o errexit"):
+            with self.subTest(options=options):
+                self.assertPasses(gate(f"        run: |\n          set {options}\n          scripts/verify.sh --package --bench\n"))
+
     def test_shell_from_defaults(self):
         text = variant("      - name: gate\n        shell: bash\n", "      - name: gate\n")
         text = variant("jobs:\n", "defaults:\n  run:\n    shell: bash\njobs:\n", text)
@@ -266,6 +271,17 @@ class Fails(unittest.TestCase):
     def test_set_plus_e(self):
         self.assertFails(gate("        run: |\n          set +e\n          scripts/verify.sh --package --bench\n          echo done\n"),
                          *self.NO_GATE, "`set +e` disables errexit")
+
+    def test_set_noexec(self):
+        # Final review R2: `set -n` makes Bash read the gate without running it (exit 0).
+        for option in ("-n", "-o noexec", "-en", "-eo noexec"):
+            with self.subTest(option=option):
+                self.assertFails(gate(f"        run: |\n          set {option}\n          scripts/verify.sh --package --bench\n"),
+                                 *self.NO_GATE, "turns on noexec: the step reads its commands without running them")
+
+    def test_set_unmodelled_option(self):
+        self.assertFails(gate("        run: |\n          set -f\n          scripts/verify.sh --package --bench\n"),
+                         *self.NO_GATE, "changes shell option `-f`, which the guard does not model")
 
     def test_set_plus_o_errexit(self):
         self.assertFails(gate("        run: |\n          set +o errexit\n          scripts/verify.sh --package --bench\n"),

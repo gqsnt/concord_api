@@ -68,10 +68,12 @@ share one version and require each other exactly (`=4.2.0`).
   until workloads show the cases matter. Records: `v4/release-4.2/PERF.md`.
 
 
+## 4.1.0
+
 The modular V4: four crates, formats as ordinary Rust types, and response metadata checked before
 a body is read. Not published on crates.io; depend on a checkout or a git revision. Rust 1.99.1 is
 both the minimum and the pinned toolchain. Upgrade steps are in
-[`docs/MIGRATION.md`](docs/MIGRATION.md) (the first two sections).
+[`docs/MIGRATION.md`](docs/MIGRATION.md) (its sections on format types and the codec contract).
 
 ### Crates
 

@@ -600,6 +600,39 @@ def disables_errexit(command):
     return False
 
 
+# Shell options a gate's step may turn on: they make a failure stop the step, never skip a command.
+SAFE_SHORT_OPTIONS = set("eux")
+SAFE_LONG_OPTIONS = {"errexit", "nounset", "pipefail", "xtrace"}
+
+
+def unsupported_set(command):
+    """Why a `set` in the gate's step is refused, or None. Only `-e`, `-u`, `-x` and `-o` with
+    errexit, nounset, pipefail or xtrace are accepted (`set -eo pipefail`); anything else changes
+    behaviour the guard does not model: `-n`/`-o noexec` reads the commands without running them
+    (the gate would never run), `+...` turns checks off (errexit: `disables_errexit`)."""
+    words = [w.text for w in command.words]
+    if words[:1] != ["set"]:
+        return None
+    k = 1
+    while k < len(words):
+        w = words[k]
+        if w == "-o" or (w.startswith("-") and w.endswith("o") and len(w) > 2):
+            name = words[k + 1] if k + 1 < len(words) else ""
+            if set(w[1:-1]) <= SAFE_SHORT_OPTIONS and name in SAFE_LONG_OPTIONS:
+                k += 2
+                continue
+            option = f"{w} {name}".strip()
+        elif w.startswith("-") and len(w) > 1 and set(w[1:]) <= SAFE_SHORT_OPTIONS:
+            k += 1
+            continue
+        else:
+            option = w
+        if "noexec" in option or (option.startswith("-") and not option.startswith("-o") and "n" in option):
+            return f"`{command.show()}` turns on noexec: the step reads its commands without running them"
+        return f"`{command.show()}` changes shell option `{option}`, which the guard does not model"
+    return None
+
+
 # ---------------------------------------------------------------------------------------------
 # The workflow structure.
 
@@ -869,6 +902,8 @@ class Guard:
                     problems.append(f"unsupported shell construct `{first}` in the gate's step (not evaluated)")
                 if disables_errexit(other):
                     problems.append(f"`{other.show()}` disables errexit: the gate's exit status can be swallowed")
+                elif unsupported_set(other):
+                    problems.append(unsupported_set(other))
             state = condition(step.get("if"))
             if state == "disabled":
                 problems.append(f"the step has if: {_show(step.get('if'))} (statically disabled)")

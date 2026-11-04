@@ -79,6 +79,17 @@ impl Weight for &Foo {
     }
 }
 pub static VALUE: Foo = Foo;
+
+/// A struct named by a forwarded path in an initializer (`$p { n: 7 }`).
+#[derive(Clone)]
+pub struct Holder {
+    pub n: u64,
+}
+impl core::fmt::Display for Holder {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        write!(f, "{}", self.n)
+    }
+}
 pub const DATA: [u8; 3] = [7, 8, 9];
 
 /// Encodes a borrowed displayable trait object as its text.
@@ -98,7 +109,7 @@ macro_rules! pick {
     };
 }
 macro_rules! declare {
-    ($e:expr, $t:ty, $r:expr, $d:expr, $s:ty, $v:ty, $w:ty) => {
+    ($e:expr, $t:ty, $r:expr, $d:expr, $s:ty, $v:ty, $w:ty, $p:path) => {
         concord::api! {
             pub client Forwarded {
                 base "http://x.test";
@@ -118,6 +129,10 @@ macro_rules! declare {
                 GET cast(query n: u64 = $e as $w);
                 GET shift(query n: usize = 1usize << $r.weight());
                 GET pointer(query n: usize = (core::ptr::null::<u8>() as *const $w).is_null() as usize);
+                GET holder(query h: Holder = $p { n: 7 });
+                scope owner(h: Holder = $p { n: 8 }) {
+                    GET get() { query { "h" = owner.h; } }
+                }
             }
         }
     };
@@ -129,7 +144,8 @@ declare!(
     &DATA,
     &'static str,
     Vec<u8>,
-    core::primitive::u64
+    core::primitive::u64,
+    crate::Holder
 );
 
 #[test]
@@ -193,4 +209,10 @@ fn forwarded_fragments_keep_their_grouping() {
     assert_eq!(p.request().url().query(), Some("n=4"));
     let p = api.pointer().prepare().unwrap();
     assert_eq!(p.request().url().query(), Some("n=1"));
+    // Final review R1: a forwarded path stays a path (one primary expression), so it can head a
+    // struct literal, in an endpoint's and in an owner's initializer (4.1 accepted both).
+    let p = api.holder().prepare().unwrap();
+    assert_eq!(p.request().url().query(), Some("h=7"));
+    let p = api.owner().get().prepare().unwrap();
+    assert_eq!(p.request().url().query(), Some("h=8"));
 }
