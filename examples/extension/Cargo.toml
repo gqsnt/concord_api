@@ -1,0 +1,19 @@
+[package]
+name = "concord-example-extension"
+description = "Downstream example: an independent crate adds a Catalog operation the SDK does not declare (a tenant's CSV export) through the SDK's public context boundary and Concord's public decoder."
+version = "0.0.0"
+edition = "2024"
+rust-version.workspace = true
+license.workspace = true
+publish = false
+
+[dependencies]
+concord = { path = "../../crates/concord" }
+concord-example-sdk = { path = "../sdk" }
+
+[dev-dependencies]
+concord-example-fixture = { path = "../fixture" }
+tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
+
+[lints]
+workspace = true

@@ -58,6 +58,33 @@ the versions you support.
 - **Where:** `Versioned` in [`crates/concord/tests/metadata.rs`](../crates/concord/tests/metadata.rs),
   explained in [Writing a format](CUSTOM_FORMATS.md#5-a-vendor-format-that-checks-a-version-header).
 
+### Response metadata with the typed value
+
+[`metadata::send_with_meta`](../examples/native/src/metadata.rs) (and `item_with_meta`, one
+endpoint packaged) — the caller needs a few response headers (an `ETag` for a later conditional
+request, a request id, a count) together with the decoded value, possibly after a native edit.
+
+- **How:** `prepare()?.into_parts()`; edit the native request; one `client.execute(request)`. On
+  `Err(e)`, convert with `decoder.finish(Err(e))` (Concord's `Transport` error, URL removed). On a
+  response, copy the status, the final URL and the headers you select by borrowing it, then
+  `decoder.decode(response)` as usual. The recipe returns `WithMeta { value, meta }` or a
+  `MetaError` holding the `concord::Error` and `Option<Meta>`: `None` when no response head
+  arrived, `Some` once one did. `Status` and `Metadata` errors still keep the whole unread response
+  (`into_response()`); after a body-read failure (`Transport`) or a `Decode` failure only the
+  captured head is left, the body is gone.
+- **Assumes:** you choose which headers outlive the response; nothing else is kept. `Debug` of
+  `Meta`, `WithMeta` and `MetaError` is written by hand: status, version and kept header
+  **names**, never a header value (`Set-Cookie`), the URL or the decoded value, so no `T: Debug`
+  bound. Values are read deliberately with `raw_header`, `raw_headers`, `raw_url` and `value`.
+  Never return the raw `reqwest::Error` of `client.execute(..).await?`: its `Display` prints the
+  full URL, sensitive query values included.
+- **When not:** for the value alone, `send()`; for the headers of a status error alone,
+  `error.response()`.
+- **Evidence:** [`examples/native/tests/metadata_recipe.rs`](../examples/native/tests/metadata_recipe.rs)
+  (native edit on the wire, metadata captured while the body is still withheld, a refused
+  connection to a URL with a synthetic secret against the raw-error control, each failure stage,
+  `Debug` with synthetic cookie, URL and payload values).
+
 ### Streaming a large or endless body
 
 [`streaming::first_event_chunks`](../examples/native/src/streaming.rs) — a chunked export or event
@@ -70,6 +97,13 @@ feed that must not be buffered.
   to the pool.
 - **Note:** any declared typed output (`-> Bytes` with `response Binary;`, `-> T`) buffers the whole body, as every
   `Decode` does; an endpoint without `->` drains it without buffering but discards it.
+- **Request bodies** go the other way: a body produced while it is sent, with one fixed media
+  type, is a format. [`upload::Streamed`](../examples/native/src/upload.rs) implements
+  `Encode<OneShot>` and moves a non-`Clone` one-shot source into `reqwest::Body::wrap_stream`
+  (reqwest's `stream` feature, enabled in that example's `Cargo.toml`); `prepare()` does not poll
+  it, one `send()` reads it once, chunked. The request cannot be cloned or replayed: another
+  upload needs a fresh source. Evidence:
+  [`examples/native/tests/upload.rs`](../examples/native/tests/upload.rs).
 
 ## Requests
 
@@ -84,6 +118,27 @@ transport setting or a header the declaration does not carry (a request id, a ti
 - **Assumes:** after `into_parts` the request is native — its `Debug` prints the full URL
   (sensitive query values and path segments included) and every header value not flagged
   sensitive. Mark a secret extra header with `HeaderValue::set_sensitive(true)` yourself.
+
+### An operation the SDK does not declare
+
+[`concord-example-extension`](../examples/extension) — another crate needs an endpoint the SDK's
+declaration lacks (here a tenant's CSV export, `GET tenants/{tenant}/exports/{export}`), and
+cannot or should not edit the SDK.
+
+- **How:** the SDK publishes a [context](../examples/sdk/src/context.rs), configured once
+  (client, base URL, credentials), that yields both the generated handles and native requests:
+  `tenant.request(Method::GET, &["exports", id])?` keeps the base path prefix, encodes each
+  segment like a Concord path value and adds the service headers (the key flagged sensitive).
+  Add `Accept`, execute once with the context's client, finish with your own format —
+  `Decoder::<Vec<CsvRow>>::new::<Csv>().finish(client.execute(request).await)` — and name the
+  operation in your own error type.
+- **Assumes:** the SDK keeps the context in step with its declaration (base, header names,
+  encoding); the example's SDK tests compare it with the generated endpoints. The decoder is
+  unlabeled (`endpoint()` is `None`), and the request is native: its `Debug` and URL show path
+  data, so do not log it when that data is secret.
+- **When not:** do not prepare a declared endpoint as a seed and rewrite its URL: it only reaches
+  suffixes of declared routes, and its decoder, `Accept` and name belong to the other endpoint.
+  If you own the SDK, declare the endpoint.
 
 ### Interleaved query parameters
 
@@ -215,8 +270,12 @@ through reqwest's own `multipart` feature, enabled in that example crate only.
   `reqwest::RequestBuilder::from_parts(client, request).multipart(form).send().await` and
   `decoder.finish(result).await`. The declared path, headers and decoder still apply; reqwest
   writes the boundary, `Content-Type` and (for parts of known length) `Content-Length`.
-- **Why native:** `Encode::CONTENT_TYPE` is a constant, while a multipart boundary is chosen per
-  body; Concord has no multipart policy.
+- **Why native:** `Encode::CONTENT_TYPE` is a constant and `encode` returns no headers, while a
+  multipart boundary is chosen per body; Concord has no multipart policy. (A `content-type` header
+  on the endpoint replaces the format's media type, so an SDK that chooses the boundary itself and
+  passes the matching header can also use a format; reqwest's multipart support does both for
+  you.) A fixed-media stream needs neither: see the request side of
+  [streaming](#streaming-a-large-or-endless-body).
 - **Assumes:** field names use `Form::percent_encode_attr_chars()` (reqwest's default leaves `\`
   raw inside `name="..."`); file names with CR/LF are escaped by reqwest in a form a strict
   RFC 9110 recipient may reject, so sanitize them if the server is unknown.
@@ -237,6 +296,77 @@ recommended default for every API. All are in [`policies.rs`](../examples/native
 A request value's `Clone` (available when its values and body are `Clone`) only means it can be
 copied. The retry recipe deliberately takes a request **factory** instead.
 
+## SDK and application patterns
+
+[`examples/app`](../examples/app) is an application over a shared SDK
+([`examples/sdk`](../examples/sdk): two independent clients, Catalog and Ledger). Each pattern
+below is application code with its policy stated in the module; the tests run against the
+loopback fake services of [`examples/fixture`](../examples/fixture)
+(`cargo test -p concord-example-app`), and the [README](../examples/app/README.md) maps modules
+to tests.
+
+### Domain values into a service's representation
+
+[`catalog_repr::activity`](../examples/app/src/catalog_repr.rs) and
+[`ledger_repr::entries`](../examples/app/src/ledger_repr.rs) — the application has its own
+[`AccountId` and `Moment`](../examples/app/src/domain.rs), and each service writes them
+differently (decimal and whole-second RFC 3339; `acct-` hex and milliseconds).
+
+- **How:** one module per service converts the domain values into that service's text and returns
+  the **generated operation**: `activity(&Catalog, AccountId, Option<Moment>) ->
+  Result<CatalogActivity, CatalogReprError>`. It is synchronous and sends nothing; the caller keeps
+  the setters (`.set_page_size(2)`), `prepare()` and `send()`.
+- **Assumes:** each service has its own precise error enum (a fractional second, a year outside
+  0000–9999; sub-millisecond precision, an instant before 1970, `u64` overflow). Nothing is
+  rounded, wrapped or truncated, and a refused value never creates a request.
+- **When not:** a value the application already holds as the service's text needs no adapter. A
+  `Display` on the domain type tuned to one service would put that service's rule in the domain.
+
+### Independent outcomes per service
+
+[`report::account_report`](../examples/app/src/report.rs) — one domain query touches two services,
+and one service refusing or failing must not hide the other's answer.
+
+- **How:** `Outcome::attempt(conversion, Operation::send)` per service, kept in one `Outcome` each:
+  `Rejected(E)` (nothing sent), `Failed(concord::Error)` or `Succeeded(T)`. No aggregate `?`.
+- **Assumes:** this aggregation is application policy, not a Concord rule: Concord returns one
+  result per `send()` and has no notion of a report. The services are attempted one after the
+  other.
+- **When not:** when the result means nothing unless both parts exist, short-circuiting with `?`
+  is the honest policy.
+
+### A named workflow
+
+[`workflow::Browser`](../examples/app/src/workflow.rs) — a call with application intent
+(`unfiltered_page`: the featured listing without its tag filter) that would otherwise be spelled
+`list().set_tags(Vec::new())` at each call site.
+
+- **How:** a struct holding the configured scope handle (a `CatalogTenantListing` with default
+  tags) whose methods return the generated `CatalogTenantListingList`, so callers still chain
+  setters, `prepare()` and `send()`. The per-request `set_tags` leaves the handle's defaults
+  intact for sibling calls.
+- **Assumes:** only calls that carry intent get a name; everything else goes through the SDK
+  handle (`Browser::listing()`).
+- **When not:** wrapping every generated endpoint in a same-named method adds a layer without
+  meaning.
+
+### Bounded traversal with a continuation
+
+[`traversal::traverse`](../examples/app/src/traversal.rs) — two services page differently
+(`next_cursor`, `paging.next`) and the application walks both.
+
+- **How:** one walk over `fetch(token) -> Page<T>`, with a `NonZeroUsize` page bound; small
+  per-service adapters (`catalog_items`, `ledger_entries`) set the token on a clone of a request
+  template and map the page. The result is `Complete` or `Bounded` with a `Continuation`, and every
+  call takes `from: Option<Continuation>` to resume.
+- **Assumes:** a failed page stops the walk with `Interrupted`: the error, the records collected in
+  that call and `retry_from`, the position of the failed page. The caller keeps the records and
+  resumes, or discards them and restarts; nothing is retried. A continuation belongs to the
+  template it came from, and "no duplicates, no gaps" holds only if the listing does not change
+  between calls.
+- **When not:** a single page needs no walk. Unlike `collect_items` above, which drops collected
+  pages on error, this walk hands them back; pick the policy your caller needs.
+
 ## Patterns from other APIs
 
 [`examples/compat`](../examples/compat) is a downstream crate (edition 2021, a private client) with
@@ -246,7 +376,7 @@ synthetic; a fake server proves nothing about the real service.
 
 | Need | How | Case |
 |---|---|---|
-| Read response headers (`ETag`, `Link`) and keep the typed decoding | `prepare()?.into_parts()`, execute, read the headers, then `decoder.decode(response)` | `tests/metadata.rs` |
+| Read response headers (`ETag`, `Link`) and keep the typed decoding | `prepare()?.into_parts()`, execute (a failure goes through `decoder.finish(Err(e))`, not `?`), read the headers, then `decoder.decode(response)`; packaged with failure stages in [response metadata](#response-metadata-with-the-typed-value) | `tests/metadata.rs` |
 | Read a status error's headers without consuming it | `error.response()`; `into_response()` afterwards for the body | `tests/metadata.rs` |
 | An error inside a 2xx (`{"ok": false}`) | a typed output that models the envelope, or a custom `Decode` returning a `CodecError` (its detail goes to `with_source`, read with `source_unredacted()`) | `tests/application.rs` |
 | Nested or bracket form keys (`metadata[order]=7`) | a custom `Encode<T>` with the form media type; `form` itself is flat | `tests/forms.rs` |

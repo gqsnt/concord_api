@@ -1,5 +1,5 @@
 [workspace]
-members = ["crates/concord", "crates/concord-core", "crates/concord-extras", "crates/concord-macros", "examples/shapes", "examples/renamed", "examples/native", "examples/multipart", "examples/quickstart", "examples/riot", "examples/compat", "examples/fixture", "examples/sdk", "checks/heap", "checks/clone-compat", "checks/hygiene", "checks/hygiene/key-a", "checks/hygiene/key-b", "checks/clone-hygiene", "checks/clone-hygiene/a", "checks/clone-hygiene/b", "checks/clone-hygiene/c", "checks/clone-hygiene/d", "benches/baselines", "benches/criterion"]
+members = ["crates/concord", "crates/concord-core", "crates/concord-extras", "crates/concord-macros", "examples/shapes", "examples/renamed", "examples/native", "examples/multipart", "examples/quickstart", "examples/riot", "examples/compat", "examples/fixture", "examples/sdk", "examples/app", "examples/extension", "checks/heap", "checks/clone-compat", "checks/hygiene", "checks/hygiene/key-a", "checks/hygiene/key-b", "checks/clone-hygiene", "checks/clone-hygiene/a", "checks/clone-hygiene/b", "checks/clone-hygiene/c", "checks/clone-hygiene/d", "benches/baselines", "benches/criterion"]
 resolver = "3"
 
 [workspace.package]
