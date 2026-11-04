@@ -13,7 +13,7 @@
 //! - [`StripeContext`] — the configured context (secret key, API version, connected account)
 //!   that produces the generated handles with consistent typed values, and
 //!   [`AccountOverride`]/[`OnAccount`] for a per-request `Stripe-Account`.
-//! - [`send`] — sends any prepared operation once and keeps Stripe's response metadata
+//! - [`send()`] — sends any prepared operation once and keeps Stripe's response metadata
 //!   (`Request-Id`, `Idempotent-Replayed`, rate-limit reason) and typed error documents.
 //! - [`pages`] — the cursor adapter (`starting_after`/`ending_before`, `has_more`) for
 //!   `concord-pagination`'s sequential traversal.

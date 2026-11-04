@@ -9,7 +9,7 @@
 //! [`CursorList`] holds one list request (a generated operation with its filters, page size and
 //! expansions — the *template*) and one [`Direction`]. [`CursorList::fetch`] builds the request
 //! for a cursor (a fresh clone of the template; nothing is shared between pages), sends it once
-//! through [`crate::send`] and projects the envelope into a `concord_pagination::Page`
+//! through [`crate::send()`] and projects the envelope into a `concord_pagination::Page`
 //! ([`StripePage`]): the items, the next [`Cursor`] and the page's [`ResponseMeta`].
 //!
 //! It is the page factory of `concord_pagination::sequential`:
