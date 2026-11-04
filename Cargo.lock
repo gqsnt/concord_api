@@ -339,6 +339,13 @@ version = "0.0.0"
 [[package]]
 name = "concord-example-github-sdk"
 version = "0.0.0"
+dependencies = [
+ "concord",
+ "concord-example-testserver",
+ "serde",
+ "serde_json",
+ "tokio",
+]
 
 [[package]]
 name = "concord-example-kubernetes-app"

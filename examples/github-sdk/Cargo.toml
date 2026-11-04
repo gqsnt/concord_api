@@ -1,6 +1,6 @@
 [package]
 name = "concord-example-github-sdk"
-description = "Placeholder: the github sdk package of the 4.4 provider integrations (implementation in progress)."
+description = "Provider SDK example (4.4 integrations): a bounded GitHub REST slice (repository, issues, pull requests, Actions runs/jobs/artifacts) declared with concord::api!, with Link-header pagination adapters and an artifact download that never forwards the token."
 version = "0.0.0"
 edition = "2024"
 rust-version.workspace = true
@@ -8,6 +8,13 @@ license.workspace = true
 publish = false
 
 [dependencies]
+concord = { path = "../../crates/concord", features = ["json", "stream"] }
+serde = { workspace = true, features = ["derive"] }
+
+[dev-dependencies]
+concord-example-testserver = { path = "../testserver" }
+serde_json.workspace = true
+tokio = { workspace = true, features = ["macros", "rt", "rt-multi-thread", "time", "sync"] }
 
 [lints]
 workspace = true
