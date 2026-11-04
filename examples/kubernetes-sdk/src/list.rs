@@ -39,17 +39,7 @@ use crate::{
     KubeCoreV1Services, ResourceVersionMatch,
 };
 
-// TEMPORARY until `ext44/pag` is merged: the planned `concord_pagination::Page` shape.
-/// One page (temporary stand-in for `concord_pagination::Page`).
-#[derive(Debug)]
-pub struct Page<T, K, M = ()> {
-    /// Items.
-    pub items: Vec<T>,
-    /// Next key.
-    pub next: Option<K>,
-    /// Metadata.
-    pub meta: M,
-}
+pub use concord_pagination::Page;
 
 /// A generated list operation (one of the eleven `GET .../{plural}` endpoints), seen through the
 /// parameters every Kubernetes list shares. Each method forwards to the generated `maybe_*`

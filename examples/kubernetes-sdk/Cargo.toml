@@ -10,6 +10,7 @@ publish = false
 [dependencies]
 concord = { path = "../../crates/concord", features = ["json", "jsonl"] }
 serde = { workspace = true, features = ["derive"] }
+concord-pagination = { path = "../../crates/concord-pagination" }
 
 [dev-dependencies]
 serde_json.workspace = true
