@@ -21,7 +21,11 @@ async fn shutdown_closes_kept_alive_connections_and_waits_for_them() {
     let server = TestServer::start(|_| Reply::json(200, "{}")).await;
     let http = client();
     for _ in 0..3 {
-        let r = http.get(format!("{}/a", server.url())).send().await.unwrap();
+        let r = http
+            .get(format!("{}/a", server.url()))
+            .send()
+            .await
+            .unwrap();
         assert_eq!(r.status(), 200);
         r.bytes().await.unwrap();
     }
@@ -31,7 +35,10 @@ async fn shutdown_closes_kept_alive_connections_and_waits_for_them() {
     let cleanup = server.shutdown().await;
     assert_eq!(cleanup.connections, 1);
     assert_eq!(cleanup.open_at_shutdown, 1);
-    assert_eq!(cleanup.open_after, 0, "shutdown returned with a connection still open");
+    assert_eq!(
+        cleanup.open_after, 0,
+        "shutdown returned with a connection still open"
+    );
 }
 
 #[tokio::test]
@@ -64,7 +71,10 @@ async fn repeated_setup_use_shutdown_releases_every_connection() {
     let http = client();
     let mut total_connections = 0;
     for cycle in 0..CYCLES {
-        let server = TestServer::start(move |r| Reply::json(200, format!("{{\"c\":{cycle},\"p\":\"{}\"}}", r.path()))).await;
+        let server = TestServer::start(move |r| {
+            Reply::json(200, format!("{{\"c\":{cycle},\"p\":\"{}\"}}", r.path()))
+        })
+        .await;
         for i in 0..2 {
             let r = http
                 .get(format!("{}/item/{i}", server.url()))
@@ -80,7 +90,10 @@ async fn repeated_setup_use_shutdown_releases_every_connection() {
     }
     // A cycle normally reuses one connection for both requests; a pooled connection to the
     // previous (closed) server is never reused for another port.
-    assert!(total_connections >= CYCLES && total_connections <= 2 * CYCLES, "{total_connections}");
+    assert!(
+        total_connections >= CYCLES && total_connections <= 2 * CYCLES,
+        "{total_connections}"
+    );
 }
 
 #[tokio::test]
@@ -91,14 +104,19 @@ async fn dropping_without_shutdown_aborts_connection_tasks() {
     assert!(server.wait_until(WAIT, |s| s.active_bodies() == 1).await);
     drop(server);
     // The aborted connection task drops its socket: the client's pending read fails promptly.
-    let read = tokio::time::timeout(WAIT, response.chunk()).await.expect("no prompt close");
+    let read = tokio::time::timeout(WAIT, response.chunk())
+        .await
+        .expect("no prompt close");
     assert!(read.is_err());
 }
 
 #[tokio::test]
 async fn fail_after_delivers_a_prefix_then_drops_the_connection() {
     let server = TestServer::start(|_| {
-        Reply::new(200).with_body(Body::FailAfter(vec![Bytes::from_static(b"one\n"), Bytes::from_static(b"two\n")]))
+        Reply::new(200).with_body(Body::FailAfter(vec![
+            Bytes::from_static(b"one\n"),
+            Bytes::from_static(b"two\n"),
+        ]))
     })
     .await;
     let mut response = client().get(server.url()).send().await.unwrap();
@@ -111,7 +129,10 @@ async fn fail_after_delivers_a_prefix_then_drops_the_connection() {
         }
     };
     assert_eq!(got, b"one\ntwo\n");
-    assert!(error.is_body() || error.is_decode() || error.is_request(), "{error:?}");
+    assert!(
+        error.is_body() || error.is_decode() || error.is_request(),
+        "{error:?}"
+    );
     server.shutdown().await;
 }
 
@@ -147,7 +168,10 @@ async fn a_slow_receiver_counts_every_request_byte_without_storing_them_all() {
         read_size: 4096,
         read_delay: Some(Duration::from_millis(1)),
     };
-    let server = TestServer::start_with(receive, |r| Reply::json(200, format!("{{\"n\":{}}}", r.body_len))).await;
+    let server = TestServer::start_with(receive, |r| {
+        Reply::json(200, format!("{{\"n\":{}}}", r.body_len))
+    })
+    .await;
     let body = vec![b'x'; 256 * 1024];
     let text = client()
         .post(server.url())
