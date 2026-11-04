@@ -301,6 +301,12 @@ async fn delimiters_quoted_separators_doubled_quotes_and_embedded_terminators() 
         outcome(absent(0x1f), b"a\x1f\"b\x1fc\"\x1f,\n").await,
         Outcome::ok(None, &[&["a", "b\x1fc", ","]])
     );
+    // `csv-core`'s permissive grammar (documented): a stray quote inside an unquoted field is
+    // data, and input that ends inside a quoted field yields that field.
+    assert_eq!(
+        outcome(absent(b','), b"a\"b,\"open").await,
+        Outcome::ok(None, &[&["a\"b", "open"]])
+    );
     // CR, LF and CRLF terminators mixed; blank lines skipped; no final terminator.
     assert_eq!(
         outcome(absent(b','), b"a,1\rb,2\n\nc,3\r\n\r\nd,4").await,

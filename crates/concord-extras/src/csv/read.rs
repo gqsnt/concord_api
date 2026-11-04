@@ -174,8 +174,8 @@ impl fmt::Debug for CsvReader {
 /// Each [`next`](Self::next) reads only as much input as the next record needs (plus the rest of
 /// the current chunk): nothing runs ahead of the caller, no task is spawned. The record being
 /// framed is bounded by the record/header/field limits; a long run of skipped input (comment or
-/// blank lines) or a large record yields to the executor every
-/// [`SKIP_BUDGET`](crate::stream) bytes. After an error or the end, `next` returns `None`.
+/// blank lines) or a large record yields to the executor after every 64 KiB parsed. After an
+/// error or the end, `next` returns `None`.
 /// Dropping it drops the source (the response's connection).
 pub struct CsvRecords<T, S = reqwest::Response> {
     driver: Driver<S>,
