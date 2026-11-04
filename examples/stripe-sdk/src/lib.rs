@@ -61,12 +61,13 @@ pub use context::{AccountOverride, OnAccount, StripeContext};
 pub use expandable::{Expandable, List, Object};
 pub use form::{MetadataPatch, Patch, StripeForm};
 pub use ids::{
-    AccountId, BalanceTransactionId, CustomerId, IdError, InvoiceId, InvoiceLineItemId, PriceId,
-    ProductId, SubscriptionId, SubscriptionItemId, TaxRateId,
+    AccountId, BalanceTransactionId, CustomerId, IdError, InvoiceId, InvoiceLineItemId,
+    PaymentMethodId, PriceId, ProductId, SubscriptionId, SubscriptionItemId, TaxRateId,
 };
 pub use models::{
-    BalanceTransaction, CollectionMethod, Customer, Invoice, InvoiceLineItem, InvoiceStatus, Price,
-    Product, SourceObject, Subscription, SubscriptionItem, SubscriptionStatus,
+    BalanceTransaction, CollectionMethod, Customer, Invoice, InvoiceLineItem, InvoiceStatus,
+    PaymentMethod, Price, Product, SourceObject, Subscription, SubscriptionItem,
+    SubscriptionStatus,
 };
 pub use send::{ApiError, ApiErrorType, Error, ProtocolError, Response, ResponseMeta, send};
 pub use types::{
@@ -196,7 +197,8 @@ concord::api! {
                 query starting_after?: CustomerId,
                 /// Backward cursor: the first id of the previous page.
                 query ending_before?: CustomerId,
-                /// `expand[]` entries, such as `data.test_clock`.
+                /// `expand[]` entries, such as `data.test_clock` or
+                /// `data.invoice_settings.default_payment_method`.
                 query("expand[]") each expand: Vec<ExpandPath> = Vec::new(),
                 /// Per-request `Stripe-Account`: absent inherits the client's, `None` sends none
                 /// (the platform), `Some(v)` sends `v`. Set it through [`OnAccount`].
@@ -208,6 +210,7 @@ concord::api! {
             /// `GET /v1/customers/{id}`.
             GET retrieve(
                 id: CustomerId,
+                /// `expand[]` entries, such as `invoice_settings.default_payment_method`.
                 query("expand[]") each expand: Vec<ExpandPath> = Vec::new(),
                 #[sensitive] account_override?: Option<HeaderValue>,
             ) -> Customer {

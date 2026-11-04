@@ -261,3 +261,53 @@ fn nested_sequences_inside_objects_keep_indices() {
         ])
     );
 }
+
+/// `invoice_settings[default_payment_method]`, spelled as in Stripe's guide "Migrate from legacy
+/// Cards or Sources" (`-d "invoice_settings[default_payment_method]={{PAYMENTMETHOD_ID}}"`,
+/// retrieved 2026-11-05) and the customer create/update parameter reference.
+#[test]
+fn invoice_settings_is_a_nested_optional_field() {
+    use concord_example_stripe_sdk::PaymentMethodId;
+    use concord_example_stripe_sdk::params::{CustomerCreate, InvoiceSettingsParams};
+
+    let settings = InvoiceSettingsParams {
+        default_payment_method: Some(PaymentMethodId::new("pm_card_one").unwrap()),
+    };
+    let create = CustomerCreate {
+        email: Some("billing@example.test".to_owned()),
+        invoice_settings: Some(settings.clone()),
+        metadata: Metadata::from([("crm_id".to_owned(), "7".to_owned())]),
+        ..CustomerCreate::default()
+    };
+    assert_eq!(
+        to_pairs(&create).unwrap(),
+        pairs(&[
+            ("email", "billing@example.test"),
+            ("invoice_settings[default_payment_method]", "pm_card_one"),
+            ("metadata[crm_id]", "7"),
+        ])
+    );
+    let update = CustomerUpdate {
+        invoice_settings: Some(settings),
+        ..CustomerUpdate::default()
+    };
+    assert_eq!(
+        encode_pairs(&to_pairs(&update).unwrap()),
+        "invoice_settings%5Bdefault_payment_method%5D=pm_card_one"
+    );
+
+    // Omitted and "present but empty" send the same nothing.
+    let omitted = CustomerUpdate {
+        name: Some(Patch::Set("Ada".to_owned())),
+        ..CustomerUpdate::default()
+    };
+    let empty = CustomerUpdate {
+        invoice_settings: Some(InvoiceSettingsParams::default()),
+        ..omitted.clone()
+    };
+    assert_eq!(to_pairs(&omitted).unwrap(), pairs(&[("name", "Ada")]));
+    assert_eq!(to_pairs(&empty).unwrap(), to_pairs(&omitted).unwrap());
+
+    // The id is validated before any body exists.
+    assert!(PaymentMethodId::new("card_legacy").is_err());
+}

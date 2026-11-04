@@ -31,6 +31,8 @@ was read as the English reference.
 | — | https://docs.stripe.com/api/errors, https://docs.stripe.com/error-codes | error object (`type`, `code`, `message`, `param`, `doc_url`), types `api_error`, `card_error`, `idempotency_error`, `invalid_request_error`; codes `rate_limit`, `lock_timeout`, `resource_missing`, `parameters_exclusive`, `idempotency_key_in_use` |
 | — | https://docs.stripe.com/api/request_ids | `Request-Id` response header |
 | — | https://docs.stripe.com/api/metadata | `metadata[key]=value`, unset a key with an empty value, unset all with `metadata=`, no `[`/`]` in keys, 50 keys / 40 / 500 characters |
+| — | https://docs.stripe.com/api/customers/create, /api/customers/update, /api/customers/object (`?query=invoice_settings`), /api/payment_methods/object (`?query=card`), retrieved **2026-11-05** | `invoice_settings[default_payment_method]` on customer create and update ("ID of a payment method that's attached to the customer"); `invoice_settings.default_payment_method` on the customer object ("nullable, expandable"); the payment method object (`id`, `type`, `card.brand/last4/exp_month/exp_year`, `customer` expandable, `metadata` nullable) |
+| — | https://docs.stripe.com/payments/payment-methods/migrate-from-legacy-cards-sources (served in French), retrieved 2026-11-05 | curl `-d "invoice_settings[default_payment_method]={{PAYMENTMETHOD_ID}}"`; the parameter mapping shows `invoice_settings.default_payment_method: "pm_xxx"`; Card or Source ids can no longer be passed as `payment_method` |
 | — | https://docs.stripe.com/api/customers/list, /api/invoices/list, /api/invoices/invoice_lines, /api/invoices/object, /api/invoice-line-item/object, /api/subscriptions/object, /api/subscriptions/create, /api/subscriptions/update, /api/prices/create, /api/products/create, /api/balance_transactions/object | parameters, objects and curl spellings of the implemented operations |
 
 ## Supported operations (19)
@@ -51,6 +53,13 @@ Every operation takes a per-request `Stripe-Account` override (`OnAccount`), eve
 `subscription`, `status`, `collection_method`, `created`), products (`active`, `ids[]`,
 `created`), prices (`product`, `active`, `currency`, `type`, `lookup_keys[]`, `created`), balance
 transactions (`type`, `currency`, `payout`, `source`, `created`).
+
+Customer create and update also take `invoice_settings[default_payment_method]`
+(`params::InvoiceSettingsParams`); the customer model decodes
+`invoice_settings.default_payment_method` as `Expandable<PaymentMethod>`
+(`Customer::default_payment_method()`), expanded with `expand[]=invoice_settings.default_payment_method`
+(`data.invoice_settings.default_payment_method` on a list). The payment method is read only as an
+expansion target; payment method operations remain unsupported.
 
 ## Deliberately unsupported
 
@@ -76,6 +85,9 @@ field Stripe sends is ignored.
 | Subscription periods | `current_period_start/end` appear on subscription **items** in the examples. | On `SubscriptionItem`, optional. |
 | Line item ids | Examples show `il_tmp_...`. | Prefix rule `il_` only. |
 | Product ids | "You can optionally override this ID". | `ProductId` has no prefix rule. |
+| Payment method ids | Examples show `pm_...`; the legacy-cards migration guide maps defaults to `pm_xxx` and says Card or Source ids can no longer be passed as `payment_method`. | `PaymentMethodId` requires `pm_` when the application constructs it (received ids: no prefix rule, as for every id). |
+| Unsetting `invoice_settings[default_payment_method]` | The reference documents an empty value only for `invoice_settings.custom_fields` ("When updating, pass an empty string to remove previously-defined fields"), not for `default_payment_method`. | No `Patch` for it: `InvoiceSettingsParams::default_payment_method` is `Option<PaymentMethodId>`, `None` leaves it unchanged. An `InvoiceSettingsParams` with nothing set sends nothing (same bytes as `None`). |
+| Customer `invoice_settings` | Documented as an object (not nullable), present in every example. | `#[serde(default)]`: a response without it decodes as empty settings, so older fixtures still decode. |
 | Response `Stripe-Version` | Not documented on the pages consulted. | Captured in `ResponseMeta::stripe_version` if present, never required. |
 | Authentication | Basic auth documented first; Bearer documented as an alternative. | `Authorization: Bearer <key>`, flagged sensitive. |
 | Idempotency key scope | Keys must identify "a single operation on your account"; scoping by `Stripe-Account` is an inference. | The application ledger refuses any reuse of a key for a different request, across accounts too. |

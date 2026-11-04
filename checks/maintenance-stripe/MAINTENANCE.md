@@ -26,3 +26,13 @@ as literal byte strings, the decoded pairs, the target, `Stripe-Account`, `Strip
 The response fixtures include every member of the documented customer object, notably
 `invoice_settings` (`{"custom_fields":null,"default_payment_method":"pm_..",...}`), which the
 SDK did not model at stage 1: the frozen consumer must keep decoding them once it does.
+
+## Stage 2 — SDK change (recorded when made)
+
+Customer create/update gain `invoice_settings[default_payment_method]`
+(`params::InvoiceSettingsParams`, field `invoice_settings: Option<InvoiceSettingsParams>`), the
+customer model gains `invoice_settings.default_payment_method: Option<Expandable<PaymentMethod>>`
+with a `PaymentMethod` model, a `PaymentMethodId` (`pm_`) and `Customer::default_payment_method()`.
+No change to the `concord::api!` declaration other than two `expand[]` doc comments, none to the
+form encoder (`form.rs`), the expandable machinery, the context or `send()`. The frozen consumer
+and the app compiled and passed unchanged (details at stage 3).

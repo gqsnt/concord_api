@@ -19,7 +19,7 @@
 use serde::Serialize;
 
 use crate::form::{MetadataPatch, Patch};
-use crate::ids::{CustomerId, PriceId, ProductId, SubscriptionItemId, TaxRateId};
+use crate::ids::{CustomerId, PaymentMethodId, PriceId, ProductId, SubscriptionItemId, TaxRateId};
 use crate::models::{Address, CollectionMethod, Interval, MarketingFeature};
 use crate::types::{Currency, ExpandPath, Metadata};
 
@@ -42,11 +42,24 @@ pub struct CustomerCreate {
     pub address: Option<Address>,
     /// Preferred locales, a repeated field: `preferred_locales[]=fr-FR&preferred_locales[]=en`.
     pub preferred_locales: Vec<String>,
+    /// Default invoice settings: `invoice_settings[default_payment_method]=pm_..`.
+    pub invoice_settings: Option<InvoiceSettingsParams>,
     /// Metadata: `metadata[key]=value`.
     #[serde(skip_serializing_if = "is_empty_map")]
     pub metadata: Metadata,
-    /// Objects to expand in the response.
+    /// Objects to expand in the response, such as `invoice_settings.default_payment_method`.
     pub expand: Vec<ExpandPath>,
+}
+
+/// `invoice_settings` of a customer create or update: `invoice_settings[default_payment_method]`.
+///
+/// Every field is optional; a value with no field set sends nothing, exactly like `None`.
+#[derive(Clone, Debug, Default, PartialEq, Serialize)]
+pub struct InvoiceSettingsParams {
+    /// The payment method (already attached to the customer) used by default for subscriptions
+    /// and invoices. Stripe documents no empty-value unset for this field, so there is no
+    /// `Patch` here: `None` leaves it as it is.
+    pub default_payment_method: Option<PaymentMethodId>,
 }
 
 /// `POST /v1/customers/{id}`.
@@ -64,9 +77,11 @@ pub struct CustomerUpdate {
     pub address: Option<Patch<Address>>,
     /// Preferred locales; `Some(Patch::Unset)` sends `preferred_locales=`.
     pub preferred_locales: Option<Patch<Vec<String>>>,
+    /// Default invoice settings to change: `invoice_settings[default_payment_method]=pm_..`.
+    pub invoice_settings: Option<InvoiceSettingsParams>,
     /// Metadata changes.
     pub metadata: Option<MetadataPatch>,
-    /// Objects to expand in the response.
+    /// Objects to expand in the response, such as `invoice_settings.default_payment_method`.
     pub expand: Vec<ExpandPath>,
 }
 
