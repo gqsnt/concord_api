@@ -2476,6 +2476,23 @@ mod tests {
             "{text}"
         );
         assert!(text.contains("match 0isize { -1isize..=1"), "{text}");
+        // Written delimiters are never taken for a fragment's (re-review C3).
+        let text = docs(quote! {
+            pub client Api {
+                base "http://x.test";
+                GET x(
+                    query a: usize = [-1isize].len(),
+                    query b: isize = if true { -1isize } else { 2isize },
+                    query c: usize = count!(-1isize),
+                );
+            }
+        });
+        assert!(text.contains("Initially `[-1isize].len()`"), "{text}");
+        assert!(
+            text.contains("Initially `if true { -1isize } else { 2isize }`"),
+            "{text}"
+        );
+        assert!(text.contains("Initially `count!(- 1isize)`"), "{text}");
     }
 
     /// Final review R1: the per-call note may call absence "the default" only when the value has

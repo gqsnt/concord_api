@@ -288,6 +288,14 @@ class Fails(unittest.TestCase):
         self.assertFails(gate("        run: |\n          builtin set +e\n          scripts/verify.sh --package --bench\n"),
                          *self.NO_GATE, "disables errexit")
 
+    def test_control_command_behind_prefixes(self):
+        # Re-review T2: a prefixed `exit`/`exec` still runs before the gate.
+        for line in ("builtin exit 0", "command exit 0", "REVIEW_OPTION=1 exit 0", "builtin exec true"):
+            with self.subTest(line=line):
+                word = line.split()[-2] if line.endswith("0") else "exec"
+                self.assertFails(gate(f"        run: |\n          {line}\n          scripts/verify.sh --package --bench\n"),
+                                 *self.NO_GATE, f"unsupported shell construct `{word}`")
+
     def test_set_unmodelled_option(self):
         self.assertFails(gate("        run: |\n          set -f\n          scripts/verify.sh --package --bench\n"),
                          *self.NO_GATE, "changes shell option `-f`, which the guard does not model")

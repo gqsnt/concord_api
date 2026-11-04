@@ -1285,11 +1285,13 @@ fn parse_type(input: ParseStream<'_>) -> syn::Result<Type> {
     })
 }
 
-/// Whether a fragment forwarded by `macro_rules!` is a negative literal (`-1isize`).
+/// Whether a group is a fragment forwarded by `macro_rules!` (no delimiters) holding a negative
+/// literal (`-1isize`); written brackets, braces or parentheses (`[-1]`, `{ -1 }`, `m!(-1)`) are not.
 fn literal_fragment(g: &proc_macro2::Group) -> bool {
-    use proc_macro2::TokenTree;
+    use proc_macro2::{Delimiter, TokenTree};
     let tokens: Vec<TokenTree> = g.stream().into_iter().collect();
-    matches!(tokens.as_slice(), [TokenTree::Punct(minus), TokenTree::Literal(_)] if minus.as_char() == '-')
+    g.delimiter() == Delimiter::None
+        && matches!(tokens.as_slice(), [TokenTree::Punct(minus), TokenTree::Literal(_)] if minus.as_char() == '-')
 }
 
 /// Whether the tokens after a negative literal fragment bind tighter than its `-`: a method call

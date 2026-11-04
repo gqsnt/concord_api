@@ -911,7 +911,9 @@ class Guard:
                 if side not in ("start", "end", NEWLINE):
                     problems.append(f"shell operator `{side}` next to the gate: it can skip the gate or swallow its exit status")
             for other in commands(tokens):
-                first = other.words[0].text if other.words else other.ops[0]
+                # After prefixes that still run it (`builtin exit 0`, `NAME=1 exec true`).
+                plain = shell_words(other)
+                first = plain[0] if plain else other.words[0].text if other.words else other.ops[0]
                 if first in COMPOUND or first in CONTROL or "(" in other.ops:
                     problems.append(f"unsupported shell construct `{first}` in the gate's step (not evaluated)")
                 if disables_errexit(other):
