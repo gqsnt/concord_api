@@ -2,13 +2,15 @@
 
 use std::fmt;
 
+use concord::stream::OpenError;
 use concord_example_sdk::context::ContextError;
 
 /// Why an operation of this crate failed.
 ///
 /// It names the operation ([`operation`](Self::operation), such as
-/// [`EXPORT_OPERATION`](crate::EXPORT_OPERATION)) and holds either the reason the request could
-/// not be built (nothing was sent) or Concord's error for the call. That Concord error comes from
+/// [`EXPORT_OPERATION`](crate::EXPORT_OPERATION)) and holds the reason the request could not be
+/// built (nothing was sent), Concord's error for the call, or the incremental reader's refusal of
+/// the response head. That Concord error comes from
 /// an unlabeled public decoder, so its `endpoint()` is `None`: this crate never borrows a
 /// declared endpoint's name.
 ///
@@ -26,6 +28,7 @@ pub struct ExtensionError {
 enum Cause {
     Invalid(ContextError),
     Call(concord::Error),
+    Open(OpenError),
 }
 
 impl ExtensionError {
@@ -43,6 +46,13 @@ impl ExtensionError {
         }
     }
 
+    pub(crate) fn open(operation: &'static str, error: OpenError) -> Self {
+        Self {
+            operation,
+            cause: Cause::Open(error),
+        }
+    }
+
     /// The operation that failed.
     pub fn operation(&self) -> &'static str {
         self.operation
@@ -53,7 +63,7 @@ impl ExtensionError {
     pub fn invalid_request(&self) -> Option<&ContextError> {
         match &self.cause {
             Cause::Invalid(error) => Some(error),
-            Cause::Call(_) => None,
+            _ => None,
         }
     }
 
@@ -62,7 +72,26 @@ impl ExtensionError {
     pub fn concord(&self) -> Option<&concord::Error> {
         match &self.cause {
             Cause::Call(error) => Some(error),
-            Cause::Invalid(_) => None,
+            _ => None,
+        }
+    }
+
+    /// The incremental route's refusal of a response before reading its body
+    /// ([`export_rows`](crate::export_rows)): a non-2xx status or a refused head. The response is
+    /// kept unread ([`OpenError::into_response`]).
+    pub fn open_refusal(&self) -> Option<&OpenError> {
+        match &self.cause {
+            Cause::Open(error) => Some(error),
+            _ => None,
+        }
+    }
+
+    /// The opening refusal, owned (to take the unread response back); any other error is
+    /// returned unchanged as `Err`.
+    pub fn into_open_refusal(self) -> Result<OpenError, Self> {
+        match self.cause {
+            Cause::Open(error) => Ok(error),
+            cause => Err(Self { cause, ..self }),
         }
     }
 
@@ -78,10 +107,11 @@ impl ExtensionError {
 
 impl fmt::Display for ExtensionError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}: ", self.operation)?;
         match &self.cause {
-            Cause::Invalid(error) => fmt::Display::fmt(error, f),
-            Cause::Call(error) => fmt::Display::fmt(error, f),
+            Cause::Invalid(error) => write!(f, "{}: {error}", self.operation),
+            Cause::Call(error) => write!(f, "{}: {error}", self.operation),
+            // The opening refusal already names the operation it was opened for.
+            Cause::Open(error) => fmt::Display::fmt(error, f),
         }
     }
 }
@@ -92,6 +122,7 @@ impl std::error::Error for ExtensionError {
         match &self.cause {
             Cause::Invalid(error) => Some(error),
             Cause::Call(error) => Some(error),
+            Cause::Open(error) => Some(error),
         }
     }
 }

@@ -1,6 +1,6 @@
 [package]
 name = "concord-example-stripe-sdk"
-description = "Placeholder: the stripe sdk package of the 4.4 provider integrations (implementation in progress)."
+description = "A bounded Stripe v1 SDK slice (customers, subscriptions, invoices and line items, products, prices, balance transactions) declared with concord::api!, with bracketed form encoding, typed expandable fields, response metadata and a cursor adapter for concord-pagination."
 version = "0.0.0"
 edition = "2024"
 rust-version.workspace = true
@@ -8,6 +8,14 @@ license.workspace = true
 publish = false
 
 [dependencies]
+concord = { path = "../../crates/concord", features = ["json"] }
+concord-pagination = { path = "../../crates/concord-pagination" }
+serde = { workspace = true, features = ["derive"] }
+serde_json.workspace = true
+
+[dev-dependencies]
+concord-example-testserver = { path = "../testserver" }
+tokio = { workspace = true, features = ["macros", "rt", "rt-multi-thread", "time", "sync"] }
 
 [lints]
 workspace = true
