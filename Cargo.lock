@@ -402,10 +402,27 @@ dependencies = [
 [[package]]
 name = "concord-example-salesforce-app"
 version = "0.0.0"
+dependencies = [
+ "concord",
+ "concord-example-salesforce-sdk",
+ "concord-example-testserver",
+ "concord-pagination",
+ "serde",
+ "serde_json",
+ "tokio",
+]
 
 [[package]]
 name = "concord-example-salesforce-sdk"
 version = "0.0.0"
+dependencies = [
+ "concord",
+ "concord-example-testserver",
+ "concord-pagination",
+ "serde",
+ "serde_json",
+ "tokio",
+]
 
 [[package]]
 name = "concord-example-sdk"
