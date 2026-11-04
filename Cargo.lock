@@ -293,6 +293,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "concord-example-app"
+version = "0.0.0"
+dependencies = [
+ "concord",
+ "concord-example-fixture",
+ "concord-example-sdk",
+ "tokio",
+]
+
+[[package]]
 name = "concord-example-compat"
 version = "0.0.0"
 dependencies = [
