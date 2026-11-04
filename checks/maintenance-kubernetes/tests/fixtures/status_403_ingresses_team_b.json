@@ -1,0 +1,1 @@
+{"kind":"Status","apiVersion":"v1","metadata":{},"status":"Failure","message":"ingresses.networking.k8s.io is forbidden: User \"system:serviceaccount:team-b:release-audit\" cannot list resource \"ingresses\" in API group \"networking.k8s.io\" in the namespace \"team-b\"","reason":"Forbidden","details":{"group":"networking.k8s.io","kind":"ingresses"},"code":403}
