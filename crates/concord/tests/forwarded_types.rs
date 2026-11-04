@@ -133,6 +133,7 @@ macro_rules! declare {
                 GET lifetime(query n: usize = core::mem::size_of::<&$l str>() + core::mem::size_of::<Option<&$l [u8; 3]>>());
                 GET object_size(query n: usize = core::mem::size_of::<&$t>(), query p?: Payload<{ core::mem::size_of::<&$t>() }>);
                 GET range(query n: usize = match 0isize { $n..=1 => 7, _ => 8 } + match 2isize { -5..=$n => 1, _ => 2 });
+                GET literal_method(query n: usize = $n.unsigned_abs() + [10usize, 20][$n.unsigned_abs()]);
                 scope owner(h: Holder = $p { n: 8 }) {
                     GET get() { query { "h" = owner.h; } }
                 }
@@ -231,7 +232,10 @@ fn forwarded_fragments_keep_their_grouping() {
         p.request().url().query(),
         Some(format!("n={size}").as_str())
     );
-    // A forwarded literal stays as written: it can bound a range pattern (no parentheses there).
+    // A forwarded negative literal stays as written where it can bound a range pattern (no
+    // parentheses there), and is grouped before a method call: `(-1isize).unsigned_abs()`.
     let p = api.range().prepare().unwrap();
     assert_eq!(p.request().url().query(), Some("n=9"));
+    let p = api.literal_method().prepare().unwrap();
+    assert_eq!(p.request().url().query(), Some("n=21"));
 }

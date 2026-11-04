@@ -230,6 +230,7 @@ fn token_text(tokens: proc_macro2::TokenStream, types: bool) -> String {
     }
 
     fn walk(tokens: proc_macro2::TokenStream, types: bool, out: &mut String) {
+        let tokens: Vec<TokenTree> = tokens.into_iter().collect();
         let mut prev = Prev::Start;
         // The previous token is a macro's `!` (`name!`): the group after it is the macro's input.
         let mut bang = false;
@@ -242,7 +243,7 @@ fn token_text(tokens: proc_macro2::TokenStream, types: bool) -> String {
         // not the float `1.`) and before any `.` when it ends with one (`1. ..` is not `1...`);
         // a literal after that `.` stays apart too.
         let (mut integer, mut trailing_dot, mut dot_after_number) = (false, false, false);
-        for tt in tokens {
+        for (i, tt) in tokens.iter().cloned().enumerate() {
             let space = match (&tt, prev) {
                 (_, Prev::Start) => false,
                 // Punctuation written apart stays apart when joining it would change the tokens
@@ -299,7 +300,16 @@ fn token_text(tokens: proc_macro2::TokenStream, types: bool) -> String {
             bang = matches!(&tt, TokenTree::Punct(p) if p.as_char() == '!') && prev == Prev::Word;
             prev = match tt {
                 TokenTree::Group(g) => {
-                    let (open, close) = delimiters(&g, types);
+                    // A negative literal fragment is grouped only before a postfix operator.
+                    let (open, close) = if !types && literal_fragment(&g) {
+                        if postfix_follows(tokens.get(i + 1), tokens.get(i + 2)) {
+                            ("(", ")")
+                        } else {
+                            ("", "")
+                        }
+                    } else {
+                        delimiters(&g, types)
+                    };
                     out.push_str(open);
                     if macro_input {
                         verbatim(g.stream(), out);
@@ -1275,23 +1285,44 @@ fn parse_type(input: ParseStream<'_>) -> syn::Result<Type> {
     })
 }
 
+/// Whether a fragment forwarded by `macro_rules!` is a negative literal (`-1isize`).
+fn literal_fragment(g: &proc_macro2::Group) -> bool {
+    use proc_macro2::TokenTree;
+    let tokens: Vec<TokenTree> = g.stream().into_iter().collect();
+    matches!(tokens.as_slice(), [TokenTree::Punct(minus), TokenTree::Literal(_)] if minus.as_char() == '-')
+}
+
+/// Whether the tokens after a negative literal fragment bind tighter than its `-`: a method call
+/// or field (`.`, not the `..` of a range), an index or `?` (`$n.abs()` is `(-1).abs()`). A range
+/// pattern's bound (`$n..=1`), where parentheses are not allowed, is followed by `..`.
+fn postfix_follows(
+    next: Option<&proc_macro2::TokenTree>,
+    after: Option<&proc_macro2::TokenTree>,
+) -> bool {
+    use proc_macro2::{Delimiter, Spacing, TokenTree};
+    match next {
+        Some(TokenTree::Punct(p)) if p.as_char() == '?' => true,
+        Some(TokenTree::Punct(p)) if p.as_char() == '.' => {
+            !(p.spacing() == Spacing::Joint
+                && matches!(after, Some(TokenTree::Punct(q)) if q.as_char() == '.'))
+        }
+        Some(TokenTree::Group(g)) => g.delimiter() == Delimiter::Bracket,
+        _ => false,
+    }
+}
+
 /// Whether a fragment forwarded by `macro_rules!`, where an expression is expected, needs its
 /// grouping as parentheses: an expression of several tokens, or a type with `+`
 /// (`size_of::<&(dyn Send + Sync)>()`). Left as it came: a path, one primary expression that may
-/// head a struct literal (`$p { n: 7 }`); a literal (`-1`), which may bound a range pattern, where
-/// parentheses are not allowed, and is emitted as 4.1 did; a lifetime, a pattern or another type
-/// that is no expression (`'static`, `&'static str`, `Vec<u8>`). A type that also reads as an
-/// expression (`[u8; 3]`, `&T`) means the same in parentheses.
+/// head a struct literal (`$p { n: 7 }`); a negative literal, which may bound a range pattern,
+/// where parentheses are not allowed (grouped only before a [postfix operator](postfix_follows));
+/// a lifetime, a pattern or another type that is no expression (`'static`, `&'static str`,
+/// `Vec<u8>`). A type that also reads as an expression (`[u8; 3]`, `&T`) means the same in
+/// parentheses.
 fn expression_fragment(g: &proc_macro2::Group) -> bool {
-    use proc_macro2::TokenTree;
     let stream = g.stream();
-    let tokens: Vec<TokenTree> = stream.clone().into_iter().collect();
-    let literal = match tokens.as_slice() {
-        [TokenTree::Punct(minus), TokenTree::Literal(_)] => minus.as_char() == '-',
-        _ => false,
-    };
-    tokens.len() > 1
-        && !literal
+    stream.clone().into_iter().nth(1).is_some()
+        && !literal_fragment(g)
         && syn::parse::Parser::parse2(syn::Path::parse, stream.clone()).is_err()
         && (syn::parse::Parser::parse2(Expr::parse, stream.clone()).is_ok()
             || syn::parse::Parser::parse2(Type::parse, stream.clone()).is_ok()
@@ -1329,7 +1360,9 @@ fn regroup_in(
     use proc_macro2::{Delimiter, Group, Span, TokenTree};
     let (mut word, mut bang) = (false, false);
     let mut out = proc_macro2::TokenStream::new();
-    for tt in tokens {
+    let tokens: Vec<TokenTree> = tokens.into_iter().collect();
+    for (i, tt) in tokens.iter().cloned().enumerate() {
+        let (next, after) = (tokens.get(i + 1), tokens.get(i + 2));
         let macro_input = bang;
         bang = matches!(&tt, TokenTree::Punct(p) if p.as_char() == '!') && word;
         word = matches!(&tt, TokenTree::Ident(_));
@@ -1344,10 +1377,12 @@ fn regroup_in(
         out.extend([match tt {
             TokenTree::Group(g) if macro_input => TokenTree::Group(g),
             TokenTree::Group(g) if g.delimiter() == Delimiter::None => {
-                let bare = if expr {
-                    !expression_fragment(&g)
-                } else {
+                let bare = if !expr {
                     bare_fragment(&g)
+                } else if literal_fragment(&g) {
+                    !postfix_follows(next, after)
+                } else {
+                    !expression_fragment(&g)
                 };
                 match (bare, forwarded(&g.stream())) {
                     (true, false) => TokenTree::Group(g),

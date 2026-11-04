@@ -2463,6 +2463,19 @@ mod tests {
             }
         });
         assert!(text.contains("Initially `(1 + 2) * 2`"), "{text}");
+        // A negative literal is grouped before a method call only (a range bound stays bare).
+        let minus = TokenTree::Group(Group::new(Delimiter::None, quote!(-1isize)));
+        let text = docs(quote! {
+            pub client Api {
+                base "http://x.test";
+                GET x(query n: usize = #minus.unsigned_abs(), query m: usize = match 0isize { #minus..=1 => 7, _ => 8 });
+            }
+        });
+        assert!(
+            text.contains("Initially `(-1isize).unsigned_abs()`"),
+            "{text}"
+        );
+        assert!(text.contains("match 0isize { -1isize..=1"), "{text}");
     }
 
     /// Final review R1: the per-call note may call absence "the default" only when the value has
