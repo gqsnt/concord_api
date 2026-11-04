@@ -335,6 +335,13 @@ dependencies = [
 [[package]]
 name = "concord-example-github-app"
 version = "0.0.0"
+dependencies = [
+ "concord",
+ "concord-example-github-sdk",
+ "concord-example-testserver",
+ "concord-pagination",
+ "tokio",
+]
 
 [[package]]
 name = "concord-example-github-sdk"
@@ -342,6 +349,7 @@ version = "0.0.0"
 dependencies = [
  "concord",
  "concord-example-testserver",
+ "concord-pagination",
  "serde",
  "serde_json",
  "tokio",

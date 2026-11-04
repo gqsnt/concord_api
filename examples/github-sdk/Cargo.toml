@@ -9,6 +9,7 @@ publish = false
 
 [dependencies]
 concord = { path = "../../crates/concord", features = ["json", "stream"] }
+concord-pagination = { path = "../../crates/concord-pagination" }
 serde = { workspace = true, features = ["derive"] }
 
 [dev-dependencies]

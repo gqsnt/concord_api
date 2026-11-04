@@ -57,7 +57,7 @@ async fn follows_next_links_as_sent() {
     let first = pages.fetch(None).await.unwrap();
     assert_eq!(ids(&first), [1, 2]);
     assert!(
-        first.info.meta.links().unwrap().last().is_none(),
+        first.meta.response.links().unwrap().last().is_none(),
         "absent last"
     );
     let second = pages.fetch(first.next.clone()).await.unwrap();
@@ -66,7 +66,7 @@ async fn follows_next_links_as_sent() {
     assert_eq!(ids(&third), [3]);
     assert!(third.next.is_none(), "no next: the listing ended");
     assert_eq!(
-        third.info.meta.request_id(),
+        third.meta.response.request_id(),
         Some("0000:1111:2222:3333:4444")
     );
 
@@ -260,7 +260,7 @@ async fn envelopes_are_projected_and_checked() {
         .await
         .unwrap();
     assert_eq!(jobs.items.len(), 1);
-    assert_eq!(jobs.info.total_count, Some(1));
+    assert_eq!(jobs.meta.total_count, Some(1));
     assert!(jobs.next.is_none());
 
     let error = repo

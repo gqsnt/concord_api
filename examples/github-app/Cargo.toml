@@ -1,6 +1,6 @@
 [package]
 name = "concord-example-github-app"
-description = "Placeholder: the github app package of the 4.4 provider integrations (implementation in progress)."
+description = "Provider caller example (4.4 integrations): the GitHub repository activity audit (GH-A) and workflow-artifact retrieval (GH-B) workflows over the public GitHub SDK slice and concord-pagination."
 version = "0.0.0"
 edition = "2024"
 rust-version.workspace = true
@@ -8,6 +8,15 @@ license.workspace = true
 publish = false
 
 [dependencies]
+concord = { path = "../../crates/concord" }
+concord-example-github-sdk = { path = "../github-sdk" }
+concord-pagination = { path = "../../crates/concord-pagination" }
+# The two binaries need a runtime (reqwest runs on Tokio); the library does not use Tokio.
+tokio = { workspace = true, features = ["macros", "rt"] }
+
+[dev-dependencies]
+concord-example-testserver = { path = "../testserver" }
+tokio = { workspace = true, features = ["macros", "rt", "rt-multi-thread", "time", "sync"] }
 
 [lints]
 workspace = true

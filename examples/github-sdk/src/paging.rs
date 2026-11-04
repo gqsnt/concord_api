@@ -26,7 +26,7 @@
 //!   [`GitHubError::Link`], never "last page"; an envelope inconsistent with itself is a
 //!   [`GitHubError::Envelope`].
 //! - **Metadata.** Every page keeps its [`ResponseMeta`] (request id, rate limit, links) in
-//!   [`PageInfo`].
+//!   [`PageInfo`], the page's `meta`.
 //!
 //! GitHub listings are live: items created, closed or relabelled between two requests can shift
 //! between pages, so a traversal is a best-effort enumeration, not a snapshot.
@@ -38,6 +38,7 @@ use std::future::Future;
 
 use concord::Prepared;
 use concord::reqwest::Url;
+use concord_pagination::Page;
 
 use crate::context::{GitHubContext, RepoContext};
 use crate::error::{EnvelopeProblem, GitHubError};
@@ -192,34 +193,17 @@ envelope!(JobList, Job, jobs);
 envelope!(ArtifactList, Artifact, artifacts);
 envelope!(WorkflowList, Workflow, workflows);
 
-/// What a page reports besides its items.
+/// What a page reports besides its items: the [`Page::meta`] of this SDK's pages.
 #[derive(Clone, Debug)]
 pub struct PageInfo {
     /// The response metadata (request id, rate limit, links).
-    pub meta: ResponseMeta,
+    pub response: ResponseMeta,
     /// `total_count` of an envelope page.
     pub total_count: Option<u64>,
 }
 
-/// One fetched page.
-pub struct LinkPage<T> {
-    /// The items, in GitHub's order.
-    pub items: Vec<T>,
-    /// The next page, `None` on the last page.
-    pub next: Option<NextLink>,
-    /// The page's metadata.
-    pub info: PageInfo,
-}
-
-impl<T> fmt::Debug for LinkPage<T> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("LinkPage")
-            .field("items", &self.items.len())
-            .field("next", &self.next)
-            .field("info", &self.info)
-            .finish()
-    }
-}
+/// One fetched page: `concord-pagination`'s [`Page`] with a [`NextLink`] key and [`PageInfo`].
+pub type LinkPage<T> = Page<T, NextLink, PageInfo>;
 
 /// A page factory for one list operation of one repository. See the
 /// [module documentation](self).
@@ -347,9 +331,12 @@ async fn fetch_page<R: Listing>(
             meta: Box::new(meta),
         });
     }
-    Ok(LinkPage {
+    Ok(Page {
         items,
         next,
-        info: PageInfo { meta, total_count },
+        meta: PageInfo {
+            response: meta,
+            total_count,
+        },
     })
 }
