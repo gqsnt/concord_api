@@ -180,15 +180,17 @@ fn token_text(tokens: proc_macro2::TokenStream, types: bool) -> String {
     }
 
     /// The delimiters written for a group. A fragment forwarded by `macro_rules!` (`$e:expr`,
-    /// `$t:ty`) groups its tokens without delimiters: bare when it is one token or a type,
-    /// parenthesized otherwise (`(1 + 2) * 2`, `&(dyn A + B)`), so the text groups as the tokens
-    /// did. (Executable advice does not spell such a fragment at all: [`forwarded`].)
-    fn delimiters(g: &proc_macro2::Group) -> (&'static str, &'static str) {
+    /// `$t:ty`) groups its tokens without delimiters: bare when it is one token, or a type where a
+    /// type is expected (`types`), parenthesized otherwise (`(1 + 2) * 2`, `(&DATA).len()`,
+    /// `&(dyn A + B)`), so the text groups as the tokens did (as [`regroup`] does in the code).
+    /// Executable advice does not spell such a fragment at all ([`advice`]).
+    fn delimiters(g: &proc_macro2::Group, types: bool) -> (&'static str, &'static str) {
         match g.delimiter() {
             Delimiter::Parenthesis => ("(", ")"),
             Delimiter::Bracket => ("[", "]"),
             Delimiter::Brace => ("{ ", " }"),
-            Delimiter::None if bare_fragment(g) => ("", ""),
+            Delimiter::None if types && bare_fragment(g) => ("", ""),
+            Delimiter::None if g.stream().into_iter().nth(1).is_none() => ("", ""),
             Delimiter::None => ("(", ")"),
         }
     }
@@ -217,7 +219,7 @@ fn token_text(tokens: proc_macro2::TokenStream, types: bool) -> String {
             word = matches!(&tt, TokenTree::Ident(_));
             match tt {
                 TokenTree::Group(g) => {
-                    let (open, close) = delimiters(&g);
+                    let (open, close) = delimiters(&g, true);
                     out.push_str(open);
                     verbatim(g.stream(), out);
                     out.push_str(close);
@@ -297,7 +299,7 @@ fn token_text(tokens: proc_macro2::TokenStream, types: bool) -> String {
             bang = matches!(&tt, TokenTree::Punct(p) if p.as_char() == '!') && prev == Prev::Word;
             prev = match tt {
                 TokenTree::Group(g) => {
-                    let (open, close) = delimiters(&g);
+                    let (open, close) = delimiters(&g, types);
                     out.push_str(open);
                     if macro_input {
                         verbatim(g.stream(), out);
@@ -1257,7 +1259,7 @@ fn consumed<T>(
 /// fragments regrouped ([`regroup`]); the parsed expression printed back has lost their grouping.
 fn parse_initializer(input: ParseStream<'_>) -> syn::Result<Expr> {
     Ok(match consumed(input, |input| input.parse::<Expr>())? {
-        (_, Some(written)) => Expr::Verbatim(regroup(written)),
+        (_, Some(written)) => Expr::Verbatim(regroup(written, true)),
         (expr, None) => expr,
     })
 }
@@ -1266,7 +1268,9 @@ fn parse_initializer(input: ParseStream<'_>) -> syn::Result<Expr> {
 /// them, regrouped ([`regroup`]): `syn` reads such a fragment in a const argument as ungrouped.
 fn parse_type(input: ParseStream<'_>) -> syn::Result<Type> {
     Ok(match consumed(input, |input| input.parse::<Type>())? {
-        (ty, Some(written)) if forwarded(&written) => syn::parse2(regroup(written)).unwrap_or(ty),
+        (ty, Some(written)) if forwarded(&written) => {
+            syn::parse2(regroup(written, false)).unwrap_or(ty)
+        }
         (ty, _) => ty,
     })
 }
@@ -1279,12 +1283,24 @@ fn bare_fragment(g: &proc_macro2::Group) -> bool {
         || syn::parse::Parser::parse2(Type::without_plus, stream).is_ok()
 }
 
-/// `tokens` with each forwarded fragment that is not [bare](bare_fragment) in parentheses. A proc
-/// macro cannot hand such a fragment back as rustc made it, and rustc reads a group without
-/// delimiters from a proc macro as ungrouped: `$e * 2` with `$e = 1 + 2` would be 5, not 6. A
-/// macro's input (`name!(..)`) is kept as it came: there the fragment is still one, opaque to that
-/// macro's matcher.
-fn regroup(tokens: proc_macro2::TokenStream) -> proc_macro2::TokenStream {
+/// `tokens` with forwarded fragments grouped as rustc grouped them. A proc macro cannot hand such
+/// a fragment back as rustc made it, and rustc reads a group without delimiters from a proc macro
+/// as ungrouped: `$e * 2` with `$e = 1 + 2` would be 5, not 6, and `$e.len()` with `$e = &DATA`
+/// would be `&DATA.len()`. Where an expression is expected (`expr`: an initializer, a braced const
+/// argument, an array length) every fragment of several tokens is put in parentheses; where a type
+/// is expected only one that is not a [type](bare_fragment) is (parentheses around a type would be
+/// noise, and a type has no precedence to lose). A macro's input (`name!(..)`) is kept as it came:
+/// there the fragment is still one, opaque to that macro's matcher.
+fn regroup(tokens: proc_macro2::TokenStream, expr: bool) -> proc_macro2::TokenStream {
+    regroup_in(tokens, expr, false)
+}
+
+/// [`regroup`]; `array`: the contents of `[T; N]` in a type, an expression after its `;`.
+fn regroup_in(
+    tokens: proc_macro2::TokenStream,
+    mut expr: bool,
+    array: bool,
+) -> proc_macro2::TokenStream {
     use proc_macro2::{Delimiter, Group, TokenTree};
     let (mut word, mut bang) = (false, false);
     let mut out = proc_macro2::TokenStream::new();
@@ -1292,23 +1308,37 @@ fn regroup(tokens: proc_macro2::TokenStream) -> proc_macro2::TokenStream {
         let macro_input = bang;
         bang = matches!(&tt, TokenTree::Punct(p) if p.as_char() == '!') && word;
         word = matches!(&tt, TokenTree::Ident(_));
+        if array && matches!(&tt, TokenTree::Punct(p) if p.as_char() == ';') {
+            expr = true;
+        }
+        let rebuilt = |g: &Group, delimiter: Delimiter, expr: bool, array: bool| {
+            let mut group = Group::new(delimiter, regroup_in(g.stream(), expr, array));
+            group.set_span(g.span());
+            TokenTree::Group(group)
+        };
         out.extend([match tt {
-            TokenTree::Group(g)
-                if macro_input || g.delimiter() != Delimiter::None && !forwarded(&g.stream()) =>
-            {
-                TokenTree::Group(g)
-            }
-            TokenTree::Group(g) if g.delimiter() == Delimiter::None && bare_fragment(&g) => {
-                TokenTree::Group(g)
-            }
-            TokenTree::Group(g) => {
-                let delimiter = match g.delimiter() {
-                    Delimiter::None => Delimiter::Parenthesis,
-                    other => other,
+            TokenTree::Group(g) if macro_input => TokenTree::Group(g),
+            TokenTree::Group(g) if g.delimiter() == Delimiter::None => {
+                let grouped = if expr {
+                    g.stream().into_iter().nth(1).is_none()
+                } else {
+                    bare_fragment(&g)
                 };
-                let mut group = Group::new(delimiter, regroup(g.stream()));
-                group.set_span(g.span());
-                TokenTree::Group(group)
+                match (grouped, forwarded(&g.stream())) {
+                    (true, false) => TokenTree::Group(g),
+                    // A type that itself holds fragments (`Payload<{ $e * 2 }>` as `$t`).
+                    (true, true) => rebuilt(&g, Delimiter::None, expr, false),
+                    (false, _) => rebuilt(&g, Delimiter::Parenthesis, true, false),
+                }
+            }
+            TokenTree::Group(g) if !forwarded(&g.stream()) => TokenTree::Group(g),
+            TokenTree::Group(g) => {
+                let delimiter = g.delimiter();
+                match delimiter {
+                    Delimiter::Brace => rebuilt(&g, delimiter, true, false),
+                    Delimiter::Bracket if !expr => rebuilt(&g, delimiter, false, true),
+                    _ => rebuilt(&g, delimiter, expr, false),
+                }
             }
             other => other,
         }]);

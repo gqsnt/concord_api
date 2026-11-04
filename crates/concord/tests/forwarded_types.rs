@@ -5,6 +5,8 @@
 //! mismatch at the declaration), named `Payload<{ $e * 2 }>` written directly `Payload<5>`,
 //! initialized 5, and rejected a forwarded `dyn A + B` behind `&` as an ambiguous `+`.
 #![allow(missing_docs)]
+// The parentheses Concord adds around a forwarded fragment are never reported as unneeded.
+#![deny(unused_parens)]
 
 use concord::{CodecError, Decode, Encode, Prepared, ResponseHead, bytes::Bytes, reqwest};
 
@@ -35,6 +37,36 @@ impl<const N: usize> Decode<Payload<N>> for Fmt {
     }
 }
 
+/// Encodes a byte array as its bytes.
+pub struct Raw;
+impl<const N: usize> Encode<[u8; N]> for Raw {
+    const CONTENT_TYPE: Option<&'static str> = None;
+    fn encode(value: [u8; N]) -> Result<reqwest::Body, CodecError> {
+        Ok(reqwest::Body::from(value.to_vec()))
+    }
+}
+
+/// `owned` for a value, `borrowed` for a reference, taken by value: `$e.meaning()` with
+/// `$e = &VALUE` is `(&VALUE).meaning()` in Rust (borrowed), while `&VALUE.meaning()` would borrow
+/// the owned answer (and `IntoValue<String>` accepts `&String`, so it would still compile).
+pub trait Meaning {
+    fn meaning(self) -> String;
+}
+#[derive(Clone, Copy)]
+pub struct Foo;
+impl Meaning for Foo {
+    fn meaning(self) -> String {
+        "owned".into()
+    }
+}
+impl Meaning for &Foo {
+    fn meaning(self) -> String {
+        "borrowed".into()
+    }
+}
+pub static VALUE: Foo = Foo;
+pub const DATA: [u8; 3] = [7, 8, 9];
+
 /// Encodes a borrowed displayable trait object as its text.
 pub struct Shown;
 impl Encode<&'static (dyn core::fmt::Display + Sync)> for Shown {
@@ -52,7 +84,7 @@ macro_rules! pick {
     };
 }
 macro_rules! declare {
-    ($e:expr, $t:ty) => {
+    ($e:expr, $t:ty, $r:expr, $d:expr) => {
         concord::api! {
             pub client Forwarded {
                 base "http://x.test";
@@ -64,11 +96,14 @@ macro_rules! declare {
                 GET initialized(query n: usize = $e * 2);
                 GET direct(query p: Payload<{ $e * 2 }>);
                 POST object(body p: &'static $t) { request Shown; }
+                GET method(query n: String = $r.meaning());
+                POST length(body p: [u8; $d.len()]) { request Raw; }
+                GET alone(query n: usize = $e, query p?: Payload<{ $e }>);
             }
         }
     };
 }
-declare!(1 + 2, dyn core::fmt::Display + Sync);
+declare!(1 + 2, dyn core::fmt::Display + Sync, &VALUE, &DATA);
 
 #[test]
 fn forwarded_fragments_keep_their_grouping() {
@@ -101,4 +136,16 @@ fn forwarded_fragments_keep_their_grouping() {
         p.request().body().unwrap().as_bytes(),
         Some(b"7".as_slice())
     );
+    // A fragment that also reads as a type (`&VALUE`) is still an expression where one is
+    // expected: `(&VALUE).meaning()` and `[u8; (&DATA).len()]`, as in Rust.
+    let p = api.method().prepare().unwrap();
+    assert_eq!(p.request().url().query(), Some("n=borrowed"));
+    let p = api.length(DATA).prepare().unwrap();
+    assert_eq!(
+        p.request().body().unwrap().as_bytes(),
+        Some([7, 8, 9].as_slice())
+    );
+    // Used alone, the fragment's value is unchanged (and its parentheses raise no lint).
+    let p = api.alone().set_p(Payload::<3>).prepare().unwrap();
+    assert_eq!(p.request().url().query(), Some("n=3&p=3"));
 }
