@@ -210,6 +210,95 @@ async fn expandable_field_in_both_forms() {
     server.shutdown().await;
 }
 
+/// `invoice_settings.default_payment_method` (nullable, expandable on the customer object; the
+/// payment method object shaped after its reference example, retrieved 2026-11-05).
+#[tokio::test]
+async fn customer_default_payment_method_in_id_object_and_null_forms() {
+    let customer = |default_payment_method: &str| {
+        format!(
+            r#"{{"id":"cus_pm","object":"customer","email":null,"name":null,"description":null,
+            "balance":0,"created":1767225600,"currency":null,
+            "invoice_settings":{{"custom_fields":null,"default_payment_method":{default_payment_method},"footer":null,"rendering_options":null}},
+            "metadata":{{}},"livemode":false}}"#
+        )
+    };
+    let payment_method = r#"{"id":"pm_one","object":"payment_method","type":"card",
+        "billing_details":{"address":{"city":null,"country":null,"line1":null,"line2":null,"postal_code":null,"state":null},"email":null,"name":null,"phone":null},
+        "card":{"brand":"visa","last4":"4242","exp_month":12,"exp_year":2030,"funding":"credit"},
+        "created":1767225600,"customer":"cus_pm","livemode":false,"metadata":{}}"#;
+    let script = Script::new([
+        Reply::json(200, customer(r#""pm_one""#)),
+        Reply::json(200, customer(payment_method)),
+        Reply::json(200, customer("null")),
+        Reply::json(
+            200,
+            list_json(&[customer(payment_method)], false, "/v1/customers"),
+        ),
+    ]);
+    let server = TestServer::start(move |_| script.next()).await;
+    let stripe = context(&server);
+    let id = CustomerId::new("cus_pm").unwrap();
+    let path = ExpandPath::new("invoice_settings.default_payment_method").unwrap();
+
+    let plain = stripe
+        .api()
+        .customers()
+        .retrieve(id.clone())
+        .send()
+        .await
+        .unwrap();
+    let method = plain.default_payment_method().unwrap();
+    assert!(!method.is_expanded());
+    assert_eq!(method.id().as_str(), "pm_one");
+
+    let expanded = stripe
+        .api()
+        .customers()
+        .retrieve(id.clone())
+        .set_expand(vec![path.clone()])
+        .send()
+        .await
+        .unwrap();
+    let object = expanded.default_payment_method().unwrap().object().unwrap();
+    assert_eq!(object.kind, "card");
+    let card = object.card.as_ref().unwrap();
+    assert_eq!((card.brand.as_str(), card.last4.as_str()), ("visa", "4242"));
+    assert_eq!((card.exp_month, card.exp_year), (12, 2030));
+    assert_eq!(object.customer.as_ref().unwrap().id(), &id);
+
+    let none = stripe.api().customers().retrieve(id).send().await.unwrap();
+    assert!(none.default_payment_method().is_none());
+
+    let listed = stripe
+        .api()
+        .customers()
+        .list()
+        .set_expand(vec![
+            ExpandPath::new("data.invoice_settings.default_payment_method").unwrap(),
+        ])
+        .send()
+        .await
+        .unwrap();
+    assert!(
+        listed.data[0]
+            .default_payment_method()
+            .unwrap()
+            .is_expanded()
+    );
+
+    let requests = server.requests();
+    assert_eq!(requests[0].target, "/v1/customers/cus_pm");
+    assert_eq!(
+        requests[1].target,
+        "/v1/customers/cus_pm?expand%5B%5D=invoice_settings.default_payment_method"
+    );
+    assert_eq!(
+        requests[3].query_all("expand[]"),
+        ["data.invoice_settings.default_payment_method"]
+    );
+    server.shutdown().await;
+}
+
 #[tokio::test]
 async fn write_carries_form_body_idempotency_key_and_metadata() {
     let server = TestServer::start(|_| {

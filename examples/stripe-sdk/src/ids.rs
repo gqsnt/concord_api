@@ -217,6 +217,12 @@ stripe_id!(
 );
 public_debug!(TaxRateId);
 stripe_id!(
+    /// A payment method id, `pm_...`. Legacy `card_`/`src_` ids are not accepted where Stripe
+    /// expects a PaymentMethod id (see `PROVIDER.md`), so the prefix is required here.
+    PaymentMethodId, "payment method", Some("pm_")
+);
+public_debug!(PaymentMethodId);
+stripe_id!(
     /// A connected account id, `acct_...`. `Debug` is redacted; the text is reachable through
     /// [`AccountId::as_str`] and `Display`.
     AccountId, "account", Some("acct_")

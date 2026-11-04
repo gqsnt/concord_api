@@ -10,8 +10,8 @@ use serde::Deserialize;
 
 use crate::expandable::{Expandable, List, Object};
 use crate::ids::{
-    BalanceTransactionId, CustomerId, InvoiceId, InvoiceLineItemId, PriceId, ProductId,
-    SubscriptionId, SubscriptionItemId,
+    BalanceTransactionId, CustomerId, InvoiceId, InvoiceLineItemId, PaymentMethodId, PriceId,
+    ProductId, SubscriptionId, SubscriptionItemId,
 };
 use crate::types::{Currency, Metadata, Timestamp};
 
@@ -66,6 +66,9 @@ pub struct Customer {
     /// Preferred locales, in order.
     #[serde(default)]
     pub preferred_locales: Vec<String>,
+    /// Default invoice settings (always sent by Stripe; empty when absent from a response).
+    #[serde(default)]
+    pub invoice_settings: CustomerInvoiceSettings,
     /// Metadata.
     #[serde(default)]
     pub metadata: Metadata,
@@ -74,11 +77,77 @@ pub struct Customer {
     pub livemode: bool,
 }
 
+impl Customer {
+    /// The default payment method for subscriptions and invoices
+    /// (`invoice_settings.default_payment_method`), as an id or, when the request named
+    /// `invoice_settings.default_payment_method` (`data.invoice_settings.default_payment_method`
+    /// on a list) in `expand[]`, as the object.
+    pub fn default_payment_method(&self) -> Option<&Expandable<PaymentMethod>> {
+        self.invoice_settings.default_payment_method.as_ref()
+    }
+}
+
 impl Object for Customer {
     type Id = CustomerId;
     fn id(&self) -> &CustomerId {
         &self.id
     }
+}
+
+/// `invoice_settings` of a customer. Only the payment method is modelled; `custom_fields`,
+/// `footer` and `rendering_options` are ignored.
+#[derive(Clone, Debug, Default, PartialEq, Deserialize)]
+pub struct CustomerInvoiceSettings {
+    /// The default payment method (nullable, expandable:
+    /// `invoice_settings.default_payment_method`).
+    #[serde(default)]
+    pub default_payment_method: Option<Expandable<PaymentMethod>>,
+}
+
+/// A payment method (`object: "payment_method"`), as far as this SDK reads it: its type, the
+/// card summary of a `card` payment method and the customer it is saved to.
+#[derive(Clone, Debug, PartialEq, Deserialize)]
+pub struct PaymentMethod {
+    /// `pm_...`.
+    pub id: PaymentMethodId,
+    /// The type, such as `card`, `sepa_debit` or `us_bank_account` (a long, growing list kept as
+    /// text). A member of the same name holds the type's details; only `card` is modelled.
+    #[serde(rename = "type")]
+    pub kind: String,
+    /// Card details, for a `card` payment method.
+    #[serde(default)]
+    pub card: Option<PaymentMethodCard>,
+    /// The customer it is saved to (expandable), if any.
+    #[serde(default)]
+    pub customer: Option<Expandable<Customer>>,
+    /// Creation time.
+    pub created: Timestamp,
+    /// Metadata (nullable on payment methods).
+    #[serde(default)]
+    pub metadata: Option<Metadata>,
+    /// Live or test mode.
+    #[serde(default)]
+    pub livemode: bool,
+}
+
+impl Object for PaymentMethod {
+    type Id = PaymentMethodId;
+    fn id(&self) -> &PaymentMethodId {
+        &self.id
+    }
+}
+
+/// `card` of a payment method: the summary an application may display.
+#[derive(Clone, Debug, PartialEq, Eq, Deserialize)]
+pub struct PaymentMethodCard {
+    /// Card brand (`visa`, `mastercard`, ..., `unknown`), as sent.
+    pub brand: String,
+    /// The last four digits.
+    pub last4: String,
+    /// Expiration month (1-12).
+    pub exp_month: u32,
+    /// Expiration year (four digits).
+    pub exp_year: u32,
 }
 
 /// A product (`object: "product"`).

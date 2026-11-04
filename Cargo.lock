@@ -280,6 +280,12 @@ version = "0.0.0"
 [[package]]
 name = "concord-check-maintenance-stripe"
 version = "0.0.0"
+dependencies = [
+ "concord",
+ "concord-example-stripe-sdk",
+ "concord-example-testserver",
+ "tokio",
+]
 
 [[package]]
 name = "concord-check-stream-stress"
