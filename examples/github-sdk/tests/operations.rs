@@ -86,6 +86,7 @@ async fn every_operation_on_the_wire() {
         sort: Some(IssueSort::Updated),
         direction: Some(Direction::Asc),
         assignee: Some("*".into()),
+        issue_type: Some("Bug".into()),
         creator: Some("octocat".into()),
         mentioned: Some("hubot".into()),
         milestone: Some("none".into()),
@@ -164,7 +165,7 @@ async fn every_operation_on_the_wire() {
             p.to_owned(),
             format!("{p}/labels?per_page=50"),
             format!(
-                "{p}/issues?milestone=none&state=all&assignee=*&creator=octocat&mentioned=hubot\
+                "{p}/issues?milestone=none&state=all&assignee=*&type=Bug&creator=octocat&mentioned=hubot\
                  &labels=bug%2Chelp+wanted&sort=updated&direction=asc&since=2026-01-02T03%3A04%3A05Z\
                  &per_page=50"
             ),
@@ -434,6 +435,47 @@ async fn undeclared_operation_through_the_context() {
         "GitHub context: request not built: path segment 0 is empty, `.` or `..`"
     );
     server.shutdown().await;
+}
+
+/// The `type` filter of `issues/list-for-repo`: absent unless set (so a request built without it
+/// is byte-identical to one built before the filter existed), sent as `type`, in the position
+/// GitHub documents it (after `assignee`), form-encoded like every other query value.
+#[test]
+fn issue_type_filter_on_the_wire() {
+    let github = context("127.0.0.1:9".parse().unwrap(), TOKEN_A);
+    let repo = github.repo(RepoRef::new("octo-org", "hello-world"));
+    let query = |filter: IssueFilter| {
+        let prepared = repo.issues(&filter).prepare().unwrap();
+        prepared.request().url().query().map(str::to_owned)
+    };
+    let state = || IssueFilter {
+        state: Some(StateFilter::Open),
+        assignee: Some("*".into()),
+        ..IssueFilter::default()
+    };
+    assert_eq!(query(state()).as_deref(), Some("state=open&assignee=*"));
+    for (value, wire) in [
+        ("Bug", "type=Bug"),
+        ("Feature request", "type=Feature+request"),
+        ("*", "type=*"),
+        ("none", "type=none"),
+    ] {
+        let filter = IssueFilter {
+            issue_type: Some(value.into()),
+            ..state()
+        };
+        assert_eq!(
+            query(filter).as_deref(),
+            Some(format!("state=open&assignee=*&{wire}").as_str())
+        );
+    }
+    let generated = repo
+        .handle()
+        .issues()
+        .set_issue_type("Bug")
+        .prepare()
+        .unwrap();
+    assert_eq!(generated.request().url().query(), Some("type=Bug"));
 }
 
 /// Path values are one segment each; a dot segment is a build error before anything is sent.

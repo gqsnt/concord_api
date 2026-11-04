@@ -44,6 +44,7 @@ description's own examples (`tests/official_examples.rs`).
 | [GS] | Getting started with the REST API | `User-Agent` required (`403` for an invalid one); `Authorization: Bearer` |
 | [BC] | Breaking changes (2026-03-10) | singular `assignee` removed from issues/pull requests; `merge_commit_sha` removed; `has_downloads` removed from repositories |
 | [ISS] [COM] [PUL] [REV] [WFR] [JOB] [REP] | issues, issue comments, pulls, reviews, workflow runs, workflow jobs, repositories reference pages | parameters, enums, status codes (cross-checked with the description file) |
+| [ISS] (retrieved 2026-11-05) | List repository issues, `type` parameter | `type`: an issue type's name, `*` (any type) or `none` (no type); added in the maintenance exercise (`checks/maintenance-github/MAINTENANCE.md`) |
 
 ## Supported operations (23)
 
@@ -51,7 +52,7 @@ description's own examples (`tests/official_examples.rs`).
 |---|---|---|---|
 | Repository | `repos/get` | `GET /repos/{owner}/{repo}` (conditional) | `GitHubRepo::get` |
 | Repository | `issues/list-labels-for-repo` | `GET .../labels` | `GitHubRepo::labels` |
-| Issues | `issues/list-for-repo` | `GET .../issues` (milestone, state, assignee, creator, mentioned, labels, sort, direction, since, per_page) | `GitHubRepo::issues`, `RepoContext::issues(&IssueFilter)` |
+| Issues | `issues/list-for-repo` | `GET .../issues` (milestone, state, assignee, type, creator, mentioned, labels, sort, direction, since, per_page) | `GitHubRepo::issues`, `RepoContext::issues(&IssueFilter)` |
 | Issues | `issues/get` | `GET .../issues/{number}` (conditional) | `GitHubRepo::issue` |
 | Issues | `issues/list-comments` | `GET .../issues/{number}/comments` (since, per_page) | `GitHubRepo::issue_comments` |
 | Issues | `issues/list-comments-for-repo` | `GET .../issues/comments` (sort, direction, since, per_page) | `GitHubRepo::repo_comments` |
@@ -82,9 +83,10 @@ Every list operation has a page factory (`RepoContext::*_pages`, `paging::LinkPa
   artifacts; re-running or dispatching workflows). The workflows are read-only.
 - **The `page` query parameter.** GitHub says to follow `Link` instead of building page queries;
   the SDK never computes a page number. (`RepoContext::request` can still reach anything.)
-- `type` and `issue_field_values` issue filters, `anon` contributors, workflow-run attempts, check
-  runs, job/step log downloads (also `302`; would reuse `download`), timeline and events, Search,
-  GraphQL.
+- The `issue_field_values` issue filter and the issue's `type` object in responses (the `type`
+  filter is supported; the returned type is not modelled), `anon` contributors, workflow-run
+  attempts, check runs, job/step log downloads (also `302`; would reuse `download`), timeline and
+  events, Search, GraphQL.
 - Alternative media types (`body_html`/`body_text`, `.diff`/`.patch` Accept values).
 - `If-Modified-Since` (only `If-None-Match` is declared).
 - GitHub App JWT and installation-token exchange (the caller supplies a token).

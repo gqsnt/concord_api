@@ -331,6 +331,7 @@ impl RepoContext {
             sort,
             direction,
             assignee,
+            issue_type,
             creator,
             mentioned,
             milestone,
@@ -344,6 +345,7 @@ impl RepoContext {
             .maybe_sort(sort)
             .maybe_direction(direction)
             .maybe_assignee(assignee)
+            .maybe_issue_type(issue_type)
             .maybe_creator(creator)
             .maybe_mentioned(mentioned)
             .maybe_milestone(milestone)

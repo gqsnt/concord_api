@@ -23,6 +23,8 @@ pub struct IssueFilter {
     pub direction: Option<Direction>,
     /// `assignee`: a login, `*` or `none`.
     pub assignee: Option<String>,
+    /// `type`: an issue type's name, `*` (any type) or `none` (no type).
+    pub issue_type: Option<String>,
     /// `creator`.
     pub creator: Option<Login>,
     /// `mentioned`.
