@@ -295,11 +295,13 @@ setters! {
     /// header, the supplied columns or the first record).
     fn flexible(yes: bool) => flexible = yes;
     /// The most unescaped field bytes of one data record (default
-    /// [`DEFAULT_MAX_RECORD_BYTES`]); at least 1. Readers never buffer more; writers refuse a
-    /// larger encoded record.
+    /// [`DEFAULT_MAX_RECORD_BYTES`]); at least 1. Readers never buffer more. Writers refuse a
+    /// record whose encoded form (quotes and delimiters included, terminator excluded) is larger,
+    /// so what a writer accepts is within a reader's limit of the same value.
     fn max_record_bytes(bytes: usize) => max_record_bytes = bytes;
     /// The most unescaped field bytes of the header record (default
-    /// [`DEFAULT_MAX_HEADER_BYTES`]); at least 1.
+    /// [`DEFAULT_MAX_HEADER_BYTES`]); at least 1. Writers apply it like
+    /// [`max_record_bytes`](Self::max_record_bytes).
     fn max_header_bytes(bytes: usize) => max_header_bytes = bytes;
     /// The most fields of one record, header included (default [`DEFAULT_MAX_FIELDS`]); at
     /// least 1.
@@ -496,6 +498,25 @@ impl Config {
             builder.escape(escape);
         }
         builder.from_writer(sink)
+    }
+
+    pub(crate) fn comment(&self) -> Option<u8> {
+        self.options.profile.comment
+    }
+
+    /// Whether the reader ends a record (or a comment line) at `b`.
+    pub(crate) fn is_terminator(&self, b: u8) -> bool {
+        match self.options.profile.read_terminator {
+            RecordTerminator::Standard => b == b'\r' || b == b'\n',
+            RecordTerminator::Byte(t) => b == t,
+        }
+    }
+
+    pub(crate) fn write_terminator_len(&self) -> usize {
+        match self.options.profile.write_terminator {
+            LineEnding::CrLf => 2,
+            LineEnding::Lf => 1,
+        }
     }
 
     pub(crate) fn trim_headers(&self) -> bool {

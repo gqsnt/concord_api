@@ -75,6 +75,20 @@ enum Bom {
     Done,
 }
 
+/// Where the parser stands in the current physical line, tracked only when a comment byte is
+/// configured: `csv-core` 0.1.13's DFA turns a final comment line without a terminator into a
+/// record of one empty field (its NFA does not), and this tells that record apart from a genuine
+/// final `""`.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Line {
+    /// At the start of a record (blank lines included).
+    Start,
+    /// Inside a comment line.
+    Comment,
+    /// Inside a record.
+    Record,
+}
+
 pub(crate) struct Table {
     config: Arc<Config>,
     named: bool,
@@ -88,6 +102,10 @@ pub(crate) struct Table {
     bom: Bom,
     /// The parser has received input (its own BOM stripping is then disabled).
     started: bool,
+    comment: Option<u8>,
+    line: Line,
+    /// The most bytes the field and end buffers have held.
+    peak: usize,
     header: Option<RawRecord>,
     names: Option<StringRecord>,
     width: Option<usize>,
@@ -103,6 +121,7 @@ impl Table {
             _ => Bom::Detect { held: 0 },
         };
         let width = config.width;
+        let comment = config.comment();
         Self {
             core: config.core_reader(),
             named,
@@ -113,6 +132,9 @@ impl Table {
             ends_len: 0,
             bom,
             started: false,
+            comment,
+            line: Line::Start,
+            peak: 0,
             header: None,
             names: None,
             width,
@@ -146,6 +168,32 @@ impl Table {
     #[cfg(test)]
     pub(crate) fn allocated(&self) -> usize {
         self.fields.capacity()
+    }
+
+    /// Bytes allocated by the framing buffers (field bytes and field end offsets).
+    pub(crate) fn retained(&self) -> usize {
+        self.fields.capacity() + self.ends.capacity() * std::mem::size_of::<usize>()
+    }
+
+    /// The most bytes [`retained`](Self::retained) has been.
+    pub(crate) fn peak_retained(&self) -> usize {
+        self.peak
+    }
+
+    /// Follows the physical lines of `consumed` (see [`Line`]).
+    fn track_lines(&mut self, consumed: &[u8]) {
+        let Some(comment) = self.comment else {
+            return;
+        };
+        for &b in consumed {
+            self.line = match self.line {
+                Line::Start if self.config.is_terminator(b) => Line::Start,
+                Line::Start if b == comment => Line::Comment,
+                Line::Start => Line::Record,
+                Line::Comment if self.config.is_terminator(b) => Line::Start,
+                other => other,
+            };
+        }
     }
 
     fn header_pending(&self) -> bool {
@@ -245,6 +293,7 @@ impl Table {
             self.ends.reserve_exact(grown - self.ends.len());
             self.ends.resize(grown, 0);
         }
+        self.peak = self.peak.max(self.retained());
         // At a limit, the parser writes into a one-element probe instead: anything written there
         // is the byte or field end that exceeds the limit. The owned buffers never pass it.
         let mut byte_probe = [0u8; 1];
@@ -284,11 +333,21 @@ impl Table {
         }
         self.fields_len += nout;
         self.ends_len += nend;
+        let line = self.line;
+        self.track_lines(&input[..nin]);
         match result {
             ReadRecordResult::InputEmpty
             | ReadRecordResult::OutputFull
             | ReadRecordResult::OutputEndsFull => Ok((nin, Step::Progress)),
+            ReadRecordResult::Record if input.is_empty() && line == Line::Comment => {
+                // The DFA's record for an unterminated final comment line: not a record.
+                self.fields_len = 0;
+                self.ends_len = 0;
+                self.line = Line::Start;
+                Ok((nin, Step::Progress))
+            }
             ReadRecordResult::Record => {
+                self.line = Line::Start;
                 let record = self.take_record();
                 self.complete(record).map(|step| (nin, step))
             }
@@ -521,6 +580,39 @@ mod tests {
             run(&mut t, b"abc,de\n1,2\n"),
             Err("the CSV header exceeds the configured size")
         );
+    }
+
+    #[test]
+    fn an_unterminated_final_comment_line_is_not_a_record() {
+        // `csv-core` 0.1.13's DFA yields `[""]` for the final `# trailer` (its NFA yields
+        // nothing); a genuine final `""` is one empty field on both.
+        let options = CsvOptions::new(HeaderMode::Absent, b',').comment(Some(b'#'));
+        for (body, expected) in [
+            (&b"a,b\n# trailer"[..], vec![2]),
+            (b"a,b\n# trailer\n", vec![2]),
+            (b"a,b\r\n#", vec![2]),
+            (b"# only", vec![]),
+            (b"a\n\"\"", vec![1, 1]),
+            (b"a\n#c\n\"\"", vec![1, 1]),
+            (b"a\n #c", vec![1, 1]),
+        ] {
+            for split in 0..=body.len() {
+                let mut t = table(options.clone());
+                let mut out = Vec::new();
+                for part in [&body[..split], &body[split..]] {
+                    let mut part = part;
+                    while !part.is_empty() {
+                        let (n, step) = t.step(part).unwrap();
+                        part = &part[n..];
+                        if let Step::Record(r) = step {
+                            out.push(r.len());
+                        }
+                    }
+                }
+                out.extend(run(&mut t, b"").unwrap());
+                assert_eq!(out, expected, "{body:?} split {split}");
+            }
+        }
     }
 
     #[test]

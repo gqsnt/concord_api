@@ -207,8 +207,9 @@ impl<T, S: ByteSource> CsvRecords<T, S> {
                 yield_now().await;
                 work = 0;
             }
+            // At most `SKIP_BUDGET` input bytes are parsed between two yields.
             let input = self.driver.input();
-            let input = &input[..input.len().min(SKIP_BUDGET)];
+            let input = &input[..input.len().min(SKIP_BUDGET - work)];
             match self.table.step(input) {
                 Ok((n, Step::Progress)) => {
                     self.driver.consume(n);
@@ -240,6 +241,31 @@ impl<T, S: ByteSource> CsvRecords<T, S> {
     /// Records delivered and input bytes consumed so far.
     pub fn position(&self) -> Position {
         self.driver.position()
+    }
+
+    /// Library-owned bytes currently allocated for the record being framed: the buffer of its
+    /// unescaped field bytes plus the buffer of its field end offsets (`usize` each). The
+    /// buffers are reused from record to record, so this is their current capacity, not the size
+    /// of the last record; it never exceeds `max(max_header_bytes, max_record_bytes) +
+    /// max_fields * size_of::<usize>()`.
+    ///
+    /// Not counted: the unconsumed rest of the current transport chunk (the source's memory, see
+    /// [`pending_input_bytes`](Self::pending_input_bytes)), the kept header record and its names
+    /// ([`headers`](Self::headers)), the fixed-size parser state, the rows already returned (the
+    /// caller's) and the memory of the transport (reqwest/hyper buffers).
+    pub fn retained_bytes(&self) -> usize {
+        self.table.retained()
+    }
+
+    /// The largest [`retained_bytes`](Self::retained_bytes) value over this reader's life.
+    pub fn peak_retained_bytes(&self) -> usize {
+        self.table.peak_retained()
+    }
+
+    /// The bytes of the current transport chunk not yet consumed by the parser (a shared slice
+    /// of the chunk the source returned; at most one chunk).
+    pub fn pending_input_bytes(&self) -> usize {
+        self.driver.input().len()
     }
 
     /// The header record, once it has been read (after the first `next()` of a `HasHeader`

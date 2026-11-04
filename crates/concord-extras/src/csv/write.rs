@@ -359,7 +359,11 @@ impl Encoder {
         }
         let mut header = Vec::new();
         self.sink.drain_into(&mut header);
-        if header.len() > self.config.max_header_bytes() {
+        if header
+            .len()
+            .saturating_sub(self.config.write_terminator_len())
+            > self.config.max_header_bytes()
+        {
             return Err(
                 CodecError::new("the CSV header exceeds the configured size")
                     .at("limit", self.config.max_header_bytes() as u64),
@@ -407,7 +411,11 @@ impl Encoder {
         }
         let start = out.len();
         let written = self.sink.drain_into(out);
-        if written > self.config.max_record_bytes() {
+        // The encoded record without its terminator: never smaller than its unescaped field bytes,
+        // so a record a writer accepts is within a reader's limit of the same value.
+        if written.saturating_sub(self.config.write_terminator_len())
+            > self.config.max_record_bytes()
+        {
             out.truncate(start);
             return Err(CodecError::new("a CSV record exceeds the configured size")
                 .at("record", number)
