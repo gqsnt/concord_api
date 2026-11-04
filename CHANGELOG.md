@@ -1,5 +1,31 @@
 # Changelog
 
+## Unreleased — V4.3 candidate (documentation and examples)
+
+No public API, behaviour or version change: the four crates are still 4.2.0 and their code is
+unchanged. Records: `v4/dx-4.3/`.
+
+### Documentation
+
+- **Request streams are formats.** The format guide (§1) and the author guide (§5.7) said a
+  streamed request body is "not a format". An `Encode<T>` takes its payload by value and may return
+  a streaming `reqwest::Body`; only a per-body media type (a multipart boundary) needs the native
+  route or a `content-type` header the SDK controls, and only an incrementally read *response*
+  needs `send_raw`. The guides now say so and link a tested example.
+- The caller guide (§7) points at `decoder.finish(Err(e))` for converting a transport failure when
+  you execute a request yourself: reqwest's own error prints the full URL.
+
+### Examples and recipes
+
+- `examples/native`: a non-`Clone` one-shot request stream (`upload.rs`), and response metadata
+  together with the typed value after a native edit (`metadata.rs`), with what each failure stage
+  keeps.
+- `examples/sdk`, `examples/app`, `examples/extension`: a two-service SDK; domain adapters that
+  return generated operations, independent per-service outcomes, a named workflow and a bounded
+  traversal with a continuation; and an independent crate adding an operation the SDK does not
+  declare through an SDK-owned context. `examples/fixture` is their loopback test server.
+- `docs/RECIPES.md` indexes the new recipes.
+
 ## 4.2.0
 
 A focused maintenance release: compiler correctness and exact advice text, fair benchmarks and
