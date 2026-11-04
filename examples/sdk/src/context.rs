@@ -74,8 +74,8 @@
 //! - There is no Concord redaction: no endpoint metadata exists for these requests. The native
 //!   request's `Debug` (and its `url()`) prints the full URL, tenant and segments included; only
 //!   the key is masked (reqwest prints a flagged header as `Sensitive`). **Do not log a built
-//!   request or its URL** when path data may be secret. [`ContextError`] and the `Debug` of the
-//!   contexts never contain the key or path data; the contexts' `Debug` shows the base URL, the
+//!   request or its URL** when path data may be secret. [`ContextError`] never contains the key
+//!   or path data; the contexts' `Debug` never contains the key, and shows the base URL, the
 //!   region and the tenant, as the generated handles' `Debug` does.
 //!
 //! # Keeping the two routes together

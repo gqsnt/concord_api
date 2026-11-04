@@ -10,6 +10,15 @@
 //! }
 //! ```
 //!
+//! (The same function without the `export` line compiles, so the failure above is the missing
+//! method and nothing else; rustdoc does not check the error code on stable.)
+//!
+//! ```
+//! fn export(tenant: &concord_example_sdk::CatalogTenant) {
+//!     let _ = tenant.item("item-001");
+//! }
+//! ```
+//!
 //! This crate uses only public items:
 //!
 //! - the SDK's [`TenantContext`] builds the native request — base and path prefix,

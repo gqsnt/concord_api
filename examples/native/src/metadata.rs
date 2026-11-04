@@ -70,6 +70,10 @@ impl Meta {
     pub fn capture(response: &reqwest::Response, keep: &[HeaderName]) -> Self {
         let mut headers = HeaderMap::new();
         for name in keep {
+            // A name listed twice is kept once (its values are not duplicated).
+            if headers.contains_key(name) {
+                continue;
+            }
             for value in response.headers().get_all(name) {
                 headers.append(name.clone(), value.clone());
             }

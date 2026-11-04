@@ -395,8 +395,12 @@ async fn m03_body_read_failure_and_decode_failure_keep_only_the_head() {
     );
     let native = error.error().transport().unwrap();
     // reqwest 0.13 reports a truncated body read through `bytes()` as its own `is_decode()`
-    // (hyper's `IncompleteBody`): still Concord's `Transport`, not Concord's `Decode`.
-    assert!(native.is_decode() && !native.is_timeout(), "{native:?}");
+    // (hyper's `IncompleteBody`); another reqwest release may call it `is_body()`. Either way it is
+    // Concord's `Transport`, not Concord's `Decode`.
+    assert!(
+        (native.is_decode() || native.is_body()) && !native.is_timeout(),
+        "{native:?}"
+    );
     let meta = error.meta().expect("the head was received");
     assert_eq!(meta.status(), StatusCode::OK);
     assert_eq!(meta.raw_header(ETAG).unwrap(), "\"t1\"");

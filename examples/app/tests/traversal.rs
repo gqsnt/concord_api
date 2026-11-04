@@ -193,7 +193,7 @@ async fn w02_ledger_resumes_page_by_page_from_a_domain_instant() {
     );
 }
 
-/// The fake services, except that the third page of each listing (`catalog-offset-2` with two
+/// The fake services, except that the second page of each listing (`catalog-offset-2` with two
 /// items per page, `ledger-from-2` with two entries per page) fails once with a `500`.
 async fn services_failing_once_at_page_two() -> Server {
     let catalog = catalog_service("/catalog/v1");

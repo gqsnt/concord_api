@@ -576,7 +576,15 @@ pub fn rfc3339_seconds(text: &str) -> Option<i64> {
     let num = |r: std::ops::Range<usize>| text.get(r)?.parse::<i64>().ok();
     let (y, m, d) = (num(0..4)?, num(5..7)?, num(8..10)?);
     let (hh, mm, ss) = (num(11..13)?, num(14..16)?, num(17..19)?);
-    if !(1..=12).contains(&m) || !(1..=31).contains(&d) || hh > 23 || mm > 59 || ss > 59 {
+    let leap = (y % 4 == 0 && y % 100 != 0) || y % 400 == 0;
+    let month_days = match m {
+        2 if leap => 29,
+        2 => 28,
+        4 | 6 | 9 | 11 => 30,
+        1..=12 => 31,
+        _ => return None,
+    };
+    if !(1..=month_days).contains(&d) || hh > 23 || mm > 59 || ss > 59 {
         return None;
     }
     // Days from civil (Howard Hinnant's algorithm).

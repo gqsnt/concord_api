@@ -8,8 +8,9 @@
 //! constant [`Encode::CONTENT_TYPE`]; a `request Streamed "type/subtype";` statement or a
 //! `content-type` header on the endpoint replaces it (author guide 5.3).
 //!
-//! Neither the operation nor its [`concord::Prepared`] can be copied, because the source cannot:
-//! a second upload needs a fresh source, and nothing replays the first one behind your back.
+//! The operation cannot be copied because the source cannot (a request is `Clone` only when its
+//! values and body are), and a [`concord::Prepared`] is never `Clone`: a second upload needs a
+//! fresh source, and nothing replays the first one behind your back.
 //!
 //! ```compile_fail,E0277
 //! # use concord_example_native::{api::Inventory, upload::OneShot};

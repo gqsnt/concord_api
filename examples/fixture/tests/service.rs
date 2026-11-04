@@ -102,4 +102,14 @@ fn whole_second_timestamps_parse() {
     assert_eq!(rfc3339_seconds("2026-01-15T10:00:00Z"), Some(1_768_471_200));
     assert_eq!(rfc3339_seconds("2026-01-15T10:00:00.5Z"), None);
     assert_eq!(rfc3339_seconds("2026-13-01T00:00:00Z"), None);
+    // Calendar anchors around century leap rules, and impossible dates.
+    assert_eq!(
+        rfc3339_seconds("1900-03-01T00:00:00Z"),
+        Some(-2_203_891_200)
+    );
+    assert_eq!(rfc3339_seconds("2000-02-29T00:00:00Z"), Some(951_782_400));
+    assert_eq!(rfc3339_seconds("2100-02-28T00:00:00Z"), Some(4_107_456_000));
+    assert_eq!(rfc3339_seconds("1900-02-29T00:00:00Z"), None);
+    assert_eq!(rfc3339_seconds("2026-02-30T00:00:00Z"), None);
+    assert_eq!(rfc3339_seconds("2026-04-31T00:00:00Z"), None);
 }

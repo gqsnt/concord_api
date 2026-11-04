@@ -137,6 +137,7 @@ async fn an_empty_source_sends_an_empty_body() {
     let receipt = upload_attachment(&api, 1, source).await.unwrap();
     assert_eq!(receipt.bytes, 0);
     let recorded = server.single();
+    assert!(recorded.chunked, "an empty source is still sent chunked");
     assert!(recorded.body.is_empty());
     assert!(tally.ended());
     assert_eq!((tally.chunks(), tally.bytes()), (0, 0));

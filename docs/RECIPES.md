@@ -315,7 +315,7 @@ differently (decimal and whole-second RFC 3339; `acct-` hex and milliseconds).
 - **How:** one module per service converts the domain values into that service's text and returns
   the **generated operation**: `activity(&Catalog, AccountId, Option<Moment>) ->
   Result<CatalogActivity, CatalogReprError>`. It is synchronous and sends nothing; the caller keeps
-  the setters (`.set_page_size(2)`), `prepare()` and `send()`.
+  the operation's setters (Ledger's `entries(..)?.set_page_size(2)`), `prepare()` and `send()`.
 - **Assumes:** each service has its own precise error enum (a fractional second, a year outside
   0000–9999; sub-millisecond precision, an instant before 1970, `u64` overflow). Nothing is
   rounded, wrapped or truncated, and a refused value never creates a request.
