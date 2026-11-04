@@ -1,0 +1,65 @@
+{
+  "kind": "PodList",
+  "apiVersion": "v1",
+  "metadata": {
+    "resourceVersion": "5100"
+  },
+  "items": [
+    {
+      "metadata": {
+        "name": "web-a-4",
+        "uid": "00000000-0000-4000-8000-00000000000e",
+        "resourceVersion": "5095",
+        "creationTimestamp": "2026-11-04T09:14:00Z",
+        "namespace": "team-a",
+        "labels": {
+          "app": "web",
+          "tier": "api"
+        },
+        "ownerReferences": [
+          {
+            "apiVersion": "apps/v1",
+            "kind": "ReplicaSet",
+            "name": "web-7d4f9c",
+            "uid": "00000000-0000-4000-8000-000000000392",
+            "controller": true,
+            "blockOwnerDeletion": true
+          }
+        ]
+      },
+      "spec": {
+        "nodeName": "node-3",
+        "serviceAccountName": "default",
+        "restartPolicy": "Always",
+        "containers": [
+          {
+            "name": "app",
+            "image": "registry.example.test/web:1.4.2",
+            "ports": [
+              {
+                "containerPort": 8080,
+                "protocol": "TCP"
+              }
+            ]
+          }
+        ]
+      },
+      "status": {
+        "phase": "Running",
+        "podIP": "10.244.2.16",
+        "startTime": "2026-11-04T09:14:05Z",
+        "qosClass": "BestEffort",
+        "containerStatuses": [
+          {
+            "name": "app",
+            "ready": true,
+            "restartCount": 0,
+            "image": "registry.example.test/web:1.4.2",
+            "imageID": "registry.example.test/web@sha256:000000000000000000000000000000000000000000000000000000000000000e",
+            "started": true
+          }
+        ]
+      }
+    }
+  ]
+}

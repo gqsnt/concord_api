@@ -87,8 +87,8 @@ concord::api! {
                 query("timeoutSeconds") timeout_seconds?: u32,
             ) -> PodList { path "pods"; }
 
-            /// `watchCoreV1PodListForAllNamespaces`: `GET /api/v1/pods?watch=1`. A stream of
-            /// consecutive JSON watch events; no typed output.
+            /// `listCoreV1PodForAllNamespaces` with `watch=1`: `GET /api/v1/pods?watch=1`. A stream
+            /// of consecutive JSON watch events; no typed output.
             GET watch_pods(
                 query("labelSelector") label_selector?: LabelSelector,
                 query("fieldSelector") field_selector?: FieldSelector,
@@ -141,7 +141,7 @@ concord::api! {
                 /// `readCoreV1NamespacedPod`.
                 GET pod(name: ObjectName) -> Pod { path "pods/{name}"; }
 
-                /// `watchCoreV1NamespacedPodList`: `GET .../pods?watch=1`.
+                /// `listCoreV1NamespacedPod` with `watch=1`: `GET .../pods?watch=1`.
                 GET watch_pods(
                     query("labelSelector") label_selector?: LabelSelector,
                     query("fieldSelector") field_selector?: FieldSelector,
@@ -199,7 +199,7 @@ concord::api! {
                 query("timeoutSeconds") timeout_seconds?: u32,
             ) -> DeploymentList { path "deployments"; }
 
-            /// `watchAppsV1DeploymentListForAllNamespaces`: `GET .../deployments?watch=1`.
+            /// `listAppsV1DeploymentForAllNamespaces` with `watch=1`.
             GET watch_deployments(
                 query("labelSelector") label_selector?: LabelSelector,
                 query("fieldSelector") field_selector?: FieldSelector,
@@ -230,7 +230,7 @@ concord::api! {
                 /// `readAppsV1NamespacedDeployment`.
                 GET deployment(name: ObjectName) -> Deployment { path "deployments/{name}"; }
 
-                /// `watchAppsV1NamespacedDeploymentList`: `GET .../deployments?watch=1`.
+                /// `listAppsV1NamespacedDeployment` with `watch=1`.
                 GET watch_deployments(
                     query("labelSelector") label_selector?: LabelSelector,
                     query("fieldSelector") field_selector?: FieldSelector,
