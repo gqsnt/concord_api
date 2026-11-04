@@ -318,7 +318,7 @@ impl fmt::Display for Labels {
     }
 }
 
-/// The `X-GitHub-Api-Version` value. [`ApiVersion::PINNED`] is the version this SDK's models
+/// The `X-GitHub-Api-Version` value. [`ApiVersion::pinned`] is the version this SDK's models
 /// were checked against (see `PROVIDER.md`); GitHub answers `410 Gone` for an unsupported
 /// version and uses `2022-11-28` when the header is missing, which is why the SDK always sends
 /// one.

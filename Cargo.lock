@@ -340,6 +340,7 @@ dependencies = [
  "concord-example-github-sdk",
  "concord-example-testserver",
  "concord-pagination",
+ "serde_json",
  "tokio",
 ]
 

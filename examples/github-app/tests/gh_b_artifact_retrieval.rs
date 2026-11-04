@@ -15,7 +15,7 @@ mod support;
 use std::num::NonZeroUsize;
 use std::path::PathBuf;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU8, AtomicU64, Ordering};
 use std::time::Duration;
 
 use concord::bytes::Bytes;
@@ -24,9 +24,11 @@ use concord_example_github_app::artifacts::{
     ExpirySignal, RetrievalBudget, RetrievalError, RetrievalInput, RetrievalOutcome, RunSelector,
     Stage, retrieve_artifact,
 };
-use concord_example_github_app::sink::{BoundedBuffer, CancelFlag, FileSink, SinkError};
+use concord_example_github_app::sink::{
+    ArtifactSink, BoundedBuffer, CancelFlag, FileSink, SinkError,
+};
 use concord_example_github_sdk::RepoRef;
-use concord_example_github_sdk::download::{DownloadLimits, StreamError};
+use concord_example_github_sdk::download::{ByteSink, DownloadLimits, StreamError};
 use concord_example_github_sdk::filters::RunFilter;
 use concord_example_github_sdk::ids::{ArtifactId, JobId, RunId};
 use concord_example_github_sdk::models::Conclusion;
@@ -375,9 +377,47 @@ async fn transport_failure_mid_body() {
     fx.shutdown().await;
 }
 
-/// The caller cancels while the archive streams: the sink refuses its next chunk, the transfer
-/// stops, partial output is removed, and the download host sees the connection close before the
-/// body's end.
+/// A sink wrapper that publishes how many bytes the inner sink accepted, so a test can act at a
+/// known point of the transfer instead of after a sleep.
+struct Observed<S> {
+    inner: S,
+    accepted: Arc<AtomicU64>,
+}
+
+impl<S: ArtifactSink + Send> ByteSink for Observed<S> {
+    type Error = S::Error;
+    async fn write(&mut self, chunk: Bytes) -> Result<(), S::Error> {
+        let len = chunk.len() as u64;
+        self.inner.write(chunk).await?;
+        self.accepted.fetch_add(len, Ordering::SeqCst);
+        Ok(())
+    }
+}
+
+impl<S: ArtifactSink + Send> ArtifactSink for Observed<S> {
+    fn commit(&mut self) -> Result<u64, S::Error> {
+        self.inner.commit()
+    }
+    fn abort(&mut self) {
+        self.inner.abort();
+    }
+}
+
+/// Waits until `counter` reaches `at_least` (bounded by a deadline).
+async fn reached(counter: &AtomicU64, at_least: u64) {
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(10);
+    while counter.load(Ordering::SeqCst) < at_least {
+        assert!(
+            tokio::time::Instant::now() < deadline,
+            "the transfer did not progress"
+        );
+        tokio::time::sleep(Duration::from_millis(2)).await;
+    }
+}
+
+/// The caller cancels while the archive streams (after the sink accepted 64 KiB): the sink
+/// refuses its next chunk, the transfer stops, partial output is removed, and the download host
+/// sees the connection close long before the body's end.
 #[tokio::test]
 async fn sink_cancellation() {
     let fx = Fixture::start().await;
@@ -385,18 +425,17 @@ async fn sink_cancellation() {
     let repo = fx.repo("hello-world", TOKEN_A);
     let cancel = CancelFlag::new();
     let path = scratch("cancelled");
-    let mut sink = FileSink::new(&path, u64::MAX).with_cancel(cancel.clone());
+    let accepted = Arc::new(AtomicU64::new(0));
+    let mut sink = Observed {
+        inner: FileSink::new(&path, u64::MAX).with_cancel(cancel.clone()),
+        accepted: accepted.clone(),
+    };
     let mut big = input("coverage-report");
+    // The slow host sends far more than the artifact's reported size; the byte limit would stop
+    // that too, so it is lifted here: the caller's cancellation is under test.
     big.limits.max_bytes = u64::MAX;
-    // The artifact claims 40,000 bytes; the slow host sends far more, which the byte limit (not
-    // under test here) would also stop. Here the caller cancels first.
     let canceller = async {
-        assert!(
-            fx.download
-                .wait_until(Duration::from_secs(10), |s| s.body_bytes_sent()
-                    >= 64 * 1024)
-                .await
-        );
+        reached(&accepted, 64 * 1024).await;
         cancel.cancel();
     };
     let (retrieval, ()) = tokio::join!(retrieve_artifact(&repo, &big, &mut sink), canceller);
@@ -416,11 +455,12 @@ async fn sink_cancellation() {
         panic!("{error:?}")
     };
     assert_eq!(*written, partial.written);
+    assert_eq!(*written, accepted.load(Ordering::SeqCst));
     assert!(
-        *written >= 64 * 1024 - 16 * 1024,
-        "a prefix was written first"
+        *written >= 64 * 1024,
+        "a prefix was written before the cancellation"
     );
-    assert!(!path.exists() && !sink.partial_path().exists());
+    assert!(!path.exists() && !sink.inner.partial_path().exists());
     assert!(
         fx.download
             .wait_until(Duration::from_secs(5), |s| s.live_connections() == 0)
@@ -431,31 +471,40 @@ async fn sink_cancellation() {
     fx.shutdown().await;
 }
 
-/// Dropping the workflow future (a caller-side timeout) stops it too: no further sink writes,
-/// and the download host observes the closed connection.
+/// Dropping the workflow future mid-transfer (the caller stops waiting once 64 KiB arrived)
+/// stops it too: no further sink writes, and the download host observes the closed connection.
 #[tokio::test]
 async fn dropped_workflow_stops_the_transfer() {
     let fx = Fixture::start().await;
     fx.deliver(Delivery::Slow);
     let repo = fx.repo("hello-world", TOKEN_A);
-    let mut sink = BoundedBuffer::new(u64::MAX);
+    let accepted = Arc::new(AtomicU64::new(0));
+    let mut sink = Observed {
+        inner: BoundedBuffer::new(u64::MAX),
+        accepted: accepted.clone(),
+    };
     let mut big = input("coverage-report");
     big.limits.max_bytes = u64::MAX;
-    let result = tokio::time::timeout(
-        Duration::from_millis(300),
-        retrieve_artifact(&repo, &big, &mut sink),
-    )
-    .await;
-    assert!(result.is_err(), "the timeout dropped the workflow");
-    let kept = sink.bytes().len();
-    assert!(kept > 0 && !sink.is_committed());
+    {
+        let workflow = retrieve_artifact(&repo, &big, &mut sink);
+        tokio::select! {
+            retrieval = workflow => panic!("finished before the drop: {:?}", retrieval.outcome),
+            () = reached(&accepted, 64 * 1024) => {} // the workflow future is dropped here
+        }
+    }
+    let kept = sink.inner.bytes().len() as u64;
+    assert!(kept >= 64 * 1024 && !sink.inner.is_committed());
     assert!(
         fx.download
             .wait_until(Duration::from_secs(5), |s| s.live_connections() == 0)
             .await
     );
-    tokio::time::sleep(Duration::from_millis(50)).await;
-    assert_eq!(sink.bytes().len(), kept, "no write after the drop");
+    assert_eq!(
+        sink.inner.bytes().len() as u64,
+        kept,
+        "no write after the drop"
+    );
+    assert_eq!(accepted.load(Ordering::SeqCst), kept);
     fx.shutdown().await;
 }
 

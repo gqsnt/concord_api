@@ -1,7 +1,7 @@
 //! Bounded sinks for downloaded artifacts.
 //!
 //! A sink receives chunks as the transfer delivers them (the SDK's
-//! [`ByteSink`](concord_example_github_sdk::download::ByteSink)); nothing collects the body
+//! [`ByteSink`]); nothing collects the body
 //! first. [`ArtifactSink`] adds the two decisions the workflow makes at the end: `commit` a
 //! complete transfer, or `abort` a failed or cancelled one so that partial output is never taken
 //! for a complete archive.

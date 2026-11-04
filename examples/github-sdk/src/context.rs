@@ -46,7 +46,7 @@
 //! without any GitHub header), so build the client with [`redirect_policy`], which follows
 //! same-origin redirects (a renamed repository's `301`) and stops at a cross-origin one. A
 //! client with `redirect::Policy::none()` works too. With reqwest's default policy, the download
-//! refuses the already-followed response ([`crate::download::DownloadError::RedirectFollowed`]).
+//! refuses the already-followed response ([`crate::download::LocateError::RedirectFollowed`]).
 
 use std::fmt;
 use std::sync::Arc;
