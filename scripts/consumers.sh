@@ -1,9 +1,13 @@
 #!/usr/bin/env bash
 # Each fixture is an independent workspace. Logs and generated manifests stay under Cargo's
-# effective target directory. --packaged OUT_DIR creates/extracts packages there for inspection.
+# effective target directory. --packaged OUT_DIR creates/extracts packages there for inspection:
+# OUT_DIR is this script's own output, recreated when it holds the script's mark, created when
+# absent or empty, and refused (left untouched) otherwise; the extracted sources must be the
+# repository's current ones (scripts/fresh-output.sh).
 set -euo pipefail
 cd "$(dirname "$0")/.."
 root=$(pwd)
+. scripts/fresh-output.sh
 python=$(command -v python3 || command -v python) || { echo "python 3 is required" >&2; exit 2; }
 packaged=
 if [[ $# != 0 ]]; then
@@ -12,6 +16,7 @@ if [[ $# != 0 ]]; then
     exit 2
   fi
   packaged=$2
+  fresh_output "$packaged" consumers-packaged || exit 1
 fi
 export RUSTUP_TOOLCHAIN
 RUSTUP_TOOLCHAIN=$(sed -n 's/^channel = "\(.*\)"/\1/p' rust-toolchain.toml)
@@ -27,7 +32,6 @@ printf '%s' "$metadata" >"$scratch/metadata.json"
 crates=(concord-core concord-macros concord-extras concord)
 source_dir="$root/crates"
 if [[ -n $packaged ]]; then
-  mkdir -p "$packaged"
   packaged=$(cd "$packaged" && pwd)
   patches=()
   for crate in "${crates[@]}"; do
@@ -40,8 +44,11 @@ if [[ -n $packaged ]]; then
       exit 1
     fi
     version=$("$python" -I -c 'import json,sys; m=json.load(sys.stdin); print(next(p["version"] for p in m["packages"] if p["name"]==sys.argv[1]))' "$crate" <<<"$metadata")
+    [[ ! -e $packaged/$crate-$version ]] || { echo "FAIL $packaged/$crate-$version exists before extraction"; exit 1; }
     tar -xzf - -C "$packaged" <"$target_dir/package/$crate-$version.crate"  # see package-check.sh
+    same_sources "$packaged/$crate-$version" "crates/$crate" || { echo "FAIL stale $crate package"; exit 1; }
   done
+  echo "extracted sources match the repository: $packaged"
   source_dir="$packaged"
 fi
 # A fresh build directory prevents Cargo from reusing same-named fixture artifacts from
@@ -96,10 +103,27 @@ PY
   # The application, not Concord, enables decompression: the pattern must still match here.
   if [[ $consumer == facade-gzip ]] && ! (cd "$destination" && cargo tree --offline -e features -i reqwest) \
     | grep -q 'reqwest feature "gzip"'; then failed=1; fi
+  # The custom-codec consumer really has no extras: no `concord feature "extras"` (nor json, form)
+  # in its feature graph. The full facade is the positive control: the pattern matches there.
+  features=''
+  if [[ $consumer == facade-no-extras || $consumer == facade-full ]]; then
+    if ! (cd "$destination" && cargo tree --offline -e features -i concord) >"$destination/features.log" 2>&1; then failed=1; fi
+    if [[ $consumer == facade-no-extras ]]; then
+      features='; no concord extras, json, form or concord-extras feature'
+      if grep -Eq 'concord feature "(extras|json|form|concord-extras)"' "$destination/features.log"; then failed=1; fi
+    elif ! grep -q 'concord feature "extras"' "$destination/features.log"; then
+      failed=1
+    else
+      features='; concord feature "extras" present (control)'
+    fi
+  fi
   if [[ $failed == 0 ]]; then
-    echo "ok    $consumer ($passed tests, $doc_passed doctests; normal graph exclusions passed)"
+    echo "ok    $consumer ($passed tests, $doc_passed doctests; normal graph exclusions passed$features)"
   else
-    cat "$destination"/fetch.log "$destination/test.log" "$destination/doc.log" "$destination/tree.log" 2>/dev/null
+    # Not every log exists (fetch.log only for a fixture with its own lockfile): under `set -e` a
+    # failing cat would end the script here, before this FAIL line and the remaining consumers.
+    cat "$destination"/fetch.log "$destination/test.log" "$destination/doc.log" "$destination/tree.log" \
+      "$destination/features.log" 2>/dev/null || true
     echo "FAIL  $consumer ($passed/$expected tests, $doc_passed/$docs doctests; see $destination)"
     status=1
   fi
