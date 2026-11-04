@@ -11,7 +11,7 @@ use crate::model::{
     Body, Composed, Cond, ContribId, HeaderComposition, Item, KeyName, Kind, Model, Origin, Output,
     Owner, OwnerDefault, Piece, Slot, Source, Usage, Value, ValueRef,
 };
-use crate::syntax::{Family, Format, type_text};
+use crate::syntax::{Family, Format, expr_text, type_text};
 
 pub fn emit(model: &Model, krate: TokenStream) -> TokenStream {
     let k = &krate;
@@ -631,92 +631,6 @@ fn initially(value: &Value, owner: &str) -> String {
     }
 }
 
-/// An expression's text for documentation, spaced as Rust is usually written (`&ACCEPT`,
-/// `HeaderValue::from_static("x")`, `vec![1, 2]`) rather than as a token stream
-/// (`& ACCEPT`, `HeaderValue :: from_static ("x")`). Only the spacing differs from the tokens.
-fn expr_text(tokens: TokenStream) -> String {
-    use proc_macro2::{Delimiter, Spacing, TokenTree};
-
-    #[derive(Clone, Copy, PartialEq)]
-    enum Prev {
-        Start,
-        Word,
-        Group,
-        /// A punctuation character; `true` when it is unary or joined to the next one.
-        Punct(char, bool),
-    }
-
-    fn walk(tokens: TokenStream, out: &mut String) {
-        let mut prev = Prev::Start;
-        // Open turbofish generics (`::<`): their `>` closes without a space.
-        let mut generics = 0usize;
-        for tt in tokens {
-            let space = match (&tt, prev) {
-                (_, Prev::Start) => false,
-                (TokenTree::Punct(p), _) if p.as_char() == '>' && generics > 0 => false,
-                (_, Prev::Punct(_, true)) => false,
-                (_, Prev::Punct('.', _)) => false,
-                (TokenTree::Punct(p), _) if matches!(p.as_char(), '.' | ',' | ';' | '?' | ':') => {
-                    false
-                }
-                (TokenTree::Punct(p), _) if p.as_char() == '!' && prev == Prev::Word => false,
-                (TokenTree::Group(g), Prev::Word | Prev::Group | Prev::Punct('!' | '>', _))
-                    if g.delimiter() != Delimiter::Brace =>
-                {
-                    false
-                }
-                _ => true,
-            };
-            if space {
-                out.push(' ');
-            }
-            prev = match tt {
-                TokenTree::Group(g) => {
-                    let (open, close) = match g.delimiter() {
-                        Delimiter::Parenthesis => ("(", ")"),
-                        Delimiter::Bracket => ("[", "]"),
-                        Delimiter::Brace => ("{ ", " }"),
-                        Delimiter::None => ("", ""),
-                    };
-                    out.push_str(open);
-                    walk(g.stream(), out);
-                    out.push_str(close);
-                    Prev::Group
-                }
-                TokenTree::Punct(p) => {
-                    let c = p.as_char();
-                    out.push(c);
-                    // `&x`, `-1`, `*p`, `!b` at the start or after an operator or `,` are unary.
-                    let unary = matches!(c, '&' | '-' | '*' | '!')
-                        && matches!(prev, Prev::Start | Prev::Punct(..));
-                    // Both colons of `::` count as joined (no space after the path separator).
-                    let path = c == ':' && prev == Prev::Punct(':', true);
-                    // The end of a range operator (`..=`) binds like `.`.
-                    let range = matches!(prev, Prev::Punct('.', _));
-                    let turbofish = c == '<' && prev == Prev::Punct(':', true);
-                    if turbofish {
-                        generics += 1;
-                    } else if c == '>' && generics > 0 {
-                        generics -= 1;
-                    }
-                    Prev::Punct(
-                        c,
-                        p.spacing() == Spacing::Joint || unary || turbofish || path || range,
-                    )
-                }
-                other => {
-                    out.push_str(&other.to_string());
-                    Prev::Word
-                }
-            };
-        }
-    }
-
-    let mut out = String::new();
-    walk(tokens, &mut out);
-    out
-}
-
 /// `set_x` for every value and body; `maybe_x` for optional ones. `owner` names the receiver in
 /// docs ("the client", "this scope", "this request").
 fn controls(
@@ -825,10 +739,28 @@ fn controls(
 
 /// `tokens` with every span moved to `at`'s location, keeping each token's own hygiene, so a
 /// trait-bound error in generated code points at the declaration that caused it.
+///
+/// A group holding a group without delimiters (a fragment forwarded by `macro_rules!`,
+/// `$e:expr`), or that group itself, is kept as it came: rebuilt from its tokens, rustc would
+/// parse the fragment as if ungrouped, and `pick!($e * 2)` with `$e = 1 + 2` would name
+/// `Payload<5>` here and `Payload<6>` elsewhere.
 fn located(tokens: TokenStream, at: Span) -> TokenStream {
+    fn invisible(stream: TokenStream) -> bool {
+        stream.into_iter().any(|tt| match tt {
+            proc_macro2::TokenTree::Group(g) => {
+                g.delimiter() == proc_macro2::Delimiter::None || invisible(g.stream())
+            }
+            _ => false,
+        })
+    }
     tokens
         .into_iter()
         .map(|tt| match tt {
+            proc_macro2::TokenTree::Group(g)
+                if g.delimiter() == proc_macro2::Delimiter::None || invisible(g.stream()) =>
+            {
+                proc_macro2::TokenTree::Group(g)
+            }
             proc_macro2::TokenTree::Group(g) => {
                 let mut group = proc_macro2::Group::new(g.delimiter(), located(g.stream(), at));
                 group.set_span(g.span().located_at(at));
@@ -1482,13 +1414,14 @@ fn emit_owner(
 /// (trivially false bound, rust-lang/rust#48214). Each bound carries an unused higher-ranked
 /// lifetime instead: such bounds are not checked where the impl is declared, so the impl simply
 /// does not apply when a value is not `Clone`, and a `.clone()` call reports the unmet bound.
+///
+/// Every occurrence keeps its own bound, even when two print the same: equal tokens can name
+/// different types (`$crate::Payload` forwarded by two crates' macros), which a proc macro cannot
+/// tell apart, so a bound dropped as a duplicate could be the one of the non-`Clone` type.
 fn endpoint_clone(ty: &Ident, values: &[Value], body: Option<&Body>) -> TokenStream {
-    let mut seen = std::collections::HashSet::new();
     let mut bounds = Vec::new();
     let mut add = |t: TokenStream, span: Span| {
-        if seen.insert(t.to_string()) {
-            bounds.push(quote_spanned!(span=> for<'__concord> #t: ::core::clone::Clone));
-        }
+        bounds.push(quote_spanned!(span=> for<'__concord> #t: ::core::clone::Clone));
     };
     for value in values {
         let t = &value.ty;
@@ -2492,6 +2425,74 @@ mod tests {
         );
         assert_eq!(text(quote!(f(&x, &mut y)?)), "f(&x, &mut y)?");
         assert_eq!(text(quote!(1..=3)), "1..=3");
+    }
+
+    /// F03 (4.2): generated documentation renders payload types from their tokens, so a literal
+    /// inside a type keeps its contents (`"a :: b"`), as in the generated signatures.
+    #[test]
+    fn documented_types_keep_literal_contents() {
+        let text = docs(quote! {
+            pub client Api {
+                base "http://x.test";
+                format Fmt;
+                POST put(body p: Payload<{ count("a :: b") }>) -> Payload<{ count(r#"c , d"#) }>;
+            }
+        });
+        assert!(
+            text.contains(r#"`Payload<{ count(\"a :: b\") }>`"#),
+            "{text}"
+        );
+        assert!(
+            text.contains(r##"`Payload<{ count(r#\"c , d\"#) }>`"##),
+            "{text}"
+        );
+        assert!(!text.contains("a::b") && !text.contains("c, d"), "{text}");
+    }
+
+    /// Review of F03 (4.2): an initializer holding a fragment forwarded by `macro_rules!` is
+    /// documented with its grouping (`(1 + 2) * 2`), which is also what the generated code computes
+    /// (`crates/concord/tests/forwarded_types.rs` sends `n=6`).
+    #[test]
+    fn documented_initializers_keep_forwarded_grouping() {
+        use proc_macro2::{Delimiter, Group, TokenTree};
+        let sum = TokenTree::Group(Group::new(Delimiter::None, quote!(1 + 2)));
+        let text = docs(quote! {
+            pub client Api {
+                base "http://x.test";
+                GET x(query n: usize = #sum * 2);
+            }
+        });
+        assert!(text.contains("Initially `(1 + 2) * 2`"), "{text}");
+        // A negative literal is grouped before a method call only (a range bound stays bare).
+        let minus = TokenTree::Group(Group::new(Delimiter::None, quote!(-1isize)));
+        let text = docs(quote! {
+            pub client Api {
+                base "http://x.test";
+                GET x(query n: usize = #minus.unsigned_abs(), query m: usize = match 0isize { #minus..=1 => 7, _ => 8 });
+            }
+        });
+        assert!(
+            text.contains("Initially `(-1isize).unsigned_abs()`"),
+            "{text}"
+        );
+        assert!(text.contains("match 0isize { -1isize..=1"), "{text}");
+        // Written delimiters are never taken for a fragment's (re-review C3).
+        let text = docs(quote! {
+            pub client Api {
+                base "http://x.test";
+                GET x(
+                    query a: usize = [-1isize].len(),
+                    query b: isize = if true { -1isize } else { 2isize },
+                    query c: usize = count!(-1isize),
+                );
+            }
+        });
+        assert!(text.contains("Initially `[-1isize].len()`"), "{text}");
+        assert!(
+            text.contains("Initially `if true { -1isize } else { 2isize }`"),
+            "{text}"
+        );
+        assert!(text.contains("Initially `count!(- 1isize)`"), "{text}");
     }
 
     /// Final review R1: the per-call note may call absence "the default" only when the value has

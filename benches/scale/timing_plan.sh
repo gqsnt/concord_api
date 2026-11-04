@@ -7,10 +7,10 @@
 #   with `run`:    executes them; JSON results go to SUITE_DIR/timings/
 # For an A/B comparison generate one suite per Concord snapshot (different OUT directories, so
 # different target directories) and run this script on each, alternating A/B between rows.
-# Environment: RUNS (default 5), WARMUP (default 1), TOOLCHAIN (default 1.97.1).
+# Environment: RUNS (default 5), WARMUP (default 1), TOOLCHAIN (default 1.99.1, the pin).
 set -euo pipefail
 suite=$(realpath "$1"); mode=${2:-dry}
-runs=${RUNS:-5}; warmup=${WARMUP:-1}; tc=${TOOLCHAIN:-1.97.1}
+runs=${RUNS:-5}; warmup=${WARMUP:-1}; tc=${TOOLCHAIN:-1.99.1}
 out=$suite/timings; mkdir -p "$out"
 export CARGO_TARGET_DIR=$suite/target CARGO_BUILD_JOBS=${CARGO_BUILD_JOBS:-6}
 cargo="cargo +$tc"

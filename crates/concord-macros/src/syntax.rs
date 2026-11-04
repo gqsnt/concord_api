@@ -86,16 +86,279 @@ pub struct FormatDefault {
 }
 
 /// A type or path as written, without `quote`'s token spacing (`Vec<Item>`, not `Vec < Item >`).
+/// Only the spacing between tokens is chosen: every identifier (`r#type`) and literal
+/// (`"a :: b"`) is its own token's text, so a suggestion made of it means what was written.
 pub fn type_text(t: &dyn quote::ToTokens) -> String {
-    t.to_token_stream()
-        .to_string()
-        .replace(" < ", "<")
-        .replace("< ", "<")
-        .replace(" >", ">")
-        .replace(" :: ", "::")
-        .replace(":: ", "::")
-        .replace(" ,", ",")
-        .replace("& ", "&")
+    token_text(t.to_token_stream(), true)
+}
+
+/// Whether `t`'s tokens hold a fragment forwarded by `macro_rules!` (a group without delimiters).
+pub fn forwarded(t: &dyn quote::ToTokens) -> bool {
+    fn any(tokens: proc_macro2::TokenStream) -> bool {
+        tokens.into_iter().any(|tt| match tt {
+            proc_macro2::TokenTree::Group(g) => {
+                g.delimiter() == proc_macro2::Delimiter::None || any(g.stream())
+            }
+            _ => false,
+        })
+    }
+    any(t.to_token_stream())
+}
+
+/// A payload type and, when given, its format, for code in a diagnostic, with the note to append.
+/// A part holding a fragment forwarded by `macro_rules!` is named `T` or `F` instead of spelled:
+/// no written text is that fragment (another macro's matcher sees it as one opaque token, so
+/// `choose!($x)` with `$x = u8` does not match an arm `(u8)` that `choose!(u8)` matches).
+pub fn advice(
+    ty: &dyn quote::ToTokens,
+    format: Option<&dyn quote::ToTokens>,
+) -> (String, String, &'static str) {
+    let t = forwarded(ty);
+    let f = format.is_some_and(forwarded);
+    let note = match (t, f) {
+        (false, false) => "",
+        (true, false) => {
+            " (`T` is the payload type as declared: it holds a fragment forwarded by `macro_rules!`, which no written type reproduces exactly)"
+        }
+        (false, true) => {
+            " (`F` is the format as declared: it holds a fragment forwarded by `macro_rules!`, which no written type reproduces exactly)"
+        }
+        (true, true) => {
+            " (`T` and `F` are the payload type and format as declared: they hold fragments forwarded by `macro_rules!`, which no written type reproduces exactly)"
+        }
+    };
+    let ty = if t { "T".to_owned() } else { type_text(ty) };
+    let format = match format {
+        Some(_) if f => "F".to_owned(),
+        Some(format) => type_text(format),
+        None => String::new(),
+    };
+    (ty, format, note)
+}
+
+/// An expression's text for documentation, spaced as Rust is usually written (`&ACCEPT`,
+/// `HeaderValue::from_static("x")`, `vec![1, 2]`) rather than as a token stream
+/// (`& ACCEPT`, `HeaderValue :: from_static ("x")`). Only the spacing differs from the tokens.
+pub fn expr_text(tokens: proc_macro2::TokenStream) -> String {
+    token_text(tokens, false)
+}
+
+/// The tokens' own texts, spaced by their neighbours. `types`: angle brackets are generics (in an
+/// expression only a turbofish `::<` opens them); a braced const argument is an expression.
+fn token_text(tokens: proc_macro2::TokenStream, types: bool) -> String {
+    use proc_macro2::{Delimiter, Spacing, TokenTree};
+
+    #[derive(Clone, Copy, PartialEq)]
+    enum Prev {
+        Start,
+        Word,
+        /// `mut`, `const`, `dyn` or `impl` in a type: what follows is spaced (`&mut [u8]`).
+        Keyword,
+        Group,
+        /// A punctuation character; `true` when it is unary or joined to the next one.
+        Punct(char, bool),
+    }
+
+    /// Whether `a` written right before `b` would lex differently than the two apart (one token,
+    /// `..`, `&&`, `<-`, or a comment opener `//`, `/*`).
+    fn lexes_with(a: char, b: char) -> bool {
+        matches!(
+            (a, b),
+            (':', ':')
+                | ('-' | '=', '>')
+                | (
+                    '=' | '!' | '<' | '>' | '+' | '-' | '*' | '/' | '%' | '^' | '&' | '|',
+                    '='
+                )
+                | ('&', '&')
+                | ('|', '|')
+                | ('<', '<' | '-')
+                | ('>', '>')
+                | ('.', '.')
+                | ('/', '/' | '*')
+        )
+    }
+
+    /// The delimiters written for a group. A fragment forwarded by `macro_rules!` (`$e:expr`,
+    /// `$t:ty`) groups its tokens without delimiters: bare when it is one token, or a type where a
+    /// type is expected (`types`), parenthesized otherwise (`(1 + 2) * 2`, `(&DATA).len()`,
+    /// `&(dyn A + B)`), so the text groups as the tokens did (as [`regroup`] does in the code).
+    /// Executable advice does not spell such a fragment at all ([`advice`]).
+    fn delimiters(g: &proc_macro2::Group, types: bool) -> (&'static str, &'static str) {
+        match g.delimiter() {
+            Delimiter::Parenthesis => ("(", ")"),
+            Delimiter::Bracket => ("[", "]"),
+            Delimiter::Brace => ("{ ", " }"),
+            Delimiter::None if types && bare_fragment(g) => ("", ""),
+            Delimiter::None if !types && !expression_fragment(g) => ("", ""),
+            Delimiter::None => ("(", ")"),
+        }
+    }
+
+    /// A macro's input, which may match any tokens: every token apart, as written, except after
+    /// joined punctuation, before `,`/`;` and in a nested invocation's `name!(`.
+    fn verbatim(tokens: proc_macro2::TokenStream, out: &mut String) {
+        let (mut first, mut joint, mut word, mut bang) = (true, false, false, false);
+        for tt in tokens {
+            let space = !first
+                && !joint
+                && match &tt {
+                    TokenTree::Punct(p) if matches!(p.as_char(), ',' | ';') => false,
+                    TokenTree::Punct(p) if p.as_char() == '!' && word => false,
+                    TokenTree::Group(g) if (word || bang) && g.delimiter() != Delimiter::Brace => {
+                        false
+                    }
+                    _ => true,
+                };
+            if space {
+                out.push(' ');
+            }
+            first = false;
+            bang = matches!(&tt, TokenTree::Punct(p) if p.as_char() == '!') && word;
+            joint = matches!(&tt, TokenTree::Punct(p) if p.spacing() == Spacing::Joint);
+            word = matches!(&tt, TokenTree::Ident(_));
+            match tt {
+                TokenTree::Group(g) => {
+                    let (open, close) = delimiters(&g, true);
+                    out.push_str(open);
+                    verbatim(g.stream(), out);
+                    out.push_str(close);
+                }
+                other => out.push_str(&other.to_string()),
+            }
+        }
+    }
+
+    fn walk(tokens: proc_macro2::TokenStream, types: bool, out: &mut String) {
+        let tokens: Vec<TokenTree> = tokens.into_iter().collect();
+        let mut prev = Prev::Start;
+        // The previous token is a macro's `!` (`name!`): the group after it is the macro's input.
+        let mut bang = false;
+        // Open generics (`Vec<`, or a turbofish `::<` in an expression): their `>` closes
+        // without a space.
+        let mut generics = 0usize;
+        // The previous token, when it was a punctuation written apart from the next token.
+        let mut alone: Option<char> = None;
+        // A number keeps its space before a lone `.` when it is an unsuffixed integer (`1 . 2` is
+        // not the float `1.`) and before any `.` when it ends with one (`1. ..` is not `1...`);
+        // a literal after that `.` stays apart too.
+        let (mut integer, mut trailing_dot, mut dot_after_number) = (false, false, false);
+        for (i, tt) in tokens.iter().cloned().enumerate() {
+            let space = match (&tt, prev) {
+                (_, Prev::Start) => false,
+                // Punctuation written apart stays apart when joining it would change the tokens
+                // (closing generics aside: `>>` and `> >` close the same brackets).
+                (TokenTree::Punct(p), _)
+                    if alone.is_some_and(|a| lexes_with(a, p.as_char()))
+                        && !(p.as_char() == '>' && alone == Some('>') && generics > 0) =>
+                {
+                    true
+                }
+                (TokenTree::Punct(p), _)
+                    if p.as_char() == '.'
+                        && (trailing_dot || integer && p.spacing() == Spacing::Alone) =>
+                {
+                    true
+                }
+                (TokenTree::Literal(_), _) if dot_after_number => true,
+                // `< -1>` stays apart: `<-` is one token.
+                (TokenTree::Punct(p), Prev::Punct('<', _)) if types && p.as_char() == '-' => true,
+                (TokenTree::Punct(p), _) if p.as_char() == '>' && generics > 0 => false,
+                (TokenTree::Punct(p), Prev::Word | Prev::Group) if types && p.as_char() == '<' => {
+                    false
+                }
+                (_, Prev::Punct(_, true)) => false,
+                (_, Prev::Punct('.', _)) => false,
+                (TokenTree::Punct(p), _) if matches!(p.as_char(), '.' | ',' | ';' | '?' | ':') => {
+                    false
+                }
+                (TokenTree::Punct(p), _) if p.as_char() == '!' && prev == Prev::Word => false,
+                (TokenTree::Group(g), Prev::Word | Prev::Group | Prev::Punct('!' | '>', _))
+                    if g.delimiter() != Delimiter::Brace =>
+                {
+                    false
+                }
+                _ => true,
+            };
+            if space {
+                out.push(' ');
+            }
+            dot_after_number = (integer || trailing_dot)
+                && matches!(&tt, TokenTree::Punct(p) if p.as_char() == '.');
+            let number = match &tt {
+                TokenTree::Literal(l) => l.to_string(),
+                _ => String::new(),
+            };
+            integer = !number.is_empty() && number.bytes().all(|b| b.is_ascii_digit() || b == b'_');
+            trailing_dot =
+                number.starts_with(|c: char| c.is_ascii_digit()) && number.ends_with('.');
+            alone = match &tt {
+                TokenTree::Punct(p) if p.spacing() == Spacing::Alone => Some(p.as_char()),
+                _ => None,
+            };
+            let macro_input = bang;
+            bang = matches!(&tt, TokenTree::Punct(p) if p.as_char() == '!') && prev == Prev::Word;
+            prev = match tt {
+                TokenTree::Group(g) => {
+                    // A negative literal fragment is grouped only before a postfix operator.
+                    let (open, close) = if !types && literal_fragment(&g) {
+                        if postfix_follows(tokens.get(i + 1), tokens.get(i + 2)) {
+                            ("(", ")")
+                        } else {
+                            ("", "")
+                        }
+                    } else {
+                        delimiters(&g, types)
+                    };
+                    out.push_str(open);
+                    if macro_input {
+                        verbatim(g.stream(), out);
+                    } else {
+                        // A braced const argument (`Payload<{ N + 1 }>`) is an expression.
+                        walk(g.stream(), types && g.delimiter() != Delimiter::Brace, out);
+                    }
+                    out.push_str(close);
+                    Prev::Group
+                }
+                TokenTree::Punct(p) => {
+                    let c = p.as_char();
+                    out.push(c);
+                    // `&x`, `-1`, `*p`, `!b` at the start or after an operator or `,` are unary.
+                    let unary = matches!(c, '&' | '-' | '*' | '!')
+                        && matches!(prev, Prev::Start | Prev::Punct(..));
+                    // Both colons of `::` count as joined (no space after the path separator).
+                    let path = c == ':' && prev == Prev::Punct(':', true);
+                    // The end of a range operator (`..=`) binds like `.`.
+                    let range = matches!(prev, Prev::Punct('.', _));
+                    let opens = c == '<' && (types || prev == Prev::Punct(':', true));
+                    // The `>` of `->` closes nothing.
+                    let arrow = c == '>' && prev == Prev::Punct('-', true);
+                    if opens {
+                        generics += 1;
+                    } else if c == '>' && generics > 0 && !arrow {
+                        generics -= 1;
+                    }
+                    Prev::Punct(
+                        c,
+                        p.spacing() == Spacing::Joint || unary || opens || path || range,
+                    )
+                }
+                other => {
+                    let text = other.to_string();
+                    out.push_str(&text);
+                    if types && matches!(text.as_str(), "mut" | "const" | "dyn" | "impl") {
+                        Prev::Keyword
+                    } else {
+                        Prev::Word
+                    }
+                }
+            };
+        }
+    }
+
+    let mut out = String::new();
+    walk(tokens, types, &mut out);
+    out
 }
 
 /// `via R` after a payload type: the removed spelling, reported with its exact replacement.
@@ -105,14 +368,13 @@ fn reject_via(input: ParseStream<'_>, ty: &Type, site: ViaSite<'_>) -> syn::Resu
     }
     let via: kw::via = input.parse()?;
     let repr: Type = input.parse()?;
-    let format = type_text(&repr);
-    let ty = type_text(ty);
+    let (ty, format, note) = advice(ty, Some(&repr));
     let message = match site {
-        ViaSite::Output => {
-            format!("`via` was removed: write `-> {ty}` and `response {format};` on the endpoint")
-        }
+        ViaSite::Output => format!(
+            "`via` was removed: write `-> {ty}` and `response {format};` on the endpoint{note}"
+        ),
         ViaSite::Body { name, optional } => format!(
-            "`via` was removed: write `body {name}{optional}: {ty}` and `request {format};` on the endpoint"
+            "`via` was removed: write `body {name}{optional}: {ty}` and `request {format};` on the endpoint{note}"
         ),
     };
     Err(syn::Error::new(via.span, message))
@@ -206,26 +468,28 @@ fn parse_output(input: ParseStream<'_>) -> syn::Result<Output> {
     };
     // A path followed by more type tokens is the removed in-place format (`-> Csv Vec<Row>`,
     // reported by the model with its replacement); a path that ends the output is the payload;
+    // a path followed by `!` is a type macro (`-> payload!()`, `-> m::payload![]`), a payload;
     // anything else (`()`, `[u8; 4]`, ...) is a payload.
     let fork = input.fork();
     let explicit = match fork.parse::<syn::Path>() {
-        Ok(_) if !at_end(&fork) && !fork.peek(kw::via) => Some(parse_format(input)?),
+        Ok(_) if !at_end(&fork) && !fork.peek(kw::via) && !fork.peek(Token![!]) => {
+            Some(parse_format(input)?)
+        }
         _ => None,
     };
     if explicit.is_some() && input.peek(syn::token::Paren) && peek_media(input) {
         return Err(output_media(input));
     }
-    let ty: Type = input.parse()?;
+    let ty = parse_type(input)?;
     reject_via(input, &ty, ViaSite::Output)?;
     // `-> () Csv`: a format after a payload that is not a path (paths are handled above).
     if explicit.is_none() && !at_end(input) && input.fork().parse::<syn::Path>().is_ok() {
         let format: syn::Path = input.parse()?;
+        let (shown, format_text, note) = advice(&ty, Some(&format));
         return Err(syn::Error::new(
             format.span(),
             format!(
-                "removed output format: write `-> {}` and `response {};` on this endpoint",
-                type_text(&ty),
-                type_text(&format)
+                "removed output format: write `-> {shown}` and `response {format_text};` on this endpoint{note}"
             ),
         ));
     }
@@ -758,6 +1022,21 @@ fn parse_child(input: ParseStream<'_>) -> syn::Result<Owner> {
         input.parse::<Token![;]>()?;
         Stmts::default()
     } else {
+        // `-> item! { response F; }`: the braces were the type macro's own.
+        if let Some(Output {
+            ty: Type::Macro(m), ..
+        }) = &output
+            && matches!(m.mac.delimiter, syn::MacroDelimiter::Brace(_))
+            && !input.peek(syn::token::Brace)
+        {
+            return Err(syn::Error::new(
+                m.span(),
+                format!(
+                    "expected `;` or this endpoint's `{{ .. }}` after its output type: the braces after `{}!` belong to the type macro; write `-> {0}!()` or `-> {0}! {{}} {{ .. }}`",
+                    type_text(&m.mac.path)
+                ),
+            ));
+        }
         let content;
         braced!(content in input);
         let (stmts, children) = parse_owner_body(&content, None)?;
@@ -880,7 +1159,7 @@ fn parse_params(
             })?;
             let optional = parse_question(&content)?;
             content.parse::<Token![:]>()?;
-            let ty: Type = content.parse()?;
+            let ty = parse_type(&content)?;
             reject_via(
                 &content,
                 &ty,
@@ -909,7 +1188,7 @@ fn parse_params(
             let name: Ident = content.parse()?;
             let optional = parse_question(&content)?;
             content.parse::<Token![:]>()?;
-            let ty: Type = content.parse()?;
+            let ty = parse_type(&content)?;
             if allow_body && placement.is_none() {
                 // `item: NewItem via Json` (the removed spelling without `body`) and
                 // `item: NewItem json` (a format after the type).
@@ -927,21 +1206,21 @@ fn parse_params(
                     && content.fork().parse::<syn::Path>().is_ok()
                 {
                     let format: syn::Path = content.parse()?;
+                    let (shown, format_text, note) = advice(&ty, Some(&format));
                     return Err(syn::Error::new(
                         format.span(),
                         format!(
-                            "removed body format: write `body {}{}: {}` and `request {3};` on this endpoint (a format is a type path: `{3}` must name a format type in scope)",
-                            plain(&name),
+                            "removed body format: write `body {}{}: {shown}` and `request {format_text};` on this endpoint (a format is a type path: `{format_text}` must name a format type in scope){note}",
+                            // As written: the suggestion is code, so `r#type` stays raw.
+                            name,
                             if optional { "?" } else { "" },
-                            type_text(&ty),
-                            type_text(&format)
                         ),
                     ));
                 }
             }
             let default = if content.peek(Token![=]) {
                 content.parse::<Token![=]>()?;
-                Some(content.parse::<Expr>()?)
+                Some(parse_initializer(&content)?)
             } else {
                 None
             };
@@ -963,9 +1242,172 @@ fn parse_params(
     Ok((params, body))
 }
 
-fn plain(ident: &Ident) -> String {
-    let s = ident.to_string();
-    s.strip_prefix("r#").map(str::to_owned).unwrap_or(s)
+/// What `parse` reads from `input`, and the tokens it consumed as written (`None` if it ended
+/// inside a group).
+fn consumed<T>(
+    input: ParseStream<'_>,
+    parse: impl FnOnce(ParseStream<'_>) -> syn::Result<T>,
+) -> syn::Result<(T, Option<proc_macro2::TokenStream>)> {
+    let start = input.cursor();
+    let parsed = parse(input)?;
+    let end = input.cursor();
+    let mut written = proc_macro2::TokenStream::new();
+    let mut at = start;
+    while at != end {
+        match at.token_tree() {
+            Some((tt, next)) => {
+                written.extend([tt]);
+                at = next;
+            }
+            None => return Ok((parsed, None)),
+        }
+    }
+    Ok((parsed, Some(written)))
+}
+
+/// A value's initializer: checked as an expression, kept as the tokens written with forwarded
+/// fragments regrouped ([`regroup`]); the parsed expression printed back has lost their grouping.
+fn parse_initializer(input: ParseStream<'_>) -> syn::Result<Expr> {
+    Ok(match consumed(input, |input| input.parse::<Expr>())? {
+        (_, Some(written)) => Expr::Verbatim(regroup(written, true)),
+        (expr, None) => expr,
+    })
+}
+
+/// A payload or value type. When its tokens hold forwarded fragments it is parsed again from
+/// them, regrouped ([`regroup`]): `syn` reads such a fragment in a const argument as ungrouped.
+fn parse_type(input: ParseStream<'_>) -> syn::Result<Type> {
+    Ok(match consumed(input, |input| input.parse::<Type>())? {
+        (ty, Some(written)) if forwarded(&written) => {
+            syn::parse2(regroup(written, false)).unwrap_or(ty)
+        }
+        (ty, _) => ty,
+    })
+}
+
+/// Whether a group is a fragment forwarded by `macro_rules!` (no delimiters) holding a negative
+/// literal (`-1isize`); written brackets, braces or parentheses (`[-1]`, `{ -1 }`, `m!(-1)`) are not.
+fn literal_fragment(g: &proc_macro2::Group) -> bool {
+    use proc_macro2::{Delimiter, TokenTree};
+    let tokens: Vec<TokenTree> = g.stream().into_iter().collect();
+    g.delimiter() == Delimiter::None
+        && matches!(tokens.as_slice(), [TokenTree::Punct(minus), TokenTree::Literal(_)] if minus.as_char() == '-')
+}
+
+/// Whether the tokens after a negative literal fragment bind tighter than its `-`: a method call
+/// or field (`.`, not the `..` of a range), an index or `?` (`$n.abs()` is `(-1).abs()`). A range
+/// pattern's bound (`$n..=1`), where parentheses are not allowed, is followed by `..`.
+fn postfix_follows(
+    next: Option<&proc_macro2::TokenTree>,
+    after: Option<&proc_macro2::TokenTree>,
+) -> bool {
+    use proc_macro2::{Delimiter, Spacing, TokenTree};
+    match next {
+        Some(TokenTree::Punct(p)) if p.as_char() == '?' => true,
+        Some(TokenTree::Punct(p)) if p.as_char() == '.' => {
+            !(p.spacing() == Spacing::Joint
+                && matches!(after, Some(TokenTree::Punct(q)) if q.as_char() == '.'))
+        }
+        Some(TokenTree::Group(g)) => g.delimiter() == Delimiter::Bracket,
+        _ => false,
+    }
+}
+
+/// Whether a fragment forwarded by `macro_rules!`, where an expression is expected, needs its
+/// grouping as parentheses: an expression of several tokens, or a type with `+`
+/// (`size_of::<&(dyn Send + Sync)>()`). Left as it came: a path, one primary expression that may
+/// head a struct literal (`$p { n: 7 }`); a negative literal, which may bound a range pattern,
+/// where parentheses are not allowed (grouped only before a [postfix operator](postfix_follows));
+/// a lifetime, a pattern or another type that is no expression (`'static`, `&'static str`,
+/// `Vec<u8>`). A type that also reads as an expression (`[u8; 3]`, `&T`) means the same in
+/// parentheses.
+fn expression_fragment(g: &proc_macro2::Group) -> bool {
+    let stream = g.stream();
+    stream.clone().into_iter().nth(1).is_some()
+        && !literal_fragment(g)
+        && syn::parse::Parser::parse2(syn::Path::parse, stream.clone()).is_err()
+        && (syn::parse::Parser::parse2(Expr::parse, stream.clone()).is_ok()
+            || syn::parse::Parser::parse2(Type::parse, stream.clone()).is_ok()
+                && syn::parse::Parser::parse2(Type::without_plus, stream).is_err())
+}
+
+/// Whether a fragment forwarded by `macro_rules!` (a group without delimiters) means the same
+/// without its group: one token, or a type without `+`.
+fn bare_fragment(g: &proc_macro2::Group) -> bool {
+    let stream = g.stream();
+    stream.clone().into_iter().nth(1).is_none()
+        || syn::parse::Parser::parse2(Type::without_plus, stream).is_ok()
+}
+
+/// `tokens` with forwarded fragments grouped as rustc grouped them. A proc macro cannot hand such
+/// a fragment back as rustc made it, and rustc reads a group without delimiters from a proc macro
+/// as ungrouped: `$e * 2` with `$e = 1 + 2` would be 5, not 6, and `$e.len()` with `$e = &DATA`
+/// would be `&DATA.len()`. Where an expression is expected (`expr`: an initializer, a braced const
+/// argument, an array length) a fragment that is an [expression or a type with `+`](expression_fragment)
+/// is put in parentheses; a literal, a lifetime, a path or another type is left as it came. Where a
+/// type is expected only a fragment that is not a [type](bare_fragment) is. The added parentheses
+/// carry the macro's call-site span, so rustc does not report them as unneeded in the user's code
+/// (`size_of::<([u8; 3])>()`). A macro's input (`name!(..)`) is kept as it came: there the
+/// fragment is still one, opaque to that macro's matcher.
+fn regroup(tokens: proc_macro2::TokenStream, expr: bool) -> proc_macro2::TokenStream {
+    regroup_in(tokens, expr, false)
+}
+
+/// [`regroup`]; `array`: the contents of `[T; N]` in a type, an expression after its `;`.
+fn regroup_in(
+    tokens: proc_macro2::TokenStream,
+    mut expr: bool,
+    array: bool,
+) -> proc_macro2::TokenStream {
+    use proc_macro2::{Delimiter, Group, Span, TokenTree};
+    let (mut word, mut bang) = (false, false);
+    let mut out = proc_macro2::TokenStream::new();
+    let tokens: Vec<TokenTree> = tokens.into_iter().collect();
+    for (i, tt) in tokens.iter().cloned().enumerate() {
+        let (next, after) = (tokens.get(i + 1), tokens.get(i + 2));
+        let macro_input = bang;
+        bang = matches!(&tt, TokenTree::Punct(p) if p.as_char() == '!') && word;
+        word = matches!(&tt, TokenTree::Ident(_));
+        if array && matches!(&tt, TokenTree::Punct(p) if p.as_char() == ';') {
+            expr = true;
+        }
+        let rebuilt = |g: &Group, delimiter: Delimiter, span: Span, expr: bool, array: bool| {
+            let mut group = Group::new(delimiter, regroup_in(g.stream(), expr, array));
+            group.set_span(span);
+            TokenTree::Group(group)
+        };
+        out.extend([match tt {
+            TokenTree::Group(g) if macro_input => TokenTree::Group(g),
+            TokenTree::Group(g) if g.delimiter() == Delimiter::None => {
+                let bare = if !expr {
+                    bare_fragment(&g)
+                } else if literal_fragment(&g) {
+                    !postfix_follows(next, after)
+                } else {
+                    !expression_fragment(&g)
+                };
+                match (bare, forwarded(&g.stream())) {
+                    (true, false) => TokenTree::Group(g),
+                    // A type that itself holds fragments (`Payload<{ $e * 2 }>` as `$t`).
+                    (true, true) => rebuilt(&g, Delimiter::None, g.span(), expr, false),
+                    (false, _) => {
+                        rebuilt(&g, Delimiter::Parenthesis, Span::call_site(), true, false)
+                    }
+                }
+            }
+            TokenTree::Group(g) if !forwarded(&g.stream()) => TokenTree::Group(g),
+            TokenTree::Group(g) => {
+                let (delimiter, span) = (g.delimiter(), g.span());
+                match delimiter {
+                    Delimiter::Brace => rebuilt(&g, delimiter, span, true, false),
+                    Delimiter::Bracket if !expr => rebuilt(&g, delimiter, span, false, true),
+                    _ => rebuilt(&g, delimiter, span, expr, false),
+                }
+            }
+            other => other,
+        }]);
+    }
+    out
 }
 
 fn parse_question(input: ParseStream<'_>) -> syn::Result<bool> {
@@ -1043,5 +1485,148 @@ mod tests {
         assert_eq!(text(syn::parse_quote!(r#type)), "r#type");
         let path: syn::Path = syn::parse_str("r#type").unwrap();
         assert_eq!(type_text(&path), "r#type");
+    }
+
+    /// F03: literal contents are never respaced (`"a :: b"` has six bytes, `"a::b"` four), in
+    /// any literal kind or nesting; only the spacing between tokens is chosen.
+    #[test]
+    fn literals_keep_their_contents() {
+        let text = |s: &str| type_text(&syn::parse_str::<syn::Type>(s).unwrap());
+        assert_eq!(
+            text(r#"Payload<{ count("a :: b") }>"#),
+            r#"Payload<{ count("a :: b") }>"#
+        );
+        for literal in [
+            r#""a :: b < c > d , e & f""#,
+            r#"r"x :: y""#,
+            r##"r#"q :: " , & "#"##,
+            r#"b"a :: b""#,
+            r#"br"a , b""#,
+            r#"c"a :: b""#,
+            "'<'",
+            "b' '",
+        ] {
+            let written = format!("Payload<{{ count({literal}) }}>");
+            let shown = text(&written);
+            assert!(shown.contains(literal), "{literal} in {shown}");
+            // The suggestion parses back to the same tokens.
+            let back: syn::Type = syn::parse_str(&shown).unwrap();
+            let original: syn::Type = syn::parse_str(&written).unwrap();
+            assert_eq!(
+                quote::quote!(#back).to_string(),
+                quote::quote!(#original).to_string()
+            );
+        }
+        assert_eq!(
+            text(r#"Outer<Inner<{ f("a :: b") }>, [u8; { g(" , ") }]>"#),
+            r#"Outer<Inner<{ f("a :: b") }>, [u8; { g(" , ") }]>"#
+        );
+    }
+
+    /// Ordinary types read as Rust is written; raw identifiers and type macros stay as written.
+    #[test]
+    fn types_are_spaced_as_written() {
+        let text = |s: &str| type_text(&syn::parse_str::<syn::Type>(s).unwrap());
+        for (written, shown) in [
+            ("Vec < Option < Item > >", "Vec<Option<Item>>"),
+            (
+                "std :: collections :: HashMap < String , u32 >",
+                "std::collections::HashMap<String, u32>",
+            ),
+            ("& 'static str", "&'static str"),
+            ("& 'a mut [u8 ; 4]", "&'a mut [u8; 4]"),
+            ("(u8 , String)", "(u8, String)"),
+            ("()", "()"),
+            ("* const u8", "*const u8"),
+            (
+                "Box < dyn Fn (u8) -> Vec < u8 > + Send >",
+                "Box<dyn Fn(u8) -> Vec<u8> + Send>",
+            ),
+            ("< T as Trait > :: Assoc", "<T as Trait>::Assoc"),
+            ("Option < r#type :: r#match >", "Option<r#type::r#match>"),
+            ("payload ! ()", "payload!()"),
+            ("m :: payload ! [u8]", "m::payload![u8]"),
+            ("Foo < - 1 >", "Foo< -1>"),
+        ] {
+            assert_eq!(text(written), shown, "{written}");
+        }
+    }
+
+    /// Review of F03 (4.2): punctuation written apart is never joined into another token, so a
+    /// macro matching `(. .)` is not shown as `(..)`. A macro's input may match any tokens, so it
+    /// is shown token for token (only spacing that cannot change the tokens is dropped); numbers
+    /// keep the space a following `.` needs.
+    #[test]
+    fn separate_punctuation_stays_separate() {
+        let text = |s: &str| type_text(&syn::parse_str::<syn::Type>(s).unwrap());
+        for (written, shown) in [
+            ("choose!(. .)", "choose!(. .)"),
+            ("choose!(..)", "choose!(..)"),
+            ("choose!(a < b < c > > d)", "choose!(a < b < c > > d)"),
+            ("choose!(a < b < c >> d)", "choose!(a < b < c >> d)"),
+            ("choose!(1. . 2)", "choose!(1. . 2)"),
+            ("m!(& &x)", "m!(& & x)"),
+            ("m!(&&x)", "m!(&& x)"),
+            ("m!(a / / b)", "m!(a / / b)"),
+            ("m!(a / *b)", "m!(a / * b)"),
+            ("m!(a < - b)", "m!(a < - b)"),
+            ("m!(a = > b)", "m!(a = > b)"),
+            ("m!(a => b)", "m!(a => b)"),
+            ("m!(a : : b)", "m!(a : : b)"),
+            ("m!(1 . 2)", "m!(1 . 2)"),
+            ("m!(x.0, y; inner!(z))", "m!(x . 0, y; inner!(z))"),
+            // Outside a macro's input: generics, and numbers before `.` in a const argument.
+            ("Vec < Vec < u8 > >", "Vec<Vec<u8>>"),
+            (
+                "Foo < { f(1 . max(2), 1. ..2, 1 ..= 3, 1.5 . max(2)) } >",
+                "Foo<{ f(1 .max(2), 1. ..2, 1..=3, 1.5.max(2)) }>",
+            ),
+        ] {
+            let shown_text = text(written);
+            assert_eq!(shown_text, shown, "{written}");
+            // The same tokens back, jointness included.
+            let tokens = |t: &str| {
+                fn flat(s: proc_macro2::TokenStream, out: &mut Vec<String>) {
+                    for tt in s {
+                        match tt {
+                            proc_macro2::TokenTree::Group(g) => flat(g.stream(), out),
+                            proc_macro2::TokenTree::Punct(p) => {
+                                out.push(format!("{}{:?}", p.as_char(), p.spacing()))
+                            }
+                            tt => out.push(tt.to_string()),
+                        }
+                    }
+                }
+                let mut out = Vec::new();
+                flat(t.parse().unwrap(), &mut out);
+                out
+            };
+            if written.contains('!') {
+                assert_eq!(tokens(&shown_text), tokens(written), "{written}");
+            }
+        }
+    }
+
+    /// Review of F03 (4.2): a fragment forwarded by `macro_rules!` is a group without delimiters;
+    /// its text keeps the grouping (`(1 + 2) * 2`, not `1 + 2 * 2`), and a type or a single token
+    /// stays bare.
+    #[test]
+    fn invisible_groups_keep_their_grouping() {
+        use proc_macro2::{Delimiter, Group, TokenStream, TokenTree};
+        let group = |tokens: TokenStream| TokenTree::Group(Group::new(Delimiter::None, tokens));
+        let sum = group(quote::quote!(1 + 2));
+        assert_eq!(
+            type_text(&quote::quote!(Payload<{ pick!(#sum * 2) }>)),
+            "Payload<{ pick!((1 + 2) * 2) }>"
+        );
+        assert_eq!(super::expr_text(quote::quote!(#sum * 2)), "(1 + 2) * 2");
+        let ty = group(quote::quote!(Vec<u8>));
+        assert_eq!(type_text(&quote::quote!(Option<#ty>)), "Option<Vec<u8>>");
+        let path = group(quote::quote!(crate::Fmt));
+        assert_eq!(type_text(&path), "crate::Fmt");
+        let object = group(quote::quote!(dyn Send + Sync));
+        assert_eq!(type_text(&quote::quote!(&#object)), "&(dyn Send + Sync)");
+        let one = group(quote::quote!(3));
+        assert_eq!(type_text(&quote::quote!([u8; #one])), "[u8; 3]");
     }
 }

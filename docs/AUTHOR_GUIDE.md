@@ -110,7 +110,8 @@ concord::api! {
 
 fn main() -> Result<(), concord::Error> {
     // The generated signatures, checked here by the compiler. Positional arguments and `set_*`
-    // take `impl IntoValue<T>`: the exact `T`, or `&str`/`&String` where `T` is `String`.
+    // take `impl IntoValue<T>`: the exact `T`, `&str`/`&String` where `T` is `String`, or
+    // `&HeaderValue` where `T` is `HeaderValue`.
     let _: fn(reqwest::Client, ShopConfig) -> Shop = Shop::new;
     let _: fn(Shop, String) -> Shop = Shop::set_key;
     let _: fn(Shop, String) -> Shop = Shop::set_lang;
@@ -194,13 +195,16 @@ fn main() -> Result<(), concord::Error> {
 **Base.** `base "https://api.example.com/v2";` is checked at compile time: `http` or `https`, an
 ASCII domain name or an IP address, an optional port, an optional path — no user information,
 query, fragment, `%` escapes or `xn--` labels. Callers replace it at runtime with
-`with_base_url(..)`, which accepts any `http`/`https` URL of that shape (including IDN hosts) and
-returns a `Result`.
+`with_base_url(..)`, which returns a `Result` and accepts more than that static subset: any
+`http`/`https` URL with a host and no user information, query, fragment or port 0, including IDN
+hosts and a percent-escaped path, whose escapes are kept as written (`https://example.com/a%2Fb`).
 
 **Paths.** Each owner's `path` template is relative (no leading `/`) and is appended after the base
 path, root first. Literal text is sent verbatim; each `{value}` is formatted with `Display` and
-percent-encoded so that it is always exactly **one** segment (`a/b` becomes `a%2Fb`). A trailing
-`/` is allowed only on an endpoint's own path. Optional values cannot appear in a path.
+percent-encoded so that it is always exactly **one** segment (`a/b` becomes `a%2Fb`). A segment
+that contains values must not come out empty, `.` or `..`: that is a build error from `prepare()`,
+and nothing is sent (`.x` is an ordinary segment). A trailing `/` is allowed only on an endpoint's
+own path. Optional values cannot appear in a path.
 
 **Subdomains.** Each owner's `subdomain` template is split on `.` into labels that are prepended to
 the base host, the deepest owner's labels leftmost. Labels are lowercased and must be 1–63
@@ -261,6 +265,15 @@ fn main() -> Result<(), concord::Error> {
     // A value that is empty, `.` or `..` cannot be a segment: a build error, nothing is sent.
     let error = bucket.object("..").prepare().unwrap_err();
     assert_eq!(error.kind(), concord::ErrorKind::Build);
+    assert!(bucket.object(".x").prepare().is_ok());
+
+    // A runtime base may carry percent escapes; they are kept as written.
+    let escaped = Storage::new(reqwest::Client::new()).with_base_url("https://example.com/a%2Fb")?;
+    let object = escaped.region(Region::Us).bucket("photos").object("k").prepare()?;
+    assert_eq!(
+        object.request().url().as_str(),
+        "https://us.storage.example.com/a%2Fb/buckets/photos/objects/k"
+    );
     Ok(())
 }
 ```
@@ -421,6 +434,8 @@ fn main() -> Result<(), concord::Error> {
   hyper add their own headers).
 - Repeats interleaved across keys (`f=a&op=eq&f=b`) cannot be declared; append them to the native
   URL instead — see the [interleaved-query recipe](RECIPES.md#interleaved-query-parameters).
+- Moving a key to another owner moves its position: [§11.1](#111-moving-a-default-into-a-scope)
+  shows the edit and what it changes for each sibling.
 
 ```rust
 use concord::reqwest;
@@ -490,11 +505,12 @@ sensitivity flag; a `static` or `from_static` value is cloned without copying), 
 `Display` text with a template (`X_SORT = "{sort}"`), or build a `HeaderValue`.
 
 - Text — a literal, a template's result, a `String` value — is whatever
-  `http::HeaderValue::from_str` accepts (UTF-8 beyond ASCII included; no control bytes). Literal
-  text and each literal fragment of a template are checked when the macro expands, after Rust
-  escapes and `{{ }}` are decoded, so a line break in a literal fragment is a compile error that
-  no value can repair. Formatted text is checked when the request is built: a build error names
-  the header, never the value.
+  `http::HeaderValue::from_str` accepts, and `http`'s rule is the authority: visible ASCII,
+  space, horizontal tab and UTF-8 beyond ASCII are accepted; every other control byte (a line
+  break, NUL, DEL) is rejected. Literal text and each literal fragment of a template are checked
+  when the macro expands, after Rust escapes and `{{ }}` are decoded, so a line break in a literal
+  fragment is a compile error that no value can repair. Formatted text is checked when the
+  request is built: a build error names the header, never the value.
 - A native value is not text: it cannot fill a path, a query value or a template hole. So the
   only value that can carry its own sensitivity flag is never written anywhere else, and a value's
   header and text placements are classified alike.
@@ -524,7 +540,10 @@ concord::api! {
         }
         GET localized() {
             path "localized";
-            headers { header::ACCEPT_LANGUAGE = "fr, café"; }  // UTF-8 is a valid value
+            headers {
+                header::ACCEPT_LANGUAGE = "fr, café"; // UTF-8 is a valid value
+                "x-note" = "a\tb";                    // and so is a horizontal tab
+            }
         }
     }
 }
@@ -547,6 +566,7 @@ fn main() -> Result<(), concord::Error> {
     assert!(public.request().headers().get("authorization").is_none());
     let localized = feed.localized().prepare()?;
     assert_eq!(localized.request().headers()["accept-language"].as_bytes(), "fr, café".as_bytes());
+    assert_eq!(localized.request().headers()["x-note"].as_bytes(), b"a\tb");
     Ok(())
 }
 ```
@@ -693,7 +713,7 @@ output's format, and which statement they come from.
 | Format | Body (`Encode<T>`) | Output (`Decode<T>`) and its check of the response head | `Accept` it suggests |
 |---|---|---|---|
 | `Json` (feature `json`, on by default) | any `T: Serialize`; `application/json` | any `T: DeserializeOwned`; exactly one `Content-Type`, `application/json` or `application/*+json`, `charset` absent or once and UTF-8 or US-ASCII; anything else is refused before the body is read | `application/json` |
-| `Text` (feature `extras`) | `String`; `text/plain; charset=utf-8` | `String`; any media type; only a declared non-UTF-8 `charset` (repeated or not) is refused; invalid UTF-8 is a decode error | none |
+| `Text` (feature `extras`) | `String`; `text/plain; charset=utf-8` | `String`; any `Content-Type`, also a missing, repeated or malformed one; the one refusal is a single well-formed `Content-Type` declaring a `charset` other than UTF-8 or US-ASCII (also among repeated `charset` parameters); invalid UTF-8 is a decode error | none |
 | `Binary` (feature `extras`) | `Bytes` or `Vec<u8>`; `application/octet-stream` | `Bytes` or `Vec<u8>`, unchanged; nothing is checked (`image/png` is fine) | none |
 | `Form` (feature `form`) | any `T: Serialize` with flat fields (a struct, a map, pairs); `application/x-www-form-urlencoded` | any `T: DeserializeOwned`; exactly one `application/x-www-form-urlencoded`, `charset` absent or once and UTF-8 or US-ASCII | `application/x-www-form-urlencoded` |
 | `IgnoreContentType<F>` (feature `extras`) | `F`'s | `F`'s, without its `Content-Type` check | `F`'s |
@@ -1320,14 +1340,19 @@ fn main() {
 
 ## 10. Limits
 
-- **Depth.** Each scope level nests the generated types. With rustc 1.97.1 and the default
-  `recursion_limit`, a chain of 48 scopes compiled and 56 failed (`E0320`, overflow while adding
-  drop-check rules, reported on the whole invocation); `#![recursion_limit = "256"]` made 64
-  compile. Real APIs are far shallower.
+- **Depth.** Each scope level nests the generated types. With the default `recursion_limit`, a
+  chain of 48 scopes compiled and 56 failed (`E0320`, overflow while adding drop-check rules,
+  reported on the whole invocation); `#![recursion_limit = "256"]` made 64 compile. These points
+  were measured with rustc 1.97.1 and re-checked with 1.99.1; other compilers can differ. The
+  limit is per crate: a crate that navigates a deep chain and prepares its requests can need its
+  own `#![recursion_limit]`, not only the crate that declares it, and `cargo doc` can reach the
+  limit before compilation does (a 32-scope chain compiled, but documenting it failed with
+  `E0275` at the default limit; 256 fixed it). Real APIs are far shallower.
 - **Very large declarations.** Generated code grows linearly with endpoints, inherited
   contributions and override chains, and quadratically only for endpoints at every level of a deep
-  chain. Measured crash thresholds on rustc 1.97.1: 1,000 nested optional overrides of one key
-  (500 compiled). Evidence: `v4/refinement/evidence/tracks/compiler.md`.
+  chain. A crash threshold measured with rustc 1.97.1, before the 1.99.1 pin, and not re-measured
+  since: 1,000 nested optional overrides of one key (500 compiled). Evidence:
+  `v4/refinement/evidence/tracks/compiler.md`.
 - **Hosts.** IDNA is not performed; a declared base cannot use punycode (`xn--`) labels or `%`
   escapes in its path — pass such a URL to `with_base_url`.
 - **Interleaved query repeats** across keys and per-call removal through `remove` are not
@@ -1353,5 +1378,130 @@ each edit does to code that calls the endpoint:
 | Move an endpoint to another scope | breaks: navigation goes through the new scope |
 | Rename an endpoint, scope or value | breaks: the method names follow |
 | Move a value between owners | breaks: it is supplied where it is now declared |
+| Move a literal query or header entry into the enclosing scope | unchanged code; every endpoint below inherits it and the query order can change ([§11.1](#111-moving-a-default-into-a-scope)) |
 
 `#[deprecated]` on a scope or endpoint (§8) lets callers migrate before a removal.
+
+### 11.1 Moving a default into a scope
+
+Several endpoints of a scope send the same `per_page=30` and `x-cache` header; `commits` sends its
+own `per_page`, `readme` neither. Declaring the shared default once on the scope changes three
+things, which the edit has to decide sibling by sibling:
+
+- **Every endpoint below inherits it**, also one that sent nothing: without an edit of its own,
+  `readme` would start sending `per_page=30`, with no error. Keep such a sibling as it was with
+  `remove`.
+- **A sibling that sets the key itself no longer compiles** ("query key `per_page` is already set
+  by `Forge.repo`"). `override` keeps its own value; `override .. else inherit` with an optional
+  value keeps a per-call choice (`pulls().set_per_page(50)` still compiles: an optional value
+  has `set_per_page` too, and `maybe_per_page` is new).
+- **The query order changes.** A key keeps the position of its first appearance on the chain
+  (§4.7): `per_page` now comes from the scope, so it moves ahead of the endpoint's own keys, also
+  where an endpoint overrides it. The pairs are the same; a server or a request signature that
+  depends on their order sees the difference. The values of one header name stay in contribution
+  order: the scope's, then an endpoint's `append`.
+
+The example below compiles both versions and checks each sibling:
+
+```rust
+use concord::reqwest;
+
+mod before {
+    concord::api! {
+        pub client Forge {
+            base "https://api.forge.example";
+            query { "v" = "2"; }
+
+            scope repo(owner: String, name: String) {
+                path "repos/{owner}/{name}";
+
+                GET issues(query state?: String) {
+                    path "issues";
+                    query { "per_page" = "30"; }
+                    headers { "x-cache" = "max-age=60"; }
+                }
+                GET pulls(query state?: String, query per_page: u32 = 30) {
+                    path "pulls";
+                    headers { "x-cache" = "max-age=60"; append "x-cache" = "no-transform"; }
+                }
+                GET commits(query sha?: String) {
+                    path "commits";
+                    query { "per_page" = "100"; }
+                }
+                GET readme() { path "readme"; }
+            }
+        }
+    }
+}
+
+mod after {
+    concord::api! {
+        pub client Forge {
+            base "https://api.forge.example";
+            query { "v" = "2"; }
+
+            scope repo(owner: String, name: String) {
+                path "repos/{owner}/{name}";
+                query { "per_page" = "30"; }             // every endpoint below inherits it
+                headers { "x-cache" = "max-age=60"; }
+
+                GET issues(query state?: String) { path "issues"; }
+                GET pulls(query state?: String, per_page?: u32) {
+                    path "pulls";
+                    query { override "per_page" = per_page else inherit; } // still per call
+                    headers { append "x-cache" = "no-transform"; }
+                }
+                GET commits(query sha?: String) {
+                    path "commits";
+                    query { override "per_page" = "100"; } // keeps its own value
+                    headers { remove "x-cache"; }
+                }
+                GET readme() {
+                    path "readme";
+                    query { remove "per_page"; }          // keeps sending neither
+                    headers { remove "x-cache"; }
+                }
+            }
+        }
+    }
+}
+
+fn query(prepared: concord::Prepared<()>) -> String {
+    prepared.request().url().query().unwrap_or_default().to_owned()
+}
+
+fn cache(prepared: concord::Prepared<()>) -> Vec<String> {
+    let values = prepared.request().headers().get_all("x-cache");
+    values.iter().map(|v| v.to_str().unwrap().to_owned()).collect()
+}
+
+fn main() -> Result<(), concord::Error> {
+    let old = before::Forge::new(reqwest::Client::new()).repo("acme", "app");
+    let new = after::Forge::new(reqwest::Client::new()).repo("acme", "app");
+
+    // `issues` inherits: the same pairs, but `per_page` now comes first (the scope's position).
+    assert_eq!(query(old.issues().set_state("open").prepare()?), "v=2&state=open&per_page=30");
+    assert_eq!(query(new.issues().set_state("open").prepare()?), "v=2&per_page=30&state=open");
+    assert_eq!(cache(new.issues().prepare()?), cache(old.issues().prepare()?));
+
+    // `pulls`: the same calling code, the same per-call value, the same two cache lines in order.
+    assert_eq!(query(old.pulls().set_per_page(50).prepare()?), "v=2&per_page=50");
+    assert_eq!(query(new.pulls().set_per_page(50).prepare()?), "v=2&per_page=50");
+    assert_eq!(query(new.pulls().set_state("open").prepare()?), "v=2&per_page=30&state=open");
+    assert_eq!(cache(old.pulls().prepare()?), ["max-age=60", "no-transform"]);
+    assert_eq!(cache(new.pulls().prepare()?), ["max-age=60", "no-transform"]);
+
+    // `commits` keeps its own value, now at the scope's position, and no cache header.
+    assert_eq!(query(old.commits().set_sha("abc").prepare()?), "v=2&sha=abc&per_page=100");
+    assert_eq!(query(new.commits().set_sha("abc").prepare()?), "v=2&per_page=100&sha=abc");
+    assert!(cache(new.commits().prepare()?).is_empty());
+
+    // `readme` sends neither, as before; without its two `remove`s it would inherit both.
+    assert_eq!(query(new.readme().prepare()?), query(old.readme().prepare()?));
+    assert!(cache(new.readme().prepare()?).is_empty());
+    Ok(())
+}
+```
+
+Moving a *value* to the scope instead of a literal entry also moves its setter to the scope
+handle, which changes calling code (the table above).

@@ -2262,9 +2262,10 @@ fn endpoint_body(
             .media
             .as_ref()
             .map_or(String::new(), |m| format!(" {:?}", m.value()));
+        let (ty, _, note) = syntax::advice(&b.ty, None);
         errors.push(syn::Error::new(b.name.span(), format!(
-            "removed in-place body format: write `body {}{}: {}` and `request {format}{media};` on this endpoint (a format is a type path: `{format}` must name a format type in scope)",
-            b.name, if b.optional { "?" } else { "" }, type_text(&b.ty))));
+            "removed in-place body format: write `body {}{}: {ty}` and `request {format}{media};` on this endpoint (a format is a type path: `{format}` must name a format type in scope){note}",
+            b.name, if b.optional { "?" } else { "" })));
         return None;
     }
     let (format, origin, media) = match own {

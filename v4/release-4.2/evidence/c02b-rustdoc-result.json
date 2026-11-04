@@ -1,0 +1,26 @@
+[
+  {
+    "page": "struct.CurrentOrdinary.html",
+    "faithful_prose_present": true,
+    "altered_absent": true,
+    "signature_control": true,
+    "html_sha256": "c745c8aaec00b4925bc7f22a188248d378b723a031da081cf8f772666a1f3a17",
+    "pass": true
+  },
+  {
+    "page": "struct.CurrentRaw.html",
+    "faithful_prose_present": true,
+    "altered_absent": true,
+    "signature_control": true,
+    "html_sha256": "959dd918f82a00e48aa2c886259562c49c6e1d81e7c7fc7d933abaec6e9c643f",
+    "pass": true
+  },
+  {
+    "page": "struct.Current.html",
+    "faithful_prose_present": true,
+    "altered_absent": true,
+    "signature_control": true,
+    "html_sha256": "7bf040c7a3a35af66b954719efdf01685aaecdfb1a78b0988614d9fcf8c75fa8",
+    "pass": true
+  }
+]

@@ -1,0 +1,22 @@
+[package]
+name = "concord-clone-hygiene-check"
+description = "Payload types written by other crates' macros: same-printed `$crate::Payload` types keep their own conditional `Clone` bounds (F01), and type macros from another crate are output types (F02)."
+version = "0.0.0"
+edition = "2024"
+rust-version.workspace = true
+license.workspace = true
+publish = false
+
+[dependencies]
+concord = { path = "../../crates/concord", default-features = false }
+concord-clone-hygiene-a = { path = "a" }
+concord-clone-hygiene-b = { path = "b" }
+concord-clone-hygiene-c = { path = "c" }
+concord-clone-hygiene-d = { path = "d" }
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["macros", "rt"] }
+trybuild.workspace = true
+
+[lints]
+workspace = true

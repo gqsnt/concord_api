@@ -42,7 +42,8 @@ impl Runner for Group<'_, '_> {
         } else {
             BatchSize::SmallInput
         };
-        // Dropping the input/output is excluded from the timing in every stage.
+        // Output destruction is excluded. The consuming routine owns its input: destruction
+        // of consumed fields (including JSON payloads and response heads) is timed there.
         if !case.trivial_input {
             g.bench_function(format!("{}/input", case.id), |b| {
                 b.iter_with_large_drop(&mut input)
@@ -72,6 +73,10 @@ fn in_memory(c: &mut Criterion) {
 /// `roundtrip`: keep-alive HTTP/1.1 over loopback, one current-thread runtime running both the
 /// client and the server (as the former harness did). Runtime, server, clients and the pooled
 /// connection are set up before measuring.
+/// Inventory: every `roundtrip/{small,10KB}/manual/{send,send_prepared}` is a partial floor
+/// against the corresponding Concord ID: prepared Accept and metadata validation differ.
+/// `raw_reqwest/get_bytes` is a transport floor (no JSON decode). Tests compare successful
+/// decoded fixture values only; no prepared-stage or general error-path equality is promised.
 fn roundtrip(c: &mut Criterion) {
     let rt = tokio::runtime::Builder::new_current_thread()
         .enable_all()
@@ -183,6 +188,9 @@ fn roundtrip(c: &mut Criterion) {
 /// `prepare()`) and the validator's check of the same chain (`NameCheck`), alone, at 8, 32, 128
 /// and 512 contributions: distinct names, appends to one name, overrides of one name, and a
 /// set/remove alternation. No request, value or classification is involved.
+/// Inventory: `plan_scaling/{8,32,128,512}/{distinct,appends,overrides,removals}/{compose,validate}`
+/// has different features: runtime plan production versus declaration-name validation. Setup
+/// prebuilds names/shapes, and there is no equal-work comparator or ratio promise.
 fn plan_scaling(c: &mut Criterion) {
     use concord_core::__private::{EndpointMeta, HeaderOp, HeaderPlan, HeaderShape, NameCheck};
     use concord_core::reqwest::header::HeaderName;

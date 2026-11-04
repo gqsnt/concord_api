@@ -27,6 +27,26 @@ mod sealed {
 /// It applies to positional arguments, `set_*` methods and initializers. The fields of a
 /// generated `{Client}Config` struct take exactly `T` (a string literal needs `.into()`), and
 /// `maybe_*` takes exactly `Option<T>`.
+///
+/// Because such a parameter is generic, an expression that takes its type from its target
+/// (`"x".into()`, `s.parse().unwrap()`, `Default::default()`) has no target to take it from:
+/// rustc reports `E0283` ("type annotations needed"). Pass the value itself (`"x"`, `7`) or name
+/// the type (`s.parse::<u64>()`, `u64::default()`):
+///
+/// ```compile_fail,E0283
+/// fn set_limit(value: impl concord_core::IntoValue<u64>) -> u64 {
+///     concord_core::IntoValue::into_value(value)
+/// }
+/// set_limit("7".parse().unwrap());
+/// ```
+///
+/// ```
+/// # fn set_limit(value: impl concord_core::IntoValue<u64>) -> u64 {
+/// #     concord_core::IntoValue::into_value(value)
+/// # }
+/// assert_eq!(set_limit("7".parse::<u64>().unwrap()), 7);
+/// assert_eq!(set_limit(u64::default()), 0);
+/// ```
 #[diagnostic::on_unimplemented(
     message = "`{Self}` is not accepted for a value of type `{T}`",
     label = "expected `{T}`",

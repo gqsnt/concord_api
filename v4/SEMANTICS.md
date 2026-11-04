@@ -214,7 +214,8 @@ Each key has one **slot**, positioned at the key's first appearance on the chain
   - *a value placed directly* (`header(K) x: T`, `K = x`, `K = each xs`): converted with
     `ToHeaderValue`, a sealed trait implemented for `HeaderValue` (cloned and sent byte for byte,
     any bytes `http` accepts, with its sensitivity flag), `str`/`String` (`HeaderValue::from_str`:
-    UTF-8 beyond ASCII accepted, control bytes rejected), the integers and `bool`, and
+    UTF-8 beyond ASCII and horizontal tab accepted, every other control byte rejected; `http`
+    decides), the integers and `bool`, and
     `&T`/`Box`/`Rc`/`Arc`/`Cow` of these. A conversion that fails is a build error naming the header.
   Concord keeps no validator of its own: `http` decides every name and value.
 - A native `HeaderValue` is never text: in a path, subdomain, query value or template hole it is a

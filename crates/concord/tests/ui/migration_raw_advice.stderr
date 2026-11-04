@@ -1,0 +1,11 @@
+error: removed body format: write `body r#type?: String` and `request Utf8;` on this endpoint (a format is a type path: `Utf8` must name a format type in scope)
+ --> tests/ui/migration_raw_advice.rs:8:37
+  |
+8 |         POST broken(r#type?: String Utf8);
+  |                                     ^^^^
+
+error: `via` was removed: write `body r#match: String` and `request Utf8;` on the endpoint
+  --> tests/ui/migration_raw_advice.rs:14:37
+   |
+14 |         POST broken(r#match: String via Utf8);
+   |                                     ^^^

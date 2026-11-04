@@ -1,0 +1,11 @@
+== F03-replace: cargo +1.99.1 test --locked -p concord --test applied_advice --test ui
+test tests/ui/migration_literal_advice.rs ... mismatch
+error: `via` was removed: write `body p: Payload<{ count("a :: b") }>` and `request Fmt;` on the endpoint
+error: removed body format: write `body p: Payload<{ count(r#"x , y"#) }>` and `request Fmt;` on this endpoint (a format is a type path: `Fmt` must name a format type in scope)
+error: `via` was removed: write `body p: Payload<{ count("a::b") }>` and `request Fmt;` on the endpoint
+error: removed body format: write `body p: Payload<{ count(r#"x, y"#) }>` and `request Fmt;` on this endpoint (a format is a type path: `Fmt` must name a format type in scope)
+test tests/ui/output_type_macro_errors.rs ... mismatch
+test ui ... FAILED
+test result: FAILED. 1 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.76s
+exit=101
+restored-bytes-verified

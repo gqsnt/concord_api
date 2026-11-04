@@ -1,0 +1,19 @@
+error[E0599]: the method `clone` exists for struct `concord_clone_hygiene_check::direct::ProbePair`, but its trait bounds were not satisfied
+ --> tests/ui/direct_pair_clone.rs:7:25
+  |
+7 |     let _copy = request.clone();
+  |                         ^^^^^ method cannot be called on `concord_clone_hygiene_check::direct::ProbePair` due to unsatisfied trait bounds
+  |
+ ::: src/lib.rs
+  |
+  |             pub client Probe {
+  |             --- doesn't satisfy `_: Clone`
+  |
+ ::: b/src/lib.rs
+  |
+  | pub struct Payload(pub u16);
+  | ------------------ doesn't satisfy `concord_clone_hygiene_b::Payload: Clone`
+  |
+  = note: the following trait bounds were not satisfied:
+          `concord_clone_hygiene_b::Payload: Clone`
+          which is required by `concord_clone_hygiene_check::direct::ProbePair: Clone`

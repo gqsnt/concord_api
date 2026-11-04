@@ -1,0 +1,10 @@
+test syntax::tests::literals_keep_their_contents ... FAILED
+test syntax::tests::types_are_spaced_as_written ... FAILED
+test emit::tests::documented_types_keep_literal_contents ... FAILED
+  left: "Payload<{ count (\"a::b\") }>"
+ right: "Payload<{ count(\"a :: b\") }>"
+  left: "&'a mut [u8 ; 4]"
+ right: "&'a mut [u8; 4]"
+test result: FAILED. 11 passed; 3 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.25s
+exit=101
+restored-bytes-verified

@@ -80,16 +80,23 @@ CatalogShopRename::set_change(self, value: impl IntoValue<Rename>) -> Self
 async CatalogShopDelete::send(self) -> Result<(), concord::Error>
 ```
 
-`impl IntoValue<T>` accepts exactly `T`, or `&str`/`&String` when `T` is `String`. Nothing else
-converts: no `Into`, no numeric widening, no wrapping into `Option`; construct newtypes and
-`Option`s yourself.
+`impl IntoValue<T>` accepts exactly `T`, `&str`/`&String` when `T` is `String`, or `&HeaderValue`
+when `T` is `HeaderValue` (cloned). Nothing else converts: no `Into`, no numeric widening, no wrapping into `Option`; construct newtypes and
+`Option`s yourself. Because the parameter is generic, an expression that takes its type from the
+target has none to take: `shop("acme".into())`, `set_limit(s.parse().unwrap())` and
+`set_limit(Default::default())` are rustc's `E0283` ("type annotations needed"). Pass the value
+itself (`shop("acme")`) or name the type (`s.parse::<u32>()`, `u32::default()`). Config fields
+are the other way round: they take exactly `T`, so a string literal needs `.into()` there.
 
 ## 1. Creating a client
 
 `Client::new` takes your `reqwest::Client` and, when the client has required values, the
-generated `{Client}Config` struct. Config fields take exactly the declared type (`.into()` for a
-string literal). `with_base_url` replaces the declared base and returns an error for anything
-that is not an `http`/`https` URL with a host (no user information, query or fragment).
+generated `{Client}Config` struct. Only the client's required values are its fields: a client
+without any has no config struct (`Client::new(http)`), and optional or initialized client values
+are changed after `new` with `set_*`. Config fields take exactly the declared type (`.into()` for
+a string literal). `with_base_url` replaces the declared base and returns an error for anything
+that is not an `http`/`https` URL with a host (no user information, query, fragment or port 0);
+IDN hosts and percent escapes in the path are accepted, the escapes kept as written.
 
 Excerpt of [`examples/quickstart/tests/caller_guide.rs`](../examples/quickstart/tests/caller_guide.rs):
 
@@ -169,6 +176,8 @@ assert_eq!(language_of(acme.products())?.as_deref(), Some("en"));
 The snapshot is **structural**: it fixes which value each handle holds, not what is inside it. A
 value with interior mutability (an `Arc<Mutex<_>>`, an atomic, a custom `Display` reading shared
 state) is shared between handles, and every value is formatted when the request is prepared.
+Reusing a scope handle saves supplying its values again, not formatting them: a handle holds the
+values, not their wire text, and each `prepare()` formats and encodes every value of the chain.
 
 Handles and requests hold your `reqwest::Client` and the values, so they are `Send + Sync` when
 the value types are; the test checks it for this declaration. Excerpt of [`examples/quickstart/tests/caller_guide.rs`](../examples/quickstart/tests/caller_guide.rs):
@@ -244,10 +253,16 @@ local stand-in server.)
   check of the response head, then reading and decoding the body with the endpoint's format (the
   navigation method's documentation names it, with the body's `Content-Type`). An endpoint without
   typed output accepts any 2xx and drains the body. No retry, no extra request.
+- No `->` and `-> ()` both give `()`, but are not the same endpoint: without `->` any 2xx
+  succeeds and the body is drained without being buffered; `-> ()` is a typed output its format
+  decodes (under `Json`, a response labelled JSON whose body is `null`; a `204` without
+  `Content-Type` is a `Metadata` error) — [author guide, 5.5](AUTHOR_GUIDE.md#55-no-output-versus---).
 - The request carries the format's `Accept` suggestion when the endpoint has a typed output and
-  you declared no `accept` (`Json` suggests `application/json`); `prepared.request().headers()`
-  shows what will be sent. A client default `Accept` of your `reqwest::Client` only goes out when
-  Concord sends none ([author guide, 5.8](AUTHOR_GUIDE.md#58-what-goes-on-the-wire-accept-and-content-type)).
+  you declared no `accept` (`Json` suggests `application/json`). `prepared.request().headers()`
+  shows the headers Concord sets, the suggestion included, but not your `reqwest::Client`'s
+  defaults (default headers, its `*/*` `Accept`): reqwest adds those when it executes the request,
+  only for names the request lacks, so a client default `Accept` only goes out when Concord sends
+  none ([author guide, 5.8](AUTHOR_GUIDE.md#58-what-goes-on-the-wire-accept-and-content-type)).
 - `send_raw()` on a prepared request returns the native response, status unchecked, body unread.
 
 Excerpt of [`examples/quickstart/tests/caller_guide.rs`](../examples/quickstart/tests/caller_guide.rs):
@@ -315,10 +330,12 @@ async fn find_product(shop: &CatalogShop, id: u64) -> Result<Option<Product>, co
 
 A status error keeps the **unread** response. `response()` borrows it, so its headers
 (`Retry-After`, a request id) can be read while the error is kept, for example in a predicate
-`Fn(&concord::Error) -> bool`. `into_response()` returns it, and returns any other error unchanged
-as `Err`, so `?` propagates those. It consumes the error: read `status()` and `endpoint()` first if
-you need them. Reading the body is reqwest's (`response.bytes()` fails with a
-`reqwest::Error`, which does not convert into `concord::Error`). Decode the API's error document
+`Fn(&concord::Error) -> bool`. `into_response()` returns it — for a `Status` error and also for a
+`Metadata` error, whose response is a 2xx ([below](#a-2xx-response-the-format-refuses)) — and
+returns a `Build`, `Transport` or `Decode` error unchanged as `Err`, so `?` propagates those. It
+consumes the error: read `kind()`, `status()` and `endpoint()` first if you need them. Reading the
+body is reqwest's (`response.bytes()` fails with a `reqwest::Error`, which does not convert into
+`concord::Error`). Decode the API's error document
 with a format's `decode_body`, which decodes bytes and checks no response head: the endpoint's
 format was never consulted for a non-2xx response. Excerpt of
 [`examples/quickstart/tests/caller_guide.rs`](../examples/quickstart/tests/caller_guide.rs):
@@ -345,7 +362,7 @@ assert_eq!(
 );
 
 // The API's error document: the response of a status error is unread.
-let response = error.into_response()?; // any other kind of error is returned as Err
+let response = error.into_response()?; // Build, Transport and Decode errors are Err
 let problem = <Json as Decode<Problem>>::decode_body((), response.bytes().await?)?;
 assert_eq!(problem.title, "no such product");
 

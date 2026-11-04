@@ -25,7 +25,7 @@ credentials), retries, rate limiting, pagination or transport configuration (tim
 TLS, redirects, connection pools). Those stay in your code and in the `reqwest::Client` you pass
 in; [`examples/native`](examples/native) shows how to compose them, and
 [`examples/riot`](examples/riot) is a complete, sourced client for part of the Riot Games API,
-tested offline.
+tested offline (its README says how to copy it out of this workspace).
 
 ## Example
 
@@ -144,9 +144,9 @@ extra request. For anything the declaration does not cover there is a native exi
 
 ## Status
 
-- Version `4.1.0` ([changelog](CHANGELOG.md)), **not published** on crates.io
-  (`publish = false`). Depend on a checkout by path, or on a git dependency pinned to the
-  `v4.1.0` tag or a commit. Breaking changes and upgrade steps are in
+- Version `4.2.0` ([changelog](CHANGELOG.md)), **not published** on crates.io
+  (`publish = false`). Depend on a checkout by path, or on a git dependency pinned to a
+  commit or a release tag (4.1.0 is `v4.1.0`). Breaking changes and upgrade steps are in
   [`docs/MIGRATION.md`](docs/MIGRATION.md).
 - Requires Rust 1.99.1 or newer (`rust-version`, edition 2024); the same release is pinned in
   `rust-toolchain.toml` for development. CI runs the complete gate

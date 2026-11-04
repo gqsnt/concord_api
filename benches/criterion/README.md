@@ -1,17 +1,26 @@
 # Runtime benchmarks (Criterion) and allocation counts
 
-`concord-bench` measures the **same scenarios** implemented with Concord and with equivalent
-hand-written reqwest. It replaces the former `Instant` harness (`benches/perf`); the keep-alive
+`concord-bench` measures scenarios implemented with Concord and hand-written reqwest. The
+synchronous consuming stages promise equal observable results; round trips include explicitly
+partial comparisons, as inventoried below. It replaces the former `Instant` harness (`benches/perf`); the keep-alive
 loopback server moved to `src/server.rs`. Compile-time workloads stay in `benches/scale`
 (hyperfine). A benchmark is not a correctness test — but `cargo test -p concord-bench` checks that
-each Concord request equals its hand-written counterpart (method, URL, header multiset, body), so
-the comparisons are like for like.
+every registered synchronous pair at its measured boundary. Preparation compares method, exact
+URL, header names and values (including multiplicity, same-name order and sensitivity), optional
+body presence and bytes, HTTP version and request timeout. Cross-name HeaderMap iteration is not
+wire order. Decoding compares the actual decoded Rust values on the registered successful
+response fixtures. This does not promise identical algorithms, diagnostics or error behavior on
+other inputs. No client defaults applied at send time can establish prepared-stage equality.
+
+Historical S3 comparisons **measured unequal prepared work; superseded by the
+[M01 corrected comparison](#m01-s3-correction)**. The original observations remain unchanged.
 
 | Path | Contents |
 |---|---|
 | `src/apis.rs` | Concord declarations used only here (tracker, headers, deep chain, header operations, bodies, native header names) |
 | `src/manual.rs` | their hand-written reqwest equivalents (S1–S3 equivalents are `benches/baselines`) |
 | `src/lib.rs` | the scenarios, defined once and driven by both runners |
+| `src/contract.rs`, `src/tests.rs` | untimed stage observations and equivalence checks driven by those same registrations |
 | `benches/runtime.rs` | the Criterion suite (wall time) |
 | `src/bin/alloc_count.rs` | deterministic allocation counts (counting global allocator) |
 | `summarize.py` | markdown summary of `target/criterion` (mean, 95% CI, change vs a named baseline) |
@@ -25,14 +34,15 @@ the comparisons are like for like.
 | Stage | Measures | How |
 |---|---|---|
 | `input` | per-call input construction: the endpoint request value (navigation, arguments, `set_*`) or the hand-written arguments | `iter_with_large_drop` (drop not timed); omitted when the hand-written input is a constant or a reference |
-| `prepare` | `prepare()` / building the `reqwest::Request` (incl. body encoding) from a fresh input | `iter_batched` (`SmallInput`; `LargeInput` for 1 MB bodies), drop not timed |
+| `prepare` | `prepare()` / building the `reqwest::Request` (incl. body encoding) from a fresh input; destruction of consumed input fields is timed | `iter_batched` (`SmallInput`; `LargeInput` for 1 MB bodies); setup and returned-output destruction are not timed |
 | `input_prepare` | both, as one call site does (`construct` and the deep chain only) | `iter_with_large_drop` |
-| `decode` | `Decoder::decode` vs `error_for_status` + `Response::{json,text,bytes}` on an in-memory `reqwest::Response` (from an `http::Response`), polled once without a runtime | `iter_batched`; the `input` stage is building that response |
+| `decode` | `Decoder::decode` vs `error_for_status` + `Response::{json,text,bytes}` on an in-memory `reqwest::Response` (from an `http::Response`), polled once without a runtime; includes destruction of the consumed response/head | `iter_batched`; the `input` stage builds a fresh response; returned decoded-output destruction is not timed |
 | `send` | round trip from the handle: input + prepare + execute + decode | async `iter` on a current-thread Tokio runtime |
 | `send_prepared` | execute + decode of a request prepared in batch setup | async `iter_batched` (`SmallInput`) |
 | `get_bytes` | raw `client.get(url).send()` + `bytes()` (transport floor) | async `iter` |
 
-Groups and scenarios (188 IDs; 180 until the `keys` group was added, 171 until the native and literal header variants were added; `cargo bench -p concord-bench --bench runtime -- --list`):
+Groups and scenarios (188 synchronous IDs, 10 round-trip IDs and 32 planner IDs;
+`cargo bench -p concord-bench --bench runtime -- --list`):
 
 - `construct`: `minimal` (S1 `GET health`), `s3_search_9_query`, `s2_product_scoped` (the
   `examples/shapes` / `benches/baselines` pairs measured by the former harness),
@@ -66,6 +76,104 @@ Groups and scenarios (188 IDs; 180 until the `keys` group was added, 171 until t
 IDs are stable: they are compared across revisions. Rename one only together with the baselines
 that use it. Scenario code calls ordinary generated methods only, so migrating the declarations in
 `examples/shapes` and `src/apis.rs` to a new DSL surface does not change the IDs.
+
+## Comparison inventory
+
+The existing `Case` registrations are the synchronous inventory: `pair` connects counterparts,
+`setup` records reusable fixtures and fresh inputs, and `run_stage`/`comparator()` state the
+boundary and observable contract. Both measurement runners and the test runner use the same
+input and consuming closures. To print every emitted synchronous ID, setup, contract and
+comparison group while asserting all 47 comparisons (92 cases, 45 groups), run:
+
+```sh
+cargo test --locked -p concord-bench registered_pairs_match -- --nocapture
+```
+
+| Registered family / paired IDs | Setup outside the consuming routine | Consuming-stage contract / comparator |
+|---|---|---|
+| `construct/*/{concord,manual}` | clients reused; fresh request navigation/setters or manual arguments; constants when `trivial_input` | equal-work prepared native state; includes S1, S2, S3 and both tracker forms |
+| `headers/{1,4,16}/{concord_text,manual_from_str}` | clients reused; fresh owned strings | equal-work prepared native state |
+| `headers/{1,4,16}/{concord_numeric,manual_numeric}` | clients reused; copied integers | equal-work prepared native state |
+| `headers/{1,4,16}/{concord_native,manual_prebuilt_clone}` | clients and validated HeaderValues reused; Concord's borrowed constructor arguments are cloned into its input; manual input is a count | equal-work prepared native state; manual clones are inside `prepare` |
+| `headers/{1,4,16}/{concord_literal,manual_from_static}` | clients and literal statics reused | equal-work prepared native state |
+| `compose/*/{concord,manual}` | fresh owned navigation values for `deep8_navigate`; other cases reuse scopes | equal-work prepared native state; append comparison preserves three ordered `x-b` values |
+| `keys/{six_inherited,one_replaced}/{concord_literal,concord_native,manual}`, `keys/riot_match_ids/{concord,manual}` | clients/team scopes reused; fresh endpoints/owned arguments versus borrowed manual arguments | equal-work prepared native state, including sensitive native values |
+| `body_encode/{json,text,bytes}/{100B,10KB,1MB}/{concord,manual}` | clients/seeds reused; fresh owned payload clones or shared Bytes handles | equal-work prepared native state, including exact body presence/bytes |
+| `decode/{json,text,bytes}/{100B,10KB,1MB}/{concord,manual}` | decoder and byte seeds reused; fresh 200 response, matching content type/length, every call | equal-work decoded Rust value on this fixture; no general metadata/error-path equivalence claim |
+| All synchronous `input` IDs | per-call representation construction itself is measured | different features: endpoint values versus manual arguments; no equal-work input claim |
+| Synchronous `input_prepare` IDs where registered | clients/scopes reused; input construction is inside the routine | equal-work prepared native state; same comparator as `prepare` |
+| `roundtrip/{small,10KB}/{concord,manual}/{send,send_prepared}` | runtime, loopback server, clients and pooled connection reused; `send_prepared` also builds each request outside timing | **partial floor**: manual omits prepared Accept and performs fewer metadata checks; tests compare successful decoded fixture values only |
+| `roundtrip/{small,10KB}/raw_reqwest/get_bytes` | same loopback setup | **partial floor**: transport and bytes collection, without JSON decoding; no equal-work ratio |
+| `plan_scaling/{8,32,128,512}/{distinct,appends,overrides,removals}/{compose,validate}` | native names and shapes prebuilt | **different features**: runtime plan production versus declaration-name validation; no equal-work comparator |
+
+For `prepare`/`decode`, batch setup never consumes a body to validate it and then times an empty
+input. The test runner reconstructs and executes every input twice, observing outputs after each
+consuming call. All prepared fixtures have buffered bodies; the comparator refuses unhandled
+streaming bodies. Decode fixtures reconstruct the one-shot native response from reusable byte
+seeds. Negative controls require detection of altered/missing Accept, repeated value/order/count,
+exact URL, method, changed/missing/empty body, sensitivity, version and timeout; cross-name header
+insertion order and fresh reconstruction remain positive controls.
+
+Cost placement follows each public call site. Concord navigation, string conversions and
+`set_*` calls occur in `input`; the manual S3 builder also constructs its owned arguments there.
+Their consuming routines format/query-encode values and assemble the URL, headers and request.
+Concord's `&HeaderValue` arguments clone into the endpoint during `input`, while
+`manual_prebuilt_clone` clones inside `prepare`; compare that boundary with this setup distinction
+in mind. Manual cached deep scopes precompute the URL prefix/header map once; Concord scopes
+retain typed values. JSON payloads are cloned in setup on both sides, serialized inside the
+consuming routine and destroyed there (even though the manual serializer borrows its local
+payload). Text and Bytes are moved into the output body. In-memory decode includes head checks,
+body collection/decoding and destruction of the consumed response. Async `iter` also drops each
+returned output during timing; async `iter_batched` retains outputs until after timing.
+
+## M01 S3 correction
+
+The manual S3 search now explicitly prepares `Accept: application/json` in
+`benches/baselines/src/s3_query.rs`, matching Concord before execution. The registered full-query
+pair and a default-query pair with a conflicting native client default both pass prepared-stage
+comparison. Native client defaults are applied later and are not a repair for a missing header.
+
+The historical S3 `prepare` and `input_prepare` results/ratios **measured unequal prepared work;
+superseded by this corrected contract and its new measurements**. Preserve the original raw
+numbers and do not apply an estimated percentage correction. Affected records include the
+[initial Criterion summary](../../v4/native-repr/evidence/perf/criterion/summary-a915c8d.md),
+[run 2](../../v4/native-repr/evidence/perf/criterion/summary-run2.md),
+[run 3](../../v4/native-repr/evidence/perf/criterion/summary-run3.md), and the
+[allocation table](../../v4/native-repr/evidence/perf/criterion/allocs-aaa5a3c.txt).
+For example, the initial summary retains S3 prepared means of 852.8 ns (Concord) and
+662.6 ns (manual), and combined means of 869.9 ns and 662.5 ns. These are historical observations,
+not the corrected pair's performance. `input` numbers remain measurements of their respective
+input representations. This notice does not invalidate unrelated cases or establish universal
+wire inequality.
+
+The corrected pair was measured on 2026-11-04 with Rust 1.99.1, the unchanged locked graph
+(reqwest 0.13.5), an i5-13600K / Linux x86-64 host with 20 logical CPUs and `powersave` governor,
+under the campaign's exclusive build lease. Only S3's six IDs and the unchanged minimal pair's
+five IDs were measured, using Criterion defaults (3 s warm-up, 5 s measurement, 100 samples).
+Means and 95% mean confidence intervals, in ns:
+
+| ID below `construct/` | run 1 | run 3 |
+|---|---:|---:|
+| `s3_search_9_query/concord/prepare` | 849.1 [839.1, 861.7] | 836.8 [834.7, 839.6] |
+| `s3_search_9_query/manual/prepare` | 648.2 [641.4, 658.1] | 648.6 [642.2, 656.8] |
+| `s3_search_9_query/concord/input_prepare` | 857.0 [847.2, 868.3] | 844.5 [841.1, 849.2] |
+| `s3_search_9_query/manual/input_prepare` | 654.4 [650.2, 659.9] | 644.5 [642.4, 647.1] |
+| `minimal/concord/prepare` (control) | 163.9 [162.7, 165.6] | 163.3 [162.0, 165.0] |
+| `minimal/manual/prepare` (control) | 123.9 [122.7, 125.2] | 119.9 [118.9, 121.1] |
+
+All three timing runs are retained. Run 2 began with elevated CPU pressure (avg10 12.85%), so
+run 3 repeated the same selection after pressure subsided. Run 1's CPU pressure avg10 went from
+0.78% to 0.00%; run 3's from 0.03% to 0.00%. These snapshots and the exclusive campaign lease do
+not certify whole-machine idleness. No timing comparison to the historical unequal pair was run,
+and no speed change or corrected historical percentage is inferred.
+
+The separate counting allocator recorded exact per-call input/stage allocation calls and
+requested bytes (256 inputs after warm-up): S3 Concord `6 / 62` then `28 / 2417`; S3 manual
+`6 / 110` then `24 / 2254`. The unchanged minimal controls recorded `0 / 0` input, then
+`9 / 863` (Concord) and `4 / 734` (manual). These are current counts, not an allocation delta
+attributed to the correction. Exact commands, source/lock hashes, host snapshots, all estimates
+and 100 raw samples per ID per run are in the campaign handoff at
+`lanes/m01-bench/measurements/`, with the acceptance receipt in `lanes/m01-bench/REPORT.md`.
 
 ## Running
 
