@@ -219,6 +219,12 @@ pub use concord_extras::Form;
 pub use concord_extras::Json;
 #[cfg(feature = "extras")]
 pub use concord_extras::{Binary, IgnoreContentType, Text};
+#[cfg(feature = "csv")]
+pub use concord_extras::csv;
+#[cfg(feature = "jsonl")]
+pub use concord_extras::jsonl;
+#[cfg(feature = "stream")]
+pub use concord_extras::stream;
 
 /// Declares an HTTP API as a client → scopes → endpoints tree and generates its typed client.
 ///

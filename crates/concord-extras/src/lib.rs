@@ -16,11 +16,15 @@
 //! through the `concord` crate.
 
 mod binary;
+#[cfg(feature = "csv")]
+pub mod csv;
 #[cfg(feature = "form")]
 mod form;
 mod ignore;
 #[cfg(feature = "json")]
 mod json;
+#[cfg(feature = "jsonl")]
+pub mod jsonl;
 mod media;
 #[cfg(feature = "stream")]
 pub mod stream;
