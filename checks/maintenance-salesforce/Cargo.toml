@@ -1,0 +1,13 @@
+[package]
+name = "concord-check-maintenance-salesforce"
+description = "Staged maintenance exercise for the salesforce SDK: the frozen initial consumer and the updated consumer, both compiled against the current SDK (placeholder until the exercise lands)."
+version = "0.0.0"
+edition = "2024"
+rust-version.workspace = true
+license.workspace = true
+publish = false
+
+[dependencies]
+
+[lints]
+workspace = true
