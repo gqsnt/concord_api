@@ -11,7 +11,7 @@ use crate::model::{
     Body, Composed, Cond, ContribId, HeaderComposition, Item, KeyName, Kind, Model, Origin, Output,
     Owner, OwnerDefault, Piece, Slot, Source, Usage, Value, ValueRef,
 };
-use crate::syntax::{Family, Format, type_text};
+use crate::syntax::{Family, Format, expr_text, type_text};
 
 pub fn emit(model: &Model, krate: TokenStream) -> TokenStream {
     let k = &krate;
@@ -629,92 +629,6 @@ fn initially(value: &Value, owner: &str) -> String {
         (None, true) => " Initially absent.".to_owned(),
         (None, false) => format!(" Required: {}.", supplied_by(owner)),
     }
-}
-
-/// An expression's text for documentation, spaced as Rust is usually written (`&ACCEPT`,
-/// `HeaderValue::from_static("x")`, `vec![1, 2]`) rather than as a token stream
-/// (`& ACCEPT`, `HeaderValue :: from_static ("x")`). Only the spacing differs from the tokens.
-fn expr_text(tokens: TokenStream) -> String {
-    use proc_macro2::{Delimiter, Spacing, TokenTree};
-
-    #[derive(Clone, Copy, PartialEq)]
-    enum Prev {
-        Start,
-        Word,
-        Group,
-        /// A punctuation character; `true` when it is unary or joined to the next one.
-        Punct(char, bool),
-    }
-
-    fn walk(tokens: TokenStream, out: &mut String) {
-        let mut prev = Prev::Start;
-        // Open turbofish generics (`::<`): their `>` closes without a space.
-        let mut generics = 0usize;
-        for tt in tokens {
-            let space = match (&tt, prev) {
-                (_, Prev::Start) => false,
-                (TokenTree::Punct(p), _) if p.as_char() == '>' && generics > 0 => false,
-                (_, Prev::Punct(_, true)) => false,
-                (_, Prev::Punct('.', _)) => false,
-                (TokenTree::Punct(p), _) if matches!(p.as_char(), '.' | ',' | ';' | '?' | ':') => {
-                    false
-                }
-                (TokenTree::Punct(p), _) if p.as_char() == '!' && prev == Prev::Word => false,
-                (TokenTree::Group(g), Prev::Word | Prev::Group | Prev::Punct('!' | '>', _))
-                    if g.delimiter() != Delimiter::Brace =>
-                {
-                    false
-                }
-                _ => true,
-            };
-            if space {
-                out.push(' ');
-            }
-            prev = match tt {
-                TokenTree::Group(g) => {
-                    let (open, close) = match g.delimiter() {
-                        Delimiter::Parenthesis => ("(", ")"),
-                        Delimiter::Bracket => ("[", "]"),
-                        Delimiter::Brace => ("{ ", " }"),
-                        Delimiter::None => ("", ""),
-                    };
-                    out.push_str(open);
-                    walk(g.stream(), out);
-                    out.push_str(close);
-                    Prev::Group
-                }
-                TokenTree::Punct(p) => {
-                    let c = p.as_char();
-                    out.push(c);
-                    // `&x`, `-1`, `*p`, `!b` at the start or after an operator or `,` are unary.
-                    let unary = matches!(c, '&' | '-' | '*' | '!')
-                        && matches!(prev, Prev::Start | Prev::Punct(..));
-                    // Both colons of `::` count as joined (no space after the path separator).
-                    let path = c == ':' && prev == Prev::Punct(':', true);
-                    // The end of a range operator (`..=`) binds like `.`.
-                    let range = matches!(prev, Prev::Punct('.', _));
-                    let turbofish = c == '<' && prev == Prev::Punct(':', true);
-                    if turbofish {
-                        generics += 1;
-                    } else if c == '>' && generics > 0 {
-                        generics -= 1;
-                    }
-                    Prev::Punct(
-                        c,
-                        p.spacing() == Spacing::Joint || unary || turbofish || path || range,
-                    )
-                }
-                other => {
-                    out.push_str(&other.to_string());
-                    Prev::Word
-                }
-            };
-        }
-    }
-
-    let mut out = String::new();
-    walk(tokens, &mut out);
-    out
 }
 
 /// `set_x` for every value and body; `maybe_x` for optional ones. `owner` names the receiver in
@@ -1482,13 +1396,14 @@ fn emit_owner(
 /// (trivially false bound, rust-lang/rust#48214). Each bound carries an unused higher-ranked
 /// lifetime instead: such bounds are not checked where the impl is declared, so the impl simply
 /// does not apply when a value is not `Clone`, and a `.clone()` call reports the unmet bound.
+///
+/// Every occurrence keeps its own bound, even when two print the same: equal tokens can name
+/// different types (`$crate::Payload` forwarded by two crates' macros), which a proc macro cannot
+/// tell apart, so a bound dropped as a duplicate could be the one of the non-`Clone` type.
 fn endpoint_clone(ty: &Ident, values: &[Value], body: Option<&Body>) -> TokenStream {
-    let mut seen = std::collections::HashSet::new();
     let mut bounds = Vec::new();
     let mut add = |t: TokenStream, span: Span| {
-        if seen.insert(t.to_string()) {
-            bounds.push(quote_spanned!(span=> for<'__concord> #t: ::core::clone::Clone));
-        }
+        bounds.push(quote_spanned!(span=> for<'__concord> #t: ::core::clone::Clone));
     };
     for value in values {
         let t = &value.ty;
@@ -2492,6 +2407,28 @@ mod tests {
         );
         assert_eq!(text(quote!(f(&x, &mut y)?)), "f(&x, &mut y)?");
         assert_eq!(text(quote!(1..=3)), "1..=3");
+    }
+
+    /// F03 (4.2): generated documentation renders payload types from their tokens, so a literal
+    /// inside a type keeps its contents (`"a :: b"`), as in the generated signatures.
+    #[test]
+    fn documented_types_keep_literal_contents() {
+        let text = docs(quote! {
+            pub client Api {
+                base "http://x.test";
+                format Fmt;
+                POST put(body p: Payload<{ count("a :: b") }>) -> Payload<{ count(r#"c , d"#) }>;
+            }
+        });
+        assert!(
+            text.contains(r#"`Payload<{ count(\"a :: b\") }>`"#),
+            "{text}"
+        );
+        assert!(
+            text.contains(r##"`Payload<{ count(r#\"c , d\"#) }>`"##),
+            "{text}"
+        );
+        assert!(!text.contains("a::b") && !text.contains("c, d"), "{text}");
     }
 
     /// Final review R1: the per-call note may call absence "the default" only when the value has

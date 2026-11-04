@@ -86,16 +86,118 @@ pub struct FormatDefault {
 }
 
 /// A type or path as written, without `quote`'s token spacing (`Vec<Item>`, not `Vec < Item >`).
+/// Only the spacing between tokens is chosen: every identifier (`r#type`) and literal
+/// (`"a :: b"`) is its own token's text, so a suggestion made of it means what was written.
 pub fn type_text(t: &dyn quote::ToTokens) -> String {
-    t.to_token_stream()
-        .to_string()
-        .replace(" < ", "<")
-        .replace("< ", "<")
-        .replace(" >", ">")
-        .replace(" :: ", "::")
-        .replace(":: ", "::")
-        .replace(" ,", ",")
-        .replace("& ", "&")
+    token_text(t.to_token_stream(), true)
+}
+
+/// An expression's text for documentation, spaced as Rust is usually written (`&ACCEPT`,
+/// `HeaderValue::from_static("x")`, `vec![1, 2]`) rather than as a token stream
+/// (`& ACCEPT`, `HeaderValue :: from_static ("x")`). Only the spacing differs from the tokens.
+pub fn expr_text(tokens: proc_macro2::TokenStream) -> String {
+    token_text(tokens, false)
+}
+
+/// The tokens' own texts, spaced by their neighbours. `types`: angle brackets are generics (in an
+/// expression only a turbofish `::<` opens them); a braced const argument is an expression.
+fn token_text(tokens: proc_macro2::TokenStream, types: bool) -> String {
+    use proc_macro2::{Delimiter, Spacing, TokenTree};
+
+    #[derive(Clone, Copy, PartialEq)]
+    enum Prev {
+        Start,
+        Word,
+        /// `mut`, `const`, `dyn` or `impl` in a type: what follows is spaced (`&mut [u8]`).
+        Keyword,
+        Group,
+        /// A punctuation character; `true` when it is unary or joined to the next one.
+        Punct(char, bool),
+    }
+
+    fn walk(tokens: proc_macro2::TokenStream, types: bool, out: &mut String) {
+        let mut prev = Prev::Start;
+        // Open generics (`Vec<`, or a turbofish `::<` in an expression): their `>` closes
+        // without a space.
+        let mut generics = 0usize;
+        for tt in tokens {
+            let space = match (&tt, prev) {
+                (_, Prev::Start) => false,
+                // `< -1>` stays apart: `<-` is one token.
+                (TokenTree::Punct(p), Prev::Punct('<', _)) if types && p.as_char() == '-' => true,
+                (TokenTree::Punct(p), _) if p.as_char() == '>' && generics > 0 => false,
+                (TokenTree::Punct(p), Prev::Word | Prev::Group) if types && p.as_char() == '<' => {
+                    false
+                }
+                (_, Prev::Punct(_, true)) => false,
+                (_, Prev::Punct('.', _)) => false,
+                (TokenTree::Punct(p), _) if matches!(p.as_char(), '.' | ',' | ';' | '?' | ':') => {
+                    false
+                }
+                (TokenTree::Punct(p), _) if p.as_char() == '!' && prev == Prev::Word => false,
+                (TokenTree::Group(g), Prev::Word | Prev::Group | Prev::Punct('!' | '>', _))
+                    if g.delimiter() != Delimiter::Brace =>
+                {
+                    false
+                }
+                _ => true,
+            };
+            if space {
+                out.push(' ');
+            }
+            prev = match tt {
+                TokenTree::Group(g) => {
+                    let (open, close) = match g.delimiter() {
+                        Delimiter::Parenthesis => ("(", ")"),
+                        Delimiter::Bracket => ("[", "]"),
+                        Delimiter::Brace => ("{ ", " }"),
+                        Delimiter::None => ("", ""),
+                    };
+                    out.push_str(open);
+                    // A braced const argument (`Payload<{ N + 1 }>`) is an expression.
+                    walk(g.stream(), types && g.delimiter() != Delimiter::Brace, out);
+                    out.push_str(close);
+                    Prev::Group
+                }
+                TokenTree::Punct(p) => {
+                    let c = p.as_char();
+                    out.push(c);
+                    // `&x`, `-1`, `*p`, `!b` at the start or after an operator or `,` are unary.
+                    let unary = matches!(c, '&' | '-' | '*' | '!')
+                        && matches!(prev, Prev::Start | Prev::Punct(..));
+                    // Both colons of `::` count as joined (no space after the path separator).
+                    let path = c == ':' && prev == Prev::Punct(':', true);
+                    // The end of a range operator (`..=`) binds like `.`.
+                    let range = matches!(prev, Prev::Punct('.', _));
+                    let opens = c == '<' && (types || prev == Prev::Punct(':', true));
+                    // The `>` of `->` closes nothing.
+                    let arrow = c == '>' && prev == Prev::Punct('-', true);
+                    if opens {
+                        generics += 1;
+                    } else if c == '>' && generics > 0 && !arrow {
+                        generics -= 1;
+                    }
+                    Prev::Punct(
+                        c,
+                        p.spacing() == Spacing::Joint || unary || opens || path || range,
+                    )
+                }
+                other => {
+                    let text = other.to_string();
+                    out.push_str(&text);
+                    if types && matches!(text.as_str(), "mut" | "const" | "dyn" | "impl") {
+                        Prev::Keyword
+                    } else {
+                        Prev::Word
+                    }
+                }
+            };
+        }
+    }
+
+    let mut out = String::new();
+    walk(tokens, types, &mut out);
+    out
 }
 
 /// `via R` after a payload type: the removed spelling, reported with its exact replacement.
@@ -206,10 +308,13 @@ fn parse_output(input: ParseStream<'_>) -> syn::Result<Output> {
     };
     // A path followed by more type tokens is the removed in-place format (`-> Csv Vec<Row>`,
     // reported by the model with its replacement); a path that ends the output is the payload;
+    // a path followed by `!` is a type macro (`-> payload!()`, `-> m::payload![]`), a payload;
     // anything else (`()`, `[u8; 4]`, ...) is a payload.
     let fork = input.fork();
     let explicit = match fork.parse::<syn::Path>() {
-        Ok(_) if !at_end(&fork) && !fork.peek(kw::via) => Some(parse_format(input)?),
+        Ok(_) if !at_end(&fork) && !fork.peek(kw::via) && !fork.peek(Token![!]) => {
+            Some(parse_format(input)?)
+        }
         _ => None,
     };
     if explicit.is_some() && input.peek(syn::token::Paren) && peek_media(input) {
@@ -758,6 +863,21 @@ fn parse_child(input: ParseStream<'_>) -> syn::Result<Owner> {
         input.parse::<Token![;]>()?;
         Stmts::default()
     } else {
+        // `-> item! { response F; }`: the braces were the type macro's own.
+        if let Some(Output {
+            ty: Type::Macro(m), ..
+        }) = &output
+            && matches!(m.mac.delimiter, syn::MacroDelimiter::Brace(_))
+            && !input.peek(syn::token::Brace)
+        {
+            return Err(syn::Error::new(
+                m.span(),
+                format!(
+                    "expected `;` or this endpoint's `{{ .. }}` after its output type: the braces after `{}!` belong to the type macro; write `-> {0}!()` or `-> {0}! {{}} {{ .. }}`",
+                    type_text(&m.mac.path)
+                ),
+            ));
+        }
         let content;
         braced!(content in input);
         let (stmts, children) = parse_owner_body(&content, None)?;
@@ -931,7 +1051,8 @@ fn parse_params(
                         format.span(),
                         format!(
                             "removed body format: write `body {}{}: {}` and `request {3};` on this endpoint (a format is a type path: `{3}` must name a format type in scope)",
-                            plain(&name),
+                            // As written: the suggestion is code, so `r#type` stays raw.
+                            name,
                             if optional { "?" } else { "" },
                             type_text(&ty),
                             type_text(&format)
@@ -961,11 +1082,6 @@ fn parse_params(
         content.parse::<Token![,]>()?;
     }
     Ok((params, body))
-}
-
-fn plain(ident: &Ident) -> String {
-    let s = ident.to_string();
-    s.strip_prefix("r#").map(str::to_owned).unwrap_or(s)
 }
 
 fn parse_question(input: ParseStream<'_>) -> syn::Result<bool> {
@@ -1043,5 +1159,70 @@ mod tests {
         assert_eq!(text(syn::parse_quote!(r#type)), "r#type");
         let path: syn::Path = syn::parse_str("r#type").unwrap();
         assert_eq!(type_text(&path), "r#type");
+    }
+
+    /// F03: literal contents are never respaced (`"a :: b"` has six bytes, `"a::b"` four), in
+    /// any literal kind or nesting; only the spacing between tokens is chosen.
+    #[test]
+    fn literals_keep_their_contents() {
+        let text = |s: &str| type_text(&syn::parse_str::<syn::Type>(s).unwrap());
+        assert_eq!(
+            text(r#"Payload<{ count("a :: b") }>"#),
+            r#"Payload<{ count("a :: b") }>"#
+        );
+        for literal in [
+            r#""a :: b < c > d , e & f""#,
+            r#"r"x :: y""#,
+            r##"r#"q :: " , & "#"##,
+            r#"b"a :: b""#,
+            r#"br"a , b""#,
+            r#"c"a :: b""#,
+            "'<'",
+            "b' '",
+        ] {
+            let written = format!("Payload<{{ count({literal}) }}>");
+            let shown = text(&written);
+            assert!(shown.contains(literal), "{literal} in {shown}");
+            // The suggestion parses back to the same tokens.
+            let back: syn::Type = syn::parse_str(&shown).unwrap();
+            let original: syn::Type = syn::parse_str(&written).unwrap();
+            assert_eq!(
+                quote::quote!(#back).to_string(),
+                quote::quote!(#original).to_string()
+            );
+        }
+        assert_eq!(
+            text(r#"Outer<Inner<{ f("a :: b") }>, [u8; { g(" , ") }]>"#),
+            r#"Outer<Inner<{ f("a :: b") }>, [u8; { g(" , ") }]>"#
+        );
+    }
+
+    /// Ordinary types read as Rust is written; raw identifiers and type macros stay as written.
+    #[test]
+    fn types_are_spaced_as_written() {
+        let text = |s: &str| type_text(&syn::parse_str::<syn::Type>(s).unwrap());
+        for (written, shown) in [
+            ("Vec < Option < Item > >", "Vec<Option<Item>>"),
+            (
+                "std :: collections :: HashMap < String , u32 >",
+                "std::collections::HashMap<String, u32>",
+            ),
+            ("& 'static str", "&'static str"),
+            ("& 'a mut [u8 ; 4]", "&'a mut [u8; 4]"),
+            ("(u8 , String)", "(u8, String)"),
+            ("()", "()"),
+            ("* const u8", "*const u8"),
+            (
+                "Box < dyn Fn (u8) -> Vec < u8 > + Send >",
+                "Box<dyn Fn(u8) -> Vec<u8> + Send>",
+            ),
+            ("< T as Trait > :: Assoc", "<T as Trait>::Assoc"),
+            ("Option < r#type :: r#match >", "Option<r#type::r#match>"),
+            ("payload ! ()", "payload!()"),
+            ("m :: payload ! [u8]", "m::payload![u8]"),
+            ("Foo < - 1 >", "Foo< -1>"),
+        ] {
+            assert_eq!(text(written), shown, "{written}");
+        }
     }
 }

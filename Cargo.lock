@@ -253,6 +253,35 @@ dependencies = [
 ]
 
 [[package]]
+name = "concord-clone-hygiene-a"
+version = "0.0.0"
+
+[[package]]
+name = "concord-clone-hygiene-b"
+version = "0.0.0"
+
+[[package]]
+name = "concord-clone-hygiene-c"
+version = "0.0.0"
+
+[[package]]
+name = "concord-clone-hygiene-check"
+version = "0.0.0"
+dependencies = [
+ "concord",
+ "concord-clone-hygiene-a",
+ "concord-clone-hygiene-b",
+ "concord-clone-hygiene-c",
+ "concord-clone-hygiene-d",
+ "tokio",
+ "trybuild",
+]
+
+[[package]]
+name = "concord-clone-hygiene-d"
+version = "0.0.0"
+
+[[package]]
 name = "concord-core"
 version = "4.1.0"
 dependencies = [

@@ -1,0 +1,11 @@
+[package]
+name = "concord-clone-hygiene-c"
+description = "Helper of checks/clone-hygiene: its `Payload` is `Clone`; its macros pass it on as `$crate::Payload`."
+version = "0.0.0"
+edition = "2024"
+rust-version.workspace = true
+license.workspace = true
+publish = false
+
+[lints]
+workspace = true
