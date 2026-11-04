@@ -1,30 +1,53 @@
 error: `via` was removed: write `body p: choose!(. .)` and `request Fmt;` on the endpoint
-  --> tests/ui/migration_token_advice.rs:19:42
+  --> tests/ui/migration_token_advice.rs:24:42
    |
-19 |         POST broken(body p: choose!(. .) via Fmt);
+24 |         POST broken(body p: choose!(. .) via Fmt);
    |                                          ^^^
 
-error: `via` was removed: write `body p: pick!((1 + 2) * 2)` and `request Fmt;` on the endpoint
-  --> tests/ui/migration_token_advice.rs:27:51
+error: `via` was removed: write `body p: choose!(a < b < c > > d)` and `request Fmt;` on the endpoint
+  --> tests/ui/migration_token_advice.rs:30:54
    |
-27 |                 POST broken(body p: pick!($e * 2) via Fmt);
+30 |         POST broken(body p: choose!(a < b < c > > d) via Fmt);
+   |                                                      ^^^
+
+error: removed body format: write `body p: choose!(1. . 2)` and `request Fmt;` on this endpoint (a format is a type path: `Fmt` must name a format type in scope)
+  --> tests/ui/migration_token_advice.rs:36:40
+   |
+36 |         POST broken(p: choose!(1. . 2) Fmt);
+   |                                        ^^^
+
+error: `via` was removed: write `body p: T` and `request Fmt;` on the endpoint (`T` is the payload type as declared: it holds a fragment forwarded by `macro_rules!`, which no written type reproduces exactly)
+  --> tests/ui/migration_token_advice.rs:44:51
+   |
+44 |                 POST broken(body p: pick!($e * 2) via Fmt);
    |                                                   ^^^
 ...
-32 | declare!(1 + 2);
-   | --------------- in this macro invocation
+55 | declare!(1 + 2, u8);
+   | ------------------- in this macro invocation
+   |
+   = note: this error originates in the macro `declare` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error: `via` was removed: write `body p: T` and `request Fmt;` on the endpoint (`T` is the payload type as declared: it holds a fragment forwarded by `macro_rules!`, which no written type reproduces exactly)
+  --> tests/ui/migration_token_advice.rs:50:45
+   |
+50 |                 POST broken(body p: Vec<$t> via Fmt);
+   |                                             ^^^
+...
+55 | declare!(1 + 2, u8);
+   | ------------------- in this macro invocation
    |
    = note: this error originates in the macro `declare` (in Nightly builds, run with -Z macro-backtrace for more info)
 
 warning: unused macro definition: `choose`
-  --> tests/ui/migration_token_advice.rs:11:14
+  --> tests/ui/migration_token_advice.rs:12:14
    |
-11 | macro_rules! choose {
+12 | macro_rules! choose {
    |              ^^^^^^
    |
    = note: `#[warn(unused_macros)]` (part of `#[warn(unused)]`) on by default
 
 warning: unused macro definition: `pick`
-  --> tests/ui/migration_token_advice.rs:15:14
+  --> tests/ui/migration_token_advice.rs:20:14
    |
-15 | macro_rules! pick { ($e:expr) => { Payload<{ $e }> }; }
+20 | macro_rules! pick { ($e:expr) => { Payload<{ $e }> }; }
    |              ^^^^

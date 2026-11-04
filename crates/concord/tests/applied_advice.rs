@@ -25,10 +25,17 @@ macro_rules! choose {
     (..) => {
         Payload<2>
     };
-}
-macro_rules! pick {
-    ($e:expr) => {
-        Payload<{ $e }>
+    (a < b < c > > d) => {
+        Payload<3>
+    };
+    (a < b < c >> d) => {
+        Payload<4>
+    };
+    (1. . 2) => {
+        Payload<5>
+    };
+    (1 .. 2) => {
+        Payload<7>
     };
 }
 pub struct Utf8;
@@ -47,7 +54,8 @@ concord::api! {
         POST raw(body r#type?: String) { request Utf8; }
         POST raw_via(body r#match: String) { request Utf8; }
         POST separate(body p: choose!(. .)) { request Fmt; }
-        POST forwarded(body p: pick!((1 + 2) * 2)) { request Fmt; }
+        POST angles(body p: choose!(a < b < c > > d)) { request Fmt; }
+        POST float(body p: choose!(1. . 2)) { request Fmt; }
     }
 }
 
@@ -103,25 +111,35 @@ fn applied_raw_advice_keeps_the_raw_name() {
     );
 }
 
-/// Review of F03: the applied advice selects the same macro arm (`choose!(. .)` is `Payload<1>`,
-/// `choose!(..)` would be `Payload<2>`) and keeps the forwarded grouping (`Payload<6>`, not `<5>`).
+/// Review of F03: applied, the advice selects the same macro arm (`choose!(. .)` is `Payload<1>`,
+/// `choose!(..)` would be `<2>`; `a < b < c > > d` is `<3>`, not `<4>`; `1. . 2` is `<5>`, not
+/// `<7>`). A forwarded fragment is not spelled: the advice names it `T` and says why.
 #[test]
 fn applied_token_advice_keeps_the_payload_type() {
     for applied in [
         "write `body p: choose!(. .)` and `request Fmt;`",
-        "write `body p: pick!((1 + 2) * 2)` and `request Fmt;`",
+        "write `body p: choose!(a < b < c > > d)` and `request Fmt;`",
+        "write `body p: choose!(1. . 2)` and `request Fmt;`",
+        "write `body p: T` and `request Fmt;` on the endpoint (`T` is the payload type as declared",
     ] {
         assert!(TOKEN_ADVICE.contains(applied), "{applied}\n{TOKEN_ADVICE}");
     }
+    // The messages (not the quoted source lines) never spell a forwarded fragment.
+    for message in TOKEN_ADVICE.lines().filter(|l| l.starts_with("error:")) {
+        assert!(
+            !message.contains("pick!(") && !message.contains("Vec<"),
+            "{message}"
+        );
+    }
     let api = Applied::new(reqwest::Client::new());
-    let p = api.separate(Payload::<1>).prepare().unwrap();
-    assert_eq!(
-        p.request().body().unwrap().as_bytes(),
-        Some(b"1".as_slice())
-    );
-    let p = api.forwarded(Payload::<6>).prepare().unwrap();
-    assert_eq!(
-        p.request().body().unwrap().as_bytes(),
-        Some(b"6".as_slice())
-    );
+    for (p, bytes) in [
+        (api.separate(Payload::<1>).prepare().unwrap(), b"1"),
+        (api.angles(Payload::<3>).prepare().unwrap(), b"3"),
+        (api.float(Payload::<5>).prepare().unwrap(), b"5"),
+    ] {
+        assert_eq!(
+            p.request().body().unwrap().as_bytes(),
+            Some(bytes.as_slice())
+        );
+    }
 }

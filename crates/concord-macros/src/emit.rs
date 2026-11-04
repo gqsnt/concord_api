@@ -2449,6 +2449,22 @@ mod tests {
         assert!(!text.contains("a::b") && !text.contains("c, d"), "{text}");
     }
 
+    /// Review of F03 (4.2): an initializer holding a fragment forwarded by `macro_rules!` is
+    /// documented with its grouping (`(1 + 2) * 2`), which is also what the generated code computes
+    /// (`crates/concord/tests/forwarded_types.rs` sends `n=6`).
+    #[test]
+    fn documented_initializers_keep_forwarded_grouping() {
+        use proc_macro2::{Delimiter, Group, TokenTree};
+        let sum = TokenTree::Group(Group::new(Delimiter::None, quote!(1 + 2)));
+        let text = docs(quote! {
+            pub client Api {
+                base "http://x.test";
+                GET x(query n: usize = #sum * 2);
+            }
+        });
+        assert!(text.contains("Initially `(1 + 2) * 2`"), "{text}");
+    }
+
     /// Final review R1: the per-call note may call absence "the default" only when the value has
     /// no initializer; an initialized optional value starts present.
     #[test]

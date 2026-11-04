@@ -1,7 +1,9 @@
-//! Review of F03 (4.2): a type that contains a fragment forwarded by `macro_rules!` means the same
-//! type everywhere the endpoint uses it. `pick!($e * 2)` with `$e = 1 + 2` is `Payload<6>` as a
-//! query value, a body and an output; 4.1 named the body's and the output's format statics with a
-//! regrouped copy (`Payload<5>`), a type mismatch at the declaration.
+//! Review of F03 (4.2): a type or initializer that contains a fragment forwarded by `macro_rules!`
+//! means what Rust says it means, everywhere the endpoint uses it. `pick!($e * 2)` with
+//! `$e = 1 + 2` is `Payload<6>` as a query value, a body and an output, and `$e * 2` initializes 6;
+//! 4.1 named the body's and the output's format statics with a regrouped copy (`Payload<5>`, a type
+//! mismatch at the declaration), named `Payload<{ $e * 2 }>` written directly `Payload<5>`,
+//! initialized 5, and rejected a forwarded `dyn A + B` behind `&` as an ambiguous `+`.
 #![allow(missing_docs)]
 
 use concord::{CodecError, Decode, Encode, Prepared, ResponseHead, bytes::Bytes, reqwest};
@@ -33,13 +35,24 @@ impl<const N: usize> Decode<Payload<N>> for Fmt {
     }
 }
 
+/// Encodes a borrowed displayable trait object as its text.
+pub struct Shown;
+impl Encode<&'static (dyn core::fmt::Display + Sync)> for Shown {
+    const CONTENT_TYPE: Option<&'static str> = None;
+    fn encode(
+        value: &'static (dyn core::fmt::Display + Sync),
+    ) -> Result<reqwest::Body, CodecError> {
+        Ok(reqwest::Body::from(value.to_string()))
+    }
+}
+
 macro_rules! pick {
     ($e:expr) => {
         Payload<{ $e }>
     };
 }
 macro_rules! declare {
-    ($e:expr) => {
+    ($e:expr, $t:ty) => {
         concord::api! {
             pub client Forwarded {
                 base "http://x.test";
@@ -48,11 +61,14 @@ macro_rules! declare {
                 POST body(body p: pick!($e * 2));
                 POST optional(body p?: pick!($e * 2));
                 GET output() -> pick!($e * 2);
+                GET initialized(query n: usize = $e * 2);
+                GET direct(query p: Payload<{ $e * 2 }>);
+                POST object(body p: &'static $t) { request Shown; }
             }
         }
     };
 }
-declare!(1 + 2);
+declare!(1 + 2, dyn core::fmt::Display + Sync);
 
 #[test]
 fn forwarded_fragments_keep_their_grouping() {
@@ -70,4 +86,19 @@ fn forwarded_fragments_keep_their_grouping() {
         Some(b"6".as_slice())
     );
     let _: Prepared<Payload<6>> = api.output().prepare().unwrap();
+    // The initializer is the written expression too (4.1 sent 5); its rustdoc says
+    // `(1 + 2) * 2` (`concord-macros` unit test `documented_initializers_keep_forwarded_grouping`).
+    let p = api.initialized().prepare().unwrap();
+    assert_eq!(p.request().url().query(), Some("n=6"));
+    // Written directly in a const argument (no inner macro): also `Payload<6>`.
+    let p = api.direct(Payload::<6>).prepare().unwrap();
+    assert_eq!(p.request().url().query(), Some("p=6"));
+    // A forwarded `dyn A + B` behind `&'static` is `&'static (dyn A + B)`, as in Rust (4.1:
+    // "ambiguous `+` in a type").
+    let value: &'static (dyn core::fmt::Display + Sync) = &7u8;
+    let p = api.object(value).prepare().unwrap();
+    assert_eq!(
+        p.request().body().unwrap().as_bytes(),
+        Some(b"7".as_slice())
+    );
 }
