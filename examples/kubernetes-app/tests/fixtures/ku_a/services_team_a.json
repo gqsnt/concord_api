@@ -1,0 +1,49 @@
+{
+  "kind": "ServiceList",
+  "apiVersion": "v1",
+  "metadata": {
+    "resourceVersion": "5003"
+  },
+  "items": [
+    {
+      "metadata": {
+        "name": "web",
+        "uid": "00000000-0000-4000-8000-000000000029",
+        "resourceVersion": "4821",
+        "creationTimestamp": "2026-11-04T09:41:00Z",
+        "namespace": "team-a",
+        "labels": {
+          "app": "web"
+        }
+      },
+      "spec": {
+        "type": "ClusterIP",
+        "clusterIP": "10.96.41.42",
+        "clusterIPs": [
+          "10.96.41.42"
+        ],
+        "selector": {
+          "app": "web"
+        },
+        "ports": [
+          {
+            "name": "http",
+            "protocol": "TCP",
+            "port": 80,
+            "targetPort": 8080
+          },
+          {
+            "name": "metrics",
+            "protocol": "TCP",
+            "port": 9090,
+            "targetPort": "metrics"
+          }
+        ],
+        "sessionAffinity": "None",
+        "ipFamilies": [
+          "IPv4"
+        ]
+      }
+    }
+  ]
+}

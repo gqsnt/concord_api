@@ -1,0 +1,2 @@
+# Byte-exact codec seeds (CRLF, BOM, invalid UTF-8): never normalize line endings.
+*.csv -text
