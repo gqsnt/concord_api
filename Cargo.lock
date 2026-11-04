@@ -438,6 +438,13 @@ version = "0.0.0"
 [[package]]
 name = "concord-example-stripe-app"
 version = "0.0.0"
+dependencies = [
+ "concord",
+ "concord-example-stripe-sdk",
+ "concord-example-testserver",
+ "serde_json",
+ "tokio",
+]
 
 [[package]]
 name = "concord-example-stripe-sdk"

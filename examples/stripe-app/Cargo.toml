@@ -1,6 +1,6 @@
 [package]
 name = "concord-example-stripe-app"
-description = "Placeholder: the stripe app package of the 4.4 provider integrations (implementation in progress)."
+description = "External caller of the Stripe SDK slice: ST-A billing reconciliation (cursor traversal with concord-pagination) and ST-B form/idempotency provisioning, as library workflows with loopback tests and opt-in live binaries."
 version = "0.0.0"
 edition = "2024"
 rust-version.workspace = true
@@ -8,6 +8,15 @@ license.workspace = true
 publish = false
 
 [dependencies]
+concord = { path = "../../crates/concord", features = ["json"] }
+concord-example-stripe-sdk = { path = "../stripe-sdk" }
+# Only the binaries (`src/bin/`) start a runtime; the library workflows are runtime-agnostic.
+tokio = { workspace = true, features = ["rt"] }
+
+[dev-dependencies]
+concord-example-testserver = { path = "../testserver" }
+serde_json.workspace = true
+tokio = { workspace = true, features = ["macros", "rt", "rt-multi-thread", "time", "sync"] }
 
 [lints]
 workspace = true
