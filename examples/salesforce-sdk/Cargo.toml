@@ -10,6 +10,7 @@ publish = false
 [dependencies]
 concord = { path = "../../crates/concord", features = ["json", "csv"] }
 concord-pagination = { path = "../../crates/concord-pagination" }
+futures-core.workspace = true
 serde = { workspace = true, features = ["derive"] }
 serde_json.workspace = true
 

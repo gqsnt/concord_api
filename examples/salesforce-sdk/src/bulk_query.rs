@@ -21,16 +21,20 @@
 
 use std::fmt;
 use std::future::Future;
+use std::marker::PhantomData;
 use std::num::NonZeroUsize;
 
+use concord::csv::CsvReader;
 use concord::reqwest;
-use concord_pagination::Manifest;
+use concord_pagination::{Manifest, Page};
+use serde::de::DeserializeOwned;
 
 use crate::bulk::{BulkDialect, CreateQueryJob, JobState, JobStateChange, NextLink, QueryJobInfo};
 use crate::context::{OrgContext, ResultLink};
+use crate::csv::SalesforceCsv;
 use crate::error::{JobFailure, ProtocolError, ProtocolErrorKind, SfError};
-use crate::ids::{QueryJobId, ResultLocator};
-use crate::soql::Soql;
+use crate::ids::{MaxRecords, QueryJobId, ResultLocator};
+use crate::soql::{FieldPath, Soql};
 use crate::transport::{prepared, send};
 
 const CREATE: &str = "bulk_query.create";
@@ -157,7 +161,7 @@ impl BulkQueryJob {
                 JobState::JobComplete => return Ok(JobWait::Complete(info)),
                 JobState::Failed | JobState::Aborted => {
                     let message = info.error_message_unredacted().map(str::to_owned);
-                    return Err(SfError::Job(JobFailure::new(
+                    return Err(SfError::from(JobFailure::new(
                         self.id.as_str(),
                         info.state.clone(),
                         message,
@@ -428,6 +432,117 @@ impl ResultManifests {
                 }),
             };
             Ok(Manifest::new(parts, next))
+        }
+    }
+}
+
+/// Metadata of one result set read through the sequential locator chain.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ResultSetMeta {
+    /// `Sforce-NumberOfRecords`.
+    pub declared_records: Option<u64>,
+    /// Input bytes the CSV reader consumed.
+    pub bytes: u64,
+}
+
+/// One result set as a pagination page; the key is the header-derived `Sforce-Locator`.
+pub type ResultSetPage<T> = Page<T, ResultLocator, ResultSetMeta>;
+
+/// The page factory of a job's result sets as a dependent chain: each set's `Sforce-Locator`
+/// header is the key of the next (`"null"` on the last). Each page's rows are parsed with the
+/// job's dialect, the header must be exactly the selected fields, and the parsed count must equal
+/// `Sforce-NumberOfRecords`. A page holds at most `maxRecords` rows: the reader refuses more
+/// ([`concord::stream::ReadErrorKind::Limit`]).
+///
+/// The parallel route ([`ResultManifests`]) is the primary export path; this chain reads the same
+/// results one set at a time.
+pub struct ResultSets<T> {
+    job: BulkQueryJob,
+    reader: CsvReader,
+    max_records: Option<MaxRecords>,
+    _rows: PhantomData<fn() -> T>,
+}
+
+impl<T: DeserializeOwned + 'static> ResultSets<T> {
+    /// The chain of `job`'s result sets with rows typed `T`, whose header must be `columns`.
+    ///
+    /// # Errors
+    ///
+    /// [`SfError::Csv`] for a refused dialect.
+    pub fn new(
+        job: &BulkQueryJob,
+        columns: &[FieldPath],
+        max_records: Option<MaxRecords>,
+    ) -> Result<Self, SfError> {
+        let csv = SalesforceCsv::new(job.dialect());
+        let names: Vec<String> = columns.iter().map(ToString::to_string).collect();
+        let mut options = csv.options().columns(names);
+        if let Some(max) = max_records {
+            options = options.max_records(u64::from(max.get()));
+        }
+        let reader = CsvReader::new(options).map_err(crate::csv::CsvError::from)?;
+        Ok(Self {
+            job: job.clone(),
+            reader,
+            max_records,
+            _rows: PhantomData,
+        })
+    }
+
+    /// The result set at `key` (`None`: the first).
+    pub fn fetch(
+        &self,
+        key: Option<ResultLocator>,
+    ) -> impl Future<Output = Result<ResultSetPage<T>, SfError>> + 'static {
+        let job = self.job.clone();
+        let reader = self.reader.clone();
+        let link = ResultLink {
+            locator: key,
+            max_records: self.max_records,
+        };
+        async move {
+            let set = job.open_result_set(&link).await?;
+            let declared_records = set.declared_records;
+            let next = set.next.clone();
+            let mut rows = match reader.open_for::<T>(set.response, RESULTS) {
+                Ok(rows) => rows,
+                Err(error) => return Err(SfError::from_open(error).await),
+            };
+            let next = match next {
+                NextResultSet::Last => None,
+                NextResultSet::At(locator) => Some(locator),
+                NextResultSet::Unknown => {
+                    return Err(ProtocolError::new(
+                        RESULTS,
+                        ProtocolErrorKind::LocatorHeaderMissing,
+                    )
+                    .into());
+                }
+            };
+            let mut items = Vec::new();
+            while let Some(row) = rows.next().await {
+                items.push(row?);
+            }
+            if let Some(declared) = declared_records
+                && declared != items.len() as u64
+            {
+                return Err(ProtocolError::new(
+                    RESULTS,
+                    ProtocolErrorKind::RecordCountMismatch {
+                        declared,
+                        parsed: items.len() as u64,
+                    },
+                )
+                .into());
+            }
+            Ok(Page {
+                items,
+                next,
+                meta: ResultSetMeta {
+                    declared_records,
+                    bytes: rows.position().bytes,
+                },
+            })
         }
     }
 }

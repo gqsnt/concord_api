@@ -453,7 +453,7 @@ pub async fn crm_extraction(
 fn check_read(ctx: &OrgContext, id: &RecordId, account: Account) -> Result<Account, SfError> {
     use concord_example_salesforce_sdk::{ProtocolError, ProtocolErrorKind};
     let mismatch = || {
-        SfError::Protocol(ProtocolError::new(
+        SfError::from(ProtocolError::new(
             "accounts.get",
             ProtocolErrorKind::RecordLinkMismatch,
         ))

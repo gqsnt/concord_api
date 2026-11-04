@@ -11,6 +11,7 @@ publish = false
 concord = { path = "../../crates/concord", features = ["json", "csv"] }
 concord-example-salesforce-sdk = { path = "../salesforce-sdk" }
 concord-pagination = { path = "../../crates/concord-pagination" }
+futures-core.workspace = true
 serde = { workspace = true, features = ["derive"] }
 # Only the binaries (`src/bin/`) start a runtime; the library workflows are runtime-agnostic.
 tokio = { workspace = true, features = ["rt", "time"] }

@@ -20,12 +20,12 @@ pub enum SfError {
     /// A declared operation failed inside Concord: the request could not be built, the transport
     /// failed, a 2xx head was refused (`Metadata`) or a 2xx body did not decode. (Non-2xx
     /// statuses become [`SfError::Api`].)
-    Concord(concord::Error),
+    Concord(Box<concord::Error>),
     /// Salesforce answered a non-2xx status, with its error document when one could be read.
     Api(Box<ApiFailure>),
     /// A response contradicts the documented protocol (a missing next link, a changed dialect,
     /// a record count that disagrees with `Sforce-NumberOfRecords`, ...).
-    Protocol(ProtocolError),
+    Protocol(Box<ProtocolError>),
     /// A link returned by Salesforce was refused before use.
     Link(LinkError),
     /// A CSV body's head was refused before it was read (the response is kept unread).
@@ -33,9 +33,9 @@ pub enum SfError {
     /// A CSV body failed while it was read (transport, format, decode or limit).
     Read(Box<ReadError>),
     /// A job ended `Failed` or `Aborted`.
-    Job(JobFailure),
+    Job(Box<JobFailure>),
     /// A CSV configuration or encoding failure before anything was sent.
-    Csv(crate::csv::CsvError),
+    Csv(Box<crate::csv::CsvError>),
 }
 
 impl SfError {
@@ -44,12 +44,12 @@ impl SfError {
     /// is kept as is.
     pub async fn from_concord(error: concord::Error) -> Self {
         if error.kind() != ErrorKind::Status {
-            return SfError::Concord(error);
+            return SfError::Concord(Box::new(error));
         }
         let operation = error.endpoint();
         match error.into_response() {
             Ok(response) => SfError::Api(Box::new(ApiFailure::read(operation, response).await)),
-            Err(error) => SfError::Concord(error),
+            Err(error) => SfError::Concord(Box::new(error)),
         }
     }
 
@@ -86,7 +86,21 @@ impl SfError {
 
 impl From<ProtocolError> for SfError {
     fn from(e: ProtocolError) -> Self {
-        SfError::Protocol(e)
+        SfError::Protocol(Box::new(e))
+    }
+}
+
+impl From<JobFailure> for SfError {
+    fn from(e: JobFailure) -> Self {
+        SfError::Job(Box::new(e))
+    }
+}
+
+impl From<concord::Error> for SfError {
+    /// Keeps the error as is (a `Status` error keeps its unread response); use
+    /// [`SfError::from_concord`] to read the provider's error document instead.
+    fn from(e: concord::Error) -> Self {
+        SfError::Concord(Box::new(e))
     }
 }
 
@@ -104,7 +118,7 @@ impl From<ReadError> for SfError {
 
 impl From<crate::csv::CsvError> for SfError {
     fn from(e: crate::csv::CsvError) -> Self {
-        SfError::Csv(e)
+        SfError::Csv(Box::new(e))
     }
 }
 
@@ -318,6 +332,8 @@ pub enum ProtocolErrorKind {
     PollBudgetExhausted,
     /// An ingest job is not `Open` when data is uploaded.
     JobNotOpen,
+    /// An ingest result file's header lacks its `sf__` columns, or a value in them is malformed.
+    ResultFileLayout,
 }
 
 impl ProtocolError {
@@ -372,6 +388,9 @@ impl fmt::Display for ProtocolError {
                 f.write_str("the job did not finish within the poll budget")
             }
             ProtocolErrorKind::JobNotOpen => f.write_str("the ingest job is not Open"),
+            ProtocolErrorKind::ResultFileLayout => {
+                f.write_str("unexpected ingest result file layout")
+            }
         }
     }
 }

@@ -1,0 +1,11 @@
+{
+  "attributes": {
+    "type": "Account",
+    "url": "/services/data/v68.0/sobjects/Account/001A00000000001AAA"
+  },
+  "Id": "001A00000000001AAA",
+  "Name": "Acme \"Rockets\"",
+  "Industry": "Aerospace",
+  "AnnualRevenue": 1200000.5,
+  "Customer_Tier__c": "Gold"
+}

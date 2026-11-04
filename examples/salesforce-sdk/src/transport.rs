@@ -67,7 +67,7 @@ pub(crate) async fn send<T>(prepared: Prepared<T>) -> Result<T, SfError> {
 pub(crate) fn prepared<T>(
     result: Result<Prepared<T>, concord::Error>,
 ) -> Result<Prepared<T>, SfError> {
-    result.map_err(SfError::Concord)
+    result.map_err(SfError::from)
 }
 
 #[cfg(test)]

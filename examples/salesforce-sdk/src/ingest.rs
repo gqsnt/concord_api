@@ -21,12 +21,14 @@ use std::future::Future;
 use std::num::NonZeroUsize;
 
 use concord::bytes::Bytes;
+use concord::csv::{CsvRecords, RawRecord};
 use concord::reqwest;
 
 use crate::bulk::{BulkDialect, CreateIngestJob, IngestJobInfo, JobState, JobStateChange};
 use crate::context::OrgContext;
+use crate::csv::{CsvError, SalesforceCsv, SpooledCsv};
 use crate::error::{JobFailure, ProtocolError, ProtocolErrorKind, SfError};
-use crate::ids::IngestJobId;
+use crate::ids::{IngestJobId, RecordId};
 use crate::transport::{prepared, send};
 
 /// The documented raw upload size limit per request: 100 MB (150 MB of base64 content).
@@ -134,6 +136,21 @@ impl IngestJob {
         send(prepared(op.prepare())?).await
     }
 
+    /// Uploads a spooled body ([`SalesforceCsv::spool`] / [`SalesforceCsv::spool_stream`] with
+    /// this job's dialect). **Writes to the org.**
+    ///
+    /// # Errors
+    ///
+    /// [`SfError`].
+    pub async fn upload_spooled(&self, spooled: SpooledCsv) -> Result<(), SfError> {
+        self.upload(spooled.into_body()).await
+    }
+
+    /// The CSV dialect of this job's bodies.
+    pub fn csv(&self) -> SalesforceCsv {
+        SalesforceCsv::new(self.dialect)
+    }
+
     /// Closes the upload (`PATCH` with `{"state": "UploadComplete"}`). **Writes to the org.**
     ///
     /// # Errors
@@ -206,7 +223,7 @@ impl IngestJob {
                 JobState::Failed => return Ok(IngestWait::Failed(info)),
                 JobState::Aborted => {
                     let message = info.error_message_unredacted().map(str::to_owned);
-                    return Err(SfError::Job(JobFailure::new(
+                    return Err(SfError::from(JobFailure::new(
                         self.id.as_str(),
                         info.state.clone(),
                         message,
@@ -245,6 +262,25 @@ impl IngestJob {
         }
     }
 
+    /// Opens a result file as typed result rows (the `sf__` columns mapped, the uploaded fields
+    /// kept by name). The file is read with the job's dialect.
+    ///
+    /// # Errors
+    ///
+    /// [`SfError::Api`] for a non-2xx status; [`SfError::Open`] for a refused head.
+    pub async fn result_rows(&self, file: ResultFile) -> Result<IngestResultRows, SfError> {
+        let response = self.open_result_file(file).await?;
+        let reader = self.csv().raw_reader().map_err(SfError::from)?;
+        match reader.open_raw_for(response, file.operation()) {
+            Ok(records) => Ok(IngestResultRows {
+                file,
+                records,
+                layout: None,
+            }),
+            Err(error) => Err(SfError::from_open(error).await),
+        }
+    }
+
     fn check(&self, operation: &'static str, info: &IngestJobInfo) -> Result<(), ProtocolError> {
         if info.id != self.id {
             return Err(ProtocolError::new(
@@ -280,6 +316,155 @@ impl fmt::Debug for IngestJob {
             .field("id", &self.id)
             .field("dialect", &self.dialect)
             .field("version", &self.ctx.version())
+            .finish()
+    }
+}
+
+/// One row of an ingest result file. `Debug` shows the id, the created flag, whether an error is
+/// present and the number of fields; values and the error text are withheld.
+#[derive(Clone)]
+pub struct IngestResultRow {
+    /// `sf__Id` (empty for a failed insert, absent in unprocessed records).
+    pub id: Option<RecordId>,
+    /// `sf__Created` (successful results).
+    pub created: Option<bool>,
+    error: Option<String>,
+    /// The uploaded fields, by header name, in file order.
+    pub fields: Vec<(String, String)>,
+}
+
+impl IngestResultRow {
+    /// `sf__Error` (failed results), **unredacted**: "error code and message".
+    pub fn error_unredacted(&self) -> Option<&str> {
+        self.error.as_deref()
+    }
+
+    /// The uploaded field `name`.
+    pub fn field(&self, name: &str) -> Option<&str> {
+        self.fields
+            .iter()
+            .find(|(n, _)| n.eq_ignore_ascii_case(name))
+            .map(|(_, v)| v.as_str())
+    }
+}
+
+impl fmt::Debug for IngestResultRow {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("IngestResultRow")
+            .field("id", &self.id)
+            .field("created", &self.created)
+            .field("error", &self.error.as_ref().map(|_| "<withheld>"))
+            .field("fields", &self.fields.len())
+            .finish()
+    }
+}
+
+/// The rows of one result file, read incrementally.
+pub struct IngestResultRows {
+    file: ResultFile,
+    records: CsvRecords<RawRecord>,
+    layout: Option<Layout>,
+}
+
+struct Layout {
+    id: Option<usize>,
+    created: Option<usize>,
+    error: Option<usize>,
+    names: Vec<String>,
+}
+
+impl IngestResultRows {
+    /// The next row; `None` at the end. The header is checked before the first row: successful
+    /// results need `sf__Id` and `sf__Created`, failed results `sf__Id` and `sf__Error`,
+    /// unprocessed records no `sf__` column.
+    pub async fn next(&mut self) -> Option<Result<IngestResultRow, SfError>> {
+        let record = self.records.next().await;
+        if self.layout.is_none() {
+            match self.layout() {
+                Ok(layout) => self.layout = layout,
+                Err(e) => return Some(Err(e)),
+            }
+        }
+        let record = match record? {
+            Ok(record) => record,
+            Err(e) => return Some(Err(e.into())),
+        };
+        let layout = self.layout.as_ref()?;
+        let values = match record.to_strings() {
+            Ok(values) => values,
+            Err(e) => return Some(Err(SfError::from(CsvError::Encode(e)))),
+        };
+        let mut row = IngestResultRow {
+            id: None,
+            created: None,
+            error: None,
+            fields: Vec::new(),
+        };
+        for (i, value) in values.into_iter().enumerate() {
+            if Some(i) == layout.id {
+                if !value.is_empty() {
+                    match RecordId::new(value) {
+                        Ok(id) => row.id = Some(id),
+                        Err(_) => return Some(Err(self.header_error())),
+                    }
+                }
+            } else if Some(i) == layout.created {
+                row.created = match value.as_str() {
+                    "true" => Some(true),
+                    "false" => Some(false),
+                    _ => return Some(Err(self.header_error())),
+                };
+            } else if Some(i) == layout.error {
+                row.error = Some(value);
+            } else {
+                row.fields.push((layout.names[i].clone(), value));
+            }
+        }
+        Some(Ok(row))
+    }
+
+    /// Which file.
+    pub fn file(&self) -> ResultFile {
+        self.file
+    }
+
+    fn header_error(&self) -> SfError {
+        ProtocolError::new(self.file.operation(), ProtocolErrorKind::ResultFileLayout).into()
+    }
+
+    fn layout(&self) -> Result<Option<Layout>, SfError> {
+        let Some(headers) = self.records.headers() else {
+            return Ok(None);
+        };
+        let names = headers.to_strings().map_err(|_| self.header_error())?;
+        let find = |name: &str| names.iter().position(|n| n == name);
+        let (id, created, error) = (find("sf__Id"), find("sf__Created"), find("sf__Error"));
+        let ok = match self.file {
+            ResultFile::Successful => id.is_some() && created.is_some() && error.is_none(),
+            ResultFile::Failed => id.is_some() && error.is_some() && created.is_none(),
+            ResultFile::Unprocessed => id.is_none() && created.is_none() && error.is_none(),
+        };
+        let others_ok = names
+            .iter()
+            .filter(|n| !n.starts_with("sf__"))
+            .all(|n| crate::soql::FieldPath::parse(n).is_ok());
+        if !ok || !others_ok {
+            return Err(self.header_error());
+        }
+        Ok(Some(Layout {
+            id,
+            created,
+            error,
+            names,
+        }))
+    }
+}
+
+impl fmt::Debug for IngestResultRows {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("IngestResultRows")
+            .field("file", &self.file)
+            .field("records", &self.records)
             .finish()
     }
 }
