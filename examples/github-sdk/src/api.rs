@@ -87,6 +87,9 @@ concord::api! {
                 query state?: StateFilter,
                 /// A login, `*` (any assignee) or `none`.
                 query assignee?: String,
+                /// `type`: an issue type's name (`Bug`), `*` (issues with any type) or `none`
+                /// (issues without a type).
+                query("type") issue_type?: String,
                 /// The author's login.
                 query creator?: Login,
                 /// A mentioned login.

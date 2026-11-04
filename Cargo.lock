@@ -256,6 +256,14 @@ version = "0.0.0"
 [[package]]
 name = "concord-check-maintenance-github"
 version = "0.0.0"
+dependencies = [
+ "concord",
+ "concord-example-github-sdk",
+ "concord-example-testserver",
+ "concord-pagination",
+ "serde",
+ "tokio",
+]
 
 [[package]]
 name = "concord-check-maintenance-kubernetes"
