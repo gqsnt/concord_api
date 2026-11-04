@@ -84,7 +84,7 @@ macro_rules! pick {
     };
 }
 macro_rules! declare {
-    ($e:expr, $t:ty, $r:expr, $d:expr) => {
+    ($e:expr, $t:ty, $r:expr, $d:expr, $s:ty, $v:ty, $w:ty) => {
         concord::api! {
             pub client Forwarded {
                 base "http://x.test";
@@ -99,11 +99,22 @@ macro_rules! declare {
                 GET method(query n: String = $r.meaning());
                 POST length(body p: [u8; $d.len()]) { request Raw; }
                 GET alone(query n: usize = $e, query p?: Payload<{ $e }>);
+                GET sized(query n: usize = core::mem::size_of::<$s>());
+                GET qualified(query n: usize = <$v>::new().len());
+                GET cast(query n: u64 = $e as $w);
             }
         }
     };
 }
-declare!(1 + 2, dyn core::fmt::Display + Sync, &VALUE, &DATA);
+declare!(
+    1 + 2,
+    dyn core::fmt::Display + Sync,
+    &VALUE,
+    &DATA,
+    &'static str,
+    Vec<u8>,
+    core::primitive::u64
+);
 
 #[test]
 fn forwarded_fragments_keep_their_grouping() {
@@ -148,4 +159,16 @@ fn forwarded_fragments_keep_their_grouping() {
     // Used alone, the fragment's value is unchanged (and its parentheses raise no lint).
     let p = api.alone().set_p(Payload::<3>).prepare().unwrap();
     assert_eq!(p.request().url().query(), Some("n=3&p=3"));
+    // A type fragment in a type position within an expression stays a type (no parentheses, so
+    // no `unused_parens`): a turbofish, a qualified path's start and the type after `as`.
+    let p = api.sized().prepare().unwrap();
+    let size = core::mem::size_of::<&'static str>().to_string();
+    assert_eq!(
+        p.request().url().query(),
+        Some(format!("n={size}").as_str())
+    );
+    let p = api.qualified().prepare().unwrap();
+    assert_eq!(p.request().url().query(), Some("n=0"));
+    let p = api.cast().prepare().unwrap();
+    assert_eq!(p.request().url().query(), Some("n=3"));
 }

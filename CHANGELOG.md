@@ -51,8 +51,8 @@ share one version and require each other exactly (`=4.2.0`).
 - **Fresh package extraction.** `scripts/package-check.sh` and `scripts/consumers.sh --packaged`
   recreate only their own marked output, refuse other directories, never build from stale extracted
   sources, and build one packaged consumer from a deep, non-ASCII path.
-- **Retired mutation helper.** `tests-gen/m4_mutations.py` refuses to run: it had no maintained
-  caller and could report a build failure as a kill.
+- **Retired mutation helper.** The historical mutation helper under `tests-gen/` refuses to run:
+  it had no maintained caller and could report a build failure as a kill.
 - **Metadata stage tested.** `examples/native` asserts that a 2xx head the format refuses is a
   `Metadata` error before its withheld body is read, with the response recoverable; removing the
   head check fails this test. Lifecycle (cancellation, drop, one request per send) and

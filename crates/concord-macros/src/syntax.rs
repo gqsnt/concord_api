@@ -299,7 +299,7 @@ fn token_text(tokens: proc_macro2::TokenStream, types: bool) -> String {
             bang = matches!(&tt, TokenTree::Punct(p) if p.as_char() == '!') && prev == Prev::Word;
             prev = match tt {
                 TokenTree::Group(g) => {
-                    let (open, close) = delimiters(&g, types);
+                    let (open, close) = delimiters(&g, types || generics > 0);
                     out.push_str(open);
                     if macro_input {
                         verbatim(g.stream(), out);
@@ -1295,14 +1295,20 @@ fn regroup(tokens: proc_macro2::TokenStream, expr: bool) -> proc_macro2::TokenSt
     regroup_in(tokens, expr, false)
 }
 
-/// [`regroup`]; `array`: the contents of `[T; N]` in a type, an expression after its `;`.
+/// [`regroup`]; `array`: the contents of `[T; N]` in a type, an expression after its `;`. Within an
+/// expression the types are a turbofish's or a qualified path's angle brackets (`size_of::<T>()`,
+/// `<T as Trait>::f()`) and the type after `as`: a fragment there is grouped as a type.
 fn regroup_in(
     tokens: proc_macro2::TokenStream,
     mut expr: bool,
     array: bool,
 ) -> proc_macro2::TokenStream {
-    use proc_macro2::{Delimiter, Group, TokenTree};
+    use proc_macro2::{Delimiter, Group, Spacing, TokenTree};
     let (mut word, mut bang) = (false, false);
+    // Within an expression: open type brackets, whether the last token was an operand (`<` after
+    // one compares), a joined `-` (the `>` of `->` closes nothing), `::` and `as` just written.
+    let (mut angles, mut operand, mut arrow, mut colons, mut cast) =
+        (0usize, false, false, 0, false);
     let mut out = proc_macro2::TokenStream::new();
     for tt in tokens {
         let macro_input = bang;
@@ -1311,6 +1317,30 @@ fn regroup_in(
         if array && matches!(&tt, TokenTree::Punct(p) if p.as_char() == ';') {
             expr = true;
         }
+        let after_cast = cast;
+        if let TokenTree::Punct(p) = &tt {
+            match p.as_char() {
+                '<' if expr && (angles > 0 || colons == 2 || !operand) => angles += 1,
+                '>' if angles > 0 && !arrow => angles -= 1,
+                _ => {}
+            }
+        }
+        // A type is expected here (outside an expression, or in its type positions).
+        let types = !expr || angles > 0 || after_cast;
+        colons = match &tt {
+            TokenTree::Punct(p) if p.as_char() == ':' && p.spacing() == Spacing::Joint => 1,
+            TokenTree::Punct(p) if p.as_char() == ':' && colons == 1 => 2,
+            _ => 0,
+        };
+        arrow = matches!(&tt, TokenTree::Punct(p) if p.as_char() == '-' && p.spacing() == Spacing::Joint);
+        cast = matches!(&tt, TokenTree::Ident(i) if i == "as");
+        operand = match &tt {
+            TokenTree::Ident(i) => {
+                !matches!(i.to_string().as_str(), "return" | "in" | "as" | "move")
+            }
+            TokenTree::Literal(_) | TokenTree::Group(_) => true,
+            TokenTree::Punct(p) => p.as_char() == '?' || (p.as_char() == '>' && angles > 0),
+        };
         let rebuilt = |g: &Group, delimiter: Delimiter, expr: bool, array: bool| {
             let mut group = Group::new(delimiter, regroup_in(g.stream(), expr, array));
             group.set_span(g.span());
@@ -1319,15 +1349,15 @@ fn regroup_in(
         out.extend([match tt {
             TokenTree::Group(g) if macro_input => TokenTree::Group(g),
             TokenTree::Group(g) if g.delimiter() == Delimiter::None => {
-                let grouped = if expr {
-                    g.stream().into_iter().nth(1).is_none()
-                } else {
+                let grouped = if types {
                     bare_fragment(&g)
+                } else {
+                    g.stream().into_iter().nth(1).is_none()
                 };
                 match (grouped, forwarded(&g.stream())) {
                     (true, false) => TokenTree::Group(g),
                     // A type that itself holds fragments (`Payload<{ $e * 2 }>` as `$t`).
-                    (true, true) => rebuilt(&g, Delimiter::None, expr, false),
+                    (true, true) => rebuilt(&g, Delimiter::None, !types, false),
                     (false, _) => rebuilt(&g, Delimiter::Parenthesis, true, false),
                 }
             }
@@ -1336,8 +1366,8 @@ fn regroup_in(
                 let delimiter = g.delimiter();
                 match delimiter {
                     Delimiter::Brace => rebuilt(&g, delimiter, true, false),
-                    Delimiter::Bracket if !expr => rebuilt(&g, delimiter, false, true),
-                    _ => rebuilt(&g, delimiter, expr, false),
+                    Delimiter::Bracket if types => rebuilt(&g, delimiter, false, true),
+                    _ => rebuilt(&g, delimiter, !types, false),
                 }
             }
             other => other,
