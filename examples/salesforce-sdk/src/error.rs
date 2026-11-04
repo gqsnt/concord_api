@@ -20,7 +20,7 @@ pub enum SfError {
     /// A declared operation failed inside Concord: the request could not be built, the transport
     /// failed, a 2xx head was refused (`Metadata`) or a 2xx body did not decode. (Non-2xx
     /// statuses become [`SfError::Api`].)
-    Concord(Box<concord::Error>),
+    Concord(concord::Error),
     /// Salesforce answered a non-2xx status, with its error document when one could be read.
     Api(Box<ApiFailure>),
     /// A response contradicts the documented protocol (a missing next link, a changed dialect,
@@ -44,12 +44,12 @@ impl SfError {
     /// is kept as is.
     pub async fn from_concord(error: concord::Error) -> Self {
         if error.kind() != ErrorKind::Status {
-            return SfError::Concord(Box::new(error));
+            return SfError::Concord(error);
         }
         let operation = error.endpoint();
         match error.into_response() {
             Ok(response) => SfError::Api(Box::new(ApiFailure::read(operation, response).await)),
-            Err(error) => SfError::Concord(Box::new(error)),
+            Err(error) => SfError::Concord(error),
         }
     }
 
@@ -100,7 +100,7 @@ impl From<concord::Error> for SfError {
     /// Keeps the error as is (a `Status` error keeps its unread response); use
     /// [`SfError::from_concord`] to read the provider's error document instead.
     fn from(e: concord::Error) -> Self {
-        SfError::Concord(Box::new(e))
+        SfError::Concord(e)
     }
 }
 

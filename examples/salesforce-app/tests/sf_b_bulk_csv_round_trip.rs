@@ -64,21 +64,25 @@ fn fields() -> Vec<FieldPath> {
 /// Job creation and status routes: created `UploadComplete`, one `InProgress` poll, then
 /// `JobComplete`.
 fn job_routes(router: &Router, dialect: BulkDialect) {
+    job_routes_for(router, ORG_A, dialect);
+}
+
+fn job_routes_for(router: &Router, org: Org, dialect: BulkDialect) {
     router
         .on(
-            ORG_A,
+            org,
             "POST",
             &api("jobs/query"),
             json(query_job("UploadComplete", dialect)),
         )
         .on(
-            ORG_A,
+            org,
             "GET",
             &api(&format!("jobs/query/{QUERY_JOB}")),
             json(query_job("InProgress", dialect)),
         )
         .on(
-            ORG_A,
+            org,
             "GET",
             &api(&format!("jobs/query/{QUERY_JOB}")),
             json(query_job("JobComplete", dialect)),
@@ -110,13 +114,14 @@ fn two_manifests(router: &Router) {
 }
 
 fn part_routes(router: &Router, dialect: BulkDialect, parts: std::ops::Range<u64>) {
+    part_routes_for(router, ORG_A, dialect, parts);
+}
+
+fn part_routes_for(router: &Router, org: Org, dialect: BulkDialect, parts: std::ops::Range<u64>) {
     for ordinal in parts {
-        router.on(
-            ORG_A,
-            "GET",
-            &result_target(ordinal),
-            move |_: &Recorded| part_reply(dialect, ordinal),
-        );
+        router.on(org, "GET", &result_target(ordinal), move |_: &Recorded| {
+            part_reply(dialect, ordinal)
+        });
     }
 }
 
@@ -1248,5 +1253,54 @@ async fn sf_b_large_generated_parts_stream_through_bounded_readers() {
     // The reader keeps one record (plus the unconsumed chunk), never the body.
     assert!(peak < 64 * 1024, "peak retained {peak}");
     assert!(records.position().bytes > 5_000_000);
+    server.shutdown().await;
+}
+
+#[tokio::test]
+async fn sf_b_two_orgs_export_concurrently_without_scope_or_header_leaks() {
+    let dialect_b = BulkDialect::new(ColumnDelimiter::Pipe, LineEnding::Lf);
+    let router = Router::new();
+    job_routes_for(&router, ORG_A, SEMI_CRLF);
+    job_routes_for(&router, ORG_B, dialect_b);
+    for (org, parts) in [(ORG_A, 0..3u64), (ORG_B, 3..5u64)] {
+        router.on(
+            org,
+            "GET",
+            &manifest_target(None),
+            json(result_pages(parts.clone(), None, "nextRecordsUrl")),
+        );
+    }
+    part_routes_for(&router, ORG_A, SEMI_CRLF, 0..3);
+    part_routes_for(&router, ORG_B, dialect_b, 3..5);
+    let server = router.start().await;
+    let (a, b) = (ctx(ORG_A, &server), ctx(ORG_B, &server));
+    let (dir_a, dir_b) = (TempDir::new("org-a"), TempDir::new("org-b"));
+    let (input_a, input_b) = (
+        input(SEMI_CRLF, &dir_a, 2, OnError::Stop),
+        input(dialect_b, &dir_b, 2, OnError::Stop),
+    );
+    let (ra, rb) = tokio::join!(
+        bulk_csv_export(&a, &input_a, no_wait),
+        bulk_csv_export(&b, &input_b, no_wait)
+    );
+    let (ra, rb) = (ra.unwrap(), rb.unwrap());
+    assert_eq!(
+        (ra.status, rb.status),
+        (ExportStatus::Complete, ExportStatus::Complete)
+    );
+    let rows_a = read_output(SEMI_CRLF, std::fs::read(&ra.output.unwrap().path).unwrap()).await;
+    let rows_b = read_output(dialect_b, std::fs::read(&rb.output.unwrap().path).unwrap()).await;
+    assert_rows_equal(&rows_a, &all_rows(3));
+    let expected_b: Vec<Row> = (3..5).flat_map(part_rows).collect();
+    assert_rows_equal(&rows_b, &expected_b);
+    let requests = server.requests();
+    assert_eq!(router.unrouted(), 0);
+    assert_org_isolation(&requests);
+    let b_create = requests
+        .iter()
+        .find(|r| r.method == "POST" && r.host.starts_with(ORG_B.host))
+        .unwrap();
+    let body: serde_json::Value = serde_json::from_slice(&b_create.body).unwrap();
+    assert_eq!(body["columnDelimiter"], "PIPE");
     server.shutdown().await;
 }

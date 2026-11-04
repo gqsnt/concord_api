@@ -46,6 +46,7 @@ fn first_batches(
         let soql = q(request);
         if soql.contains(" FROM Account ") {
             Reply::json(200, fixture(accounts))
+                .header("sforce-limit-info", "api-usage=18/5000; api-bursts=1/750")
         } else if soql.contains(" FROM Contact ") {
             Reply::json(200, fixture(contacts))
         } else {
@@ -135,6 +136,15 @@ async fn sf_a_multi_page_extraction_with_schema_custom_fields_and_record_read() 
     assert_eq!(report.accounts.pages.len(), 3);
     assert_eq!(report.contacts.pages.len(), 2);
     assert!(report.accounts.pages.iter().all(|p| p.total_size == 5));
+    // Response metadata kept with the page (`Sforce-Limit-Info`).
+    assert_eq!(
+        report.accounts.pages[0].api_usage,
+        Some(concord_example_salesforce_sdk::ApiUsage {
+            used: 18,
+            limit: 5000
+        })
+    );
+    assert_eq!(report.accounts.pages[1].api_usage, None);
     let ids: Vec<_> = report
         .accounts
         .records
