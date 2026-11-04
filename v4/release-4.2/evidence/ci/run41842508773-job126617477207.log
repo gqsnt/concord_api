@@ -1,0 +1,196 @@
+verify (windows-latest)	Set up job	﻿2026-11-04T13:55:16.9264450Z Current runner version: '2.338.2'
+verify (windows-latest)	Set up job	2026-11-04T13:55:16.9308006Z ##[group]Runner Image Provisioner
+verify (windows-latest)	Set up job	2026-11-04T13:55:16.9309014Z Hosted Compute Agent
+verify (windows-latest)	Set up job	2026-11-04T13:55:16.9309634Z Version: 20261021.618
+verify (windows-latest)	Set up job	2026-11-04T13:55:16.9310348Z Commit: 21505ad2541d5be6135ed84fc33697146cf75b8e
+verify (windows-latest)	Set up job	2026-11-04T13:55:16.9311169Z Build Date: 2026-10-21T00:45:21Z
+verify (windows-latest)	Set up job	2026-11-04T13:55:16.9311928Z Worker ID: {8991280b-2fef-4c79-903e-04f7da36a316}
+verify (windows-latest)	Set up job	2026-11-04T13:55:16.9313001Z Region: centralus
+verify (windows-latest)	Set up job	2026-11-04T13:55:16.9313572Z Cloud: Azure
+verify (windows-latest)	Set up job	2026-11-04T13:55:16.9314070Z ##[endgroup]
+verify (windows-latest)	Set up job	2026-11-04T13:55:16.9315629Z ##[group]Operating System
+verify (windows-latest)	Set up job	2026-11-04T13:55:16.9316303Z Microsoft Windows Server 2025
+verify (windows-latest)	Set up job	2026-11-04T13:55:16.9316902Z 10.0.26100
+verify (windows-latest)	Set up job	2026-11-04T13:55:16.9317321Z Datacenter
+verify (windows-latest)	Set up job	2026-11-04T13:55:16.9317728Z ##[endgroup]
+verify (windows-latest)	Set up job	2026-11-04T13:55:16.9318182Z ##[group]Runner Image
+verify (windows-latest)	Set up job	2026-11-04T13:55:16.9318649Z Image: windows-2025-vs2026
+verify (windows-latest)	Set up job	2026-11-04T13:55:16.9319144Z Version: 20261030.294.1
+verify (windows-latest)	Set up job	2026-11-04T13:55:16.9320106Z Included Software: https://github.com/actions/runner-images/blob/win25-vs2026/20261030.294/images/windows/Windows2025-VS2026-Readme.md
+verify (windows-latest)	Set up job	2026-11-04T13:55:16.9321953Z Image Release: https://github.com/actions/runner-images/releases/tag/win25-vs2026%2F20261030.294
+verify (windows-latest)	Set up job	2026-11-04T13:55:16.9322745Z ##[endgroup]
+verify (windows-latest)	Set up job	2026-11-04T13:55:16.9323706Z ##[group]GITHUB_TOKEN Permissions
+verify (windows-latest)	Set up job	2026-11-04T13:55:16.9326001Z Contents: read
+verify (windows-latest)	Set up job	2026-11-04T13:55:16.9326560Z Metadata: read
+verify (windows-latest)	Set up job	2026-11-04T13:55:16.9326989Z Packages: read
+verify (windows-latest)	Set up job	2026-11-04T13:55:16.9327391Z ##[endgroup]
+verify (windows-latest)	Set up job	2026-11-04T13:55:16.9329149Z Secret source: Actions
+verify (windows-latest)	Set up job	2026-11-04T13:55:16.9329862Z Cache mode: write
+verify (windows-latest)	Set up job	2026-11-04T13:55:16.9330415Z Prepare workflow directory
+verify (windows-latest)	Set up job	2026-11-04T13:55:16.9644307Z Prepare all required actions
+verify (windows-latest)	Set up job	2026-11-04T13:55:16.9686263Z Getting action download info
+verify (windows-latest)	Set up job	2026-11-04T13:55:17.1862872Z Download action repository 'actions/checkout@v4' (SHA:11d5960a326750d5838078e36cf38b85af677262)
+verify (windows-latest)	Set up job	2026-11-04T13:55:17.5345044Z Complete job name: verify (windows-latest)
+verify (windows-latest)	Run actions/checkout@v4	﻿2026-11-04T13:55:17.6901649Z ##[group]Run actions/checkout@v4
+verify (windows-latest)	Run actions/checkout@v4	2026-11-04T13:55:17.6902707Z with:
+verify (windows-latest)	Run actions/checkout@v4	2026-11-04T13:55:17.6903038Z   repository: gqsnt/concord_api
+verify (windows-latest)	Run actions/checkout@v4	2026-11-04T13:55:17.6906178Z   token: ***
+verify (windows-latest)	Run actions/checkout@v4	2026-11-04T13:55:17.6906809Z   ssh-strict: true
+verify (windows-latest)	Run actions/checkout@v4	2026-11-04T13:55:17.6907128Z   ssh-user: git
+verify (windows-latest)	Run actions/checkout@v4	2026-11-04T13:55:17.6907450Z   persist-credentials: true
+verify (windows-latest)	Run actions/checkout@v4	2026-11-04T13:55:17.6907800Z   clean: true
+verify (windows-latest)	Run actions/checkout@v4	2026-11-04T13:55:17.6908120Z   sparse-checkout-cone-mode: true
+verify (windows-latest)	Run actions/checkout@v4	2026-11-04T13:55:17.6908503Z   fetch-depth: 1
+verify (windows-latest)	Run actions/checkout@v4	2026-11-04T13:55:17.6908913Z   fetch-tags: false
+verify (windows-latest)	Run actions/checkout@v4	2026-11-04T13:55:17.6909348Z   show-progress: true
+verify (windows-latest)	Run actions/checkout@v4	2026-11-04T13:55:17.6909798Z   lfs: false
+verify (windows-latest)	Run actions/checkout@v4	2026-11-04T13:55:17.6910194Z   submodules: false
+verify (windows-latest)	Run actions/checkout@v4	2026-11-04T13:55:17.6910671Z   set-safe-directory: true
+verify (windows-latest)	Run actions/checkout@v4	2026-11-04T13:55:17.6911143Z   allow-unsafe-pr-checkout: false
+verify (windows-latest)	Run actions/checkout@v4	2026-11-04T13:55:17.6911806Z env:
+verify (windows-latest)	Run actions/checkout@v4	2026-11-04T13:55:17.6912093Z   CARGO_TERM_COLOR: always
+verify (windows-latest)	Run actions/checkout@v4	2026-11-04T13:55:17.6912428Z ##[endgroup]
+verify (windows-latest)	Run actions/checkout@v4	2026-11-04T13:55:17.8152326Z Syncing repository: gqsnt/concord_api
+verify (windows-latest)	Run actions/checkout@v4	2026-11-04T13:55:17.8153801Z ##[group]Getting Git version info
+verify (windows-latest)	Run actions/checkout@v4	2026-11-04T13:55:17.8154284Z Working directory is 'D:\a\concord_api\concord_api'
+verify (windows-latest)	Run actions/checkout@v4	2026-11-04T13:55:18.0178684Z [command]"C:\Program Files\Git\bin\git.exe" version
+verify (windows-latest)	Run actions/checkout@v4	2026-11-04T13:55:18.5152893Z git version 2.56.0.windows.4
+verify (windows-latest)	Run actions/checkout@v4	2026-11-04T13:55:18.5200770Z ##[endgroup]
+verify (windows-latest)	Run actions/checkout@v4	2026-11-04T13:55:18.5217505Z Temporarily overriding HOME='D:\a\_temp\7419cf77-6a19-4f28-b1df-9d3f75311f6d' before making global git config changes
+verify (windows-latest)	Run actions/checkout@v4	2026-11-04T13:55:18.5218923Z Adding repository directory to the temporary git global config as a safe directory
+verify (windows-latest)	Run actions/checkout@v4	2026-11-04T13:55:18.5226538Z [command]"C:\Program Files\Git\bin\git.exe" config --global --add safe.directory D:\a\concord_api\concord_api
+verify (windows-latest)	Run actions/checkout@v4	2026-11-04T13:55:18.5736391Z Deleting the contents of 'D:\a\concord_api\concord_api'
+verify (windows-latest)	Run actions/checkout@v4	2026-11-04T13:55:18.5741252Z ##[group]Initializing the repository
+verify (windows-latest)	Run actions/checkout@v4	2026-11-04T13:55:18.5748494Z [command]"C:\Program Files\Git\bin\git.exe" init D:\a\concord_api\concord_api
+verify (windows-latest)	Run actions/checkout@v4	2026-11-04T13:55:18.6570614Z Initialized empty Git repository in D:/a/concord_api/concord_api/.git/
+verify (windows-latest)	Run actions/checkout@v4	2026-11-04T13:55:18.6614748Z [command]"C:\Program Files\Git\bin\git.exe" remote add origin https://github.com/gqsnt/concord_api
+verify (windows-latest)	Run actions/checkout@v4	2026-11-04T13:55:18.7480298Z ##[endgroup]
+verify (windows-latest)	Run actions/checkout@v4	2026-11-04T13:55:18.7481518Z ##[group]Disabling automatic garbage collection
+verify (windows-latest)	Run actions/checkout@v4	2026-11-04T13:55:18.7487291Z [command]"C:\Program Files\Git\bin\git.exe" config --local gc.auto 0
+verify (windows-latest)	Run actions/checkout@v4	2026-11-04T13:55:18.7821345Z ##[endgroup]
+verify (windows-latest)	Run actions/checkout@v4	2026-11-04T13:55:18.7822836Z ##[group]Setting up auth
+verify (windows-latest)	Run actions/checkout@v4	2026-11-04T13:55:18.7831284Z [command]"C:\Program Files\Git\bin\git.exe" config --local --name-only --get-regexp core\.sshCommand
+verify (windows-latest)	Run actions/checkout@v4	2026-11-04T13:55:18.8134898Z [command]"C:\Program Files\Git\bin\git.exe" submodule foreach --recursive "sh -c \"git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :\""
+verify (windows-latest)	Run actions/checkout@v4	2026-11-04T13:55:20.9563913Z [command]"C:\Program Files\Git\bin\git.exe" config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+verify (windows-latest)	Run actions/checkout@v4	2026-11-04T13:55:20.9887991Z [command]"C:\Program Files\Git\bin\git.exe" submodule foreach --recursive "sh -c \"git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :\""
+verify (windows-latest)	Run actions/checkout@v4	2026-11-04T13:55:21.4647133Z [command]"C:\Program Files\Git\bin\git.exe" config --local --name-only --get-regexp ^includeIf\.gitdir:
+verify (windows-latest)	Run actions/checkout@v4	2026-11-04T13:55:21.4982128Z [command]"C:\Program Files\Git\bin\git.exe" submodule foreach --recursive "git config --local --show-origin --name-only --get-regexp remote.origin.url"
+verify (windows-latest)	Run actions/checkout@v4	2026-11-04T13:55:21.9722490Z [command]"C:\Program Files\Git\bin\git.exe" config --local http.https://github.com/.extraheader "AUTHORIZATION: basic ***"
+verify (windows-latest)	Run actions/checkout@v4	2026-11-04T13:55:22.0060652Z ##[endgroup]
+verify (windows-latest)	Run actions/checkout@v4	2026-11-04T13:55:22.0061428Z ##[group]Fetching the repository
+verify (windows-latest)	Run actions/checkout@v4	2026-11-04T13:55:22.0071001Z [command]"C:\Program Files\Git\bin\git.exe" -c protocol.version=2 fetch --no-tags --prune --no-recurse-submodules --depth=1 origin +b2ba34199b4221906c49d2ed5eb60bd85dca3fcd:refs/remotes/origin/main
+verify (windows-latest)	Run actions/checkout@v4	2026-11-04T13:55:24.6725010Z From https://github.com/gqsnt/concord_api
+verify (windows-latest)	Run actions/checkout@v4	2026-11-04T13:55:24.6726068Z  * [new ref]         b2ba34199b4221906c49d2ed5eb60bd85dca3fcd -> origin/main
+verify (windows-latest)	Run actions/checkout@v4	2026-11-04T13:55:24.6761995Z ##[endgroup]
+verify (windows-latest)	Run actions/checkout@v4	2026-11-04T13:55:24.6762466Z ##[group]Determining the checkout info
+verify (windows-latest)	Run actions/checkout@v4	2026-11-04T13:55:24.6764487Z ##[endgroup]
+verify (windows-latest)	Run actions/checkout@v4	2026-11-04T13:55:24.6773157Z [command]"C:\Program Files\Git\bin\git.exe" sparse-checkout disable
+verify (windows-latest)	Run actions/checkout@v4	2026-11-04T13:55:24.7238633Z [command]"C:\Program Files\Git\bin\git.exe" config --local --unset-all extensions.worktreeConfig
+verify (windows-latest)	Run actions/checkout@v4	2026-11-04T13:55:24.7562952Z ##[group]Checking out the ref
+verify (windows-latest)	Run actions/checkout@v4	2026-11-04T13:55:24.7570873Z [command]"C:\Program Files\Git\bin\git.exe" checkout --progress --force -B main refs/remotes/origin/main
+verify (windows-latest)	Run actions/checkout@v4	2026-11-04T13:55:25.1894872Z Switched to a new branch 'main'
+verify (windows-latest)	Run actions/checkout@v4	2026-11-04T13:55:25.1912341Z branch 'main' set up to track 'origin/main'.
+verify (windows-latest)	Run actions/checkout@v4	2026-11-04T13:55:25.1955134Z ##[endgroup]
+verify (windows-latest)	Run actions/checkout@v4	2026-11-04T13:55:25.2673265Z [command]"C:\Program Files\Git\bin\git.exe" log -1 --format=%H
+verify (windows-latest)	Run actions/checkout@v4	2026-11-04T13:55:25.2943195Z b2ba34199b4221906c49d2ed5eb60bd85dca3fcd
+verify (windows-latest)	Run rustup show	﻿2026-11-04T13:55:25.3282404Z ##[group]Run rustup show
+verify (windows-latest)	Run rustup show	2026-11-04T13:55:25.3282761Z ^[[36;1mrustup show^[[0m
+verify (windows-latest)	Run rustup show	2026-11-04T13:55:25.4932368Z shell: C:\Program Files\PowerShell\7\pwsh.EXE -command ". '{0}'"
+verify (windows-latest)	Run rustup show	2026-11-04T13:55:25.4932733Z env:
+verify (windows-latest)	Run rustup show	2026-11-04T13:55:25.4932920Z   CARGO_TERM_COLOR: always
+verify (windows-latest)	Run rustup show	2026-11-04T13:55:25.4933115Z ##[endgroup]
+verify (windows-latest)	Run rustup show	2026-11-04T13:55:26.6479794Z Default host: x86_64-pc-windows-msvc
+verify (windows-latest)	Run rustup show	2026-11-04T13:55:26.6480320Z rustup home:  C:\Users\runneradmin\.rustup
+verify (windows-latest)	Run rustup show	2026-11-04T13:55:26.6480923Z 
+verify (windows-latest)	Run rustup show	2026-11-04T13:55:26.7406463Z info: syncing channel updates for 1.99.1-x86_64-pc-windows-msvc
+verify (windows-latest)	Run rustup show	2026-11-04T13:55:27.8228259Z info: latest update on 2026-10-15 for version 1.99.1 (58cf8f9c3 2026-10-13)
+verify (windows-latest)	Run rustup show	2026-11-04T13:55:27.8327551Z info: downloading 7 components
+verify (windows-latest)	Run rustup show	2026-11-04T13:56:00.3883285Z warn: the missing active toolchain `1.99.1-x86_64-pc-windows-msvc` has been auto-installed
+verify (windows-latest)	Run rustup show	2026-11-04T13:56:00.3885259Z warn: auto-installation is deprecated for most `rustup` commands
+verify (windows-latest)	Run rustup show	2026-11-04T13:56:00.3885634Z warn: scripts relying on this behavior in `rustup` may stop working in the future
+verify (windows-latest)	Run rustup show	2026-11-04T13:56:00.3886069Z warn: to install the active toolchain, use `rustup install` instead
+verify (windows-latest)	Run rustup show	2026-11-04T13:56:00.3886430Z warn: see <https://github.com/rust-lang/rustup/issues/4836> for more info
+verify (windows-latest)	Run rustup show	2026-11-04T13:56:00.3886737Z installed toolchains
+verify (windows-latest)	Run rustup show	2026-11-04T13:56:00.3886896Z --------------------
+verify (windows-latest)	Run rustup show	2026-11-04T13:56:00.3887204Z stable-x86_64-pc-windows-msvc (default)
+verify (windows-latest)	Run rustup show	2026-11-04T13:56:00.3887365Z 
+verify (windows-latest)	Run rustup show	2026-11-04T13:56:00.3887444Z active toolchain
+verify (windows-latest)	Run rustup show	2026-11-04T13:56:00.3887615Z ----------------
+verify (windows-latest)	Run rustup show	2026-11-04T13:56:00.3887786Z name: 1.99.1-x86_64-pc-windows-msvc
+verify (windows-latest)	Run rustup show	2026-11-04T13:56:00.3888150Z active because: overridden by 'D:\a\concord_api\concord_api\rust-toolchain.toml'
+verify (windows-latest)	Run rustup show	2026-11-04T13:56:00.3888451Z installed targets:
+verify (windows-latest)	Run rustup show	2026-11-04T13:56:00.4064031Z   x86_64-pc-windows-msvc
+verify (windows-latest)	scripts/verify.sh	﻿2026-11-04T13:56:00.5078494Z ##[group]Run scripts/verify.sh --package --bench
+verify (windows-latest)	scripts/verify.sh	2026-11-04T13:56:00.5078948Z ^[[36;1mscripts/verify.sh --package --bench^[[0m
+verify (windows-latest)	scripts/verify.sh	2026-11-04T13:56:00.5092411Z shell: C:\Program Files\Git\bin\bash.EXE --noprofile --norc -e -o pipefail {0}
+verify (windows-latest)	scripts/verify.sh	2026-11-04T13:56:00.5092735Z env:
+verify (windows-latest)	scripts/verify.sh	2026-11-04T13:56:00.5092889Z   CARGO_TERM_COLOR: always
+verify (windows-latest)	scripts/verify.sh	2026-11-04T13:56:00.5093066Z ##[endgroup]
+verify (windows-latest)	scripts/verify.sh	2026-11-04T13:56:02.6957705Z head: b2ba34199b4221906c49d2ed5eb60bd85dca3fcd  dirty: 0 file(s)
+verify (windows-latest)	scripts/verify.sh	2026-11-04T13:56:03.8326861Z rustc: rustc 1.99.1 (58cf8f9c3 2026-10-13)
+verify (windows-latest)	scripts/verify.sh	2026-11-04T13:56:05.3200540Z PASS  argv-length
+verify (windows-latest)	scripts/verify.sh	2026-11-04T13:56:06.9425290Z PASS  toolchain
+verify (windows-latest)	scripts/verify.sh	2026-11-04T13:56:07.1106056Z PASS  ci-inventory
+verify (windows-latest)	scripts/verify.sh	2026-11-04T13:56:11.6281511Z PASS  tool-tests
+verify (windows-latest)	scripts/verify.sh	2026-11-04T13:56:13.5636050Z PASS  output-dirs
+verify (windows-latest)	scripts/verify.sh	2026-11-04T13:56:19.7434205Z PASS  graph
+verify (windows-latest)	scripts/verify.sh	2026-11-04T13:56:21.2179871Z PASS  fmt
+verify (windows-latest)	scripts/verify.sh	2026-11-04T13:56:21.5170466Z PASS  records
+verify (windows-latest)	scripts/verify.sh	2026-11-04T13:56:22.7885032Z PASS  generated
+verify (windows-latest)	scripts/verify.sh	2026-11-04T13:57:51.4179945Z PASS  clippy
+verify (windows-latest)	scripts/verify.sh	2026-11-04T14:02:45.2737386Z PASS  test
+verify (windows-latest)	scripts/verify.sh	2026-11-04T14:03:39.9373618Z PASS  test-no-default
+verify (windows-latest)	scripts/verify.sh	2026-11-04T14:04:31.3382834Z PASS  test-json-only
+verify (windows-latest)	scripts/verify.sh	2026-11-04T14:05:19.5407065Z PASS  test-reqwest-defaults-only
+verify (windows-latest)	scripts/verify.sh	2026-11-04T14:05:59.6107543Z PASS  test-form-only
+verify (windows-latest)	scripts/verify.sh	2026-11-04T14:06:05.0275778Z PASS  test-form-json
+verify (windows-latest)	scripts/verify.sh	2026-11-04T14:06:43.6644557Z PASS  test-extras-only
+verify (windows-latest)	scripts/verify.sh	2026-11-04T14:06:57.7110090Z PASS  test-core
+verify (windows-latest)	scripts/verify.sh	2026-11-04T14:07:00.7979344Z PASS  test-extras-none
+verify (windows-latest)	scripts/verify.sh	2026-11-04T14:07:02.7826997Z PASS  test-extras-json
+verify (windows-latest)	scripts/verify.sh	2026-11-04T14:07:05.9027683Z PASS  test-extras-form
+verify (windows-latest)	scripts/verify.sh	2026-11-04T14:07:19.4559131Z PASS  clippy-features
+verify (windows-latest)	scripts/verify.sh	2026-11-04T14:09:09.3517340Z PASS  consumers
+verify (windows-latest)	scripts/verify.sh	2026-11-04T14:09:11.4967698Z PASS  feature-isolation
+verify (windows-latest)	scripts/verify.sh	2026-11-04T14:10:34.0738737Z PASS  test-examples-isolated
+verify (windows-latest)	scripts/verify.sh	2026-11-04T14:10:46.1644953Z PASS  doc
+verify (windows-latest)	scripts/verify.sh	2026-11-04T14:10:46.8743842Z PASS  doc-no-default
+verify (windows-latest)	scripts/verify.sh	2026-11-04T14:10:47.5220659Z PASS  doc-json-only
+verify (windows-latest)	scripts/verify.sh	2026-11-04T14:10:48.9201578Z PASS  doc-form-only
+verify (windows-latest)	scripts/verify.sh	2026-11-04T14:10:50.5109398Z PASS  doc-form
+verify (windows-latest)	scripts/verify.sh	2026-11-04T14:10:51.0854407Z PASS  doc-extras-only
+verify (windows-latest)	scripts/verify.sh	2026-11-04T14:10:57.7659171Z PASS  doc-core
+verify (windows-latest)	scripts/verify.sh	2026-11-04T14:10:59.3134248Z PASS  doc-extras
+verify (windows-latest)	scripts/verify.sh	2026-11-04T14:11:00.0036224Z PASS  doc-extras-none
+verify (windows-latest)	scripts/verify.sh	2026-11-04T14:13:23.3636833Z PASS  bench-build
+verify (windows-latest)	scripts/verify.sh	2026-11-04T14:14:31.0475224Z PASS  package-check
+verify (windows-latest)	scripts/verify.sh	2026-11-04T14:16:19.0369005Z PASS  consumers-packaged
+verify (windows-latest)	scripts/verify.sh	2026-11-04T14:16:19.1173112Z       verify-test-core: 13 passed, 0 failed
+verify (windows-latest)	scripts/verify.sh	2026-11-04T14:16:19.1943419Z       verify-test-examples-isolated: 126 passed, 0 failed
+verify (windows-latest)	scripts/verify.sh	2026-11-04T14:16:19.2714862Z       verify-test-extras-form: 4 passed, 0 failed
+verify (windows-latest)	scripts/verify.sh	2026-11-04T14:16:19.3485880Z       verify-test-extras-json: 9 passed, 0 failed
+verify (windows-latest)	scripts/verify.sh	2026-11-04T14:16:19.4341969Z       verify-test-extras-none: 3 passed, 0 failed
+verify (windows-latest)	scripts/verify.sh	2026-11-04T14:16:19.5412069Z       verify-test-extras-only: 393 passed, 0 failed
+verify (windows-latest)	scripts/verify.sh	2026-11-04T14:16:19.6169486Z       verify-test-form-json: 5 passed, 0 failed
+verify (windows-latest)	scripts/verify.sh	2026-11-04T14:16:19.6993245Z       verify-test-form-only: 396 passed, 0 failed
+verify (windows-latest)	scripts/verify.sh	2026-11-04T14:16:19.7803041Z       verify-test-json-only: 459 passed, 0 failed
+verify (windows-latest)	scripts/verify.sh	2026-11-04T14:16:19.8735801Z       verify-test-no-default: 298 passed, 0 failed
+verify (windows-latest)	scripts/verify.sh	2026-11-04T14:16:19.9524356Z       verify-test-reqwest-defaults-only: 300 passed, 0 failed
+verify (windows-latest)	scripts/verify.sh	2026-11-04T14:16:20.0314890Z       verify-test: 676 passed, 0 failed
+verify (windows-latest)	Post Run actions/checkout@v4	﻿2026-11-04T14:16:20.3409759Z Post job cleanup.
+verify (windows-latest)	Post Run actions/checkout@v4	2026-11-04T14:16:21.4887384Z [command]"C:\Program Files\Git\bin\git.exe" version
+verify (windows-latest)	Post Run actions/checkout@v4	2026-11-04T14:16:21.5181263Z git version 2.56.0.windows.4
+verify (windows-latest)	Post Run actions/checkout@v4	2026-11-04T14:16:21.5298255Z Temporarily overriding HOME='D:\a\_temp\1099d0f5-40a9-4e6d-83b3-9e8039671f22' before making global git config changes
+verify (windows-latest)	Post Run actions/checkout@v4	2026-11-04T14:16:21.5299252Z Adding repository directory to the temporary git global config as a safe directory
+verify (windows-latest)	Post Run actions/checkout@v4	2026-11-04T14:16:21.5306837Z [command]"C:\Program Files\Git\bin\git.exe" config --global --add safe.directory D:\a\concord_api\concord_api
+verify (windows-latest)	Post Run actions/checkout@v4	2026-11-04T14:16:21.5608184Z [command]"C:\Program Files\Git\bin\git.exe" config --local --name-only --get-regexp core\.sshCommand
+verify (windows-latest)	Post Run actions/checkout@v4	2026-11-04T14:16:21.5914839Z [command]"C:\Program Files\Git\bin\git.exe" submodule foreach --recursive "sh -c \"git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :\""
+verify (windows-latest)	Post Run actions/checkout@v4	2026-11-04T14:16:22.1145550Z [command]"C:\Program Files\Git\bin\git.exe" config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+verify (windows-latest)	Post Run actions/checkout@v4	2026-11-04T14:16:22.1416067Z http.https://github.com/.extraheader
+verify (windows-latest)	Post Run actions/checkout@v4	2026-11-04T14:16:22.1452173Z [command]"C:\Program Files\Git\bin\git.exe" config --local --unset-all http.https://github.com/.extraheader
+verify (windows-latest)	Post Run actions/checkout@v4	2026-11-04T14:16:22.1753755Z [command]"C:\Program Files\Git\bin\git.exe" submodule foreach --recursive "sh -c \"git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :\""
+verify (windows-latest)	Post Run actions/checkout@v4	2026-11-04T14:16:22.6230778Z [command]"C:\Program Files\Git\bin\git.exe" config --local --name-only --get-regexp ^includeIf\.gitdir:
+verify (windows-latest)	Post Run actions/checkout@v4	2026-11-04T14:16:22.6525945Z [command]"C:\Program Files\Git\bin\git.exe" submodule foreach --recursive "git config --local --show-origin --name-only --get-regexp remote.origin.url"
+verify (windows-latest)	Complete job	﻿2026-11-04T14:16:23.2067346Z Cleaning up orphan processes
+verify (windows-latest)	Complete job	2026-11-04T14:16:23.2350941Z Terminate orphan process: pid (5740) (vctip)
+verify (windows-latest)	Complete job	2026-11-04T14:16:23.3890640Z ##[warning]Node.js 20 is deprecated. The following actions target Node.js 20 but are being forced to run on Node.js 24: actions/checkout@v4. For more information see: https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/

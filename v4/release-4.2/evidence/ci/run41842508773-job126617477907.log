@@ -1,0 +1,208 @@
+verify (ubuntu-latest)	Set up job	﻿2026-11-04T13:55:16.8706817Z Current runner version: '2.338.2'
+verify (ubuntu-latest)	Set up job	2026-11-04T13:55:16.8732749Z ##[group]Runner Image Provisioner
+verify (ubuntu-latest)	Set up job	2026-11-04T13:55:16.8733997Z Hosted Compute Agent
+verify (ubuntu-latest)	Set up job	2026-11-04T13:55:16.8734635Z Version: 20261021.618
+verify (ubuntu-latest)	Set up job	2026-11-04T13:55:16.8735295Z Commit: 21505ad2541d5be6135ed84fc33697146cf75b8e
+verify (ubuntu-latest)	Set up job	2026-11-04T13:55:16.8736234Z Build Date: 2026-10-21T00:45:21Z
+verify (ubuntu-latest)	Set up job	2026-11-04T13:55:16.8736910Z Worker ID: {a745477a-9c6c-46a7-a3c3-3784c89a4cd6}
+verify (ubuntu-latest)	Set up job	2026-11-04T13:55:16.8737665Z Region: eastus
+verify (ubuntu-latest)	Set up job	2026-11-04T13:55:16.8738212Z Cloud: Azure
+verify (ubuntu-latest)	Set up job	2026-11-04T13:55:16.8738761Z ##[endgroup]
+verify (ubuntu-latest)	Set up job	2026-11-04T13:55:16.8740284Z ##[group]Operating System
+verify (ubuntu-latest)	Set up job	2026-11-04T13:55:16.8740935Z Ubuntu
+verify (ubuntu-latest)	Set up job	2026-11-04T13:55:16.8741525Z 26.04.1
+verify (ubuntu-latest)	Set up job	2026-11-04T13:55:16.8742070Z LTS
+verify (ubuntu-latest)	Set up job	2026-11-04T13:55:16.8742614Z ##[endgroup]
+verify (ubuntu-latest)	Set up job	2026-11-04T13:55:16.8743242Z ##[group]Runner Image
+verify (ubuntu-latest)	Set up job	2026-11-04T13:55:16.8744206Z Image: ubuntu-26.04
+verify (ubuntu-latest)	Set up job	2026-11-04T13:55:16.8744835Z Version: 20261025.179.1
+verify (ubuntu-latest)	Set up job	2026-11-04T13:55:16.8745946Z Included Software: https://github.com/actions/runner-images/blob/ubuntu26/20261025.179/images/ubuntu/Ubuntu2604-Readme.md
+verify (ubuntu-latest)	Set up job	2026-11-04T13:55:16.8747801Z Image Release: https://github.com/actions/runner-images/releases/tag/ubuntu26%2F20261025.179
+verify (ubuntu-latest)	Set up job	2026-11-04T13:55:16.8748809Z ##[endgroup]
+verify (ubuntu-latest)	Set up job	2026-11-04T13:55:16.8750011Z ##[group]GITHUB_TOKEN Permissions
+verify (ubuntu-latest)	Set up job	2026-11-04T13:55:16.8752354Z Contents: read
+verify (ubuntu-latest)	Set up job	2026-11-04T13:55:16.8753086Z Metadata: read
+verify (ubuntu-latest)	Set up job	2026-11-04T13:55:16.8754048Z Packages: read
+verify (ubuntu-latest)	Set up job	2026-11-04T13:55:16.8754682Z ##[endgroup]
+verify (ubuntu-latest)	Set up job	2026-11-04T13:55:16.8757208Z Secret source: Actions
+verify (ubuntu-latest)	Set up job	2026-11-04T13:55:16.8758479Z Cache mode: write
+verify (ubuntu-latest)	Set up job	2026-11-04T13:55:16.8759506Z Prepare workflow directory
+verify (ubuntu-latest)	Set up job	2026-11-04T13:55:16.9147807Z Prepare all required actions
+verify (ubuntu-latest)	Set up job	2026-11-04T13:55:16.9196515Z Getting action download info
+verify (ubuntu-latest)	Set up job	2026-11-04T13:55:17.0849059Z Download action repository 'actions/checkout@v4' (SHA:11d5960a326750d5838078e36cf38b85af677262)
+verify (ubuntu-latest)	Set up job	2026-11-04T13:55:17.2737059Z Complete job name: verify (ubuntu-latest)
+verify (ubuntu-latest)	Run actions/checkout@v4	﻿2026-11-04T13:55:17.3714425Z ##[group]Run actions/checkout@v4
+verify (ubuntu-latest)	Run actions/checkout@v4	2026-11-04T13:55:17.3715383Z with:
+verify (ubuntu-latest)	Run actions/checkout@v4	2026-11-04T13:55:17.3715941Z   repository: gqsnt/concord_api
+verify (ubuntu-latest)	Run actions/checkout@v4	2026-11-04T13:55:17.3719891Z   token: ***
+verify (ubuntu-latest)	Run actions/checkout@v4	2026-11-04T13:55:17.3720341Z   ssh-strict: true
+verify (ubuntu-latest)	Run actions/checkout@v4	2026-11-04T13:55:17.3720798Z   ssh-user: git
+verify (ubuntu-latest)	Run actions/checkout@v4	2026-11-04T13:55:17.3721258Z   persist-credentials: true
+verify (ubuntu-latest)	Run actions/checkout@v4	2026-11-04T13:55:17.3721770Z   clean: true
+verify (ubuntu-latest)	Run actions/checkout@v4	2026-11-04T13:55:17.3722233Z   sparse-checkout-cone-mode: true
+verify (ubuntu-latest)	Run actions/checkout@v4	2026-11-04T13:55:17.3722763Z   fetch-depth: 1
+verify (ubuntu-latest)	Run actions/checkout@v4	2026-11-04T13:55:17.3723206Z   fetch-tags: false
+verify (ubuntu-latest)	Run actions/checkout@v4	2026-11-04T13:55:17.3723833Z   show-progress: true
+verify (ubuntu-latest)	Run actions/checkout@v4	2026-11-04T13:55:17.3724312Z   lfs: false
+verify (ubuntu-latest)	Run actions/checkout@v4	2026-11-04T13:55:17.3724730Z   submodules: false
+verify (ubuntu-latest)	Run actions/checkout@v4	2026-11-04T13:55:17.3725184Z   set-safe-directory: true
+verify (ubuntu-latest)	Run actions/checkout@v4	2026-11-04T13:55:17.3725700Z   allow-unsafe-pr-checkout: false
+verify (ubuntu-latest)	Run actions/checkout@v4	2026-11-04T13:55:17.3726498Z env:
+verify (ubuntu-latest)	Run actions/checkout@v4	2026-11-04T13:55:17.3726937Z   CARGO_TERM_COLOR: always
+verify (ubuntu-latest)	Run actions/checkout@v4	2026-11-04T13:55:17.3727438Z ##[endgroup]
+verify (ubuntu-latest)	Run actions/checkout@v4	2026-11-04T13:55:17.6680525Z Syncing repository: gqsnt/concord_api
+verify (ubuntu-latest)	Run actions/checkout@v4	2026-11-04T13:55:17.6682595Z ##[group]Getting Git version info
+verify (ubuntu-latest)	Run actions/checkout@v4	2026-11-04T13:55:17.6683867Z Working directory is '/home/runner/work/concord_api/concord_api'
+verify (ubuntu-latest)	Run actions/checkout@v4	2026-11-04T13:55:17.6685482Z [command]/usr/bin/git version
+verify (ubuntu-latest)	Run actions/checkout@v4	2026-11-04T13:55:17.6716968Z git version 2.56.0
+verify (ubuntu-latest)	Run actions/checkout@v4	2026-11-04T13:55:17.6739634Z ##[endgroup]
+verify (ubuntu-latest)	Run actions/checkout@v4	2026-11-04T13:55:17.6758961Z Temporarily overriding HOME='/home/runner/work/_temp/8935b970-6363-4f87-af12-94179e15b2e6' before making global git config changes
+verify (ubuntu-latest)	Run actions/checkout@v4	2026-11-04T13:55:17.6761905Z Adding repository directory to the temporary git global config as a safe directory
+verify (ubuntu-latest)	Run actions/checkout@v4	2026-11-04T13:55:17.6764862Z [command]/usr/bin/git config --global --add safe.directory /home/runner/work/concord_api/concord_api
+verify (ubuntu-latest)	Run actions/checkout@v4	2026-11-04T13:55:17.6844484Z Deleting the contents of '/home/runner/work/concord_api/concord_api'
+verify (ubuntu-latest)	Run actions/checkout@v4	2026-11-04T13:55:17.6865156Z ##[group]Initializing the repository
+verify (ubuntu-latest)	Run actions/checkout@v4	2026-11-04T13:55:17.6875059Z [command]/usr/bin/git init /home/runner/work/concord_api/concord_api
+verify (ubuntu-latest)	Run actions/checkout@v4	2026-11-04T13:55:17.6979847Z hint: Using 'master' as the name for the initial branch. This default branch name
+verify (ubuntu-latest)	Run actions/checkout@v4	2026-11-04T13:55:17.6982454Z hint: will change to "main" in Git 3.0. To configure the initial branch name
+verify (ubuntu-latest)	Run actions/checkout@v4	2026-11-04T13:55:17.6985266Z hint: to use in all of your new repositories, which will suppress this warning,
+verify (ubuntu-latest)	Run actions/checkout@v4	2026-11-04T13:55:17.6987007Z hint: call:
+verify (ubuntu-latest)	Run actions/checkout@v4	2026-11-04T13:55:17.6988063Z hint:
+verify (ubuntu-latest)	Run actions/checkout@v4	2026-11-04T13:55:17.6989285Z hint: 	git config --global init.defaultBranch <name>
+verify (ubuntu-latest)	Run actions/checkout@v4	2026-11-04T13:55:17.6990678Z hint:
+verify (ubuntu-latest)	Run actions/checkout@v4	2026-11-04T13:55:17.6992032Z hint: Names commonly chosen instead of 'master' are 'main', 'trunk' and
+verify (ubuntu-latest)	Run actions/checkout@v4	2026-11-04T13:55:17.6994410Z hint: 'development'. The just-created branch can be renamed via this command:
+verify (ubuntu-latest)	Run actions/checkout@v4	2026-11-04T13:55:17.6996121Z hint:
+verify (ubuntu-latest)	Run actions/checkout@v4	2026-11-04T13:55:17.6997237Z hint: 	git branch -m <name>
+verify (ubuntu-latest)	Run actions/checkout@v4	2026-11-04T13:55:17.6998471Z hint:
+verify (ubuntu-latest)	Run actions/checkout@v4	2026-11-04T13:55:17.6999924Z hint: Disable this message with "git config set advice.defaultBranchName false"
+verify (ubuntu-latest)	Run actions/checkout@v4	2026-11-04T13:55:17.7009599Z Initialized empty Git repository in /home/runner/work/concord_api/concord_api/.git/
+verify (ubuntu-latest)	Run actions/checkout@v4	2026-11-04T13:55:17.7021932Z [command]/usr/bin/git remote add origin https://github.com/gqsnt/concord_api
+verify (ubuntu-latest)	Run actions/checkout@v4	2026-11-04T13:55:17.7077230Z ##[endgroup]
+verify (ubuntu-latest)	Run actions/checkout@v4	2026-11-04T13:55:17.7078214Z ##[group]Disabling automatic garbage collection
+verify (ubuntu-latest)	Run actions/checkout@v4	2026-11-04T13:55:17.7081002Z [command]/usr/bin/git config --local gc.auto 0
+verify (ubuntu-latest)	Run actions/checkout@v4	2026-11-04T13:55:17.7116381Z ##[endgroup]
+verify (ubuntu-latest)	Run actions/checkout@v4	2026-11-04T13:55:17.7117461Z ##[group]Setting up auth
+verify (ubuntu-latest)	Run actions/checkout@v4	2026-11-04T13:55:17.7125604Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+verify (ubuntu-latest)	Run actions/checkout@v4	2026-11-04T13:55:17.7162674Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+verify (ubuntu-latest)	Run actions/checkout@v4	2026-11-04T13:55:17.7669828Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+verify (ubuntu-latest)	Run actions/checkout@v4	2026-11-04T13:55:17.7706078Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+verify (ubuntu-latest)	Run actions/checkout@v4	2026-11-04T13:55:17.7974366Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+verify (ubuntu-latest)	Run actions/checkout@v4	2026-11-04T13:55:17.8009003Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+verify (ubuntu-latest)	Run actions/checkout@v4	2026-11-04T13:55:17.8275486Z [command]/usr/bin/git config --local http.https://github.com/.extraheader AUTHORIZATION: basic ***
+verify (ubuntu-latest)	Run actions/checkout@v4	2026-11-04T13:55:17.8314834Z ##[endgroup]
+verify (ubuntu-latest)	Run actions/checkout@v4	2026-11-04T13:55:17.8316607Z ##[group]Fetching the repository
+verify (ubuntu-latest)	Run actions/checkout@v4	2026-11-04T13:55:17.8326536Z [command]/usr/bin/git -c protocol.version=2 fetch --no-tags --prune --no-recurse-submodules --depth=1 origin +b2ba34199b4221906c49d2ed5eb60bd85dca3fcd:refs/remotes/origin/main
+verify (ubuntu-latest)	Run actions/checkout@v4	2026-11-04T13:55:18.3104527Z From https://github.com/gqsnt/concord_api
+verify (ubuntu-latest)	Run actions/checkout@v4	2026-11-04T13:55:18.3106099Z  * [new ref]         b2ba34199b4221906c49d2ed5eb60bd85dca3fcd -> origin/main
+verify (ubuntu-latest)	Run actions/checkout@v4	2026-11-04T13:55:18.3123186Z ##[endgroup]
+verify (ubuntu-latest)	Run actions/checkout@v4	2026-11-04T13:55:18.3125196Z ##[group]Determining the checkout info
+verify (ubuntu-latest)	Run actions/checkout@v4	2026-11-04T13:55:18.3126860Z ##[endgroup]
+verify (ubuntu-latest)	Run actions/checkout@v4	2026-11-04T13:55:18.3128007Z [command]/usr/bin/git sparse-checkout disable
+verify (ubuntu-latest)	Run actions/checkout@v4	2026-11-04T13:55:18.3178518Z [command]/usr/bin/git config --local --unset-all extensions.worktreeConfig
+verify (ubuntu-latest)	Run actions/checkout@v4	2026-11-04T13:55:18.3208710Z ##[group]Checking out the ref
+verify (ubuntu-latest)	Run actions/checkout@v4	2026-11-04T13:55:18.3212035Z [command]/usr/bin/git checkout --progress --force -B main refs/remotes/origin/main
+verify (ubuntu-latest)	Run actions/checkout@v4	2026-11-04T13:55:18.4268101Z Switched to a new branch 'main'
+verify (ubuntu-latest)	Run actions/checkout@v4	2026-11-04T13:55:18.4273847Z branch 'main' set up to track 'origin/main'.
+verify (ubuntu-latest)	Run actions/checkout@v4	2026-11-04T13:55:18.4284491Z ##[endgroup]
+verify (ubuntu-latest)	Run actions/checkout@v4	2026-11-04T13:55:18.4329655Z [command]/usr/bin/git log -1 --format=%H
+verify (ubuntu-latest)	Run actions/checkout@v4	2026-11-04T13:55:18.4354066Z b2ba34199b4221906c49d2ed5eb60bd85dca3fcd
+verify (ubuntu-latest)	Run rustup show	﻿2026-11-04T13:55:18.4674291Z ##[group]Run rustup show
+verify (ubuntu-latest)	Run rustup show	2026-11-04T13:55:18.4675509Z ^[[36;1mrustup show^[[0m
+verify (ubuntu-latest)	Run rustup show	2026-11-04T13:55:18.4709769Z shell: /usr/bin/bash -e {0}
+verify (ubuntu-latest)	Run rustup show	2026-11-04T13:55:18.4710874Z env:
+verify (ubuntu-latest)	Run rustup show	2026-11-04T13:55:18.4711713Z   CARGO_TERM_COLOR: always
+verify (ubuntu-latest)	Run rustup show	2026-11-04T13:55:18.4712728Z ##[endgroup]
+verify (ubuntu-latest)	Run rustup show	2026-11-04T13:55:18.5277716Z Default host: x86_64-unknown-linux-gnu
+verify (ubuntu-latest)	Run rustup show	2026-11-04T13:55:18.5279272Z rustup home:  /home/runner/.rustup
+verify (ubuntu-latest)	Run rustup show	2026-11-04T13:55:18.5280383Z 
+verify (ubuntu-latest)	Run rustup show	2026-11-04T13:55:18.5310159Z info: syncing channel updates for 1.99.1-x86_64-unknown-linux-gnu
+verify (ubuntu-latest)	Run rustup show	2026-11-04T13:55:18.6416091Z info: latest update on 2026-10-15 for version 1.99.1 (58cf8f9c3 2026-10-13)
+verify (ubuntu-latest)	Run rustup show	2026-11-04T13:55:18.6421488Z info: downloading 7 components
+verify (ubuntu-latest)	Run rustup show	2026-11-04T13:55:28.3440464Z warn: the missing active toolchain `1.99.1-x86_64-unknown-linux-gnu` has been auto-installed
+verify (ubuntu-latest)	Run rustup show	2026-11-04T13:55:28.3441715Z warn: auto-installation is deprecated for most `rustup` commands
+verify (ubuntu-latest)	Run rustup show	2026-11-04T13:55:28.3442642Z warn: scripts relying on this behavior in `rustup` may stop working in the future
+verify (ubuntu-latest)	Run rustup show	2026-11-04T13:55:28.3443918Z warn: to install the active toolchain, use `rustup install` instead
+verify (ubuntu-latest)	Run rustup show	2026-11-04T13:55:28.3445000Z warn: see <https://github.com/rust-lang/rustup/issues/4836> for more info
+verify (ubuntu-latest)	Run rustup show	2026-11-04T13:55:28.3445796Z installed toolchains
+verify (ubuntu-latest)	Run rustup show	2026-11-04T13:55:28.3446627Z --------------------
+verify (ubuntu-latest)	Run rustup show	2026-11-04T13:55:28.3447288Z stable-x86_64-unknown-linux-gnu (default)
+verify (ubuntu-latest)	Run rustup show	2026-11-04T13:55:28.3447846Z 
+verify (ubuntu-latest)	Run rustup show	2026-11-04T13:55:28.3448256Z active toolchain
+verify (ubuntu-latest)	Run rustup show	2026-11-04T13:55:28.3448720Z ----------------
+verify (ubuntu-latest)	Run rustup show	2026-11-04T13:55:28.3449178Z name: 1.99.1-x86_64-unknown-linux-gnu
+verify (ubuntu-latest)	Run rustup show	2026-11-04T13:55:28.3450167Z active because: overridden by '/home/runner/work/concord_api/concord_api/rust-toolchain.toml'
+verify (ubuntu-latest)	Run rustup show	2026-11-04T13:55:28.3451135Z installed targets:
+verify (ubuntu-latest)	Run rustup show	2026-11-04T13:55:28.3612009Z   x86_64-unknown-linux-gnu
+verify (ubuntu-latest)	scripts/verify.sh	﻿2026-11-04T13:55:28.3782709Z ##[group]Run scripts/verify.sh --package --bench
+verify (ubuntu-latest)	scripts/verify.sh	2026-11-04T13:55:28.3783260Z ^[[36;1mscripts/verify.sh --package --bench^[[0m
+verify (ubuntu-latest)	scripts/verify.sh	2026-11-04T13:55:28.3816634Z shell: /usr/bin/bash --noprofile --norc -e -o pipefail {0}
+verify (ubuntu-latest)	scripts/verify.sh	2026-11-04T13:55:28.3817056Z env:
+verify (ubuntu-latest)	scripts/verify.sh	2026-11-04T13:55:28.3817318Z   CARGO_TERM_COLOR: always
+verify (ubuntu-latest)	scripts/verify.sh	2026-11-04T13:55:28.3817619Z ##[endgroup]
+verify (ubuntu-latest)	scripts/verify.sh	2026-11-04T13:55:28.4990617Z head: b2ba34199b4221906c49d2ed5eb60bd85dca3fcd  dirty: 0 file(s)
+verify (ubuntu-latest)	scripts/verify.sh	2026-11-04T13:55:28.5328975Z rustc: rustc 1.99.1 (58cf8f9c3 2026-10-13)
+verify (ubuntu-latest)	scripts/verify.sh	2026-11-04T13:55:28.5942098Z PASS  argv-length
+verify (ubuntu-latest)	scripts/verify.sh	2026-11-04T13:55:28.7350016Z PASS  toolchain
+verify (ubuntu-latest)	scripts/verify.sh	2026-11-04T13:55:28.8013912Z PASS  ci-inventory
+verify (ubuntu-latest)	scripts/verify.sh	2026-11-04T13:55:32.0249947Z PASS  tool-tests
+verify (ubuntu-latest)	scripts/verify.sh	2026-11-04T13:55:32.2058205Z PASS  output-dirs
+verify (ubuntu-latest)	scripts/verify.sh	2026-11-04T13:55:33.7087269Z PASS  graph
+verify (ubuntu-latest)	scripts/verify.sh	2026-11-04T13:55:34.1758918Z PASS  fmt
+verify (ubuntu-latest)	scripts/verify.sh	2026-11-04T13:55:34.2825242Z PASS  records
+verify (ubuntu-latest)	scripts/verify.sh	2026-11-04T13:55:34.5107685Z PASS  generated
+verify (ubuntu-latest)	scripts/verify.sh	2026-11-04T13:56:27.0722037Z PASS  clippy
+verify (ubuntu-latest)	scripts/verify.sh	2026-11-04T13:59:12.6229462Z PASS  test
+verify (ubuntu-latest)	scripts/verify.sh	2026-11-04T13:59:38.5223965Z PASS  test-no-default
+verify (ubuntu-latest)	scripts/verify.sh	2026-11-04T14:00:02.6399241Z PASS  test-json-only
+verify (ubuntu-latest)	scripts/verify.sh	2026-11-04T14:00:28.8031014Z PASS  test-reqwest-defaults-only
+verify (ubuntu-latest)	scripts/verify.sh	2026-11-04T14:00:52.1982049Z PASS  test-form-only
+verify (ubuntu-latest)	scripts/verify.sh	2026-11-04T14:00:55.2531585Z PASS  test-form-json
+verify (ubuntu-latest)	scripts/verify.sh	2026-11-04T14:01:15.2846314Z PASS  test-extras-only
+verify (ubuntu-latest)	scripts/verify.sh	2026-11-04T14:01:25.2020008Z PASS  test-core
+verify (ubuntu-latest)	scripts/verify.sh	2026-11-04T14:01:27.3721675Z PASS  test-extras-none
+verify (ubuntu-latest)	scripts/verify.sh	2026-11-04T14:01:28.5284472Z PASS  test-extras-json
+verify (ubuntu-latest)	scripts/verify.sh	2026-11-04T14:01:30.3331361Z PASS  test-extras-form
+verify (ubuntu-latest)	scripts/verify.sh	2026-11-04T14:01:38.9805236Z PASS  clippy-features
+verify (ubuntu-latest)	scripts/verify.sh	2026-11-04T14:02:41.6456887Z PASS  consumers
+verify (ubuntu-latest)	scripts/verify.sh	2026-11-04T14:02:42.6049095Z PASS  feature-isolation
+verify (ubuntu-latest)	scripts/verify.sh	2026-11-04T14:03:17.3916109Z PASS  test-examples-isolated
+verify (ubuntu-latest)	scripts/verify.sh	2026-11-04T14:03:23.8875090Z PASS  doc
+verify (ubuntu-latest)	scripts/verify.sh	2026-11-04T14:03:24.3586457Z PASS  doc-no-default
+verify (ubuntu-latest)	scripts/verify.sh	2026-11-04T14:03:24.7246874Z PASS  doc-json-only
+verify (ubuntu-latest)	scripts/verify.sh	2026-11-04T14:03:25.6622285Z PASS  doc-form-only
+verify (ubuntu-latest)	scripts/verify.sh	2026-11-04T14:03:26.7566893Z PASS  doc-form
+verify (ubuntu-latest)	scripts/verify.sh	2026-11-04T14:03:27.1040821Z PASS  doc-extras-only
+verify (ubuntu-latest)	scripts/verify.sh	2026-11-04T14:03:32.2007315Z PASS  doc-core
+verify (ubuntu-latest)	scripts/verify.sh	2026-11-04T14:03:33.5568173Z PASS  doc-extras
+verify (ubuntu-latest)	scripts/verify.sh	2026-11-04T14:03:33.9850018Z PASS  doc-extras-none
+verify (ubuntu-latest)	scripts/verify.sh	2026-11-04T14:05:13.6317454Z PASS  bench-build
+verify (ubuntu-latest)	scripts/verify.sh	2026-11-04T14:05:50.7271134Z PASS  package-check
+verify (ubuntu-latest)	scripts/verify.sh	2026-11-04T14:06:54.3091653Z PASS  consumers-packaged
+verify (ubuntu-latest)	scripts/verify.sh	2026-11-04T14:06:54.3177261Z       verify-test-core: 13 passed, 0 failed
+verify (ubuntu-latest)	scripts/verify.sh	2026-11-04T14:06:54.3253437Z       verify-test-examples-isolated: 126 passed, 0 failed
+verify (ubuntu-latest)	scripts/verify.sh	2026-11-04T14:06:54.3327374Z       verify-test-extras-form: 4 passed, 0 failed
+verify (ubuntu-latest)	scripts/verify.sh	2026-11-04T14:06:54.3400851Z       verify-test-extras-json: 9 passed, 0 failed
+verify (ubuntu-latest)	scripts/verify.sh	2026-11-04T14:06:54.3475030Z       verify-test-extras-none: 3 passed, 0 failed
+verify (ubuntu-latest)	scripts/verify.sh	2026-11-04T14:06:54.3549521Z       verify-test-extras-only: 393 passed, 0 failed
+verify (ubuntu-latest)	scripts/verify.sh	2026-11-04T14:06:54.3624067Z       verify-test-form-json: 5 passed, 0 failed
+verify (ubuntu-latest)	scripts/verify.sh	2026-11-04T14:06:54.3698696Z       verify-test-form-only: 396 passed, 0 failed
+verify (ubuntu-latest)	scripts/verify.sh	2026-11-04T14:06:54.3773961Z       verify-test-json-only: 459 passed, 0 failed
+verify (ubuntu-latest)	scripts/verify.sh	2026-11-04T14:06:54.3847839Z       verify-test-no-default: 298 passed, 0 failed
+verify (ubuntu-latest)	scripts/verify.sh	2026-11-04T14:06:54.3922210Z       verify-test-reqwest-defaults-only: 300 passed, 0 failed
+verify (ubuntu-latest)	scripts/verify.sh	2026-11-04T14:06:54.4000886Z       verify-test: 676 passed, 0 failed
+verify (ubuntu-latest)	Post Run actions/checkout@v4	﻿2026-11-04T14:06:54.4316731Z Post job cleanup.
+verify (ubuntu-latest)	Post Run actions/checkout@v4	2026-11-04T14:06:54.6923088Z [command]/usr/bin/git version
+verify (ubuntu-latest)	Post Run actions/checkout@v4	2026-11-04T14:06:54.6975125Z git version 2.56.0
+verify (ubuntu-latest)	Post Run actions/checkout@v4	2026-11-04T14:06:54.7019207Z Temporarily overriding HOME='/home/runner/work/_temp/8376d93f-bee7-417f-a0b2-164be3a9e49c' before making global git config changes
+verify (ubuntu-latest)	Post Run actions/checkout@v4	2026-11-04T14:06:54.7020642Z Adding repository directory to the temporary git global config as a safe directory
+verify (ubuntu-latest)	Post Run actions/checkout@v4	2026-11-04T14:06:54.7025464Z [command]/usr/bin/git config --global --add safe.directory /home/runner/work/concord_api/concord_api
+verify (ubuntu-latest)	Post Run actions/checkout@v4	2026-11-04T14:06:54.7066013Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+verify (ubuntu-latest)	Post Run actions/checkout@v4	2026-11-04T14:06:54.7102028Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+verify (ubuntu-latest)	Post Run actions/checkout@v4	2026-11-04T14:06:54.7484572Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+verify (ubuntu-latest)	Post Run actions/checkout@v4	2026-11-04T14:06:54.7506877Z http.https://github.com/.extraheader
+verify (ubuntu-latest)	Post Run actions/checkout@v4	2026-11-04T14:06:54.7518576Z [command]/usr/bin/git config --local --unset-all http.https://github.com/.extraheader
+verify (ubuntu-latest)	Post Run actions/checkout@v4	2026-11-04T14:06:54.7556683Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+verify (ubuntu-latest)	Post Run actions/checkout@v4	2026-11-04T14:06:54.7890472Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+verify (ubuntu-latest)	Post Run actions/checkout@v4	2026-11-04T14:06:54.7927652Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+verify (ubuntu-latest)	Complete job	﻿2026-11-04T14:06:54.8366051Z Cleaning up orphan processes
+verify (ubuntu-latest)	Complete job	2026-11-04T14:06:54.9099078Z ##[warning]Node.js 20 is deprecated. The following actions target Node.js 20 but are being forced to run on Node.js 24: actions/checkout@v4. For more information see: https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/

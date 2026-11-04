@@ -5,15 +5,14 @@ A focused maintenance release on branch `concord-v4.2`, started from `main` at
 `afcec400f7bdb044b0f9dd3c42c0575091f9e26f`; the only difference is `v4/release-4.1/STATUS.md`).
 The public DSL, the four crates, codec contracts and policies, request types, `IntoValue` borrowing
 and the Rust 1.99.1 minimum/pin are unchanged; the crates are at **4.2.0** with exact `=4.2.0`
-internal requirements, `publish = false`. Nothing was pushed, merged into `main`, tagged or
-published by this work, except the branch push for native Windows CI authorized by the owner after
-Stage 6 (see below). Handoff: `Concord_V4_2_Opus_Implementation_Handoff/concord_v42_opus_handoff`
+internal requirements, `publish = false`. Released by the owner's authorization: merged into
+`main`, pushed and tagged `v4.2.0` (see Release below). Not published on crates.io. Handoff: `Concord_V4_2_Opus_Implementation_Handoff/concord_v42_opus_handoff`
 (its handoff check script, outside this repository: PASS, 184 files). Work directory: `/home/canarit/projects/concord-v42/`.
 
-**State: ACCEPTED_NATIVE_LINUX_AND_WINDOWS** for the code at
-`ed6703a29d6f798f13e06379d488feeac33410f4`: mandatory work and all six stage dispositions complete,
-native Linux and Windows gates passed on that exact source, independent reviews completed (final:
-ACCEPT). No authority to publish, merge into `main` or tag. Final report: [FINAL.md](FINAL.md).
+**State: RELEASED** as `v4.2.0` (merge `b2ba341` on `main`), after ACCEPTED_NATIVE_LINUX_AND_WINDOWS
+for the code at `ed6703a29d6f798f13e06379d488feeac33410f4`: mandatory work and all six stage
+dispositions complete, native Linux and Windows gates passed, independent reviews completed (final:
+ACCEPT). Not published on crates.io. Final report: [FINAL.md](FINAL.md).
 
 ## Stages
 
@@ -89,3 +88,17 @@ shows each step's PASS line. Full CI logs: [evidence/ci/](evidence/ci/) (SHA-256
 Final independent review: `rv-final4-sol` (fresh `gpt-6.1-sol`, `xhigh`) on `ed6703a` — ACCEPT for
 the compiler/tooling scope, no new finding, no polish item; it inspected the central Linux gate and
 noted native Windows as the remaining prerequisite, supplied by run 41786978999 above.
+
+## Release
+
+| Item | Value |
+|---|---|
+| Merge into `main` | `b2ba34199b4221906c49d2ed5eb60bd85dca3fcd`, non-fast-forward, parents `07dcdd0` (previous `main`) and `85c5002` (`concord-v4.2`); no conflicts; tree identical to `85c5002` |
+| Local gate on the merge | `scripts/verify.sh --package --bench`: 37/37 PASS, 676 workspace tests, 126 isolated-example tests ([log](evidence/release-gate-b2ba341.log)) |
+| CI on the merge (`main` push) | run 41842508773: `verify (ubuntu-latest)` success (job 126617477907, 37 PASS, 676), `verify (windows-latest)` success (job 126617477207, native, 37 PASS, 676), `nightly-clone` success (job 126617477747, 16) — [logs](evidence/ci/) |
+| CI on the tag push (same commit) | run 41846133324: Linux, Windows and nightly success |
+| Tag | `v4.2.0`, annotated (tag object `cf6743b210b1132ca9644ceba64c264f3fb73176`), pointing to `b2ba341`, created after run 41842508773 passed |
+| Publication | none: `publish = false`, nothing uploaded to crates.io |
+
+This section is a records-only commit on top of the tagged merge; the tag stays on `b2ba341`.
+Branches and tags from earlier releases are unchanged.

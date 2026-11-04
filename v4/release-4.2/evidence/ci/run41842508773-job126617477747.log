@@ -1,0 +1,152 @@
+nightly-clone	Set up job	﻿2026-11-04T13:55:16.9186340Z Current runner version: '2.338.2'
+nightly-clone	Set up job	2026-11-04T13:55:16.9207799Z ##[group]Runner Image Provisioner
+nightly-clone	Set up job	2026-11-04T13:55:16.9208595Z Hosted Compute Agent
+nightly-clone	Set up job	2026-11-04T13:55:16.9209071Z Version: 20261021.618
+nightly-clone	Set up job	2026-11-04T13:55:16.9209694Z Commit: 21505ad2541d5be6135ed84fc33697146cf75b8e
+nightly-clone	Set up job	2026-11-04T13:55:16.9210342Z Build Date: 2026-10-21T00:45:21Z
+nightly-clone	Set up job	2026-11-04T13:55:16.9210947Z Worker ID: {de0ce5bd-4f7e-43d2-9140-7ec8b95a9e7e}
+nightly-clone	Set up job	2026-11-04T13:55:16.9211574Z Region: centralus
+nightly-clone	Set up job	2026-11-04T13:55:16.9212031Z Cloud: Azure
+nightly-clone	Set up job	2026-11-04T13:55:16.9212516Z ##[endgroup]
+nightly-clone	Set up job	2026-11-04T13:55:16.9213659Z ##[group]Operating System
+nightly-clone	Set up job	2026-11-04T13:55:16.9214231Z Ubuntu
+nightly-clone	Set up job	2026-11-04T13:55:16.9214713Z 26.04.1
+nightly-clone	Set up job	2026-11-04T13:55:16.9215139Z LTS
+nightly-clone	Set up job	2026-11-04T13:55:16.9215564Z ##[endgroup]
+nightly-clone	Set up job	2026-11-04T13:55:16.9216042Z ##[group]Runner Image
+nightly-clone	Set up job	2026-11-04T13:55:16.9216545Z Image: ubuntu-26.04
+nightly-clone	Set up job	2026-11-04T13:55:16.9216993Z Version: 20261025.179.1
+nightly-clone	Set up job	2026-11-04T13:55:16.9217891Z Included Software: https://github.com/actions/runner-images/blob/ubuntu26/20261025.179/images/ubuntu/Ubuntu2604-Readme.md
+nightly-clone	Set up job	2026-11-04T13:55:16.9219294Z Image Release: https://github.com/actions/runner-images/releases/tag/ubuntu26%2F20261025.179
+nightly-clone	Set up job	2026-11-04T13:55:16.9220389Z ##[endgroup]
+nightly-clone	Set up job	2026-11-04T13:55:16.9221408Z ##[group]GITHUB_TOKEN Permissions
+nightly-clone	Set up job	2026-11-04T13:55:16.9222899Z Contents: read
+nightly-clone	Set up job	2026-11-04T13:55:16.9223364Z Metadata: read
+nightly-clone	Set up job	2026-11-04T13:55:16.9223947Z Packages: read
+nightly-clone	Set up job	2026-11-04T13:55:16.9224438Z ##[endgroup]
+nightly-clone	Set up job	2026-11-04T13:55:16.9226166Z Secret source: Actions
+nightly-clone	Set up job	2026-11-04T13:55:16.9226897Z Cache mode: write
+nightly-clone	Set up job	2026-11-04T13:55:16.9227469Z Prepare workflow directory
+nightly-clone	Set up job	2026-11-04T13:55:16.9535253Z Prepare all required actions
+nightly-clone	Set up job	2026-11-04T13:55:16.9573955Z Getting action download info
+nightly-clone	Set up job	2026-11-04T13:55:17.1922989Z Download action repository 'actions/checkout@v4' (SHA:11d5960a326750d5838078e36cf38b85af677262)
+nightly-clone	Set up job	2026-11-04T13:55:17.4871951Z Complete job name: nightly-clone
+nightly-clone	Run actions/checkout@v4	﻿2026-11-04T13:55:17.5559283Z ##[group]Run actions/checkout@v4
+nightly-clone	Run actions/checkout@v4	2026-11-04T13:55:17.5560175Z with:
+nightly-clone	Run actions/checkout@v4	2026-11-04T13:55:17.5560546Z   repository: gqsnt/concord_api
+nightly-clone	Run actions/checkout@v4	2026-11-04T13:55:17.5563746Z   token: ***
+nightly-clone	Run actions/checkout@v4	2026-11-04T13:55:17.5564122Z   ssh-strict: true
+nightly-clone	Run actions/checkout@v4	2026-11-04T13:55:17.5564493Z   ssh-user: git
+nightly-clone	Run actions/checkout@v4	2026-11-04T13:55:17.5564858Z   persist-credentials: true
+nightly-clone	Run actions/checkout@v4	2026-11-04T13:55:17.5565261Z   clean: true
+nightly-clone	Run actions/checkout@v4	2026-11-04T13:55:17.5565642Z   sparse-checkout-cone-mode: true
+nightly-clone	Run actions/checkout@v4	2026-11-04T13:55:17.5566066Z   fetch-depth: 1
+nightly-clone	Run actions/checkout@v4	2026-11-04T13:55:17.5566415Z   fetch-tags: false
+nightly-clone	Run actions/checkout@v4	2026-11-04T13:55:17.5566777Z   show-progress: true
+nightly-clone	Run actions/checkout@v4	2026-11-04T13:55:17.5567146Z   lfs: false
+nightly-clone	Run actions/checkout@v4	2026-11-04T13:55:17.5567483Z   submodules: false
+nightly-clone	Run actions/checkout@v4	2026-11-04T13:55:17.5567855Z   set-safe-directory: true
+nightly-clone	Run actions/checkout@v4	2026-11-04T13:55:17.5568259Z   allow-unsafe-pr-checkout: false
+nightly-clone	Run actions/checkout@v4	2026-11-04T13:55:17.5568890Z env:
+nightly-clone	Run actions/checkout@v4	2026-11-04T13:55:17.5569244Z   CARGO_TERM_COLOR: always
+nightly-clone	Run actions/checkout@v4	2026-11-04T13:55:17.5569746Z ##[endgroup]
+nightly-clone	Run actions/checkout@v4	2026-11-04T13:55:17.9857840Z Syncing repository: gqsnt/concord_api
+nightly-clone	Run actions/checkout@v4	2026-11-04T13:55:17.9860393Z ##[group]Getting Git version info
+nightly-clone	Run actions/checkout@v4	2026-11-04T13:55:17.9861688Z Working directory is '/home/runner/work/concord_api/concord_api'
+nightly-clone	Run actions/checkout@v4	2026-11-04T13:55:17.9863420Z [command]/usr/bin/git version
+nightly-clone	Run actions/checkout@v4	2026-11-04T13:55:17.9864291Z git version 2.56.0
+nightly-clone	Run actions/checkout@v4	2026-11-04T13:55:17.9876782Z ##[endgroup]
+nightly-clone	Run actions/checkout@v4	2026-11-04T13:55:17.9905406Z Temporarily overriding HOME='/home/runner/work/_temp/c938955f-bbce-4a66-8508-04e13dd11ea8' before making global git config changes
+nightly-clone	Run actions/checkout@v4	2026-11-04T13:55:17.9920987Z Adding repository directory to the temporary git global config as a safe directory
+nightly-clone	Run actions/checkout@v4	2026-11-04T13:55:17.9923251Z [command]/usr/bin/git config --global --add safe.directory /home/runner/work/concord_api/concord_api
+nightly-clone	Run actions/checkout@v4	2026-11-04T13:55:17.9971953Z Deleting the contents of '/home/runner/work/concord_api/concord_api'
+nightly-clone	Run actions/checkout@v4	2026-11-04T13:55:17.9977206Z ##[group]Initializing the repository
+nightly-clone	Run actions/checkout@v4	2026-11-04T13:55:17.9982357Z [command]/usr/bin/git init /home/runner/work/concord_api/concord_api
+nightly-clone	Run actions/checkout@v4	2026-11-04T13:55:18.0167097Z hint: Using 'master' as the name for the initial branch. This default branch name
+nightly-clone	Run actions/checkout@v4	2026-11-04T13:55:18.0168450Z hint: will change to "main" in Git 3.0. To configure the initial branch name
+nightly-clone	Run actions/checkout@v4	2026-11-04T13:55:18.0169795Z hint: to use in all of your new repositories, which will suppress this warning,
+nightly-clone	Run actions/checkout@v4	2026-11-04T13:55:18.0170526Z hint: call:
+nightly-clone	Run actions/checkout@v4	2026-11-04T13:55:18.0170952Z hint:
+nightly-clone	Run actions/checkout@v4	2026-11-04T13:55:18.0171460Z hint: 	git config --global init.defaultBranch <name>
+nightly-clone	Run actions/checkout@v4	2026-11-04T13:55:18.0172056Z hint:
+nightly-clone	Run actions/checkout@v4	2026-11-04T13:55:18.0172623Z hint: Names commonly chosen instead of 'master' are 'main', 'trunk' and
+nightly-clone	Run actions/checkout@v4	2026-11-04T13:55:18.0173459Z hint: 'development'. The just-created branch can be renamed via this command:
+nightly-clone	Run actions/checkout@v4	2026-11-04T13:55:18.0174167Z hint:
+nightly-clone	Run actions/checkout@v4	2026-11-04T13:55:18.0174636Z hint: 	git branch -m <name>
+nightly-clone	Run actions/checkout@v4	2026-11-04T13:55:18.0175372Z hint:
+nightly-clone	Run actions/checkout@v4	2026-11-04T13:55:18.0176299Z hint: Disable this message with "git config set advice.defaultBranchName false"
+nightly-clone	Run actions/checkout@v4	2026-11-04T13:55:18.0177827Z Initialized empty Git repository in /home/runner/work/concord_api/concord_api/.git/
+nightly-clone	Run actions/checkout@v4	2026-11-04T13:55:18.0196480Z [command]/usr/bin/git remote add origin https://github.com/gqsnt/concord_api
+nightly-clone	Run actions/checkout@v4	2026-11-04T13:55:18.0235104Z ##[endgroup]
+nightly-clone	Run actions/checkout@v4	2026-11-04T13:55:18.0236283Z ##[group]Disabling automatic garbage collection
+nightly-clone	Run actions/checkout@v4	2026-11-04T13:55:18.0238137Z [command]/usr/bin/git config --local gc.auto 0
+nightly-clone	Run actions/checkout@v4	2026-11-04T13:55:18.0271585Z ##[endgroup]
+nightly-clone	Run actions/checkout@v4	2026-11-04T13:55:18.0272696Z ##[group]Setting up auth
+nightly-clone	Run actions/checkout@v4	2026-11-04T13:55:18.0279267Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+nightly-clone	Run actions/checkout@v4	2026-11-04T13:55:18.0313069Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+nightly-clone	Run actions/checkout@v4	2026-11-04T13:55:18.0728837Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+nightly-clone	Run actions/checkout@v4	2026-11-04T13:55:18.0759869Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+nightly-clone	Run actions/checkout@v4	2026-11-04T13:55:18.0998666Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+nightly-clone	Run actions/checkout@v4	2026-11-04T13:55:18.1029352Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+nightly-clone	Run actions/checkout@v4	2026-11-04T13:55:18.1268787Z [command]/usr/bin/git config --local http.https://github.com/.extraheader AUTHORIZATION: basic ***
+nightly-clone	Run actions/checkout@v4	2026-11-04T13:55:18.1304433Z ##[endgroup]
+nightly-clone	Run actions/checkout@v4	2026-11-04T13:55:18.1305290Z ##[group]Fetching the repository
+nightly-clone	Run actions/checkout@v4	2026-11-04T13:55:18.1312501Z [command]/usr/bin/git -c protocol.version=2 fetch --no-tags --prune --no-recurse-submodules --depth=1 origin +b2ba34199b4221906c49d2ed5eb60bd85dca3fcd:refs/remotes/origin/main
+nightly-clone	Run actions/checkout@v4	2026-11-04T13:55:19.0252864Z From https://github.com/gqsnt/concord_api
+nightly-clone	Run actions/checkout@v4	2026-11-04T13:55:19.0254866Z  * [new ref]         b2ba34199b4221906c49d2ed5eb60bd85dca3fcd -> origin/main
+nightly-clone	Run actions/checkout@v4	2026-11-04T13:55:19.0257645Z ##[endgroup]
+nightly-clone	Run actions/checkout@v4	2026-11-04T13:55:19.0258239Z ##[group]Determining the checkout info
+nightly-clone	Run actions/checkout@v4	2026-11-04T13:55:19.0259311Z ##[endgroup]
+nightly-clone	Run actions/checkout@v4	2026-11-04T13:55:19.0272552Z [command]/usr/bin/git sparse-checkout disable
+nightly-clone	Run actions/checkout@v4	2026-11-04T13:55:19.1324810Z [command]/usr/bin/git config --local --unset-all extensions.worktreeConfig
+nightly-clone	Run actions/checkout@v4	2026-11-04T13:55:19.1353180Z ##[group]Checking out the ref
+nightly-clone	Run actions/checkout@v4	2026-11-04T13:55:19.1356148Z [command]/usr/bin/git checkout --progress --force -B main refs/remotes/origin/main
+nightly-clone	Run actions/checkout@v4	2026-11-04T13:55:19.2697767Z Switched to a new branch 'main'
+nightly-clone	Run actions/checkout@v4	2026-11-04T13:55:19.2698952Z branch 'main' set up to track 'origin/main'.
+nightly-clone	Run actions/checkout@v4	2026-11-04T13:55:19.2709196Z ##[endgroup]
+nightly-clone	Run actions/checkout@v4	2026-11-04T13:55:19.4131052Z [command]/usr/bin/git log -1 --format=%H
+nightly-clone	Run actions/checkout@v4	2026-11-04T13:55:19.4156838Z b2ba34199b4221906c49d2ed5eb60bd85dca3fcd
+nightly-clone	Run rustup toolchain install nightly --profile minimal	﻿2026-11-04T13:55:19.4352700Z ##[group]Run rustup toolchain install nightly --profile minimal
+nightly-clone	Run rustup toolchain install nightly --profile minimal	2026-11-04T13:55:19.4353185Z ^[[36;1mrustup toolchain install nightly --profile minimal^[[0m
+nightly-clone	Run rustup toolchain install nightly --profile minimal	2026-11-04T13:55:19.4383989Z shell: /usr/bin/bash -e {0}
+nightly-clone	Run rustup toolchain install nightly --profile minimal	2026-11-04T13:55:19.4384216Z env:
+nightly-clone	Run rustup toolchain install nightly --profile minimal	2026-11-04T13:55:19.4384382Z   CARGO_TERM_COLOR: always
+nightly-clone	Run rustup toolchain install nightly --profile minimal	2026-11-04T13:55:19.4384574Z ##[endgroup]
+nightly-clone	Run rustup toolchain install nightly --profile minimal	2026-11-04T13:55:19.6867085Z info: syncing channel updates for nightly-x86_64-unknown-linux-gnu
+nightly-clone	Run rustup toolchain install nightly --profile minimal	2026-11-04T13:55:20.1197643Z info: latest update on 2026-11-04 for version 1.101.0-nightly (708c94ef0 2026-11-03)
+nightly-clone	Run rustup toolchain install nightly --profile minimal	2026-11-04T13:55:20.1198954Z info: downloading 3 components
+nightly-clone	Run rustup toolchain install nightly --profile minimal	2026-11-04T13:55:27.0312482Z 
+nightly-clone	Run rustup toolchain install nightly --profile minimal	2026-11-04T13:55:27.0375974Z   nightly-x86_64-unknown-linux-gnu installed - rustc 1.101.0-nightly (708c94ef0 2026-11-03)
+nightly-clone	Run rustup toolchain install nightly --profile minimal	2026-11-04T13:55:27.0376532Z 
+nightly-clone	scripts/verify.sh --nightly-only	﻿2026-11-04T13:55:27.0598560Z ##[group]Run scripts/verify.sh --nightly-only
+nightly-clone	scripts/verify.sh --nightly-only	2026-11-04T13:55:27.0598899Z ^[[36;1mscripts/verify.sh --nightly-only^[[0m
+nightly-clone	scripts/verify.sh --nightly-only	2026-11-04T13:55:27.0628502Z shell: /usr/bin/bash --noprofile --norc -e -o pipefail {0}
+nightly-clone	scripts/verify.sh --nightly-only	2026-11-04T13:55:27.0628827Z env:
+nightly-clone	scripts/verify.sh --nightly-only	2026-11-04T13:55:27.0629011Z   CARGO_TERM_COLOR: always
+nightly-clone	scripts/verify.sh --nightly-only	2026-11-04T13:55:27.0629205Z ##[endgroup]
+nightly-clone	scripts/verify.sh --nightly-only	2026-11-04T13:55:27.1863094Z head: b2ba34199b4221906c49d2ed5eb60bd85dca3fcd  dirty: 0 file(s)
+nightly-clone	scripts/verify.sh --nightly-only	2026-11-04T13:55:27.1907779Z info: syncing channel updates for 1.99.1-x86_64-unknown-linux-gnu
+nightly-clone	scripts/verify.sh --nightly-only	2026-11-04T13:55:27.3811235Z info: latest update on 2026-10-15 for version 1.99.1 (58cf8f9c3 2026-10-13)
+nightly-clone	scripts/verify.sh --nightly-only	2026-11-04T13:55:27.3812101Z info: downloading 7 components
+nightly-clone	scripts/verify.sh --nightly-only	2026-11-04T13:55:36.3575138Z warn: the missing active toolchain `1.99.1-x86_64-unknown-linux-gnu` has been auto-installed
+nightly-clone	scripts/verify.sh --nightly-only	2026-11-04T13:55:36.3575862Z warn: this might cause rustup commands to take longer time to finish than expected
+nightly-clone	scripts/verify.sh --nightly-only	2026-11-04T13:55:36.3576425Z info: you may opt out with `RUSTUP_AUTO_INSTALL=0` or `rustup set auto-install disable`
+nightly-clone	scripts/verify.sh --nightly-only	2026-11-04T13:55:36.3730587Z rustc: rustc 1.99.1 (58cf8f9c3 2026-10-13)
+nightly-clone	scripts/verify.sh --nightly-only	2026-11-04T13:55:47.7630078Z PASS  nightly-clone-compat
+nightly-clone	scripts/verify.sh --nightly-only	2026-11-04T13:55:47.7699938Z       verify-nightly-clone-compat: 16 passed, 0 failed
+nightly-clone	Post Run actions/checkout@v4	﻿2026-11-04T13:55:47.7903531Z Post job cleanup.
+nightly-clone	Post Run actions/checkout@v4	2026-11-04T13:55:47.8616821Z [command]/usr/bin/git version
+nightly-clone	Post Run actions/checkout@v4	2026-11-04T13:55:47.8656114Z git version 2.56.0
+nightly-clone	Post Run actions/checkout@v4	2026-11-04T13:55:47.8689096Z Temporarily overriding HOME='/home/runner/work/_temp/a2af3419-a901-421f-a2f2-be3f86c38be5' before making global git config changes
+nightly-clone	Post Run actions/checkout@v4	2026-11-04T13:55:47.8690011Z Adding repository directory to the temporary git global config as a safe directory
+nightly-clone	Post Run actions/checkout@v4	2026-11-04T13:55:47.8693706Z [command]/usr/bin/git config --global --add safe.directory /home/runner/work/concord_api/concord_api
+nightly-clone	Post Run actions/checkout@v4	2026-11-04T13:55:47.8729403Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+nightly-clone	Post Run actions/checkout@v4	2026-11-04T13:55:47.8768577Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+nightly-clone	Post Run actions/checkout@v4	2026-11-04T13:55:47.9025503Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+nightly-clone	Post Run actions/checkout@v4	2026-11-04T13:55:47.9051957Z http.https://github.com/.extraheader
+nightly-clone	Post Run actions/checkout@v4	2026-11-04T13:55:47.9070657Z [command]/usr/bin/git config --local --unset-all http.https://github.com/.extraheader
+nightly-clone	Post Run actions/checkout@v4	2026-11-04T13:55:47.9105845Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+nightly-clone	Post Run actions/checkout@v4	2026-11-04T13:55:47.9366947Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+nightly-clone	Post Run actions/checkout@v4	2026-11-04T13:55:47.9397977Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+nightly-clone	Complete job	﻿2026-11-04T13:55:47.9768248Z Cleaning up orphan processes
+nightly-clone	Complete job	2026-11-04T13:55:48.0057808Z ##[warning]Node.js 20 is deprecated. The following actions target Node.js 20 but are being forced to run on Node.js 24: actions/checkout@v4. For more information see: https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/
