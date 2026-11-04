@@ -1,0 +1,10 @@
+== F04-plain: cargo +1.99.1 test --locked -p concord --test applied_advice --test ui
+test tests/ui/migration_raw_advice.rs ... mismatch
+error: removed body format: write `body r#type?: String` and `request Utf8;` on this endpoint (a format is a type path: `Utf8` must name a format type in scope)
+error: `via` was removed: write `body r#match: String` and `request Utf8;` on the endpoint
+error: removed body format: write `body type?: String` and `request Utf8;` on this endpoint (a format is a type path: `Utf8` must name a format type in scope)
+error: `via` was removed: write `body r#match: String` and `request Utf8;` on the endpoint
+test ui ... FAILED
+test result: FAILED. 1 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.74s
+exit=101
+restored-bytes-verified

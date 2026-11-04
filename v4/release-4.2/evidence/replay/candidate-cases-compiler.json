@@ -1,0 +1,471 @@
+{
+  "F01": [
+    {
+      "cwd": "consumer-1",
+      "command": [
+        "cargo",
+        "+1.99.1",
+        "check",
+        "--offline",
+        "--locked",
+        "-p",
+        "rv02-clone-consumer",
+        "--bin",
+        "same_forward"
+      ],
+      "expected_exit": 0,
+      "required_output": [
+        "Finished"
+      ],
+      "forbidden_output": [
+        "E0277"
+      ],
+      "repairs": "F01#0"
+    },
+    {
+      "cwd": "consumer-1",
+      "command": [
+        "cargo",
+        "+1.99.1",
+        "run",
+        "--offline",
+        "--locked",
+        "-p",
+        "rv02-clone-consumer",
+        "--bin",
+        "same_forward"
+      ],
+      "expected_exit": 0,
+      "required_output": [
+        "ASSERTIONS_PASSED forward URL=http://rv02.invalid/inspect?first=17&second=29"
+      ]
+    },
+    {
+      "cwd": "consumer-1",
+      "command": [
+        "cargo",
+        "+1.99.1",
+        "run",
+        "--offline",
+        "--locked",
+        "-p",
+        "rv02-clone-consumer",
+        "--bin",
+        "direct"
+      ],
+      "expected_exit": 0,
+      "required_output": [
+        "ASSERTIONS_PASSED"
+      ],
+      "control": "F01#1"
+    },
+    {
+      "cwd": "consumer-1",
+      "command": [
+        "cargo",
+        "+1.99.1",
+        "run",
+        "--offline",
+        "--locked",
+        "-p",
+        "rv02-clone-consumer",
+        "--bin",
+        "distinct_macro"
+      ],
+      "expected_exit": 0,
+      "required_output": [
+        "ASSERTIONS_PASSED"
+      ],
+      "control": "F01#2"
+    },
+    {
+      "cwd": "consumer-1",
+      "command": [
+        "cargo",
+        "+1.99.1",
+        "run",
+        "--offline",
+        "--locked",
+        "-p",
+        "rv02-clone-consumer",
+        "--bin",
+        "same_forward",
+        "--features",
+        "both-clone"
+      ],
+      "expected_exit": 0,
+      "required_output": [
+        "ASSERTIONS_PASSED"
+      ],
+      "control": "F01#3"
+    },
+    {
+      "cwd": "consumer-1",
+      "command": [
+        "cargo",
+        "+1.99.1",
+        "run",
+        "--offline",
+        "--locked",
+        "-p",
+        "rv02-clone-consumer",
+        "--bin",
+        "same_reverse"
+      ],
+      "expected_exit": 0,
+      "required_output": [
+        "ASSERTIONS_PASSED"
+      ],
+      "control": "F01#4"
+    },
+    {
+      "cwd": "consumer-1",
+      "command": [
+        "cargo",
+        "+1.99.1",
+        "check",
+        "--offline",
+        "--locked",
+        "-p",
+        "rv02-clone-consumer",
+        "--bin",
+        "same_clone_call"
+      ],
+      "expected_exit": 101,
+      "required_output": [
+        "E0599",
+        "Clone",
+        "same_clone_call.rs"
+      ],
+      "intended_negative": "clone of a request holding the non-Clone value"
+    },
+    {
+      "cwd": "consumer-1",
+      "command": [
+        "cargo",
+        "+1.99.1",
+        "check",
+        "--offline",
+        "--locked",
+        "-p",
+        "rv02-clone-consumer",
+        "--bin",
+        "direct_clone_call"
+      ],
+      "expected_exit": 101,
+      "required_output": [
+        "E0599",
+        "Clone",
+        "direct_clone_call.rs"
+      ],
+      "intended_negative": "clone with direct paths"
+    },
+    {
+      "cwd": "consumer-1",
+      "command": [
+        "cargo",
+        "+1.99.1",
+        "run",
+        "--offline",
+        "--locked",
+        "-p",
+        "rv02-clone-consumer",
+        "--bin",
+        "same_clone_call",
+        "--features",
+        "both-clone"
+      ],
+      "expected_exit": 0,
+      "required_output": [
+        "ASSERTIONS_PASSED explicit clone and prepare"
+      ],
+      "control": "Clone payloads clone"
+    }
+  ],
+  "F02": [
+    {
+      "cwd": "consumer-2",
+      "command": [
+        "cargo",
+        "+1.99.1",
+        "test",
+        "--offline",
+        "--locked"
+      ],
+      "expected_exit": 0,
+      "required_output": [
+        "4 passed"
+      ],
+      "control": "F02#0"
+    },
+    {
+      "cwd": "consumer-2",
+      "command": [
+        "cargo",
+        "+1.99.1",
+        "check",
+        "--offline",
+        "--locked",
+        "--features",
+        "macro-output-paren"
+      ],
+      "expected_exit": 0,
+      "required_output": [
+        "Finished"
+      ],
+      "forbidden_output": [
+        "expected curly braces"
+      ],
+      "repairs": "F02#1"
+    },
+    {
+      "cwd": "consumer-2",
+      "command": [
+        "cargo",
+        "+1.99.1",
+        "check",
+        "--offline",
+        "--locked",
+        "--features",
+        "macro-output-bracket"
+      ],
+      "expected_exit": 0,
+      "required_output": [
+        "Finished"
+      ],
+      "forbidden_output": [
+        "error"
+      ]
+    },
+    {
+      "cwd": "consumer-2",
+      "command": [
+        "cargo",
+        "+1.99.1",
+        "check",
+        "--offline",
+        "--locked",
+        "--features",
+        "macro-output-brace"
+      ],
+      "expected_exit": 0,
+      "required_output": [
+        "Finished"
+      ],
+      "forbidden_output": [
+        "error"
+      ]
+    },
+    {
+      "cwd": "consumer-3",
+      "command": [
+        "cargo",
+        "+1.99.1",
+        "check",
+        "--offline",
+        "--locked",
+        "--bin",
+        "macro_type"
+      ],
+      "expected_exit": 0,
+      "required_output": [
+        "Finished"
+      ],
+      "forbidden_output": [
+        "error"
+      ]
+    },
+    {
+      "cwd": "consumer-3",
+      "command": [
+        "cargo",
+        "+1.99.1",
+        "test",
+        "--offline",
+        "--locked",
+        "--bin",
+        "macro_type_control"
+      ],
+      "expected_exit": 0,
+      "required_output": [
+        "1 passed"
+      ]
+    }
+  ],
+  "F03": [
+    {
+      "cwd": "consumer-3",
+      "command": [
+        "cargo",
+        "+1.99.1",
+        "check",
+        "--offline",
+        "--locked",
+        "--bin",
+        "migration_literal"
+      ],
+      "expected_exit": 101,
+      "required_output": [
+        "`via` was removed",
+        "write `body p: Payload<{ count(\"a :: b\") }>` and `request Fmt;`"
+      ],
+      "forbidden_output": [
+        "a::b"
+      ],
+      "repairs": "F03#0 (old syntax still requests migration; advice now faithful)"
+    },
+    {
+      "cwd": "consumer-3",
+      "command": [
+        "cargo",
+        "+1.99.1",
+        "test",
+        "--offline",
+        "--locked",
+        "--bin",
+        "migration_literal_control",
+        "--",
+        "--nocapture"
+      ],
+      "expected_exit": 0,
+      "required_output": [
+        "1 passed"
+      ],
+      "control": "F03#1"
+    },
+    {
+      "cwd": "consumer-3",
+      "command": [
+        "cargo",
+        "+1.99.1",
+        "test",
+        "--offline",
+        "--locked",
+        "--bin",
+        "migration_literal_applied",
+        "--",
+        "--nocapture"
+      ],
+      "expected_exit": 101,
+      "required_output": [
+        "E0277"
+      ],
+      "historical_bad_source": "F03#2: the 4.1 advice applied stays wrong source"
+    },
+    {
+      "cwd": "consumer-3",
+      "command": [
+        "cargo",
+        "+1.99.1",
+        "test",
+        "--offline",
+        "--locked",
+        "--bin",
+        "migration_literal_applied_v42",
+        "--",
+        "--nocapture"
+      ],
+      "expected_exit": 0,
+      "required_output": [
+        "regenerated_advice_keeps_six ... ok",
+        "1 passed"
+      ],
+      "new": "4.2 advice applied"
+    }
+  ],
+  "F04": [
+    {
+      "cwd": "consumer-3",
+      "command": [
+        "cargo",
+        "+1.99.1",
+        "check",
+        "--offline",
+        "--locked",
+        "--bin",
+        "migration_raw"
+      ],
+      "expected_exit": 101,
+      "required_output": [
+        "write `body r#type?: String` and `request concord::Text;`"
+      ],
+      "forbidden_output": [
+        "body type"
+      ],
+      "repairs": "F04#0"
+    },
+    {
+      "cwd": "consumer-3",
+      "command": [
+        "cargo",
+        "+1.99.1",
+        "check",
+        "--offline",
+        "--locked",
+        "--bin",
+        "migration_raw_applied"
+      ],
+      "expected_exit": 101,
+      "required_output": [
+        "expected the body's name"
+      ],
+      "historical_bad_source": "F04#1"
+    },
+    {
+      "cwd": "consumer-3",
+      "command": [
+        "cargo",
+        "+1.99.1",
+        "test",
+        "--offline",
+        "--locked",
+        "--bin",
+        "migration_raw_control",
+        "--",
+        "--nocapture"
+      ],
+      "expected_exit": 0,
+      "required_output": [
+        "1 passed"
+      ],
+      "control": "F04#2"
+    },
+    {
+      "cwd": "consumer-3",
+      "command": [
+        "cargo",
+        "+1.99.1",
+        "test",
+        "--offline",
+        "--locked",
+        "--bin",
+        "migration_raw_applied_v42",
+        "--",
+        "--nocapture"
+      ],
+      "expected_exit": 0,
+      "required_output": [
+        "regenerated_advice_keeps_raw_name ... ok",
+        "1 passed"
+      ],
+      "new": "4.2 advice applied"
+    },
+    {
+      "cwd": "consumer-3",
+      "command": [
+        "cargo",
+        "+1.99.1",
+        "test",
+        "--offline",
+        "--locked",
+        "--bin",
+        "valid"
+      ],
+      "expected_exit": 0,
+      "required_output": [
+        "1 passed"
+      ],
+      "control": "public grammar control"
+    }
+  ]
+}

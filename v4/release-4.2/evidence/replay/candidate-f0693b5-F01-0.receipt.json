@@ -1,0 +1,42 @@
+{
+  "step": "F01#0",
+  "command": [
+    "cargo",
+    "+1.99.1",
+    "check",
+    "--offline",
+    "--locked",
+    "-p",
+    "rv02-clone-consumer",
+    "--bin",
+    "same_forward"
+  ],
+  "cwd": "replay-cand-f0693b5/consumer-1",
+  "started_at": "2026-11-04T04:40:32.093858+00:00",
+  "expected_exit": 0,
+  "actual_exit": 0,
+  "witnesses": {
+    "Finished": true
+  },
+  "forbidden_absent": {
+    "E0277": true
+  },
+  "match": true,
+  "original_receipt": null,
+  "lock_sha256": "928a466031a387a24268f17d44bc16d38c4bee5d4c46df357e11c37a12da680d",
+  "consumer_inputs_digest": "0ea7313a1b74b1336045c7b9af7a04918ba8cff2ee37e8920144b91eedbfd7af",
+  "consumer_files": 12,
+  "path_dependency_crates_digest": "2c3b9275505e5009f1d7752243d9b99ebf5faecee0bcbcda9adf74cedadccaa0",
+  "path_dependency_files": 249,
+  "rustc": [
+    "rustc 1.99.1 (58cf8f9c3 2026-10-13)",
+    "binary: rustc",
+    "commit-hash: 58cf8f9c35b355199727627d07ae34a4e2846d67",
+    "commit-date: 2026-10-13",
+    "host: x86_64-unknown-linux-gnu",
+    "release: 1.99.1",
+    "LLVM version: 23.1.1"
+  ],
+  "log": "logs/replay-cand-f0693b5/F01-0.log",
+  "log_sha256": "d04e275e533ce8a072857078c6ea97379b8ecee41d42ec7fae45a4ed08c17dcf"
+}

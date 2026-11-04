@@ -1,0 +1,7 @@
+== F01-dedup: cargo +1.99.1 test --locked -p concord-clone-hygiene-check --test clone_hygiene
+error[E0277]: the trait bound `concord_clone_hygiene_b::Payload: Clone` is not satisfied
+error[E0277]: the trait bound `concord_clone_hygiene_b::Payload: Clone` is not satisfied
+error[E0277]: the trait bound `concord_clone_hygiene_d::Payload: Clone` is not satisfied
+error[E0277]: the trait bound `concord_clone_hygiene_d::Payload: Clone` is not satisfied
+exit=101
+restored-bytes-verified

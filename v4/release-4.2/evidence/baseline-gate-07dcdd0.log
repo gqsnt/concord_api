@@ -1,0 +1,50 @@
+head: 07dcdd03c61a1822341e92d3820e66117f1aef14  dirty: 0 file(s)
+rustc: rustc 1.99.1 (58cf8f9c3 2026-10-13)
+PASS  argv-length
+PASS  toolchain
+PASS  ci-inventory
+PASS  graph
+PASS  fmt
+PASS  records
+PASS  generated
+PASS  clippy
+PASS  test
+PASS  test-no-default
+PASS  test-json-only
+PASS  test-reqwest-defaults-only
+PASS  test-form-only
+PASS  test-form-json
+PASS  test-extras-only
+PASS  test-core
+PASS  test-extras-none
+PASS  test-extras-json
+PASS  test-extras-form
+PASS  clippy-features
+PASS  consumers
+PASS  feature-isolation
+PASS  test-multipart-alone
+PASS  doc
+PASS  doc-no-default
+PASS  doc-json-only
+PASS  doc-form-only
+PASS  doc-form
+PASS  doc-extras-only
+PASS  doc-core
+PASS  doc-extras
+PASS  doc-extras-none
+PASS  bench-build
+PASS  package-check
+PASS  consumers-packaged
+      verify-test-core: 11 passed, 0 failed
+      verify-test-extras-form: 4 passed, 0 failed
+      verify-test-extras-json: 9 passed, 0 failed
+      verify-test-extras-none: 3 passed, 0 failed
+      verify-test-extras-only: 385 passed, 0 failed
+      verify-test-form-json: 5 passed, 0 failed
+      verify-test-form-only: 388 passed, 0 failed
+      verify-test-json-only: 451 passed, 0 failed
+      verify-test: 651 passed, 0 failed
+      verify-test-multipart-alone: 11 passed, 0 failed
+      verify-test-no-default: 290 passed, 0 failed
+      verify-test-reqwest-defaults-only: 292 passed, 0 failed
+exit=0
