@@ -483,8 +483,10 @@ assert_eq!(server.requests()[0].header("x-request-id"), Some("req-1"));
   masked (reqwest prints them as `Sensitive`). Mark extra secret headers with
   `HeaderValue::set_sensitive(true)` yourself.
 
-More: the [recipes](RECIPES.md) (streaming responses and request bodies, multipart, interleaved
-query parameters).
+More: the [recipes](RECIPES.md) (streaming responses and request bodies, multipart, response
+metadata with the typed value, interleaved query parameters). When you execute a request yourself
+and need the response before decoding, convert a failure with `decoder.finish(Err(e))` rather than
+returning reqwest's error: its `Display` prints the full URL.
 
 ## 8. What Concord redacts, and what it does not
 

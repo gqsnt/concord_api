@@ -7,7 +7,8 @@
 //! Copied from `crates/concord/tests/support/mod.rs`, then extended for these recipes: a reply
 //! can be delayed or replaced by dropping the connection, the server tracks its peak number of
 //! requests in flight, and [`chunked`] serves a real `Transfer-Encoding: chunked` body. A request
-//! body sent with `Transfer-Encoding: chunked` is decoded (and flagged).
+//! body sent with `Transfer-Encoding: chunked` is decoded (and flagged); a reply can declare a
+//! longer `Content-Length` than it sends and then close (a truncated body).
 #![allow(dead_code, missing_docs)]
 
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
@@ -69,6 +70,9 @@ pub struct Reply {
     pub delay: Option<Duration>,
     /// Close the connection after reading the request, without answering.
     pub drop_connection: bool,
+    /// Declare this `Content-Length` instead of the body's, send the body, then close the
+    /// connection: a body shorter than declared.
+    pub declared_length: Option<usize>,
 }
 
 impl Reply {
@@ -79,6 +83,7 @@ impl Reply {
             body: Vec::new(),
             delay: None,
             drop_connection: false,
+            declared_length: None,
         }
     }
 
@@ -88,6 +93,12 @@ impl Reply {
             drop_connection: true,
             ..Self::new(0)
         }
+    }
+
+    /// Declares `length` bytes but sends only the body, then closes the connection.
+    pub fn truncated(mut self, length: usize) -> Self {
+        self.declared_length = Some(length);
+        self
     }
 
     pub fn delay(mut self, delay: Duration) -> Self {
@@ -308,10 +319,16 @@ async fn serve_connection(
         for (n, v) in &reply.headers {
             out.push_str(&format!("{n}: {v}\r\n"));
         }
-        out.push_str(&format!("content-length: {}\r\n\r\n", reply.body.len()));
+        let declared = reply.declared_length.unwrap_or(reply.body.len());
+        out.push_str(&format!("content-length: {declared}\r\n\r\n"));
         stream.write_all(out.as_bytes()).await?;
         stream.write_all(&reply.body).await?;
         stream.flush().await?;
+        if reply.declared_length.is_some() {
+            // The rest of the declared body never comes.
+            stream.shutdown().await?;
+            return Ok(());
+        }
     }
 }
 

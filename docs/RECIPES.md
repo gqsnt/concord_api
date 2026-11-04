@@ -58,6 +58,33 @@ the versions you support.
 - **Where:** `Versioned` in [`crates/concord/tests/metadata.rs`](../crates/concord/tests/metadata.rs),
   explained in [Writing a format](CUSTOM_FORMATS.md#5-a-vendor-format-that-checks-a-version-header).
 
+### Response metadata with the typed value
+
+[`metadata::send_with_meta`](../examples/native/src/metadata.rs) (and `item_with_meta`, one
+endpoint packaged) — the caller needs a few response headers (an `ETag` for a later conditional
+request, a request id, a count) together with the decoded value, possibly after a native edit.
+
+- **How:** `prepare()?.into_parts()`; edit the native request; one `client.execute(request)`. On
+  `Err(e)`, convert with `decoder.finish(Err(e))` (Concord's `Transport` error, URL removed). On a
+  response, copy the status, the final URL and the headers you select by borrowing it, then
+  `decoder.decode(response)` as usual. The recipe returns `WithMeta { value, meta }` or a
+  `MetaError` holding the `concord::Error` and `Option<Meta>`: `None` when no response head
+  arrived, `Some` once one did. `Status` and `Metadata` errors still keep the whole unread response
+  (`into_response()`); after a body-read failure (`Transport`) or a `Decode` failure only the
+  captured head is left, the body is gone.
+- **Assumes:** you choose which headers outlive the response; nothing else is kept. `Debug` of
+  `Meta`, `WithMeta` and `MetaError` is written by hand: status, version and kept header
+  **names**, never a header value (`Set-Cookie`), the URL or the decoded value, so no `T: Debug`
+  bound. Values are read deliberately with `raw_header`, `raw_headers`, `raw_url` and `value`.
+  Never return the raw `reqwest::Error` of `client.execute(..).await?`: its `Display` prints the
+  full URL, sensitive query values included.
+- **When not:** for the value alone, `send()`; for the headers of a status error alone,
+  `error.response()`.
+- **Evidence:** [`examples/native/tests/metadata_recipe.rs`](../examples/native/tests/metadata_recipe.rs)
+  (native edit on the wire, metadata captured while the body is still withheld, a refused
+  connection to a URL with a synthetic secret against the raw-error control, each failure stage,
+  `Debug` with synthetic cookie, URL and payload values).
+
 ### Streaming a large or endless body
 
 [`streaming::first_event_chunks`](../examples/native/src/streaming.rs) — a chunked export or event
@@ -257,7 +284,7 @@ synthetic; a fake server proves nothing about the real service.
 
 | Need | How | Case |
 |---|---|---|
-| Read response headers (`ETag`, `Link`) and keep the typed decoding | `prepare()?.into_parts()`, execute, read the headers, then `decoder.decode(response)` | `tests/metadata.rs` |
+| Read response headers (`ETag`, `Link`) and keep the typed decoding | `prepare()?.into_parts()`, execute (a failure goes through `decoder.finish(Err(e))`, not `?`), read the headers, then `decoder.decode(response)`; packaged with failure stages in [response metadata](#response-metadata-with-the-typed-value) | `tests/metadata.rs` |
 | Read a status error's headers without consuming it | `error.response()`; `into_response()` afterwards for the body | `tests/metadata.rs` |
 | An error inside a 2xx (`{"ok": false}`) | a typed output that models the envelope, or a custom `Decode` returning a `CodecError` (its detail goes to `with_source`, read with `source_unredacted()`) | `tests/application.rs` |
 | Nested or bracket form keys (`metadata[order]=7`) | a custom `Encode<T>` with the form media type; `form` itself is flat | `tests/forms.rs` |
