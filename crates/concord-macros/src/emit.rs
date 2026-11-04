@@ -614,6 +614,274 @@ fn positional_params(k: &TokenStream, values: &[Value], body: Option<&Body>) -> 
     params
 }
 
+/// The argument names of [`positional_params`], in the same order.
+fn positional_args(values: &[Value], body: Option<&Body>) -> TokenStream {
+    let body = body.filter(|b| !b.optional);
+    let mut args = TokenStream::new();
+    for (i, value) in values.iter().enumerate() {
+        if let Some(b) = body.filter(|b| b.position == i) {
+            let name = &b.name;
+            args.extend(quote!(#name,));
+        }
+        if value.is_positional() {
+            let name = &value.name;
+            args.extend(quote!(#name,));
+        }
+    }
+    if let Some(b) = body.filter(|b| b.position >= values.len()) {
+        let name = &b.name;
+        args.extend(quote!(#name,));
+    }
+    args
+}
+
+/// Where a contribution comes from, for an input field's documentation: the owner declaring it
+/// and the value or template it sends (never a value: values are run-time data).
+fn contrib_origin(model: &Model, owner: usize, c: &crate::model::Contrib) -> String {
+    let at = &model.owners[owner].dotted;
+    let named = |r: ValueRef| {
+        if r.owner == owner {
+            format!("`{}`", plain(&model.value(r).name))
+        } else {
+            format!(
+                "`{}` of `{}`",
+                plain(&model.value(r).name),
+                model.owners[r.owner].dotted
+            )
+        }
+    };
+    match &c.source {
+        Some(Source::Ref { value, .. }) => format!("`{at}` (value {})", named(*value)),
+        Some(Source::Template { pieces }) => {
+            let holes: Vec<String> = pieces
+                .iter()
+                .filter_map(|p| match p {
+                    Piece::Hole(r) => Some(named(*r)),
+                    Piece::Lit(_) => None,
+                })
+                .collect();
+            if holes.is_empty() {
+                format!("`{at}` (a literal)")
+            } else {
+                format!("`{at}` (a template of {})", holes.join(", "))
+            }
+        }
+        None => format!("`{at}`"),
+    }
+}
+
+/// Documentation lines of an input field: its starting state, what absence means (with the
+/// declaring owners of an inherited key), then the placement notes shared with the setters. The
+/// lines describe the declaration; they do not track assignments.
+fn input_field_docs(model: &Model, endpoint: usize, vi: usize, notes: &[String]) -> Vec<String> {
+    use crate::syntax::Op;
+    let owner = &model.owners[endpoint];
+    let value = &owner.values[vi];
+    let me = ValueRef {
+        owner: endpoint,
+        index: vi,
+    };
+    let mut lines = vec![match (&value.default, value.optional) {
+        (Some(expr), optional) => format!(
+            " Starts as `{}`: evaluated once when the input is created (`new` or the navigation \
+             method), never when it is read or cloned.",
+            if optional {
+                format!("Some({})", expr_text(quote!(#expr)))
+            } else {
+                expr_text(quote!(#expr))
+            }
+        ),
+        (None, true) => " Starts as `None`.".to_owned(),
+        (None, false) => {
+            " Required: an argument of `new` and of the navigation method, in declaration order."
+                .to_owned()
+        }
+    }];
+    let mut inherits = false;
+    let chain = model.chain(endpoint);
+    for (family, list) in [
+        (Family::Query, &owner.query),
+        (Family::Header, &owner.headers),
+    ] {
+        let what = match family {
+            Family::Query => "query parameter",
+            Family::Header => "header",
+        };
+        for c in list
+            .iter()
+            .filter(|c| c.op == Op::Override && c.else_inherit)
+        {
+            let each = match &c.source {
+                Some(Source::Ref { value, each }) if *value == me => *each,
+                _ => continue,
+            };
+            inherits = true;
+            let key = model.key_text(&c.key);
+            let mut origins = Vec::new();
+            for &o in chain.iter().filter(|&&o| o != endpoint) {
+                let upstream = match family {
+                    Family::Query => &model.owners[o].query,
+                    Family::Header => &model.owners[o].headers,
+                };
+                for d in upstream.iter().filter(|d| d.op != Op::Remove) {
+                    if model.key_text(&d.key) == key {
+                        origins.push(contrib_origin(model, o, d));
+                    }
+                }
+            }
+            let origins = if origins.is_empty() {
+                "an enclosing owner".to_owned()
+            } else {
+                origins.join(", then ")
+            };
+            lines.push(format!(
+                " `None`: the inherited `{key}` {what} is sent unchanged — declared by {origins}; \
+                 its current value is whatever the handle this input is bound to holds."
+            ));
+            lines.push(if each {
+                format!(
+                    " `Some(v)`: one `{key}` per item of `v` instead, and no `{key}` at all when \
+                     `v` has no items (an empty collection, or `None` for an `Option`)."
+                )
+            } else {
+                format!(" `Some(v)`: `v` instead of the inherited `{key}`.")
+            });
+        }
+    }
+    if value.optional && !inherits {
+        lines.push(" `None`: absent; the placements that read it are not sent.".to_owned());
+    }
+    // Placement and sensitivity notes, without the setter-specific "per call" lines.
+    lines.extend(
+        notes
+            .iter()
+            .filter(|n| !n.starts_with(" Per call:") && !n.starts_with(" When `"))
+            .cloned(),
+    );
+    lines
+}
+
+/// The input record of an endpoint: its own values and body as public fields of a
+/// `#[non_exhaustive]` struct, and `new` taking the required ones.
+fn input_record(
+    k: &TokenStream,
+    model: &Model,
+    index: usize,
+    vis: &syn::Visibility,
+    notes: &[Vec<String>],
+) -> TokenStream {
+    let owner = &model.owners[index];
+    let (method, body) = match &owner.kind {
+        Kind::Endpoint { method, body, .. } => (method, body.as_ref()),
+        _ => unreachable!("only endpoints have input records"),
+    };
+    let input_ty = owner.input_name();
+    let parent = &model.owners[owner.parent.unwrap()];
+    let parent_ty = &parent.type_name;
+    let ty = &owner.type_name;
+    let name = plain(&owner.name);
+    let mut fields = TokenStream::new();
+    for (vi, (value, notes)) in owner.values.iter().zip(notes).enumerate() {
+        let fname = &value.name;
+        let fty = field_type(value);
+        let docs = &value.docs;
+        let sep = if docs.is_empty() {
+            quote!()
+        } else {
+            quote!(#[doc = ""])
+        };
+        let lines: Vec<LitStr> = input_field_docs(model, index, vi, notes)
+            .iter()
+            .map(|l| lit(l))
+            .collect();
+        fields.extend(quote!(#(#docs)* #sep #(#[doc = #lines])* pub #fname: #fty,));
+    }
+    let mut body_init = TokenStream::new();
+    if let Some(b) = body {
+        let bname = &b.name;
+        let vty = body_value_type(b);
+        let docs = &b.docs;
+        let sep = if docs.is_empty() {
+            quote!()
+        } else {
+            quote!(#[doc = ""])
+        };
+        if b.optional {
+            fields.extend(quote! {
+                #(#docs)* #sep
+                #[doc = " The request body. Starts as `None`: no body is sent. `Some(v)` sends `v`, encoded by the request format when the request is prepared."]
+                pub #bname: ::core::option::Option<#vty>,
+            });
+            body_init.extend(quote!(#bname: ::core::option::Option::None,));
+        } else {
+            fields.extend(quote! {
+                #(#docs)* #sep
+                #[doc = " The request body, encoded by the request format when the request is prepared (never when the input is read, cloned or rebound)."]
+                pub #bname: #vty,
+            });
+            body_init.extend(quote!(#bname: #k::IntoValue::into_value(#bname),));
+        }
+    }
+    let params = positional_params(k, &owner.values, body);
+    let (default_fns, inits) = value_inits(k, &owner.values);
+    let line = lit(&format!(
+        " The inputs of `{method}` endpoint `{}`: its own values{} as public fields.",
+        owner.dotted,
+        if body.is_some() { " and body" } else { "" }
+    ));
+    let usage = lit(&format!(
+        " Create one with [`new`]({input_ty}::new), or take one from a request with \
+         [`{ty}::into_input`]; edit its fields; send it with [`{parent_ty}::{name}_with`]. \
+         `{ty}::input` and `input_mut` borrow the input of an existing request."
+    ));
+    let context = lit(&format!(
+        " Only the endpoint's own values are here. Values of `{}` and its enclosing owners — \
+         the client's, every scope's, static headers and query parameters — stay in the handle \
+         the input is bound to; an absent field that the declaration overrides with `else \
+         inherit` keeps what that handle supplies.",
+        parent.dotted
+    ));
+    let rules = lit(
+        " Reading, cloning or rebinding an input runs no initializer and formats, encodes or \
+         sends nothing; values are formatted and encoded by `prepare`. `Clone` exists when every \
+         value and the body are `Clone`, and copies them (an `Arc` or other shared value inside \
+         stays shared). Assignments are not recorded: the field documentation describes the \
+         declaration, not who set a value. `#[non_exhaustive]`: outside this crate, create it \
+         with `new` (a new optional value adds a field without changing `new`).",
+    );
+    let new_doc = lit(&format!(
+        " The input `{}` starts with: required values as given (in declaration order, as for \
+         the navigation method), initializers evaluated here once, optional values absent.",
+        owner.dotted
+    ));
+    quote! {
+        #[doc = #line]
+        #[doc = ""]
+        #[doc = #usage]
+        #[doc = ""]
+        #[doc = #context]
+        #[doc = ""]
+        #[doc = #rules]
+        #[non_exhaustive]
+        #vis struct #input_ty {
+            #fields
+        }
+
+        impl #input_ty {
+            #[doc = #new_doc]
+            #[inline]
+            #[allow(clippy::too_many_arguments, clippy::new_without_default)]
+            pub fn new(#params) -> Self {
+                #default_fns
+                Self {
+                    #inits
+                    #body_init
+                }
+            }
+        }
+    }
+}
+
 /// Where an owner's required values are supplied, for generated documentation.
 fn supplied_by(owner: &str) -> String {
     format!("supplied when {owner} is created")
@@ -1316,28 +1584,33 @@ fn emit_owner(
             body,
         } => {
             let parent_ty = &model.owners[owner.parent.unwrap()].type_name;
+            let input_ty = owner.input_name();
+            let input_label = lit(&plain(&input_ty));
             let controls = controls(
                 k,
                 &owner.values,
                 body.as_ref(),
-                &quote!(self),
+                &quote!(self.__in),
                 "this request",
                 notes,
             );
-            let mut debug = debug_fields(k, model, &owner.values, &quote!(self));
-            let body_field = body.as_ref().map(|b| {
+            // The request's `Debug` is unchanged (its own values, read from its input); the
+            // input's `Debug` renders the same fields. Both call one private helper, so a value
+            // type's missing `Display`/`ToHeaderValue` is reported once, not once per impl.
+            let mut input_debug = debug_fields(k, model, &owner.values, &quote!(self));
+            if let Some(b) = body {
                 let name = &b.name;
-                let vty = body_value_type(b);
                 let label = lit(&plain(name));
                 if b.optional {
-                    debug.extend(quote!(__d.field(#label, &self.#name.as_ref().map(|_| ".."));));
-                    quote!(#name: ::core::option::Option<#vty>,)
+                    input_debug
+                        .extend(quote!(__d.field(#label, &self.#name.as_ref().map(|_| ".."));));
                 } else {
-                    debug.extend(quote!(__d.field(#label, &"..");));
-                    quote!(#name: #vty,)
+                    input_debug.extend(quote!(__d.field(#label, &"..");));
                 }
-            });
-            let clone_impl = endpoint_clone(ty, &owner.values, body.as_ref());
+            }
+            let input_item = input_record(k, model, index, vis, notes);
+            let clone_impl = endpoint_clone(ty, &owner.values, body.as_ref(), false);
+            let input_clone_impl = endpoint_clone(&input_ty, &owner.values, body.as_ref(), true);
             let out = match output {
                 Some(p) => {
                     let t = &p.ty;
@@ -1355,6 +1628,23 @@ fn emit_owner(
                 body.as_ref(),
             );
             let shapes = shapes_static(k, model, index);
+            let input_doc = lit(&format!(
+                " This request's own inputs, borrowed: reading them runs no initializer and \
+                 formats, encodes or sends nothing. Values of `{}` and its enclosing owners are \
+                 not part of it.",
+                model.owners[owner.parent.unwrap()].dotted
+            ));
+            let input_mut_doc = lit(&format!(
+                " This request's own inputs, to edit in place. Equivalent to the `set_*` and \
+                 `maybe_*` methods; an assignment is not recorded anywhere (see [`{input_ty}`])."
+            ));
+            let into_input_doc = lit(&format!(
+                " This request's own inputs, by value; the enclosing handle is dropped. Bind \
+                 them again with [`{parent_ty}::{}_with`].",
+                plain(&owner.name)
+            ));
+            // The input's items follow the request's, so that a value type's bound errors keep
+            // the order they had before input records existed (`prepare`'s first).
             quote! {
                 #shapes
 
@@ -1362,14 +1652,28 @@ fn emit_owner(
                 #[must_use = "an endpoint request does nothing until `send` or `prepare` is called"]
                 #vis struct #ty {
                     __parent: #parent_ty,
-                    #(#fields)*
-                    #body_field
+                    __in: #input_ty,
                 }
 
                 #clone_impl
 
                 impl #ty {
                     #controls
+
+                    #[doc = #input_doc]
+                    #[inline] pub fn input(&self) -> &#input_ty {
+                        &self.__in
+                    }
+
+                    #[doc = #input_mut_doc]
+                    #[inline] pub fn input_mut(&mut self) -> &mut #input_ty {
+                        &mut self.__in
+                    }
+
+                    #[doc = #into_input_doc]
+                    #[inline] pub fn into_input(self) -> #input_ty {
+                        self.__in
+                    }
 
                     /// Builds the native request without sending it.
                     ///
@@ -1399,7 +1703,26 @@ fn emit_owner(
                 impl ::core::fmt::Debug for #ty {
                     #[inline] fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
                         let mut __d = f.debug_struct(#type_label);
-                        #debug
+                        self.__in.__concord_debug(&mut __d);
+                        __d.finish()
+                    }
+                }
+
+                #input_item
+
+                #input_clone_impl
+
+                impl #input_ty {
+                    #[inline]
+                    fn __concord_debug(&self, __d: &mut ::core::fmt::DebugStruct<'_, '_>) {
+                        #input_debug
+                    }
+                }
+
+                impl ::core::fmt::Debug for #input_ty {
+                    #[inline] fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
+                        let mut __d = f.debug_struct(#input_label);
+                        self.__concord_debug(&mut __d);
                         __d.finish()
                     }
                 }
@@ -1418,7 +1741,10 @@ fn emit_owner(
 /// Every occurrence keeps its own bound, even when two print the same: equal tokens can name
 /// different types (`$crate::Payload` forwarded by two crates' macros), which a proc macro cannot
 /// tell apart, so a bound dropped as a duplicate could be the one of the non-`Clone` type.
-fn endpoint_clone(ty: &Ident, values: &[Value], body: Option<&Body>) -> TokenStream {
+///
+/// For an input record (`input`), the same bounds over its own fields; for a request, its
+/// parent handle and its input, under the same bounds.
+fn endpoint_clone(ty: &Ident, values: &[Value], body: Option<&Body>, input: bool) -> TokenStream {
     let mut bounds = Vec::new();
     let mut add = |t: TokenStream, span: Span| {
         bounds.push(quote_spanned!(span=> for<'__concord> #t: ::core::clone::Clone));
@@ -1430,16 +1756,21 @@ fn endpoint_clone(ty: &Ident, values: &[Value], body: Option<&Body>) -> TokenStr
     if let Some(b) = body {
         add(body_value_type(b), b.ty.span());
     }
-    let mut fields: Vec<&Ident> = values.iter().map(|v| &v.name).collect();
-    fields.extend(body.map(|b| &b.name));
+    let fields = if input {
+        let mut fields: Vec<&Ident> = values.iter().map(|v| &v.name).collect();
+        fields.extend(body.map(|b| &b.name));
+        quote!(#(#fields: ::core::clone::Clone::clone(&self.#fields),)*)
+    } else {
+        quote! {
+            __parent: ::core::clone::Clone::clone(&self.__parent),
+            __in: ::core::clone::Clone::clone(&self.__in),
+        }
+    };
     quote! {
         impl ::core::clone::Clone for #ty where #(#bounds,)* {
             #[inline]
             fn clone(&self) -> Self {
-                Self {
-                    __parent: ::core::clone::Clone::clone(&self.__parent),
-                    #(#fields: ::core::clone::Clone::clone(&self.#fields),)*
-                }
+                Self { #fields }
             }
         }
     }
@@ -1486,7 +1817,6 @@ fn navigation(k: &TokenStream, model: &Model, index: usize) -> TokenStream {
         let docs = &c.docs;
         let body = c.body();
         let params = positional_params(k, &c.values, body);
-        let (default_fns, inits) = value_inits(k, &c.values);
         let scope_line = lit(&format!(" Enters scope `{}`.", c.dotted));
         let scope_defaults = defaults_line(model, child).map(|l| quote!(#[doc = ""] #[doc = #l]));
         let args = argument_docs(&c.values, body);
@@ -1499,7 +1829,9 @@ fn navigation(k: &TokenStream, model: &Model, index: usize) -> TokenStream {
             quote!(#[doc = ""])
         };
         match &c.kind {
-            Kind::Scope => out.extend(quote! {
+            Kind::Scope => out.extend({
+                let (default_fns, inits) = value_inits(k, &c.values);
+                quote! {
                 #(#docs)*
                 #scope_sep
                 #[doc = #scope_line]
@@ -1516,16 +1848,8 @@ fn navigation(k: &TokenStream, model: &Model, index: usize) -> TokenStream {
                         }),
                     }
                 }
-            }),
+            }}),
             Kind::Endpoint { method, .. } => {
-                let body_init = body.map(|b| {
-                    let bname = &b.name;
-                    if b.optional {
-                        quote!(#bname: ::core::option::Option::None,)
-                    } else {
-                        quote!(#bname: #k::IntoValue::into_value(#bname),)
-                    }
-                });
                 let line = lit(&format!(" `{}` endpoint `{}`.", method, c.dotted));
                 let sep = if docs.is_empty() {
                     quote!()
@@ -1533,6 +1857,16 @@ fn navigation(k: &TokenStream, model: &Model, index: usize) -> TokenStream {
                     quote!(#[doc = ""])
                 };
                 let summary = request_summary(model, child, method);
+                let input_ty = c.input_name();
+                let with = format_ident!("{}_with", plain(name), span = name.span());
+                let call_args = positional_args(&c.values, body);
+                let with_line = lit(&format!(
+                    " `{}` endpoint `{}`, from an input record ([`{input_ty}`]): the same request                      as [`{}`](Self::{}) with that input's values. This handle supplies the rest                      (client and scope values, static headers); nothing is evaluated or sent here.",
+                    method,
+                    c.dotted,
+                    plain(name),
+                    plain(name)
+                ));
                 out.extend(quote! {
                     #(#docs)*
                     #sep
@@ -1541,11 +1875,20 @@ fn navigation(k: &TokenStream, model: &Model, index: usize) -> TokenStream {
                     #args
                     #(#nav_attrs)*
                     #[inline] #[allow(clippy::too_many_arguments)] pub fn #name(&self, #params) -> #cty {
-                        #default_fns
+                        // Not through `_with`: a `#[deprecated]` endpoint deprecates both, and one
+                        // must not call the other.
                         #cty {
                             __parent: ::core::clone::Clone::clone(self),
-                            #inits
-                            #body_init
+                            __in: #input_ty::new(#call_args),
+                        }
+                    }
+
+                    #[doc = #with_line]
+                    #(#nav_attrs)*
+                    #[inline] pub fn #with(&self, input: #input_ty) -> #cty {
+                        #cty {
+                            __parent: ::core::clone::Clone::clone(self),
+                            __in: input,
                         }
                     }
                 })
@@ -1569,7 +1912,8 @@ impl Places {
             .position(|&o| o == owner)
             .expect("owner on chain");
         if depth == self.chain.len() - 1 {
-            quote!(self)
+            // The endpoint's own values live in its input record.
+            quote!(self.__in)
         } else {
             let var = format_ident!("__o{}", depth);
             quote!(#var)
@@ -2159,7 +2503,7 @@ fn prepare_body(
             if b.optional {
                 quote!({
                     #encode
-                    match self.#name {
+                    match self.__in.#name {
                         ::core::option::Option::Some(__b) => ::core::option::Option::Some(#k::__private::encode_body(&__FORMAT, __b, &__META)?),
                         ::core::option::Option::None => ::core::option::Option::None,
                     }
@@ -2167,7 +2511,7 @@ fn prepare_body(
             } else {
                 quote!({
                     #encode
-                    ::core::option::Option::Some(#k::__private::encode_body(&__FORMAT, self.#name, &__META)?)
+                    ::core::option::Option::Some(#k::__private::encode_body(&__FORMAT, self.__in.#name, &__META)?)
                 })
             }
         }

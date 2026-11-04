@@ -203,6 +203,11 @@ impl Owner {
         format_ident!("{}Config", self.type_name, span = self.type_name.span())
     }
 
+    /// The generated input record of an endpoint (`{Endpoint}Input`).
+    pub fn input_name(&self) -> Ident {
+        format_ident!("{}Input", self.type_name, span = self.type_name.span())
+    }
+
     pub fn is_endpoint(&self) -> bool {
         matches!(self.kind, Kind::Endpoint { .. })
     }
@@ -1779,6 +1784,36 @@ impl Model {
                 errors.push(e);
             }
         }
+        // Input records of endpoints, against every generated type name and each other.
+        for owner in self.owners.iter().filter(|o| o.is_endpoint()) {
+            let input = owner.input_name();
+            let key = plain(&input);
+            if config.as_deref() == Some(key.as_str()) {
+                let mut e = syn::Error::new(
+                    owner.name.span(),
+                    format!(
+                        "generated input record `{key}` is also the struct of the client's required values; rename this endpoint"
+                    ),
+                );
+                e.combine(syn::Error::new(
+                    client.name.span(),
+                    "the client is declared here",
+                ));
+                errors.push(e);
+                continue;
+            }
+            if let Some(first) = types.insert(key, &owner.name) {
+                let mut e = syn::Error::new(
+                    owner.name.span(),
+                    format!(
+                        "generated type name `{input}` is used twice (the input record of `{}`)",
+                        owner.dotted
+                    ),
+                );
+                e.combine(syn::Error::new(first.span(), "also generated here"));
+                errors.push(e);
+            }
+        }
         // Methods per generated type.
         for owner in &self.owners {
             // name -> (declaration span, or None for built-ins; description)
@@ -1832,6 +1867,14 @@ impl Model {
                         "the built-in `prepare`".into(),
                         errors,
                     );
+                    for builtin in ["input", "input_mut", "into_input"] {
+                        add(
+                            builtin.into(),
+                            None,
+                            format!("the built-in `{builtin}`"),
+                            errors,
+                        );
+                    }
                 }
                 Kind::Scope => {}
             }
@@ -1877,6 +1920,14 @@ impl Model {
                     format!("the navigation method for `{}`", c.dotted),
                     errors,
                 );
+                if c.is_endpoint() {
+                    add(
+                        format!("{}_with", plain(&c.name)),
+                        Some(c.name.span()),
+                        format!("the input-record method for `{}`", c.dotted),
+                        errors,
+                    );
+                }
             }
         }
     }

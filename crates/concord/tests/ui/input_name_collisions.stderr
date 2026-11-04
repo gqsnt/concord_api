@@ -1,0 +1,23 @@
+error: generated type name `ShopListInput` is used twice (the input record of `Shop.list`)
+ --> tests/ui/input_name_collisions.rs:7:13
+  |
+7 |         GET list() { path "a"; }
+  |             ^^^^
+
+error: also generated here
+ --> tests/ui/input_name_collisions.rs:8:15
+  |
+8 |         scope list_input { GET ping() { path "p"; } }
+  |               ^^^^^^^^^^
+
+error: `Shop` would have two methods named `item_with`: the navigation method for `Shop.item_with` and the input-record method for `Shop.item`; rename one of them
+  --> tests/ui/input_name_collisions.rs:11:13
+   |
+11 |         GET item_with() { path "c"; }
+   |             ^^^^^^^^^
+
+error: the input-record method for `Shop.item` is declared here
+  --> tests/ui/input_name_collisions.rs:10:13
+   |
+10 |         GET item() { path "b"; }
+   |             ^^^^
