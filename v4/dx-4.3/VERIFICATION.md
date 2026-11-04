@@ -8,8 +8,10 @@ commit and its records-only successor are listed separately in STATUS.md.
 | Source | Command | Result | Log |
 |---|---|---|---|
 | `5ed600b` (base) | `scripts/verify.sh --package --bench` | 37/37 PASS (676 workspace tests) | handoff `work/logs/baseline-verify.log` (not in the repository) |
-| FINAL | `scripts/verify.sh --package --bench` | PENDING | `verification-logs/` in the delivery ZIP |
-| FINAL | `scripts/verify.sh --nightly-only` | PENDING | `verification-logs/` in the delivery ZIP |
+| `637c8d2` (superseded by R4 fixes) | `scripts/verify.sh --package --bench` | 37/37 PASS, exit 0, 1m55s; tests: workspace 747, examples each alone 197, `-p concord` no-default 298 / json-only 459 / form-only 396 / extras-only 393 / reqwest-defaults-only 300, form+json 5, core 13, extras 3/9/4; packaged consumers PASS | delivery ZIP `verification-logs/` |
+| `637c8d2` (superseded by R4 fixes) | `scripts/verify.sh --nightly-only` | PASS `nightly-clone-compat`, 16 passed, exit 0 | delivery ZIP `verification-logs/` |
+| final implementation commit (see STATUS.md) | `scripts/verify.sh --package --bench` | recorded in the records-only successor | delivery ZIP `verification-logs/` |
+| final implementation commit | `scripts/verify.sh --nightly-only` | recorded in the records-only successor | delivery ZIP `verification-logs/` |
 
 ## CI (GitHub Actions `ci`: `scripts/verify.sh --package --bench` on Linux and native Windows; nightly conditional-`Clone` lane, non-blocking)
 
@@ -27,4 +29,5 @@ commit and its records-only successor are listed separately in STATUS.md.
 ## Requirement trace
 
 `requirements.json` maps every requirement id to its tests and commands; the tests ran in the
-final gate's `test`, `test-examples-isolated` and per-feature steps on FINAL.
+final gate's `test`, `test-examples-isolated` and per-feature steps; the commit each run used is
+named in its row.

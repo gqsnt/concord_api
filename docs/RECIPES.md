@@ -136,9 +136,11 @@ cannot or should not edit the SDK.
   encoding); the example's SDK tests compare it with the generated endpoints. The decoder is
   unlabeled (`endpoint()` is `None`), and the request is native: its `Debug` and URL show path
   data, so do not log it when that data is secret.
-- **When not:** do not prepare a declared endpoint as a seed and rewrite its URL: it only reaches
-  suffixes of declared routes, and its decoder, `Accept` and name belong to the other endpoint.
-  If you own the SDK, declare the endpoint.
+- **When not:** do not prepare a declared endpoint as a seed and rewrite its URL. The native URL
+  can be rewritten freely, but the seed's base, headers, `Accept`, decoder and endpoint name still
+  belong to the other endpoint, and nothing checks that they fit the new route (an append-only
+  seed helper, like the campaign's, also reaches only suffixes of declared routes). If you own the
+  SDK, declare the endpoint.
 
 ### Interleaved query parameters
 

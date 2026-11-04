@@ -112,4 +112,7 @@ fn whole_second_timestamps_parse() {
     assert_eq!(rfc3339_seconds("1900-02-29T00:00:00Z"), None);
     assert_eq!(rfc3339_seconds("2026-02-30T00:00:00Z"), None);
     assert_eq!(rfc3339_seconds("2026-04-31T00:00:00Z"), None);
+    // Signs are not digits.
+    assert_eq!(rfc3339_seconds("1970-01-01T-1:00:00Z"), None);
+    assert_eq!(rfc3339_seconds("+970-01-01T00:00:00Z"), None);
 }

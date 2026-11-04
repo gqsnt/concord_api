@@ -1,15 +1,17 @@
 # V4.3 candidate — review findings and resolutions
 
-Reviews actually performed, and what each found. "Independent" here means a separate Claude
-reviewer started with the code and the contract, not with the coordinator's conclusions. No other
-reviewer (a configured Codex/Sol profile or a human) was available in this environment; none is
-claimed. Agreement between reviewers is not used as evidence.
+Reviews actually performed, and what each found. "Independent" means a reviewer that started
+with the code and the contract, not with the coordinator's conclusions. Agreement between reviewers
+is not used as evidence. R2 and R3 are Claude subagents (same provider as the coordinator); R4 is
+the already-configured Codex CLI, a different provider. (An earlier revision of this file, in
+`637c8d2`, said no Codex reviewer was available; that was wrong — it had not been checked yet.)
 
 | Review | Scope | Reviewer |
 |---|---|---|
 | R1 | coordinator's own checks while integrating | coordinator (Claude Opus 5.5) |
 | R2 | the generated-input prototype (`0a91ce5..214980d`) and its caller tasks (DX05) | independent Claude subagent |
 | R3 | the supported branch's examples and guides (`5ed600b..`, excluding records) | independent Claude subagent |
+| R4 | the whole supported branch at `637c8d2`, records and decisions included | Codex CLI 0.166.0, read-only sandbox; requested `-m gpt-6.1-sol -c model_reasoning_effort=xhigh`; the session header reported `model: gpt-6.1-sol`, `reasoning effort: xhigh`, `sandbox: read-only` (observed settings are what the CLI printed; nothing else was observable) |
 
 ## R1 — found while building and integrating
 
@@ -57,3 +59,23 @@ No high-severity finding. Every package passed alone; clippy clean.
 After the fixes: each affected package passes alone (fixture 4, SDK 12, extension 17, native 47,
 app 21 tests) and `cargo clippy --locked --workspace --all-targets -- -D warnings` is clean; the
 final gate is in VERIFICATION.md.
+
+
+## R4 — Codex review of the supported branch at `637c8d2`
+
+No high- or medium-severity finding; five low ones, all confirmed by reading the code.
+
+| # | Finding (low) | Disposition | Change |
+|---|---|---|---|
+| R4-1 | the fixture added a caller-supplied cursor offset to the page size unchecked (overflow panic in debug) | fixed: saturating end | this commit |
+| R4-2 | the fixture's RFC 3339 oracle parsed signed numbers (`T-1:00:00Z` accepted) | fixed: digits only, with tests | this commit |
+| R4-3 | `MetaError::meta()` promised `None` ⇔ "no head arrived", but `From<concord::Error>` gives `None` for any converted error | fixed wording: the stage guarantee holds for errors the recipe produces; a converted error has nothing captured | this commit |
+| R4-4 | `VERIFICATION.md` said the requirement tests ran "on FINAL" while the final rows were still pending | fixed: rows name the exact commit each result ran on | this commit and the records-only successor |
+| R4-5 | `docs/RECIPES.md` said rewriting a seed request's URL "only reaches suffixes"; `into_parts` gives an unrestricted native URL | fixed: the suffix limit is attributed to an append-only helper; the seed's real problem is its base, headers, `Accept`, decoder and name | this commit |
+
+Codex also reported as checked and correct: path-encoding agreement of the SDK context with
+Concord's, the metadata recipe's single execution and stage handling, wrapper formatting,
+traversal positions, the conversions, the guides apart from R4-5, that G1/M1/X1 are supported by
+their evidence, and that `crates/` and `scripts/verify.sh` are unchanged. It inspected but did not
+run the tests. After the fixes: fixture 4, native 47, SDK 12, app 21, extension 17 tests pass,
+each package alone; clippy clean.

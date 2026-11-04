@@ -208,8 +208,11 @@ impl MetaError {
         self.error.kind()
     }
 
-    /// The metadata of the response head: `None` when no head arrived (build or transport
-    /// failure before a response), `Some` from the moment a head was received.
+    /// The metadata captured from the response head. For errors produced by this module's
+    /// [`execute`]/[`Received::decode`]: `None` when no head arrived (a transport failure before
+    /// a response), `Some` from the moment a head was received. An error converted with `From`
+    /// (`prepare()?`, or any other `concord::Error`) has `None`: nothing was captured, even if
+    /// that error holds a response.
     pub fn meta(&self) -> Option<&Meta> {
         self.meta.as_deref()
     }
@@ -220,8 +223,8 @@ impl MetaError {
     }
 }
 
-/// A Concord error raised before any response: `prepare()?` in a function returning
-/// `MetaError`.
+/// A Concord error from outside the recipe — typically `prepare()?` in a function returning
+/// `MetaError` — without metadata: nothing was captured for it.
 impl From<concord::Error> for MetaError {
     fn from(error: concord::Error) -> Self {
         Self { error, meta: None }

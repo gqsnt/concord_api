@@ -508,8 +508,10 @@ fn tenant_answer(method: &str, tenant: &str, rest: &[&str], request: &Recorded) 
                 .take(limit)
                 .map(|row| item_json(tenant, row))
                 .collect();
-            let next = (start + limit < matching.len())
-                .then(|| format!("catalog-offset-{}", start + limit));
+            // A token's offset is caller data: an end past the listing (or past `usize`) is
+            // simply the last page, never an overflow.
+            let end = start.saturating_add(limit);
+            let next = (end < matching.len()).then(|| format!("catalog-offset-{end}"));
             Reply::json(
                 200,
                 &serde_json::json!({ "items": page, "next_cursor": next }).to_string(),
@@ -573,7 +575,14 @@ pub fn rfc3339_seconds(text: &str) -> Option<i64> {
     {
         return None;
     }
-    let num = |r: std::ops::Range<usize>| text.get(r)?.parse::<i64>().ok();
+    // Digits only: `parse` alone would accept a sign (`T-1:00:00Z`).
+    let num = |r: std::ops::Range<usize>| {
+        let digits = text.get(r)?;
+        digits
+            .bytes()
+            .all(|b| b.is_ascii_digit())
+            .then(|| digits.parse::<i64>().ok())?
+    };
     let (y, m, d) = (num(0..4)?, num(5..7)?, num(8..10)?);
     let (hh, mm, ss) = (num(11..13)?, num(14..16)?, num(17..19)?);
     let leap = (y % 4 == 0 && y % 100 != 0) || y % 400 == 0;
@@ -683,8 +692,8 @@ fn ledger_answer(prefix: &str, request: &Recorded) -> Reply {
         .take(page_size)
         .map(|(id, a, ms, amount)| serde_json::json!({ "id": id, "account": a, "at_ms": ms, "amount_minor": amount }))
         .collect();
-    let next =
-        (start + page_size < matching.len()).then(|| format!("ledger-from-{}", start + page_size));
+    let end = start.saturating_add(page_size);
+    let next = (end < matching.len()).then(|| format!("ledger-from-{end}"));
     Reply::new(200)
         .header("content-type", "application/vnd.demo.ledger+json")
         .header("x-record-count", &matching.len().to_string())
