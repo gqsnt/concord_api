@@ -21,7 +21,8 @@ resolved and verified; the integration receipt is recorded under "Integration".
 | Draft PR | [gqsnt/concord_api#2](https://github.com/gqsnt/concord_api/pull/2) |
 | Records-only successor head | `d4ebd34e88a4698f9e936b53884ba50106643adb` — its PR run [41904216870](https://github.com/gqsnt/concord_api/actions/runs/41904216870) **failed** on Windows (job 126834420624, fixture bind WSAENOBUFS); its push run [41904212230](https://github.com/gqsnt/concord_api/actions/runs/41904212230) passed. See CI_FAILURE_RESOLUTION.md |
 | CI diagnostics | `7eefdeedcc1ee0646525b6e02ac3f1ba0e02b90b` — socket-pressure snapshots in the gate (diagnostic only) |
-| CI correction head | the commit adding this line: Riot fixture lifecycle control, records |
+| CI correction | `2cdecd30ae526c9c89e28ebcb59965e6091c9305` (Riot fixture lifecycle control, records); its local gate passed (37/37, nightly 16/0) |
+| CI correction head | the commit after `2cdecd3`: review fixes (CI_FAILURE_RESOLUTION.md, "Independent review") |
 
 The campaign's B0 trial sources (`FINAL_EVIDENCE.zip`, the handoff's `reference/campaign/`) are
 historical evidence of an older source. Nothing here relabels them as tests of this branch; every
@@ -56,8 +57,9 @@ Helper branches merged into the implementation branch: `dx43/native` (`e73838e`,
 
 ## Completion
 
-Current candidate: the CI correction head above; its verification and the integration receipt
-are in VERIFICATION.md and "Integration" below. The failed run on `d4ebd34` remains on record
+Current candidate: the CI correction head above. Its exact-commit verification (local gate,
+Linux, native Windows, nightly) is **pending** and will be recorded with the integration receipt
+under "Integration"; VERIFICATION.md covers earlier commits only. The failed run on `d4ebd34` remains on record
 (CI_FAILURE_RESOLUTION.md); it is not relabelled as a pass.
 
 Historical status: **COMPLETE_VERIFIED** for `a6fb998`: every work package is implemented or decided; the

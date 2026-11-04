@@ -4,7 +4,8 @@ r"""One line of TCP socket-pressure counters, for the verification log (diagnost
 Usage: python3 -I scripts/socket-snapshot.py LABEL [--details]
        python3 -I scripts/socket-snapshot.py --summary LOG
 
-Prints, for the whole machine (not only this gate's processes):
+Prints, for the whole machine (not only this gate's processes), for IPv4 TCP only (the failing
+bind was `127.0.0.1:0`; Windows configures the families separately):
 
     socket-snapshot LABEL t=EPOCH tcp=N time_wait=N established=N listen=N other=N
         dyn=START+COUNT excluded=N dyn_in_use=N dyn_free=N active_opens=N
@@ -12,14 +13,20 @@ Prints, for the whole machine (not only this gate's processes):
 `dyn` is the dynamic (ephemeral) port range that a `bind` to port 0 draws from; `excluded` the
 ports of that range reserved by the system (Windows port exclusion ranges, Linux
 `ip_local_reserved_ports`); `dyn_in_use` the distinct local ports of that range held by any TCP
-socket in any state (TIME_WAIT included); `dyn_free` what remains. `active_opens` is the system's
+socket in any state (TIME_WAIT included; on Windows `netstat -q` also lists bound sockets that are
+neither listening nor connected); `dyn_free` what remains. On Linux `/proc/net/tcp` does not list
+bound-only sockets, so there `dyn_free` is an upper estimate. `active_opens` is the system's
 cumulative count of TCP connections opened (`netstat -s` / `/proc/net/snmp`), so differences
 between snapshots measure connection churn. `--details` also prints the raw range and exclusion
-listings. Any counter that cannot be read is printed as `?`; the script never fails the gate
-(exit 0), because it observes the runner rather than checking the code.
+listings. Any counter that cannot be read — a command missing, failing, timing out, or printing
+output this script does not recognize (another display language, say) — is printed as `?`, never
+as a reassuring zero; the script never fails the gate (exit 0), because it observes the runner
+rather than checking the code. Each command gets 10 s and a snapshot at most 20 s; after a
+timeout the script writes `target/socket-snapshot.disabled` and later snapshots of the same gate
+run print `disabled` instead of waiting again.
 
-On Windows the counters come from `netstat -ano`, `netstat -s -p tcp` and `netsh`; elsewhere
-from `/proc/net/tcp{,6}`, `/proc/net/snmp` and `/proc/sys/net/ipv4`. Platforms without either
+On Windows the counters come from `netstat -anoq -p TCP`, `netstat -s -p tcp` and `netsh`;
+elsewhere from `/proc/net/tcp`, `/proc/net/snmp` and `/proc/sys/net/ipv4`. Platforms without either
 source print `?` everywhere.
 
 `--summary LOG` reads the snapshot lines of LOG and prints the peak TIME_WAIT, the smallest
@@ -40,27 +47,64 @@ import time
 WINDOWS = os.name == "nt"
 
 
+COMMAND_TIMEOUT = 10.0
+SNAPSHOT_BUDGET = 20.0
+DISABLED = os.path.join("target", "socket-snapshot.disabled")
+_started = time.monotonic()
+
+
+class Disabled(Exception):
+    """A collector timed out: stop invoking collectors for the rest of the gate run."""
+
+
 def run(args):
+    """The command's output, or None if it is missing, fails or exceeds its time."""
+    remaining = SNAPSHOT_BUDGET - (time.monotonic() - _started)
+    if remaining <= 0:
+        return None
     try:
-        out = subprocess.run(
-            args, capture_output=True, timeout=60, check=False
-        ).stdout
+        done = subprocess.run(
+            args, capture_output=True, timeout=min(COMMAND_TIMEOUT, remaining), check=False
+        )
+    except subprocess.TimeoutExpired:
+        try:
+            with open(DISABLED, "w", encoding="ascii") as f:
+                f.write(" ".join(args) + "\n")
+        except OSError:
+            pass
+        raise Disabled
     except (OSError, subprocess.SubprocessError):
         return None
-    return out.decode("utf-8", "replace")
+    if done.returncode != 0:
+        return None
+    return done.stdout.decode("utf-8", "replace")
 
 
 # ---------------------------------------------------------------- parsers (unit-tested) ----
 
 
+KNOWN_STATES = {
+    "LISTENING", "ESTABLISHED", "TIME_WAIT", "CLOSE_WAIT", "FIN_WAIT_1", "FIN_WAIT_2",
+    "SYN_SENT", "SYN_RECEIVED", "LAST_ACK", "CLOSING", "CLOSED", "BOUND", "DELETE_TCB",
+}
+
+
 def parse_netstat_connections(text):
-    """`netstat -ano` → list of (local_port, state). UDP and header lines are skipped."""
+    """`netstat -anoq -p TCP` → list of (local_port, state) for IPv4 rows, or None when the output
+    is not recognized (no English column header, or a state this script does not know: localized
+    output must not be counted as zeros)."""
+    if not re.search(r"^\s*Proto\s+Local Address\s+Foreign Address\s+State", text, re.M):
+        return None
     rows = []
     for line in text.splitlines():
         parts = line.split()
         if len(parts) < 4 or parts[0].upper() != "TCP":
             continue
         local, state = parts[1], parts[3].upper()
+        if local.startswith("["):
+            continue  # IPv6: another range and exclusion list
+        if state not in KNOWN_STATES:
+            return None
         port = local.rsplit(":", 1)[-1]
         if port.isdigit():
             rows.append((int(port), state))
@@ -77,7 +121,10 @@ def parse_netsh_dynamic(text):
 
 
 def parse_netsh_excluded(text):
-    """`netsh int ipv4 show excludedportrange protocol=tcp` → list of (start, end)."""
+    """`netsh int ipv4 show excludedportrange protocol=tcp` → list of (start, end), or None when
+    the listing's English header is missing (an error message, another display language)."""
+    if not re.search(r"Start Port\s+End Port", text):
+        return None
     ranges = []
     for line in text.splitlines():
         m = re.match(r"\s*(\d+)\s+(\d+)\b", line)
@@ -172,7 +219,7 @@ def render(label, fields):
 
 
 def collect_windows(details):
-    text = run(["netstat", "-ano"])
+    text = run(["netstat", "-anoq", "-p", "TCP"])
     rows = parse_netstat_connections(text) if text is not None else None
     dyn_text = run(["netsh", "int", "ipv4", "show", "dynamicport", "tcp"]) or ""
     exc_text = run(["netsh", "int", "ipv4", "show", "excludedportrange", "protocol=tcp"])
@@ -192,11 +239,8 @@ def read(path):
 
 
 def collect_linux(details):
-    rows = None
-    for path in ("/proc/net/tcp", "/proc/net/tcp6"):
-        text = read(path)
-        if text is not None:
-            rows = (rows or []) + parse_proc_net_tcp(text)
+    text = read("/proc/net/tcp")
+    rows = parse_proc_net_tcp(text) if text is not None else None
     dynamic = None
     port_range = read("/proc/sys/net/ipv4/ip_local_port_range")
     if port_range:
@@ -215,6 +259,16 @@ def collect_linux(details):
 
 
 def snapshot(label, details):
+    if os.path.exists(DISABLED):
+        print(f"socket-snapshot {label} disabled (an earlier collector timed out)")
+        return
+    try:
+        collect(label, details)
+    except Disabled:
+        print(f"socket-snapshot {label} disabled (a collector timed out)")
+
+
+def collect(label, details):
     if WINDOWS:
         rows, dynamic, excluded, active, extra = collect_windows(details)
     elif os.path.exists("/proc/net/tcp"):

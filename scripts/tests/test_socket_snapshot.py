@@ -5,6 +5,7 @@ import contextlib
 import importlib.util
 import io
 import os
+import sys
 import tempfile
 import unittest
 
@@ -23,8 +24,16 @@ Active Connections
   TCP    127.0.0.1:49670        127.0.0.1:49671        TIME_WAIT       0
   TCP    127.0.0.1:49671        127.0.0.1:49670        TIME_WAIT       0
   TCP    127.0.0.1:50001        127.0.0.1:50002        ESTABLISHED     4242
+  TCP    127.0.0.1:49800        0.0.0.0:0              BOUND           4242
   TCP    [::1]:49700            [::1]:49701            CLOSE_WAIT      4242
   UDP    0.0.0.0:5353           *:*                                    2100
+"""
+
+NETSTAT_LOCALIZED = """
+Aktive Verbindungen
+
+  Proto  Lokale Adresse         Remoteadresse          Status           PID
+  TCP    127.0.0.1:49670        127.0.0.1:49671        WARTEND          0
 """
 
 NETSH_DYNAMIC = """
@@ -61,7 +70,7 @@ PROC_NET_TCP = """  sl  local_address rem_address   st tx_queue rx_queue tr tm->
 
 
 class Parsers(unittest.TestCase):
-    def test_windows_connections_skip_udp_and_headers(self):
+    def test_windows_connections_keep_ipv4_tcp_rows_including_bound_ones(self):
         rows = snap.parse_netstat_connections(NETSTAT_ANO)
         self.assertEqual(
             rows,
@@ -70,9 +79,17 @@ class Parsers(unittest.TestCase):
                 (49670, "TIME_WAIT"),
                 (49671, "TIME_WAIT"),
                 (50001, "ESTABLISHED"),
-                (49700, "CLOSE_WAIT"),
+                (49800, "BOUND"),
             ],
         )
+
+    def test_unrecognized_output_is_unavailable_not_zero(self):
+        self.assertIsNone(snap.parse_netstat_connections(NETSTAT_LOCALIZED))
+        self.assertIsNone(snap.parse_netstat_connections(""))
+        unknown_state = NETSTAT_ANO.replace("ESTABLISHED", "ETABLIE")
+        self.assertIsNone(snap.parse_netstat_connections(unknown_state))
+        self.assertIsNone(snap.parse_netsh_excluded("Access is denied."))
+        self.assertEqual(snap.parse_netsh_excluded("Start Port    End Port\n----------    --------\n"), [])
 
     def test_windows_range_exclusions_and_opens(self):
         self.assertEqual(snap.parse_netsh_dynamic(NETSH_DYNAMIC), (49152, 16384))
@@ -95,16 +112,41 @@ class Arithmetic(unittest.TestCase):
         )
         self.assertEqual(fields["time_wait"], 2)
         self.assertEqual(fields["listen"], 1)
-        self.assertEqual(fields["other"], 1)
         self.assertEqual(fields["excluded"], 60)  # 5357 lies outside the dynamic range
-        # 49670, 49671 and 49700 are in use; 50001 is inside an exclusion, counted there only.
+        # 49670, 49671 and the bound-only 49800 are in use; 50001 is inside an exclusion, counted
+        # there only.
         self.assertEqual(fields["dyn_in_use"], 3)
         self.assertEqual(fields["dyn_free"], 16384 - 60 - 3)
+        self.assertEqual(fields["other"], 1)  # BOUND
 
     def test_unreadable_sources_print_question_marks(self):
         line = snap.render("x", snap.summarize(None, None, None, None))
         self.assertIn("tcp=? time_wait=?", line)
         self.assertIn("dyn_free=? active_opens=?", line)
+
+
+class Commands(unittest.TestCase):
+    def test_a_failing_command_is_unavailable(self):
+        self.assertIsNone(snap.run([sys.executable, "-c", "import sys; print('x'); sys.exit(3)"]))
+        self.assertIsNone(snap.run(["definitely-not-a-command-socket-snapshot"]))
+
+    def test_a_timeout_disables_later_snapshots(self):
+        saved = (snap.COMMAND_TIMEOUT, os.getcwd())
+        with tempfile.TemporaryDirectory() as d:
+            os.chdir(d)
+            os.mkdir("target")
+            try:
+                snap.COMMAND_TIMEOUT = 0.2
+                with self.assertRaises(snap.Disabled):
+                    snap.run([sys.executable, "-c", "import time; time.sleep(5)"])
+                self.assertTrue(os.path.exists(snap.DISABLED))
+                out = io.StringIO()
+                with contextlib.redirect_stdout(out):
+                    snap.snapshot("later", False)
+                self.assertEqual(out.getvalue().strip(), "socket-snapshot later disabled (an earlier collector timed out)")
+            finally:
+                snap.COMMAND_TIMEOUT = saved[0]
+                os.chdir(saved[1])
 
 
 class Summary(unittest.TestCase):

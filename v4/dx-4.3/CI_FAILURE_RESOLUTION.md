@@ -1,7 +1,8 @@
 # Windows CI failure on the 4.3 PR: investigation and resolution
 
-Status of the investigation: **cause not established; gate-induced dynamic-port exhaustion
-excluded by measurement; no defect found in the code under test; diagnostics and a lifecycle
+Status of the investigation: **cause not established; dynamic-port exhaustion was not observed
+in the measured reruns, and the measurements argue against ordinary gate churn exhausting an
+otherwise healthy range; no defect found in the code under test; diagnostics and a lifecycle
 control retained.** Nothing was disabled, ignored, retried or weakened.
 
 ## The observed failure
@@ -39,17 +40,22 @@ resource was missing.
    `scripts/socket-snapshot.py` (diagnostic only): machine-wide TCP counters, the dynamic port
    range, its excluded and in-use ports, after every gate step and around every example package,
    with a summary line printed by `scripts/verify.sh` on every run and the full series in
-   `target/verify-socket-pressure.log` (printed by CI when a step fails).
+   `target/verify-socket-pressure.log` (printed by CI when a step fails). The `7eefdee` version
+   used `netstat -ano`, which omits bound sockets that neither listen nor connect, and mixed
+   IPv6 rows into the IPv4 range; the figures below therefore count visible IPv4/IPv6 TCP
+   sockets and slightly overstate the free ports. The correction head collects `netstat -anoq
+   -p TCP` (IPv4, bound sockets included) and prints `?` for unrecognized or failed output.
 
    | Run / job (Windows) | Checkout | Region | Peak TIME_WAIT | Fewest free dynamic ports | Excluded | Connections opened | Result |
    |---|---|---|---|---|---|---|---|
    | [41921343094](https://github.com/gqsnt/concord_api/actions/runs/41921343094) / 126894342080 (push) | `7eefdee` | eastus | 294 | 15,884 of 16,384 | 200 | 1,575 | success |
    | [41921346743](https://github.com/gqsnt/concord_api/actions/runs/41921346743) / 126894355705 (pull_request) | `e12492b` (merge of `5ed600b` and `7eefdee`) | westus3 | 306 | 15,870 of 16,384 | 200 | 1,427 | success |
 
-   The gate's own use of the dynamic range peaks below 4 % of the free ports at step boundaries
-   (within-step peaks are not sampled; they are bounded by the connections a step opens). An
-   exhaustion of the dynamic range by the gate's own tests would need two orders of magnitude
-   more sockets than measured.
+   At step boundaries the visible occupancy of the dynamic range was 300–314 ports, about 2 % of
+   it (roughly a 50-fold margin to the free ports reported). Within-step peaks are not sampled, `ActiveOpens` counts
+   connections, not listeners or bound-only sockets, and these are other machines than the one
+   that failed: the figures establish the gate's ordinary footprint on healthy runners, not the
+   state of the failing runner.
 4. **Repetition tied to the failure mode.** The identical Riot tests, with their full preceding
    workload, have passed on native Windows in job 126834404351 (same tree as the failure) and in
    both instrumented jobs above; earlier implementation runs passed too (VERIFICATION.md).
@@ -57,10 +63,12 @@ resource was missing.
 ## Conclusion and evidence strength
 
 - **Established:** the failure is the fixture's listener bind, before any provider request; the
-  same tree passed on another runner; the gate's measured socket footprint on native Windows
-  leaves ≥ 15,870 of 16,384 dynamic ports free.
-- **Excluded (by measurement, at step granularity):** dynamic-port exhaustion caused by the
-  gate's own connection churn or a fixture that accumulates sockets across tests.
+  same tree passed on another runner; in the measured reruns the gate's visible socket footprint
+  on native Windows left ≥ 15,870 of 16,384 dynamic ports free at step boundaries.
+- **Not observed, argued against:** dynamic-port exhaustion by the gate's own connection churn
+  (not observed in the measured reruns; the margin argues against ordinary churn exhausting an
+  otherwise healthy range) and a fixture that accumulates connection tasks or listeners across
+  cycles (the lifecycle control below would fail).
 - **Not established:** which resource the failing runner lacked. No counters exist for that
   virtual machine (its job predates the instrumentation). The remaining hypothesis is a
   runner-side transient condition (other processes or kernel buffer pressure on that machine); it
@@ -73,11 +81,32 @@ retained measures are:
 - the per-step socket snapshots (`scripts/socket-snapshot.py`, controls in
   `scripts/tests/test_socket_snapshot.py`), so a recurrence on any runner comes with that
   machine's dynamic range, exclusions and usage;
-- a lifecycle control, `examples/riot/tests/fixture_lifecycle.rs::repeated_fixture_cycles_release_their_connections`:
-  100 cycles of the failing fixture lifecycle (ephemeral bind, kept-alive requests, client and
-  server dropped) asserting that the server side releases its connection within a bounded wait
-  before the next bind; the helper gained only a live-connection counter
-  (`examples/riot/tests/support/mod.rs`). Verified to fail when a connection task is made to
-  leak (temporary local mutation, cycle 0) and to pass on the real fixture.
+- a lifecycle control, `examples/riot/tests/fixture_lifecycle.rs::repeated_fixture_cycles_release_their_connections_and_listener`:
+  100 cycles of the failing fixture lifecycle (ephemeral bind, kept-alive requests, client
+  dropped, server dropped) asserting, within bounded waits, that the server's connection tasks
+  end after the client closes and that its accept task (which owns the listener) ends after the
+  server is dropped. The helper gained only counters and a `Probe` that reads them after the
+  server is dropped (`examples/riot/tests/support/mod.rs`); responses and wire behaviour are
+  unchanged. Negative controls (temporary local mutations): a connection task that never ends,
+  and a `Server::drop` that no longer aborts the accept task, each fail at cycle 0; the real
+  fixture passes.
 
 The wire assertions, the isolated-example gate and the feature-isolation checks are unchanged.
+
+## Independent review of the correction
+
+Reviewer: Codex CLI 0.166.0, requested model `gpt-6.1-sol` with reasoning effort `xhigh`,
+read-only sandbox; observed in the session header: `model: gpt-6.1-sol`, `reasoning effort:
+xhigh`, `sandbox: read-only`. Scope: `git diff d4ebd34 2cdecd3` in a detached checkout of
+`2cdecd3`. Verdict: **ACCEPT_WITH_FIXES**. Resolutions, all in the commit that follows `2cdecd3`:
+
+| # | Finding (severity) | Resolution |
+|---|---|---|
+| 1 | `netstat -ano` omits bound non-listening ports, so `dyn_free` overstates (major) | `netstat -anoq -p TCP`; BOUND rows counted (control in `scripts/tests/test_socket_snapshot.py`); Linux `dyn_free` documented as an upper estimate |
+| 2 | `connections() == 1` races reqwest's pool return (major) | assertion relaxed to 1–2 accepted connections; the bounded zero-live wait stays |
+| 3 | "excluded" and "two orders of magnitude" overstate the evidence (major) | wording narrowed to "not observed in the measured reruns; argues against ordinary churn"; margin stated as roughly 50-fold over visible occupancy, with the measurement's limits |
+| 4 | the control did not observe listener/accept-task teardown (minor) | accept-task counter and `Probe`; bounded wait after `drop(server)`; negative control added |
+| 5 | failed or localized collector output became zeros (minor) | nonzero exit, missing English headers or unknown states give `?`; controls added |
+| 6 | IPv6 rows mixed into the IPv4 range (minor) | the diagnostic is IPv4-only on both platforms |
+| 7 | 60 s per command, no snapshot budget (minor) | 10 s per command, 20 s per snapshot; a timeout disables later snapshots of the run (`target/socket-snapshot.disabled`, removed at gate start) |
+| 8 | STATUS points at verification that does not cover the correction head (minor) | STATUS marks the correction head's verification pending until its exact-commit results are recorded |

@@ -69,6 +69,7 @@ no_reqwest_multipart() {
 
 mkdir -p target
 rm -f target/verify-*.log  # the summary below reads only this run's logs
+rm -f target/socket-snapshot.disabled  # scripts/socket-snapshot.py: re-enabled for every run
 
 # Every step runs python, cargo and tar through scripts/argv-guard.sh, which refuses a command line
 # over the Windows limit on every platform (a consumers.sh argument once failed only on Windows).
