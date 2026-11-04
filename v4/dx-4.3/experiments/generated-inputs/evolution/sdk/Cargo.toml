@@ -1,0 +1,8 @@
+[package]
+name = "g1-evo-sdk"
+version = "0.0.0"
+edition = "2024"
+publish = false
+
+[dependencies]
+concord = { path = "../../../../../../crates/concord" }

@@ -1,0 +1,23 @@
+# Matched caller tasks of experiment G1 (generated input records): the same jobs written against
+# the existing generated interface (`baseline`) and against the generated inputs (`candidate`),
+# over the same SDK, runtime and fixture. Standalone workspace: not a member of the repository's
+# workspace, never packaged. See ../README.md.
+[package]
+name = "concord-g1-tasks"
+version = "0.0.0"
+edition = "2024"
+publish = false
+
+[workspace]
+
+[features]
+## The generated-input solutions; they compile only with the experiment's macro.
+candidate = []
+
+[dependencies]
+concord = { path = "../../../../../crates/concord" }
+concord-example-sdk = { path = "../../../../../examples/sdk" }
+
+[dev-dependencies]
+concord-example-fixture = { path = "../../../../../examples/fixture" }
+tokio = { version = "1.45", default-features = false, features = ["macros", "rt-multi-thread"] }

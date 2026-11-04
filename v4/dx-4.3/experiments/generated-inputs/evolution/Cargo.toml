@@ -1,0 +1,6 @@
+# Experiment G1, downstream evolution (C02, DX03). `run.sh` installs each SDK version from
+# `versions/` into `sdk/src/lib.rs` and builds the saved consumers, which are never edited.
+# Standalone workspace: not part of the repository's workspace, never packaged.
+[workspace]
+members = ["sdk", "consumer", "consumer-setters", "literal"]
+resolver = "3"
