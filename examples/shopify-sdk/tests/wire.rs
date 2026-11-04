@@ -327,3 +327,91 @@ async fn the_result_download_goes_to_its_own_host_without_the_token() {
     drop(response);
     storage.shutdown().await;
 }
+
+#[tokio::test]
+async fn product_by_id_and_bulk_cancel_on_the_wire() {
+    use concord_example_shopify_sdk::ops::bulk::{BulkOperationStatus, CancelBulkOperation};
+    use concord_example_shopify_sdk::ops::catalog::ProductQuery;
+    use concord_example_shopify_sdk::scalars::{BulkOperationId, ProductId};
+
+    let server = TestServer::start(|request: &Recorded| {
+        let body = body_json(request);
+        match body["operationName"].as_str() {
+            Some("CatalogProduct") => graphql(json!({"data": {"product": {
+                "id": body["variables"]["id"], "title": "Tee", "handle": "tee", "status": "UNLISTED",
+                "vendor": "V", "productType": "", "tags": ["a", "b"], "totalInventory": 0,
+                "variantsCount": null,
+                "variants": {"nodes": [], "pageInfo": {"hasNextPage": false, "endCursor": null}},
+                "collections": {"nodes": [{"id": "gid://shopify/Collection/5", "title": "C", "handle": "c"}],
+                                "pageInfo": {"hasNextPage": true, "endCursor": "Y29s"}}}}})),
+            Some("BulkOperationCancel") => graphql(json!({"data": {"bulkOperationCancel": {
+                "bulkOperation": {"id": body["variables"]["id"], "status": "CANCELING", "errorCode": null,
+                    "createdAt": "2026-10-22T10:00:00Z", "completedAt": null, "objectCount": "12",
+                    "rootObjectCount": "4", "fileSize": null, "url": null, "partialDataUrl": null, "type": "QUERY"},
+                "userErrors": []}}})),
+            _ => Reply::json(500, "{}"),
+        }
+    })
+    .await;
+    let sdk = sdk(&server);
+    let shop = sdk.shop(ShopDomain::new("shop-one").unwrap(), &token(TOKEN_ONE));
+
+    let id = ProductId::parse("gid://shopify/Product/101").unwrap();
+    let query = ProductQuery {
+        id: id.clone(),
+        variants_first: PageSize::new(5).unwrap(),
+        collections_first: PageSize::new(2).unwrap(),
+    };
+    let product = shop
+        .send(shop.admin().product(query).prepare())
+        .await
+        .unwrap()
+        .data
+        .present()
+        .unwrap()
+        .product
+        .unwrap();
+    assert_eq!(product.id, id);
+    assert_eq!(product.variants_count, None);
+    assert_eq!(product.tags, ["a", "b"]);
+    assert!(product.collections.page_info.has_next_page);
+
+    let op = BulkOperationId::parse("gid://shopify/BulkOperation/9001").unwrap();
+    let cancel = shop
+        .send(
+            shop.admin()
+                .cancel_bulk_operation(CancelBulkOperation { id: op.clone() })
+                .prepare(),
+        )
+        .await
+        .unwrap();
+    let payload = cancel
+        .data
+        .present()
+        .unwrap()
+        .bulk_operation_cancel
+        .unwrap();
+    assert!(payload.user_errors.is_empty());
+    assert_eq!(
+        payload.bulk_operation.unwrap().status,
+        BulkOperationStatus::Canceling
+    );
+
+    let requests = server.requests();
+    assert_eq!(
+        body_json(&requests[0])["variables"],
+        json!({"id": "gid://shopify/Product/101", "variantsFirst": 5, "collectionsFirst": 2})
+    );
+    let cancel_body = body_json(&requests[1]);
+    assert_eq!(
+        cancel_body["variables"],
+        json!({"id": "gid://shopify/BulkOperation/9001"})
+    );
+    assert!(
+        cancel_body["query"]
+            .as_str()
+            .unwrap()
+            .starts_with("mutation BulkOperationCancel(")
+    );
+    server.shutdown().await;
+}
