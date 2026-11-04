@@ -79,7 +79,12 @@ pub fn to_path<'a>(requests: &'a [Recorded], path: &str) -> Vec<&'a Recorded> {
 /// Every request carried the bearer token and nothing printed it.
 pub fn assert_authenticated(requests: &[Recorded]) {
     for r in requests {
-        assert_eq!(r.header("authorization"), Some(format!("Bearer {TOKEN}").as_str()), "{}", r.target);
+        assert_eq!(
+            r.header("authorization"),
+            Some(format!("Bearer {TOKEN}").as_str()),
+            "{}",
+            r.target
+        );
     }
 }
 

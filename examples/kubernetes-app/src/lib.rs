@@ -19,5 +19,5 @@
 
 pub mod collect;
 pub mod inventory;
-// pub mod list_watch; (waits for the JSON values reader)
+pub mod list_watch;
 mod stop;

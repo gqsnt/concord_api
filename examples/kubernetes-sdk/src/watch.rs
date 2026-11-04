@@ -23,7 +23,13 @@
 
 use serde::Deserialize;
 use std::collections::BTreeMap;
+use std::fmt;
 
+use concord::jsonl::{JsonValues, JsonValuesReader};
+use concord::reqwest;
+use concord::stream::{ByteSource, OpenError, OpenErrorKind, Position, ReadError};
+
+use crate::error::ApiError;
 use crate::ids::ResourceVersion;
 use crate::model::{Resource, Status};
 use crate::selector::{FieldSelector, LabelSelector};
@@ -169,4 +175,90 @@ watch_operation! {
     KubeAppsV1WatchDeployments => crate::model::Deployment, "Kube.apps_v1.watch_deployments";
     KubeAppsV1NamespacedWatchDeployments => crate::model::Deployment,
         "Kube.apps_v1.namespaced.watch_deployments";
+}
+
+/// Why a watch could not be opened: the complete classification (no response, non-2xx, refused
+/// head), so callers can match it exhaustively.
+#[derive(Debug)]
+pub enum WatchOpenError {
+    /// The request was not built, or no response arrived (Concord's error, redacted).
+    Request(concord::Error),
+    /// The server answered non-2xx; `410` ([`ApiError::is_expired`]) means the start resource
+    /// version is older than the server's history: list again.
+    Api(ApiError),
+    /// The 2xx response's head was refused by the decoder's media policy (kept unread).
+    Refused(OpenError),
+}
+
+impl fmt::Display for WatchOpenError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Request(error) => error.fmt(f),
+            Self::Api(error) => error.fmt(f),
+            Self::Refused(error) => error.fmt(f),
+        }
+    }
+}
+
+impl std::error::Error for WatchOpenError {}
+
+/// One open watch connection: typed events decoded incrementally from the response body.
+///
+/// Nothing runs ahead of the caller; at most the current chunk and one unfinished event are
+/// retained. Dropping it drops the response (the connection is closed, not returned to the pool).
+/// After the end of the stream or a read error it is fused.
+pub struct WatchStream<T, S = reqwest::Response> {
+    values: JsonValues<WatchEvent<T>, S>,
+}
+
+impl<T: Resource, S: ByteSource> WatchStream<T, S> {
+    /// Wraps a JSON values reader over any byte source (an in-memory [`concord::stream::Chunks`]
+    /// in segmentation tests). [`open`] is the HTTP route.
+    pub fn from_values(values: JsonValues<WatchEvent<T>, S>) -> Self {
+        Self { values }
+    }
+
+    /// The next event; `None` when the server ended the stream (or after an error).
+    ///
+    /// A `ReadError` of kind `Transport` is a lost connection, `Limit` an event larger than the
+    /// reader's `max_value_bytes`, `Format`/`Decode` a malformed event. Cancel-safe.
+    pub async fn next(&mut self) -> Option<Result<WatchEvent<T>, ReadError>> {
+        self.values.next().await
+    }
+
+    /// Events delivered and bytes consumed so far.
+    pub fn position(&self) -> Position {
+        self.values.position()
+    }
+}
+
+impl<T, S> fmt::Debug for WatchStream<T, S> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("WatchStream").finish_non_exhaustive()
+    }
+}
+
+/// Opens one watch: prepares the generated operation, sends it once with `send_raw`, and hands
+/// the 2xx response to `reader` (which checks the media type before polling the body). A non-2xx
+/// answer's `Status` document is read (bounded) into [`WatchOpenError::Api`].
+///
+/// # Errors
+///
+/// [`WatchOpenError`]: not built / no response, non-2xx, refused head.
+pub async fn open<W: WatchOperation>(
+    operation: W,
+    reader: &JsonValuesReader,
+) -> Result<WatchStream<W::Item>, WatchOpenError> {
+    let prepared = operation.prepare_watch().map_err(WatchOpenError::Request)?;
+    let response = prepared.send_raw().await.map_err(WatchOpenError::Request)?;
+    match reader.open_for::<WatchEvent<W::Item>>(response, W::ENDPOINT) {
+        Ok(values) => Ok(WatchStream { values }),
+        Err(refused) if refused.kind() == OpenErrorKind::Status => {
+            let response = refused.into_response();
+            Err(WatchOpenError::Api(
+                ApiError::from_response(Some(W::ENDPOINT), response).await,
+            ))
+        }
+        Err(refused) => Err(WatchOpenError::Refused(refused)),
+    }
 }

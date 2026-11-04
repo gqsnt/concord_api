@@ -70,7 +70,10 @@ fn names<T: concord_example_kubernetes_sdk::Resource>(items: &[T]) -> Vec<String
         .collect()
 }
 
-fn two_namespaces(labels: Option<LabelSelector>, fields: Option<FieldSelector>) -> InventoryRequest {
+fn two_namespaces(
+    labels: Option<LabelSelector>,
+    fields: Option<FieldSelector>,
+) -> InventoryRequest {
     InventoryRequest {
         scope: InventoryScope::Namespaces(vec![ns("team-a"), ns("team-b")]),
         label_selector: labels,
@@ -109,15 +112,24 @@ async fn ku_a_two_namespaces_selectors_and_an_empty_chunk() {
     let pods_a = &inv.pods[0];
     assert_eq!(pods_a.scope, CollectionScope::Namespace(ns("team-a")));
     assert_eq!(names(&pods_a.items), ["web-a-1", "web-a-2", "web-a-3"]);
-    assert_eq!(pods_a.completion.snapshot, Some(ResourceVersion::new("5001")));
+    assert_eq!(
+        pods_a.completion.snapshot,
+        Some(ResourceVersion::new("5001"))
+    );
     assert_eq!(pods_a.completion.chunks, 3);
     assert_eq!(pods_a.completion.remaining_item_counts, [None, None, None]);
     assert!(pods_a.completion.restarts.is_empty());
     let pods_b = &inv.pods[1];
     assert_eq!(pods_b.scope, CollectionScope::Namespace(ns("team-b")));
     assert_eq!(names(&pods_b.items), ["web-b-1"]);
-    assert_eq!(pods_b.completion.snapshot, Some(ResourceVersion::new("7001")));
-    assert_eq!(inv.jobs[1].items[0].state(), concord_example_kubernetes_sdk::model::JobState::Complete);
+    assert_eq!(
+        pods_b.completion.snapshot,
+        Some(ResourceVersion::new("7001"))
+    );
+    assert_eq!(
+        inv.jobs[1].items[0].state(),
+        concord_example_kubernetes_sdk::model::JobState::Complete
+    );
 
     assert_eq!(
         inv.summary(),
@@ -210,7 +222,10 @@ async fn ku_a_cluster_wide_reports_remaining_item_count_without_using_it() {
     assert_eq!(pods.items.len(), 5);
     assert_eq!(pods.completion.snapshot, Some(ResourceVersion::new("8100")));
     // Reported as received (3, then 1, absent on the last chunk) ...
-    assert_eq!(pods.completion.remaining_item_counts, [Some(3), Some(1), None]);
+    assert_eq!(
+        pods.completion.remaining_item_counts,
+        [Some(3), Some(1), None]
+    );
     // ... and not used: exactly the chunks the tokens led to, one at a time, only server tokens.
     let requests = server.requests();
     let chain = to_path(&requests, "/api/v1/pods");
@@ -257,7 +272,12 @@ async fn ku_a_long_chain_is_strictly_sequential() {
     })
     .await;
     let template = kube(&server).namespace(ns("team-a")).core().pods();
-    let collected = collect_list(template, policy(5, CHUNKS, OnExpired::Report), Resume::Start).await;
+    let collected = collect_list(
+        template,
+        policy(5, CHUNKS, OnExpired::Report),
+        Resume::Start,
+    )
+    .await;
     assert!(collected.completion.outcome.is_complete());
     assert_eq!(collected.items.len(), CHUNKS * PER);
     let in_order = names(&collected.items)
@@ -277,13 +297,18 @@ async fn ku_a_long_chain_is_strictly_sequential() {
     let bounded = collect_list(template, policy(5, 3, OnExpired::Report), Resume::Start).await;
     assert_eq!(server.requests().len() - before, 3);
     match &bounded.completion.outcome {
-        ListOutcome::Bounded { resume: Resume::At(key) } => {
+        ListOutcome::Bounded {
+            resume: Resume::At(key),
+        } => {
             assert_eq!(key.token().expose(), "g3");
             assert_eq!(key.snapshot().as_str(), "99000");
         }
         other => panic!("{other:?}"),
     }
-    assert_eq!(bounded.completion.remaining_item_counts, [Some(295), Some(290), Some(285)]);
+    assert_eq!(
+        bounded.completion.remaining_item_counts,
+        [Some(295), Some(290), Some(285)]
+    );
     finish(server).await;
 }
 
@@ -313,7 +338,11 @@ async fn ku_a_expired_token_restarts_with_an_explicit_boundary() {
     let server = TestServer::start(expired_then_restart(Arc::clone(&firsts))).await;
     let inv = inventory(&kube(&server), &two_namespaces(None, None)).await;
     let pods = &inv.pods[0];
-    assert!(pods.completion.outcome.is_complete(), "{:?}", pods.completion);
+    assert!(
+        pods.completion.outcome.is_complete(),
+        "{:?}",
+        pods.completion
+    );
     // The expired chain's prefix (web-a-1, web-a-2 at 5001) was discarded; the new snapshot's
     // objects replace it (web-a-2 is gone, web-a-3 and web-a-4 are new).
     assert_eq!(names(&pods.items), ["web-a-1", "web-a-3", "web-a-4"]);
@@ -350,7 +379,10 @@ async fn ku_a_expired_token_reported_when_restarts_are_not_allowed() {
     let pods = &inv.pods[0];
     match &pods.completion.outcome {
         ListOutcome::Expired { boundary } => {
-            assert_eq!(boundary.expired_snapshot, Some(ResourceVersion::new("5001")));
+            assert_eq!(
+                boundary.expired_snapshot,
+                Some(ResourceVersion::new("5001"))
+            );
             assert_eq!(boundary.discarded_items, 2);
             assert!(boundary.during_continuation);
         }
@@ -363,7 +395,11 @@ async fn ku_a_expired_token_reported_when_restarts_are_not_allowed() {
     assert!(!inv.is_complete());
     // The other families are still reported.
     assert!(inv.pods[1].completion.outcome.is_complete());
-    assert!(inv.deployments.iter().all(|f| f.completion.outcome.is_complete()));
+    assert!(
+        inv.deployments
+            .iter()
+            .all(|f| f.completion.outcome.is_complete())
+    );
     finish(server).await;
 }
 
@@ -416,7 +452,12 @@ async fn ku_a_bounded_chain_resumes_from_its_checkpoint() {
             Some(ResourceVersion::new("0")),
             Some(concord_example_kubernetes_sdk::ResourceVersionMatch::NotOlderThan),
         );
-    let first = collect_list(template.clone(), policy(2, 1, OnExpired::Report), Resume::Start).await;
+    let first = collect_list(
+        template.clone(),
+        policy(2, 1, OnExpired::Report),
+        Resume::Start,
+    )
+    .await;
     let resume = match first.completion.outcome {
         ListOutcome::Bounded { resume } => resume,
         other => panic!("{other:?}"),
@@ -427,7 +468,11 @@ async fn ku_a_bounded_chain_resumes_from_its_checkpoint() {
     assert!(!format!("{key:?}").contains(T1));
 
     let rest = collect_list(template, policy(2, 5, OnExpired::Report), resume).await;
-    assert!(rest.completion.outcome.is_complete(), "{:?}", rest.completion);
+    assert!(
+        rest.completion.outcome.is_complete(),
+        "{:?}",
+        rest.completion
+    );
     assert_eq!(names(&rest.items), ["web-a-3"]);
     assert_eq!(rest.completion.chunks, 2);
     assert_eq!(rest.completion.snapshot, Some(ResourceVersion::new("5001")));
@@ -481,7 +526,14 @@ async fn ku_a_a_forbidden_family_does_not_hide_the_others() {
         api.to_string(),
         "Kube.batch_v1.namespaced.jobs: Kubernetes API answered 403 (reason Forbidden)"
     );
-    assert!(api.status().unwrap().message.as_deref().unwrap().contains("serviceaccount"));
+    assert!(
+        api.status()
+            .unwrap()
+            .message
+            .as_deref()
+            .unwrap()
+            .contains("serviceaccount")
+    );
     assert!(!inv.is_complete());
     assert_eq!(inv.summary().pods, 4);
     assert!(inv.jobs[0].completion.outcome.is_complete());

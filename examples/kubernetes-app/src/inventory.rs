@@ -19,10 +19,10 @@
 //! - The server's `/version/` is read and compared with the pinned target; a different server
 //!   is recorded, not refused (the core/apps/batch v1 resources are stable across releases).
 
+use concord_example_kubernetes_sdk::list::ListOperation;
 use concord_example_kubernetes_sdk::model::{
     ConfigMap, Deployment, Job, JobState, Namespace, Pod, PodPhase, Service, VersionInfo,
 };
-use concord_example_kubernetes_sdk::list::ListOperation;
 use concord_example_kubernetes_sdk::{
     FieldSelector, KubeContext, KubeError, LabelSelector, NamespaceName, PINNED_SERVER_VERSION,
 };
@@ -237,19 +237,23 @@ pub async fn inventory(kube: &KubeContext, request: &InventoryRequest) -> Invent
         InventoryScope::AllNamespaces => {
             let all = CollectionScope::AllNamespaces;
             let core = kube.core();
-            inventory.namespace_list =
-                Some(family(all.clone(), core.namespaces(), policy).await);
+            inventory.namespace_list = Some(family(all.clone(), core.namespaces(), policy).await);
             let pods = core
                 .pods()
                 .with_label_selector(labels.clone())
                 .with_field_selector(pod_fields.clone());
             inventory.pods.push(family(all.clone(), pods, policy).await);
-            let deployments = kube.apps().deployments().with_label_selector(labels.clone());
+            let deployments = kube
+                .apps()
+                .deployments()
+                .with_label_selector(labels.clone());
             inventory
                 .deployments
                 .push(family(all.clone(), deployments, policy).await);
             let services = core.services().with_label_selector(labels.clone());
-            inventory.services.push(family(all.clone(), services, policy).await);
+            inventory
+                .services
+                .push(family(all.clone(), services, policy).await);
             let config_maps = core.config_maps().with_label_selector(labels.clone());
             inventory
                 .config_maps
@@ -276,7 +280,9 @@ pub async fn inventory(kube: &KubeContext, request: &InventoryRequest) -> Invent
                     .pods()
                     .with_label_selector(labels.clone())
                     .with_field_selector(pod_fields.clone());
-                inventory.pods.push(family(scope.clone(), pods, policy).await);
+                inventory
+                    .pods
+                    .push(family(scope.clone(), pods, policy).await);
                 let deployments = ns.apps().deployments().with_label_selector(labels.clone());
                 inventory
                     .deployments

@@ -20,7 +20,6 @@ use concord_example_kubernetes_sdk::ResourceVersion;
 use concord_example_kubernetes_sdk::list::{Continuation, ListError, ListOperation, ListPager};
 use concord_pagination::{Budget, Outcome, Resume, sequential};
 
-
 /// How a collection is read.
 #[derive(Clone, Copy, Debug)]
 pub struct ListPolicy {
