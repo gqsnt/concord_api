@@ -7,11 +7,15 @@
 //! | [`Text`] | — | `String`, `text/plain; charset=utf-8` | `String` (UTF-8); any `Content-Type`, also a missing, repeated or malformed one; refused only when a single well-formed one declares a charset other than UTF-8 or US-ASCII (also among repeated charset parameters) | none |
 //! | [`Binary`] | — | `Bytes`, `Vec<u8>`, `application/octet-stream` | `Bytes`, `Vec<u8>`; nothing checked (`image/png` is fine) | none |
 //! | `Form` | `form` | any `T: Serialize` (flat), `application/x-www-form-urlencoded` | any `T: DeserializeOwned`; exactly one `application/x-www-form-urlencoded`, charset absent or once and UTF-8 or US-ASCII | `application/x-www-form-urlencoded` |
+//! | `jsonl::JsonLines` | `jsonl` | `Vec<T: Serialize>` or a lazy `jsonl::StreamRecords<S>`, compact JSON with an LF after every record, `application/jsonl` | `Vec<T: DeserializeOwned>`; exactly one `application/jsonl`, `application/jsonlines` or `application/x-jsonlines`, charset absent or once and UTF-8 or US-ASCII; blank lines and a byte order mark refused | `application/jsonl` |
+//! | `jsonl::Ndjson` | `jsonl` | as `JsonLines`, `application/x-ndjson` | as `JsonLines` with `application/x-ndjson` or `application/ndjson`; blank lines ignored | `application/x-ndjson` |
 //! | [`IgnoreContentType<F>`] | — | `F`'s | `F`'s, without its `Content-Type` check | `F`'s |
 //!
 //! Head checks run before the body is read; a refusal is an
 //! [`ErrorKind::Metadata`](concord_core::ErrorKind::Metadata) error that keeps the response
-//! unread. None of these formats is known to the `api!` macro: a statement names them by their
+//! unread. The `jsonl` module also reads JSON Lines and consecutive JSON values (a Kubernetes
+//! watch) incrementally as a response arrives, on the `stream` infrastructure. None of these
+//! formats is known to the `api!` macro: a statement names them by their
 //! type path (`format Json;`), exactly like a format of your own. Applications normally get them
 //! through the `concord` crate.
 

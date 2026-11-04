@@ -302,6 +302,12 @@ body is read. A version header, as in `Versioned` above, would go in `context`, 
 A line-oriented format reports where a record failed, with numbers and without content.
 Excerpt of [`examples/native/src/repr.rs`](../examples/native/src/repr.rs):
 
+> The maintained implementation is `concord_extras::jsonl::{JsonLines, Ndjson}` (feature `jsonl`):
+> a documented framing profile (UTF-8, LF/CRLF, blank lines, byte order mark, final line, media
+> types), the same framing for the finite `Decode` and an incremental `JsonLinesReader`, lazy
+> uploads and a consecutive-JSON-values reader. Use it rather than copying this example, which
+> stays here as a small illustration of positions in a format of your own.
+
 ```rust
 /// Newline-delimited JSON (`application/x-ndjson`): a `Vec<T>` is one JSON object per line.
 ///
