@@ -1,15 +1,24 @@
 #!/usr/bin/env bash
 # Builds and tests a downstream consumer against the *packaged* sources of the four crates (the
 # extracted `.crate` files), not the repository: what a release would ship. Each package must hold
-# only sources, manifests, the README and the licences, with nothing that looks like a credential.
-# Usage: scripts/package-check.sh [OUT_DIR]   (default: target/package-check; never published)
+# only sources, manifests, the README and the licences, with nothing that looks like a credential,
+# and the extracted sources must be the repository's current ones (never a stale extraction).
+# Usage: scripts/package-check.sh [OUT_DIR]   (default: target/packaged/package-check; never published)
+# OUT_DIR is this script's own output: recreated when it holds the script's mark, created when
+# absent or empty, and refused (left untouched) otherwise (scripts/fresh-output.sh).
 set -euo pipefail
 cd "$(dirname "$0")/.."
 root=$(pwd)
-out=${1:-target/package-check}
-rm -rf "$out"
-mkdir -p "$out"
+. scripts/fresh-output.sh
+out=${1:-target/packaged/package-check}
+fresh_output "$out" package-check || exit 1
 out=$(cd "$out" && pwd)
+# The packages are extracted, and the consumer built, under a deep directory whose path has
+# non-ASCII components, so the native Windows CI job builds from such a path too (the build output
+# stays in $out/target).
+component="ünïcødé-路径"
+src="$out/extracted/$component/nested-directory-one/nested-directory-two/nested-directory-three"
+mkdir -p "$src"
 
 # The four crates are not on crates.io, so each is packaged with crates.io patches pointing at the
 # local crates it depends on (packaging resolves dependencies even with `--no-verify`), and without
@@ -31,31 +40,34 @@ target_dir=${target_dir%$'\r'}  # Python on Windows ends its line with CR LF
 # The archive is read from standard input: on Windows the target directory is `D:\...`, and GNU
 # tar takes a name with a colon before its first slash for a remote `host:path`.
 for crate in $crates; do
-  tar -xzf - -C "$out" <"$target_dir/package/$crate-$version.crate"
+  [[ ! -e $src/$crate-$version ]] || { echo "FAIL: $src/$crate-$version exists before extraction"; exit 1; }
+  tar -xzf - -C "$src" <"$target_dir/package/$crate-$version.crate"
+  same_sources "$src/$crate-$version" "crates/$crate" || { echo "FAIL: stale $crate package"; exit 1; }
 done
+echo "extracted sources match the repository: $src"
 echo "packaged files:"
 for crate in $crates; do
-  (cd "$out/$crate-$version" && find . -type f | sort | sed "s#^\./#  $crate/#")
+  (cd "$src/$crate-$version" && find . -type f | sort | sed "s#^\./#  $crate/#")
 done
 for crate in $crates; do
-  if find "$out/$crate-$version" -path '*/tests/*' | grep -q .; then
+  if find "$src/$crate-$version" -path '*/tests/*' | grep -q .; then
     echo "FAIL: test-only material in the $crate package"; exit 1
   fi
   # No build output, logs, fixtures or evidence: only these kinds of files are shipped.
-  unexpected=$(cd "$out/$crate-$version" && find . -type f | sed 's#^\./##' | grep -vE \
+  unexpected=$(cd "$src/$crate-$version" && find . -type f | sed 's#^\./##' | grep -vE \
     '^(src/[a-z_]+\.rs|Cargo\.toml|Cargo\.toml\.orig|Cargo\.lock|README\.md|LICENSE-(MIT|APACHE)|\.cargo_vcs_info\.json)$' || true)
   if [[ -n $unexpected ]]; then
     echo "FAIL: unexpected files in the $crate package:"; echo "$unexpected"; exit 1
   fi
   # Nothing credential-like: private keys, Riot API keys, GitHub or AWS tokens.
   if grep -rEn 'BEGIN [A-Z ]*PRIVATE KEY|RGAPI-[0-9A-Fa-f-]{8,}|gh[pousr]_[A-Za-z0-9]{20,}|AKIA[0-9A-Z]{16}' \
-    "$out/$crate-$version"; then
+    "$src/$crate-$version"; then
     echo "FAIL: credential-like material in the $crate package"; exit 1
   fi
 done
 
-mkdir -p "$out/consumer/src" "$out/consumer/tests"
-cat >"$out/consumer/Cargo.toml" <<EOF
+mkdir -p "$src/consumer/src" "$src/consumer/tests"
+cat >"$src/consumer/Cargo.toml" <<EOF
 [package]
 name = "package-consumer"
 version = "0.0.0"
@@ -77,7 +89,7 @@ concord-macros = { path = "../concord-macros-$version" }
 
 [workspace]
 EOF
-cat >"$out/consumer/src/lib.rs" <<'EOF'
+cat >"$src/consumer/src/lib.rs" <<'EOF'
 //! A consumer of the packaged crates: format statements (defaults and endpoint), a native header.
 use concord::reqwest::header::HeaderValue;
 
@@ -104,7 +116,7 @@ concord::api! {
     }
 }
 EOF
-cat >"$out/consumer/tests/consumer.rs" <<'EOF'
+cat >"$src/consumer/tests/consumer.rs" <<'EOF'
 use package_consumer::*;
 
 fn shop() -> Shop {
@@ -130,8 +142,8 @@ fn json_defaults_from_the_packaged_sources() {
     assert_eq!(create.request().body().and_then(|b| b.as_bytes()), Some(&br#"{"id":7}"#[..]));
 }
 EOF
-cp "$root/Cargo.lock" "$out/consumer/Cargo.lock" 2>/dev/null || true
-cd "$out/consumer"
+cp "$root/Cargo.lock" "$src/consumer/Cargo.lock" 2>/dev/null || true
+cd "$src/consumer"
 # Outside the repository rust-toolchain.toml does not apply: build with the pinned toolchain (also
 # the minimum supported Rust) rather than whatever the machine's default is.
 RUSTUP_TOOLCHAIN=$(sed -n 's/^channel = "\(.*\)"/\1/p' "$root/rust-toolchain.toml")
@@ -140,12 +152,17 @@ export CARGO_TARGET_DIR="$out/target"
 # Each run must pass exactly the expected number of consumer tests (not just compile).
 run() {
   local expected="$1"; shift
-  local log passed
+  local passed
   log=$("$@" 2>&1) || { echo "$log"; echo "FAIL  $*"; exit 1; }
   passed=$(grep -o 'test result: ok. [0-9]* passed' <<<"$log" | awk '{s+=$4} END {print s+0}')
   if [[ "$passed" != "$expected" ]]; then echo "$log"; echo "FAIL  $* ($passed passed, expected $expected)"; exit 1; fi
   echo "ok    $* ($passed tests)"
 }
 run 2 cargo test --offline
+# Cargo compiled the facade from the extraction directory (`Compiling concord vX (PATH)`).
+if ! grep -F " concord v$version (" <<<"$log" | grep -Fq "$component"; then
+  echo "$log"; echo "FAIL  concord was not compiled from $src"; exit 1
+fi
+echo "ok    concord compiled from $src"
 run 1 cargo test --offline --no-default-features
 echo "PASS  package-check (consumer built against the extracted .crate files)"

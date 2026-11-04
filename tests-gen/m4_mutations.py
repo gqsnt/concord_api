@@ -1,22 +1,29 @@
 #!/usr/bin/env python3
-"""Targeted mutation checks (handoff guides/09_TESTING.md "Mutation checks").
+"""RETIRED in Concord 4.2: the V4 refinement campaign's mutation driver. It refuses to run.
 
-Applies one production-code mutation at a time to a DISPOSABLE checkout, runs the tests that
-should catch it, and restores the file with `git checkout`. Never point it at a shared checkout.
+It applied one production-code mutation at a time to a disposable checkout and ran the tests meant
+to catch it (historical record: v4/refinement/evidence/m4_mutations.md, bound to its own revision;
+`git log -p -- tests-gen/m4_mutations.py` holds the runnable version). The table below is kept as
+that record's inventory; nothing applies it.
 
-    git worktree add --detach <root> refine-m4-tests        # throwaway checkout
-    python3 -I tests-gen/m4_mutations.py <root> [name ...]   # all mutations or a subset
-    git worktree remove <root>
+Retired rather than maintained, because:
+  * nothing maintained calls it: no script, workflow, gate step or current document refers to it
+    (only historical records under v4/ do);
+  * four of its nine mutations edit files that no longer exist (crates/concord/src/prepared.rs,
+    error.rs, __private.rs), so a run would stop at the first of them;
+  * its verdict was "killed" whenever the baseline and restored runs passed and the mutant run did
+    not, so a mutant that failed to compile, and therefore ran no test, counted as killed (V4.1
+    review finding M04: an undefined-name mutant, error E0425, zero tests run, verdict "killed").
 
-Environment: CARGO_TARGET_DIR (default <root>/target), CARGO_BUILD_JOBS (default 6).
-For each mutation it records: baseline pass (unmutated), mutant result, restored pass.
+A compile failure, or a selection that runs zero tests, is never a runtime "kill". A future
+mutation check should keep separate: the baseline result, whether the mutant compiles, the selected
+tests and their count, the intended assertion's result, the restoration, timeouts, unrelated
+failures and uncertainty (compile-contract negatives under their own rule), with no global score.
 """
 
-import os
-import re
-import subprocess
 import sys
 
+# Historical inventory, applied by nothing.
 M = "crates/concord-macros/src/model.rs"
 E = "crates/concord-macros/src/emit.rs"
 
@@ -97,85 +104,10 @@ MUTATIONS = {
 }
 
 
-def run_tests(root, cmds, env, log):
-    """Returns (all_passed, summary)."""
-    ok, parts = True, []
-    for args in cmds:
-        cmd = ["cargo", "test", "--locked", *args]
-        p = subprocess.run(cmd, cwd=root, env=env, capture_output=True, text=True)
-        out = p.stdout + p.stderr
-        log.write(f"$ {' '.join(cmd)}  (exit {p.returncode})\n{out}\n")
-        results = re.findall(r"test result: (\w+)\. (\d+) passed; (\d+) failed", out)
-        failed = sorted(set(re.findall(r"^    (\S+)$", out, re.M)))
-        target = args[-1]
-        if p.returncode == 0:
-            parts.append(f"{target}: pass ({sum(int(r[1]) for r in results)} passed)")
-        else:
-            ok = False
-            if not results:
-                parts.append(f"{target}: FAIL (build error)")
-            else:
-                shown = ", ".join(failed[:4]) + (" ..." if len(failed) > 4 else "")
-                parts.append(f"{target}: FAIL ({sum(int(r[2]) for r in results)} failed: {shown})")
-    return ok, "; ".join(parts)
-
-
-def apply(root, edits):
-    for path, old, new in edits:
-        full = os.path.join(root, path)
-        with open(full) as f:
-            text = f.read()
-        n = text.count(old)
-        if n != 1:
-            raise SystemExit(f"anchor occurs {n} times in {path}: {old!r}")
-        with open(full, "w") as f:
-            f.write(text.replace(old, new))
-
-
-def restore(root, edits):
-    files = sorted({path for path, _, _ in edits})
-    subprocess.run(["git", "checkout", "--", *files], cwd=root, check=True)
-
-
 def main():
-    if len(sys.argv) < 2:
-        raise SystemExit(__doc__)
-    root = os.path.abspath(sys.argv[1])
-    names = sys.argv[2:] or list(MUTATIONS)
-    if "/mut" not in root:
-        raise SystemExit("refusing: the checkout path must contain '/mut' (disposable copies only)")
-    status = subprocess.run(["git", "status", "--porcelain", "--untracked-files=no"], cwd=root,
-                            capture_output=True, text=True, check=True).stdout
-    if status.strip():
-        raise SystemExit(f"refusing: {root} has local changes:\n{status}")
-    env = dict(os.environ)
-    env.setdefault("CARGO_TARGET_DIR", os.path.join(root, "target"))
-    env.setdefault("CARGO_BUILD_JOBS", "6")
-    log_path = os.path.join(root, "m4_mutations.log")
-    rows = []
-    with open(log_path, "w") as log:
-        for name in names:
-            descr, edits, cmds = MUTATIONS[name]
-            log.write(f"\n===== {name}: baseline\n")
-            base_ok, base = run_tests(root, cmds, env, log)
-            log.write(f"\n===== {name}: mutant\n")
-            apply(root, edits)
-            try:
-                mut_ok, mut = run_tests(root, cmds, env, log)
-            finally:
-                restore(root, edits)
-            log.write(f"\n===== {name}: restored\n")
-            rest_ok, rest = run_tests(root, cmds, env, log)
-            verdict = "killed" if base_ok and not mut_ok and rest_ok else (
-                "SURVIVED" if mut_ok else "INVALID (baseline/restore failed)")
-            rows.append((name, descr, base, mut, rest, verdict))
-            print(f"{name}: {verdict}\n  baseline: {base}\n  mutant:   {mut}\n  restored: {rest}",
-                  flush=True)
-    print(f"\nlog: {log_path}")
-    print("\n| mutation | baseline | mutant | restored | verdict |\n|---|---|---|---|---|")
-    for name, descr, base, mut, rest, verdict in rows:
-        print(f"| `{name}`: {descr} | {base} | {mut} | {rest} | {verdict} |")
-    return 0 if all(r[5] == "killed" for r in rows) else 1
+    print("tests-gen/m4_mutations.py is retired (Concord 4.2): it applies no mutation, runs no test "
+          "and reports no verdict; see its documentation.", file=sys.stderr)
+    return 2
 
 
 if __name__ == "__main__":

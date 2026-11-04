@@ -8,7 +8,9 @@ license.workspace = true
 publish = false
 
 [dependencies]
-concord4 = { package = "concord", path = "../../crates/concord", default-features = false }
+# Defaults off, and exactly the feature this crate uses: `extras` (`Text`, `Binary`). Tested alone
+# (`cargo test -p concord-example-renamed`), so another member cannot supply it.
+concord4 = { package = "concord", path = "../../crates/concord", default-features = false, features = ["extras"] }
 # reqwest under another name too: its `HeaderValue` is the same type as `concord4::reqwest`'s.
 reqwest013 = { package = "reqwest", version = "0.13.4", default-features = false }
 
