@@ -40,6 +40,8 @@ http-body = { workspace = true, optional = true }
 
 [dev-dependencies]
 serde = { workspace = true, features = ["derive"] }
+# `raw_value`: the JSON Lines writer's guard against a raw value spanning lines is tested with one.
+serde_json = { workspace = true, features = ["raw_value"] }
 tokio = { workspace = true, features = ["macros", "rt", "net", "io-util", "time", "sync"] }
 
 [lints]
