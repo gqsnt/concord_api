@@ -82,6 +82,13 @@ if [[ $only_nightly == 0 ]]; then
 step argv-length "$python" -I scripts/argv-length.py --self-test
 step toolchain "$python" -I scripts/check-ci.py --toolchain
 step ci-inventory "$python" -I scripts/check-ci.py --workflow
+# The tools' own controls: the workflow guard on the real workflow, its supported forms and its
+# negatives (inert, disabled, swallowed, missing-platform gates), each with its intended message;
+# the retired mutation helper refuses to run and has no maintained caller.
+step tool-tests "$python" -I -B -m unittest discover -s scripts/tests -p "test_*.py" -v
+# Designated output directories (scripts/fresh-output.sh): recreated only from their owner's mark,
+# anything else refused and left untouched, stale extracted sources detected; builds nothing.
+step output-dirs scripts/tests/output-dirs.sh
 # The production edges of the four crates (manifests, then one resolved graph per package).
 step graph "$python" -I scripts/check-graph.py
 step fmt cargo fmt --all -- --check
@@ -127,7 +134,47 @@ step consumers scripts/consumers.sh
 # Separate consumers: reqwest's `multipart` feature belongs to examples/multipart only, so a
 # workspace-wide build (which unifies features) cannot hide a core dependency on it.
 step feature-isolation no_reqwest_multipart
-step test-multipart-alone cargo test --locked -p concord-example-multipart
+# Every example package alone, one `cargo test -p` each (never one command for several): features
+# are unified only across the packages selected, so no other member can supply a feature that an
+# example forgot to declare (the renamed example once relied on that for `extras`). Every directory
+# under examples/ must be a workspace member, and each package must run at least one test.
+examples_isolated() {
+  local names name log rc passed failed=0
+  names=$(cargo metadata --locked --no-deps --format-version 1 | "$python" -I -c '
+import json, os, sys
+m = json.loads(sys.stdin.buffer.read())
+examples = os.path.join(m["workspace_root"], "examples")
+key = lambda p: os.path.normcase(os.path.realpath(p))
+members = {key(os.path.dirname(p["manifest_path"])): p["name"] for p in m["packages"]}
+names, missing = [], []
+for entry in sorted(os.listdir(examples)):
+    if os.path.isfile(os.path.join(examples, entry, "Cargo.toml")):
+        name = members.get(key(os.path.join(examples, entry)))
+        if name:
+            names.append(name)
+        else:
+            missing.append(entry)
+if missing:
+    sys.exit("examples that are not workspace members: " + ", ".join(missing))
+print(" ".join(names))
+') || return 1
+  names=${names%$'\r'}
+  [[ -n $names ]] || { echo "no example packages"; return 1; }
+  for name in $names; do
+    log=$(cargo test --locked -p "$name" 2>&1)
+    rc=$?
+    echo "$log"
+    passed=$(grep -o 'test result: ok. [0-9]* passed' <<<"$log" | awk '{s+=$4} END {print s+0}')
+    if [[ $rc != 0 || $passed == 0 ]]; then
+      echo "FAIL  $name alone (exit $rc, $passed tests)"
+      failed=1
+    else
+      echo "ok    $name alone ($passed tests)"
+    fi
+  done
+  return "$failed"
+}
+step test-examples-isolated examples_isolated
 step doc env RUSTDOCFLAGS="-D warnings" cargo doc --locked -p concord --no-deps
 step doc-no-default env RUSTDOCFLAGS="-D warnings" cargo doc --locked -p concord --no-deps --no-default-features
 step doc-json-only env RUSTDOCFLAGS="-D warnings" cargo doc --locked -p concord --no-deps --no-default-features --features json
@@ -143,8 +190,9 @@ if [[ $bench == 1 ]]; then
 fi
 
 if [[ $package == 1 ]]; then
-  step package-check scripts/package-check.sh target/package-check
-  step consumers-packaged scripts/consumers.sh --packaged target/consumer-packages
+  # Each extracts into its own designated directory (recreated, or refused if foreign).
+  step package-check scripts/package-check.sh target/packaged/package-check
+  step consumers-packaged scripts/consumers.sh --packaged target/packaged/consumers
 fi
 fi
 
