@@ -201,3 +201,74 @@ fn page_futures_are_send() {
     let future = list.fetch(None);
     send(&future);
 }
+
+/// A generated list of 2,500 customers with pseudo-random ids (seeded linear congruential
+/// generator, so ids carry no order or count), served 100 per page. The chain must fetch every
+/// object exactly once, in order, with each `starting_after` equal to the previous page's last
+/// id: a cursor guessed from a count or an index could not match these ids.
+#[tokio::test]
+async fn generated_list_is_walked_exactly_once_by_object_cursors() {
+    const COUNT: usize = 2_500;
+    const SEED: u64 = 0x5EED_2026_1104;
+    let mut state = SEED;
+    let ids: Vec<String> = (0..COUNT)
+        .map(|_| {
+            state = state
+                .wrapping_mul(6_364_136_223_846_793_005)
+                .wrapping_add(1_442_695_040_888_963_407);
+            format!("cus_{:016x}", state)
+        })
+        .collect();
+    let position: std::collections::HashMap<String, usize> = ids
+        .iter()
+        .enumerate()
+        .map(|(i, id)| (id.clone(), i))
+        .collect();
+    let served = ids.clone();
+    let server = TestServer::start(move |request| {
+        let limit: usize = request.query_all("limit")[0].parse().unwrap();
+        let start = match request.query_all("starting_after").first() {
+            None => 0,
+            Some(id) => position[id] + 1,
+        };
+        let end = (start + limit).min(served.len());
+        let data: Vec<String> = served[start..end].iter().map(|id| customer(id)).collect();
+        Reply::json(
+            200,
+            format!(
+                r#"{{"object":"list","url":"/v1/customers","has_more":{},"data":[{}]}}"#,
+                end < served.len(),
+                data.join(",")
+            ),
+        )
+    })
+    .await;
+    let stripe = context(&server);
+    let list = CursorList::forward(
+        stripe
+            .api()
+            .customers()
+            .list()
+            .set_limit(Limit::new(100).unwrap()),
+    )
+    .unwrap();
+    let mut pages = sequential(Resume::Start, budget(1_000), |cursor| list.fetch(cursor));
+    let mut seen = Vec::with_capacity(COUNT);
+    while let Some(page) = pages.next().await {
+        seen.extend(page.unwrap().items.into_iter().map(|c| c.id.to_string()));
+    }
+    let report = pages.finish();
+    assert_eq!(report.outcome, Outcome::Exhausted);
+    assert_eq!(report.progress.succeeded, 25);
+    assert_eq!(seen, ids);
+    let requests = server.requests();
+    assert_eq!(requests.len(), 25);
+    for (index, request) in requests.iter().enumerate().skip(1) {
+        assert_eq!(
+            request.query_all("starting_after"),
+            [ids[index * 100 - 1].clone()],
+            "page {index} continues from the previous page's last id"
+        );
+    }
+    assert_eq!(server.shutdown().await.open_after, 0);
+}
