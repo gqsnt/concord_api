@@ -13,8 +13,10 @@ Label: **V4.3 candidate** (not a release; no tag, no publication, no `main` merg
 | **Base of this work** (`origin/main` at start) | `5ed600b766fa274acbced0b006e70dcd171fc2bd` — records-only successor of `b2ba341` (changes only `v4/release-4.2/*`) |
 | Base CI (exact SHA) | run [41851008386](https://github.com/gqsnt/concord_api/actions/runs/41851008386): success |
 | Implementation branch | `concord-v4.3-dx-implementation` |
-| Generated-input experiment branch | `concord-v4.3-dx-generated-inputs` (see DECISIONS.md) |
-| Final implementation SHA | pending |
+| Generated-input experiment branch | `concord-v4.3-dx-generated-inputs`, tip `9e4c0efe3896223c8a29e366c5c47cd070a70c20` (G1: evaluated, not adopted) |
+| **Final implementation SHA** | `a6fb99843830f46680e77132eb61aa6c67c47497` (verified; see VERIFICATION.md) |
+| Records-only successor | the commit adding this line: only `v4/dx-4.3/` changes after `a6fb998` |
+| Draft PR | [gqsnt/concord_api#2](https://github.com/gqsnt/concord_api/pull/2) |
 
 The campaign's B0 trial sources (`FINAL_EVIDENCE.zip`, the handoff's `reference/campaign/`) are
 historical evidence of an older source. Nothing here relabels them as tests of this branch; every
@@ -36,7 +38,7 @@ claim below is credited only to commands run on this branch's commits.
 | W2 | metadata-preserving native-edit recipe; public convenience decision | done, maintained recipe; convenience rejected | `examples/native/src/metadata.rs`; DECISIONS M1 |
 | W3 | SDK context boundary; independent outside-endpoint crate; core decision | done, maintained; core primitive rejected | `examples/sdk/src/context.rs`, `examples/extension`; DECISIONS X1 |
 | W4 | generated-input ADR; macro prototype; matched evaluation; adoption decision | done: evaluated, not adopted (G1 outcome); prototype retained | branch `concord-v4.3-dx-generated-inputs`; `experiments/generated-inputs/` |
-| W5 | integration, review, verification, delivery | in progress | REVIEW_RESOLUTIONS.md, VERIFICATION.md |
+| W5 | integration, review, verification, delivery | done | REVIEW_RESOLUTIONS.md, VERIFICATION.md, delivery outside the repository |
 
 Helper branches merged into the implementation branch: `dx43/native` (`e73838e`, `d226b3f`),
 `dx43/app` (`4c01954`), `dx43/ext` (`cf3c9fc` = frozen SDK context, `b077e7e`).
@@ -47,6 +49,10 @@ Helper branches merged into the implementation branch: `dx43/native` (`e73838e`,
   bodies) and deterministic fake Catalog/Ledger services; a dev-dependency only.
 - `examples/sdk` — the Catalog and Ledger declarations the W1/W3/W4 examples share.
 
-## Remaining gates
+## Completion
 
-Pending until the final commit exists.
+Status: **COMPLETE_VERIFIED** for `a6fb998`: every work package is implemented or decided; the
+maintained gate passed locally and in CI on Linux and native Windows on that exact commit, and the
+nightly conditional-`Clone` step passed (read from its log). Conditional items: generated input
+records, metadata convenience in core and a core context primitive were each evaluated and not
+adopted (DECISIONS.md). No release action was taken: no `main` merge, tag or publication.
