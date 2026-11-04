@@ -1,0 +1,9 @@
+{
+  "kind": "PodList",
+  "apiVersion": "v1",
+  "metadata": {
+    "resourceVersion": "5001",
+    "continue": "eyJ2IjoibWV0YS5rOHMuaW8vdjEiLCJydiI6NTAwMSwic3RhcnQiOiJ3ZWItYS05XHUwMDAwIn0"
+  },
+  "items": []
+}

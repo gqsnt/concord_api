@@ -355,10 +355,25 @@ version = "0.0.0"
 [[package]]
 name = "concord-example-kubernetes-app"
 version = "0.0.0"
+dependencies = [
+ "concord",
+ "concord-example-kubernetes-sdk",
+ "concord-example-testserver",
+ "concord-pagination",
+ "serde_json",
+ "tokio",
+]
 
 [[package]]
 name = "concord-example-kubernetes-sdk"
 version = "0.0.0"
+dependencies = [
+ "concord",
+ "concord-pagination",
+ "serde",
+ "serde_json",
+ "tokio",
+]
 
 [[package]]
 name = "concord-example-multipart"

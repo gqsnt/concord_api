@@ -1,0 +1,9 @@
+{
+  "kind": "Status",
+  "apiVersion": "v1",
+  "metadata": {},
+  "status": "Failure",
+  "message": "jobs.batch is forbidden: User \"system:serviceaccount:team-b:inventory\" cannot list resource \"jobs\" in API group \"batch\" in the namespace \"team-b\"",
+  "reason": "Forbidden",
+  "code": 403
+}
