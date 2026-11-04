@@ -127,6 +127,18 @@ struct Load {
     in_flight: AtomicUsize,
     peak: AtomicUsize,
     connections: AtomicUsize,
+    /// Connections whose server-side task is still running (decremented by [`Live`]).
+    live: AtomicUsize,
+}
+
+/// Counts a connection task as live until it ends, however it ends (the client closing, an
+/// error, or the task being dropped with its runtime).
+struct Live(Arc<Load>);
+
+impl Drop for Live {
+    fn drop(&mut self) {
+        self.0.live.fetch_sub(1, Ordering::SeqCst);
+    }
 }
 
 impl Server {
@@ -147,10 +159,13 @@ impl Server {
                     return;
                 };
                 counters.connections.fetch_add(1, Ordering::SeqCst);
+                counters.live.fetch_add(1, Ordering::SeqCst);
+                let live = Live(Arc::clone(&counters));
                 let log = Arc::clone(&log);
                 let respond = Arc::clone(&respond);
                 let counters = Arc::clone(&counters);
                 tokio::spawn(async move {
+                    let _live = live;
                     let _ = serve_connection(stream, log, respond, counters).await;
                 });
             }
@@ -181,6 +196,11 @@ impl Server {
     /// TCP connections accepted so far.
     pub fn connections(&self) -> usize {
         self.load.connections.load(Ordering::SeqCst)
+    }
+
+    /// Accepted connections whose server-side task has not ended yet.
+    pub fn live_connections(&self) -> usize {
+        self.load.live.load(Ordering::SeqCst)
     }
 
     pub fn requests(&self) -> Vec<Recorded> {

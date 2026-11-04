@@ -1,6 +1,8 @@
 # V4.3 candidate — developer-experience implementation: status
 
-Label: **V4.3 candidate** (not a release; no tag, no publication, no `main` merge).
+Label: **V4.3 candidate** (not a release; no tag, no publication). The owner authorized merging
+PR #2 into `main` in the 4.4 handoff (4 November 2026), after the Windows CI failure below is
+resolved and verified; the integration receipt is recorded under "Integration".
 
 ## Identities
 
@@ -17,6 +19,9 @@ Label: **V4.3 candidate** (not a release; no tag, no publication, no `main` merg
 | **Final implementation SHA** | `a6fb99843830f46680e77132eb61aa6c67c47497` (verified; see VERIFICATION.md) |
 | Records-only successor | the commit adding this line: only `v4/dx-4.3/` changes after `a6fb998` |
 | Draft PR | [gqsnt/concord_api#2](https://github.com/gqsnt/concord_api/pull/2) |
+| Records-only successor head | `d4ebd34e88a4698f9e936b53884ba50106643adb` — its PR run [41904216870](https://github.com/gqsnt/concord_api/actions/runs/41904216870) **failed** on Windows (job 126834420624, fixture bind WSAENOBUFS); its push run [41904212230](https://github.com/gqsnt/concord_api/actions/runs/41904212230) passed. See CI_FAILURE_RESOLUTION.md |
+| CI diagnostics | `7eefdeedcc1ee0646525b6e02ac3f1ba0e02b90b` — socket-pressure snapshots in the gate (diagnostic only) |
+| CI correction head | the commit adding this line: Riot fixture lifecycle control, records |
 
 The campaign's B0 trial sources (`FINAL_EVIDENCE.zip`, the handoff's `reference/campaign/`) are
 historical evidence of an older source. Nothing here relabels them as tests of this branch; every
@@ -51,8 +56,17 @@ Helper branches merged into the implementation branch: `dx43/native` (`e73838e`,
 
 ## Completion
 
-Status: **COMPLETE_VERIFIED** for `a6fb998`: every work package is implemented or decided; the
+Current candidate: the CI correction head above; its verification and the integration receipt
+are in VERIFICATION.md and "Integration" below. The failed run on `d4ebd34` remains on record
+(CI_FAILURE_RESOLUTION.md); it is not relabelled as a pass.
+
+Historical status: **COMPLETE_VERIFIED** for `a6fb998`: every work package is implemented or decided; the
 maintained gate passed locally and in CI on Linux and native Windows on that exact commit, and the
 nightly conditional-`Clone` step passed (read from its log). Conditional items: generated input
 records, metadata convenience in core and a core context primitive were each evaluated and not
 adopted (DECISIONS.md). No release action was taken: no `main` merge, tag or publication.
+
+## Integration
+
+Pending: recorded after the merge of PR #2 (merge commit, parents, tree, exact-commit CI on Linux,
+native Windows and nightly).
