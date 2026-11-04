@@ -1,0 +1,30 @@
+{
+  "totalSize": 2,
+  "done": true,
+  "records": [
+    {
+      "attributes": {
+        "type": "Contact",
+        "url": "/services/data/v68.0/sobjects/Contact/003B00000000011BBB"
+      },
+      "Id": "003B00000000011BBB",
+      "FirstName": "Ada",
+      "LastName": "Lovelace",
+      "Email": "ada@example.test",
+      "AccountId": null,
+      "Account": null
+    },
+    {
+      "attributes": {
+        "type": "Contact",
+        "url": "/services/data/v68.0/sobjects/Contact/003B00000000012BBB"
+      },
+      "Id": "003B00000000012BBB",
+      "FirstName": "Grace",
+      "LastName": "Hopper",
+      "Email": null,
+      "AccountId": null,
+      "Account": null
+    }
+  ]
+}

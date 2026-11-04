@@ -1,0 +1,39 @@
+{
+  "totalSize": 3,
+  "done": false,
+  "nextRecordsUrl": "/services/data/v68.0/query/01gA0000000CoNtAAA-2",
+  "records": [
+    {
+      "attributes": {
+        "type": "Contact",
+        "url": "/services/data/v68.0/sobjects/Contact/003A00000000001AAA"
+      },
+      "Id": "003A00000000001AAA",
+      "FirstName": "Zoë",
+      "LastName": "Smith",
+      "Email": "zoe@example.test",
+      "AccountId": "001A00000000001AAA",
+      "Account": {
+        "attributes": {
+          "type": "Account",
+          "url": "/services/data/v68.0/sobjects/Account/001A00000000001AAA"
+        },
+        "Name": "Acme \"Rockets\""
+      },
+      "Loyalty_Tier__c": "Gold"
+    },
+    {
+      "attributes": {
+        "type": "Contact",
+        "url": "/services/data/v68.0/sobjects/Contact/003A00000000002AAA"
+      },
+      "Id": "003A00000000002AAA",
+      "FirstName": null,
+      "LastName": "Doe",
+      "Email": null,
+      "AccountId": null,
+      "Account": null,
+      "Loyalty_Tier__c": null
+    }
+  ]
+}

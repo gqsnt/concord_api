@@ -1,0 +1,20 @@
+{
+  "id": "750A00000000002AAA",
+  "operation": "insert",
+  "object": "Contact",
+  "createdById": "005A00000000001AAA",
+  "createdDate": "2026-11-04T11:00:00.000+0000",
+  "systemModstamp": "2026-11-04T11:00:00.000+0000",
+  "state": "Open",
+  "concurrencyMode": "Parallel",
+  "contentType": "CSV",
+  "apiVersion": 68.0,
+  "jobType": "V2Ingest",
+  "lineEnding": "CRLF",
+  "columnDelimiter": "SEMICOLON",
+  "contentUrl": "services/data/v68.0/jobs/ingest/750A00000000002AAA/batches",
+  "retries": 0,
+  "totalProcessingTime": 0,
+  "apiActiveProcessingTime": 0,
+  "apexProcessingTime": 0
+}

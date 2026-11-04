@@ -1,0 +1,21 @@
+{
+    "resultPages": [
+        {
+            "resultUrl": "/services/data/vXX.X/jobs/query/750R0000000zxr8IAA/results?locator=aBcDeFg4N"
+        },
+        {
+            "resultUrl": "/services/data/vXX.X/jobs/query/750R0000000zxr8IAA/results?locator=HiJkLmN4N"
+        },
+        {
+            "resultUrl": "/services/data/vXX.X/jobs/query/750R0000000zxr8IAA/results?locator=oPQrStU4N"
+        },
+        {
+            "resultUrl": "/services/data/vXX.X/jobs/query/750R0000000zxr8IAA/results?locator=vWxYzz4N"
+        },
+        {
+            "resultUrl": "/services/data/vXX.X/jobs/query/750R0000000zxr8IAA/results?locator=NiKmABC4N"
+        }
+    ],
+    "nextRecordsUrl": "/services/data/vXX.X/jobs/query/750R0000000zxr8IAA/resultpages?locator=YcApWm4N",
+    "done": false
+}
