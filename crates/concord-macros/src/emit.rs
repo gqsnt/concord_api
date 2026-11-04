@@ -711,8 +711,18 @@ fn input_field_docs(model: &Model, endpoint: usize, vi: usize, notes: &[String])
             .iter()
             .filter(|c| c.op == Op::Override && c.else_inherit)
         {
+            // `Some(each)` for a direct reference to this value, `None` for a template that
+            // reads it (the whole template is sent instead of the inherited key when every
+            // value it reads is present).
             let each = match &c.source {
-                Some(Source::Ref { value, each }) if *value == me => *each,
+                Some(Source::Ref { value, each }) if *value == me => Some(*each),
+                Some(Source::Template { pieces })
+                    if pieces
+                        .iter()
+                        .any(|p| matches!(p, Piece::Hole(r) if *r == me)) =>
+                {
+                    None
+                }
                 _ => continue,
             };
             inherits = true;
@@ -738,13 +748,18 @@ fn input_field_docs(model: &Model, endpoint: usize, vi: usize, notes: &[String])
                 " `None`: the inherited `{key}` {what} is sent unchanged — declared by {origins}; \
                  its current value is whatever the handle this input is bound to holds."
             ));
-            lines.push(if each {
+            lines.push(if each == Some(true) {
                 format!(
                     " `Some(v)`: one `{key}` per item of `v` instead, and no `{key}` at all when \
                      `v` has no items (an empty collection, or `None` for an `Option`)."
                 )
-            } else {
+            } else if each == Some(false) {
                 format!(" `Some(v)`: `v` instead of the inherited `{key}`.")
+            } else {
+                format!(
+                    " `Some(v)`: the declared template, written with `v`, instead of the \
+                     inherited `{key}` (when the template's other values are present too)."
+                )
             });
         }
     }
@@ -851,7 +866,8 @@ fn input_record(
     );
     let new_doc = lit(&format!(
         " The input `{}` starts with: required values as given (in declaration order, as for \
-         the navigation method), initializers evaluated here once, optional values absent.",
+         the navigation method), initializers evaluated here once (an optional value with an \
+         initializer starts as `Some`), other optional values absent.",
         owner.dotted
     ));
     quote! {
@@ -1861,7 +1877,9 @@ fn navigation(k: &TokenStream, model: &Model, index: usize) -> TokenStream {
                 let with = format_ident!("{}_with", plain(name), span = name.span());
                 let call_args = positional_args(&c.values, body);
                 let with_line = lit(&format!(
-                    " `{}` endpoint `{}`, from an input record ([`{input_ty}`]): the same request                      as [`{}`](Self::{}) with that input's values. This handle supplies the rest                      (client and scope values, static headers); nothing is evaluated or sent here.",
+                    " `{}` endpoint `{}`, from an input record ([`{input_ty}`]): the same request \
+                     as [`{}`](Self::{}) with that input's values. This handle supplies the rest \
+                     (client and scope values, static headers); nothing is evaluated or sent here.",
                     method,
                     c.dotted,
                     plain(name),
