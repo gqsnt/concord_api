@@ -77,10 +77,16 @@ Concord re-emitted `macro_rules!` fragments as groups rustc reads as ungrouped. 
 initializers are taken from the written tokens with fragments regrouped (`e5082c4`), by context
 (`0670240`: every expression fragment of several tokens in expression positions; `1dad499`: a
 type fragment in an expression's type positions — turbofish, qualified path, after `as` — stays a
-type, so no `unused_parens`). Effects: `pick!($e * 2)` body/output, `Payload<{ $e * 2 }>` and
+type, so no `unused_parens`), then without any guess (`c69b9b4`: every expression fragment in an
+expression position is parenthesized, the added parentheses spanned at the call site so rustc does
+not report them; `c2cf3a9`: a path stays bare, so it can head a struct literal; `033e08e`: only a
+fragment that parses as an expression is parenthesized, so lifetimes, patterns and non-expression
+types are left as written). Effects: `pick!($e * 2)` body/output, `Payload<{ $e * 2 }>` and
 `= $e * 2` mean 6 (4.1: 5 or a type mismatch); `$e.meaning()` with `$e = &VALUE` calls the `&Foo`
 impl; `[u8; $e.len()]` compiles; a forwarded `dyn A + B` behind `&` is accepted. Maintained:
-`crates/concord/tests/forwarded_types.rs` (under `deny(unused_parens)`). Qualified: R3, R7, R8, R9.
+`crates/concord/tests/forwarded_types.rs` (under `deny(unused_parens)`: shifts, casts, pointer casts,
+turbofish, qualified paths, struct-literal paths in endpoint and owner initializers, lifetimes).
+Qualified: R3, R7–R12, R14.
 
 ## F04 — raw identifiers in executable advice — RESOLVED
 
@@ -116,8 +122,10 @@ outputs, stale sources detected, a packaged consumer built from a deep non-ASCII
 
 `scripts/check-ci.py --workflow` parses `ci.yml` (documented YAML subset) and counts only an
 enabled, blocking `scripts/verify.sh --package --bench` step on Linux and Windows plus the nightly
-lane; 16 positive and 47 negative maintained cases (`scripts/tests/test_check_ci.py`); 8 mutants of
-the real workflow pass the 4.1 checker and fail the new one. Static inspection only: CI logs remain
+lane; 17 positive and 49 negative maintained cases (`scripts/tests/test_check_ci.py`); 8 mutants of
+the real workflow pass the 4.1 checker and fail the new one. The final executable review found a
+gate step disabled by `set -n`/`set -o noexec` still accepted; the gate's step may now only turn on
+`-e`, `-u`, `-x` and `-o errexit|nounset|pipefail|xtrace` (`c2cf3a9`, qualified R13). Static inspection only: CI logs remain
 the execution evidence. Correction note for 4.1: its `ci-inventory` step was a text search (D24,
 Z01); the 4.1 CI runs themselves are not invalidated.
 

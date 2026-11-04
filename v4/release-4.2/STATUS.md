@@ -42,6 +42,10 @@ recorded below (records-only receipt).
 | `de132dc` | merge (tooling) | M02, M03, M04, fresh extraction, gate wiring (`44193b6`) |
 | `db0af48` | release | consumer lock 4.2.0, maintainers' notes, changelog maintenance |
 | `1dad499` | code | review round 4 correction |
+| `9c32294` | records | candidate records (frozen for the first final gate: 37/37 PASS; pushed for CI) |
+| `c69b9b4` | code | review round 5 correction |
+| `c2cf3a9` | code, tooling, records | final executable review R1–R3 |
+| `033e08e` | code | review round 6 correction |
 
 ## Gate inventory change
 

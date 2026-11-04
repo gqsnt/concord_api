@@ -20,6 +20,9 @@ the originals and their logs are in `/home/canarit/projects/concord-v42/lanes/`)
 | rv-compiler2 | widened re-review | `gpt-6.1-terra`, xhigh | `gpt-6.1-terra`, `xhigh` | `aae6218` | REVISE (4 findings) |
 | rv-compiler3 | widened re-review | `gpt-6.1-terra`, xhigh | `gpt-6.1-terra`, `xhigh` | `e5082c4` | REVISE (1 finding, pre-existing) |
 | rv-compiler4 | re-review | `gpt-6.1-terra`, xhigh | `gpt-6.1-terra`, `xhigh` | `0670240` | REVISE (1 finding, introduced by `0670240`) |
+| rv-compiler5 | re-review | `gpt-6.1-terra`, xhigh | `gpt-6.1-terra`, `xhigh` | `9c32294` | REVISE (2 findings, introduced by `1dad499`/`0670240`) |
+| rv-final-sol | final executable review (Brief D) | `gpt-6.1-sol`, xhigh | `gpt-6.1-sol`, `xhigh` | `9c32294` | REVISE (2 findings + 1 polish) |
+| rv-compiler6 | re-review | `gpt-6.1-terra`, xhigh | `gpt-6.1-terra`, `xhigh` | `c69b9b4` | REVISE (1 finding, since `e5082c4`) |
 | rv-stage5 | Stage 5 adoption review (Brief C) | Claude Opus, xhigh (Agent) | `claude-opus-5-5`; effort n/o | `4874405` + patches | concur DEFER_WITH_EVIDENCE ×2 |
 | trial-opus | documentation-first trial (Brief E) | Claude Opus, medium (Agent) | `claude-opus-5-5`; effort n/o | `7a2819a` | 7 doc issues, 0 library defects |
 | trial-terra | documentation-first trial (Brief E) | `gpt-6.1-terra`, xhigh | `gpt-6.1-terra`, `xhigh` | `7a2819a` | 1 doc issue, 0 library defects |
@@ -41,6 +44,12 @@ The final executable review (fresh Sol, Brief D) and the last compiler re-review
 | rv-compiler2 (boundary) | forwarded `dyn A + B` behind `&` ambiguous `+` (pre-existing) | fixed by `e5082c4`; regression in `forwarded_types.rs` |
 | rv-compiler3 1 | `&VALUE` fragment treated as a type in expression positions (pre-existing) | fixed `0670240`; qualified R8 |
 | rv-compiler4 1 | type fragment in a turbofish parenthesized (`unused_parens`, introduced by `0670240`) | fixed `1dad499`; qualified R9 |
+| rv-compiler5 1 | `<<` taken for an opening type bracket (value change, introduced by `1dad499`) | fixed `c69b9b4` (no guessing of type positions in expressions); qualified R11 |
+| rv-compiler5 2 | type behind `as *const` parenthesized (`unused_parens`) | fixed `c69b9b4` (added parentheses at the call-site span); qualified R10 |
+| rv-final-sol R1 | forwarded path heading a struct literal parenthesized (compatibility regression) | fixed `c2cf3a9` (a path stays bare); qualified R12 |
+| rv-final-sol R2 | workflow guard accepted `set -n` / `set -o noexec` in the gate step | fixed `c2cf3a9` (only safe `set` options); qualified R13 |
+| rv-final-sol R3 | changelog lost its `## 4.1.0` heading | fixed `c2cf3a9` |
+| rv-compiler6 1 | forwarded lifetime parenthesized in an initializer (since `e5082c4`) | fixed `033e08e` (only expression fragments parenthesized); qualified R14 |
 | trials | `&HeaderValue` missing from the `IntoValue` list; `status()` None for Metadata unstated | fixed `c621b6c` |
 | trial-opus | unused `Json` import warning undocumented; no Config rationale; §11 table row; README version (snapshot predates bump); guides cite `v4/SEMANTICS.md` | not changed: lint behaviour of Rust, design rationale, covered by §11.1, already fixed in `bd5d25e`, existing design |
 | docs lane | `v4/SEMANTICS.md` HTAB wording, caller-guide excerpt comment, `timing_plan.sh` toolchain | fixed `7a2819a` |
