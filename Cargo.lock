@@ -276,6 +276,14 @@ version = "0.0.0"
 [[package]]
 name = "concord-check-maintenance-shopify"
 version = "0.0.0"
+dependencies = [
+ "concord",
+ "concord-example-shopify-sdk",
+ "concord-example-testserver",
+ "concord-pagination",
+ "serde_json",
+ "tokio",
+]
 
 [[package]]
 name = "concord-check-maintenance-stripe"
