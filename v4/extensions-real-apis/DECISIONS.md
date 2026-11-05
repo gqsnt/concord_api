@@ -210,7 +210,12 @@ SOL-7).** Shared foundation and both JSON readers; the CSV reader changes only t
   slice end is never taken for the end of input (`at_eof` holds only with the chunk used up). Cost:
   a line/value that crosses a 64 KiB step boundary is copied into the line/value buffer, as one
   crossing a chunk boundary always was (`retained_bytes` docs adjusted); the zero-copy path remains
-  for records inside one step. Parsing a completed record (serde) is not divided.
+  for records inside one step. Parsing a completed record (serde) is not divided. Observable for a
+  record (or an over-limit line/value) larger than one step inside one large chunk:
+  `peak_retained_bytes` now reaches its size (it was 0), and a `Limit` error's position counts the
+  bytes buffered before the limit (it was the record's start); kinds and labels are unchanged.
+  Observed with a 1 MiB string line in one chunk: peak 0 → 1,048,577; with a 512 KiB limit, error
+  `position.bytes` 0 → 524,288 (JSON Lines and JSON values alike).
 - *Lookahead.* The JSON Lines framer searches for LF at most `max_record_bytes + 2 - buffered`
   bytes ahead (content, CR, LF); no LF within reach is the same `Limit` fault as before, found
   after bounded work instead of a search through the whole chunk.
