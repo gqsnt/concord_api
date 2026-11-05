@@ -148,8 +148,10 @@
 //! [`max_header_bytes`](CsvProfileOptions::max_header_bytes)) bytes plus the terminator. Each
 //! field is measured before it is copied: the first one that would exceed the limit stops the
 //! row's serialization, nothing of that record reaches the body, and the error carries the
-//! `limit`. [`max_fields`](CsvProfileOptions::max_fields) stops the serialization at the first
-//! field past it. Neither bounds what the row's own `Serialize` does before it hands a value over
+//! `limit`. Header names (explicit or configured columns, inferred field names) are borrowed,
+//! never copied: the header's only buffer is its bounded encoding.
+//! [`max_fields`](CsvProfileOptions::max_fields) stops the serialization at the first field past
+//! it. Neither bounds what the row's own `Serialize` does before it hands a value over
 //! (a large value it builds, a loop that ignores the serializer's error), the finite route's whole
 //! body, or the frames already handed to the transport.
 //!

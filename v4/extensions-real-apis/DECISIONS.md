@@ -386,16 +386,29 @@ twice the record's size retained before the refusal). Now a record (header) is e
 that never exceeds `max_record_bytes` (`max_header_bytes`) plus the terminator: each field is
 measured before it is copied (a value longer than the remaining room is refused without scanning),
 the buffer grows by doubling up to that ceiling (`reserve_exact`), and a refused record never
-reaches the output frame; the error keeps `record` and `limit`. The writer also no longer clones
-explicit columns to write the header. `max_fields` stops the pass at the first field past it.
-Not bounded: what the row's own `Serialize` does before it hands a value over, the finite route's
-body, frames already handed to the transport, the captured names (at most `max_fields`), and two
-fixed scratch buffers (a 40-byte number buffer, the float writer's 64 bytes). Evidence: unit tests
-`write::tests` (buffer capacity ≤ limit + terminator for every record size up to and past the
-limit; the frame untouched by a refused record or header) and `fields::tests`; integration tests
-(a field after the oversized one is never serialized; a 1,000-field row stops after 4 attempts with
-`max_fields(3)`; encoded-size boundaries with quotes and escapes); `tests/csv_write_memory.rs`
-(Linux `VmHWM`, reset before each route, one test per binary): refusing a 16 MiB field with a
-64-byte limit grew the peak by 12 / 8 / 8 KiB (finite / lazy / header); with the fix reverted, the
-same test observed 32,452 / 32,232 / 32,224 KiB (the review: about 32 MiB, finite and lazy). Linux
-process high-water observations, not allocation counts.
+reaches the output frame; the error keeps `record` and `limit`. `max_fields` stops the pass at the
+first field past it. **Header names are borrowed, never copied** (re-check, second fix): the first
+fix still copied them before the bounded header encoding refused them, configured columns once
+(cloned per encoder) and inferred field names twice (to `String`s, then again for the header).
+Now configured columns are read from the shared configuration (the encoder keeps only a payload's
+own list, when nothing is configured; an equal payload list is dropped for the configured one),
+explicit payload columns are moved, the schema keeps the serializer's `&'static str` names, and
+`check_columns` borrows. The header's only buffer is its bounded encoding. Not bounded: what the
+row's own `Serialize` does before it hands a value over, the finite route's body, frames already
+handed to the transport, the list of name *references* (at most `max_fields` entries, no name
+bytes), and two fixed scratch buffers (a 40-byte number buffer, the float writer's 64 bytes).
+Evidence: unit tests `write::tests` (buffer capacity ≤ limit + terminator for every record size up
+to and past the limit; the frame untouched by a refused record or header; the schema's names are
+the serializer's own, pointer-equal; configured columns are not held by the encoder) and
+`fields::tests`; integration tests (a field after the oversized one is never serialized; a
+1,000-field row stops after 4 attempts with `max_fields(3)`; encoded-size boundaries with quotes
+and escapes); `tests/csv_write_memory.rs`: Linux `VmHWM`, reset before the measurement, each route
+in its own process (in one process, memory freed by an earlier route is reused and hides a later
+route's growth), a 16 MiB value with a 64-byte limit. With both fixes the peak grew by 0–24 KiB on
+all seven routes (record finite/lazy; header from payload columns; inferred names finite/lazy;
+configured columns finite/lazy). Reverted to before the first fix (in-process measurement then):
+about 32 MiB on the record and payload-column routes. Reverted to the first fix only (separate
+processes): inferred names +32,544 / +32,584 KiB, configured columns +16,092 / +16,036 KiB
+(finite / lazy), the record and payload-column routes 0–12 KiB, matching the re-check
+(+32,472 / +32,684, +16,108 / +16,176). Linux process high-water observations, not allocation
+counts.
