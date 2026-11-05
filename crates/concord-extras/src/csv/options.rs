@@ -583,8 +583,12 @@ impl Config {
     }
 }
 
-/// Checks a column list: non-empty, every name non-empty and distinct.
-pub(crate) fn check_columns(columns: &[String], max_fields: usize) -> Result<(), CsvConfigError> {
+/// Checks a column list: non-empty, every name non-empty and distinct (names are borrowed, not
+/// copied).
+pub(crate) fn check_columns<S: AsRef<str>>(
+    columns: &[S],
+    max_fields: usize,
+) -> Result<(), CsvConfigError> {
     if columns.is_empty() {
         return Err(CsvConfigError::new("a CSV column list is empty"));
     }
@@ -595,10 +599,11 @@ pub(crate) fn check_columns(columns: &[String], max_fields: usize) -> Result<(),
     }
     let mut seen = HashSet::with_capacity(columns.len());
     for name in columns {
+        let name = name.as_ref();
         if name.is_empty() {
             return Err(CsvConfigError::new("a CSV column name is empty"));
         }
-        if !seen.insert(name.as_str()) {
+        if !seen.insert(name) {
             return Err(CsvConfigError::new("a CSV column list repeats a name"));
         }
     }

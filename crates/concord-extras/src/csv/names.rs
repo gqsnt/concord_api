@@ -112,10 +112,10 @@ enum State {
 
 /// Serializes `row` once into `out` (fields only; the caller ends the record), checking its shape
 /// and at most `max_fields` fields. With `expect`, the names are compared with it instead of
-/// collected.
+/// collected; collected names are the serializer's own `&'static str`, never copied.
 pub(crate) fn encode<T: Serialize + ?Sized>(
     row: &T,
-    expect: Option<&[String]>,
+    expect: Option<&[&str]>,
     max_fields: usize,
     out: &mut Fields<'_>,
 ) -> Result<Shape, ShapeError> {
@@ -129,12 +129,13 @@ pub(crate) fn shape<T: Serialize + ?Sized>(
     row: &T,
     expect: Option<&[String]>,
 ) -> Result<Shape, ShapeError> {
-    walk(row, expect, usize::MAX, None)
+    let expect: Option<Vec<&str>> = expect.map(|e| e.iter().map(String::as_str).collect());
+    walk(row, expect.as_deref(), usize::MAX, None)
 }
 
 fn walk<T: Serialize + ?Sized>(
     row: &T,
-    expect: Option<&[String]>,
+    expect: Option<&[&str]>,
     max_fields: usize,
     out: Option<&mut Fields<'_>>,
 ) -> Result<Shape, ShapeError> {
@@ -167,7 +168,7 @@ struct Capture<'e, 'o, 'f> {
     fields: usize,
     named: usize,
     names: Vec<&'static str>,
-    expect: Option<&'e [String]>,
+    expect: Option<&'e [&'e str]>,
     matches: bool,
     max_fields: usize,
     out: Option<&'o mut Fields<'f>>,
@@ -233,7 +234,7 @@ impl Capture<'_, '_, '_> {
         }
         match self.expect {
             Some(expect) => {
-                if expect.get(self.named).map(String::as_str) != Some(key) {
+                if expect.get(self.named).copied() != Some(key) {
                     self.matches = false;
                 }
             }
