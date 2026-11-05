@@ -9,7 +9,7 @@ mod support;
 use concord::reqwest::{self, Url};
 use concord_example_github_sdk::ids::{IssueNumber, RunId};
 use concord_example_github_sdk::models::IssueComment;
-use concord_example_github_sdk::paging::{LinkPage, NextLink, operation};
+use concord_example_github_sdk::paging::{Binding, LinkPage, NextLink, operation};
 use concord_example_github_sdk::{GitHubConfig, GitHubContext, GitHubError, RepoRef};
 use concord_example_testserver::{Recorded, Reply, TestServer};
 use concord_pagination::{Budget, Outcome, Resume, sequential};
@@ -17,6 +17,18 @@ use support::*;
 
 fn ids(page: &LinkPage<IssueComment>) -> Vec<u64> {
     page.items.iter().map(|c| c.id.get()).collect()
+}
+
+/// `NextLink::to_stored`'s documented form: `url` stored with `binding`.
+fn stored(binding: &Binding, url: impl std::fmt::Display) -> String {
+    let parent = binding
+        .parent()
+        .map_or_else(|| "-".to_owned(), |parent| parent.to_string());
+    format!(
+        "github-link/1 {} {} {parent} {url}",
+        binding.operation(),
+        binding.repo()
+    )
 }
 
 /// Three pages: page 1 links to a repository-id URL with a cursor (and no `last`), page 2 is
@@ -124,7 +136,7 @@ async fn foreign_next_link_is_refused() {
     assert_eq!(elsewhere.requests().len(), 0);
     assert_eq!(api.requests().len(), 1);
     // A persisted continuation is checked the same way.
-    let restored = pages.restore(Url::parse("http://evil.test/steal?page=2").unwrap());
+    let restored = pages.restore(&stored(pages.binding(), "http://evil.test/steal?page=2"));
     assert!(matches!(
         restored,
         Err(GitHubError::ForeignLink { meta: None })
@@ -277,7 +289,8 @@ async fn envelopes_are_projected_and_checked() {
     server.shutdown().await;
 }
 
-/// A persisted continuation is restored against the same factory and fetches that page.
+/// A persisted continuation is restored against the same factory and fetches that page; the
+/// stored form round-trips.
 #[tokio::test]
 async fn persisted_continuation_resumes() {
     let server = TestServer::start(|r: &Recorded| {
@@ -291,21 +304,24 @@ async fn persisted_continuation_resumes() {
     let github = context(server.addr(), TOKEN_A);
     let repo = github.repo(RepoRef::new("octo-org", "hello-world"));
     let pages = repo.issue_comment_pages(IssueNumber(7), |op| op);
-    let stored = format!(
+    let url = format!(
         "{}/repositories/42/issues/7/comments?page=2",
         api_base(server.addr())
     );
-    let next = pages.restore(Url::parse(&stored).unwrap()).unwrap();
+    let next = pages
+        .restore(&stored(pages.binding(), Url::parse(&url).unwrap()))
+        .unwrap();
+    assert_eq!(pages.restore(&next.to_stored()).unwrap(), next);
     let page = pages.fetch(Some(next)).await.unwrap();
     assert_eq!(ids(&page), [9]);
     server.shutdown().await;
 }
 
-/// A persisted continuation is bound by what its path addresses (OPUS-1): issue 13's comments
-/// link restored into issue 11's factory, another repository's link, or another operation's link
-/// is refused by `restore` itself, before any request. The link of the factory's own collection
-/// is accepted in either repository form (owner and name in any ASCII case), also under a base
-/// path, and fetches that page.
+/// A persisted continuation is bound by its stored binding and by what its path addresses
+/// (OPUS-1): issue 13's comments link restored into issue 11's factory, another repository's
+/// continuation, or another operation's link is refused by `restore` itself, before any request.
+/// The link of the factory's own collection is accepted in either repository form (owner and
+/// name in any ASCII case), also under a base path, and fetches that page.
 #[tokio::test]
 async fn persisted_continuation_of_another_collection_is_refused() {
     let server = TestServer::start(|r: &Recorded| {
@@ -321,7 +337,7 @@ async fn persisted_continuation_of_another_collection_is_refused() {
     let issue_11 = repo.issue_comment_pages(IssueNumber(11), |op| op);
     let base = api_base(server.addr());
     let url = |path: &str| Url::parse(&format!("{base}{path}")).unwrap();
-    let refused = |path: &str| match issue_11.restore(url(path)) {
+    let refused = |path: &str| match issue_11.restore(&stored(issue_11.binding(), url(path))) {
         Err(GitHubError::ContinuationMismatch { expected, found }) => {
             assert_eq!(*expected, *issue_11.binding(), "{path}");
             *found
@@ -341,10 +357,43 @@ async fn persisted_continuation_of_another_collection_is_refused() {
             "{path}"
         );
     }
-    // Another repository by name.
-    let found = refused("/repos/octo-org/second-repo/issues/11/comments?page=2");
-    assert_eq!(found.repo(), &RepoRef::new("octo-org", "second-repo"));
-    assert_eq!(found.parent(), Some(11));
+    // Another repository's continuation, in either URL form: refused by its stored binding.
+    let second = Binding::new(
+        operation::ISSUE_COMMENTS,
+        RepoRef::new("octo-org", "second-repo"),
+        Some(11),
+    );
+    for path in [
+        "/repositories/202/issues/11/comments?page=2",
+        "/repos/octo-org/second-repo/issues/11/comments?page=2",
+    ] {
+        match issue_11.restore(&stored(&second, url(path))) {
+            Err(GitHubError::ContinuationMismatch { found, .. }) => assert_eq!(*found, second),
+            other => panic!("{path}: expected a mismatch, got {other:?}"),
+        }
+    }
+    // Another parent or operation in the stored binding.
+    for binding in [
+        Binding::new(
+            operation::ISSUE_COMMENTS,
+            RepoRef::new("octo-org", "hello-world"),
+            Some(13),
+        ),
+        Binding::new(
+            operation::PULL_REVIEWS,
+            RepoRef::new("octo-org", "hello-world"),
+            Some(11),
+        ),
+    ] {
+        let restored = issue_11.restore(&stored(
+            &binding,
+            url("/repositories/101/issues/11/comments"),
+        ));
+        match restored {
+            Err(GitHubError::ContinuationMismatch { found, .. }) => assert_eq!(*found, binding),
+            other => panic!("expected a mismatch, got {other:?}"),
+        }
+    }
     // Another operation or no collection of this operation.
     for path in [
         "/repos/octo-org/hello-world/pulls/11/reviews?page=2",
@@ -362,12 +411,18 @@ async fn persisted_continuation_of_another_collection_is_refused() {
     // A top-level listing: its own path only.
     let issues = repo.issue_pages(repo.issues(&Default::default()));
     assert!(matches!(
-        issues.restore(url("/repositories/101/pulls?page=2")),
+        issues.restore(&stored(
+            issues.binding(),
+            url("/repositories/101/pulls?page=2")
+        )),
         Err(GitHubError::ContinuationMismatch { .. })
     ));
     assert!(
         issues
-            .restore(url("/repositories/101/issues?page=2"))
+            .restore(&stored(
+                issues.binding(),
+                url("/repositories/101/issues?page=2")
+            ))
             .is_ok()
     );
     assert_eq!(server.requests().len(), 0, "refused restores send nothing");
@@ -377,7 +432,9 @@ async fn persisted_continuation_of_another_collection_is_refused() {
         "/repositories/101/issues/11/comments?page=2",
         "/repos/Octo-Org/Hello-World/issues/11/comments?page=2",
     ] {
-        let next = issue_11.restore(url(path)).unwrap();
+        let next = issue_11
+            .restore(&stored(issue_11.binding(), url(path)))
+            .unwrap();
         assert_eq!(next.binding(), issue_11.binding());
         assert_eq!(ids(&issue_11.fetch(Some(next)).await.unwrap()), [9]);
     }
@@ -401,15 +458,137 @@ async fn persisted_continuation_of_another_collection_is_refused() {
     .unwrap();
     let repo = enterprise.repo(RepoRef::new("octo-org", "hello-world"));
     let issue_11 = repo.issue_comment_pages(IssueNumber(11), |op| op);
-    assert!(
-        issue_11
-            .restore(url("/api/v3/repositories/101/issues/11/comments?page=2"))
-            .is_ok()
-    );
+    let restore = |path: &str| issue_11.restore(&stored(issue_11.binding(), url(path)));
+    assert!(restore("/api/v3/repositories/101/issues/11/comments?page=2").is_ok());
     assert!(matches!(
-        issue_11.restore(url("/api/v3/repositories/101/issues/13/comments?page=2")),
+        restore("/api/v3/repositories/101/issues/13/comments?page=2"),
         Err(GitHubError::ContinuationMismatch { .. })
     ));
+    server.shutdown().await;
+}
+
+/// The stored form keeps the repository a link belongs to (Sol's fix re-check of OPUS-1): a
+/// repository-id link returned to repository A, stored and restored through repository B's
+/// factory, is refused, although its URL names no repository; through A's factory it resumes.
+/// A link naming the repository by a new name (after a rename redirect) restores through the
+/// factory it was returned to (SOL-R3). Text that is not the stored form is refused.
+#[tokio::test]
+async fn stored_continuation_keeps_its_repository() {
+    let server = TestServer::start(|r: &Recorded| {
+        let host = r.host.clone();
+        match r.target.as_str() {
+            "/repos/org/repo-a/issues/11/comments" => {
+                gh_json(200, &comments_json(&[1], 11, "org/repo-a")).header(
+                    "link",
+                    format!(
+                        "<http://{host}/repositories/101/issues/11/comments?page=2>; rel=\"next\""
+                    ),
+                )
+            }
+            "/repos/org/old-name/issues/11/comments" => {
+                gh_json(200, &comments_json(&[1], 11, "org/new-name")).header(
+                    "link",
+                    format!(
+                        "<http://{host}/repos/org/new-name/issues/11/comments?page=2>; rel=\"next\""
+                    ),
+                )
+            }
+            "/repositories/101/issues/11/comments?page=2"
+            | "/repos/org/new-name/issues/11/comments?page=2" => {
+                gh_json(200, &comments_json(&[2], 11, "org/repo-a"))
+            }
+            _ => Reply::new(500),
+        }
+    })
+    .await;
+    let github = context(server.addr(), TOKEN_A);
+    let repo_a = github.repo(RepoRef::new("org", "repo-a"));
+    let repo_b = github.repo(RepoRef::new("org", "repo-b"));
+    let a = repo_a.issue_comment_pages(IssueNumber(11), |op| op);
+    let b = repo_b.issue_comment_pages(IssueNumber(11), |op| op);
+
+    let next = a.fetch(None).await.unwrap().next.unwrap();
+    let text = next.to_stored();
+    assert!(
+        text.starts_with("github-link/1 issues/list-comments org/repo-a 11 http://"),
+        "{text}"
+    );
+    match b.restore(&text) {
+        Err(GitHubError::ContinuationMismatch { expected, found }) => {
+            assert_eq!(*expected, *b.binding());
+            assert_eq!(*found, *a.binding());
+        }
+        other => panic!("expected a mismatch, got {other:?}"),
+    }
+    let requests_before = server.requests().len();
+    let resumed = a.restore(&text).unwrap();
+    assert_eq!(resumed, next);
+    assert_eq!(
+        server.requests().len(),
+        requests_before,
+        "restore sends nothing"
+    );
+    assert_eq!(ids(&a.fetch(Some(resumed)).await.unwrap()), [2]);
+
+    // A renamed repository's link, returned to the old name's factory.
+    let old = github
+        .repo(RepoRef::new("org", "old-name"))
+        .issue_comment_pages(IssueNumber(11), |op| op);
+    let renamed = old.fetch(None).await.unwrap().next.unwrap();
+    let resumed = old.restore(&renamed.to_stored()).unwrap();
+    assert_eq!(ids(&old.fetch(Some(resumed)).await.unwrap()), [2]);
+
+    for text in [
+        "",
+        "http://example.test/repositories/101/issues/11/comments?page=2",
+        "github-link/2 issues/list-comments org/repo-a 11 http://example.test/x",
+        "github-link/1 issues/list-comments org/repo-a 011 http://example.test/x",
+        "github-link/1 issues/list-comments org-repo-a 11 http://example.test/x",
+        "github-link/1 issues/list-comments org/repo-a 11 not-a-url",
+        "github-link/1 issues/list-comments org/repo-a 11 http://example.test/x extra",
+    ] {
+        assert!(
+            matches!(a.restore(text), Err(GitHubError::MalformedStoredLink)),
+            "{text:?}"
+        );
+    }
+    let unknown = a.restore("github-link/1 gists/list org/repo-a 11 http://example.test/x");
+    match unknown {
+        Err(GitHubError::ContinuationMismatch { found, .. }) => {
+            assert_eq!(found.operation(), operation::UNRECOGNIZED)
+        }
+        other => panic!("expected a mismatch, got {other:?}"),
+    }
+    server.shutdown().await;
+}
+
+/// A fragment is never sent (SOL-R1): links that differ only by fragment request the same page,
+/// so a `next` repeating the requested URL with another fragment is refused on the first repeat,
+/// and a kept link carries no fragment.
+#[tokio::test]
+async fn next_link_differing_only_by_fragment_does_not_advance() {
+    let server = TestServer::start(|r: &Recorded| {
+        let host = r.host.clone();
+        // Page 1 links to page 2 with `#v1`; page 2 links to itself with `#v2`.
+        let n = if r.target.ends_with("page=2") { 2 } else { 1 };
+        gh_json(200, &comments_json(&[1], 7, "octo-org/hello-world")).header(
+            "link",
+            format!("<http://{host}/repositories/42/issues/7/comments?page=2#v{n}>; rel=\"next\""),
+        )
+    })
+    .await;
+    let github = context(server.addr(), TOKEN_A);
+    let repo = github.repo(RepoRef::new("octo-org", "hello-world"));
+    let pages = repo.issue_comment_pages(IssueNumber(7), |op| op);
+    let first = pages.fetch(None).await.unwrap();
+    let next = first.next.unwrap();
+    assert_eq!(next.raw_url().fragment(), None);
+    assert_eq!(next.raw_url().query(), Some("page=2"));
+    assert!(matches!(
+        pages.fetch(Some(next)).await,
+        Err(GitHubError::LinkDidNotAdvance { .. })
+    ));
+    assert_eq!(server.requests().len(), 2);
     server.shutdown().await;
 }
 

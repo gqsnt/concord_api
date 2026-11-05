@@ -56,8 +56,11 @@ pub enum GitHubError {
         /// The page's metadata.
         meta: Box<ResponseMeta>,
     },
+    /// A stored continuation could not be read: not
+    /// [`NextLink::to_stored`](crate::paging::NextLink::to_stored)'s form. Nothing was sent.
+    MalformedStoredLink,
     /// A continuation was used with another operation, repository or parent than the one that
-    /// produced it, or a restored URL addresses another collection
+    /// produced it, or a restored continuation belongs to or addresses another collection
     /// ([`LinkPages::restore`](crate::paging::LinkPages::restore)).
     ContinuationMismatch {
         /// What the traversal expected.
@@ -116,7 +119,9 @@ impl GitHubError {
             Self::Link { meta, .. }
             | Self::LinkDidNotAdvance { meta }
             | Self::Envelope { meta, .. } => Some(meta),
-            Self::ContinuationMismatch { .. } | Self::Context(_) => None,
+            Self::MalformedStoredLink | Self::ContinuationMismatch { .. } | Self::Context(_) => {
+                None
+            }
         }
     }
 
@@ -149,6 +154,9 @@ impl fmt::Display for GitHubError {
             }
             Self::LinkDidNotAdvance { .. } => {
                 f.write_str("GitHub page: next link is the URL just requested; not followed")
+            }
+            Self::MalformedStoredLink => {
+                f.write_str("GitHub continuation: not a stored link of this SDK")
             }
             Self::ContinuationMismatch { expected, found } => write!(
                 f,
@@ -187,6 +195,7 @@ impl fmt::Debug for GitHubError {
                 .debug_struct("LinkDidNotAdvance")
                 .field("meta", meta)
                 .finish(),
+            Self::MalformedStoredLink => f.write_str("MalformedStoredLink"),
             Self::ContinuationMismatch { expected, found } => f
                 .debug_struct("ContinuationMismatch")
                 .field("expected", expected)
