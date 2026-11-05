@@ -11,9 +11,17 @@ use concord_core::bytes::{Buf, Bytes};
 use super::error::{Position, ReadError, ReadErrorKind};
 use super::source::ByteSource;
 
-/// Input bytes a reader may skip (comments, blank lines, separators) in one poll before it yields
-/// to the executor ([`yield_now`]): bounds the work of one poll on a long ignored run.
+/// Input bytes a reader may frame in one poll (skipped comments, blank lines and separators, or
+/// part of a large record) before it yields to the executor ([`yield_now`]): a reader hands its
+/// parser at most this much of the current chunk between two yields, so neither a long ignored
+/// run nor one large ready chunk can make a poll unbounded.
 pub(crate) const SKIP_BUDGET: usize = 64 * 1024;
+
+/// Empty chunks the driver accepts from its source between two of its own yields: a source that
+/// is always ready with empty chunks costs at most this many source polls per poll of a reader
+/// (an endless run no longer holds one poll forever), and an empty chunk stays distinct from the
+/// end of input. Each nonempty chunk carries at least one byte of the reader's [`SKIP_BUDGET`].
+pub(crate) const EMPTY_CHUNK_BUDGET: usize = 64;
 
 pub(crate) struct Driver<S> {
     source: S,
@@ -25,6 +33,8 @@ pub(crate) struct Driver<S> {
     fused: bool,
     max_bytes: Option<u64>,
     max_records: Option<u64>,
+    /// Empty chunks received since the last yield they caused.
+    empty_chunks: usize,
 }
 
 impl<S: ByteSource> Driver<S> {
@@ -39,6 +49,7 @@ impl<S: ByteSource> Driver<S> {
             fused: false,
             max_bytes: None,
             max_records: None,
+            empty_chunks: 0,
         }
     }
 
@@ -74,6 +85,9 @@ impl<S: ByteSource> Driver<S> {
     }
 
     /// Reads the next nonempty chunk once the current one is used up. `Ok(false)`: end of input.
+    ///
+    /// Yields to the executor after every [`EMPTY_CHUNK_BUDGET`] empty chunks. Cancel-safe: a
+    /// dropped call has consumed only empty chunks.
     pub(crate) async fn refill(&mut self) -> Result<bool, ReadError> {
         debug_assert!(self.chunk.is_empty());
         if self.eof {
@@ -81,7 +95,13 @@ impl<S: ByteSource> Driver<S> {
         }
         loop {
             match self.source.next_chunk().await {
-                Ok(Some(chunk)) if chunk.is_empty() => continue,
+                Ok(Some(chunk)) if chunk.is_empty() => {
+                    self.empty_chunks += 1;
+                    if self.empty_chunks >= EMPTY_CHUNK_BUDGET {
+                        self.empty_chunks = 0;
+                        yield_now().await;
+                    }
+                }
                 Ok(Some(chunk)) => {
                     if let Some(max) = self.max_bytes
                         && self.consumed + chunk.len() as u64 > max
@@ -167,7 +187,7 @@ impl<S: ByteSource> Driver<S> {
 }
 
 /// Returns `Pending` once after waking itself: lets the executor run other work in the middle of
-/// a long ignored input run, without depending on a particular runtime.
+/// a long input run (or a long run of empty chunks), without depending on a particular runtime.
 pub(crate) fn yield_now() -> YieldNow {
     YieldNow(false)
 }

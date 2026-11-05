@@ -132,6 +132,10 @@ JSON (including a truncated final line) and a `Decode` mismatch. Always terminal
 `max_record_bytes` (the reader stops before the line's end, so it is not isolated and is not
 skipped), a refused byte order mark, transport errors and totals. `JsonValues` has no yield mode:
 every error is terminal.
+*Note (4.4 review, SOL-5; JSONL-14):* "or the true end" above did not describe the implementation,
+which is kept: a bad final line **without** LF is terminal even in `Yield` mode, because the input
+may have been cut off inside it (a valid final line without LF is still delivered). Only bad lines
+ended by LF/CRLF are recoverable; the public docs now say so.
 
 **JSONL-05 — UTF-8 validated per line before serde.** serde_json does not validate the bytes of a
 string it skips (`IgnoredAny`, unknown fields), so the profile's UTF-8 rule is enforced with
@@ -164,6 +168,9 @@ a literal cut at the true end is `Format` ("a JSON value is incomplete").
 always-ready source cannot make one poll unbounded. The value scanner also stops after
 `SKIP_BUDGET` whitespace bytes inside one chunk. Scanning one line/value is bounded by
 min(chunk, limit).
+*Note (4.4 review, ASTRA-4 and SOL-2/ASTRA-3; JSONL-14):* the budget was applied only after a
+framing call over the whole pending chunk, and ready empty chunks were not counted at all. Both are
+superseded by JSONL-14.
 
 **JSONL-10 — Resource accessors (coordinator request).** `JsonLinesRecords` and `JsonValues` have
 `retained_bytes()` (length of the library-owned buffer holding a line/value that started in an
@@ -189,6 +196,35 @@ receiver (it observed 0 bytes, not even the head: hyper writes the head with the
 frame). A failure after a frame was handed over leaves the receiver with the complete records of
 the earlier frames and no terminating chunk; `send` returns a reqwest error (`is_request`) whose
 source chain contains the `UploadError` (label, records serialized). Nothing is replayed.
+
+**JSONL-14 — Incremental-body review fixes (4.4 review: SOL-2/ASTRA-3, ASTRA-4, SOL-3, SOL-5,
+SOL-7).** Shared foundation and both JSON readers; the CSV reader changes only through the driver.
+- *Empty chunks.* `Driver::refill` counts the empty chunks it receives and yields (`yield_now`)
+  after every 64th (`EMPTY_CHUNK_BUDGET`, counted across refills, reset only by that yield): a
+  source always ready with empty chunks costs at most 64 source polls per poll of any reader, and an
+  endless run no longer holds one poll forever. An empty chunk is still never an end of input
+  (`Ok(None)` is). Cancel-safe: a dropped `next()` has consumed only empty chunks.
+- *Work per poll.* `JsonLinesRecords::next` and `JsonValues::next` hand their framer/scanner at most
+  the remaining `SKIP_BUDGET` (64 KiB) of the current chunk per step and yield before the next step
+  once it is spent, as the CSV reader already did; the rest of the chunk stays in the driver. A
+  slice end is never taken for the end of input (`at_eof` holds only with the chunk used up). Cost:
+  a line/value that crosses a 64 KiB step boundary is copied into the line/value buffer, as one
+  crossing a chunk boundary always was (`retained_bytes` docs adjusted); the zero-copy path remains
+  for records inside one step. Parsing a completed record (serde) is not divided.
+- *Lookahead.* The JSON Lines framer searches for LF at most `max_record_bytes + 2 - buffered`
+  bytes ahead (content, CR, LF); no LF within reach is the same `Limit` fault as before, found
+  after bounded work instead of a search through the whole chunk.
+- *Diagnostics.* `Chunks`'s `Debug` shows chunk count, total bytes and whether a failure follows,
+  never content.
+- *`from_iter`.* `impl<I> Unpin for FromIter<I>`; its `Stream` impl no longer requires `I: Unpin`
+  (no unsafe; the iterator is used only through `&mut`).
+- *Docs only.* `RecordErrors::Yield` and the reader/module docs state that a bad final line without
+  LF is terminal (behaviour unchanged, see the JSONL-04 note).
+
+Tests: `tests/stream_budget.rs` (per reader: source polls per poll over 100,000 empty chunks, an
+endless run, cancellation inside a run; bytes framed per poll over one large chunk, CSV as the
+control), `tests/stream_foundation.rs` (`Chunks` redaction, `!Unpin` rows through `from_iter` and a
+JSON Lines upload), and a framer unit test of the bounded lookahead.
 
 ## CSV (`concord_extras::csv`)
 
@@ -285,6 +321,7 @@ copies fields into owned records and never takes chunk slices, so with `csv` alo
 the `jsonl` stub) it was an unused-code warning under `-D warnings`. Observation, not changed:
 `stream::FromIter` requires `I: Unpin`, so `from_iter(vec_of_results)` needs `T: Unpin`; an
 `impl<I> Unpin for FromIter<I>` would lift that (the iterator is never pinned structurally).
+*Note (4.4 review, SOL-7; JSONL-14):* done: `FromIter<I>` is now `Unpin` for every `I`.
 
 **CSV-14 Extension example migration (CSV.md item 17).** `examples/extension` now profiles the codec
 (`CatalogExport`: `comment(Some(b'#'))`, `columns(["id", "name"])`) and its `Csv` is a type alias of

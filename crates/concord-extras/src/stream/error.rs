@@ -168,7 +168,8 @@ pub enum ReadErrorKind {
 /// A failure after an incremental reader started polling the body. Earlier records stay
 /// delivered. The reader is fused (every later `next()` returns `None`) unless
 /// [`is_terminal`](Self::is_terminal) is `false`: only a JSON Lines reader in
-/// `RecordErrors::Yield` mode reports a fully delimited bad record that way and goes on reading.
+/// `RecordErrors::Yield` mode reports a bad line ended by a line feed that way and goes on
+/// reading.
 pub struct ReadError {
     inner: Box<ReadInner>,
 }
@@ -229,11 +230,12 @@ impl ReadError {
         self.inner.kind
     }
 
-    /// Whether this error ended the read. `true` for every failure except a fully delimited bad
-    /// record reported by a JSON Lines reader in `RecordErrors::Yield` mode, after which `next()`
-    /// goes on with the following record. A caller that counts skipped records must check this:
-    /// a terminal error (a refused byte-order mark, a limit, a transport failure, input ending
-    /// inside a record) is never a skipped record, and the reader returns `None` afterwards.
+    /// Whether this error ended the read. `true` for every failure except a bad line ended by a
+    /// line feed, reported by a JSON Lines reader in `RecordErrors::Yield` mode, after which
+    /// `next()` goes on with the following record. A caller that counts skipped records must
+    /// check this: a terminal error (a refused byte-order mark, a limit, a transport failure,
+    /// input ending inside a record, including a bad final line without a line feed) is never a
+    /// skipped record, and the reader returns `None` afterwards.
     pub fn is_terminal(&self) -> bool {
         self.inner.terminal
     }

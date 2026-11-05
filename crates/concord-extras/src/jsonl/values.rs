@@ -43,7 +43,8 @@ enum Scanned {
     },
     /// The input is used up (inside a value, kept in the buffer, or between values).
     NeedMore,
-    /// [`SKIP_BUDGET`] whitespace bytes were skipped: the caller may yield, then call again.
+    /// [`SKIP_BUDGET`] whitespace bytes were skipped: the caller may yield, then call again. (The
+    /// reader never passes more than `SKIP_BUDGET` bytes, so it sees `NeedMore` instead.)
     Skipped,
     /// True end of input between values.
     End,
@@ -426,8 +427,10 @@ impl<T: DeserializeOwned, S: ByteSource> JsonValues<T, S> {
     /// The next value; `None` at the end of input and after a terminal error (fused).
     ///
     /// Cancel-safe: dropping the returned future loses no value (a partly received value stays
-    /// buffered for the next call). Work per poll is bounded: it yields to the executor after
-    /// consuming 64 KiB without completing a value.
+    /// buffered for the next call, the rest of the chunk pending). Work per poll is bounded: it
+    /// scans at most 64 KiB of input between two yields to the executor (whitespace, a large
+    /// value, many ready chunks or one large chunk), and yields after every 64 empty chunks from
+    /// the source. Parsing the completed value is not divided.
     pub async fn next(&mut self) -> Option<Result<T, ReadError>> {
         if self.driver.is_fused() {
             return None;
@@ -440,8 +443,17 @@ impl<T: DeserializeOwned, S: ByteSource> JsonValues<T, S> {
                     Err(e) => return Some(Err(e)),
                 }
             }
+            if work >= SKIP_BUDGET {
+                work = 0;
+                yield_now().await;
+            }
+            // At most `SKIP_BUDGET` input bytes are scanned between two yields; the rest of the
+            // chunk stays in the driver. The end of a slice is not the end of input: `at_eof`
+            // holds only once the chunk is used up (the slice is then empty).
+            let input = self.driver.input();
+            let input = &input[..input.len().min(SKIP_BUDGET - work)];
             let eof = self.driver.at_eof();
-            let (used, scanned) = match self.scanner.scan(self.driver.input(), eof) {
+            let (used, scanned) = match self.scanner.scan(input, eof) {
                 Ok(step) => step,
                 Err(fault) => return Some(Err(self.driver.error(fault.kind, fault.codec))),
             };
@@ -449,10 +461,6 @@ impl<T: DeserializeOwned, S: ByteSource> JsonValues<T, S> {
                 Scanned::NeedMore | Scanned::Skipped => {
                     self.driver.consume(used);
                     work += used;
-                    if work >= SKIP_BUDGET {
-                        work = 0;
-                        yield_now().await;
-                    }
                 }
                 Scanned::End => {
                     self.driver.consume(used);
@@ -495,8 +503,9 @@ impl<T: DeserializeOwned, S: ByteSource> JsonValues<T, S> {
     }
 
     /// Library-owned bytes held now for the unfinished value: the part of a value that started
-    /// in an earlier chunk and was copied into the reader's buffer (`0` between values, and while
-    /// a value lies wholly inside the current chunk). The buffer's length; its allocation is
+    /// in an earlier chunk, or in an earlier scanning step of the current one (a step scans at
+    /// most 64 KiB), and was copied into the reader's buffer (`0` between values, and while a
+    /// value lies wholly inside the input of one step). The buffer's length; its allocation is
     /// bounded by `max_value_bytes` too. Excludes the unconsumed remainder of the current
     /// transport chunk ([`pending_input_bytes`]), which is the source's buffer, and the values
     /// already returned.

@@ -62,6 +62,9 @@ pub(super) struct Framer {
     peak: usize,
     max: usize,
     bom: BomPolicy,
+    /// Bytes searched for a line feed so far (for the resource tests).
+    #[cfg(test)]
+    searched: usize,
 }
 
 impl Framer {
@@ -74,6 +77,8 @@ impl Framer {
             peak: 0,
             max: options.max_record_bytes,
             bom: options.bom,
+            #[cfg(test)]
+            searched: 0,
         }
     }
 
@@ -111,9 +116,12 @@ impl Framer {
         self.line.capacity()
     }
 
-    /// Frames from `input` (the unconsumed part of the current chunk); `eof`: the source has ended
-    /// and `input` is the last of it. Returns how many bytes of `input` were consumed. A fault is
-    /// terminal.
+    /// Frames from `input` (the unconsumed part of the current chunk, or a slice of it); `eof`: the
+    /// source has ended and `input` is the last of it (never set for a slice that leaves input
+    /// behind). Returns how many bytes of `input` were consumed. A fault is terminal.
+    ///
+    /// The search for a line feed stops `max` content bytes (plus a CR) past the line's start: a
+    /// longer run without one is a limit fault however much input follows.
     pub(super) fn frame(&mut self, input: &[u8], eof: bool) -> Result<(usize, Framed), Fault> {
         self.release();
         let mut used = 0;
@@ -148,7 +156,15 @@ impl Framer {
             }
         }
         let rest = &input[used..];
-        if let Some(i) = rest.iter().position(|&b| b == b'\n') {
+        // A terminator can follow at most `max` content bytes and one CR: look no further.
+        let reach = rest
+            .len()
+            .min(self.max.saturating_add(2).saturating_sub(self.line.len()));
+        #[cfg(test)]
+        {
+            self.searched += reach;
+        }
+        if let Some(i) = rest[..reach].iter().position(|&b| b == b'\n') {
             let cr = if i > 0 {
                 rest[i - 1] == b'\r'
             } else {
@@ -186,6 +202,10 @@ impl Framer {
                     terminated: true,
                 },
             ));
+        }
+        if reach < rest.len() {
+            // No LF within reach: more than `max` content bytes precede any terminator.
+            return Err(self.limit());
         }
         let total = self.line.len() + rest.len();
         if eof {
@@ -473,6 +493,10 @@ impl JsonLinesReader {
 /// one record. It retains the current chunk and the unfinished line (bounded by
 /// `max_record_bytes`), never a queue of records. Dropping it drops the source (a response's
 /// connection is closed, not drained).
+///
+/// With [`RecordErrors::Yield`], a bad line ended by a line feed is a nonterminal `Err` item;
+/// a bad final line without one (it may have been cut off) is terminal, like every limit, byte
+/// order mark and transport failure ([`ReadError::is_terminal`]).
 pub struct JsonLinesRecords<T, S = reqwest::Response> {
     driver: Driver<S>,
     framer: Framer,
@@ -485,9 +509,10 @@ impl<T: DeserializeOwned, S: ByteSource> JsonLinesRecords<T, S> {
     /// The next record; `None` at the end of input and after a terminal error (fused).
     ///
     /// Cancel-safe: dropping the returned future loses no record (a partly received line stays
-    /// buffered for the next call). Work per poll is bounded: after consuming 64 KiB without
-    /// producing a record (blank lines, a long line arriving in many ready chunks), it yields to
-    /// the executor once.
+    /// buffered for the next call, the rest of the chunk pending). Work per poll is bounded: it
+    /// frames at most 64 KiB of input between two yields to the executor (blank lines, a long
+    /// line, many ready chunks or one large chunk), and yields after every 64 empty chunks from
+    /// the source. Parsing the completed line is not divided.
     pub async fn next(&mut self) -> Option<Result<T, ReadError>> {
         if self.driver.is_fused() {
             return None;
@@ -501,8 +526,17 @@ impl<T: DeserializeOwned, S: ByteSource> JsonLinesRecords<T, S> {
                     Err(e) => return Some(Err(e)),
                 }
             }
+            if work >= SKIP_BUDGET {
+                work = 0;
+                yield_now().await;
+            }
+            // At most `SKIP_BUDGET` input bytes are framed between two yields; the rest of the
+            // chunk stays in the driver. The end of a slice is not the end of input: `at_eof`
+            // holds only once the chunk is used up (the slice is then empty).
+            let input = self.driver.input();
+            let input = &input[..input.len().min(SKIP_BUDGET - work)];
             let eof = self.driver.at_eof();
-            let (used, framed) = match self.framer.frame(self.driver.input(), eof) {
+            let (used, framed) = match self.framer.frame(input, eof) {
                 Ok(step) => step,
                 Err(fault) => return Some(Err(self.driver.error(fault.kind, fault.codec))),
             };
@@ -566,12 +600,7 @@ impl<T: DeserializeOwned, S: ByteSource> JsonLinesRecords<T, S> {
                         }
                     }));
                 }
-                None => {
-                    if work >= SKIP_BUDGET {
-                        work = 0;
-                        yield_now().await;
-                    }
-                }
+                None => {}
             }
         }
     }
@@ -582,11 +611,12 @@ impl<T: DeserializeOwned, S: ByteSource> JsonLinesRecords<T, S> {
     }
 
     /// Library-owned bytes held now for the unfinished line: the part of a line that started in
-    /// an earlier chunk and was copied into the reader's line buffer (`0` between lines, and
-    /// while a line lies wholly inside the current chunk). The buffer's length, not its
-    /// allocation; that is bounded too, by `max_record_bytes` plus one pending CR. Excludes the
-    /// unconsumed remainder of the current transport chunk ([`pending_input_bytes`]), which is
-    /// the source's buffer, and the records already returned.
+    /// an earlier chunk, or in an earlier framing step of the current one (a step frames at most
+    /// 64 KiB), and was copied into the reader's line buffer (`0` between lines, and while a line
+    /// lies wholly inside the input of one step). The buffer's length, not its allocation; that
+    /// is bounded too, by `max_record_bytes` plus one pending CR. Excludes the unconsumed
+    /// remainder of the current transport chunk ([`pending_input_bytes`]), which is the source's
+    /// buffer, and the records already returned.
     ///
     /// [`pending_input_bytes`]: Self::pending_input_bytes
     pub fn retained_bytes(&self) -> usize {
@@ -741,6 +771,43 @@ mod tests {
         assert_eq!(
             lines(&mut f, &[b"abc\r"]),
             Err("a line exceeds max_record_bytes")
+        );
+    }
+
+    /// The search for a line feed stops within reach of the limit: a run without one is refused
+    /// after inspecting at most `max + 2` bytes however large the input (the reach shrinks with
+    /// what is already buffered), while a line of exactly `max` bytes before a CRLF is found.
+    #[test]
+    fn lookahead_stops_within_reach_of_the_limit() {
+        let large = vec![b'x'; 1 << 20];
+        for eof in [false, true] {
+            let mut f = framer(64);
+            let step = f.frame(&large, eof).map_err(|f| f.codec.label());
+            assert_eq!(step, Err("a line exceeds max_record_bytes"));
+            assert!(f.searched <= 66, "searched {}", f.searched);
+        }
+        let mut f = framer(64);
+        let step = f.frame(&[b'x'; 60], false).map_err(|f| f.codec.label());
+        assert_eq!(step, Ok((60, Framed::NeedMore)));
+        f.searched = 0;
+        let step = f.frame(&large, false).map_err(|f| f.codec.label());
+        assert_eq!(step, Err("a line exceeds max_record_bytes"));
+        assert!(f.searched <= 6, "searched {}", f.searched);
+
+        let mut f = framer(64);
+        let input = [b"y".repeat(64), b"\r\n".to_vec(), large].concat();
+        let step = f.frame(&input, false).map_err(|f| f.codec.label());
+        assert_eq!(
+            step,
+            Ok((
+                66,
+                Framed::Line {
+                    buffered: false,
+                    start: 0,
+                    end: 64,
+                    terminated: true
+                }
+            ))
         );
     }
 

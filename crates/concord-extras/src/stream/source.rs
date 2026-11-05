@@ -30,7 +30,10 @@ impl ByteSource for reqwest::Response {
 
 /// An in-memory [`ByteSource`]: the given chunks in order, optionally followed by a failure.
 /// Useful to test a parser on chosen chunk boundaries without a network.
-#[derive(Debug, Default)]
+///
+/// Its `Debug` shows the number of chunks left, their total bytes and whether a failure follows,
+/// never their content.
+#[derive(Default)]
 pub struct Chunks {
     chunks: VecDeque<Bytes>,
     fail_at_end: Option<&'static str>,
@@ -54,6 +57,16 @@ impl Chunks {
     pub fn then_fail(mut self, label: &'static str) -> Self {
         self.fail_at_end = Some(label);
         self
+    }
+}
+
+impl fmt::Debug for Chunks {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("Chunks")
+            .field("chunks", &self.chunks.len())
+            .field("bytes", &self.chunks.iter().map(Bytes::len).sum::<usize>())
+            .field("fails_at_end", &self.fail_at_end.is_some())
+            .finish()
     }
 }
 

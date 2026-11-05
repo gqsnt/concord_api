@@ -202,9 +202,14 @@ pub enum BomPolicy {
 pub enum RecordErrors {
     /// The first bad line is a terminal error; the reader is then fused (the default).
     Stop,
-    /// Each bad line is reported as an `Err` item and reading continues with the next line.
-    /// Only a line delimited on both sides (by line feeds, or by the true end of input) is
-    /// isolated this way. Limit, byte order mark and transport failures stay terminal.
+    /// Each bad line ended by a line feed (LF or CRLF) is reported as a nonterminal `Err` item
+    /// ([`ReadError::is_terminal`](crate::stream::ReadError::is_terminal) is `false`) and reading
+    /// continues with the next line.
+    ///
+    /// A bad final line without a line feed, delimited only by the true end of input, is
+    /// terminal: the input may have been cut off inside it, so it is not counted as a skipped
+    /// record. (A valid final line without a line feed is still delivered.) Limit, byte order
+    /// mark and transport failures stay terminal too.
     Yield,
 }
 
@@ -309,7 +314,8 @@ impl JsonLinesOptions {
         self
     }
 
-    /// Bad-line handling.
+    /// Bad-line handling. With [`RecordErrors::Yield`] only bad lines ended by a line feed are
+    /// skipped; a bad final line without one is terminal (see [`RecordErrors::Yield`]).
     #[must_use]
     pub fn record_errors(mut self, record_errors: RecordErrors) -> Self {
         self.record_errors = record_errors;
