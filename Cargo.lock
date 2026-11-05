@@ -279,6 +279,14 @@ dependencies = [
 [[package]]
 name = "concord-check-maintenance-salesforce"
 version = "0.0.0"
+dependencies = [
+ "concord",
+ "concord-example-salesforce-sdk",
+ "concord-example-testserver",
+ "concord-pagination",
+ "serde_json",
+ "tokio",
+]
 
 [[package]]
 name = "concord-check-maintenance-shopify"
