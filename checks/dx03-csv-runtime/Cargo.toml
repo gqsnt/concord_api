@@ -1,6 +1,6 @@
 [package]
 name = "concord-check-dx03-csv-runtime"
-description = "DX-03 independent caller task (dx03-csv-runtime): written by a reader who did not author the abstraction (placeholder until the task lands)."
+description = "A caller's runtime CSV exports client"
 version = "0.0.0"
 edition = "2024"
 rust-version.workspace = true
@@ -8,6 +8,13 @@ license.workspace = true
 publish = false
 
 [dependencies]
+concord = { path = "../../crates/concord", features = ["csv"] }
+serde = { workspace = true, features = ["derive"] }
+serde_json.workspace = true
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["macros", "rt-multi-thread", "time"] }
+concord-example-testserver = { path = "../../examples/testserver" }
 
 [lints]
 workspace = true
