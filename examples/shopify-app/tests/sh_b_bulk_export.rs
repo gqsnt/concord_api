@@ -465,8 +465,11 @@ async fn sh_b_malformed_lines_stop_the_export_or_are_skipped_within_a_bound() {
 async fn sh_b_a_skipped_error_right_before_the_end_is_never_reported_as_complete() {
     let export = fixture("sh_b/export.jsonl");
     let lines: Vec<&str> = export.lines().collect();
-    // A byte-order mark is a terminal Format error; a malformed last line is an isolated one. The
-    // reader reports both the same way, then ends: neither may become a complete export.
+    // A byte-order mark is a terminal Format error, and so is a final line without LF that does
+    // not parse (it may have been cut off). The reader marks both terminal
+    // (`ReadError::is_terminal`), so neither is counted as a skipped line and neither may become a
+    // complete export. (Before `is_terminal` existed, the workflow counted them as skipped lines
+    // and inferred the interruption from the end that followed.)
     let bom = format!("\u{feff}{}\n{}\n", lines[0], lines[1]).into_bytes();
     let last = format!("{}\n{}\n{{\"id\":", lines[0], lines[1]).into_bytes();
     for (body, delivered) in [(bom, 0), (last, 2)] {
@@ -483,11 +486,15 @@ async fn sh_b_a_skipped_error_right_before_the_end_is_never_reported_as_complete
         request.malformed = MalformedLines::Skip { max: 5 };
         let (report, _) = run(&shop_one(&sdk), &request, &mut sink).await;
         assert_eq!(sink.records.len(), delivered);
-        assert_eq!(report.skipped_lines, 1);
+        assert_eq!(
+            report.skipped_lines, 0,
+            "a terminal error is not a skipped line"
+        );
         let ExportOutcome::Interrupted { error } = &report.outcome else {
             panic!("{report:?}")
         };
         assert_eq!(error.kind(), ReadErrorKind::Format);
+        assert!(error.is_terminal());
         server.shutdown().await;
         store.shutdown().await;
     }

@@ -22,9 +22,9 @@
 //!
 //! - Malformed lines ([`MalformedLines`]): stop at the first one, or skip and count up to a
 //!   bound (the reader isolates a fully delimited bad line); an over-long line, a transport
-//!   failure or a byte-order mark always ends the stream. A skipped error directly followed by
-//!   the end of the records is reported as [`ExportOutcome::Interrupted`], because the reader
-//!   does not say whether that error ended the stream.
+//!   failure or a byte-order mark always ends the stream. Only errors the reader reports as
+//!   not terminal (`ReadError::is_terminal`) are skipped; any terminal error is reported as
+//!   [`ExportOutcome::Interrupted`].
 //! - The sink decides to stop ([`SinkControl::Stop`]): the response is dropped at once (its
 //!   connection closed, not drained); the remote job is not canceled.
 //! - Nothing is retried; a failure keeps the operation id so the caller can attach again.
@@ -35,7 +35,7 @@ use std::num::NonZeroU32;
 
 use concord::jsonl::RecordErrors;
 use concord::reqwest::{self, StatusCode};
-use concord::stream::{OpenError, Position, ReadError, ReadErrorKind};
+use concord::stream::{OpenError, Position, ReadError};
 use concord_example_shopify_sdk::bulk_export::{self, BULK_RESULT_OPERATION, BulkRecord};
 use concord_example_shopify_sdk::graphql::UserError;
 use concord_example_shopify_sdk::ops::bulk::{
@@ -629,28 +629,17 @@ async fn download<S: RecordSink + ?Sized>(
         Ok(records) => records,
         Err(error) => return ExportOutcome::DownloadRefused { error },
     };
-    // The error last skipped, until a record proves the reader went on. The reader does not say
-    // whether an error ended the stream (a refused byte-order mark is a terminal `Format` error,
-    // a malformed line in `Yield` mode is not), so an end right after a skipped error is reported
-    // as `Interrupted` by it: never a complete export that might not be one (FRICTION.md).
-    let mut unconfirmed: Option<ReadError> = None;
+    // A skipped line is an error the reader did not end the read on (`is_terminal() == false`,
+    // only in `Yield` mode); a refused byte-order mark, a limit or a transport failure is
+    // terminal and interrupts the export. (Before `ReadError::is_terminal` existed, this loop
+    // had to treat an end right after a skipped error as an interruption: FRICTION.md F7.)
     let outcome = loop {
         let record = match records.next().await {
-            None => match unconfirmed.take() {
-                Some(error) => break ExportOutcome::Interrupted { error },
-                None => break done,
-            },
-            Some(Ok(record)) => {
-                unconfirmed = None;
-                record
-            }
+            None => break done,
+            Some(Ok(record)) => record,
             Some(Err(error)) => {
-                let isolable =
-                    matches!(error.kind(), ReadErrorKind::Decode | ReadErrorKind::Format)
-                        && record_errors == RecordErrors::Yield;
-                if isolable && report.skipped_lines < max_skips {
+                if !error.is_terminal() && report.skipped_lines < max_skips {
                     report.skipped_lines += 1;
-                    unconfirmed = Some(error);
                     continue;
                 }
                 break ExportOutcome::Interrupted { error };

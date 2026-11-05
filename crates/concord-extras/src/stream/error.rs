@@ -166,7 +166,9 @@ pub enum ReadErrorKind {
 }
 
 /// A failure after an incremental reader started polling the body. Earlier records stay
-/// delivered; the reader is fused.
+/// delivered. The reader is fused (every later `next()` returns `None`) unless
+/// [`is_terminal`](Self::is_terminal) is `false`: only a JSON Lines reader in
+/// `RecordErrors::Yield` mode reports a fully delimited bad record that way and goes on reading.
 pub struct ReadError {
     inner: Box<ReadInner>,
 }
@@ -177,6 +179,7 @@ struct ReadInner {
     position: Position,
     codec: Option<CodecError>,
     source: Option<Box<dyn StdError + Send + Sync>>,
+    terminal: bool,
 }
 
 impl ReadError {
@@ -188,8 +191,15 @@ impl ReadError {
                 position,
                 codec: Some(codec),
                 source: None,
+                terminal: true,
             }),
         }
+    }
+
+    /// A record-level failure after which the reader continues (JSON Lines `Yield` mode).
+    pub(crate) fn recoverable(mut self) -> Self {
+        self.inner.terminal = false;
+        self
     }
 
     pub(crate) fn transport(error: SourceError, position: Position) -> Self {
@@ -201,6 +211,7 @@ impl ReadError {
                 position,
                 codec: Some(CodecError::new(label)),
                 source: error.into_source(),
+                terminal: true,
             }),
         }
     }
@@ -215,6 +226,15 @@ impl ReadError {
     /// The stage.
     pub fn kind(&self) -> ReadErrorKind {
         self.inner.kind
+    }
+
+    /// Whether this error ended the read. `true` for every failure except a fully delimited bad
+    /// record reported by a JSON Lines reader in `RecordErrors::Yield` mode, after which `next()`
+    /// goes on with the following record. A caller that counts skipped records must check this:
+    /// a terminal error (a refused byte-order mark, a limit, a transport failure, input ending
+    /// inside a record) is never a skipped record, and the reader returns `None` afterwards.
+    pub fn is_terminal(&self) -> bool {
+        self.inner.terminal
     }
 
     /// The operation name supplied when the response was opened, if any.
@@ -273,6 +293,7 @@ impl fmt::Debug for ReadError {
             .field("kind", &self.inner.kind)
             .field("operation", &self.inner.operation)
             .field("position", &self.inner.position)
+            .field("terminal", &self.inner.terminal)
             .field("codec", &self.inner.codec)
             .field("source", &self.inner.source.as_ref().map(|_| "<withheld>"))
             .finish()

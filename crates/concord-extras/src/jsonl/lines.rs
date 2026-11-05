@@ -38,6 +38,9 @@ pub(super) enum Framed {
         buffered: bool,
         start: usize,
         end: usize,
+        /// `false` for a final line without LF at the true end of input: if it does not parse,
+        /// the record may have been cut off, so even `Yield` mode treats that fault as terminal.
+        terminated: bool,
     },
     /// The input is used up inside a line (kept in the buffer) or between lines.
     NeedMore,
@@ -165,6 +168,7 @@ impl Framer {
                         buffered: false,
                         start: used,
                         end,
+                        terminated: true,
                     },
                 ));
             }
@@ -179,6 +183,7 @@ impl Framer {
                     buffered: true,
                     start: 0,
                     end: self.line.len(),
+                    terminated: true,
                 },
             ));
         }
@@ -200,6 +205,7 @@ impl Framer {
                         buffered: false,
                         start: used,
                         end: input.len(),
+                        terminated: false,
                     },
                 ));
             }
@@ -211,6 +217,7 @@ impl Framer {
                     buffered: true,
                     start: 0,
                     end: self.line.len(),
+                    terminated: false,
                 },
             ));
         }
@@ -312,6 +319,7 @@ pub(super) fn decode_all<T: DeserializeOwned>(
                 buffered,
                 start,
                 end,
+                ..
             } => (buffered, start, end),
         };
         let line = if buffered {
@@ -485,6 +493,7 @@ impl<T: DeserializeOwned, S: ByteSource> JsonLinesRecords<T, S> {
             return None;
         }
         let mut work = 0usize;
+        let mut unterminated = false;
         loop {
             if self.driver.input().is_empty() && !self.driver.at_eof() {
                 match self.driver.refill().await {
@@ -512,7 +521,9 @@ impl<T: DeserializeOwned, S: ByteSource> JsonLinesRecords<T, S> {
                     buffered,
                     start,
                     end,
+                    terminated,
                 } => {
+                    unterminated = !terminated;
                     let taken;
                     let line = if buffered {
                         self.driver.consume(used);
@@ -544,9 +555,14 @@ impl<T: DeserializeOwned, S: ByteSource> JsonLinesRecords<T, S> {
                 Some(Err(fault)) => {
                     return Some(Err(match self.record_errors {
                         RecordErrors::Stop => self.driver.error(fault.kind, fault.codec),
+                        // A final line without LF that does not parse may be a cut-off record.
+                        RecordErrors::Yield if unterminated => {
+                            self.driver.error(fault.kind, fault.codec)
+                        }
                         RecordErrors::Yield => {
                             ReadError::new(fault.kind, fault.codec, self.driver.position())
                                 .with_operation(self.driver.operation())
+                                .recoverable()
                         }
                     }));
                 }
@@ -636,6 +652,7 @@ mod tests {
                     buffered,
                     start,
                     end,
+                    ..
                 } => out.push(if buffered {
                     framer.line().to_vec()
                 } else {

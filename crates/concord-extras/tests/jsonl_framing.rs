@@ -450,8 +450,12 @@ async fn yield_mode_isolates_bad_lines_and_continues() {
     let bad = records.next().await.unwrap().unwrap_err();
     assert_eq!(bad.position().records, 1);
     assert_eq!(bad.position().bytes, 16, "through the bad line's LF");
+    assert!(
+        !bad.is_terminal(),
+        "a yielded record error does not end the read"
+    );
     for _ in 0..4 {
-        assert!(records.next().await.unwrap().is_err());
+        assert!(!records.next().await.unwrap().unwrap_err().is_terminal());
     }
     assert_eq!(records.next().await.unwrap().unwrap(), Rec { id: 7 });
     assert!(records.next().await.unwrap().is_err());
@@ -783,4 +787,52 @@ fn readers_and_futures_are_send() {
         .read::<Value, _>(Chunks::new([&b"1\n"[..]]));
     send(&records);
     send(&records.next());
+}
+
+/// Regression (Shopify SH-B, reported by its SDK author): in `Yield` mode a caller could not tell
+/// a skipped record from an error that ended the read, so a refused byte-order mark was counted
+/// as one skipped line and an export reported "complete, 0 records". Terminal errors say so.
+#[tokio::test]
+async fn yield_mode_marks_errors_that_end_the_read_as_terminal() {
+    let yield_options = JsonLinesOptions::json_lines().record_errors(RecordErrors::Yield);
+    // A refused BOM ends the read before any record.
+    let mut records = JsonLinesReader::new(yield_options.clone())
+        .read::<Rec, _>(Chunks::new([&b"\xEF\xBB\xBF{\"id\":1}\n"[..]]));
+    let bom = records.next().await.unwrap().unwrap_err();
+    assert_eq!(bom.kind(), ReadErrorKind::Format);
+    assert!(bom.is_terminal(), "{bom:?}");
+    assert!(records.next().await.is_none());
+    // An oversized line is a terminal limit, also in Yield mode.
+    let mut records = JsonLinesReader::new(yield_options.clone().max_record_bytes(8))
+        .read::<Rec, _>(Chunks::new([
+            &b"{\"id\":1}\n{\"id\":12345678}\n{\"id\":3}\n"[..],
+        ]));
+    assert_eq!(records.next().await.unwrap().unwrap(), Rec { id: 1 });
+    let limit = records.next().await.unwrap().unwrap_err();
+    assert_eq!(limit.kind(), ReadErrorKind::Limit);
+    assert!(limit.is_terminal());
+    assert!(records.next().await.is_none());
+    // A final line without LF that does not parse may be a cut-off record: terminal, while the
+    // same bytes followed by LF are an isolated bad record.
+    for (input, terminal) in [
+        (&b"{\"id\":1}\n{\"id\":"[..], true),
+        (&b"{\"id\":1}\n{\"id\":\n"[..], false),
+    ] {
+        let mut records =
+            JsonLinesReader::new(yield_options.clone()).read::<Rec, _>(Chunks::new([input]));
+        assert_eq!(records.next().await.unwrap().unwrap(), Rec { id: 1 });
+        let error = records.next().await.unwrap().unwrap_err();
+        assert_eq!(error.is_terminal(), terminal, "{input:?}");
+        assert!(records.next().await.is_none());
+    }
+    // A transport failure after a skipped record: the skip is recoverable, the failure terminal.
+    let mut records = JsonLinesReader::new(yield_options)
+        .read::<Rec, _>(Chunks::new([&b"{\"id\":\"x\"}\n{\"id\":2}\n"[..]]).then_fail("injected"));
+    let skipped = records.next().await.unwrap().unwrap_err();
+    assert!(!skipped.is_terminal());
+    assert_eq!(records.next().await.unwrap().unwrap(), Rec { id: 2 });
+    let failed = records.next().await.unwrap().unwrap_err();
+    assert_eq!(failed.kind(), ReadErrorKind::Transport);
+    assert!(failed.is_terminal());
+    assert!(records.next().await.is_none());
 }
