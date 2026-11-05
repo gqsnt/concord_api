@@ -11,6 +11,7 @@ publish = false
 concord = { path = "../../crates/concord", features = ["json", "jsonl"] }
 concord-example-shopify-sdk = { path = "../../examples/shopify-sdk" }
 concord-pagination = { path = "../../crates/concord-pagination" }
+serde.workspace = true
 
 [dev-dependencies]
 concord-example-testserver = { path = "../../examples/testserver" }

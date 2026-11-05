@@ -281,6 +281,7 @@ dependencies = [
  "concord-example-shopify-sdk",
  "concord-example-testserver",
  "concord-pagination",
+ "serde",
  "serde_json",
  "tokio",
 ]
