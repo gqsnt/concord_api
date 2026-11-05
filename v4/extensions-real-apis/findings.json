@@ -9,7 +9,7 @@
  },
  "resolution_rechecks": {
   "astra-recheck": "Codex gpt-6-astra xhigh (observed), stream and CSV fixes at ea68333d: ACCEPT_WITH_FIXES (ASTRA-2 header names), fixed in e27a0958/843416d9",
-  "sol-recheck": "Codex gpt-6.1-sol xhigh (observed), OPUS fixes and ASTRA-2 follow-up at d2681065: ACCEPT_WITH_FIXES (OPUS-1 numeric links, SOL-R1..R3, OPUS-6 replay), fixed in b528bc79/fc166290/66fde2ac; follow-up check recorded in review/sol-recheck/"
+  "sol-recheck": "Codex gpt-6.1-sol xhigh (observed), OPUS fixes and ASTRA-2 follow-up at d2681065: ACCEPT_WITH_FIXES (OPUS-1 numeric links, SOL-R1..R3, OPUS-6 replay), fixed in b528bc79/fc166290/66fde2ac; follow-up check at 66fde2ac: ACCEPT, no new finding (review/sol-recheck/followup/)"
  },
  "findings": [
   {

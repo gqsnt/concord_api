@@ -1,0 +1,189 @@
+   Compiling sol-recheck-followup v0.0.0 (/home/canarit/projects/concord-ext44/rv44-sol-recheck/review/sol-recheck/followup/probes)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.39s
+     Running tests/github.rs (review/sol-recheck/followup/target/debug/deps/github-3c9718af493597d5)
+
+running 6 tests
+SOL-R1: changing fragments removed, error at request 2, Outcome::Failed: ["/repos/org/repo/issues/11/comments", "/repositories/101/issues/11/comments?page=2"]
+test changing_fragment_is_rejected_on_first_repeated_http_request ... ok
+SOL-R3: same-origin rename redirect; provider new-name Link round-trips through old-name factory and fetches
+test renamed_repository_link_round_trips_through_original_factory ... ok
+restore ACCEPT /api/v3/repos/octo-org/hello-world/issues/11/comments?page=2
+restore ACCEPT /api/v3/repos/OCTO-ORG/HELLO-WORLD/issues/11/comments?page=2
+restore ACCEPT /api/v3/repositories/101/issues/11/comments?page=2
+restore ACCEPT /api/v3/repositories/999/issues/11/comments?page=2
+restore ACCEPT /api/v3/repositories/000101/issues/11/comments?page=2
+restore ACCEPT /api/v3/repos/other/hello-world/issues/11/comments?page=2
+restore ACCEPT /api/v3/repos/octo-org/other/issues/11/comments?page=2
+restore REFUSE /api/v3/repositories/101/issues/12/comments?page=2
+fragment-only target "#v1": LinkDidNotAdvance on first request
+restore REFUSE /api/v3/repos/octo-org/hello-world/issues/12/comments?page=2
+restore REFUSE /api/v3/repositories/101/pulls/11/reviews?page=2
+restore REFUSE /api/v3/repos/octo-org/hello-world/issues/11/comments/1?page=2
+restore REFUSE /api/v3/repos/octo-org/hello-world/issues/11/comments/?page=2
+restore REFUSE /api/v30/repos/octo-org/hello-world/issues/11/comments?page=2
+restore REFUSE /api/v4/repos/octo-org/hello-world/issues/11/comments?page=2
+restore REFUSE /api/v3-other/repos/octo-org/hello-world/issues/11/comments?page=2
+restore ACCEPT /api/v3/repos/other/repo/issues/11/comments?path=/repos/octo-org/hello-world/issues/11/comments
+restore ACCEPT /api/v3/repos/other/repo/issues/11/comments#/repos/octo-org/hello-world/issues/11/comments
+restore ACCEPT /api/v3/repos/octo-org/hello-world/issues/11/comments?page=2&path=/repos/other/repo
+restore ACCEPT /api/v3/repos/octo-org/hello-world/issues/11/comments?page=2#/repos/other/repo
+restore REFUSE /api/v3/repos/octo-org/hello-world/issues/11/comments%2F..%2F..%2F12/comments?page=2
+GitHub Start -> page=2 -> page=3 -> page=3: error at request 3
+restore REFUSE /api/v3/repos/octo-org/hello-world/issues/11/comments/%2e%2e/../12/comments?page=2
+restore REFUSE /api/v3/repos/octo-org/hello-world/issues/12/comments/../../../11/comments?page=2
+restore ACCEPT /api/v3/repos/%6fcto-org/hello-world/issues/11/comments?page=2
+test progress_compares_current_url_on_third_request ... ok
+restore ACCEPT /api/v3/repos/octo-org/%68ello-world/issues/11/comments?page=2
+restore REFUSE /api/v3/repos/octo-org/hello-world/issues/%31%31/comments?page=2
+restore REFUSE /api/v3/repos/octo-org/hello-world/%69ssues/11/comments?page=2
+restore REFUSE /api/v3/repos/octo-org/hello-world/issues/011/comments?page=2
+restore REFUSE /api/v3/REPOS/octo-org/hello-world/issues/11/comments?page=2
+restore REFUSE /api/v3/repos/octo-org/hello-world/Issues/11/comments?page=2
+restore REFUSE /API/v3/repos/octo-org/hello-world/issues/11/comments?page=2
+restore ACCEPT /api/v3/repos/octo-org/hello-world/issues/11/comments?page=2&after=a%2Fb%3D
+restore ACCEPT /api/v3/repos/octo-org/hello-world/issues/11/comments?after=a%2fb%3d
+OPUS-1: A numeric link round-trips through A; B rejects stored A binding; no request on mismatch
+test numeric_repo_link_preserves_binding_across_persistence ... ok
+test restore_matrix ... ok
+fragment-only target "#": LinkDidNotAdvance on first request
+fragment-only target "": LinkDidNotAdvance on first request
+restored #stored stripped, escaped %23 kept; "#new" fails on first continued request with response metadata
+restored #stored stripped, escaped %23 kept; "?page=2&cursor=a%23b#new" fails on first continued request with response metadata
+test literal_fragment_only_targets_and_restored_fragments_do_not_advance ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.05s
+
+     Running tests/kubernetes.rs (review/sol-recheck/followup/target/debug/deps/kubernetes-7841bd9af1fcebe8)
+
+running 2 tests
+explicit resume sends key-C, never template-unused; inconsistent snapshot still refused
+test explicit_resume_overrides_template_and_checks_snapshot ... ok
+SOL-R2: sent [None, seed-A, next-B, None]; repeat rejected at request 3; first RV preserved and continued RV cleared
+test template_token_is_cleared_and_current_key_is_checked ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+
+     Running tests/shopify.rs (review/sol-recheck/followup/target/debug/deps/shopify-2b65a3560995d42d)
+
+running 1 test
+products page=1 failed_item=1: Stopped, correct page; replay repeats 0 successful siblings and failed parent; remaining siblings included
+products page=1 failed_item=2: Stopped, correct page; replay repeats 1 successful siblings and failed parent; remaining siblings included
+products page=1 failed_item=3: Stopped, correct page; replay repeats 2 successful siblings and failed parent; remaining siblings included
+products page=2 failed_item=1: Stopped, correct page; replay repeats 0 successful siblings and failed parent; remaining siblings included
+products page=2 failed_item=2: Stopped, correct page; replay repeats 1 successful siblings and failed parent; remaining siblings included
+products page=2 failed_item=3: Stopped, correct page; replay repeats 2 successful siblings and failed parent; remaining siblings included
+collections page=1 failed_item=1: Stopped, correct page; replay repeats 0 successful siblings and failed parent; remaining siblings included
+collections page=1 failed_item=2: Stopped, correct page; replay repeats 1 successful siblings and failed parent; remaining siblings included
+collections page=1 failed_item=3: Stopped, correct page; replay repeats 2 successful siblings and failed parent; remaining siblings included
+collections page=2 failed_item=1: Stopped, correct page; replay repeats 0 successful siblings and failed parent; remaining siblings included
+collections page=2 failed_item=2: Stopped, correct page; replay repeats 1 successful siblings and failed parent; remaining siblings included
+collections page=2 failed_item=3: Stopped, correct page; replay repeats 2 successful siblings and failed parent; remaining siblings included
+test nested_failure_matrix_and_actual_parent_replay ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.13s
+
+     Running tests/stored.rs (review/sol-recheck/followup/target/debug/deps/stored-1d8ea5e0a7d0afb0)
+
+running 3 tests
+13 declared operation IDs: own accepted, all other known IDs mismatched accurately; unknown/empty/case/newline IDs refused as unrecognized, no I/O
+test operation_mismatches_keep_known_ids_and_redact_unknown_ids ... ok
+Accept: canonical
+Malformed: empty
+Malformed: raw URL
+Malformed: version 2
+Malformed: tag case
+Malformed: leading space
+Malformed: trailing space
+Malformed: double delimiter
+top-level '-' and numeric u64 boundaries round-trip; wrong parent and unknown operation rejected
+Malformed: tab delimiters
+Malformed: newline delimiter
+Malformed: NBSP delimiter
+Malformed: extra field
+Malformed: missing URL
+Malformed: missing parent
+Malformed: BOM
+Accept: parent "11"
+Mismatch: parent "-"
+Mismatch: parent "0"
+test top_level_and_u64_parent_boundaries_round_trip ... ok
+Mismatch: parent "12"
+Malformed: parent "011"
+Malformed: parent "+11"
+Malformed: parent "-11"
+Malformed: parent "-0"
+Malformed: parent "11.0"
+Malformed: parent "1e1"
+Malformed: parent "0xb"
+Malformed: parent "١١"
+Mismatch: parent "18446744073709551615"
+Malformed: parent "18446744073709551616"
+Malformed: parent "11\t"
+Malformed: parent "\n11"
+Malformed: parent ""
+Accept: binding repo "ORG/REPO"
+Accept: binding repo "Org/RePo"
+Mismatch: binding repo "other/repo"
+Mismatch: binding repo "org/other"
+Mismatch: binding repo "%6frg/repo"
+Mismatch: binding repo "org/r%65po"
+Mismatch: binding repo "оrg/repo"
+Malformed: binding repo "/repo"
+Malformed: binding repo "org/"
+Malformed: binding repo "org/repo/extra"
+Malformed: binding repo "orgrepo"
+Mismatch: binding repo "org/repo\t"
+Mismatch: binding repo "org\n/repo"
+Mismatch: binding repo "./repo"
+Mismatch: operation "issues/list-for-repo"
+Mismatch: operation "pulls/list-reviews"
+Mismatch: operation "gists/list"
+Mismatch: operation "issues/LIST-comments"
+Mismatch: operation "issues/list-comments/"
+Mismatch: operation ""
+Mismatch: operation "issues/list-comments\t"
+Accept: path /repos/org/repo/issues/11/comments?page=2
+Accept: path /repos/org/new-name/issues/11/comments?page=2
+Accept: path /repos/other/name/issues/11/comments?page=2
+Accept: path /repositories/999/issues/11/comments?page=2
+Accept: path /repositories/000101/issues/11/comments?page=2
+Mismatch: path /repositories/no-id/issues/11/comments?page=2
+Mismatch: path /repositories/%31%30%31/issues/11/comments?page=2
+Mismatch: path /repositories/101/issues/12/comments?page=2
+Mismatch: path /repositories/101/pulls/11/reviews?page=2
+Mismatch: path /repositories/101/issues/11/comments/1?page=2
+Mismatch: path /repositories/101/issues/11/comments/?page=2
+Mismatch: path /repositories/101/issues/011/comments?page=2
+Mismatch: path /repositories/101/issues/%31%31/comments?page=2
+Mismatch: path /repositories/101/%69ssues/11/comments?page=2
+Mismatch: path /repositories/101/Issues/11/comments?page=2
+Mismatch: path /repositories/101/issues/12/comments?page=2#issues/11/comments
+Mismatch: path /repositories/101/issues/12/comments?path=/issues/11/comments
+Mismatch: path /repositories/101/issues/11/comments%2F..%2F..%2F12/comments
+Accept: path /repositories/101/issues/11/./comments?page=2
+Accept: path /repositories/101/issues/12/../11/comments?page=2
+Accept: path /repositories/101/issues/11/comments?cursor=a%2Fb%3D#ignored
+Accept: path /repositories/101/issues/11/comments?cursor=a%2fb%3d%23inside
+Accept: URL host case
+Foreign: foreign host
+Foreign: userinfo apparent host
+Accept: same-origin userinfo
+Foreign: foreign scheme
+Foreign: foreign port
+Foreign: foreign base
+Foreign: base prefix trick
+Foreign: base case
+Malformed: relative URL
+Malformed: scheme-relative URL
+Foreign: file URL
+Foreign: opaque URL
+Malformed: literal URL space
+Accept: escaped URL space
+Accept: URL trailing LF
+Accept: URL embedded tab
+Foreign: foreign host with tab
+stored parser: 93 cases; accept/malformed/mismatch/foreign=[18, 33, 32, 10]; every accepted key has stable canonical round-trip
+test stored_binding_and_url_parser_matrix ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+

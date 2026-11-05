@@ -1,0 +1,106 @@
+     Locking 185 packages to highest Rust 1.99.1 compatible versions
+   Compiling icu_normalizer_data v2.4.0
+   Compiling icu_properties_data v2.4.0
+   Compiling rustversion v1.0.23
+   Compiling core_detect v1.0.0
+   Compiling cc v1.11.0
+   Compiling simdutf8 v0.1.5
+   Compiling multiversion_no_op v1.0.0
+   Compiling scopeguard v1.2.0
+   Compiling concord-macros v4.2.0 (/home/canarit/projects/concord-ext44/rv44-sol-recheck/crates/concord-macros)
+   Compiling concord-pagination v4.2.0 (/home/canarit/projects/concord-ext44/rv44-sol-recheck/crates/concord-pagination)
+   Compiling concord-example-testserver v0.0.0 (/home/canarit/projects/concord-ext44/rv44-sol-recheck/examples/testserver)
+   Compiling icu_locale_core v2.4.0
+   Compiling icu_collections v2.4.0
+   Compiling encoding_rs v0.8.44
+   Compiling icu_provider v2.4.0
+   Compiling icu_normalizer v2.4.0
+   Compiling icu_properties v2.4.0
+   Compiling cmake v0.1.58
+   Compiling aws-lc-sys v0.47.0
+   Compiling idna_adapter v1.2.2
+   Compiling idna v1.1.0
+   Compiling url v2.5.8
+   Compiling tower-http v0.6.11
+   Compiling aws-lc-rs v1.19.0
+   Compiling rustls v0.23.46
+   Compiling rustls-webpki v0.103.16
+   Compiling tokio-rustls v0.26.6
+   Compiling rustls-platform-verifier v0.7.1
+   Compiling hyper-rustls v0.27.10
+   Compiling reqwest v0.13.5
+   Compiling concord-core v4.2.0 (/home/canarit/projects/concord-ext44/rv44-sol-recheck/crates/concord-core)
+   Compiling concord-extras v4.2.0 (/home/canarit/projects/concord-ext44/rv44-sol-recheck/crates/concord-extras)
+   Compiling concord v4.2.0 (/home/canarit/projects/concord-ext44/rv44-sol-recheck/crates/concord)
+   Compiling concord-example-shopify-sdk v0.0.0 (/home/canarit/projects/concord-ext44/rv44-sol-recheck/examples/shopify-sdk)
+   Compiling concord-example-kubernetes-sdk v0.0.0 (/home/canarit/projects/concord-ext44/rv44-sol-recheck/examples/kubernetes-sdk)
+   Compiling concord-example-github-sdk v0.0.0 (/home/canarit/projects/concord-ext44/rv44-sol-recheck/examples/github-sdk)
+   Compiling concord-example-shopify-app v0.0.0 (/home/canarit/projects/concord-ext44/rv44-sol-recheck/examples/shopify-app)
+   Compiling sol-recheck-followup v0.0.0 (/home/canarit/projects/concord-ext44/rv44-sol-recheck/review/sol-recheck/followup/probes)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 9.89s
+     Running tests/github.rs (review/sol-recheck/followup/target/debug/deps/github-a2ee2b89e8b440a7)
+
+running 5 tests
+restore ACCEPT /api/v3/repos/octo-org/hello-world/issues/11/comments?page=2
+restore ACCEPT /api/v3/repos/OCTO-ORG/HELLO-WORLD/issues/11/comments?page=2
+restore ACCEPT /api/v3/repositories/101/issues/11/comments?page=2
+restore ACCEPT /api/v3/repositories/999/issues/11/comments?page=2
+restore ACCEPT /api/v3/repositories/000101/issues/11/comments?page=2
+restore ACCEPT /api/v3/repos/other/hello-world/issues/11/comments?page=2
+restore ACCEPT /api/v3/repos/octo-org/other/issues/11/comments?page=2
+restore REFUSE /api/v3/repositories/101/issues/12/comments?page=2
+restore REFUSE /api/v3/repos/octo-org/hello-world/issues/12/comments?page=2
+restore REFUSE /api/v3/repositories/101/pulls/11/reviews?page=2
+restore REFUSE /api/v3/repos/octo-org/hello-world/issues/11/comments/1?page=2
+restore REFUSE /api/v3/repos/octo-org/hello-world/issues/11/comments/?page=2
+restore REFUSE /api/v30/repos/octo-org/hello-world/issues/11/comments?page=2
+restore REFUSE /api/v4/repos/octo-org/hello-world/issues/11/comments?page=2
+restore REFUSE /api/v3-other/repos/octo-org/hello-world/issues/11/comments?page=2
+restore ACCEPT /api/v3/repos/other/repo/issues/11/comments?path=/repos/octo-org/hello-world/issues/11/comments
+restore ACCEPT /api/v3/repos/other/repo/issues/11/comments#/repos/octo-org/hello-world/issues/11/comments
+restore ACCEPT /api/v3/repos/octo-org/hello-world/issues/11/comments?page=2&path=/repos/other/repo
+restore ACCEPT /api/v3/repos/octo-org/hello-world/issues/11/comments?page=2#/repos/other/repo
+restore REFUSE /api/v3/repos/octo-org/hello-world/issues/11/comments%2F..%2F..%2F12/comments?page=2
+restore REFUSE /api/v3/repos/octo-org/hello-world/issues/11/comments/%2e%2e/../12/comments?page=2
+restore REFUSE /api/v3/repos/octo-org/hello-world/issues/12/comments/../../../11/comments?page=2
+restore ACCEPT /api/v3/repos/%6fcto-org/hello-world/issues/11/comments?page=2
+restore ACCEPT /api/v3/repos/octo-org/%68ello-world/issues/11/comments?page=2
+restore REFUSE /api/v3/repos/octo-org/hello-world/issues/%31%31/comments?page=2
+restore REFUSE /api/v3/repos/octo-org/hello-world/%69ssues/11/comments?page=2
+restore REFUSE /api/v3/repos/octo-org/hello-world/issues/011/comments?page=2
+restore REFUSE /api/v3/REPOS/octo-org/hello-world/issues/11/comments?page=2
+restore REFUSE /api/v3/repos/octo-org/hello-world/Issues/11/comments?page=2
+restore REFUSE /API/v3/repos/octo-org/hello-world/issues/11/comments?page=2
+restore ACCEPT /api/v3/repos/octo-org/hello-world/issues/11/comments?page=2&after=a%2Fb%3D
+restore ACCEPT /api/v3/repos/octo-org/hello-world/issues/11/comments?after=a%2fb%3d
+test restore_matrix ... ok
+GitHub Start -> page=2 -> page=3 -> page=3: error at request 3
+test progress_compares_current_url_on_third_request ... ok
+SOL-R1: changing fragments removed, error at request 2, Outcome::Failed: ["/repos/org/repo/issues/11/comments", "/repositories/101/issues/11/comments?page=2"]
+test changing_fragment_is_rejected_on_first_repeated_http_request ... ok
+SOL-R3: same-origin rename redirect; provider new-name Link round-trips through old-name factory and fetches
+test renamed_repository_link_round_trips_through_original_factory ... ok
+OPUS-1: A numeric link round-trips through A; B rejects stored A binding; no request on mismatch
+test numeric_repo_link_preserves_binding_across_persistence ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+
+     Running tests/shopify.rs (review/sol-recheck/followup/target/debug/deps/shopify-f610873122f6759e)
+
+running 1 test
+products page=1 failed_item=1: Stopped, correct page; replay repeats 0 successful siblings and failed parent; remaining siblings included
+products page=1 failed_item=2: Stopped, correct page; replay repeats 1 successful siblings and failed parent; remaining siblings included
+products page=1 failed_item=3: Stopped, correct page; replay repeats 2 successful siblings and failed parent; remaining siblings included
+products page=2 failed_item=1: Stopped, correct page; replay repeats 0 successful siblings and failed parent; remaining siblings included
+products page=2 failed_item=2: Stopped, correct page; replay repeats 1 successful siblings and failed parent; remaining siblings included
+products page=2 failed_item=3: Stopped, correct page; replay repeats 2 successful siblings and failed parent; remaining siblings included
+collections page=1 failed_item=1: Stopped, correct page; replay repeats 0 successful siblings and failed parent; remaining siblings included
+collections page=1 failed_item=2: Stopped, correct page; replay repeats 1 successful siblings and failed parent; remaining siblings included
+collections page=1 failed_item=3: Stopped, correct page; replay repeats 2 successful siblings and failed parent; remaining siblings included
+collections page=2 failed_item=1: Stopped, correct page; replay repeats 0 successful siblings and failed parent; remaining siblings included
+collections page=2 failed_item=2: Stopped, correct page; replay repeats 1 successful siblings and failed parent; remaining siblings included
+collections page=2 failed_item=3: Stopped, correct page; replay repeats 2 successful siblings and failed parent; remaining siblings included
+test nested_failure_matrix_and_actual_parent_replay ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.13s
+
