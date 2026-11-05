@@ -120,8 +120,8 @@ impl Framer {
     /// source has ended and `input` is the last of it (never set for a slice that leaves input
     /// behind). Returns how many bytes of `input` were consumed. A fault is terminal.
     ///
-    /// The search for a line feed stops `max` content bytes (plus a CR) past the line's start: a
-    /// longer run without one is a limit fault however much input follows.
+    /// The search for a line feed covers at most `max` content bytes, a CR and the LF itself from
+    /// the line's start: a longer run without one is a limit fault however much input follows.
     pub(super) fn frame(&mut self, input: &[u8], eof: bool) -> Result<(usize, Framed), Fault> {
         self.release();
         let mut used = 0;
