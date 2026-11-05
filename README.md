@@ -193,6 +193,7 @@ breaking Concord release.
 | Write your own `Encode`/`Decode` format; read the response head; test it | [Writing a format](docs/CUSTOM_FORMATS.md) |
 | What goes on the wire: `Accept` and `Content-Type` | [Author guide, 5.8](docs/AUTHOR_GUIDE.md#58-what-goes-on-the-wire-accept-and-content-type) |
 | Error documents, timeouts, streaming, retries, pagination; patterns from other APIs | [Recipes](docs/RECIPES.md), [`examples/compat`](examples/compat) |
+| Build an SDK around a declaration: domain values to operations, named workflows, bounded traversal, response metadata, operations the SDK does not declare | [Recipes: SDK and application patterns](docs/RECIPES.md#sdk-and-application-patterns), [`examples/app`](examples/app), [`examples/extension`](examples/extension) |
 | Read a compile error | [Diagnostics](docs/DIAGNOSTICS.md) |
 | Upgrade from format words and the body-only codec traits, from in-place formats, from `via`, from the V4 alpha or from V3 | [Migration](docs/MIGRATION.md) |
 | A complete real-world client (Riot Games), offline tests, sources | [`examples/riot`](examples/riot) |

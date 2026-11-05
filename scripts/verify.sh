@@ -36,6 +36,17 @@ step() {
     echo "FAIL  ${name}  (see target/verify-${name}.log)"
     status=1
   fi
+  socket_snapshot "after:${name}"
+}
+
+# Diagnostic only, never a gate: machine-wide TCP counters (TIME_WAIT, the dynamic port range a
+# `bind` to port 0 draws from, its excluded and in-use ports, connections opened) appended to
+# target/verify-socket-pressure.log after every step and around every example package; a summary
+# is printed at the end. The 4.3 Windows job 126834420624 failed a loopback bind with WSAENOBUFS
+# (10055); these counters show how close each runner came to the dynamic-port limit and how much
+# of it the gate's own tests used (scripts/socket-snapshot.py documents what they can show).
+socket_snapshot() {
+  "$python" -I scripts/socket-snapshot.py "$@" >>target/verify-socket-pressure.log 2>&1 || true
 }
 
 # Fails if `concord` (any feature set) or another example gets reqwest's `multipart` feature or a
@@ -58,6 +69,7 @@ no_reqwest_multipart() {
 
 mkdir -p target
 rm -f target/verify-*.log  # the summary below reads only this run's logs
+rm -f target/socket-snapshot.disabled  # scripts/socket-snapshot.py: re-enabled for every run
 
 # Every step runs python, cargo and tar through scripts/argv-guard.sh, which refuses a command line
 # over the Windows limit on every platform (a consumers.sh argument once failed only on Windows).
@@ -76,6 +88,7 @@ argv_guard || { echo "argv-guard could not be installed" >&2; exit 2; }
 python=$(command -v python3 || command -v python)  # now the guarded one
 echo "head: $(git rev-parse HEAD)  dirty: $(git status --porcelain --untracked-files=no | wc -l) file(s)"
 echo "rustc: $(rustc --version)"
+socket_snapshot start --details
 
 if [[ $only_nightly == 0 ]]; then
 # The guard's length model (MSVC quoting, UTF-16 units) against known exact lengths.
@@ -161,8 +174,10 @@ print(" ".join(names))
   names=${names%$'\r'}
   [[ -n $names ]] || { echo "no example packages"; return 1; }
   for name in $names; do
+    socket_snapshot "examples:${name}:before"
     log=$(cargo test --locked -p "$name" 2>&1)
     rc=$?
+    socket_snapshot "examples:${name}:after"
     echo "$log"
     passed=$(grep -o 'test result: ok. [0-9]* passed' <<<"$log" | awk '{s+=$4} END {print s+0}')
     if [[ $rc != 0 || $passed == 0 ]]; then
@@ -210,6 +225,7 @@ for log in target/verify-test*.log target/verify-nightly*.log; do
   failed=$(grep -o '[0-9]* failed' "$log" | awk '{s+=$1} END {print s+0}')
   echo "      $(basename "$log" .log): ${passed} passed, ${failed} failed"
 done
+echo "      $("$python" -I scripts/socket-snapshot.py --summary target/verify-socket-pressure.log 2>&1)"
 if [[ -n "$(git status --porcelain --untracked-files=no)" ]]; then
   echo "FAIL  tracked files changed during verification (e.g. Cargo.lock)"
   status=1

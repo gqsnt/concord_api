@@ -127,6 +127,43 @@ struct Load {
     in_flight: AtomicUsize,
     peak: AtomicUsize,
     connections: AtomicUsize,
+    /// Connections whose server-side task is still running (decremented by [`Live`]).
+    live: AtomicUsize,
+    /// 1 while the accept task (which owns the listener) has not ended.
+    accepting: AtomicUsize,
+}
+
+/// Counts a task (a connection, or the accept loop) as running until it ends, however it ends
+/// (the client closing, an error, an abort, or the task being dropped with its runtime).
+struct Live(Arc<Load>, Counter);
+
+enum Counter {
+    Live,
+    Accepting,
+}
+
+impl Drop for Live {
+    fn drop(&mut self) {
+        match self.1 {
+            Counter::Live => self.0.live.fetch_sub(1, Ordering::SeqCst),
+            Counter::Accepting => self.0.accepting.fetch_sub(1, Ordering::SeqCst),
+        };
+    }
+}
+
+/// The server's task counters, observable after the [`Server`] itself was dropped.
+pub struct Probe(Arc<Load>);
+
+impl Probe {
+    /// Accepted connections whose server-side task has not ended yet.
+    pub fn live_connections(&self) -> usize {
+        self.0.live.load(Ordering::SeqCst)
+    }
+
+    /// 1 while the accept task (and so the listener) is alive, 0 once it ended.
+    pub fn accepting(&self) -> usize {
+        self.0.accepting.load(Ordering::SeqCst)
+    }
 }
 
 impl Server {
@@ -141,16 +178,22 @@ impl Server {
         let respond: Arc<Responder> = Arc::new(respond);
         let log = Arc::clone(&requests);
         let counters = Arc::clone(&load);
+        load.accepting.store(1, Ordering::SeqCst);
+        let accepting = Live(Arc::clone(&load), Counter::Accepting);
         let task = tokio::spawn(async move {
+            let _accepting = accepting;
             loop {
                 let Ok((stream, _)) = listener.accept().await else {
                     return;
                 };
                 counters.connections.fetch_add(1, Ordering::SeqCst);
+                counters.live.fetch_add(1, Ordering::SeqCst);
+                let live = Live(Arc::clone(&counters), Counter::Live);
                 let log = Arc::clone(&log);
                 let respond = Arc::clone(&respond);
                 let counters = Arc::clone(&counters);
                 tokio::spawn(async move {
+                    let _live = live;
                     let _ = serve_connection(stream, log, respond, counters).await;
                 });
             }
@@ -181,6 +224,16 @@ impl Server {
     /// TCP connections accepted so far.
     pub fn connections(&self) -> usize {
         self.load.connections.load(Ordering::SeqCst)
+    }
+
+    /// Accepted connections whose server-side task has not ended yet.
+    pub fn live_connections(&self) -> usize {
+        self.load.live.load(Ordering::SeqCst)
+    }
+
+    /// The task counters, readable after this server is dropped.
+    pub fn probe(&self) -> Probe {
+        Probe(Arc::clone(&self.load))
     }
 
     pub fn requests(&self) -> Vec<Recorded> {

@@ -1010,10 +1010,22 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 }
 ```
 
-A format whose media type varies per body (a multipart boundary), a streamed body or a streamed
-response is not a format: use the native exits (`into_parts`, `send_raw`, reqwest's multipart).
-`examples/native` has NDJSON and pair-encoded form formats, and `examples/multipart` a multipart
-upload ([recipes](RECIPES.md)).
+A request stream with a fixed media type can use a custom `Encode<T>` that moves its payload
+into a streaming `reqwest::Body`; enable reqwest's `stream` feature (in your own `Cargo.toml`) for
+those constructors. The encoder runs during preparation, but it need not read the stream then:
+[`examples/native/src/upload.rs`](../examples/native/src/upload.rs) prepares a non-`Clone`
+one-shot source without polling it, and one `send()` reads it once.
+
+`Encode::CONTENT_TYPE` is static, and the encoder does not return per-body media headers. A
+`request F "type/subtype";` statement or a `content-type` header replaces that static value (5.3,
+5.8). For a media type that varies with the body (a multipart boundary), use the documented native
+request-construction route through `into_parts` and reqwest's multipart support. An explicit
+matching `content-type` header can also carry it when the endpoint or SDK controls that
+body/header pair.
+
+For a response consumed incrementally, use `send_raw` and native reads; typed `Decode` receives
+the collected body bytes. `examples/native` has NDJSON and pair-encoded form formats and a
+one-shot request stream, and `examples/multipart` a multipart upload ([recipes](RECIPES.md)).
 
 ### 5.8 What goes on the wire: `Accept` and `Content-Type`
 

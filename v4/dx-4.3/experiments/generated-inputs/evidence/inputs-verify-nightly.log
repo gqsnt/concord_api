@@ -1,0 +1,5 @@
+head: 9e4c0efe3896223c8a29e366c5c47cd070a70c20  dirty: 0 file(s)
+rustc: rustc 1.99.1 (58cf8f9c3 2026-10-13)
+PASS  nightly-clone-compat
+      verify-nightly-clone-compat: 16 passed, 0 failed
+exit=0

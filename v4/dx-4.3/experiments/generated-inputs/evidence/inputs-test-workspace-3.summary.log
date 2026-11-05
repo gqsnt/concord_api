@@ -1,0 +1,216 @@
+# cargo test --workspace --locked on the prototype (inputs-test-workspace-3)
+     Running unittests src/lib.rs (target/debug/deps/concord-3354b8f340a98e1f)
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+     Running tests/accept.rs (target/debug/deps/accept-b4329b6a9fbce1e4)
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.43s
+     Running tests/applied_advice.rs (target/debug/deps/applied_advice-8ec391b0df3ab0fe)
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+     Running tests/attributes.rs (target/debug/deps/attributes-72f6ac7bfc7fd6c0)
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+     Running tests/bodies.rs (target/debug/deps/bodies-1bd867efcfcd5de3)
+test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.04s
+     Running tests/composition.rs (target/debug/deps/composition-fcdb1cc9352454a3)
+test result: ok. 37 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.11s
+     Running tests/d15_surfaces.rs (target/debug/deps/d15_surfaces-ce1562a472deaaa1)
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s
+     Running tests/d16_followup.rs (target/debug/deps/d16_followup-b3364650861fc07b)
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.25s
+     Running tests/display_errors.rs (target/debug/deps/display_errors-c9e454f59433dd91)
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+     Running tests/error_inspection.rs (target/debug/deps/error_inspection-8cfb550608460a37)
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.25s
+     Running tests/formats.rs (target/debug/deps/formats-675a7628f799421f)
+test result: ok. 29 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.31s
+     Running tests/forms.rs (target/debug/deps/forms-dfe215af1edc2962)
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s
+     Running tests/forwarded_types.rs (target/debug/deps/forwarded_types-dfe1730d0de60809)
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+     Running tests/hygiene.rs (target/debug/deps/hygiene-a6b391652d43067c)
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+     Running tests/lifecycle.rs (target/debug/deps/lifecycle-c071344c5aac38ab)
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.76s
+     Running tests/metadata.rs (target/debug/deps/metadata-0bf0c75a4448b804)
+test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.11s
+     Running tests/native_headers.rs (target/debug/deps/native_headers-869a83693b4749ec)
+test result: ok. 18 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.04s
+     Running tests/native_keys.rs (target/debug/deps/native_keys-c7455884e49bcbde)
+test result: ok. 11 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.05s
+     Running tests/native_limits.rs (target/debug/deps/native_limits-a00f104efbf78661)
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s
+     Running tests/oracle_composition.rs (target/debug/deps/oracle_composition-47a0ca8667ac3fe6)
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+     Running tests/oracle_sensitivity.rs (target/debug/deps/oracle_sensitivity-5dfee5ed54f8de2f)
+test result: ok. 252 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.21s
+     Running tests/oracle_ui.rs (target/debug/deps/oracle_ui-9ae420d839977a6c)
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.24s
+     Running tests/output_types.rs (target/debug/deps/output_types-fbb88ddd7f92a2c3)
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+     Running tests/representations.rs (target/debug/deps/representations-0b58d111a8e0738f)
+test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.06s
+     Running tests/sensitivity.rs (target/debug/deps/sensitivity-458c1b2673b24b4a)
+test result: ok. 13 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+     Running tests/slice.rs (target/debug/deps/slice-2d80e82f03c0e858)
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.07s
+     Running tests/spelling_equivalence.rs (target/debug/deps/spelling_equivalence-10bc140fde8b74f2)
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+     Running tests/synthetic_sdk.rs (target/debug/deps/synthetic_sdk-2aeb044014610d94)
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+     Running tests/tls.rs (target/debug/deps/tls-453d7bc21887928a)
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+     Running tests/ui.rs (target/debug/deps/ui-d7238108690bd444)
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.04s
+     Running tests/validate_names.rs (target/debug/deps/validate_names-a907b2f3d337e52a)
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+     Running tests/values.rs (target/debug/deps/values-a973b93ecc8e0187)
+test result: ok. 15 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s
+     Running unittests src/lib.rs (target/debug/deps/concord_baselines-0624bdc81401c26f)
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+     Running unittests src/lib.rs (target/debug/deps/concord_bench-194154ebb1eb5874)
+test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.36s
+     Running unittests src/bin/alloc_count.rs (target/debug/deps/alloc_count-afe2b74115e7980a)
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+     Running unittests src/lib.rs (target/debug/deps/concord_clone_compat-7170c899ec679826)
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+     Running tests/clone.rs (target/debug/deps/clone-c4a30e78aa431a29)
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+     Running unittests src/lib.rs (target/debug/deps/concord_clone_hygiene_a-c49fa6f91f9d3f46)
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+     Running unittests src/lib.rs (target/debug/deps/concord_clone_hygiene_b-e982d6b4fec00a65)
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+     Running unittests src/lib.rs (target/debug/deps/concord_clone_hygiene_c-41355dc7179f84de)
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+     Running unittests src/lib.rs (target/debug/deps/concord_clone_hygiene_check-08ac199213cd6b72)
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+     Running tests/clone_hygiene.rs (target/debug/deps/clone_hygiene-ff001b40ded2f58b)
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 3.88s
+     Running tests/type_macros.rs (target/debug/deps/type_macros-b90f8b9824d84357)
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+     Running unittests src/lib.rs (target/debug/deps/concord_clone_hygiene_d-9efeb4d38238263a)
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+     Running unittests src/lib.rs (target/debug/deps/concord_core-a1e9380fda7a4735)
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+     Running tests/header_plan.rs (target/debug/deps/header_plan-b6dc98dddd8dcf03)
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.04s
+     Running unittests src/lib.rs (target/debug/deps/concord_example_compat-81d7fe04870a9c37)
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+     Running tests/application.rs (target/debug/deps/application-b7635820e7ca0f03)
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.07s
+     Running tests/apply.rs (target/debug/deps/apply-1bd9d1c16d520ab7)
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+     Running tests/forms.rs (target/debug/deps/forms-92ab0616775a6d94)
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+     Running tests/headers.rs (target/debug/deps/headers-1a805684b440cb0a)
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+     Running tests/idempotency.rs (target/debug/deps/idempotency-a0e4c5a5c07e30d8)
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+     Running tests/json_or_empty.rs (target/debug/deps/json_or_empty-2974ee1a94aa345b)
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.05s
+     Running tests/metadata.rs (target/debug/deps/metadata-2a13c419c686199d)
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s
+     Running tests/refresh.rs (target/debug/deps/refresh-48fc714b8b9f3214)
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+     Running tests/resource_key.rs (target/debug/deps/resource_key-43c941180e39e1c5)
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+     Running unittests src/lib.rs (target/debug/deps/concord_example_fixture-cf5b5cfa96beff67)
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+     Running tests/service.rs (target/debug/deps/service-96e3b1e01a81d4a7)
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+     Running unittests src/lib.rs (target/debug/deps/concord_example_multipart-7f194c9c87ac3db3)
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+     Running tests/upload.rs (target/debug/deps/upload-561ba50dcd072c39)
+test result: ok. 11 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s
+     Running unittests src/lib.rs (target/debug/deps/concord_example_native-f76f94ed3603208d)
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+     Running tests/bodies.rs (target/debug/deps/bodies-30f3a99fa53b4d9e)
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+     Running tests/errors.rs (target/debug/deps/errors-a1b89c0039552a0f)
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+     Running tests/metadata_stage.rs (target/debug/deps/metadata_stage-aef05128a1f4e831)
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+     Running tests/native_edit.rs (target/debug/deps/native_edit-b3d808e742d3cec3)
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.21s
+     Running tests/policies.rs (target/debug/deps/policies-0312c5c37fe2fd40)
+test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.48s
+     Running tests/streaming.rs (target/debug/deps/streaming-a01d404f9900fff1)
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.32s
+     Running unittests src/lib.rs (target/debug/deps/concord_example_quickstart-9f9945f4ab931660)
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+     Running unittests src/main.rs (target/debug/deps/concord_example_quickstart-74abb30db5bcc626)
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+     Running tests/caller_guide.rs (target/debug/deps/caller_guide-df0ad2545e300477)
+test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+     Running tests/doc_excerpts.rs (target/debug/deps/doc_excerpts-695bfe2336cf7ac1)
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+     Running tests/quickstart.rs (target/debug/deps/quickstart-67030e4c7cc8f384)
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+     Running unittests src/lib.rs (target/debug/deps/concord_example_renamed-a641e4869421514a)
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+     Running unittests src/lib.rs (target/debug/deps/concord_example_riot-39321e1a70a95e1c)
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+     Running unittests src/main.rs (target/debug/deps/concord_example_riot-3a7a087c06db042b)
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+     Running tests/errors.rs (target/debug/deps/errors-fd472444da6c9b98)
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s
+     Running tests/redirects.rs (target/debug/deps/redirects-9b2e80c0f3030d18)
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+     Running tests/wire.rs (target/debug/deps/wire-2b3b958b1b85dba1)
+test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.09s
+     Running tests/workflows.rs (target/debug/deps/workflows-e69fca52196ba1f2)
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.15s
+     Running unittests src/lib.rs (target/debug/deps/concord_example_sdk-86e5ea155c8d07dc)
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+     Running tests/sdk.rs (target/debug/deps/sdk-c2317e5e9bab08d8)
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.13s
+     Running unittests src/lib.rs (target/debug/deps/concord_example_shapes-4af32b54192640c1)
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+     Running tests/wire.rs (target/debug/deps/wire-96b68512c9931723)
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.14s
+     Running unittests src/lib.rs (target/debug/deps/concord_extras-6bdd87795521705f)
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+     Running tests/media.rs (target/debug/deps/media-25aafe77d780d0b5)
+test result: ok. 13 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+     Running unittests src/lib.rs (target/debug/deps/concord_heap_check-738e3a3d9589fcab)
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+     Running tests/drain.rs (target/debug/deps/drain-ec726dc756bf16e8)
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.07s
+     Running tests/headers.rs (target/debug/deps/headers-ad9845ebf11a81a9)
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+     Running unittests src/lib.rs (target/debug/deps/concord_hygiene_check-9d91e200dd3dd9c1)
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+     Running tests/cross_crate.rs (target/debug/deps/cross_crate-a43819d0dbff9024)
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+     Running unittests src/lib.rs (target/debug/deps/concord_hygiene_key_a-1bc630a04b074e26)
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+     Running unittests src/lib.rs (target/debug/deps/concord_hygiene_key_b-480b16d737c97dc2)
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+     Running unittests src/lib.rs (target/debug/deps/concord_macros-37874054aba9cc5c)
+test result: ok. 17 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.27s
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.07s
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+test result: ok. 33 passed; 0 failed; 10 ignored; 0 measured; 0 filtered out; finished in 0.03s
+test result: ok. 0 passed; 0 failed; 3 ignored; 0 measured; 0 filtered out; finished in 0.00s
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+exit=0

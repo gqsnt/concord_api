@@ -1,0 +1,11 @@
+consumer sources: consumer 949afc36059b4a4a  consumer-setters 245060b3718ae028  literal 4c46ebecc8c4b841
+v1  g1-evo-consumer-setters pass                     expected pass
+v1  g1-evo-consumer        pass                     expected pass
+v1  g1-evo-literal         fail                     expected fail
+v2  g1-evo-consumer-setters pass                     expected pass
+v2  g1-evo-consumer        pass                     expected pass
+v2  g1-evo-literal         fail                     expected fail
+v3  g1-evo-consumer-setters pass                     expected pass
+v3  g1-evo-consumer        fail                     expected fail
+v3  g1-evo-literal         fail                     expected fail
+consumer sources after: consumer 949afc36059b4a4a  consumer-setters 245060b3718ae028

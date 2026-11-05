@@ -1,0 +1,269 @@
+{
+ "schema": "dx-4.3 requirement index v1: requirement id -> evidence (tests are `file::fn`, run by the listed command)",
+ "requirements": [
+  {
+   "id": "B01",
+   "outcome": "met",
+   "evidence": [
+    "v4/dx-4.3/STATUS.md (identities, branch, worktrees)"
+   ],
+   "command": "git fetch origin; git merge-base --is-ancestor b2ba341 origin/main; git ls-remote --tags origin v4.2.0*"
+  },
+  {
+   "id": "B02",
+   "outcome": "met",
+   "evidence": [
+    "v4/dx-4.3/STATUS.md (base 5ed600b is records-only after b2ba341; CI 41851008386 credited to 5ed600b only)"
+   ],
+   "command": "git diff --stat b2ba341 5ed600b"
+  },
+  {
+   "id": "B03",
+   "outcome": "met",
+   "evidence": [
+    "rust-toolchain.toml 1.99.1",
+    "scripts/verify.sh"
+   ],
+   "command": "scripts/verify.sh --package --bench"
+  },
+  {
+   "id": "S01",
+   "outcome": "met",
+   "evidence": [
+    "docs/CUSTOM_FORMATS.md §1",
+    "docs/AUTHOR_GUIDE.md §5.7",
+    "docs/RECIPES.md (streaming, multipart)"
+   ],
+   "command": "cargo test --locked -p concord-example-quickstart (AUTHOR_GUIDE doctests)"
+  },
+  {
+   "id": "S02",
+   "outcome": "met",
+   "evidence": [
+    "examples/native/tests/upload.rs::preparing_and_inspecting_never_polls_the_source"
+   ],
+   "command": "cargo test --locked -p concord-example-native"
+  },
+  {
+   "id": "S03",
+   "outcome": "met",
+   "evidence": [
+    "examples/native/tests/upload.rs::one_send_streams_the_source_once_and_a_second_upload_needs_a_fresh_source",
+    "examples/native/tests/upload.rs::an_explicit_endpoint_media_type_replaces_the_static_one",
+    "examples/native/src/upload.rs (compile_fail doc tests: no Clone)"
+   ],
+   "command": "cargo test --locked -p concord-example-native"
+  },
+  {
+   "id": "S04",
+   "outcome": "met",
+   "evidence": [
+    "examples/native/Cargo.toml (reqwest stream feature declared by the example)",
+    "scripts/verify.sh steps feature-isolation, test-examples-isolated"
+   ],
+   "command": "cargo tree --locked -e features -i reqwest -p concord"
+  },
+  {
+   "id": "D01",
+   "outcome": "met",
+   "evidence": [
+    "examples/app/tests/adapters.rs::d01_one_account_reaches_each_service_in_its_own_representation",
+    "examples/app/tests/adapters.rs::d01_no_lower_bound_and_caller_setters_on_the_operation",
+    "examples/app/tests/adapters.rs::d01_catalog_since_is_whole_second_rfc3339",
+    "examples/app/tests/adapters.rs::d01_ledger_from_ms_is_exact_milliseconds",
+    "examples/app/tests/adapters.rs::d01_typed_errors_name_the_service_rule"
+   ],
+   "command": "cargo test --locked -p concord-example-app"
+  },
+  {
+   "id": "D02",
+   "outcome": "met",
+   "evidence": [
+    "examples/app/tests/adapters.rs::d02_unrepresentable_values_fail_before_any_request",
+    "examples/app/tests/adapters.rs::d02_a_server_side_failure_is_not_a_preflight_failure"
+   ],
+   "command": "cargo test --locked -p concord-example-app"
+  },
+  {
+   "id": "D03",
+   "outcome": "met",
+   "evidence": [
+    "examples/app/tests/adapters.rs::d03_one_service_rejecting_does_not_suppress_the_other",
+    "examples/app/tests/adapters.rs::d03_both_services_rejecting_send_nothing",
+    "examples/app/tests/adapters.rs::d03_one_service_failing_keeps_the_other_answer"
+   ],
+   "command": "cargo test --locked -p concord-example-app"
+  },
+  {
+   "id": "W01",
+   "outcome": "met",
+   "evidence": [
+    "examples/app/tests/workflow.rs::w01_unfiltered_and_featured_pages_leave_sibling_defaults_intact",
+    "examples/app/tests/workflow.rs::w01_callers_keep_chaining_setters_on_named_operations"
+   ],
+   "command": "cargo test --locked -p concord-example-app"
+  },
+  {
+   "id": "W02",
+   "outcome": "met",
+   "evidence": [
+    "examples/app/tests/traversal.rs::w02_complete_walks_over_both_services",
+    "examples/app/tests/traversal.rs::w02_a_bounded_walk_returns_a_continuation_and_resumes_without_gaps",
+    "examples/app/tests/traversal.rs::w02_ledger_resumes_page_by_page_from_a_domain_instant",
+    "examples/app/tests/traversal.rs::w02_a_failed_page_keeps_partial_records_and_its_resumption_point",
+    "examples/app/tests/traversal.rs::w02_a_failed_first_page_resumes_from_the_beginning",
+    "examples/app/tests/traversal.rs::w02_the_bound_stops_a_listing_that_never_ends"
+   ],
+   "command": "cargo test --locked -p concord-example-app"
+  },
+  {
+   "id": "M01",
+   "outcome": "met",
+   "evidence": [
+    "examples/native/tests/metadata_recipe.rs::m01_native_edit_one_execution_metadata_and_typed_value",
+    "examples/native/tests/metadata_recipe.rs::m01_metadata_is_captured_before_the_body_is_read"
+   ],
+   "command": "cargo test --locked -p concord-example-native"
+  },
+  {
+   "id": "M02",
+   "outcome": "met",
+   "evidence": [
+    "examples/native/tests/metadata_recipe.rs::m02_transport_failure_is_converted_and_does_not_print_the_url"
+   ],
+   "command": "cargo test --locked -p concord-example-native"
+  },
+  {
+   "id": "M03",
+   "outcome": "met",
+   "evidence": [
+    "examples/native/tests/metadata_recipe.rs::m03_status_and_head_rejections_keep_the_unread_response",
+    "examples/native/tests/metadata_recipe.rs::m03_body_read_failure_and_decode_failure_keep_only_the_head"
+   ],
+   "command": "cargo test --locked -p concord-example-native"
+  },
+  {
+   "id": "M04",
+   "outcome": "met",
+   "evidence": [
+    "examples/native/tests/metadata_recipe.rs::m04_wrappers_do_not_print_values_and_accessors_return_them"
+   ],
+   "command": "cargo test --locked -p concord-example-native"
+  },
+  {
+   "id": "M05",
+   "outcome": "met; public convenience rejected (DECISIONS.md M1)",
+   "evidence": [
+    "examples/native/tests/metadata_recipe.rs::m05_no_output_endpoint_drains_through_the_recipe",
+    "crates/concord unchanged; existing send/send_raw tests"
+   ],
+   "command": "cargo test --workspace --locked"
+  },
+  {
+   "id": "X01",
+   "outcome": "met",
+   "evidence": [
+    "examples/extension/tests/extension.rs::x01_the_sdk_declares_no_export_route",
+    "examples/extension/tests/extension.rs::x01_the_extension_uses_no_hidden_api_and_no_declared_endpoint",
+    "examples/extension/tests/extension.rs::x01_one_request_to_the_export_route_and_nothing_else"
+   ],
+   "command": "cargo test --locked -p concord-example-extension"
+  },
+  {
+   "id": "X02",
+   "outcome": "met",
+   "evidence": [
+    "examples/extension/tests/extension.rs::x02_a_base_path_prefix_is_kept",
+    "examples/extension/tests/extension.rs::x02_hard_tenant_and_export_data_stay_one_segment",
+    "examples/extension/tests/extension.rs::x02_the_encoding_agrees_with_the_generated_endpoint",
+    "examples/extension/tests/extension.rs::x02_empty_and_dot_data_fail_before_http",
+    "examples/sdk/tests/context.rs::built_requests_agree_with_generated_endpoints"
+   ],
+   "command": "cargo test --locked -p concord-example-extension -p concord-example-sdk (each alone)"
+  },
+  {
+   "id": "X03",
+   "outcome": "met",
+   "evidence": [
+    "examples/extension/tests/extension.rs::x03_contexts_from_one_base_stay_independent",
+    "examples/sdk/tests/context.rs::contexts_are_snapshots_and_their_handles_follow_them"
+   ],
+   "command": "cargo test --locked -p concord-example-extension"
+  },
+  {
+   "id": "X04",
+   "outcome": "met",
+   "evidence": [
+    "examples/extension/tests/extension.rs::x04_the_csv_decoder_is_kept_when_the_caller_changes_accept",
+    "examples/extension/tests/extension.rs::x04_a_json_labelled_response_is_refused_unread_with_a_truthful_identity",
+    "examples/extension/tests/extension.rs::x04_a_malformed_body_is_a_decode_error_with_positions_only"
+   ],
+   "command": "cargo test --locked -p concord-example-extension"
+  },
+  {
+   "id": "X05",
+   "outcome": "met; core primitive rejected (DECISIONS.md X1)",
+   "evidence": [
+    "examples/extension/tests/extension.rs::x05_a_native_edit_adds_a_header_before_one_execution",
+    "examples/extension/tests/extension.rs::x05_a_transport_failure_does_not_restore_the_url"
+   ],
+   "command": "cargo test --locked -p concord-example-extension"
+  },
+  {
+   "id": "I01-I08",
+   "outcome": "evaluated on the experiment branch; G1 not adopted (DECISIONS.md, G1 outcome)",
+   "evidence": [
+    "v4/dx-4.3/experiments/generated-inputs/EVALUATION.md §2"
+   ],
+   "command": "on concord-v4.3-dx-generated-inputs: cargo test --locked -p concord --test inputs"
+  },
+  {
+   "id": "C01-C05",
+   "outcome": "evaluated on the experiment branch; G1 not adopted (DECISIONS.md, G1 outcome)",
+   "evidence": [
+    "v4/dx-4.3/experiments/generated-inputs/EVALUATION.md §2, §4"
+   ],
+   "command": "see experiments/generated-inputs/README.md"
+  },
+  {
+   "id": "DX01-DX05",
+   "outcome": "evaluated; G1 not adopted (DECISIONS.md, G1 outcome)",
+   "evidence": [
+    "v4/dx-4.3/experiments/generated-inputs/EVALUATION.md §3-§5"
+   ],
+   "command": "see experiments/generated-inputs/README.md"
+  },
+  {
+   "id": "F01",
+   "outcome": "see VERIFICATION.md",
+   "evidence": [
+    "v4/dx-4.3/VERIFICATION.md"
+   ],
+   "command": "scripts/verify.sh --package --bench; scripts/verify.sh --nightly-only"
+  },
+  {
+   "id": "F02",
+   "outcome": "see VERIFICATION.md",
+   "evidence": [
+    "v4/dx-4.3/VERIFICATION.md (branch CI: Linux, native Windows, nightly)"
+   ],
+   "command": "GitHub Actions ci on the final commit"
+  },
+  {
+   "id": "F03",
+   "outcome": "see REVIEW_RESOLUTIONS.md",
+   "evidence": [
+    "v4/dx-4.3/REVIEW_RESOLUTIONS.md"
+   ],
+   "command": "-"
+  },
+  {
+   "id": "F04",
+   "outcome": "see IMPLEMENTATION_READOUT.md and the delivery manifest",
+   "evidence": [
+    "v4/dx-4.3/IMPLEMENTATION_READOUT.md"
+   ],
+   "command": "make_delivery.sh (outside the repository)"
+  }
+ ]
+}
