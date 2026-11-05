@@ -267,8 +267,11 @@ macro_rules! setters {
 setters! {
     /// The quote byte (default `"`).
     fn quote(quote: u8) => quote = quote;
-    /// An escape byte for a quote inside a quoted field (`\"`), used instead of doubled quotes
-    /// when [`double_quote`](Self::double_quote) is off; default none.
+    /// An escape byte (default none). Readers (`csv-core`): inside a quoted field it makes the
+    /// next byte literal (`\"` is a quote, `\\` the escape byte); in an unquoted field it is
+    /// data. Writers write a quote inside a quoted field with it when
+    /// [`double_quote`](Self::double_quote) is off, and a literal escape byte inside a quoted
+    /// field as two, so the reader of the same options reads every field back unchanged.
     fn escape(escape: Option<u8>) => escape = escape;
     /// Whether a quote inside a quoted field is written and read as two quotes (default on).
     /// Turning it off requires an [`escape`](Self::escape) byte.
@@ -296,15 +299,18 @@ setters! {
     fn flexible(yes: bool) => flexible = yes;
     /// The most unescaped field bytes of one data record (default
     /// [`DEFAULT_MAX_RECORD_BYTES`]); at least 1. Readers never buffer more. Writers refuse a
-    /// record whose encoded form (quotes and delimiters included, terminator excluded) is larger,
-    /// so what a writer accepts is within a reader's limit of the same value.
+    /// record whose encoded form (quotes, escapes and delimiters included, terminator excluded)
+    /// is larger, so what a writer accepts is within a reader's limit of the same value. The
+    /// field that would exceed it is refused before it is copied: the writer's record buffer
+    /// never grows past the limit plus the terminator.
     fn max_record_bytes(bytes: usize) => max_record_bytes = bytes;
     /// The most unescaped field bytes of the header record (default
     /// [`DEFAULT_MAX_HEADER_BYTES`]); at least 1. Writers apply it like
     /// [`max_record_bytes`](Self::max_record_bytes).
     fn max_header_bytes(bytes: usize) => max_header_bytes = bytes;
     /// The most fields of one record, header included (default [`DEFAULT_MAX_FIELDS`]); at
-    /// least 1.
+    /// least 1. A writer stops a row's serialization at the first field past it; this does not
+    /// bound what the row's own `Serialize` does before it hands a field over.
     fn max_fields(fields: usize) => max_fields = fields;
     /// The most input bytes a reader consumes (default no limit); reaching it is a
     /// [`Limit`](crate::stream::ReadErrorKind::Limit) error, not an end.
@@ -473,31 +479,55 @@ impl Config {
             .build()
     }
 
-    /// The writer of this dialect (headers are written by the caller).
-    pub(crate) fn writer<W: std::io::Write>(&self, sink: W) -> ::csv::Writer<W> {
+    /// `csv-core`'s writer of this dialect, configured as `csv`'s writer configures it. The
+    /// writer only asks it whether a field needs quotes; the field bytes are its own
+    /// ([`Dialect`](super::fields::Dialect)).
+    pub(crate) fn core_writer(&self) -> csv_core::Writer {
         let p = &self.options.profile;
-        let mut builder = ::csv::WriterBuilder::new();
+        let mut builder = csv_core::WriterBuilder::new();
         builder
-            .has_headers(false)
             .delimiter(self.options.delimiter)
             .quote(p.quote)
             .double_quote(p.double_quote)
             .comment(p.comment)
-            .flexible(p.flexible)
             .terminator(match p.write_terminator {
-                LineEnding::CrLf => ::csv::Terminator::CRLF,
-                LineEnding::Lf => ::csv::Terminator::Any(b'\n'),
+                LineEnding::CrLf => csv_core::Terminator::CRLF,
+                LineEnding::Lf => csv_core::Terminator::Any(b'\n'),
             })
             .quote_style(match p.quote_style {
-                QuoteStyle::Necessary => ::csv::QuoteStyle::Necessary,
-                QuoteStyle::Always => ::csv::QuoteStyle::Always,
-                QuoteStyle::NonNumeric => ::csv::QuoteStyle::NonNumeric,
-                QuoteStyle::Never => ::csv::QuoteStyle::Never,
+                QuoteStyle::Necessary => csv_core::QuoteStyle::Necessary,
+                QuoteStyle::Always => csv_core::QuoteStyle::Always,
+                QuoteStyle::NonNumeric => csv_core::QuoteStyle::NonNumeric,
+                QuoteStyle::Never => csv_core::QuoteStyle::Never,
             });
         if let Some(escape) = p.escape {
             builder.escape(escape);
         }
-        builder.from_writer(sink)
+        builder.build()
+    }
+
+    pub(crate) fn delimiter(&self) -> u8 {
+        self.options.delimiter
+    }
+
+    pub(crate) fn quote(&self) -> u8 {
+        self.options.profile.quote
+    }
+
+    pub(crate) fn escape(&self) -> Option<u8> {
+        self.options.profile.escape
+    }
+
+    pub(crate) fn double_quote(&self) -> bool {
+        self.options.profile.double_quote
+    }
+
+    /// The record terminator writers emit.
+    pub(crate) fn write_terminator(&self) -> &'static [u8] {
+        match self.options.profile.write_terminator {
+            LineEnding::CrLf => b"\r\n",
+            LineEnding::Lf => b"\n",
+        }
     }
 
     pub(crate) fn comment(&self) -> Option<u8> {
@@ -509,13 +539,6 @@ impl Config {
         match self.options.profile.read_terminator {
             RecordTerminator::Standard => b == b'\r' || b == b'\n',
             RecordTerminator::Byte(t) => b == t,
-        }
-    }
-
-    pub(crate) fn write_terminator_len(&self) -> usize {
-        match self.options.profile.write_terminator {
-            LineEnding::CrLf => 2,
-            LineEnding::Lf => 1,
         }
     }
 

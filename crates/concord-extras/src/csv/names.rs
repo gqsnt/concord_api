@@ -1,15 +1,22 @@
-//! The writer's schema capture: a small Serde serializer that records a row's field names and
-//! counts its fields with the same shape rules as `csv`'s header writer, without producing any
-//! output.
+//! The writer's record serializer: one pass over a row's `Serialize` that checks its shape with
+//! the same rules as `csv`'s header writer, captures (or compares) its field names, counts its
+//! fields against the field limit and, while doing so, writes each value's field with `csv`'s
+//! value text ([`Fields`]).
 //!
 //! Rules (those of `csv::Writer::serialize` with headers): every named struct field holds one
 //! scalar; every scalar is either a named field value or the table is positional; structs may sit
 //! inside tuples and sequences (their names are concatenated). Maps, flattened structs and
 //! tuple/struct enum variants are refused, as `csv` refuses them.
+//!
+//! The names that are checked are those of the serialization whose values are written: the row's
+//! `Serialize` runs once per record, so a stateful or conditional implementation cannot be
+//! validated as one schema and written as another.
 
 use std::fmt;
 
 use serde::ser::{self, Serialize};
+
+use super::fields::{Exceeded, FieldError, Fields};
 
 /// The shape of one serialized row.
 #[derive(Debug)]
@@ -24,36 +31,37 @@ pub(crate) struct Shape {
     pub(crate) matches: bool,
 }
 
-/// Why a row's shape cannot be a CSV record: a static label, and for a failure of the row's own
-/// `Serialize` implementation its message (which may quote the value: kept only as the
-/// unredacted source).
+/// Why a row cannot be a CSV record. It stops the row's serialization where it is found.
 #[derive(Debug)]
-pub(crate) struct ShapeError {
-    label: &'static str,
-    message: Option<String>,
-}
-
-const fn shape_error(label: &'static str) -> ShapeError {
-    ShapeError {
-        label,
-        message: None,
-    }
+pub(crate) enum ShapeError {
+    /// An unsupported shape (a static label).
+    Shape(&'static str),
+    /// The row's own `Serialize` failed (or a number had no text): its message, which may quote
+    /// the value, kept only as the unredacted source.
+    Custom(String),
+    /// One field more than the field limit.
+    Fields,
+    /// The encoded record would exceed the record limit.
+    Bytes,
 }
 
 impl ShapeError {
     pub(crate) fn label(&self) -> &'static str {
-        self.label
-    }
-
-    /// Whether the row's own `Serialize` failed (rather than its shape being unsupported).
-    pub(crate) fn is_custom(&self) -> bool {
-        self.message.is_some()
+        match self {
+            Self::Shape(label) => label,
+            Self::Custom(_) => "a CSV row cannot be written",
+            Self::Fields => "a CSV row has more fields than the configured limit",
+            Self::Bytes => "a CSV record exceeds the configured size",
+        }
     }
 }
 
 impl fmt::Display for ShapeError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(self.message.as_deref().unwrap_or(self.label))
+        match self {
+            Self::Custom(message) => f.write_str(message),
+            other => f.write_str(other.label()),
+        }
     }
 }
 
@@ -61,11 +69,27 @@ impl std::error::Error for ShapeError {}
 
 impl ser::Error for ShapeError {
     fn custom<T: fmt::Display>(message: T) -> Self {
-        ShapeError {
-            label: "a CSV row cannot be written",
-            message: Some(message.to_string()),
+        Self::Custom(message.to_string())
+    }
+}
+
+impl From<Exceeded> for ShapeError {
+    fn from(Exceeded: Exceeded) -> Self {
+        Self::Bytes
+    }
+}
+
+impl From<FieldError> for ShapeError {
+    fn from(error: FieldError) -> Self {
+        match error {
+            FieldError::Exceeded => Self::Bytes,
+            FieldError::Text => Self::Custom("a number has no CSV text".to_owned()),
         }
     }
+}
+
+const fn shape_error(label: &'static str) -> ShapeError {
+    ShapeError::Shape(label)
 }
 
 const MIXED: &str = "a CSV row mixes named struct fields and unnamed values";
@@ -86,10 +110,33 @@ enum State {
     InField,
 }
 
-/// The shape of `row`. With `expect`, the names are compared with it instead of collected.
+/// Serializes `row` once into `out` (fields only; the caller ends the record), checking its shape
+/// and at most `max_fields` fields. With `expect`, the names are compared with it instead of
+/// collected.
+pub(crate) fn encode<T: Serialize + ?Sized>(
+    row: &T,
+    expect: Option<&[String]>,
+    max_fields: usize,
+    out: &mut Fields<'_>,
+) -> Result<Shape, ShapeError> {
+    walk(row, expect, max_fields, Some(out))
+}
+
+/// The shape of `row`, nothing written. With `expect`, the names are compared with it instead of
+/// collected.
+#[cfg(test)]
 pub(crate) fn shape<T: Serialize + ?Sized>(
     row: &T,
     expect: Option<&[String]>,
+) -> Result<Shape, ShapeError> {
+    walk(row, expect, usize::MAX, None)
+}
+
+fn walk<T: Serialize + ?Sized>(
+    row: &T,
+    expect: Option<&[String]>,
+    max_fields: usize,
+    out: Option<&mut Fields<'_>>,
 ) -> Result<Shape, ShapeError> {
     let mut capture = Capture {
         state: State::Start,
@@ -98,6 +145,8 @@ pub(crate) fn shape<T: Serialize + ?Sized>(
         names: Vec::new(),
         expect,
         matches: true,
+        max_fields,
+        out,
     };
     row.serialize(&mut capture)?;
     let named = capture.named > 0;
@@ -113,28 +162,54 @@ pub(crate) fn shape<T: Serialize + ?Sized>(
     })
 }
 
-struct Capture<'e> {
+struct Capture<'e, 'o, 'f> {
     state: State,
     fields: usize,
     named: usize,
     names: Vec<&'static str>,
     expect: Option<&'e [String]>,
     matches: bool,
+    max_fields: usize,
+    out: Option<&'o mut Fields<'f>>,
 }
 
-impl Capture<'_> {
+impl Capture<'_, '_, '_> {
+    /// Accounts for one scalar; the caller then writes its field.
     fn scalar(&mut self) -> Result<(), ShapeError> {
         match self.state {
-            State::Start | State::Positional => {
-                self.state = State::Positional;
-                self.fields += 1;
-                Ok(())
-            }
-            State::InField => {
-                self.fields += 1;
-                Ok(())
-            }
-            State::Named => Err(shape_error(MIXED)),
+            State::Start | State::Positional => self.state = State::Positional,
+            State::InField => {}
+            State::Named => return Err(shape_error(MIXED)),
+        }
+        if self.fields == self.max_fields {
+            return Err(ShapeError::Fields);
+        }
+        self.fields += 1;
+        Ok(())
+    }
+
+    /// A scalar whose field is `value`.
+    fn bytes(&mut self, value: &[u8]) -> Result<(), ShapeError> {
+        self.scalar()?;
+        match &mut self.out {
+            Some(out) => Ok(out.field(value)?),
+            None => Ok(()),
+        }
+    }
+
+    fn integer(&mut self, value: impl fmt::Display) -> Result<(), ShapeError> {
+        self.scalar()?;
+        match &mut self.out {
+            Some(out) => Ok(out.integer(value)?),
+            None => Ok(()),
+        }
+    }
+
+    fn float<F: Serialize>(&mut self, value: F) -> Result<(), ShapeError> {
+        self.scalar()?;
+        match &mut self.out {
+            Some(out) => Ok(out.float(value)?),
+            None => Ok(()),
         }
     }
 
@@ -176,7 +251,7 @@ impl Capture<'_> {
     }
 }
 
-impl ser::Serializer for &mut Capture<'_> {
+impl ser::Serializer for &mut Capture<'_, '_, '_> {
     type Ok = ();
     type Error = ShapeError;
     type SerializeSeq = Self;
@@ -187,73 +262,74 @@ impl ser::Serializer for &mut Capture<'_> {
     type SerializeStruct = Self;
     type SerializeStructVariant = ser::Impossible<(), ShapeError>;
 
-    fn serialize_bool(self, _: bool) -> Result<(), ShapeError> {
-        self.scalar()
+    // The value text of `csv`'s record serializer, scalar by scalar.
+    fn serialize_bool(self, v: bool) -> Result<(), ShapeError> {
+        self.bytes(if v { b"true" } else { b"false" })
     }
-    fn serialize_i8(self, _: i8) -> Result<(), ShapeError> {
-        self.scalar()
+    fn serialize_i8(self, v: i8) -> Result<(), ShapeError> {
+        self.integer(v)
     }
-    fn serialize_i16(self, _: i16) -> Result<(), ShapeError> {
-        self.scalar()
+    fn serialize_i16(self, v: i16) -> Result<(), ShapeError> {
+        self.integer(v)
     }
-    fn serialize_i32(self, _: i32) -> Result<(), ShapeError> {
-        self.scalar()
+    fn serialize_i32(self, v: i32) -> Result<(), ShapeError> {
+        self.integer(v)
     }
-    fn serialize_i64(self, _: i64) -> Result<(), ShapeError> {
-        self.scalar()
+    fn serialize_i64(self, v: i64) -> Result<(), ShapeError> {
+        self.integer(v)
     }
-    fn serialize_i128(self, _: i128) -> Result<(), ShapeError> {
-        self.scalar()
+    fn serialize_i128(self, v: i128) -> Result<(), ShapeError> {
+        self.integer(v)
     }
-    fn serialize_u8(self, _: u8) -> Result<(), ShapeError> {
-        self.scalar()
+    fn serialize_u8(self, v: u8) -> Result<(), ShapeError> {
+        self.integer(v)
     }
-    fn serialize_u16(self, _: u16) -> Result<(), ShapeError> {
-        self.scalar()
+    fn serialize_u16(self, v: u16) -> Result<(), ShapeError> {
+        self.integer(v)
     }
-    fn serialize_u32(self, _: u32) -> Result<(), ShapeError> {
-        self.scalar()
+    fn serialize_u32(self, v: u32) -> Result<(), ShapeError> {
+        self.integer(v)
     }
-    fn serialize_u64(self, _: u64) -> Result<(), ShapeError> {
-        self.scalar()
+    fn serialize_u64(self, v: u64) -> Result<(), ShapeError> {
+        self.integer(v)
     }
-    fn serialize_u128(self, _: u128) -> Result<(), ShapeError> {
-        self.scalar()
+    fn serialize_u128(self, v: u128) -> Result<(), ShapeError> {
+        self.integer(v)
     }
-    fn serialize_f32(self, _: f32) -> Result<(), ShapeError> {
-        self.scalar()
+    fn serialize_f32(self, v: f32) -> Result<(), ShapeError> {
+        self.float(v)
     }
-    fn serialize_f64(self, _: f64) -> Result<(), ShapeError> {
-        self.scalar()
+    fn serialize_f64(self, v: f64) -> Result<(), ShapeError> {
+        self.float(v)
     }
-    fn serialize_char(self, _: char) -> Result<(), ShapeError> {
-        self.scalar()
+    fn serialize_char(self, v: char) -> Result<(), ShapeError> {
+        self.bytes(v.encode_utf8(&mut [0; 4]).as_bytes())
     }
-    fn serialize_str(self, _: &str) -> Result<(), ShapeError> {
-        self.scalar()
+    fn serialize_str(self, v: &str) -> Result<(), ShapeError> {
+        self.bytes(v.as_bytes())
     }
-    fn serialize_bytes(self, _: &[u8]) -> Result<(), ShapeError> {
-        self.scalar()
+    fn serialize_bytes(self, v: &[u8]) -> Result<(), ShapeError> {
+        self.bytes(v)
     }
     fn serialize_none(self) -> Result<(), ShapeError> {
-        self.scalar()
+        self.bytes(b"")
     }
     fn serialize_some<T: Serialize + ?Sized>(self, value: &T) -> Result<(), ShapeError> {
         value.serialize(self)
     }
     fn serialize_unit(self) -> Result<(), ShapeError> {
-        self.scalar()
+        self.bytes(b"")
     }
-    fn serialize_unit_struct(self, _: &'static str) -> Result<(), ShapeError> {
-        self.scalar()
+    fn serialize_unit_struct(self, name: &'static str) -> Result<(), ShapeError> {
+        self.bytes(name.as_bytes())
     }
     fn serialize_unit_variant(
         self,
         _: &'static str,
         _: u32,
-        _: &'static str,
+        variant: &'static str,
     ) -> Result<(), ShapeError> {
-        self.scalar()
+        self.bytes(variant.as_bytes())
     }
     fn serialize_newtype_struct<T: Serialize + ?Sized>(
         self,
@@ -306,7 +382,7 @@ impl ser::Serializer for &mut Capture<'_> {
     }
 }
 
-impl ser::SerializeSeq for &mut Capture<'_> {
+impl ser::SerializeSeq for &mut Capture<'_, '_, '_> {
     type Ok = ();
     type Error = ShapeError;
     fn serialize_element<T: Serialize + ?Sized>(&mut self, value: &T) -> Result<(), ShapeError> {
@@ -317,7 +393,7 @@ impl ser::SerializeSeq for &mut Capture<'_> {
     }
 }
 
-impl ser::SerializeTuple for &mut Capture<'_> {
+impl ser::SerializeTuple for &mut Capture<'_, '_, '_> {
     type Ok = ();
     type Error = ShapeError;
     fn serialize_element<T: Serialize + ?Sized>(&mut self, value: &T) -> Result<(), ShapeError> {
@@ -328,7 +404,7 @@ impl ser::SerializeTuple for &mut Capture<'_> {
     }
 }
 
-impl ser::SerializeTupleStruct for &mut Capture<'_> {
+impl ser::SerializeTupleStruct for &mut Capture<'_, '_, '_> {
     type Ok = ();
     type Error = ShapeError;
     fn serialize_field<T: Serialize + ?Sized>(&mut self, value: &T) -> Result<(), ShapeError> {
@@ -339,7 +415,7 @@ impl ser::SerializeTupleStruct for &mut Capture<'_> {
     }
 }
 
-impl ser::SerializeStruct for &mut Capture<'_> {
+impl ser::SerializeStruct for &mut Capture<'_, '_, '_> {
     type Ok = ();
     type Error = ShapeError;
     fn serialize_field<T: Serialize + ?Sized>(
