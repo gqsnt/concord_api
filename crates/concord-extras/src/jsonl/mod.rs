@@ -18,7 +18,7 @@
 //! | final line without LF | accepted at the true end of input (a chunk boundary is never an end) | same |
 //! | blank line (empty, or only spaces, tabs, CR) | refused ([`BlankLines::Refuse`]) | ignored ([`BlankLines::Ignore`]) |
 //! | byte order mark at the start | refused ([`BomPolicy::Refuse`]) | refused |
-//! | malformed line | terminal error by default; [`RecordErrors::Yield`] reports it as an `Err` item and continues | same |
+//! | malformed line | terminal error by default; [`RecordErrors::Yield`] reports a line ended by LF as an `Err` item and continues (a malformed final line without LF stays terminal) | same |
 //! | writer output | compact JSON, LF after every record **including the last**, no BOM | same |
 //! | response media types ([`MediaPolicy::standard`]) | `application/jsonl`, `application/jsonlines`, `application/x-jsonlines` | `application/x-ndjson`, `application/ndjson` |
 //! | request `Content-Type` / `Accept` suggestion | `application/jsonl` | `application/x-ndjson` |
@@ -26,7 +26,9 @@
 //! The reader is lenient where the writer is strict: the writer always terminates the last
 //! record, the reader also accepts a last line without LF at the true end of input. Input that
 //! ends inside a line is that final line: a truncated record is therefore a malformed final
-//! line (`Format`), not a silent end.
+//! line (`Format`), not a silent end. Because a final line without LF may have been cut off,
+//! its failure is terminal ([`ReadError::is_terminal`](crate::stream::ReadError::is_terminal))
+//! even with [`RecordErrors::Yield`], which isolates only bad lines ended by LF.
 //!
 //! The media check (for [`Decode`] and the readers' `open`) also requires exactly one
 //! `Content-Type` field and a `charset`, if any, of `utf-8`/`us-ascii` declared once. Use
@@ -49,8 +51,9 @@
 //! decompressed bytes, which is what the limits and positions count) and the unfinished line or
 //! value, bounded by `max_record_bytes` / `max_value_bytes` (default 16 MiB) and enforced before
 //! the buffer grows past it. It never queues decoded records: one `next()` produces at most one.
-//! A `next()` yields to the executor after consuming 64 KiB without producing a record. No task
-//! is spawned. Dropping the records value drops the response.
+//! A `next()` frames at most 64 KiB of input between two yields to the executor, whatever the
+//! chunk sizes, and yields after every 64 empty chunks from the source; parsing a completed record
+//! (serde) is not divided. No task is spawned. Dropping the records value drops the response.
 //!
 //! The finite [`Decode`] for [`JsonLines`] / [`Ndjson`] applies the corresponding preset exactly
 //! (including the 16 MiB line limit) to the body Concord has already collected: it is the same

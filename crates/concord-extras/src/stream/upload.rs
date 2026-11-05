@@ -270,9 +270,15 @@ where
 
 /// A [`Stream`] over an iterator of results: a synchronous one-shot source for an upload body.
 /// Created by [`from_iter`].
+///
+/// It is `Unpin` whatever the iterator and its items (rows that are not `Unpin` are accepted):
+/// the iterator is advanced through a plain `&mut`, never pinned.
 pub struct FromIter<I> {
     iter: I,
 }
+
+// The iterator is not structurally pinned: `poll_next` only ever uses it through `&mut I`.
+impl<I> Unpin for FromIter<I> {}
 
 /// Wraps an iterator of `Result<T, E>` as a one-shot record source (`StreamRows`, `StreamRecords`).
 /// The iterator is advanced only when the body is polled.
@@ -285,7 +291,7 @@ where
     }
 }
 
-impl<I: Iterator + Unpin> Stream for FromIter<I> {
+impl<I: Iterator> Stream for FromIter<I> {
     type Item = I::Item;
 
     fn poll_next(mut self: Pin<&mut Self>, _: &mut Context<'_>) -> Poll<Option<I::Item>> {
