@@ -29,7 +29,7 @@ echo "consumer logs: $scratch"
 # The metadata (about 50 KB) goes to Python as a file, never as an argument: Windows limits a
 # whole command line to 32,767 characters.
 printf '%s' "$metadata" >"$scratch/metadata.json"
-crates=(concord-core concord-macros concord-extras concord)
+crates=(concord-core concord-macros concord-extras concord concord-pagination)
 source_dir="$root/crates"
 if [[ -n $packaged ]]; then
   packaged=$(cd "$packaged" && pwd)
@@ -56,7 +56,7 @@ fi
 # directory, while separate cargo invocations still isolate each feature selection.
 export CARGO_TARGET_DIR="$scratch/target"
 status=0
-for consumer in core-only facade-no-extras extras-core facade-full facade-json-only facade-gzip; do
+for consumer in core-only facade-no-extras extras-core facade-full facade-json-only facade-gzip streaming; do
   destination="$scratch/$consumer"
   cp -R "$root/checks/consumers/$consumer" "$destination"
   # Rewrite only Concord dependency paths; retain the fixture's authored feature selection.
@@ -65,12 +65,15 @@ import json, pathlib, re, sys
 manifest, source, metadata, packaged = sys.argv[1:]
 versions = {p['name']: p['version'] for p in json.loads(pathlib.Path(metadata).read_text())['packages']}
 paths = {name: str(pathlib.Path(source) / (name + '-' + versions[name] if packaged else name))
-         for name in ('concord-core', 'concord-macros', 'concord-extras', 'concord')}
+         for name in ('concord-core', 'concord-macros', 'concord-extras', 'concord', 'concord-pagination')}
 p = pathlib.Path(manifest)
 text = re.sub(r'path = "../../../crates/([^"]+)"',
               lambda m: 'path = ' + json.dumps(paths[m[1]]), p.read_text())
 text += '\n[patch.crates-io]\n'
-text += ''.join(name + ' = { path = ' + json.dumps(path) + ' }\n' for name, path in paths.items())
+# concord-pagination is patched only where a consumer uses it: an unused patch would make cargo
+# rewrite the lockfile of a consumer that keeps its own (facade-gzip, fetched with --locked).
+text += ''.join(name + ' = { path = ' + json.dumps(path) + ' }\n' for name, path in paths.items()
+                if name != 'concord-pagination' or 'concord-pagination' in text)
 p.write_text(text)
 PY
   # A fixture with dependencies outside the workspace graph (facade-gzip: reqwest's gzip support)
@@ -98,6 +101,8 @@ PY
     facade-no-extras) forbidden='concord-extras|serde_json|serde_urlencoded' ;;
     extras-core) forbidden='concord-macros|concord' ;;
     facade-json-only) forbidden='serde_urlencoded' ;;
+    # csv + jsonl only: the form encoder must not arrive with the streaming formats.
+    streaming) forbidden='serde_urlencoded' ;;
   esac
   if [[ -n $forbidden ]] && grep -Eq "^($forbidden) v" "$destination/tree.log"; then failed=1; fi
   # The application, not Concord, enables decompression: the pattern must still match here.
