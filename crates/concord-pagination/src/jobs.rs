@@ -513,6 +513,10 @@ impl<D, MK, R, EJ> JobsReport<D, MK, R, EJ> {
     }
 
     /// Failed descriptors, in discovery order.
+    ///
+    /// These are the descriptors the jobs *started* with. A job with internal progress (several
+    /// pages, a partly written shard) must carry its own restart point in its error: rerunning
+    /// the descriptor repeats the work done before the failure.
     pub fn failed(&self) -> impl Iterator<Item = &D> {
         self.unfinished
             .iter()
@@ -522,7 +526,10 @@ impl<D, MK, R, EJ> JobsReport<D, MK, R, EJ> {
 
     /// Splits the report into retained receipts and the descriptors still to run (unfinished and
     /// not retained, then queued). Run those with [`independent`](crate::independent), and
-    /// continue discovery from `discovery.resume` with [`manifest_jobs`].
+    /// continue discovery from `discovery.resume` with [`manifest_jobs`]. Like
+    /// [`failed`](Self::failed), these are start descriptors: a failed job with internal progress
+    /// restarts from the beginning unless its error carried a later restart point that you use
+    /// instead.
     pub fn into_rerun(self) -> (Vec<Keyed<D, R>>, Vec<D>) {
         let mut descriptors: Vec<D> = self
             .unfinished

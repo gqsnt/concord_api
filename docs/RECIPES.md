@@ -369,6 +369,20 @@ and one service refusing or failing must not hide the other's answer.
 - **When not:** a single page needs no walk. Unlike `collect_items` above, which drops collected
   pages on error, this walk hands them back; pick the policy your caller needs.
 
+### Many pages or jobs: `concord-pagination`
+
+When an SDK has several listings to walk, or result manifests to fan out over, the separate
+[`concord-pagination`](../crates/concord-pagination/README.md) crate packages this walk: a
+dependent chain (`sequential`, with item-level checkpoints), a known plan of independent keys or a
+first page that fixes the plan (`independent`, `first_page_then`), and manifest-discovered jobs
+that each read a whole streamed body (`manifest_jobs`), all with budgets, a bounded window and
+reports that keep failed keys apart from the resume point. It does not depend on Concord: the SDK
+supplies a factory from a key to an owned future (a generated operation with the key set, `send()`,
+and a projection of the response into a page), so the continuation rules stay in the SDK adapter,
+and core Concord still sends one request per `send()`. Its README states the bounds and what the
+crate cannot check; the provider SDK examples (`examples/{github,stripe,shopify,salesforce,kubernetes}-sdk`)
+show adapters over real provider contracts.
+
 ## Patterns from other APIs
 
 [`examples/compat`](../examples/compat) is a downstream crate (edition 2021, a private client) with
