@@ -298,3 +298,60 @@ A new `export_rows` shows the incremental reader with the same profile.
 completion" belongs to the pagination crate. Item 16's Salesforce adapter is left to the SDK author;
 the profile API (static types and `CsvOptions::new(HeaderMode, delimiter)` with the same setters)
 covers its header/delimiter/line-ending choices.
+
+**CSV-16 Escape dialects write what their reader reads (4.4 review, ASTRA-1).** `csv-core`
+0.1.13's reader, inside a quoted field, discards the escape byte and copies the next byte whatever
+it is (`transition_nfa`: `InQuotedField` + escape → `InEscapedQuote`, which copies one byte back
+into `InQuotedField`); outside quotes the escape byte is data (`StartField`/`InField` copy it).
+`csv`'s writer escapes only the quote inside a quoted field (`csv_core::quote`), so a literal escape
+byte there was dropped on reading and changed the meaning of the byte after it:
+`(r"back\slash,comma",)` read back as `backslash,comma` with `double_quote` on and off.
+**Chosen: write correctly, not fail closed.** The writer owns its field bytes: `csv-core`'s writer of
+the same settings still decides whether a field is quoted (`should_quote`), and inside quotes a
+quote is written doubled (or escape + quote with `double_quote(false)`) and an escape byte twice;
+unquoted fields are written as they are, which that reader reads literally. Refusing every quoted
+field that contains the escape byte was rejected: it would refuse ordinary values (Windows paths)
+in an advertised dialect when a correct encoding exists. Wire change: only quoted fields that
+contain the escape byte, all of which were previously read back wrong; every other field keeps
+`csv`'s bytes (`fields_without_escape_bytes_keep_the_csv_crate_bytes` compares the two writers over
+every value type and ten dialects). Evidence (`tests/csv_write_integrity.rs`): the reviewed value
+in both modes on the incremental (every split) and finite routes; a corpus of literal, repeated,
+leading and trailing escapes and escapes before quotes, delimiters and terminators, for two escape
+bytes × both quote modes × three quote styles × CRLF/LF, read at every split point and byte by
+byte; every value of up to four bytes over `a \ " , \r \n` (1,555 values) in eight dialects, read
+whole, byte by byte and in random partitions; escape bytes in explicit and inferred header names;
+raw tables with non-UTF-8 bytes on the finite route. Outside this guarantee, unchanged:
+`QuoteStyle::Never` (documented as possibly unparseable) and a reader with `quoting(false)` (CSV-03:
+quotes are data to it).
+
+**CSV-17 One serialization per row (4.4 review, SOL-1).** The shape capture (CSV-10) called the
+row's `Serialize`, then `csv` called it again to write, so a stateful or conditional implementation
+could be checked as `id` and written as `other` under the header `id`. One serializer now does
+both: CSV-10's shape rules, the names (captured for the first row, compared afterwards), the field
+count, and each scalar's field with `csv`'s value text (`Display` for integers, identical to the
+`itoa` text `csv` writes; floats through a small `csv` writer, because `csv` formats them with
+`ryu`, which is not on the crate's dependency allowlist in `scripts/check-graph.py`). The header is
+inferred from that pass, and the row and an inferred header reach the output only after every
+check. Visible to callers: a row's `Serialize` runs once per record (it ran twice); when a row fails
+several checks, the error reported can differ (a field or byte limit reached during the pass is
+reported before a name change found at its end). Evidence: `each_row_is_serialized_once_*` (finite,
+`Encode<Vec<T>>`, upload, `Encode<StreamRows<S>>`: one call per record and `id` over 7, where the
+old encoder wrote `MISLABELLED` under `id`).
+
+**CSV-18 Writer limits bound the writer's buffers (4.4 review, ASTRA-2).** The limits were checked
+after `csv` had serialized the whole record into an unbounded buffer and it had been copied (about
+twice the record's size retained before the refusal). Now a record (header) is encoded into a buffer
+that never exceeds `max_record_bytes` (`max_header_bytes`) plus the terminator: each field is
+measured before it is copied (a value longer than the remaining room is refused without scanning),
+the buffer grows by doubling up to that ceiling (`reserve_exact`), and a refused record never
+reaches the output frame; the error keeps `record` and `limit`. The writer also no longer clones
+explicit columns to write the header. `max_fields` stops the pass at the first field past it.
+Not bounded: what the row's own `Serialize` does before it hands a value over, the finite route's
+body, frames already handed to the transport, the captured names (at most `max_fields`), and two
+fixed scratch buffers (a 40-byte number buffer, the float writer's 64 bytes). Evidence: unit tests
+`write::tests` (buffer capacity ≤ limit + terminator for every record size up to and past the
+limit; the frame untouched by a refused record or header) and `fields::tests`; integration tests
+(a field after the oversized one is never serialized; a 1,000-field row stops after 4 attempts with
+`max_fields(3)`; encoded-size boundaries with quotes and escapes); `tests/csv_write_memory.rs`
+(Linux `VmHWM`, one test per binary): refusing a 16 MiB field with a 64-byte limit grew the peak by
+8–12 KiB on the finite, lazy and header routes, where the review observed about 32 MiB.

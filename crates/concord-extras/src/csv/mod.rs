@@ -129,6 +129,30 @@
 //! row's field names are captured and compared with the first row's, so a row that changes its
 //! fields (a conditional `Serialize`) is refused even at the same width.
 //!
+//! Each row is serialized **once**: its field names are checked (and, for the first row, become
+//! the inferred header) in the same serialization whose values are written, so a `Serialize`
+//! that answers differently on two calls cannot be checked as one schema and written as another.
+//! A row, and a header inferred from it, reach the body only after every check passed.
+//!
+//! Fields are quoted as `csv` quotes them ([`QuoteStyle`]; a quote inside a quoted field is
+//! doubled, or written escape + quote with `double_quote(false)`), with `csv`'s text for values.
+//! With an [`escape`](CsvProfileOptions::escape) byte, a literal escape byte inside a quoted field
+//! is written twice: `csv-core`'s reader takes the escape byte inside quotes as "the next byte is
+//! literal", and as data in an unquoted field (which is written as it is). The reader of the same
+//! options therefore reads every written field back byte for byte, in both quote modes and at any
+//! chunk split. `QuoteStyle::Never` remains the documented exception, and a reader with
+//! [`quoting(false)`](CsvProfileOptions::quoting) reads every quote as data.
+//!
+//! Writer limits: a record is encoded into a buffer that never holds more than
+//! [`max_record_bytes`](CsvProfileOptions::max_record_bytes) (the header:
+//! [`max_header_bytes`](CsvProfileOptions::max_header_bytes)) bytes plus the terminator. Each
+//! field is measured before it is copied: the first one that would exceed the limit stops the
+//! row's serialization, nothing of that record reaches the body, and the error carries the
+//! `limit`. [`max_fields`](CsvProfileOptions::max_fields) stops the serialization at the first
+//! field past it. Neither bounds what the row's own `Serialize` does before it hands a value over
+//! (a large value it builds, a loop that ignores the serializer's error), the finite route's whole
+//! body, or the frames already handed to the transport.
+//!
 //! A lazy body ([`Encode<StreamRows<S>>`](concord_core::Encode), [`CsvWriter::upload`]) fails
 //! **after** transmission started when a later row cannot be written (serialization, changed
 //! fields, width, size), when the source fails, or when a header-required source ends empty
@@ -146,6 +170,7 @@
 //! while the body is parsed. A profile relaxes the media rule with [`MediaPolicy`].
 
 mod codec;
+mod fields;
 mod frame;
 mod names;
 mod options;
