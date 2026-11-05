@@ -17,7 +17,9 @@ use concord_example_kubernetes_app::inventory::{
     CollectionScope, InventoryRequest, InventoryScope, InventorySummary, inventory,
 };
 use concord_example_kubernetes_sdk::list::{Continuation, ListError, ListOperation};
-use concord_example_kubernetes_sdk::{FieldSelector, LabelSelector, ResourceVersion};
+use concord_example_kubernetes_sdk::{
+    ContinueToken, FieldSelector, LabelSelector, ResourceVersion,
+};
 use concord_example_testserver::{Recorded, Reply, TestServer};
 use concord_pagination::Resume;
 use support::*;
@@ -468,6 +470,40 @@ async fn ku_a_a_continue_token_that_does_not_advance_is_a_failure() {
     let requests = server.requests();
     assert_eq!(requests.len(), 2, "the first repeat ends the chain");
     assert_eq!(query(&requests[1], "continue").as_deref(), Some(T1));
+    finish(server).await;
+}
+
+/// SOL-R2 (fix re-check): a `continue` token left on the template is not sent with the first
+/// chunk. Before the fix the first request sent it while the progress check compared the reply
+/// with "no token", so a reply repeating that token was accepted once.
+#[tokio::test]
+async fn ku_a_a_continue_token_on_the_template_is_not_sent() {
+    let server = TestServer::start(|r| {
+        if r.path() == "/api/v1/namespaces/team-a/pods" {
+            return pods_team_a(r);
+        }
+        not_found()
+    })
+    .await;
+    let template = kube(&server)
+        .namespace(ns("team-a"))
+        .core()
+        .pods()
+        .set_continue_token(ContinueToken::from_server(T1));
+    let collected = collect_list(template, policy(2, 50, OnExpired::Report), Resume::Start).await;
+    assert!(
+        matches!(collected.completion.outcome, ListOutcome::Complete),
+        "{:?}",
+        collected.completion.outcome
+    );
+    let requests = server.requests();
+    assert_eq!(
+        query(&requests[0], "continue"),
+        None,
+        "the first chunk is the first"
+    );
+    let sent: Vec<_> = requests.iter().map(|r| query(r, "continue")).collect();
+    assert_eq!(sent, [None, Some(T1.to_owned()), Some(T2.to_owned())]);
     finish(server).await;
 }
 

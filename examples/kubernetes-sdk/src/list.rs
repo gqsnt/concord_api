@@ -257,7 +257,10 @@ pub struct ListPager<O> {
 
 impl<O: ListOperation> ListPager<O> {
     /// Chunks of `limit` items of the list `template` (with its selectors and, for the first
-    /// chunk, its `resourceVersion` parameters).
+    /// chunk, its `resourceVersion` parameters). A `continue` token set on the template is never
+    /// sent: the first chunk (`fetch(None)`) is the collection's first chunk, and a continued
+    /// chunk sends its [`Continuation`]'s token, which also carries the snapshot it is checked
+    /// against.
     pub fn new(template: O, limit: NonZeroU32) -> Self {
         Self { template, limit }
     }
@@ -273,11 +276,15 @@ impl<O: ListOperation> ListPager<O> {
         &self,
         key: Option<Continuation>,
     ) -> impl Future<Output = Result<ListPage<O::Item>, ListError>> + Send + 'static {
-        let mut op = self.template.clone().with_limit(Some(self.limit.get()));
-        if let Some(key) = &key {
-            op = op
-                .with_continue(Some(key.token.clone()))
-                .with_resource_version(None, None);
+        // The token sent is exactly the key's (none for the first chunk), so the progress check
+        // in `into_page` compares the next token with the one actually requested.
+        let mut op = self
+            .template
+            .clone()
+            .with_limit(Some(self.limit.get()))
+            .with_continue(key.as_ref().map(|key| key.token.clone()));
+        if key.is_some() {
+            op = op.with_resource_version(None, None);
         }
         async move {
             let list = match op.send_list().await {
