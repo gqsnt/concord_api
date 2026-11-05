@@ -1,4 +1,0 @@
-//! Placeholder.
-
-#[test]
-fn placeholder() {}
