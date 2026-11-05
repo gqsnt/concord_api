@@ -21,10 +21,10 @@
 //! # Policies
 //!
 //! - Malformed lines ([`MalformedLines`]): stop at the first one, or skip and count up to a
-//!   bound (the reader isolates a fully delimited bad line); an over-long line, a transport
-//!   failure or a byte-order mark always ends the stream. Only errors the reader reports as
-//!   not terminal (`ReadError::is_terminal`) are skipped; any terminal error is reported as
-//!   [`ExportOutcome::Interrupted`].
+//!   bound. Only a bad line ended by a line feed can be skipped: the reader reports it as not
+//!   terminal (`ReadError::is_terminal`) and goes on with the next line. A bad final line without
+//!   a line feed, an over-long line, a transport failure or a byte-order mark is terminal and
+//!   always ends the stream, reported as [`ExportOutcome::Interrupted`].
 //! - The sink decides to stop ([`SinkControl::Stop`]): the response is dropped at once (its
 //!   connection closed, not drained); the remote job is not canceled.
 //! - Nothing is retried; a failure keeps the operation id so the caller can attach again.

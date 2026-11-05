@@ -24,7 +24,10 @@
 //!   `null`, a `null` parent) is always a failure.
 //! - **Failures**: the first failed traversal (throttled, refused, inconsistent, not decodable)
 //!   ends the run; later stages are [`Stage::NotRun`]. Nothing is retried and nothing waits: a
-//!   `THROTTLED` failure keeps the bucket state so the caller can schedule the resume.
+//!   `THROTTLED` failure keeps the bucket state so the caller can schedule the resume. A failed
+//!   nested traversal also ends its parent traversal in the middle of a page: the parent's
+//!   summary is [`Outcome::Stopped`], and its resume point is that page, whose later parents were
+//!   not processed (see [`TraversalSummary`]).
 //! - **Budgets**: every traversal (nested ones included) has the same page budget; a bounded
 //!   traversal is not a failure, the run continues and the report says what is incomplete.
 //! - **Completeness**: a check runs only when its inputs are complete (see [`Discrepancy`]);
@@ -207,16 +210,22 @@ impl fmt::Debug for SyncFailure {
 impl std::error::Error for SyncFailure {}
 
 /// How one traversal ended.
+///
+/// `Stopped` is reported only by `CatalogProducts` and `CatalogCollections`, when the nested
+/// traversal of one of a page's parents failed: the parents after it on that page were not
+/// processed (not counted, not compared). The page being consumed is then the resume point,
+/// `failure` is `None`, and the nested failure is in [`ReconcileReport::variant_pages`] or
+/// [`ReconcileReport::member_pages`] (`incomplete`).
 #[derive(Debug)]
 pub struct TraversalSummary {
     /// The pagination outcome (`Exhausted`, `Bounded`, `Failed`, `Stopped`).
     pub outcome: Outcome,
-    /// Pages received successfully.
+    /// Pages received successfully (a stopped traversal's interrupted page included).
     pub pages: u64,
-    /// Where to resume: the failed page after a failure, the next page when bounded; `None` when
-    /// exhausted.
+    /// Where to resume: the failed page after a failure, the next page when bounded, the
+    /// interrupted page when stopped; `None` when exhausted.
     pub resume: Option<Resume<Cursor>>,
-    /// The failure, when `outcome` is `Failed`.
+    /// The failure, when `outcome` is `Failed` (a stopped traversal's failure is the nested one).
     pub failure: Option<SyncFailure>,
 }
 
@@ -227,6 +236,18 @@ impl TraversalSummary {
             pages: report.progress.succeeded,
             resume: report.resume,
             failure,
+        }
+    }
+
+    /// A traversal whose page `interrupted` (its checkpoint before `next()`) was being consumed
+    /// when a nested traversal failed. Whatever the chain itself would report (its position has
+    /// moved past that page, possibly to the end), the page is where to resume.
+    fn interrupted(report: SequentialReport<Cursor>, interrupted: Option<Resume<Cursor>>) -> Self {
+        Self {
+            outcome: Outcome::Stopped,
+            pages: report.progress.succeeded,
+            resume: interrupted,
+            failure: None,
         }
     }
 
@@ -622,7 +643,13 @@ async fn products(
         },
     );
     let mut failure = None;
-    while let Some(result) = pages.next().await {
+    loop {
+        // The chain's position moves past a page when the page is emitted: keep the page's own
+        // key in case a nested traversal fails while its products are processed.
+        let consuming = pages.checkpoint().cloned();
+        let Some(result) = pages.next().await else {
+            break;
+        };
         let mut page = match result {
             Ok(page) => page,
             Err(e) => {
@@ -670,7 +697,8 @@ async fn products(
             }
         }
         if state.stop {
-            break;
+            // Only a nested failure stops the run while a page is consumed.
+            return TraversalSummary::interrupted(pages.finish(), consuming);
         }
     }
     TraversalSummary::new(pages.finish(), failure)
@@ -760,7 +788,12 @@ async fn collections(
         },
     );
     let mut failure = None;
-    while let Some(result) = pages.next().await {
+    loop {
+        // As for products: the page's own key, in case a nested traversal fails mid-page.
+        let consuming = pages.checkpoint().cloned();
+        let Some(result) = pages.next().await else {
+            break;
+        };
         let mut page = match result {
             Ok(page) => page,
             Err(e) => {
@@ -799,7 +832,8 @@ async fn collections(
             }
         }
         if state.stop {
-            break;
+            // Only a nested failure stops the run while a page is consumed.
+            return TraversalSummary::interrupted(pages.finish(), consuming);
         }
     }
     TraversalSummary::new(pages.finish(), failure)
