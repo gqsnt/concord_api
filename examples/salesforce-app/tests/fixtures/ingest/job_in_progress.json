@@ -1,0 +1,17 @@
+{
+  "id": "750A00000000002AAA",
+  "operation": "insert",
+  "object": "Contact",
+  "createdById": "005A00000000001AAA",
+  "createdDate": "2026-11-04T11:00:00.000+0000",
+  "systemModstamp": "2026-11-04T11:00:00.000+0000",
+  "state": "InProgress",
+  "concurrencyMode": "Parallel",
+  "contentType": "CSV",
+  "apiVersion": 68.0,
+  "jobType": "V2Ingest",
+  "lineEnding": "CRLF",
+  "columnDelimiter": "SEMICOLON",
+  "numberRecordsProcessed": 1,
+  "numberRecordsFailed": 0
+}

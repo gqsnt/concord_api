@@ -1,0 +1,17 @@
+{
+  "totalSize": 1,
+  "done": true,
+  "records": [
+    {
+      "attributes": {
+        "type": "Account",
+        "url": "/services/data/v68.0/sobjects/Account/001B00000000011BBB"
+      },
+      "Id": "001B00000000011BBB",
+      "Name": "Babbage Engines",
+      "Industry": null,
+      "AnnualRevenue": null,
+      "Customer_Tier__c": null
+    }
+  ]
+}

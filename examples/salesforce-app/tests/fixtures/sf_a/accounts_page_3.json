@@ -1,0 +1,17 @@
+{
+  "totalSize": 5,
+  "done": true,
+  "records": [
+    {
+      "attributes": {
+        "type": "Account",
+        "url": "/services/data/v68.0/sobjects/Account/001A00000000005AAA"
+      },
+      "Id": "001A00000000005AAA",
+      "Name": "Line\nBreak Corp",
+      "Industry": "Energy",
+      "AnnualRevenue": 7.25,
+      "Customer_Tier__c": null
+    }
+  ]
+}

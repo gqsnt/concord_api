@@ -1,0 +1,100 @@
+{
+  "data": {
+    "products": {
+      "nodes": [
+        {
+          "id": "gid://shopify/Product/101",
+          "title": "Synthetic Tee",
+          "handle": "synthetic-tee",
+          "status": "ACTIVE",
+          "vendor": "Synthetic Vendor",
+          "productType": "Shirts",
+          "tracksInventory": true,
+          "totalInventory": 8,
+          "updatedAt": "2026-10-20T09:30:00Z",
+          "variants": {
+            "nodes": [
+              {
+                "id": "gid://shopify/ProductVariant/1101",
+                "title": "S",
+                "sku": "SYN-TEE-S",
+                "price": "19.90",
+                "compareAtPrice": "24.90",
+                "inventoryQuantity": 5,
+                "position": 1,
+                "inventoryItem": {
+                  "id": "gid://shopify/InventoryItem/2101",
+                  "tracked": true
+                }
+              },
+              {
+                "id": "gid://shopify/ProductVariant/1102",
+                "title": "M",
+                "sku": "SYN-TEE-M",
+                "price": "19.90",
+                "compareAtPrice": null,
+                "inventoryQuantity": 3,
+                "position": 2,
+                "inventoryItem": {
+                  "id": "gid://shopify/InventoryItem/2102",
+                  "tracked": true
+                }
+              }
+            ],
+            "pageInfo": {
+              "hasNextPage": true,
+              "endCursor": "dmFyLXAxLTI="
+            }
+          }
+        },
+        {
+          "id": "gid://shopify/Product/102",
+          "title": "Synthetic Cap",
+          "handle": "synthetic-cap",
+          "status": "ACTIVE",
+          "vendor": "Synthetic Vendor",
+          "productType": "Hats",
+          "tracksInventory": true,
+          "totalInventory": 7,
+          "updatedAt": "2026-10-20T09:30:00Z",
+          "variants": {
+            "nodes": [
+              {
+                "id": "gid://shopify/ProductVariant/1201",
+                "title": "Default Title",
+                "sku": null,
+                "price": "12.00",
+                "compareAtPrice": null,
+                "inventoryQuantity": 7,
+                "position": 1,
+                "inventoryItem": {
+                  "id": "gid://shopify/InventoryItem/2201",
+                  "tracked": true
+                }
+              }
+            ],
+            "pageInfo": {
+              "hasNextPage": false,
+              "endCursor": "dmFyLXAyLTE="
+            }
+          }
+        }
+      ],
+      "pageInfo": {
+        "hasNextPage": true,
+        "endCursor": "cHJvZC0y"
+      }
+    }
+  },
+  "extensions": {
+    "cost": {
+      "requestedQueryCost": 52,
+      "actualQueryCost": 14,
+      "throttleStatus": {
+        "maximumAvailable": 2000.0,
+        "currentlyAvailable": 1983,
+        "restoreRate": 100.0
+      }
+    }
+  }
+}

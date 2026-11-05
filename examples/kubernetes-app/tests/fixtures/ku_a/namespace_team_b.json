@@ -1,0 +1,21 @@
+{
+  "kind": "Namespace",
+  "apiVersion": "v1",
+  "metadata": {
+    "name": "team-b",
+    "uid": "00000000-0000-4000-8000-000000000002",
+    "resourceVersion": "102",
+    "creationTimestamp": "2026-11-04T09:02:00Z",
+    "labels": {
+      "kubernetes.io/metadata.name": "team-b"
+    }
+  },
+  "spec": {
+    "finalizers": [
+      "kubernetes"
+    ]
+  },
+  "status": {
+    "phase": "Active"
+  }
+}

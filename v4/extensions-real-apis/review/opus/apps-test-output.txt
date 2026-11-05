@@ -1,0 +1,437 @@
+   Compiling libc v0.2.191
+   Compiling bytes v1.12.1
+   Compiling stable_deref_trait v1.2.1
+   Compiling shlex v2.0.1
+   Compiling find-msvc-tools v0.1.15
+   Compiling syn v3.0.9
+   Compiling futures-core v0.3.34
+   Compiling pkg-config v0.3.34
+   Compiling dunce v1.0.5
+   Compiling itoa v1.0.18
+   Compiling fs_extra v1.3.0
+   Compiling once_cell v1.21.4
+   Compiling writeable v0.6.4
+   Compiling http v1.5.0
+   Compiling smallvec v1.16.4
+   Compiling aws-lc-rs v1.19.0
+   Compiling slab v0.4.12
+   Compiling litemap v0.8.3
+   Compiling zeroize v1.9.1
+   Compiling icu_normalizer_data v2.1.1
+   Compiling icu_properties_data v2.1.2
+   Compiling rustls-pki-types v1.15.1
+   Compiling futures-util v0.3.34
+   Compiling tracing-core v0.1.36
+   Compiling http-body v1.1.0
+   Compiling percent-encoding v2.3.2
+   Compiling rustls v0.23.46
+   Compiling futures-sink v0.3.34
+   Compiling httparse v1.10.1
+   Compiling equivalent v1.0.3
+   Compiling untrusted v0.9.0
+   Compiling hashbrown v0.17.1
+   Compiling tracing v0.1.44
+   Compiling try-lock v0.2.5
+   Compiling utf_types v1.0.0
+   Compiling jobserver v0.1.35
+   Compiling socket2 v0.6.5
+   Compiling mio v1.2.4
+   Compiling cc v1.10.0
+   Compiling indexmap v2.14.2
+   Compiling atomic-waker v1.1.2
+   Compiling subtle v2.6.1
+   Compiling fnv v1.0.7
+   Compiling tower-service v0.3.3
+   Compiling utf8_iter v1.1.0
+   Compiling want v0.3.2
+   Compiling futures-channel v0.3.34
+   Compiling serde_core v1.0.229
+   Compiling form_urlencoded v1.2.2
+   Compiling sync_wrapper v1.0.2
+   Compiling openssl-probe v0.2.2
+   Compiling base64 v0.23.1
+   Compiling ipnet v2.12.2
+   Compiling tower-layer v0.3.3
+   Compiling rustls-native-certs v0.8.5
+   Compiling cfg-if v1.0.5
+   Compiling zmij v1.0.23
+   Compiling bitflags v2.13.2
+   Compiling mime v0.3.17
+   Compiling log v0.4.35
+   Compiling memchr v2.8.3
+   Compiling encoding_rs v0.8.35
+   Compiling http-body-util v0.1.5
+   Compiling cmake v0.1.58
+   Compiling synstructure v0.14.0
+   Compiling serde v1.0.229
+   Compiling serde_json v1.0.154
+   Compiling csv-core v0.1.13
+   Compiling aws-lc-sys v0.47.0
+   Compiling ryu v1.0.23
+   Compiling csv v1.4.0
+   Compiling concord-pagination v4.2.0 (/home/canarit/projects/concord-ext44/rv44-opus/crates/concord-pagination)
+   Compiling zerofrom-derive v0.1.8
+   Compiling yoke-derive v0.8.4
+   Compiling zerovec-derive v0.11.7
+   Compiling displaydoc v0.2.7
+   Compiling tokio-macros v2.7.2
+   Compiling serde_derive v1.0.229
+   Compiling concord-macros v4.2.0 (/home/canarit/projects/concord-ext44/rv44-opus/crates/concord-macros)
+   Compiling tokio v1.54.1
+   Compiling zerofrom v0.1.8
+   Compiling yoke v0.8.4
+   Compiling zerovec v0.11.9
+   Compiling zerotrie v0.2.5
+   Compiling tinystr v0.8.5
+   Compiling icu_locale_core v2.1.1
+   Compiling potential_utf v0.1.6
+   Compiling icu_collections v2.1.1
+   Compiling icu_provider v2.1.1
+   Compiling icu_normalizer v2.1.1
+   Compiling icu_properties v2.1.2
+   Compiling idna_adapter v1.2.1
+   Compiling idna v1.1.0
+   Compiling tokio-util v0.7.20
+   Compiling h2 v0.4.20
+   Compiling url v2.5.8
+   Compiling tower v0.5.3
+   Compiling tower-http v0.6.11
+   Compiling concord-example-testserver v0.0.0 (/home/canarit/projects/concord-ext44/rv44-opus/examples/testserver)
+   Compiling hyper v1.12.0
+   Compiling hyper-util v0.1.21
+   Compiling rustls-webpki v0.103.16
+   Compiling tokio-rustls v0.26.6
+   Compiling rustls-platform-verifier v0.7.1
+   Compiling hyper-rustls v0.27.10
+   Compiling reqwest v0.13.5
+   Compiling concord-core v4.2.0 (/home/canarit/projects/concord-ext44/rv44-opus/crates/concord-core)
+   Compiling concord-extras v4.2.0 (/home/canarit/projects/concord-ext44/rv44-opus/crates/concord-extras)
+   Compiling concord v4.2.0 (/home/canarit/projects/concord-ext44/rv44-opus/crates/concord)
+   Compiling concord-example-salesforce-sdk v0.0.0 (/home/canarit/projects/concord-ext44/rv44-opus/examples/salesforce-sdk)
+   Compiling concord-example-shopify-sdk v0.0.0 (/home/canarit/projects/concord-ext44/rv44-opus/examples/shopify-sdk)
+   Compiling concord-example-github-sdk v0.0.0 (/home/canarit/projects/concord-ext44/rv44-opus/examples/github-sdk)
+   Compiling concord-example-stripe-sdk v0.0.0 (/home/canarit/projects/concord-ext44/rv44-opus/examples/stripe-sdk)
+   Compiling concord-example-kubernetes-sdk v0.0.0 (/home/canarit/projects/concord-ext44/rv44-opus/examples/kubernetes-sdk)
+   Compiling concord-example-shopify-app v0.0.0 (/home/canarit/projects/concord-ext44/rv44-opus/examples/shopify-app)
+   Compiling concord-example-salesforce-app v0.0.0 (/home/canarit/projects/concord-ext44/rv44-opus/examples/salesforce-app)
+   Compiling concord-example-github-app v0.0.0 (/home/canarit/projects/concord-ext44/rv44-opus/examples/github-app)
+   Compiling concord-example-kubernetes-app v0.0.0 (/home/canarit/projects/concord-ext44/rv44-opus/examples/kubernetes-app)
+   Compiling concord-example-stripe-app v0.0.0 (/home/canarit/projects/concord-ext44/rv44-opus/examples/stripe-app)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 22.27s
+     Running unittests src/lib.rs (target/debug/deps/concord_example_github_app-8a5b8658294778a9)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/gh_a.rs (target/debug/deps/gh_a-bc50db156b1f5c68)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/gh_b.rs (target/debug/deps/gh_b-65220a4fe454e7bd)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/gh_a_activity_audit.rs (target/debug/deps/gh_a_activity_audit-27ced169fc590d2c)
+
+running 9 tests
+test parent_budget_then_resume ... ok
+test conditional_refresh_with_etag ... ok
+test report_rendering_is_redacted ... ok
+test stale_continuation_is_refused ... ok
+test child_budget_bounds_each_collection ... ok
+test parent_page_failure ... ok
+test complete_audit_over_multiple_pages ... ok
+test child_failure_after_successes_then_resume ... ok
+test context_isolation_between_repositories ... ok
+
+test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+
+     Running tests/gh_b_artifact_retrieval.rs (target/debug/deps/gh_b_artifact_retrieval-4edbca0fae7a70f2)
+
+running 10 tests
+test no_matching_run_or_artifact ... ok
+test transport_failure_mid_body ... ok
+test expired_artifact_by_metadata ... ok
+test expired_artifact_by_410 ... ok
+test expired_signed_url ... ok
+test bounded_sink_and_size_limit ... ok
+test retrieves_into_a_file_without_forwarding_the_token ... ok
+test sink_cancellation ... ok
+test dropped_workflow_stops_the_transfer ... ok
+test context_isolation_between_repositories ... ok
+
+test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.05s
+
+     Running tests/manifest.rs (target/debug/deps/manifest-3fa740aeb1359902)
+
+running 2 tests
+test sha256_matches_published_vectors ... ok
+test manifest_lists_every_fixture_with_its_hash ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+     Running unittests src/lib.rs (target/debug/deps/concord_example_kubernetes_app-5781ca0f77356faa)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/fixtures_manifest.rs (target/debug/deps/fixtures_manifest-f5c0d3e35ef8ea9d)
+
+running 2 tests
+test sha256_known_vectors ... ok
+test manifest_matches_the_fixture_files ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+     Running tests/ku_a_inventory.rs (target/debug/deps/ku_a_inventory-66401f42a685b2ec)
+
+running 9 tests
+test ku_a_a_forbidden_family_does_not_hide_the_others ... ok
+test ku_a_missing_namespace_and_diagnostics_without_secrets ... ok
+test ku_a_expired_token_restarts_with_an_explicit_boundary ... ok
+test ku_a_cluster_wide_reports_remaining_item_count_without_using_it ... ok
+test ku_a_bounded_chain_resumes_from_its_checkpoint ... ok
+test ku_a_expired_token_reported_when_restarts_are_not_allowed ... ok
+test ku_a_a_different_snapshot_mid_chain_is_a_failure ... ok
+test ku_a_two_namespaces_selectors_and_an_empty_chunk ... ok
+test ku_a_long_chain_is_strictly_sequential ... ok
+
+test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s
+
+     Running tests/ku_b_list_watch.rs (target/debug/deps/ku_b_list_watch-bad3b6b8a9415bf8)
+
+running 13 tests
+test ku_b_an_oversized_event_is_a_limit_not_a_clean_end ... ok
+test ku_b_deployments_in_a_second_namespace ... ok
+test ku_b_split_utf8_is_decoded_intact ... ok
+test ku_b_malformed_events_end_the_connection_and_reconnect ... ok
+test ku_b_410_on_open_relists_and_the_relist_budget_is_explicit ... ok
+test ku_b_expired_history_relists_with_an_explicit_reset_boundary ... ok
+test ku_b_a_consumer_can_stop_the_run ... ok
+test ku_b_list_watch_applies_typed_changes_and_reconnects_after_normal_end ... ok
+test ku_b_unrecoverable_open_failures ... ok
+test ku_b_transport_loss_reconnects_from_the_last_resource_version ... ok
+test ku_b_a_long_watch_keeps_bounded_state ... ok
+test ku_b_dropping_the_workflow_releases_the_watch_connection ... ok
+test ku_b_cancellation_while_awaiting_data ... ok
+
+test result: ok. 13 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.08s
+
+     Running tests/ku_b_segmentation.rs (target/debug/deps/ku_b_segmentation-d58eee2721600376)
+
+running 2 tests
+test events_need_no_newline_and_an_unfinished_event_is_not_an_end ... ok
+test every_split_offset_decodes_the_same_events ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.22s
+
+     Running unittests src/lib.rs (target/debug/deps/concord_example_salesforce_app-1c0c70d8751acccd)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/sf_a.rs (target/debug/deps/sf_a-b1666afaa4b4113c)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/sf_b.rs (target/debug/deps/sf_b-371784a00a5c6cb2)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/generic_streaming_upload_transport.rs (target/debug/deps/generic_streaming_upload_transport-b8ad494c2fcd4c60)
+
+running 2 tests
+test generic_stream_source_failure_fails_the_transfer_after_it_started ... ok
+test generic_one_shot_stream_is_polled_only_by_the_transport_and_sent_chunked ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+
+     Running tests/manifest.rs (target/debug/deps/manifest-e209be4f91a402ce)
+
+running 2 tests
+test sha256_matches_known_vectors ... ok
+test every_fixture_is_listed_with_its_hash_and_provenance ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+     Running tests/sf_a_crm_extraction.rs (target/debug/deps/sf_a_crm_extraction-2bbb589a4082d49a)
+
+running 9 tests
+test sf_a_official_query_more_example_parses_and_validates ... ok
+test sf_a_diagnostics_never_show_tokens_locators_literals_or_record_values ... ok
+test sf_a_transient_failure_resumes_from_the_failed_locator_without_duplicates ... ok
+test sf_a_multi_page_extraction_with_schema_custom_fields_and_record_read ... ok
+test sf_a_user_data_is_a_literal_and_encoded_by_the_transport ... ok
+test sf_a_expired_locator_after_earlier_pages_requires_an_explicit_restart ... ok
+test sf_a_two_orgs_stay_isolated_and_missing_custom_fields_are_reported ... ok
+test sf_a_resume_points_are_bound_to_their_org_and_statement ... ok
+test sf_a_returned_links_are_validated_and_counts_never_make_locators ... ok
+
+test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.05s
+
+     Running tests/sf_b_bulk_csv_round_trip.rs (target/debug/deps/sf_b_bulk_csv_round_trip-a4137a65afd0ce1f)
+
+running 14 tests
+test sf_b_official_parallel_results_example_agrees_with_the_link_policy ... ok
+test sf_b_sequential_locator_chain_follows_sforce_locator_headers ... ok
+test sf_b_width_schema_decode_and_count_errors_fail_only_their_part ... ok
+test sf_b_job_version_and_dialect_are_preserved_and_links_scoped ... ok
+test sf_b_failed_job_and_still_running_job ... ok
+test sf_b_next_manifest_link_alias_policy_on_the_wire ... ok
+test sf_b_failure_in_an_active_download_discards_its_staged_shard ... ok
+test sf_b_discovered_parallel_export_semicolon_crlf ... ok
+test sf_b_two_orgs_export_concurrently_without_scope_or_header_leaks ... ok
+test sf_b_discovery_batch_failure_then_restart_completes ... ok
+test sf_b_permits_are_held_through_stalled_bodies ... ok
+test sf_b_every_bulk_dialect_round_trips_with_quoted_separators_and_newlines ... ok
+test sf_b_large_generated_parts_stream_through_bounded_readers ... ok
+test sf_b_completed_but_unemitted_shards_are_retained_and_reused ... ok
+
+test result: ok. 14 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.04s
+
+     Running tests/sf_b_ingest_round_trip.rs (target/debug/deps/sf_b_ingest_round_trip-f248f312954c9f9c)
+
+running 3 tests
+test ingest_encoding_failures_create_no_job ... ok
+test ingest_spooled_upload_round_trip ... ok
+test ingest_content_url_is_validated_before_upload ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+
+     Running unittests src/lib.rs (target/debug/deps/concord_example_shopify_app-4a11a6752edcc962)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/sh_a.rs (target/debug/deps/sh_a-3b3b7b19617734b5)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/sh_b.rs (target/debug/deps/sh_b-f4afed2a83c25841)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/manifest.rs (target/debug/deps/manifest-7d6d50a189eb3531)
+
+running 2 tests
+test sha256_matches_the_standard_vectors ... ok
+test every_fixture_is_listed_with_its_current_digest ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/sh_a_catalog_inventory.rs (target/debug/deps/sh_a_catalog_inventory-dc5c4d0dee48afef)
+
+running 6 tests
+test sh_a_throttled_page_stops_the_run_with_bucket_state_and_resume_cursor ... ok
+test sh_a_page_budget_bounds_every_traversal_with_a_resume_cursor ... ok
+test sh_a_two_shops_reconcile_independently_and_encode_their_filters ... ok
+test sh_a_rejected_partial_data_fails_at_that_page_with_its_errors ... ok
+test sh_a_reconciles_catalog_and_inventory_across_dependent_and_nested_cursors ... ok
+test sh_a_http_200_errors_without_data_absent_fields_and_bad_page_info_are_failures ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s
+
+     Running tests/sh_b_bulk_export.rs (target/debug/deps/sh_b_bulk_export-9d000479283b4050)
+
+running 12 tests
+test sh_b_failed_job_streams_partial_output_and_says_it_is_partial ... ok
+test sh_b_expired_signed_url_is_refused_before_its_body_is_read ... ok
+test sh_b_an_oversized_line_ends_the_stream_with_a_limit_error ... ok
+test sh_b_empty_completion_downloads_nothing_and_shops_stay_separate ... ok
+test sh_b_a_rejected_submission_creates_no_job_and_polls_nothing ... ok
+test sh_b_polling_is_bounded_and_a_throttled_poll_is_a_reported_failure ... ok
+test sh_b_a_transport_error_after_records_is_reported_with_its_position ... ok
+test sh_b_malformed_lines_stop_the_export_or_are_skipped_within_a_bound ... ok
+test sh_b_a_skipped_error_right_before_the_end_is_never_reported_as_complete ... ok
+test sh_b_completed_export_streams_normalized_records_from_arbitrary_chunks ... ok
+test sh_b_consumer_cancellation_stops_reading_and_closes_the_download ... ok
+test sh_b_a_large_generated_export_is_streamed_with_a_bounded_line_buffer ... ok
+
+test result: ok. 12 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.02s
+
+     Running unittests src/lib.rs (target/debug/deps/concord_example_stripe_app-9c8461a674f4efd6)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/st_a.rs (target/debug/deps/st_a-603c087d27816a74)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/st_b.rs (target/debug/deps/st_b-a159ac567d57defb)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/st_a_billing_reconciliation.rs (target/debug/deps/st_a_billing_reconciliation-6ee842abbc0da028)
+
+running 4 tests
+test st_a_malformed_line_page_and_bounded_budget ... ok
+test st_a_reconciles_parent_and_related_lists_with_expansions_and_totals ... ok
+test st_a_identifier_forms_findings_empty_terminal_and_account_isolation ... ok
+test st_a_rate_limit_interrupts_and_resumed_collection_completes ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+
+     Running tests/st_b_form_idempotency.rs (target/debug/deps/st_b_form_idempotency-76952cf30020995a)
+
+running 3 tests
+test st_b_provisions_with_forms_account_override_and_a_lost_response ... ok
+test st_b_reused_key_with_changed_parameters_is_prevented_then_rejected ... ok
+test st_b_missing_key_and_unrepeated_lost_response ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+   Doc-tests concord_example_github_app
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests concord_example_kubernetes_app
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests concord_example_salesforce_app
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests concord_example_shopify_app
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests concord_example_stripe_app
+
+running 1 test
+test examples/stripe-app/src/lib.rs - (line 18) - compile ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+all doctests ran in 0.13s; merged doctests compilation took 0.13s
+exit=0

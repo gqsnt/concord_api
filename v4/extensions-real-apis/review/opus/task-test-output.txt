@@ -1,0 +1,62 @@
+   Compiling opus-review-task v0.0.0 (/home/canarit/projects/concord-ext44/rv44-opus/review/opus/task)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 1.23s
+     Running unittests src/lib.rs (../target/debug/deps/opus_review_task-2a9945de0f0dfe50)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/keep_going.rs (../target/debug/deps/keep_going-10c7d86538eaac4e)
+
+running 9 tests
+test changed_listing_is_refused_on_resume ... ok
+test child_failure_does_not_stop_and_repair_fetches_only_the_failed_page ... ok
+test child_failure_limit_stops_after_the_item_that_reached_it ... ok
+test hand_written_traversal_is_serial ... ok
+test manifest_jobs_variant_overlaps_discovery_with_jobs ... first checkpoint: admitted=1 unfinished=0 queued=[(12, true)] discovery=Some(At(..))
+requests: 10
+overlap: /repositories/101/issues || /repos/octo-org/hello-world/pulls/12 (72.991µs)
+overlap: /repositories/101/issues || /repos/octo-org/hello-world/pulls/12/reviews (21.409µs)
+ok
+test parent_failure_stops_with_a_page_position_and_resumes ... ok
+test persisted_child_link_restored_into_another_parent_is_not_refused ... ok
+test repair_that_fails_again_reports_the_new_restart_point ... ok
+test stop_after_one_item_then_resume_from_the_persisted_position ... ok
+
+test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.86s
+
+     Running tests/probe_jsonl_jobs.rs (../target/debug/deps/probe_jsonl_jobs-0e974309837fc412)
+
+running 1 test
+test jsonl_jobs_hold_their_slot_through_a_stalled_body ... in_flight=1 retained=1 requests=["/a", "/b"]
+Cleanup { connections: 2, open_at_shutdown: 2, open_after: 0 }
+ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.31s
+
+     Running tests/probe_shopify_nested.rs (../target/debug/deps/probe_shopify_nested-22c9809612fe4f3f)
+
+running 1 test
+test nested_failure_reports_next_parent_page_as_resume_and_skips_rest_of_page ... products: outcome=Stopped pages=1 resume=Some("cHJvZC0y") failure=false
+counts.products=1
+variant_pages.incomplete=[("\"gid://shopify/Product/101\"", Failed)]
+requests: ["Locations(-)", "CatalogProducts(-)", "ProductVariants(dmFyLXAxLTI=)"]
+ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+     Running tests/probe_stuck_cursor.rs (../target/debug/deps/probe_stuck_cursor-c3ba3e7db043b498)
+
+running 1 test
+test github_link_next_equal_to_the_request_loops_until_the_budget ... requests=50 items=100 errors=0 outcome=Bounded
+ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+
+   Doc-tests opus_review_task
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+exit=0

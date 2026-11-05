@@ -1,0 +1,19 @@
+   Compiling astra-review-task v0.0.0 (/home/canarit/projects/concord-ext44/rv44-astra/review/astra/task)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.62s
+     Running tests/probes.rs (../target/debug/deps/probes-194adb68c629ad4d)
+
+running 3 tests
+escape profile: double_quote=true, original="back\\slash,comma", wire="\"back\\slash,comma\"\r\n"
+decoded="backslash,comma"
+escape profile: double_quote=false, original="back\\slash,comma", wire="\"back\\slash,comma\"\r\n"
+decoded="backslash,comma"
+test escape_profiles_round_trip_probe ... ok
+csv: ready=true; source polls in ONE future poll=1000001
+jsonl: ready=true; source polls in ONE future poll=1000001
+JSONL 32MiB unterminated chunk, 64-byte cap: ONE poll 82.374822ms; ready=true
+test jsonl_large_unfinished_chunk_work_probe ... ok
+values: ready=true; source polls in ONE future poll=1000001
+test one_poll_consumes_a_million_empty_chunks_in_every_reader ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.12s
+

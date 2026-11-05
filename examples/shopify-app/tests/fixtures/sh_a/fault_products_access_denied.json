@@ -1,0 +1,33 @@
+{
+  "data": null,
+  "errors": [
+    {
+      "message": "Access denied for products field. Required access: `read_products` access scope.",
+      "locations": [
+        {
+          "line": 1,
+          "column": 101
+        }
+      ],
+      "path": [
+        "products"
+      ],
+      "extensions": {
+        "code": "ACCESS_DENIED",
+        "documentation": "https://shopify.dev/api/usage/access-scopes",
+        "requiredAccess": "`read_products` access scope."
+      }
+    }
+  ],
+  "extensions": {
+    "cost": {
+      "requestedQueryCost": 52,
+      "actualQueryCost": 1,
+      "throttleStatus": {
+        "maximumAvailable": 2000.0,
+        "currentlyAvailable": 1999,
+        "restoreRate": 100.0
+      }
+    }
+  }
+}

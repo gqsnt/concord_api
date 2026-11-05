@@ -1,0 +1,21 @@
+[package]
+name = "concord-check-maintenance-github"
+description = "Staged maintenance exercise for the github SDK: the frozen initial consumer and the updated consumer, both compiled against the current SDK."
+version = "0.0.0"
+edition = "2024"
+rust-version.workspace = true
+license.workspace = true
+publish = false
+
+[dependencies]
+concord = { path = "../../crates/concord", features = ["json"] }
+concord-example-github-sdk = { path = "../../examples/github-sdk" }
+concord-pagination = { path = "../../crates/concord-pagination" }
+serde = { workspace = true, features = ["derive"] }
+
+[dev-dependencies]
+concord-example-testserver = { path = "../../examples/testserver" }
+tokio = { workspace = true, features = ["macros", "rt", "rt-multi-thread"] }
+
+[lints]
+workspace = true

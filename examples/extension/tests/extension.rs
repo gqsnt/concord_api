@@ -1,15 +1,19 @@
 //! The outside operation against the fake Catalog service, with request counts: X01 (absent
 //! from the SDK, public APIs only, no seed endpoint), X02 (base prefix and path data), X03
 //! (independent contexts, headers on the wire), X04 (own representation, truthful identity),
-//! X05 (native edit, transport failure).
+//! X05 (native edit, transport failure), X06 (the same profile read incrementally), X07 (the
+//! documented changes from the earlier handwritten parser).
 
 use std::time::Duration;
 
 use concord::bytes::Bytes;
 use concord::reqwest::header::{ACCEPT, HeaderMap, HeaderValue};
 use concord::reqwest::{self, StatusCode, Version};
+use concord::stream::{OpenErrorKind, ReadErrorKind};
 use concord::{Decode, ErrorKind, ResponseHead};
-use concord_example_extension::{Csv, CsvRow, EXPORT_OPERATION, export, export_parts, export_with};
+use concord_example_extension::{
+    Csv, CsvRow, EXPORT_OPERATION, export, export_parts, export_rows, export_with,
+};
 use concord_example_fixture::{Reply, Server, catalog};
 use concord_example_sdk::CatalogConfig;
 use concord_example_sdk::context::{CatalogContext, ContextError, TenantContext};
@@ -347,12 +351,12 @@ async fn x04_a_json_labelled_response_is_refused_unread_with_a_truthful_identity
     assert_eq!(concord.endpoint(), None);
     assert_eq!(
         concord.codec_error().unwrap().label(),
-        "the response is not text/csv"
+        "the response Content-Type is not text/csv"
     );
     let shown = error.to_string();
     assert_eq!(
         shown,
-        "catalog-extension: tenant export: response metadata not accepted: the response is not text/csv"
+        "catalog-extension: tenant export: response metadata not accepted: the response Content-Type is not text/csv"
     );
     let debug = format!("{error:?} {error:#?}");
     for text in [&shown, &debug] {
@@ -390,8 +394,14 @@ async fn x04_a_malformed_body_is_a_decode_error_with_positions_only() {
     let concord = error.concord().unwrap();
     assert_eq!(concord.kind(), ErrorKind::Decode);
     let codec = concord.codec_error().unwrap();
-    assert_eq!(codec.label(), "a CSV row does not have 2 fields");
-    assert_eq!(codec.context(), [("line", 3), ("fields", 3)]);
+    assert_eq!(
+        codec.label(),
+        "a CSV record does not have as many fields as the header"
+    );
+    assert_eq!(
+        codec.context(),
+        [("record", 2), ("fields", 3), ("expected", 2)]
+    );
     let shown = format!("{error} {error:?}");
     assert!(!shown.contains("s3cr3t"), "{shown}");
 }
@@ -405,6 +415,25 @@ fn head_check(content_type: &[&str]) -> Result<(), &'static str> {
     <Csv as Decode<Vec<CsvRow>>>::check_content_type(&head).map_err(|e| e.label())
 }
 
+/// The finite decoder on a body alone: the profile's context, then `decode_body`.
+/// A refusal: its static label and numeric positions.
+type Refusal = (&'static str, Vec<(&'static str, u64)>);
+
+fn decode(body: &'static [u8]) -> Result<Vec<CsvRow>, Refusal> {
+    let headers = HeaderMap::new();
+    let head = ResponseHead::new(StatusCode::OK, Version::HTTP_11, &headers);
+    let context = <Csv as Decode<Vec<CsvRow>>>::context(&head).unwrap();
+    <Csv as Decode<Vec<CsvRow>>>::decode_body(context, Bytes::from_static(body))
+        .map_err(|e| (e.label(), e.context().to_vec()))
+}
+
+fn row(id: &str, name: &str) -> CsvRow {
+    CsvRow {
+        id: id.into(),
+        name: name.into(),
+    }
+}
+
 #[test]
 fn x04_the_csv_format_checks_its_head_and_body() {
     assert_eq!(head_check(&["text/csv"]), Ok(()));
@@ -412,23 +441,19 @@ fn x04_the_csv_format_checks_its_head_and_body() {
     assert_eq!(head_check(&["text/csv; header=present"]), Ok(()));
     assert_eq!(
         head_check(&["application/json"]),
-        Err("the response is not text/csv")
+        Err("the response Content-Type is not text/csv")
     );
     assert_eq!(
         head_check(&["text/csv; charset=latin1"]),
-        Err("the CSV charset is not utf-8")
+        Err("the CSV response declares a charset other than utf-8")
     );
     assert_eq!(head_check(&[]), Err("the response has no Content-Type"));
     assert_eq!(
         head_check(&["text/csv", "text/csv"]),
-        Err("the response repeats Content-Type")
+        Err("the response has more than one Content-Type field")
     );
     assert_eq!(<Csv as Decode<Vec<CsvRow>>>::ACCEPT, Some("text/csv"));
 
-    let decode = |body: &'static [u8]| {
-        <Csv as Decode<Vec<CsvRow>>>::decode_body((), Bytes::from_static(body))
-            .map_err(|e| (e.label(), e.context().to_vec()))
-    };
     assert_eq!(
         decode(b"# note\r\nid,name\r\nitem-001,Notebook\r\n\r\n# trailer\n").unwrap(),
         rows()[..1]
@@ -436,22 +461,78 @@ fn x04_the_csv_format_checks_its_head_and_body() {
     assert_eq!(decode(b"id,name\n").unwrap(), []);
     assert_eq!(
         decode(b"name,id\n"),
-        Err(("the CSV header is not `id,name`", vec![("line", 1)]))
-    );
-    assert_eq!(
-        decode(b"id,name\nitem-001,\"Note\"\n"),
         Err((
-            "quoted CSV fields are not supported",
-            vec![("line", 2), ("column", 10)]
+            "the CSV header does not match the expected columns",
+            vec![("field", 1)]
         ))
     );
     assert_eq!(
-        decode(b"id,name\n\xffbad\n"),
-        Err(("the CSV body is not UTF-8", vec![("byte", 8)]))
+        decode(b"id,name\nitem-001,\xffbad\n"),
+        Err((
+            "a CSV field is not valid UTF-8",
+            vec![("record", 1), ("field", 2)]
+        ))
     );
     assert_eq!(
         decode(b"# only a comment\n"),
-        Err(("the CSV body has no header line", vec![]))
+        Err(("the CSV input has no header record", vec![]))
+    );
+}
+
+// ---------------------------------------------------------------------------------------------
+// X07: intentional changes from the earlier handwritten parser (comma/newline splitting, no
+// quotes): the generic codec's RFC 4180 records, with the provider rules kept in the profile.
+
+#[test]
+fn x07_quoted_fields_and_other_csv_records_are_now_read() {
+    // Quoted fields were refused (`quoted CSV fields are not supported`): now standard CSV.
+    assert_eq!(
+        decode(b"id,name\nitem-001,\"Note\"\n").unwrap(),
+        [row("item-001", "Note")]
+    );
+    assert_eq!(
+        decode(
+            b"id,name\r\n\"item-001\",\"Notebook, A5\"\r\nitem-002,\"two\nlines \"\"q\"\"\"\r\n"
+        )
+        .unwrap(),
+        [
+            row("item-001", "Notebook, A5"),
+            row("item-002", "two\nlines \"q\"")
+        ]
+    );
+    // `#` is a comment only at the start of a record; elsewhere it is data (unchanged).
+    assert_eq!(
+        decode(b"id,name\nitem-#1,a#b\n").unwrap(),
+        [row("item-#1", "a#b")]
+    );
+    // A leading UTF-8 BOM is stripped; a bare `\r` ends a record; a final trailer without a
+    // line ending is still a comment.
+    assert_eq!(
+        decode(b"\xef\xbb\xbfid,name\ritem-001,Notebook\r# trailer").unwrap(),
+        [row("item-001", "Notebook")]
+    );
+    // The provider rules are kept: the header is exactly `id,name` (now named by field, so a
+    // reordered or extra header is refused rather than read positionally), and every row has
+    // two fields.
+    assert_eq!(
+        decode(b"id,name,extra\nitem-001,a,b\n"),
+        Err((
+            "the CSV header does not match the expected columns",
+            vec![("field", 3)]
+        ))
+    );
+    assert_eq!(
+        decode(b"id,name\nitem-001\n"),
+        Err((
+            "a CSV record does not have as many fields as the header",
+            vec![("record", 1), ("fields", 1), ("expected", 2)]
+        ))
+    );
+    // A `header=absent` media parameter contradicts the profile's header and is refused before
+    // the body is read (the earlier parser ignored the parameter).
+    assert_eq!(
+        head_check(&["text/csv; header=absent"]),
+        Err("the CSV response declares header=absent, but this format expects a header")
     );
 }
 
@@ -531,4 +612,82 @@ async fn x05_a_transport_failure_does_not_restore_the_url() {
         depth, 2,
         "the extension error, then Concord's (no further source)"
     );
+}
+
+// ---------------------------------------------------------------------------------------------
+// X06: the same profile, read incrementally.
+
+#[tokio::test]
+async fn x06_rows_arrive_incrementally_with_the_same_rules() {
+    let server = Server::start(catalog("/catalog/v1")).await;
+    let acme = context(&server, "/catalog/v1", "k-ext").tenant("acme");
+
+    let mut records = export_rows(&acme, "items-2026").await.unwrap();
+    let mut got = Vec::new();
+    while let Some(row) = records.next().await {
+        got.push(row.unwrap());
+    }
+    assert_eq!(got, rows());
+    assert_eq!(
+        records.headers().unwrap().to_strings().unwrap(),
+        ["id", "name"]
+    );
+    assert_eq!(records.operation(), Some(EXPORT_OPERATION));
+    let seen = server.single();
+    assert_eq!(seen.target, "/catalog/v1/tenants/acme/exports/items-2026");
+    assert_eq!(seen.header("accept"), Some("text/csv"));
+}
+
+#[tokio::test]
+async fn x06_a_refused_head_keeps_the_response_unread() {
+    const KEY: &str = "key-q7x-s3cr3t";
+    const JSON: &str = r#"[{"id":"item-001","name":"Notebook"}]"#;
+    let server = Server::reply(Reply::json(200, JSON)).await;
+    let tenant = context(&server, "/catalog/v1", KEY).tenant("tenant-q7x");
+
+    let error = export_rows(&tenant, "items-2026").await.unwrap_err();
+    assert_eq!(error.operation(), EXPORT_OPERATION);
+    let refusal = error.open_refusal().unwrap();
+    assert_eq!(refusal.kind(), OpenErrorKind::Metadata);
+    assert_eq!(
+        error.to_string(),
+        "catalog-extension: tenant export: the response head was refused: the response Content-Type is not text/csv (response kept unread)"
+    );
+    let shown = format!("{error} {error:?}");
+    for leaked in [KEY, "tenant-q7x", "127.0.0.1", "exports"] {
+        assert!(!shown.contains(leaked), "{leaked} in {shown}");
+    }
+    let response = error.into_open_refusal().unwrap().into_response();
+    assert_eq!(response.bytes().await.unwrap(), JSON.as_bytes());
+
+    // An unknown export: a status refusal, before any body read.
+    let server = Server::start(catalog("/catalog/v1")).await;
+    let acme = context(&server, "/catalog/v1", "k-ext").tenant("acme");
+    let error = export_rows(&acme, "missing").await.unwrap_err();
+    assert_eq!(error.open_refusal().unwrap().kind(), OpenErrorKind::Status);
+    assert_eq!(
+        error.open_refusal().unwrap().status_code(),
+        StatusCode::NOT_FOUND
+    );
+}
+
+#[tokio::test]
+async fn x06_a_malformed_row_after_good_rows_keeps_them_and_names_the_operation() {
+    let body = "id,name\nitem-001,Notebook\nitem-002,s3cr3t-cell,extra\n";
+    let server = Server::reply(
+        Reply::new(200)
+            .header("content-type", "text/csv; charset=utf-8")
+            .body(body),
+    )
+    .await;
+    let acme = context(&server, "/catalog/v1", "k-ext").tenant("acme");
+    let mut records = export_rows(&acme, "items-2026").await.unwrap();
+    assert_eq!(records.next().await.unwrap().unwrap(), rows()[0]);
+    let error = records.next().await.unwrap().unwrap_err();
+    assert_eq!(error.kind(), ReadErrorKind::Format);
+    assert_eq!(error.operation(), Some(EXPORT_OPERATION));
+    assert_eq!(error.position().records, 1);
+    let shown = format!("{error} {error:?}");
+    assert!(!shown.contains("s3cr3t"), "{shown}");
+    assert!(records.next().await.is_none());
 }

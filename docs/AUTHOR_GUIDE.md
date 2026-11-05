@@ -1377,14 +1377,14 @@ each edit does to code that calls the endpoint:
 
 | Edit | Calling code |
 |---|---|
-| Add an optional or initialized value (`x?: T`, `x: T = e`) | unchanged; `set_x` is new |
+| Add an optional or initialized value (`x?: T`, `x: T = e`) | unchanged argument list; `set_x` is new. **Exception:** the request is `Clone` only when every value type is (§9), so adding a value whose type is not `Clone` removes `Clone` from the request even while the value is absent, and code that clones the request (a pagination template, say) stops compiling (E0599). Keep added value types `Clone` when callers may clone requests |
 | Add a required value (`x: T`) | breaks: a new positional argument (or a `{Client}Config` field) |
 | Required → optional (`x: T` → `x?: T`) | breaks: the argument goes; callers write `.set_x(v)` |
 | Optional → required | breaks: a new positional argument; `maybe_x` disappears |
 | Required → initialized (`x: T` → `x: T = e`) | breaks: the argument goes; `set_x(v)` still replaces it |
 | Reorder required values | breaks only if the types differ; with equal types it still compiles and **silently swaps the values**: rename instead |
 | Add a required body (`body b: T`) | breaks: a new positional argument, where the body is declared |
-| Add an optional body (`body b?: T`) | unchanged; no body is sent until `set_b` |
+| Add an optional body (`body b?: T`) | unchanged; no body is sent until `set_b` (same `Clone` exception as an added value) |
 | Change the body or output type | breaks where the old type was used |
 | Change a format or media type (`request`, `response`) | unchanged code; **different bytes on the wire**, a different check of the response, and possibly a different `Accept` |
 | Move an endpoint to another scope | breaks: navigation goes through the new scope |
@@ -1393,6 +1393,21 @@ each edit does to code that calls the endpoint:
 | Move a literal query or header entry into the enclosing scope | unchanged code; every endpoint below inherits it and the query order can change ([§11.1](#111-moving-a-default-into-a-scope)) |
 
 `#[deprecated]` on a scope or endpoint (§8) lets callers migrate before a removal.
+
+The table covers the generated methods only. Inferred traits (`Clone`, `Send`, `Sync`) follow the
+declared value types, so check them with a representative downstream caller (one that clones or
+sends requests across tasks), not only with `.send()`.
+
+**Your SDK's own input records evolve by Rust's rules, not by the table.** An SDK that groups
+several declared values into a public struct (a stored filter such as `IssueFilter { state,
+labels, .. }`) breaks callers that write exhaustive struct literals or patterns as soon as it adds
+a field (E0063, E0027), even though the generated `set_x` for the new value is additive; and a new
+declared value that the SDK forgets to map from its record compiles and is silently never sent.
+Decide the record's evolution rule when you publish it: private fields with a constructor and
+setters (a builder) for records that will grow, or documented `..Default::default()` construction
+with `#[non_exhaustive]` — and map a record exhaustively (destructure it without `..`) so that the
+compiler points at the mapping when a field is added. (Observed in the 4.4 maintenance exercises:
+`checks/maintenance-github/MAINTENANCE.md`, `checks/maintenance-stripe/MAINTENANCE.md`.)
 
 ### 11.1 Moving a default into a scope
 

@@ -1,0 +1,5 @@
+# Fixture bytes are evidence (sha256 in MANIFEST.json): never convert line endings on checkout.
+# Without this, `* text=auto` turned the .json-values watch streams into CRLF on native Windows
+# and the manifest hash check failed (CI job 127018187023).
+* -text
+.gitattributes text eol=lf

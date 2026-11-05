@@ -24,7 +24,7 @@ mkdir -p "$src"
 # local crates it depends on (packaging resolves dependencies even with `--no-verify`), and without
 # cargo's own verification build: the consumers below build the packaged crates together instead.
 # The "ignoring test" warnings list the test targets deliberately left out of the packages.
-crates="concord-core concord-macros concord-extras concord"
+crates="concord-core concord-macros concord-extras concord concord-pagination"
 patches=()
 for crate in $crates; do
   patches+=(--config "patch.crates-io.$crate.path=\"crates/$crate\"")
@@ -55,7 +55,7 @@ for crate in $crates; do
   fi
   # No build output, logs, fixtures or evidence: only these kinds of files are shipped.
   unexpected=$(cd "$src/$crate-$version" && find . -type f | sed 's#^\./##' | grep -vE \
-    '^(src/[a-z_]+\.rs|Cargo\.toml|Cargo\.toml\.orig|Cargo\.lock|README\.md|LICENSE-(MIT|APACHE)|\.cargo_vcs_info\.json)$' || true)
+    '^(src/([a-z_]+/)*[a-z_]+\.rs|Cargo\.toml|Cargo\.toml\.orig|Cargo\.lock|README\.md|LICENSE-(MIT|APACHE)|\.cargo_vcs_info\.json)$' || true)
   if [[ -n $unexpected ]]; then
     echo "FAIL: unexpected files in the $crate package:"; echo "$unexpected"; exit 1
   fi

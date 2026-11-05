@@ -1,0 +1,26 @@
+   Compiling astra-review-task v0.0.0 (/home/canarit/projects/concord-ext44/rv44-astra/review/astra/task)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.46s
+     Running unittests src/lib.rs (../target/debug/deps/astra_review_task-5a1e914190328afb)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/caller.rs (../target/debug/deps/caller-0295af11a226c63b)
+
+running 3 tests
+runtime contradiction: kind=Metadata, status=200 OK, body still withheld; the response head was refused: the CSV response declares header=present, but this format reads no header (response kept unread)
+metadata: status=200 OK, x-github-request-id=astra-7, typed label=bug
+test contradictory_runtime_header_preserves_unread_response ... ok
+test provider_typed_value_keeps_metadata ... ok
+upload: prepare polls=0; cancelled polls=16; rows=4; drops=1; server wire body bytes=32826; terminal=eof; final chunk absent
+test declared_stream_upload_prepares_without_polling_and_cancels ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.22s
+
+   Doc-tests astra_review_task
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+

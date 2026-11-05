@@ -1,0 +1,22 @@
+[package]
+name = "concord-check-dx03-fanout-sink"
+description = "DX-03 Stage 1: a downstream consumer of sequential Salesforce Bulk CSV results."
+version = "0.0.0"
+edition = "2024"
+rust-version.workspace = true
+license.workspace = true
+publish = false
+
+[dependencies]
+concord-example-salesforce-sdk = { path = "../../examples/salesforce-sdk" }
+concord = { path = "../../crates/concord", features = ["json", "csv"] }
+concord-pagination = { path = "../../crates/concord-pagination" }
+serde = { workspace = true, features = ["derive"] }
+serde_json.workspace = true
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["macros", "rt", "time"] }
+concord-example-testserver = { path = "../../examples/testserver" }
+
+[lints]
+workspace = true

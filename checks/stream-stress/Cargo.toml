@@ -1,0 +1,21 @@
+[package]
+name = "concord-check-stream-stress"
+description = "Generated large-read and large-upload workloads for the incremental CSV and JSON Lines paths, with scoped lifecycle/resource measurements (DATA-02, DATA-04)."
+version = "0.0.0"
+edition = "2024"
+rust-version.workspace = true
+license.workspace = true
+publish = false
+
+[dependencies]
+concord = { path = "../../crates/concord", features = ["json", "csv", "jsonl"] }
+concord-example-testserver = { path = "../../examples/testserver" }
+serde = { workspace = true, features = ["derive"] }
+serde_json.workspace = true
+tokio = { workspace = true, features = ["macros", "rt", "rt-multi-thread", "time", "sync"] }
+
+[dev-dependencies]
+concord-pagination = { path = "../../crates/concord-pagination" }
+
+[lints]
+workspace = true

@@ -1,0 +1,2 @@
+PASS 50/50; concurrent processes=1; min=0.090s max=0.109s mean=0.093s
+PASS 100/100; concurrent processes=8; min=0.088s max=0.098s mean=0.092s

@@ -1,0 +1,21 @@
+    Blocking waiting for file lock on build directory
+    Checking icu_properties_data v2.1.2
+    Checking icu_normalizer_data v2.1.1
+   Compiling concord-macros v4.2.0 (/home/canarit/projects/concord-ext44/rv44-sol/crates/concord-macros)
+    Checking tokio v1.54.1
+    Checking icu_locale_core v2.1.1
+    Checking icu_collections v2.1.1
+    Checking icu_provider v2.1.1
+    Checking icu_normalizer v2.1.1
+    Checking icu_properties v2.1.2
+    Checking idna_adapter v1.2.1
+    Checking idna v1.1.0
+    Checking url v2.5.8
+    Checking tower v0.5.3
+    Checking hyper v1.12.0
+    Checking tower-http v0.6.11
+    Checking hyper-util v0.1.21
+    Checking reqwest v0.13.5
+    Checking concord-core v4.2.0 (/home/canarit/projects/concord-ext44/rv44-sol/crates/concord-core)
+    Checking concord v4.2.0 (/home/canarit/projects/concord-ext44/rv44-sol/crates/concord)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 1.94s

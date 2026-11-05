@@ -1,0 +1,846 @@
+   Compiling tokio v1.54.1
+   Compiling url v2.5.8
+   Compiling tokio-util v0.7.20
+   Compiling tower v0.5.3
+   Compiling tokio-rustls v0.26.6
+   Compiling concord-example-testserver v0.0.0 (/home/canarit/projects/concord-ext44/rv44-sol/examples/testserver)
+   Compiling h2 v0.4.20
+   Compiling tower-http v0.6.11
+   Compiling hyper v1.12.0
+   Compiling hyper-util v0.1.21
+   Compiling hyper-rustls v0.27.10
+   Compiling reqwest v0.13.5
+   Compiling concord-core v4.2.0 (/home/canarit/projects/concord-ext44/rv44-sol/crates/concord-core)
+   Compiling concord-extras v4.2.0 (/home/canarit/projects/concord-ext44/rv44-sol/crates/concord-extras)
+   Compiling concord v4.2.0 (/home/canarit/projects/concord-ext44/rv44-sol/crates/concord)
+   Compiling concord-example-salesforce-sdk v0.0.0 (/home/canarit/projects/concord-ext44/rv44-sol/examples/salesforce-sdk)
+   Compiling concord-example-github-sdk v0.0.0 (/home/canarit/projects/concord-ext44/rv44-sol/examples/github-sdk)
+   Compiling concord-example-shopify-sdk v0.0.0 (/home/canarit/projects/concord-ext44/rv44-sol/examples/shopify-sdk)
+   Compiling concord-example-stripe-sdk v0.0.0 (/home/canarit/projects/concord-ext44/rv44-sol/examples/stripe-sdk)
+   Compiling concord-example-kubernetes-sdk v0.0.0 (/home/canarit/projects/concord-ext44/rv44-sol/examples/kubernetes-sdk)
+   Compiling concord-check-dx03-csv-runtime v0.0.0 (/home/canarit/projects/concord-ext44/rv44-sol/checks/dx03-csv-runtime)
+   Compiling concord-example-salesforce-app v0.0.0 (/home/canarit/projects/concord-ext44/rv44-sol/examples/salesforce-app)
+   Compiling concord-check-maintenance-salesforce v0.0.0 (/home/canarit/projects/concord-ext44/rv44-sol/checks/maintenance-salesforce)
+   Compiling concord-check-dx03-fanout-sink v0.0.0 (/home/canarit/projects/concord-ext44/rv44-sol/checks/dx03-fanout-sink)
+   Compiling concord-example-shopify-app v0.0.0 (/home/canarit/projects/concord-ext44/rv44-sol/examples/shopify-app)
+   Compiling concord-check-maintenance-shopify v0.0.0 (/home/canarit/projects/concord-ext44/rv44-sol/checks/maintenance-shopify)
+   Compiling concord-example-stripe-app v0.0.0 (/home/canarit/projects/concord-ext44/rv44-sol/examples/stripe-app)
+   Compiling concord-check-maintenance-stripe v0.0.0 (/home/canarit/projects/concord-ext44/rv44-sol/checks/maintenance-stripe)
+   Compiling concord-example-github-app v0.0.0 (/home/canarit/projects/concord-ext44/rv44-sol/examples/github-app)
+   Compiling concord-check-maintenance-github v0.0.0 (/home/canarit/projects/concord-ext44/rv44-sol/checks/maintenance-github)
+   Compiling concord-example-kubernetes-app v0.0.0 (/home/canarit/projects/concord-ext44/rv44-sol/examples/kubernetes-app)
+   Compiling concord-check-maintenance-kubernetes v0.0.0 (/home/canarit/projects/concord-ext44/rv44-sol/checks/maintenance-kubernetes)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 23.34s
+     Running unittests src/lib.rs (review/sol/target/debug/deps/concord_check_dx03_csv_runtime-23bd481fac0dd601)
+
+running 2 tests
+test tests::runtime_writer_encodes_both_header_modes ... ok
+test tests::runtime_reader_maps_columns_across_chunks_and_reports_progress ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/exports.rs (review/sol/target/debug/deps/exports-ea07e32fa22b67a6)
+
+running 6 tests
+test upload_matches_runtime_dialect_on_wire ... ok
+test invalid_runtime_options_fail_before_request ... ok
+test refused_response_stays_unread_and_inspectable ... ok
+test read_failures_report_delivered_rows ... ok
+test fixed_report_decodes_and_rejects_contradictory_header ... ok
+test runtime_reader_delivers_first_row_before_remaining_body_and_keeps_metadata ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.01s
+
+     Running unittests src/lib.rs (review/sol/target/debug/deps/concord_check_dx03_fanout_sink-1e12e4fc4a32f336)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/stage1.rs (review/sol/target/debug/deps/stage1-4fb5a82f3279444c)
+
+running 7 tests
+test empty_set_with_a_locator_does_not_end_the_chain ... ok
+test later_csv_decode_failure_is_typed_and_stops_before_its_next_locator ... ok
+test later_count_mismatch_is_a_typed_protocol_failure ... ok
+test later_http_failure_preserves_the_typed_salesforce_error ... ok
+test header_only_last_set_is_a_complete_empty_export ... ok
+test invalid_job_metadata_is_refused_before_requesting_results ... ok
+test collects_two_sets_in_order_using_the_jobs_pipe_crlf_dialect ... ok
+
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.05s
+
+     Running tests/stage2.rs (review/sol/target/debug/deps/stage2-6d30ab30164439c4)
+
+running 5 tests
+test a_count_failure_at_eof_discards_all_staged_rows_before_resume ... ok
+test sink_failure_does_not_publish_a_prefix_and_can_be_retried ... ok
+test discovery_failure_resumes_at_failed_manifest_without_redownloading_completed_parts ... ok
+test bounded_resume_preserves_queued_parts_and_undiscovered_manifests ... ok
+test stalled_part_holds_slot_failed_part_is_not_published_and_resume_only_redoes_it ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.07s
+
+     Running unittests src/lib.rs (review/sol/target/debug/deps/concord_check_maintenance_github-2725771ad380ea38)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/after.rs (review/sol/target/debug/deps/after-906a63f94cbc2715)
+
+running 6 tests
+test gone_event_page_keeps_status_and_metadata ... ok
+test event_pages_are_bounded_per_bug ... ok
+test typed_bugs_with_their_events ... ok
+test event_continuation_is_bound_to_its_issue ... ok
+test foreign_event_link_is_not_followed ... ok
+test generated_setter_and_extension_in_two_contexts ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s
+
+     Running tests/before.rs (review/sol/target/debug/deps/before-c5835edb06f3c7d4)
+
+running 5 tests
+test unusable_label_sends_nothing ... ok
+test rate_limited_page_is_a_typed_error ... ok
+test digest_follows_links_and_skips_pull_requests ... ok
+test digest_is_bounded_by_the_page_budget ... ok
+test newest_bug_through_generated_setters_in_two_contexts ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+
+     Running unittests src/lib.rs (review/sol/target/debug/deps/concord_check_maintenance_kubernetes-320e26c0405681be)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/after.rs (review/sol/target/debug/deps/after-95fa9db7f360f3e4)
+
+running 4 tests
+test the_selector_changed_from_equality_to_set_based ... ok
+test a_forbidden_ingress_list_is_a_typed_error_naming_the_new_endpoint ... ok
+test updated_follow_watches_ingresses_with_the_new_selector ... ok
+test updated_audit_reads_ingresses_through_the_context_with_the_new_selector ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+
+     Running tests/before.rs (review/sol/target/debug/deps/before-8250c495c99d83ea)
+
+running 2 tests
+test frozen_follow_delivers_deployment_events_from_the_audited_snapshot ... ok
+test frozen_audit_reads_two_namespaces_in_consistent_chunks ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+     Running unittests src/lib.rs (review/sol/target/debug/deps/concord_check_maintenance_salesforce-94ec404b69ce1309)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/after.rs (review/sol/target/debug/deps/after-e5522dda4b7387ed)
+
+running 3 tests
+test a_job_document_that_contradicts_the_requested_dialect_is_refused ... ok
+test an_opt_out_value_that_is_not_a_boolean_fails_the_result_set_without_echoing_it ... ok
+test tab_crlf_mailing_list_reads_and_writes_the_opt_out_column ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+     Running tests/before.rs (review/sol/target/debug/deps/before-e3258cfa304d971f)
+
+running 4 tests
+test the_result_set_budget_bounds_the_export_with_a_resume_point ... ok
+test an_expired_session_is_a_typed_error_that_does_not_render_the_token ... ok
+test comma_export_reads_typed_rows_across_result_sets ... ok
+test an_org_without_the_custom_field_is_refused_before_a_job_and_orgs_stay_apart ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+
+     Running unittests src/lib.rs (review/sol/target/debug/deps/concord_check_maintenance_shopify-0c9028851926b6c7)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/after.rs (review/sol/target/debug/deps/after-9b2aa99ebdaf75c1)
+
+running 4 tests
+test the_frozen_reader_refuses_a_metafield_line_at_its_position ... ok
+test attribute_export_streams_products_offers_and_metafields_by_parent ... ok
+test published_listing_requests_the_link_and_sets_unpublished_products_aside ... ok
+test the_link_member_across_old_and_new_answers ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s
+
+     Running tests/before.rs (review/sol/target/debug/deps/before-632757ec0dc26d5f)
+
+running 3 tests
+test feed_listing_pages_active_products_with_exact_requests ... ok
+test feed_export_submits_checks_and_streams_products_and_offers ... ok
+test feed_export_not_ready_downloads_nothing_and_a_bad_line_stops_the_stream ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+     Running unittests src/lib.rs (review/sol/target/debug/deps/concord_check_maintenance_stripe-472a858bc3be614c)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/after.rs (review/sol/target/debug/deps/after-55787017d2a07aef)
+
+running 4 tests
+test stripe_parameter_error_names_the_bracketed_wire_key ... ok
+test local_validation_of_the_new_values ... ok
+test omitted_field_keeps_frozen_bytes_and_set_field_adds_one_pair ... ok
+test nested_update_and_typed_expansions_on_two_accounts ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+
+     Running tests/before.rs (review/sol/target/debug/deps/before-ecce84287bc955ea)
+
+running 3 tests
+test frozen_write_sees_stripe_parameter_errors_by_wire_name ... ok
+test frozen_reads_send_no_body_and_ignore_unmodelled_members ... ok
+test frozen_writes_send_exact_form_bytes_per_account ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+
+     Running unittests src/lib.rs (review/sol/target/debug/deps/concord_example_github_app-8a5b8658294778a9)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/gh_a.rs (review/sol/target/debug/deps/gh_a-bc50db156b1f5c68)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/gh_b.rs (review/sol/target/debug/deps/gh_b-65220a4fe454e7bd)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/gh_a_activity_audit.rs (review/sol/target/debug/deps/gh_a_activity_audit-27ced169fc590d2c)
+
+running 9 tests
+test parent_page_failure ... ok
+test conditional_refresh_with_etag ... ok
+test parent_budget_then_resume ... ok
+test stale_continuation_is_refused ... ok
+test child_budget_bounds_each_collection ... ok
+test complete_audit_over_multiple_pages ... ok
+test report_rendering_is_redacted ... ok
+test context_isolation_between_repositories ... ok
+test child_failure_after_successes_then_resume ... ok
+
+test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+
+     Running tests/gh_b_artifact_retrieval.rs (review/sol/target/debug/deps/gh_b_artifact_retrieval-4edbca0fae7a70f2)
+
+running 10 tests
+test transport_failure_mid_body ... ok
+test expired_artifact_by_410 ... ok
+test no_matching_run_or_artifact ... ok
+test expired_artifact_by_metadata ... ok
+test bounded_sink_and_size_limit ... ok
+test expired_signed_url ... ok
+test retrieves_into_a_file_without_forwarding_the_token ... ok
+test dropped_workflow_stops_the_transfer ... ok
+test context_isolation_between_repositories ... ok
+test sink_cancellation ... ok
+
+test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.05s
+
+     Running tests/manifest.rs (review/sol/target/debug/deps/manifest-3fa740aeb1359902)
+
+running 2 tests
+test sha256_matches_published_vectors ... ok
+test manifest_lists_every_fixture_with_its_hash ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+     Running unittests src/lib.rs (review/sol/target/debug/deps/concord_example_github_sdk-b622568e55176fee)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/download.rs (review/sol/target/debug/deps/download-76d9e0c489c94437)
+
+running 9 tests
+test unusable_redirects ... ok
+test redirect_then_stream_without_the_token ... ok
+test expired_signed_url ... ok
+test client_followed_redirect_is_refused ... ok
+test transport_failure_mid_body ... ok
+test byte_limits ... ok
+test gone_artifact ... ok
+test no_redirect_policy_also_works ... ok
+test sink_refusal_stops_the_transfer ... ok
+
+test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s
+
+     Running tests/link.rs (review/sol/target/debug/deps/link-4392da0773314be0)
+
+running 8 tests
+test absent_prev_and_absent_last ... ok
+test debug_withholds_targets ... ok
+test last_page_has_no_next ... ok
+test no_header_is_no_links ... ok
+test documented_example_shape ... ok
+test duplicate_relations ... ok
+test rfc_8288_details ... ok
+test malformed_headers_are_errors ... ok
+
+test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/official_examples.rs (review/sol/target/debug/deps/official_examples-c70c509a2de4a7e8)
+
+running 9 tests
+test comments ... ok
+test labels ... ok
+test unknown_enumeration_values_are_kept ... ok
+test reviews_and_files ... ok
+test issues_listing_distinguishes_pull_requests ... ok
+test single_issue ... ok
+test repository ... ok
+test actions_envelopes_project_their_items ... ok
+test pull_requests ... ok
+
+test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/operations.rs (review/sol/target/debug/deps/operations-7070fbd48d7f615d)
+
+running 9 tests
+test parameters_are_validated ... ok
+test issue_type_filter_on_the_wire ... ok
+test path_values_are_single_segments ... ok
+test token_never_rendered ... ok
+test conditional_refresh_with_etag ... ok
+test status_errors_keep_response_and_metadata ... ok
+test every_operation_on_the_wire ... ok
+test undeclared_operation_through_the_context ... ok
+test contexts_and_repositories_are_isolated ... ok
+
+test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s
+
+     Running tests/paging.rs (review/sol/target/debug/deps/paging-d527c8deacb54685)
+
+running 7 tests
+test persisted_continuation_resumes ... ok
+test malformed_link_fails_the_page ... ok
+test follows_next_links_as_sent ... ok
+test envelopes_are_projected_and_checked ... ok
+test link_outside_the_base_path_is_refused ... ok
+test foreign_next_link_is_refused ... ok
+test continuation_binding_is_checked ... ok
+
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+
+     Running unittests src/lib.rs (review/sol/target/debug/deps/concord_example_kubernetes_app-5781ca0f77356faa)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/fixtures_manifest.rs (review/sol/target/debug/deps/fixtures_manifest-f5c0d3e35ef8ea9d)
+
+running 2 tests
+test sha256_known_vectors ... ok
+test manifest_matches_the_fixture_files ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+     Running tests/ku_a_inventory.rs (review/sol/target/debug/deps/ku_a_inventory-66401f42a685b2ec)
+
+running 9 tests
+test ku_a_two_namespaces_selectors_and_an_empty_chunk ... ok
+test ku_a_a_forbidden_family_does_not_hide_the_others ... ok
+test ku_a_a_different_snapshot_mid_chain_is_a_failure ... ok
+test ku_a_missing_namespace_and_diagnostics_without_secrets ... ok
+test ku_a_bounded_chain_resumes_from_its_checkpoint ... ok
+test ku_a_cluster_wide_reports_remaining_item_count_without_using_it ... ok
+test ku_a_expired_token_reported_when_restarts_are_not_allowed ... ok
+test ku_a_expired_token_restarts_with_an_explicit_boundary ... ok
+test ku_a_long_chain_is_strictly_sequential ... ok
+
+test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s
+
+     Running tests/ku_b_list_watch.rs (review/sol/target/debug/deps/ku_b_list_watch-bad3b6b8a9415bf8)
+
+running 13 tests
+test ku_b_split_utf8_is_decoded_intact ... ok
+test ku_b_deployments_in_a_second_namespace ... ok
+test ku_b_an_oversized_event_is_a_limit_not_a_clean_end ... ok
+test ku_b_410_on_open_relists_and_the_relist_budget_is_explicit ... ok
+test ku_b_malformed_events_end_the_connection_and_reconnect ... ok
+test ku_b_expired_history_relists_with_an_explicit_reset_boundary ... ok
+test ku_b_unrecoverable_open_failures ... ok
+test ku_b_a_consumer_can_stop_the_run ... ok
+test ku_b_list_watch_applies_typed_changes_and_reconnects_after_normal_end ... ok
+test ku_b_transport_loss_reconnects_from_the_last_resource_version ... ok
+test ku_b_a_long_watch_keeps_bounded_state ... ok
+test ku_b_dropping_the_workflow_releases_the_watch_connection ... ok
+test ku_b_cancellation_while_awaiting_data ... ok
+
+test result: ok. 13 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.07s
+
+     Running tests/ku_b_segmentation.rs (review/sol/target/debug/deps/ku_b_segmentation-d58eee2721600376)
+
+running 2 tests
+test events_need_no_newline_and_an_unfinished_event_is_not_an_end ... ok
+test every_split_offset_decodes_the_same_events ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.21s
+
+     Running unittests src/lib.rs (review/sol/target/debug/deps/concord_example_kubernetes_sdk-cb66e2fe9101b3a2)
+
+running 7 tests
+test ids::tests::secrets_are_redacted_in_debug ... ok
+test ids::tests::object_names_follow_rfc1123_subdomains ... ok
+test ids::tests::namespace_names_follow_rfc1123_labels ... ok
+test selector::tests::field_values_are_escaped_like_fields_escape_value ... ok
+test selector::tests::label_syntax_cannot_be_injected ... ok
+test selector::tests::label_selector_matches_like_the_server ... ok
+test selector::tests::label_requirements_render_in_kubernetes_syntax ... ok
+
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/declaration.rs (review/sol/target/debug/deps/declaration-df4f6e02d1feba8b)
+
+running 8 tests
+test header_names_compose ... ok
+test list_parameters_use_the_schema_names_and_encode_selectors ... ok
+test ingress_lists_share_the_list_parameters ... ok
+test every_operation_has_the_schema_path ... ok
+test two_namespaces_do_not_share_scope ... ok
+test continue_token_is_sent_but_withheld_from_diagnostics ... ok
+test watch_parameters ... ok
+test credentials_are_per_context_and_redacted ... ok
+
+test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s
+
+     Running tests/decode.rs (review/sol/target/debug/deps/decode-80bc2d0788502bce)
+
+running 5 tests
+test expired_status_document ... ok
+test list_envelope_items_move_out_and_continue_keys_bind_the_snapshot ... ok
+test watch_events_decode_by_type ... ok
+test ingress_decodes_rules_backends_tls_and_status ... ok
+test objects_decode_with_unknown_fields_tolerated ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/lib.rs (review/sol/target/debug/deps/concord_example_salesforce_app-1c0c70d8751acccd)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/sf_a.rs (review/sol/target/debug/deps/sf_a-b1666afaa4b4113c)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/sf_b.rs (review/sol/target/debug/deps/sf_b-371784a00a5c6cb2)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/generic_streaming_upload_transport.rs (review/sol/target/debug/deps/generic_streaming_upload_transport-b8ad494c2fcd4c60)
+
+running 2 tests
+test generic_stream_source_failure_fails_the_transfer_after_it_started ... ok
+test generic_one_shot_stream_is_polled_only_by_the_transport_and_sent_chunked ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+     Running tests/manifest.rs (review/sol/target/debug/deps/manifest-e209be4f91a402ce)
+
+running 2 tests
+test sha256_matches_known_vectors ... ok
+test every_fixture_is_listed_with_its_hash_and_provenance ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+     Running tests/sf_a_crm_extraction.rs (review/sol/target/debug/deps/sf_a_crm_extraction-2bbb589a4082d49a)
+
+running 9 tests
+test sf_a_transient_failure_resumes_from_the_failed_locator_without_duplicates ... ok
+test sf_a_official_query_more_example_parses_and_validates ... ok
+test sf_a_user_data_is_a_literal_and_encoded_by_the_transport ... ok
+test sf_a_expired_locator_after_earlier_pages_requires_an_explicit_restart ... ok
+test sf_a_diagnostics_never_show_tokens_locators_literals_or_record_values ... ok
+test sf_a_multi_page_extraction_with_schema_custom_fields_and_record_read ... ok
+test sf_a_resume_points_are_bound_to_their_org_and_statement ... ok
+test sf_a_two_orgs_stay_isolated_and_missing_custom_fields_are_reported ... ok
+test sf_a_returned_links_are_validated_and_counts_never_make_locators ... ok
+
+test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.04s
+
+     Running tests/sf_b_bulk_csv_round_trip.rs (review/sol/target/debug/deps/sf_b_bulk_csv_round_trip-a4137a65afd0ce1f)
+
+running 14 tests
+test sf_b_official_parallel_results_example_agrees_with_the_link_policy ... ok
+test sf_b_sequential_locator_chain_follows_sforce_locator_headers ... ok
+test sf_b_job_version_and_dialect_are_preserved_and_links_scoped ... ok
+test sf_b_width_schema_decode_and_count_errors_fail_only_their_part ... ok
+test sf_b_failed_job_and_still_running_job ... ok
+test sf_b_next_manifest_link_alias_policy_on_the_wire ... ok
+test sf_b_failure_in_an_active_download_discards_its_staged_shard ... ok
+test sf_b_two_orgs_export_concurrently_without_scope_or_header_leaks ... ok
+test sf_b_discovered_parallel_export_semicolon_crlf ... ok
+test sf_b_permits_are_held_through_stalled_bodies ... ok
+test sf_b_discovery_batch_failure_then_restart_completes ... ok
+test sf_b_every_bulk_dialect_round_trips_with_quoted_separators_and_newlines ... ok
+test sf_b_large_generated_parts_stream_through_bounded_readers ... ok
+test sf_b_completed_but_unemitted_shards_are_retained_and_reused ... ok
+
+test result: ok. 14 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.06s
+
+     Running tests/sf_b_ingest_round_trip.rs (review/sol/target/debug/deps/sf_b_ingest_round_trip-f248f312954c9f9c)
+
+running 3 tests
+test ingest_encoding_failures_create_no_job ... ok
+test ingest_spooled_upload_round_trip ... ok
+test ingest_content_url_is_validated_before_upload ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+
+     Running unittests src/lib.rs (review/sol/target/debug/deps/concord_example_salesforce_sdk-bed5296f3b6ae6bd)
+
+running 20 tests
+test bulk::tests::create_body_names_the_dialect ... ok
+test bulk::tests::next_link_alias_policy ... ok
+test bulk::tests::documented_job_example_parses ... ok
+test csv::tests::ingest_body_uses_the_job_dialect_and_null_marker ... ok
+test ids::tests::ids_and_names ... ok
+test ids::tests::locators_are_redacted_in_debug ... ok
+test ids::tests::versions_parse_and_print ... ok
+test ids::tests::instance_urls ... ok
+test model::tests::error_docs_hide_messages ... ok
+test model::tests::optional_fields_distinguish_absent_and_null ... ok
+test soql::tests::date_literals_have_a_fixed_shape ... ok
+test soql::tests::literals_are_escaped_and_identifiers_are_validated ... ok
+test transport::tests::parses_limit_info ... ok
+test csv::tests::results_are_read_with_the_job_dialect_and_exact_header ... ok
+test csv::tests::spool_is_bounded ... ok
+test context::tests::query_links ... ok
+test context::tests::debug_hides_the_token ... ok
+test context::tests::content_and_record_links ... ok
+test context::tests::result_links ... ok
+test csv::tests::headers_follow_salesforce_rules ... ok
+
+test result: ok. 20 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.20s
+
+     Running tests/wire.rs (review/sol/target/debug/deps/wire-5cb764f5a916b689)
+
+running 4 tests
+test bulk_query_operations_on_the_wire ... ok
+test rest_operations_on_the_wire ... ok
+test status_errors_become_salesforce_error_documents ... ok
+test ingest_operations_on_the_wire ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+
+     Running unittests src/lib.rs (review/sol/target/debug/deps/concord_example_shopify_app-4a11a6752edcc962)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/sh_a.rs (review/sol/target/debug/deps/sh_a-3b3b7b19617734b5)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/sh_b.rs (review/sol/target/debug/deps/sh_b-f4afed2a83c25841)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/manifest.rs (review/sol/target/debug/deps/manifest-7d6d50a189eb3531)
+
+running 2 tests
+test sha256_matches_the_standard_vectors ... ok
+test every_fixture_is_listed_with_its_current_digest ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+
+     Running tests/sh_a_catalog_inventory.rs (review/sol/target/debug/deps/sh_a_catalog_inventory-dc5c4d0dee48afef)
+
+running 6 tests
+test sh_a_throttled_page_stops_the_run_with_bucket_state_and_resume_cursor ... ok
+test sh_a_rejected_partial_data_fails_at_that_page_with_its_errors ... ok
+test sh_a_reconciles_catalog_and_inventory_across_dependent_and_nested_cursors ... ok
+test sh_a_two_shops_reconcile_independently_and_encode_their_filters ... ok
+test sh_a_page_budget_bounds_every_traversal_with_a_resume_cursor ... ok
+test sh_a_http_200_errors_without_data_absent_fields_and_bad_page_info_are_failures ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s
+
+     Running tests/sh_b_bulk_export.rs (review/sol/target/debug/deps/sh_b_bulk_export-9d000479283b4050)
+
+running 12 tests
+test sh_b_a_transport_error_after_records_is_reported_with_its_position ... ok
+test sh_b_a_rejected_submission_creates_no_job_and_polls_nothing ... ok
+test sh_b_an_oversized_line_ends_the_stream_with_a_limit_error ... ok
+test sh_b_empty_completion_downloads_nothing_and_shops_stay_separate ... ok
+test sh_b_expired_signed_url_is_refused_before_its_body_is_read ... ok
+test sh_b_polling_is_bounded_and_a_throttled_poll_is_a_reported_failure ... ok
+test sh_b_a_skipped_error_right_before_the_end_is_never_reported_as_complete ... ok
+test sh_b_failed_job_streams_partial_output_and_says_it_is_partial ... ok
+test sh_b_malformed_lines_stop_the_export_or_are_skipped_within_a_bound ... ok
+test sh_b_completed_export_streams_normalized_records_from_arbitrary_chunks ... ok
+test sh_b_consumer_cancellation_stops_reading_and_closes_the_download ... ok
+test sh_b_a_large_generated_export_is_streamed_with_a_bounded_line_buffer ... ok
+
+test result: ok. 12 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.02s
+
+     Running unittests src/lib.rs (review/sol/target/debug/deps/concord_example_shopify_sdk-eb89ce1b28734785)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/decoding.rs (review/sol/target/debug/deps/decoding-b84b1dcedfe478a6)
+
+running 9 tests
+test bulk_documents_escape_the_filter_as_a_graphql_string ... ok
+test global_ids_are_checked_against_their_type ... ok
+test bulk_operation_scalars_follow_the_schema ... ok
+test error_extensions_stay_dynamic_where_shopify_varies_them ... ok
+test the_adapter_selects_the_dependent_cursor_and_refuses_inconsistent_page_info ... ok
+test nullable_fields_accept_null_and_refuse_absence ... ok
+test data_absent_null_and_partial_are_distinct ... ok
+test metafield_lines_are_children_of_their_product_and_only_catalog_line_reads_them ... ok
+test bulk_lines_are_typed_with_their_parent_and_split_anywhere ... ok
+
+test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+     Running tests/wire.rs (review/sol/target/debug/deps/wire-d29beae553c3ab93)
+
+running 8 tests
+test one_operation_on_the_wire ... ok
+test online_store_url_is_selected_only_when_requested ... ok
+test the_result_download_goes_to_its_own_host_without_the_token ... ok
+test product_by_id_and_bulk_cancel_on_the_wire ... ok
+test two_shops_never_share_a_host_or_a_token ... ok
+test the_served_version_must_be_the_pinned_one ... ok
+test http_200_with_errors_and_throttle_metadata_is_an_envelope_not_an_error ... ok
+test variables_are_json_encoded_with_null_and_absent_distinct ... ok
+
+test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+
+     Running unittests src/lib.rs (review/sol/target/debug/deps/concord_example_stripe_app-9c8461a674f4efd6)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/st_a.rs (review/sol/target/debug/deps/st_a-603c087d27816a74)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/st_b.rs (review/sol/target/debug/deps/st_b-a159ac567d57defb)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/st_a_billing_reconciliation.rs (review/sol/target/debug/deps/st_a_billing_reconciliation-6ee842abbc0da028)
+
+running 4 tests
+test st_a_malformed_line_page_and_bounded_budget ... ok
+test st_a_reconciles_parent_and_related_lists_with_expansions_and_totals ... ok
+test st_a_identifier_forms_findings_empty_terminal_and_account_isolation ... ok
+test st_a_rate_limit_interrupts_and_resumed_collection_completes ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s
+
+     Running tests/st_b_form_idempotency.rs (review/sol/target/debug/deps/st_b_form_idempotency-76952cf30020995a)
+
+running 3 tests
+test st_b_provisions_with_forms_account_override_and_a_lost_response ... ok
+test st_b_reused_key_with_changed_parameters_is_prevented_then_rejected ... ok
+test st_b_missing_key_and_unrepeated_lost_response ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+
+     Running unittests src/lib.rs (review/sol/target/debug/deps/concord_example_stripe_sdk-c1f6a668a69351f6)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/form.rs (review/sol/target/debug/deps/form-62e771139d860108)
+
+running 7 tests
+test bytes_are_form_urlencoded ... ok
+test nested_indexed_and_repeated_fields_follow_the_documented_spelling ... ok
+test nested_sequences_inside_objects_keep_indices ... ok
+test omitted_and_empty_values_are_distinct ... ok
+test invoice_settings_is_a_nested_optional_field ... ok
+test price_product_is_exactly_one_of_product_or_product_data ... ok
+test values_without_a_form_spelling_are_refused ... ok
+
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/pages.rs (review/sol/target/debug/deps/pages-0a6464906bc43efb)
+
+running 5 tests
+test page_budget_bounds_the_chain_and_keeps_the_next_cursor ... ok
+test page_futures_are_send ... ok
+test backward_chain_uses_ending_before_from_the_first_id ... ok
+test items_stop_mid_page_and_resume_by_replaying_the_page ... ok
+test generated_list_is_walked_exactly_once_by_object_cursors ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+
+     Running tests/wire.rs (review/sol/target/debug/deps/wire-5521609c2fe4a82f)
+
+running 8 tests
+test header_names_compose ... ok
+test values_are_validated_and_redacted ... ok
+test write_carries_form_body_idempotency_key_and_metadata ... ok
+test list_query_headers_and_account_scope ... ok
+test customer_default_payment_method_in_id_object_and_null_forms ... ok
+test error_documents_rate_limits_and_lost_responses ... ok
+test expandable_field_in_both_forms ... ok
+test cursor_list_pages_forward_and_refuses_inconsistent_pages ... ok
+
+test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+
+   Doc-tests concord_check_dx03_csv_runtime
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests concord_check_dx03_fanout_sink
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests concord_check_maintenance_github
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests concord_check_maintenance_kubernetes
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests concord_check_maintenance_salesforce
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests concord_check_maintenance_shopify
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests concord_check_maintenance_stripe
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests concord_example_github_app
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests concord_example_github_sdk
+
+running 2 tests
+test examples/github-sdk/src/pages.rs - pages (line 7) ... ok
+test examples/github-sdk/src/context.rs - context (line 11) ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+all doctests ran in 0.23s; merged doctests compilation took 0.21s
+   Doc-tests concord_example_kubernetes_app
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests concord_example_kubernetes_sdk
+
+running 4 tests
+test examples/kubernetes-sdk/src/list.rs - list::ListPager (line 230) - compile ... ok
+test examples/kubernetes-sdk/src/selector.rs - selector::FieldSelector (line 264) ... ok
+test examples/kubernetes-sdk/src/selector.rs - selector::LabelSelector (line 108) ... ok
+test examples/kubernetes-sdk/src/lib.rs - (line 25) ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+all doctests ran in 0.25s; merged doctests compilation took 0.23s
+   Doc-tests concord_example_salesforce_app
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests concord_example_salesforce_sdk
+
+running 2 tests
+test examples/salesforce-sdk/src/lib.rs - (line 22) - compile ... ok
+test examples/salesforce-sdk/src/query.rs - query (line 12) - compile ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+all doctests ran in 0.17s; merged doctests compilation took 0.16s
+   Doc-tests concord_example_shopify_app
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests concord_example_shopify_sdk
+
+running 1 test
+test examples/shopify-sdk/src/lib.rs - (line 16) - compile ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+all doctests ran in 0.14s; merged doctests compilation took 0.13s
+   Doc-tests concord_example_stripe_app
+
+running 1 test
+test examples/stripe-app/src/lib.rs - (line 18) - compile ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+all doctests ran in 0.18s; merged doctests compilation took 0.18s
+   Doc-tests concord_example_stripe_sdk
+
+running 2 tests
+test examples/stripe-sdk/src/pages.rs - pages (line 17) - compile ... ok
+test examples/stripe-sdk/src/lib.rs - (line 22) ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+all doctests ran in 0.21s; merged doctests compilation took 0.19s

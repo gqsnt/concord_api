@@ -1,0 +1,20 @@
+{
+  "kind": "ServiceList",
+  "apiVersion": "v1",
+  "metadata": {
+    "resourceVersion": "6101"
+  },
+  "items": [
+    {
+      "metadata": {
+        "name": "storefront",
+        "namespace": "team-b",
+        "uid": "00000000-0000-4000-8000-00000000b101",
+        "resourceVersion": "6040",
+        "labels": {"app.kubernetes.io/part-of": "shop", "app.kubernetes.io/name": "storefront"}
+      },
+      "spec": {"type": "ClusterIP", "clusterIP": "10.96.20.1", "selector": {"app.kubernetes.io/name": "storefront"},
+        "ports": [{"name": "http", "protocol": "TCP", "port": 80, "targetPort": 8080}]}
+    }
+  ]
+}

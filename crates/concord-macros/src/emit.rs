@@ -1408,6 +1408,39 @@ fn emit_owner(
     }
 }
 
+/// The unused binder of a `Clone` bound: `'__concord`, unless the type itself already names that
+/// lifetime (a payload such as `for<'__concord> fn(&'__concord str)` is valid Rust), in which case
+/// the first `'__concordN` the type does not name. A binder that shadowed one of the type's own
+/// lifetimes would be E0496.
+fn unused_lifetime(ty: &TokenStream, span: Span) -> syn::Lifetime {
+    fn collect(tokens: TokenStream, used: &mut HashSet<String>) {
+        let mut after_apostrophe = false;
+        for token in tokens {
+            match token {
+                proc_macro2::TokenTree::Punct(p) => {
+                    after_apostrophe = p.as_char() == '\'';
+                    continue;
+                }
+                proc_macro2::TokenTree::Ident(i) if after_apostrophe => {
+                    used.insert(i.to_string());
+                }
+                proc_macro2::TokenTree::Group(g) => collect(g.stream(), used),
+                _ => {}
+            }
+            after_apostrophe = false;
+        }
+    }
+    let mut used = HashSet::new();
+    collect(ty.clone(), &mut used);
+    let mut name = String::from("__concord");
+    let mut n = 0u32;
+    while used.contains(&name) {
+        n += 1;
+        name = format!("__concord{n}");
+    }
+    syn::Lifetime::new(&format!("'{name}"), span)
+}
+
 /// `Clone` for an endpoint request exactly when every value type (and the body value) is `Clone`.
 ///
 /// The type is not generic, so a plain `where Value: Clone` bound would be rejected on stable
@@ -1421,7 +1454,8 @@ fn emit_owner(
 fn endpoint_clone(ty: &Ident, values: &[Value], body: Option<&Body>) -> TokenStream {
     let mut bounds = Vec::new();
     let mut add = |t: TokenStream, span: Span| {
-        bounds.push(quote_spanned!(span=> for<'__concord> #t: ::core::clone::Clone));
+        let binder = unused_lifetime(&t, span);
+        bounds.push(quote_spanned!(span=> for<#binder> #t: ::core::clone::Clone));
     };
     for value in values {
         let t = &value.ty;

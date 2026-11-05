@@ -1,0 +1,27 @@
+   Compiling concord-sol-review-task v0.0.0 (/home/canarit/projects/concord-ext44/rv44-sol/review/sol/task)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.56s
+     Running unittests src/lib.rs (../target/debug/deps/concord_sol_review_task-934b5eb30e0a5c19)
+
+running 1 test
+test tests::caller_task ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+     Running tests/defects.rs (../target/debug/deps/defects-ab99d20f6e92a86f)
+
+running 6 tests
+test chunks_debug_does_not_print_body ... ignored, expected invariant failure on reviewed commit; run explicitly with --ignored
+test csv_does_not_emit_a_header_for_different_fields ... ignored, expected invariant failure on reviewed commit; run explicitly with --ignored
+test empty_chunks_yield_with_bounded_source_polls ... ignored, expected invariant failure on reviewed commit; run explicitly with --ignored
+test final_delimited_by_eof_bad_line_matches_yield_docs ... ignored, expected invariant failure on reviewed commit; run explicitly with --ignored
+test finish_preserves_discovery_failure_outcome ... ignored, expected invariant failure on reviewed commit; run explicitly with --ignored
+test counter_example_values_across_every_split ... ok
+
+test result: ok. 1 passed; 0 failed; 5 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests concord_sol_review_task
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+

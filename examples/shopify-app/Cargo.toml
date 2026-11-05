@@ -1,0 +1,23 @@
+[package]
+name = "concord-example-shopify-app"
+description = "External caller of the Shopify SDK example: SH-A catalog/inventory reconciliation over concord-pagination and SH-B bulk catalog export streamed with the concord::jsonl reader."
+version = "0.0.0"
+edition = "2024"
+rust-version.workspace = true
+license.workspace = true
+publish = false
+
+[dependencies]
+concord = { path = "../../crates/concord", features = ["json", "jsonl"] }
+concord-example-shopify-sdk = { path = "../shopify-sdk" }
+concord-pagination = { path = "../../crates/concord-pagination" }
+# Only the two live-mode binaries (`src/bin`) need a runtime and a timer; the library does not.
+tokio = { workspace = true, features = ["macros", "rt-multi-thread", "time"] }
+
+[dev-dependencies]
+concord-example-testserver = { path = "../testserver" }
+serde_json.workspace = true
+tokio = { workspace = true, features = ["macros", "rt", "rt-multi-thread", "time", "sync"] }
+
+[lints]
+workspace = true

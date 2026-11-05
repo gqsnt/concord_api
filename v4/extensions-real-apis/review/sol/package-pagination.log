@@ -1,0 +1,13 @@
+.cargo_vcs_info.json
+Cargo.lock
+Cargo.toml
+Cargo.toml.orig
+LICENSE-APACHE
+LICENSE-MIT
+README.md
+src/independent.rs
+src/jobs.rs
+src/lib.rs
+src/sequential.rs
+src/types.rs
+src/window.rs

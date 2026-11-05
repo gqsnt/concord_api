@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Checks the production dependency graph of the four crates.
+"""Checks the production dependency graph of the five crates.
 
 Direct edges come from the manifests (`cargo metadata`, normal dependencies only: dev-dependencies
 and the workspace build do not count). Resolved-graph exclusions come from `cargo tree -e normal`
@@ -18,7 +18,10 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 # Allowed direct normal dependencies of each production package.
 ALLOWED = {
     "concord-core": {"bytes", "percent-encoding", "reqwest", "url"},
-    "concord-extras": {"concord-core", "mime", "serde", "serde_json", "serde_urlencoded"},
+    "concord-extras": {"concord-core", "csv", "csv-core", "futures-core", "http-body", "mime", "serde",
+                       "serde_json", "serde_urlencoded"},
+    # Pagination knows no Concord crate and no runtime: request factories are plain closures.
+    "concord-pagination": {"futures-util"},
     "concord-macros": {"http", "mime", "proc-macro2", "quote", "syn"},
     "concord": {"concord-core", "concord-extras", "concord-macros"},
 }
@@ -26,10 +29,19 @@ ALLOWED = {
 # Packages that must not appear in the resolved normal graph of `cargo tree -p PKG ARGS`.
 EXCLUDED = [
     ("concord-core", [], {"concord-extras", "concord-macros", "concord", "serde_json", "serde_urlencoded"}),
-    ("concord-extras", ["--all-features"], {"concord-macros", "concord"}),
+    ("concord-extras", ["--all-features"], {"concord-macros", "concord", "concord-pagination"}),
+    # The CSV parser and serde only with their features (http-body and futures-core already come
+    # with reqwest, so the `stream` feature adds no package to the graph).
+    ("concord-extras", [], {"csv", "csv-core", "serde", "serde_json"}),
+    ("concord-extras", ["--no-default-features", "--features", "jsonl"], {"csv", "csv-core", "serde_urlencoded"}),
+    ("concord-extras", ["--no-default-features", "--features", "csv"], {"serde_json", "serde_urlencoded"}),
+    ("concord-pagination", [], {"concord", "concord-core", "concord-extras", "concord-macros", "reqwest",
+                                "tokio", "serde"}),
     ("concord-macros", [], {"concord-core", "concord-extras", "concord", "reqwest", "serde"}),
     ("concord", ["--no-default-features"], {"concord-extras", "serde_json", "serde_urlencoded"}),
-    ("concord", ["--no-default-features", "--features", "extras"], {"serde_json", "serde_urlencoded"}),
+    ("concord", ["--no-default-features", "--features", "extras"], {"serde_json", "serde_urlencoded", "csv",
+                                                                    "csv-core"}),
+    ("concord", [], {"csv", "csv-core", "concord-pagination"}),
 ]
 
 

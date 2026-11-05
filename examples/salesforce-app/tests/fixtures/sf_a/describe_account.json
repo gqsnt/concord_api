@@ -1,0 +1,98 @@
+{
+  "name": "Account",
+  "label": "Account",
+  "custom": false,
+  "queryable": true,
+  "keyPrefix": "001",
+  "fields": [
+    {
+      "name": "Id",
+      "type": "id",
+      "label": "Account ID",
+      "nillable": false,
+      "custom": false,
+      "updateable": false,
+      "createable": false,
+      "defaultValue": {
+        "value": null
+      },
+      "length": 18,
+      "relationshipName": null
+    },
+    {
+      "name": "Name",
+      "type": "string",
+      "label": "Account Name",
+      "nillable": false,
+      "custom": false,
+      "updateable": true,
+      "createable": true,
+      "defaultValue": {
+        "value": null
+      },
+      "length": 255,
+      "relationshipName": null
+    },
+    {
+      "name": "Industry",
+      "type": "picklist",
+      "label": "Industry",
+      "nillable": true,
+      "custom": false,
+      "updateable": true,
+      "createable": true,
+      "defaultValue": {
+        "value": null
+      },
+      "length": 255,
+      "relationshipName": null
+    },
+    {
+      "name": "AnnualRevenue",
+      "type": "currency",
+      "label": "Annual Revenue",
+      "nillable": true,
+      "custom": false,
+      "updateable": true,
+      "createable": true,
+      "defaultValue": {
+        "value": null
+      },
+      "relationshipName": null
+    },
+    {
+      "name": "Customer_Tier__c",
+      "type": "picklist",
+      "label": "Customer Tier",
+      "nillable": true,
+      "custom": true,
+      "updateable": true,
+      "createable": true,
+      "defaultValue": {
+        "value": null
+      },
+      "length": 255,
+      "relationshipName": null
+    },
+    {
+      "name": "Rating",
+      "type": "picklist",
+      "label": "Account Rating",
+      "nillable": true,
+      "custom": false,
+      "updateable": true,
+      "createable": true,
+      "defaultValue": {
+        "value": null
+      },
+      "length": 255,
+      "relationshipName": null
+    }
+  ],
+  "urls": {
+    "sobject": "/services/data/v68.0/sobjects/Account"
+  },
+  "childRelationships": [],
+  "createable": true,
+  "updateable": true
+}

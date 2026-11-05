@@ -1,0 +1,46 @@
+   Compiling concord-sol-review-task v0.0.0 (/home/canarit/projects/concord-ext44/rv44-sol/review/sol/task)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.21s
+     Running tests/defects.rs (../target/debug/deps/defects-ab99d20f6e92a86f)
+
+running 5 tests
+observed Debug: Chunks { chunks: [b"TOP_SECRET_BODY"], fail_at_end: None }
+
+thread 'chunks_debug_does_not_print_body' (248) panicked at tests/defects.rs:34:5:
+assertion failed: !shown.contains("TOP_SECRET_BODY")
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+Serialize calls=2, result=Ok([105, 100, 13, 10, 55, 13, 10])
+
+thread 'csv_does_not_emit_a_header_for_different_fields' (249) panicked at tests/defects.rs:54:5:
+expected one consistent serialization, or refusal of the second pass whose field is 'other'
+test chunks_debug_does_not_print_body ... FAILED
+test csv_does_not_emit_a_header_for_different_fields ... finish outcome=Stopped, discovery.failed=Some(At(..)), cancelled=1
+
+thread 'finish_preserves_discovery_failure_outcome' (252) panicked at tests/defects.rs:142:5:
+assertion `left == right` failed
+  left: Stopped
+ right: DiscoveryFailed
+FAILED
+EOF line error terminal=true: malformed input: a line is not one valid JSON value (line 2, column 2) (after 1 records, 10 bytes)
+
+thread 'final_delimited_by_eof_bad_line_matches_yield_docs' (251) panicked at tests/defects.rs:107:5:
+policy rustdoc says true EOF delimits an isolated bad line
+test finish_preserves_discovery_failure_outcome ... FAILED
+test final_delimited_by_eof_bad_line_matches_yield_docs ... FAILED
+single poll=Ready(Some(Ok(1))), source calls=100001
+
+thread 'empty_chunks_yield_with_bounded_source_polls' (250) panicked at tests/defects.rs:92:5:
+a poll consumed 100,000 empty source chunks without yielding
+test empty_chunks_yield_with_bounded_source_polls ... FAILED
+
+failures:
+
+failures:
+    chunks_debug_does_not_print_body
+    csv_does_not_emit_a_header_for_different_fields
+    empty_chunks_yield_with_bounded_source_polls
+    final_delimited_by_eof_bad_line_matches_yield_docs
+    finish_preserves_discovery_failure_outcome
+
+test result: FAILED. 0 passed; 5 failed; 0 ignored; 0 measured; 1 filtered out; finished in 0.00s
+
+error: test failed, to rerun pass `--test defects`

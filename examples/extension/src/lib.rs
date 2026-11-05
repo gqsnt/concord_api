@@ -24,10 +24,14 @@
 //! - the SDK's [`TenantContext`] builds the native request — base and path prefix,
 //!   `tenants/{tenant}`, the export id as one encoded segment, the service headers and the
 //!   sensitive key — and supplies the `reqwest::Client`;
-//! - this crate adds `Accept: text/csv` and chooses its own representation, the [`Csv`] format,
-//!   through Concord's public [`Decoder::new`](concord::Decoder::new);
+//! - this crate adds `Accept: text/csv` and chooses its own representation, the [`Csv`] format:
+//!   Concord's reusable CSV codec with a small provider profile ([`CatalogExport`]: header
+//!   exactly `id,name`, `#` comment records), through Concord's public
+//!   [`Decoder::new`](concord::Decoder::new);
 //! - `decoder.finish(client.execute(request).await)` applies Concord's status, head and body rules
-//!   and converts a transport failure (its URL removed).
+//!   and converts a transport failure (its URL removed);
+//! - [`export_rows`] reads the same export incrementally with the profile's reader
+//!   (`Csv::reader()`): rows arrive as the body does, with the same table rules.
 //!
 //! No declared endpoint is prepared as a seed, nothing hidden is read, and errors name this
 //! operation ([`EXPORT_OPERATION`]), never a declared endpoint: the decoder is unlabeled, so
@@ -55,10 +59,11 @@
 mod csv;
 mod error;
 
-pub use csv::{Csv, CsvRow, TEXT_CSV};
+pub use csv::{CatalogExport, Csv, CsvRow, TEXT_CSV};
 pub use error::ExtensionError;
 
 use concord::Decoder;
+use concord::csv::CsvRecords;
 use concord::reqwest::header::{ACCEPT, HeaderValue};
 use concord::reqwest::{self, Method};
 use concord_example_sdk::context::TenantContext;
@@ -74,7 +79,8 @@ pub const EXPORT_OPERATION: &str = "catalog-extension: tenant export";
 /// [`invalid_request`](ExtensionError::invalid_request) if the tenant or export id is empty,
 /// `.` or `..` (nothing is sent); otherwise [`concord`](ExtensionError::concord) — a `Status`
 /// error for an unknown export (`404`), `Metadata` for a response that is not `text/csv` (kept
-/// unread), `Decode` for a malformed body, `Transport` if reqwest fails.
+/// unread), `Decode` for a malformed body (a header other than `id,name`, a row without two
+/// fields, invalid UTF-8), `Transport` if reqwest fails.
 pub async fn export(tenant: &TenantContext, export: &str) -> Result<Vec<CsvRow>, ExtensionError> {
     export_with(tenant, export, |_| {}).await
 }
@@ -127,4 +133,37 @@ pub fn export_parts(
         .insert(ACCEPT, HeaderValue::from_static(TEXT_CSV));
     let decoder = Decoder::<Vec<CsvRow>>::new::<Csv>();
     Ok((tenant.http().clone(), request, decoder))
+}
+
+/// The export read incrementally: one `GET`, then rows as the body arrives (no collected body).
+///
+/// The response's status and head are checked before any body byte is read, with the same
+/// rules as [`export`]; the table rules (header `id,name`, two fields, UTF-8, `#` comments) apply
+/// while reading. Each `next()` reads only what the next row needs; dropping the rows closes the
+/// connection. A failure while reading is a `concord::stream::ReadError` naming
+/// [`EXPORT_OPERATION`]; rows already returned stay returned.
+///
+/// # Errors
+///
+/// An [`ExtensionError`] naming [`EXPORT_OPERATION`]:
+/// [`invalid_request`](ExtensionError::invalid_request) as for [`export`];
+/// [`concord`](ExtensionError::concord) with a `Transport` error if reqwest fails;
+/// [`open_refusal`](ExtensionError::open_refusal) for a non-2xx status or a refused head (the
+/// response kept unread).
+pub async fn export_rows(
+    tenant: &TenantContext,
+    export: &str,
+) -> Result<CsvRecords<CsvRow>, ExtensionError> {
+    let (http, request, decoder) = export_parts(tenant, export)?;
+    let reader = Csv::reader().expect("the Catalog profile is a valid dialect");
+    match http.execute(request).await {
+        Ok(response) => reader
+            .open_for::<CsvRow>(response, EXPORT_OPERATION)
+            .map_err(|e| ExtensionError::open(EXPORT_OPERATION, e)),
+        // Concord's conversion of a transport failure (URL removed), as on the finite route.
+        Err(e) => Err(match decoder.finish(Err(e)).await {
+            Err(e) => ExtensionError::call(EXPORT_OPERATION, e),
+            Ok(_) => unreachable!("a transport failure is never a value"),
+        }),
+    }
 }
