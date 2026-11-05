@@ -1,0 +1,20 @@
+[package]
+name = "concord-example-kubernetes-sdk"
+description = "A bounded, read-only Kubernetes API SDK slice (core/v1, apps/v1, batch/v1, networking.k8s.io/v1 get/list/watch) declared with concord::api!, with a chunked-list adapter for concord-pagination and a typed watch stream over the consecutive-JSON-values reader."
+version = "0.0.0"
+edition = "2024"
+rust-version.workspace = true
+license.workspace = true
+publish = false
+
+[dependencies]
+concord = { path = "../../crates/concord", features = ["json", "jsonl"] }
+serde = { workspace = true, features = ["derive"] }
+concord-pagination = { path = "../../crates/concord-pagination" }
+
+[dev-dependencies]
+serde_json.workspace = true
+tokio = { workspace = true, features = ["macros", "rt", "rt-multi-thread"] }
+
+[lints]
+workspace = true

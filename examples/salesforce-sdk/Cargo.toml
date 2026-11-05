@@ -1,0 +1,22 @@
+[package]
+name = "concord-example-salesforce-sdk"
+description = "A bounded Salesforce REST + Bulk API 2.0 SDK slice (selected sObject describe, record reads, SOQL query/queryMore, Bulk query jobs with sequential and parallel results, Bulk ingest jobs) declared with concord::api!, with a provider CSV dialect adapter, returned-link validation and concord-pagination adapters."
+version = "0.0.0"
+edition = "2024"
+rust-version.workspace = true
+license.workspace = true
+publish = false
+
+[dependencies]
+concord = { path = "../../crates/concord", features = ["json", "csv"] }
+concord-pagination = { path = "../../crates/concord-pagination" }
+futures-core.workspace = true
+serde = { workspace = true, features = ["derive"] }
+serde_json.workspace = true
+
+[dev-dependencies]
+concord-example-testserver = { path = "../testserver" }
+tokio = { workspace = true, features = ["macros", "rt", "rt-multi-thread", "time", "sync"] }
+
+[lints]
+workspace = true

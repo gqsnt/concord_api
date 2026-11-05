@@ -1,0 +1,22 @@
+[package]
+name = "concord-pagination"
+description = "Bounded page and job traversal for Concord SDKs: dependent cursor chains, known and first-page-discovered independent plans, and manifest-discovered streamed jobs, over plain request factories."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+readme = "README.md"
+include = ["/src/**/*.rs", "/Cargo.toml", "/README.md", "/LICENSE-APACHE", "/LICENSE-MIT"]
+
+[dependencies]
+# `FuturesUnordered` only: futures owned by the traversal, polled concurrently on the caller's
+# task. No executor, no spawned task, no Tokio.
+futures-util = { workspace = true, features = ["alloc"] }
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["macros", "rt", "time"] }
+
+[lints]
+workspace = true

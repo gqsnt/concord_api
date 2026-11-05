@@ -1,0 +1,25 @@
+[package]
+name = "concord-example-salesforce-app"
+description = "External caller of the Salesforce SDK slice: SF-A schema-aware CRM extraction (describe, SOQL, sequential locator traversal) and SF-B streamed Bulk CSV round trip (manifest-discovered parallel result downloads into staged shards, plus an offline ingest sub-scenario), as library workflows with loopback tests and opt-in live binaries."
+version = "0.0.0"
+edition = "2024"
+rust-version.workspace = true
+license.workspace = true
+publish = false
+
+[dependencies]
+concord = { path = "../../crates/concord", features = ["json", "csv"] }
+concord-example-salesforce-sdk = { path = "../salesforce-sdk" }
+concord-pagination = { path = "../../crates/concord-pagination" }
+futures-core.workspace = true
+serde = { workspace = true, features = ["derive"] }
+# Only the binaries (`src/bin/`) start a runtime; the library workflows are runtime-agnostic.
+tokio = { workspace = true, features = ["rt", "time"] }
+
+[dev-dependencies]
+concord-example-testserver = { path = "../testserver" }
+serde_json.workspace = true
+tokio = { workspace = true, features = ["macros", "rt", "rt-multi-thread", "time", "sync"] }
+
+[lints]
+workspace = true

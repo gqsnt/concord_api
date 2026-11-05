@@ -1,0 +1,96 @@
+{
+  "data": {
+    "location": {
+      "id": "gid://shopify/Location/1001",
+      "name": "Synthetic Warehouse",
+      "inventoryLevels": {
+        "nodes": [
+          {
+            "id": "gid://shopify/InventoryLevel/34?inventory_item_id=2104",
+            "updatedAt": "2026-10-21T08:00:00Z",
+            "quantities": [
+              {
+                "name": "available",
+                "quantity": -1
+              },
+              {
+                "name": "on_hand",
+                "quantity": 0
+              }
+            ],
+            "item": {
+              "id": "gid://shopify/InventoryItem/2104",
+              "sku": "SYN-TEE-S",
+              "tracked": true,
+              "unitCost": {
+                "amount": "6.10",
+                "currencyCode": "EUR"
+              }
+            }
+          },
+          {
+            "id": "gid://shopify/InventoryLevel/35?inventory_item_id=2201",
+            "updatedAt": "2026-10-21T08:00:00Z",
+            "quantities": [
+              {
+                "name": "available",
+                "quantity": 7
+              },
+              {
+                "name": "on_hand",
+                "quantity": 7
+              }
+            ],
+            "item": {
+              "id": "gid://shopify/InventoryItem/2201",
+              "sku": null,
+              "tracked": true,
+              "unitCost": {
+                "amount": "3.50",
+                "currencyCode": "EUR"
+              }
+            }
+          },
+          {
+            "id": "gid://shopify/InventoryLevel/39?inventory_item_id=2999",
+            "updatedAt": "2026-10-21T08:00:00Z",
+            "quantities": [
+              {
+                "name": "available",
+                "quantity": 4
+              },
+              {
+                "name": "on_hand",
+                "quantity": 4
+              }
+            ],
+            "item": {
+              "id": "gid://shopify/InventoryItem/2999",
+              "sku": "SYN-ORPHAN",
+              "tracked": true,
+              "unitCost": {
+                "amount": "1.00",
+                "currencyCode": "EUR"
+              }
+            }
+          }
+        ],
+        "pageInfo": {
+          "hasNextPage": false,
+          "endCursor": "aW52LTU="
+        }
+      }
+    }
+  },
+  "extensions": {
+    "cost": {
+      "requestedQueryCost": 104,
+      "actualQueryCost": 14,
+      "throttleStatus": {
+        "maximumAvailable": 2000.0,
+        "currentlyAvailable": 1929,
+        "restoreRate": 100.0
+      }
+    }
+  }
+}

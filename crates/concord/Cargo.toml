@@ -25,6 +25,13 @@ json = ["extras", "concord-extras/json"]
 ## `Form` (`application/x-www-form-urlencoded`), via serde/serde_urlencoded (implies `extras`).
 ## Off by default, like reqwest's own `form` feature.
 form = ["extras", "concord-extras/form"]
+## The incremental-body infrastructure (`concord::stream`): unread refusals, byte sources, safe
+## read errors, lazy upload bodies (implies `extras`).
+stream = ["extras", "concord-extras/stream"]
+## `concord::csv`: `Csv<HasHeader, Delimiter>`, finite and incremental (implies `stream`).
+csv = ["stream", "concord-extras/csv"]
+## `concord::jsonl`: JSON Lines / NDJSON and consecutive JSON values (implies `stream`).
+jsonl = ["stream", "concord-extras/jsonl"]
 ## Enables reqwest's own default features (TLS, HTTP/2, charset, system proxy).
 ## Disable it to choose reqwest features yourself in your own Cargo.toml.
 reqwest-defaults = ["concord-core/reqwest-defaults"]

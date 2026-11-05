@@ -1,5 +1,5 @@
 [workspace]
-members = ["crates/concord", "crates/concord-core", "crates/concord-extras", "crates/concord-macros", "examples/shapes", "examples/renamed", "examples/native", "examples/multipart", "examples/quickstart", "examples/riot", "examples/compat", "examples/fixture", "examples/sdk", "examples/app", "examples/extension", "checks/heap", "checks/clone-compat", "checks/hygiene", "checks/hygiene/key-a", "checks/hygiene/key-b", "checks/clone-hygiene", "checks/clone-hygiene/a", "checks/clone-hygiene/b", "checks/clone-hygiene/c", "checks/clone-hygiene/d", "benches/baselines", "benches/criterion"]
+members = ["crates/concord", "crates/concord-core", "crates/concord-extras", "crates/concord-pagination", "crates/concord-macros", "examples/shapes", "examples/renamed", "examples/native", "examples/multipart", "examples/quickstart", "examples/riot", "examples/compat", "examples/fixture", "examples/sdk", "examples/app", "examples/extension", "examples/testserver", "examples/github-sdk", "examples/github-app", "examples/stripe-sdk", "examples/stripe-app", "examples/shopify-sdk", "examples/shopify-app", "examples/salesforce-sdk", "examples/salesforce-app", "examples/kubernetes-sdk", "examples/kubernetes-app", "checks/heap", "checks/stream-stress", "checks/dx03-csv-runtime", "checks/dx03-fanout-sink", "checks/maintenance-github", "checks/maintenance-stripe", "checks/maintenance-shopify", "checks/maintenance-salesforce", "checks/maintenance-kubernetes", "checks/clone-compat", "checks/hygiene", "checks/hygiene/key-a", "checks/hygiene/key-b", "checks/clone-hygiene", "checks/clone-hygiene/a", "checks/clone-hygiene/b", "checks/clone-hygiene/c", "checks/clone-hygiene/d", "benches/baselines", "benches/criterion"]
 resolver = "3"
 
 [workspace.package]
@@ -12,6 +12,11 @@ publish = false
 
 [workspace.dependencies]
 bytes = "1.10"
+csv = "1.4"
+csv-core = "0.1.13"
+futures-core = "0.3.31"
+futures-util = { version = "0.3.31", default-features = false }
+http-body = "1.0.1"
 http = "1.5"
 mime = "0.3.17"
 percent-encoding = "2.3"

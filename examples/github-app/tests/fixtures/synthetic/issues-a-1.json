@@ -1,0 +1,81 @@
+[
+  {
+    "id": 5011,
+    "node_id": "I_5011",
+    "url": "https://api.github.com/repos/octo-org/hello-world/issues/11",
+    "html_url": "https://github.com/octo-org/hello-world/issues/11",
+    "number": 11,
+    "state": "open",
+    "state_reason": null,
+    "title": "Crash on empty input",
+    "body": "Body of 11",
+    "user": {
+      "login": "octocat",
+      "id": 1,
+      "node_id": "U_1",
+      "type": "User",
+      "site_admin": false
+    },
+    "labels": [
+      {
+        "id": 10,
+        "node_id": "LA_10",
+        "name": "bug",
+        "color": "d73a4a",
+        "default": false,
+        "description": null
+      }
+    ],
+    "assignees": [],
+    "milestone": null,
+    "locked": false,
+    "comments": 3,
+    "created_at": "2026-10-12T08:00:00Z",
+    "updated_at": "2026-10-12T09:00:00Z",
+    "closed_at": null,
+    "author_association": "MEMBER"
+  },
+  {
+    "id": 5012,
+    "node_id": "I_5012",
+    "url": "https://api.github.com/repos/octo-org/hello-world/issues/12",
+    "html_url": "https://github.com/octo-org/hello-world/pull/12",
+    "number": 12,
+    "state": "open",
+    "state_reason": null,
+    "title": "Fix empty input crash",
+    "body": "Body of 12",
+    "user": {
+      "login": "octocat",
+      "id": 1,
+      "node_id": "U_1",
+      "type": "User",
+      "site_admin": false
+    },
+    "labels": [
+      {
+        "id": 10,
+        "node_id": "LA_10",
+        "name": "bug",
+        "color": "d73a4a",
+        "default": false,
+        "description": null
+      }
+    ],
+    "assignees": [],
+    "milestone": null,
+    "locked": false,
+    "comments": 0,
+    "created_at": "2026-10-13T08:00:00Z",
+    "updated_at": "2026-10-13T09:00:00Z",
+    "closed_at": null,
+    "author_association": "MEMBER",
+    "pull_request": {
+      "url": "https://api.github.com/repos/octo-org/hello-world/pulls/12",
+      "html_url": "https://github.com/octo-org/hello-world/pull/12",
+      "diff_url": "https://github.com/octo-org/hello-world/pull/12.diff",
+      "patch_url": "https://github.com/octo-org/hello-world/pull/12.patch",
+      "merged_at": null
+    }
+  }
+]

@@ -1,0 +1,19 @@
+[package]
+name = "concord-example-testserver"
+description = "Test support for the provider SDK examples: a loopback HTTP/1.1 server with owned listener/connection tasks, observable cleanup, streamed/stalled/failing bodies and slow receivers."
+version = "0.0.0"
+edition = "2024"
+rust-version.workspace = true
+license.workspace = true
+publish = false
+
+[dependencies]
+bytes.workspace = true
+tokio = { workspace = true, features = ["macros", "rt", "net", "io-util", "time", "sync"] }
+
+[dev-dependencies]
+reqwest = { workspace = true }
+tokio = { workspace = true, features = ["macros", "rt", "rt-multi-thread", "net", "io-util", "time", "sync"] }
+
+[lints]
+workspace = true

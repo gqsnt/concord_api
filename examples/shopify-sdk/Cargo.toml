@@ -1,0 +1,21 @@
+[package]
+name = "concord-example-shopify-sdk"
+description = "A bounded Shopify GraphQL Admin API (2026-10) SDK slice declared with concord::api!: typed named operations over one endpoint, a GraphQL envelope that keeps errors and cost beside data, connection adapters for concord-pagination, and the bulk-operation result reader."
+version = "0.0.0"
+edition = "2024"
+rust-version.workspace = true
+license.workspace = true
+publish = false
+
+[dependencies]
+concord = { path = "../../crates/concord", features = ["json", "jsonl"] }
+concord-pagination = { path = "../../crates/concord-pagination" }
+serde = { workspace = true, features = ["derive"] }
+serde_json.workspace = true
+
+[dev-dependencies]
+concord-example-testserver = { path = "../testserver" }
+tokio = { workspace = true, features = ["macros", "rt", "rt-multi-thread", "time"] }
+
+[lints]
+workspace = true

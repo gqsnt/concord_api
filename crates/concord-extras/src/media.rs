@@ -5,11 +5,18 @@ use concord_core::{CodecError, ContentTypeField, ResponseHead};
 /// A response `Content-Type`: its media type and the values of its `charset` parameters.
 pub(crate) struct Media {
     /// Type and subtype (and a structured-syntax suffix), parsed by `mime`, without parameters.
-    /// Read by `Json` and `Form`; `Text` needs only the charsets.
-    #[cfg_attr(not(any(feature = "json", feature = "form")), allow(dead_code))]
+    /// Read by `Json`, `Form` and the JSON Lines readers; `Text` needs only the charsets.
+    #[cfg_attr(
+        not(any(feature = "json", feature = "form", feature = "jsonl")),
+        allow(dead_code)
+    )]
     pub(crate) essence: mime::Mime,
     /// Every `charset` parameter's value, unquoted, in order.
     pub(crate) charsets: Vec<String>,
+    /// Every parameter, name lowercased and value unquoted, in order (`charset` included). Read by
+    /// the streaming formats (`header=` of `text/csv`).
+    #[cfg_attr(not(feature = "csv"), allow(dead_code))]
+    pub(crate) params: Vec<(String, String)>,
 }
 
 /// The response's single `Content-Type`. `Ok(None)`: no field. A repeated field (equal or not), a
@@ -46,8 +53,17 @@ pub(crate) fn single(head: &ResponseHead<'_>) -> Result<Option<Media>, CodecErro
     let essence = essence
         .parse::<mime::Mime>()
         .map_err(|e| not_media().with_source(e))?;
-    let charsets = charsets(text).ok_or_else(not_media)?;
-    Ok(Some(Media { essence, charsets }))
+    let params = params(text).ok_or_else(not_media)?;
+    let charsets = params
+        .iter()
+        .filter(|(name, _)| name == "charset")
+        .map(|(_, value)| value.clone())
+        .collect();
+    Ok(Some(Media {
+        essence,
+        charsets,
+        params,
+    }))
 }
 
 /// An RFC 9110 `token`: one or more `tchar`.
@@ -67,9 +83,9 @@ pub(crate) fn is_utf8(charset: &str) -> bool {
 
 /// Whether a media type's `charset` parameters, if any, name UTF-8 (`us-ascii` is a subset, so it
 /// is accepted too); charset names are case-insensitive. A repeated `charset` is refused as
-/// ambiguous, whatever its values. Used by `Json` and `Form`; `Text` applies its own rule with
-/// [`is_utf8`].
-#[cfg(any(feature = "json", feature = "form"))]
+/// ambiguous, whatever its values. Used by `Json`, `Form` and the JSON Lines readers; `Text`
+/// applies its own rule with [`is_utf8`].
+#[cfg(any(feature = "json", feature = "form", feature = "jsonl"))]
 pub(crate) fn check_charset(charsets: &[String], foreign: &'static str) -> Result<(), CodecError> {
     match charsets {
         [] => Ok(()),
@@ -81,9 +97,9 @@ pub(crate) fn check_charset(charsets: &[String], foreign: &'static str) -> Resul
     }
 }
 
-/// The values of every `charset` parameter of a media type, unquoted; `None` if the parameter
-/// section does not follow `*( OWS ";" OWS [ token "=" ( token / quoted-string ) ] )`.
-fn charsets(text: &str) -> Option<Vec<String>> {
+/// Every parameter of a media type, name lowercased and value unquoted, in order; `None` if the
+/// parameter section does not follow `*( OWS ";" OWS [ token "=" ( token / quoted-string ) ] )`.
+fn params(text: &str) -> Option<Vec<(String, String)>> {
     let bytes = text.as_bytes();
     let mut i = bytes.iter().position(|&b| b == b';').unwrap_or(bytes.len());
     let mut found = Vec::new();
@@ -146,8 +162,6 @@ fn charsets(text: &str) -> Option<Vec<String>> {
             }
             text[start..i].to_owned()
         };
-        if name.eq_ignore_ascii_case("charset") {
-            found.push(value);
-        }
+        found.push((name.to_ascii_lowercase(), value));
     }
 }

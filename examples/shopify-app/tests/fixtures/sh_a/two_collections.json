@@ -1,0 +1,44 @@
+{
+  "data": {
+    "collections": {
+      "nodes": [
+        {
+          "id": "gid://shopify/Collection/601",
+          "title": "Lights",
+          "handle": "lights",
+          "updatedAt": "2026-10-03T00:00:00Z",
+          "productsCount": {
+            "count": 1,
+            "precision": "EXACT"
+          },
+          "products": {
+            "nodes": [
+              {
+                "id": "gid://shopify/Product/201"
+              }
+            ],
+            "pageInfo": {
+              "hasNextPage": false,
+              "endCursor": "dHdvLWNvbA=="
+            }
+          }
+        }
+      ],
+      "pageInfo": {
+        "hasNextPage": false,
+        "endCursor": "dHdvLWNvbHM="
+      }
+    }
+  },
+  "extensions": {
+    "cost": {
+      "requestedQueryCost": 102,
+      "actualQueryCost": 5,
+      "throttleStatus": {
+        "maximumAvailable": 2000.0,
+        "currentlyAvailable": 986.5,
+        "restoreRate": 100.0
+      }
+    }
+  }
+}

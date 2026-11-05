@@ -1,0 +1,25 @@
+{
+  "kind": "ConfigMapList",
+  "apiVersion": "v1",
+  "metadata": {
+    "resourceVersion": "5004"
+  },
+  "items": [
+    {
+      "metadata": {
+        "name": "web.config",
+        "uid": "00000000-0000-4000-8000-000000000033",
+        "resourceVersion": "4831",
+        "creationTimestamp": "2026-11-04T09:51:00Z",
+        "namespace": "team-a",
+        "labels": {
+          "app": "web"
+        }
+      },
+      "data": {
+        "LOG_LEVEL": "info",
+        "FEATURE_FLAGS": "synthetic-flag-a,synthetic-flag-b"
+      }
+    }
+  ]
+}

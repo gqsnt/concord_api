@@ -1,0 +1,25 @@
+{
+  "totalSize": 3,
+  "done": true,
+  "records": [
+    {
+      "attributes": {
+        "type": "Contact",
+        "url": "/services/data/v68.0/sobjects/Contact/003A00000000003AAA"
+      },
+      "Id": "003A00000000003AAA",
+      "FirstName": "José",
+      "LastName": "García",
+      "Email": "jose@example.test",
+      "AccountId": "001A00000000003AAA",
+      "Account": {
+        "attributes": {
+          "type": "Account",
+          "url": "/services/data/v68.0/sobjects/Account/001A00000000003AAA"
+        },
+        "Name": "Café Zoë"
+      },
+      "Loyalty_Tier__c": "Silver"
+    }
+  ]
+}
