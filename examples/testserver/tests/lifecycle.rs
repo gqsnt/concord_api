@@ -91,7 +91,7 @@ async fn repeated_setup_use_shutdown_releases_every_connection() {
     // A cycle normally reuses one connection for both requests; a pooled connection to the
     // previous (closed) server is never reused for another port.
     assert!(
-        total_connections >= CYCLES && total_connections <= 2 * CYCLES,
+        (CYCLES..=2 * CYCLES).contains(&total_connections),
         "{total_connections}"
     );
 }
