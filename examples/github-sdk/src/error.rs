@@ -50,8 +50,15 @@ pub enum GitHubError {
         /// The page's metadata, when the link came from a response.
         meta: Option<Box<ResponseMeta>>,
     },
-    /// A continuation was used with another operation or repository than the one that produced
-    /// it.
+    /// A page's `rel="next"` is the URL that was just requested: following it would fetch the
+    /// same page again. Not followed, and the page's items were not returned.
+    LinkDidNotAdvance {
+        /// The page's metadata.
+        meta: Box<ResponseMeta>,
+    },
+    /// A continuation was used with another operation, repository or parent than the one that
+    /// produced it, or a restored URL addresses another collection
+    /// ([`LinkPages::restore`](crate::paging::LinkPages::restore)).
     ContinuationMismatch {
         /// What the traversal expected.
         expected: Box<Binding>,
@@ -106,7 +113,9 @@ impl GitHubError {
     pub fn meta(&self) -> Option<&ResponseMeta> {
         match self {
             Self::Api { meta, .. } | Self::ForeignLink { meta } => meta.as_deref(),
-            Self::Link { meta, .. } | Self::Envelope { meta, .. } => Some(meta),
+            Self::Link { meta, .. }
+            | Self::LinkDidNotAdvance { meta }
+            | Self::Envelope { meta, .. } => Some(meta),
             Self::ContinuationMismatch { .. } | Self::Context(_) => None,
         }
     }
@@ -137,6 +146,9 @@ impl fmt::Display for GitHubError {
             Self::Link { error, .. } => write!(f, "GitHub page: {error}"),
             Self::ForeignLink { .. } => {
                 f.write_str("GitHub page: next link is outside the API origin; not followed")
+            }
+            Self::LinkDidNotAdvance { .. } => {
+                f.write_str("GitHub page: next link is the URL just requested; not followed")
             }
             Self::ContinuationMismatch { expected, found } => write!(
                 f,
@@ -171,6 +183,10 @@ impl fmt::Debug for GitHubError {
             Self::ForeignLink { meta } => {
                 f.debug_struct("ForeignLink").field("meta", meta).finish()
             }
+            Self::LinkDidNotAdvance { meta } => f
+                .debug_struct("LinkDidNotAdvance")
+                .field("meta", meta)
+                .finish(),
             Self::ContinuationMismatch { expected, found } => f
                 .debug_struct("ContinuationMismatch")
                 .field("expected", expected)

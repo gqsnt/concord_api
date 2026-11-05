@@ -42,15 +42,18 @@ Live runs were **not** performed for this delivery (no credentials): both workfl
   (`accepted_errors`, with paths); `Reject` fails the traversal at that page, keeping the errors
   and resuming there. A page without its connection is always a failure.
 - **SH-A failures:** the first failed traversal ends the run (later stages `NotRun`); nothing is
-  retried; a `THROTTLED` failure keeps the bucket state and the resume cursor.
+  retried; a `THROTTLED` failure keeps the bucket state and the resume cursor. A failed nested
+  traversal stops its parent traversal mid-page: the parent summary is `Stopped`, resuming at the
+  interrupted page (its later parents were not processed).
 - **SH-A completeness:** each discrepancy kind runs only when its inputs are complete (see
   `Discrepancy`); `ReconcileStatus::Complete` needs every enabled traversal exhausted without
   accepted errors.
 - **SH-B output:** records are normalized per line (a variant names its product), so nothing is
   grouped or collected; the workflow holds at most one record plus the reader's line buffer.
-- **SH-B malformed lines:** stop, or skip up to a bound; an over-long line, a transport failure or
-  a byte-order mark always ends the stream; a skipped error right before the end is reported as
-  `Interrupted`, never as complete.
+- **SH-B malformed lines:** stop, or skip up to a bound; only a bad line ended by a line feed is
+  skipped (`ReadError::is_terminal` is false). A bad final line without a line feed, an over-long
+  line, a transport failure or a byte-order mark is terminal: it always ends the stream and is
+  reported as `Interrupted`, never as complete.
 
 ## Test map (acceptance → test)
 
@@ -61,6 +64,7 @@ Live runs were **not** performed for this delivery (no credentials): both workfl
 | SH-A HTTP 200 containing errors | `sh_a_http_200_errors_without_data_absent_fields_and_bad_page_info_are_failures` |
 | SH-A partial data with errors, policy | `sh_a_reconciles_…` (accept), `sh_a_rejected_partial_data_fails_at_that_page_with_its_errors` |
 | SH-A throttling information | `sh_a_throttled_page_stops_the_run_with_bucket_state_and_resume_cursor` |
+| SH-A nested failure mid-page (resume at the interrupted parent page) | `sh_a_nested_failure_mid_page_resumes_at_the_interrupted_parent_page` |
 | SH-A variables requiring encoding, two shops | `sh_a_two_shops_reconcile_independently_and_encode_their_filters` |
 | SH-A budgets | `sh_a_page_budget_bounds_every_traversal_with_a_resume_cursor` |
 | SH-B submit, poll, completion, signed download on another host without the token | `sh_b_completed_export_streams_normalized_records_from_arbitrary_chunks` |

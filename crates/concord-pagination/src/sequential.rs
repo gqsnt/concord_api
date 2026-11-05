@@ -300,8 +300,11 @@ impl<K> fmt::Debug for ItemCheckpoint<K> {
 ///
 /// This *replays* the checkpoint page. It is exact only if the provider returns the same items in
 /// the same order for that key (a stable page: same tenant, query, filter, sort, page size and
-/// snapshot). The crate cannot check that; an adapter can, for example with a snapshot token
-/// kept in the page metadata. If the refetched page has fewer than `skip` items, all of them are
+/// snapshot). The crate cannot check that, and [`Items`] neither shows the skipped items nor the
+/// page metadata, so the check belongs in the factory: when it fetches the replayed key, compare
+/// the page's item at `skip - 1` with the last item emitted before the checkpoint (whose identity
+/// the caller stored with it), or a snapshot token in the response with a stored one, and return
+/// an error when they differ. If the refetched page has fewer than `skip` items, all of them are
 /// skipped. An expired cursor is the factory's error; nothing restarts from the first page.
 ///
 /// ```

@@ -15,7 +15,8 @@
 //!
 //! [`ResultManifests::fetch`] is the discovery factory of `manifest_jobs`: one call reads one
 //! manifest (`GET jobs/query/{id}/resultPages[?locator=..]`), validates every `resultUrl` and the
-//! next link against the org, version and job, and returns them as [`ResultPart`] descriptors
+//! next link against the org, version and job (a next link repeating the requested locator is a
+//! [`ProtocolErrorKind::LocatorDidNotAdvance`]), and returns them as [`ResultPart`] descriptors
 //! numbered in discovery order. The key ([`ManifestCursor`]) carries the next ordinal, so a
 //! discovery resumed from a report numbers its parts exactly as an uninterrupted run would.
 
@@ -391,6 +392,7 @@ impl ResultManifests {
                 None => (None, 0),
                 Some(cursor) => (Some(cursor.locator), cursor.next_ordinal),
             };
+            let locator_requested = locator.clone();
             let op = job
                 .ctx
                 .api()
@@ -426,10 +428,20 @@ impl ResultManifests {
                         ProtocolError::new(MANIFEST, ProtocolErrorKind::MissingNextLink).into(),
                     );
                 }
-                (false, NextLink::Present(raw)) => Some(ManifestCursor {
-                    locator: job.ctx.result_pages_link(&job.id, raw)?,
-                    next_ordinal,
-                }),
+                (false, NextLink::Present(raw)) => {
+                    let locator = job.ctx.result_pages_link(&job.id, raw)?;
+                    if locator_requested.as_ref() == Some(&locator) {
+                        return Err(ProtocolError::new(
+                            MANIFEST,
+                            ProtocolErrorKind::LocatorDidNotAdvance,
+                        )
+                        .into());
+                    }
+                    Some(ManifestCursor {
+                        locator,
+                        next_ordinal,
+                    })
+                }
             };
             Ok(Manifest::new(parts, next))
         }
@@ -449,7 +461,8 @@ pub struct ResultSetMeta {
 pub type ResultSetPage<T> = Page<T, ResultLocator, ResultSetMeta>;
 
 /// The page factory of a job's result sets as a dependent chain: each set's `Sforce-Locator`
-/// header is the key of the next (`"null"` on the last). Each page's rows are parsed with the
+/// header is the key of the next (`"null"` on the last; the locator just requested is a
+/// [`ProtocolErrorKind::LocatorDidNotAdvance`]). Each page's rows are parsed with the
 /// job's dialect, the header must be exactly the selected fields, and the parsed count must equal
 /// `Sforce-NumberOfRecords`. A page holds at most `maxRecords` rows: the reader refuses more
 /// ([`concord::stream::ReadErrorKind::Limit`]).
@@ -510,6 +523,13 @@ impl<T: DeserializeOwned + 'static> ResultSets<T> {
             };
             let next = match next {
                 NextResultSet::Last => None,
+                NextResultSet::At(locator) if link.locator.as_ref() == Some(&locator) => {
+                    return Err(ProtocolError::new(
+                        RESULTS,
+                        ProtocolErrorKind::LocatorDidNotAdvance,
+                    )
+                    .into());
+                }
                 NextResultSet::At(locator) => Some(locator),
                 NextResultSet::Unknown => {
                     return Err(ProtocolError::new(

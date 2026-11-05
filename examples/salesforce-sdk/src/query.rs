@@ -5,8 +5,9 @@
 //! The projection reads the **whole** envelope before moving the records out: the next key comes
 //! from `nextRecordsUrl` (validated against the org, see [`crate::OrgContext::query_link`]), only
 //! when `done` is false; `totalSize` is kept as metadata and never used to construct a locator.
-//! An envelope that contradicts itself (`done: false` without a link, `done: true` with one) is a
-//! typed [`ProtocolError`], not an empty page. Every record's `attributes` must name the queried
+//! An envelope that contradicts itself (`done: false` without a link, `done: true` with one) or
+//! whose next locator is the one just requested (which would repeat the batch forever) is a typed
+//! [`ProtocolError`], not an empty page. Every record's `attributes` must name the queried
 //! object and a record URL on the org and version.
 //!
 //! ```no_run
@@ -193,12 +194,12 @@ impl<R: QueryRecord> QueryPages<R> {
         let batch = self.batch;
         async move {
             let scope = ctx.api().query().maybe_batch_size(batch);
-            let prepared = prepared(match key {
+            let prepared = prepared(match &key {
                 None => R::first(&scope, soql.clone()),
-                Some(locator) => R::more(&scope, locator),
+                Some(locator) => R::more(&scope, locator.clone()),
             })?;
             let (response, api_usage) = send_with_usage(prepared).await?;
-            project(&ctx, &soql, response, api_usage)
+            project(&ctx, &soql, key.as_ref(), response, api_usage)
         }
     }
 }
@@ -208,6 +209,7 @@ const OPERATION: &str = "query";
 fn project<R: QueryRecord>(
     ctx: &OrgContext,
     soql: &Soql,
+    requested: Option<&QueryLocator>,
     response: QueryResponse<R>,
     api_usage: Option<ApiUsage>,
 ) -> Result<QueryPage<R>, SfError> {
@@ -221,6 +223,9 @@ fn project<R: QueryRecord>(
         }
         (false, Some(raw)) => Some(ctx.query_link(raw)?),
     };
+    if next.is_some() && next.as_ref() == requested {
+        return Err(ProtocolError::new(OPERATION, ProtocolErrorKind::LocatorDidNotAdvance).into());
+    }
     for record in &response.records {
         check_record(ctx, soql, record)?;
     }

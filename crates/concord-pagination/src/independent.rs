@@ -384,6 +384,10 @@ impl<K, I: IntoIterator<Item = K>, R, E> IndependentReport<K, I, R, E> {
     }
 
     /// Failed keys, in plan order (kept apart from the restart point).
+    ///
+    /// These are the keys the pages or jobs *started* with. A job with internal progress (a child
+    /// chain of several pages, a partly written shard) must carry its own restart point in its
+    /// error: rerunning the start key repeats the work done before the failure.
     pub fn failed(&self) -> impl Iterator<Item = &K> {
         self.unfinished
             .iter()
@@ -393,7 +397,9 @@ impl<K, I: IntoIterator<Item = K>, R, E> IndependentReport<K, I, R, E> {
 
     /// Splits the report into the retained results and the keys still to run: unfinished keys
     /// that were not retained, then the plan's rest. Pass the keys as a new plan to finish the
-    /// work while reusing the retained results.
+    /// work while reusing the retained results. Like [`failed`](Self::failed), these are start
+    /// keys: a failed job with internal progress restarts from the beginning unless its error
+    /// carried a later restart point that you use instead.
     pub fn into_rerun(self) -> (Vec<Keyed<K, R>>, impl Iterator<Item = K>) {
         let keys = self
             .unfinished

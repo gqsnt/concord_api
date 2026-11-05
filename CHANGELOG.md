@@ -1,5 +1,30 @@
 # Changelog
 
+## Unreleased — 4.4 extensions (candidate)
+
+Additive, not released: the version is unchanged (4.2.0) and no release or version has been
+decided. Records: `v4/extensions-real-apis/`.
+
+### Added
+
+- **`concord-pagination`**, a new workspace crate (not published): bounded page and job
+  traversal over plain request factories — dependent chains with item checkpoints, independent
+  page plans, first-page plans and manifest-discovered streamed jobs, with budgets, a bounded
+  window, cancellation by drop and reports. It does not depend on Concord, and core Concord still
+  performs no pagination ([README](crates/concord-pagination/README.md)).
+- **Incremental bodies in `concord-extras`**, re-exported by the `concord` facade under the same
+  feature names:
+  - `stream` (`concord::stream`): response opening with unread refusals, byte sources, safe read
+    errors and lazily produced upload bodies;
+  - `csv` (`concord::csv`): `Csv<HasHeader, Delimiter>`, finite and incremental;
+  - `jsonl` (`concord::jsonl`): JSON Lines / NDJSON, finite and incremental, and consecutive JSON
+    values.
+- `ReadError::is_terminal`: whether a read error ended the read. Only a bad line ended by a line
+  feed, reported by a JSON Lines reader in `RecordErrors::Yield` mode, is not terminal; the reader
+  then goes on with the next record.
+- Five provider SDK examples, each with an external caller example and loopback tests:
+  `examples/{github,stripe,shopify,salesforce,kubernetes}-sdk` and `-app`.
+
 ## Unreleased — V4.3 candidate (documentation and examples)
 
 No public API, behaviour or version change: the four crates are still 4.2.0 and their code is

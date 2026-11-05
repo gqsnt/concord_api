@@ -300,6 +300,10 @@ pub enum ProtocolErrorKind {
     NextLinkWhenDone,
     /// Both `nextRecordsUrl` and `nextRecordUrl` were returned, with different values.
     AmbiguousNextLink,
+    /// The next locator (a query's `nextRecordsUrl`, a result set's `Sforce-Locator`, a result
+    /// manifest's next link) is the one just requested: following it would fetch the same batch
+    /// again. Its records or descriptors were not returned.
+    LocatorDidNotAdvance,
     /// A job document's `columnDelimiter` or `lineEnding` differs from the dialect the job was
     /// created with.
     DialectChanged,
@@ -361,6 +365,9 @@ impl fmt::Display for ProtocolError {
             ProtocolErrorKind::NextLinkWhenDone => f.write_str("done, but a next link"),
             ProtocolErrorKind::AmbiguousNextLink => {
                 f.write_str("nextRecordsUrl and nextRecordUrl disagree")
+            }
+            ProtocolErrorKind::LocatorDidNotAdvance => {
+                f.write_str("the next locator is the one just requested")
             }
             ProtocolErrorKind::DialectChanged => f.write_str("the job's CSV dialect changed"),
             ProtocolErrorKind::ApiVersionChanged => f.write_str("the job's API version differs"),

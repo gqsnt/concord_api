@@ -13,7 +13,7 @@ use concord_example_shopify_app::catalog_inventory::{
 };
 use concord_example_shopify_sdk::connection::{DataShape, Protocol};
 use concord_example_shopify_sdk::scalars::{
-    InventoryItemId, InventoryLevelId, LocationId, ProductId, ProductVariantId,
+    CollectionId, InventoryItemId, InventoryLevelId, LocationId, ProductId, ProductVariantId,
 };
 use concord_example_shopify_sdk::{Cursor, ErrorCode, PageError, RequestError, SearchQuery};
 use concord_example_testserver::{Recorded, Reply, TestServer};
@@ -378,6 +378,76 @@ async fn sh_a_throttled_page_stops_the_run_with_bucket_state_and_resume_cursor()
     );
     // No retry: the throttled page was requested once and nothing followed it.
     assert_eq!(server.requests().len(), 5);
+    server.shutdown().await;
+}
+
+/// A nested traversal fails in the middle of a parent page (OPUS-6). Products page 1 holds 101
+/// (whose variants continue) and 102; 101's second variant page is THROTTLED. The products
+/// summary is `Stopped` with page 1 itself as the resume point (not page 2, which would skip
+/// 102), no failure of its own, and 102 is not counted; the failure is the nested one.
+/// Collections page 1 (the last page) holds 501 (whose members continue) and 502: a failed
+/// member page must not let the collections traversal report `Exhausted`.
+#[tokio::test]
+async fn sh_a_nested_failure_mid_page_resumes_at_the_interrupted_parent_page() {
+    let server = shops(vec![(
+        "one",
+        "ProductVariants",
+        Some("dmFyLXAxLTI="),
+        "sh_a/fault_products_throttled.json",
+    )])
+    .await;
+    let client = sdk(&server, None);
+    let report = reconcile(&shop_one(&client), &ReconcileRequest::new(budget(10))).await;
+
+    let products = summary(&report.products);
+    assert_eq!(products.outcome, Outcome::Stopped);
+    assert_eq!(products.pages, 1);
+    assert_eq!(products.resume, Some(Resume::Start), "page 1, not page 2");
+    assert!(products.failure.is_none());
+    assert_eq!(report.counts.products, 1, "102 was not processed");
+    let (parent, nested) = &report.variant_pages.incomplete[0];
+    assert_eq!(parent, &pid(101));
+    assert_eq!(nested.outcome, Outcome::Failed);
+    assert_eq!(cursor_of(&nested.resume), Some("dmFyLXAxLTI="));
+    assert!(nested.failure.as_ref().unwrap().is_throttled());
+    assert!(matches!(
+        report.collections,
+        Stage::NotRun(NotRun::EarlierFailure)
+    ));
+    assert_eq!(report.status, ReconcileStatus::Incomplete);
+    let operations: Vec<String> = server.requests().iter().map(operation).collect();
+    assert_eq!(
+        operations,
+        ["Locations", "CatalogProducts", "ProductVariants"],
+        "nothing after the failed nested page"
+    );
+    server.shutdown().await;
+
+    let server = shops(vec![(
+        "one",
+        "CollectionProducts",
+        Some("Y29sLTUwMS0x"),
+        "sh_a/fault_products_throttled.json",
+    )])
+    .await;
+    let client = sdk(&server, None);
+    let report = reconcile(&shop_one(&client), &ReconcileRequest::new(budget(10))).await;
+    assert!(summary(&report.products).is_exhausted());
+    let collections = summary(&report.collections);
+    assert_eq!(collections.outcome, Outcome::Stopped, "not Exhausted");
+    assert_eq!(collections.resume, Some(Resume::Start));
+    assert!(collections.failure.is_none());
+    assert_eq!(report.counts.collections, 1, "502 was not processed");
+    let (parent, nested) = &report.member_pages.incomplete[0];
+    assert_eq!(
+        parent,
+        &CollectionId::parse("gid://shopify/Collection/501").unwrap()
+    );
+    assert_eq!(nested.outcome, Outcome::Failed);
+    assert!(matches!(
+        report.inventory,
+        Stage::NotRun(NotRun::EarlierFailure)
+    ));
     server.shutdown().await;
 }
 

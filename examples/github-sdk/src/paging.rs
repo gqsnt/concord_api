@@ -19,8 +19,13 @@
 //!   otherwise nothing is sent ([`GitHubError::ForeignLink`]), so the token never leaves the API.
 //! - **Binding.** A [`NextLink`] remembers the operation, repository and parent resource it came
 //!   from ([`Binding`]); using it with another [`LinkPages`] is a
-//!   [`GitHubError::ContinuationMismatch`]. The link's own query carries GitHub's filters, so a
-//!   resumed traversal continues the original listing.
+//!   [`GitHubError::ContinuationMismatch`]. A persisted URL restored with [`LinkPages::restore`]
+//!   gets its binding only if its path addresses the factory's own collection (the same check,
+//!   read from the path: see [`LinkPages::restore`]). The link's own query carries GitHub's
+//!   filters, so a resumed traversal continues the original listing.
+//! - **Progress.** A `rel="next"` equal to the URL just requested would fetch the same page
+//!   forever (only the caller's budget would end the chain): it is a
+//!   [`GitHubError::LinkDidNotAdvance`], and the page's items are not returned.
 //! - **Continuation before projection.** The `Link` header is read from the full response before
 //!   the envelope is projected into items ([`Listing`]). A malformed header is a
 //!   [`GitHubError::Link`], never "last page"; an envelope inconsistent with itself is a
@@ -76,6 +81,10 @@ pub mod operation {
     pub const ARTIFACTS: &str = "actions/list-artifacts-for-repo";
     /// `actions/list-workflow-run-artifacts`
     pub const RUN_ARTIFACTS: &str = "actions/list-workflow-run-artifacts";
+    /// Not a listing: the operation of the binding a restored URL is reported with
+    /// ([`GitHubError::ContinuationMismatch`](crate::GitHubError::ContinuationMismatch)'s
+    /// `found`) when its path names no collection of the factory's operation.
+    pub const UNRECOGNIZED: &str = "unrecognized-collection";
 }
 
 /// What a continuation belongs to: the listing operation, the repository and, for a child
@@ -237,19 +246,92 @@ impl<Op: Clone, R: Listing> LinkPages<Op, R> {
         &self.binding
     }
 
-    /// A continuation from a URL an application persisted ([`NextLink::raw_url`]).
+    /// A continuation from a URL an application persisted ([`NextLink::raw_url`]). Nothing is
+    /// sent.
+    ///
+    /// The URL gets this factory's binding only if its path addresses this factory's collection:
+    /// below the base path, a repository part — `repos/{owner}/{name}` naming this factory's
+    /// repository (ASCII case-insensitively, as GitHub compares them) or GitHub's
+    /// `repositories/{id}` form — followed by exactly the path of the factory's own first
+    /// request (for example `issues/11/comments` for issue 11's comments). The numeric id of the
+    /// `repositories/{id}` form cannot be checked against the owner and name: such a URL is
+    /// accepted for the operation and parent its path names, in whatever repository the id
+    /// designates. The query (GitHub's filters, page or cursor) is kept as stored.
     ///
     /// # Errors
     ///
-    /// [`GitHubError::ForeignLink`] if it is not an API URL of this context.
+    /// - [`GitHubError::ForeignLink`] if it is not an API URL of this context;
+    /// - [`GitHubError::ContinuationMismatch`] if its path addresses another collection.
+    ///   `found` is what the path names, as far as it can be read: another parent of the same
+    ///   operation, another repository (by name; the `repositories/{id}` form is reported with
+    ///   this factory's repository), or [`operation::UNRECOGNIZED`] for any other path;
+    /// - the Concord build error if the factory's operation cannot be prepared.
     pub fn restore(&self, url: Url) -> Result<NextLink, GitHubError> {
         if !self.context.is_api_url(&url) {
             return Err(GitHubError::ForeignLink { meta: None });
+        }
+        let prepared = (self.prepare)(self.operation.clone())?;
+        let found = self.binding_of(prepared.request().url(), &url);
+        if found != self.binding {
+            return Err(GitHubError::ContinuationMismatch {
+                expected: Box::new(self.binding.clone()),
+                found: Box::new(found),
+            });
         }
         Ok(NextLink {
             url,
             binding: self.binding.clone(),
         })
+    }
+
+    /// The binding `link`'s path names, read against `own`, the path of this factory's first
+    /// request. Equal to `self.binding` exactly when `link` addresses the same collection.
+    fn binding_of(&self, own: &Url, link: &Url) -> Binding {
+        let unrecognized =
+            || Binding::new(operation::UNRECOGNIZED, self.binding.repo.clone(), None);
+        let base = self.context.base_url().path().trim_end_matches('/');
+        let (Some(own), Some(link)) = (below(base, own), below(base, link)) else {
+            return unrecognized();
+        };
+        let (Some((RepoPart::Name(..), own_rest)), Some((repo, rest))) =
+            (repo_part(&own), repo_part(&link))
+        else {
+            return unrecognized();
+        };
+        let repo = match repo {
+            RepoPart::Name(owner, name)
+                if !(owner.eq_ignore_ascii_case(self.binding.repo.owner.as_str())
+                    && name.eq_ignore_ascii_case(self.binding.repo.name.as_str())) =>
+            {
+                RepoRef::new(owner, name)
+            }
+            RepoPart::Name(..) | RepoPart::Id => self.binding.repo.clone(),
+        };
+        if rest == own_rest {
+            return Binding::new(self.binding.operation, repo, self.binding.parent);
+        }
+        // The same operation under another parent: every segment equal except the parent's,
+        // which is another number in canonical decimal form.
+        let parent = self.binding.parent.and_then(|parent| {
+            let parent = parent.to_string();
+            let at = own_rest.iter().position(|segment| *segment == parent)?;
+            let other = rest.get(at)?;
+            let number = other
+                .parse::<u64>()
+                .ok()
+                .filter(|n| n.to_string() == *other)?;
+            let same_shape = rest.len() == own_rest.len()
+                && rest
+                    .iter()
+                    .zip(own_rest)
+                    .enumerate()
+                    .all(|(i, (a, b))| i == at || a == b);
+            same_shape.then_some(number)
+        });
+        match parent {
+            Some(parent) => Binding::new(self.binding.operation, repo, Some(parent)),
+            None => unrecognized(),
+        }
     }
 
     /// Fetches the first page (`None`) or a linked page. The returned future owns everything it
@@ -261,6 +343,34 @@ impl<Op: Clone, R: Listing> LinkPages<Op, R> {
     ) -> impl Future<Output = Result<LinkPage<R::Item>, GitHubError>> + use<Op, R> {
         let prepared = (self.prepare)(self.operation.clone());
         fetch_page(self.context.clone(), self.binding.clone(), prepared, key)
+    }
+}
+
+/// The repository part of an API path.
+enum RepoPart<'a> {
+    /// `repos/{owner}/{name}`.
+    Name(&'a str, &'a str),
+    /// `repositories/{id}`.
+    Id,
+}
+
+/// The path segments of `url` below the base path `base` (without its trailing `/`).
+fn below<'a>(base: &str, url: &'a Url) -> Option<Vec<&'a str>> {
+    let rest = url.path().strip_prefix(base)?;
+    let rest = rest.strip_prefix('/')?;
+    Some(rest.split('/').collect())
+}
+
+/// Splits `segments` into the repository part and the collection path after it.
+fn repo_part<'a, 'b>(segments: &'b [&'a str]) -> Option<(RepoPart<'a>, &'b [&'a str])> {
+    match segments {
+        ["repos", owner, name, rest @ ..] => Some((RepoPart::Name(owner, name), rest)),
+        ["repositories", id, rest @ ..]
+            if !id.is_empty() && id.bytes().all(|b| b.is_ascii_digit()) =>
+        {
+            Some((RepoPart::Id, rest))
+        }
+        _ => None,
     }
 }
 
@@ -279,6 +389,11 @@ async fn fetch_page<R: Listing>(
     key: Option<NextLink>,
 ) -> Result<LinkPage<R::Item>, GitHubError> {
     let prepared = prepared?;
+    // The URL this request goes to: a `next` equal to it does not advance.
+    let requested = match &key {
+        Some(key) => key.url.clone(),
+        None => prepared.request().url().clone(),
+    };
     if let Some(key) = &key {
         if key.binding != binding {
             return Err(GitHubError::ContinuationMismatch {
@@ -307,6 +422,11 @@ async fn fetch_page<R: Listing>(
         }
         Ok(links) => match links.next() {
             None => None,
+            Some(url) if *url == requested => {
+                return Err(GitHubError::LinkDidNotAdvance {
+                    meta: Box::new(meta),
+                });
+            }
             Some(url) if context.is_api_url(url) => Some(NextLink {
                 url: url.clone(),
                 binding,
