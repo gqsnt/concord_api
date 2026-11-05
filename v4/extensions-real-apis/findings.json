@@ -100,7 +100,7 @@
    "evidence": "reproduced",
    "recurrence": "one shared encoder",
    "disposition": "fixed now",
-   "resolution": "CSV writer fix (see VERIFICATION.md)",
+   "resolution": "commits cff5e35, a6a33a4 (tests/csv_write_integrity.rs)",
    "recommendation": null,
    "source": "review/sol/FINDINGS.md"
   },
@@ -112,7 +112,7 @@
    "evidence": "reproduced",
    "recurrence": "shared driver (all readers)",
    "disposition": "fixed now",
-   "resolution": "ext44/fix-stream 86f1472 (tests/stream_budget.rs)",
+   "resolution": "commits 86f1472, 175e5c0 (tests/stream_budget.rs)",
    "recommendation": null,
    "source": "review/sol/FINDINGS.md"
   },
@@ -124,7 +124,7 @@
    "evidence": "reproduced",
    "recurrence": "one helper",
    "disposition": "fixed now",
-   "resolution": "ext44/fix-stream 86f1472 (tests/stream_foundation.rs)",
+   "resolution": "commits 86f1472, 175e5c0 (tests/stream_foundation.rs)",
    "recommendation": null,
    "source": "review/sol/FINDINGS.md"
   },
@@ -148,7 +148,7 @@
    "evidence": "reproduced",
    "recurrence": "one policy",
    "disposition": "fixed now (docs)",
-   "resolution": "ext44/fix-stream 86f1472",
+   "resolution": "commits 86f1472, 175e5c0",
    "recommendation": null,
    "source": "review/sol/FINDINGS.md"
   },
@@ -172,7 +172,7 @@
    "evidence": "reproduced",
    "recurrence": "one adapter",
    "disposition": "fixed now",
-   "resolution": "ext44/fix-stream 86f1472 (tests/stream_foundation.rs)",
+   "resolution": "commits 86f1472, 175e5c0 (tests/stream_foundation.rs)",
    "recommendation": null,
    "source": "review/sol/FINDINGS.md"
   },
@@ -208,7 +208,7 @@
    "evidence": "reproduced",
    "recurrence": "one shared writer",
    "disposition": "fixed now",
-   "resolution": "CSV writer fix (see VERIFICATION.md)",
+   "resolution": "commit cff5e35 (tests/csv_write_integrity.rs escape round trips; DECISIONS CSV-16)",
    "recommendation": null,
    "source": "review/astra/FINDINGS.md"
   },
@@ -220,7 +220,7 @@
    "evidence": "reproduced",
    "recurrence": "one shared writer",
    "disposition": "fixed now",
-   "resolution": "CSV writer fix (see VERIFICATION.md)",
+   "resolution": "commits cff5e35, a6a33a4 (tests/csv_write_memory.rs, csv_write_integrity.rs; DECISIONS CSV-17/18)",
    "recommendation": null,
    "source": "review/astra/FINDINGS.md"
   },
@@ -232,7 +232,7 @@
    "evidence": "reproduced",
    "recurrence": "same as SOL-2",
    "disposition": "fixed now",
-   "resolution": "ext44/fix-stream 86f1472",
+   "resolution": "commits 86f1472, 175e5c0",
    "recommendation": null,
    "source": "review/astra/FINDINGS.md"
   },
@@ -244,7 +244,7 @@
    "evidence": "reproduced",
    "recurrence": "JSONL and JSON values readers",
    "disposition": "fixed now",
-   "resolution": "ext44/fix-stream 86f1472 (tests/stream_budget.rs)",
+   "resolution": "commits 86f1472, 175e5c0 (tests/stream_budget.rs)",
    "recommendation": null,
    "source": "review/astra/FINDINGS.md"
   },

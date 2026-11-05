@@ -54,10 +54,10 @@ fails on the old code (revert-checked by the fixer):
 
 | Finding | Defect | Fix |
 |---|---|---|
-| ASTRA-1 (high) | CSV escape dialects wrote a literal escape byte unescaped; the reader dropped it on round-trip | CSV writer fix (VERIFICATION.md lists the commit and tests) |
-| SOL-1 | CSV writer validated the field names of one `Serialize` call and wrote another: a stateful serializer could write values under the wrong heading | names checked in the serialization that is written (same commit) |
-| ASTRA-2 | CSV writer limits checked after the oversized record was buffered and copied | byte budget enforced before growth (same commit) |
-| SOL-2 / ASTRA-3 | a source of ready empty chunks was polled without bound inside one `next()` poll | empty-chunk budget with cooperative yield in the shared driver (`ext44/fix-stream`, `tests/stream_budget.rs`) |
+| ASTRA-1 (high) | CSV escape dialects wrote a literal escape byte unescaped; the reader dropped it on round-trip | writer encodes fields itself and escapes the escape byte inside quotes, checked against csv-core's reader at every split point (commit `cff5e35`, `crates/concord-extras/tests/csv_write_integrity.rs`, DECISIONS CSV-16) |
+| SOL-1 | CSV writer validated the field names of one `Serialize` call and wrote another: a stateful serializer could write values under the wrong heading | one serialization per row: shape, names and values checked in the pass that is written (`cff5e35`) |
+| ASTRA-2 | CSV writer limits checked after the oversized record was buffered and copied | per-record buffer capped at the limit; fields measured before copying; refused records never reach the frame (`cff5e35`, `a6a33a4`; peak RSS growth for a refused 32 MiB record 12 KiB instead of 32 MiB) |
+| SOL-2 / ASTRA-3 | a source of ready empty chunks was polled without bound inside one `next()` poll | empty-chunk budget with cooperative yield in the shared driver (commit `86f1472`, `crates/concord-extras/tests/stream_budget.rs`) |
 | ASTRA-4 | JSON Lines / JSON values processed a whole large chunk before applying the 64 KiB work budget; LF lookahead could exceed the line limit | framing slices limited to the remaining budget; bounded lookahead (same lane) |
 | SOL-3 | `Chunks` `Debug` printed body content | content-free `Debug` (same lane) |
 | SOL-4 | the macro's conditional-`Clone` binder shadowed a payload lifetime named `'__concord` (E0496) | collision-free binder (commit `7262007`, `checks/clone-hygiene`) |
