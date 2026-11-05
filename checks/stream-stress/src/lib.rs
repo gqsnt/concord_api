@@ -136,8 +136,8 @@ impl Format {
 
 /// The two incremental readers behind one interface (the harness's own convenience).
 enum Records {
-    Jsonl(JsonLinesRecords<Rec>),
-    Csv(CsvRecords<Rec>),
+    Jsonl(Box<JsonLinesRecords<Rec>>),
+    Csv(Box<CsvRecords<Rec>>),
 }
 
 impl Records {
@@ -383,19 +383,19 @@ pub async fn read(format: Format, scenario: &str, plan: ReadPlan) -> Measurement
         .await
         .unwrap();
     let mut records = match format {
-        Format::Jsonl => Records::Jsonl(
+        Format::Jsonl => Records::Jsonl(Box::new(
             JsonLinesReader::new(JsonLinesOptions::json_lines().max_record_bytes(MAX_RECORD_BYTES))
                 .open_for::<Rec>(response, "stress: jsonl export")
                 .unwrap(),
-        ),
-        Format::Csv => Records::Csv(
+        )),
+        Format::Csv => Records::Csv(Box::new(
             CsvReader::new(
                 Csv::<concord::csv::HasHeader>::options().max_record_bytes(MAX_RECORD_BYTES),
             )
             .unwrap()
             .open_for::<Rec>(response, "stress: csv export")
             .unwrap(),
-        ),
+        )),
     };
     let mut m = Measurement {
         scenario: scenario.into(),
@@ -420,7 +420,7 @@ pub async fn read(format: Format, scenario: &str, plan: ReadPlan) -> Measurement
                 peak_in_flight =
                     peak_in_flight.max(generated.load(Ordering::SeqCst).saturating_sub(consumed));
                 if let Some((every, pause)) = plan.slow
-                    && expected % every == 0
+                    && expected.is_multiple_of(every)
                 {
                     tokio::time::sleep(pause).await;
                 }
@@ -545,10 +545,7 @@ pub async fn upload(format: Format, scenario: &str, plan: UploadPlan) -> Measure
     };
     let send = prepared.send();
     let result = match plan.cancel_after {
-        Some(after) => match tokio::time::timeout(after, send).await {
-            Ok(r) => Some(r),
-            Err(_) => None,
-        },
+        Some(after) => tokio::time::timeout(after, send).await.ok(),
         None => Some(send.await),
     };
     m.total_ms = start.elapsed().as_secs_f64() * 1e3;

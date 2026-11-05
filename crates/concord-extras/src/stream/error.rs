@@ -197,6 +197,7 @@ impl ReadError {
     }
 
     /// A record-level failure after which the reader continues (JSON Lines `Yield` mode).
+    #[cfg_attr(not(feature = "jsonl"), allow(dead_code))]
     pub(crate) fn recoverable(mut self) -> Self {
         self.inner.terminal = false;
         self
