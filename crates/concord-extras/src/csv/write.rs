@@ -241,8 +241,8 @@ where
 enum Schema {
     /// No row yet.
     Unknown,
-    /// Rows have these field names, in order.
-    Named(Vec<String>),
+    /// Rows have these field names, in order: the serializer's own names, never copied.
+    Named(Vec<&'static str>),
     /// Rows have no field names.
     Positional,
 }
@@ -252,11 +252,14 @@ enum Schema {
 ///
 /// A row is serialized once, into `record`, which never holds more than the record limit plus the
 /// terminator; it reaches `out` only once every check passed, so a refused row leaves `out` as it
-/// was.
+/// was. Header names (configured columns, inferred field names) are borrowed, never copied: the
+/// header's only buffer is its bounded encoding.
 pub(crate) struct Encoder {
     config: Arc<Config>,
     dialect: Dialect,
     floats: FloatText,
+    /// The payload's explicit columns, when there are no configured ones (an equal payload list is
+    /// dropped for the configured one, which is read from `config`).
     columns: Option<Vec<String>>,
     record: Vec<u8>,
     schema: Schema,
@@ -276,13 +279,14 @@ impl Encoder {
                     "the payload's CSV columns conflict with the configured columns",
                 ));
             }
-            (Some(payload), _) => Some(payload),
-            (None, configured) => configured.map(<[String]>::to_vec),
+            // Configured columns (an equal payload list is the same table) are read from `config`.
+            (_, Some(_)) => None,
+            (payload, None) => payload,
         };
         Ok(Self {
             dialect: Dialect::new(&config),
             floats: FloatText::new(),
-            width: columns.as_ref().map(Vec::len),
+            width: columns.as_deref().or(config.columns()).map(<[String]>::len),
             config,
             columns,
             record: Vec::new(),
@@ -296,16 +300,24 @@ impl Encoder {
         self.config.has_header()
     }
 
-    /// Writes the header now if its names are known (explicit columns).
+    /// The table's explicit columns: the payload's or the configured ones.
+    fn column_names(&self) -> Option<&[String]> {
+        self.columns.as_deref().or(self.config.columns())
+    }
+
+    /// Writes the header now if its names are known (explicit columns), from the borrowed list.
     fn begin(&mut self, out: &mut Vec<u8>) -> Result<(), CodecError> {
-        if self.has_header()
-            && let Some(columns) = self.columns.take()
-        {
-            let written = self.header(columns.iter().map(String::as_bytes), columns.len(), out);
-            self.columns = Some(columns);
-            written?;
+        if !self.has_header() {
+            return Ok(());
         }
-        Ok(())
+        let config = Arc::clone(&self.config);
+        let payload = self.columns.take();
+        let written = match payload.as_deref().or(config.columns()) {
+            Some(columns) => self.header(columns.iter().map(String::as_bytes), columns.len(), out),
+            None => Ok(()),
+        };
+        self.columns = payload;
+        written
     }
 
     /// Encodes the header into its own buffer (never more than the header limit plus the
@@ -339,7 +351,7 @@ impl Encoder {
     }
 
     fn raw_header(&mut self, header: &RawRecord, out: &mut Vec<u8>) -> Result<(), CodecError> {
-        if let Some(columns) = &self.columns
+        if let Some(columns) = self.column_names()
             && !header.iter().eq(columns.iter().map(String::as_bytes))
         {
             return Err(CodecError::new(
@@ -383,13 +395,13 @@ impl Encoder {
         if shape.fields == 0 {
             return Err(CodecError::new("a CSV row serializes to no fields").at("record", number));
         }
-        let mut header = None;
+        let mut header = false;
         let schema = match &self.schema {
             Schema::Unknown => {
                 if shape.named {
-                    let names: Vec<String> = shape.names.iter().map(|n| (*n).to_owned()).collect();
-                    if let Some(columns) = &self.columns
-                        && *columns != names
+                    let names = shape.names;
+                    if let Some(columns) = self.column_names()
+                        && !columns.iter().map(String::as_str).eq(names.iter().copied())
                     {
                         return Err(CodecError::new(
                             "the CSV row's field names are not the columns, in order (columns do not reorder fields)",
@@ -402,9 +414,7 @@ impl Encoder {
                         )
                         .at("record", number));
                     }
-                    if self.has_header() && !self.header_written {
-                        header = Some(names.clone());
-                    }
+                    header = self.has_header() && !self.header_written;
                     Some(Schema::Named(names))
                 } else {
                     if self.has_header() && !self.header_written {
@@ -436,7 +446,7 @@ impl Encoder {
             }
         };
         // An inferred header has the row's width (its names are the row's fields).
-        let width = self.width.or(header.as_ref().map(Vec::len));
+        let width = self.width.or(header.then_some(shape.fields));
         if !self.config.flexible()
             && let Some(width) = width
             && width != shape.fields
@@ -448,8 +458,9 @@ impl Encoder {
                     .at("expected", width as u64),
             );
         }
-        if let Some(names) = header {
-            self.header(names.iter().map(String::as_bytes), names.len(), out)?;
+        // The inferred header, encoded (bounded) from the serializer's names.
+        if header && let Some(Schema::Named(names)) = &schema {
+            self.header(names.iter().map(|n| n.as_bytes()), names.len(), out)?;
         }
         if let Some(schema) = schema {
             self.schema = schema;
@@ -568,5 +579,93 @@ mod tests {
         assert_eq!(error.get("limit"), Some(64));
         assert_eq!((out.len(), out.capacity()), (0, 0));
         assert!(!e.header_written);
+    }
+
+    // Header names are borrowed, never copied (ASTRA-2 re-check): the header's only buffer is
+    // its bounded encoding.
+
+    /// A struct row with one field, named at run time.
+    struct Named(&'static str);
+
+    impl Serialize for Named {
+        fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+            use serde::ser::SerializeStruct;
+            let mut row = serializer.serialize_struct("Named", 1)?;
+            row.serialize_field(self.0, &1)?;
+            row.end()
+        }
+    }
+
+    fn long_name() -> &'static str {
+        Box::leak("n".repeat(1 << 16).into_boxed_str())
+    }
+
+    fn present() -> CsvOptions {
+        CsvOptions::new(HeaderMode::Present, b',')
+    }
+
+    #[test]
+    fn inferred_names_are_the_serializers_names_not_copies() {
+        let name = long_name();
+        for options in [present().max_header_bytes(1 << 20), absent()] {
+            let mut e = encoder(options, None);
+            let mut out = Vec::new();
+            e.row(&Named(name), &mut out).unwrap();
+            e.row(&Named(name), &mut out).unwrap();
+            match &e.schema {
+                Schema::Named(names) => {
+                    assert_eq!(names.len(), 1);
+                    assert!(
+                        std::ptr::eq(names[0].as_ptr(), name.as_ptr()),
+                        "the schema keeps the serializer's name, not a copy"
+                    );
+                }
+                _ => panic!("a named schema"),
+            }
+        }
+
+        // Over the header limit: refused, nothing written, nothing kept.
+        let mut e = encoder(present().max_header_bytes(64), None);
+        let mut out = Vec::new();
+        let error = e.row(&Named(name), &mut out).unwrap_err();
+        assert_eq!(error.label(), "the CSV header exceeds the configured size");
+        assert_eq!(error.get("limit"), Some(64));
+        assert_eq!((out.len(), out.capacity()), (0, 0));
+        assert!(matches!(e.schema, Schema::Unknown));
+        assert!(!e.header_written);
+    }
+
+    #[test]
+    fn configured_columns_are_read_from_the_configuration_not_copied() {
+        let name = long_name().to_owned();
+        let config = Arc::new(Config::new(present().columns([name.clone()])).unwrap());
+        for payload in [None, Some(vec![name.clone()])] {
+            let mut e = Encoder::new(Arc::clone(&config), payload).unwrap();
+            assert!(
+                e.columns.is_none(),
+                "the configured list is borrowed from the configuration"
+            );
+            let mut out = Vec::new();
+            e.begin(&mut out).unwrap();
+            assert_eq!(out.len(), name.len() + 2);
+            e.row(&(1,), &mut out).unwrap();
+        }
+
+        // Over the header limit: refused before anything reaches the frame.
+        let config =
+            Arc::new(Config::new(present().columns([name.clone()]).max_header_bytes(64)).unwrap());
+        let mut e = Encoder::new(config, None).unwrap();
+        assert!(e.columns.is_none());
+        let mut out = Vec::new();
+        let error = e.begin(&mut out).unwrap_err();
+        assert_eq!(error.get("limit"), Some(64));
+        assert_eq!((out.len(), out.capacity()), (0, 0));
+
+        // Payload columns without configured ones are the payload's own list (moved, not copied).
+        let mut e = encoder(present(), Some(vec![name.clone()]));
+        let kept = e.columns.as_ref().unwrap()[0].as_ptr();
+        let mut out = Vec::new();
+        e.begin(&mut out).unwrap();
+        assert!(std::ptr::eq(e.columns.as_ref().unwrap()[0].as_ptr(), kept));
     }
 }
