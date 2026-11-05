@@ -19,9 +19,9 @@ write it and did not read its author's friction notes".
 
 | Stage | Commit | Content |
 |---|---|---|
-| 1 frozen consumer | `6a7ed00521b93129e0cb879accbdbf2347ba91eb` | `src/before.rs`, `tests/before.rs`, `Cargo.lock` |
-| 2 SDK change | `f90923e4b310472477165f017c9e67e65e606b3e` | `examples/stripe-sdk/{src,tests,PROVIDER.md}` |
-| 3 updated consumer | `ca6c7b0cda6914a9c8104903fd6edb0853189793` | `src/after.rs`, `tests/after.rs`, this file |
+| 1 frozen consumer | `5a7259095079a3d09f7d7d6b305fe528fd5f8e2a` | `src/before.rs`, `tests/before.rs`, `Cargo.lock` |
+| 2 SDK change | `fb519c7355460e3ed572d11262d6d48b8c06039b` | `examples/stripe-sdk/{src,tests,PROVIDER.md}` |
+| 3 updated consumer | `9e9da9d82de43cd80ed2470a66f0f6ad621fcb4a` | `src/after.rs`, `tests/after.rs`, this file |
 
 Executable check: `cargo test --locked -p concord-check-maintenance-stripe` — at stage 1 runs
 `tests/before.rs` (3 tests); at stage 2 the same 3 unchanged tests against the changed SDK; at
@@ -99,7 +99,7 @@ the migration guide says Card or Source ids "can no longer" be passed as `paymen
 
 ### Diff of stage 2
 
-`git diff --stat 6a7ed00 f90923e`:
+`git diff --stat 5a72590 fb519c7`:
 
 ```text
  checks/maintenance-stripe/MAINTENANCE.md | 10 ++++
@@ -335,7 +335,7 @@ response type cannot record whether an expansion was requested.
 
 ## Results
 
-| Command | Stage 2 (`f90923e`) | Stage 3 |
+| Command | Stage 2 (`fb519c7`) | Stage 3 |
 |---|---|---|
 | `cargo test --locked -p concord-check-maintenance-stripe` | `before`: 3 passed | `after`: 4 passed, `before`: 3 passed |
 | `cargo test --locked -p concord-example-stripe-sdk` | form 7, pages 5, wire 8, doctests 2 — all passed | same |
@@ -348,7 +348,7 @@ measured.
 
 ## After stage 3: comparison with the SDK author's `FRICTION.md`
 
-Read for the first time after `ca6c7b0` was committed (this section and the stage-3 SHA above are
+Read for the first time after `9e9da9d` was committed (this section and the stage-3 SHA above are
 the only later edits). The author's entries and what this exercise observed about them:
 
 | Author entry | Exercised here? | Observation |

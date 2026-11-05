@@ -28,9 +28,9 @@ before the commit).
 
 | Stage | Commit | Content |
 |---|---|---|
-| 1 frozen consumer | `5a2cd0fa558e9e9d70d2727da9a622a84eb08e6d` | `src/before.rs`, `tests/before.rs`, `Cargo.toml`, `Cargo.lock` |
-| 2 SDK change | `08a2db9be3f803a447674fd3449c5f5d01ee7072` | `examples/shopify-sdk/{src,tests,PROVIDER.md}` only (app untouched) |
-| 3 updated consumer | `2166f81ea54b7c817545064df4befb615541e606` | `src/after.rs`, `tests/after.rs`, `Cargo.toml` (+`serde`), `Cargo.lock` |
+| 1 frozen consumer | `d72e4699297c8bfe523e2b30a177a946f055a945` | `src/before.rs`, `tests/before.rs`, `Cargo.toml`, `Cargo.lock` |
+| 2 SDK change | `ee7145adf4d95751e66bf33ff7335e66dc7e7612` | `examples/shopify-sdk/{src,tests,PROVIDER.md}` only (app untouched) |
+| 3 updated consumer | `183959fa34cf5f8bed7db000316622b4704495f6` | `src/after.rs`, `tests/after.rs`, `Cargo.toml` (+`serde`), `Cargo.lock` |
 | findings | the commit adding this file | `MAINTENANCE.md` |
 
 Executable check: `cargo test --locked -p concord-check-maintenance-shopify` — stage 1: 3 tests
@@ -141,7 +141,7 @@ Admin API reference does not list them; support is confirmed only in Shopify's d
 (February 2025). Not live-verified (`PROVIDER.md` discrepancy 14). Equally an assumption: that a
 nested connection's `namespace:` argument applies in a bulk query (discrepancy 16).
 
-### Diff of stage 2 (`git diff --stat 5a2cd0fa 08a2db9b`)
+### Diff of stage 2 (`git diff --stat d72e4699 ee7145ad`)
 
 ```text
  examples/shopify-sdk/PROVIDER.md        |  33 +++++++--
@@ -357,10 +357,10 @@ before the restart and is not measurable. Not a quality signal.
 
 | Stage | Command | Result |
 |---|---|---|
-| 1 (`5a2cd0fa`) | `cargo test --locked -p concord-check-maintenance-shopify` | `before`: 3 passed |
-| 2 (`08a2db9b`) | same | `before`: 3 passed (unchanged tests, changed SDK) |
+| 1 (`d72e4699`) | `cargo test --locked -p concord-check-maintenance-shopify` | `before`: 3 passed |
+| 2 (`ee7145ad`) | same | `before`: 3 passed (unchanged tests, changed SDK) |
 | 2 | `cargo test --locked -p concord-example-shopify-sdk -p concord-example-shopify-app` | SDK: decoding 9, wire 8, doctest 1 passed; app: manifest 2, sh_a 6, sh_b 12 passed |
-| 3 (`2166f81e`) | `cargo test --locked -p concord-check-maintenance-shopify` | `after`: 4 passed, `before`: 3 passed |
+| 3 (`183959fa`) | `cargo test --locked -p concord-check-maintenance-shopify` | `after`: 4 passed, `before`: 3 passed |
 | 3 | SDK + app as above | same counts, all passed |
 | 1–3 | `cargo clippy --locked --all-targets -- -D warnings`, `cargo fmt --check` (check crate, SDK, app); SDK rustdoc `-D warnings` | clean |
 
@@ -375,7 +375,7 @@ quoted above verbatim; probes are not part of the executable check.
 
 ## After stage 3: comparison with the SDK author's `FRICTION.md`
 
-Read only after the stage-3 commit (`2166f81e`); nothing above was changed after reading it.
+Read only after the stage-3 commit (`183959fa`); nothing above was changed after reading it.
 
 | `FRICTION.md` entry | This exercise |
 |---|---|

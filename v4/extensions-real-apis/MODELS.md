@@ -28,9 +28,9 @@ model by the tool's documented default; the harness does not report a per-agent 
 | Salesforce SDK + SF-A/SF-B | `ext44/sdk-salesforce` (`a99a91d`) | separate session |
 | Kubernetes SDK + KU-A/KU-B | `ext44/sdk-kubernetes` (`8816c4a`) | separate session |
 | Maintenance exercise, GitHub | `ext44/maint-github` (`b7daf50`) | did not write the GitHub SDK |
-| Maintenance exercise, Stripe | `ext44/maint-stripe` (`3dcb3ac`) | did not write the Stripe SDK |
-| Maintenance exercise, Shopify | `ext44/maint-shopify` (`4f2f664`) | did not write the Shopify SDK (resumed once after a machine restart) |
-| Maintenance exercise, Salesforce | `ext44/maint-salesforce` (`962567c`) | did not write the Salesforce SDK |
+| Maintenance exercise, Stripe | `ext44/maint-stripe` (`247d45c`) | did not write the Stripe SDK |
+| Maintenance exercise, Shopify | `ext44/maint-shopify` (`993e225`) | did not write the Shopify SDK (resumed once after a machine restart) |
+| Maintenance exercise, Salesforce | `ext44/maint-salesforce` (`58b7052`) | did not write the Salesforce SDK |
 | Maintenance exercise, Kubernetes | `ext44/maint-kubernetes` (`d903a1f`) | did not write the Kubernetes SDK |
 
 Limitation: all of these are the same model family as the coordinator; separate sessions give

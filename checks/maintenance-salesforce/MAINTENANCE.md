@@ -30,19 +30,19 @@ changed.
 
 | Stage | Commit | Subject |
 |---|---|---|
-| 1 | `32fa1136db5049d7ad6135a6ad4bff5e5ea902a6` | maintenance salesforce: frozen initial consumer |
-| 2 | `b45fe6c3ac22a168b0a39a2b374b94d9e1a95360` | maintenance salesforce: SDK change — HasOptedOutOfEmail in the Contact export |
-| 3 | `dad33569401ea34354f124191972c76dfaef0bb8` | maintenance salesforce: updated consumer |
+| 1 | `6b554205c745de60e8eccf7d8319fab85e43368d` | maintenance salesforce: frozen initial consumer |
+| 2 | `0190425c05ab942a46ef0b54d504ae9d81f9e9f3` | maintenance salesforce: SDK change — HasOptedOutOfEmail in the Contact export |
+| 3 | `34339304d760251676cda514b03e86b9cebede6c` | maintenance salesforce: updated consumer |
 
 The commit adding this file records the findings only (no code). `src/before.rs` and
 `tests/before.rs` are byte-identical from stage 1 to the last commit
-(`git diff 32fa1136 HEAD -- checks/maintenance-salesforce/src/before.rs checks/maintenance-salesforce/tests/before.rs`
-is empty). Base: `0e14f15a` (branch `ext44/maint-salesforce`). Stage 1 also updated `Cargo.lock`
+(`git diff 6b554205 HEAD -- checks/maintenance-salesforce/src/before.rs checks/maintenance-salesforce/tests/before.rs`
+is empty). Base: `08649a3f` (branch `ext44/maint-salesforce`). Stage 1 also updated `Cargo.lock`
 offline (`cargo metadata --offline`) for this crate's new dependencies.
 
 ## Results (Rust 1.99.1, `CARGO_BUILD_JOBS=6`, Linux x86_64, loopback only)
 
-| Command | Baseline `0e14f15a` | Stage 1 | After stage 2 | Final (stage 3) |
+| Command | Baseline `08649a3f` | Stage 1 | After stage 2 | Final (stage 3) |
 |---|---|---|---|---|
 | `cargo test --locked -p concord-check-maintenance-salesforce` | placeholder | before: 4 passed | before: 4 passed (source unchanged) | before: 4 passed, after: 3 passed |
 | `cargo test --locked -p concord-example-salesforce-sdk` | 20 + 4 wire + 2 doctests | — | 20 + 4 + 2 passed (1 unit test adapted) | same |
@@ -108,7 +108,7 @@ escape (every request is a declared operation or an SDK wrapper).
 
 ## Stage 2 — the SDK change
 
-`git diff --stat 32fa1136 b45fe6c3`:
+`git diff --stat 6b554205 0190425c`:
 
 ```text
  .../salesforce-app/tests/fixtures/MANIFEST.json    |  4 ++--
@@ -245,7 +245,7 @@ wire must copy the old row type and list; the SDK keeps no versioned schema.
 
 ## Stage 3 — the updated consumer
 
-`git diff --stat b45fe6c3 dad33569`: `src/after.rs` +105, `src/lib.rs` +3, `tests/after.rs` +468.
+`git diff --stat 0190425c 34339304`: `src/after.rs` +105, `src/lib.rs` +3, `tests/after.rs` +468.
 
 - `src/after.rs`: `MAILING_DIALECT = BulkDialect::new(ColumnDelimiter::Tab, LineEnding::Crlf)`;
   `mailing_export(..)` is the frozen `MailingExport::new(..)` with that dialect;
