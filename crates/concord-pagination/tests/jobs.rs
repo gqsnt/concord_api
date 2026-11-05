@@ -387,6 +387,40 @@ fn a_discovery_failure_in_continue_mode_finishes_known_work() {
     assert_eq!(report.discovery.failed, Some(Resume::At(1)));
 }
 
+/// Precedence (4.4 review SOL-6): stopping with `finish` while continue-mode jobs still run after
+/// a discovery failure reports `Stopped`, and the discovery failure stays in `discovery.failed`.
+#[test]
+fn finish_after_a_discovery_failure_reports_stopped_and_keeps_the_failure() {
+    let manifests = Server::<Option<u32>, ManifestReply>::new();
+    let downloads = Server::<String, JobReply>::new();
+    let options = JobOptions::new(
+        Budget::new(n(10)),
+        Options::new(Budget::new(n(100)))
+            .window(n(2))
+            .on_error(OnError::Continue),
+    );
+    let mut jobs = manifest_jobs(
+        Resume::Start,
+        options,
+        |key| manifests.call(key),
+        |url| downloads.call(url),
+    );
+    assert!(now(jobs.next()).is_none());
+    manifests.open(&None, manifest(&["a"], Some(1)));
+    assert!(now(jobs.next()).is_none());
+    manifests.open(&Some(1), Err("manifest 1 broke"));
+    assert!(matches!(
+        now(jobs.next()),
+        Some(Some(Err(JobsError::Discovery("manifest 1 broke"))))
+    ));
+    // Job `a` is still running (never answered) when the caller stops.
+    let report = jobs.finish();
+    assert_eq!(report.outcome, Outcome::Stopped);
+    assert_eq!(report.discovery.failed, Some(Resume::At(1)));
+    assert_eq!(states(&report.unfinished), [("a", Unfinished::Cancelled)]);
+    assert!(downloads.dropped(&s("a")));
+}
+
 #[test]
 fn jobs_support_keyed_completion_order_and_continue_mode() {
     let downloads = Server::<String, JobReply>::new();

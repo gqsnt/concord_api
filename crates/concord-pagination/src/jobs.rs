@@ -73,10 +73,13 @@ impl JobOptions {
 /// discovery failure ends discovery (no next key is guessed) and is returned by `next` as
 /// [`JobsError::Discovery`]. Then, with [`OnError::Stop`], every job in flight is dropped
 /// (cancelled); with [`OnError::Continue`], the jobs already admitted *and* the descriptors
-/// already queued still run to completion. Either way the outcome is
-/// [`Outcome::DiscoveryFailed`], and the report keeps attempted work (`unfinished`, `retained`),
-/// known but unattempted work (`queued`) and the undiscovered remainder (`discovery.resume`)
-/// apart.
+/// already queued still run to completion. Once that known work has finished, the outcome is
+/// [`Outcome::DiscoveryFailed`]. If you call [`Jobs::finish`] earlier (while continue-mode jobs
+/// are still running after the discovery failure), the outcome is [`Outcome::Stopped`]: the stop
+/// is what ended the traversal. In every case `discovery.failed` in the report is the
+/// authoritative record of the discovery failure, and the report keeps attempted work
+/// (`unfinished`, `retained`), known but unattempted work (`queued`) and the undiscovered
+/// remainder (`discovery.resume`) apart.
 ///
 /// ```
 /// use std::num::NonZeroUsize;
@@ -354,7 +357,9 @@ where
     }
 
     /// Ends the traversal and reports how. The manifest call and the jobs in flight are dropped
-    /// (outcome [`Outcome::Stopped`] unless the traversal had already ended).
+    /// (outcome [`Outcome::Stopped`] unless the traversal had already ended — also after a
+    /// discovery failure whose known jobs were still running; `discovery.failed` keeps that
+    /// failure).
     pub fn finish(mut self) -> JobsReport<D, MK, R, EJ> {
         let outcome = match self.ended {
             Some(outcome) => outcome,
