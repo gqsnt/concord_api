@@ -1,0 +1,49 @@
+# Concord 4.4 extensions: status
+
+"4.4 is the requested review label; the package/release version remains a separate decision."
+Crate versions stay `4.2.0`; no tag, release or publication was made. The extension pull request
+is a draft and is not merged.
+
+## Identities
+
+| What | Value |
+|---|---|
+| Repository | `gqsnt/concord_api` |
+| 4.3 integration (PR #2) | merge commit `fd4771aee360fcad61f09a780829817f3ad474a1` (parents `5ed600b` main, `ae5618a` verified PR head) — **INTEGRATED_VERIFIED** (v4/dx-4.3/STATUS.md) |
+| 4.3 receipt (records only) | `d1802547381ee604118024a6985513d1f90d54e7` on `main` |
+| Extension base | `d1802547` (verified main). The work started on `7eefdee` (a 4.3 PR commit, now an ancestor of main) while the integration was pending; `07e051d` merges that development history onto the receipt, so the branch's merge-base with `main` is `d1802547` |
+| Extension branch | `concord-4.4-extensions-evidence` |
+| History rewrite | before the first push, 98 unpublished commits were rewritten to remove a token-shaped synthetic test constant (HISTORY_REWRITE.md) |
+| Toolchain | Rust 1.99.1 (pinned and minimum), edition 2024 |
+| Final implementation commit, CI and draft PR | recorded in VERIFICATION.md |
+
+## Work packages
+
+| WP | Deliverable | Status | Where |
+|---|---|---|---|
+| W0 | 4.3 CI diagnosis, correction, merge, receipt; extension base | done; INTEGRATED_VERIFIED | `v4/dx-4.3/` |
+| W1 | `Csv<HasHeader, Delimiter>` finite + incremental read/write, profiles, runtime bridge, raw records; extension example migrated | done | `crates/concord-extras/src/csv/`, `examples/extension/` |
+| W2 | JSON Lines / NDJSON finite + incremental, consecutive JSON values, response opening, lifecycle, uploads | done | `crates/concord-extras/src/{jsonl,stream}/` |
+| W3 | `concord-pagination`: sequential, items with checkpoints, independent plans, first-page discovery, manifest jobs | done | `crates/concord-pagination/` |
+| W4–W8 | Five SDK slices, ten workflows (offline verified; live NOT_RUN) | done | `examples/{github,stripe,shopify,salesforce,kubernetes}-{sdk,app}/` |
+| W9 | fixtures/provenance, stress, maintenance exercises, independent caller tasks, test server, gates | done | FIXTURES.md, STRESS.md, USAGE_AND_MAINTENANCE.md, `examples/testserver/`, `checks/` |
+| W10 | 4.4 review, defect fixes, readout, delivery | see NEXT_REVIEW_4_4.md, IMPLEMENTATION_READOUT.md, VERIFICATION.md | |
+
+## New packages
+
+| Package | Kind | Tests (`cargo test -p`) |
+|---|---|---|
+| `concord-pagination` | maintained crate (packaged by `package-check`) | 68 |
+| `concord-extras` features `stream`, `csv`, `jsonl` | maintained modules, facade features `concord/{stream,csv,jsonl}` | stream 3, csv 85, jsonl 65 (feature alone) |
+| `concord-example-testserver` | test support | 7 |
+| `concord-example-{github,stripe,shopify,salesforce,kubernetes}-sdk` | SDK slices | 44, 22, 18, 26, 24 |
+| `concord-example-{github,stripe,shopify,salesforce,kubernetes}-app` | external callers, two workflows each | 21, 10, 20, 30, 26 |
+| `concord-check-maintenance-{github,stripe,shopify,salesforce,kubernetes}` | staged maintenance consumers | 11, 7, 7, 7, 6 |
+| `concord-check-dx03-csv-runtime`, `concord-check-dx03-fanout-sink` | independent caller tasks (other provider's models) | 8, 12 |
+| `concord-check-stream-stress` | generated workloads (CI-sized smoke + N/2N binary) | 9 |
+
+## Evidence tiers
+
+Ten workflows OFFLINE_VERIFIED; LIVE_PROVIDER_VERIFIED NOT_RUN for all (no credentials; mutation
+and job-creation lanes need explicit opt-ins); Kubernetes REAL_SERVER_VERIFIED NOT_RUN (no
+disposable cluster tooling on the machine). See FIXTURES.md.
