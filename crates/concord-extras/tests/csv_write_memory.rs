@@ -1,11 +1,11 @@
 //! ASTRA-2 (4.4 review), as a process observation: refusing a record over the record (or header)
 //! limit does not grow the process's peak resident memory with that record. Before the fix the
 //! writer serialized the whole record into an unbounded buffer and copied it before comparing it
-//! with the limit: about twice the field's size (a 16 MiB field with a 64-byte limit grew the
-//! peak by about 32 MiB on both routes).
+//! with the limit: about twice the field's size (with the fix reverted, this test observed a
+//! 16 MiB field with a 64-byte limit grow the peak by about 32 MiB on each of the three routes).
 //!
-//! Linux only (`VmHWM` in `/proc/self/status`), and alone in its test binary so that no other
-//! test allocates during the measurement. The portable, exact bound (the encoder's buffers never
+//! Linux only (`VmHWM` in `/proc/self/status`, reset per measurement), and alone in its test
+//! binary so that no other test allocates during the measurement. The portable, exact bound (the encoder's buffers never
 //! exceed the limit plus the terminator) is a unit test of the encoder.
 
 #![cfg(all(feature = "csv", target_os = "linux"))]
@@ -33,8 +33,11 @@ fn peak_kib() -> u64 {
         .expect("VmHWM in /proc/self/status")
 }
 
-/// Runs `refuse` and returns how much the peak grew (KiB).
+/// Runs `refuse` and returns how much the peak grew (KiB). The peak is first reset to the current
+/// resident size (`5` to `/proc/self/clear_refs`, this process only), so that an earlier
+/// measurement's high-water mark cannot hide this one's growth.
 fn growth(refuse: impl FnOnce()) -> u64 {
+    std::fs::write("/proc/self/clear_refs", "5").expect("reset this process's VmHWM");
     let before = peak_kib();
     refuse();
     peak_kib().saturating_sub(before)

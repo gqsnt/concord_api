@@ -353,5 +353,7 @@ fixed scratch buffers (a 40-byte number buffer, the float writer's 64 bytes). Ev
 limit; the frame untouched by a refused record or header) and `fields::tests`; integration tests
 (a field after the oversized one is never serialized; a 1,000-field row stops after 4 attempts with
 `max_fields(3)`; encoded-size boundaries with quotes and escapes); `tests/csv_write_memory.rs`
-(Linux `VmHWM`, one test per binary): refusing a 16 MiB field with a 64-byte limit grew the peak by
-8–12 KiB on the finite, lazy and header routes, where the review observed about 32 MiB.
+(Linux `VmHWM`, reset before each route, one test per binary): refusing a 16 MiB field with a
+64-byte limit grew the peak by 12 / 8 / 8 KiB (finite / lazy / header); with the fix reverted, the
+same test observed 32,452 / 32,232 / 32,224 KiB (the review: about 32 MiB, finite and lazy). Linux
+process high-water observations, not allocation counts.
