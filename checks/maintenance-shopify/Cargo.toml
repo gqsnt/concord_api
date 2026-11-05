@@ -1,6 +1,6 @@
 [package]
 name = "concord-check-maintenance-shopify"
-description = "Staged maintenance exercise for the shopify SDK: the frozen initial consumer and the updated consumer, both compiled against the current SDK (placeholder until the exercise lands)."
+description = "Staged maintenance exercise for the Shopify SDK slice: a frozen initial consumer (a product-feed job) and the updated consumer, both external callers compiled against the current SDK."
 version = "0.0.0"
 edition = "2024"
 rust-version.workspace = true
@@ -8,6 +8,15 @@ license.workspace = true
 publish = false
 
 [dependencies]
+concord = { path = "../../crates/concord", features = ["json", "jsonl"] }
+concord-example-shopify-sdk = { path = "../../examples/shopify-sdk" }
+concord-pagination = { path = "../../crates/concord-pagination" }
+serde.workspace = true
+
+[dev-dependencies]
+concord-example-testserver = { path = "../../examples/testserver" }
+serde_json.workspace = true
+tokio = { workspace = true, features = ["macros", "rt", "rt-multi-thread"] }
 
 [lints]
 workspace = true

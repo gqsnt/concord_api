@@ -11,7 +11,8 @@ use concord_example_shopify_sdk::ops::catalog::ProductsQuery;
 use concord_example_shopify_sdk::ops::shop::ShopQuery;
 use concord_example_shopify_sdk::scalars::SignedUrl;
 use concord_example_shopify_sdk::{
-    AccessToken, ApiVersion, Cursor, RequestError, SearchQuery, ShopDomain, ShopifyContext, Var,
+    AccessToken, ApiVersion, Cursor, Included, RequestError, SearchQuery, ShopDomain,
+    ShopifyContext, Var,
 };
 use concord_example_testserver::{Recorded, Reply, TestServer};
 use serde_json::{Value, json};
@@ -413,5 +414,74 @@ async fn product_by_id_and_bulk_cancel_on_the_wire() {
             .unwrap()
             .starts_with("mutation BulkOperationCancel(")
     );
+    server.shutdown().await;
+}
+
+#[tokio::test]
+async fn online_store_url_is_selected_only_when_requested() {
+    let product = |url: Option<Value>| {
+        let mut node = json!({"id": "gid://shopify/Product/1", "title": "Tee", "handle": "tee",
+            "status": "ACTIVE", "vendor": "V", "productType": "", "tracksInventory": true,
+            "totalInventory": 1, "updatedAt": "2026-10-01T00:00:00Z",
+            "variants": {"nodes": [], "pageInfo": {"hasNextPage": false, "endCursor": null}}});
+        if let Some(url) = url {
+            node["onlineStoreUrl"] = url;
+        }
+        node
+    };
+    // What Shopify answers: the member only when `withOnlineStoreUrl` is true.
+    let server = TestServer::start(move |request| {
+        let nodes = match body_json(request)["variables"]["withOnlineStoreUrl"].as_bool() {
+            Some(true) => json!([
+                product(Some(json!("https://shop-one.example/products/tee"))),
+                product(Some(Value::Null))
+            ]),
+            _ => json!([product(None)]),
+        };
+        graphql(json!({"data": {"products": {"nodes": nodes,
+            "pageInfo": {"hasNextPage": false, "endCursor": null}}}}))
+    })
+    .await;
+    let sdk = sdk(&server);
+    let shop = sdk.shop(ShopDomain::new("shop-one").unwrap(), &token(TOKEN_ONE));
+    let ten = PageSize::new(10).unwrap();
+
+    let plain = shop
+        .send(
+            shop.admin()
+                .products(ProductsQuery::new(ten, ten))
+                .prepare(),
+        )
+        .await
+        .unwrap();
+    let with_url = ProductsQuery::new(ten, ten).with_online_store_url();
+    let requested = shop
+        .send(shop.admin().products(with_url).prepare())
+        .await
+        .unwrap();
+
+    let plain = plain.data.present().unwrap().products.nodes;
+    assert_eq!(plain[0].online_store_url, Included::NotIncluded);
+    let requested = requested.data.present().unwrap().products.nodes;
+    assert_eq!(
+        requested[0].online_store_url.value().map(String::as_str),
+        Some("https://shop-one.example/products/tee")
+    );
+    // `null`: not published to the online store; distinct from not requested.
+    assert_eq!(requested[1].online_store_url, Included::Null);
+    assert!(requested[1].online_store_url.is_included());
+
+    let requests = server.requests();
+    // Without the flag the variable is omitted (the document's default, `false`).
+    assert_eq!(
+        body_json(&requests[0])["variables"],
+        json!({"first": 10, "variantsFirst": 10})
+    );
+    assert_eq!(
+        body_json(&requests[1])["variables"],
+        json!({"first": 10, "variantsFirst": 10, "withOnlineStoreUrl": true})
+    );
+    assert!(ProductsQuery::DOCUMENT.contains("$withOnlineStoreUrl: Boolean! = false"));
+    assert!(ProductsQuery::DOCUMENT.contains("onlineStoreUrl @include(if: $withOnlineStoreUrl)"));
     server.shutdown().await;
 }

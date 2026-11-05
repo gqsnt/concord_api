@@ -134,6 +134,46 @@ where
     Option::<T>::deserialize(deserializer)
 }
 
+/// A nullable field the document selects only on request (`field @include(if: $flag)`), with
+/// its three response states: not in the response because the operation did not ask for it
+/// ([`NotIncluded`](Self::NotIncluded)), `null` ([`Null`](Self::Null)), or a value.
+///
+/// Fields of this type are written `#[serde(default)]`: an absent member is `NotIncluded`. This is
+/// the one place where absence is not a decode error (see [`nullable`]): the response cannot say
+/// whether it was asked for, so a caller that set the flag and still reads `NotIncluded` has an
+/// answer that does not match its request.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub enum Included<T> {
+    /// Not in the response: the flag was not set.
+    #[default]
+    NotIncluded,
+    /// `null`.
+    Null,
+    /// The value.
+    Value(T),
+}
+
+impl<T> Included<T> {
+    /// Whether the member was in the response (`null` or a value).
+    pub fn is_included(&self) -> bool {
+        !matches!(self, Self::NotIncluded)
+    }
+
+    /// The value, if the member was included and not `null`.
+    pub fn value(&self) -> Option<&T> {
+        match self {
+            Self::Value(value) => Some(value),
+            _ => None,
+        }
+    }
+}
+
+impl<'de, T: Deserialize<'de>> Deserialize<'de> for Included<T> {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        Ok(Option::<T>::deserialize(deserializer)?.map_or(Self::Null, Self::Value))
+    }
+}
+
 /// The `data` member of a response, with the distinction GraphQL makes: absent when the request
 /// failed before execution (a parse, validation, cost or throttling error), `null` when an error
 /// propagated to the root, otherwise the (possibly partial) data.

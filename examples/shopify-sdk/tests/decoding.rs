@@ -6,7 +6,7 @@ use concord::Json;
 use concord::bytes::Bytes;
 use concord::jsonl::RecordErrors;
 use concord::stream::{Chunks, ReadErrorKind};
-use concord_example_shopify_sdk::bulk_export::{self, BulkRecord, CatalogExport};
+use concord_example_shopify_sdk::bulk_export::{self, BulkRecord, CatalogExport, CatalogLine};
 use concord_example_shopify_sdk::connection::{DataShape, Protocol};
 use concord_example_shopify_sdk::graphql::{
     Data, ErrorCode, GraphqlResponse, PathSegment, string_literal,
@@ -350,4 +350,102 @@ async fn bulk_lines_are_typed_with_their_parent_and_split_anywhere() {
         records.next().await.unwrap().unwrap(),
         BulkRecord::Product(_)
     ));
+}
+
+#[tokio::test]
+async fn metafield_lines_are_children_of_their_product_and_only_catalog_line_reads_them() {
+    let export = CatalogExport::products()
+        .with_variants(true)
+        .with_metafields(Some("mm-google-shopping \"feed\""));
+    assert!(export.includes_metafields());
+    assert_eq!(
+        export.document(),
+        r#"{ products { edges { node { id title handle status vendor updatedAt variants { edges { node { id title sku price inventoryQuantity inventoryItem { id tracked } } } } metafields(namespace: "mm-google-shopping \"feed\"") { edges { node { id namespace key value type } } } } } } }"#
+    );
+    assert_eq!(
+        CatalogExport::products().with_metafields(None).document(),
+        "{ products { edges { node { id title handle status vendor updatedAt metafields { edges { node { id namespace key value type } } } } } } }"
+    );
+
+    // Children of two products, interleaved: each line names its parent.
+    let body = concat!(
+        r#"{"id":"gid://shopify/Product/1","title":"Tee","handle":"tee","status":"ACTIVE","vendor":"V","updatedAt":"2026-10-01T00:00:00Z"}"#, "\n",
+        r#"{"id":"gid://shopify/Product/2","title":"Cap","handle":"cap","status":"ACTIVE","vendor":"V","updatedAt":"2026-10-01T00:00:00Z"}"#, "\n",
+        r#"{"id":"gid://shopify/ProductVariant/11","title":"S","sku":null,"price":"10.00","inventoryQuantity":null,"inventoryItem":{"id":"gid://shopify/InventoryItem/11","tracked":false},"__parentId":"gid://shopify/Product/1"}"#, "\n",
+        r#"{"id":"gid://shopify/Metafield/21","namespace":"mm-google-shopping","key":"gender","value":"unisex","type":"single_line_text_field","__parentId":"gid://shopify/Product/1"}"#, "\n",
+        r#"{"id":"gid://shopify/Metafield/22","namespace":"custom","key":"care","value":"[\"wash cold\",\"dry flat\"]","type":"list.single_line_text_field","__parentId":"gid://shopify/Product/2"}"#, "\n",
+    )
+    .as_bytes();
+    for split in [1, 7, 150, 300, body.len() - 1] {
+        let reader = bulk_export::result_reader(1024, RecordErrors::Stop);
+        let chunks = Chunks::new([body[..split].to_vec(), body[split..].to_vec()]);
+        let mut lines = reader.read::<CatalogLine, _>(chunks);
+        let mut kinds = Vec::new();
+        while let Some(line) = lines.next().await {
+            match line.unwrap() {
+                CatalogLine::Record(BulkRecord::Product(p)) => {
+                    kinds.push(format!("P{}", p.id.tail()))
+                }
+                CatalogLine::Record(BulkRecord::Variant(v)) => {
+                    kinds.push(format!("V{}<{}", v.id.tail(), v.product_id.tail()));
+                }
+                CatalogLine::Metafield(m) => {
+                    kinds.push(format!(
+                        "M{}<{} {}.{}",
+                        m.id.tail(),
+                        m.product_id.tail(),
+                        m.namespace,
+                        m.key
+                    ));
+                    if m.key == "care" {
+                        assert_eq!(m.value, r#"["wash cold","dry flat"]"#);
+                        assert_eq!(m.value_type, "list.single_line_text_field");
+                    }
+                }
+                other => panic!("{other:?}"),
+            }
+        }
+        assert_eq!(
+            kinds,
+            [
+                "P1",
+                "P2",
+                "V11<1",
+                "M21<1 mm-google-shopping.gender",
+                "M22<2 custom.care"
+            ]
+        );
+    }
+
+    // `BulkRecord` (the reader of selections without metafields) refuses a metafield line as a
+    // line of an unselected type; a metafield without its product parent is refused by both.
+    let bad = concat!(
+        r#"{"id":"gid://shopify/Metafield/21","namespace":"n","key":"k","value":"v","type":"t","__parentId":"gid://shopify/Product/1"}"#,
+        "\n",
+        r#"{"id":"gid://shopify/Metafield/23","namespace":"n","key":"k","value":"v","type":"t","__parentId":"gid://shopify/ProductVariant/11"}"#,
+        "\n",
+        r#"{"id":"gid://shopify/Metafield/24","namespace":"n","key":"k","type":"t","__parentId":"gid://shopify/Product/1"}"#,
+        "\n",
+    );
+    let reader = bulk_export::result_reader(1024, RecordErrors::Yield);
+    let mut old = reader.read::<BulkRecord, _>(Chunks::new([bad.as_bytes().to_vec()]));
+    let error = old.next().await.unwrap().unwrap_err();
+    assert_eq!(error.kind(), ReadErrorKind::Decode);
+    assert_eq!(
+        error.source_unredacted().unwrap().to_string(),
+        "a line of an object type the selection does not contain"
+    );
+    let mut new = reader.read::<CatalogLine, _>(Chunks::new([bad.as_bytes().to_vec()]));
+    assert!(matches!(
+        new.next().await.unwrap().unwrap(),
+        CatalogLine::Metafield(_)
+    ));
+    for expected in [
+        "metafield line whose __parentId is not a product",
+        "metafield line without value",
+    ] {
+        let error = new.next().await.unwrap().unwrap_err();
+        assert_eq!(error.kind(), ReadErrorKind::Decode);
+        assert_eq!(error.source_unredacted().unwrap().to_string(), expected);
+    }
 }

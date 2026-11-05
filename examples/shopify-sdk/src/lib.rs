@@ -6,10 +6,10 @@
 //! |---|---|
 //! | [`api`] | the declaration: one `POST graphql.json` endpoint per named operation, under a `shop` scope carrying the shop subdomain and its `#[sensitive]` token |
 //! | [`ops`] | the operations: typed variables (the request body) and typed `data` for shop, catalog, inventory and bulk documents |
-//! | [`graphql`] | the [`GraphQl`] request format, the [`GraphqlResponse`] envelope (errors and cost kept beside data), [`Var`] (absent / `null` / value) |
+//! | [`graphql`] | the [`GraphQl`] request format, the [`GraphqlResponse`] envelope (errors and cost kept beside data), [`Var`] (absent / `null` / value), [`Included`] (a field selected on request) |
 //! | [`connection`] | [`Connection`] and the [`connection_page`] adapter for `concord-pagination` |
 //! | [`context`] | [`ShopifyContext`] / [`ShopContext`]: configuration, the version-checked [`ShopContext::send`], the credential-free result download |
-//! | [`bulk_export`] | the catalog export selection, its typed JSONL line ([`BulkRecord`]) and the configured [`result_reader`](bulk_export::result_reader) |
+//! | [`bulk_export`] | the catalog export selection, its typed JSONL lines ([`BulkRecord`]; [`CatalogLine`] when metafields are selected) and the configured [`result_reader`](bulk_export::result_reader) |
 //! | [`scalars`] | ids, shop, token, cursor, signed URL, `Decimal`, `DateTime`, `UnsignedInt64` |
 //! | [`search`] | Shopify search syntax for `query:` filters |
 //!
@@ -44,12 +44,12 @@ pub mod scalars;
 pub mod search;
 
 pub use api::{ShopifyAdmin, ShopifyAdminShop, X_SHOPIFY_ACCESS_TOKEN};
-pub use bulk_export::{BulkRecord, CatalogExport};
+pub use bulk_export::{BulkRecord, CatalogExport, CatalogLine};
 pub use connection::{Connection, PageError, PageInfo, PageMeta, connection_page};
 pub use context::{RequestError, ShopContext, ShopifyContext};
 pub use graphql::{
-    Answer, Data, ErrorCode, GraphQl, GraphqlError, GraphqlResponse, Operation, QueryCost,
-    ThrottleStatus, Var,
+    Answer, Data, ErrorCode, GraphQl, GraphqlError, GraphqlResponse, Included, Operation,
+    QueryCost, ThrottleStatus, Var,
 };
 pub use scalars::{AccessToken, ApiVersion, Cursor, ShopDomain, SignedUrl};
 pub use search::SearchQuery;
