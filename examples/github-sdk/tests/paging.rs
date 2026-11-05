@@ -12,6 +12,7 @@ use concord_example_github_sdk::models::IssueComment;
 use concord_example_github_sdk::paging::{LinkPage, NextLink, operation};
 use concord_example_github_sdk::{GitHubConfig, GitHubContext, GitHubError, RepoRef};
 use concord_example_testserver::{Recorded, Reply, TestServer};
+use concord_pagination::{Budget, Outcome, Resume, sequential};
 use support::*;
 
 fn ids(page: &LinkPage<IssueComment>) -> Vec<u64> {
@@ -297,5 +298,182 @@ async fn persisted_continuation_resumes() {
     let next = pages.restore(Url::parse(&stored).unwrap()).unwrap();
     let page = pages.fetch(Some(next)).await.unwrap();
     assert_eq!(ids(&page), [9]);
+    server.shutdown().await;
+}
+
+/// A persisted continuation is bound by what its path addresses (OPUS-1): issue 13's comments
+/// link restored into issue 11's factory, another repository's link, or another operation's link
+/// is refused by `restore` itself, before any request. The link of the factory's own collection
+/// is accepted in either repository form (owner and name in any ASCII case), also under a base
+/// path, and fetches that page.
+#[tokio::test]
+async fn persisted_continuation_of_another_collection_is_refused() {
+    let server = TestServer::start(|r: &Recorded| {
+        if r.query() == Some("page=2") {
+            gh_json(200, &comments_json(&[9], 11, "octo-org/hello-world"))
+        } else {
+            Reply::new(500)
+        }
+    })
+    .await;
+    let github = context(server.addr(), TOKEN_A);
+    let repo = github.repo(RepoRef::new("octo-org", "hello-world"));
+    let issue_11 = repo.issue_comment_pages(IssueNumber(11), |op| op);
+    let base = api_base(server.addr());
+    let url = |path: &str| Url::parse(&format!("{base}{path}")).unwrap();
+    let refused = |path: &str| match issue_11.restore(url(path)) {
+        Err(GitHubError::ContinuationMismatch { expected, found }) => {
+            assert_eq!(*expected, *issue_11.binding(), "{path}");
+            *found
+        }
+        other => panic!("{path}: expected a mismatch, got {other:?}"),
+    };
+
+    // Another parent of the same operation, in both repository forms: the parent the path names.
+    for path in [
+        "/repositories/101/issues/13/comments?page=2",
+        "/repos/octo-org/hello-world/issues/13/comments?page=2",
+    ] {
+        let found = refused(path);
+        assert_eq!(
+            (found.operation(), found.parent()),
+            (operation::ISSUE_COMMENTS, Some(13)),
+            "{path}"
+        );
+    }
+    // Another repository by name.
+    let found = refused("/repos/octo-org/second-repo/issues/11/comments?page=2");
+    assert_eq!(found.repo(), &RepoRef::new("octo-org", "second-repo"));
+    assert_eq!(found.parent(), Some(11));
+    // Another operation or no collection of this operation.
+    for path in [
+        "/repos/octo-org/hello-world/pulls/11/reviews?page=2",
+        "/repositories/101/issues/comments?page=2",
+        "/repositories/101/issues/11?page=2",
+        "/repositories/101/issues/11/comments/12?page=2",
+        "/repositories/101/issues/011/comments?page=2",
+        "/repositories/x101/issues/11/comments?page=2",
+        "/orgs/octo-org/issues/11/comments?page=2",
+        "/?page=2",
+    ] {
+        let found = refused(path);
+        assert_eq!(found.operation(), operation::UNRECOGNIZED, "{path}");
+    }
+    // A top-level listing: its own path only.
+    let issues = repo.issue_pages(repo.issues(&Default::default()));
+    assert!(matches!(
+        issues.restore(url("/repositories/101/pulls?page=2")),
+        Err(GitHubError::ContinuationMismatch { .. })
+    ));
+    assert!(
+        issues
+            .restore(url("/repositories/101/issues?page=2"))
+            .is_ok()
+    );
+    assert_eq!(server.requests().len(), 0, "refused restores send nothing");
+
+    // The factory's own collection: accepted, and the page is fetched where the link points.
+    for path in [
+        "/repositories/101/issues/11/comments?page=2",
+        "/repos/Octo-Org/Hello-World/issues/11/comments?page=2",
+    ] {
+        let next = issue_11.restore(url(path)).unwrap();
+        assert_eq!(next.binding(), issue_11.binding());
+        assert_eq!(ids(&issue_11.fetch(Some(next)).await.unwrap()), [9]);
+    }
+    let targets: Vec<String> = server.requests().iter().map(|r| r.target.clone()).collect();
+    assert_eq!(
+        targets,
+        [
+            "/repositories/101/issues/11/comments?page=2",
+            "/repos/Octo-Org/Hello-World/issues/11/comments?page=2",
+        ]
+    );
+
+    // Under a base path, the collection is read below it.
+    let enterprise = GitHubContext::new(
+        http(server.addr(), None),
+        GitHubConfig {
+            token: TOKEN_A.into(),
+        },
+    )
+    .with_base_url(format!("{base}/api/v3"))
+    .unwrap();
+    let repo = enterprise.repo(RepoRef::new("octo-org", "hello-world"));
+    let issue_11 = repo.issue_comment_pages(IssueNumber(11), |op| op);
+    assert!(
+        issue_11
+            .restore(url("/api/v3/repositories/101/issues/11/comments?page=2"))
+            .is_ok()
+    );
+    assert!(matches!(
+        issue_11.restore(url("/api/v3/repositories/101/issues/13/comments?page=2")),
+        Err(GitHubError::ContinuationMismatch { .. })
+    ));
+    server.shutdown().await;
+}
+
+/// A `rel="next"` equal to the URL just requested (OPUS-2) is refused on the first repeat, also
+/// when it repeats the first page's URL; the chain ends there instead of at the budget.
+#[tokio::test]
+async fn next_link_equal_to_the_request_is_refused() {
+    let server = TestServer::start(|r: &Recorded| {
+        let host = r.host.clone();
+        // Every page, page 2 included, says: next is page 2.
+        gh_json(200, &comments_json(&[1], 7, "octo-org/hello-world")).header(
+            "link",
+            format!("<http://{host}/repositories/42/issues/7/comments?page=2>; rel=\"next\""),
+        )
+    })
+    .await;
+    let github = context(server.addr(), TOKEN_A);
+    let repo = github.repo(RepoRef::new("octo-org", "hello-world"));
+    let pages = repo.issue_comment_pages(IssueNumber(7), |op| op);
+    let budget = Budget::new(std::num::NonZeroUsize::new(50).unwrap());
+    let mut chain = sequential(Resume::Start, budget, |key| pages.fetch(key));
+    let mut items = 0;
+    let mut errors = Vec::new();
+    while let Some(page) = chain.next().await {
+        match page {
+            Ok(page) => items += page.items.len(),
+            Err(error) => errors.push(error),
+        }
+    }
+    let report = chain.finish();
+    assert_eq!(
+        items, 1,
+        "page 1 only: the repeated page's items are not returned"
+    );
+    assert_eq!(errors.len(), 1);
+    match &errors[0] {
+        GitHubError::LinkDidNotAdvance { meta } => assert_eq!(meta.status().as_u16(), 200),
+        other => panic!("expected LinkDidNotAdvance, got {other:?}"),
+    }
+    assert_eq!(
+        errors[0].to_string(),
+        "GitHub page: next link is the URL just requested; not followed"
+    );
+    assert_eq!(report.outcome, Outcome::Failed);
+    assert_eq!(report.progress.admitted, 2);
+    assert_eq!(server.requests().len(), 2);
+
+    // The first page linking to itself is the same violation.
+    let server_2 = TestServer::start(|r: &Recorded| {
+        let host = r.host.clone();
+        let target = r.target.clone();
+        gh_json(200, &comments_json(&[1], 7, "octo-org/hello-world"))
+            .header("link", format!("<http://{host}{target}>; rel=\"next\""))
+    })
+    .await;
+    let github = context(server_2.addr(), TOKEN_A);
+    let repo = github.repo(RepoRef::new("octo-org", "hello-world"));
+    assert!(matches!(
+        repo.issue_comment_pages(IssueNumber(7), |op| op)
+            .fetch(None)
+            .await,
+        Err(GitHubError::LinkDidNotAdvance { .. })
+    ));
+    assert_eq!(server_2.requests().len(), 1);
+    server_2.shutdown().await;
     server.shutdown().await;
 }
