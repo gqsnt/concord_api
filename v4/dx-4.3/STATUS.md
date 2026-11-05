@@ -23,7 +23,7 @@ resolved and verified; the integration receipt is recorded under "Integration".
 | CI diagnostics | `7eefdeedcc1ee0646525b6e02ac3f1ba0e02b90b` — socket-pressure snapshots in the gate (diagnostic only) |
 | CI correction | `2cdecd30ae526c9c89e28ebcb59965e6091c9305` (Riot fixture lifecycle control, records); its local gate passed (37/37, nightly 16/0) |
 | CI review fixes | `f9d8d2d6f33b1e89c387670990d74e5471a2f34e`: local gate 37/37 and nightly 16/0; CI runs 41927326927 and 41927331498 green on Linux, native Windows (two runners) and nightly (16/0) |
-| CI correction head | the commit after `f9d8d2d`: re-check fix (snapshot budget per snapshot) |
+| CI correction head (merged) | `ae5618a3b54f10d42a3f2c957e9b296325564684`: re-check fix (snapshot budget per snapshot); local gate 37/37, nightly 16/0; CI runs [41931697578](https://github.com/gqsnt/concord_api/actions/runs/41931697578) (push) and [41931702050](https://github.com/gqsnt/concord_api/actions/runs/41931702050) (pull request, checkout `674de17`): Linux and native Windows 37/37 each, nightly 16/0 each; independent re-check ACCEPT |
 
 The campaign's B0 trial sources (`FINAL_EVIDENCE.zip`, the handoff's `reference/campaign/`) are
 historical evidence of an older source. Nothing here relabels them as tests of this branch; every
@@ -58,9 +58,11 @@ Helper branches merged into the implementation branch: `dx43/native` (`e73838e`,
 
 ## Completion
 
-Current candidate: the CI correction head above. Its exact-commit verification (local gate,
-Linux, native Windows, nightly) is **pending** and will be recorded with the integration receipt
-under "Integration"; VERIFICATION.md covers earlier commits only. The failed run on `d4ebd34` remains on record
+Status: **INTEGRATED_VERIFIED.** PR #2 was merged into `main` at `fd4771a` from the verified
+head `ae5618a`, and the merge commit itself passed the local gate and CI on Linux, native Windows
+and nightly (see "Integration"). The failed run on `d4ebd34` remains on record
+(CI_FAILURE_RESOLUTION.md); it is not relabelled as a pass. No tag, release or publication; crate
+versions stay 4.2.0. The failed run on `d4ebd34` remains on record
 (CI_FAILURE_RESOLUTION.md); it is not relabelled as a pass.
 
 Historical status: **COMPLETE_VERIFIED** for `a6fb998`: every work package is implemented or decided; the
@@ -71,5 +73,13 @@ adopted (DECISIONS.md). No release action was taken: no `main` merge, tag or pub
 
 ## Integration
 
-Pending: recorded after the merge of PR #2 (merge commit, parents, tree, exact-commit CI on Linux,
-native Windows and nightly).
+| What | Value |
+|---|---|
+| PR | [gqsnt/concord_api#2](https://github.com/gqsnt/concord_api/pull/2), marked ready and merged 2026-11-05T02:08:34Z with `--merge --match-head-commit ae5618a` (merge commit, no fast-forward, branch kept) |
+| Merge commit | `fd4771aee360fcad61f09a780829817f3ad474a1`, tree `a993866d4b99efd939b4fe374210bb8693f524ff` |
+| Parents | `5ed600b766fa274acbced0b006e70dcd171fc2bd` (main), `ae5618a3b54f10d42a3f2c957e9b296325564684` (verified PR head) |
+| Tree check | equal to the tree of `ae5618a` and of the PR run's synthetic checkout `674de17` (main was already an ancestor of the PR branch) |
+| Local gate on `fd4771a` | `scripts/verify.sh --package --bench`: 37/37 PASS, exit 0 (workspace 748, examples each alone 198); `scripts/verify.sh --nightly-only`: PASS `nightly-clone-compat`, 16 passed |
+| CI on `fd4771a` (push to main) | run [41953231307](https://github.com/gqsnt/concord_api/actions/runs/41953231307): Linux 37/37 (job 127001862459), native Windows 37/37 (job 127001862555, eastus2, 200 excluded / ≥ 15,784 free dynamic ports), nightly `PASS nightly-clone-compat` 16/0 (job 127001862114) — read from the job logs |
+| Branch | `concord-v4.3-dx-implementation` retained at `ae5618a` |
+| Receipt | the commit adding this table (records only: `v4/dx-4.3/`); its own CI is recorded by the 4.4 extension records |
