@@ -101,7 +101,10 @@ both are accepted (`ApiVersion` deserializer).
 accepted, validated against the org, version and job, and the upload uses the declared endpoint.
 
 **SF-D5 Null vs empty in query results.** Not documented. Empty fields (quoted `""` or unquoted)
-are `None` in typed rows; raw records keep bytes. For ingest the documentation is explicit: an
+are `None` in typed rows; raw records keep bytes. Exception: the Contact export's
+`HasOptedOutOfEmail` (a standard, non-nillable boolean, "Email Opt Out" in the Object Reference;
+that page was not retrievable over HTTP either, 403) is a `bool`: `true`/`false`, and an empty or
+other value is a decode error of its result set. For ingest the documentation is explicit: an
 empty field is ignored on update, `#N/A` sets null (`IngestValue::{Keep, Null}`); a literal
 `#N/A` text value is refused as ambiguous (`FieldText`).
 

@@ -571,7 +571,7 @@
       "authoritative_url": "https://developer.salesforce.com/docs/platform/api-asynch/guide/query-get-job-results.html",
       "retrieved": "2026-11-04",
       "provenance": "schema_derived_synthetic",
-      "parameters": "3 rows per part; every Bulk delimiter inside a value, quoted LF and CRLF, doubled quotes, UTF-8, empty optional fields; every field quoted like the documented example; odd parts write empty fields unquoted; Sforce-NumberOfRecords and Sforce-Locator headers",
+      "parameters": "3 rows per part; every Bulk delimiter inside a value, quoted LF and CRLF, doubled quotes, UTF-8, empty optional fields, the HasOptedOutOfEmail boolean as true/false; every field quoted like the documented example; odd parts write empty fields unquoted; Sforce-NumberOfRecords and Sforce-Locator headers",
       "tests": [
         "cargo test -p concord-example-salesforce-app --test sf_b_bulk_csv_round_trip"
       ]
@@ -583,7 +583,7 @@
       "authoritative_url": "https://developer.salesforce.com/docs/platform/api-asynch/guide/query-get-job-results.html",
       "retrieved": "2026-11-04",
       "provenance": "schema_derived_synthetic",
-      "parameters": "2 parts x 60,000 rows (about 5.7 MB each), produced lazily in 16 KiB chunks, never materialized",
+      "parameters": "2 parts x 60,000 rows (about 6.2 MB each), produced lazily in 16 KiB chunks, never materialized",
       "tests": [
         "cargo test -p concord-example-salesforce-app --test sf_b_bulk_csv_round_trip"
       ]
