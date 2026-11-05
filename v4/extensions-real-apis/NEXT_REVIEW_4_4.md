@@ -56,20 +56,21 @@ fails on the old code (revert-checked by the fixer):
 |---|---|---|
 | ASTRA-1 (high) | CSV escape dialects wrote a literal escape byte unescaped; the reader dropped it on round-trip | writer encodes fields itself and escapes the escape byte inside quotes, checked against csv-core's reader at every split point (commit `cff5e35`, `crates/concord-extras/tests/csv_write_integrity.rs`, DECISIONS CSV-16) |
 | SOL-1 | CSV writer validated the field names of one `Serialize` call and wrote another: a stateful serializer could write values under the wrong heading | one serialization per row: shape, names and values checked in the pass that is written (`cff5e35`) |
-| ASTRA-2 | CSV writer limits checked after the oversized record was buffered and copied | per-record buffer capped at the limit; fields measured before copying; refused records never reach the frame (`cff5e35`, `a6a33a4`; peak RSS growth for a refused 32 MiB record 12 KiB instead of 32 MiB) |
+| ASTRA-2 | CSV writer limits checked after the oversized record was buffered and copied | per-record buffer capped at the limit; fields measured before copying; refused records never reach the frame (`cff5e35`, `a6a33a4`). The resolution re-check (Astra) found header names still copied before the header limit; they are now borrowed, never copied (`e27a095`, `843416d`). Peak RSS growth for a refused 16 MiB value with a 64-byte limit, one process per route: 0–24 KiB on all seven routes, against +16 to +32 MiB before (`crates/concord-extras/tests/csv_write_memory.rs`, DECISIONS CSV-18) |
 | SOL-2 / ASTRA-3 | a source of ready empty chunks was polled without bound inside one `next()` poll | empty-chunk budget with cooperative yield in the shared driver (commit `86f1472`, `crates/concord-extras/tests/stream_budget.rs`) |
 | ASTRA-4 | JSON Lines / JSON values processed a whole large chunk before applying the 64 KiB work budget; LF lookahead could exceed the line limit | framing slices limited to the remaining budget; bounded lookahead (same lane) |
 | SOL-3 | `Chunks` `Debug` printed body content | content-free `Debug` (same lane) |
 | SOL-4 | the macro's conditional-`Clone` binder shadowed a payload lifetime named `'__concord` (E0496) | collision-free binder (commit `7262007`, `checks/clone-hygiene`) |
-| OPUS-1 | GitHub `LinkPages::restore` re-bound any API URL, so a stored continuation of issue #13 was sent and recorded as #11 | restore checks the factory's operation and parent (pagination/workflow fix lane) |
-| OPUS-2 | GitHub, Kubernetes and Salesforce adapters accepted a non-advancing continuation (only the budget ended the loop) | each adapter refuses `next == requested` (same lane) |
-| OPUS-6 | SH-A reported the next products page as the resume point after a nested failure, silently skipping later siblings | checkpoint before each page; documented `Stopped` case (same lane) |
+| OPUS-1 | GitHub `LinkPages::restore` re-bound any API URL, so a stored continuation of issue #13 was sent and recorded as #11 | restore accepts only the factory's repository and operation path, otherwise `ContinuationMismatch` before any request (commit `d4578fc`, `examples/github-sdk/tests/paging.rs`) |
+| OPUS-2 | GitHub, Kubernetes and Salesforce adapters accepted a non-advancing continuation (only the budget ended the loop) | each adapter refuses `next == requested` with a typed error (`d4578fc` GitHub, `36b0adc` Kubernetes and Salesforce, incl. Salesforce result manifests; `examples/salesforce-sdk/tests/continuations.rs`, KU-A test) |
+| OPUS-6 | SH-A reported the next products page as the resume point after a nested failure, silently skipping later siblings | checkpoint before each page, for products and collections; the parent reports `Stopped` at the interrupted page (commit `585f7fe`, `sh_a_catalog_inventory.rs`) |
 
 Documentation and evidence gaps fixed now: SOL-5 (Yield docs: a bad final line without LF is
 terminal), SOL-6 (jobs outcome precedence, with test), SOL-9 and TERRA-6 (AUTHOR_GUIDE §11: the
 `Clone` exception and SDK record evolution), SOL-7 (`FromIter` no longer requires `Unpin`),
-OPUS-3/OPUS-11 doc sentences, OPUS-9 (maintained JSON-record full-job test), OPUS-10
-(`concord-pagination` in README/RECIPES/CHANGELOG). A native-Windows-only failure found by CI on
+OPUS-3/OPUS-11 doc sentences (`7ac6ca6`), OPUS-9 (maintained JSON-record full-job test,
+`checks/stream-stress/tests/jsonl_jobs.rs`, `77455a7`), OPUS-10 (`concord-pagination` in
+README/RECIPES/CHANGELOG, `7ac6ca6`). A native-Windows-only failure found by CI on
 `297b95e` (Kubernetes fixture hashes changed by CRLF conversion) was fixed with `-text` attributes
 (commit `97ddcc3`), verified by a simulated CRLF checkout.
 

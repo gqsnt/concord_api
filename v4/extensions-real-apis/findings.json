@@ -220,7 +220,7 @@
    "evidence": "reproduced",
    "recurrence": "one shared writer",
    "disposition": "fixed now",
-   "resolution": "commits cff5e35, a6a33a4 (tests/csv_write_memory.rs, csv_write_integrity.rs; DECISIONS CSV-17/18)",
+   "resolution": "commits cff5e35, a6a33a4; header names after the Astra re-check: e27a0958, 843416d9 (tests/csv_write_memory.rs, csv_write_integrity.rs; DECISIONS CSV-17/18)",
    "recommendation": null,
    "source": "review/astra/FINDINGS.md"
   },
@@ -268,7 +268,7 @@
    "evidence": "reproduced",
    "recurrence": "GitHub only",
    "disposition": "fixed now",
-   "resolution": "pagination/workflow fix (see VERIFICATION.md)",
+   "resolution": "commit d4578fcf (examples/github-sdk/tests/paging.rs persisted_continuation_of_another_collection_is_refused)",
    "recommendation": null,
    "source": "review/opus/FINDINGS.md"
   },
@@ -280,7 +280,7 @@
    "evidence": "reproduced (GitHub), source-inspected (Kubernetes, Salesforce)",
    "recurrence": "3 of 5 SDK adapters",
    "disposition": "fixed now",
-   "resolution": "pagination/workflow fix (see VERIFICATION.md)",
+   "resolution": "commits d4578fcf (GitHub), 36b0adc4 (Kubernetes, Salesforce; tests/continuations.rs, ku_a_inventory.rs)",
    "recommendation": null,
    "source": "review/opus/FINDINGS.md"
   },
@@ -292,7 +292,7 @@
    "evidence": "reproduced + source",
    "recurrence": "GitHub F9, Stripe F6 (independent)",
    "disposition": "doc sentence fixed now; accessor proposed for next release",
-   "resolution": "pagination/workflow fix (docs)",
+   "resolution": "commit 7ac6ca6a (sequential.rs resume_items docs)",
    "recommendation": "R3",
    "source": "review/opus/FINDINGS.md"
   },
@@ -328,7 +328,7 @@
    "evidence": "reproduced",
    "recurrence": "Shopify only",
    "disposition": "fixed now",
-   "resolution": "pagination/workflow fix (see VERIFICATION.md)",
+   "resolution": "commit 585f7fea (sh_a_nested_failure_mid_page_resumes_at_the_interrupted_parent_page)",
    "recommendation": null,
    "source": "review/opus/FINDINGS.md"
   },
@@ -364,7 +364,7 @@
    "evidence": "reproduced",
    "recurrence": "n/a",
    "disposition": "fixed now (test)",
-   "resolution": "pagination/workflow fix (checks/stream-stress/tests/jsonl_jobs.rs)",
+   "resolution": "commit 77455a7b (checks/stream-stress/tests/jsonl_jobs.rs)",
    "recommendation": null,
    "source": "review/opus/FINDINGS.md"
   },
@@ -376,7 +376,7 @@
    "evidence": "source-inspected",
    "recurrence": "n/a",
    "disposition": "fixed now (docs)",
-   "resolution": "pagination/workflow fix (docs)",
+   "resolution": "commit 7ac6ca6a (README, docs/RECIPES.md, CHANGELOG.md)",
    "recommendation": null,
    "source": "review/opus/FINDINGS.md"
   },
@@ -388,7 +388,7 @@
    "evidence": "reproduced",
    "recurrence": "n/a",
    "disposition": "fixed now (docs)",
-   "resolution": "pagination/workflow fix (docs)",
+   "resolution": "commit 7ac6ca6a (independent.rs, jobs.rs docs)",
    "recommendation": null,
    "source": "review/opus/FINDINGS.md"
   }
