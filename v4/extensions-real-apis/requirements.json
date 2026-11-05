@@ -606,11 +606,13 @@
      "paths": [
       "crates/concord-pagination/tests/jobs.rs",
       "examples/salesforce-app/tests/sf_b_bulk_csv_round_trip.rs",
-      "checks/dx03-fanout-sink/"
+      "checks/dx03-fanout-sink/",
+      "checks/stream-stress/tests/jsonl_jobs.rs"
      ],
      "commands": [
       "cargo test -p concord-example-salesforce-app",
-      "cargo test -p concord-check-dx03-fanout-sink"
+      "cargo test -p concord-check-dx03-fanout-sink",
+      "cargo test -p concord-check-stream-stress --test jsonl_jobs"
      ]
     }
    ],

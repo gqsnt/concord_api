@@ -333,6 +333,7 @@ version = "0.0.0"
 dependencies = [
  "concord",
  "concord-example-testserver",
+ "concord-pagination",
  "serde",
  "serde_json",
  "tokio",
