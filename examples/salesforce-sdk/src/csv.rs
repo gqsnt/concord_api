@@ -528,8 +528,10 @@ impl Serialize for IngestValue {
 }
 
 /// A Contact row of a Bulk query export: `SELECT Id, FirstName, LastName, Email, AccountId,
-/// Loyalty_Tier__c FROM Contact`, in that column order ([`CONTACT_EXPORT_FIELDS`]). Empty fields
-/// are `None` (the results do not distinguish `null` from empty). `Debug` shows the id only.
+/// Loyalty_Tier__c, HasOptedOutOfEmail FROM Contact`, in that column order
+/// ([`CONTACT_EXPORT_FIELDS`]). Empty optional fields are `None` (the results do not distinguish
+/// `null` from empty); `HasOptedOutOfEmail` is a boolean that is never empty (`true`/`false`), so
+/// an empty or other value is a decode error of its result set. `Debug` shows the id only.
 #[derive(Clone, PartialEq, Serialize, Deserialize)]
 pub struct ContactExportRow {
     /// `Id`.
@@ -550,6 +552,10 @@ pub struct ContactExportRow {
     /// `Loyalty_Tier__c` (custom).
     #[serde(rename = "Loyalty_Tier__c")]
     pub loyalty_tier: Option<String>,
+    /// `HasOptedOutOfEmail` (standard boolean, label "Email Opt Out"): the Contact does not
+    /// want e-mail.
+    #[serde(rename = "HasOptedOutOfEmail")]
+    pub has_opted_out_of_email: bool,
 }
 
 impl fmt::Debug for ContactExportRow {
@@ -561,13 +567,14 @@ impl fmt::Debug for ContactExportRow {
 }
 
 /// The columns of [`ContactExportRow`], in order.
-pub const CONTACT_EXPORT_FIELDS: [&str; 6] = [
+pub const CONTACT_EXPORT_FIELDS: [&str; 7] = [
     "Id",
     "FirstName",
     "LastName",
     "Email",
     "AccountId",
     "Loyalty_Tier__c",
+    "HasOptedOutOfEmail",
 ];
 
 #[cfg(test)]
@@ -656,20 +663,28 @@ mod tests {
             .map(|f| FieldPath::parse(f).unwrap())
             .collect();
         let reader = csv.result_reader(&fields).unwrap();
-        let body = "\"Id\"|\"FirstName\"|\"LastName\"|\"Email\"|\"AccountId\"|\"Loyalty_Tier__c\"\n\
-                    \"003R0000000AAAAAAA\"|\"\"|\"Smith|Jones\"|\"\"|\"\"|\"Gold\"\n";
+        let body = "\"Id\"|\"FirstName\"|\"LastName\"|\"Email\"|\"AccountId\"|\"Loyalty_Tier__c\"|\"HasOptedOutOfEmail\"\n\
+                    \"003R0000000AAAAAAA\"|\"\"|\"Smith|Jones\"|\"\"|\"\"|\"Gold\"|\"true\"\n";
         let mut rows = reader.read::<ContactExportRow, _>(Chunks::new([body]));
         let row = rows.next().await.unwrap().unwrap();
         assert_eq!(row.last_name, "Smith|Jones");
         assert_eq!(row.first_name, None);
         assert_eq!(row.account_id, None);
         assert_eq!(row.loyalty_tier.as_deref(), Some("Gold"));
+        assert!(row.has_opted_out_of_email);
         assert!(rows.next().await.is_none());
 
         // A header that is not exactly the selected fields is a format error.
-        let wrong = "Id|LastName|FirstName|Email|AccountId|Loyalty_Tier__c\n";
+        let wrong = "Id|LastName|FirstName|Email|AccountId|Loyalty_Tier__c|HasOptedOutOfEmail\n";
         let mut rows = reader.read::<ContactExportRow, _>(Chunks::new([wrong]));
         let err = rows.next().await.unwrap().unwrap_err();
         assert_eq!(err.kind(), concord::stream::ReadErrorKind::Format);
+
+        // The opt-out flag is a boolean that is never empty: an empty value does not decode.
+        let empty = "Id|FirstName|LastName|Email|AccountId|Loyalty_Tier__c|HasOptedOutOfEmail\n\
+                     003R0000000AAAAAAA||Smith||||\n";
+        let mut rows = reader.read::<ContactExportRow, _>(Chunks::new([empty]));
+        let err = rows.next().await.unwrap().unwrap_err();
+        assert_eq!(err.kind(), concord::stream::ReadErrorKind::Decode);
     }
 }

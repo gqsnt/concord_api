@@ -148,6 +148,7 @@ fn assert_rows_equal(actual: &[ContactExportRow], expected: &[Row]) {
         assert_eq!(a.email, opt(&e[3]));
         assert_eq!(a.account_id.as_ref().map(|i| i.to_string()), opt(&e[4]));
         assert_eq!(a.loyalty_tier, opt(&e[5]));
+        assert_eq!(a.has_opted_out_of_email, e[6] == "true");
     }
 }
 
@@ -193,7 +194,7 @@ async fn sf_b_discovered_parallel_export_semicolon_crlf() {
     assert_eq!(output.parts, 7);
     let bytes = std::fs::read(&output.path).unwrap();
     let text = String::from_utf8(bytes.clone()).unwrap();
-    let header = "Id;FirstName;LastName;Email;AccountId;Loyalty_Tier__c\r\n";
+    let header = "Id;FirstName;LastName;Email;AccountId;Loyalty_Tier__c;HasOptedOutOfEmail\r\n";
     assert!(text.starts_with(header), "{text}");
     assert_eq!(
         text.matches("Id;FirstName;LastName").count(),
@@ -202,7 +203,7 @@ async fn sf_b_discovered_parallel_export_semicolon_crlf() {
     );
     assert!(
         text[header.len()..].starts_with(
-            "003A00000000000AAA;;\"all,delims;in|one^val`ue\there\";;001A00000000000AAA;Gold\r\n"
+            "003A00000000000AAA;;\"all,delims;in|one^val`ue\there\";;001A00000000000AAA;Gold;false\r\n"
         ),
         "{text}"
     );
@@ -229,7 +230,7 @@ async fn sf_b_discovered_parallel_export_semicolon_crlf() {
     );
     assert_eq!(
         body["query"],
-        "SELECT Id, FirstName, LastName, Email, AccountId, Loyalty_Tier__c FROM Contact LIMIT 10000"
+        "SELECT Id, FirstName, LastName, Email, AccountId, Loyalty_Tier__c, HasOptedOutOfEmail FROM Contact LIMIT 10000"
     );
     for r in requests.iter().filter(|r| r.path().ends_with("/results")) {
         assert_eq!(r.header("accept"), Some("text/csv"));
@@ -276,7 +277,7 @@ async fn sf_b_every_bulk_dialect_round_trips_with_quoted_separators_and_newlines
         let bytes = std::fs::read(&report.output.as_ref().unwrap().path).unwrap();
         let d = dialect.delimiter.byte() as char;
         let header = format!(
-            "Id{d}FirstName{d}LastName{d}Email{d}AccountId{d}Loyalty_Tier__c{}",
+            "Id{d}FirstName{d}LastName{d}Email{d}AccountId{d}Loyalty_Tier__c{d}HasOptedOutOfEmail{}",
             ending(dialect)
         );
         assert!(bytes.starts_with(header.as_bytes()), "{dialect:?}");
@@ -633,7 +634,8 @@ async fn sf_b_permits_are_held_through_stalled_bodies() {
 async fn sf_b_width_schema_decode_and_count_errors_fail_only_their_part() {
     let rows = part_rows(0);
     let good = server_csv(SEMI_CRLF, &HEADER, &rows, false);
-    let width = format!("{good}\"003A00000000099AAA\";\"x\";\"y\";\"z\";\"\";\"\";\"extra\"\r\n");
+    let width =
+        format!("{good}\"003A00000000099AAA\";\"x\";\"y\";\"z\";\"\";\"\";\"false\";\"extra\"\r\n");
     let swapped = good.replacen(
         "\"FirstName\";\"LastName\"",
         "\"LastName\";\"FirstName\"",
@@ -1135,7 +1137,7 @@ async fn sf_b_large_generated_parts_stream_through_bounded_readers() {
     const ROWS: u64 = 60_000;
     let row = |i: u64| {
         format!(
-            "\"003G{i:011}AAA\";\"First {i}\";\"Last; \"\"quoted\"\" {i}\";\"g{i}@example.test\";\"\";\"Tier {}\"\r\n",
+            "\"003G{i:011}AAA\";\"First {i}\";\"Last; \"\"quoted\"\" {i}\";\"g{i}@example.test\";\"\";\"Tier {}\";\"false\"\r\n",
             i % 7
         )
         .into_bytes()

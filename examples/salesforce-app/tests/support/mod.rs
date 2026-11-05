@@ -184,17 +184,19 @@ pub fn assert_org_isolation(requests: &[Recorded]) {
 // Bulk CSV: canonical rows and an independent generator
 // ---------------------------------------------------------------------------------------------
 
-/// A canonical export row: Id, FirstName, LastName, Email, AccountId, Loyalty_Tier__c (empty
-/// string for a field Salesforce would leave empty).
-pub type Row = [String; 6];
+/// A canonical export row: Id, FirstName, LastName, Email, AccountId, Loyalty_Tier__c,
+/// HasOptedOutOfEmail (empty string for a field Salesforce would leave empty; the boolean is
+/// never empty).
+pub type Row = [String; 7];
 
-pub const HEADER: [&str; 6] = [
+pub const HEADER: [&str; 7] = [
     "Id",
     "FirstName",
     "LastName",
     "Email",
     "AccountId",
     "Loyalty_Tier__c",
+    "HasOptedOutOfEmail",
 ];
 
 /// The canonical rows of part `ordinal` (3 rows per part, with the tricky values spread over
@@ -233,7 +235,8 @@ pub fn part_rows(ordinal: u64) -> Vec<Row> {
                 1 => String::new(),
                 _ => "Silver, Plus".to_owned(),
             };
-            [id, first, last, email, account, tier]
+            let opted_out = if n % 4 == 1 { "true" } else { "false" }.to_owned();
+            [id, first, last, email, account, tier, opted_out]
         })
         .collect()
 }
