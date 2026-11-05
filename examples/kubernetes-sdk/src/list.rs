@@ -7,7 +7,9 @@
 //!   and a non-empty `metadata.continue` while more chunks exist. Only the presence of `continue`
 //!   decides whether to go on; an empty page with a token continues.
 //! - The token is opaque and valid for the identical query only. It is passed back unmodified;
-//!   this adapter never builds, edits or predicts one.
+//!   this adapter never builds, edits or predicts one. A continued chunk that returns the token
+//!   it was requested with would repeat itself forever (only the caller's budget would end the
+//!   chain): it is a [`ListError::ContinueDidNotAdvance`], and its items are not returned.
 //! - Every chunk of one chain reports the **same** collection `metadata.resourceVersion` (the
 //!   consistent snapshot). [`ListPager::fetch`] checks it: the snapshot travels inside the page key
 //!   ([`Continuation`]), and a continued chunk that reports another one is a
@@ -188,6 +190,9 @@ pub enum ListError {
     /// A chunk returned a `continue` token without a collection `resourceVersion`, so the next
     /// chunk's consistency could not be checked.
     MissingSnapshot,
+    /// A continued chunk returned the `continue` token it was requested with: following it
+    /// would request the same chunk again. Its items were not returned.
+    ContinueDidNotAdvance,
 }
 
 impl ListError {
@@ -218,6 +223,9 @@ impl fmt::Display for ListError {
             Self::MissingSnapshot => {
                 f.write_str("a list chunk returned a continue token without a resourceVersion")
             }
+            Self::ContinueDidNotAdvance => f.write_str(
+                "a continued list chunk returned the continue token it was requested with",
+            ),
         }
     }
 }
@@ -266,43 +274,46 @@ impl<O: ListOperation> ListPager<O> {
         key: Option<Continuation>,
     ) -> impl Future<Output = Result<ListPage<O::Item>, ListError>> + Send + 'static {
         let mut op = self.template.clone().with_limit(Some(self.limit.get()));
-        let expected = key.map(|key| {
+        if let Some(key) = &key {
             op = op
-                .clone()
-                .with_continue(Some(key.token))
+                .with_continue(Some(key.token.clone()))
                 .with_resource_version(None, None);
-            key.snapshot
-        });
+        }
         async move {
             let list = match op.send_list().await {
                 Ok(list) => list,
                 Err(error) => return Err(ListError::from_concord(error).await),
             };
-            into_page(list, expected.as_ref())
+            into_page(list, key.as_ref())
         }
     }
 }
 
-/// Moves the items out of a list envelope and derives the next key, checking the snapshot of a
-/// continued chunk against `expected`.
+/// Moves the items out of a list envelope and derives the next key, checking a continued chunk
+/// against the key it was requested with (`requested`, `None` for the first chunk): it must
+/// report the same snapshot and must not return the same token.
 ///
 /// # Errors
 ///
-/// [`ListError::InconsistentSnapshot`] when `expected` is given and the chunk reports another
-/// (or no) snapshot; [`ListError::MissingSnapshot`] when a token comes without a snapshot.
+/// [`ListError::InconsistentSnapshot`] when `requested` is given and the chunk reports another
+/// (or no) snapshot; [`ListError::ContinueDidNotAdvance`] when the chunk's token is the requested
+/// one; [`ListError::MissingSnapshot`] when a token comes without a snapshot.
 pub fn into_page<T>(
     list: ObjectList<T>,
-    expected: Option<&ResourceVersion>,
+    requested: Option<&Continuation>,
 ) -> Result<ListPage<T>, ListError> {
     let (meta, items) = list.into_parts();
     let snapshot = meta.snapshot().cloned();
-    if let Some(expected) = expected
-        && snapshot.as_ref() != Some(expected)
+    if let Some(requested) = requested
+        && snapshot.as_ref() != Some(&requested.snapshot)
     {
         return Err(ListError::InconsistentSnapshot);
     }
     let next = match meta.next_token() {
         None => None,
+        Some(token) if requested.is_some_and(|r| r.token == *token) => {
+            return Err(ListError::ContinueDidNotAdvance);
+        }
         Some(token) => Some(Continuation {
             token: token.clone(),
             snapshot: snapshot.clone().ok_or(ListError::MissingSnapshot)?,

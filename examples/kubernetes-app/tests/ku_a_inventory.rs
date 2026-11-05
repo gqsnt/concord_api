@@ -435,6 +435,42 @@ async fn ku_a_a_different_snapshot_mid_chain_is_a_failure() {
     finish(server).await;
 }
 
+/// A server that answers a continued chunk with the token it was sent (OPUS-2): the chain fails
+/// on the first repeat, its items are not merged, and the budget (50 chunks) is not what ends it.
+#[tokio::test]
+async fn ku_a_a_continue_token_that_does_not_advance_is_a_failure() {
+    let server = TestServer::start(|r| {
+        if r.path() == "/api/v1/namespaces/team-a/pods" {
+            return match query(r, "continue").as_deref() {
+                None => json("ku_a/pods_team_a_1.json"),
+                Some(T1) => Reply::json(
+                    200,
+                    format!(
+                        r#"{{"kind":"PodList","apiVersion":"v1","metadata":{{"resourceVersion":"5001","continue":"{T1}"}},"items":[{{"metadata":{{"name":"web-a-1","namespace":"team-a"}}}}]}}"#
+                    ),
+                ),
+                Some(_) => not_found(),
+            };
+        }
+        not_found()
+    })
+    .await;
+    let template = kube(&server).namespace(ns("team-a")).core().pods();
+    let collected = collect_list(template, policy(2, 50, OnExpired::Report), Resume::Start).await;
+    match &collected.completion.outcome {
+        ListOutcome::Failed {
+            error: ListError::ContinueDidNotAdvance,
+            resume: Resume::At(key),
+        } => assert_eq!(key.token().expose(), T1),
+        other => panic!("{other:?}"),
+    }
+    assert_eq!(names(&collected.items), ["web-a-1", "web-a-2"]);
+    let requests = server.requests();
+    assert_eq!(requests.len(), 2, "the first repeat ends the chain");
+    assert_eq!(query(&requests[1], "continue").as_deref(), Some(T1));
+    finish(server).await;
+}
+
 #[tokio::test]
 async fn ku_a_bounded_chain_resumes_from_its_checkpoint() {
     let server = TestServer::start(|r| {

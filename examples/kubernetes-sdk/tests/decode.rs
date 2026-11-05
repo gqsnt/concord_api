@@ -195,7 +195,7 @@ fn list_envelope_items_move_out_and_continue_keys_bind_the_snapshot() {
     // An empty chunk with a token continues; `items: null` reads as empty.
     let empty: PodList =
         json(r#"{"metadata":{"resourceVersion":"10245","continue":"T2"},"items":null}"#);
-    let page = into_page(empty, Some(next.snapshot())).unwrap();
+    let page = into_page(empty, Some(&next)).unwrap();
     assert!(page.items.is_empty());
     assert!(page.next.is_some());
     assert_eq!(page.meta.remaining_item_count, None);
@@ -203,23 +203,27 @@ fn list_envelope_items_move_out_and_continue_keys_bind_the_snapshot() {
     // The last chunk: `continue: ""` ends the chain.
     let last: PodList =
         json(r#"{"metadata":{"resourceVersion":"10245","continue":""},"items":[]}"#);
-    assert!(
-        into_page(last, Some(next.snapshot()))
-            .unwrap()
-            .next
-            .is_none()
-    );
+    assert!(into_page(last, Some(&next)).unwrap().next.is_none());
 
     // A continued chunk from another snapshot is refused, not merged.
     let moved: PodList = json(r#"{"metadata":{"resourceVersion":"10300"},"items":[]}"#);
     assert!(matches!(
-        into_page(moved, Some(next.snapshot())),
+        into_page(moved, Some(&next)),
         Err(ListError::InconsistentSnapshot)
     ));
     let missing: PodList = json(r#"{"metadata":{},"items":[]}"#);
     assert!(matches!(
-        into_page(missing, Some(next.snapshot())),
+        into_page(missing, Some(&next)),
         Err(ListError::InconsistentSnapshot)
+    ));
+    // A continued chunk returning the token it was requested with would repeat forever.
+    let stuck: PodList = json(
+        r#"{"metadata":{"resourceVersion":"10245","continue":"ENCODED_CONTINUE_TOKEN"},
+            "items":[{"metadata":{"name":"p1","namespace":"team-a"}}]}"#,
+    );
+    assert!(matches!(
+        into_page(stuck, Some(&next)),
+        Err(ListError::ContinueDidNotAdvance)
     ));
     // A token without a snapshot cannot be checked later.
     let unbound: PodList = json(r#"{"metadata":{"continue":"T"},"items":[]}"#);
