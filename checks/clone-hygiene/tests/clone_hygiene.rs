@@ -95,3 +95,44 @@ fn clone_of_non_clone_request_is_rejected() {
     let t = trybuild::TestCases::new();
     t.compile_fail("tests/ui/*.rs");
 }
+
+/// Review finding SOL-4 (4.4 review): a payload type may itself bind the lifetime `'__concord`
+/// (`for<'__concord> fn(&'__concord str)` is valid Rust and `Clone`). The generated conditional
+/// `Clone` bound adds its own unused higher-ranked binder; it must not shadow the payload's
+/// lifetime (that was E0496), so the request stays cloneable.
+mod lifetime_named_like_the_binder {
+    struct Wire;
+
+    impl<T> concord::Encode<T> for Wire {
+        const CONTENT_TYPE: Option<&'static str> = None;
+        fn encode(_: T) -> Result<concord::reqwest::Body, concord::CodecError> {
+            Ok("callback".into())
+        }
+    }
+
+    concord::api! {
+        pub client CallbackApi {
+            base "http://127.0.0.1";
+            POST send_callback(body callback: for<'__concord> fn(&'__concord str)) {
+                path "callback";
+                request Wire;
+            }
+            POST send_both(
+                body callback: for<'__concord, '__concord1> fn(&'__concord str, &'__concord1 str),
+            ) {
+                path "both";
+                request Wire;
+            }
+        }
+    }
+
+    #[test]
+    fn a_payload_lifetime_named_like_the_binder_keeps_clone() {
+        let callback: for<'x> fn(&'x str) = |_| {};
+        let request = CallbackApi::new(concord::reqwest::Client::new()).send_callback(callback);
+        let _ = request.clone().prepare().unwrap();
+        let both: for<'x, 'y> fn(&'x str, &'y str) = |_, _| {};
+        let request = CallbackApi::new(concord::reqwest::Client::new()).send_both(both);
+        let _ = request.clone().prepare().unwrap();
+    }
+}
