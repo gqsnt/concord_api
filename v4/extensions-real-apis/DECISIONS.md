@@ -180,7 +180,7 @@ while parsed from the buffer), `pending_input_bytes()` (the current chunk's unco
 the source's memory, shared not copied) and `into_source()` (documented as partially consumed,
 never unread). A buffered line is released right after it is parsed.
 
-**JSONL-11 — Foundation touch points.** `media.rs` only: the dead-code allowance of `Media::params`
+**JSONL-11 — Foundation touch points.** `crates/concord-extras/src/media.rs` only: the dead-code allowance of `Media::params`
 now applies whenever `csv` is off (it is read only by CSV), and `check_charset`/`essence` are
 compiled for `jsonl` too. With `--all-features` the `params` field is still unread while `csv` is a
 stub on this branch (the same warning exists before this change); it disappears once CSV reads it.

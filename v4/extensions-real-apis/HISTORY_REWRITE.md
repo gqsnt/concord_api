@@ -7,7 +7,7 @@ commit on. The value was never a real credential. Rather than allowing it throug
 repository's push-protection bypass (a security decision for the owner), the coordinator
 rewrote the then-unpublished commits `origin/main..concord-4.4-extensions-evidence` (98 commits)
 with `git filter-branch --tree-filter`, replacing the value with `sk_test_SYNTHETIC_maintenance`
-in `checks/maintenance-stripe/tests/before.rs` and `tests/after.rs` wherever they existed. The
+in `checks/maintenance-stripe/tests/before.rs` and `checks/maintenance-stripe/tests/after.rs` wherever they existed. The
 frozen consumer therefore stays byte-identical across its stages.
 
 `git diff` between the old tip `54f96abe` and the new tip `45fd8cab` touches exactly those two

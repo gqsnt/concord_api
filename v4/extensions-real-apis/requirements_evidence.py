@@ -131,15 +131,31 @@ E = {
               ["cargo test -p concord-check-dx03-csv-runtime", "cargo test -p concord-check-dx03-fanout-sink"]),
     "VERIFY-01": ("DONE", ["scripts/verify.sh", "scripts/check-graph.py", "scripts/package-check.sh"],
                   ["scripts/verify.sh --package --bench"]),
-    "VERIFY-02": ("PENDING", ["v4/extensions-real-apis/VERIFICATION.md"], []),
+    "VERIFY-02": ("DONE", ["v4/extensions-real-apis/VERIFICATION.md"],
+                  ["scripts/verify.sh --package --bench (local, fcf5573a: 43/43)",
+                   "scripts/verify.sh --nightly-only (local, fcf5573a: PASS 16/0)",
+                   "CI run 41967712269 (fcf5573a): Linux 43/43, native Windows 43/43, nightly PASS 16/0",
+                   "CI run 41967732726 (PR #3 merge commit d65fb7a3, tree of fcf5573a): same results"]),
     "REVIEW-01": ("DONE", ["v4/extensions-real-apis/NEXT_REVIEW_4_4.md", "v4/extensions-real-apis/review/",
                            "v4/extensions-real-apis/findings.json"], []),
     "REVIEW-02": ("DONE", ["v4/extensions-real-apis/NEXT_REVIEW_4_4.md", "v4/extensions-real-apis/findings.json",
                            "v4/extensions-real-apis/review/astra-recheck/",
                            "v4/extensions-real-apis/review/sol-recheck/"], []),
     "REVIEW-03": ("DONE", ["v4/extensions-real-apis/NEXT_REVIEW_4_4.md"], []),
-    "DELIVERY-01": ("PENDING", ["v4/extensions-real-apis/STATUS.md"], []),
+    "DELIVERY-01": ("DONE", ["v4/extensions-real-apis/STATUS.md", "v4/extensions-real-apis/VERIFICATION.md",
+                             "v4/extensions-real-apis/requirements.json",
+                             "v4/extensions-real-apis/IMPLEMENTATION_READOUT.md",
+                             "v4/extensions-real-apis/readout_check.py"],
+                    ["python3 -I v4/extensions-real-apis/readout_check.py",
+                     "make_delivery.sh BASE FINAL OUT (cumulative binary diff applied to BASE reproduces the "
+                     "final tree; Git bundle verified and cloned; source/evidence ZIP with path/size/sha256 "
+                     "manifest, integrity, safe-path, link and replay checks); the package and its checks are "
+                     "outside the repository and reported with the delivery"]),
 }
+
+
+# The final implementation commit the evidence was verified at (VERIFICATION.md, Final).
+SOURCE = "fcf5573ad3a5e062fd336ab4e830ae897961d16f"
 
 
 def main():
@@ -155,7 +171,9 @@ def main():
     missing = set(E) - {r["id"] for r in handoff["requirements"]}
     assert not missing, missing
     out["requirements"] = reqs
-    out["evidence_note"] = "Statuses per v4/extensions-real-apis/STATUS.md; source identities in VERIFICATION.md."
+    out["evidence_source_sha"] = SOURCE
+    out["evidence_note"] = ("Paths and commands are evidence at evidence_source_sha, the final implementation "
+                            "commit (local gate and CI in VERIFICATION.md); statuses per STATUS.md.")
     with open(os.path.join(HERE, "requirements.json"), "w", encoding="utf-8") as f:
         json.dump(out, f, indent=1)
         f.write("\n")

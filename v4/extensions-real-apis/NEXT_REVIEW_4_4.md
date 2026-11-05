@@ -117,7 +117,7 @@ Counter-evidence (what worked):
   excepted, as documented). The Salesforce dialect switch needed zero SDK lines.
 - Both independent callers succeeded from public docs. One found "the whole-job future is the
   correct concurrency unit"; the other reported no compiler errors.
-- Stress: 256/512 MiB reads at constant library retention and about 11 MB process RSS.
+- Stress: 256/512 MiB reads at constant library retention and 11–12 MB process RSS.
 - Opus traced the pagination scheduler and found no scheduling, ordering, budget or
   cancellation defect.
 

@@ -988,10 +988,15 @@
      "paths": [
       "v4/extensions-real-apis/VERIFICATION.md"
      ],
-     "commands": []
+     "commands": [
+      "scripts/verify.sh --package --bench (local, fcf5573a: 43/43)",
+      "scripts/verify.sh --nightly-only (local, fcf5573a: PASS 16/0)",
+      "CI run 41967712269 (fcf5573a): Linux 43/43, native Windows 43/43, nightly PASS 16/0",
+      "CI run 41967732726 (PR #3 merge commit d65fb7a3, tree of fcf5573a): same results"
+     ]
     }
    ],
-   "implementation_status": "PENDING"
+   "implementation_status": "DONE"
   },
   {
    "id": "REVIEW-01",
@@ -1042,12 +1047,19 @@
    "implementation_evidence": [
     {
      "paths": [
-      "v4/extensions-real-apis/STATUS.md"
+      "v4/extensions-real-apis/STATUS.md",
+      "v4/extensions-real-apis/VERIFICATION.md",
+      "v4/extensions-real-apis/requirements.json",
+      "v4/extensions-real-apis/IMPLEMENTATION_READOUT.md",
+      "v4/extensions-real-apis/readout_check.py"
      ],
-     "commands": []
+     "commands": [
+      "python3 -I v4/extensions-real-apis/readout_check.py",
+      "make_delivery.sh BASE FINAL OUT (cumulative binary diff applied to BASE reproduces the final tree; Git bundle verified and cloned; source/evidence ZIP with path/size/sha256 manifest, integrity, safe-path, link and replay checks); the package and its checks are outside the repository and reported with the delivery"
+     ]
     }
    ],
-   "implementation_status": "PENDING"
+   "implementation_status": "DONE"
   },
   {
    "id": "DATA-04",
@@ -1130,5 +1142,6 @@
  ],
  "handoff_revision": "4.4-with-4.3-ci-repair-and-integration",
  "integration_required": true,
- "evidence_note": "Statuses per v4/extensions-real-apis/STATUS.md; source identities in VERIFICATION.md."
+ "evidence_source_sha": "fcf5573ad3a5e062fd336ab4e830ae897961d16f",
+ "evidence_note": "Paths and commands are evidence at evidence_source_sha, the final implementation commit (local gate and CI in VERIFICATION.md); statuses per STATUS.md."
 }

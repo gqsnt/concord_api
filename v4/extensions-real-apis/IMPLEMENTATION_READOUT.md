@@ -107,8 +107,8 @@ transport sends it (`checks/stream-stress/src/lib.rs`):
 ```
 
 Measured (STRESS.md): 256 MiB and 512 MiB reads keep the reader's own buffer at 127 B (JSON
-Lines) / 384 B (CSV) and the whole process near 11 MB; first records arrive in under a
-millisecond; uploads poll their source zero times before sending.
+Lines) / 384 B (CSV) and the whole process at 11–12 MB; in the full-body reads the first record
+arrives in under a millisecond; uploads poll their source zero times before sending.
 
 ## 3. Cursor traversal
 
