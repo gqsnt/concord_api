@@ -1,0 +1,3 @@
+# Fixture bytes must not depend on the checkout platform (see examples/kubernetes-app/tests/fixtures).
+* -text
+.gitattributes text eol=lf
