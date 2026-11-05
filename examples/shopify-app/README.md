@@ -44,7 +44,9 @@ Live runs were **not** performed for this delivery (no credentials): both workfl
 - **SH-A failures:** the first failed traversal ends the run (later stages `NotRun`); nothing is
   retried; a `THROTTLED` failure keeps the bucket state and the resume cursor. A failed nested
   traversal stops its parent traversal mid-page: the parent summary is `Stopped`, resuming at the
-  interrupted page (its later parents were not processed).
+  interrupted page (its later parents were not processed). The cursor names a page, not a
+  position in it: resuming there processes that page's earlier parents again, so a caller
+  discards or deduplicates them (at least once, not exactly once).
 - **SH-A completeness:** each discrepancy kind runs only when its inputs are complete (see
   `Discrepancy`); `ReconcileStatus::Complete` needs every enabled traversal exhausted without
   accepted errors.

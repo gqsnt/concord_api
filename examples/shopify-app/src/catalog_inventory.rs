@@ -224,6 +224,11 @@ pub struct TraversalSummary {
     pub pages: u64,
     /// Where to resume: the failed page after a failure, the next page when bounded, the
     /// interrupted page when stopped; `None` when exhausted.
+    ///
+    /// The cursor names a page, not a position inside it: resuming a stopped traversal fetches
+    /// the interrupted page again, so the parents of that page processed before the failure are
+    /// processed again (at least once, not exactly once). A caller that resumes discards or
+    /// deduplicates that page's earlier results; [`ReconcileRequest`] has no resume input.
     pub resume: Option<Resume<Cursor>>,
     /// The failure, when `outcome` is `Failed` (a stopped traversal's failure is the nested one).
     pub failure: Option<SyncFailure>,
