@@ -32,6 +32,10 @@ model by the tool's documented default; the harness does not report a per-agent 
 | Maintenance exercise, Shopify | `ext44/maint-shopify` (`993e225`) | did not write the Shopify SDK (resumed once after a machine restart) |
 | Maintenance exercise, Salesforce | `ext44/maint-salesforce` (`58b7052`) | did not write the Salesforce SDK |
 | Maintenance exercise, Kubernetes | `ext44/maint-kubernetes` (`d903a1f`) | did not write the Kubernetes SDK |
+| Review fixes: incremental bodies (SOL-2/3/5/7, ASTRA-3/4) | `ext44/fix-stream` (`ff0b3cc`) | the stream foundation's author is the coordinator; reviewed by the Astra re-check |
+| Review fixes: CSV writer (SOL-1, ASTRA-1, ASTRA-2 and its header-name follow-up) | `ext44/fix-csv-writer` (`843416d`) | reviewed by the Astra re-check (first round) and the Sol re-check (follow-up) |
+| Review fixes: OPUS "fix now" findings | `ext44/fix-opus` (`7ac6ca6`) | did not write the SDKs it changed; reviewed by the Sol re-check |
+| Residuals of the Sol re-check (OPUS-1 numeric links, SOL-R1..R3, OPUS-6 docs) | coordinator, on the extension branch (`b528bc7`, `fc16629`, `66fde2a`) | reviewed by the Sol follow-up check |
 
 Limitation: all of these are the same model family as the coordinator; separate sessions give
 separate authorship, not provider diversity.
@@ -49,5 +53,10 @@ Available models (local `~/.codex/models_cache.json`): `gpt-6.1-sol`, `gpt-6.1-t
 | DX-03 (b) static/runtime CSV caller task | `-m gpt-6.1-terra -c model_reasoning_effort=xhigh -s workspace-write` | `model: gpt-6.1-terra`, `reasoning effort: xhigh`, `sandbox: workspace-write` (session `01a1a8d6…`) | sandbox refused loopback sockets in round 1; the coordinator ran the tests |
 | (aborted) resume of that session | `codex exec resume` without `-m` | `model: gpt-6.1-sol` | the resume fell back to the config default; it only read files and was stopped; repeated with `-m gpt-6.1-terra` (observed `gpt-6.1-terra`, `xhigh`) |
 | DX-03 (a) fanout/sink caller task, stages 1–2 | `-m gpt-6-astra -c model_reasoning_effort=xhigh -s workspace-write -c sandbox_workspace_write.network_access=true` | `model: gpt-6-astra`, `reasoning effort: xhigh`, `sandbox: workspace-write … (network access enabled)` (session `01a1a978…`) | stage 2 resumed with `-m gpt-6-astra` (observed the same) |
+
+| 4.4 resolution re-check, Astra (`ea68333d`) | `-m gpt-6-astra -c model_reasoning_effort=xhigh -s workspace-write -c sandbox_workspace_write.network_access=true` | `model: gpt-6-astra`, `reasoning effort: xhigh` (session `01a1a9c5…`) | ACCEPT_WITH_FIXES |
+| 4.4 resolution re-check, Sol (`d2681065`) | `-m gpt-6.1-sol -c model_reasoning_effort=xhigh -s workspace-write -c sandbox_workspace_write.network_access=true` | `model: gpt-6.1-sol`, `reasoning effort: xhigh`, `sandbox: workspace-write … (network access enabled)` (session `01a1a9d8…`) | ACCEPT_WITH_FIXES |
+| (failed to start) its follow-up | `codex exec resume … -s workspace-write` | none: `codex exec resume` rejects `-s` (exit 2) | nothing ran; repeated with `-c sandbox_mode=workspace-write` |
+| Sol follow-up check (`66fde2ac`) | `codex exec resume 01a1a9d8… -m gpt-6.1-sol -c model_reasoning_effort=xhigh -c sandbox_mode=workspace-write -c sandbox_workspace_write.network_access=true` | `model: gpt-6.1-sol`, `reasoning effort: xhigh`, `sandbox: workspace-write … (network access enabled)` | see `review/sol-recheck/` |
 
 The 4.4 review strands and their observed settings are recorded in `NEXT_REVIEW_4_4.md`.

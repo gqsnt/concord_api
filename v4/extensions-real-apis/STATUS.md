@@ -31,16 +31,17 @@ is a draft and is not merged.
 
 ## New packages
 
-| Package | Kind | Tests (`cargo test -p`) |
+| Package | Kind | Tests (`cargo test -p`, at `d2681065`) |
 |---|---|---|
-| `concord-pagination` | maintained crate (packaged by `package-check`) | 68 |
-| `concord-extras` features `stream`, `csv`, `jsonl` | maintained modules, facade features `concord/{stream,csv,jsonl}` | stream 3, csv 85, jsonl 65 (feature alone) |
+| `concord-pagination` | maintained crate (packaged by `package-check`) | 69 |
+| `concord-extras` features `stream`, `csv`, `jsonl` | maintained modules, facade features `concord/{stream,csv,jsonl}` | stream 5, csv 110, jsonl 73 (feature alone, gate steps `test-extras-{stream,csv,jsonl}`) |
 | `concord-example-testserver` | test support | 7 |
-| `concord-example-{github,stripe,shopify,salesforce,kubernetes}-sdk` | SDK slices | 44, 22, 18, 26, 24 |
-| `concord-example-{github,stripe,shopify,salesforce,kubernetes}-app` | external callers, two workflows each | 21, 10, 20, 30, 26 |
+| `concord-example-{github,stripe,shopify,salesforce,kubernetes}-sdk` | SDK slices | 46, 22, 18, 29, 24 |
+| `concord-example-{github,stripe,shopify,salesforce,kubernetes}-app` | external callers, two workflows each | 21, 10, 21, 30, 27 |
 | `concord-check-maintenance-{github,stripe,shopify,salesforce,kubernetes}` | staged maintenance consumers | 11, 7, 7, 7, 6 |
 | `concord-check-dx03-csv-runtime`, `concord-check-dx03-fanout-sink` | independent caller tasks (other provider's models) | 8, 12 |
-| `concord-check-stream-stress` | generated workloads (CI-sized smoke + N/2N binary) | 9 |
+| `concord-check-stream-stress` | generated workloads (CI-sized smoke + N/2N binary; JSON Lines full jobs) | 10 |
+| `checks/consumers/streaming` | packaged downstream consumer of `concord/{csv,jsonl}` and `concord-pagination` (own workspace; `scripts/consumers.sh`, path and `--packaged`) | 3 |
 
 ## Evidence tiers
 

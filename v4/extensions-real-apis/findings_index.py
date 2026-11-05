@@ -79,10 +79,11 @@ F = [
      "proposed for next release", None, "R1, R2"),
     # Opus — pagination and caller workflows
     ("OPUS-1", "GitHub LinkPages::restore re-binds any API URL", "correctness defect", "medium", "reproduced",
-     "GitHub only", "fixed now", "commit d4578fcf (examples/github-sdk/tests/paging.rs persisted_continuation_of_another_collection_is_refused)", None),
+     "GitHub only", "fixed now",
+     "commit d4578fcf; numeric links kept their repository only after Sol's re-check: b528bc79 (stored form with binding; tests/paging.rs stored_continuation_keeps_its_repository)", None),
     ("OPUS-2", "Non-advancing continuations accepted by three adapters", "correctness defect", "low",
      "reproduced (GitHub), source-inspected (Kubernetes, Salesforce)", "3 of 5 SDK adapters",
-     "fixed now", "commits d4578fcf (GitHub), 36b0adc4 (Kubernetes, Salesforce; tests/continuations.rs, ku_a_inventory.rs)", None),
+     "fixed now", "commits d4578fcf (GitHub), 36b0adc4 (Kubernetes, Salesforce; tests/continuations.rs, ku_a_inventory.rs); edge cases from Sol's re-check: SOL-R1, SOL-R2", None),
     ("OPUS-3", "Items hides the page: metadata dropped, replayed prefix unverifiable", "developer friction",
      "medium", "reproduced + source", "GitHub F9, Stripe F6 (independent)",
      "doc sentence fixed now; accessor proposed for next release", "commit 7ac6ca6a (sequential.rs resume_items docs)", "R3"),
@@ -92,7 +93,8 @@ F = [
     ("OPUS-5", "manifest_jobs cannot express a strictly serial provider", "speculative opportunity", "low",
      "reproduced (timing)", "GitHub, Stripe, Shopify hand-roll nesting", "blocked by missing evidence", None, None),
     ("OPUS-6", "SH-A nested failure: misleading parent summary, unprocessed siblings", "correctness defect",
-     "low", "reproduced", "Shopify only", "fixed now", "commit 585f7fea (sh_a_nested_failure_mid_page_resumes_at_the_interrupted_parent_page)", None),
+     "low", "reproduced", "Shopify only", "fixed now",
+     "commit 585f7fea (sh_a_nested_failure_mid_page_resumes_at_the_interrupted_parent_page); page replay on resume documented after Sol's re-check: 66fde2ac", None),
     ("OPUS-7", "Same drain/error-stash/outcome loop written ~13 times", "developer friction", "low",
      "source-inspected", "five apps (Shopify F5, Kubernetes F6, Salesforce F10)", "proposed for next release (low)",
      None, "R3"),
@@ -104,6 +106,16 @@ F = [
      "source-inspected", "n/a", "fixed now (docs)", "commit 7ac6ca6a (README, docs/RECIPES.md, CHANGELOG.md)", None),
     ("OPUS-11", "Reports name the start key of a failed multi-page job", "documentation gap", "low",
      "reproduced", "n/a", "fixed now (docs)", "commit 7ac6ca6a (independent.rs, jobs.rs docs)", None),
+    # Sol resolution re-check of the OPUS fixes and the ASTRA-2 follow-up (commit d2681065)
+    ("SOL-R1", "A next link differing only by fragment bypasses GitHub's progress check", "correctness defect",
+     "low", "reproduced", "GitHub only", "fixed now",
+     "commit b528bc79 (tests/paging.rs next_link_differing_only_by_fragment_does_not_advance)", None),
+    ("SOL-R2", "Kubernetes first fetch sends a template's continue token but checks against none",
+     "correctness defect", "low", "reproduced", "Kubernetes only", "fixed now",
+     "commit fc166290 (ku_a_inventory.rs ku_a_a_continue_token_on_the_template_is_not_sent)", None),
+    ("SOL-R3", "A named link after a repository rename cannot be restored through the original factory",
+     "compatibility risk", "low", "reproduced (conditional loopback scenario)", "GitHub only", "fixed now",
+     "commit b528bc79 (stored form keeps the binding; stored_continuation_keeps_its_repository)", None),
 ]
 
 
@@ -117,11 +129,16 @@ def main():
             "ASTRA": "Codex gpt-6-astra xhigh (observed), core/native boundaries and streaming",
             "OPUS": "Claude subagent (coordinator model claude-opus-5-5 inherited; not reported by the harness), pagination and workflows, cross-check",
         },
+        "resolution_rechecks": {
+            "astra-recheck": "Codex gpt-6-astra xhigh (observed), stream and CSV fixes at ea68333d: ACCEPT_WITH_FIXES (ASTRA-2 header names), fixed in e27a0958/843416d9",
+            "sol-recheck": "Codex gpt-6.1-sol xhigh (observed), OPUS fixes and ASTRA-2 follow-up at d2681065: ACCEPT_WITH_FIXES (OPUS-1 numeric links, SOL-R1..R3, OPUS-6 replay), fixed in b528bc79/fc166290/66fde2ac; follow-up check recorded in review/sol-recheck/",
+        },
         "findings": [
             {
                 "id": i, "title": t, "classification": c, "severity": s, "evidence": e,
                 "recurrence": r, "disposition": d, "resolution": res, "recommendation": rec,
-                "source": f"review/{i.split('-')[0].lower()}/FINDINGS.md",
+                "source": "review/sol-recheck/FINDINGS.md" if i.startswith("SOL-R")
+                else f"review/{i.split('-')[0].lower()}/FINDINGS.md",
             }
             for (i, t, c, s, e, r, d, res, rec) in F
         ],

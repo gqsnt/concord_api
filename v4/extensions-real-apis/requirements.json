@@ -1024,7 +1024,8 @@
      "paths": [
       "v4/extensions-real-apis/NEXT_REVIEW_4_4.md",
       "v4/extensions-real-apis/findings.json",
-      "v4/extensions-real-apis/review/astra-recheck/"
+      "v4/extensions-real-apis/review/astra-recheck/",
+      "v4/extensions-real-apis/review/sol-recheck/"
      ],
      "commands": []
     }

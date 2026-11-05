@@ -1,0 +1,24 @@
+**Verdict: ACCEPT_WITH_FIXES.**
+
+Full file:line evidence, reproduction commands, observed output and classifications are in [FINDINGS.md](/home/canarit/projects/concord-ext44/rv44-sol-recheck/review/sol-recheck/FINDINGS.md). Reproduction commands are also collected in [COMMANDS.sh](/home/canarit/projects/concord-ext44/rv44-sol-recheck/review/sol-recheck/COMMANDS.sh).
+
+| Finding | Status | Independent result |
+|---|---|---|
+| OPUS-1 | **PARTIALLY** | Named repository, parent, operation and base-path checks work. Numeric repository URLs still acquire another factory’s repository binding (`github-sdk/src/paging.rs:308`). |
+| OPUS-2 | **PARTIALLY** | Ordinary repeats fail against the current requested key, including on request 3 after advancement. GitHub fragments and Kubernetes cursor-bearing templates leave two holes, detailed below. Stripe and Shopify checks passed. |
+| OPUS-6 | **PARTIALLY** | All 12 products/collections failure positions report the correct interrupted page. Replaying it repeats up to two completed siblings. The original report defect is fixed; exact resumption remains unsupported. |
+| OPUS-9 | **RESOLVED** | Real pagination job futures read `concord::jsonl` bodies through EOF. Retention, cancellation, rerun keys and disconnect cleanup are asserted. No timing failure in 150 additional executions. |
+| OPUS-3 docs | **RESOLVED** | Factory-side replay verification works before `Items` discards metadata and skipped items. |
+| OPUS-10 | **RESOLVED** | README, RECIPES and CHANGELOG expose pagination and describe its boundaries accurately. |
+| OPUS-11 | **RESOLVED** | Both report types return job start keys; independent probes confirm later restart points travel in errors. |
+| ASTRA-2 follow-up | **RESOLVED** | Header names are borrowed/moved on the scoped encoder routes. Accepted bytes match the pre-fix implementation. Memory controls detect the old proportional allocations. |
+
+Additional findings, with reproductions in the report:
+
+- **SOL-R1 — correctness defect, low, reproduced/source-confirmed:** changing only GitHub link fragments bypasses `LinkDidNotAdvance`. Five pages succeed until the budget ends, while requests 2–5 have identical HTTP targets (`paging.rs:425`).
+- **SOL-R2 — correctness defect, low, reproduced/source-confirmed:** Kubernetes `fetch(None)` sends a template’s existing continuation but compares against `None`. The first repeated page exposes an item; the second request fails (`kubernetes-sdk/src/list.rs:276`, `:287`).
+- **SOL-R3 — compatibility risk, low, conditional loopback reproduction/source-confirmed:** after a same-origin rename redirect, a returned named continuation works in memory but cannot round-trip through `restore` using the original factory. Live GitHub emission of this shape was not established.
+
+The requested regression commands produced **496 passed, zero failed, one existing ignored throughput test**. Additional Stripe/Shopify suites passed **40 tests**, and the independent suite passed **15 tests**. CSV verification covered **1,920 byte-comparison configurations**, **676 limit comparisons**, and **32 isolated memory processes**; current peak growth was **0–84 KiB** with 16/32 MiB inputs.
+
+No tracked files changed. All added evidence is under `review/sol-recheck/`.

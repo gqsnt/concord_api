@@ -7,6 +7,10 @@
   "ASTRA": "Codex gpt-6-astra xhigh (observed), core/native boundaries and streaming",
   "OPUS": "Claude subagent (coordinator model claude-opus-5-5 inherited; not reported by the harness), pagination and workflows, cross-check"
  },
+ "resolution_rechecks": {
+  "astra-recheck": "Codex gpt-6-astra xhigh (observed), stream and CSV fixes at ea68333d: ACCEPT_WITH_FIXES (ASTRA-2 header names), fixed in e27a0958/843416d9",
+  "sol-recheck": "Codex gpt-6.1-sol xhigh (observed), OPUS fixes and ASTRA-2 follow-up at d2681065: ACCEPT_WITH_FIXES (OPUS-1 numeric links, SOL-R1..R3, OPUS-6 replay), fixed in b528bc79/fc166290/66fde2ac; follow-up check recorded in review/sol-recheck/"
+ },
  "findings": [
   {
    "id": "TERRA-1",
@@ -268,7 +272,7 @@
    "evidence": "reproduced",
    "recurrence": "GitHub only",
    "disposition": "fixed now",
-   "resolution": "commit d4578fcf (examples/github-sdk/tests/paging.rs persisted_continuation_of_another_collection_is_refused)",
+   "resolution": "commit d4578fcf; numeric links kept their repository only after Sol's re-check: b528bc79 (stored form with binding; tests/paging.rs stored_continuation_keeps_its_repository)",
    "recommendation": null,
    "source": "review/opus/FINDINGS.md"
   },
@@ -280,7 +284,7 @@
    "evidence": "reproduced (GitHub), source-inspected (Kubernetes, Salesforce)",
    "recurrence": "3 of 5 SDK adapters",
    "disposition": "fixed now",
-   "resolution": "commits d4578fcf (GitHub), 36b0adc4 (Kubernetes, Salesforce; tests/continuations.rs, ku_a_inventory.rs)",
+   "resolution": "commits d4578fcf (GitHub), 36b0adc4 (Kubernetes, Salesforce; tests/continuations.rs, ku_a_inventory.rs); edge cases from Sol's re-check: SOL-R1, SOL-R2",
    "recommendation": null,
    "source": "review/opus/FINDINGS.md"
   },
@@ -328,7 +332,7 @@
    "evidence": "reproduced",
    "recurrence": "Shopify only",
    "disposition": "fixed now",
-   "resolution": "commit 585f7fea (sh_a_nested_failure_mid_page_resumes_at_the_interrupted_parent_page)",
+   "resolution": "commit 585f7fea (sh_a_nested_failure_mid_page_resumes_at_the_interrupted_parent_page); page replay on resume documented after Sol's re-check: 66fde2ac",
    "recommendation": null,
    "source": "review/opus/FINDINGS.md"
   },
@@ -391,6 +395,42 @@
    "resolution": "commit 7ac6ca6a (independent.rs, jobs.rs docs)",
    "recommendation": null,
    "source": "review/opus/FINDINGS.md"
+  },
+  {
+   "id": "SOL-R1",
+   "title": "A next link differing only by fragment bypasses GitHub's progress check",
+   "classification": "correctness defect",
+   "severity": "low",
+   "evidence": "reproduced",
+   "recurrence": "GitHub only",
+   "disposition": "fixed now",
+   "resolution": "commit b528bc79 (tests/paging.rs next_link_differing_only_by_fragment_does_not_advance)",
+   "recommendation": null,
+   "source": "review/sol-recheck/FINDINGS.md"
+  },
+  {
+   "id": "SOL-R2",
+   "title": "Kubernetes first fetch sends a template's continue token but checks against none",
+   "classification": "correctness defect",
+   "severity": "low",
+   "evidence": "reproduced",
+   "recurrence": "Kubernetes only",
+   "disposition": "fixed now",
+   "resolution": "commit fc166290 (ku_a_inventory.rs ku_a_a_continue_token_on_the_template_is_not_sent)",
+   "recommendation": null,
+   "source": "review/sol-recheck/FINDINGS.md"
+  },
+  {
+   "id": "SOL-R3",
+   "title": "A named link after a repository rename cannot be restored through the original factory",
+   "classification": "compatibility risk",
+   "severity": "low",
+   "evidence": "reproduced (conditional loopback scenario)",
+   "recurrence": "GitHub only",
+   "disposition": "fixed now",
+   "resolution": "commit b528bc79 (stored form keeps the binding; stored_continuation_keeps_its_repository)",
+   "recommendation": null,
+   "source": "review/sol-recheck/FINDINGS.md"
   }
  ]
 }

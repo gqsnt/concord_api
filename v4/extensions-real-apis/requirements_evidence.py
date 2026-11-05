@@ -135,7 +135,8 @@ E = {
     "REVIEW-01": ("DONE", ["v4/extensions-real-apis/NEXT_REVIEW_4_4.md", "v4/extensions-real-apis/review/",
                            "v4/extensions-real-apis/findings.json"], []),
     "REVIEW-02": ("DONE", ["v4/extensions-real-apis/NEXT_REVIEW_4_4.md", "v4/extensions-real-apis/findings.json",
-                           "v4/extensions-real-apis/review/astra-recheck/"], []),
+                           "v4/extensions-real-apis/review/astra-recheck/",
+                           "v4/extensions-real-apis/review/sol-recheck/"], []),
     "REVIEW-03": ("DONE", ["v4/extensions-real-apis/NEXT_REVIEW_4_4.md"], []),
     "DELIVERY-01": ("PENDING", ["v4/extensions-real-apis/STATUS.md"], []),
 }
