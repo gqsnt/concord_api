@@ -943,12 +943,15 @@
     {
      "paths": [
       "v4/extensions-real-apis/DECISIONS.md",
-      "examples/*-sdk/FRICTION.md"
+      "examples/*-sdk/FRICTION.md",
+      "v4/extensions-real-apis/NEXT_REVIEW_4_4.md"
      ],
-     "commands": []
+     "commands": [
+      "defects fixed at their layer (macro SOL-4, codecs, SDK adapters); repeated friction ranked in NEXT_REVIEW \u00a74-5"
+     ]
     }
    ],
-   "implementation_status": "PENDING"
+   "implementation_status": "DONE"
   },
   {
    "id": "VERIFY-01",
@@ -998,12 +1001,14 @@
    "implementation_evidence": [
     {
      "paths": [
-      "v4/extensions-real-apis/NEXT_REVIEW_4_4.md"
+      "v4/extensions-real-apis/NEXT_REVIEW_4_4.md",
+      "v4/extensions-real-apis/review/",
+      "v4/extensions-real-apis/findings.json"
      ],
      "commands": []
     }
    ],
-   "implementation_status": "PENDING"
+   "implementation_status": "DONE"
   },
   {
    "id": "REVIEW-02",
@@ -1015,12 +1020,14 @@
    "implementation_evidence": [
     {
      "paths": [
-      "v4/extensions-real-apis/NEXT_REVIEW_4_4.md"
+      "v4/extensions-real-apis/NEXT_REVIEW_4_4.md",
+      "v4/extensions-real-apis/findings.json",
+      "v4/extensions-real-apis/review/astra-recheck/"
      ],
      "commands": []
     }
    ],
-   "implementation_status": "PENDING"
+   "implementation_status": "DONE"
   },
   {
    "id": "DELIVERY-01",
@@ -1115,7 +1122,7 @@
      "commands": []
     }
    ],
-   "implementation_status": "PENDING"
+   "implementation_status": "DONE"
   }
  ],
  "handoff_revision": "4.4-with-4.3-ci-repair-and-integration",

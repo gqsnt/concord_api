@@ -1,0 +1,63 @@
+   Compiling astra-recheck-probes v0.0.0 (/home/canarit/projects/concord-ext44/rv44-astra-recheck/review/astra-recheck/probes)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.28s
+     Running unittests src/lib.rs (review/astra-recheck/target/debug/deps/astra_recheck_probes-60a65f492c39e55a)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/header_memory.rs (review/astra-recheck/target/debug/deps/header_memory-f739308316f5d171)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/csv_matrix.rs (review/astra-recheck/target/debug/deps/csv_matrix-caf3c7a1bf4a94d4)
+
+running 3 tests
+single/multiple empty fields match csv; 8 empty-table header/columns/lazy combinations pass
+test empty_fields_and_empty_tables ... ok
+direct csv-core roundtrip: 36 dialects x 2801 arbitrary-byte values; finite == lazy
+test escapes_against_direct_csv_core_reader ... ok
+csv-crate compatibility: 864 dialect/header configurations x 128 all-type rows
+test csv_crate_byte_matrix ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.98s
+
+     Running tests/stream_recheck.rs (review/astra-recheck/target/debug/deps/stream_recheck-6d24d3c0210bd826)
+
+running 5 tests
+Chunks Debug: Chunks { chunks: 2, bytes: 23, fails_at_end: true }
+!Unpin item via from_iter -> CSV upload passes; Yield malformed/type-error EOF terminal, LF nonterminal
+test debug_unpin_and_yield_docs ... ok
+JSON boundary/limit comparisons: 1568 split cases plus bytewise controls
+test every_small_boundary_and_exact_limits ... ok
+all readers: first poll 64 empty chunks; cancellation retains record; JSON cancelled futures consume 65536 bytes/poll
+test cancellation_empty_budget_and_partial_record_budget ... ok
+1 MiB string line: peak_retained JSONL=1048577, values=1048577
+512 KiB limit: JSONL and values position=524288, peak_retained=524288
+JSONL overlimit chunk=1MiB peak_retained=0 first_poll=1.484µs
+JSONL overlimit chunk=8MiB peak_retained=0 first_poll=1.061µs
+JSONL overlimit chunk=32MiB peak_retained=0 first_poll=720.347µs
+test documented_cost_and_limits_before_growth ... ok
+large JSON slice/CRLF/escape/UTF-8/limit comparisons: 728; truncated EOF rejected
+test slice_boundaries_do_not_become_eof ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.23s
+
+     Running tests/writer_semantics.rs (review/astra-recheck/target/debug/deps/writer_semantics-05c42a7a2e06c6e2)
+
+running 2 tests
+one row serialization: 8 header/explicit/lazy combinations plus static finite/lazy Encode; changed schema refused
+test once_schema_and_header_policy ... ok
+encoded record/header limit cases=208; quotes/escapes/delimiters counted, LF/CRLF excluded, max_fields stops at attempt 4
+test encoded_limits_and_short_circuit ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests astra_recheck_probes
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+

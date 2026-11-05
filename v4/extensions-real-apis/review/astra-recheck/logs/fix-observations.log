@@ -1,0 +1,41 @@
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.05s
+     Running tests/csv_write_memory.rs (review/astra-recheck/target/debug/deps/csv_write_memory-e85490f0b80b5229)
+
+running 1 test
+field=16777216 bytes, limit=64 bytes: peak growth finite=12 KiB, lazy=8 KiB, header=0 KiB
+test refusing_an_oversized_record_does_not_grow_the_peak_with_it ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.05s
+
+     Running tests/stream_budget.rs (review/astra-recheck/target/debug/deps/stream_budget-b738bdbc36c3b596)
+
+running 6 tests
+jsonl: unfinished 8 MiB string: 65536 bytes consumed by the first poll
+jsonl: 100000 empty chunks: 1562 pendings, at most 64 source polls per poll
+values: unfinished 8 MiB string: 65536 bytes consumed by the first poll
+csv: 100000 empty chunks: 1562 pendings, at most 64 source polls per poll
+values: 100000 empty chunks: 1562 pendings, at most 64 source polls per poll
+jsonl: endless empty chunks: 1000 polls, 64000 source polls
+test jsonl_empty_chunk_runs_are_budgeted ... ok
+values: endless empty chunks: 1000 polls, 64000 source polls
+test json_values_empty_chunk_runs_are_budgeted ... ok
+csv: endless empty chunks: 1000 polls, 64000 source polls
+test csv_empty_chunk_runs_are_budgeted ... ok
+values: a 4194304-byte record in one chunk: 65 polls, at most 65536 bytes per poll
+jsonl: a 4194304-byte record in one chunk: 65 polls, at most 65536 bytes per poll
+test json_values_frame_a_large_chunk_in_bounded_steps ... ok
+csv: a 4194304-byte field in one chunk: 65 polls, at most 65536 bytes per poll
+test csv_frames_a_large_chunk_in_bounded_steps ... ok
+test jsonl_frames_a_large_chunk_in_bounded_steps ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.07s
+
+     Running tests/stream_foundation.rs (review/astra-recheck/target/debug/deps/stream_foundation-3722b0acb21d0c9d)
+
+running 3 tests
+test chunks_debug_shows_counts_not_content ... ok
+test rows_that_are_not_unpin_upload_as_json_lines ... ok
+test from_iter_accepts_items_that_are_not_unpin ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+

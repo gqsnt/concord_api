@@ -1,0 +1,395 @@
+   Compiling proc-macro2 v1.0.107
+   Compiling unicode-ident v1.0.27
+   Compiling quote v1.0.47
+   Compiling stable_deref_trait v1.2.1
+   Compiling itoa v1.0.18
+   Compiling libc v0.2.191
+   Compiling pin-project-lite v0.2.17
+   Compiling bytes v1.12.1
+   Compiling futures-core v0.3.34
+   Compiling litemap v0.8.3
+   Compiling writeable v0.6.4
+   Compiling icu_properties_data v2.1.2
+   Compiling icu_normalizer_data v2.1.1
+   Compiling smallvec v1.16.4
+   Compiling percent-encoding v2.3.2
+   Compiling httparse v1.10.1
+   Compiling serde_core v1.0.229
+   Compiling utf_types v1.0.0
+   Compiling slab v0.4.12
+   Compiling futures-task v0.3.34
+   Compiling tower-service v0.3.3
+   Compiling try-lock v0.2.5
+   Compiling once_cell v1.21.4
+   Compiling sync_wrapper v1.0.2
+   Compiling tower-layer v0.3.3
+   Compiling want v0.3.2
+   Compiling atomic-waker v1.1.2
+   Compiling futures-channel v0.3.34
+   Compiling form_urlencoded v1.2.2
+   Compiling ipnet v2.12.2
+   Compiling futures-util v0.3.34
+   Compiling zmij v1.0.23
+   Compiling memchr v2.8.3
+   Compiling bitflags v2.13.2
+   Compiling serde v1.0.229
+   Compiling base64 v0.23.1
+   Compiling tracing-core v0.1.36
+   Compiling ryu v1.0.23
+   Compiling utf8_iter v1.1.0
+   Compiling log v0.4.35
+   Compiling serde_json v1.0.154
+   Compiling mime v0.3.17
+   Compiling http v1.5.0
+   Compiling tracing v0.1.44
+   Compiling syn v3.0.9
+   Compiling csv-core v0.1.13
+   Compiling socket2 v0.6.5
+   Compiling mio v1.2.4
+   Compiling http-body v1.1.0
+   Compiling http-body-util v0.1.5
+   Compiling csv v1.4.0
+   Compiling synstructure v0.14.0
+   Compiling zerovec-derive v0.11.7
+   Compiling zerofrom-derive v0.1.8
+   Compiling yoke-derive v0.8.4
+   Compiling displaydoc v0.2.7
+   Compiling tokio-macros v2.7.2
+   Compiling serde_derive v1.0.229
+   Compiling tokio v1.54.1
+   Compiling zerofrom v0.1.8
+   Compiling yoke v0.8.4
+   Compiling zerovec v0.11.9
+   Compiling zerotrie v0.2.5
+   Compiling tinystr v0.8.5
+   Compiling potential_utf v0.1.6
+   Compiling icu_collections v2.1.1
+   Compiling icu_locale_core v2.1.1
+   Compiling icu_provider v2.1.1
+   Compiling icu_normalizer v2.1.1
+   Compiling icu_properties v2.1.2
+   Compiling serde_urlencoded v0.7.1
+   Compiling idna_adapter v1.2.1
+   Compiling idna v1.1.0
+   Compiling url v2.5.8
+   Compiling hyper v1.12.0
+   Compiling tower v0.5.3
+   Compiling tower-http v0.6.11
+   Compiling hyper-util v0.1.21
+   Compiling reqwest v0.13.5
+   Compiling concord-core v4.2.0 (/home/canarit/projects/concord-ext44/rv44-astra-recheck/crates/concord-core)
+   Compiling concord-extras v4.2.0 (/home/canarit/projects/concord-ext44/rv44-astra-recheck/crates/concord-extras)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 6.65s
+     Running unittests src/lib.rs (review/astra-recheck/target/debug/deps/concord_extras-8c960da879f2381a)
+
+running 25 tests
+test csv::fields::tests::numbers_have_the_csv_text ... ok
+test csv::fields::tests::quoted_fields_escape_the_quote_and_the_escape_byte ... ok
+test csv::names::tests::expected_names_are_compared_in_order ... ok
+test csv::names::tests::shapes_follow_the_csv_header_rules ... ok
+test jsonl::lines::tests::bom_split_and_lookalikes ... ok
+test csv::frame::tests::the_header_has_its_own_limit ... ok
+test jsonl::lines::tests::terminators_and_final_line ... ok
+test jsonl::policy::tests::empty_only_panics - should panic ... ok
+test csv::fields::tests::an_oversized_field_is_refused_before_anything_is_allocated ... ok
+test csv::write::tests::a_refused_record_leaves_the_frame_untouched_and_the_buffer_within_the_limit ... ok
+test jsonl::policy::tests::media_type_entries ... ok
+test jsonl::lines::tests::limit_before_growth ... ok
+test jsonl::policy::tests::invalid_entry_panics - should panic ... ok
+test jsonl::values::tests::primitives_end_only_at_delimiters_or_true_eof ... ok
+test jsonl::values::tests::limit_before_buffering_past_it ... ok
+test jsonl::values::tests::strings_and_escapes_hide_structure ... ok
+test jsonl::lines::tests::lookahead_stops_within_reach_of_the_limit ... ok
+test jsonl::values::tests::whitespace_runs_are_skipped_in_budgeted_steps ... ok
+test csv::frame::tests::the_end_buffer_never_grows_past_the_field_limit ... ok
+test jsonl::lines::tests::retains_only_the_unfinished_line ... ok
+test csv::frame::tests::the_field_buffer_never_grows_past_the_record_limit ... ok
+test csv::write::tests::a_refused_header_never_reaches_the_frame ... ok
+test csv::frame::tests::an_unterminated_final_comment_line_is_not_a_record ... ok
+test csv::frame::tests::a_long_comment_run_allocates_nothing ... ok
+test csv::write::tests::the_record_buffer_grows_to_the_limit_and_no_further ... ok
+
+test result: ok. 25 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s
+
+     Running tests/csv_dialect.rs (review/astra-recheck/target/debug/deps/csv_dialect-e13bc2c994c65186)
+
+running 10 tests
+test aliases_resolve_to_their_header_and_delimiter_in_the_authored_order ... ok
+test invalid_dialects_are_configuration_errors ... ok
+test the_static_type_is_the_whole_finite_format ... ok
+test an_invalid_static_dialect_fails_before_any_polling ... ok
+test a_profile_and_the_equivalent_runtime_options_read_and_write_equally ... ok
+test an_alternate_escape_dialect ... ok
+test comments_are_off_by_default_and_a_profile_can_enable_them ... ok
+test delimiters_quoted_separators_doubled_quotes_and_embedded_terminators ... ok
+test trim_terminator_and_flexible_settings ... ok
+test bom_policies ... ok
+
+test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+     Running tests/csv_fixtures.rs (review/astra-recheck/target/debug/deps/csv_fixtures-5b30639773479e7f)
+
+running 6 tests
+test the_seeds_are_the_documented_bytes ... ok
+test static_aliases_and_runtime_options_read_the_seeds_equally ... ok
+test every_seed_reads_as_documented_on_the_incremental_route ... ok
+test every_seed_reads_as_documented_on_the_finite_route ... ok
+test named_and_supplied_mappings_of_the_seeds_on_every_split ... ok
+test every_split_point_and_partition_gives_the_same_outcome ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.38s
+
+     Running tests/csv_http.rs (review/astra-recheck/target/debug/deps/csv_http-64b468cdf11d811f)
+
+running 13 tests
+test the_media_override_does_not_bypass_table_rules ... ok
+test head_rules_of_the_reader_and_the_finite_decoder_agree ... ok
+test an_upload_polls_its_source_zero_times_until_sent_then_once_through ... ok
+test a_late_transport_failure_keeps_the_delivered_prefix_and_fuses ... ok
+test an_open_succeeds_immediately_and_the_first_record_arrives_before_the_body_ends ... ok
+test head_refusal_leaves_the_body_unread_even_when_it_never_arrives ... ok
+test a_runtime_upload_carries_its_matching_content_type ... ok
+test decode_and_format_errors_do_not_show_cells_or_headers ... ok
+test the_finite_decoder_refuses_the_head_before_reading_the_body ... ok
+test late_upload_failures_happen_after_transmission_started ... ok
+test paced_late_failures_after_the_server_received_rows ... ok
+test cancelling_a_pending_next_loses_nothing_and_a_drop_releases_the_connection ... ok
+test a_paused_consumer_stalls_the_server_and_a_drop_releases_the_connection ... ok
+
+test result: ok. 13 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.60s
+
+     Running tests/csv_limits.rs (review/astra-recheck/target/debug/deps/csv_limits-2f288dca51cf97f1)
+
+running 9 tests
+test endless_fields_stop_at_the_field_limit ... ok
+test an_endless_header_stops_at_the_header_limit ... ok
+test a_late_source_error_keeps_the_prefix_and_fuses ... ok
+test total_limits_are_limit_errors_not_ends ... ok
+test an_endless_record_stops_at_the_record_limit ... ok
+test records_exactly_at_the_limits_are_accepted_on_every_split ... ok
+test a_stopped_consumer_does_not_advance_the_source ... ok
+test a_large_record_in_one_chunk_is_parsed_in_bounded_steps ... ok
+test a_long_comment_run_yields_and_allocates_nothing ... ok
+
+test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.39s
+
+     Running tests/csv_mapping.rs (review/astra-recheck/target/debug/deps/csv_mapping-ee3a307ec92fedd3)
+
+running 16 tests
+test a_quoted_newline_in_a_header_names_a_field ... ok
+test a_decode_error_names_the_record_and_field_without_the_value ... ok
+test a_headerless_profile_with_columns_maps_by_name ... ok
+test empty_and_whitespace_fields_are_values ... ok
+test has_header_positional_ignores_the_names_but_consumes_the_header ... ok
+test supplied_columns_with_a_header_are_refused_as_ambiguous ... ok
+test has_header_default_keeps_tuples_and_sequences_positional ... ok
+test has_header_default_maps_named_fields_in_any_column_order ... ok
+test no_header_default_is_positional_including_structs_by_declaration_order ... ok
+test duplicate_and_empty_names_are_refused_by_named_mapping ... ok
+test no_header_supplied_columns_name_the_positions ... ok
+test profile_columns_validate_the_wire_header_without_replacing_it ... ok
+test positional_and_raw_reading_keep_duplicate_and_empty_names ... ok
+test missing_extra_and_defaulted_fields_follow_serde ... ok
+test invalid_utf8_is_a_format_error_for_typed_rows_and_bytes_for_raw_records ... ok
+test empty_and_header_only_inputs ... ok
+
+test result: ok. 16 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/csv_scale.rs (review/astra-recheck/target/debug/deps/csv_scale-42a664656f9d8f8a)
+
+running 3 tests
+test measure_throughput ... ignored, measurement; run in release with --ignored --nocapture
+test a_generated_upload_is_produced_in_bounded_frames ... ok
+test a_generated_table_reads_in_bounded_buffers ... ok
+
+test result: ok. 2 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 0.15s
+
+     Running tests/csv_write.rs (review/astra-recheck/target/debug/deps/csv_write-a530e85b53fe0c61)
+
+running 14 tests
+test a_record_larger_than_the_limit_is_refused ... ok
+test empty_tables ... ok
+test a_same_width_change_of_field_names_is_refused ... ok
+test explicit_columns_label_positions_and_must_equal_named_fields_in_order ... ok
+test conflicting_column_sources_are_refused ... ok
+test static_content_types_follow_the_header_policy ... ok
+test no_header_never_writes_one ... ok
+test width_mismatches_are_refused ... ok
+test line_endings_quoting_and_comment_bytes ... ok
+test named_rows_infer_the_header_with_renames_and_crlf ... ok
+test tuples_with_a_header_need_explicit_columns ... ok
+test unsupported_row_shapes_are_refused ... ok
+test raw_tables_round_trip_bytes ... ok
+test written_tables_read_back_equal_on_both_routes ... ok
+
+test result: ok. 14 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+     Running tests/csv_write_integrity.rs (review/astra-recheck/target/debug/deps/csv_write_integrity-3886c2db3f23770f)
+
+running 12 tests
+test a_changed_serialization_is_refused_and_nothing_mislabelled_is_written ... ok
+test each_row_is_serialized_once_on_the_finite_routes ... ok
+test each_row_is_serialized_once_on_the_lazy_route ... ok
+test the_field_limit_stops_the_row_at_the_first_field_past_it ... ok
+test limits_count_the_encoded_bytes_with_quotes_and_escapes ... ok
+test raw_tables_with_escape_bytes_round_trip_on_the_finite_route ... ok
+test an_oversized_field_stops_the_row_before_later_fields_on_both_routes ... ok
+test the_reviewed_escape_value_reads_back_in_both_quote_modes ... ok
+test fields_without_escape_bytes_keep_the_csv_crate_bytes ... ok
+test escape_bytes_in_header_names_read_back ... ok
+test every_short_value_over_the_special_bytes_round_trips ... ok
+test escape_values_round_trip_at_every_split_point ... ok
+
+test result: ok. 12 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.05s
+
+     Running tests/csv_write_memory.rs (review/astra-recheck/target/debug/deps/csv_write_memory-e85490f0b80b5229)
+
+running 1 test
+test refusing_an_oversized_record_does_not_grow_the_peak_with_it ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.05s
+
+     Running tests/json_values_framing.rs (review/astra-recheck/target/debug/deps/json_values_framing-461b56d81864781e)
+
+running 12 tests
+test position_counts_values_and_bytes ... ok
+test values_readers_and_futures_are_send ... ok
+test wrong_shape_is_a_decode_error ... ok
+test totals_are_limit_errors ... ok
+test primitive_tokens_span_chunks_until_a_delimiter_or_true_eof ... ok
+test a_top_level_array_is_one_value ... ok
+test truncation_and_end_of_input ... ok
+test non_json_is_a_format_error ... ok
+test oversized_value_is_a_limit_before_growth ... ok
+test whitespace_runs_yield_cooperatively ... ok
+test structure_inside_strings_does_not_end_values ... ok
+test seeds_match_documented_expectations ... ok
+
+test result: ok. 12 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s
+
+     Running tests/json_values_http.rs (review/astra-recheck/target/debug/deps/json_values_http-923577e1c360d62d)
+
+running 5 tests
+test late_transport_error_keeps_delivered_values ... ok
+test value_diagnostics_never_show_content ... ok
+test watch_media_policy ... ok
+test drop_while_watching_releases_the_connection ... ok
+test values_arrive_while_the_watch_stays_open ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.10s
+
+     Running tests/jsonl_framing.rs (review/astra-recheck/target/debug/deps/jsonl_framing-843faf35e2d77442)
+
+running 18 tests
+test final_line_only_at_the_true_end ... ok
+test totals_are_limit_errors ... ok
+test wrong_shape_is_decode_invalid_json_is_format ... ok
+test utf8_is_validated_whatever_the_type_reads ... ok
+test yield_mode_marks_errors_that_end_the_read_as_terminal ... ok
+test readers_and_futures_are_send ... ok
+test encoding_errors_name_the_record ... ok
+test finite_encoding_is_compact_with_lf_after_every_record ... ok
+test finite_media_types ... ok
+test byte_order_mark_policies ... ok
+test yield_mode_isolates_bad_lines_and_continues ... ok
+test blank_line_policies ... ok
+test every_split_of_canonical_inputs ... ok
+test oversized_line_is_a_limit_before_growth ... ok
+test streamed_encoding_is_lazy_and_matches_the_finite_one ... ok
+test seeds_match_documented_expectations ... ok
+test every_json_value_kind_is_a_record ... ok
+test ignored_blank_runs_yield_cooperatively ... ok
+
+test result: ok. 18 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.09s
+
+     Running tests/jsonl_http.rs (review/astra-recheck/target/debug/deps/jsonl_http-7aded1cc3cd6fb38)
+
+running 7 tests
+test late_transport_error_keeps_the_prefix_and_fuses ... ok
+test read_diagnostics_never_show_body_content ... ok
+test head_refusal_leaves_the_body_unread ... ok
+test media_policies_are_deliberate ... ok
+test many_records_over_http_in_arbitrary_pieces ... ok
+test drop_while_awaiting_data_releases_the_connection ... ok
+test first_record_arrives_before_the_server_finishes ... ok
+
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.10s
+
+     Running tests/jsonl_incremental.rs (review/astra-recheck/target/debug/deps/jsonl_incremental-160be2dd974b6563)
+
+running 4 tests
+test retained_pending_and_into_source ... ok
+test a_slow_consumer_does_not_drive_the_source ... ok
+test generated_values_are_read_with_one_chunk_of_read_ahead ... ok
+test generated_input_is_read_with_one_chunk_of_read_ahead ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.23s
+
+     Running tests/jsonl_upload.rs (review/astra-recheck/target/debug/deps/jsonl_upload-05bda82ae7f1ba35)
+
+running 3 tests
+test unencodable_record_fails_the_transfer ... ok
+test late_source_error_fails_the_transfer_after_a_received_prefix ... ok
+test upload_polls_zero_times_at_preparation_and_once_at_send ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+     Running tests/media.rs (review/astra-recheck/target/debug/deps/media-8d2f3d97c83e64e3)
+
+running 13 tests
+test binary_checks_nothing ... ok
+test charset::a_repeated_charset_is_refused ... ok
+test form::form_response_head ... ok
+test charset::the_parameter_grammar_is_rfc_9110 ... ok
+test json::accepted_media_types ... ok
+test json::ignore_content_type_skips_only_the_media_check ... ok
+test json::empty_bodies_are_not_null ... ok
+test json::decode_errors_show_positions_not_content ... ok
+test response_head_debug_withholds_values ... ok
+test charset::quoted_utf8_before_another_parameter_is_accepted ... ok
+test json::refused_media_types_with_their_labels ... ok
+test text_accepts_any_media_type_but_a_foreign_charset ... ok
+test vendor::an_exact_vendor_media_type ... ok
+
+test result: ok. 13 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/stream_budget.rs (review/astra-recheck/target/debug/deps/stream_budget-b738bdbc36c3b596)
+
+running 6 tests
+test jsonl_empty_chunk_runs_are_budgeted ... ok
+test csv_empty_chunk_runs_are_budgeted ... ok
+test json_values_empty_chunk_runs_are_budgeted ... ok
+test csv_frames_a_large_chunk_in_bounded_steps ... ok
+test json_values_frame_a_large_chunk_in_bounded_steps ... ok
+test jsonl_frames_a_large_chunk_in_bounded_steps ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.07s
+
+     Running tests/stream_foundation.rs (review/astra-recheck/target/debug/deps/stream_foundation-3722b0acb21d0c9d)
+
+running 3 tests
+test chunks_debug_shows_counts_not_content ... ok
+test from_iter_accepts_items_that_are_not_unpin ... ok
+test rows_that_are_not_unpin_upload_as_json_lines ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests concord_extras
+
+running 5 tests
+test crates/concord-extras/src/jsonl/lines.rs - jsonl::lines::JsonLinesReader (line 393) - compile ... ok
+test crates/concord-extras/src/jsonl/policy.rs - jsonl::policy::MediaPolicy (line 21) ... ok
+test crates/concord-extras/src/csv/mod.rs - csv (line 11) ... ok
+test crates/concord-extras/src/csv/write.rs - csv::write::Rows (line 25) ... ok
+test crates/concord-extras/src/csv/read.rs - csv::read::CsvReader (line 23) ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+
+running 2 tests
+test crates/concord-extras/src/csv/mod.rs - csv (line 53) - compile fail ... ok
+test crates/concord-extras/src/csv/mod.rs - csv (line 45) - compile fail ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s
+
+all doctests ran in 0.24s; merged doctests compilation took 0.21s
