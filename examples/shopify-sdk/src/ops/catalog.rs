@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 
 use super::{PageSize, open_enum};
 use crate::connection::Connection;
-use crate::graphql::{Operation, OperationKind, Var, nullable};
+use crate::graphql::{Included, Operation, OperationKind, Var, nullable};
 use crate::scalars::{
     CollectionId, Cursor, DateTime, Decimal, InventoryItemId, ProductId, ProductVariantId,
 };
@@ -90,7 +90,9 @@ pub struct VariantInventoryItem {
 /// `products(first:, after:, query:, sortKey: ID)` with each product's first variants.
 ///
 /// Variables: `first` (page size), `after` (the previous `endCursor`; absent for the first
-/// page), `query` (search syntax; absent: every product), `variantsFirst`.
+/// page), `query` (search syntax; absent: every product), `variantsFirst`, and
+/// `withOnlineStoreUrl` (absent: `false`, the document's default) which includes each product's
+/// `onlineStoreUrl` ([`with_online_store_url`](Self::with_online_store_url)).
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ProductsQuery {
@@ -104,6 +106,10 @@ pub struct ProductsQuery {
     pub query: Var<String>,
     /// Variants per product in this page (the rest: [`ProductVariantsQuery`]).
     pub variants_first: PageSize,
+    /// Whether to include `onlineStoreUrl` (`@include(if: $withOnlineStoreUrl)`); absent means
+    /// the document's default, `false`.
+    #[serde(skip_serializing_if = "Var::is_absent")]
+    pub with_online_store_url: Var<bool>,
 }
 
 impl ProductsQuery {
@@ -114,7 +120,16 @@ impl ProductsQuery {
             after: Var::Absent,
             query: Var::Absent,
             variants_first,
+            with_online_store_url: Var::Absent,
         }
+    }
+
+    /// Also selects each product's `onlineStoreUrl` ([`ProductNode::online_store_url`]); without
+    /// it the variable is omitted and the field is not in the response.
+    #[must_use]
+    pub fn with_online_store_url(mut self) -> Self {
+        self.with_online_store_url = Var::Value(true);
+        self
     }
 
     /// Continues after `cursor` (`None`: the first page, `after` omitted).
@@ -139,9 +154,11 @@ impl ProductsQuery {
 impl Operation for ProductsQuery {
     const NAME: &'static str = "CatalogProducts";
     const DOCUMENT: &'static str = concat!(
-        "query CatalogProducts($first: Int!, $after: String, $query: String, $variantsFirst: Int!) { \
+        "query CatalogProducts($first: Int!, $after: String, $query: String, $variantsFirst: Int!, \
+         $withOnlineStoreUrl: Boolean! = false) { \
          products(first: $first, after: $after, query: $query, sortKey: ID) { \
-         nodes { id title handle status vendor productType tracksInventory totalInventory updatedAt \
+         nodes { id title handle status vendor productType \
+         onlineStoreUrl @include(if: $withOnlineStoreUrl) tracksInventory totalInventory updatedAt \
          variants(first: $variantsFirst) { nodes { ",
         variant_fields!(),
         " } pageInfo { hasNextPage endCursor } } } \
@@ -174,6 +191,11 @@ pub struct ProductNode {
     pub vendor: String,
     /// `String!`
     pub product_type: String,
+    /// `URL` (nullable), only when requested ([`ProductsQuery::with_online_store_url`]): the
+    /// product's page on the online store; `null` when the product is not published to the online
+    /// store sales channel.
+    #[serde(default)]
+    pub online_store_url: Included<String>,
     /// `Boolean!`
     pub tracks_inventory: bool,
     /// `Int!`

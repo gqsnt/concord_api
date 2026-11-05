@@ -13,6 +13,12 @@
 //! [`BulkRecord`] decodes one line of the [`CatalogExport`] selection into a typed product or
 //! variant, the variant keeping its parent id: records are normalized per line, so a consumer
 //! never needs to hold a parent group to relate them.
+//!
+//! A selection [`with_metafields`](CatalogExport::with_metafields) also writes each product's
+//! metafields as child lines (`__parentId`: the product). [`BulkRecord`] does not know that line
+//! type and refuses it (a `Decode` error of that line, as for any unselected type); read such a
+//! file as [`CatalogLine`], which is [`CatalogLine::Record`] for every product or variant line and
+//! [`CatalogLine::Metafield`] for a metafield line.
 
 use std::fmt;
 
@@ -23,7 +29,7 @@ use serde::de::Deserializer;
 use crate::graphql::string_literal;
 use crate::ops::bulk::RunBulkQuery;
 use crate::ops::catalog::{ProductStatus, VariantInventoryItem};
-use crate::scalars::{DateTime, Decimal, ProductId, ProductVariantId};
+use crate::scalars::{DateTime, Decimal, MetafieldId, ProductId, ProductVariantId};
 use crate::search::SearchQuery;
 
 /// The operation label of result-download errors (`ReadError::operation`, `OpenError::operation`).
@@ -34,11 +40,13 @@ pub const BULK_RESULT_OPERATION: &str = "shopify: bulk result";
 pub const DEFAULT_MAX_LINE_BYTES: usize = 1024 * 1024;
 
 /// What a catalog export selects: products (optionally filtered), optionally with their variants
-/// as child lines.
+/// and their metafields as child lines.
 #[derive(Clone, Debug, Default)]
 pub struct CatalogExport {
     filter: SearchQuery,
     variants: bool,
+    /// `None`: no metafields; `Some(None)`: every namespace; `Some(Some(ns))`: one namespace.
+    metafields: Option<Option<String>>,
 }
 
 impl CatalogExport {
@@ -66,6 +74,23 @@ impl CatalogExport {
         self.variants
     }
 
+    /// With each product's metafields, of one `namespace` or (`None`) of every namespace: a
+    /// nested connection, so child lines with `__parentId`. Read the result as [`CatalogLine`].
+    ///
+    /// The namespace is written into the document as a GraphQL string literal, like the filter.
+    /// That a nested connection's `namespace:` argument applies in a bulk query is an assumption
+    /// (the bulk guide shows arguments only on the root connection, see `PROVIDER.md`).
+    #[must_use]
+    pub fn with_metafields(mut self, namespace: Option<&str>) -> Self {
+        self.metafields = Some(namespace.map(str::to_owned));
+        self
+    }
+
+    /// Whether metafields are selected.
+    pub fn includes_metafields(&self) -> bool {
+        self.metafields.is_some()
+    }
+
     /// The bulk query document. A bulk query takes no variables, so the filter is written into
     /// the document as a GraphQL string literal ([`string_literal`]); the document itself then
     /// travels as the JSON-encoded `$query` variable of [`RunBulkQuery`].
@@ -81,8 +106,19 @@ impl CatalogExport {
         } else {
             ""
         };
+        let metafields = match &self.metafields {
+            None => String::new(),
+            Some(namespace) => {
+                let arguments = namespace.as_deref().map_or(String::new(), |namespace| {
+                    format!("(namespace: {})", string_literal(namespace))
+                });
+                format!(
+                    " metafields{arguments} {{ edges {{ node {{ id namespace key value type }} }} }}"
+                )
+            }
+        };
         format!(
-            "{{ products{arguments} {{ edges {{ node {{ id title handle status vendor updatedAt{variants} }} }} }} }}"
+            "{{ products{arguments} {{ edges {{ node {{ id title handle status vendor updatedAt{variants}{metafields} }} }} }} }}"
         )
     }
 
@@ -155,6 +191,39 @@ pub struct BulkVariant {
     pub inventory_item: VariantInventoryItem,
 }
 
+/// A metafield line, with its owner from `__parentId` (the product: metafields are selected on
+/// products only).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct BulkMetafield {
+    /// `ID!`
+    pub id: MetafieldId,
+    /// The product it belongs to (`__parentId`).
+    pub product_id: ProductId,
+    /// `String!`
+    pub namespace: String,
+    /// `String!`
+    pub key: String,
+    /// `String!`: the value as text, whatever its type (a JSON or list type is JSON text).
+    pub value: String,
+    /// `String!`: the metafield type name (`single_line_text_field`, `list.product_reference`,
+    /// ...), kept as text: the set grows independently of this SDK.
+    pub value_type: String,
+}
+
+/// One line of a [`CatalogExport`] result whose selection may include metafields
+/// ([`CatalogExport::with_metafields`]).
+///
+/// Non-exhaustive: a selection that grows another child connection adds a variant here, so a
+/// `match` needs a wildcard arm.
+#[derive(Clone, Debug, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum CatalogLine {
+    /// A product or variant line, exactly as [`BulkRecord`] reads it.
+    Record(BulkRecord),
+    /// A metafield line, a child of its product.
+    Metafield(BulkMetafield),
+}
+
 /// The union of the selection's fields: every line is read into it, then checked against the
 /// shape of its object type (the type comes from the global id).
 #[derive(Deserialize)]
@@ -181,6 +250,14 @@ struct Line {
     inventory_quantity: Option<Option<i64>>,
     #[serde(default)]
     inventory_item: Option<VariantInventoryItem>,
+    #[serde(default)]
+    namespace: Option<String>,
+    #[serde(default)]
+    key: Option<String>,
+    #[serde(default)]
+    value: Option<String>,
+    #[serde(rename = "type", default)]
+    value_type: Option<String>,
 }
 
 /// `Some(None)` for `null`, `Some(Some(v))` for a value; an absent field stays `None` (default).
@@ -249,6 +326,41 @@ impl TryFrom<Line> for BulkRecord {
 }
 
 impl<'de> Deserialize<'de> for BulkRecord {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let line = Line::deserialize(deserializer)?;
+        Self::try_from(line).map_err(serde::de::Error::custom)
+    }
+}
+
+impl TryFrom<Line> for CatalogLine {
+    type Error = LineError;
+
+    fn try_from(line: Line) -> Result<Self, LineError> {
+        let Ok(id) = MetafieldId::parse(&line.id) else {
+            return BulkRecord::try_from(line).map(Self::Record);
+        };
+        let missing = |what| LineError(what);
+        let parent = line
+            .parent_id
+            .ok_or(missing("metafield line without __parentId"))?;
+        let product_id = ProductId::parse(&parent)
+            .map_err(|_| LineError("metafield line whose __parentId is not a product"))?;
+        Ok(Self::Metafield(BulkMetafield {
+            id,
+            product_id,
+            namespace: line
+                .namespace
+                .ok_or(missing("metafield line without namespace"))?,
+            key: line.key.ok_or(missing("metafield line without key"))?,
+            value: line.value.ok_or(missing("metafield line without value"))?,
+            value_type: line
+                .value_type
+                .ok_or(missing("metafield line without type"))?,
+        }))
+    }
+}
+
+impl<'de> Deserialize<'de> for CatalogLine {
     fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
         let line = Line::deserialize(deserializer)?;
         Self::try_from(line).map_err(serde::de::Error::custom)

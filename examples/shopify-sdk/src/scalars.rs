@@ -492,4 +492,6 @@ kinds! {
     BulkOperation => BulkOperationId;
     /// A shop.
     Shop => ShopId;
+    /// A metafield.
+    Metafield => MetafieldId;
 }

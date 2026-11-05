@@ -46,7 +46,7 @@ plus one native download:
 | Family | Endpoint | Document (`operationName`) | Kind |
 |---|---|---|---|
 | Shop | `shop_info` | `ShopIdentity` — `shop { id name myshopifyDomain currencyCode }` | query |
-| Catalog | `products` | `CatalogProducts` — `products(first, after, query, sortKey: ID)` with each product's first `variants(first)` | query |
+| Catalog | `products` | `CatalogProducts` — `products(first, after, query, sortKey: ID)` with each product's first `variants(first)`; `onlineStoreUrl @include(if: $withOnlineStoreUrl)` on request (`ProductsQuery::with_online_store_url`) | query |
 | Catalog | `product` | `CatalogProduct` — `product(id)` with tags, `variantsCount`, first variants and collections | query |
 | Catalog | `product_variants` | `ProductVariants` — `product(id) { variants(first, after) }` (nested connection) | query |
 | Catalog | `collections` | `CatalogCollections` — `collections(first, after, query, sortKey: ID)` with `productsCount` and first members | query |
@@ -59,12 +59,16 @@ plus one native download:
 | Bulk | `ShopContext::result_download` (native `GET`) | the signed `url` / `partialDataUrl`, on the storage host, without the access token | download |
 
 `bulk_export::CatalogExport` builds the bulk query document (products, optionally their variants
-as a nested connection) and `bulk_export::BulkRecord` decodes its JSONL lines.
+and their metafields as nested connections) and `bulk_export::BulkRecord` decodes its JSONL lines;
+a selection with metafields is read as `bulk_export::CatalogLine` (`Record(BulkRecord)` or
+`Metafield(BulkMetafield)`), since `BulkRecord` refuses a metafield line.
 
 ## Deliberately unsupported
 
-- Every other resource (orders, customers, fulfillment, metafields, media, publications, ...) and
-  every mutation other than the two bulk ones; `bulkOperationRunMutation`.
+- Every other resource (orders, customers, fulfillment, media, publications, ...) and every
+  mutation other than the two bulk ones; `bulkOperationRunMutation`. Metafields are read only as
+  product children of the bulk catalog export (`id namespace key value type`; not `jsonValue`,
+  `owner`, variant metafields or the `keys:` argument).
 - `currentBulkOperation`: deprecated from `2026-01`, replaced by `bulkOperation(id:)`.
 - The `bulkOperations` listing, `groupObjects: true`, and the `bulk_operations/finish` webhook
   (polling is used; the docs recommend it as the fallback anyway).
@@ -115,7 +119,26 @@ as a nested connection) and `bulk_export::BulkRecord` decodes its JSONL lines.
 12. **`UnsignedInt64`** is documented as a string of digits; a JSON number is also accepted
     (lenient, never produced by the documented schema).
 13. **Bulk query limits** (at most five connections, two levels of nesting, a connection at the
-    root, no top-level `node`/`nodes`): `CatalogExport` uses at most two connections and one level.
+    root, no top-level `node`/`nodes`): `CatalogExport` uses at most three connections and one
+    level.
+14. **`@include` on the Admin API** (added 5 November 2026 with `onlineStoreUrl`). `@include` and
+    `@skip` are the GraphQL specification's built-in directives; the Admin API reference does not
+    list them, and their support is confirmed only in Shopify's developer community
+    (<https://community.shopify.dev/t/skip-and-include-directives/8255>, February 2025, not
+    API-specific). `CatalogProducts` relies on `onlineStoreUrl @include(if: $withOnlineStoreUrl)`
+    with `$withOnlineStoreUrl: Boolean! = false`, omitted unless requested, so callers that do not
+    ask send the same variables as before and receive no new member. Not live-verified.
+15. **`onlineStoreUrl`** (`URL`, nullable; `Product` page for `2026-10`, retrieved 5 November
+    2026): "If `null`, then the product isn't published to the online store sales channel". A
+    member that is absent therefore must not be read as `null`: `Included::NotIncluded` (not
+    requested) and `Included::Null` (unpublished) stay distinct.
+16. **Metafields in bulk** (`Metafield` and `Product.metafields` pages for `2026-10`, retrieved 5
+    November 2026: `id: ID!`, `namespace`, `key`, `value`, `type: String!`;
+    `metafields(namespace:)` filters, "If omitted, all metafields are returned"). The bulk guide
+    names `metafields` only as a nested connection in its nesting-limit example and shows
+    arguments only on the root connection; that `namespace:` applies to a nested connection in a
+    bulk query is an assumption. A metafield line is inferred to follow the documented child-line
+    rule (`__parentId`: its product).
 
 ## Evidence labels (implementation SHA in the delivery report)
 

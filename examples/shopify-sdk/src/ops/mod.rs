@@ -4,6 +4,8 @@
 //! Every document selects only fields verified against the pinned `2026-10` reference (see
 //! `PROVIDER.md`). Nullable fields that are selected are read with
 //! [`nullable`](crate::graphql::nullable): `null` is `None`, an absent field is a decode error.
+//! A field selected only on request (`@include(if: ..)`) is an
+//! [`Included`](crate::graphql::Included) instead: absent there means "not requested".
 
 pub mod bulk;
 pub mod catalog;
