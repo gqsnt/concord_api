@@ -1,0 +1,14 @@
+   Compiling astra-review-task v0.0.0 (/home/canarit/projects/concord-ext44/rv44-astra/review/astra/task)
+error: expected one of `!`, `,`, `::`, or `|`, found `>`
+  --> tests/probes.rs:78:126
+   |
+78 |     let poll_once = |future: &mut std::pin::Pin<&mut dyn Future<Output = Option<Result<String, concord::stream::ReadError>>>>>| {
+   |                                                                                                                              ^ expected one of `!`, `,`, `::`, or `|`
+
+error: expected one of `!`, `#`, `&`, `(`, `,`, `-`, `...`, `..=`, `..`, `::`, `[`, `_`, `box`, `mut`, `ref`, `|`, identifier, or path, found `>`
+  --> tests/probes.rs:78:126
+   |
+78 |     let poll_once = |future: &mut std::pin::Pin<&mut dyn Future<Output = Option<Result<String, concord::stream::ReadError>>>>>| {
+   |                                                                                                                              ^ expected one of 18 possible tokens
+
+error: could not compile `astra-review-task` (test "probes") due to 2 previous errors

@@ -1,0 +1,357 @@
+   Compiling concord-pagination v4.2.0 (/home/canarit/projects/concord-ext44/rv44-astra/crates/concord-pagination)
+   Compiling concord-example-testserver v0.0.0 (/home/canarit/projects/concord-ext44/rv44-astra/examples/testserver)
+   Compiling tokio-rustls v0.26.6
+   Compiling url v2.5.8
+   Compiling hyper-rustls v0.27.10
+   Compiling tower-http v0.6.11
+   Compiling reqwest v0.13.5
+   Compiling concord-core v4.2.0 (/home/canarit/projects/concord-ext44/rv44-astra/crates/concord-core)
+   Compiling concord-extras v4.2.0 (/home/canarit/projects/concord-ext44/rv44-astra/crates/concord-extras)
+   Compiling concord v4.2.0 (/home/canarit/projects/concord-ext44/rv44-astra/crates/concord)
+   Compiling concord-example-salesforce-sdk v0.0.0 (/home/canarit/projects/concord-ext44/rv44-astra/examples/salesforce-sdk)
+   Compiling concord-example-github-sdk v0.0.0 (/home/canarit/projects/concord-ext44/rv44-astra/examples/github-sdk)
+   Compiling concord-example-stripe-sdk v0.0.0 (/home/canarit/projects/concord-ext44/rv44-astra/examples/stripe-sdk)
+   Compiling concord-example-shopify-sdk v0.0.0 (/home/canarit/projects/concord-ext44/rv44-astra/examples/shopify-sdk)
+   Compiling concord-example-kubernetes-sdk v0.0.0 (/home/canarit/projects/concord-ext44/rv44-astra/examples/kubernetes-sdk)
+   Compiling concord-check-dx03-csv-runtime v0.0.0 (/home/canarit/projects/concord-ext44/rv44-astra/checks/dx03-csv-runtime)
+   Compiling concord-check-dx03-fanout-sink v0.0.0 (/home/canarit/projects/concord-ext44/rv44-astra/checks/dx03-fanout-sink)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 6.90s
+     Running unittests src/lib.rs (review/astra/target/debug/deps/concord_check_dx03_csv_runtime-23bd481fac0dd601)
+
+running 2 tests
+test tests::runtime_writer_encodes_both_header_modes ... ok
+test tests::runtime_reader_maps_columns_across_chunks_and_reports_progress ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/exports.rs (review/astra/target/debug/deps/exports-ea07e32fa22b67a6)
+
+running 6 tests
+test upload_matches_runtime_dialect_on_wire ... ok
+test invalid_runtime_options_fail_before_request ... ok
+test refused_response_stays_unread_and_inspectable ... ok
+test read_failures_report_delivered_rows ... ok
+test fixed_report_decodes_and_rejects_contradictory_header ... ok
+test runtime_reader_delivers_first_row_before_remaining_body_and_keeps_metadata ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.01s
+
+     Running unittests src/lib.rs (review/astra/target/debug/deps/concord_check_dx03_fanout_sink-1e12e4fc4a32f336)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/stage1.rs (review/astra/target/debug/deps/stage1-4fb5a82f3279444c)
+
+running 7 tests
+test empty_set_with_a_locator_does_not_end_the_chain ... ok
+test later_csv_decode_failure_is_typed_and_stops_before_its_next_locator ... ok
+test header_only_last_set_is_a_complete_empty_export ... ok
+test later_http_failure_preserves_the_typed_salesforce_error ... ok
+test later_count_mismatch_is_a_typed_protocol_failure ... ok
+test invalid_job_metadata_is_refused_before_requesting_results ... ok
+test collects_two_sets_in_order_using_the_jobs_pipe_crlf_dialect ... ok
+
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.05s
+
+     Running tests/stage2.rs (review/astra/target/debug/deps/stage2-6d30ab30164439c4)
+
+running 5 tests
+test sink_failure_does_not_publish_a_prefix_and_can_be_retried ... ok
+test a_count_failure_at_eof_discards_all_staged_rows_before_resume ... ok
+test discovery_failure_resumes_at_failed_manifest_without_redownloading_completed_parts ... ok
+test bounded_resume_preserves_queued_parts_and_undiscovered_manifests ... ok
+test stalled_part_holds_slot_failed_part_is_not_published_and_resume_only_redoes_it ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.08s
+
+     Running unittests src/lib.rs (review/astra/target/debug/deps/concord_example_github_sdk-b622568e55176fee)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/download.rs (review/astra/target/debug/deps/download-76d9e0c489c94437)
+
+running 9 tests
+test gone_artifact ... ok
+test no_redirect_policy_also_works ... ok
+test redirect_then_stream_without_the_token ... ok
+test byte_limits ... ok
+test unusable_redirects ... ok
+test sink_refusal_stops_the_transfer ... ok
+test client_followed_redirect_is_refused ... ok
+test transport_failure_mid_body ... ok
+test expired_signed_url ... ok
+
+test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+
+     Running tests/link.rs (review/astra/target/debug/deps/link-4392da0773314be0)
+
+running 8 tests
+test absent_prev_and_absent_last ... ok
+test debug_withholds_targets ... ok
+test last_page_has_no_next ... ok
+test documented_example_shape ... ok
+test no_header_is_no_links ... ok
+test duplicate_relations ... ok
+test rfc_8288_details ... ok
+test malformed_headers_are_errors ... ok
+
+test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/official_examples.rs (review/astra/target/debug/deps/official_examples-c70c509a2de4a7e8)
+
+running 9 tests
+test labels ... ok
+test comments ... ok
+test unknown_enumeration_values_are_kept ... ok
+test reviews_and_files ... ok
+test single_issue ... ok
+test issues_listing_distinguishes_pull_requests ... ok
+test repository ... ok
+test pull_requests ... ok
+test actions_envelopes_project_their_items ... ok
+
+test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/operations.rs (review/astra/target/debug/deps/operations-7070fbd48d7f615d)
+
+running 9 tests
+test parameters_are_validated ... ok
+test path_values_are_single_segments ... ok
+test undeclared_operation_through_the_context ... ok
+test status_errors_keep_response_and_metadata ... ok
+test token_never_rendered ... ok
+test issue_type_filter_on_the_wire ... ok
+test conditional_refresh_with_etag ... ok
+test every_operation_on_the_wire ... ok
+test contexts_and_repositories_are_isolated ... ok
+
+test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+
+     Running tests/paging.rs (review/astra/target/debug/deps/paging-d527c8deacb54685)
+
+running 7 tests
+test persisted_continuation_resumes ... ok
+test malformed_link_fails_the_page ... ok
+test link_outside_the_base_path_is_refused ... ok
+test envelopes_are_projected_and_checked ... ok
+test follows_next_links_as_sent ... ok
+test foreign_next_link_is_refused ... ok
+test continuation_binding_is_checked ... ok
+
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+
+     Running unittests src/lib.rs (review/astra/target/debug/deps/concord_example_kubernetes_sdk-cb66e2fe9101b3a2)
+
+running 7 tests
+test ids::tests::namespace_names_follow_rfc1123_labels ... ok
+test ids::tests::secrets_are_redacted_in_debug ... ok
+test selector::tests::label_requirements_render_in_kubernetes_syntax ... ok
+test ids::tests::object_names_follow_rfc1123_subdomains ... ok
+test selector::tests::label_syntax_cannot_be_injected ... ok
+test selector::tests::label_selector_matches_like_the_server ... ok
+test selector::tests::field_values_are_escaped_like_fields_escape_value ... ok
+
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/declaration.rs (review/astra/target/debug/deps/declaration-df4f6e02d1feba8b)
+
+running 8 tests
+test header_names_compose ... ok
+test two_namespaces_do_not_share_scope ... ok
+test every_operation_has_the_schema_path ... ok
+test ingress_lists_share_the_list_parameters ... ok
+test continue_token_is_sent_but_withheld_from_diagnostics ... ok
+test list_parameters_use_the_schema_names_and_encode_selectors ... ok
+test watch_parameters ... ok
+test credentials_are_per_context_and_redacted ... ok
+
+test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+
+     Running tests/decode.rs (review/astra/target/debug/deps/decode-80bc2d0788502bce)
+
+running 5 tests
+test expired_status_document ... ok
+test list_envelope_items_move_out_and_continue_keys_bind_the_snapshot ... ok
+test watch_events_decode_by_type ... ok
+test ingress_decodes_rules_backends_tls_and_status ... ok
+test objects_decode_with_unknown_fields_tolerated ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/lib.rs (review/astra/target/debug/deps/concord_example_salesforce_sdk-bed5296f3b6ae6bd)
+
+running 20 tests
+test bulk::tests::create_body_names_the_dialect ... ok
+test bulk::tests::next_link_alias_policy ... ok
+test bulk::tests::documented_job_example_parses ... ok
+test ids::tests::ids_and_names ... ok
+test csv::tests::ingest_body_uses_the_job_dialect_and_null_marker ... ok
+test ids::tests::instance_urls ... ok
+test ids::tests::locators_are_redacted_in_debug ... ok
+test ids::tests::versions_parse_and_print ... ok
+test model::tests::error_docs_hide_messages ... ok
+test soql::tests::date_literals_have_a_fixed_shape ... ok
+test model::tests::optional_fields_distinguish_absent_and_null ... ok
+test soql::tests::literals_are_escaped_and_identifiers_are_validated ... ok
+test transport::tests::parses_limit_info ... ok
+test csv::tests::results_are_read_with_the_job_dialect_and_exact_header ... ok
+test csv::tests::spool_is_bounded ... ok
+test context::tests::query_links ... ok
+test context::tests::content_and_record_links ... ok
+test context::tests::debug_hides_the_token ... ok
+test context::tests::result_links ... ok
+test csv::tests::headers_follow_salesforce_rules ... ok
+
+test result: ok. 20 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.21s
+
+     Running tests/wire.rs (review/astra/target/debug/deps/wire-5cb764f5a916b689)
+
+running 4 tests
+test ingest_operations_on_the_wire ... ok
+test status_errors_become_salesforce_error_documents ... ok
+test bulk_query_operations_on_the_wire ... ok
+test rest_operations_on_the_wire ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+
+     Running unittests src/lib.rs (review/astra/target/debug/deps/concord_example_shopify_sdk-eb89ce1b28734785)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/decoding.rs (review/astra/target/debug/deps/decoding-b84b1dcedfe478a6)
+
+running 9 tests
+test bulk_documents_escape_the_filter_as_a_graphql_string ... ok
+test error_extensions_stay_dynamic_where_shopify_varies_them ... ok
+test global_ids_are_checked_against_their_type ... ok
+test bulk_operation_scalars_follow_the_schema ... ok
+test data_absent_null_and_partial_are_distinct ... ok
+test nullable_fields_accept_null_and_refuse_absence ... ok
+test the_adapter_selects_the_dependent_cursor_and_refuses_inconsistent_page_info ... ok
+test metafield_lines_are_children_of_their_product_and_only_catalog_line_reads_them ... ok
+test bulk_lines_are_typed_with_their_parent_and_split_anywhere ... ok
+
+test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/wire.rs (review/astra/target/debug/deps/wire-d29beae553c3ab93)
+
+running 8 tests
+test the_result_download_goes_to_its_own_host_without_the_token ... ok
+test product_by_id_and_bulk_cancel_on_the_wire ... ok
+test http_200_with_errors_and_throttle_metadata_is_an_envelope_not_an_error ... ok
+test the_served_version_must_be_the_pinned_one ... ok
+test variables_are_json_encoded_with_null_and_absent_distinct ... ok
+test one_operation_on_the_wire ... ok
+test online_store_url_is_selected_only_when_requested ... ok
+test two_shops_never_share_a_host_or_a_token ... ok
+
+test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+
+     Running unittests src/lib.rs (review/astra/target/debug/deps/concord_example_stripe_sdk-c1f6a668a69351f6)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/form.rs (review/astra/target/debug/deps/form-62e771139d860108)
+
+running 7 tests
+test bytes_are_form_urlencoded ... ok
+test nested_sequences_inside_objects_keep_indices ... ok
+test omitted_and_empty_values_are_distinct ... ok
+test nested_indexed_and_repeated_fields_follow_the_documented_spelling ... ok
+test values_without_a_form_spelling_are_refused ... ok
+test invoice_settings_is_a_nested_optional_field ... ok
+test price_product_is_exactly_one_of_product_or_product_data ... ok
+
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/pages.rs (review/astra/target/debug/deps/pages-0a6464906bc43efb)
+
+running 5 tests
+test page_futures_are_send ... ok
+test page_budget_bounds_the_chain_and_keeps_the_next_cursor ... ok
+test backward_chain_uses_ending_before_from_the_first_id ... ok
+test items_stop_mid_page_and_resume_by_replaying_the_page ... ok
+test generated_list_is_walked_exactly_once_by_object_cursors ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+
+     Running tests/wire.rs (review/astra/target/debug/deps/wire-5521609c2fe4a82f)
+
+running 8 tests
+test header_names_compose ... ok
+test values_are_validated_and_redacted ... ok
+test write_carries_form_body_idempotency_key_and_metadata ... ok
+test list_query_headers_and_account_scope ... ok
+test error_documents_rate_limits_and_lost_responses ... ok
+test expandable_field_in_both_forms ... ok
+test customer_default_payment_method_in_id_object_and_null_forms ... ok
+test cursor_list_pages_forward_and_refuses_inconsistent_pages ... ok
+
+test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+
+   Doc-tests concord_check_dx03_csv_runtime
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests concord_check_dx03_fanout_sink
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests concord_example_github_sdk
+
+running 2 tests
+test examples/github-sdk/src/context.rs - context (line 11) ... ok
+test examples/github-sdk/src/pages.rs - pages (line 7) ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+all doctests ran in 0.23s; merged doctests compilation took 0.21s
+   Doc-tests concord_example_kubernetes_sdk
+
+running 4 tests
+test examples/kubernetes-sdk/src/list.rs - list::ListPager (line 230) - compile ... ok
+test examples/kubernetes-sdk/src/selector.rs - selector::FieldSelector (line 264) ... ok
+test examples/kubernetes-sdk/src/selector.rs - selector::LabelSelector (line 108) ... ok
+test examples/kubernetes-sdk/src/lib.rs - (line 25) ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+all doctests ran in 0.27s; merged doctests compilation took 0.25s
+   Doc-tests concord_example_salesforce_sdk
+
+running 2 tests
+test examples/salesforce-sdk/src/lib.rs - (line 22) - compile ... ok
+test examples/salesforce-sdk/src/query.rs - query (line 12) - compile ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+all doctests ran in 0.16s; merged doctests compilation took 0.15s
+   Doc-tests concord_example_shopify_sdk
+
+running 1 test
+test examples/shopify-sdk/src/lib.rs - (line 16) - compile ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+all doctests ran in 0.15s; merged doctests compilation took 0.14s
+   Doc-tests concord_example_stripe_sdk
+
+running 2 tests
+test examples/stripe-sdk/src/pages.rs - pages (line 17) - compile ... ok
+test examples/stripe-sdk/src/lib.rs - (line 22) ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+all doctests ran in 0.26s; merged doctests compilation took 0.24s

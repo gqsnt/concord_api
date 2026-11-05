@@ -1,0 +1,43 @@
+[package]
+name = "concord-sol-review-task"
+version = "0.0.0"
+edition = "2024"
+
+[workspace]
+
+[dependencies]
+concord = { path = "../../../crates/concord", default-features = false, features = ["json", "csv", "jsonl"] }
+concord-pagination = { path = "../../../crates/concord-pagination" }
+concord-example-testserver = { path = "../../../examples/testserver" }
+serde = { version = "1", features = ["derive"] }
+tokio = { version = "1", features = ["macros", "rt", "time"] }
+serde_json = "1"
+futures-core = "0.3"
+
+[features]
+compile-probes = []
+
+[[bin]]
+name = "lifetime_collision"
+path = "compile/lifetime_collision.rs"
+required-features = ["compile-probes"]
+
+[[bin]]
+name = "from_iter_pinned"
+path = "compile/from_iter_pinned.rs"
+required-features = ["compile-probes"]
+
+[[bin]]
+name = "lifetime_control"
+path = "compile/lifetime_control.rs"
+required-features = ["compile-probes"]
+
+[[bin]]
+name = "clone_before"
+path = "compile/clone_before.rs"
+required-features = ["compile-probes"]
+
+[[bin]]
+name = "clone_after"
+path = "compile/clone_after.rs"
+required-features = ["compile-probes"]

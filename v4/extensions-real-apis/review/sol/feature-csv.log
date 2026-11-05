@@ -1,0 +1,19 @@
+    Checking memchr v2.8.3
+   Compiling serde v1.0.229
+    Checking csv-core v0.1.13
+    Checking csv v1.4.0
+    Checking concord-extras v4.2.0 (/home/canarit/projects/concord-ext44/rv44-sol/crates/concord-extras)
+warning: method `recoverable` is never used
+   --> crates/concord-extras/src/stream/error.rs:200:19
+    |
+185 | impl ReadError {
+    | -------------- method in this implementation
+...
+200 |     pub(crate) fn recoverable(mut self) -> Self {
+    |                   ^^^^^^^^^^^
+    |
+    = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: `concord-extras` (lib) generated 1 warning
+    Checking concord v4.2.0 (/home/canarit/projects/concord-ext44/rv44-sol/crates/concord)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.54s

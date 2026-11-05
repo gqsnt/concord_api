@@ -1,0 +1,31 @@
+    Checking concord-sol-review-task v0.0.0 (/home/canarit/projects/concord-ext44/rv44-sol/review/sol/task)
+error[E0599]: the method `clone` exists for struct `ApiList`, but its trait bounds were not satisfied
+  --> compile/clone_after.rs:12:26
+   |
+ 1 |   struct Filter(String);
+   |   ------------- doesn't satisfy `Filter: Clone`
+...
+ 7 | / concord::api! { pub client Api { base "http://127.0.0.1";
+ 8 | |     GET list(query filter?: Filter) { path "items"; }
+ 9 | | } }
+   | |___- method `clone` not found for this struct because it doesn't satisfy `ApiList: Clone`
+...
+12 |       let _first = request.clone().prepare().unwrap();
+   |                            ^^^^^ method cannot be called on `ApiList` due to unsatisfied trait bounds
+   |
+note: trait bound `Filter: Clone` was not satisfied
+  --> compile/clone_after.rs:8:29
+   |
+ 7 | / concord::api! { pub client Api { base "http://127.0.0.1";
+ 8 | |     GET list(query filter?: Filter) { path "items"; }
+   | |         ----                ^^^^^^ unsatisfied trait bound introduced here
+ 9 | | } }
+   | |___-
+help: consider annotating `Filter` with `#[derive(Clone)]`
+   |
+ 1 + #[derive(Clone)]
+ 2 | struct Filter(String);
+   |
+
+For more information about this error, try `rustc --explain E0599`.
+error: could not compile `concord-sol-review-task` (bin "clone_after") due to 1 previous error

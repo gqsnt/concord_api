@@ -1,0 +1,926 @@
+   Compiling serde_core v1.0.229
+   Compiling rustls v0.23.46
+   Compiling target-triple v1.0.1
+   Compiling winnow v1.0.4
+   Compiling toml_writer v1.1.3+spec-1.1.0
+   Compiling termcolor v1.4.1
+   Compiling glob v0.3.4
+   Compiling tower-http v0.6.11
+   Compiling toml_parser v1.1.5+spec-1.1.0
+   Compiling serde v1.0.229
+   Compiling serde_json v1.0.154
+   Compiling serde_spanned v1.1.2
+   Compiling csv v1.4.0
+   Compiling toml_datetime v1.1.2+spec-1.1.0
+   Compiling toml v1.1.8+spec-1.1.0
+   Compiling serde_urlencoded v0.7.1
+   Compiling trybuild v1.0.119
+   Compiling tokio-rustls v0.26.6
+   Compiling rustls-platform-verifier v0.7.1
+   Compiling hyper-rustls v0.27.10
+   Compiling reqwest v0.13.5
+   Compiling concord-core v4.2.0 (/home/canarit/projects/concord-ext44/rv44-sol/crates/concord-core)
+   Compiling concord-extras v4.2.0 (/home/canarit/projects/concord-ext44/rv44-sol/crates/concord-extras)
+   Compiling concord v4.2.0 (/home/canarit/projects/concord-ext44/rv44-sol/crates/concord)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 14.60s
+     Running unittests src/lib.rs (review/sol/target/debug/deps/concord-679a9be7ed27150f)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/accept.rs (review/sol/target/debug/deps/accept-3fccb46a181e0772)
+
+running 4 tests
+test prepared_requests_follow_the_truth_table ... ok
+test a_sensitive_accept_classifies_the_suggestion ... ok
+test no_suggestion_keeps_the_metadata_checks ... ok
+test the_wire_and_the_client_defaults ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.44s
+
+     Running tests/applied_advice.rs (review/sol/target/debug/deps/applied_advice-f2abaf8a4d6e6ad1)
+
+running 3 tests
+test applied_raw_advice_keeps_the_raw_name ... ok
+test applied_token_advice_keeps_the_payload_type ... ok
+test applied_literal_advice_keeps_the_const_value ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+     Running tests/attributes.rs (review/sol/target/debug/deps/attributes-16f9cc87fb7621bc)
+
+running 1 test
+test cfg_and_deprecated ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+     Running tests/bodies.rs (review/sol/target/debug/deps/bodies-56b3fb003f39f8af)
+
+running 9 tests
+test r05_status_error_keeps_the_response ... ok
+test r03_malformed_json_is_a_decode_error ... ok
+test optional_body_controls ... ok
+test r01_post_json ... ok
+test r02_no_body_vs_empty_vs_null ... ok
+test r08_raw_response_streaming ... ok
+test r06_option_output_has_no_status_magic ... ok
+test r04_empty_responses ... ok
+test r03_content_type_is_checked_unless_deliberately_ignored ... ok
+
+test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.04s
+
+     Running tests/composition.rs (review/sol/target/debug/deps/composition-73cf5ca81f6bf75f)
+
+running 37 tests
+test c06_repeated_keys ... ok
+test c4_r_002_escaped_braces ... ok
+test c05_bare_names_bind_the_current_owner ... ok
+test c10_authorization_is_an_ordinary_header ... ok
+test c08_suppressed_contributions_are_not_formatted ... ok
+test c4_r_003_endpoint_named_like_scope ... ok
+test c4_r_004_strict_base_subset_constructs ... ok
+test c01_segments_compose_in_order ... ok
+test client_default_headers_fill_only_missing_names ... ok
+test c04_ip_base_with_subdomain_is_rejected ... ok
+test c09_header_slots_on_the_wire ... ok
+test c02_mixed_segments_and_literal_pchar ... ok
+test c04_labels_prepend_deepest_first ... ok
+test declared_content_type_wins ... ok
+test d04_override_truth_table ... ok
+test c13_trailing_slash_and_inherited_path ... ok
+test l02_invalid_header_value_is_a_build_error ... ok
+test query_keys_are_case_sensitive ... ok
+test q5_nested_overrides ... ok
+test q6_remove_reintroduce_append ... ok
+test query_values_are_form_encoded ... ok
+test dns_length_limits ... ok
+test q2_override_total_in_place ... ok
+test required_body_is_positional_in_declaration_order ... ok
+test c03_dot_and_empty_segments_are_rejected ... ok
+test remove_then_introduce_absent_removes ... ok
+test q10_present_empty_each_override_removes ... ok
+test q4_override_absent_keeps_inherited ... ok
+test c4_r_013_build_error_precedence ... ok
+test runtime_base_with_invalid_punycode_is_an_error ... ok
+test each_over_option_under_override ... ok
+test no_query_string_when_nothing_survives ... ok
+test header_value_policy ... ok
+test base_path_without_generated_segments_is_unchanged ... ok
+test c02_dynamic_segments_are_encoded_once ... ok
+test c04_label_values_are_validated ... ok
+test c13_base_url_variants ... ok
+
+test result: ok. 37 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.12s
+
+     Running tests/d15_surfaces.rs (review/sol/target/debug/deps/d15_surfaces-2efce94c5f52b533)
+
+running 7 tests
+test s03_remove_and_reintroduce_stays_sensitive ... ok
+test adv_1_plain_http_scenario_has_no_positive_control ... ok
+test s09_custom_encoder_description_is_trusted_text ... ok
+test json_encode_error_is_content_free ... ok
+test adv_1_tls_name_mismatch_positive_control ... ok
+test s07_runtime_base_is_shown_but_not_echoed_by_errors ... ok
+test s08_classification_without_printing ... ok
+
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s
+
+     Running tests/d16_followup.rs (review/sol/target/debug/deps/d16_followup-d0d3cce653613743)
+
+running 2 tests
+test nested_owners_and_sibling_defaults ... ok
+   Compiling proc-macro2 v1.0.107
+   Compiling unicode-ident v1.0.27
+   Compiling quote v1.0.47
+   Compiling libc v0.2.191
+    Checking stable_deref_trait v1.2.1
+   Compiling find-msvc-tools v0.1.15
+   Compiling shlex v2.0.1
+    Checking bytes v1.12.1
+    Checking pin-project-lite v0.2.17
+   Compiling pkg-config v0.3.34
+   Compiling fs_extra v1.3.0
+   Compiling dunce v1.0.5
+    Checking futures-core v0.3.34
+    Checking itoa v1.0.18
+    Checking once_cell v1.21.4
+    Checking zeroize v1.9.1
+    Checking smallvec v1.16.4
+    Checking litemap v0.8.3
+   Compiling aws-lc-rs v1.19.0
+    Checking writeable v0.6.4
+   Compiling icu_properties_data v2.1.2
+   Compiling icu_normalizer_data v2.1.1
+    Checking slab v0.4.12
+    Checking percent-encoding v2.3.2
+    Checking futures-sink v0.3.34
+    Checking tracing-core v0.1.36
+    Checking rustls-pki-types v1.15.1
+    Checking equivalent v1.0.3
+    Checking untrusted v0.9.0
+    Checking hashbrown v0.17.1
+   Compiling httparse v1.10.1
+    Checking futures-task v0.3.34
+   Compiling rustls v0.23.46
+    Checking log v0.4.35
+   Compiling serde_core v1.0.229
+    Checking atomic-waker v1.1.2
+    Checking utf_types v1.0.0
+    Checking tower-service v0.3.3
+    Checking try-lock v0.2.5
+    Checking subtle v2.6.1
+    Checking fnv v1.0.7
+    Checking futures-util v0.3.34
+    Checking form_urlencoded v1.2.2
+    Checking futures-channel v0.3.34
+    Checking sync_wrapper v1.0.2
+    Checking ipnet v2.12.2
+    Checking base64 v0.23.1
+    Checking want v0.3.2
+    Checking tower-layer v0.3.3
+    Checking openssl-probe v0.2.2
+    Checking memchr v2.8.3
+   Compiling zmij v1.0.23
+   Compiling serde v1.0.229
+    Checking cfg-if v1.0.5
+    Checking bitflags v2.13.2
+    Checking utf8_iter v1.1.0
+    Checking rustls-native-certs v0.8.5
+    Checking encoding_rs v0.8.35
+   Compiling serde_json v1.0.154
+    Checking mime v0.3.17
+    Checking tracing v0.1.44
+    Checking http v1.5.0
+    Checking ryu v1.0.23
+    Checking indexmap v2.14.2
+    Checking csv-core v0.1.13
+   Compiling syn v3.0.9
+    Checking http-body v1.1.0
+    Checking http-body-util v0.1.5
+   Compiling jobserver v0.1.35
+   Compiling cc v1.10.0
+    Checking socket2 v0.6.5
+    Checking mio v1.2.4
+    Checking csv v1.4.0
+   Compiling cmake v0.1.58
+   Compiling aws-lc-sys v0.47.0
+   Compiling synstructure v0.14.0
+   Compiling zerofrom-derive v0.1.8
+   Compiling yoke-derive v0.8.4
+   Compiling zerovec-derive v0.11.7
+   Compiling displaydoc v0.2.7
+   Compiling tokio-macros v2.7.2
+   Compiling serde_derive v1.0.229
+   Compiling concord-macros v4.2.0 (/home/canarit/projects/concord-ext44/rv44-sol/crates/concord-macros)
+    Checking tokio v1.54.1
+    Checking zerofrom v0.1.8
+    Checking yoke v0.8.4
+    Checking zerovec v0.11.9
+    Checking zerotrie v0.2.5
+    Checking tinystr v0.8.5
+    Checking potential_utf v0.1.6
+    Checking icu_collections v2.1.1
+    Checking icu_locale_core v2.1.1
+    Checking icu_provider v2.1.1
+    Checking icu_properties v2.1.2
+    Checking icu_normalizer v2.1.1
+    Checking serde_urlencoded v0.7.1
+    Checking idna_adapter v1.2.1
+    Checking tokio-util v0.7.20
+    Checking tower v0.5.3
+    Checking idna v1.1.0
+    Checking url v2.5.8
+    Checking h2 v0.4.20
+    Checking tower-http v0.6.11
+    Checking hyper v1.12.0
+    Checking hyper-util v0.1.21
+    Checking rustls-webpki v0.103.16
+    Checking tokio-rustls v0.26.6
+    Checking rustls-platform-verifier v0.7.1
+    Checking hyper-rustls v0.27.10
+    Checking reqwest v0.13.5
+    Checking concord-core v4.2.0 (/home/canarit/projects/concord-ext44/rv44-sol/crates/concord-core)
+    Checking concord-extras v4.2.0 (/home/canarit/projects/concord-ext44/rv44-sol/crates/concord-extras)
+    Checking concord v4.2.0 (/home/canarit/projects/concord-ext44/rv44-sol/crates/concord)
+    Checking concord-tests v0.0.0 (/home/canarit/projects/concord-ext44/rv44-sol/review/sol/target/tests/trybuild/concord)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 9.42s
+
+
+test tests/ui_d16/non_ancestor.rs ... ok
+test tests/ui_d16/removed_override.rs ... ok
+test tests/ui_d16/unqualified_ancestor.rs ... ok
+
+
+test compiler_rejections ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 17.29s
+
+     Running tests/display_errors.rs (review/sol/target/debug/deps/display_errors-b0b9b2e6adf799be)
+
+running 2 tests
+test every_placement_reports_a_build_error ... ok
+test generated_debug_shows_a_placeholder ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+
+     Running tests/error_inspection.rs (review/sol/target/debug/deps/error_inspection-24d90236df4edf71)
+
+running 7 tests
+test runtime_types_are_send_and_sync ... ok
+test source_of_a_codec_error ... ok
+test response_is_none_for_other_errors ... ok
+test response_is_borrowed_and_the_body_stays_unread ... ok
+test invalid_base_url_is_not_a_request_error ... ok
+test non_json_responses_are_refused_by_the_head_and_never_quoted ... ok
+test empty_responses_are_not_null ... ok
+
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.24s
+
+     Running tests/formats.rs (review/sol/target/debug/deps/formats-7e344e3f60326c04)
+
+running 29 tests
+test decode_is_usable_directly ... ok
+test compile_time_rows_have_ui_cases ... ok
+test native_sensitive_header_stays_protected_under_defaults ... ok
+test row2a_required_option_body_is_json_null ... ok
+test row1_no_body_under_a_request_default ... ok
+test lexical_raw_identifier_is_a_payload ... ok
+test row2c_empty_text_and_bytes_bodies_are_present ... ok
+test row12b_unused_and_cfg_disabled_defaults_are_never_referenced ... ok
+test row6b_in_place_exception_with_media_type ... ok
+test row11_status_and_native_decoder_unchanged ... ok
+test h12_format_defaults_do_not_affect_header_presence_or_inheritance ... ok
+test row8c_remove_resolves_the_conflict ... ok
+test row8a_body_media_types ... ok
+test row8b_four_runtime_cases ... ok
+test row8f_inserted_content_type_is_classified ... ok
+test row8d_json_suggests_accept_and_checks_the_response_type ... ok
+test row8b_empty_value_empty_each_and_conversion_failure ... ok
+test h11_optional_native_headers_do_not_affect_body_presence ... ok
+test row3a_no_output_drains_under_a_response_default ... ok
+test row6c_endpoint_format_sets_both_directions ... ok
+test row4_json_string_versus_raw_text ... ok
+test row3b_3c_typed_unit_is_decoded ... ok
+test row2b_absent_optional_body_sends_nothing ... ok
+test row9_custom_codec_in_place_and_as_default ... ok
+test migrated_marker_paths_behave_like_the_words ... ok
+test row6a_nearest_owner_per_direction ... ok
+test row6c_endpoint_statements_override_per_direction ... ok
+test row5_aliases_follow_the_written_format ... ok
+test lexical_precedence ... ok
+
+test result: ok. 29 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.32s
+
+     Running tests/forms.rs (review/sol/target/debug/deps/forms-d78bb1a166393191)
+
+running 5 tests
+test with_json::form_in_json_out ... ok
+test pairs_and_form_default ... ok
+test form_in_text_out ... ok
+test unencodable_form_is_a_build_error ... ok
+test form_response ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s
+
+     Running tests/forwarded_types.rs (review/sol/target/debug/deps/forwarded_types-86b4c11141c20a82)
+
+running 1 test
+test forwarded_fragments_keep_their_grouping ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+     Running tests/hygiene.rs (review/sol/target/debug/deps/hygiene-04688b8474c3def2)
+
+running 4 tests
+test raw_root::raw_keyword_client_name ... ok
+test forwarded_declaration_builds_requests ... ok
+test many_required_values ... ok
+test expands_without_the_prelude ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+
+     Running tests/lifecycle.rs (review/sol/target/debug/deps/lifecycle-0c96fbb369e773f7)
+
+running 1 test
+test stages_cancellation_and_controls ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.77s
+
+     Running tests/metadata.rs (review/sol/target/debug/deps/metadata-ca830718176366e4)
+
+running 10 tests
+test futures_stay_send ... ok
+test no_output_checks_nothing ... ok
+test the_head_is_refused_before_the_body_exists ... ok
+test a_one_shot_payload_is_moved_into_the_body ... ok
+test metadata_errors_print_no_response_content ... ok
+test charset_parameters_are_read_exactly ... ok
+test content_encoding_is_not_a_media_type ... ok
+test native_exits_apply_the_same_rules ... ok
+test a_downstream_format_uses_response_metadata ... ok
+test status_comes_before_the_format ... ok
+
+test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.12s
+
+     Running tests/native_headers.rs (review/sol/target/debug/deps/native_headers-871e5c8bda13741e)
+
+running 18 tests
+test h7_inherited_composition ... ok
+test h1_h4_client_values_on_the_wire ... ok
+test forwarded_forms ... ok
+test h6_native_sensitivity_without_marker ... ok
+test h1_setter_and_snapshots ... ok
+test dual_use_values_are_withheld_everywhere_or_are_text ... ok
+test declaration_classification_is_added ... ok
+test native_headers_and_bodies ... ok
+test h2_static_reused ... ok
+test h4_each_order_and_flags ... ok
+test generated_debug_of_every_owner ... ok
+test h6_native_and_declared_sensitivity_combine ... ok
+test h3_optional_and_initialized ... ok
+test h5_non_text_bytes ... ok
+test h9_scalars ... ok
+test empty_versus_absent ... ok
+test full_header_map_with_native_values ... ok
+test initializers_run_per_client ... ok
+
+test result: ok. 18 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s
+
+     Running tests/native_keys.rs (review/sol/target/debug/deps/native_keys-e371c56119192366)
+
+running 11 tests
+test marked_native_contribution_is_sticky_across_spellings ... ok
+test reserved_and_content_type_through_native_constants ... ok
+test the_same_constant_twice_is_decided_when_the_request_is_built ... ok
+test transitive_classification_follows_resolved_names ... ok
+test deep_native_chain_withholds_only_the_aliased_level ... ok
+test h15_suppressed_values_are_never_formatted ... ok
+test h01_h03_native_keys_send_their_names ... ok
+test h14_classification_by_resolved_name ... ok
+test native_conditions_follow_cfg ... ok
+test identity_errors_are_deferred_build_errors ... ok
+test h05_composition_follows_identity_not_spelling ... ok
+
+test result: ok. 11 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.06s
+
+     Running tests/native_limits.rs (review/sol/target/debug/deps/native_limits-b217561be749c48b)
+
+running 3 tests
+test longest_native_header_name_is_accepted ... ok
+test header_map_capacity::a_full_header_map_is_a_build_error_not_a_panic ... ok
+test header_map_capacity::a_body_content_type_that_does_not_fit_is_a_build_error ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s
+
+     Running tests/oracle_composition.rs (review/sol/target/debug/deps/oracle_composition-7cda9d8bd884bf54)
+
+running 6 tests
+test oracle_client_io ... ok
+test oracle_client_al ... ok
+test oracle_client_n ... ok
+test oracle_client_dp ... ok
+test oracle_client_il ... ok
+test oracle_client_ao ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+
+     Running tests/oracle_sensitivity.rs (review/sol/target/debug/deps/oracle_sensitivity-1d5c4b26c1428bfa)
+
+running 252 tests
+test case_003 ... ok
+test case_002 ... ok
+test case_006 ... ok
+test case_001 ... ok
+test case_012 ... ok
+test case_009 ... ok
+test case_000 ... ok
+test case_013 ... ok
+test case_005 ... ok
+test case_015 ... ok
+test case_016 ... ok
+test case_010 ... ok
+test case_017 ... ok
+test case_007 ... ok
+test case_011 ... ok
+test case_008 ... ok
+test case_004 ... ok
+test case_018 ... ok
+test case_014 ... ok
+test case_019 ... ok
+test case_024 ... ok
+test case_026 ... ok
+test case_034 ... ok
+test case_020 ... ok
+test case_027 ... ok
+test case_021 ... ok
+test case_022 ... ok
+test case_029 ... ok
+test case_030 ... ok
+test case_035 ... ok
+test case_033 ... ok
+test case_032 ... ok
+test case_031 ... ok
+test case_028 ... ok
+test case_039 ... ok
+test case_025 ... ok
+test case_023 ... ok
+test case_040 ... ok
+test case_046 ... ok
+test case_043 ... ok
+test case_041 ... ok
+test case_044 ... ok
+test case_036 ... ok
+test case_045 ... ok
+test case_047 ... ok
+test case_042 ... ok
+test case_048 ... ok
+test case_050 ... ok
+test case_051 ... ok
+test case_037 ... ok
+test case_052 ... ok
+test case_038 ... ok
+test case_049 ... ok
+test case_054 ... ok
+test case_056 ... ok
+test case_055 ... ok
+test case_058 ... ok
+test case_053 ... ok
+test case_061 ... ok
+test case_063 ... ok
+test case_062 ... ok
+test case_057 ... ok
+test case_059 ... ok
+test case_060 ... ok
+test case_064 ... ok
+test case_067 ... ok
+test case_066 ... ok
+test case_073 ... ok
+test case_074 ... ok
+test case_072 ... ok
+test case_069 ... ok
+test case_075 ... ok
+test case_076 ... ok
+test case_077 ... ok
+test case_079 ... ok
+test case_082 ... ok
+test case_083 ... ok
+test case_078 ... ok
+test case_068 ... ok
+test case_065 ... ok
+test case_084 ... ok
+test case_081 ... ok
+test case_080 ... ok
+test case_070 ... ok
+test case_088 ... ok
+test case_085 ... ok
+test case_071 ... ok
+test case_087 ... ok
+test case_086 ... ok
+test case_090 ... ok
+test case_093 ... ok
+test case_092 ... ok
+test case_091 ... ok
+test case_096 ... ok
+test case_097 ... ok
+test case_095 ... ok
+test case_099 ... ok
+test case_089 ... ok
+test case_098 ... ok
+test case_104 ... ok
+test case_100 ... ok
+test case_102 ... ok
+test case_101 ... ok
+test case_094 ... ok
+test case_109 ... ok
+test case_105 ... ok
+test case_106 ... ok
+test case_110 ... ok
+test case_111 ... ok
+test case_113 ... ok
+test case_108 ... ok
+test case_114 ... ok
+test case_115 ... ok
+test case_107 ... ok
+test case_116 ... ok
+test case_119 ... ok
+test case_120 ... ok
+test case_117 ... ok
+test case_122 ... ok
+test case_118 ... ok
+test case_121 ... ok
+test case_124 ... ok
+test case_127 ... ok
+test case_125 ... ok
+test case_126 ... ok
+test case_128 ... ok
+test case_130 ... ok
+test case_123 ... ok
+test case_131 ... ok
+test case_103 ... ok
+test case_135 ... ok
+test case_132 ... ok
+test case_112 ... ok
+test case_129 ... ok
+test case_136 ... ok
+test case_138 ... ok
+test case_139 ... ok
+test case_140 ... ok
+test case_142 ... ok
+test case_133 ... ok
+test case_134 ... ok
+test case_145 ... ok
+test case_146 ... ok
+test case_149 ... ok
+test case_148 ... ok
+test case_147 ... ok
+test case_150 ... ok
+test case_137 ... ok
+test case_151 ... ok
+test case_141 ... ok
+test case_143 ... ok
+test case_153 ... ok
+test case_144 ... ok
+test case_152 ... ok
+test case_154 ... ok
+test case_155 ... ok
+test case_158 ... ok
+test case_156 ... ok
+test case_157 ... ok
+test case_159 ... ok
+test case_160 ... ok
+test case_161 ... ok
+test case_165 ... ok
+test case_162 ... ok
+test case_173 ... ok
+test case_170 ... ok
+test case_171 ... ok
+test case_166 ... ok
+test case_172 ... ok
+test case_167 ... ok
+test case_174 ... ok
+test case_168 ... ok
+test case_176 ... ok
+test case_175 ... ok
+test case_178 ... ok
+test case_177 ... ok
+test case_180 ... ok
+test case_179 ... ok
+test case_181 ... ok
+test case_184 ... ok
+test case_183 ... ok
+test case_182 ... ok
+test case_185 ... ok
+test case_187 ... ok
+test case_188 ... ok
+test case_186 ... ok
+test case_193 ... ok
+test case_189 ... ok
+test case_163 ... ok
+test case_196 ... ok
+test case_164 ... ok
+test case_194 ... ok
+test case_195 ... ok
+test case_169 ... ok
+test case_197 ... ok
+test case_199 ... ok
+test case_200 ... ok
+test case_198 ... ok
+test case_192 ... ok
+test case_203 ... ok
+test case_204 ... ok
+test case_202 ... ok
+test case_206 ... ok
+test case_207 ... ok
+test case_205 ... ok
+test case_191 ... ok
+test case_201 ... ok
+test case_208 ... ok
+test case_190 ... ok
+test case_215 ... ok
+test case_211 ... ok
+test case_214 ... ok
+test case_219 ... ok
+test case_223 ... ok
+test case_216 ... ok
+test case_220 ... ok
+test case_222 ... ok
+test case_221 ... ok
+test case_229 ... ok
+test case_209 ... ok
+test case_224 ... ok
+test case_225 ... ok
+test case_226 ... ok
+test case_210 ... ok
+test case_218 ... ok
+test case_228 ... ok
+test case_213 ... ok
+test case_212 ... ok
+test case_227 ... ok
+test case_232 ... ok
+test case_217 ... ok
+test case_235 ... ok
+test case_236 ... ok
+test case_237 ... ok
+test case_243 ... ok
+test case_242 ... ok
+test case_240 ... ok
+test case_239 ... ok
+test case_245 ... ok
+test case_241 ... ok
+test case_234 ... ok
+test case_244 ... ok
+test case_246 ... ok
+test case_233 ... ok
+test case_231 ... ok
+test case_230 ... ok
+test case_247 ... ok
+test case_238 ... ok
+test case_248 ... ok
+test case_251 ... ok
+test case_250 ... ok
+test case_249 ... ok
+
+test result: ok. 252 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.23s
+
+     Running tests/oracle_ui.rs (review/sol/target/debug/deps/oracle_ui-5a94649ca63f1c28)
+
+running 1 test
+    Checking concord-tests v0.0.0 (/home/canarit/projects/concord-ext44/rv44-sol/review/sol/target/tests/trybuild/concord)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.06s
+
+
+test tests/oracle_ui/direct_while_live.rs ... ok
+test tests/oracle_ui/introduce_while_live.rs ... ok
+test tests/oracle_ui/override_else_inherit_without_writer.rs ... ok
+test tests/oracle_ui/override_without_writer.rs ... ok
+test tests/oracle_ui/remove_acts_first_within_owner.rs ... ok
+test tests/oracle_ui/remove_without_writer.rs ... ok
+
+
+test oracle_rejections ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.26s
+
+     Running tests/output_types.rs (review/sol/target/debug/deps/output_types-5cfd059ed6ccf192)
+
+running 1 test
+test macro_outputs_are_the_macros_types ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+     Running tests/representations.rs (review/sol/target/debug/deps/representations-69fe71a4faae7e90)
+
+running 10 tests
+test r07_text_and_binary_bodies ... ok
+test transport_error_message ... ok
+test unit_drain_detects_truncated_body ... ok
+test declared_media_type_replaces_an_invalid_constant ... ok
+test decoder_applies_status_handling ... ok
+test custom_decoder_gets_the_body_and_no_output_drains ... ok
+test r04_unit_accepts_any_2xx_body ... ok
+test into_response_keeps_other_errors ... ok
+test r07_text_and_binary_responses ... ok
+test m05_transport_failure_is_one_attempt ... ok
+
+test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.06s
+
+     Running tests/sensitivity.rs (review/sol/target/debug/deps/sensitivity-51ea63893ca4eefd)
+
+running 13 tests
+test s04_sensitivity_is_sticky ... ok
+test s01_s02_sensitive_values_are_sent ... ok
+test s02_query_on_wire_redacted_in_debug ... ok
+test build_errors_have_no_source ... ok
+test s05_transport_error_does_not_leak ... ok
+test c4_r_001_debug_uses_effective_sensitivity ... ok
+test s03_path_and_host_redacted ... ok
+test s06_native_request_debug_is_outside_the_guarantee ... ok
+test adv_1_sensitive_host_hides_transport_source ... ok
+test generated_debug_redacts ... ok
+test safety_list_normalization_is_exact ... ok
+test adv_2_effective_sensitivity_reaches_every_placement ... ok
+test s05_build_error_does_not_leak ... ok
+
+test result: ok. 13 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+
+     Running tests/slice.rs (review/sol/target/debug/deps/slice-62beb8719d18d323)
+
+running 7 tests
+test m05_failure_is_not_retried ... ok
+test m04_send_raw_returns_the_native_response ... ok
+test into_parts_then_decode ... ok
+test m01_health_round_trip ... ok
+test item_path_value ... ok
+test m02_application_client_is_used ... ok
+test m03_prepare_does_not_contact_the_server ... ok
+
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.06s
+
+     Running tests/spelling_equivalence.rs (review/sol/target/debug/deps/spelling_equivalence-9f06b3bebc06e577)
+
+running 2 tests
+test a_conditional_value_is_withheld_on_literal_chains ... ok
+test stickiness_covers_overridden_conditional_values ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+
+     Running tests/synthetic_sdk.rs (review/sol/target/debug/deps/synthetic_sdk-6fa5ca60f51b0b5b)
+
+running 2 tests
+test the_synthetic_sdk_validates_without_building_anything ... ok
+test every_kind_of_endpoint_prepares ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+     Running tests/tls.rs (review/sol/target/debug/deps/tls-bf0cce4bb2e50353)
+
+running 2 tests
+test c4_r_008_header_reflected_into_redirect_does_not_leak ... ok
+test c4_r_008_redirect_error_chain_does_not_leak ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+
+     Running tests/ui.rs (review/sol/target/debug/deps/ui-16ed4be50a125f9c)
+
+running 2 tests
+    Checking concord-tests v0.0.0 (/home/canarit/projects/concord-ext44/rv44-sol/review/sol/target/tests/trybuild/concord)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.06s
+
+
+test tests/ui/ancestor_needs_qualification.rs ... ok
+test tests/ui/base_errors.rs ... ok
+test tests/ui/base_invalid_port.rs ... ok
+test tests/ui/body_errors.rs ... ok
+test tests/ui/builtin_collisions.rs ... ok
+test tests/ui/config_missing_field.rs ... ok
+test tests/ui/config_name_collision.rs ... ok
+test tests/ui/conversions_are_closed.rs ... ok
+test tests/ui/default_cannot_capture_arguments.rs ... ok
+test tests/ui/deprecated_endpoint.rs ... ok
+test tests/ui/discarded_setter.rs ... ok
+test tests/ui/duplicate_header_case.rs ... ok
+test tests/ui/duplicate_inherited_key.rs ... ok
+test tests/ui/duplicate_names.rs ... ok
+test tests/ui/duplicate_statement.rs ... ok
+test tests/ui/duplicate_value.rs ... ok
+test tests/ui/each_and_scalar.rs ... ok
+test tests/ui/else_inherit_needs_optional_source.rs ... ok
+test tests/ui/endpoint_attribute_unsupported.rs ... ok
+test tests/ui/endpoint_clone_needs_clone_values.rs ... ok
+test tests/ui/format_endpoint_statement.rs ... ok
+test tests/ui/format_header_media_conflict.rs ... ok
+test tests/ui/format_inherited_unsupported.rs ... ok
+test tests/ui/format_invalid_accept.rs ... ok
+test tests/ui/format_invalid_content_type.rs ... ok
+test tests/ui/format_media_type_invalid.rs ... ok
+test tests/ui/format_media_type_needs_format.rs ... ok
+test tests/ui/format_output_media_type.rs ... ok
+test tests/ui/format_removed_spellings.rs ... ok
+test tests/ui/format_swapped_order.rs ... ok
+test tests/ui/format_type_paths.rs ... ok
+test tests/ui/format_unknown_type.rs ... ok
+test tests/ui/format_via_removed.rs ... ok
+test tests/ui/header_constant_as_value.rs ... ok
+test tests/ui/header_literal_value.rs ... ok
+test tests/ui/header_name_exceeds_native_limit.rs ... ok
+test tests/ui/header_value_type.rs ... ok
+test tests/ui/invalid_header_name.rs ... ok
+test tests/ui/method_collisions.rs ... ok
+test tests/ui/migration_literal_advice.rs ... ok
+test tests/ui/migration_raw_advice.rs ... ok
+test tests/ui/migration_token_advice.rs ... ok
+test tests/ui/missing_base.rs ... ok
+test tests/ui/missing_required_argument.rs ... ok
+test tests/ui/native_chain_duplicate_names_the_setter.rs ... ok
+test tests/ui/native_header_cross_placement.rs ... ok
+test tests/ui/native_key_deref.rs ... ok
+test tests/ui/native_key_sealed.rs ... ok
+test tests/ui/native_key_static_errors.rs ... ok
+test tests/ui/native_key_type.rs ... ok
+test tests/ui/newtype_is_not_converted.rs ... ok
+test tests/ui/only_optional_values_have_maybe.rs ... ok
+test tests/ui/option_has_no_wire_spelling.rs ... ok
+test tests/ui/optional_in_path.rs ... ok
+test tests/ui/output_type_macro_errors.rs ... ok
+test tests/ui/override_after_remove.rs ... ok
+test tests/ui/override_needs_else_inherit.rs ... ok
+test tests/ui/override_without_target.rs ... ok
+test tests/ui/path_errors.rs ... ok
+test tests/ui/qualified_non_ancestor.rs ... ok
+test tests/ui/remove_acts_on_inherited.rs ... ok
+test tests/ui/remove_without_target.rs ... ok
+test tests/ui/representation_alpha_spelling.rs ... ok
+test tests/ui/representation_missing_via.rs ... ok
+test tests/ui/representation_unsupported_payload.rs ... ok
+test tests/ui/reserved_header.rs ... ok
+test tests/ui/reserved_headers_all.rs ... ok
+test tests/ui/reserved_value_names.rs ... ok
+test tests/ui/scope_trailing_slash.rs ... ok
+test tests/ui/self_qualified.rs ... ok
+test tests/ui/sensitive_body.rs ... ok
+test tests/ui/statement_after_child.rs ... ok
+test tests/ui/subdomain_errors.rs ... ok
+test tests/ui/template_raw_keyword.rs ... ok
+test tests/ui/to_header_value_sealed.rs ... ok
+test tests/ui/unknown_attribute.rs ... ok
+test tests/ui/unknown_method.rs ... ok
+test tests/ui/unknown_value.rs ... ok
+test tests/ui/unused_value.rs ... ok
+test tests/ui/unused_value_keeps_the_client.rs ... ok
+test tests/ui/vec_needs_each.rs ... ok
+
+
+test ui ... ok
+    Checking concord-tests v0.0.0 (/home/canarit/projects/concord-ext44/rv44-sol/review/sol/target/tests/trybuild/concord)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.06s
+
+
+test tests/ui_json/format_missing_import.rs ... ok
+test tests/ui_json/format_serde_bound.rs ... ok
+
+
+test ui_json ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.98s
+
+     Running tests/validate_names.rs (review/sol/target/debug/deps/validate_names-338f65356464a277)
+
+running 4 tests
+test literal_and_coherent_clients_validate ... ok
+test debug_lists_the_problems_readably ... ok
+test validation_runs_nothing_and_matches_prepare ... ok
+test earlier_build_steps_fail_first ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+     Running tests/values.rs (review/sol/target/debug/deps/values-1c2bfaa6c8eff55b)
+
+running 15 tests
+test v10_request_clone_follows_the_data ... ok
+test v10_snapshots_are_not_changed_by_later_parent_changes ... ok
+test v03_initializer_evaluation_points ... ok
+test v01_required_root_value_empty_string_is_valid ... ok
+test query_order_follows_declaration_order ... ok
+test c12_no_shared_state_between_clients ... ok
+test required_values_have_setters ... ok
+test v12_borrowed_string_and_literals ... ok
+test v12_newtype_value ... ok
+test v03_v09_initializer_order_and_clone_retention ... ok
+test v05_required_optional_payload_is_not_omission ... ok
+test v02_initialized_value_and_override ... ok
+test v04_optional_absent_vs_present_empty ... ok
+test v06_nested_absence ... ok
+test v07_maybe_is_exact ... ok
+
+test result: ok. 15 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s
+
+   Doc-tests concord
+
+running 2 tests
+test crates/concord/src/lib.rs - (line 151) - compile ... ok
+test crates/concord/src/lib.rs - (line 14) ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+all doctests ran in 0.27s; merged doctests compilation took 0.26s

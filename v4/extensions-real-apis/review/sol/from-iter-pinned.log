@@ -1,0 +1,50 @@
+    Checking concord-sol-review-task v0.0.0 (/home/canarit/projects/concord-ext44/rv44-sol/review/sol/task)
+error[E0277]: `PhantomPinned` cannot be unpinned
+   --> compile/from_iter_pinned.rs:17:21
+    |
+ 17 |             .upload(concord::jsonl::StreamRecords::new(rows));
+    |              ------ ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ within `std::vec::IntoIter<Result<Row, Infallible>>`, the trait `Unpin` is not implemented for `PhantomPinned`
+    |              |
+    |              required by a bound introduced by this call
+    |
+    = note: consider using the `pin!` macro
+            consider using `Box::pin` if you need to access the pinned value outside of the current scope
+help: the trait `futures_core::stream::Stream` is conditionally implemented for `concord::stream::FromIter<I>`
+   --> /home/canarit/projects/concord-ext44/rv44-sol/crates/concord-extras/src/stream/upload.rs:288:1
+    |
+288 | impl<I: Iterator + Unpin> Stream for FromIter<I> {
+    | ^^^^^^^^^^^^^^^^^^^-----^^^^^^^^^^^^^^^^^^^^^^^^
+    |                    |
+    |                    unsatisfied requirement introduced here: `std::vec::IntoIter<Result<Row, Infallible>>: Unpin`
+note: required because it appears within the type `Row`
+   --> compile/from_iter_pinned.rs:5:8
+    |
+  5 | struct Row {
+    |        ^^^
+note: required because it appears within the type `Result<Row, Infallible>`
+   --> /home/canarit/.rustup/toolchains/1.99.1-x86_64-unknown-linux-gnu/lib/rustlib/src/rust/library/core/src/result.rs:558:10
+    |
+558 | pub enum Result<T, E> {
+    |          ^^^^^^
+note: required because it appears within the type `PhantomData<Result<Row, Infallible>>`
+   --> /home/canarit/.rustup/toolchains/1.99.1-x86_64-unknown-linux-gnu/lib/rustlib/src/rust/library/core/src/marker.rs:811:12
+    |
+811 | pub struct PhantomData<T: PointeeSized>;
+    |            ^^^^^^^^^^^
+note: required because it appears within the type `std::vec::IntoIter<Result<Row, Infallible>>`
+   --> /home/canarit/.rustup/toolchains/1.99.1-x86_64-unknown-linux-gnu/lib/rustlib/src/rust/library/alloc/src/vec/into_iter.rs:45:12
+    |
+ 45 | pub struct IntoIter<
+    |            ^^^^^^^^
+    = note: required for `concord::stream::FromIter<std::vec::IntoIter<Result<Row, Infallible>>>` to implement `futures_core::stream::Stream`
+note: required by a bound in `JsonLinesWriter::upload`
+   --> /home/canarit/projects/concord-ext44/rv44-sol/crates/concord-extras/src/jsonl/writer.rs:142:12
+    |
+140 |     pub fn upload<S, T, E>(&self, records: StreamRecords<S>) -> Upload
+    |            ------ required by a bound in this associated function
+141 |     where
+142 |         S: Stream<Item = Result<T, E>> + Send + 'static,
+    |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^ required by this bound in `JsonLinesWriter::upload`
+
+For more information about this error, try `rustc --explain E0277`.
+error: could not compile `concord-sol-review-task` (bin "from_iter_pinned") due to 1 previous error
