@@ -153,6 +153,9 @@ pub type Generator = Box<dyn FnMut() -> Option<Bytes> + Send>;
 pub enum Body {
     /// Complete, with `content-length`.
     Full(Bytes),
+    /// The head of a `HEAD` answer: `content-length: N` (the length a `GET` would send) and no
+    /// body bytes.
+    HeadOnly(u64),
     /// `transfer-encoding: chunked`, each chunk after its delay.
     Chunks(Vec<(Duration, Bytes)>),
     /// `transfer-encoding: chunked`, chunks produced on demand (never materialized). The
@@ -173,6 +176,7 @@ impl std::fmt::Debug for Body {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Body::Full(b) => write!(f, "Full({} bytes)", b.len()),
+            Body::HeadOnly(n) => write!(f, "HeadOnly({n} bytes declared)"),
             Body::Chunks(c) => write!(f, "Chunks({})", c.len()),
             Body::Generate(..) => f.write_str("Generate"),
             Body::FailAfter(c) => write!(f, "FailAfter({})", c.len()),
@@ -582,6 +586,10 @@ async fn serve(
                     .body_bytes_sent
                     .fetch_add(bytes.len() as u64, Ordering::SeqCst);
             }
+            Body::HeadOnly(declared) => {
+                out.push_str(&format!("content-length: {declared}\r\n\r\n"));
+                stream.write_all(out.as_bytes()).await?;
+            }
             body => {
                 out.push_str("transfer-encoding: chunked\r\n\r\n");
                 stream.write_all(out.as_bytes()).await?;
@@ -618,7 +626,7 @@ async fn write_chunked(
     body: Body,
 ) -> std::io::Result<bool> {
     match body {
-        Body::Full(_) => unreachable!(),
+        Body::Full(_) | Body::HeadOnly(_) => unreachable!(),
         Body::Chunks(chunks) => {
             for (delay, chunk) in chunks {
                 if !delay.is_zero() {
