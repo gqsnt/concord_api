@@ -17,7 +17,7 @@ use concord_example_salesforce_sdk::soql::{FieldPath, Soql};
 use concord_example_salesforce_sdk::{OrgContext, ProtocolErrorKind, SfError};
 use concord_example_testserver::{Recorded, Reply, TestServer};
 use concord_pagination::{
-    Budget, JobOptions, JobsError, Options, Outcome, Resume, manifest_jobs, sequential,
+    Budget, JobOptions, JobsError, Options, Outcome, PagesError, Resume, manifest_jobs, sequential,
 };
 use serde::Deserialize;
 
@@ -115,6 +115,76 @@ async fn query_locator_that_does_not_advance_is_refused() {
             "/services/data/v68.0/query",
             "/services/data/v68.0/query/01gA0000000AbCdEAA-2"
         ]
+    );
+    server.shutdown().await;
+}
+
+/// The ordinary listing (`QueryPages::into_pages`): the same non-advancing provider ends the
+/// traversal with a typed error that names the batch to retry, and never with `Ok(None)`; a
+/// provider that reaches `done: true` ends with `Ok(None)`.
+#[tokio::test]
+async fn ordinary_query_listing_ends_only_at_done() {
+    let record = r#"{"attributes":{"type":"Account",
+        "url":"/services/data/v68.0/sobjects/Account/001A00000000001AAA"},
+        "Id":"001A00000000001AAA","Name":"Acme"}"#;
+    let (server, ctx) = start(move |r: &Recorded| match (r.path(), r.query()) {
+        ("/services/data/v68.0/query", Some(q)) if q.contains("Contact") => Reply::json(
+            200,
+            r#"{"totalSize":0,"done":false,
+                "nextRecordsUrl":"/services/data/v68.0/query/01gA0000000AbCdEAA-2","records":[]}"#,
+        ),
+        ("/services/data/v68.0/query", _) => Reply::json(
+            200,
+            format!(
+                r#"{{"totalSize":2,"done":false,
+                    "nextRecordsUrl":"/services/data/v68.0/query/01gA0000000AbCdEAA-1",
+                    "records":[{record}]}}"#
+            ),
+        ),
+        ("/services/data/v68.0/query/01gA0000000AbCdEAA-1", _) => Reply::json(
+            200,
+            format!(r#"{{"totalSize":2,"done":true,"records":[{record}]}}"#),
+        ),
+        // Repeats its own locator.
+        ("/services/data/v68.0/query/01gA0000000AbCdEAA-2", _) => Reply::json(
+            200,
+            r#"{"totalSize":0,"done":false,
+                "nextRecordsUrl":"/services/data/v68.0/query/01gA0000000AbCdEAA-2","records":[]}"#,
+        ),
+        _ => Reply::new(404),
+    })
+    .await;
+    let select = |object: &str| {
+        Soql::select(
+            SObjectName::new(object).unwrap(),
+            [FieldPath::parse("Id").unwrap()],
+        )
+        .build()
+        .unwrap()
+    };
+
+    let mut pages = QueryPages::<Account>::new(&ctx, select("Account")).into_pages(Resume::Start);
+    let mut records = 0;
+    while let Some(page) = pages.next_page().await.unwrap() {
+        records += page.items.len();
+    }
+    assert_eq!(records, 2);
+
+    // A statement of another object; its records (none) do not matter, the chain does.
+    let mut pages = QueryPages::<Account>::new(&ctx, select("Contact")).into_pages(Resume::Start);
+    assert!(pages.next_page().await.unwrap().is_some());
+    let error = pages.next_page().await.unwrap_err();
+    let PagesError::Provider { error, failed, .. } = error else {
+        panic!("expected the provider's error, got {error:?}");
+    };
+    assert_eq!(
+        protocol_kind(&error),
+        Some(&ProtocolErrorKind::LocatorDidNotAdvance)
+    );
+    assert!(matches!(failed, Resume::At(_)), "the batch to retry");
+    assert!(
+        matches!(pages.next_page().await, Err(PagesError::Ended { .. })),
+        "an ended listing is not an exhausted one"
     );
     server.shutdown().await;
 }
