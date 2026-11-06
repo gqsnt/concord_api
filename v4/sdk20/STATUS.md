@@ -44,7 +44,12 @@ the Phase A agent worktrees' own targets (about 17 GB, idle). At Phase B start: 
 
 Wave 3 frozen at `6d6d66aa` (waves 1-2 integrated; between-wave refinements D-W23-1/2, review
 SOL-W23 fixed): `verify.sh --package --bench` 43/43 PASS on a clean tree
-(`work/logs/gate-6d6d66aa-verify.txt`, 4m19s); pushed to PR #4. Earlier at `634b135b` the gate
+(`work/logs/gate-6d6d66aa-verify.txt`, 4m19s); pushed to PR #4. CI: pull_request run
+`42162457510` on synthetic merge `0c0748fa` (parents `a95fb2fb`, `6d6d66aa`; tree `b858ffa2` =
+candidate tree) — ubuntu success; windows success, 43 `PASS` / 0 `FAIL` lines, rustc 1.99.1;
+nightly-clone success, step log `PASS nightly-clone-compat`, 16 passed, rustc
+`1.101.0-nightly (249c1e4e3 2026-11-05)` (logs `work/logs/ci-6d6d66aa-pr-*.txt`). Push run
+`42162457389`: ubuntu and nightly success, windows still running at this record. Earlier at `634b135b` the gate
 failed 3 `test` steps (one UI case, W23-5), fixed in `08df6614` (43/43). The S3 move to the
 value-form policy ran in parallel (SDK-only) and merged as `bbbf6c97`.
 
