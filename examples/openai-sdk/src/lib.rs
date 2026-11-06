@@ -8,7 +8,7 @@ use concord::{
     multipart::{Multipart, MultipartBody},
     reqwest::{
         self,
-        header::{AUTHORIZATION, HeaderMap, HeaderValue},
+        header::{AUTHORIZATION, HeaderValue},
     },
     sse::{Sse, SseEvents, SseOptions, SseReader},
     stream::{ByteSource, ReadErrorKind, SourceError},
@@ -228,21 +228,9 @@ impl BatchResults {
     }
 }
 
-#[derive(Clone, Debug)]
-pub struct ResponseMeta {
-    pub status: reqwest::StatusCode,
-    pub headers: HeaderMap,
-    pub operation: Option<concord::Operation>,
-}
-impl ResponseMeta {
-    fn from<T>(r: &Received<T>) -> Self {
-        Self {
-            status: r.status(),
-            headers: r.head().headers().clone(),
-            operation: r.operation(),
-        }
-    }
-}
+/// Status, version, headers and operation of a response: Concord's own type, whose `Debug`
+/// prints header names only.
+pub use concord::ResponseMeta;
 #[derive(Debug)]
 pub struct Response<T> {
     pub value: T,
@@ -293,8 +281,8 @@ impl From<concord::Error> for Error {
     }
 }
 async fn checked<T>(r: Received<T>) -> Result<(Received<T>, ResponseMeta), Error> {
-    let meta = ResponseMeta::from(&r);
-    if !meta.status.is_success() {
+    let meta = r.meta();
+    if !meta.status().is_success() {
         let error = r
             .bytes_limited(65536)
             .await
