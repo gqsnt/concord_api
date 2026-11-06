@@ -65,9 +65,9 @@ commit, so no baseline intervention was needed.
 | SDK06 | GitLab | medium | 2 | Opus subagent (`debaefb7`) | `gpt-6.1-sol` xhigh, 18 tests, unassisted (`5d15bc2b`) | `gpt-6.1-terra` xhigh (`e1b813b5`) | WAVE_2_DONE, merged `8288e3e6` |
 | SDK07 | Slack Web API | medium | 2 | `gpt-6.1-sol` xhigh (`ae8ddfb1`) | `gpt-6.1-terra` xhigh, 6 tests, unassisted (`31cad62d`) | `gpt-6-astra` xhigh (`c844a878`) | WAVE_2_DONE, merged |
 | SDK08 | OpenAI | large | 2 | `gpt-6.1-terra` xhigh (`8a659204`) | `gpt-6-astra` xhigh, 18 tests, unassisted (`08f97864`) | Opus subagent (`51d0eee3`) | WAVE_2_DONE, merged |
-| SDK09 | ntfy | small | 3 | Opus subagent (running) | `gpt-6.1-sol` | `gpt-6.1-terra` | WAVE_3_AUTHORING |
+| SDK09 | ntfy | small | 3 | Opus subagent (`f255d4df`) | `gpt-6.1-sol` (running) | `gpt-6.1-terra` | WAVE_3_CONSUMER |
 | SDK10 | Linear | medium | 3 | `gpt-6.1-terra` xhigh (`ed548bd5`) | `gpt-6-astra` xhigh, 18 tests, unassisted (`3ae13c1c`) | Opus subagent (`9466d1eb`) | WAVE_3_ROLES_DONE (branch `sdk20/w3-sdk10-linear`) |
-| SDK11 | Dropbox | medium | 3 | `gpt-6-astra` xhigh (session `01a1af1b-4f4d-71d1…`, running) | Opus | `gpt-6.1-sol` | WAVE_3_AUTHORING |
+| SDK11 | Dropbox | medium | 3 | `gpt-6-astra` xhigh (`69692433`; flaky test fixed by the same session) | Opus subagent, 18 tests, unassisted (`373362dc`) | `gpt-6.1-sol` (running) | WAVE_3_MAINTENANCE |
 | SDK12 | Google Drive | large | 3 | `gpt-6.1-sol` xhigh (`6d9d7fb9`) | `gpt-6.1-terra` xhigh, 5 tests, unassisted (`e8968c80`) | `gpt-6-astra` xhigh (`9bc413b0`, no production change needed) | WAVE_3_ROLES_DONE (branch `sdk20/w3-sdk12-google-drive`) |
 
 ## Model/session ledger
