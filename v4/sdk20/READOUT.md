@@ -404,8 +404,10 @@ Shopify opens its signed bulk download, a native request without API headers, wi
 | Policy-only per-request input; a decorated request cannot re-enter the policy | S3 user metadata (W23-6/7) | DEFER: one consumer |
 
 Other costs: a policy missing an output is E0277 at `api!` and at `send` (W23-2); a finite format
-used for `-> stream T` gives six identical E0277s (D-A3); an `Incremental` wrapper cannot open
-with non-default limits (declare `-> stream` and open the `Incoming`, D-W34-R1); provider error
+used for `-> stream T` gives six identical E0277s (D-A3); an `Incremental` wrapper with non-default
+limits calls its configured reader's `check_head` and returns `read_for(body, operation)` from
+`open` (resolved by D-W45-R5; AUTHOR_GUIDE §5.9, CUSTOM_FORMATS §9b), keeping the typed
+`-> stream T`; provider error
 schemas stay SDK code (W4-5, W5-7). Rejected: unsealing `ToHeaderValue` for validated credentials
 (D-W2-HDR) and the readers' `ReadError`/`RecordStream` constructors (W3-4).
 

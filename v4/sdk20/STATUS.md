@@ -27,7 +27,7 @@ Baseline gate at `a95fb2fb` (detached worktree `work/baseline`, 2026-11-06):
 | Migration of the five SDKs | GitHub/Stripe/Shopify metadata (`3abbbba9`), Kubernetes `-> stream WatchEvent<T>` (`9703f3c9`), Salesforce (`54685858`..`8efd185a`), multipart declared body (`7520fb8d`), dx03 runtime CSV; Stripe/GitHub listings on `Pages`/`PageItems` (`65b0c830`) | per-SDK tests | DONE |
 | Independent packaged consumer | `checks/consumers/phase-a-dx` (Codex Terra), in `scripts/consumers.sh` | 9 tests; `REPORT.md`; findings FA-1..6 | DONE |
 | Independent review | Codex Sol read-only on `a95fb2fb..4bcd8980` | ACCEPT_WITH_FIXES, SOL-A-1..3 fixed | DONE |
-| Maintained gates, CI | Gate A candidate `94d13527` (tree `d44edada`) | local `work/gate`: `verify.sh --package --bench` 43/43 PASS, clean; `--nightly-only` PASS (16 passed). CI [PR #4](https://github.com/gqsnt/concord_api/pull/4): push run `42141742060` on `94d13527` — `verify (ubuntu-latest)` success, `verify (windows-latest)` success with 43/43 `PASS` lines and 0 `FAIL` in the job log (`head: 94d13527… dirty: 0`, rustc 1.99.1, 01:08→01:40 UTC), `nightly-clone` success with step log `PASS nightly-clone-compat`, `16 passed, 0 failed` on nightly `1.101.0-nightly (2d20b42b8 2026-11-04)`; pull_request run `42141748868` on synthetic merge `6fa955a0` (parents `a95fb2fb`, `94d13527`; tree `d44edada` = candidate tree) — same three jobs success, Windows 43/43 PASS | **GATE_A_PASS** |
+| Maintained gates, CI | Gate A candidate `94d13527` (tree `d44edada`) | local `work/gate`: `verify.sh --package --bench` 43/43 PASS, clean; `--nightly-only` PASS (16 passed). CI [PR #4](https://github.com/gqsnt/concord_api/pull/4): push run `42141742060` on `94d13527` — `verify (ubuntu-latest)` success, `verify (windows-latest)` success with 43/43 `PASS` lines and 0 `FAIL` in the job log (`head: 94d13527… dirty: 0`, rustc 1.99.1, 01:08→01:40 UTC), `nightly-clone` success with step log `PASS nightly-clone-compat`, `16 passed, 0 failed` on nightly `1.101.0-nightly (2d20b42b8 2026-11-04)`; pull_request run `42141748868` on synthetic merge `6fa955a0` (GitHub's `refs/pull/4/merge` at the time, not kept locally; read from the GitHub API; parents `a95fb2fb`, `94d13527`; tree `d44edada` = candidate tree) — same three jobs success, Windows 43/43 PASS | **GATE_A_PASS** |
 
 Cost check (A1): `concord-bench --bin alloc-count`, release, base `a95fb2fb` vs candidate
 `d83b4782`: all 94 rows identical (prepare and decode stages, encode through `encode_body`).
@@ -81,7 +81,9 @@ Wave 3 integrated at `961db5c8` (library still `6d6d66aa`): `verify.sh --package
 Wave 3 frozen at `6d6d66aa` (waves 1-2 integrated; between-wave refinements D-W23-1/2, review
 SOL-W23 fixed): `verify.sh --package --bench` 43/43 PASS on a clean tree
 (`work/logs/gate-6d6d66aa-verify.txt`, 4m19s); pushed to PR #4. CI: pull_request run
-`42162457510` on synthetic merge `0c0748fa` (parents `a95fb2fb`, `6d6d66aa`; tree `b858ffa2` =
+`42162457510` on synthetic merge `0c0748fa` (GitHub's `refs/pull/4/merge` at the time, not kept
+locally; parents `a95fb2fb`, `6d6d66aa` and tree `b858ffa2` read from the GitHub API, `gh api
+repos/gqsnt/concord_api/commits/0c0748fa…`; tree `b858ffa2` =
 candidate tree) — ubuntu success; windows success, 43 `PASS` / 0 `FAIL` lines, rustc 1.99.1;
 nightly-clone success, step log `PASS nightly-clone-compat`, 16 passed, rustc
 `1.101.0-nightly (249c1e4e3 2026-11-05)` (logs `work/logs/ci-6d6d66aa-pr-*.txt`). Push run

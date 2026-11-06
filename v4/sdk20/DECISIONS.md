@@ -609,3 +609,17 @@ First-pass findings about Concord (none fixed during the wave; dispositions afte
 
 No reproduced Concord defect came out of the held-out wave, so no post-validation library fix was
 made; the deferred items are listed as product decisions in the final report.
+
+### Final focused review (Codex `gpt-6.1-sol`, xhigh, read-only, session `01a1b022-9b4b…`, on `718def34`)
+
+| ID | Severity | Finding | Fix |
+|---|---|---|---|
+| SOL-FIN-1 | medium | READOUT §9 still listed "an `Incremental` wrapper cannot open with non-default limits" as a limit although D-W45-R5 resolved it | READOUT now gives the recipe (`check_head` + `read_for` from `open`, keeping `-> stream T`) |
+| SOL-FIN-2 | low | STATUS quoted CI synthetic merges (`0c0748fa`, and likewise `6fa955a0`) as if verifiable locally; GitHub's `refs/pull/4/merge` objects are not in the local repository | STATUS now says both were read from the GitHub API at the time and are not kept locally |
+
+Areas reported clean: the Linear and Snowflake post-freeze fixes (they follow the earlier README
+contracts; no other behaviour changed); every other readout behaviour claim; all 25 feature-table
+rows; seven tradeoff rows against DECISIONS; all 60 role commits exist, are ancestors of the
+candidate and touch their SDK; identities and trees; open-issue statuses; no library commit
+between `47a25fbf` and the wave 5 merges. The reviewer could not run cargo (read-only filesystem).
+Verdict ACCEPT_WITH_FIXES.
