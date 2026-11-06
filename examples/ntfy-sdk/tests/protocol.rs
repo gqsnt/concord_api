@@ -309,9 +309,11 @@ async fn a_body_ending_inside_an_event_is_not_a_clean_end() {
     assert_eq!(got.len(), 1, "only the open event was complete");
     let error = error.expect("a truncated event is an error");
     assert_eq!(error.kind(), ReadErrorKind::Format);
+    // Concord's SSE reader's label: it tells an end inside a line from this end, after the
+    // complete `data` line of an event without its blank line.
     assert_eq!(
         error.codec().unwrap().label(),
-        "the event stream ended inside an event"
+        "the input ends inside an event, before the blank line that dispatches it"
     );
     assert_eq!(events.completion(), Completion::Failed);
 }
@@ -347,15 +349,38 @@ async fn a_broken_connection_is_a_transport_error_naming_the_endpoint() {
 
 #[tokio::test]
 async fn malformed_or_foreign_data_fails_without_quoting_it() {
-    let cases: [(&[u8], ReadErrorKind); 3] = [
-        (b"data: {\"SECRETPAYLOAD\n\n", ReadErrorKind::Format),
+    // Malformed JSON and a foreign shape: the first event, ended by the empty line 2, with the
+    // parser's error underneath. Invalid UTF-8 is refused by Concord's SSE reader on the line that
+    // holds it (line 1), before any event exists: no event number, no underlying error.
+    // The body, the kind, the `event` and `line` positions, whether an underlying error is kept.
+    type Case = (
+        &'static [u8],
+        ReadErrorKind,
+        (Option<u64>, Option<u64>),
+        bool,
+    );
+    let first_event = (Some(1), Some(2));
+    let cases: [Case; 3] = [
+        (
+            b"data: {\"SECRETPAYLOAD\n\n",
+            ReadErrorKind::Format,
+            first_event,
+            true,
+        ),
         (
             b"data: {\"id\":\"a1\",\"event\":\"message\",\"message\":\"SECRETPAYLOAD\"}\n\n",
             ReadErrorKind::Decode,
+            first_event,
+            true,
         ),
-        (b"data: \xff\"SECRETPAYLOAD\"\n\n", ReadErrorKind::Format),
+        (
+            b"data: \xff\"SECRETPAYLOAD\"\n\n",
+            ReadErrorKind::Format,
+            (None, Some(1)),
+            false,
+        ),
     ];
-    for (body, kind) in cases {
+    for (body, kind, at, underlying) in cases {
         let server = TestServer::start(move |_| sse(cut(body, &[]))).await;
         let mut events = alerts(&server).subscribe_sse().send().await.unwrap();
         let (got, error) = drain(&mut events).await;
@@ -365,9 +390,47 @@ async fn malformed_or_foreign_data_fails_without_quoting_it() {
         let shown = format!("{error} {error:?}");
         assert!(!shown.contains("SECRETPAYLOAD"), "{shown}");
         let codec = error.codec().unwrap();
-        // The first event, ended by the empty line 2.
-        assert_eq!((codec.get("event"), codec.get("line")), (Some(1), Some(2)));
-        assert!(error.source_unredacted().is_some());
+        assert_eq!((codec.get("event"), codec.get("line")), at, "{error}");
+        assert_eq!(error.source_unredacted().is_some(), underlying, "{error}");
+    }
+}
+
+#[tokio::test]
+async fn a_payload_error_names_its_line_across_chunks() {
+    // The SDK counts the lines itself (the SSE reader does not say which line dispatched an
+    // event): CR LF, LF and lone CR ends, a CR LF split between two chunks counted once. The
+    // second event is ended by the empty line 6.
+    let body: &[u8] = b"event: open\r\ndata: {\"id\":\"synOpen00001\",\"time\":1,\"event\":\"open\",\"topic\":\"alerts\"}\r\n\r\n: comment\rdata: {\"broken\r\n\n";
+    let mut gated = Vec::new();
+    let mut start = 0;
+    for end in [
+        after(body, b"\"alerts\"}\r"),
+        after(body, b"comment\r"),
+        after(body, b"broken\r"),
+        body.len(),
+    ] {
+        gated.push((
+            Duration::from_millis(20),
+            Bytes::copy_from_slice(&body[start..end]),
+        ));
+        start = end;
+    }
+    let bodies = [cut(body, &[]), Body::Chunks(gated), bytewise(body)];
+    for (n, chunks) in bodies.into_iter().enumerate() {
+        let chunks = std::sync::Mutex::new(Some(chunks));
+        let server = TestServer::start(move |_| sse(chunks.lock().unwrap().take().unwrap())).await;
+        let mut events = alerts(&server).subscribe_sse().send().await.unwrap();
+        let (got, error) = drain(&mut events).await;
+        assert_eq!(got.len(), 1, "body {n}");
+        let error = error.unwrap();
+        assert_eq!(error.kind(), ReadErrorKind::Format, "body {n}");
+        let codec = error.codec().unwrap();
+        assert_eq!(
+            (codec.get("event"), codec.get("line")),
+            (Some(2), Some(6)),
+            "body {n}"
+        );
+        assert_eq!(events.position().records, 1, "body {n}");
     }
 }
 

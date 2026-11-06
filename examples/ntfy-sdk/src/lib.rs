@@ -81,7 +81,6 @@
 mod error;
 pub mod events;
 mod model;
-mod sse;
 
 use concord::Json;
 use concord::reqwest::header::{AUTHORIZATION, HeaderValue};

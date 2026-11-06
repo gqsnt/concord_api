@@ -5,12 +5,14 @@
 //!
 //! | Endpoint | Wire | Format | Framing |
 //! |---|---|---|---|
-//! | `subscribe_sse` (`GET /<topic>/sse`) | `text/event-stream` | [`SseFormat`] | this crate's SSE framer over [`Incoming::chunk`] |
+//! | `subscribe_sse` (`GET /<topic>/sse`) | `text/event-stream` | [`SseFormat`] | Concord's SSE reader (`concord::sse::SseReader`), [`MAX_EVENT_BYTES`] per event |
 //! | `subscribe_json`, `poll` (`GET /<topic>/json`) | `application/x-ndjson` | [`NdjsonFormat`] | Concord's NDJSON reader (`concord::jsonl::Ndjson`) |
 //!
 //! Both carry the same JSON message ([`Event`]) and return the same [`Events`]. ntfy's envelope is
 //! the JSON object: in SSE, the `data` payload is that object and its `event` member names the
 //! kind (ntfy writes an SSE `event:` line only for some kinds, so the SSE event type is not used).
+//! The SSE reader frames events; this crate decodes each `data` itself, so that malformed JSON
+//! (`Format`) and a well-formed value that is not an ntfy message (`Decode`) stay distinct.
 //!
 //! # What a reader proves
 //!
@@ -29,15 +31,16 @@ use std::fmt;
 use concord::bytes::Bytes;
 use concord::jsonl::{JsonLinesRecords, Ndjson};
 use concord::reqwest::header::HeaderName;
-use concord::stream::{Completion, Position, ReadError, ReadErrorKind};
-use concord::{CodecError, ContentTypeField, Incoming, Incremental, ResponseHead};
+use concord::sse::{Sse, SseEvents, SseOptions, SseReader};
+use concord::stream::{ByteSource, Completion, Position, ReadError, ReadErrorKind, SourceError};
+use concord::{CodecError, Incoming, Incremental, ResponseHead};
 
 use crate::model::{Event, EventId, EventKind, Since};
-use crate::sse::{Dispatched, Fault, Framer};
 
-/// The most bytes one event may take: an SSE event's lines and data together, or one NDJSON line.
-/// The same 16 MiB as Concord's NDJSON reader default, far above ntfy's documented limits (a
-/// 4,096-byte message, a 1 KB title, 512 bytes of tags).
+/// The most bytes one event may take: an SSE event being assembled (its `data` lines, event type
+/// and unfinished line: the SSE reader's `max_event_bytes`), or one NDJSON line. The same 16 MiB
+/// as Concord's NDJSON reader default, far above ntfy's documented limits (a 4,096-byte message,
+/// a 1 KB title, 512 bytes of tags).
 pub const MAX_EVENT_BYTES: usize = concord::jsonl::DEFAULT_MAX_RECORD_BYTES;
 
 /// `X-Messages-Truncated`: a replay response that dropped older messages to fit the server's
@@ -51,8 +54,9 @@ fn truncated(head: &ResponseHead<'_>) -> bool {
         .any(|value| value.as_bytes() == b"1")
 }
 
-/// The format of `GET /<topic>/sse`: a `text/event-stream` response (charset absent or UTF-8),
-/// checked before the body is read, opened as [`Events`] over this crate's SSE framer. It suggests
+/// The format of `GET /<topic>/sse`: Concord's `text/event-stream` head check (exactly one
+/// `Content-Type`, charset absent, `utf-8` or its subset `us-ascii`) before the body is read, then
+/// [`Events`] over Concord's SSE reader with a [`MAX_EVENT_BYTES`] bound. It suggests
 /// `Accept: text/event-stream`.
 pub struct SseFormat(());
 
@@ -60,18 +64,22 @@ impl Incremental<Event> for SseFormat {
     type Records = Events;
     /// Whether the head said `X-Messages-Truncated: 1`.
     type Context = bool;
-    const ACCEPT: Option<&'static str> = Some("text/event-stream");
+    const ACCEPT: Option<&'static str> = <Sse as Incremental<concord::sse::Event>>::ACCEPT;
 
     fn check_content_type(head: &ResponseHead<'_>) -> Result<(), CodecError> {
-        check_event_stream(head)
+        <Sse as Incremental<concord::sse::Event>>::check_content_type(head)
     }
 
     fn context(head: &ResponseHead<'_>) -> Result<bool, CodecError> {
+        <Sse as Incremental<concord::sse::Event>>::context(head)?;
         Ok(truncated(head))
     }
 
     fn open(truncated: bool, body: Incoming) -> Events {
-        Events::sse(body, truncated)
+        Events {
+            source: Source::Sse(Box::new(SseSource::new(body))),
+            truncated,
+        }
     }
 }
 
@@ -97,52 +105,10 @@ impl Incremental<Event> for NdjsonFormat {
 
     fn open(truncated: bool, body: Incoming) -> Events {
         Events {
-            source: Source::Json(<Ndjson as Incremental<Event>>::open((), body)),
+            source: Source::Json(Box::new(<Ndjson as Incremental<Event>>::open((), body))),
             truncated,
         }
     }
-}
-
-/// `text/event-stream`, compared case-insensitively on type and subtype; a `charset` parameter, if
-/// present, must be `utf-8` (the stream is UTF-8 by definition). Exactly one field line.
-fn check_event_stream(head: &ResponseHead<'_>) -> Result<(), CodecError> {
-    let ContentTypeField::One(value) = head.content_type() else {
-        return Err(CodecError::new(
-            "the event stream response has no single Content-Type",
-        ));
-    };
-    let Ok(text) = value.to_str() else {
-        return Err(CodecError::new(
-            "the response Content-Type is not visible ASCII",
-        ));
-    };
-    let mut parts = text.split(';');
-    let essence = parts.next().unwrap_or_default().trim_matches([' ', '\t']);
-    if !essence.eq_ignore_ascii_case("text/event-stream") {
-        return Err(CodecError::new(
-            "the response Content-Type is not text/event-stream",
-        ));
-    }
-    for parameter in parts {
-        let Some((name, value)) = parameter.split_once('=') else {
-            continue;
-        };
-        let value = value.trim_matches([' ', '\t']);
-        let value = value
-            .strip_prefix('"')
-            .and_then(|v| v.strip_suffix('"'))
-            .unwrap_or(value);
-        if name
-            .trim_matches([' ', '\t'])
-            .eq_ignore_ascii_case("charset")
-            && !value.eq_ignore_ascii_case("utf-8")
-        {
-            return Err(CodecError::new(
-                "the event stream declares a charset other than utf-8",
-            ));
-        }
-    }
-    Ok(())
 }
 
 /// The events of one subscription or poll response, read as the body arrives: what the generated
@@ -164,19 +130,22 @@ pub struct Events {
     truncated: bool,
 }
 
+/// Both boxed: the readers are a few hundred bytes each, the SSE one about twice the NDJSON one
+/// (clippy `large_enum_variant`).
 enum Source {
-    Sse(SseReader),
-    Json(JsonLinesRecords<Event>),
+    Sse(Box<SseSource>),
+    Json(Box<JsonLinesRecords<Event>>),
 }
 
-/// The SSE reader: the unread body, the framer, and the unconsumed rest of the current chunk.
-struct SseReader {
-    body: Incoming,
+/// The SSE mode: Concord's reader frames the body, this crate decodes each event's `data`.
+struct SseSource {
+    /// The reader; `None` once a `data` payload did not decode (its body was taken back to name
+    /// the line, then dropped: the connection is closed).
+    events: Option<SseEvents<Body>>,
+    /// The endpoint, for the errors ([`SseReader::read`] does not take one).
     operation: Option<&'static str>,
-    framer: Framer,
-    pending: Bytes,
-    position: Position,
-    completion: Completion,
+    /// Where reading stopped when a payload did not decode (that event not delivered).
+    stopped: Position,
 }
 
 /// Which wire mode a reader parses.
@@ -189,29 +158,14 @@ pub enum Mode {
 }
 
 impl Events {
-    fn sse(body: Incoming, truncated: bool) -> Self {
-        let operation = body.operation().map(|op| op.name());
-        Self {
-            source: Source::Sse(SseReader {
-                body,
-                operation,
-                framer: Framer::new(MAX_EVENT_BYTES),
-                pending: Bytes::new(),
-                position: Position::default(),
-                completion: Completion::Reading,
-            }),
-            truncated,
-        }
-    }
-
     /// The next event; `None` at the end of the body and after a terminal error.
     pub async fn next(&mut self) -> Option<Result<Event, EventsError>> {
         match &mut self.source {
-            Source::Sse(reader) => reader.next().await,
+            Source::Sse(sse) => sse.next().await,
             Source::Json(records) => records
                 .next()
                 .await
-                .map(|item| item.map_err(EventsError::from_read)),
+                .map(|item| item.map_err(|error| EventsError::read(error, None))),
         }
     }
 
@@ -220,7 +174,10 @@ impl Events {
     /// the caller stopped reading).
     pub fn completion(&self) -> Completion {
         match &self.source {
-            Source::Sse(reader) => reader.completion,
+            Source::Sse(sse) => sse
+                .events
+                .as_ref()
+                .map_or(Completion::Failed, SseEvents::completion),
             Source::Json(records) => records.completion(),
         }
     }
@@ -228,7 +185,7 @@ impl Events {
     /// Events delivered and body bytes consumed so far.
     pub fn position(&self) -> Position {
         match &self.source {
-            Source::Sse(reader) => reader.position,
+            Source::Sse(sse) => sse.events.as_ref().map_or(sse.stopped, SseEvents::position),
             Source::Json(records) => records.position(),
         }
     }
@@ -260,90 +217,120 @@ impl fmt::Debug for Events {
     }
 }
 
-impl SseReader {
+impl SseSource {
+    fn new(body: Incoming) -> Self {
+        let operation = body.operation().map(|op| op.name());
+        let reader = SseReader::new(SseOptions::new().max_event_bytes(MAX_EVENT_BYTES));
+        Self {
+            // The head was checked by `SseFormat::check_content_type`: `read` checks nothing.
+            events: Some(reader.read(Body {
+                incoming: body,
+                chunk: Bytes::new(),
+                offset: 0,
+                lines: LineEnds::default(),
+            })),
+            operation,
+            stopped: Position::default(),
+        }
+    }
+
+    /// Cancel-safe: the reader's `next` is, and nothing changes here until it returns.
     async fn next(&mut self) -> Option<Result<Event, EventsError>> {
-        if self.completion != Completion::Reading {
-            return None;
-        }
-        loop {
-            if !self.pending.is_empty() {
-                let framed = self.framer.feed(&self.pending);
-                let (used, event) = match framed {
-                    Ok(step) => step,
-                    Err(fault) => return Some(Err(self.fault(fault))),
-                };
-                self.position.bytes += used as u64;
-                let _ = self.pending.split_to(used);
-                match event {
-                    Some(event) => return Some(self.decode(event)),
-                    None => continue,
-                }
-            }
-            // The only await: until it completes, no state has changed (cancel-safe).
-            match self.body.chunk().await {
-                Ok(Some(chunk)) => self.pending = chunk,
-                Ok(None) => {
-                    if let Err(fault) = self.framer.finish() {
-                        return Some(Err(self.fault(fault)));
-                    }
-                    self.completion = Completion::EndOfInput;
-                    return None;
-                }
-                Err(error) => {
-                    self.completion = Completion::Failed;
-                    return Some(Err(EventsError::new(
-                        ReadErrorKind::Transport,
-                        self.operation,
-                        self.position,
-                        Detail::Transport(error),
-                    )));
-                }
-            }
-        }
-    }
-
-    fn fault(&mut self, fault: Fault) -> EventsError {
-        self.completion = Completion::Failed;
-        let codec = CodecError::new(fault.label).at("line", fault.line);
-        EventsError::new(
-            fault.kind,
+        let events = self.events.as_mut()?;
+        let event = match events.next().await? {
+            Ok(event) => event,
+            Err(error) => return Some(Err(EventsError::read(error, self.operation))),
+        };
+        let error = match serde_json::from_str::<Event>(event.data()) {
+            Ok(decoded) => return Some(Ok(decoded)),
+            Err(error) => error,
+        };
+        // Terminal. The reader counted the event as delivered; it is not.
+        let mut stopped = events.position();
+        stopped.records -= 1;
+        self.stopped = stopped;
+        let line = self
+            .events
+            .take()
+            .map_or(0, |events| events.into_source().line_at(stopped.bytes));
+        let (kind, label) = match error.classify() {
+            serde_json::error::Category::Data => (
+                ReadErrorKind::Decode,
+                "an event's data is not an ntfy message",
+            ),
+            _ => (
+                ReadErrorKind::Format,
+                "an event's data is not one JSON value",
+            ),
+        };
+        // The 1-based event, the stream line that ended it, the column in its data.
+        let codec = CodecError::new(label)
+            .at("event", stopped.records + 1)
+            .at("line", line)
+            .at("column", error.column() as u64)
+            .with_source(error);
+        Some(Err(EventsError::new(
+            kind,
             self.operation,
-            self.position,
-            Detail::Sse(codec),
-        )
+            stopped,
+            Detail::Payload(codec),
+        )))
     }
+}
 
-    fn decode(&mut self, event: Dispatched) -> Result<Event, EventsError> {
-        match serde_json::from_slice::<Event>(&event.data) {
-            Ok(decoded) => {
-                self.position.records += 1;
-                Ok(decoded)
+/// The `/sse` body as the SSE reader's byte source. Concord's own transport error (naming the
+/// endpoint, URL removed) travels as the reader error's source, for [`EventsError::transport`].
+/// It also counts line ends, for a payload error's `line`: the reader does not say which line
+/// dispatched an event.
+struct Body {
+    incoming: Incoming,
+    /// The chunk the reader is consuming (shared with it, not copied) and its offset in the body.
+    chunk: Bytes,
+    offset: u64,
+    /// The line ends of the body before `chunk`.
+    lines: LineEnds,
+}
+
+impl Body {
+    /// The line ends in the first `bytes` bytes of the body (an offset within the current chunk):
+    /// the number of the line that ends there.
+    fn line_at(&self, bytes: u64) -> u64 {
+        let used = usize::try_from(bytes.saturating_sub(self.offset)).unwrap_or(usize::MAX);
+        let mut lines = self.lines;
+        lines.add(&self.chunk[..used.min(self.chunk.len())]);
+        lines.count
+    }
+}
+
+impl ByteSource for Body {
+    async fn next_chunk(&mut self) -> Result<Option<Bytes>, SourceError> {
+        // Cancel-safe: nothing changes until `chunk` returns, and it loses no byte.
+        let next = self.incoming.chunk().await.map_err(|error| {
+            SourceError::new("reading the response body failed").with_source(error)
+        })?;
+        // The reader asks for a chunk only once it has used up the one it had.
+        self.lines.add(&self.chunk);
+        self.offset += self.chunk.len() as u64;
+        self.chunk = next.clone().unwrap_or_default();
+        Ok(next)
+    }
+}
+
+/// Line ends as the event stream interpretation splits lines: CR LF, LF or CR, a CR LF split
+/// across chunks counted once.
+#[derive(Clone, Copy, Default)]
+struct LineEnds {
+    count: u64,
+    after_cr: bool,
+}
+
+impl LineEnds {
+    fn add(&mut self, bytes: &[u8]) {
+        for &b in bytes {
+            if b == b'\r' || (b == b'\n' && !self.after_cr) {
+                self.count += 1;
             }
-            Err(error) => {
-                self.completion = Completion::Failed;
-                let (kind, label) = match error.classify() {
-                    serde_json::error::Category::Data => (
-                        ReadErrorKind::Decode,
-                        "an event's data is not an ntfy message",
-                    ),
-                    _ => (
-                        ReadErrorKind::Format,
-                        "an event's data is not one JSON value",
-                    ),
-                };
-                // The 1-based event, the stream line that ended it, the column in its data.
-                let codec = CodecError::new(label)
-                    .at("event", self.position.records + 1)
-                    .at("line", event.line)
-                    .at("column", error.column() as u64)
-                    .with_source(error);
-                Err(EventsError::new(
-                    kind,
-                    self.operation,
-                    self.position,
-                    Detail::Sse(codec),
-                ))
-            }
+            self.after_cr = b == b'\r';
         }
     }
 }
@@ -354,7 +341,7 @@ impl SseReader {
 /// | [`kind`](Self::kind) | Meaning |
 /// |---|---|
 /// | `Transport` | the connection broke mid-body (reconnect with a [`ReplayCursor`] to resume) |
-/// | `Format` | input ended inside an event, malformed SSE or JSON, invalid UTF-8 |
+/// | `Format` | input ended inside a line or an event, malformed JSON, invalid UTF-8 |
 /// | `Decode` | a well-formed JSON value that is not an ntfy message |
 /// | `Limit` | one event over [`MAX_EVENT_BYTES`] |
 ///
@@ -373,12 +360,10 @@ struct Inner {
 }
 
 enum Detail {
-    /// The NDJSON reader's error, as it returned it.
+    /// Concord's reader's error (NDJSON or SSE), as it returned it.
     Read(ReadError),
-    /// `Incoming::chunk` failed (Concord's `Transport` error, URL removed).
-    Transport(concord::Error),
-    /// The SSE framer's or payload decoder's failure.
-    Sse(CodecError),
+    /// An SSE event's `data` that is not one JSON value or not an ntfy message.
+    Payload(CodecError),
 }
 
 impl EventsError {
@@ -398,10 +383,11 @@ impl EventsError {
         }
     }
 
-    fn from_read(error: ReadError) -> Self {
+    /// A reader's error; `operation` names the endpoint when the reader was not given it.
+    fn read(error: ReadError, operation: Option<&'static str>) -> Self {
         Self::new(
             error.kind(),
-            error.operation(),
+            error.operation().or(operation),
             error.position(),
             Detail::Read(error),
         )
@@ -426,35 +412,39 @@ impl EventsError {
     pub fn codec(&self) -> Option<&CodecError> {
         match &self.inner.detail {
             Detail::Read(error) => error.codec(),
-            Detail::Transport(_) => None,
-            Detail::Sse(codec) => Some(codec),
+            Detail::Payload(codec) => Some(codec),
         }
     }
 
-    /// The JSON stream reader's own error, for a `/json` body.
+    /// Concord's reader's own error: the NDJSON reader's for a `/json` body, the SSE reader's for
+    /// a `/sse` body (framing, UTF-8, the bound, the transport). `None` for an SSE event whose
+    /// `data` does not decode (this crate's check).
     pub fn read_error(&self) -> Option<&ReadError> {
         match &self.inner.detail {
             Detail::Read(error) => Some(error),
-            _ => None,
+            Detail::Payload(_) => None,
         }
     }
 
     /// Concord's `Transport` error, for a broken SSE body.
     pub fn transport(&self) -> Option<&concord::Error> {
-        match &self.inner.detail {
-            Detail::Transport(error) => Some(error),
-            _ => None,
-        }
+        // The SSE body's source error is Concord's (`Body`); the NDJSON reader's is reqwest's.
+        self.read_error()
+            .filter(|error| error.kind() == ReadErrorKind::Transport)?
+            .source_unredacted()?
+            .downcast_ref::<concord::Error>()
     }
 
     /// The underlying error, **unredacted**: a serde error quoting the input, a transport error.
     pub fn source_unredacted(&self) -> Option<&(dyn std::error::Error + Send + Sync + 'static)> {
+        if let Some(error) = self.transport() {
+            return error
+                .transport()
+                .map(|e| e as &(dyn std::error::Error + Send + Sync + 'static));
+        }
         match &self.inner.detail {
             Detail::Read(error) => error.source_unredacted(),
-            Detail::Transport(error) => error
-                .transport()
-                .map(|e| e as &(dyn std::error::Error + Send + Sync + 'static)),
-            Detail::Sse(codec) => codec.source_unredacted(),
+            Detail::Payload(codec) => codec.source_unredacted(),
         }
     }
 }
@@ -553,5 +543,128 @@ impl ReplayCursor {
     /// The id of the last message observed.
     pub fn last_message(&self) -> Option<&EventId> {
         self.last_message.as_ref()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    //! The framing this crate relies on, read by Concord's SSE reader (the former `src/sse.rs`
+    //! framer's tests: the same inputs and assertions, but for the partial byte order mark), and
+    //! `Body`'s line count.
+
+    use concord::stream::Chunks;
+
+    use super::*;
+
+    /// A framing failure: the kind and the line the reader names.
+    #[derive(Debug)]
+    struct Fault {
+        kind: ReadErrorKind,
+        line: Option<u64>,
+    }
+
+    /// Reads `chunks` with a `max` bound and returns every dispatched payload, or the first fault.
+    async fn frame(chunks: &[&[u8]], max: usize) -> Result<Vec<Vec<u8>>, Fault> {
+        let reader = SseReader::new(SseOptions::new().max_event_bytes(max));
+        let mut events = reader.read(Chunks::new(
+            chunks.iter().map(|chunk| Bytes::copy_from_slice(chunk)),
+        ));
+        let mut out = Vec::new();
+        while let Some(event) = events.next().await {
+            match event {
+                Ok(event) => out.push(event.into_data().into_bytes()),
+                Err(error) => {
+                    return Err(Fault {
+                        kind: error.kind(),
+                        line: error.codec().and_then(|codec| codec.get("line")),
+                    });
+                }
+            }
+        }
+        Ok(out)
+    }
+
+    /// Every way of cutting `input` in two gives the same events as the whole input.
+    async fn same_at_every_split(input: &[u8]) -> Vec<Vec<u8>> {
+        let whole = frame(&[input], 1 << 20).await.expect("frames");
+        for cut in 0..=input.len() {
+            let (a, b) = input.split_at(cut);
+            assert_eq!(
+                frame(&[a, b], 1 << 20).await.expect("frames"),
+                whole,
+                "cut at {cut}"
+            );
+        }
+        let bytes: Vec<&[u8]> = input.chunks(1).collect();
+        assert_eq!(
+            frame(&bytes, 1 << 20).await.expect("frames"),
+            whole,
+            "one byte per chunk"
+        );
+        whole
+    }
+
+    #[tokio::test]
+    async fn line_ends_bom_comments_and_fields() {
+        let input = b"\xEF\xBB\xBFevent: open\r\ndata: {\"a\":1}\r\n\r\n: comment\rdata:x\ndata\nid: 7\nretry: 10\nunknown: y\n\nevent: keepalive\n\n";
+        let events = same_at_every_split(input).await;
+        assert_eq!(events, vec![b"{\"a\":1}".to_vec(), b"x\n".to_vec()]);
+    }
+
+    #[tokio::test]
+    async fn empty_data_is_an_event_and_fieldless_blank_lines_are_not() {
+        assert_eq!(
+            same_at_every_split(b"\n\n\ndata:\n\n").await,
+            vec![Vec::<u8>::new()]
+        );
+    }
+
+    #[tokio::test]
+    async fn end_inside_an_event_is_an_error() {
+        for input in [
+            &b"data: {}"[..],
+            b"data: {}\n",
+            b"event: open\n",
+            b"data: {}\r",
+        ] {
+            // `data: {}\r` ends a line with a lone CR, but not the event.
+            let fault = frame(&[input], 1 << 20).await.unwrap_err();
+            assert_eq!(fault.kind, ReadErrorKind::Format, "{input:?}");
+        }
+        // Concord's reader: a partial byte order mark is content, so this body ends inside a line
+        // (the former framer read it as an empty body).
+        let fault = frame(&[b"\xEF\xBB"], 1 << 20).await.unwrap_err();
+        assert_eq!((fault.kind, fault.line), (ReadErrorKind::Format, Some(1)));
+        assert_eq!(frame(&[b""], 1 << 20).await.unwrap(), Vec::<Vec<u8>>::new());
+    }
+
+    #[tokio::test]
+    async fn the_bound_counts_the_line_and_the_data() {
+        // The raw line (`data: 12345`, 11 bytes) and the retained data count together.
+        assert_eq!(
+            frame(&[b"data: 12345\n\n"], 11).await.unwrap(),
+            vec![b"12345".to_vec()]
+        );
+        assert_eq!(
+            frame(&[b"data: 12345\n\n"], 10).await.unwrap_err().kind,
+            ReadErrorKind::Limit
+        );
+        let fault = frame(&[b"data: 1234\ndata: 5\n\n"], 11).await.unwrap_err();
+        assert_eq!((fault.kind, fault.line), (ReadErrorKind::Limit, Some(2)));
+        let fault = frame(&[b"data: 1234567"], 8).await.unwrap_err();
+        assert_eq!(fault.kind, ReadErrorKind::Limit);
+    }
+
+    /// `Body` counts line ends as the reader splits lines, wherever a chunk is cut.
+    #[test]
+    fn line_ends_at_every_split() {
+        let input = b"a\r\nb\rc\n\r\n\r";
+        for cut in 0..=input.len() {
+            let (a, b) = input.split_at(cut);
+            let mut lines = LineEnds::default();
+            lines.add(a);
+            lines.add(b);
+            assert_eq!(lines.count, 5, "cut at {cut}");
+        }
     }
 }
