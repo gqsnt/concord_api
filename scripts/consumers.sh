@@ -56,7 +56,7 @@ fi
 # directory, while separate cargo invocations still isolate each feature selection.
 export CARGO_TARGET_DIR="$scratch/target"
 status=0
-for consumer in core-only facade-no-extras extras-core facade-full facade-json-only facade-gzip streaming; do
+for consumer in core-only facade-no-extras extras-core facade-full facade-json-only facade-gzip streaming phase-a-dx; do
   destination="$scratch/$consumer"
   cp -R "$root/checks/consumers/$consumer" "$destination"
   # Rewrite only Concord dependency paths; retain the fixture's authored feature selection.
@@ -89,6 +89,8 @@ PY
   docs=0
   if [[ $consumer == facade-json-only ]]; then expected=2; docs=1; fi
   if [[ $consumer == facade-gzip ]]; then expected=4; fi
+  # The independent first-use consumer of the consolidated interface (Gate A): its own tests.
+  if [[ $consumer == phase-a-dx ]]; then expected=9; fi
   if ! (cd "$destination" && cargo test --offline --lib --tests) >"$destination/test.log" 2>&1; then failed=1; fi
   if ! (cd "$destination" && cargo test --offline --doc) >"$destination/doc.log" 2>&1; then failed=1; fi
   passed=$(awk '/^test result: ok\./ {s += $4} END {print s+0}' "$destination/test.log")
@@ -103,6 +105,7 @@ PY
     facade-json-only) forbidden='serde_urlencoded' ;;
     # csv + jsonl only: the form encoder must not arrive with the streaming formats.
     streaming) forbidden='serde_urlencoded' ;;
+    phase-a-dx) forbidden='serde_urlencoded' ;;
   esac
   if [[ -n $forbidden ]] && grep -Eq "^($forbidden) v" "$destination/tree.log"; then failed=1; fi
   # The application, not Concord, enables decompression: the pattern must still match here.
@@ -133,4 +136,11 @@ PY
     status=1
   fi
 done
+# The scratch directory holds each consumer's own build (about 1.6 GB per run): kept when a
+# consumer failed (its logs are the evidence), removed after a clean run so repeated gates do not
+# fill the disk (observed: the disk filled during the campaign's wave 4).
+if [[ $status == 0 ]]; then
+  rm -rf -- "$scratch"
+  echo "consumer scratch removed after a clean run"
+fi
 exit "$status"

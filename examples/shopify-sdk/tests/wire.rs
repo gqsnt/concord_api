@@ -4,6 +4,8 @@
 //! reference, see `PROVIDER.md`); the workflow fixtures with provenance live in
 //! `examples/shopify-app/tests/fixtures`.
 
+use std::time::Duration;
+
 use concord::reqwest;
 use concord_example_shopify_sdk::graphql::{Data, ErrorCode, Operation};
 use concord_example_shopify_sdk::ops::PageSize;
@@ -14,7 +16,7 @@ use concord_example_shopify_sdk::{
     AccessToken, ApiVersion, Cursor, Included, RequestError, SearchQuery, ShopDomain,
     ShopifyContext, Var,
 };
-use concord_example_testserver::{Recorded, Reply, TestServer};
+use concord_example_testserver::{Body, Recorded, Reply, TestServer};
 use serde_json::{Value, json};
 
 const TOKEN_ONE: &str = "shpat_synthetic_one_0001";
@@ -281,6 +283,73 @@ async fn the_served_version_must_be_the_pinned_one() {
         server.requests()[1].path(),
         "/admin/api/2026-01/graphql.json"
     );
+    server.shutdown().await;
+}
+
+/// `ShopContext::send` under `version`, which must fail; bounded so that a guard that read the
+/// (stalled) body would fail the test instead of hanging it.
+async fn refused(sdk: &ShopifyContext, version: ApiVersion) -> RequestError {
+    let pinned = sdk.clone().with_version(version);
+    let shop = pinned.shop(ShopDomain::new("shop-one").unwrap(), &token(TOKEN_ONE));
+    let sent = tokio::time::timeout(
+        Duration::from_secs(5),
+        shop.send(shop.admin().shop_info(ShopQuery {}).prepare()),
+    )
+    .await
+    .expect("refused on the head, without waiting for the body");
+    match sent {
+        Ok(_) => panic!("{version} was accepted"),
+        Err(error) => error,
+    }
+}
+
+/// The served-version guard runs on the head of a 2xx answer, before its body is read: a body
+/// that never arrives does not delay the refusal (another version, an unparseable one, none). A
+/// non-2xx answer is not version-checked: it is Concord's status error, its response unread.
+#[tokio::test]
+async fn the_version_guard_refuses_on_the_head_without_reading_the_body() {
+    let server = TestServer::start(|request: &Recorded| {
+        let served = match request.path() {
+            "/admin/api/2026-01/graphql.json" => Some("2026-04"),
+            "/admin/api/2026-04/graphql.json" => Some("2026-4"),
+            "/admin/api/2026-07/graphql.json" => None,
+            _ => return Reply::json(503, r#"{"errors":"unavailable"}"#),
+        };
+        let reply = Reply::new(200)
+            .header("content-type", "application/json")
+            .with_body(Body::Stall);
+        match served {
+            Some(version) => reply.header("x-shopify-api-version", version),
+            None => reply,
+        }
+    })
+    .await;
+    let sdk = sdk(&server);
+
+    let error = refused(&sdk, ApiVersion::new(2026, 1).unwrap()).await;
+    assert_eq!(
+        error.to_string(),
+        "requested API version 2026-01, served 2026-04"
+    );
+    let error = refused(&sdk, ApiVersion::new(2026, 4).unwrap()).await;
+    assert!(
+        matches!(error, RequestError::VersionMismatch { served: None, .. }),
+        "{error:?}"
+    );
+    let error = refused(&sdk, ApiVersion::new(2026, 7).unwrap()).await;
+    assert!(
+        matches!(error, RequestError::VersionUnconfirmed),
+        "{error:?}"
+    );
+
+    let RequestError::Concord(error) = refused(&sdk, ApiVersion::PINNED).await else {
+        panic!("a non-2xx answer is Concord's status error")
+    };
+    assert_eq!(error.kind(), concord::ErrorKind::Status);
+    assert_eq!(error.status().map(|s| s.as_u16()), Some(503));
+    let body = error.into_response().unwrap().text().await.unwrap();
+    assert_eq!(body, r#"{"errors":"unavailable"}"#);
+    assert_eq!(server.requests().len(), 4, "one execution each");
     server.shutdown().await;
 }
 

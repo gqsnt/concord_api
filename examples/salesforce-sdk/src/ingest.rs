@@ -20,16 +20,16 @@ use std::fmt;
 use std::future::Future;
 use std::num::NonZeroUsize;
 
+use concord::Incoming;
 use concord::bytes::Bytes;
 use concord::csv::{CsvRecords, RawRecord};
-use concord::reqwest;
 
 use crate::bulk::{BulkDialect, CreateIngestJob, IngestJobInfo, JobState, JobStateChange};
 use crate::context::OrgContext;
 use crate::csv::{CsvError, SalesforceCsv, SpooledCsv};
 use crate::error::{JobFailure, ProtocolError, ProtocolErrorKind, SfError};
 use crate::ids::{IngestJobId, RecordId};
-use crate::transport::{prepared, send};
+use crate::transport::{operation_name, prepared, send};
 
 /// The documented raw upload size limit per request: 100 MB (150 MB of base64 content).
 pub const MAX_UPLOAD_BYTES: usize = 100 * 1000 * 1000;
@@ -62,17 +62,6 @@ pub enum ResultFile {
     Failed,
     /// `unprocessedrecords/`: the uploaded fields.
     Unprocessed,
-}
-
-impl ResultFile {
-    /// The operation label CSV readers name in their errors.
-    pub fn operation(self) -> &'static str {
-        match self {
-            ResultFile::Successful => "ingest.job.successful_results",
-            ResultFile::Failed => "ingest.job.failed_results",
-            ResultFile::Unprocessed => "ingest.job.unprocessed_records",
-        }
-    }
 }
 
 impl IngestJob {
@@ -235,31 +224,21 @@ impl IngestJob {
         }
     }
 
-    /// Requests a result file; the CSV body is left unread for a reader (whose open refuses a
-    /// non-2xx status and reads its error document).
+    /// Requests a result file (its declared `-> stream` operation): the 2xx CSV body, unread,
+    /// with the endpoint's identity, for a reader of the job's dialect.
     ///
     /// # Errors
     ///
-    /// A transport [`SfError`].
-    pub async fn open_result_file(&self, file: ResultFile) -> Result<reqwest::Response, SfError> {
+    /// [`SfError::Api`] for a non-2xx status (its error document read), or a transport
+    /// [`SfError`].
+    pub async fn open_result_file(&self, file: ResultFile) -> Result<Incoming, SfError> {
         let job = self.ctx.api().ingest().job(self.id.clone());
-        let result = match file {
-            ResultFile::Successful => {
-                prepared(job.successful_results().prepare())?
-                    .send_raw()
-                    .await
-            }
-            ResultFile::Failed => prepared(job.failed_results().prepare())?.send_raw().await,
-            ResultFile::Unprocessed => {
-                prepared(job.unprocessed_records().prepare())?
-                    .send_raw()
-                    .await
-            }
+        let op = match file {
+            ResultFile::Successful => job.successful_results().prepare(),
+            ResultFile::Failed => job.failed_results().prepare(),
+            ResultFile::Unprocessed => job.unprocessed_records().prepare(),
         };
-        match result {
-            Ok(response) => Ok(response),
-            Err(error) => Err(SfError::from_concord(error).await),
-        }
+        send(prepared(op)?).await
     }
 
     /// Opens a result file as typed result rows (the `sf__` columns mapped, the uploaded fields
@@ -269,11 +248,13 @@ impl IngestJob {
     ///
     /// [`SfError::Api`] for a non-2xx status; [`SfError::Open`] for a refused head.
     pub async fn result_rows(&self, file: ResultFile) -> Result<IngestResultRows, SfError> {
-        let response = self.open_result_file(file).await?;
+        let body = self.open_result_file(file).await?;
+        let operation = operation_name(body.operation());
         let reader = self.csv().raw_reader().map_err(SfError::from)?;
-        match reader.open_raw_for(response, file.operation()) {
+        match reader.open_raw(body) {
             Ok(records) => Ok(IngestResultRows {
                 file,
+                operation,
                 records,
                 layout: None,
             }),
@@ -362,6 +343,7 @@ impl fmt::Debug for IngestResultRow {
 /// The rows of one result file, read incrementally.
 pub struct IngestResultRows {
     file: ResultFile,
+    operation: &'static str,
     records: CsvRecords<RawRecord>,
     layout: Option<Layout>,
 }
@@ -428,8 +410,13 @@ impl IngestResultRows {
         self.file
     }
 
+    /// The declared endpoint that produced the file (named by its errors).
+    pub fn operation(&self) -> &'static str {
+        self.operation
+    }
+
     fn header_error(&self) -> SfError {
-        ProtocolError::new(self.file.operation(), ProtocolErrorKind::ResultFileLayout).into()
+        ProtocolError::new(self.operation, ProtocolErrorKind::ResultFileLayout).into()
     }
 
     fn layout(&self) -> Result<Option<Layout>, SfError> {

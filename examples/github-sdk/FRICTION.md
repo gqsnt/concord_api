@@ -45,6 +45,13 @@ Every 4.4 SDK needs the same plumbing for its own provider headers.
 (or the same on `Decoder`). It would remove the plumbing above, the `unreachable!` and the
 "was a head received" bookkeeping from each SDK.
 
+**Status (Concord response boundary, `Received`).** Addressed by `Prepared::receive` /
+`Decoder::execute` (one execution, any status, body unread) and `Received::decode`: `send_edited`,
+`send_with_meta` and `send_conditional` no longer execute or convert anything themselves, and a
+transport failure has no metadata by construction. The headers are still copied from the native
+response (`Received::into_parts`, then `Decoder::receive`), because `Received::head` carries no
+URL and relative `Link` targets resolve against the response URL.
+
 ## F2 — Converting a native transport error needs an async call and `unreachable!` (friction)
 
 `Decoder::finish(Err(e))` is the only public way to turn a `reqwest::Error` into Concord's
@@ -53,6 +60,10 @@ redacted `Transport` error. It is `async` and returns `Result<T, Error>`, so eac
 twice, `download.rs` twice, the latter with `Decoder::<()>::drain()` for a request no declaration
 owns). **Proposal:** a synchronous `Decoder::transport_error(&self, e: reqwest::Error) -> Error`
 (or `concord::Error::from_transport_unlabeled`).
+
+**Status.** `Decoder::transport_error` exists, and none of the four uses remains: `meta.rs` and
+`download::locate` use `receive`/`Decoder::execute`; `download::stream_to` uses
+`Decoder::incoming().execute(..)` and `Received::into_incoming` (status check, response unread).
 
 ## F3 — Following a provider's `next` URL with a declared endpoint (justified escape hatch)
 
@@ -197,6 +208,13 @@ exactly this duplication.
 - `concord_pagination::sequential` with a borrowing closure (`|key| pages.fetch(key)`), mandatory
   budgets and the `SequentialReport { failed, resume }` split mapped directly onto GH-A's child
   collections and GH-B's run/job/artifact scans; early stop (`break` + `finish`) was natural.
+  **Later status (`concord_pagination::Pages`):** every listing now also has ordinary
+  traversals (`LinkPages::pages`/`items`, owned, a cap or a failed page is a typed error), and
+  GH-B's three scans use them: their end comes from the traversal (`Ok(None)`, `Bounded`,
+  `Provider`) rather than from a separately read report, and each page's metadata from the page
+  itself (no `record_page` side channel). GH-A stays on the engine: its parent resumes from an
+  item checkpoint (`resume_items`), which the facade cannot start from, and its continuation is
+  assembled from the engine's reports.
 - `Page<T, K, M>` with a typed `M` let the SDK keep `ResponseMeta` per page without wrappers.
 - Typed errors stayed typed end to end (`GitHubError::Api` keeps the Concord error and its unread
   response; the workflow outcomes keep `GitHubError`, `LocateError`, `StreamError<E>`).

@@ -27,7 +27,7 @@ use std::collections::VecDeque;
 use std::future::Future;
 use std::net::SocketAddr;
 use std::pin::Pin;
-use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
@@ -153,6 +153,9 @@ pub type Generator = Box<dyn FnMut() -> Option<Bytes> + Send>;
 pub enum Body {
     /// Complete, with `content-length`.
     Full(Bytes),
+    /// The head of a `HEAD` answer: `content-length: N` (the length a `GET` would send) and no
+    /// body bytes.
+    HeadOnly(u64),
     /// `transfer-encoding: chunked`, each chunk after its delay.
     Chunks(Vec<(Duration, Bytes)>),
     /// `transfer-encoding: chunked`, chunks produced on demand (never materialized). The
@@ -173,6 +176,7 @@ impl std::fmt::Debug for Body {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Body::Full(b) => write!(f, "Full({} bytes)", b.len()),
+            Body::HeadOnly(n) => write!(f, "HeadOnly({n} bytes declared)"),
             Body::Chunks(c) => write!(f, "Chunks({})", c.len()),
             Body::Generate(..) => f.write_str("Generate"),
             Body::FailAfter(c) => write!(f, "FailAfter({})", c.len()),
@@ -192,6 +196,8 @@ pub struct Reply {
     pub delay: Option<Duration>,
     /// Close the connection after reading the request, without answering.
     pub hang_up: bool,
+    /// Wait until this gate is opened (after any `delay`) before sending the head.
+    pub after: Option<Gate>,
 }
 
 impl Reply {
@@ -202,6 +208,7 @@ impl Reply {
             body: Body::Full(Bytes::new()),
             delay: None,
             hang_up: false,
+            after: None,
         }
     }
 
@@ -243,6 +250,54 @@ impl Reply {
     pub fn delay(mut self, delay: Duration) -> Self {
         self.delay = Some(delay);
         self
+    }
+
+    /// Holds the head until `gate` is opened — typically by the responder handling another
+    /// request — so a test can prove two requests overlap without a sleep and without blocking
+    /// a runtime thread in the responder.
+    pub fn after(mut self, gate: Gate) -> Self {
+        self.after = Some(gate);
+        self
+    }
+}
+
+/// A one-way latch shared between replies: [`Reply::after`] waits on it, [`Gate::open`] (from a
+/// responder or the test) releases every waiter, now and later. Clone it freely.
+#[derive(Clone, Default)]
+pub struct Gate(Arc<(AtomicBool, Notify)>);
+
+impl Gate {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Opens the gate (idempotent).
+    pub fn open(&self) {
+        self.0.0.store(true, Ordering::SeqCst);
+        self.0.1.notify_waiters();
+    }
+
+    pub fn is_open(&self) -> bool {
+        self.0.0.load(Ordering::SeqCst)
+    }
+
+    /// Waits until the gate is open.
+    pub async fn wait(&self) {
+        loop {
+            let notified = self.0.1.notified();
+            if self.is_open() {
+                return;
+            }
+            notified.await;
+        }
+    }
+}
+
+impl std::fmt::Debug for Gate {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Gate")
+            .field("open", &self.is_open())
+            .finish()
     }
 }
 
@@ -568,6 +623,9 @@ async fn serve(
         if let Some(delay) = reply.delay {
             tokio::time::sleep(delay).await;
         }
+        if let Some(gate) = &reply.after {
+            gate.wait().await;
+        }
         let mut out = format!("HTTP/1.1 {} X\r\n", reply.status);
         for (n, v) in &reply.headers {
             out.push_str(&format!("{n}: {v}\r\n"));
@@ -581,6 +639,10 @@ async fn serve(
                 shared
                     .body_bytes_sent
                     .fetch_add(bytes.len() as u64, Ordering::SeqCst);
+            }
+            Body::HeadOnly(declared) => {
+                out.push_str(&format!("content-length: {declared}\r\n\r\n"));
+                stream.write_all(out.as_bytes()).await?;
             }
             body => {
                 out.push_str("transfer-encoding: chunked\r\n\r\n");
@@ -618,7 +680,7 @@ async fn write_chunked(
     body: Body,
 ) -> std::io::Result<bool> {
     match body {
-        Body::Full(_) => unreachable!(),
+        Body::Full(_) | Body::HeadOnly(_) => unreachable!(),
         Body::Chunks(chunks) => {
             for (delay, chunk) in chunks {
                 if !delay.is_zero() {

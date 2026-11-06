@@ -7,10 +7,11 @@ use percent_encoding::{AsciiSet, NON_ALPHANUMERIC};
 use reqwest::header::{ACCEPT, CONTENT_TYPE, HeaderMap, HeaderName, HeaderValue};
 use reqwest::{Method, Url};
 
-use crate::codec::{CodecError, Decode, Encode};
+use crate::codec::{CodecError, Decode, Encode, EncodedBody, Incremental};
 use crate::error::Error;
 use crate::header::ToHeaderValue;
-use crate::prepared::{Decoder, HeadStep, Prepared, head_step};
+use crate::prepared::{Decoder, HeadStep, OpenHeadStep, Prepared, head_step, open_step};
+use crate::response::Incoming;
 
 pub use crate::value::IntoValue;
 
@@ -179,19 +180,23 @@ pub fn display_into<T: Text + ?Sized>(
 /// `Encode::CONTENT_TYPE` or a declared media type, through `HeaderValue::from_static`: an invalid
 /// one fails the static's evaluation, a compile error) and each request only clones it.
 pub struct BodyFormat<T> {
-    encode: fn(T) -> Result<reqwest::Body, CodecError>,
+    encode: fn(T) -> Result<EncodedBody, CodecError>,
     content_type: Option<HeaderValue>,
+    /// Whether `content_type` is a declared media type (`request F "…";`) rather than the
+    /// format's own `CONTENT_TYPE`: a runtime media type must then equal it.
+    declared: bool,
 }
 
 impl<T> BodyFormat<T> {
     /// The format `E` with its own media type, `E::CONTENT_TYPE`.
     pub const fn new<E: Encode<T>>() -> Self {
         Self {
-            encode: E::encode,
+            encode: E::encode_body,
             content_type: match E::CONTENT_TYPE {
                 Some(text) => Some(HeaderValue::from_static(text)),
                 None => None,
             },
+            declared: false,
         }
     }
 
@@ -199,21 +204,54 @@ impl<T> BodyFormat<T> {
     /// or the client). `E::CONTENT_TYPE` is not used.
     pub const fn with_media_type<E: Encode<T>>(media_type: HeaderValue) -> Self {
         Self {
-            encode: E::encode,
+            encode: E::encode_body,
             content_type: Some(media_type),
+            declared: true,
         }
     }
 }
 
-/// Encodes a body with its declared format and returns it with its media type. The media type
-/// was validated at compile time; a failing encoder is an `Encode` error.
+/// An encoded body on its way into the request: the bytes and the media type the precedence
+/// rules of [`EncodedBody`] pick from.
+pub struct BodyParts {
+    body: reqwest::Body,
+    /// The format's `CONTENT_TYPE` or the declared media type.
+    media: Option<HeaderValue>,
+    /// Whether `media` was declared.
+    declared: bool,
+    /// The media type the encoder bound to these bytes.
+    runtime: Option<HeaderValue>,
+}
+
+impl BodyParts {
+    /// A body with a static (format or declared) media type and no runtime one.
+    pub fn new(body: reqwest::Body, media: Option<HeaderValue>) -> Self {
+        Self {
+            body,
+            media,
+            declared: false,
+            runtime: None,
+        }
+    }
+}
+
+/// Encodes a body with its declared format (through `Encode::encode_body`, polling nothing) and
+/// returns it with its media types. A static media type was validated at compile time, a runtime
+/// one is a `HeaderValue`; a failing encoder is an `Encode` error.
 pub fn encode_body<T>(
     format: &'static BodyFormat<T>,
     value: T,
     meta: &'static EndpointMeta,
-) -> Result<(reqwest::Body, Option<HeaderValue>), Error> {
-    let body = (format.encode)(value).map_err(|e| Error::from_encode(meta, e))?;
-    Ok((body, format.content_type.clone()))
+) -> Result<BodyParts, Error> {
+    let (body, runtime) = (format.encode)(value)
+        .map_err(|e| Error::from_encode(meta, e))?
+        .into_parts();
+    Ok(BodyParts {
+        body,
+        media: format.content_type.clone(),
+        declared: format.declared,
+        runtime,
+    })
 }
 
 /// An endpoint's response format. The generated code holds one in a `static` per endpoint with a
@@ -247,6 +285,49 @@ impl<T> DecodeFormat<T> {
     pub fn accept(&self) -> Option<&HeaderValue> {
         self.accept.as_ref()
     }
+}
+
+/// An endpoint's incremental response format (`-> stream I`): a `static` per endpoint, like
+/// [`DecodeFormat`]. `R` is the format's reader for `I`.
+pub struct OpenFormat<R> {
+    head: OpenHeadStep<R>,
+    accept: Option<HeaderValue>,
+}
+
+impl<R: 'static> OpenFormat<R> {
+    /// The incremental format `F` for items `I`.
+    pub const fn new<I: 'static, F: Incremental<I, Records = R> + 'static>() -> Self {
+        Self {
+            head: open_step::<F, I>,
+            accept: match F::ACCEPT {
+                Some(text) => Some(HeaderValue::from_static(text)),
+                None => None,
+            },
+        }
+    }
+}
+
+impl<R> OpenFormat<R> {
+    /// The endpoint's response handling.
+    pub fn decoder(&self, meta: &'static EndpointMeta) -> Decoder<R> {
+        Decoder::opened(meta, self.head)
+    }
+
+    /// The format's `Accept` suggestion.
+    pub fn accept(&self) -> Option<&HeaderValue> {
+        self.accept.as_ref()
+    }
+}
+
+/// The identity of a declared endpoint, for its generated `Endpoint::operation()`.
+pub fn declared(name: &'static str, method: &'static str) -> crate::Operation {
+    crate::Operation::declared(name, method)
+}
+
+/// The response handling of an endpoint declared `-> stream` without an item: any 2xx, the body
+/// returned unread (a `response` default does not apply).
+pub fn incoming(meta: &'static EndpointMeta) -> Decoder<Incoming> {
+    Decoder::incoming_for(meta, |body| body)
 }
 
 /// The request being composed by one endpoint's generated code.
@@ -453,7 +534,7 @@ impl<'a> Parts<'a> {
         self,
         method: Method,
         client: &reqwest::Client,
-        body: Option<(reqwest::Body, Option<HeaderValue>)>,
+        body: Option<BodyParts>,
         decoder: Decoder<T>,
         accept: Option<&HeaderValue>,
     ) -> Result<Prepared<T>, Error> {
@@ -480,7 +561,40 @@ impl<'a> Parts<'a> {
         // The body's media type is sent exactly when the body is, unless a `content-type` header
         // contribution was sent (it wins, body or not; an empty value counts as sent). The
         // inserted value carries the key's static classification, like a declared value would.
-        if let Some((body, content_type)) = body {
+        // A media type the encoder bound to the bytes at run time is never separated from them:
+        // a contradicting declared media type or sent header is a build error (`EncodedBody`).
+        if let Some(BodyParts {
+            body,
+            media,
+            declared,
+            runtime,
+        }) = body
+        {
+            let content_type = match runtime {
+                None => media,
+                Some(runtime) => {
+                    if declared && media.as_ref() != Some(&runtime) {
+                        return Err(Error::build(
+                            Some(self.meta),
+                            "content-type",
+                            "of the body's encoder differs from the declared media type",
+                        ));
+                    }
+                    let mut sent = headers.get_all(CONTENT_TYPE).iter();
+                    match (sent.next(), sent.next()) {
+                        (None, _) => {}
+                        (Some(one), None) if *one == runtime => {}
+                        _ => {
+                            return Err(Error::build(
+                                Some(self.meta),
+                                "content-type",
+                                "header contradicts the media type the body was encoded with",
+                            ));
+                        }
+                    }
+                    Some(runtime)
+                }
+            };
             if let Some(mut content_type) = content_type
                 && !headers.contains_key(CONTENT_TYPE)
             {

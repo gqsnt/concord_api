@@ -182,6 +182,18 @@ fn invalid_dialects_are_configuration_errors() {
             "the CSV record terminator equals the delimiter, the quote, the escape or the comment byte",
         ),
         (
+            present(b',')
+                .comment(Some(b'#'))
+                .read_terminator(RecordTerminator::Byte(b';')),
+            COMMENT_TERMINATOR,
+        ),
+        (
+            present(b',')
+                .read_terminator(RecordTerminator::Byte(b'\r'))
+                .comment(Some(b'#')),
+            COMMENT_TERMINATOR,
+        ),
+        (
             present(b',').max_record_bytes(0),
             "a CSV record, header or field limit is zero",
         ),
@@ -207,6 +219,14 @@ fn invalid_dialects_are_configuration_errors() {
     ];
     for (options, label) in cases {
         assert_eq!(config_error(options.clone()), label, "{options:?}");
+    }
+    // A comment byte with terminators that end lines at `\n` is valid, for readers and writers.
+    for terminator in [RecordTerminator::Standard, RecordTerminator::Byte(b'\n')] {
+        let options = present(b',')
+            .comment(Some(b'#'))
+            .read_terminator(terminator);
+        assert!(CsvReader::new(options.clone()).is_ok(), "{terminator:?}");
+        assert!(CsvWriter::new(options).is_ok(), "{terminator:?}");
     }
     // Other single bytes are valid delimiters, not only the four aliases.
     for byte in [b' ', b'^', b'`', 0x01, 0x1f, 0x7f, b'#'] {
@@ -269,6 +289,51 @@ async fn an_invalid_static_dialect_fails_before_any_polling() {
     assert_eq!(polls.load(Ordering::SeqCst), 0);
 }
 
+const COMMENT_TERMINATOR: &str = "a CSV comment byte needs a read_terminator that ends lines at \\n (Standard or Byte(b'\\n')): a comment line ends only at a line feed";
+
+/// Comment lines with a custom terminator: a comment line would never end.
+struct CommentsWithTilde;
+impl CsvProfile for CommentsWithTilde {
+    fn options() -> CsvProfileOptions {
+        CsvProfileOptions::default()
+            .comment(Some(b'#'))
+            .read_terminator(RecordTerminator::Byte(b'~'))
+    }
+}
+
+/// `csv-core` ends a comment line only at a line feed, which its DFA does not see with a custom
+/// terminator byte: the rest of the input would be skipped and the read end cleanly. The
+/// combination is refused on every route before anything is read or sent.
+#[test]
+fn a_comment_byte_with_a_custom_terminator_is_refused_on_every_route() {
+    type Tilde = Csv<HasHeader, Comma, CommentsWithTilde>;
+    assert_eq!(Tilde::reader().unwrap_err().label(), COMMENT_TERMINATOR);
+    assert_eq!(Tilde::writer().unwrap_err().label(), COMMENT_TERMINATOR);
+    let headers = concord_core::reqwest::header::HeaderMap::new();
+    let head = ResponseHead::new(
+        concord_core::reqwest::StatusCode::OK,
+        concord_core::reqwest::Version::HTTP_11,
+        &headers,
+    );
+    assert_eq!(
+        <Tilde as Decode<Vec<Vec<String>>>>::context(&head)
+            .unwrap_err()
+            .label(),
+        COMMENT_TERMINATOR
+    );
+    assert_eq!(
+        <Tilde as Encode<Vec<(u8, u8)>>>::encode(vec![(1, 2)])
+            .unwrap_err()
+            .label(),
+        COMMENT_TERMINATOR
+    );
+    assert_eq!(
+        config_error(Tilde::options()),
+        COMMENT_TERMINATOR,
+        "the runtime options of the profile"
+    );
+}
+
 async fn outcome(options: CsvOptions, body: &[u8]) -> Outcome {
     let reader = CsvReader::new(options).unwrap();
     let whole = streamed(&reader, Chunks::new([body.to_vec()])).await;
@@ -302,10 +367,18 @@ async fn delimiters_quoted_separators_doubled_quotes_and_embedded_terminators() 
         Outcome::ok(None, &[&["a", "b\x1fc", ","]])
     );
     // `csv-core`'s permissive grammar (documented): a stray quote inside an unquoted field is
-    // data, and input that ends inside a quoted field yields that field.
+    // data. Input that ends inside a quoted field is a truncated record, not a record (before
+    // wave 4's Open-Meteo F4 it yielded that field; see `csv_quote_eof.rs`).
+    assert_eq!(
+        outcome(absent(b','), b"a\"b,\"closed\"").await,
+        Outcome::ok(None, &[&["a\"b", "closed"]])
+    );
     assert_eq!(
         outcome(absent(b','), b"a\"b,\"open").await,
-        Outcome::ok(None, &[&["a\"b", "open"]])
+        Outcome::ok(None, &[]).failing(
+            ReadErrorKind::Format,
+            "the CSV input ends inside a quoted field"
+        )
     );
     // CR, LF and CRLF terminators mixed; blank lines skipped; no final terminator.
     assert_eq!(
@@ -368,6 +441,18 @@ async fn comments_are_off_by_default_and_a_profile_can_enable_them() {
         )
         .await,
         Outcome::ok(None, &[&["#x", "1"]])
+    );
+    // A comment line ends only at a line feed: a lone `\r` does not end it (documented on
+    // `comment`), so `b,c` belongs to the comment line and `d` is the next record.
+    assert_eq!(
+        outcome(
+            CsvOptions::new(HeaderMode::Absent, b',')
+                .comment(Some(b'#'))
+                .flexible(true),
+            b"a\r#note\rb,c\nd\r"
+        )
+        .await,
+        Outcome::ok(None, &[&["a"], &["d"]])
     );
 }
 

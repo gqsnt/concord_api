@@ -77,32 +77,45 @@ exactly one parent, so `namespaced(namespace: NamespaceName)` is declared under 
 across the three generated scope handles. This mirrors the URL structure honestly; the only
 friction is the triple declaration of the scope header. No change proposed.
 
-## 4. Watches: no typed streaming output, `send_raw` plus the reader — intentional
+## 4. Watches: a truthful streaming output — resolved
 
-A watch body is unbounded, and a typed `Decode` buffers the whole body, so watch endpoints are
-declared without `->` and opened natively (`src/watch.rs`):
+**Before `-> stream` outputs existed.** A typed `Decode` buffers the whole body, so the watch endpoints were
+declared without `->`. Their generated `send()` therefore *drained* the watch (it returned only
+when the server closed the stream, or never), and the real route was `prepare()?.send_raw()` plus
+`JsonValuesReader::open_for(response, W::ENDPOINT)` with a hand-written endpoint label per watch
+type (`"Kube.core_v1.namespaced.watch_pods"`) that had to match Concord's name by convention.
+
+**Now.** Each watch is declared with its output:
 
 ```rust
-let prepared = operation.prepare_watch().map_err(WatchOpenError::Request)?;
-let response = prepared.send_raw().await.map_err(WatchOpenError::Request)?;
-match reader.open_for::<WatchEvent<W::Item>>(response, W::ENDPOINT) {
-    Ok(values) => Ok(WatchStream { values }),
-    Err(refused) if refused.kind() == OpenErrorKind::Status => Err(WatchOpenError::Api(
-        ApiError::from_response(Some(W::ENDPOINT), refused.into_response()).await,
-    )),
-    Err(refused) => Err(WatchOpenError::Refused(refused)),
+GET watch_pods(/* selectors, resourceVersion, allowWatchBookmarks, timeoutSeconds */)
+    -> stream WatchEvent<Pod> {
+    path "pods";
+    query { "watch" = "1"; }
+    headers { ACCEPT = "application/json"; }
+    response JsonStream;
 }
 ```
 
-This is the documented route and it worked first time. Two small papercuts:
+and the ordinary caller writes
+`kube.core().watch_pods().set_resource_version(rv).send().await?` and iterates events: `send()`
+returns `WatchStream<Pod>` (= `concord::jsonl::JsonValues<WatchEvent<Pod>>`) as soon as the head
+is accepted, without reading the body; non-2xx is a `Status` error with the response unread (read
+with `KubeError::from_concord`), a refused head is `Metadata`, unread. Read errors name the
+declared endpoint; the `ENDPOINT` strings and the `open_for` duplication are gone. `JsonStream`'s
+defaults (standard JSON media policy, 16 MiB per event, no totals) fit Kubernetes, so the SDK
+declares the static format rather than `-> stream` plus an SDK-configured reader. An application
+with its own per-event bound keeps `watch::open(operation, &reader)`, which now sends the same
+declared operation with `Prepared::receive()` and opens the `Received` with that reader
+(`examples/kubernetes-app` does this from `WatchPolicy::max_event_bytes`).
 
-- **No `Accept` from the format.** An endpoint without `->` gets no `Accept` suggestion, so each
-  watch declares `headers { ACCEPT = "application/json"; }` itself (four copies). Harmless.
-- **The operation label is typed twice.** `Prepared` has no `endpoint()` accessor, so the reader's
-  `open_for(.., operation)` label is a hand-written `&'static str` per watch type
-  (`"Kube.core_v1.namespaced.watch_pods"`) that must match Concord's endpoint name by convention.
-  **Proposal:** `Prepared::endpoint() -> &'static str` (the name `Error::endpoint()` already
-  reports).
+`WatchStream` became a type alias of the reader (it was a wrapper struct forwarding `next`,
+`position` and `peak_retained_bytes`): the generated output and `watch::open` now return the
+same type, which also offers `completion()` and `into_stream()`. `WatchStream::from_values` is
+gone (`JsonValuesReader::read(source)` is already a `WatchStream<T, S>`).
+
+The explicit `ACCEPT = "application/json"` stays on each watch although `JsonStream` suggests the
+same value: it states the provider requirement (JSON, not protobuf) independently of the format.
 
 ## 5. Reading the `Status` document of a status error — friction (small)
 
@@ -162,7 +175,7 @@ Two observations on the crate API:
 
 ## 7. Watch events as an adjacently tagged serde enum — no friction
 
-`JsonValues<WatchEvent<T>>` with `#[serde(tag = "type", content = "object")]` decodes typed
+`JsonValues<WatchEvent<T>>` (`WatchStream<T>`) with `#[serde(tag = "type", content = "object")]` decodes typed
 `ADDED/MODIFIED/DELETED/BOOKMARK/ERROR` events directly, in either member order. Consequence by
 contract: an event with an unknown `type` is a terminal `Decode` error for that connection (the
 reader is fused), so the workflow reconnects from the last resource version

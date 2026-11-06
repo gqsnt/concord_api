@@ -17,7 +17,7 @@ use concord_example_salesforce_app::sf_b::{
 };
 use concord_example_salesforce_app::sink::ShardStaging;
 use concord_example_salesforce_sdk::bulk::{BulkDialect, ColumnDelimiter, JobState, LineEnding};
-use concord_example_salesforce_sdk::bulk_query::{BulkQueryJob, ResultSets};
+use concord_example_salesforce_sdk::bulk_query::{BulkQueryJob, ResultPartReader, ResultSets};
 use concord_example_salesforce_sdk::csv::{CONTACT_EXPORT_FIELDS, ContactExportRow, SalesforceCsv};
 use concord_example_salesforce_sdk::ids::{MaxRecords, QueryJobId};
 use concord_example_salesforce_sdk::soql::FieldPath;
@@ -1225,18 +1225,13 @@ async fn sf_b_large_generated_parts_stream_through_bounded_readers() {
     let server = router.start().await;
     let ctx = support::ctx(ORG_A, &server);
     let job = BulkQueryJob::attach(&ctx, QueryJobId::new(QUERY_JOB).unwrap(), SEMI_CRLF);
-    let reader = SalesforceCsv::new(SEMI_CRLF)
-        .result_reader(&fields())
-        .unwrap();
+    let reader = ResultPartReader::<ContactExportRow>::new(&job, &fields()).unwrap();
     let started = Instant::now();
     let link = concord_example_salesforce_sdk::ResultLink {
         locator: Some(concord_example_salesforce_sdk::ids::ResultLocator::new("loc0").unwrap()),
         max_records: None,
     };
-    let set = job.open_result_set(&link).await.unwrap();
-    let mut records = reader
-        .open_for::<ContactExportRow>(set.response, "test: generated part")
-        .unwrap();
+    let mut records = reader.open(&link).await.unwrap();
     let first = records.next().await.unwrap().unwrap();
     let first_latency = started.elapsed();
     let mut count = 1u64;
@@ -1246,7 +1241,7 @@ async fn sf_b_large_generated_parts_stream_through_bounded_readers() {
     }
     assert_eq!(first.id.as_str(), "003G00000000000AAA");
     assert_eq!(count, ROWS);
-    let peak = records.peak_retained_bytes();
+    let peak = records.records().peak_retained_bytes();
     println!(
         "direct read: {count} rows, {} bytes parsed, first record after {first_latency:?}, \
          reader peak retained {peak} bytes",
@@ -1255,6 +1250,12 @@ async fn sf_b_large_generated_parts_stream_through_bounded_readers() {
     // The reader keeps one record (plus the unconsumed chunk), never the body.
     assert!(peak < 64 * 1024, "peak retained {peak}");
     assert!(records.position().bytes > 5_000_000);
+    // The declared count was checked at the end of input.
+    let complete = records.finish().unwrap();
+    assert_eq!(
+        (complete.records, complete.declared_records),
+        (ROWS, Some(ROWS))
+    );
     server.shutdown().await;
 }
 

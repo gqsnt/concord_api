@@ -198,6 +198,16 @@ query, fragment, `%` escapes or `xn--` labels. Callers replace it at runtime wit
 `with_base_url(..)`, which returns a `Result` and accepts more than that static subset: any
 `http`/`https` URL with a host and no user information, query, fragment or port 0, including IDN
 hosts and a percent-escaped path, whose escapes are kept as written (`https://example.com/a%2Fb`).
+`with_base_url` replaces the **whole** base, path included: a version prefix that must survive
+(`/v1` for a test server at `http://127.0.0.1:port`) belongs in the client's `path "v1";`, not in
+`base`.
+
+**Credentials and redirects.** reqwest drops `Authorization`, `Cookie`, `Cookie2`,
+`Proxy-Authorization` and `WWW-Authenticate` when a redirect changes the host, port or scheme, but
+**not** a custom credential header (`PRIVATE-TOKEN`, `X-Api-Key`). An SDK with such a header documents (or builds) a client
+whose redirect policy refuses a cross-origin hop — `reqwest::redirect::Policy::custom` comparing
+`attempt.url().origin()` with `attempt.previous()[0].origin()` — or disables redirects. The
+application owns its `reqwest::Client`; Concord never changes it.
 
 **Paths.** Each owner's `path` template is relative (no leading `/`) and is appended after the base
 path, root first. Literal text is sent verbatim; each `{value}` is formatted with `Display` and
@@ -717,6 +727,7 @@ output's format, and which statement they come from.
 | `Binary` (feature `extras`) | `Bytes` or `Vec<u8>`; `application/octet-stream` | `Bytes` or `Vec<u8>`, unchanged; nothing is checked (`image/png` is fine) | none |
 | `Form` (feature `form`) | any `T: Serialize` with flat fields (a struct, a map, pairs); `application/x-www-form-urlencoded` | any `T: DeserializeOwned`; exactly one `application/x-www-form-urlencoded`, `charset` absent or once and UTF-8 or US-ASCII | `application/x-www-form-urlencoded` |
 | `IgnoreContentType<F>` (feature `extras`) | `F`'s | `F`'s, without its `Content-Type` check | `F`'s |
+| `multipart::Multipart` (feature `multipart`) | `multipart::MultipartBody`, `multipart/form-data` or `multipart/related` parts held in memory; `multipart/<subtype>; boundary=...` with a boundary chosen per body ([5.10](#510-bodies-whose-media-type-is-known-at-run-time)) | none (a request format) | none |
 | a type path: `Csv`, `codecs::Csv` | your `Encode<T>` ([5.7](#57-custom-formats)) | your `Decode<T>` | your `ACCEPT`, if any |
 
 The check of the response head runs on a 2xx response **before the body is read**. A refusal is an
@@ -1016,16 +1027,18 @@ those constructors. The encoder runs during preparation, but it need not read th
 [`examples/native/src/upload.rs`](../examples/native/src/upload.rs) prepares a non-`Clone`
 one-shot source without polling it, and one `send()` reads it once.
 
-`Encode::CONTENT_TYPE` is static, and the encoder does not return per-body media headers. A
-`request F "type/subtype";` statement or a `content-type` header replaces that static value (5.3,
-5.8). For a media type that varies with the body (a multipart boundary), use the documented native
-request-construction route through `into_parts` and reqwest's multipart support. An explicit
-matching `content-type` header can also carry it when the endpoint or SDK controls that
-body/header pair.
+`Encode::CONTENT_TYPE` is static. A `request F "type/subtype";` statement or a `content-type`
+header replaces that static value (5.3, 5.8). A media type that varies with the body is a runtime
+media type: the format overrides `Encode::encode_body` and returns it bound to the bytes (5.10).
+For a multipart body, use the standard `concord::multipart::Multipart` (feature `multipart`):
+`body form: MultipartBody` with `request Multipart;`, the boundary chosen per body. The native route
+through `into_parts` and reqwest's own `multipart` support remains for large or streamed parts,
+which `MultipartBody` (in memory) does not hold.
 
 For a response consumed incrementally, use `send_raw` and native reads; typed `Decode` receives
 the collected body bytes. `examples/native` has NDJSON and pair-encoded form formats and a
-one-shot request stream, and `examples/multipart` a multipart upload ([recipes](RECIPES.md)).
+one-shot request stream, and `examples/multipart` a multipart upload through reqwest and a local
+multipart format of its own ([recipes](RECIPES.md)).
 
 ### 5.8 What goes on the wire: `Accept` and `Content-Type`
 
@@ -1134,6 +1147,328 @@ fn main() -> Result<(), concord::Error> {
     Ok(())
 }
 ```
+
+### 5.9 Streaming outputs: `-> stream`
+
+An endpoint whose useful result is read as it arrives (a watch, an export, a log) declares it.
+`-> stream T` names the item and needs a format implementing `Incremental<T>` (`Csv<..>`,
+`JsonLines`, `Ndjson`, `JsonStream` for consecutive JSON values, `Sse` for server-sent events, or
+your own): `send()` checks the status and the head, then returns the format's reader **without
+reading the body**. `-> stream` without an item returns the unread `Incoming` body, for a reader
+whose options are known only at run time. Neither drains: draining is what an endpoint without `->`
+does, and a watch declared that way would discard its events.
+
+Excerpt of `checks/phase-a/src/lib.rs`:
+
+```rust,ignore
+        GET rows(id: String) -> stream Row {
+            path "reports/{id}";
+            response ReportCsv;
+        }
+        /// Change events (consecutive JSON values).
+        GET events(#[sensitive] query("token") resume?: String) -> stream Event {
+            path "events";
+            response JsonStream;
+        }
+        /// Audit lines (JSON Lines).
+        GET audit() -> stream Row { path "audit"; response JsonLines; }
+        /// Live report updates (server-sent events; the SDK decodes each `data`).
+        GET live() -> stream sse::Event { path "live"; response Sse; }
+        /// A job export whose dialect is known only at run time.
+        GET export(id: String) -> stream { path "jobs/{id}/export"; }
+```
+
+The reader names the endpoint in every later error (`ReadError::operation`), with no string to
+repeat. `completion()` says whether the input ended cleanly (`EndOfInput`), failed, or is still
+being read; only the first proves every record was seen. `into_stream()` turns any reader into a
+standard `futures_core::Stream` with the same errors (a recoverable JSON Lines line error does not
+end it) and a cancellation-safe pending read. Reconnecting a watch, resuming an export and
+deduplicating replays stay the SDK's or the application's policy.
+
+**Server-sent events** (`concord::sse`, feature `sse`). `response Sse;` frames a
+`text/event-stream` body as the WHATWG HTML standard interprets it (one leading byte order mark,
+CR/LF/CRLF line ends split anywhere, comments, `event`/`data`/`id`/`retry`, dispatch on a blank
+line) and yields `sse::Event` values: type, `data` as text, last event ID. It does **not** decode
+`data`; the SDK parses it (`serde_json::from_str(event.data())`) and keeps its own distinction
+between a malformed payload and one of the wrong shape. Concord is stricter than a browser where a
+silent repair would lose an event unnoticed: invalid UTF-8, a body ending inside a line or inside
+an event (fields without their blank line), and an event over `max_event_bytes` (1 MiB by default)
+are terminal errors; only a body ending at an event boundary completes. The head check requires
+exactly one `text/event-stream` `Content-Type`, charset absent or UTF-8, and `Accept:
+text/event-stream` is suggested. For other limits (`SseOptions::max_event_bytes`, `max_events`),
+declare `-> stream` and open the `Incoming` body with `SseReader::new(options).open(body)`; for a
+body source of your own, `SseReader::read_for(source, operation)` takes any `stream::ByteSource`
+and checks neither status nor head (below). The reader does not reconnect: `last_event_id()` and
+`retry()` give the SDK what a reconnect policy needs.
+
+**A reader over a body the SDK checked or wraps.** `open` is the usual path. When the SDK applies
+the head check itself (an `Incremental` format of its own whose `check_content_type` already ran,
+a provider header to look at first) or puts a filter of its own between the body and the reader
+(a provider's in-body error marker, a line counter), every reader — `CsvReader`,
+`JsonLinesReader`, `JsonValuesReader`, `SseReader` — offers the two halves of `open` separately:
+
+- `check_head(&head)`: the reader's own media policy, exactly what `open` applies, as a
+  `CodecError` with the same label (`head` only; the status is the caller's, and an `Incoming` is
+  2xx already);
+- `read_for(source, operation)` (and `CsvReader::read_raw_for`): reads any `stream::ByteSource`
+  without status or head checks, naming `operation` in every later `ReadError`, as `open` does
+  for a declared endpoint (`read(source)` names none).
+
+`Incoming` is a `ByteSource`, so the source is the `Incoming` itself or a wrapper of the SDK's
+around it, and the body never leaves Concord's boundary. A body that breaks off is then a
+`Transport` `ReadError` whose underlying error is Concord's own `Error` (kind `Transport`, the
+endpoint named, no URL) — where `open` keeps reqwest's. `ReadError::into_source_unredacted()`
+gives the byte source's error back **by value** (`downcast::<concord::Error>()`, or the
+provider-typed error a wrapper attached with `SourceError::with_source`), so the SDK neither
+stashes it beside the reader nor copies it; `SourceError::into_source_unredacted()` does the same
+for a wrapper the SDK drives itself. Read the kind and position first: taking the source consumes
+the error. A parser's error (serde's, for `Format` and `Decode`) stays in `codec()`, by reference
+only. `Display` and `Debug` are unchanged. Inside an `Incremental` format of your own, this is
+also how a configured reader (non-default limits) reads the already-checked body: apply its
+`check_head` in `check_content_type`, then return `reader.read_for(body, name)` from `open`
+(`Records` is then, say, `SseEvents<Incoming>`); `body.operation()` gives the endpoint's name.
+
+### 5.10 Bodies whose media type is known at run time
+
+When the bytes and their media type are produced together — a CSV dialect chosen per job, a
+generated multipart boundary — the body still belongs in the declaration. Give it a type that
+carries both and the `Encoded` format: `stream::Upload` (from `CsvWriter::upload` or
+`JsonLinesWriter::upload`) or `EncodedBody`.
+
+Excerpt of `checks/phase-a/src/lib.rs`:
+
+```rust,ignore
+        POST upload(id: String, body export: Upload) -> Row {
+            path "jobs/{id}/export";
+            request Encoded;
+        }
+```
+
+A format of yours does the same by overriding `Encode::encode_body` (see
+[CUSTOM_FORMATS](CUSTOM_FORMATS.md)). The media type stays bound to the bytes: a declared media
+type (`request Encoded "m";`) or a `content-type` header that differs is a `Build` error before
+anything is sent; an equal one is sent once; `remove content-type` keeps the runtime value. The
+body's own length decides `Content-Length` versus chunked transfer, and preparing the request polls
+a lazy source zero times.
+
+A multipart body has its own format, `multipart::Multipart` (feature `multipart`), which chooses
+the boundary once the parts are known. The declaration states the body; the call builds it.
+Excerpt of `examples/openai-sdk/src/lib.rs` (`multipart/form-data`):
+
+```rust,ignore
+        POST upload(body form: MultipartBody) -> FileObject {
+            path "files";
+            request Multipart;
+        }
+```
+
+Excerpt of `examples/openai-sdk/src/lib.rs` (a field, then a file):
+
+```rust,ignore
+        let form = MultipartBody::form_data().text("purpose", "batch").file(
+            "file",
+            filename,
+            "application/jsonl",
+            bytes.to_vec(),
+        );
+        self.api.upload(form).send().await
+```
+
+Excerpt of `examples/google-drive-sdk/src/upload.rs` (`multipart/related`: JSON metadata as the
+root part, then the media):
+
+```rust,ignore
+        let payload = MultipartBody::related()
+            .part(Part::new(json).header("Content-Type", "application/json; charset=UTF-8"))
+            .part(Part::new(bytes.to_vec()).header(
+                "Content-Type",
+                media.to_str().expect("validated MIME is ASCII"),
+            ));
+```
+
+Drive's documented upload request carries no `type` parameter, so the SDK uses `related()`;
+RFC 2387 requires one (the root part's media type), and `related_with_type(root)` sends it — use
+that form unless the provider documents the bare one.
+
+The boundary is `concord-boundary-<n>`, the first candidate found in no part (header lines
+included): deterministic, so tests can predict it, and checked against the parts rather than made
+unlikely by randomness. The body is sent with `Content-Length`. A name, file name or part header
+value with a control character other than tab (CR, LF and NUL among them), a quote or backslash in
+a form-data name or file name, and an empty `related` body are refused when the request is
+prepared (`Build`, before I/O; the error shows no part bytes). The complete rules are on
+`concord::multipart::Multipart`.
+
+### 5.11 Reading response metadata in an SDK
+
+A provider's rate-limit counter, request id or served version is read from the response head,
+between sending and consuming the body: `Prepared::receive()` returns a `Received<T>` for any
+status, and `decode()` then applies the declared handling. Capture what must survive a body
+failure before decoding, into a value the SDK owns.
+
+Excerpt of `checks/phase-a/tests/received.rs`:
+
+```rust,ignore
+async fn summary_with_meta(
+    api: &Reports,
+    id: &str,
+) -> Result<(Row, Meta), (concord::Error, Option<Meta>)> {
+    let received = api
+        .summary(id)
+        .prepare()
+        .map_err(|e| (e, None))?
+        .receive()
+        .await
+        .map_err(|e| (e, None))?;
+    let meta = Meta::capture(&received.head());
+    match received.decode().await {
+        Ok(row) => Ok((row, meta)),
+        Err(e) => Err((e, Some(meta))),
+    }
+}
+```
+
+When the SDK keeps the whole head rather than a few typed fields, `received.meta()` is that
+owned value: a `concord::ResponseMeta` (status, version, header map, operation) whose `Debug`
+prints header names only, unlike a derived `Debug` over a `HeaderMap`. `Incoming::meta()` gives
+the same before a reader consumes the body, and `concord::Error::meta()` from a `Status` or
+`Metadata` error that kept its response. To add provider accessors (`request_id()`), wrap it in
+the SDK's own type (`pub struct ResponseMeta(concord::ResponseMeta)`; the Dropbox SDK derefs to
+it): methods cannot be added to another crate's type.
+
+A provider rule on the head (a served API version) refuses by returning the SDK's error with
+`received.into_response()`, unread. A request edited natively after `into_parts()` (a `Link` URL)
+is executed with `Decoder::execute(&client, request)`, which returns the same `Received<T>`.
+
+### 5.12 One adapter for every operation: `concord::Endpoint`
+
+An SDK that returns its own error type and response metadata does not need a wrapper method per
+operation. Every generated endpoint implements `concord::Endpoint<T>` for its output `T`
+(`prepare()` and `operation()`), so one trait of the SDK, implemented for every `E: Endpoint<T>`,
+serves all of them; callers import it once. The output is a parameter, so private output types
+stay allowed in a public client.
+
+Excerpt of `checks/phase-a/tests/received.rs`:
+
+```rust,ignore
+    pub trait Call<T>: Endpoint<T> {
+        fn call(self) -> impl Future<Output = Result<(T, Meta), SdkError>>;
+    }
+
+    impl<T, E: Endpoint<T>> Call<T> for E {
+        async fn call(self) -> Result<(T, Meta), SdkError> {
+            let prepared = self.prepare().map_err(|e| SdkError::Concord(e, None))?;
+            let received = prepared
+                .receive()
+                .await
+                .map_err(|e| SdkError::Concord(e, None))?;
+            let meta = Meta::capture(&received.head());
+            match received.decode().await {
+                Ok(value) => Ok((value, meta)),
+                Err(e) => Err(SdkError::Concord(e, Some(meta))),
+            }
+        }
+    }
+```
+
+It pays where the generated client is the client callers hold. An SDK that keeps a wrapper (a
+validated credential type at construction, an input rule per operation) keeps its domain methods:
+the trait cannot host a per-operation rule. A generated operation is not a future: code that passes
+`api.op(..)` where a future is expected (`tokio::time::timeout(d, api.op(..))`) needs the adapter's
+call (`api.op(..).call()`), and rustc's E0277 does not suggest it.
+
+A provider error document on a non-2xx response is read with `received.bytes_limited(n)`: the body
+up to `n` bytes, `ErrorKind::Limit` beyond (nothing more is read); parse it with the format's
+`decode_body`. `<E as Endpoint<T>>::operation()` names the endpoint without building a request.
+
+### 5.13 The SDK's own `send()`: `send policy;`
+
+When every call of a client should return the SDK's result — its error type with the provider's
+error document, response metadata — or every request must be signed after it is built, name a
+**send policy** on the client. A policy implements `concord::SendWith<T>` (usually generically over
+`T`); each generated `send()` then calls it with the endpoint and returns its `Output`. Callers keep
+one terminal method and need no import; `prepare()` still returns the declared, native request with
+Concord's `Error`.
+
+A stateless policy is a type, built with `Default` for each call:
+
+Excerpt of `checks/phase-a/tests/send_policy.rs`:
+
+```rust,ignore
+concord::api! {
+    pub client Store {
+        base "http://store.invalid";
+        send Policy;
+        format concord::Json;
+        GET item(id: u64) -> Item { path "items/{id}"; }
+        GET events() -> stream { path "events"; }
+    }
+}
+```
+
+A policy with state — credentials, a region, a clock — is a client value: `send signer;` names it.
+The value is required (no `?`, no default: it is the one given to the constructor), the
+statement itself does not place it on the wire, and each `send()` clones it, so keep it cheap to
+clone. It is withheld like a `#[sensitive]` value: generated `Debug` never prints it, and if the
+declaration also places it (a path segment, a query value, a header template), that placement is
+withheld from `Prepared`'s `Debug` too:
+
+Excerpt of `checks/phase-a/tests/send_policy.rs`:
+
+```rust,ignore
+concord::api! {
+    pub client Bucket(signer: Signer) {
+        base "http://bucket.invalid";
+        send signer;
+        format concord::Json;
+        scope objects {
+            GET object(key: String) -> Item { path "objects/{key}"; }
+        }
+    }
+}
+```
+
+Excerpt of `checks/phase-a/tests/send_policy.rs`:
+
+```rust,ignore
+impl<T: Send> SendWith<T> for Signer {
+    type Output = Result<T, concord::Error>;
+
+    async fn send<E: Endpoint<T> + Send>(&self, endpoint: E) -> Self::Output {
+        let (client, mut request, decoder) = endpoint.prepare()?.into_parts();
+        let (key_id, region) = &*self.0;
+        let digest = format!(
+            "sig({key_id}/{region} {} {})",
+            request.method(),
+            request.url().path()
+        );
+        let mut value = HeaderValue::try_from(digest).expect("a header value");
+        value.set_sensitive(true);
+        request.headers_mut().insert("authorization", value);
+        decoder.execute(&client, request).await?.decode().await
+    }
+}
+```
+
+Use a send policy when the result type of the whole client changes; keep domain methods for an
+input rule of one operation (an identifier that must not be empty), which a policy only sees after
+the request is built. Without `send`, generated `send()` returns `Result<T, concord::Error>`.
+
+Adopting a policy changes `send()` only. `prepare()` stays the declared request — for a signing
+policy, *unsigned* — and its signature does not change, so callers who inspected or executed a
+decorated request from an SDK method named `prepare` keep compiling and fail only at run time
+(observed when S3 moved to `send signer;`). Give the decorated request its own name (S3:
+`S3Client::prepare(op)` returning a signed request) and say so in the migration notes.
+
+If the declaration stays private behind the SDK's own client, do not re-export its generated
+`{Client}Config` as the SDK's construction type: its generated docs link to the hidden client and
+its `set_*` methods (observed in the Dropbox SDK). Re-export the declared client too, or give the
+SDK's constructor a configuration type of its own.
+
+If the SDK's public API names Concord types (`concord::Error`, `ResponseMeta`, `ErrorKind`,
+`Operation`), re-export the crate (`pub use concord;`): an application then matches on them
+without adding a `concord` dependency of its own that must stay at the same version (observed in
+the Snowflake first-use run, where telling a dropped body from a bad document needed
+`concord::ErrorKind`).
 
 ## 6. Wire formatting: `Display` and newtypes
 

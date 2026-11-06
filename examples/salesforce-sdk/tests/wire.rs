@@ -207,12 +207,19 @@ async fn bulk_query_operations_on_the_wire() {
         .unwrap();
     assert_eq!(last(&server).query(), Some("locator=YcApWm4N"));
 
-    job.results()
+    // `-> stream`: `send()` returns the unread body with the declared identity.
+    let body = job
+        .results()
         .set_locator(ResultLocator::new("MTAwMDA").unwrap())
         .set_max_records(MaxRecords::new(50_000).unwrap())
         .send()
         .await
         .unwrap();
+    assert_eq!(
+        body.operation().map(|op| op.name()),
+        Some("SalesforceApi.bulk_query.job.results")
+    );
+    body.drain().await.unwrap();
     let r = last(&server);
     common(&r, "GET", "jobs/query/750A00000000001AAA/results");
     assert_eq!(r.query(), Some("locator=MTAwMDA&maxRecords=50000"));
@@ -273,7 +280,7 @@ async fn ingest_operations_on_the_wire() {
             "unprocessedrecords/",
         ),
     ] {
-        op.unwrap();
+        op.unwrap().drain().await.unwrap();
         let _ = path;
     }
     let requests = server.requests();

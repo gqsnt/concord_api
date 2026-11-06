@@ -1,4 +1,5 @@
-//! Link-header pagination: a page factory for `concord-pagination`'s sequential traversal.
+//! Link-header pagination: ordinary traversals ([`LinkPages::pages`], [`LinkPages::items`]) and
+//! the page factory underneath them, also usable with `concord-pagination`'s engine.
 //!
 //! GitHub's contract ([pagination guide]): a paginated response carries `Link` with
 //! `rel="next"` until the last page; clients follow those URLs rather than building page
@@ -36,6 +37,15 @@
 //! - **Metadata.** Every page keeps its [`ResponseMeta`] (request id, rate limit, links) in
 //!   [`PageInfo`], the page's `meta`.
 //!
+//! [`LinkPages::pages`] and [`LinkPages::items`] run [`LinkPages::fetch`] as
+//! `concord_pagination`'s owned [`Pages`] / [`PageItems`] ([`GitHubPages`], [`GitHubItems`]):
+//! `Ok(None)` only after a page without `rel="next"`; a cap ([`Pages::max_pages`], none by
+//! default) reached while GitHub links on is `Err(PagesError::Bounded { resume, .. })`, and every
+//! rule above that refuses a page (a foreign or non-advancing link, a malformed `Link`, a status)
+//! is `Err(PagesError::Provider { error, failed, .. })` with the [`GitHubError`]: neither is a
+//! silent end. The engine (`sequential`, `resume_items`) takes `|key| factory.fetch(key)` for
+//! item-level checkpoints and engine reports.
+//!
 //! GitHub listings are live: items created, closed or relabelled between two requests can shift
 //! between pages, so a traversal is a best-effort enumeration, not a snapshot.
 //!
@@ -46,7 +56,7 @@ use std::future::Future;
 
 use concord::Prepared;
 use concord::reqwest::Url;
-use concord_pagination::Page;
+use concord_pagination::{Page, PageItems, Pages, Resume};
 
 use crate::context::{GitHubContext, RepoContext};
 use crate::error::{EnvelopeProblem, GitHubError};
@@ -293,6 +303,13 @@ pub struct PageInfo {
 /// One fetched page: `concord-pagination`'s [`Page`] with a [`NextLink`] key and [`PageInfo`].
 pub type LinkPage<T> = Page<T, NextLink, PageInfo>;
 
+/// The ordinary page traversal of a listing ([`LinkPages::pages`]): owned, nameable, its end
+/// explicit (see the [module documentation](self)).
+pub type GitHubPages<T> = Pages<T, NextLink, PageInfo, GitHubError>;
+
+/// The ordinary item traversal of a listing ([`LinkPages::items`]).
+pub type GitHubItems<T> = PageItems<T, NextLink, GitHubError>;
+
 /// A page factory for one list operation of one repository. See the
 /// [module documentation](self).
 pub struct LinkPages<Op, R> {
@@ -300,6 +317,65 @@ pub struct LinkPages<Op, R> {
     binding: Binding,
     operation: Op,
     prepare: fn(Op) -> Result<Prepared<R>, concord::Error>,
+}
+
+impl<Op: Clone, R> Clone for LinkPages<Op, R> {
+    fn clone(&self) -> Self {
+        Self {
+            context: self.context.clone(),
+            binding: self.binding.clone(),
+            operation: self.operation.clone(),
+            prepare: self.prepare,
+        }
+    }
+}
+
+impl<Op, R> LinkPages<Op, R>
+where
+    Op: Clone + Send + 'static,
+    R: Listing + Send + 'static,
+    R::Item: Send + 'static,
+{
+    /// The pages of this listing from its first page: a [`Pages`] traversal over
+    /// [`fetch`](Self::fetch), one page at a time, without a cap unless you set one
+    /// ([`Pages::max_pages`]). `Ok(None)` only after a page without `rel="next"`; a cap reached
+    /// while GitHub links on, or a refused or failed page, is an error that names the page to
+    /// continue from. Nothing is sent until the first `next_page()`.
+    ///
+    /// ```no_run
+    /// use std::num::NonZeroUsize;
+    /// use concord_example_github_sdk::RepoContext;
+    /// use concord_example_github_sdk::ids::IssueNumber;
+    ///
+    /// # async fn run(repo: RepoContext) -> Result<(), Box<dyn std::error::Error>> {
+    /// let comments = repo.issue_comment_pages(IssueNumber(7), |op| op).items();
+    /// let all = comments.collect_complete().await?; // `Err` keeps the prefix and the reason
+    ///
+    /// let cap = NonZeroUsize::new(10).unwrap();
+    /// let mut pages = repo.label_pages(repo.handle().labels()).pages().max_pages(cap);
+    /// while let Some(page) = pages.next_page().await? {
+    ///     println!("{} labels, request {:?}", page.items.len(), page.meta.response.request_id());
+    /// }
+    /// # let _ = all; Ok(()) }
+    /// ```
+    pub fn pages(&self) -> GitHubPages<R::Item> {
+        self.pages_from(Resume::Start)
+    }
+
+    /// [`pages`](Self::pages) from `from`: a link of this listing (a bounded or failed
+    /// traversal's `PagesError::resume`, a [`restore`](Self::restore)d continuation), or
+    /// `Resume::Start`. A link of another listing or origin is refused by the first page's
+    /// request, before anything is sent.
+    pub fn pages_from(&self, from: Resume<NextLink>) -> GitHubPages<R::Item> {
+        let factory = self.clone();
+        Pages::new(from, move |key| factory.fetch(key))
+    }
+
+    /// The items of this listing from its first page, one at a time ([`PageItems`] over
+    /// [`pages`](Self::pages)); the same end rules.
+    pub fn items(&self) -> GitHubItems<R::Item> {
+        self.pages().items()
+    }
 }
 
 impl<Op: Clone, R: Listing> LinkPages<Op, R> {

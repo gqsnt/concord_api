@@ -212,7 +212,7 @@ impl ReadError {
                 operation: None,
                 position,
                 codec: Some(CodecError::new(label)),
-                source: error.into_source(),
+                source: error.into_source_unredacted(),
                 terminal: true,
             }),
         }
@@ -240,7 +240,8 @@ impl ReadError {
         self.inner.terminal
     }
 
-    /// The operation name supplied when the response was opened, if any.
+    /// The operation name supplied when the response was opened (or a source read with a reader's
+    /// `read_for`), if any.
     pub fn operation(&self) -> Option<&'static str> {
         self.inner.operation
     }
@@ -265,6 +266,33 @@ impl ReadError {
             .codec
             .as_ref()
             .and_then(CodecError::source_unredacted)
+    }
+
+    /// The byte source's underlying error, **unredacted**, taken back by value: for a
+    /// [`Transport`](ReadErrorKind::Transport) failure, whatever the source attached to its
+    /// [`SourceError`] — Concord's `concord_core::Error` for an [`Incoming`](concord_core::Incoming)
+    /// source, a `reqwest::Error` (URL removed) for a native response, a type of yours for a
+    /// source of yours. `downcast` it to keep it without a copy:
+    ///
+    /// ```
+    /// # use concord_extras::stream::{ReadError, ReadErrorKind};
+    /// fn transport(error: ReadError) -> Option<concord_core::Error> {
+    ///     if error.kind() != ReadErrorKind::Transport {
+    ///         return None;
+    ///     }
+    ///     error.into_source_unredacted()?.downcast().ok().map(|e| *e)
+    /// }
+    /// # let _ = transport;
+    /// ```
+    ///
+    /// `None` for a source failure without an underlying error, and for every other kind: a
+    /// parser's error (the serde error of a `Format` or `Decode` failure) stays in
+    /// [`codec`](Self::codec), reachable by reference only
+    /// ([`source_unredacted`](Self::source_unredacted)). The kind, position and operation are
+    /// dropped: read them first. To keep the `ReadError` unless the source is of one type, test
+    /// it first (`error.source_unredacted().is_some_and(|s| s.is::<E>())`).
+    pub fn into_source_unredacted(self) -> Option<Box<dyn StdError + Send + Sync + 'static>> {
+        self.inner.source
     }
 }
 

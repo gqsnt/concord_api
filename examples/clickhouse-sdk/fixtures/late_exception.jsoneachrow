@@ -1,0 +1,8 @@
+{"sleepEachRow(0.001)":0,"throwIf(equals(number, 2))":0}
+{"sleepEachRow(0.001)":0,"throwIf(equals(number, 2))":0}
+
+__exception__
+dmrdfnujjqvszhav
+Code: 395. DB::Exception: Value passed to 'throwIf' function is non-zero: while executing 'FUNCTION throwIf(equals(__table1.number, 2_UInt8) :: 1) -> throwIf(equals(__table1.number, 2_UInt8)) UInt8 : 0'. (FUNCTION_THROW_IF_VALUE_IS_NON_ZERO) (version 25.11.1.1)
+262 dmrdfnujjqvszhav
+__exception__

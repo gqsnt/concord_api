@@ -1,0 +1,26 @@
+[package]
+name = "concord-sdk-ntfy"
+description = "A small ntfy SDK slice declared with concord::api!: publish to a topic, subscribe to it as Server-Sent Events or line-delimited JSON, and replay the server's message cache with a since cursor."
+version = "0.0.0"
+edition = "2024"
+rust-version.workspace = true
+license.workspace = true
+publish = false
+
+[dependencies]
+# `json`: the publish response and the error document; `jsonl`: the NDJSON reader behind the
+# JSON stream and poll endpoints; `sse`: the server-sent events reader behind the SSE endpoint.
+concord = { path = "../../crates/concord", features = ["json", "jsonl", "sse"] }
+serde = { workspace = true, features = ["derive"] }
+# The SSE `data` payload is parsed here (Concord's reader frames events, it does not decode them);
+# serde_json's error category separates malformed JSON (Format) from a well-formed event of the
+# wrong shape (Decode).
+serde_json.workspace = true
+
+[dev-dependencies]
+concord-example-testserver = { path = "../testserver" }
+serde_json.workspace = true
+tokio = { workspace = true, features = ["macros", "rt", "rt-multi-thread", "time", "sync"] }
+
+[lints]
+workspace = true

@@ -2,17 +2,20 @@
 //! pages, absent `last`, foreign and malformed links, continuation binding, envelope projection.
 //!
 //! These tests drive [`LinkPages::fetch`] directly to pin the factory's own contract; the
-//! workflows in `concord-example-github-app` drive it through `concord-pagination`.
+//! workflows in `concord-example-github-app` drive it through `concord-pagination`. The last
+//! tests pin the ordinary traversals (`items()`, `pages()`): typed end, opt-in cap, kept prefix.
 
 mod support;
 
-use concord::reqwest::{self, Url};
+use std::num::NonZeroUsize;
+
+use concord::reqwest::{self, StatusCode, Url};
 use concord_example_github_sdk::ids::{IssueNumber, RunId};
 use concord_example_github_sdk::models::IssueComment;
 use concord_example_github_sdk::paging::{Binding, LinkPage, NextLink, operation};
 use concord_example_github_sdk::{GitHubConfig, GitHubContext, GitHubError, RepoRef};
 use concord_example_testserver::{Recorded, Reply, TestServer};
-use concord_pagination::{Budget, Outcome, Resume, sequential};
+use concord_pagination::{Budget, Outcome, PagesError, Resume, sequential};
 use support::*;
 
 fn ids(page: &LinkPage<IssueComment>) -> Vec<u64> {
@@ -655,4 +658,218 @@ async fn next_link_equal_to_the_request_is_refused() {
     assert_eq!(server_2.requests().len(), 1);
     server_2.shutdown().await;
     server.shutdown().await;
+}
+
+const COMMENTS: &str = "/repos/octo-org/hello-world/issues/7/comments";
+
+/// Issue 7's comments on three pages linked by `page=N` (1, 2 / 3, 4 / 5); `page2` answers the
+/// second page instead, when given.
+fn three_pages(r: &Recorded, page2: Option<&dyn Fn(&str) -> Reply>) -> Reply {
+    let host = r.host.clone();
+    let next = |n: u32| format!("<http://{host}{COMMENTS}?page={n}>; rel=\"next\"");
+    let repo = "octo-org/hello-world";
+    match r.target.strip_prefix(COMMENTS) {
+        Some("") => gh_json(200, &comments_json(&[1, 2], 7, repo)).header("link", next(2)),
+        Some("?page=2") => match page2 {
+            Some(page2) => page2(&host),
+            None => gh_json(200, &comments_json(&[3, 4], 7, repo)).header("link", next(3)),
+        },
+        Some("?page=3") => gh_json(200, &comments_json(&[5], 7, repo)),
+        _ => gh_json(404, r#"{"message":"Not Found"}"#),
+    }
+}
+
+fn comment_ids(comments: &[IssueComment]) -> Vec<u64> {
+    comments.iter().map(|c| c.id.get()).collect()
+}
+
+/// The ordinary path: `items()` follows every `rel="next"` and ends only after the page without
+/// one; `pages()` keeps each page's metadata.
+#[tokio::test]
+async fn ordinary_items_follow_every_link_to_the_last_page() {
+    let server = TestServer::start(|r: &Recorded| three_pages(r, None)).await;
+    let github = context(server.addr(), TOKEN_A);
+    let repo = github.repo(RepoRef::new("octo-org", "hello-world"));
+    let comments = repo.issue_comment_pages(IssueNumber(7), |op| op);
+
+    let all = comments.items().collect_complete().await.unwrap();
+    assert_eq!(comment_ids(&all), [1, 2, 3, 4, 5]);
+
+    let mut pages = comments.pages();
+    let mut sizes = Vec::new();
+    while let Some(page) = pages.next_page().await.unwrap() {
+        assert_eq!(
+            page.meta.response.request_id(),
+            Some("0000:1111:2222:3333:4444")
+        );
+        sizes.push(page.items.len());
+    }
+    assert_eq!(sizes, [2, 2, 1]);
+    assert!(
+        pages.next_page().await.unwrap().is_none(),
+        "the end repeats"
+    );
+    let wire = server.requests();
+    assert_eq!(wire.len(), 6);
+    for request in &wire {
+        assert_api_headers(request, TOKEN_A);
+    }
+    server.shutdown().await;
+}
+
+/// A cap reached while GitHub links on is an error carrying the next link, never a silent
+/// prefix; continuing from it reads the rest. A cap reached exactly on the last page is the end.
+#[tokio::test]
+async fn a_cap_with_more_pages_is_an_error_and_on_the_last_page_is_the_end() {
+    let server = TestServer::start(|r: &Recorded| three_pages(r, None)).await;
+    let github = context(server.addr(), TOKEN_A);
+    let repo = github.repo(RepoRef::new("octo-org", "hello-world"));
+    let comments = repo.issue_comment_pages(IssueNumber(7), |op| op);
+
+    let incomplete = comments
+        .items()
+        .max_pages(NonZeroUsize::new(2).unwrap())
+        .collect_complete()
+        .await
+        .unwrap_err();
+    assert_eq!(comment_ids(&incomplete.collected), [1, 2, 3, 4]);
+    let PagesError::Bounded { resume, .. } = incomplete.error else {
+        panic!("a cap with more pages is `Bounded`: {:?}", incomplete.error)
+    };
+    let Resume::At(link) = &resume else {
+        panic!("the resume point is the next link")
+    };
+    assert_eq!(link.raw_url().query(), Some("page=3"));
+    assert_eq!(link.binding(), comments.binding());
+    assert_eq!(server.requests().len(), 2, "the cap is not exceeded");
+
+    let rest = comments
+        .pages_from(resume)
+        .items()
+        .collect_complete()
+        .await
+        .unwrap();
+    assert_eq!(comment_ids(&rest), [5]);
+
+    let exact = comments
+        .pages()
+        .max_pages(NonZeroUsize::new(3).unwrap())
+        .collect_complete()
+        .await
+        .unwrap();
+    assert_eq!(
+        exact.len(),
+        3,
+        "a cap exactly on the last page is exhaustion"
+    );
+    server.shutdown().await;
+}
+
+/// A failed second page ends the traversal with the SDK's typed error (its metadata kept) and
+/// the failed link; `collect_complete` keeps the first page's items. Nothing is retried, and the
+/// traversal never reads as ended afterwards.
+#[tokio::test]
+async fn a_failed_second_page_keeps_the_first_pages_items() {
+    let server = TestServer::start(|r: &Recorded| {
+        three_pages(
+            r,
+            Some(&|_| {
+                Reply::json(502, r#"{"message":"Server Error"}"#)
+                    .header("x-github-request-id", "PAGE:2")
+            }),
+        )
+    })
+    .await;
+    let github = context(server.addr(), TOKEN_A);
+    let repo = github.repo(RepoRef::new("octo-org", "hello-world"));
+    let comments = repo.issue_comment_pages(IssueNumber(7), |op| op);
+
+    let incomplete = comments.items().collect_complete().await.unwrap_err();
+    assert_eq!(comment_ids(&incomplete.collected), [1, 2]);
+    let PagesError::Provider { error, failed, .. } = incomplete.error else {
+        panic!("a failed page is `Provider`: {:?}", incomplete.error)
+    };
+    assert_eq!(error.status(), Some(StatusCode::BAD_GATEWAY));
+    assert_eq!(error.meta().unwrap().request_id(), Some("PAGE:2"));
+    let Resume::At(link) = failed else {
+        panic!("the failed page is the second one")
+    };
+    assert_eq!(link.raw_url().query(), Some("page=2"));
+    assert_eq!(server.requests().len(), 2, "nothing is retried");
+
+    let mut pages = comments.pages();
+    assert!(pages.next_page().await.unwrap().is_some());
+    assert!(matches!(
+        pages.next_page().await,
+        Err(PagesError::Provider { .. })
+    ));
+    assert!(matches!(
+        pages.next_page().await,
+        Err(PagesError::Ended {
+            outcome: Outcome::Failed,
+            ..
+        })
+    ));
+    server.shutdown().await;
+}
+
+/// The SDK's link policy holds on the ordinary path: a `next` link off the API origin is the
+/// page's error (its items are not returned), the other host receives nothing, and the
+/// traversal does not end silently.
+#[tokio::test]
+async fn a_foreign_next_link_is_an_error_not_an_end() {
+    let elsewhere = TestServer::start(|_: &Recorded| gh_json(200, "[]")).await;
+    let port = elsewhere.addr().port();
+    let api = TestServer::start(move |r: &Recorded| {
+        three_pages(
+            r,
+            Some(&|_| {
+                gh_json(200, &comments_json(&[3, 4], 7, "octo-org/hello-world")).header(
+                    "link",
+                    format!("<http://evil.test:{port}{COMMENTS}?page=3>; rel=\"next\""),
+                )
+            }),
+        )
+    })
+    .await;
+    let http = reqwest::Client::builder()
+        .no_proxy()
+        .resolve(API_HOST, api.addr())
+        .resolve("evil.test", elsewhere.addr())
+        .build()
+        .unwrap();
+    let github = GitHubContext::new(
+        http,
+        GitHubConfig {
+            token: TOKEN_A.into(),
+        },
+    )
+    .with_base_url(api_base(api.addr()))
+    .unwrap();
+    let repo = github.repo(RepoRef::new("octo-org", "hello-world"));
+    let incomplete = repo
+        .issue_comment_pages(IssueNumber(7), |op| op)
+        .items()
+        .collect_complete()
+        .await
+        .unwrap_err();
+    assert_eq!(comment_ids(&incomplete.collected), [1, 2]);
+    assert!(
+        matches!(
+            incomplete.error,
+            PagesError::Provider {
+                error: GitHubError::ForeignLink { meta: Some(_) },
+                ..
+            }
+        ),
+        "{:?}",
+        incomplete.error
+    );
+    assert_eq!(
+        elsewhere.requests().len(),
+        0,
+        "the token never left the API"
+    );
+    elsewhere.shutdown().await;
+    api.shutdown().await;
 }

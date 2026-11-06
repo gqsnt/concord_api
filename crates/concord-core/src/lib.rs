@@ -20,14 +20,19 @@ mod error;
 mod header;
 mod names;
 mod prepared;
+mod response;
 mod value;
 
 #[doc(hidden)]
 pub mod __private;
 
-pub use codec::{CODEC_ERROR_CONTEXT, CodecError, ContentTypeField, Decode, Encode, ResponseHead};
+pub use codec::{
+    CODEC_ERROR_CONTEXT, CodecError, ContentTypeField, Decode, Encode, EncodedBody, Incremental,
+    Records, ResponseHead,
+};
 pub use error::{Error, ErrorKind};
 pub use header::ToHeaderValue;
 pub use names::{HeaderNameError, HeaderNameErrors};
-pub use prepared::{Decoder, Prepared};
+pub use prepared::{Decoder, Endpoint, Prepared, SendWith};
+pub use response::{Incoming, Operation, Received, ResponseMeta};
 pub use value::IntoValue;

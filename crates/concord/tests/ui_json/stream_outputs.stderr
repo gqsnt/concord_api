@@ -1,0 +1,17 @@
+error: stream output `String` has no format: say `response F;` (`F` a type implementing `Incremental<String>`) on this endpoint, a scope or the client; `-> stream` without an item returns the unread body
+ --> tests/ui_json/stream_outputs.rs:5:32
+  |
+5 |         GET events() -> stream String;
+  |                                ^^^^^^
+
+error: `response` statement has no typed output to apply to: `-> stream` without an item returns the unread body for a reader chosen at run time; to open it with a format, write `-> stream T`
+  --> tests/ui_json/stream_outputs.rs:12:34
+   |
+12 |         GET export() -> stream { response concord::Json; }
+   |                                  ^^^^^^^^
+
+error: expected the endpoint block after `-> stream T`: the stream's format is a statement (`response F;`, `F: Incremental<T>`), not a second type
+  --> tests/ui_json/stream_outputs.rs:19:39
+   |
+19 |         GET events() -> stream String concord::Json;
+   |                                       ^^^^^^^

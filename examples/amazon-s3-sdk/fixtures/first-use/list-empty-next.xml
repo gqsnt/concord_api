@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ListBucketResult xmlns="http://s3.amazonaws.com/doc/2006-03-01/">
+<Name>first-use-bucket</Name><Prefix>reports%2F2026%2F</Prefix><MaxKeys>2</MaxKeys><EncodingType>url</EncodingType>
+<KeyCount>0</KeyCount><IsTruncated>true</IsTruncated>
+<ContinuationToken>opaque+/= first</ContinuationToken><NextContinuationToken>opaque+/= last</NextContinuationToken>
+</ListBucketResult>

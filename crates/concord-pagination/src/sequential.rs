@@ -107,7 +107,7 @@ where
         poll_fn(|cx| self.poll_page(cx)).await
     }
 
-    fn poll_page(&mut self, cx: &mut Context<'_>) -> Polled<T, K, M, E> {
+    pub(crate) fn poll_page(&mut self, cx: &mut Context<'_>) -> Polled<T, K, M, E> {
         if self.ended.is_some() {
             return Poll::Ready(None);
         }
@@ -152,6 +152,12 @@ where
     /// the provider's last page was emitted.
     pub fn checkpoint(&self) -> Option<&Resume<K>> {
         self.position.as_ref()
+    }
+
+    /// Replaces the page budget (the ordinary facade's cap, or no cap). A chain that already
+    /// ended stays ended.
+    pub(crate) fn set_budget(&mut self, pages: u64) {
+        self.budget = pages;
     }
 
     /// Counters (pages admitted, emitted, failed).
@@ -398,7 +404,7 @@ where
         poll_fn(|cx| self.poll_item(cx)).await
     }
 
-    fn poll_item(&mut self, cx: &mut Context<'_>) -> Poll<Option<Result<T, E>>> {
+    pub(crate) fn poll_item(&mut self, cx: &mut Context<'_>) -> Poll<Option<Result<T, E>>> {
         loop {
             if let Some(item) = self.buffer.next() {
                 self.items += 1;
@@ -438,6 +444,16 @@ where
             page: Resume::At(key),
             skip: 0,
         });
+    }
+
+    /// The underlying page chain.
+    pub(crate) fn chain(&self) -> &Sequential<K, T, M, E, F, Fut> {
+        &self.pages
+    }
+
+    /// See [`Sequential::set_budget`].
+    pub(crate) fn set_budget(&mut self, pages: u64) {
+        self.pages.set_budget(pages);
     }
 
     /// Where to resume to continue after the last emitted item; `None` once every item of the

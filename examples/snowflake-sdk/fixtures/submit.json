@@ -1,0 +1,1 @@
+{"statement":"select \"value\" from DEMO where label = 'café'","timeout":60,"database":"TEST_DB","schema":"PUBLIC","warehouse":"TEST_WH","role":"TEST_ROLE"}

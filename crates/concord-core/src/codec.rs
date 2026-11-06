@@ -17,6 +17,8 @@ use bytes::Bytes;
 use reqwest::header::{CONTENT_TYPE, HeaderMap, HeaderValue};
 use reqwest::{StatusCode, Version};
 
+use crate::response::Incoming;
+
 /// Encodes a request body of type `T` with the format `Self`.
 ///
 /// Implement it on your own marker type for a custom format, then name the type in a statement
@@ -29,9 +31,14 @@ use reqwest::{StatusCode, Version};
 /// `request` statement declares its own (`request Csv "text/csv; header=present";`) or the
 /// endpoint sends a `content-type` header. It is validated when the declaration is compiled
 /// (visible ASCII, like `HeaderValue::from_static`): an invalid value is a compile error wherever
-/// it may be sent, and is not used at all where a declared media type replaces it. A media type
-/// that varies per body (a multipart boundary) is set on the native request after
-/// [`Prepared::into_parts`](crate::Prepared::into_parts).
+/// it may be sent, and is not used at all where a declared media type replaces it.
+///
+/// A media type known only once the body is encoded (a generated multipart boundary, a CSV
+/// dialect chosen per job) is a **runtime** media type: override
+/// [`encode_body`](Self::encode_body) to return it with the body in an [`EncodedBody`]. Concord
+/// calls `encode_body` (whose default wraps [`encode`](Self::encode) with no runtime media type),
+/// so existing formats need no change. The precedence of a runtime media type over declarations
+/// is documented on [`EncodedBody`].
 #[diagnostic::on_unimplemented(
     message = "the format `{Self}` cannot encode a `{T}` request body",
     label = "this body's format is `{Self}` (the nearest `request` statement: on the endpoint, a scope or the client); it needs `{Self}: Encode<{T}>`",
@@ -48,6 +55,94 @@ pub trait Encode<T> {
     /// A [`CodecError`] when the payload cannot be encoded: the request is not built
     /// ([`ErrorKind::Build`](crate::ErrorKind::Build)).
     fn encode(value: T) -> Result<reqwest::Body, CodecError>;
+
+    /// Encodes the payload into a body and, for a format whose media type depends on the
+    /// payload, the runtime media type that describes it. This is what Concord calls when it
+    /// prepares a request.
+    ///
+    /// The default is [`encode`](Self::encode) without a runtime media type (then
+    /// [`CONTENT_TYPE`](Self::CONTENT_TYPE) or a declared media type applies, as before). A format
+    /// that overrides it should make `encode` agree, or refuse there, for code that calls `encode`
+    /// directly.
+    ///
+    /// # Errors
+    ///
+    /// As for [`encode`](Self::encode).
+    fn encode_body(value: T) -> Result<EncodedBody, CodecError> {
+        Self::encode(value).map(EncodedBody::new)
+    }
+}
+
+/// A request body with the media type it was encoded with at run time, returned by
+/// [`Encode::encode_body`].
+///
+/// The body itself carries its length: a body built from bytes is sent with `Content-Length`,
+/// a lazily produced one whose size hint is exact likewise, any other stream chunked. Concord
+/// neither buffers a body to learn its length nor claims a length a stream does not report.
+///
+/// # How a runtime media type meets the declaration
+///
+/// A runtime media type is bound to its bytes, so Concord never sends the body under another
+/// one. When the request is prepared (before any I/O):
+///
+/// | Declaration for the body | Static media (`EncodedBody::new`) | Runtime media `R` |
+/// |---|---|---|
+/// | nothing | `Encode::CONTENT_TYPE`, if any | `R` |
+/// | `request F "m";` (endpoint, scope or client) | `m` | `R` if `m == R` byte for byte, else a `Build` error |
+/// | a sent `content-type` header (literal, native name, inherited, `override`, `append`) | the header wins | accepted if it is exactly one value equal to `R`, else a `Build` error |
+/// | the header chain ends with `remove content-type` | the format's media type is sent | `R` is sent |
+/// | an optional body that is absent | no media type | no media type |
+///
+/// Equality is byte equality of the header values: Concord parses no media type, so
+/// `text/csv;header=present` and `text/csv; header=present` differ. The sensitivity of the
+/// `content-type` key applies to an inserted runtime value as to a declared one.
+pub struct EncodedBody {
+    body: reqwest::Body,
+    content_type: Option<HeaderValue>,
+}
+
+impl EncodedBody {
+    /// A body without a runtime media type: the format's `CONTENT_TYPE` or the declared media
+    /// type applies.
+    pub fn new(body: reqwest::Body) -> Self {
+        Self {
+            body,
+            content_type: None,
+        }
+    }
+
+    /// A body bound to the media type `content_type` (a validated header value).
+    pub fn with_content_type(body: reqwest::Body, content_type: HeaderValue) -> Self {
+        Self {
+            body,
+            content_type: Some(content_type),
+        }
+    }
+
+    /// The runtime media type, if any.
+    pub fn content_type(&self) -> Option<&HeaderValue> {
+        self.content_type.as_ref()
+    }
+
+    /// The body and its runtime media type.
+    pub fn into_parts(self) -> (reqwest::Body, Option<HeaderValue>) {
+        (self.body, self.content_type)
+    }
+}
+
+impl From<reqwest::Body> for EncodedBody {
+    fn from(body: reqwest::Body) -> Self {
+        Self::new(body)
+    }
+}
+
+impl fmt::Debug for EncodedBody {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("EncodedBody")
+            .field("runtime_content_type", &self.content_type.is_some())
+            .field("body", &format_args!("..."))
+            .finish()
+    }
 }
 
 /// Decodes a successful response into `T` with the format `Self`.
@@ -172,6 +267,76 @@ pub trait Decode<T> {
     /// [`ErrorKind::Decode`](crate::ErrorKind::Decode) error.
     fn decode_body(context: Self::Context, body: Bytes) -> Result<T, CodecError>;
 }
+
+/// Opens a successful response for incremental reading into `Records` with the format `Self`:
+/// the contract of an endpoint declared `-> stream T` (`response JsonValues;`, say).
+///
+/// It is the streaming counterpart of [`Decode`], not a variant of it: [`Decode`] receives a
+/// collected body, `Incremental` receives the **unread** body and returns an owned reader. On a
+/// **2xx** response Concord calls [`check_content_type`](Self::check_content_type), then
+/// [`context`](Self::context), both on the borrowed head (a refusal is an
+/// [`ErrorKind::Metadata`](crate::ErrorKind::Metadata) error that keeps the response unread), then
+/// [`open`](Self::open) with the context and the [`Incoming`] body. Opening polls nothing; the
+/// reader reads as its caller asks and names the operation in its own errors. A non-2xx response
+/// is a [`Status`](crate::ErrorKind::Status) error before any of this.
+///
+/// ```
+/// use concord_core::{CodecError, Incoming, Incremental, ResponseHead};
+///
+/// /// Hands the unread body over as is (a reader of your own then reads it).
+/// pub struct Opaque;
+///
+/// impl Incremental<()> for Opaque {
+///     type Records = Incoming;
+///     type Context = ();
+///     fn context(_: &ResponseHead<'_>) -> Result<(), CodecError> {
+///         Ok(())
+///     }
+///     fn open((): (), body: Incoming) -> Incoming {
+///         body
+///     }
+/// }
+/// ```
+#[diagnostic::on_unimplemented(
+    message = "the format `{Self}` cannot open a stream of `{T}`",
+    label = "this streaming output's format is `{Self}` (the nearest `response` statement: on the endpoint, a scope or the client); it needs `{Self}: Incremental<{T}>`",
+    note = "`-> stream T` needs a format implementing `Incremental<{T}>` (an incremental reader); a finite `-> T` needs `Decode<{T}>`; `-> stream` without an item returns the unread `Incoming` body"
+)]
+pub trait Incremental<T> {
+    /// The owned reader returned by the endpoint's `send()`.
+    type Records;
+
+    /// Owned per-response state taken from the head for [`open`](Self::open).
+    type Context: Send + 'static;
+
+    /// A request `Accept` value this format suggests, as [`Decode::ACCEPT`].
+    const ACCEPT: Option<&'static str> = None;
+
+    /// The format's checks of the response `Content-Type` field, as
+    /// [`Decode::check_content_type`] (the `IgnoreContentType` adapter skips exactly this step).
+    ///
+    /// # Errors
+    ///
+    /// A [`CodecError`]: an [`ErrorKind::Metadata`](crate::ErrorKind::Metadata) error, body unread.
+    fn check_content_type(head: &ResponseHead<'_>) -> Result<(), CodecError> {
+        let _ = head;
+        Ok(())
+    }
+
+    /// Every other check of the head, and the state [`open`](Self::open) needs.
+    ///
+    /// # Errors
+    ///
+    /// A [`CodecError`]: an [`ErrorKind::Metadata`](crate::ErrorKind::Metadata) error, body unread.
+    fn context(head: &ResponseHead<'_>) -> Result<Self::Context, CodecError>;
+
+    /// Builds the reader over the unread body. Must not poll it.
+    fn open(context: Self::Context, body: Incoming) -> Self::Records;
+}
+
+/// The reader an incremental format `F` opens for items `I`: the output type of an endpoint
+/// declared `-> stream I` with `response F;` (its `send()` returns one).
+pub type Records<F, I> = <F as Incremental<I>>::Records;
 
 /// The head of a response — status, version and header fields — borrowed from the native
 /// response before its body is read. Nothing is cloned.

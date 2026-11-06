@@ -15,7 +15,7 @@ use std::fmt;
 
 use concord::jsonl::{JsonLinesRecords, RecordErrors};
 use concord_example_shopify_sdk::bulk_export::{
-    self, BULK_RESULT_OPERATION, BulkRecord, CatalogLine, DEFAULT_MAX_LINE_BYTES,
+    self, BulkRecord, CatalogLine, DEFAULT_MAX_LINE_BYTES,
 };
 use concord_example_shopify_sdk::ops::PageSize;
 use concord_example_shopify_sdk::ops::bulk::{BulkOperationQuery, BulkOperationStatus};
@@ -266,8 +266,8 @@ async fn open_result<T: DeserializeOwned>(
         .execute(shop.result_download(&url))
         .await
         .map_err(|e| FeedError::Download(e.without_url()))?;
-    let records = bulk_export::result_reader(DEFAULT_MAX_LINE_BYTES, RecordErrors::Stop)
-        .open_for::<T>(response, BULK_RESULT_OPERATION)?;
+    let reader = bulk_export::result_reader(DEFAULT_MAX_LINE_BYTES, RecordErrors::Stop);
+    let records = bulk_export::open_result::<T>(&reader, response)?;
     Ok(Opened::Records(Box::new(records)))
 }
 

@@ -11,13 +11,16 @@
 //!   transport encoding, typed REST documents (a small Account/Contact schema with optional and
 //!   custom fields, dynamic records, describe), Bulk API 2.0 documents.
 //! - [`query`]: the SOQL page factory for `concord_pagination::sequential`.
-//! - [`bulk_query`]: query jobs, the sequential `Sforce-Locator` result chain and the parallel
-//!   result-pages discovery factory for `concord_pagination::manifest_jobs`.
+//! - [`bulk_query`]: query jobs, the one validated result-part reader
+//!   ([`bulk_query::ResultPartReader`]) shared by the sequential `Sforce-Locator` result chain and
+//!   the parallel result-pages discovery factory for `concord_pagination::manifest_jobs`.
 //! - [`ingest`]: ingest jobs (create, known-length upload, close, poll, result files).
 //! - [`csv`]: the provider's CSV dialect on `concord::csv`.
 //!
 //! The declared operations stay ordinary generated operations: callers keep their setters,
-//! `prepare()`, `send()`, `send_raw()` and `into_parts()`.
+//! `prepare()`, `send()`, `receive()` and `into_parts()`. The CSV result endpoints are declared
+//! `-> stream`: their `send()` returns the unread body ([`concord::Incoming`]) for a reader of the
+//! job's dialect.
 //!
 //! ```no_run
 //! use concord_example_salesforce_sdk::ids::{AccessToken, ApiVersion, InstanceUrl};
@@ -62,7 +65,7 @@ mod transport;
 pub use api::*;
 pub use context::{ContextError, OrgContext, ResultLink};
 pub use error::{
-    ApiFailure, ErrorBodyState, JobFailure, LinkError, LinkErrorKind, LinkRole, MAX_ERROR_BODY,
-    ProtocolError, ProtocolErrorKind, SfError,
+    ApiFailure, ErrorBodyState, IncompletePart, JobFailure, LinkError, LinkErrorKind, LinkRole,
+    MAX_ERROR_BODY, ProtocolError, ProtocolErrorKind, SfError,
 };
 pub use transport::ApiUsage;

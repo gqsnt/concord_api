@@ -106,6 +106,7 @@
 //! | [`Error`], [`ErrorKind`] | the one error type: `kind`, `endpoint`, `status`, `response`, `into_response`, `codec_error`, `transport` |
 //! | [`Encode<T>`](Encode), [`Decode<T>`](Decode) | the open format traits, implemented by `Json` (feature `json`), `Text`, `Binary`, `IgnoreContentType<F>` (feature `extras`), `Form` (feature `form`) and by your own types; a statement names a format by its type path (`format Json;`) |
 //! | [`ResponseHead`], [`ContentTypeField`] | what a [`Decode`] implementation reads before the body: status, version, header fields |
+//! | [`ResponseMeta`] | an owned copy of a response head with its [`Operation`], kept after the body is consumed |
 //! | [`CodecError`] | a format's failure: a static label, numeric positions, an unredacted source |
 //! | [`IntoValue<T>`](IntoValue) | the closed set of conversions accepted by arguments and setters |
 //! | [`ToHeaderValue`] | the closed set of header values: native `HeaderValue`, text, integers, `bool` (another type is sent through a template) |
@@ -199,19 +200,28 @@
 //! # Features
 //!
 //! - `json` (default): the `Json` format, via serde and serde_json. Implies `extras`.
-//! - `extras`: the standard formats without serializer dependencies, `Text` and `Binary`, and
-//!   the `IgnoreContentType` adapter.
+//! - `extras`: the standard formats without serializer dependencies, `Text` and `Binary`, the
+//!   `IgnoreContentType` adapter and the `Encoded` format of pre-encoded bodies.
 //!   Without `extras` (`default-features = false`), the facade has no standard format: formats
 //!   of your own work the same way.
 //! - `form`: the `Form` format, `application/x-www-form-urlencoded` via serde and
 //!   serde_urlencoded. Off by default, like reqwest's own `form` feature. Implies `extras`.
+//! - `stream`, `csv`, `jsonl`, `sse`: incremental bodies (`concord::stream`), `concord::csv`,
+//!   `concord::jsonl` and `concord::sse` (server-sent events); each implies `extras`, **not**
+//!   `json` — with `default-features = false`, add `json` too if the same client also decodes
+//!   JSON documents.
+//! - `multipart`: `concord::multipart`, `multipart/form-data` and `multipart/related` request
+//!   bodies (`request Multipart;` with a `MultipartBody`) whose boundary is chosen per body and
+//!   sent as its runtime media type. Implies `extras`; no dependency (reqwest's own `multipart`
+//!   feature stays off).
 //! - `reqwest-defaults` (default): reqwest's default features (TLS, HTTP/2, system proxy).
 //!   Disable it to choose reqwest's features in your own `Cargo.toml`.
 
 pub use concord_core::{
-    CODEC_ERROR_CONTEXT, CodecError, ContentTypeField, Decode, Decoder, Encode, Error, ErrorKind,
-    HeaderNameError, HeaderNameErrors, IntoValue, Prepared, ResponseHead, ToHeaderValue, bytes,
-    reqwest,
+    CODEC_ERROR_CONTEXT, CodecError, ContentTypeField, Decode, Decoder, Encode, EncodedBody,
+    Endpoint, Error, ErrorKind, HeaderNameError, HeaderNameErrors, Incoming, Incremental,
+    IntoValue, Operation, Prepared, Received, Records, ResponseHead, ResponseMeta, SendWith,
+    ToHeaderValue, bytes, reqwest,
 };
 #[cfg(feature = "form")]
 pub use concord_extras::Form;
@@ -221,10 +231,14 @@ pub use concord_extras::Json;
 pub use concord_extras::csv;
 #[cfg(feature = "jsonl")]
 pub use concord_extras::jsonl;
+#[cfg(feature = "multipart")]
+pub use concord_extras::multipart;
+#[cfg(feature = "sse")]
+pub use concord_extras::sse;
 #[cfg(feature = "stream")]
 pub use concord_extras::stream;
 #[cfg(feature = "extras")]
-pub use concord_extras::{Binary, IgnoreContentType, Text};
+pub use concord_extras::{Binary, Encoded, IgnoreContentType, Text};
 
 /// Declares an HTTP API as a client → scopes → endpoints tree and generates its typed client.
 ///

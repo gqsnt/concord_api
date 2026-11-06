@@ -36,7 +36,7 @@ use std::num::NonZeroU32;
 use concord::jsonl::RecordErrors;
 use concord::reqwest::{self, StatusCode};
 use concord::stream::{OpenError, Position, ReadError};
-use concord_example_shopify_sdk::bulk_export::{self, BULK_RESULT_OPERATION, BulkRecord};
+use concord_example_shopify_sdk::bulk_export::{self, BulkRecord};
 use concord_example_shopify_sdk::graphql::UserError;
 use concord_example_shopify_sdk::ops::bulk::{
     BulkOperation, BulkOperationErrorCode, BulkOperationQuery, BulkOperationStatus,
@@ -612,6 +612,9 @@ async fn download<S: RecordSink + ?Sized>(
     report: &mut ExportReport,
     done: ExportOutcome,
 ) -> ExportOutcome {
+    // Native on purpose: the signed URL is not a declared endpoint, is used verbatim and must not
+    // carry the shop token. Its transport error is reqwest's, so the URL (the signature) is
+    // stripped here.
     let response = match shop.http().execute(shop.result_download(url)).await {
         Ok(response) => response,
         Err(error) => {
@@ -625,7 +628,7 @@ async fn download<S: RecordSink + ?Sized>(
         MalformedLines::Skip { max } => (RecordErrors::Yield, max),
     };
     let reader = bulk_export::result_reader(request.max_line_bytes, record_errors);
-    let mut records = match reader.open_for::<BulkRecord>(response, BULK_RESULT_OPERATION) {
+    let mut records = match bulk_export::open_result::<BulkRecord>(&reader, response) {
         Ok(records) => records,
         Err(error) => return ExportOutcome::DownloadRefused { error },
     };

@@ -147,6 +147,11 @@ or a URL rewrite.
   **Proposal:** a small library helper, e.g. `Prepared::send_with(|head: &ResponseHead| -> M)`
   returning `(T, M)` or `(Error, Option<M>)`, so SDKs keep the decoder and Concord's error
   conversion without copying the recipe.
+- **Status (Concord response boundary).** `send` is now `Prepared::receive` (one execution, any
+  status, body unread), `ResponseMeta::from_head(&received.head())`, then for a non-2xx the
+  bounded error document read from `Received::into_response`, otherwise `Received::decode`. The
+  impossible success branch of `decoder.finish(Err(e))` and its fabricated `status: 0` metadata
+  are gone; a transport failure is `Error::Concord { meta: None }`.
 
 ## F5 — Secrets in templates must have a `Display` that prints the secret (minor; flexibility used)
 
@@ -176,6 +181,12 @@ or a URL rewrite.
 - An invoice's embedded `lines` list is the first page of the line chain; the adapter's
   `after_embedded` applies the same `has_more` rules and the chain starts at `Resume::At`. No
   pagination API change was needed.
+- **Status (`concord_pagination::Pages`).** The facade removes the first point: the SDK now
+  returns a named traversal (`StripePages<T>` / `StripeItems<T>`) from every list operation's
+  `pages()` / `items()` and from `CursorList::pages_from`, so an ordinary caller writes no
+  closure, budget or report check; a cap or a failed page is a typed error. ST-A's `drain` reads
+  its sections from that end. `CursorList::fetch` stays the engine's factory for item
+  checkpoints and engine reports.
 
 ## F7 — Small observations (no change proposed)
 

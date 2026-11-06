@@ -1,5 +1,121 @@
 # Changelog
 
+## Unreleased — interface consolidation (candidate)
+
+Not released: the version is unchanged (4.2.0) and no release has been decided. Records:
+`v4/sdk20/`. Source-compatible for callers of the existing API except where noted.
+
+### Added
+
+- **Owned response metadata.** `concord::ResponseMeta` (status, version, header map, operation;
+  `Debug` prints header names, never values), from `Received::meta()` and `Incoming::meta()`:
+  the value SDKs kept beside a decoded value or provider error after the body is consumed.
+- **One response boundary.** `Prepared::receive()` executes once and returns `Received<T>`: any
+  status, body unread, the declared handling and the endpoint identity (`Operation`). Read the head
+  (`head()`), then consume once: `decode()` (what `send()` does), `into_incoming()` (an incremental
+  reader chosen at run time) or `into_response()` (native). `Decoder::execute`, `Decoder::receive`
+  and `Decoder::transport_error` serve natively edited requests without reconstructing execution.
+- **Truthful streaming outputs.** `-> stream T` (format `Incremental<T>`) makes `send()` return the
+  format's reader without reading the body; `-> stream` returns the unread `Incoming` body.
+  `Incremental` is implemented by `Csv<..>`, `JsonLines`, `Ndjson`, the new `jsonl::JsonStream`
+  (consecutive JSON values) and `IgnoreContentType<F>`.
+- **Readers open declared responses.** `CsvReader::open/open_raw`, `JsonLinesReader::open` and
+  `JsonValuesReader::open` accept `Incoming`, `Received<T>` or a native response
+  (`stream::Openable`); the endpoint's identity reaches every `ReadError` without `open_for`.
+  `completion()` distinguishes a clean end of input from a failure or an early stop.
+  `into_stream()` returns an owning standard `Stream` (`stream::RecordStream`).
+- **Runtime body media.** `Encode::encode_body` (defaulted) returns an `EncodedBody` whose media
+  type is bound to its bytes; contradictions with a declared media type or `content-type` header
+  are `Build` errors before I/O. The `Encoded` format sends an `EncodedBody` or `stream::Upload`
+  through a declared body.
+- **Ordinary pagination.** `concord_pagination::Pages`/`PageItems`/`ItemStream`: nameable,
+  owned traversals whose `Ok(None)` means provider exhaustion; caps and failures are typed
+  `PagesError`s; `collect_complete` returns `Incomplete` with the collected prefix.
+  `JobsReport::into_resume` / `IndependentReport::into_resume` decompose a report losslessly.
+
+- **One SDK adapter for all operations.** Every generated endpoint implements `concord::Endpoint<T>`
+  (`prepare()`, `operation()`; the output `T` is a parameter), so an SDK writes one generic adapter (its own error and
+  metadata) instead of a wrapper method per operation. `Prepared::operation()`.
+- **The SDK's own `send()`.** A client statement `send Policy;` makes every generated `send()`
+  return `<Policy as SendWith<T>>::Output`: an SDK's result type and error, metadata, or a signed
+  request, from one policy type (`concord::SendWith<T>`), without wrapper methods or imports.
+- **Following server links.** `Prepared::follow(url)` replaces the URL of a prepared request with
+  one the server returned (`Link: rel="next"`, a `next` field), keeping the endpoint's headers,
+  handling and identity; another origin is a `Build` error, and `Debug` withholds the URL.
+- **Bounded body reads.** `Received::bytes_limited(n)` reads a body (any status) up to `n` bytes,
+  `ErrorKind::Limit` beyond: for provider error documents. `Received::decode_limited(n)` decodes a
+  finite output with the same bound.
+- **Multipart request bodies** (feature `multipart` of `concord-extras` and of the facade,
+  `concord::multipart`; no new dependency, reqwest's own `multipart` feature stays off). A declared
+  `body form: MultipartBody` with `request Multipart;` sends `multipart/form-data`
+  (`MultipartBody::form_data()`, `.text(name, value)`, `.file(name, file_name, content_type,
+  bytes)`) or `multipart/related` (`MultipartBody::related()`, `related_with_type(root)`,
+  `.part(Part::new(bytes).header(name, value))`). The boundary, `concord-boundary-<n>`, is the
+  first deterministic candidate that occurs in no part; it is the body's runtime media type
+  (`EncodedBody` precedence) and the body is sent with `Content-Length`. Control characters in
+  names, file names and part header values (tab excepted), `"`/`\` in form-data names and file
+  names, and an empty `related` body are encode errors (`Build`, before I/O) that show no part
+  bytes. The OpenAI and Google Drive SDK examples moved onto it from hand-written framing.
+- **Server-sent events.** Feature `sse` of `concord-extras` (facade: `concord::sse`): `SseReader`
+  (`open`, `read`) → `SseEvents` (`next`, `completion`, `position`, `last_event_id`, `retry`,
+  `into_stream`, `into_source`), `Event` (`event`, `data`, `id`) and the `Sse` format
+  (`-> stream sse::Event` with `response Sse;`). WHATWG framing, no decoding of `data`; stricter
+  than a browser: invalid UTF-8, a body ending inside a line or an event, and an event over
+  `max_event_bytes` (1 MiB) or past `max_events` are terminal errors. `examples/openai-sdk` reads
+  its event stream with it.
+- **Readers over a body the SDK checked or wraps; source errors back by value** (`concord-extras`,
+  feature `stream` and the readers). Additions only; `open`, `read` and every existing error stay
+  as they were.
+  - `check_head(&self, &ResponseHead) -> Result<(), CodecError>` on `JsonLinesReader`,
+    `JsonValuesReader` and `SseReader`, as `CsvReader` already had: the reader's own media policy,
+    exactly what its `open` applies (same label), head only.
+  - `read_for(source, operation: &'static str)` on `CsvReader` (and `read_raw_for`),
+    `JsonLinesReader`, `JsonValuesReader` and `SseReader`: `read` of any `ByteSource`, without
+    status or head checks, naming the operation in every later `ReadError` (as `open_for`).
+  - `impl ByteSource for concord_core::Incoming`: a failure is a `SourceError` ("reading the
+    response body failed") whose underlying error is Concord's own `Error` (kind `Transport`, the
+    operation named, URL removed), where `open(incoming)` keeps reqwest's.
+  - `ReadError::into_source_unredacted(self)` and `SourceError::into_source_unredacted(self)`
+    (`-> Option<Box<dyn Error + Send + Sync + 'static>>`): the byte source's underlying error by
+    value, to `downcast` Concord's error or a provider-typed one without stashing it. A parser's
+    error (`Format`/`Decode`) stays in `codec()`, by reference only. `Display`/`Debug` unchanged.
+
+  From wave 4 (`examples/ntfy-sdk`, `examples/openai-sdk`, `examples/clickhouse-sdk` each wrote a
+  byte source over `Incoming::chunk` to keep Concord's error, and could not name the operation of
+  `read`); tested per reader in `crates/concord-extras/tests/reader_wrapping.rs`.
+
+### Changed
+
+- **An empty declared body is sent with `Content-Length: 0`.** reqwest omits the field for an
+  empty buffered body, so an empty PUT/POST looked like a request without content (RFC 9110
+  §8.6; Google Drive's resumable-upload status probe documents `Content-Length: 0`). Applied when
+  Concord executes (`Decoder::execute`, behind `send()`/`receive()`), to the body actually sent,
+  so a body replaced natively after `into_parts` keeps its own length. A request without a body
+  and streamed bodies are unchanged.
+- `Error`'s identity is an `Operation`; `Display` of a labelled native response starts with the
+  label. `Error::endpoint()` is unchanged for declared endpoints.
+- The reader `open` methods take `impl Openable` instead of `reqwest::Response` (a native
+  response still works unchanged).
+- `IgnoreContentType<F>` forwards `encode_body`, so a runtime media type of `F` is kept.
+- **CSV input that ends inside a quoted field is an error.** A body cut after an opening quote
+  (`…,"12.7` at the end of input) was a complete table: `csv-core` ends such a field silently,
+  so `Decode<Vec<T>>`/`Decode<RawTable>` returned the record and `CsvReader` ended with
+  `completion() == EndOfInput`. Both routes now fail with a terminal `Format` error, "the CSV
+  input ends inside a quoted field" (with the `record` number; none for the header), in every
+  dialect: doubled quotes, an escape byte, standard or custom terminators; quotes in comment lines
+  and with `quoting(false)` open nothing. A closed quoted field without a final terminator is
+  still a record. The same tracking corrects a final comment line containing `\r`, which yielded
+  a record of one empty field (wave 4, Open-Meteo F4).
+- **A comment byte with a custom read terminator is a `CsvConfigError`.** `csv-core` ends a
+  comment line only at a line feed, which its DFA does not see when the read terminator is a
+  custom byte: everything after the first comment line was silently skipped and the read ended
+  cleanly. `comment(Some(_))` with `read_terminator(RecordTerminator::Byte(t))` for any `t` other
+  than `\n` is now refused by `CsvReader::new`, `CsvWriter::new` and the static formats (before
+  anything is read or sent): "a CSV comment byte needs a read_terminator that ends lines at \n
+  (Standard or Byte(b'\n')): a comment line ends only at a line feed". With the standard
+  terminators nothing changes; the `comment` option now documents that a lone `\r` does not end
+  a comment line (it runs to the next `\n`).
+
 ## Unreleased — 4.4 extensions (candidate)
 
 Additive, not released: the version is unchanged (4.2.0) and no release or version has been

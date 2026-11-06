@@ -16,6 +16,11 @@
 //!    its reviews: child collections, each a `concord-pagination` sequential chain with its own
 //!    page budget. A child bounded by its budget is reported with its own resume link.
 //!
+//! The audit stays on `concord-pagination`'s engine rather than the SDK's ordinary `pages()` /
+//! `items()`: the parent resumes from an item-level checkpoint (`resume_items`), which the
+//! ordinary traversal cannot start from, and the continuation is assembled from the engine's
+//! reports (the parent's checkpoint before each item, each child's failed and resume pages).
+//!
 //! **Failures.** The first failure stops the audit (nothing is retried). The report keeps
 //! everything collected so far, says what failed ([`FailedAt`]: the repository, an issue page,
 //! or a child page with its issue number) and gives a continuation: the parent checkpoint *before*

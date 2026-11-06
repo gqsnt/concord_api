@@ -35,6 +35,8 @@ pub(crate) struct Driver<S> {
     max_records: Option<u64>,
     /// Empty chunks received since the last yield they caused.
     empty_chunks: usize,
+    /// Set by [`finish`](Self::finish): the input ended cleanly (not after an error).
+    clean_end: bool,
 }
 
 impl<S: ByteSource> Driver<S> {
@@ -50,6 +52,7 @@ impl<S: ByteSource> Driver<S> {
             max_bytes: None,
             max_records: None,
             empty_chunks: 0,
+            clean_end: false,
         }
     }
 
@@ -86,8 +89,9 @@ impl<S: ByteSource> Driver<S> {
 
     /// Reads the next nonempty chunk once the current one is used up. `Ok(false)`: end of input.
     ///
-    /// Yields to the executor after every [`EMPTY_CHUNK_BUDGET`] empty chunks. Cancel-safe: a
-    /// dropped call has consumed only empty chunks.
+    /// Yields to the executor after every [`EMPTY_CHUNK_BUDGET`] empty chunks. Cancel-safe when
+    /// the source's `next_chunk` is ([`ByteSource`], "Cancellation"): a dropped call has then
+    /// consumed only empty chunks.
     pub(crate) async fn refill(&mut self) -> Result<bool, ReadError> {
         debug_assert!(self.chunk.is_empty());
         if self.eof {
@@ -174,6 +178,16 @@ impl<S: ByteSource> Driver<S> {
     /// Ends reading cleanly (later `next()` calls return `None`).
     pub(crate) fn finish(&mut self) {
         self.fused = true;
+        self.clean_end = true;
+    }
+
+    /// Whether the input ended cleanly, failed, or may still yield records.
+    pub(crate) fn completion(&self) -> super::Completion {
+        match (self.fused, self.clean_end) {
+            (false, _) => super::Completion::Reading,
+            (true, true) => super::Completion::EndOfInput,
+            (true, false) => super::Completion::Failed,
+        }
     }
 
     pub(crate) fn operation(&self) -> Option<&'static str> {

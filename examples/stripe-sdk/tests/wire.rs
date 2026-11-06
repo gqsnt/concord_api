@@ -435,6 +435,89 @@ async fn error_documents_rate_limits_and_lost_responses() {
     server.shutdown().await;
 }
 
+/// The head's metadata is captured before the body is read and kept when the 2xx body is
+/// refused (`Metadata`, unread) or does not decode (`Decode`); no response, no metadata. A
+/// non-2xx error document is read from the body whatever its `Content-Type`, within
+/// `MAX_ERROR_BODY`; a larger one is reported, not read to its end.
+#[tokio::test]
+async fn metadata_survives_body_failures_and_error_documents_are_bounded() {
+    use concord_example_stripe_sdk::send::{DocumentProblem, MAX_ERROR_BODY};
+
+    let oversized = format!(
+        r#"{{"error":{{"type":"api_error","message":"{}"}}}}"#,
+        "x".repeat(MAX_ERROR_BODY)
+    );
+    let script = Script::new([
+        Reply::json(
+            200,
+            r#"{"id":"cus_1","object":"customer","balance":"zero"}"#,
+        )
+        .header("request-id", "req_decode")
+        .header("stripe-version", "2026-10-28.endive"),
+        Reply::text(200, "text/html", "<html>proxy</html>").header("request-id", "req_head"),
+        Reply::text(
+            402,
+            "text/plain",
+            r#"{"error":{"type":"card_error","code":"card_declined"}}"#,
+        )
+        .header("request-id", "req_card"),
+        Reply::json(500, oversized).header("request-id", "req_big"),
+        Reply::hang_up(),
+    ]);
+    let server = TestServer::start(move |_| script.next()).await;
+    let stripe = context(&server);
+    let id = CustomerId::new("cus_1").unwrap();
+    let retrieve = || {
+        stripe
+            .api()
+            .customers()
+            .retrieve(id.clone())
+            .prepare()
+            .unwrap()
+    };
+
+    let decode = send(retrieve()).await.unwrap_err();
+    assert_eq!(decode.concord().unwrap().kind(), ErrorKind::Decode);
+    let meta = decode.meta().unwrap();
+    assert_eq!(meta.status, 200);
+    assert_eq!(meta.request_id.as_deref(), Some("req_decode"));
+    assert_eq!(meta.stripe_version.as_deref(), Some("2026-10-28.endive"));
+    assert!(!decode.is_response_lost());
+
+    let head = send(retrieve()).await.unwrap_err();
+    let concord = head.concord().unwrap();
+    assert_eq!(concord.kind(), ErrorKind::Metadata);
+    assert!(
+        concord.response().is_some(),
+        "a refused head keeps the body"
+    );
+    assert_eq!(head.meta().unwrap().request_id.as_deref(), Some("req_head"));
+
+    let card = send(retrieve()).await.unwrap_err();
+    let failure = card.api().unwrap();
+    assert_eq!(failure.endpoint(), Some("Stripe.customers.retrieve"));
+    assert_eq!(failure.status().as_u16(), 402);
+    assert_eq!(failure.meta().request_id.as_deref(), Some("req_card"));
+    let document = failure.error().unwrap();
+    assert_eq!(document.kind, ApiErrorType::CardError);
+    assert_eq!(document.code.as_deref(), Some("card_declined"));
+
+    let big = send(retrieve()).await.unwrap_err();
+    let failure = big.api().unwrap();
+    assert_eq!(failure.error().unwrap_err(), DocumentProblem::TooLarge);
+    assert_eq!(failure.meta().request_id.as_deref(), Some("req_big"));
+
+    let lost = send(retrieve()).await.unwrap_err();
+    assert!(lost.is_response_lost());
+    assert!(lost.meta().is_none());
+    assert_eq!(
+        lost.concord().unwrap().endpoint(),
+        Some("Stripe.customers.retrieve")
+    );
+    assert_eq!(server.requests().len(), 5, "one execution each, no retry");
+    server.shutdown().await;
+}
+
 #[tokio::test]
 async fn cursor_list_pages_forward_and_refuses_inconsistent_pages() {
     let script = Script::new([

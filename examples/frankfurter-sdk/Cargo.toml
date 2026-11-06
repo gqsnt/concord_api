@@ -1,0 +1,22 @@
+[package]
+name = "concord-sdk-frankfurter"
+description = "Frankfurter v2 JSON pair rates with exact decimal decoding, built with Concord."
+version = "0.0.0"
+edition = "2024"
+rust-version.workspace = true
+license.workspace = true
+publish = false
+
+[dependencies]
+concord = { path = "../../crates/concord", features = ["json"] }
+serde = { workspace = true, features = ["derive"] }
+serde_json = { workspace = true, features = ["raw_value"] }
+bigdecimal = "0.4.11"
+chrono = { version = "0.4.45", default-features = false, features = ["std", "serde"] }
+
+[dev-dependencies]
+concord-example-testserver = { path = "../testserver" }
+tokio = { workspace = true, features = ["macros", "rt", "time"] }
+
+[lints]
+workspace = true

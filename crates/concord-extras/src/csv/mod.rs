@@ -69,6 +69,7 @@
 //! | [`Encode<RawTable>`](concord_core::Encode) | [`RawTable`] | byte records, header from the table |
 //! | [`CsvReader::open`] / [`read`](CsvReader::read) | `T: DeserializeOwned` | incremental: status and head checked before the body is polled, records framed from arbitrary chunks, owned rows yielded one at a time |
 //! | [`CsvReader::open_raw`] | [`RawRecord`] | incremental byte records |
+//! | [`CsvReader::check_head`], then [`read_for`](CsvReader::read_for) / [`read_raw_for`](CsvReader::read_raw_for) | as above | a body whose head the caller checked, or one behind a filter of the caller's (any [`ByteSource`](crate::stream::ByteSource), an [`Incoming`](concord_core::Incoming) included): no status or head check, the operation named in every error |
 //! | [`CsvWriter::upload`] | [`StreamRows`] | a lazy body with the `Content-Type` of the runtime header mode |
 //!
 //! The finite and incremental routes share one framing and mapping implementation
@@ -96,8 +97,16 @@
 //!   UTF-8 byte order mark is stripped by default ([`BomPolicy`]).
 //! - Input record terminators: `\r\n`, `\n` and `\r`; blank lines are skipped (`csv-core`'s
 //!   grammar). A final record needs no terminator. `csv-core` is permissive rather than a strict
-//!   RFC 4180 validator: a stray quote inside an unquoted field is data, and input that ends
-//!   inside a quoted field yields that field.
+//!   RFC 4180 validator: a stray quote inside an unquoted field is data.
+//! - Input that ends inside a quoted field (an opening quote never closed, as in a body cut after
+//!   `,"12.7`) is a truncated record: a [`Format`](crate::stream::ReadErrorKind::Format) error,
+//!   "the CSV input ends inside a quoted field", with the 1-based `record` number of the data
+//!   record (none for the header), on both routes. It is never a record, and the incremental
+//!   reader never reports it as the end of input. `csv-core` alone would end the field silently;
+//!   the framer follows its quote state in the configured dialect (doubled quotes, an escape
+//!   byte, the terminators; quotes in comment lines and with
+//!   [`quoting(false)`](CsvProfileOptions::quoting) open nothing). A closed quoted field at the
+//!   end of input, with or without a final terminator, is a record.
 //!
 //! # Defaults
 //!

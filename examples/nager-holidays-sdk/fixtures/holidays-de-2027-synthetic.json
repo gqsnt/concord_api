@@ -1,0 +1,41 @@
+[
+  {
+    "date": "2027-01-01",
+    "name": "Synthetic national public day",
+    "countryCode": "DE",
+    "nationalHoliday": true,
+    "subdivisionCodes": null,
+    "holidayTypes": ["Public"]
+  },
+  {
+    "date": "2027-01-02",
+    "name": "Synthetic regional bank day",
+    "countryCode": "DE",
+    "nationalHoliday": false,
+    "subdivisionCodes": ["DE-BY"],
+    "holidayTypes": ["Bank"]
+  },
+  {
+    "date": "2027-01-03",
+    "name": "Synthetic school and authorities day",
+    "countryCode": "DE",
+    "nationalHoliday": false,
+    "subdivisionCodes": ["DE-BY", "DE-BE"],
+    "holidayTypes": ["School", "Authorities"]
+  },
+  {
+    "date": "2027-01-04",
+    "name": "Synthetic optional day",
+    "countryCode": "DE",
+    "nationalHoliday": false,
+    "subdivisionCodes": [],
+    "holidayTypes": ["Optional"]
+  },
+  {
+    "date": "2027-01-05",
+    "name": "Synthetic observance",
+    "countryCode": "DE",
+    "nationalHoliday": false,
+    "holidayTypes": ["Observance"]
+  }
+]

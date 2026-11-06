@@ -1,6 +1,8 @@
 //! The one framing implementation of the finite and incremental routes: `csv-core` records from
 //! arbitrary input slices, with the record/header/field limits enforced before the owned buffers
-//! grow past them, the BOM policy, header consumption and validation, and the width rule.
+//! grow past them, the BOM policy, header consumption and validation, the width rule, and what
+//! the end of input completes (see [`Scanner`]: a final comment line is no record, an open quoted
+//! field is an error).
 //!
 //! [`Table::step`] is synchronous and takes any slice of the remaining input (an empty slice is
 //! the true end of input). The finite decoder hands it the whole body; the incremental reader
@@ -75,18 +77,187 @@ enum Bom {
     Done,
 }
 
-/// Where the parser stands in the current physical line, tracked only when a comment byte is
-/// configured: `csv-core` 0.1.13's DFA turns a final comment line without a terminator into a
-/// record of one empty field (its NFA does not), and this tells that record apart from a genuine
-/// final `""`.
-#[derive(Clone, Copy, PartialEq, Eq)]
-enum Line {
-    /// At the start of a record (blank lines included).
-    Start,
-    /// Inside a comment line.
-    Comment,
-    /// Inside a record.
+/// Where `csv-core` 0.1.13's DFA stands (see [`Scanner`]).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Scan {
+    /// At the start of a record: before any input, after a record terminator, a blank line or a
+    /// comment line (the DFA's `StartRecord`, `EndRecord` and `CRLF`, which read every byte
+    /// alike).
     Record,
+    /// Inside a comment line, which only a line feed ends (a lone `\r` does not). The DFA sees a
+    /// line feed only when it is a record terminator; the configuration refuses a comment byte
+    /// with any other read terminator, so here it always is.
+    Comment,
+    /// At the start of a field after a delimiter.
+    Field,
+    /// Inside an unquoted field: a quote there is data.
+    Unquoted,
+    /// Inside a quoted field: the quote is open.
+    Quoted,
+    /// After the escape byte inside a quoted field (the next byte is literal): still open.
+    Escaped,
+    /// After a quote inside a quoted field: closed, unless a doubled quote reopens it.
+    Closed,
+}
+
+/// `csv-core` 0.1.13's DFA, mirrored over the bytes the parser consumed since the last record it
+/// completed (the parser's state is not public). A completed record leaves the parser at the
+/// start of a record, so release builds do not scan its bytes (debug builds do, and check that).
+/// In a chunk that completes no record, skipped lines (blank lines, comment lines) are passed
+/// over by a word-at-a-time search for the byte that ends them ([`find`]): only the bytes of a
+/// record in progress are stepped through one by one. At the end of input that DFA completes a
+/// record in every state but the start of a record, so this tells three such records apart:
+///
+/// - inside a comment line without a terminator: the DFA's record of one empty field (its NFA
+///   yields nothing), which is not a record;
+/// - inside a quoted field that was never closed (`Quoted`, `Escaped`): the DFA ends the field
+///   silently; Concord refuses a truncated record;
+/// - anywhere else: a genuine final record without a terminator (a closed quoted field included).
+///
+/// The transitions are `csv-core`'s (`transition_nfa` through its epsilon moves) for the
+/// configured delimiter, quote, quoting switch, doubled quotes, escape, terminator and comment.
+struct Scanner {
+    state: Scan,
+    /// The quote byte, if quoting is on.
+    quote: Option<u8>,
+    /// The escape byte inside quoted fields, if quoting is on.
+    escape: Option<u8>,
+    double_quote: bool,
+    delimiter: u8,
+    terminators: [u8; 2],
+    comment: Option<u8>,
+    /// The bytes stepped through one by one (the work the skipped lines must not cost).
+    #[cfg(test)]
+    stepped: usize,
+}
+
+impl Scanner {
+    fn new(config: &Config) -> Self {
+        let quoting = config.quoting();
+        Self {
+            state: Scan::Record,
+            quote: quoting.then(|| config.quote()),
+            escape: config.escape().filter(|_| quoting),
+            double_quote: config.double_quote(),
+            delimiter: config.delimiter(),
+            terminators: config.read_terminators(),
+            comment: config.comment(),
+            #[cfg(test)]
+            stepped: 0,
+        }
+    }
+
+    fn is_terminator(&self, b: u8) -> bool {
+        b == self.terminators[0] || b == self.terminators[1]
+    }
+
+    /// `csv-core`'s `InField` transition (also `StartField`'s for anything but a quote).
+    fn unquoted(&self, b: u8) -> Scan {
+        if b == self.delimiter {
+            Scan::Field
+        } else if self.is_terminator(b) {
+            Scan::Record
+        } else {
+            Scan::Unquoted
+        }
+    }
+
+    /// Follows `bytes`: skipped lines (blank lines, comment lines) are passed over by a search
+    /// for the byte that ends them, and only the bytes of a record are stepped through one by
+    /// one. The state carries over to the next call, so a span may end in a later chunk.
+    fn consume(&mut self, mut bytes: &[u8]) {
+        while !bytes.is_empty() {
+            bytes = match self.state {
+                Scan::Record => self.skip_blank_lines(bytes),
+                Scan::Comment => self.skip_comment(bytes),
+                _ => self.step_record(bytes),
+            };
+        }
+    }
+
+    /// At the start of a record: passes over terminators, then reads the byte that starts a
+    /// comment line or a record. Returns the bytes after it.
+    fn skip_blank_lines<'a>(&mut self, bytes: &'a [u8]) -> &'a [u8] {
+        let Some(start) = find(bytes, self.terminators, false) else {
+            return &[];
+        };
+        let b = bytes[start];
+        self.state = if self.comment == Some(b) {
+            Scan::Comment
+        } else if self.quote == Some(b) {
+            Scan::Quoted
+        } else {
+            self.unquoted(b)
+        };
+        &bytes[start + 1..]
+    }
+
+    /// Inside a comment line: passes over it to its line feed. Returns the bytes after it.
+    fn skip_comment<'a>(&mut self, bytes: &'a [u8]) -> &'a [u8] {
+        let Some(end) = find(bytes, [b'\n'; 2], true) else {
+            return &[];
+        };
+        self.state = Scan::Record;
+        &bytes[end + 1..]
+    }
+
+    /// Inside a record: one byte at a time until the record ends (the start of the next one) or
+    /// the bytes do. Returns the bytes after the record.
+    fn step_record<'a>(&mut self, bytes: &'a [u8]) -> &'a [u8] {
+        for (i, &b) in bytes.iter().enumerate() {
+            #[cfg(test)]
+            {
+                self.stepped += 1;
+            }
+            self.state = match self.state {
+                Scan::Field if self.quote == Some(b) => Scan::Quoted,
+                Scan::Field | Scan::Unquoted => self.unquoted(b),
+                Scan::Quoted if self.quote == Some(b) => Scan::Closed,
+                Scan::Quoted if self.escape == Some(b) => Scan::Escaped,
+                Scan::Quoted | Scan::Escaped => Scan::Quoted,
+                Scan::Closed if self.double_quote && self.quote == Some(b) => Scan::Quoted,
+                Scan::Closed => self.unquoted(b),
+                Scan::Record | Scan::Comment => unreachable!("not inside a record"),
+            };
+            if self.state == Scan::Record {
+                return &bytes[i + 1..];
+            }
+        }
+        &[]
+    }
+}
+
+/// `0x7f` and `0x80` in every byte of a word.
+const LOW: u64 = u64::from_ne_bytes([0x7f; 8]);
+const HIGH: u64 = u64::from_ne_bytes([0x80; 8]);
+
+/// The high bit of every byte of `x` that is not zero, exactly: no carry crosses a byte.
+fn nonzero_bytes(x: u64) -> u64 {
+    (((x & LOW) + LOW) | x) & HIGH
+}
+
+/// The index of the first byte of `bytes` that is (`member`) or is not one of `set`: eight bytes
+/// at a time while none of them can be it, then byte by byte.
+fn find(bytes: &[u8], set: [u8; 2], member: bool) -> Option<usize> {
+    let (a, b) = (
+        u64::from_ne_bytes([set[0]; 8]),
+        u64::from_ne_bytes([set[1]; 8]),
+    );
+    let none = if member { 0 } else { HIGH };
+    let mut start = 0;
+    for word in bytes.as_chunks::<8>().0 {
+        let x = u64::from_ne_bytes(*word);
+        // The high bit of every byte that is one of `set`.
+        let in_set = !(nonzero_bytes(x ^ a) & nonzero_bytes(x ^ b)) & HIGH;
+        if in_set != none {
+            break;
+        }
+        start += 8;
+    }
+    bytes[start..]
+        .iter()
+        .position(|c| set.contains(c) == member)
+        .map(|i| start + i)
 }
 
 pub(crate) struct Table {
@@ -102,8 +273,7 @@ pub(crate) struct Table {
     bom: Bom,
     /// The parser has received input (its own BOM stripping is then disabled).
     started: bool,
-    comment: Option<u8>,
-    line: Line,
+    scanner: Scanner,
     /// The most bytes the field and end buffers have held.
     peak: usize,
     header: Option<RawRecord>,
@@ -121,7 +291,7 @@ impl Table {
             _ => Bom::Detect { held: 0 },
         };
         let width = config.width;
-        let comment = config.comment();
+        let scanner = Scanner::new(&config);
         Self {
             core: config.core_reader(),
             named,
@@ -132,8 +302,7 @@ impl Table {
             ends_len: 0,
             bom,
             started: false,
-            comment,
-            line: Line::Start,
+            scanner,
             peak: 0,
             header: None,
             names: None,
@@ -178,22 +347,6 @@ impl Table {
     /// The most bytes [`retained`](Self::retained) has been.
     pub(crate) fn peak_retained(&self) -> usize {
         self.peak
-    }
-
-    /// Follows the physical lines of `consumed` (see [`Line`]).
-    fn track_lines(&mut self, consumed: &[u8]) {
-        let Some(comment) = self.comment else {
-            return;
-        };
-        for &b in consumed {
-            self.line = match self.line {
-                Line::Start if self.config.is_terminator(b) => Line::Start,
-                Line::Start if b == comment => Line::Comment,
-                Line::Start => Line::Record,
-                Line::Comment if self.config.is_terminator(b) => Line::Start,
-                other => other,
-            };
-        }
     }
 
     fn header_pending(&self) -> bool {
@@ -333,21 +486,49 @@ impl Table {
         }
         self.fields_len += nout;
         self.ends_len += nend;
-        let line = self.line;
-        self.track_lines(&input[..nin]);
         match result {
             ReadRecordResult::InputEmpty
             | ReadRecordResult::OutputFull
-            | ReadRecordResult::OutputEndsFull => Ok((nin, Step::Progress)),
-            ReadRecordResult::Record if input.is_empty() && line == Line::Comment => {
-                // The DFA's record for an unterminated final comment line: not a record.
-                self.fields_len = 0;
-                self.ends_len = 0;
-                self.line = Line::Start;
+            | ReadRecordResult::OutputEndsFull => {
+                // A record (or skipped lines) in progress: follow its bytes.
+                self.scanner.consume(&input[..nin]);
                 Ok((nin, Step::Progress))
             }
+            // The end of input completed this record (see `Scanner`); the parser then stands at
+            // the start of a record, before its final `End`.
+            ReadRecordResult::Record if input.is_empty() => match self.scanner.state {
+                Scan::Comment => {
+                    // The DFA's record for an unterminated final comment line: not a record.
+                    self.fields_len = 0;
+                    self.ends_len = 0;
+                    self.scanner.state = Scan::Record;
+                    Ok((nin, Step::Progress))
+                }
+                Scan::Quoted | Scan::Escaped => {
+                    // A truncated record (or header), never a record.
+                    let codec = CodecError::new("the CSV input ends inside a quoted field");
+                    Err(TableError::format(if header {
+                        codec
+                    } else {
+                        codec.at("record", self.records + 1)
+                    }))
+                }
+                Scan::Record | Scan::Field | Scan::Unquoted | Scan::Closed => {
+                    self.scanner.state = Scan::Record;
+                    let record = self.take_record();
+                    self.complete(record).map(|step| (nin, step))
+                }
+            },
             ReadRecordResult::Record => {
-                self.line = Line::Start;
+                // Only a terminator outside quotes ends a record before the end of input, and the
+                // DFA then stands at the start of a record: the bytes of a completed record need
+                // no scan (debug builds scan them and check that).
+                #[cfg(debug_assertions)]
+                {
+                    self.scanner.consume(&input[..nin]);
+                    debug_assert_eq!(self.scanner.state, Scan::Record);
+                }
+                self.scanner.state = Scan::Record;
                 let record = self.take_record();
                 self.complete(record).map(|step| (nin, step))
             }
@@ -496,7 +677,7 @@ pub(crate) fn decode_all<T>(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::csv::options::{CsvOptions, HeaderMode};
+    use crate::csv::options::{CsvOptions, HeaderMode, RecordTerminator};
 
     fn table(options: CsvOptions) -> Table {
         Table::new(Arc::new(Config::new(options).unwrap()), Mode::Raw)
@@ -595,6 +776,10 @@ mod tests {
             (b"a\n\"\"", vec![1, 1]),
             (b"a\n#c\n\"\"", vec![1, 1]),
             (b"a\n #c", vec![1, 1]),
+            // Only a line feed ends a comment line (`csv-core`), so these end inside one too.
+            (b"a\n#c\r", vec![1]),
+            (b"a\n#c\rb,d", vec![1]),
+            (b"a\n#c\rb,d\ne", vec![1, 1]),
         ] {
             for split in 0..=body.len() {
                 let mut t = table(options.clone());
@@ -615,6 +800,212 @@ mod tests {
         }
     }
 
+    /// The records' field counts, or the error label with its `record` position.
+    type Counts = Result<Vec<usize>, (&'static str, Option<u64>)>;
+
+    /// Feeds `body` split at `split` (then the end).
+    fn run_split(options: &CsvOptions, body: &[u8], split: usize) -> Counts {
+        let error = |e: TableError| (e.codec.label(), e.codec.get("record"));
+        let mut t = table(options.clone());
+        let mut out = Vec::new();
+        for mut part in [&body[..split], &body[split..]] {
+            while !part.is_empty() {
+                let (n, step) = t.step(part).map_err(error)?;
+                part = &part[n..];
+                if let Step::Record(r) = step {
+                    out.push(r.len());
+                }
+            }
+        }
+        loop {
+            match t.step(b"").map_err(error)?.1 {
+                Step::Record(r) => out.push(r.len()),
+                Step::End => return Ok(out),
+                Step::Progress => {}
+            }
+        }
+    }
+
+    const OPEN: &str = "the CSV input ends inside a quoted field";
+
+    #[test]
+    fn the_end_of_input_inside_a_quoted_field_is_an_error() {
+        let absent = || CsvOptions::new(HeaderMode::Absent, b',');
+        let escaped = || absent().double_quote(false).escape(Some(b'\\'));
+        let cases: Vec<(CsvOptions, &[u8], Counts)> = vec![
+            (absent(), b"a,\"12.7\n", Err((OPEN, Some(1)))),
+            (absent(), b"x\ny\n\"", Err((OPEN, Some(3)))),
+            (absent(), b"\"a\"\"b\"", Ok(vec![1])),
+            (absent(), b"\"a\"\"", Err((OPEN, Some(1)))),
+            (absent(), b"\"a\"", Ok(vec![1])),
+            (absent(), b"\"\"", Ok(vec![1])),
+            (absent(), b"ab\"c", Ok(vec![1])),
+            (absent(), b"ab\"c\n\"d\"", Ok(vec![1, 1])),
+            (absent(), b"\"a\r\nb\"\r\n\"c\r\n", Err((OPEN, Some(2)))),
+            (absent(), b"\"a\r\nb\"\r\n", Ok(vec![1])),
+            (escaped(), b"\"a\\\"", Err((OPEN, Some(1)))),
+            (escaped(), b"\"a\\\\\"", Ok(vec![1])),
+            (escaped(), b"\"a\\", Err((OPEN, Some(1)))),
+            (escaped(), b"\"a\"\"", Ok(vec![1])),
+            (escaped(), b"a\\\"", Ok(vec![1])),
+            (
+                absent().quoting(false).flexible(true),
+                b"\"a,b\n\"",
+                Ok(vec![2, 1]),
+            ),
+            // The BOM path: stripped, preserved (data of an unquoted field), partial (replayed).
+            (absent(), b"\xef\xbb\xbf\"a", Err((OPEN, Some(1)))),
+            (absent(), b"\xef\xbb\xbf\"a\"", Ok(vec![1])),
+            (
+                absent().bom(BomPolicy::Preserve),
+                b"\xef\xbb\xbf\"a",
+                Ok(vec![1]),
+            ),
+            (absent(), b"\xef\xbb\"a", Ok(vec![1])),
+            (
+                absent().read_terminator(RecordTerminator::Byte(b';')),
+                b"\"a;b\";\"c;",
+                Err((OPEN, Some(2))),
+            ),
+            (
+                absent().read_terminator(RecordTerminator::Byte(b';')),
+                b"\"a;b\";\"c\"",
+                Ok(vec![1, 1]),
+            ),
+            (
+                absent().comment(Some(b'#')),
+                b"#\"open\na\n# \"\n",
+                Ok(vec![1]),
+            ),
+            (absent().comment(Some(b'#')), b"a\n#\"", Ok(vec![1])),
+            (absent().comment(Some(b'#')), b"\"#\n", Err((OPEN, Some(1)))),
+            (
+                absent().flexible(true),
+                b"a,\"#,\"\n,\"",
+                Err((OPEN, Some(2))),
+            ),
+        ];
+        for (options, body, expected) in cases {
+            for split in 0..=body.len() {
+                assert_eq!(
+                    run_split(&options, body, split),
+                    expected,
+                    "{:?} split {split}",
+                    String::from_utf8_lossy(body)
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn a_header_ending_inside_a_quoted_field_has_no_record_position() {
+        let options = CsvOptions::new(HeaderMode::Present, b',');
+        let body = b"id,\"na";
+        for split in 0..=body.len() {
+            assert_eq!(run_split(&options, body, split), Err((OPEN, None)));
+        }
+        // Closed, without a final terminator: a header-only table.
+        assert_eq!(run_split(&options, b"id,\"name\"", 3), Ok(vec![]));
+    }
+
+    /// `csv-core`'s own records of `input` (no limits, no Concord policy).
+    fn core_records(reader: &mut csv_core::Reader, mut input: &[u8]) -> Vec<Vec<Vec<u8>>> {
+        reader.reset();
+        let mut output = [0u8; 64];
+        let mut ends = [0usize; 64];
+        let (mut nout, mut nend) = (0, 0);
+        let mut records = Vec::new();
+        loop {
+            let (result, nin, o, e) =
+                reader.read_record(input, &mut output[nout..], &mut ends[nend..]);
+            input = &input[nin..];
+            nout += o;
+            nend += e;
+            match result {
+                ReadRecordResult::InputEmpty => {}
+                ReadRecordResult::Record => {
+                    let mut start = 0;
+                    let fields = ends[..nend]
+                        .iter()
+                        .map(|&end| {
+                            let field = output[start..end].to_vec();
+                            start = end;
+                            field
+                        })
+                        .collect();
+                    records.push(fields);
+                    (nout, nend) = (0, 0);
+                }
+                ReadRecordResult::End => return records,
+                other => panic!("{other:?}"),
+            }
+        }
+    }
+
+    /// The scanner agrees with `csv-core` itself on every input of up to four bytes over an
+    /// alphabet of the dialects' special bytes, for each dialect. The oracle uses only
+    /// `csv-core`'s output for the input followed by one more delimiter: the input ends inside a
+    /// quoted field exactly when that delimiter is copied into the final field as data, and
+    /// inside a comment line exactly when the final record is the DFA's one empty field (in every
+    /// other state the delimiter ends a field, so that record has two fields or more).
+    #[test]
+    fn the_scanner_agrees_with_csv_core_on_every_short_input() {
+        let absent = || CsvOptions::new(HeaderMode::Absent, b',').flexible(true);
+        let dialects = [
+            absent(),
+            absent().comment(Some(b'#')),
+            absent().double_quote(false).escape(Some(b'\\')),
+            absent().escape(Some(b'\\')).comment(Some(b'#')),
+            absent().quoting(false).comment(Some(b'#')),
+            absent().read_terminator(RecordTerminator::Byte(b';')),
+            absent()
+                .read_terminator(RecordTerminator::Byte(b'\n'))
+                .comment(Some(b'#')),
+            absent().quote(b'\'').escape(Some(b'\\')),
+        ];
+        let alphabet = *b"a,\"'\\\r\n#;";
+        let mut inputs: Vec<Vec<u8>> = vec![Vec::new()];
+        let mut last = inputs.clone();
+        for _ in 0..4 {
+            last = last
+                .iter()
+                .flat_map(|prefix| {
+                    alphabet.iter().map(move |&b| {
+                        let mut next = prefix.clone();
+                        next.push(b);
+                        next
+                    })
+                })
+                .collect();
+            inputs.extend(last.iter().cloned());
+        }
+        for options in dialects {
+            let config = Arc::new(Config::new(options.clone()).unwrap());
+            let mut core = config.core_reader();
+            for input in &inputs {
+                let mut probe = input.clone();
+                probe.push(b',');
+                let probe = core_records(&mut core, &probe);
+                let last = probe.last();
+                let open = last
+                    .and_then(|record| record.last())
+                    .is_some_and(|field| field.ends_with(b","));
+                let comment = last == Some(&vec![Vec::new()]);
+                let mut expected: Vec<usize> = core_records(&mut core, input)
+                    .iter()
+                    .map(Vec::len)
+                    .collect();
+                if comment {
+                    // The DFA's record of a final comment line, which is not a record.
+                    assert_eq!(expected.pop(), Some(1), "{options:?} {input:?}");
+                }
+                let mut t = Table::new(Arc::clone(&config), Mode::Raw);
+                let expected = if open { Err(OPEN) } else { Ok(expected) };
+                assert_eq!(run(&mut t, input), expected, "{options:?} {input:?}");
+            }
+        }
+    }
+
     #[test]
     fn a_long_comment_run_allocates_nothing() {
         let options = CsvOptions::new(HeaderMode::Absent, b',').comment(Some(b'#'));
@@ -626,5 +1017,130 @@ mod tests {
         let mut t = table(options);
         assert_eq!(run(&mut t, &body), Ok(vec![2]));
         assert!(t.allocated() <= MIN_FIELD_BYTES);
+    }
+
+    #[test]
+    fn the_word_search_finds_what_a_byte_search_finds() {
+        let alphabet = [0x00, b'\n', b'\r', b';', 0x7f, 0x80, 0x8a, 0xff, b'a', b'#'];
+        let sets = [
+            *b"\r\n",
+            *b"\n\n",
+            *b";;",
+            [0x80, 0x80],
+            [0x00, 0xff],
+            [0x7f, 0x8a],
+        ];
+        let mut seed = 0x9e37_79b9_7f4a_7c15u64;
+        let mut next = || {
+            seed = seed.wrapping_mul(6_364_136_223_846_793_005).wrapping_add(1);
+            (seed >> 33) as usize
+        };
+        for set in sets {
+            for member in [true, false] {
+                let naive = |bytes: &[u8]| bytes.iter().position(|c| set.contains(c) == member);
+                // Random contents of every length up to five words.
+                for len in 0..=40 {
+                    for _ in 0..200 {
+                        let bytes: Vec<u8> = (0..len)
+                            .map(|_| alphabet[next() % alphabet.len()])
+                            .collect();
+                        assert_eq!(
+                            find(&bytes, set, member),
+                            naive(&bytes),
+                            "{set:?} {bytes:?}"
+                        );
+                    }
+                }
+                // One hit at every position of a run that has none.
+                let filler = if member {
+                    *alphabet.iter().find(|c| !set.contains(c)).unwrap()
+                } else {
+                    set[0]
+                };
+                let hit = *alphabet.iter().find(|c| set.contains(c) == member).unwrap();
+                for len in 0..=40 {
+                    let mut bytes = vec![filler; len];
+                    assert_eq!(find(&bytes, set, member), None, "{set:?} {len}");
+                    for at in 0..len {
+                        bytes[at] = hit;
+                        assert_eq!(find(&bytes, set, member), Some(at), "{set:?} {len} {at}");
+                        bytes[at] = filler;
+                    }
+                }
+            }
+        }
+    }
+
+    /// Long runs of blank lines and comment lines (with quotes, delimiters, a lone `\r` and bytes
+    /// above `0x7f` in them), split anywhere, are passed over by a search: the scanner steps
+    /// through no more bytes than the records have, in every build (debug builds also scan
+    /// completed records).
+    #[test]
+    fn skipped_lines_are_searched_not_stepped_through() {
+        let records: [&[u8]; 3] = [b"a,b\n", b"\"c\r\nd\",e\r\n", b"f,\"g\""];
+        let blank = b"\r\n\n\r".repeat(25_000);
+        let comment =
+            b"# a \"comment\", with a quote\r, a delimiter and \xc4\x8a\x8d\n".repeat(2_000);
+        let mut body = Vec::new();
+        for record in records {
+            body.extend_from_slice(&blank);
+            body.extend_from_slice(&comment);
+            body.extend_from_slice(record);
+        }
+        let record_bytes: usize = records.iter().map(|r| r.len()).sum();
+        let mut tail = body.clone();
+        tail.extend_from_slice(b"\n");
+        tail.extend_from_slice(&blank);
+        tail.extend_from_slice(&comment);
+        let comments = || CsvOptions::new(HeaderMode::Absent, b',').comment(Some(b'#'));
+        let cases = [
+            (comments(), &body, vec![2, 2, 2]),
+            (comments(), &tail, vec![2, 2, 2]),
+            (
+                CsvOptions::new(HeaderMode::Present, b',').comment(Some(b'#')),
+                &tail,
+                vec![2, 2],
+            ),
+        ];
+        for (options, input, expected) in cases {
+            for chunk in [1, 7, 4096, 16 * 1024, input.len()] {
+                let mut t = table(options.clone());
+                let mut out = Vec::new();
+                let mut parts = input.chunks(chunk).chain(std::iter::repeat(&b""[..]));
+                let mut part = parts.next().unwrap();
+                loop {
+                    let (n, step) = t.step(part).unwrap();
+                    part = &part[n..];
+                    match step {
+                        Step::Record(r) => out.push(r.len()),
+                        Step::End => break,
+                        Step::Progress => {}
+                    }
+                    if part.is_empty() {
+                        part = parts.next().unwrap();
+                    }
+                }
+                assert_eq!(out, expected, "chunk {chunk}");
+                assert!(
+                    t.scanner.stepped <= record_bytes,
+                    "chunk {chunk}: {} bytes stepped through, {record_bytes} in records, {} in all",
+                    t.scanner.stepped,
+                    input.len()
+                );
+            }
+        }
+        // Without a comment byte, only blank lines are skipped.
+        let mut t = table(CsvOptions::new(HeaderMode::Absent, b','));
+        let mut input = blank.clone();
+        input.extend_from_slice(b"a,b");
+        for mut part in input.chunks(5) {
+            while !part.is_empty() {
+                let (n, step) = t.step(part).unwrap();
+                assert!(matches!(step, Step::Progress));
+                part = &part[n..];
+            }
+        }
+        // `,b` of the record in progress (its first byte ends the search).
+        assert_eq!(t.scanner.stepped, 2);
     }
 }

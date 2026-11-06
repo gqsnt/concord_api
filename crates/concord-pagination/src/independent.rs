@@ -395,11 +395,34 @@ impl<K, I: IntoIterator<Item = K>, R, E> IndependentReport<K, I, R, E> {
             .map(|entry| &entry.key)
     }
 
+    /// Decomposes the report, without losing anything, into what to keep and the work to run;
+    /// see [`IndependentResume`].
+    pub fn into_resume(self) -> IndependentResume<K, I, R, E> {
+        // A retained entry is represented once, by its result in `retained`.
+        let rerun = self
+            .unfinished
+            .into_iter()
+            .filter(|entry| entry.value != Unfinished::Retained)
+            .collect();
+        IndependentResume {
+            outcome: self.outcome,
+            progress: self.progress,
+            retained: self.retained,
+            unemitted_errors: self.unemitted_errors,
+            rerun,
+            rest: self.rest,
+        }
+    }
+
     /// Splits the report into the retained results and the keys still to run: unfinished keys
     /// that were not retained, then the plan's rest. Pass the keys as a new plan to finish the
     /// work while reusing the retained results. Like [`failed`](Self::failed), these are start
     /// keys: a failed job with internal progress restarts from the beginning unless its error
     /// carried a later restart point that you use instead.
+    ///
+    /// This split is lossy: it drops the outcome, the counters, each key's classification
+    /// (failed or cancelled), the unemitted errors and whether a plan exists at all.
+    /// [`into_resume`](Self::into_resume) keeps all of them.
     pub fn into_rerun(self) -> (Vec<Keyed<K, R>>, impl Iterator<Item = K>) {
         let keys = self
             .unfinished
@@ -407,6 +430,50 @@ impl<K, I: IntoIterator<Item = K>, R, E> IndependentReport<K, I, R, E> {
             .filter(|entry| entry.value != Unfinished::Retained)
             .map(|entry| entry.key);
         (self.retained, keys.chain(self.rest.into_iter().flatten()))
+    }
+}
+
+/// An [`IndependentReport`] decomposed without loss ([`IndependentReport::into_resume`]): what to
+/// keep and the work to run.
+///
+/// Every part of the report is here, moved, never cloned (results and errors need no `Clone`):
+/// the outcome, the counters, the retained results, the unemitted errors, every unfinished entry
+/// with its classification and the plan's rest. The report's [`Unfinished::Retained`] entries
+/// are not repeated in `rerun`: each is the `retained` entry with the same index and key (one per
+/// retained entry, as [`Independent::finish`] returns them).
+///
+/// The work left: keep `retained`; run `rerun` (attempted: failed or cancelled), then `rest`
+/// (never admitted). When `rest` is `None` there is no plan (first-page discovery failed or
+/// never ran): the remaining work is unknown, not empty.
+#[non_exhaustive]
+pub struct IndependentResume<K, I: IntoIterator<Item = K>, R, E> {
+    /// How the traversal ended.
+    pub outcome: Outcome,
+    /// Final counters, as in the report.
+    pub progress: Progress,
+    /// Successful results completed but never emitted, in plan order: keep them.
+    pub retained: Vec<Keyed<K, R>>,
+    /// Errors of failed keys that were never emitted, in plan order. Their keys are in `rerun`
+    /// as [`Unfinished::Failed`].
+    pub unemitted_errors: Vec<Keyed<K, E>>,
+    /// Attempted keys to run again, with their plan index and classification
+    /// ([`Unfinished::Failed`] or [`Unfinished::Cancelled`]), in plan order: the report's
+    /// unfinished entries except the retained ones.
+    pub rerun: Vec<Keyed<K, Unfinished>>,
+    /// The plan's keys never admitted; `None` when there is no plan.
+    pub rest: Option<Peekable<I::IntoIter>>,
+}
+
+impl<K, I: IntoIterator<Item = K>, R, E> fmt::Debug for IndependentResume<K, I, R, E> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("IndependentResume")
+            .field("outcome", &self.outcome)
+            .field("progress", &self.progress)
+            .field("retained", &self.retained.len())
+            .field("unemitted_errors", &self.unemitted_errors.len())
+            .field("rerun", &self.rerun.len())
+            .field("rest", &self.rest.is_some())
+            .finish()
     }
 }
 

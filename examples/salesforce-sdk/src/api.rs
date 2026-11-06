@@ -1,7 +1,7 @@
 //! The declaration: one org's REST and Bulk API 2.0 resources under
 //! `{instance}/services/data/v{version}/`.
 //!
-//! Every endpoint is an ordinary generated operation (setters, `prepare`, `send`, `send_raw`,
+//! Every endpoint is an ordinary generated operation (setters, `prepare`, `send`, `receive`,
 //! `into_parts`). The typed wrappers of this crate construct these operations; callers can use
 //! them directly too, from [`crate::OrgContext::api`].
 //!
@@ -9,10 +9,12 @@
 //! per typed record of the selected schema (`Account`, `Contact`) plus once for
 //! [`DynamicRecord`]; see `FRICTION.md` (F1).
 //!
-//! CSV endpoints (`results`, `successful_results`, ...) have no typed output: their dialect is
-//! chosen per job at runtime, which a static format type cannot express, so they are read with
-//! `prepare()?.send_raw()` and a runtime [`concord::csv::CsvReader`] built from the job's
-//! dialect ([`crate::csv`]).
+//! CSV endpoints (`results`, `successful_results`, ...) are declared `-> stream` without an item:
+//! their dialect is chosen per job at run time, which a static format type cannot express, so
+//! their `send()` returns the unread 2xx body ([`concord::Incoming`]; a non-2xx status is a
+//! `Status` error) with the endpoint's identity, and the SDK opens it with a runtime
+//! [`concord::csv::CsvReader`] built from the job's dialect ([`crate::csv`]). Every reader error
+//! then names the declared endpoint. Nothing is drained or buffered.
 
 use concord::Binary;
 use concord::Json;
@@ -116,12 +118,12 @@ concord::api! {
                 GET result_pages(#[sensitive] query locator?: ResultLocator) -> ResultPagesResponse {
                     path "resultPages";
                 }
-                /// One set of CSV results (`GET jobs/query/{id}/results`). No typed output: read
-                /// with `send_raw` and the job's CSV dialect.
+                /// One set of CSV results (`GET jobs/query/{id}/results`): the unread body, read
+                /// with the job's CSV dialect by [`crate::bulk_query::ResultPartReader`].
                 GET results(
                     #[sensitive] query locator?: ResultLocator,
                     query("maxRecords") max_records?: MaxRecords,
-                ) {
+                ) -> stream {
                     path "results";
                     headers { ACCEPT = "text/csv"; }
                 }
@@ -151,17 +153,17 @@ concord::api! {
                     request Binary "text/csv";
                 }
                 /// Successfully processed records (CSV with `sf__Id`, `sf__Created`).
-                GET successful_results() {
+                GET successful_results() -> stream {
                     path "successfulResults/";
                     headers { ACCEPT = "text/csv"; }
                 }
                 /// Failed records (CSV with `sf__Id`, `sf__Error`).
-                GET failed_results() {
+                GET failed_results() -> stream {
                     path "failedResults/";
                     headers { ACCEPT = "text/csv"; }
                 }
                 /// Unprocessed records (CSV of the uploaded fields).
-                GET unprocessed_records() {
+                GET unprocessed_records() -> stream {
                     path "unprocessedrecords/";
                     headers { ACCEPT = "text/csv"; }
                 }

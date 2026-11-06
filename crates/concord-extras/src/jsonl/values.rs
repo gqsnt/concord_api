@@ -4,13 +4,13 @@
 use std::fmt;
 use std::marker::PhantomData;
 
-use concord_core::{CodecError, reqwest};
+use concord_core::{CodecError, ResponseHead, reqwest};
 use serde::de::DeserializeOwned;
 
 use super::policy::{DEFAULT_MAX_RECORD_BYTES, Family, MediaPolicy, check_media};
 use crate::stream::{
-    ByteSource, Driver, OpenError, Position, ReadError, ReadErrorKind, SKIP_BUDGET, open_response,
-    yield_now,
+    ByteSource, Driver, OpenError, Openable, Position, ReadError, ReadErrorKind, SKIP_BUDGET,
+    open_input, open_response, yield_now,
 };
 
 /// Where the scanner stands.
@@ -349,25 +349,51 @@ impl JsonValuesReader {
         self
     }
 
-    /// The response media policy applied by [`open`](Self::open).
+    /// The response media policy applied by [`open`](Self::open) and
+    /// [`check_head`](Self::check_head).
     #[must_use]
     pub fn media(mut self, media: MediaPolicy) -> Self {
         self.media = media;
         self
     }
 
-    /// Opens a response: requires a 2xx status and a `Content-Type` accepted by the media policy,
-    /// before polling the body. A refusal keeps the response unread
-    /// ([`OpenError::into_response`]).
+    /// The `Content-Type` this reader accepts, as checked by [`open`](Self::open) (and by the
+    /// static [`JsonStream`](super::JsonStream) with the defaults): the
+    /// [`media`](Self::media) policy over `application/json` and `application/*+json`. For a
+    /// caller that opens responses itself, then reads the body with
+    /// [`read_for`](Self::read_for). It reads the head only; the status is not checked.
+    ///
+    /// # Errors
+    ///
+    /// The refusal, with a static label (the one an [`OpenError`] of kind `Metadata` carries).
+    pub fn check_head(&self, head: &ResponseHead<'_>) -> Result<(), CodecError> {
+        check_media(self.media, &JSON, head)
+    }
+
+    /// Opens a response ([`Openable`]: the [`Incoming`](concord_core::Incoming) body of an
+    /// endpoint declared `-> stream`, a [`Received`](concord_core::Received) response, or a native
+    /// response): requires a 2xx status and a `Content-Type` accepted by the media policy
+    /// ([`check_head`](Self::check_head)), before polling the body. A refusal keeps the response
+    /// unread ([`OpenError::into_response`]).
     ///
     /// # Errors
     ///
     /// An [`OpenError`] of kind `Status` or `Metadata`.
     pub fn open<T: DeserializeOwned>(
         &self,
-        response: reqwest::Response,
+        response: impl Openable,
     ) -> Result<JsonValues<T>, OpenError> {
-        self.open_with(response, None)
+        let (response, operation) = open_input(response, |head| self.check_head(head))?;
+        Ok(self.values(response, operation))
+    }
+
+    /// The values of a body whose head a static format already checked (`Incremental`).
+    pub(crate) fn open_checked<T: DeserializeOwned>(
+        &self,
+        body: concord_core::Incoming,
+    ) -> JsonValues<T> {
+        let (response, operation) = body.into_parts();
+        self.values(response, operation.map(|op| op.name()))
     }
 
     /// [`open`](Self::open), naming the operation in later errors.
@@ -388,15 +414,27 @@ impl JsonValuesReader {
         response: reqwest::Response,
         operation: Option<&'static str>,
     ) -> Result<JsonValues<T>, OpenError> {
-        let response = open_response(response, operation, |head| {
-            check_media(self.media, &JSON, head)
-        })?;
+        let response = open_response(response, operation, |head| self.check_head(head))?;
         Ok(self.values(response, operation))
     }
 
     /// Reads any byte source, without status or head checks.
     pub fn read<T: DeserializeOwned, S: ByteSource>(&self, source: S) -> JsonValues<T, S> {
         self.values(source, None)
+    }
+
+    /// [`read`](Self::read), naming the operation in every later error (a static label the SDK
+    /// chooses; never derived from the URL), as [`open_for`](Self::open_for) does. No status or
+    /// head check: the caller made them — an [`Incoming`](concord_core::Incoming) body is a 2xx,
+    /// and [`check_head`](Self::check_head) applies the head rules of `open`. Read through the
+    /// `Incoming` itself (it is a [`ByteSource`]), a broken body keeps Concord's own
+    /// `Transport` error ([`ReadError::into_source_unredacted`]).
+    pub fn read_for<T: DeserializeOwned, S: ByteSource>(
+        &self,
+        source: S,
+        operation: &'static str,
+    ) -> JsonValues<T, S> {
+        self.values(source, Some(operation))
     }
 
     fn values<T, S: ByteSource>(
@@ -424,10 +462,21 @@ pub struct JsonValues<T, S = reqwest::Response> {
 }
 
 impl<T: DeserializeOwned, S: ByteSource> JsonValues<T, S> {
+    /// Whether the input ended cleanly ([`Completion::EndOfInput`](crate::stream::Completion)),
+    /// a terminal error ended the reader (`Failed`), or records may follow (`Reading`). Only
+    /// `EndOfInput` proves every record was read; stopping early or dropping the reader is not
+    /// an end of input.
+    pub fn completion(&self) -> crate::stream::Completion {
+        self.driver.completion()
+    }
+
     /// The next value; `None` at the end of input and after a terminal error (fused).
     ///
-    /// Cancel-safe: dropping the returned future loses no value (a partly received value stays
-    /// buffered for the next call, the rest of the chunk pending). Work per poll is bounded: it
+    /// Cancel-safe when the source is ([`ByteSource`], "Cancellation"; `reqwest::Response` and
+    /// [`Chunks`](crate::stream::Chunks) are): dropping the returned future then loses no value
+    /// (a partly received value stays buffered for the next call, the rest of the chunk pending);
+    /// with any other source, [`into_stream`](Self::into_stream) keeps a pending read across a
+    /// dropped `next()`. Work per poll is bounded: it
     /// scans at most 64 KiB of input between two yields to the executor (whitespace, a large
     /// value, many ready chunks or one large chunk), and yields after every 64 empty chunks from
     /// the source. Parsing the completed value is not divided.
@@ -539,6 +588,47 @@ impl<T, S> fmt::Debug for JsonValues<T, S> {
         f.debug_struct("JsonValues")
             .field("state", &self.scanner.state)
             .finish_non_exhaustive()
+    }
+}
+
+impl<T, S> crate::stream::RecordSealed for JsonValues<T, S> {}
+
+impl<T, S> crate::stream::RecordReader for JsonValues<T, S>
+where
+    T: DeserializeOwned + Send + 'static,
+    S: ByteSource + 'static,
+{
+    type Record = T;
+
+    fn next_record(
+        &mut self,
+    ) -> impl std::future::Future<Output = Option<Result<T, ReadError>>> + Send {
+        self.next()
+    }
+
+    fn record_position(&self) -> Position {
+        self.position()
+    }
+
+    fn record_operation(&self) -> Option<&'static str> {
+        self.driver.operation()
+    }
+
+    fn record_completion(&self) -> crate::stream::Completion {
+        self.driver.completion()
+    }
+}
+
+impl<T, S> JsonValues<T, S>
+where
+    T: DeserializeOwned + Send + 'static,
+    S: ByteSource + 'static,
+{
+    /// This reader as an owning standard [`Stream`](futures_core::Stream) of
+    /// `Result<T, ReadError>` ([`RecordStream`](crate::stream::RecordStream)): no read-ahead,
+    /// cancellation-safe, errors and completion unchanged.
+    pub fn into_stream(self) -> crate::stream::RecordStream<Self> {
+        crate::stream::RecordStream::new(self)
     }
 }
 

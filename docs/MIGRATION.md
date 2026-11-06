@@ -1,8 +1,11 @@
 # Migration
 
-Seven paths, newest first: 4.1 to 4.2 (a maintenance release; summary in the
-[changelog](../CHANGELOG.md)), then the two parts of 4.1.0 (the modular V4), then older ones:
+Eight paths, newest first: the interface consolidation (unreleased candidate), 4.1 to 4.2 (a
+maintenance release; summary in the [changelog](../CHANGELOG.md)), then the two parts of 4.1.0
+(the modular V4), then older ones:
 
+- [To the consolidated interface](#to-the-consolidated-interface) — additive: existing code
+  compiles; the new response, body, stream and pagination boundaries replace SDK plumbing.
 - [From 4.1 to 4.2](#from-41-to-42) — same DSL, crates, codec contracts and toolchain; some
   declarations that 4.1 rejected compile, advice is exact, and one rare `macro_rules!` case changes
   meaning.
@@ -25,6 +28,72 @@ Seven paths, newest first: 4.1 to 4.2 (a maintenance release; summary in the
 Code blocks marked "does not compile" show the old form. Every other Rust block in this file is
 compiled and run as a doctest of `examples/quickstart` (`cargo test --doc -p
 concord-example-quickstart`).
+
+## To the consolidated interface
+
+Nothing is removed: `send`, `send_raw`, `into_parts`, `Decoder::{decode, finish}`, the reader
+`open`/`open_for` methods and the pagination engine work as before. Four kinds of SDK code can
+shrink.
+
+**Reading response metadata.** Code that took the request apart only to look at the head before
+decoding (a fragment of the old form; it does not compile on its own):
+
+```rust,ignore
+// Before (still compiles; does not need to be written any more).
+let (client, request, decoder) = prepared.into_parts();
+let response = match client.execute(request).await {
+    Ok(response) => response,
+    Err(e) => {
+        let Err(error) = decoder.finish(Err(e)).await else { unreachable!() };
+        return Err(error);
+    }
+};
+let request_id = response.headers().get("x-request-id").cloned();
+let value = decoder.decode(response).await?;
+```
+
+becomes one execution with the head in between:
+
+```rust
+# use concord::Json;
+# #[derive(serde::Deserialize)] pub struct Summary { pub total: u64 }
+# concord::api! { pub client Ledger { base "https://ledger.example.test"; format Json;
+#     GET summary(id: u64) -> Summary { path "summary/{id}"; } } }
+async fn summary(api: &Ledger, id: u64) -> Result<(Summary, Option<String>), concord::Error> {
+    let received = api.summary(id).prepare()?.receive().await?;
+    let request_id = received
+        .head()
+        .headers()
+        .get("x-request-id")
+        .and_then(|v| v.to_str().ok())
+        .map(str::to_owned);
+    Ok((received.decode().await?, request_id))
+}
+```
+
+A request you edit natively (a `Link` URL) goes through `Decoder::execute(&client, request)`,
+which returns the same `Received`; a native transport failure converts with
+`decoder.transport_error(e)`.
+
+**Streaming endpoints.** An endpoint declared without `->` drains its body; a watch or an export
+declared that way and opened with `send_raw()` + `reader.open_for(response, "Name")` should
+declare its stream instead: `-> stream T` with an incremental `response` format returns the reader
+from `send()`, `-> stream` returns the unread `Incoming` body for a reader configured at run time
+(`reader.open(incoming)`), and the reader names the endpoint without the string. See the
+[author guide](AUTHOR_GUIDE.md#59-streaming-outputs---stream).
+
+**Runtime-encoded bodies.** An upload declared without a body and given an `Upload` with
+`upload.apply(&mut request)` after `into_parts()` declares its body instead:
+`body export: Upload` with `request Encoded;` ([author guide](AUTHOR_GUIDE.md#510-bodies-whose-media-type-is-known-at-run-time)).
+A custom format whose media type depends on the payload overrides `Encode::encode_body`. A
+wrapper format must forward `encode_body` too.
+
+**Pagination.** An SDK that returned a request factory so that callers could assemble
+`sequential(..)` returns a `concord_pagination::Pages` (or `PageItems`) instead; a caller's
+`while let Some(page) = pages.next().await` loop that ignored the finish report becomes
+`while let Some(page) = pages.next_page().await?`, which fails on a cap or a provider error instead
+of ending silently. `JobsReport::into_resume` replaces cloning `discovery.resume` before
+`into_rerun`.
 
 ## From 4.1 to 4.2
 

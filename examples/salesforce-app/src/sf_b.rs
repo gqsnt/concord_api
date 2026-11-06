@@ -15,11 +15,13 @@
 //!    [`ResultManifests`] factory reads one result-pages manifest per call (at most five result
 //!    URLs), validates every link against the org, version and job, and numbers the parts.
 //!    Discovery calls, queued descriptors and running downloads each have an explicit bound.
-//! 3. Each part is one job future ([`PartRunner::run`]): request the result URL, open the body
-//!    with the job's dialect (its own header, which must be exactly the selected fields), parse
-//!    rows incrementally, write them in batches to a staged shard file, check the row count
-//!    against `Sforce-NumberOfRecords`, publish the shard. The window slot is held through all of
-//!    it: a response whose headers arrived but whose body stalls still occupies its slot.
+//! 3. Each part is one job future ([`PartRunner::run`]): the SDK's
+//!    [`ResultPartReader`] requests the result URL and opens the body with the job's dialect (its
+//!    own header, which must be exactly the selected fields); the rows are parsed incrementally
+//!    and written in batches to a staged shard file; the shard is published only after the SDK's
+//!    validated end of the part ([`ResultPartRows::finish`]: end of input reached, row count equal
+//!    to `Sforce-NumberOfRecords` when declared). The window slot is held through all of it: a
+//!    response whose headers arrived but whose body stalls still occupies its slot.
 //! 4. When every part succeeded and discovery ended, combine the header and the shards in
 //!    discovery order into the output file (in the job's dialect). Headers of the parts are never
 //!    concatenated: each part was parsed with its own header.
@@ -52,17 +54,18 @@ use std::io;
 use std::num::NonZeroUsize;
 use std::path::PathBuf;
 
-use concord::csv::{CsvReader, CsvWriter, Rows};
+use concord::csv::{CsvWriter, Rows};
 use concord_example_salesforce_sdk::bulk::BulkDialect;
 use concord_example_salesforce_sdk::bulk_query::{
-    BulkQueryJob, JobWait, ManifestCursor, RESULTS, ResultManifests, ResultPart,
+    BulkQueryJob, JobWait, ManifestCursor, ResultManifests, ResultPart, ResultPartReader,
+    ResultPartRows,
 };
 use concord_example_salesforce_sdk::csv::{
     CONTACT_EXPORT_FIELDS, ContactExportRow, CsvError, FieldColumns, SalesforceCsv,
 };
 use concord_example_salesforce_sdk::ids::{ApiVersion, FieldName, QueryJobId, SObjectName};
 use concord_example_salesforce_sdk::soql::{Condition, FieldPath, Literal, Op, Soql};
-use concord_example_salesforce_sdk::{OrgContext, ProtocolError, ProtocolErrorKind, SfError};
+use concord_example_salesforce_sdk::{OrgContext, SfError};
 use concord_pagination::{
     Budget, JobOptions, JobsError, OnError, Options, Order, Outcome, Resume, Unfinished,
     independent, manifest_jobs,
@@ -209,8 +212,7 @@ impl std::error::Error for PartFailure {}
 /// One part job: download, parse with the job's dialect, stage, publish. Cheap to clone.
 #[derive(Clone, Debug)]
 pub struct PartRunner {
-    job: BulkQueryJob,
-    reader: CsvReader,
+    parts: ResultPartReader<ContactExportRow>,
     writer: CsvWriter,
     staging: ShardStaging,
     header: Vec<u8>,
@@ -221,7 +223,7 @@ impl PartRunner {
     ///
     /// # Errors
     ///
-    /// [`ExportError::Csv`].
+    /// [`ExportError::Csv`] (or [`ExportError::Query`] for the fixed columns, never expected).
     pub fn new(
         job: &BulkQueryJob,
         staging: ShardStaging,
@@ -229,16 +231,19 @@ impl PartRunner {
     ) -> Result<Self, ExportError> {
         let csv = SalesforceCsv::new(job.dialect());
         let columns = FieldColumns::new(CONTACT_EXPORT_FIELDS).map_err(ExportError::Csv)?;
-        let mut options = csv.options().columns(columns.names().iter().cloned());
+        let fields = CONTACT_EXPORT_FIELDS
+            .iter()
+            .map(|f| FieldPath::parse(f))
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(ExportError::Query)?;
+        let mut parts = ResultPartReader::new(job, &fields).map_err(ExportError::Csv)?;
         if let Some(max) = max_part_bytes {
-            options = options.max_total_bytes(max);
+            parts = parts.max_part_bytes(max).map_err(ExportError::Csv)?;
         }
-        let reader = CsvReader::new(options).map_err(|e| ExportError::Csv(CsvError::from(e)))?;
         let writer = csv.rows_writer(&columns).map_err(ExportError::Csv)?;
         let header = csv.header(&columns).map_err(ExportError::Csv)?;
         Ok(Self {
-            job: job.clone(),
-            reader,
+            parts,
             writer,
             staging,
             header,
@@ -256,8 +261,8 @@ impl PartRunner {
     }
 
     /// The whole job of one part, as one owned future: request acquisition, incremental parsing
-    /// through EOF, shard writes, count check, publication. Dropping the future (cancellation)
-    /// removes the staged shard.
+    /// through EOF, shard writes, the SDK's validated end (count check), publication. Dropping
+    /// the future (cancellation) removes the staged shard.
     pub fn run(
         &self,
         part: ResultPart,
@@ -268,19 +273,11 @@ impl PartRunner {
                 error,
                 rows_discarded,
             };
-            let set = runner
-                .job
-                .open_result_set(&part.link)
+            let mut records: ResultPartRows<ContactExportRow> = runner
+                .parts
+                .open(&part.link)
                 .await
                 .map_err(|e| fail(PartError::Sf(e), 0))?;
-            let declared = set.declared_records;
-            let mut records = match runner
-                .reader
-                .open_for::<ContactExportRow>(set.response, RESULTS)
-            {
-                Ok(records) => records,
-                Err(e) => return Err(fail(PartError::Sf(SfError::from_open(e).await), 0)),
-            };
             let mut shard = runner
                 .staging
                 .begin(&part)
@@ -295,7 +292,8 @@ impl PartRunner {
                         batch.push(row);
                         false
                     }
-                    Some(Err(e)) => return Err(fail(PartError::Sf(e.into()), rows)),
+                    // A read error, a limit, or a count mismatch at the end of input.
+                    Some(Err(e)) => return Err(fail(PartError::Sf(e), rows)),
                     None => true,
                 };
                 if batch.len() == SHARD_BATCH || (done && !batch.is_empty()) {
@@ -311,20 +309,10 @@ impl PartRunner {
                     break;
                 }
             }
-            if let Some(declared) = declared
-                && declared != rows
-            {
-                let error = SfError::from(ProtocolError::new(
-                    RESULTS,
-                    ProtocolErrorKind::RecordCountMismatch {
-                        declared,
-                        parsed: rows,
-                    },
-                ));
-                return Err(fail(PartError::Sf(error), rows));
-            }
+            // Publish only after the SDK validated the end of the part.
+            let complete = records.finish().map_err(|e| fail(PartError::Sf(e), rows))?;
             shard
-                .publish(rows, declared)
+                .publish(complete.records, complete.declared_records)
                 .map_err(|e| fail(PartError::Sink(e), rows))
         }
     }

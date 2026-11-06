@@ -7,22 +7,25 @@
 //!
 //! Two steps, each a value the caller holds:
 //!
-//! 1. [`locate`] sends the **declared** endpoint (`download_artifact`, no typed output) through
-//!    `Prepared::into_parts` and one `execute`, then reads the head itself: a `3xx` with a
-//!    `Location` becomes an [`ArtifactLocation`] (with the API response's [`ResponseMeta`]:
-//!    request id, rate limit); `410` becomes [`Located::Gone`]; any other status goes back to the
-//!    endpoint's decoder, so it is Concord's `Status` error with the response unread. A `3xx` is
-//!    never treated as a decoded success. If the `reqwest::Client` followed the redirect itself
-//!    (reqwest's default policy), the response is refused ([`LocateError::RedirectFollowed`]):
-//!    the SDK did not choose what was forwarded. Build the client with
-//!    [`crate::redirect_policy`].
+//! 1. [`locate`] sends the **declared** endpoint (`download_artifact`, no typed output) once with
+//!    `Prepared::receive`, which returns the response for any status, unread, then reads the head
+//!    itself: a `3xx` with a `Location` becomes an [`ArtifactLocation`] (with the API response's
+//!    [`ResponseMeta`]: request id, rate limit); `410` becomes [`Located::Gone`]; any other status
+//!    goes back to the endpoint's decoder, so it is Concord's `Status` error with the response
+//!    unread. A `3xx` is never treated as a decoded success. If the `reqwest::Client` followed the
+//!    redirect itself (reqwest's default policy), the response is refused
+//!    ([`LocateError::RedirectFollowed`]): the SDK did not choose what was forwarded. Build the
+//!    client with [`crate::redirect_policy`]. The head is read on the native response
+//!    (`Received::into_parts`): that the client followed a redirect is visible only in the
+//!    response URL, which also resolves a relative `Location`.
 //! 2. [`stream_to`] requests the location with a **new native request carrying no header at all**
 //!    (no `Authorization`, no `X-GitHub-Api-Version`, no `User-Agent`; reqwest adds `Accept` and
-//!    `Host`), checks the status and a declared `Content-Length` against [`DownloadLimits`], and
-//!    hands each body chunk to the [`ByteSink`] as it arrives (`concord::stream::ByteSource` on
-//!    the response). Nothing is collected. A transport failure, the byte limit or a sink error
-//!    stops the transfer and drops the response; the error reports the bytes received and
-//!    written, so a partial file is never mistaken for a complete one.
+//!    `Host`), checks the status (Concord's unlabelled `-> stream` handling, `Decoder::incoming`:
+//!    no declaration owns the signed URL) and a declared `Content-Length` against
+//!    [`DownloadLimits`], and hands each body chunk to the [`ByteSink`] as it arrives
+//!    (`concord::stream::ByteSource` on the response). Nothing is collected. A transport failure,
+//!    the byte limit or a sink error stops the transfer and drops the response; the error reports
+//!    the bytes received and written, so a partial file is never mistaken for a complete one.
 //!
 //! The location's scheme must be `https`, unless the configured API base itself is plain `http`
 //! (a loopback test configuration); a location with user information is refused.
@@ -32,11 +35,11 @@
 use std::fmt;
 use std::future::Future;
 
-use concord::Decoder;
 use concord::bytes::Bytes;
 use concord::reqwest::header::{CONTENT_LENGTH, CONTENT_TYPE, LOCATION};
 use concord::reqwest::{self, Method, StatusCode, Url};
 use concord::stream::{ByteSource, SourceError};
+use concord::{Decoder, Received};
 
 use crate::context::RepoContext;
 use crate::error::GitHubError;
@@ -193,17 +196,13 @@ pub async fn locate(repo: &RepoContext, artifact: ArtifactId) -> Result<Located,
         .set_archive_format(ArchiveFormat::Zip)
         .prepare()
         .map_err(GitHubError::from)?;
-    let (client, request, decoder) = prepared.into_parts();
-    let requested = request.url().clone();
-    let response = match client.execute(request).await {
-        Ok(response) => response,
-        Err(e) => {
-            let Err(error) = decoder.finish(Err(e)).await else {
-                unreachable!("`Decoder::finish(Err(_))` is always `Err`")
-            };
-            return Err(GitHubError::api(error, None).into());
-        }
-    };
+    let requested = prepared.request().url().clone();
+    let received = prepared
+        .receive()
+        .await
+        .map_err(|error| GitHubError::api(error, None))?;
+    // The native response, unread: its URL says whether the client followed the redirect.
+    let (response, decoder) = received.into_parts();
     let meta = ResponseMeta::capture(&response);
     let status = response.status();
     if status.is_redirection() {
@@ -418,23 +417,15 @@ pub async fn stream_to<S: ByteSink>(
 ) -> Result<StreamReceipt, StreamError<S::Error>> {
     // A fresh request: no header of the GitHub API (in particular no Authorization) exists on it.
     let request = reqwest::Request::new(Method::GET, location.url.clone());
-    let drain = Decoder::<()>::drain();
-    let mut response = match http.execute(request).await {
-        Ok(response) => response,
-        Err(e) => {
-            let Err(error) = drain.finish(Err(e)).await else {
-                unreachable!("`Decoder::finish(Err(_))` is always `Err`")
-            };
-            return Err(StreamError::Request(error));
-        }
-    };
+    // No declaration owns this URL: the unlabelled `-> stream` handling gives Concord's transport
+    // error (URL removed) and, for a non-2xx, its status error (response unread).
+    let mut response = Decoder::incoming()
+        .execute(http, request)
+        .await
+        .and_then(Received::into_incoming)
+        .map_err(StreamError::Request)?
+        .into_response();
     let status = response.status();
-    if !status.is_success() {
-        let Err(error) = drain.decode(response).await else {
-            unreachable!("a non-2xx response is a status error")
-        };
-        return Err(StreamError::Request(error));
-    }
     let header = |name| {
         response
             .headers()

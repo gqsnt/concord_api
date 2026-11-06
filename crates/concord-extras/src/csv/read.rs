@@ -11,7 +11,8 @@ use super::frame::{Mode, Step, Table};
 use super::options::{Config, CsvConfigError, CsvOptions};
 use super::record::{self, MapFn, RawRecord};
 use crate::stream::{
-    ByteSource, Driver, OpenError, Position, ReadError, SKIP_BUDGET, open_response, yield_now,
+    ByteSource, Driver, OpenError, Openable, Position, ReadError, SKIP_BUDGET, open_input,
+    open_response, yield_now,
 };
 
 /// An immutable, validated CSV reader configuration: opens responses and byte sources into
@@ -60,8 +61,39 @@ impl CsvReader {
         &self.config.options
     }
 
+    pub(crate) fn from_config(config: Arc<Config>) -> Self {
+        Self { config }
+    }
+
+    /// Typed rows of a body whose head the static format already checked (`Incremental`).
+    pub(crate) fn open_checked<T: DeserializeOwned>(
+        &self,
+        body: concord_core::Incoming,
+    ) -> CsvRecords<T> {
+        let (response, operation) = body.into_parts();
+        self.records(
+            response,
+            operation.map(|op| op.name()),
+            record::typed::<T>,
+            Mode::Typed,
+        )
+    }
+
+    /// Raw records of a body whose head the static format already checked (`Incremental`).
+    pub(crate) fn open_raw_checked(&self, body: concord_core::Incoming) -> CsvRecords<RawRecord> {
+        let (response, operation) = body.into_parts();
+        self.records(
+            response,
+            operation.map(|op| op.name()),
+            record::raw,
+            Mode::Raw,
+        )
+    }
+
     /// The `Content-Type` this reader accepts, as checked by [`open`](Self::open) (per the
-    /// [`MediaPolicy`](super::MediaPolicy)), for a caller that opens responses itself.
+    /// [`MediaPolicy`](super::MediaPolicy)), for a caller that opens responses itself (then reads
+    /// the body with [`read_for`](Self::read_for)). It reads the head only; the status is not
+    /// checked.
     ///
     /// # Errors
     ///
@@ -70,17 +102,21 @@ impl CsvReader {
         check_media(head, self.config.has_header(), self.config.media())
     }
 
-    /// Opens a native response (from `Prepared::send_raw`, say) for typed rows. Before polling
-    /// the body: requires a 2xx status, then the head per [`check_head`](Self::check_head).
+    /// Opens a response for typed rows: the [`Incoming`](concord_core::Incoming) body of an
+    /// endpoint declared `-> stream`, a [`Received`](concord_core::Received) response or a native
+    /// `reqwest::Response` ([`Openable`]). Before polling the body: requires a 2xx status, then
+    /// the head per [`check_head`](Self::check_head). A declared endpoint's identity names every
+    /// later error.
     ///
     /// # Errors
     ///
     /// An [`OpenError`] that keeps the response unread.
     pub fn open<T: DeserializeOwned>(
         &self,
-        response: reqwest::Response,
+        response: impl Openable,
     ) -> Result<CsvRecords<T>, OpenError> {
-        self.opened(response, None, record::typed::<T>, Mode::Typed)
+        let (response, operation) = open_input(response, |head| self.check_head(head))?;
+        Ok(self.records(response, operation, record::typed::<T>, Mode::Typed))
     }
 
     /// [`open`](Self::open), naming the operation in every later error (a static label the SDK
@@ -102,17 +138,29 @@ impl CsvReader {
         self.records(source, None, record::typed::<T>, Mode::Typed)
     }
 
-    /// Opens a native response for raw byte records (no UTF-8 requirement; header names may be
-    /// empty or repeated). The head checks are those of [`open`](Self::open).
+    /// [`read`](Self::read), naming the operation in every later error (a static label the SDK
+    /// chooses; never derived from the URL), as [`open_for`](Self::open_for) does. No status or
+    /// head check: the caller made them — an [`Incoming`](concord_core::Incoming) body is a 2xx,
+    /// and [`check_head`](Self::check_head) applies the head rules of `open`. Read through the
+    /// `Incoming` itself (it is a [`ByteSource`]), a broken body keeps Concord's own
+    /// `Transport` error ([`ReadError::into_source_unredacted`]).
+    pub fn read_for<T: DeserializeOwned, S: ByteSource>(
+        &self,
+        source: S,
+        operation: &'static str,
+    ) -> CsvRecords<T, S> {
+        self.records(source, Some(operation), record::typed::<T>, Mode::Typed)
+    }
+
+    /// Opens a response ([`Openable`]) for raw byte records (no UTF-8 requirement; header names
+    /// may be empty or repeated). The head checks are those of [`open`](Self::open).
     ///
     /// # Errors
     ///
     /// An [`OpenError`] that keeps the response unread.
-    pub fn open_raw(
-        &self,
-        response: reqwest::Response,
-    ) -> Result<CsvRecords<RawRecord>, OpenError> {
-        self.opened(response, None, record::raw, Mode::Raw)
+    pub fn open_raw(&self, response: impl Openable) -> Result<CsvRecords<RawRecord>, OpenError> {
+        let (response, operation) = open_input(response, |head| self.check_head(head))?;
+        Ok(self.records(response, operation, record::raw, Mode::Raw))
     }
 
     /// [`open_raw`](Self::open_raw), naming the operation in every later error.
@@ -131,6 +179,16 @@ impl CsvReader {
     /// Raw byte records from any byte source, without status or head checks.
     pub fn read_raw<S: ByteSource>(&self, source: S) -> CsvRecords<RawRecord, S> {
         self.records(source, None, record::raw, Mode::Raw)
+    }
+
+    /// [`read_raw`](Self::read_raw), naming the operation in every later error (see
+    /// [`read_for`](Self::read_for)).
+    pub fn read_raw_for<S: ByteSource>(
+        &self,
+        source: S,
+        operation: &'static str,
+    ) -> CsvRecords<RawRecord, S> {
+        self.records(source, Some(operation), record::raw, Mode::Raw)
     }
 
     fn opened<T>(
@@ -185,11 +243,20 @@ pub struct CsvRecords<T, S = reqwest::Response> {
 }
 
 impl<T, S: ByteSource> CsvRecords<T, S> {
+    /// Whether the input ended cleanly ([`Completion::EndOfInput`](crate::stream::Completion)),
+    /// a terminal error ended the reader (`Failed`), or records may follow (`Reading`). Only
+    /// `EndOfInput` proves every record was read; stopping early or dropping the reader is not
+    /// an end of input.
+    pub fn completion(&self) -> crate::stream::Completion {
+        self.driver.completion()
+    }
+
     /// The next row; `None` at the end of the table, and after an error.
     ///
     /// A failure is a [`ReadError`]: [`Transport`](crate::stream::ReadErrorKind::Transport) (the
     /// source failed), [`Format`](crate::stream::ReadErrorKind::Format) (width, header names,
-    /// UTF-8, a refused BOM, a missing header), [`Decode`](crate::stream::ReadErrorKind::Decode)
+    /// UTF-8, a refused BOM, a missing header, input that ends inside a quoted field),
+    /// [`Decode`](crate::stream::ReadErrorKind::Decode)
     /// (a well-formed record that is not a `T`) or [`Limit`](crate::stream::ReadErrorKind::Limit).
     /// Rows already returned stay returned.
     pub async fn next(&mut self) -> Option<Result<T, ReadError>> {
@@ -275,7 +342,8 @@ impl<T, S: ByteSource> CsvRecords<T, S> {
         self.table.header()
     }
 
-    /// The operation name supplied when the response was opened, if any.
+    /// The operation name supplied when the response was opened (or the source read with
+    /// `read_for`), if any.
     pub fn operation(&self) -> Option<&'static str> {
         self.driver.operation()
     }
@@ -297,5 +365,46 @@ where
             .field("position", &self.driver.position())
             .field("finished", &self.driver.is_fused())
             .finish_non_exhaustive()
+    }
+}
+
+impl<T, S> crate::stream::RecordSealed for CsvRecords<T, S> {}
+
+impl<T, S> crate::stream::RecordReader for CsvRecords<T, S>
+where
+    T: Send + 'static,
+    S: ByteSource + 'static,
+{
+    type Record = T;
+
+    fn next_record(
+        &mut self,
+    ) -> impl std::future::Future<Output = Option<Result<T, ReadError>>> + Send {
+        self.next()
+    }
+
+    fn record_position(&self) -> Position {
+        self.position()
+    }
+
+    fn record_operation(&self) -> Option<&'static str> {
+        self.driver.operation()
+    }
+
+    fn record_completion(&self) -> crate::stream::Completion {
+        self.driver.completion()
+    }
+}
+
+impl<T, S> CsvRecords<T, S>
+where
+    T: Send + 'static,
+    S: ByteSource + 'static,
+{
+    /// This reader as an owning standard [`Stream`](futures_core::Stream) of
+    /// `Result<T, ReadError>` ([`RecordStream`](crate::stream::RecordStream)): no read-ahead,
+    /// cancellation-safe, errors and completion unchanged.
+    pub fn into_stream(self) -> crate::stream::RecordStream<Self> {
+        crate::stream::RecordStream::new(self)
     }
 }

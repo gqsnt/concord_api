@@ -20,10 +20,10 @@ pub(crate) const FRAME_TARGET: usize = 16 * 1024;
 /// A request body and the `Content-Type` that describes it, produced together by a runtime
 /// configured writer (a `CsvWriter` whose header/delimiter were chosen per job).
 ///
-/// `Encode` gives a format one static `Content-Type`; a body whose media parameters vary per
-/// call cannot use it, so the body and its header travel together here. Apply both:
-/// [`apply`](Self::apply) sets them on a native request (from `Prepared::into_parts`), or take them
-/// apart with [`into_parts`](Self::into_parts).
+/// A body whose media parameters vary per call travels with its header here. Send it as a
+/// declared body with the [`Encoded`](crate::Encoded) format (`body export: Upload` with
+/// `request Encoded;`): the media type stays bound to the bytes. For a native request,
+/// [`apply`](Self::apply) sets both, or take them apart with [`into_parts`](Self::into_parts).
 #[must_use = "an upload does nothing until its body is sent"]
 pub struct Upload {
     body: reqwest::Body,
@@ -51,6 +51,12 @@ impl Upload {
             .headers_mut()
             .insert(CONTENT_TYPE, self.content_type);
         *request.body_mut() = Some(self.body);
+    }
+}
+
+impl From<Upload> for concord_core::EncodedBody {
+    fn from(upload: Upload) -> Self {
+        Self::with_content_type(upload.body, upload.content_type)
     }
 }
 

@@ -5,8 +5,9 @@ use std::fmt;
 use bytes::Bytes;
 
 use crate::__private::{EndpointMeta, redacted_url};
-use crate::codec::{CodecError, Decode, ResponseHead};
+use crate::codec::{CodecError, Decode, Incremental, ResponseHead};
 use crate::error::Error;
+use crate::response::{Incoming, Operation, Received};
 
 /// A request built by an endpoint, not yet sent. `T` is the endpoint's output type (`()` when it
 /// declares none).
@@ -23,6 +24,9 @@ pub struct Prepared<T> {
     client: reqwest::Client,
     request: reqwest::Request,
     decoder: Decoder<T>,
+    /// The URL came from the server ([`Prepared::follow`]): the endpoint's placement-based
+    /// redaction does not describe it, so `Debug` withholds it whole.
+    followed: bool,
 }
 
 impl<T> Prepared<T> {
@@ -35,7 +39,44 @@ impl<T> Prepared<T> {
             client,
             request,
             decoder,
+            followed: false,
         }
+    }
+
+    /// The same request with a URL the server returned (a `Link: rel="next"` target, a `next`
+    /// field): the endpoint's method, headers (credentials included), body, declared response
+    /// handling and identity are kept; only the URL is replaced, verbatim.
+    ///
+    /// The URL must have the **same origin** (scheme, host, port) as the prepared one, so the
+    /// endpoint's credentials never reach another host through a link; any further rule (a path
+    /// prefix, a collection) is the SDK's to check before calling this. A cross-origin URL (a
+    /// signed download) is a native request of its own, without these headers. `Debug` withholds
+    /// a followed URL whole: the endpoint's redaction describes its own placements, not the
+    /// server's.
+    ///
+    /// # Errors
+    ///
+    /// [`ErrorKind::Build`](crate::ErrorKind::Build) if `url` does not parse or has another origin;
+    /// nothing is sent.
+    pub fn follow(mut self, url: &str) -> Result<Self, Error> {
+        let meta = self.decoder.operation.and_then(|op| op.meta());
+        let parsed = reqwest::Url::parse(url)
+            .map_err(|_| Error::build(meta, "followed URL", "does not parse"))?;
+        if parsed.origin() != self.request.url().origin() {
+            return Err(Error::build(
+                meta,
+                "followed URL",
+                "has another origin than the endpoint's",
+            ));
+        }
+        *self.request.url_mut() = parsed;
+        self.followed = true;
+        Ok(self)
+    }
+
+    /// The identity of the endpoint that built this request.
+    pub fn operation(&self) -> Option<Operation> {
+        self.decoder.operation
     }
 
     /// The native request, for inspection. Its `Debug` output is **not** Concord's: it prints the full
@@ -56,8 +97,23 @@ impl<T> Prepared<T> {
     /// unread), [`Metadata`](crate::ErrorKind::Metadata) if the format refuses the 2xx response's
     /// head (kept unread), [`Decode`](crate::ErrorKind::Decode) if the body does not decode.
     pub async fn send(self) -> Result<T, Error> {
+        self.receive().await?.decode().await
+    }
+
+    /// Executes the request once and returns the response for **any** status with its body
+    /// unread, keeping the endpoint's declared handling and identity: the boundary where an SDK
+    /// reads response metadata, applies a provider rule to the head, or chooses an incremental
+    /// reader, then consumes the body once ([`Received`]). Never retries.
+    ///
+    /// `send()` is `receive()` followed by [`Received::decode`].
+    ///
+    /// # Errors
+    ///
+    /// [`ErrorKind::Transport`](crate::ErrorKind::Transport) only (no response arrived), naming
+    /// the endpoint, with the URL removed from the underlying error.
+    pub async fn receive(self) -> Result<Received<T>, Error> {
         let (client, request, decoder) = self.into_parts();
-        decoder.finish(client.execute(request).await).await
+        decoder.execute(&client, request).await
     }
 
     /// Executes the request once and returns the native response without checking its status or
@@ -68,11 +124,7 @@ impl<T> Prepared<T> {
     /// [`ErrorKind::Transport`](crate::ErrorKind::Transport) only: any status is returned as a
     /// response.
     pub async fn send_raw(self) -> Result<reqwest::Response, Error> {
-        let meta = self.decoder.meta;
-        self.client
-            .execute(self.request)
-            .await
-            .map_err(|e| Error::from_transport(meta, e))
+        Ok(self.receive().await?.into_response())
     }
 
     /// The application's client, the native request and the declared response handling.
@@ -88,14 +140,121 @@ impl<T> Prepared<T> {
     }
 }
 
+/// Reads a body, keeping at most `limit` bytes: `ErrorKind::Limit` beyond, `Transport` on failure.
+pub(crate) async fn read_limited(
+    mut response: reqwest::Response,
+    limit: usize,
+    operation: Option<Operation>,
+) -> Result<Bytes, Error> {
+    let mut body = bytes::BytesMut::new();
+    while let Some(chunk) = response
+        .chunk()
+        .await
+        .map_err(|e| Error::from_transport(operation, e))?
+    {
+        if body.len() + chunk.len() > limit {
+            return Err(Error::limit(operation, limit as u64));
+        }
+        body.extend_from_slice(&chunk);
+    }
+    Ok(body.freeze())
+}
+
+/// A generated endpoint request, seen generically: every endpoint type `api!` generates implements
+/// `Endpoint<T>` for its declared output `T` (the decoded `T` of `-> T`, `()` without `->`, the
+/// reader of `-> stream T`, `Incoming` for `-> stream`), so an SDK can write **one** adapter for all
+/// of its operations instead of a wrapper method per operation — a send that returns the SDK's own
+/// error and response metadata, say:
+///
+/// ```ignore
+/// pub trait Call<T>: concord::Endpoint<T> {
+///     fn call(self) -> impl Future<Output = Result<WithMeta<T>, SdkError>>;
+/// }
+/// impl<T, E: concord::Endpoint<T>> Call<T> for E {
+///     async fn call(self) -> Result<WithMeta<T>, SdkError> {
+///         let received = self.prepare()?.receive().await?;
+///         let meta = Meta::capture(&received.head());
+///         Ok(WithMeta { value: received.decode().await?, meta })
+///     }
+/// }
+/// // caller: `use my_sdk::Call;` then `api.items().get(7).call().await?`
+/// ```
+///
+/// The output is a type parameter, not an associated type, so a public client may keep private
+/// output types (an associated type in this public impl would be E0446). The generated type's own
+/// `prepare()` and `send()` stay what callers use directly; the trait adds no method to the generated
+/// namespace.
+pub trait Endpoint<T>: Sized {
+    /// The generated `prepare()`: builds the request, no I/O.
+    ///
+    /// # Errors
+    ///
+    /// As the generated `prepare()` (`ErrorKind::Build`).
+    fn prepare(self) -> Result<Prepared<T>, Error>;
+
+    /// The endpoint's declared identity, without building a request.
+    fn operation() -> Operation;
+}
+
+/// A client's **send policy**: what every generated `send()` returns. An SDK whose callers should
+/// receive its own error type and response metadata, or whose requests must be signed after they
+/// are built, implements it once and names the policy on the client; each endpoint's `send()` then
+/// calls [`send`](Self::send) with the endpoint. No wrapper method per operation, no trait to
+/// import, one terminal method.
+///
+/// The policy is a **value**:
+///
+/// - `send value;` names a required client value (`pub client S3(signer: Signer) { send signer; }`)
+///   holding the state the policy needs — credentials, a region, a clock. It is not placed on the
+///   wire; each `send()` clones it (keep it cheap: an `Arc` inside), so it must be `Clone`, and
+///   `Send + Sync` for the future to be `Send`.
+/// - `send Policy;` names a stateless type; each `send()` uses `Policy::default()`.
+///
+/// ```ignore
+/// #[derive(Default)]
+/// pub struct Policy;
+/// impl<T: Send> concord::SendWith<T> for Policy {
+///     type Output = Result<WithMeta<T>, SdkError>;
+///     async fn send<E: concord::Endpoint<T> + Send>(&self, endpoint: E) -> Self::Output {
+///         let received = endpoint.prepare()?.receive().await?;
+///         let meta = Meta::capture(&received.head());
+///         Ok(WithMeta { value: received.decode().await?, meta })
+///     }
+/// }
+/// // declaration: `pub client Api { base "…"; send Policy; … }`
+/// // caller: `api.items().get(7).send().await?` returns `Result<WithMeta<Item>, SdkError>`
+/// ```
+///
+/// Without `send`, the generated `send()` is `prepare()?.send()` (Concord's `Error`). `prepare()`
+/// is unchanged either way, for callers that need the native (unsigned) request.
+#[diagnostic::on_unimplemented(
+    message = "the send policy `{Self}` does not send a `{T}` output",
+    label = "named by the client's `send` statement; it needs `{Self}: SendWith<{T}>`",
+    note = "a send policy implements `concord::SendWith<T>` for every output `T` its endpoints declare (usually generically: `impl<T: Send> SendWith<T> for Policy`)"
+)]
+pub trait SendWith<T> {
+    /// What `send()` returns.
+    type Output;
+
+    /// Sends the endpoint's request according to the policy. `self` is the policy value: a client
+    /// value named by `send value;` (credentials, a signer, a region, a clock), cloned for each
+    /// call, or `P::default()` for `send P;`.
+    fn send<E>(&self, endpoint: E) -> impl std::future::Future<Output = Self::Output> + Send
+    where
+        E: Endpoint<T> + Send;
+}
+
 impl<T> fmt::Debug for Prepared<T> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let meta = self.decoder.meta;
+        let meta = self.decoder.operation.and_then(|op| op.meta());
         let headers = DebugHeaders(self.request.headers());
         f.debug_struct("Prepared")
             .field("endpoint", &meta.map(|m| m.name))
             .field("method", &self.request.method().as_str())
-            .field("url", &DebugUrl(self.request.url(), meta))
+            .field(
+                "url",
+                &DebugUrl(self.request.url(), meta.filter(|_| !self.followed)),
+            )
             .field("headers", &headers)
             .field("body", &self.request.body().map(|_| "..."))
             .finish()
@@ -141,6 +300,24 @@ type BodyStep<T> = Box<dyn FnOnce(Bytes) -> Result<T, CodecError> + Send>;
 /// Checks a response head with a format and returns its body step.
 pub(crate) type HeadStep<T> = fn(&ResponseHead<'_>) -> Result<BodyStep<T>, CodecError>;
 
+/// An incremental format's continuation once the head was accepted: opens the unread body.
+type OpenStep<T> = Box<dyn FnOnce(Incoming) -> T + Send>;
+
+/// Checks a response head with an incremental format and returns its opening step.
+pub(crate) type OpenHeadStep<T> = fn(&ResponseHead<'_>) -> Result<OpenStep<T>, CodecError>;
+
+/// An incremental format's head checks and opening, erased like [`head_step`].
+pub(crate) fn open_step<F: Incremental<T> + 'static, T: 'static>(
+    head: &ResponseHead<'_>,
+) -> Result<OpenStep<F::Records>, CodecError>
+where
+    F::Records: 'static,
+{
+    F::check_content_type(head)?;
+    let context = F::context(head)?;
+    Ok(Box::new(move |body| F::open(context, body)))
+}
+
 /// A format's head checks and body decoding, monomorphized for `F` and erased behind a plain
 /// function pointer, so a [`Decoder`] stays `Copy` and names only its output type.
 pub(crate) fn head_step<F: Decode<T> + 'static, T: 'static>(
@@ -155,6 +332,10 @@ enum Kind<T> {
     /// No typed output: any 2xx, the body drained unbuffered.
     Drain(fn() -> T),
     Typed(HeadStep<T>),
+    /// `-> stream T`: the head checked, the unread body opened into the reader `T`.
+    Open(OpenHeadStep<T>),
+    /// `-> stream`: any 2xx, the unread body returned as is (`T` is `Incoming`).
+    Incoming(fn(Incoming) -> T),
 }
 
 impl<T> Clone for Kind<T> {
@@ -173,7 +354,7 @@ impl<T> Copy for Kind<T> {}
 /// Every endpoint has one ([`Prepared::into_parts`]); [`Decoder::new`] builds one for a format
 /// and output type of your choosing, without a declaration.
 pub struct Decoder<T> {
-    pub(crate) meta: Option<&'static EndpointMeta>,
+    pub(crate) operation: Option<Operation>,
     kind: Kind<T>,
 }
 
@@ -197,8 +378,32 @@ impl<T: 'static> Decoder<T> {
     /// ```
     pub fn new<F: Decode<T> + 'static>() -> Self {
         Self {
-            meta: None,
+            operation: None,
             kind: Kind::Typed(head_step::<F, T>),
+        }
+    }
+
+    /// The opening of the incremental format `F` for items `I` (its reader is `T`), outside any
+    /// declaration: the status and head rules of an endpoint declared `-> stream I`.
+    pub fn open<F, I>() -> Self
+    where
+        F: Incremental<I, Records = T> + 'static,
+        I: 'static,
+    {
+        Self {
+            operation: None,
+            kind: Kind::Open(open_step::<F, I>),
+        }
+    }
+}
+
+impl Decoder<Incoming> {
+    /// The handling of an endpoint declared `-> stream` without an item: any 2xx, the body
+    /// returned unread as an [`Incoming`] for a reader chosen at run time.
+    pub fn incoming() -> Self {
+        Self {
+            operation: None,
+            kind: Kind::Incoming(|body| body),
         }
     }
 }
@@ -208,7 +413,7 @@ impl Decoder<()> {
     /// without being buffered (no time or size bound beyond the client's own timeouts).
     pub fn drain() -> Self {
         Self {
-            meta: None,
+            operation: None,
             kind: Kind::Drain(|| ()),
         }
     }
@@ -217,16 +422,74 @@ impl Decoder<()> {
 impl<T> Decoder<T> {
     pub(crate) fn typed(meta: &'static EndpointMeta, head: HeadStep<T>) -> Self {
         Self {
-            meta: Some(meta),
+            operation: Some(Operation::endpoint(meta)),
             kind: Kind::Typed(head),
         }
     }
 
     pub(crate) fn drained(meta: &'static EndpointMeta, unit: fn() -> T) -> Self {
         Self {
-            meta: Some(meta),
+            operation: Some(Operation::endpoint(meta)),
             kind: Kind::Drain(unit),
         }
+    }
+
+    pub(crate) fn opened(meta: &'static EndpointMeta, head: OpenHeadStep<T>) -> Self {
+        Self {
+            operation: Some(Operation::endpoint(meta)),
+            kind: Kind::Open(head),
+        }
+    }
+
+    pub(crate) fn incoming_for(meta: &'static EndpointMeta, wrap: fn(Incoming) -> T) -> Self {
+        Self {
+            operation: Some(Operation::endpoint(meta)),
+            kind: Kind::Incoming(wrap),
+        }
+    }
+
+    /// The identity of the endpoint this handling belongs to (`None` for [`Decoder::new`],
+    /// [`Decoder::open`], [`Decoder::incoming`] and [`Decoder::drain`]).
+    pub fn operation(&self) -> Option<Operation> {
+        self.operation
+    }
+
+    /// Executes a native request once (one you edited after
+    /// [`Prepared::into_parts`]: a `Link` URL, a per-request timeout) and returns the response,
+    /// any status, unread, with this handling attached: the same boundary as
+    /// [`Prepared::receive`].
+    ///
+    /// A request whose body is buffered and empty is sent with `Content-Length: 0` (unless it
+    /// already has one): reqwest omits the field, and an empty PUT/POST would otherwise look like
+    /// a request without content. The rule is applied here, to the body actually sent, so a body
+    /// replaced natively after `into_parts` is framed by its own length; a request executed with
+    /// `reqwest::Client::execute` directly gets reqwest's framing.
+    ///
+    /// # Errors
+    ///
+    /// [`ErrorKind::Transport`](crate::ErrorKind::Transport) only, naming the endpoint.
+    pub async fn execute(
+        self,
+        client: &reqwest::Client,
+        mut request: reqwest::Request,
+    ) -> Result<Received<T>, Error> {
+        frame_empty_body(&mut request);
+        match client.execute(request).await {
+            Ok(response) => Ok(Received::new(response, self)),
+            Err(e) => Err(self.transport_error(e)),
+        }
+    }
+
+    /// Attaches this handling to a response you obtained yourself, unread.
+    pub fn receive(self, response: reqwest::Response) -> Received<T> {
+        Received::new(response, self)
+    }
+
+    /// Converts a transport failure of a request you executed yourself into Concord's
+    /// [`ErrorKind::Transport`](crate::ErrorKind::Transport) error naming this endpoint, with the
+    /// URL removed (synchronous; nothing to await, no impossible success branch).
+    pub fn transport_error(&self, error: reqwest::Error) -> Error {
+        Error::from_transport(self.operation, error)
     }
 
     /// Handles `response` as the endpoint would have: a non-2xx status is
@@ -240,8 +503,19 @@ impl<T> Decoder<T> {
     /// unread), [`Transport`](crate::ErrorKind::Transport) if reading the body fails,
     /// [`Decode`](crate::ErrorKind::Decode) if it does not decode.
     pub async fn decode(self, response: reqwest::Response) -> Result<T, Error> {
+        self.decode_within(response, None).await
+    }
+
+    /// [`decode`](Self::decode) with a finite body read bounded by `limit` (`-> T` outputs; a drain,
+    /// a stream or an `Incoming` is unaffected).
+    pub(crate) async fn decode_within(
+        self,
+        response: reqwest::Response,
+        limit: Option<usize>,
+    ) -> Result<T, Error> {
+        let operation = self.operation;
         if !response.status().is_success() {
-            return Err(Error::from_status(self.meta, response));
+            return Err(Error::from_status(operation, response));
         }
         match self.kind {
             Kind::Drain(unit) => {
@@ -249,7 +523,7 @@ impl<T> Decoder<T> {
                 while response
                     .chunk()
                     .await
-                    .map_err(|e| Error::from_transport(self.meta, e))?
+                    .map_err(|e| Error::from_transport(operation, e))?
                     .is_some()
                 {}
                 Ok(unit())
@@ -259,14 +533,26 @@ impl<T> Decoder<T> {
                 // either into the error (unread) or into `bytes()`.
                 let step = match head(&ResponseHead::of(&response)) {
                     Ok(step) => step,
-                    Err(e) => return Err(Error::from_metadata(self.meta, e, response)),
+                    Err(e) => return Err(Error::from_metadata(operation, e, response)),
                 };
-                let body = response
-                    .bytes()
-                    .await
-                    .map_err(|e| Error::from_transport(self.meta, e))?;
-                step(body).map_err(|e| Error::from_decode(self.meta, e))
+                let body = match limit {
+                    None => response
+                        .bytes()
+                        .await
+                        .map_err(|e| Error::from_transport(operation, e))?,
+                    Some(limit) => read_limited(response, limit, operation).await?,
+                };
+                step(body).map_err(|e| Error::from_decode(operation, e))
             }
+            Kind::Open(head) => {
+                // Same head discipline as `Typed`; the body is not polled, only handed over.
+                let step = match head(&ResponseHead::of(&response)) {
+                    Ok(step) => step,
+                    Err(e) => return Err(Error::from_metadata(operation, e, response)),
+                };
+                Ok(step(Incoming::checked(response, operation)?))
+            }
+            Kind::Incoming(wrap) => Ok(wrap(Incoming::checked(response, operation)?)),
         }
     }
 
@@ -294,7 +580,7 @@ impl<T> Decoder<T> {
     ) -> Result<T, Error> {
         match result {
             Ok(response) => self.decode(response).await,
-            Err(e) => Err(Error::from_transport(self.meta, e)),
+            Err(e) => Err(self.transport_error(e)),
         }
     }
 }
@@ -310,7 +596,22 @@ impl<T> Copy for Decoder<T> {}
 impl<T> fmt::Debug for Decoder<T> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("Decoder")
-            .field("endpoint", &self.meta.map(|m| m.name))
+            .field("endpoint", &self.operation.map(|op| op.name()))
             .finish()
+    }
+}
+
+/// `Content-Length: 0` for a buffered empty body (RFC 9110 §8.6: content of length zero is still
+/// content), which reqwest omits; streamed bodies and requests without a body are left alone.
+fn frame_empty_body(request: &mut reqwest::Request) {
+    use reqwest::header::{CONTENT_LENGTH, HeaderValue};
+    let empty = request
+        .body()
+        .and_then(reqwest::Body::as_bytes)
+        .is_some_and(<[u8]>::is_empty);
+    if empty && !request.headers().contains_key(CONTENT_LENGTH) {
+        request
+            .headers_mut()
+            .insert(CONTENT_LENGTH, HeaderValue::from_static("0"));
     }
 }

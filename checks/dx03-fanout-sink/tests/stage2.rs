@@ -637,3 +637,144 @@ async fn sink_failure_does_not_publish_a_prefix_and_can_be_retried() {
     directory.assert_no_staging();
     assert_eq!(server.shutdown().await.open_after, 0);
 }
+
+#[tokio::test]
+async fn zero_row_parts_publish_with_a_declared_or_absent_count() {
+    let directory = TestDirectory::new();
+    let server = TestServer::start(|request| match request.path() {
+        JOB_PATH => info(),
+        MANIFEST_PATH => manifest(&[0, 1], false),
+        RESULT_PATH => match part_number(request) {
+            0 => csv(HEADER, Some(0)),
+            1 => csv(HEADER, None),
+            n => panic!("unexpected part {n}"),
+        },
+        path => panic!("unexpected path {path}"),
+    })
+    .await;
+    let report = export(
+        &context(&server),
+        job_id(),
+        directory.sink(),
+        limits(10, 10),
+    )
+    .await
+    .unwrap();
+    assert!(report.is_complete());
+    assert!(report.failures.is_empty());
+    let receipts: Vec<_> = report
+        .completed()
+        .map(|r| (r.ordinal, r.rows, r.bytes, r.declared_records))
+        .collect();
+    let header = HEADER.len() as u64;
+    assert_eq!(receipts, [(0, 0, header, Some(0)), (1, 0, header, None)]);
+    for ordinal in 0..2 {
+        let published = report.sink().published_path(ordinal);
+        assert_eq!(
+            fs::read(published).unwrap(),
+            b"",
+            "an empty part is published empty"
+        );
+    }
+    directory.assert_no_staging();
+    assert_eq!(server.shutdown().await.open_after, 0);
+}
+
+#[tokio::test]
+async fn a_provider_error_document_on_a_part_is_typed_and_never_staged() {
+    let directory = TestDirectory::new();
+    let progress = Arc::new(Progress::default());
+    let sink = ObservedSink {
+        files: directory.sink(),
+        progress: progress.clone(),
+        fail_second_row_once: Arc::new(AtomicBool::new(false)),
+    };
+    let attempts = AtomicUsize::new(0);
+    let server = TestServer::start(move |request| match request.path() {
+        JOB_PATH => info(),
+        MANIFEST_PATH => manifest(&[0], false),
+        RESULT_PATH if attempts.fetch_add(1, Ordering::SeqCst) == 0 => Reply::json(
+            404,
+            br#"[{"errorCode":"NOT_FOUND","message":"fixture: result part unavailable"}]"#,
+        ),
+        RESULT_PATH => full_part(part_number(request)),
+        path => panic!("unexpected path {path}"),
+    })
+    .await;
+    let report = export(&context(&server), job_id(), sink, limits(10, 10))
+        .await
+        .unwrap();
+    assert_eq!(report.completed().count(), 0);
+    assert_eq!(
+        report.redo().iter().map(|p| p.ordinal).collect::<Vec<_>>(),
+        [0]
+    );
+    let PartError::Salesforce(error) = &report.failures[0].error else {
+        panic!("expected the provider's error document");
+    };
+    let api = error.api().expect("an SfError::Api");
+    assert_eq!(api.status().as_u16(), 404);
+    assert!(error.has_error_code("NOT_FOUND"));
+    assert_eq!(
+        api.operation(),
+        Some("SalesforceApi.bulk_query.job.results")
+    );
+    assert_eq!(
+        progress.peak.load(Ordering::SeqCst),
+        0,
+        "a refused part never begins a sink transaction"
+    );
+    assert!(!report.sink().files.published_path(0).exists());
+    directory.assert_no_staging();
+
+    let report = report.resume(limits(10, 10)).await;
+    assert!(report.is_complete());
+    assert_eq!(report.completed().next().unwrap().rows, 2);
+    directory.assert_no_staging();
+    assert_eq!(server.shutdown().await.open_after, 0);
+}
+
+#[tokio::test]
+async fn dropping_the_export_mid_part_publishes_nothing() {
+    let directory = TestDirectory::new();
+    let progress = Arc::new(Progress::default());
+    let sink = ObservedSink {
+        files: directory.sink(),
+        progress: progress.clone(),
+        fail_second_row_once: Arc::new(AtomicBool::new(false)),
+    };
+    let published = sink.files.published_path(0);
+    let server = TestServer::start(|request| match request.path() {
+        JOB_PATH => info(),
+        MANIFEST_PATH => manifest(&[0], false),
+        RESULT_PATH => {
+            // One valid row, then blank lines forever: the part never reaches its end.
+            let mut first = true;
+            csv("", Some(2)).with_body(Body::Generate(
+                Box::new(move || {
+                    if std::mem::take(&mut first) {
+                        Some(format!("{HEADER}{}", ROWS[0]).into())
+                    } else {
+                        Some("\n".into())
+                    }
+                }),
+                Some(Duration::from_millis(1)),
+            ))
+        }
+        path => panic!("unexpected path {path}"),
+    })
+    .await;
+    let ctx = context(&server);
+    tokio::select! {
+        _ = export(&ctx, job_id(), sink, limits(10, 10)) => panic!("a stalled part cannot finish"),
+        reached = server.wait_until(Duration::from_secs(2), |_| progress.rows(0) == 1) => {
+            assert!(reached, "one row reached the staged part");
+        }
+    }
+    // The export future (and its part) was dropped after a staged row: nothing is published and
+    // the staging file is gone.
+    assert!(!published.exists());
+    assert_eq!(fs::read_dir(&directory.0).unwrap().count(), 0);
+    assert_eq!(progress.active.load(Ordering::SeqCst), 0);
+    assert_eq!(server.shutdown().await.open_after, 0);
+}

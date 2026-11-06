@@ -59,12 +59,12 @@ Bulk API 2.0 Developer Guide (`https://developer.salesforce.com/docs/platform/ap
 | Bulk query | Job info | `bulk_query().job(id).info()` | `BulkQueryJob::info`, `wait_complete` |
 | Bulk query | Abort (`PATCH {"state":"Aborted"}`) | `bulk_query().job(id).abort(change)` | `BulkQueryJob::abort` |
 | Bulk query | Parallel result pages | `bulk_query().job(id).result_pages()` | `ResultManifests::fetch` (manifest factory) |
-| Bulk query | Results (`locator`, `maxRecords`) | `bulk_query().job(id).results()` | `open_result_set`, `ResultSets` (sequential chain) |
+| Bulk query | Results (`locator`, `maxRecords`) | `bulk_query().job(id).results()` (`-> stream`: the unread body) | `ResultPartReader::open` (one validated part), `ResultSets` (sequential chain, same reader) |
 | Ingest | Create (`POST jobs/ingest`) | `ingest().create(body)` | `IngestJob::create` |
 | Ingest | Job info | `ingest().job(id).info()` | `IngestJob::info`, `wait_finished` |
 | Ingest | Upload complete / abort (`PATCH`) | `ingest().job(id).set_state(change)` | `IngestJob::close`, `abort` |
 | Ingest | Upload job data (`PUT .../batches`, `text/csv`) | `ingest().job(id).upload(bytes)` | `IngestJob::upload`, `upload_spooled` |
-| Ingest | Successful / failed / unprocessed results | `ingest().job(id).successful_results()`, `.failed_results()`, `.unprocessed_records()` | `IngestJob::result_rows` |
+| Ingest | Successful / failed / unprocessed results | `ingest().job(id).successful_results()`, `.failed_results()`, `.unprocessed_records()` (`-> stream`) | `IngestJob::result_rows` |
 
 **Deliberately unsupported** (a bounded slice, not a complete SDK): authentication flows (the
 caller supplies an access token), REST record writes, `queryAll` over REST, SOSL, composite and
@@ -117,10 +117,13 @@ the whole encoded body is buffered before the request starts. Live acceptance of
 is unverified. The generic chunked route is tested only against a labelled transport fixture.
 
 **SF-D7 `Sforce-NumberOfRecords` on parallel result URLs.** Documented for the results resource,
-which the result URLs address. When present it must equal the parsed row count
-(`RecordCountMismatch`); when absent the check is skipped and the receipt says so
-(`declared_records: None`). `Sforce-Locator` is required only on the sequential chain; `"null"`
-(the string) ends it.
+which the result URLs address. When present it must equal the parsed row count at the parsed end
+of input (`RecordCountMismatch`, after the part's rows were delivered); when absent the check is
+skipped and the completion says so (`declared_records: None`). Both routes read parts through one
+adapter, `bulk_query::ResultPartReader`: only `ResultPartRows::finish` after that validated end
+returns a `PartComplete`; an early stop, a limit (`maxRecords`, a byte limit) or a read error is
+`SfError::Incomplete`, never a completion. `Sforce-Locator` is required only on the sequential
+chain (`ResultSets`); `"null"` (the string) ends it.
 
 **SF-D8 Ingest result file dialect.** Not stated explicitly; read with the job's delimiter and
 line ending (the files echo "field data … provided in the original job data upload"). Columns are

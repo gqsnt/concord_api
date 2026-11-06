@@ -625,9 +625,10 @@
         "ku_b_list_watch_applies_typed_changes_and_reconnects_after_normal_end",
         "ku_b_split_utf8_is_decoded_intact",
         "ku_b_transport_loss_reconnects_from_the_last_resource_version",
-        "every_split_offset_decodes_the_same_events"
+        "every_split_offset_decodes_the_same_events",
+        "events_decode_across_chunk_splits_and_end_cleanly"
       ],
-      "test_command": "cargo test --locked -p concord-example-kubernetes-app --test ku_b_list_watch; cargo test --locked -p concord-example-kubernetes-app --test ku_b_segmentation",
+      "test_command": "cargo test --locked -p concord-example-kubernetes-app --test ku_b_list_watch; cargo test --locked -p concord-example-kubernetes-app --test ku_b_segmentation; cargo test --locked -p concord-example-kubernetes-app --test watch_operation",
       "sha256": "b8e6288f27d3702df74cb28f0e662f58c668f3a88c29c8611c807becb79aecb5",
       "bytes": 3671
     },
@@ -647,9 +648,11 @@
       "tests": [
         "ku_b_list_watch_applies_typed_changes_and_reconnects_after_normal_end",
         "ku_b_dropping_the_workflow_releases_the_watch_connection",
-        "events_need_no_newline_and_an_unfinished_event_is_not_an_end"
+        "events_need_no_newline_and_an_unfinished_event_is_not_an_end",
+        "a_410_error_event_is_the_last_event",
+        "dropping_the_stream_early_is_not_end_of_input"
       ],
-      "test_command": "cargo test --locked -p concord-example-kubernetes-app --test ku_b_list_watch; cargo test --locked -p concord-example-kubernetes-app --test ku_b_segmentation",
+      "test_command": "cargo test --locked -p concord-example-kubernetes-app --test ku_b_list_watch; cargo test --locked -p concord-example-kubernetes-app --test ku_b_segmentation; cargo test --locked -p concord-example-kubernetes-app --test watch_operation",
       "sha256": "b0a0898eb48ff066968d3c8fb75672621d22d0748dee89350559f943735a0989",
       "bytes": 987
     },
@@ -667,9 +670,10 @@
       "wire_assertions": "after two events",
       "expected_outcome": "relist with ResetBoundary{ExpiredEvent, 9000, abandoned 8002, previous 3, objects 2, vanished 2}",
       "tests": [
-        "ku_b_expired_history_relists_with_an_explicit_reset_boundary"
+        "ku_b_expired_history_relists_with_an_explicit_reset_boundary",
+        "a_410_error_event_is_the_last_event"
       ],
-      "test_command": "cargo test --locked -p concord-example-kubernetes-app --test ku_b_list_watch",
+      "test_command": "cargo test --locked -p concord-example-kubernetes-app --test ku_b_list_watch; cargo test --locked -p concord-example-kubernetes-app --test watch_operation",
       "sha256": "5d9c70c9cdb6fc82e1c5888ab177e9b9247eb10fb1d23f7a78b13df9b7a97992",
       "bytes": 175
     },
@@ -727,9 +731,10 @@
       "wire_assertions": "every watch request",
       "expected_outcome": "ResetCause::ExpiredOnOpen, then WatchOutcome::RelistBudget",
       "tests": [
-        "ku_b_410_on_open_relists_and_the_relist_budget_is_explicit"
+        "ku_b_410_on_open_relists_and_the_relist_budget_is_explicit",
+        "a_410_answer_is_a_status_error_read_as_expired"
       ],
-      "test_command": "cargo test --locked -p concord-example-kubernetes-app --test ku_b_list_watch",
+      "test_command": "cargo test --locked -p concord-example-kubernetes-app --test ku_b_list_watch; cargo test --locked -p concord-example-kubernetes-app --test watch_operation",
       "sha256": "cd3677b382ae812b0cb2db22f9d4d6aaec29c630b22e73e8fedfe508aac48fe0",
       "bytes": 178
     },
@@ -767,9 +772,10 @@
       "wire_assertions": "resourceVersion=7100",
       "expected_outcome": "MODIFIED web (available), ADDED worker; normal end; ReconnectBudget with max_reconnects 0",
       "tests": [
-        "ku_b_deployments_in_a_second_namespace"
+        "ku_b_deployments_in_a_second_namespace",
+        "a_mid_stream_read_error_names_the_declared_endpoint"
       ],
-      "test_command": "cargo test --locked -p concord-example-kubernetes-app --test ku_b_list_watch",
+      "test_command": "cargo test --locked -p concord-example-kubernetes-app --test ku_b_list_watch; cargo test --locked -p concord-example-kubernetes-app --test watch_operation",
       "sha256": "8e8ef9aecc62bd43a53052ac13ba4d508b665d181efad1e16c8335eb669d0c2e",
       "bytes": 1573
     }

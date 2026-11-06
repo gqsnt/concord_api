@@ -238,6 +238,35 @@ Each key has one **slot**, positioned at the key's first appearance on the chain
   response handling to any native response, and `Decoder::finish(client.execute(request).await)`
   also converts a native transport error into Concord's `ErrorKind::Transport` (same redaction
   as `send`). `Prepared::request()` gives read-only access.
+- `Prepared::receive()` executes once and returns a `Received<T>` for **any** status, body unread,
+  keeping the response handling and the endpoint's identity (`Operation`: declared name and
+  method). Only a transport failure is an error (`ErrorKind::Transport`, naming the endpoint).
+  `Received::head()` borrows status, version and headers without consuming anything;
+  `Received::decode()` applies the response handling (`send()` is `receive()` then `decode()`, so
+  the two paths cannot diverge); `Received::into_incoming()` requires a 2xx and returns the unread
+  body with its identity for a reader chosen at run time; `into_response()`/`into_parts()` are the
+  native escape. Each consumer takes `self`: one response, one consumer. `Debug` of `Received`
+  and `Incoming` prints the operation, status, version and header names, never the URL or a
+  header value. Metadata that must survive a body failure is read from the head before the
+  consumer into a value the SDK owns; Concord copies no header by default.
+- For a request edited natively after `into_parts()`, `Decoder::execute(&client, request)`
+  returns the same `Received<T>`; `Decoder::transport_error(&self, e)` converts a native
+  transport failure synchronously; `Decoder::receive(response)` attaches the handling to a
+  response obtained otherwise. `Incoming::new(response, operation)` status-checks a natively
+  obtained response (a signed URL) with an optional static label (`Operation::label`), which
+  errors and readers print; `Error::endpoint()` names declared endpoints only,
+  `Error::operation()` either.
+- `Prepared::follow(url)` replaces the URL of a prepared request with a server-provided one,
+  verbatim, keeping method, headers, body, handling and identity; a URL that does not parse or has
+  another origin (scheme, host, port) is a `Build` error before I/O; `Debug` then withholds the
+  whole URL. Further link rules (path prefix, collection) are the SDK's.
+- `send P;` on the client (once, before children) makes every generated `send()` return
+  `<P as SendWith<T>>::Output` by calling `P::send(endpoint)`; the policy owns execution, errors and
+  metadata (it usually calls `prepare()` and `receive()`). Without it, `send()` is `prepare()?.send()`.
+- Every generated endpoint type implements the public `Endpoint<T>` trait for its output `T` (the
+  generated `prepare()`, `operation()` — the declared identity without building a request); it adds
+  nothing to the generated namespace. `Received::bytes_limited(n)` reads the body of any status up
+  to `n` bytes (`ErrorKind::Limit` beyond, the rest unread), without the declared handling.
 - Concord performs no retries, no authentication, no rate limiting, no pagination and has no
   transport settings. One `send` is one `Client::execute` call; redirects, proxies, timeouts,
   compression and default headers are whatever the reqwest client does.
@@ -252,7 +281,8 @@ Each key has one **slot**, positioned at the key's first appearance on the chain
 
 Every body and every typed output has a **format**, given by a statement. `T` is the payload type
 the caller supplies or receives (generated signatures use it directly); the format is a type
-implementing `Encode<T>` (bodies) or `Decode<T>` (outputs), named by its Rust path. No format is
+implementing `Encode<T>` (bodies), `Decode<T>` (outputs) or `Incremental<T>` (stream outputs, below),
+named by its Rust path. No format is
 chosen from the spelling of `T`, and none is known to the macro: the standard formats
 (`concord-extras`, re-exported by `concord`) are ordinary implementations.
 
@@ -304,6 +334,19 @@ chosen from the spelling of `T`, and none is known to the macro: the standard fo
 - The inserted `Content-Type` is flagged sensitive when the `content-type` header is sensitive on
   the endpoint (marker or sticky composition, also after a `remove`), decided at compile time for
   literal chains and by the run-time plan otherwise.
+- **Runtime media.** `Encode::encode_body` (defaulted: `encode` with no runtime media type) may
+  return an `EncodedBody` whose media type is bound to its bytes at run time (a generated
+  multipart boundary, a CSV dialect chosen per job); Concord always calls `encode_body`. Against
+  the declaration, when the request is prepared and before any I/O: no declaration → the runtime
+  value is sent (it supersedes the format's own `CONTENT_TYPE`); a declared `request F "m";` must
+  equal it byte for byte, else a `Build` error; a surviving `content-type` header contribution
+  must be exactly one value equal to it, else a `Build` error (an equal one is sent once); a chain
+  ending in `remove content-type` sends the runtime value; an absent optional body sends no media
+  type. Concord parses no media type (byte equality is the documented tradeoff). The body's
+  length is the body's own: a known size hint is sent with `Content-Length`, a stream of unknown
+  length chunked; Concord never buffers a body to learn its length. The standard `Encoded` format
+  passes an `EncodedBody` or a runtime writer's `Upload` through a declared body (`body x: Upload`
+  with `request Encoded;`), so a body-carrying operation is declared with its body.
 - An output takes no media type: the response `Content-Type` is the format's to check
   (`Decode::check_content_type`), never compared with the request's `Accept`. Concord does not
   enforce the request field's cardinality (repeated declared `content-type` values are the
@@ -343,6 +386,34 @@ chosen from the spelling of `T`, and none is known to the macro: the standard fo
   can be called directly (for example on the body of an error response), with no head check.
 - Observed transport detail: hyper sends a zero-length body without `Content-Length`, so "no body"
   and "empty `text` body" differ on the wire only by `Content-Type`.
+
+**Incremental outputs.**
+
+- `-> stream T` declares an output read as the response arrives. Its format is the nearest
+  `response` statement, which must implement `Incremental<T>` (`Csv<..>`, `JsonLines`, `Ndjson`,
+  `JsonStream`, `IgnoreContentType<F>`, or yours); `send()` returns the format's reader
+  (`Records<F, T>`, e.g. `CsvRecords<T>`) after the status and head checks, **without reading the
+  body**. `-> stream` without an item returns the unread `Incoming` body, any 2xx, no format (a
+  `response` statement there is a compile error). Neither drains; the drain applies only without
+  `->`. `stream` is the keyword unless it begins a path or a generic type (`-> stream::E`,
+  `-> stream<T>`); `r#stream` is a type.
+- A reader opens an `Incoming`, a `Received<T>` (status checked) or a native response, checks the
+  head before polling the body, and names the declared operation (or label) in every later error,
+  without a string written by the SDK. `completion()` is `EndOfInput` only after the clean end of
+  the input; a terminal error is `Failed`; dropping or stopping early is neither. `into_stream()`
+  gives an owning `futures_core::Stream` (`RecordStream`) with the same errors, no read-ahead and a
+  cancellation-safe pending read.
+
+| Stage | Finite `-> T` (and `()`) | `-> stream T` / `-> stream` + reader |
+|---|---|---|
+| request not built | `Build`, nothing sent | same |
+| no response | `Transport`, no response | same |
+| non-2xx | `Status`, response unread | `Status` (`send()`), or reader `OpenError::Status`, response unread |
+| head refused | `Metadata`, response unread | `Metadata` (`send()`), or reader `OpenError::Metadata`, unread |
+| body read fails | `Transport` with the endpoint; the bytes are gone; SDK metadata read from the head survives | `ReadError` `Transport`, terminal, with position; records already delivered stay delivered |
+| body malformed / does not decode | `Decode` | `ReadError` `Format`/`Decode`: terminal, except JSON Lines `RecordErrors::Yield` line errors (recoverable, `is_terminal() == false`) |
+| limit | — | `ReadError` `Limit`, terminal, never a clean end |
+| caller stops / drops | the request future is dropped | the reader is dropped: `completion()` was `Reading`, not `EndOfInput` |
 
 ## 8. Errors
 

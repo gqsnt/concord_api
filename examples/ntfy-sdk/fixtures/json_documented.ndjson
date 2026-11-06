@@ -1,0 +1,3 @@
+{"id":"SLiKI64DOt","time":1635528757,"event":"open","topic":"mytopic"}
+{"id":"hwQ2YpKdmg","time":1635528741,"event":"message","topic":"mytopic","message":"Disk full"}
+{"id":"DGUDShMCsc","time":1635528787,"event":"keepalive","topic":"mytopic"}

@@ -623,6 +623,45 @@ async fn no_matching_run_or_artifact() {
     fx.shutdown().await;
 }
 
+/// A walk's end is read from the traversal and reported, never hidden: a job budget reached
+/// while GitHub lists more jobs leaves `complete: false` (the retrieval still succeeds with the
+/// jobs read); a run listing read to its end without a match is `exhausted` with no resume link.
+#[tokio::test]
+async fn budget_and_exhaustion_are_reported() {
+    let fx = Fixture::start().await;
+    fx.deliver(Delivery::Archive);
+    let repo = fx.repo("hello-world", TOKEN_A);
+
+    let mut one_job_page = input("coverage-report");
+    one_job_page.budget.job_pages = NonZeroUsize::MIN;
+    let mut sink = BoundedBuffer::new(1 << 20);
+    let retrieval = retrieve_artifact(&repo, &one_job_page, &mut sink).await;
+    let RetrievalOutcome::Retrieved(report) = &retrieval.outcome else {
+        panic!("{:?}", retrieval.outcome)
+    };
+    assert_eq!(
+        report.jobs.jobs.iter().map(|j| j.id).collect::<Vec<_>>(),
+        [JobId(7001)]
+    );
+    assert!(!report.jobs.complete, "a bounded job walk is not complete");
+
+    let mut cancelled = input("coverage-report");
+    cancelled.select.conclusion = Some(Conclusion::Cancelled);
+    let mut sink = BoundedBuffer::new(1 << 20);
+    let retrieval = retrieve_artifact(&repo, &cancelled, &mut sink).await;
+    let RetrievalOutcome::NoMatchingRun {
+        runs_scanned,
+        exhausted,
+        resume,
+    } = &retrieval.outcome
+    else {
+        panic!("{:?}", retrieval.outcome)
+    };
+    assert_eq!((*runs_scanned, *exhausted), (3, true));
+    assert!(resume.is_none());
+    fx.shutdown().await;
+}
+
 /// Two repositories under two tokens on the same servers: API requests carry each context's own
 /// token and repository; the download host sees neither token.
 #[tokio::test]

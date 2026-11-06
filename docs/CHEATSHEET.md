@@ -92,7 +92,8 @@ fn main() -> Result<(), concord::Error> {
 | `query { "k" = v; }`, `headers { "k" = "t {x}"; KEY = v; }` | blocks. **Left of `=` is a key**: a literal, or for headers a Rust path to a `HeaderName`. **Right of `=` is a value**: a template, or a value's name | [§4.2](AUTHOR_GUIDE.md#42-blocks-templates-and-references), [§4.8](AUTHOR_GUIDE.md#48-header-names-and-values) |
 | `append`, `override`, `override .. else inherit`, `remove` | change a key set further up; anything else on an inherited key is an error | [§4.3](AUTHOR_GUIDE.md#43-what-an-owner-may-do-with-an-inherited-key) |
 | `format F;`, `request F;`, `request F "type/subtype";`, `response F;` | formats on a client, scope or endpoint; the nearest wins per direction; a media type comes with its format | [§5.2](AUTHOR_GUIDE.md#52-where-formats-come-from) |
-| `Json`, `Text`, `Binary`, `Form`, `IgnoreContentType<Json>`, or any path (`self::Csv`) | a format type: one implementing `Encode<T>`/`Decode<T>` (Concord's or yours), named like any Rust type | [§5.1](AUTHOR_GUIDE.md#51-the-formats), [§5.7](AUTHOR_GUIDE.md#57-custom-formats), [formats](CUSTOM_FORMATS.md) |
+| `Json`, `Text`, `Binary`, `Form`, `IgnoreContentType<Json>`, `multipart::Multipart`, or any path (`self::Csv`) | a format type: one implementing `Encode<T>`/`Decode<T>` (Concord's or yours), named like any Rust type | [§5.1](AUTHOR_GUIDE.md#51-the-formats), [§5.7](AUTHOR_GUIDE.md#57-custom-formats), [formats](CUSTOM_FORMATS.md) |
+| `body form: MultipartBody` + `request Multipart;` (feature `multipart`) | `MultipartBody::form_data().text(..).file(..)` or `::related().part(Part::new(b).header(..))`; boundary chosen per body, sent with `Content-Length`; a contradicting declared media type or `content-type` is a `Build` error | [§5.10](AUTHOR_GUIDE.md#510-bodies-whose-media-type-is-known-at-run-time) |
 | `ACCEPT = ".."`, `remove ACCEPT` | an authored `Accept` always wins over the format's suggestion; a chain ending in `remove` sends none from Concord | [§5.8](AUTHOR_GUIDE.md#58-what-goes-on-the-wire-accept-and-content-type) |
 | `#[sensitive]` | never printed by Concord; also every key, segment and label it feeds | [§7](AUTHOR_GUIDE.md#7-sensitive-values) |
 | `#[cfg(..)]`, `#[deprecated]`, `///` on scopes and endpoints | applied to the subtree or the navigation method; names are checked as if every `cfg` were on, so cfg-exclusive siblings need distinct names | [§8](AUTHOR_GUIDE.md#8-attributes) |
@@ -109,9 +110,15 @@ format statements, then children.
 | `.set_x(v)`, `.maybe_x(Some(v) / None)` | return the updated handle (`#[must_use]`); handles are cheap snapshots |
 | `docs.folder(7)`, `folder.rename(3, change)` | navigation: required values are positional, in declaration order |
 | `.send().await` | `prepare`, one `execute`, require 2xx, check the response head, read and decode the body; never retries |
-| `.prepare()?` → `Prepared` | the native `reqwest::Request` (`request()`), `send()`, `send_raw()`, `into_parts()` |
+| `.prepare()?` → `Prepared` | `receive()` (below), `send()`, the native `reqwest::Request` (`request()`), `send_raw()`, `into_parts()` |
+| `.prepare()?.receive().await?` → `Received` | one execution, any status, body unread: `head()`, `meta()` (owned copy), `status()`, `url()`, then one of `decode()`, `decode_limited(n)`, `into_incoming()`, `bytes_limited(n)`, `into_response()` |
+| `-> stream T` / `-> stream` | `send()` returns the reader / the unread `Incoming`; readers' `open(..)` takes `Incoming`, `Received` or a native response; `completion()`, `into_stream()` |
+| `-> stream sse::Event` + `response Sse;` (feature `sse`) | server-sent events: `next()` → `Event` (`event()`, `data()` as text, `id()`), `last_event_id()`, `retry()`; a body ending inside an event is an error; no reconnect |
+| `prepared.follow(url)?` | the same request at a server-returned URL (same origin only; `Debug` withholds it) |
+| `send Policy;` (client) | every `send()` returns the SDK's `<Policy as SendWith<T>>::Output` (its errors, metadata, signing) |
+| `concord::Endpoint<T>` | implemented by every generated endpoint for its output `T` (`prepare`, `operation()`): write one SDK adapter for all operations |
 | `into_parts()` → `(Client, Request, Decoder)` | execute it yourself, then `decoder.finish(result)` or `decoder.decode(response)` |
-| `error.kind()`, `status()`, `endpoint()` | `Build`, `Transport`, `Status`, `Metadata`, `Decode`; `status()` is `Some` for `Status` only |
+| `error.kind()`, `status()`, `endpoint()` | `Build`, `Transport`, `Status`, `Metadata`, `Decode`, `Limit`; `status()` is `Some` for `Status` only |
 | `error.response()`, `error.into_response()` | the unread response of a `Status` or a `Metadata` error: borrowed (headers) or taken (body) |
 | `error.codec_error()` | the format's `CodecError` (a `Metadata`, `Decode` or encoding `Build` error): static `label()`, `get("line")`, and `source_unredacted()` |
 | `error.transport()` | the reqwest error, which may contain URLs |

@@ -9,16 +9,17 @@
 //!
 //! # Traversal policy
 //!
-//! - Every list is a dependent cursor chain ([`CursorList`] with `concord_pagination::sequential`):
-//!   the next request is built only from the previous page's last id; pages are fetched one at a
-//!   time, and child chains run one after another inside the parent walk. Nothing is fetched in
-//!   parallel and no cursor is derived from a count.
+//! - Every list is a dependent cursor chain ([`CursorList::pages_from`], `concord_pagination`'s
+//!   `Pages`): the next request is built only from the previous page's last id; pages are
+//!   fetched one at a time, and child chains run one after another inside the parent walk.
+//!   Nothing is fetched in parallel and no cursor is derived from a count.
 //! - An invoice's embedded `lines` list is the first page of its line chain: when
 //!   `lines.has_more` is true, the chain resumes after the embedded list's last id
 //!   ([`CursorList::after_embedded`]); the embedded page is not charged to the line budget.
-//! - Budgets ([`Budgets`]) are page counts per chain (`concord_pagination::Budget`): the invoice
-//!   chain, each invoice's line chain, the balance chain. A chain that reaches its budget is
-//!   `Bounded` with its next cursor.
+//! - Budgets ([`Budgets`]) are page counts per chain (`concord_pagination::Budget`, applied as
+//!   the traversal's `max_pages`): the invoice chain, each invoice's line chain, the balance
+//!   chain. A chain that reaches its budget while Stripe has more is `Bounded` with its next
+//!   cursor (the traversal's `PagesError::Bounded`, never a silent end).
 //! - A failed page (a rate limit, a protocol violation, a transport failure) ends that chain; the
 //!   report keeps the typed error, the pages already collected and the cursor of the failed page.
 //!   A failed line chain marks that invoice's lines incomplete and the walk continues with the
@@ -52,7 +53,7 @@ use concord_example_stripe_sdk::{
     Expandable, InvoiceId, InvoiceLineItemId, Limit, Object, PriceId, ResponseMeta, StripeContext,
     SubscriptionId, Timestamp,
 };
-use concord_pagination::{Budget, Outcome, Resume, sequential};
+use concord_pagination::{Budget, Outcome, PagesError, Resume};
 
 /// A creation-time window: `created[gte]` and `created[lt]`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -411,8 +412,8 @@ fn record(report: &mut ReconciliationReport, operation: &'static str, meta: &Res
     });
 }
 
-/// Drains one chain: records every page's metadata, hands each page to `each`, and turns the
-/// pagination report into a [`Section`].
+/// Drains one chain: records every page's metadata, hands each page to `each`, and turns how
+/// the traversal ended into a [`Section`].
 async fn drain<R, F>(
     list: &CursorList<R>,
     from: Resume<Cursor<<R::Item as Object>::Id>>,
@@ -422,30 +423,33 @@ async fn drain<R, F>(
     mut each: F,
 ) -> Section<<R::Item as Object>::Id>
 where
-    R: ListRequest,
+    R: ListRequest + Send + 'static,
+    R::Item: Send + 'static,
+    <R::Item as Object>::Id: Send + 'static,
     F: AsyncFnMut(StripePage<R::Item>, &mut ReconciliationReport),
 {
-    let mut pages = sequential(from, budget, |cursor| list.fetch(cursor));
-    let mut error = None;
-    while let Some(page) = pages.next().await {
-        match page {
-            Ok(page) => {
+    let mut pages = list.pages_from(from).max_pages(budget);
+    let (outcome, resume, error) = loop {
+        match pages.next_page().await {
+            Ok(Some(page)) => {
                 record(report, operation, &page.meta);
                 each(page, report).await;
             }
-            Err(failure) => {
-                if let Some(meta) = failure.meta() {
+            Ok(None) => break (Outcome::Exhausted, None, None),
+            Err(PagesError::Provider { error, failed, .. }) => {
+                if let Some(meta) = error.meta() {
                     record(report, operation, meta);
                 }
-                error = Some(failure);
+                break (Outcome::Failed, Some(failed), Some(error));
             }
+            // The budget, reached while Stripe had more: the next cursor is the resume point.
+            Err(stopped) => break (stopped.outcome(), stopped.resume().cloned(), None),
         }
-    }
-    let finished = pages.finish();
+    };
     Section {
-        outcome: Some(finished.outcome),
-        pages: finished.progress.succeeded,
-        resume: finished.resume,
+        outcome: Some(outcome),
+        pages: pages.progress().succeeded,
+        resume,
         error,
     }
 }

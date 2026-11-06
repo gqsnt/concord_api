@@ -1,0 +1,23 @@
+[package]
+name = "concord-sdk-google-drive"
+description = "Bounded Google Drive v3 files, multipart/resumable uploads, and changes over Concord"
+version = "0.0.0"
+edition = "2024"
+rust-version.workspace = true
+license.workspace = true
+publish = false
+
+[dependencies]
+concord = { path = "../../crates/concord", features = ["json", "multipart"] }
+concord-pagination = { path = "../../crates/concord-pagination" }
+serde = { workspace = true, features = ["derive"] }
+serde_json.workspace = true
+mime.workspace = true
+
+[dev-dependencies]
+concord-example-testserver = { path = "../testserver" }
+tokio = { workspace = true, features = ["macros", "rt-multi-thread", "time", "sync"] }
+futures-util = { workspace = true, features = ["std"] }
+
+[lints]
+workspace = true

@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- synthetic: every element S3 may add must be skipped -->
+<ListBucketResult xmlns="http://s3.amazonaws.com/doc/2006-03-01/" xmlns:x="urn:synthetic">
+  <x:Extension><Nested><Deeper>1</Deeper></Nested></x:Extension>
+  <Name>examplebucket</Name>
+  <Prefix/>
+  <KeyCount>1</KeyCount>
+  <MaxKeys>1000</MaxKeys>
+  <IsTruncated>false</IsTruncated>
+  <Contents>
+    <FutureObjectField kind="unknown">value</FutureObjectField>
+    <Key>a&amp;b &lt;c&gt;.txt</Key>
+    <LastModified>2026-11-06T12:00:00.000Z</LastModified>
+    <ETag>"opaque"</ETag>
+    <ChecksumAlgorithm>CRC32</ChecksumAlgorithm>
+    <ChecksumAlgorithm>SHA256</ChecksumAlgorithm>
+    <ChecksumType>COMPOSITE</ChecksumType>
+    <Size>5</Size>
+    <Owner><ID>synthetic-owner-id</ID><FutureOwnerField/></Owner>
+    <StorageClass>FUTURE_CLASS</StorageClass>
+    <RestoreStatus><IsRestoreInProgress>true</IsRestoreInProgress><RestoreExpiryDate>2026-12-01T00:00:00.000Z</RestoreExpiryDate></RestoreStatus>
+  </Contents>
+  <?synthetic-processing-instruction ignored?>
+</ListBucketResult>

@@ -1,21 +1,32 @@
-//! Ready-made page factories ([`LinkPages`]) for the declared list operations, as
-//! [`RepoContext`] methods. A top-level listing takes the generated operation (the caller sets
-//! filters and `per_page` with the generated setters); a child listing builds the operation for
-//! its parent itself and lets the caller configure it, so a continuation's binding (operation,
-//! repository, parent number or id) always matches the request it continues.
+//! Ready-made listings ([`LinkPages`]) for the declared list operations, as [`RepoContext`]
+//! methods. A top-level listing takes the generated operation (the caller sets filters and
+//! `per_page` with the generated setters); a child listing builds the operation for its parent
+//! itself and lets the caller configure it, so a continuation's binding (operation, repository,
+//! parent number or id) always matches the request it continues.
 //!
-//! ```
+//! The ordinary path is `.items()` or `.pages()` on the listing: an owned traversal whose end
+//! is explicit (`Ok(None)` only after the last page; a cap or a failed page is an error, see
+//! [`crate::paging`]). The listing itself is also the page factory of `concord-pagination`'s
+//! engine (`|key| listing.fetch(key)`), for item-level checkpoints.
+//!
+//! ```no_run
+//! use std::num::NonZeroUsize;
 //! use concord_example_github_sdk::{GitHubConfig, GitHubContext, RepoRef};
 //! use concord_example_github_sdk::ids::IssueNumber;
 //! use concord_example_github_sdk::params::PerPage;
 //!
-//! # fn main() -> Result<(), concord_example_github_sdk::params::ParamError> {
+//! # async fn run() -> Result<(), Box<dyn std::error::Error>> {
 //! let github = GitHubContext::new(Default::default(), GitHubConfig { token: "t".into() });
 //! let repo = github.repo(RepoRef::new("octo-org", "hello-world"));
-//! let number = IssueNumber(7);
 //! let per_page = PerPage::new(50)?;
-//! let comments = repo.issue_comment_pages(number, |op| op.set_per_page(per_page));
+//! let comments = repo.issue_comment_pages(IssueNumber(7), |op| op.set_per_page(per_page));
 //! assert_eq!(comments.binding().parent(), Some(7));
+//!
+//! // Every comment, page after page, at most 20 pages; `?`: a cap or a failure is an error.
+//! let mut items = comments.items().max_pages(NonZeroUsize::new(20).unwrap());
+//! while let Some(comment) = items.next().await? {
+//!     println!("{}", comment.id);
+//! }
 //! # Ok(()) }
 //! ```
 

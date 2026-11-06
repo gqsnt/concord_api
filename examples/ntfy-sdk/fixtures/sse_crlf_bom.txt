@@ -1,0 +1,10 @@
+﻿data: {"id":"synOpen00002","time":1767225700,"event":"open","topic":"alerts"}
+
+: a comment line
+id: ignored-by-this-sdk
+retry: 5000
+x-unknown-field: ignored
+data: {"id":"synMsg000003",
+data:  "time":1767225701,"event":"message","topic":"alerts","message":"two data lines"}
+
+event: keepalivedata: {"id":"synKeep00002","time":1767225731,"event":"keepalive","topic":"alerts"}

@@ -1,0 +1,21 @@
+[package]
+name = "concord-check-phase-a"
+description = "Wire-level acceptance of the consolidated response, body, stream and incremental-output boundaries (Received, Incoming, EncodedBody, -> stream, RecordStream, server-sent events)."
+version = "0.0.0"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish = false
+
+[dependencies]
+concord = { path = "../../crates/concord", features = ["csv", "jsonl", "sse"] }
+serde = { workspace = true, features = ["derive"] }
+
+[dev-dependencies]
+concord-example-testserver = { path = "../../examples/testserver" }
+futures-util = { workspace = true }
+serde_json.workspace = true
+tokio = { workspace = true, features = ["macros", "rt", "time"] }
+
+[lints]
+workspace = true

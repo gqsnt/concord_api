@@ -1,0 +1,21 @@
+[package]
+name = "concord-sdk-gitlab"
+description = "Provider SDK slice: GitLab REST API v4 project issues (Link pagination over a URL-encoded project path) and one issue with its project, declared with concord::api!."
+version = "0.0.0"
+edition = "2024"
+rust-version.workspace = true
+license.workspace = true
+publish = false
+
+[dependencies]
+concord = { path = "../../crates/concord", features = ["json"] }
+concord-pagination = { path = "../../crates/concord-pagination" }
+serde = { workspace = true, features = ["derive"] }
+serde_json.workspace = true
+
+[dev-dependencies]
+concord-example-testserver = { path = "../testserver" }
+tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
+
+[lints]
+workspace = true

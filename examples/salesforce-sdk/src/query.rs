@@ -1,4 +1,5 @@
-//! SOQL query traversal: the page factory for `concord_pagination::sequential`.
+//! SOQL query traversal: an ordinary listing ([`QueryPages::into_pages`]) and the page factory
+//! for `concord_pagination::sequential`.
 //!
 //! [`QueryPages::fetch`] turns a locator key into one owned request future: `None` runs the SOQL
 //! statement (`GET query?q=`), `Some(locator)` fetches the next batch (`GET query/{locator}`).
@@ -9,6 +10,22 @@
 //! whose next locator is the one just requested (which would repeat the batch forever) is a typed
 //! [`ProtocolError`], not an empty page. Every record's `attributes` must name the queried
 //! object and a record URL on the org and version.
+//!
+//! To read a statement, iterate its pages; the end is explicit (`Ok(None)` only after the batch
+//! with `done: true`; a failed batch is a [`PagesError`] carrying the locator to resume from):
+//!
+//! ```no_run
+//! # use concord_example_salesforce_sdk::{OrgContext, model::Account, query::QueryPages, soql::Soql};
+//! # use concord_pagination::Resume;
+//! # async fn run(ctx: &OrgContext, soql: Soql) -> Result<(), Box<dyn std::error::Error>> {
+//! let mut pages = QueryPages::<Account>::new(ctx, soql).into_pages(Resume::Start);
+//! while let Some(page) = pages.next_page().await? {
+//!     println!("{} records, totalSize {}", page.items.len(), page.meta.total_size);
+//! }
+//! # Ok(()) }
+//! ```
+//!
+//! For a page budget, a resume report or a custom traversal, give the factory to the engine:
 //!
 //! ```no_run
 //! # use std::num::NonZeroUsize;
@@ -22,14 +39,17 @@
 //!     let page = page.unwrap();
 //!     println!("{} records, totalSize {}", page.items.len(), page.meta.total_size);
 //! }
-//! # }
+//! let report = chain.finish(); // outcome, counters, where to resume
+//! # let _ = report; }
 //! ```
+//!
+//! [`PagesError`]: concord_pagination::PagesError
 
 use std::future::Future;
 use std::marker::PhantomData;
 
 use concord::Prepared;
-use concord_pagination::Page;
+use concord_pagination::{Page, Pages, Resume};
 use serde::de::DeserializeOwned;
 
 use crate::SalesforceApiQuery;
@@ -184,11 +204,11 @@ impl<R: QueryRecord> QueryPages<R> {
     }
 
     /// The page at `key`: the first batch for `None`, the batch at the locator otherwise. The
-    /// future owns everything it needs (no borrow of `self`).
+    /// future owns everything it needs (no borrow of `self`: it captures no lifetime).
     pub fn fetch(
         &self,
         key: Option<QueryLocator>,
-    ) -> impl Future<Output = Result<QueryPage<R>, SfError>> + 'static {
+    ) -> impl Future<Output = Result<QueryPage<R>, SfError>> + 'static + use<R> {
         let ctx = self.ctx.clone();
         let soql = self.soql.clone();
         let batch = self.batch;
@@ -201,6 +221,20 @@ impl<R: QueryRecord> QueryPages<R> {
             let (response, api_usage) = send_with_usage(prepared).await?;
             project(&ctx, &soql, key.as_ref(), response, api_usage)
         }
+    }
+}
+
+impl<R: QueryRecord + Send> QueryPages<R> {
+    /// The statement's pages from `from` ([`Resume::Start`], or a resume point a previous
+    /// traversal returned) as an ordinary listing: [`Pages::next_page`] is `Ok(None)` only after
+    /// the batch with `done: true`; a failed batch is a [`concord_pagination::PagesError`]
+    /// carrying the [`SfError`] and the locator to retry. No page cap unless you set one
+    /// ([`Pages::max_pages`]). Each page is one [`fetch`](Self::fetch).
+    pub fn into_pages(
+        self,
+        from: Resume<QueryLocator>,
+    ) -> Pages<R, QueryLocator, QueryPageMeta, SfError> {
+        Pages::new(from, move |key| self.fetch(key))
     }
 }
 

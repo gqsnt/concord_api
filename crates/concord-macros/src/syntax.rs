@@ -25,6 +25,8 @@ mod kw {
     syn::custom_keyword!(request);
     syn::custom_keyword!(response);
     syn::custom_keyword!(format);
+    syn::custom_keyword!(stream);
+    syn::custom_keyword!(send);
 }
 
 /// HTTP methods accepted as endpoint keywords.
@@ -67,11 +69,15 @@ impl Format {
     }
 }
 
-/// A typed output: `-> T`. Legacy format tokens are retained only for migration errors.
+/// An output: `-> T`, `-> stream T` or `-> stream`. Legacy format tokens are retained only for
+/// migration errors.
 pub struct Output {
-    pub ty: Type,
+    /// `None` only for `-> stream` without an item.
+    pub ty: Option<Type>,
     /// `None`: the nearest `response` default.
     pub format: Option<Format>,
+    /// The `stream` keyword: the output is opened incrementally, not decoded.
+    pub stream: Option<Span>,
 }
 
 /// A uniform representation statement on any owner.
@@ -466,6 +472,36 @@ fn parse_output(input: ParseStream<'_>) -> syn::Result<Output> {
     let at_end = |input: ParseStream<'_>| {
         input.peek(syn::token::Brace) || input.peek(Token![;]) || input.is_empty()
     };
+    // `-> stream T` / `-> stream`: the keyword, unless `stream` begins a path, a generic type or
+    // a type macro (`-> stream::Event`, `-> stream<T>`, `-> stream!()`; `r#stream` is never the
+    // keyword).
+    if input.peek(kw::stream)
+        && !input.peek2(Token![::])
+        && !input.peek2(Token![<])
+        && !input.peek2(Token![!])
+    {
+        let keyword: kw::stream = input.parse()?;
+        if at_end(input) {
+            return Ok(Output {
+                ty: None,
+                format: None,
+                stream: Some(keyword.span),
+            });
+        }
+        let ty = parse_type(input)?;
+        reject_via(input, &ty, ViaSite::Output)?;
+        if !at_end(input) {
+            return Err(syn::Error::new(
+                input.span(),
+                "expected the endpoint block after `-> stream T`: the stream's format is a statement (`response F;`, `F: Incremental<T>`), not a second type",
+            ));
+        }
+        return Ok(Output {
+            ty: Some(ty),
+            format: None,
+            stream: Some(keyword.span),
+        });
+    }
     // A path followed by more type tokens is the removed in-place format (`-> Csv Vec<Row>`,
     // reported by the model with its replacement); a path that ends the output is the payload;
     // a path followed by `!` is a type macro (`-> payload!()`, `-> m::payload![]`), a payload;
@@ -494,8 +530,9 @@ fn parse_output(input: ParseStream<'_>) -> syn::Result<Output> {
         ));
     }
     Ok(Output {
-        ty,
+        ty: Some(ty),
         format: explicit,
+        stream: None,
     })
 }
 
@@ -521,6 +558,8 @@ pub struct Stmts {
     pub request: Option<FormatDefault>,
     /// `response FORMAT;` on any owner.
     pub response: Option<FormatDefault>,
+    /// `send POLICY;` on the client: the type whose `SendWith<T>` every generated `send()` uses.
+    pub send: Option<(Type, Span)>,
 }
 
 pub struct Param {
@@ -696,6 +735,40 @@ fn parse_owner_body(
             let lit: LitStr = input.parse()?;
             input.parse::<Token![;]>()?;
             set_once(slot, lit, kw.span, "base")?;
+            continue;
+        }
+        if input.peek(kw::send) {
+            let kw: kw::send = input.parse()?;
+            if base.is_none() {
+                return Err(syn::Error::new(
+                    kw.span,
+                    "`send` is only allowed on the client: one send policy serves every endpoint",
+                ));
+            }
+            if let Some(first) = children.first() {
+                let first: &Owner = first;
+                return Err(syn::Error::new(
+                    kw.span,
+                    format!(
+                        "owner statements (`send`, `path`, `query`, ...) must precede child declarations (first child: `{}`)",
+                        first.name
+                    ),
+                ));
+            }
+            if input.peek(Token![;]) {
+                return Err(input.error(
+                    "expected a send policy: a path to a type implementing `concord::SendWith<T>` (`send crate::Policy;`)",
+                ));
+            }
+            let ty: Type = input.parse()?;
+            input.parse::<Token![;]>()?;
+            if stmts.send.is_some() {
+                return Err(syn::Error::new(
+                    kw.span,
+                    "`send` is set twice on the client",
+                ));
+            }
+            stmts.send = Some((ty, kw.span));
             continue;
         }
         if input.peek(kw::path)
@@ -1024,7 +1097,8 @@ fn parse_child(input: ParseStream<'_>) -> syn::Result<Owner> {
     } else {
         // `-> item! { response F; }`: the braces were the type macro's own.
         if let Some(Output {
-            ty: Type::Macro(m), ..
+            ty: Some(Type::Macro(m)),
+            ..
         }) = &output
             && matches!(m.mac.delimiter, syn::MacroDelimiter::Brace(_))
             && !input.peek(syn::token::Brace)

@@ -1,4 +1,5 @@
-//! Stripe's cursor pagination, as an adapter for sequential traversal.
+//! Stripe's cursor pagination: ordinary traversals of every list operation, and the adapter
+//! underneath them.
 //!
 //! Stripe v1 lists page with object ids: `starting_after=<last id>` fetches the page after a
 //! page, `ending_before=<first id>` the page before it, and the two are mutually exclusive.
@@ -6,13 +7,52 @@
 //! therefore known only once a page has arrived (a dependent chain): pages of one list are
 //! fetched one after another, never in parallel, and no cursor is ever computed from a count.
 //!
+//! # Ordinary use
+//!
+//! Every generated list operation has `items()` and `pages()`: the traversal forward from the
+//! first page, as `concord_pagination`'s owned [`PageItems`] / [`Pages`] ([`StripeItems`],
+//! [`StripePages`]). The end is explicit: `Ok(None)` only after the page with `has_more: false`;
+//! a cap ([`Pages::max_pages`], none by default) reached while Stripe has more is
+//! `Err(PagesError::Bounded { resume, .. })`; a failed page (a status, a protocol violation, a
+//! transport failure) is `Err(PagesError::Provider { error, failed, .. })` with this SDK's
+//! [`Error`]. Neither is ever a silent end.
+//!
+//! ```no_run
+//! use std::num::NonZeroUsize;
+//! use concord_example_stripe_sdk::{Limit, StripeContext};
+//!
+//! # async fn run(stripe: StripeContext) -> Result<(), Box<dyn std::error::Error>> {
+//! let limit = Limit::new(100)?;
+//! // Every invoice, item by item; `?` on each step: a cap or a failure is an error.
+//! let mut invoices = stripe.api().invoices().list().set_limit(limit).items()?;
+//! while let Some(invoice) = invoices.next().await? {
+//!     println!("{} {}", invoice.id, invoice.total);
+//! }
+//!
+//! // Pages with their request metadata, at most 20; or everything, keeping the prefix.
+//! let cap = NonZeroUsize::new(20).unwrap();
+//! let mut pages = stripe.api().customers().list().pages()?.max_pages(cap);
+//! while let Some(page) = pages.next_page().await? {
+//!     println!("{} customers (request {:?})", page.items.len(), page.meta.request_id);
+//! }
+//! let products = stripe.api().products().list().items()?.collect_complete().await?;
+//! # let _ = products; Ok(()) }
+//! ```
+//!
+//! A bounded or failed traversal names the page to continue from (`PagesError::resume`); pass
+//! it to [`CursorList::pages_from`] over the same list. [`CursorList`] is also the way to page
+//! [`Direction::Backward`] or to continue a first page obtained another way
+//! ([`CursorList::after_embedded`]).
+//!
+//! # The adapter
+//!
 //! [`CursorList`] holds one list request (a generated operation with its filters, page size and
 //! expansions — the *template*) and one [`Direction`]. [`CursorList::fetch`] builds the request
 //! for a cursor (a fresh clone of the template; nothing is shared between pages), sends it once
 //! through [`crate::send()`] and projects the envelope into a `concord_pagination::Page`
-//! ([`StripePage`]): the items, the next [`Cursor`] and the page's [`ResponseMeta`].
-//!
-//! It is the page factory of `concord_pagination::sequential`:
+//! ([`StripePage`]): the items, the next [`Cursor`] and the page's [`ResponseMeta`]. The ordinary
+//! traversals above run it; it is also the page factory of the `concord_pagination` engine
+//! (`sequential`, `resume_items`) for item-level checkpoints and engine reports:
 //!
 //! ```no_run
 //! use std::num::NonZeroUsize;
@@ -29,12 +69,9 @@
 //!     let page = page?; // a failure ends the chain; `pages.finish()` keeps the restart point
 //!     println!("{} invoices (request {:?})", page.items.len(), page.meta.request_id);
 //! }
-//! let report = pages.finish();
+//! let report = pages.finish(); // the engine's `None` also ends a bounded chain: check this
 //! # let _ = report; Ok(()) }
 //! ```
-//!
-//! The SDK hands out the factory (`|cursor| list.fetch(cursor)`) rather than a ready-made
-//! traversal: a returned `Sequential` would have to name the closure and future types.
 //!
 //! # Protocol rules the projection enforces
 //!
@@ -76,7 +113,7 @@ use std::hash::{DefaultHasher, Hash, Hasher};
 
 use concord::Prepared;
 use concord::reqwest::Url;
-use concord_pagination::Page;
+use concord_pagination::{Page, PageItems, Pages, Resume};
 
 use crate::expandable::{List, Object};
 use crate::send::{Error, ProtocolError, ResponseMeta, send};
@@ -118,6 +155,28 @@ macro_rules! list_request {
             }
             fn prepare_list(self) -> Result<Prepared<List<$item>>, concord::Error> {
                 self.prepare()
+            }
+        }
+
+        impl $operation {
+            /// Every object of this list, forward from its first page, one at a time: see
+            /// [`CursorList::items`].
+            ///
+            /// # Errors
+            ///
+            /// As [`CursorList::new`]; nothing is sent before the first `next()`.
+            pub fn items(self) -> Result<StripeItems<$item>, Error> {
+                Ok(CursorList::forward(self)?.items())
+            }
+
+            /// Every page of this list, forward from its first page: see
+            /// [`CursorList::pages`].
+            ///
+            /// # Errors
+            ///
+            /// As [`CursorList::new`]; nothing is sent before the first `next_page()`.
+            pub fn pages(self) -> Result<StripePages<$item>, Error> {
+                Ok(CursorList::forward(self)?.pages())
             }
         })*
     };
@@ -194,6 +253,13 @@ impl<I> fmt::Debug for Cursor<I> {
 
 /// One projected page: `concord_pagination`'s page with Stripe cursors and response metadata.
 pub type StripePage<T> = Page<T, Cursor<<T as Object>::Id>, ResponseMeta>;
+
+/// The ordinary page traversal of a list ([`CursorList::pages`]): owned, nameable, its end
+/// explicit (see the [module documentation](self)).
+pub type StripePages<T> = Pages<T, Cursor<<T as Object>::Id>, ResponseMeta, Error>;
+
+/// The ordinary item traversal of a list ([`CursorList::items`]).
+pub type StripeItems<T> = PageItems<T, Cursor<<T as Object>::Id>, Error>;
 
 /// One list request and a direction. See the [module documentation](self).
 #[derive(Clone)]
@@ -336,6 +402,40 @@ impl<R: ListRequest> CursorList<R> {
                 response.meta,
             )
         }
+    }
+}
+
+impl<R> CursorList<R>
+where
+    R: ListRequest + Send + 'static,
+    R::Item: Send + 'static,
+    <R::Item as Object>::Id: Send + 'static,
+{
+    /// The pages of this list from its first page: a [`Pages`] traversal over
+    /// [`fetch`](Self::fetch), one page at a time, without a cap unless you set one
+    /// ([`Pages::max_pages`]). `Ok(None)` only after the page with `has_more: false`; a cap
+    /// reached while Stripe has more, or a failed page, is an error that names the page to
+    /// continue from. Nothing is sent until the first `next_page()`.
+    pub fn pages(&self) -> StripePages<R::Item> {
+        self.pages_from(Resume::Start)
+    }
+
+    /// [`pages`](Self::pages) from `from`: a cursor of this list (a bounded or failed
+    /// traversal's `PagesError::resume`, [`continue_from`](Self::continue_from),
+    /// [`after_embedded`](Self::after_embedded)), or `Resume::Start`. A cursor of another list
+    /// or direction is refused by the first page's request, before anything is sent.
+    pub fn pages_from(
+        &self,
+        from: Resume<Cursor<<R::Item as Object>::Id>>,
+    ) -> StripePages<R::Item> {
+        let list = self.clone();
+        Pages::new(from, move |cursor| list.fetch(cursor))
+    }
+
+    /// The objects of this list from its first page, one at a time ([`PageItems`] over
+    /// [`pages`](Self::pages)); the same end rules.
+    pub fn items(&self) -> StripeItems<R::Item> {
+        self.pages().items()
     }
 }
 

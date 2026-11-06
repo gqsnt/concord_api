@@ -1,0 +1,19 @@
+[package]
+name = "concord-sdk-open-meteo"
+description = "A bounded Open-Meteo hourly forecast client with runtime JSON and CSV responses."
+version = "0.0.0"
+edition = "2024"
+rust-version.workspace = true
+license.workspace = true
+publish = false
+
+[dependencies]
+concord = { path = "../../crates/concord", features = ["json", "csv"] }
+serde = { workspace = true, features = ["derive"] }
+
+[dev-dependencies]
+concord-example-testserver = { path = "../testserver" }
+tokio = { workspace = true, features = ["macros", "rt", "time"] }
+
+[lints]
+workspace = true

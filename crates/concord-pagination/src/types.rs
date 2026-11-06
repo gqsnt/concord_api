@@ -135,6 +135,13 @@ impl Budget {
     }
 }
 
+/// A budget as a page cap ([`Pages::max_pages`](crate::Pages::max_pages)).
+impl From<Budget> for NonZeroUsize {
+    fn from(budget: Budget) -> Self {
+        budget.0
+    }
+}
+
 impl From<NonZeroUsize> for Budget {
     fn from(max: NonZeroUsize) -> Self {
         Self(max)

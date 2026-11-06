@@ -42,9 +42,10 @@ impl ApiError {
         Ok(Self::from_response(endpoint, response).await)
     }
 
-    /// Reads the `Status` document of a non-2xx response obtained another way (a watch opened
-    /// with `send_raw`). The body is read up to [`STATUS_BODY_LIMIT`]; a body that is larger, not
-    /// JSON or not a `Status` leaves [`status`](Self::status) empty.
+    /// Reads the `Status` document of a non-2xx response obtained another way (the unread
+    /// response of a reader's `Status` refusal, as in [`crate::watch::open`]). The body is read up
+    /// to [`STATUS_BODY_LIMIT`]; a body that is larger, not JSON or not a `Status` leaves
+    /// [`status`](Self::status) empty.
     pub async fn from_response(
         endpoint: Option<&'static str>,
         response: reqwest::Response,

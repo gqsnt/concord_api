@@ -117,11 +117,15 @@ pub enum Kind {
     Client {
         vis: Visibility,
         base: LitStr,
+        /// `send P;`: the send policy of every generated `send()`.
+        send: Option<Type>,
     },
     Scope,
     Endpoint {
         method: Ident,
         output: Option<Output>,
+        /// `-> stream` without an item: `send()` returns the unread `Incoming` body.
+        incoming: bool,
         body: Option<Body>,
     },
 }
@@ -150,11 +154,14 @@ pub struct Body {
     pub media: Option<(LitStr, Origin)>,
 }
 
-/// A typed output `-> T`: its format (`Decode<ty>`) and where it comes from.
+/// A typed output `-> T` (format `Decode<ty>`) or `-> stream T` (format `Incremental<ty>`): its
+/// format and where it comes from.
 pub struct Output {
     pub ty: Type,
     pub format: Format,
     pub origin: Origin,
+    /// `-> stream T`: opened incrementally (`Incremental`), not decoded.
+    pub stream: bool,
 }
 
 /// A `request`/`response` default declared on a client or scope.
@@ -528,6 +535,29 @@ impl Model {
         }
         errors.check()?;
 
+        // `send value;`: the named client value is the send policy (its use; never on the wire
+        // by itself). A policy usually holds credentials, so it is withheld like a `#[sensitive]`
+        // value: marked before propagation, every placement that also reads it (path, query,
+        // headers) is sensitive too, and generated `Debug` needs neither `Display` nor a header
+        // value from its type.
+        if let Some(index) = model.send_value() {
+            let value = &model.owners[0].values[index];
+            let span = value.name.span();
+            if value.optional || value.default.is_some() {
+                errors.push(syn::Error::new(
+                    span,
+                    "a send policy value must be required (no `?`, no default): `send` uses the value given to the constructor for every request",
+                ));
+            }
+            model.mark(
+                ValueRef { owner: 0, index },
+                Usage::Scalar,
+                span,
+                &mut errors,
+            );
+            model.owners[0].values[index].debug_sensitive = true;
+        }
+
         // Effective sensitivity: a value is withheld if it is marked or feeds a sensitive key on
         // some chain, and every path segment, host label and key that reads a withheld value is
         // itself sensitive. Slot membership does not depend on sensitivity, so the slots are
@@ -683,6 +713,26 @@ impl Model {
             Kind::Client { .. } => "client".to_owned(),
             _ => plain(&self.owners[owner].name),
         }
+    }
+
+    /// The client value a `send value;` statement names (a single identifier equal to a client
+    /// value's name), if any; otherwise the statement names a type.
+    pub fn send_value(&self) -> Option<usize> {
+        let Kind::Client {
+            send: Some(Type::Path(path)),
+            ..
+        } = &self.owners[0].kind
+        else {
+            return None;
+        };
+        let ident = path.path.get_ident()?;
+        if path.qself.is_some() {
+            return None;
+        }
+        self.owners[0]
+            .values
+            .iter()
+            .position(|v| plain(&v.name) == plain(ident))
     }
 
     fn mark(&mut self, r: ValueRef, usage: Usage, span: Span, errors: &mut Errors) {
@@ -2064,7 +2114,11 @@ fn flatten(
                 if let Err(e) = validate_base(&base) {
                     errors.push(e);
                 }
-                Kind::Client { vis, base }
+                Kind::Client {
+                    vis,
+                    base,
+                    send: owner.stmts.send.take().map(|(ty, _)| ty),
+                }
             }
             None => {
                 errors.push(syn::Error::new(
@@ -2074,6 +2128,7 @@ fn flatten(
                 Kind::Client {
                     vis,
                     base: LitStr::new("http://invalid", span),
+                    send: None,
                 }
             }
         },
@@ -2084,6 +2139,9 @@ fn flatten(
             body,
         } => {
             let ancestor = parent.map(|p| p.0);
+            // `-> stream` without an item: no typed output, no format.
+            let incoming = output.as_ref().is_some_and(|o| o.ty.is_none());
+            let output = output.filter(|o| o.ty.is_some());
             // A statement with nothing to apply to is an error on an endpoint; `format` needs one
             // of its two directions.
             match (&owner.stmts.request, &owner.stmts.response) {
@@ -2091,7 +2149,11 @@ fn flatten(
                     if body.is_none() && output.is_none() {
                         errors.push(syn::Error::new(
                             d.span,
-                            "`format` statement has neither a body nor a typed output (`-> T`) to apply to",
+                            if incoming {
+                                "`format` statement has neither a body nor a typed output to apply to: `-> stream` without an item returns the unread body, and no format applies to it"
+                            } else {
+                                "`format` statement has neither a body nor a typed output (`-> T`) to apply to"
+                            },
                         ));
                     }
                 }
@@ -2105,13 +2167,18 @@ fn flatten(
                     if let (None, Some(d)) = (&output, response) {
                         errors.push(syn::Error::new(
                             d.span,
-                            "`response` statement has no typed output (`-> T`) to apply to",
+                            if incoming {
+                                "`response` statement has no typed output to apply to: `-> stream` without an item returns the unread body for a reader chosen at run time; to open it with a format, write `-> stream T`"
+                            } else {
+                                "`response` statement has no typed output (`-> T`) to apply to"
+                            },
                         ));
                     }
                 }
             }
             Kind::Endpoint {
                 method,
+                incoming,
                 body: body.and_then(|b| {
                     endpoint_body(
                         b,
@@ -2312,15 +2379,17 @@ fn endpoint_output(
     out: &mut [Owner],
     errors: &mut Errors,
 ) -> Option<Output> {
+    let stream = o.stream.is_some();
+    let ty = o.ty.expect("an item-less stream has no typed output");
     if let Some(format) = &o.format {
         // `-> A B`: two type paths. The removed spelling put the format first, but a swapped
         // `-> T F` reads the same, and no name tells a format from a payload.
         errors.push(syn::Error::new(
-            o.ty.span(),
+            ty.span(),
             format!(
                 "removed in-place output format: `-> {} {}` names two types; write the payload alone (`-> T`) and the format as a statement (`response F;`) on this endpoint",
                 format.text(),
-                type_text(&o.ty)
+                type_text(&ty)
             ),
         ));
         return None;
@@ -2334,24 +2403,31 @@ fn endpoint_output(
                 (d.format.clone(), Origin::Default(owner))
             }
             None => {
-                let ty = type_text(&o.ty);
-                let unit = if matches!(&o.ty, syn::Type::Tuple(t) if t.elems.is_empty()) {
-                    " (`-> ()` is a typed output decoded with a format, such as JSON `null`; an endpoint that returns nothing omits `->`)"
+                let text = type_text(&ty);
+                let message = if stream {
+                    format!(
+                        "stream output `{text}` has no format: say `response F;` (`F` a type implementing `Incremental<{text}>`) on this endpoint, a scope or the client; `-> stream` without an item returns the unread body"
+                    )
                 } else {
-                    "; omit `->` to drain"
+                    let unit = if matches!(&ty, syn::Type::Tuple(t) if t.elems.is_empty()) {
+                        " (`-> ()` is a typed output decoded with a format, such as JSON `null`; an endpoint that returns nothing omits `->`)"
+                    } else {
+                        "; omit `->` to drain"
+                    };
+                    format!(
+                        "output `{text}` has no format: say `response F;` (`F` a type implementing `Decode`) on this endpoint, a scope or the client{unit}"
+                    )
                 };
-                let message = format!(
-                    "output `{ty}` has no format: say `response F;` (`F` a type implementing `Decode`) on this endpoint, a scope or the client{unit}"
-                );
-                errors.push(syn::Error::new(o.ty.span(), message));
+                errors.push(syn::Error::new(ty.span(), message));
                 return None;
             }
         },
     };
     Some(Output {
-        ty: o.ty,
+        ty,
         format,
         origin,
+        stream,
     })
 }
 

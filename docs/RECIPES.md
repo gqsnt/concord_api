@@ -17,14 +17,17 @@ They use only the public surface: `Prepared::{send, send_raw, into_parts}`, `Dec
 [`errors::rename_item`](../examples/native/src/errors.rs) — the API documents an error body
 (RFC 9457 problem details, a JSON error object).
 
-- **How:** `send()`; on error, return any error whose `status()` is `None` unchanged (not an
+- **Bounded, with the head:** `prepare()?.receive().await?`; for a non-2xx, read the document with
+  `received.bytes_limited(n)` (`ErrorKind::Limit` beyond `n`) and decode it as below; a send
+  policy (`send Policy;`) does this once for a whole client.
+- **How (unbounded):** `send()`; on error, return any error whose `status()` is `None` unchanged (not an
   error document), then `into_response()?` returns the unread response of the status error;
   decode its bytes with
   `<Json as Decode<Problem>>::decode_body((), bytes)`. That is a body-only decode: it checks no
   response head, so the error document's `Content-Type` is not judged. The status always stays
   with the document or with the reason it could not be read.
-- **Assumes:** the error body fits in memory. Against an untrusted server, read it with
-  `response.chunk()` up to your own limit. A native read error is stored with `without_url()`.
+- **Assumes:** the error body fits in memory; against an untrusted server, use the bounded route
+  above. A native read error is stored with `without_url()`.
   `into_response()` alone also returns the response of a `Metadata` error (a 2xx whose head the
   format refused); the recipe's `status()` guard keeps such a 2xx from being read as an error
   document.
@@ -64,10 +67,16 @@ the versions you support.
 endpoint packaged) — the caller needs a few response headers (an `ETag` for a later conditional
 request, a request id, a count) together with the decoded value, possibly after a native edit.
 
+- **Without a native edit, start with `receive`:** `prepare()?.receive().await?` returns a
+  `concord::Received` for any status; read the headers you need from `received.head()`, then
+  `received.decode().await` (the [author guide](AUTHOR_GUIDE.md#511-reading-response-metadata-in-an-sdk)
+  shows the pattern; `received.url()` gives the final URL). The recipe below adds a native edit
+  and copies the selected headers into a value of its own.
 - **How:** `prepare()?.into_parts()`; edit the native request; one `client.execute(request)`. On
-  `Err(e)`, convert with `decoder.finish(Err(e))` (Concord's `Transport` error, URL removed). On a
-  response, copy the status, the final URL and the headers you select by borrowing it, then
-  `decoder.decode(response)` as usual. The recipe returns `WithMeta { value, meta }` or a
+  `Err(e)`, convert with `decoder.transport_error(e)` (Concord's `Transport` error naming the
+  endpoint, URL removed); `Decoder::execute(&client, request)` does both and returns a
+  `concord::Received`. On a response, copy the status, the final URL and the headers you select by
+  borrowing it, then `decoder.decode(response)` as usual. The recipe returns `WithMeta { value, meta }` or a
   `MetaError` holding the `concord::Error` and `Option<Meta>`: `None` when no response head
   arrived, `Some` once one did. `Status` and `Metadata` errors still keep the whole unread response
   (`into_response()`); after a body-read failure (`Transport`) or a `Decode` failure only the
@@ -265,19 +274,36 @@ Without the feature, or without serde: [`repr::Form`](../examples/native/src/rep
 
 ### Multipart uploads
 
-[`concord_example_multipart::upload`](../examples/multipart/src/lib.rs) — `multipart/form-data`
-through reqwest's own `multipart` feature, enabled in that example crate only.
+With the `multipart` feature, `concord::multipart` declares a `multipart/form-data` or
+`multipart/related` body like any other: `body form: MultipartBody` with `request Multipart;`
+([author guide](AUTHOR_GUIDE.md#510-bodies-whose-media-type-is-known-at-run-time)). Used by
+`upload_batch_file` in [`examples/openai-sdk`](../examples/openai-sdk/src/lib.rs) (a form-data
+file and field) and `upload_multipart` in
+[`examples/google-drive-sdk`](../examples/google-drive-sdk/src/upload.rs) (`multipart/related`:
+JSON metadata, then the media).
 
-- **How:** declare the endpoint without a body; `prepare()?.into_parts()`, then
+- **How:** `MultipartBody::form_data().text(name, value).file(name, file_name, content_type,
+  bytes)`, or `MultipartBody::related_with_type(root)` (RFC 2387's `type` parameter) /
+  `related()` (without it, only where the provider documents that form) with
+  `.part(Part::new(bytes).header(name, value))`; then the generated `send()`.
+- **What it does:** writes the parts in order, chooses the boundary `concord-boundary-<n>` that
+  occurs in no part (deterministic: checked, not left to chance), and sends
+  `multipart/<subtype>; boundary=...` as the body's runtime media type with `Content-Length`. A
+  declared media type or `content-type` header that differs is a `Build` error before I/O.
+- **Assumes:** the parts fit in memory. Names, file names and part header values with control
+  characters (tab excepted), and `"` or `\` in form-data names and file names, are refused rather
+  than escaped; sanitize them first if they come from users.
+
+For large or streamed files, [`concord_example_multipart::upload`](../examples/multipart/src/lib.rs)
+attaches reqwest's own `multipart` form (enabled in that example crate only) to a declared endpoint
+without a body.
+
+- **How:** `prepare()?.into_parts()`, then
   `reqwest::RequestBuilder::from_parts(client, request).multipart(form).send().await` and
   `decoder.finish(result).await`. The declared path, headers and decoder still apply; reqwest
   writes the boundary, `Content-Type` and (for parts of known length) `Content-Length`.
-- **Why native:** `Encode::CONTENT_TYPE` is a constant and `encode` returns no headers, while a
-  multipart boundary is chosen per body; Concord has no multipart policy. (A `content-type` header
-  on the endpoint replaces the format's media type, so an SDK that chooses the boundary itself and
-  passes the matching header can also use a format; reqwest's multipart support does both for
-  you.) A fixed-media stream needs neither: see the request side of
-  [streaming](#streaming-a-large-or-endless-body).
+- **When:** a part is streamed (`Part::stream_with_length`) or too large to buffer, or reqwest's
+  `Form` is already the application's currency.
 - **Assumes:** field names use `Form::percent_encode_attr_chars()` (reqwest's default leaves `\`
   raw inside `name="..."`); file names with CR/LF are escaped by reqwest in a form a strict
   RFC 9110 recipient may reject, so sanitize them if the server is unknown.
@@ -392,10 +418,11 @@ synthetic; a fake server proves nothing about the real service.
 
 | Need | How | Case |
 |---|---|---|
-| Read response headers (`ETag`, `Link`) and keep the typed decoding | `prepare()?.into_parts()`, execute (a failure goes through `decoder.finish(Err(e))`, not `?`), read the headers, then `decoder.decode(response)`; packaged with failure stages in [response metadata](#response-metadata-with-the-typed-value) | `tests/metadata.rs` |
+| Read response headers (`ETag`, `Link`) and keep the typed decoding | `prepare()?.receive().await?`, read `head()` (and `url()`), then `decode()`; with a native edit, `into_parts()` then `decoder.execute(&client, request)`; packaged with failure stages in [response metadata](#response-metadata-with-the-typed-value) | `tests/metadata.rs` |
 | Read a status error's headers without consuming it | `error.response()`; `into_response()` afterwards for the body | `tests/metadata.rs` |
 | An error inside a 2xx (`{"ok": false}`) | a typed output that models the envelope, or a custom `Decode` returning a `CodecError` (its detail goes to `with_source`, read with `source_unredacted()`) | `tests/application.rs` |
 | Nested or bracket form keys (`metadata[order]=7`) | a custom `Encode<T>` with the form media type; `form` itself is flat | `tests/forms.rs` |
+| Follow a `Link: rel="next"` or a `next` URL as the same endpoint | validate the link (origin, path) in the SDK, then `prepare()?.follow(&url)?` and send it: headers and handling are kept, another origin is refused | `checks/phase-a/tests/received.rs` |
 | A key spanning path segments (`docs/2026/report.md`) | `into_parts()`, then `url_mut().path_segments_mut()`; an ordinary path value is one segment (`/` is sent as `%2F`) | `tests/resource_key.rs` |
 | JSON or nothing (`200` with a document, `204` without) | a format of your own implementing `Decode<Option<T>>` that decides on the status: a `204` needs no `Content-Type` and is `None`; any other 2xx must pass `Json`'s head check (`Json` stays strict; an empty `200` is a decode error) | `tests/json_or_empty.rs` |
 | JSON under another media type (Kubernetes server-side apply) | `request Json "application/apply-patch+yaml";` on the endpoint | `tests/apply.rs` |
