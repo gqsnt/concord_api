@@ -2,9 +2,8 @@
 
 use std::fmt;
 
-use concord::bytes::BytesMut;
-use concord::reqwest::{self, StatusCode, Version, header::HeaderMap};
-use concord::{Decode, Json, Operation, Prepared, Received, ResponseHead};
+use concord::reqwest::{StatusCode, Version, header::HeaderMap};
+use concord::{Decode, ErrorKind, Json, Operation, Prepared, Received};
 use serde::Deserialize;
 
 /// Maximum retained bytes of a non-success response body (64 KiB).
@@ -198,7 +197,7 @@ pub(crate) async fn send<T>(prepared: Prepared<T>) -> Result<Response<T>, Error>
     if !meta.status.is_success() {
         return Err(Error::Provider {
             meta: Box::new(meta),
-            document: read_error(received.into_response()).await,
+            document: read_error(received).await,
         });
     }
     match received.decode().await {
@@ -210,24 +209,18 @@ pub(crate) async fn send<T>(prepared: Prepared<T>) -> Result<Response<T>, Error>
     }
 }
 
-async fn read_error(
-    mut response: reqwest::Response,
-) -> Result<ProviderError, ErrorDocumentProblem> {
-    let head = ResponseHead::of(&response);
+async fn read_error<T>(received: Received<T>) -> Result<ProviderError, ErrorDocumentProblem> {
+    let head = received.head();
     <Json as Decode<ProviderError>>::check_content_type(&head)
         .map_err(|_| ErrorDocumentProblem::ContentType)?;
     <Json as Decode<ProviderError>>::context(&head).map_err(|_| ErrorDocumentProblem::Decode)?;
-    let mut bytes = BytesMut::new();
-    while let Some(chunk) = response
-        .chunk()
+    let bytes = received
+        .bytes_limited(MAX_ERROR_BODY)
         .await
-        .map_err(|_| ErrorDocumentProblem::Read)?
-    {
-        if chunk.len() > MAX_ERROR_BODY - bytes.len() {
-            return Err(ErrorDocumentProblem::TooLarge);
-        }
-        bytes.extend_from_slice(&chunk);
-    }
-    <Json as Decode<ProviderError>>::decode_body((), bytes.freeze())
+        .map_err(|error| match error.kind() {
+            ErrorKind::Limit => ErrorDocumentProblem::TooLarge,
+            _ => ErrorDocumentProblem::Read,
+        })?;
+    <Json as Decode<ProviderError>>::decode_body((), bytes)
         .map_err(|_| ErrorDocumentProblem::Decode)
 }
