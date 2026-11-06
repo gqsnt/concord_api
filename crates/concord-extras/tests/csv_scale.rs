@@ -3,7 +3,8 @@
 //! running checksum, the framing buffers' peak, and a lazy upload body drained frame by frame.
 //!
 //! `measure_throughput` (ignored by default) reports throughput, first-record latency and the
-//! peak retained bytes for N and 2N rows; run it in release:
+//! peak retained bytes for N and 2N rows, and for inputs that are mostly skipped lines (blank
+//! lines, comment lines); run it in release:
 //! `cargo test --release -p concord-extras --features csv --test csv_scale -- --ignored --nocapture`.
 
 #![cfg(feature = "csv")]
@@ -60,6 +61,32 @@ fn table(rows: u64, chunk: usize) -> impl FnMut(usize) -> Option<Bytes> + Send {
     }
 }
 
+/// A generator of a header and `rows` rows, each followed by `gap` repeated `repeat` times
+/// (skipped lines), in chunks of `chunk` bytes.
+fn with_gaps(
+    rows: u64,
+    gap: &'static [u8],
+    repeat: usize,
+    chunk: usize,
+) -> impl FnMut(usize) -> Option<Bytes> + Send {
+    let mut next = 0u64;
+    let mut pending = b"id,name,amount,note\r\n".to_vec();
+    move |_| {
+        while pending.len() < chunk && next < rows {
+            pending.extend_from_slice(line(next).as_bytes());
+            for _ in 0..repeat {
+                pending.extend_from_slice(gap);
+            }
+            next += 1;
+        }
+        if pending.is_empty() {
+            return None;
+        }
+        let rest = pending.split_off(chunk.min(pending.len()));
+        Some(Bytes::from(std::mem::replace(&mut pending, rest)))
+    }
+}
+
 struct Measured {
     rows: u64,
     checksum: u64,
@@ -71,7 +98,14 @@ struct Measured {
 
 async fn read_generated(rows: u64) -> Measured {
     let reader = CsvReader::new(CsvOptions::new(HeaderMode::Present, b',')).unwrap();
-    let (source, produced) = Generated::new(table(rows, 16 * 1024));
+    read_from(&reader, table(rows, 16 * 1024)).await
+}
+
+async fn read_from(
+    reader: &CsvReader,
+    generator: impl FnMut(usize) -> Option<Bytes> + Send,
+) -> Measured {
+    let (source, produced) = Generated::new(generator);
     let start = Instant::now();
     let mut records = reader.read::<Row, _>(source);
     let mut first = None;
@@ -181,6 +215,33 @@ async fn measure_throughput() {
         println!(
             "write N={rows}: {total} bytes in {secs:.3}s = {:.1} MB/s; largest frame {largest} bytes",
             total as f64 / secs / 1e6
+        );
+    }
+    // Mostly skipped lines: whole 16 KiB chunks of blank lines or comment lines between rows.
+    let present = || CsvOptions::new(HeaderMode::Present, b',');
+    let rows = 1_000;
+    let blank: &[u8] = b"\r\n";
+    let comment: &[u8] = b"# a comment line of filler text, skipped by the reader entirely\n";
+    for (name, options, gap, repeat) in [
+        ("blank lines", present(), blank, 32 * 1024),
+        (
+            "comment lines",
+            present().comment(Some(b'#')),
+            comment,
+            1024,
+        ),
+    ] {
+        let reader = CsvReader::new(options).unwrap();
+        let m = read_from(&reader, with_gaps(rows, gap, repeat, 16 * 1024)).await;
+        assert_eq!(m.rows, rows);
+        assert_eq!(m.checksum, expected_checksum(rows));
+        let secs = m.total.as_secs_f64();
+        println!(
+            "read  {name}: {rows} rows in {} bytes in {:.3}s = {:.1} MB/s; peak retained {} bytes",
+            m.bytes,
+            secs,
+            m.bytes as f64 / secs / 1e6,
+            m.peak
         );
     }
 }
