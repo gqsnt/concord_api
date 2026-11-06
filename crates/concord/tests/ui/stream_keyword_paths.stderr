@@ -1,0 +1,11 @@
+error: output `stream::Event` has no format: say `response F;` (`F` a type implementing `Decode`) on this endpoint, a scope or the client; omit `->` to drain
+  --> tests/ui/stream_keyword_paths.rs:10:27
+   |
+10 |             GET path() -> stream::Event;
+   |                           ^^^^^^
+
+error: output `stream<u8>` has no format: say `response F;` (`F` a type implementing `Decode`) on this endpoint, a scope or the client; omit `->` to drain
+  --> tests/ui/stream_keyword_paths.rs:20:30
+   |
+20 |             GET generic() -> stream<u8>;
+   |                              ^^^^^^

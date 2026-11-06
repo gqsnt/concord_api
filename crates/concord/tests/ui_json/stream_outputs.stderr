@@ -1,0 +1,134 @@
+error: stream output `String` has no format: say `response F;` (`F` a type implementing `Incremental<String>`) on this endpoint, a scope or the client; `-> stream` without an item returns the unread body
+  --> tests/ui_json/stream_outputs.rs:12:32
+   |
+12 |         GET events() -> stream String;
+   |                                ^^^^^^
+
+error: `response` statement has no typed output to apply to: `-> stream` without an item returns the unread body for a reader chosen at run time; to open it with a format, write `-> stream T`
+  --> tests/ui_json/stream_outputs.rs:19:34
+   |
+19 |         GET export() -> stream { response concord::Json; }
+   |                                  ^^^^^^^^
+
+error: expected the endpoint block after `-> stream T`: the stream's format is a statement (`response F;`, `F: Incremental<T>`), not a second type
+  --> tests/ui_json/stream_outputs.rs:26:39
+   |
+26 |         GET events() -> stream String concord::Json;
+   |                                       ^^^^^^^
+
+error[E0277]: the format `Json` cannot open a stream of `String`
+ --> tests/ui_json/stream_outputs.rs:2:1
+  |
+2 | / concord::api! {
+3 | |     pub client Finite {
+4 | |         base "http://x.test";
+5 | |         GET events() -> stream String { response concord::Json; }
+6 | |     }
+7 | | }
+  | |_^ this streaming output's format is `Json` (the nearest `response` statement: on the endpoint, a scope or the client); it needs `Json: Incremental<String>`
+  |
+  = help: the trait `Incremental<String>` is not implemented for `Json`
+  = note: `-> stream T` needs a format implementing `Incremental<String>` (an incremental reader); a finite `-> T` needs `Decode<String>`; `-> stream` without an item returns the unread `Incoming` body
+help: the trait `Incremental<T>` is implemented for `IgnoreContentType<F>`
+ --> $WORKSPACE/crates/concord-extras/src/ignore.rs
+  |
+  | impl<T, F: Incremental<T>> Incremental<T> for IgnoreContentType<F> {
+  | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  = note: this error originates in the macro `concord::api` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0277]: the format `Json` cannot open a stream of `String`
+ --> tests/ui_json/stream_outputs.rs:2:1
+  |
+2 | / concord::api! {
+3 | |     pub client Finite {
+4 | |         base "http://x.test";
+5 | |         GET events() -> stream String { response concord::Json; }
+6 | |     }
+7 | | }
+  | |_^ this streaming output's format is `Json` (the nearest `response` statement: on the endpoint, a scope or the client); it needs `Json: Incremental<String>`
+  |
+  = help: the trait `Incremental<String>` is not implemented for `Json`
+  = note: `-> stream T` needs a format implementing `Incremental<String>` (an incremental reader); a finite `-> T` needs `Decode<String>`; `-> stream` without an item returns the unread `Incoming` body
+help: the trait `Incremental<T>` is implemented for `IgnoreContentType<F>`
+ --> $WORKSPACE/crates/concord-extras/src/ignore.rs
+  |
+  | impl<T, F: Incremental<T>> Incremental<T> for IgnoreContentType<F> {
+  | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  = note: this error originates in the macro `concord::api` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0599]: the method `prepare` exists for struct `FiniteEvents`, but its trait bounds were not satisfied
+ --> tests/ui_json/stream_outputs.rs:2:1
+  |
+2 | / concord::api! {
+3 | |     pub client Finite {
+4 | |         base "http://x.test";
+5 | |         GET events() -> stream String { response concord::Json; }
+6 | |     }
+7 | | }
+  | | ^
+  | | |
+  | |_method cannot be called on `FiniteEvents` due to unsatisfied trait bounds
+  |   method `prepare` not found for this struct
+  |
+ ::: $WORKSPACE/crates/concord-extras/src/json.rs
+  |
+  |   pub struct Json(());
+  |   --------------- doesn't satisfy `Json: Incremental<String>`
+  |
+  = note: the following trait bounds were not satisfied:
+          `Json: Incremental<String>`
+  = note: this error originates in the macro `$crate::__macro::api` which comes from the expansion of the macro `concord::api` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0277]: the format `Json` cannot open a stream of `String`
+ --> tests/ui_json/stream_outputs.rs:2:1
+  |
+2 | / concord::api! {
+3 | |     pub client Finite {
+4 | |         base "http://x.test";
+5 | |         GET events() -> stream String { response concord::Json; }
+6 | |     }
+7 | | }
+  | |_^ this streaming output's format is `Json` (the nearest `response` statement: on the endpoint, a scope or the client); it needs `Json: Incremental<String>`
+  |
+  = help: the trait `Incremental<String>` is not implemented for `Json`
+  = note: `-> stream T` needs a format implementing `Incremental<String>` (an incremental reader); a finite `-> T` needs `Decode<String>`; `-> stream` without an item returns the unread `Incoming` body
+help: the trait `Incremental<T>` is implemented for `IgnoreContentType<F>`
+ --> $WORKSPACE/crates/concord-extras/src/ignore.rs
+  |
+  | impl<T, F: Incremental<T>> Incremental<T> for IgnoreContentType<F> {
+  | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  = note: this error originates in the macro `$crate::__macro::api` which comes from the expansion of the macro `concord::api` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0277]: the format `Json` cannot open a stream of `String`
+ --> tests/ui_json/stream_outputs.rs:5:50
+  |
+5 |         GET events() -> stream String { response concord::Json; }
+  |                                                  ^^^^^^^ this streaming output's format is `Json` (the nearest `response` statement: on the endpoint, a scope or the client); it needs `Json: Incremental<String>`
+  |
+  = help: the trait `Incremental<String>` is not implemented for `Json`
+  = note: `-> stream T` needs a format implementing `Incremental<String>` (an incremental reader); a finite `-> T` needs `Decode<String>`; `-> stream` without an item returns the unread `Incoming` body
+help: the trait `Incremental<T>` is implemented for `IgnoreContentType<F>`
+ --> $WORKSPACE/crates/concord-extras/src/ignore.rs
+  |
+  | impl<T, F: Incremental<T>> Incremental<T> for IgnoreContentType<F> {
+  | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  = note: this error originates in the macro `concord::api` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0277]: the format `Json` cannot open a stream of `String`
+ --> tests/ui_json/stream_outputs.rs:5:50
+  |
+5 |         GET events() -> stream String { response concord::Json; }
+  |                                                  ^^^^^^^ this streaming output's format is `Json` (the nearest `response` statement: on the endpoint, a scope or the client); it needs `Json: Incremental<String>`
+  |
+  = help: the trait `Incremental<String>` is not implemented for `Json`
+  = note: `-> stream T` needs a format implementing `Incremental<String>` (an incremental reader); a finite `-> T` needs `Decode<String>`; `-> stream` without an item returns the unread `Incoming` body
+help: the trait `Incremental<T>` is implemented for `IgnoreContentType<F>`
+ --> $WORKSPACE/crates/concord-extras/src/ignore.rs
+  |
+  | impl<T, F: Incremental<T>> Incremental<T> for IgnoreContentType<F> {
+  | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+note: required by a bound in `concord::__macro::concord_core::__private::OpenFormat::<R>::new`
+ --> $WORKSPACE/crates/concord-core/src/__private.rs
+  |
+  |     pub const fn new<I: 'static, F: Incremental<I, Records = R> + 'static>() -> Self {
+  |                                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^ required by this bound in `OpenFormat::<R>::new`
