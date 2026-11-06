@@ -42,6 +42,10 @@ the Phase A agent worktrees' own targets (about 17 GB, idle). At Phase B start: 
 
 ## SDK cohort (Phase B)
 
+Wave 3 integrated at `961db5c8` (library still `6d6d66aa`): `verify.sh --package --bench`
+43/43 PASS, clean tree (`work/logs/gate-961db5c8-verify.txt`, 3m37s). Synthesis: DECISIONS
+"Wave 3" (W3-1..18).
+
 Wave 3 frozen at `6d6d66aa` (waves 1-2 integrated; between-wave refinements D-W23-1/2, review
 SOL-W23 fixed): `verify.sh --package --bench` 43/43 PASS on a clean tree
 (`work/logs/gate-6d6d66aa-verify.txt`, 4m19s); pushed to PR #4. CI: pull_request run
@@ -74,6 +78,15 @@ commit, so no baseline intervention was needed.
 | SDK10 | Linear | medium | 3 | `gpt-6.1-terra` xhigh (`ed548bd5`) | `gpt-6-astra` xhigh, 18 tests, unassisted (`3ae13c1c`) | Opus subagent (`9466d1eb`) | WAVE_3_ROLES_DONE, merged `2c1d5295` |
 | SDK11 | Dropbox | medium | 3 | `gpt-6-astra` xhigh (`69692433`; flaky test fixed by the same session) | Opus subagent, 18 tests, unassisted (`373362dc`) | `gpt-6.1-sol` xhigh (`72249e49`) | WAVE_3_ROLES_DONE, merged `0bc35457` |
 | SDK12 | Google Drive | large | 3 | `gpt-6.1-sol` xhigh (`6d9d7fb9`) | `gpt-6.1-terra` xhigh, 5 tests, unassisted (`e8968c80`) | `gpt-6-astra` xhigh (`9bc413b0`, no production change needed) | WAVE_3_ROLES_DONE, merged `7354d5a3` |
+
+## Open issues (not fixed; tracked)
+
+| ID | Where | Issue | Status |
+|---|---|---|---|
+| W3-13 | `examples/linear-sdk` | a connection nulled by a GraphQL partial-data error becomes a decode error and loses the diagnostics, contrary to the README | OPEN (SDK) |
+| W3-18 | `checks/stream-stress` | one timing-sensitive smoke test failed once under heavy parallel load | OBSERVED |
+| W23-6/7 | Concord | a per-request input for the send policy cannot be declared; a decorated request cannot re-enter the policy | DEFERRED (one consumer, S3) |
+| — | all SDKs | live provider tier | NOT_RUN (no credentials, no live calls) |
 
 ## Model/session ledger
 
