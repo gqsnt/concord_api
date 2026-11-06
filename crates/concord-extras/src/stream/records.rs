@@ -10,8 +10,8 @@ use futures_core::Stream;
 
 use super::error::{Position, ReadError, ReadErrorKind};
 
-/// An incremental reader of records `T` (`CsvRecords`, `JsonLinesRecords`, `JsonValues`): what
-/// [`RecordStream`] drives. Sealed; implemented by this crate's readers.
+/// An incremental reader of records `T` (`CsvRecords`, `JsonLinesRecords`, `JsonValues`,
+/// `SseEvents`): what [`RecordStream`] drives. Sealed; implemented by this crate's readers.
 pub trait RecordReader: Send + 'static + sealed::Sealed {
     /// The record type.
     type Record: Send + 'static;

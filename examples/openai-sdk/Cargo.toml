@@ -7,7 +7,7 @@ license.workspace = true
 publish = false
 
 [dependencies]
-concord = { path = "../../crates/concord", features = ["jsonl", "multipart"] }
+concord = { path = "../../crates/concord", features = ["jsonl", "multipart", "sse"] }
 serde = { workspace = true, features = ["derive"] }
 serde_json.workspace = true
 tokio = { workspace = true, features = ["time"] }

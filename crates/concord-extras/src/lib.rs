@@ -12,14 +12,15 @@
 //! | [`IgnoreContentType<F>`] | — | `F`'s | `F`'s, without its `Content-Type` check | `F`'s |
 //! | `multipart::Multipart` | `multipart` | `multipart::MultipartBody`: `multipart/form-data` or `multipart/related` parts held in memory, `multipart/<subtype>; boundary=...` chosen per body so that it occurs in no part (a runtime media type), sent with `Content-Length` | — | none |
 //! | `csv::Csv<H, D, P>` | `csv` | `Vec<T: Serialize>`, `csv::Rows`, a lazy `csv::StreamRows`, `csv::RawTable`; `text/csv; header=present\|absent` from `H` | `Vec<T: DeserializeOwned>`, `csv::RawTable`; exactly one `text/csv` (profile can relax), charset absent or UTF-8/US-ASCII, a `header=` parameter agreeing with `H`; also an incremental reader | `text/csv` |
+//! | `sse::Sse` | `sse` | — | none (incremental only: `-> stream sse::Event` returns `sse::SseEvents`); exactly one `text/event-stream`, charset absent or once and UTF-8 or US-ASCII | `text/event-stream` |
 //!
 //! Head checks run before the body is read; a refusal is an
 //! [`ErrorKind::Metadata`](concord_core::ErrorKind::Metadata) error that keeps the response
 //! unread. The `jsonl` module also reads JSON Lines and consecutive JSON values (a Kubernetes
-//! watch) incrementally as a response arrives, on the `stream` infrastructure. None of these
-//! formats is known to the `api!` macro: a statement names them by their
-//! type path (`format Json;`), exactly like a format of your own. Applications normally get them
-//! through the `concord` crate.
+//! watch) incrementally as a response arrives, on the `stream` infrastructure; the `sse` module
+//! reads server-sent events the same way. None of these formats is known to the `api!` macro: a
+//! statement names them by their type path (`format Json;`), exactly like a format of your own.
+//! Applications normally get them through the `concord` crate.
 
 mod binary;
 #[cfg(feature = "csv")]
@@ -35,6 +36,8 @@ pub mod jsonl;
 mod media;
 #[cfg(feature = "multipart")]
 pub mod multipart;
+#[cfg(feature = "sse")]
+pub mod sse;
 #[cfg(feature = "stream")]
 pub mod stream;
 mod text;

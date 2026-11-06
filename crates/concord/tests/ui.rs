@@ -27,9 +27,9 @@ fn ui_features() {
 }
 
 /// Stream outputs with a finite format. rustc's help lists the `Incremental` implementors in
-/// scope, which depend on the streaming features: run where `csv` and `jsonl` are both on (the
-/// workspace build).
-#[cfg(all(feature = "json", feature = "csv", feature = "jsonl"))]
+/// scope, which depend on the streaming features: run where `csv`, `jsonl` and `sse` are all on
+/// (the workspace build).
+#[cfg(all(feature = "json", feature = "csv", feature = "jsonl", feature = "sse"))]
 #[test]
 fn ui_stream() {
     let t = trybuild::TestCases::new();

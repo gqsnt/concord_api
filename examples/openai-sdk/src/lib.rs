@@ -3,12 +3,15 @@
 #![allow(missing_docs)]
 
 use concord::{
-    Binary, Endpoint, Json, Received, SendWith,
+    Binary, Endpoint, Incremental, Json, Received, SendWith,
+    bytes::Bytes,
     multipart::{Multipart, MultipartBody},
     reqwest::{
         self,
         header::{AUTHORIZATION, HeaderMap, HeaderValue},
     },
+    sse::{Sse, SseEvents, SseOptions, SseReader},
+    stream::{ByteSource, ReadErrorKind, SourceError},
 };
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -21,7 +24,7 @@ use std::{
 concord::api! {
     /// Wire declarations for the supported operations. Every `send()` returns
     /// `Result<Response<T>, Error>` (this crate's, through [`SendPolicy`]); [`OpenAi`] adds the
-    /// per-operation input rules, the SSE parser and the bounded downloads.
+    /// per-operation input rules, the event stream and the bounded downloads.
     pub client OpenAiApi(#[sensitive] header(AUTHORIZATION) authorization: HeaderValue) {
         base "https://api.openai.com";
         path "v1";
@@ -30,7 +33,7 @@ concord::api! {
         response Json;
         /// Create a response.
         POST response(body request: ResponseRequest) -> ResponseObject { path "responses"; }
-        /// Open a response event stream: the unread body, for the SDK's SSE parser.
+        /// Open a response event stream: the unread body, for [`EventStream`].
         POST response_stream(body request: ResponseRequest) -> stream {
             path "responses";
             headers { "accept" = "text/event-stream"; }
@@ -358,26 +361,16 @@ impl OpenAi {
             value: incoming,
             meta,
         } = self.api.response_stream(request).send().await?;
-        let content_type = meta
-            .headers
-            .get("content-type")
-            .and_then(|v| v.to_str().ok())
-            .unwrap_or("");
-        if !content_type
-            .split(';')
-            .next()
-            .unwrap_or("")
-            .trim()
-            .eq_ignore_ascii_case("text/event-stream")
-        {
-            return Err(Error::Stream("expected text/event-stream".into()));
-        }
+        // Concord's `text/event-stream` head check (one Content-Type, charset absent or UTF-8).
+        <Sse as Incremental<concord::sse::Event>>::check_content_type(&incoming.head())
+            .map_err(|_| Error::Stream("expected text/event-stream".into()))?;
+        let reader = SseReader::new(SseOptions::new().max_event_bytes(MAX_EVENT_BYTES));
         Ok(EventStream {
-            body: incoming,
+            events: Some(reader.read(Body {
+                incoming,
+                failure: None,
+            })),
             meta,
-            buffer: Vec::new(),
-            data: Vec::new(),
-            done: false,
         })
     }
     /// Upload buffered JSONL; rejects unsafe filenames. The multipart boundary is chosen by
@@ -495,73 +488,65 @@ pub enum Event {
     #[serde(other)]
     Other,
 }
-/// Incremental SSE reader. EOF before a completion event is an error. Drop to cancel.
+/// The largest SSE event being assembled (its `data` lines, event type and unfinished line).
+const MAX_EVENT_BYTES: usize = 1024 * 1024;
+
+/// The response body as a byte source for Concord's SSE reader. It keeps Concord's own transport
+/// error (naming `OpenAiApi.response_stream`, URL removed), which [`EventStream`] returns.
+struct Body {
+    incoming: concord::Incoming,
+    failure: Option<concord::Error>,
+}
+impl ByteSource for Body {
+    async fn next_chunk(&mut self) -> Result<Option<Bytes>, SourceError> {
+        self.incoming.chunk().await.map_err(|error| {
+            self.failure = Some(error);
+            SourceError::new("reading the response body failed")
+        })
+    }
+}
+
+/// Typed Responses events over Concord's SSE reader (`concord::sse`). EOF before a completion
+/// event is an error; every error except malformed event JSON ends the stream. Drop to cancel.
 pub struct EventStream {
-    body: concord::Incoming,
+    events: Option<SseEvents<Body>>,
     pub meta: ResponseMeta,
-    buffer: Vec<u8>,
-    data: Vec<Vec<u8>>,
-    done: bool,
 }
 impl EventStream {
     pub async fn next(&mut self) -> Result<Option<Event>, Error> {
-        if self.done {
+        let Some(events) = self.events.as_mut() else {
             return Ok(None);
-        }
-        loop {
-            if let Some(pos) = self.buffer.iter().position(|b| *b == b'\n') {
-                let mut line: Vec<u8> = self.buffer.drain(..=pos).collect();
-                line.pop();
-                if line.last() == Some(&b'\r') {
-                    line.pop();
-                }
-                if line.is_empty() {
-                    if self.data.is_empty() {
-                        continue;
-                    }
-                    let data = std::mem::take(&mut self.data).join(&b'\n');
-                    let event: Event = serde_json::from_slice(&data).map_err(Error::Json)?;
-                    match &event {
-                        Event::Completed { .. } => self.done = true,
-                        Event::Failed { response } => {
-                            self.done = true;
-                            return Err(Error::StreamFailed(Box::new(response.clone())));
-                        }
-                        Event::Error { message, code } => {
-                            self.done = true;
-                            return Err(Error::StreamEventError {
-                                message: message.clone(),
-                                code: code.clone(),
-                            });
-                        }
-                        _ => {}
-                    }
-                    return Ok(Some(event));
-                }
-                if let Some(data) = line.strip_prefix(b"data:") {
-                    self.data
-                        .push(data.strip_prefix(b" ").unwrap_or(data).to_vec());
-                } else if line == b"data" {
-                    self.data.push(Vec::new());
-                }
-                continue;
+        };
+        let frame = match events.next().await {
+            Some(Ok(frame)) => frame,
+            None => {
+                self.events = None;
+                return Err(Error::Stream("SSE ended before response.completed".into()));
             }
-            match self.body.chunk().await? {
-                Some(chunk) => {
-                    if self.buffer.len()
-                        + self.data.iter().map(Vec::len).sum::<usize>()
-                        + chunk.len()
-                        > 1024 * 1024
-                    {
-                        return Err(Error::Stream("SSE event exceeds 1 MiB".into()));
-                    }
-                    self.buffer.extend_from_slice(&chunk);
-                }
-                None => {
-                    self.done = true;
-                    return Err(Error::Stream("SSE ended before response.completed".into()));
-                }
+            Some(Err(error)) => {
+                let failure = self.events.take().and_then(|e| e.into_source().failure);
+                return Err(match (error.kind(), failure) {
+                    (ReadErrorKind::Transport, Some(failure)) => Error::Concord(failure),
+                    _ => Error::Stream(error.to_string()),
+                });
             }
+        };
+        let event: Event = serde_json::from_str(frame.data()).map_err(Error::Json)?;
+        match &event {
+            Event::Completed { .. } => self.events = None,
+            Event::Failed { response } => {
+                self.events = None;
+                return Err(Error::StreamFailed(Box::new(response.clone())));
+            }
+            Event::Error { message, code } => {
+                self.events = None;
+                return Err(Error::StreamEventError {
+                    message: message.clone(),
+                    code: code.clone(),
+                });
+            }
+            _ => {}
         }
+        Ok(Some(event))
     }
 }

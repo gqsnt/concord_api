@@ -113,6 +113,7 @@ format statements, then children.
 | `.prepare()?` → `Prepared` | `receive()` (below), `send()`, the native `reqwest::Request` (`request()`), `send_raw()`, `into_parts()` |
 | `.prepare()?.receive().await?` → `Received` | one execution, any status, body unread: `head()`, `meta()` (owned copy), `status()`, `url()`, then one of `decode()`, `decode_limited(n)`, `into_incoming()`, `bytes_limited(n)`, `into_response()` |
 | `-> stream T` / `-> stream` | `send()` returns the reader / the unread `Incoming`; readers' `open(..)` takes `Incoming`, `Received` or a native response; `completion()`, `into_stream()` |
+| `-> stream sse::Event` + `response Sse;` (feature `sse`) | server-sent events: `next()` → `Event` (`event()`, `data()` as text, `id()`), `last_event_id()`, `retry()`; a body ending inside an event is an error; no reconnect |
 | `prepared.follow(url)?` | the same request at a server-returned URL (same origin only; `Debug` withholds it) |
 | `send Policy;` (client) | every `send()` returns the SDK's `<Policy as SendWith<T>>::Output` (its errors, metadata, signing) |
 | `concord::Endpoint<T>` | implemented by every generated endpoint for its output `T` (`prepare`, `operation()`): write one SDK adapter for all operations |

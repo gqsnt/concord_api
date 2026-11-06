@@ -38,6 +38,9 @@ EXCLUDED = [
     # The multipart format adds no package: no serializer, no CSV parser.
     ("concord-extras", ["--no-default-features", "--features", "multipart"], {"csv", "csv-core", "serde",
                                                                               "serde_json", "serde_urlencoded"}),
+    # The SSE reader frames events and decodes no payload: no serializer at all.
+    ("concord-extras", ["--no-default-features", "--features", "sse"], {"csv", "csv-core", "serde", "serde_json",
+                                                                       "serde_urlencoded"}),
     ("concord-pagination", [], {"concord", "concord-core", "concord-extras", "concord-macros", "reqwest",
                                 "tokio", "serde"}),
     ("concord-macros", [], {"concord-core", "concord-extras", "concord", "reqwest", "serde"}),

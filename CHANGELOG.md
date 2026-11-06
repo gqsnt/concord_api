@@ -56,6 +56,13 @@ Not released: the version is unchanged (4.2.0) and no release has been decided. 
   names, file names and part header values (tab excepted), `"`/`\` in form-data names and file
   names, and an empty `related` body are encode errors (`Build`, before I/O) that show no part
   bytes. The OpenAI and Google Drive SDK examples moved onto it from hand-written framing.
+- **Server-sent events.** Feature `sse` of `concord-extras` (facade: `concord::sse`): `SseReader`
+  (`open`, `read`) → `SseEvents` (`next`, `completion`, `position`, `last_event_id`, `retry`,
+  `into_stream`, `into_source`), `Event` (`event`, `data`, `id`) and the `Sse` format
+  (`-> stream sse::Event` with `response Sse;`). WHATWG framing, no decoding of `data`; stricter
+  than a browser: invalid UTF-8, a body ending inside a line or an event, and an event over
+  `max_event_bytes` (1 MiB) or past `max_events` are terminal errors. `examples/openai-sdk` reads
+  its event stream with it.
 
 ### Changed
 

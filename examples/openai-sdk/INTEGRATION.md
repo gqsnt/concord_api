@@ -352,3 +352,53 @@ are unchanged.
 change). The repository gate (`scripts/verify.sh`) result is in the coordinator's records.
 
 Offline only; no OpenAI API calls.
+
+## Between waves 3-4 (shared SSE reader)
+
+The second independent SSE consumer (ntfy, wave 3) met decision W2-8's condition, so
+`concord-extras` gained an `sse` feature (`concord::sse`: `SseReader`, `SseEvents`, `Event`, the
+`Sse` format) and `EventStream` now reads through it.
+
+### Before / after (`src/lib.rs`, 566 → 551 lines; 80 removed, 65 added)
+
+- **Removed:** the hand-written framing in `EventStream::next` (line splitting on LF with a CRLF
+  strip, the `data` buffer, blank-line dispatch, the 1 MiB check, the EOF branch over
+  `Incoming::chunk`; about 45 lines) and the 14-line `Content-Type` comparison in
+  `stream_response`.
+- **Added:** `Body`, a 13-line `concord::stream::ByteSource` over `Incoming::chunk` that keeps
+  Concord's own transport error, so a body that breaks off is still `Error::Concord(e)` (kind
+  `Transport`, operation `OpenAiApi.response_stream`, URL removed: `tests/workflows.rs:206`); the
+  mapping of the reader's `ReadError` to this crate's `Error`; a call of the format's head check
+  (`<Sse as Incremental<concord::sse::Event>>::check_content_type`); a private
+  `MAX_EVENT_BYTES` (1 MiB, the reader's default stated explicitly).
+- **Kept:** the endpoint (`-> stream`, `accept: text/event-stream`), `Event` and its typed
+  variants, `response.completed` ends the stream (then `Ok(None)`), `response.failed` and `error`
+  are typed errors, an end before completion is `Error::Stream`, malformed event JSON is
+  `Error::Json` and reading may go on.
+
+### Behaviour changes (from the code; no test assertion changed)
+
+- **Framing follows the WHATWG interpretation:** a lone CR is a line end too (a CR-only stream
+  used to end as "SSE ended before response.completed"), and a leading byte order mark is
+  skipped (it used to hide the first `data` field). LF, CR LF and a CR LF split across chunks
+  behave as before.
+- **Invalid UTF-8** anywhere (also in a comment or an unknown field) is `Error::Stream` and ends
+  the stream; it used to be `Error::Json` for `data` and ignored elsewhere.
+- **An early end** is still `Error::Stream`; its message now says where: inside a line or inside
+  an event (the reader's content-free `ReadError` text), or "SSE ended before
+  response.completed" at an event boundary.
+- **The 1 MiB bound** counts the event being assembled (its `data`, event type and unfinished
+  line) instead of the buffered input plus the incoming chunk: a large chunk holding many small
+  events no longer fails, and exceeding the bound now ends the stream.
+- **The head check** is Concord's: exactly one `Content-Type`, `text/event-stream`, charset
+  absent or UTF-8 (it used to compare only the essence of the first field); a refusal is still
+  `Error::Stream("expected text/event-stream")`.
+- **After a transport error** the stream is fused (`Ok(None)`); before, a further `next()` read
+  the broken body again.
+
+### Verification (observed)
+
+`cargo test --locked -p concord-sdk-openai`: 18 first_use + 4 protocol + 4 split_and_reorder + 5
+workflows passed, 0 failed; `git diff` of `tests/` is empty. The every-boundary perturbation
+(`tests/split_and_reorder.rs`: every single cut and one byte per chunk, LF and CRLF copies)
+passes unchanged on the shared reader. Offline only; no OpenAI API calls.
