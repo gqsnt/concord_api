@@ -1,18 +1,30 @@
 //! Discovery from a validated first result, then independently indexed bounded fanout.
+use crate::links::PartitionLinks;
 use crate::model::PartitionBody;
 use crate::{Error, ProtocolError, Query, Reply, ResultMetadata, ResultSet, Row};
 use concord::ResponseMeta;
 use concord_pagination::{Independent, IndependentReport, Options, independent};
-use std::{future::Future, num::NonZeroUsize, ops::Range, pin::Pin, sync::Arc};
+use std::{
+    future::Future,
+    num::NonZeroUsize,
+    ops::Range,
+    pin::Pin,
+    sync::{Arc, Mutex},
+};
 
 /// A validated first response. Its rows are owned here and never refetched by traversal.
 #[derive(Debug)]
 pub struct FirstResult {
     query: Query,
     response: Reply<ResultSet>,
+    links: Arc<Mutex<PartitionLinks>>,
 }
 impl FirstResult {
-    pub(crate) fn new(query: Query, response: Reply<ResultSet>) -> Result<Self, Error> {
+    pub(crate) fn new(
+        query: Query,
+        response: Reply<ResultSet>,
+        url: &concord::reqwest::Url,
+    ) -> Result<Self, Error> {
         let r = &response.value;
         let m = &r.result_set_meta_data;
         if r.status.code == "391908" {
@@ -43,7 +55,13 @@ impl FirstResult {
             ));
         }
         validate_rows(&r.data, m, 0, &response.meta)?;
-        Ok(Self { query, response })
+        let links =
+            crate::links::partition_links(&query, url, &response.meta, m.partition_info.len(), 0)?;
+        Ok(Self {
+            query,
+            response,
+            links: Arc::new(Mutex::new(PartitionLinks(links))),
+        })
     }
     /// Original result, including partition zero, all descriptors and response headers.
     pub fn response(&self) -> &Reply<ResultSet> {
@@ -51,11 +69,12 @@ impl FirstResult {
     }
     /// A plan bound to this account, handle, request context and server descriptors.
     /// The proof is partitionInfo's ordered descriptors plus the documented indexed GET contract,
-    /// not numRows or an inferred page size. No server URL is followed.
+    /// not numRows or an inferred page size. Returned partition links are followed unchanged.
     pub fn plan(&self) -> PartitionPlan {
         PartitionPlan {
             query: self.query.clone(),
             metadata: Arc::new(self.response.value.result_set_meta_data.clone()),
+            links: self.links.clone(),
         }
     }
     /// Yields partition zero first, without I/O, then uses Concord's independent scheduler.
@@ -95,6 +114,7 @@ impl FirstResult {
 pub struct PartitionPlan {
     query: Query,
     metadata: Arc<ResultMetadata>,
+    links: Arc<Mutex<PartitionLinks>>,
 }
 impl PartitionPlan {
     /// Query identity and original request context.
@@ -111,19 +131,22 @@ impl PartitionPlan {
         if index == 0 || index >= self.metadata.partition_info.len() {
             return Err(Error::protocol(ProtocolError::InvalidPartition, None));
         }
+        let mut prepared = self
+            .query
+            .client
+            .api
+            .statement(self.query.handle.clone())
+            .partition(index)
+            .prepare()?;
+        let target = self.links.lock().unwrap().0.get(&index).cloned();
+        if let Some(url) = target {
+            prepared = prepared.follow(url.as_str())?;
+        }
+        let url = prepared.request().url().clone();
         let response = self
             .query
             .client
-            .execute(
-                self.query
-                    .client
-                    .api
-                    .statement(self.query.handle.clone())
-                    .partition(index)
-                    .prepare()?,
-                &[200],
-                Some(&self.query.handle),
-            )
+            .execute(prepared, &[200], Some(&self.query.handle))
             .await?;
         let body = response
             .value
@@ -145,6 +168,14 @@ impl PartitionPlan {
             PartitionBody::Rows(rows) => rows,
         };
         validate_rows(&rows, &self.metadata, index, &response.meta)?;
+        let links = crate::links::partition_links(
+            &self.query,
+            &url,
+            &response.meta,
+            self.metadata.partition_info.len(),
+            index,
+        )?;
+        self.links.lock().unwrap().0.extend(links);
         Ok(Partition {
             index,
             rows,

@@ -41,8 +41,10 @@ execution timeout; it is independent of HTTP and polling deadlines.
 
 Supply a distinct UUID `RequestContext::submission_id` for each new submission. The
 returned `Query`, every `PartitionPlan`, and each partition retain this original
-context and the server handle. Cloning preserves that identity. GETs omit the optional
-`requestId`; cancel accepts a separate request UUID. There is no implicit request-ID
+context and the server handle. Cloning preserves that identity. GETs retain any
+server-returned `requestId` and opaque query values exactly; without a returned link,
+the declared GET omits optional `requestId`. Cancel accepts a separate request UUID.
+There is no implicit request-ID
 generation, retry, resubmission, or promise of exactly-once SQL execution. An interrupted
 submit may have reached the server without returning a handle.
 
@@ -117,6 +119,12 @@ plan. A total count alone never enables fanout. For example, `first.plan().fetch
 may precede `fetch(1)` when both descriptors exist. Index zero is already owned by the
 first result and is rejected by `fetch`; traversal delivers it without I/O.
 
+When a response supplies partition `Link` targets, the plan follows those exact
+targets, preserving query order, repeated values, escapes and server request IDs.
+Known targets are shared by cloned plans and updated from later partition responses.
+If `next` and `last` identify the same partition with distinct URLs, `next` is used.
+Only partitions without a known returned target use the declared indexed GET.
+
 Discovery rejects missing/empty descriptors, inconsistent total rows, arithmetic
 overflow, unsupported format, a nonzero first-partition index, and mismatched row
 count/width. Code `391908` (incomplete first result) is refused rather than silently
@@ -142,6 +150,9 @@ Emitted results and errors belong to the caller and are not duplicated in the re
 endpoint. `Query::cancel` sends that POST once and validates its documented
 `000604` / `57014` acknowledgement. `cancel_and_wait` preserves that result, **including
 rejection or transport error**, and then observes the query's actual status.
+An inserted pending status remains pending; even an accepted cancel followed by
+successful completion produces `PollOutcome::Complete`. Cancellation is terminal
+only when a correlated status response actually reports it.
 
 ```rust,no_run
 use concord_sdk_snowflake::*;
@@ -191,7 +202,7 @@ consume that original `Submission::state` instead.
 ## Errors, limits and remaining tradeoffs
 
 `Error::Server` retains status, headers, generated operation identity, typed code,
-SQLSTATE, handle, advisory URL, unknown fields and bounded raw bytes. Invalid JSON
+SQLSTATE, handle, returned status URL, unknown fields and bounded raw bytes. Invalid JSON
 keeps its decode diagnostic; body truncation/limit failure keeps the Concord error
 and response metadata. Successful-body read/decode/limit failures also keep the head.
 `Error::Protocol` identifies correlation/manifest/row violations. `Error::Config`
@@ -230,8 +241,15 @@ index; an echoed handle is checked when present. The documentation does not prov
 a complete compressed later-partition specimen: both a `data` envelope and a bare row
 array are accepted; fixtures for those shapes are synthetic (see provenance).
 
-The SDK never follows `statementStatusUrl` or `Link`, and redirects/retries are disabled.
-It constructs the documented indexed path on the original account. It does not expose
+The SDK follows the latest correlated `statementStatusUrl` for subsequent status
+checks, including links returned by cancel acknowledgements and correlated provider
+errors. Query clones share that target. Relative links resolve against the response's
+request URL; absolute links must stay on the same account origin and statement path.
+Partition links must also match their descriptor index and relation. Invalid,
+ambiguous, foreign-account or wrong-handle links produce `ProtocolError::InvalidLink`
+with the response head, without a follow-up request. Unknown Link relations are ignored;
+links with an `anchor` context are unsupported and refused for known relations.
+Redirects/retries remain disabled. It does not expose
 custom HTTP middleware or persist/reconstitute a Query across processes. Token
 rotation requires a new client. Incomplete first results, expired server results and
 account-specific SQL behavior are not repaired automatically.
@@ -251,3 +269,7 @@ workflows, extra pending responses, added partitions, independent out-of-order
 retrieval, concurrency gates, budgets, caller stops, cancellation races and virtual
 deadlines. Testserver owns and shuts down loopback tasks. No test uses credentials or
 calls Snowflake. `tests/first_use.rs` is reserved for the independent consumer.
+`tests/maintenance.rs` combines an inserted pending poll, two result partitions and
+a gated cancel/completion race with both accepted and rejected cancel replies. It
+also checks opaque link bytes, cloned-plan updates and handle/link failures. See
+[MAINTENANCE.md](MAINTENANCE.md) for the change evidence and compatibility adjustment.

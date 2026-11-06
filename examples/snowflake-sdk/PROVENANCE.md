@@ -22,7 +22,29 @@ partition behavior introduced in Snowflake 5.40. The cancellation status pair
 `000604` / `57014` and cancel rejection `000709` / `02000` are from S4's examples;
 S3 alone does not specify those JSON bodies.
 
+Maintenance recheck (2026-11-06): reopened S2, S3 and S4. S2's execution flow
+allows polling the returned `statementStatusUrl`; S4's POST/GET 200 examples supply
+partition Link targets containing distinct `requestId` values. The SDK now follows
+those targets instead of discarding their queries. The S4 response-header table has
+an inconsistent inline Link spelling (its `rel` appears inside angle brackets);
+fixtures use the conventional `<target>; rel="next"` spelling shown in S4's actual
+HTTP response examples. No provider request or capture was made.
+
 ## Fixture inventory
+
+Maintenance fixtures, also hand-authored and compact UTF-8 without trailing newline:
+
+| Fixture | Source / synthetic changes |
+|---|---|
+| `maintenance-pending-submit.json`, `maintenance-pending-poll.json`, `maintenance-pending-after-cancel.json` | S2/S4 202 QueryStatus fields, synthetic handle B, message, request IDs and opaque query values. Three different status targets test query order, repeated values, plus signs and escape spelling. |
+| `maintenance-complete.json` | Existing `complete-2.json` shape changed to synthetic handle B and the maintenance status URL. Two descriptors describe three rows across partitions zero and one. |
+| `maintenance-partitions.link` | S4 POST 200 Link example shape, with synthetic handle/request IDs, opaque query values and a quoted title containing a comma. `next` and `last` target partition one with distinct request IDs, as in the documented example. |
+
+The maintenance race is a scripted adversarial ordering: completion is delivered
+while the cancel response is held, then status is pending once before completing.
+Both a 200 cancellation acknowledgement and a 422 rejection are tested against that
+ordering. This is not a claim about which ordering or consistency a live account
+will exhibit. Existing partition JSON/gzip fixtures are reused without modification.
 
 **No fixture is a captured vendor response or a verbatim complete vendor example.**
 All JSON was hand-authored from the documented fields and then serialized as compact

@@ -5,9 +5,12 @@ use crate::{
     Error, ProtocolError, RequestContext, RequestId, ServerError, ServerMessage, Statement,
     StatementHandle,
 };
-use concord::reqwest::{self, header::HeaderValue};
+use concord::reqwest::{self, Url, header::HeaderValue};
 use concord::{Prepared, ResponseMeta};
-use std::{sync::Arc, time::Duration};
+use std::{
+    sync::{Arc, Mutex},
+    time::Duration,
+};
 
 /// Authentication token classification. Token acquisition/renewal is caller-owned.
 #[derive(Clone, Copy, Debug)]
@@ -154,15 +157,12 @@ impl Client {
         if statement.statement.trim().is_empty() {
             return Err(Error::Config("empty statement"));
         }
-        let reply = self
-            .execute(
-                self.api
-                    .submit(context.submission_id.clone(), statement)
-                    .prepare()?,
-                &[200, 202],
-                None,
-            )
-            .await?;
+        let prepared = self
+            .api
+            .submit(context.submission_id.clone(), statement)
+            .prepare()?;
+        let url = prepared.request().url().clone();
+        let reply = self.execute(prepared, &[200, 202], None).await?;
         let handle = match &reply.value {
             StatementBody::Pending(s) => s.statement_handle.clone(),
             StatementBody::Complete(r) => r.status.statement_handle.clone(),
@@ -172,8 +172,9 @@ impl Client {
             client: self.clone(),
             handle,
             context: Arc::new(context),
+            status_url: Arc::new(Mutex::new(None)),
         };
-        let state = query.state(reply)?;
+        let state = query.state(reply, &url)?;
         Ok(Submission { query, state })
     }
 
@@ -252,11 +253,20 @@ pub enum StatementState {
 }
 
 /// Identity and submission context retained across polling, cancellation and result retrieval.
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub struct Query {
     pub(crate) client: Client,
     pub(crate) handle: StatementHandle,
     pub(crate) context: Arc<RequestContext>,
+    status_url: Arc<Mutex<Option<Url>>>,
+}
+impl std::fmt::Debug for Query {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Query")
+            .field("handle", &self.handle)
+            .field("context", &self.context)
+            .finish_non_exhaustive()
+    }
 }
 impl Query {
     /// Server statement identity.
@@ -268,20 +278,21 @@ impl Query {
         &self.context
     }
     /// Fetches status once; completion includes partition zero, without a second request.
+    /// Follows the latest correlated status URL, preserving its opaque query and request ID.
+    /// Cloned queries share that target. Without a returned link, uses the declared handle path.
     pub async fn status(&self) -> Result<StatementState, Error> {
-        self.state(
-            self.client
-                .execute(
-                    self.client
-                        .api
-                        .statement(self.handle.clone())
-                        .status()
-                        .prepare()?,
-                    &[200, 202],
-                    Some(&self.handle),
-                )
-                .await?,
-        )
+        let mut prepared = self
+            .client
+            .api
+            .statement(self.handle.clone())
+            .status()
+            .prepare()?;
+        let target = self.status_url.lock().unwrap().clone();
+        if let Some(url) = target {
+            prepared = prepared.follow(url.as_str())?;
+        }
+        let url = prepared.request().url().clone();
+        self.state(self.execute(prepared, &[200, 202], &url).await?, &url)
     }
     pub(crate) fn correlate(
         &self,
@@ -293,10 +304,44 @@ impl Query {
         }
         Ok(())
     }
-    fn state(&self, reply: Reply<StatementBody>) -> Result<StatementState, Error> {
+    fn remember_status(
+        &self,
+        value: &ServerMessage,
+        meta: &ResponseMeta,
+        base: &Url,
+    ) -> Result<(), Error> {
+        self.correlate(value.statement_handle.as_ref(), meta)?;
+        if let Some(raw) = &value.statement_status_url {
+            let url = crate::links::resolve(self, base, raw, meta)?;
+            if crate::links::partition_index(&url, meta)?.is_some_and(|index| index != 0) {
+                return Err(Error::protocol(ProtocolError::InvalidLink, Some(meta)));
+            }
+            *self.status_url.lock().unwrap() = Some(url);
+        }
+        Ok(())
+    }
+    async fn execute<T>(
+        &self,
+        prepared: Prepared<T>,
+        statuses: &[u16],
+        url: &Url,
+    ) -> Result<Reply<T>, Error> {
+        let result = self
+            .client
+            .execute(prepared, statuses, Some(&self.handle))
+            .await;
+        if let Err(Error::Server(error)) = &result
+            && let Some(doc) = &error.document
+            && doc.statement_handle.as_ref() == Some(&self.handle)
+        {
+            self.remember_status(doc, &error.meta, url)?;
+        }
+        result
+    }
+    fn state(&self, reply: Reply<StatementBody>, url: &Url) -> Result<StatementState, Error> {
         match reply.value {
             StatementBody::Pending(value) => {
-                self.correlate(value.statement_handle.as_ref(), &reply.meta)?;
+                self.remember_status(&value, &reply.meta, url)?;
                 Ok(StatementState::Pending(Reply {
                     value,
                     meta: reply.meta,
@@ -304,32 +349,30 @@ impl Query {
             }
             StatementBody::Complete(value) => {
                 self.correlate(value.status.statement_handle.as_ref(), &reply.meta)?;
-                FirstResult::new(
+                let first = FirstResult::new(
                     self.clone(),
                     Reply {
                         value,
                         meta: reply.meta,
                     },
-                )
-                .map(StatementState::Complete)
+                    url,
+                )?;
+                self.remember_status(&first.response().value.status, &first.response().meta, url)?;
+                Ok(StatementState::Complete(first))
             }
         }
     }
     /// Explicit remote cancellation POST, exactly once. Local stop never calls this endpoint.
     /// Returns the documented 000604/57014 acknowledgement; use cancel_and_wait to observe a race.
     pub async fn cancel(&self, request_id: RequestId) -> Result<Reply<ServerMessage>, Error> {
-        let reply = self
+        let prepared = self
             .client
-            .execute(
-                self.client
-                    .api
-                    .statement(self.handle.clone())
-                    .cancel(request_id)
-                    .prepare()?,
-                &[200],
-                Some(&self.handle),
-            )
-            .await?;
+            .api
+            .statement(self.handle.clone())
+            .cancel(request_id)
+            .prepare()?;
+        let url = prepared.request().url().clone();
+        let reply = self.execute(prepared, &[200], &url).await?;
         self.correlate(reply.value.statement_handle.as_ref(), &reply.meta)?;
         if reply.value.code != "000604" || reply.value.sql_state.as_deref() != Some("57014") {
             return Err(Error::protocol(
@@ -337,6 +380,7 @@ impl Query {
                 Some(&reply.meta),
             ));
         }
+        self.remember_status(&reply.value, &reply.meta, &url)?;
         Ok(reply)
     }
 }

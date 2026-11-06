@@ -15,6 +15,7 @@ async fn all_four_operations_have_exact_targets_headers_and_bodies() {
             200,
             &mutate(CANCELLED, |v| {
                 v["statementHandle"] = A.into();
+                v["statementStatusUrl"] = format!("/api/v2/statements/{A}").into();
             }),
         ),
     ]);
@@ -310,7 +311,7 @@ async fn transport_truncation_is_not_success_and_keeps_operation() {
 }
 
 #[tokio::test]
-async fn advisory_status_urls_are_not_followed_and_redirects_are_not_followed() {
+async fn foreign_status_urls_are_refused_and_redirects_are_not_followed() {
     let script = Script::new([
         json(
             202,
@@ -321,16 +322,14 @@ async fn advisory_status_urls_are_not_followed_and_redirects_are_not_followed() 
         json(200, ONE),
     ]);
     let s = TestServer::start(move |_| script.next()).await;
-    let q = client(&s)
-        .submit(context(), statement())
-        .await
-        .unwrap()
-        .query;
     assert!(matches!(
-        q.status().await.unwrap(),
-        StatementState::Complete(_)
+        client(&s).submit(context(), statement()).await,
+        Err(Error::Protocol {
+            kind: ProtocolError::InvalidLink,
+            ..
+        })
     ));
-    assert_eq!(s.requests()[1].target, format!("/api/v2/statements/{A}"));
+    assert_eq!(s.requests().len(), 1);
     s.shutdown().await;
     let s =
         TestServer::start(|_| WireReply::new(307).header("location", "http://127.0.0.1:1/never"))

@@ -3,6 +3,7 @@ mod api;
 mod client;
 mod compression;
 mod error;
+mod links;
 mod model;
 mod partitions;
 mod polling;

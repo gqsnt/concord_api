@@ -145,7 +145,7 @@ pub struct ServerMessage {
     pub sql_state: Option<String>,
     /// Server identity, when provided (generic HTTP errors may omit it).
     pub statement_handle: Option<StatementHandle>,
-    /// Advisory URL, preserved but never followed or used as a request base.
+    /// Exact server status link. Correlated observations update the Query's next status target.
     pub statement_status_url: Option<String>,
     /// Additional server fields, without loss.
     #[serde(flatten)]

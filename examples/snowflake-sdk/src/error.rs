@@ -7,6 +7,8 @@ use concord::ResponseMeta;
 pub enum ProtocolError {
     /// A response omitted or changed the statement handle.
     HandleMismatch,
+    /// A returned status/partition link is malformed, ambiguous or not for this query/account.
+    InvalidLink,
     /// The status is not documented for this operation.
     UnexpectedStatus,
     /// Metadata is absent, inconsistent, unsupported or not partition zero.
