@@ -40,6 +40,28 @@ error[E0277]: the format `Json` cannot open a stream of `String`
             `JsonLines` implements `Incremental<T>`
             `JsonStream` implements `Incremental<T>`
             `Ndjson` implements `Incremental<T>`
+  = note: this error originates in the macro `$crate::__macro::api` which comes from the expansion of the macro `concord::api` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0277]: the format `Json` cannot open a stream of `String`
+ --> tests/ui_stream/finite_format_for_stream.rs:3:1
+  |
+3 | / concord::api! {
+4 | |     pub client Finite {
+5 | |         base "http://x.test";
+6 | |         GET events() -> stream String { response concord::Json; }
+7 | |     }
+8 | | }
+  | |_^ this streaming output's format is `Json` (the nearest `response` statement: on the endpoint, a scope or the client); it needs `Json: Incremental<String>`
+  |
+  = help: the trait `Incremental<String>` is not implemented for `Json`
+  = note: `-> stream T` needs a format implementing `Incremental<String>` (an incremental reader); a finite `-> T` needs `Decode<String>`; `-> stream` without an item returns the unread `Incoming` body
+  = help: the following other types implement trait `Incremental<T>`:
+            `Csv<H, D, P>` implements `Incremental<RawRecord>`
+            `Csv<H, D, P>` implements `Incremental<T>`
+            `IgnoreContentType<F>` implements `Incremental<T>`
+            `JsonLines` implements `Incremental<T>`
+            `JsonStream` implements `Incremental<T>`
+            `Ndjson` implements `Incremental<T>`
   = note: this error originates in the macro `concord::api` (in Nightly builds, run with -Z macro-backtrace for more info)
 
 error[E0599]: the method `prepare` exists for struct `FiniteEvents`, but its trait bounds were not satisfied
@@ -63,29 +85,12 @@ error[E0599]: the method `prepare` exists for struct `FiniteEvents`, but its tra
   |
   = note: the following trait bounds were not satisfied:
           `Json: Incremental<String>`
+  = help: items from traits can only be used if the trait is in scope
   = note: this error originates in the macro `$crate::__macro::api` which comes from the expansion of the macro `concord::api` (in Nightly builds, run with -Z macro-backtrace for more info)
-
-error[E0277]: the format `Json` cannot open a stream of `String`
- --> tests/ui_stream/finite_format_for_stream.rs:3:1
+help: trait `Endpoint` which provides `prepare` is implemented but not in scope; perhaps you want to import it
   |
-3 | / concord::api! {
-4 | |     pub client Finite {
-5 | |         base "http://x.test";
-6 | |         GET events() -> stream String { response concord::Json; }
-7 | |     }
-8 | | }
-  | |_^ this streaming output's format is `Json` (the nearest `response` statement: on the endpoint, a scope or the client); it needs `Json: Incremental<String>`
+3 + use concord::Endpoint;
   |
-  = help: the trait `Incremental<String>` is not implemented for `Json`
-  = note: `-> stream T` needs a format implementing `Incremental<String>` (an incremental reader); a finite `-> T` needs `Decode<String>`; `-> stream` without an item returns the unread `Incoming` body
-  = help: the following other types implement trait `Incremental<T>`:
-            `Csv<H, D, P>` implements `Incremental<RawRecord>`
-            `Csv<H, D, P>` implements `Incremental<T>`
-            `IgnoreContentType<F>` implements `Incremental<T>`
-            `JsonLines` implements `Incremental<T>`
-            `JsonStream` implements `Incremental<T>`
-            `Ndjson` implements `Incremental<T>`
-  = note: this error originates in the macro `$crate::__macro::api` which comes from the expansion of the macro `concord::api` (in Nightly builds, run with -Z macro-backtrace for more info)
 
 error[E0277]: the format `Json` cannot open a stream of `String`
  --> tests/ui_stream/finite_format_for_stream.rs:6:50
