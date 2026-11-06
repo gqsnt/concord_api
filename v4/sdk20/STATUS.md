@@ -49,6 +49,9 @@ agent's kept) and the `consumers.*` scratch copies in `work/gate/target` and
 `work/implementation/target` (~37 GB). No source, branch, commit or worktree was removed; the
 `work/baseline/target/consumers.*` copies were not on the list and remain. Free afterwards:
 200 GB.
+Second approval (free space down to 87 GB before wave 5): "Yes, delete it (both agent
+targets)" — `agent-ac998292…/target` (39 GB, R5 finished) deleted; `agent-ae98124f…/target`
+(33 GB, R4) to be deleted after its follow-up session ends.
 
 ## SDK cohort (Phase B)
 
