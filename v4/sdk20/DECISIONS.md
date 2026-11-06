@@ -500,3 +500,31 @@ Every gate run left ~1.6 GB; with idle agent build directories the disk filled d
 **R5 (in progress)** — readers over a wrapped body (`check_head` on every reader, an
 operation-naming `read_for`, `ByteSource` for `Incoming` keeping Concord's error, `ReadError`
 source by value): ntfy (W34-G2/G3/G4), OpenAI, ClickHouse (FRICTION 2, 3).
+
+## Wave 4 (frozen library `0983a349`; Open-Meteo, Airtable, ClickHouse, Snowflake)
+
+All twelve roles done; merged `fb3f519c` (Open-Meteo), `eb801635` (Airtable), `0e0bc3df`
+(ClickHouse), `0347edfc` (Snowflake). Process notes: the three Codex author launches first failed
+before starting (a batch ran from the wrong directory) and were relaunched with absolute paths;
+the disk filled mid-wave (STATUS) and one maintainer session was resumed after the owner-approved
+cleanup; the Snowflake author's first delivery enabled reqwest `gzip`, which under workspace
+feature unification broke `crates/concord/tests/metadata.rs` `content_encoding_is_not_a_media_type`
+— the same session moved decompression into the SDK (flate2).
+
+| ID | Evidence | Cause | Disposition |
+|---|---|---|---|
+| W4-1 | Open-Meteo F4: a CSV body ending inside a quoted field decoded as complete (finite and incremental) | Concord CSV (csv-core leniency) | FIXED D-W45-R4 |
+| W4-2 | ClickHouse F2/F3, ntfy (W34-G2..G4), OpenAI: a reader over a wrapped body loses the head check and the operation name; a source error comes back only by reference | concord-extras readers | IMPLEMENT R5 (in progress) |
+| W4-3 | Open-Meteo F2: JSON/CSV chosen at run time needs an SDK response adapter | representation per request | DEFER: one consumer; `-> stream`/`Received` plus a reader chosen at run time works |
+| W4-4 | Open-Meteo F3: a CSV body holding two tables with different schemas | provider format | SDK-local |
+| W4-5 | Open-Meteo F5, Airtable F1, Snowflake F2: typed provider errors and metadata still need SDK orchestration (a policy, bounded error reads) | shared, already addressed | the send policy, `ResponseMeta`, `Error::meta()` and `bytes_limited` are the mechanism; the remaining code is provider error schemas (no new library change) |
+| W4-6 | Airtable F2 and Dropbox (W3-15): an opaque cursor is valid only with the listing's own options; the page factory must carry that context | pagination | DEFER: two consumers, both correct with the factory closure; a context-carrying `Resume` would add a type parameter everywhere for no blocked SDK |
+| W4-7 | ClickHouse F1: per-query parameter names (`param_<name>`) cannot be declared; every query goes through `into_parts` + `query_pairs_mut` + `Decoder::execute` | declaration (dynamic keys) | DEFER with D-A5 (F7 parameter groups): one consumer; the documented native recipe works; the appended pairs cannot be marked sensitive (recorded) |
+| W4-8 | Snowflake F1: status-dependent success bodies (200 result vs 202 running) need a custom decoder | provider protocol | SDK-local (a format reading the head's status) |
+| W4-9 | Snowflake author: reqwest `gzip` in an SDK forces decompression on every workspace member | SDK placement | SDK fixed; the gate's workspace `test` step catches it |
+| W4-10 | Snowflake consumer F1: a missing `partitionInfo` is a decode error while an empty one is `InvalidManifest`, contrary to the README | SDK | OPEN SDK finding (STATUS open issues) |
+| W4-11 | Snowflake consumer F2: `concord` types appear in the SDK's API but `concord` is not re-exported | SDK guidance | DOCS (between waves 4-5): AUTHOR_GUIDE to say an SDK whose API exposes Concord types re-exports `concord` |
+| W4-12 | Snowflake maintainer: the author built the status path from the handle instead of following the returned link | cohort contract | FIXED in the SDK (`1a78be4f`; an invalid link is `ProtocolError::InvalidLink`) |
+| W4-13 | Airtable maintainer: rename-proof keys need Airtable's `returnFieldsByFieldId`; adding a public options field breaks two tests that build it by literal | SDK API (`#[non_exhaustive]`) | SDK choice, not taken (outside the ticket) |
+| W4-14 | ClickHouse consumer: a broken insert response can lose metadata; collection still requires checking `Outcome` | SDK | recorded in its FIRST_USE.md |
+| W4-15 | maintenance dispersion: Airtable 0 production changes, Open-Meteo 1 definition, ClickHouse 2 production decisions, Snowflake one fact in 7 places | measurement | — |
