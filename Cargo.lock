@@ -427,6 +427,8 @@ version = "0.0.0"
 dependencies = [
  "concord",
  "concord-example-testserver",
+ "futures-core",
+ "reqwest",
  "serde",
  "tokio",
 ]

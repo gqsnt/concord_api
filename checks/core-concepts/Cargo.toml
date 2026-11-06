@@ -12,6 +12,9 @@ concord = { path = "../../crates/concord" }
 serde = { workspace = true, features = ["derive"] }
 
 [dev-dependencies]
+futures-core.workspace = true
+# `Body::wrap_stream`, for the one-shot source of the F1 comparison.
+reqwest = { workspace = true, features = ["stream"] }
 concord-example-testserver = { path = "../../examples/testserver" }
 tokio = { workspace = true, features = ["macros", "rt", "time"] }
 
