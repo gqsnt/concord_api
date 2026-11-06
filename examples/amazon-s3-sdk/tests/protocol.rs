@@ -14,9 +14,9 @@ use concord_example_testserver::{Body, Recorded, Reply, TestServer};
 use concord_pagination::{PagesError, Resume};
 use concord_sdk_amazon_s3::sigv4::sign_request;
 use concord_sdk_amazon_s3::{
-    BodyErrorKind, BucketName, ByteRange, Clock, ContentType, ContinuationToken, Credentials, ETag,
-    ErrorBody, HttpDate, MaxKeys, Metadata, ObjectKey, ProtocolErrorKind, Region, S3Client,
-    S3Error, StorageClass,
+    BodyCompletion, BodyErrorKind, BucketName, ByteRange, Clock, ContentType, ContinuationToken,
+    Credentials, ETag, ErrorBody, HttpDate, MaxKeys, Metadata, ObjectKey, ProtocolErrorKind,
+    Region, S3Client, S3Error, StorageClass,
 };
 
 const EMPTY_SHA256: &str = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855";
@@ -934,6 +934,54 @@ async fn body_failures_are_reported_with_what_arrived() {
         (body.kind(), body.received(), body.expected()),
         (BodyErrorKind::LimitExceeded, 0, Some(4096))
     );
+}
+
+/// After a failure, later `chunk()` calls return `Ok(None)` like the verified end does;
+/// `completion()` is `EndOfInput` only at that end and keeps the failure's kind otherwise.
+#[tokio::test]
+async fn completion_tells_a_failed_body_from_a_clean_end() {
+    let server =
+        TestServer::start(|r| match r.path() {
+            "/cut" => Reply::new(200).with_body(Body::FailAfter(vec![
+                concord::bytes::Bytes::from_static(b"partial-"),
+            ])),
+            "/chunked" => Reply::new(200).with_body(Body::Chunks(vec![
+                (Duration::ZERO, concord::bytes::Bytes::from_static(b"ab")),
+                (Duration::ZERO, concord::bytes::Bytes::from_static(b"cd")),
+            ])),
+            _ => Reply::new(200).body(vec![7u8; 4096]),
+        })
+        .await;
+    let s3 = client_for(server.addr(), "us-east-1", &["examplebucket"]);
+    let bucket = s3.bucket(bucket_name("examplebucket"));
+
+    let mut cut = bucket.get_object(key("cut")).send().await.unwrap();
+    assert_eq!(cut.body.completion(), BodyCompletion::Reading);
+    assert_eq!(&cut.body.chunk().await.unwrap().unwrap()[..], b"partial-");
+    assert_eq!(cut.body.completion(), BodyCompletion::Reading);
+    assert!(cut.body.chunk().await.is_err());
+    for _ in 0..2 {
+        assert!(cut.body.chunk().await.unwrap().is_none());
+        assert!(cut.body.is_finished());
+        assert_eq!(
+            cut.body.completion(),
+            BodyCompletion::Failed(BodyErrorKind::Transport)
+        );
+    }
+    assert!(format!("{:?}", cut.body).contains("Failed(Transport)"));
+
+    for (path, len) in [("whole", 4096), ("chunked", 4)] {
+        let mut ok = bucket.get_object(key(path)).send().await.unwrap();
+        assert_eq!(ok.body.completion(), BodyCompletion::Reading, "{path}");
+        let mut read = 0;
+        while let Some(chunk) = ok.body.chunk().await.unwrap() {
+            read += chunk.len();
+        }
+        assert_eq!(read, len, "{path}");
+        assert!(ok.body.chunk().await.unwrap().is_none());
+        assert_eq!(ok.body.completion(), BodyCompletion::EndOfInput, "{path}");
+    }
+    assert_eq!(server.requests().len(), 3);
 }
 
 // ---------------------------------------------------------------------------------------------

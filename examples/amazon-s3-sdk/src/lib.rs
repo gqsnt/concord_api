@@ -74,7 +74,8 @@ pub use error::{
     ProtocolErrorKind, ResponseMeta, S3Error, SigningError,
 };
 pub use object::{
-    Download, GetObjectOutput, HeadFormat, ObjectBody, ObjectHead, PutFormat, PutObjectOutput,
+    BodyCompletion, Download, GetObjectOutput, HeadFormat, ObjectBody, ObjectHead, PutFormat,
+    PutObjectOutput,
 };
 pub use sigv4::{Clock, Credentials};
 pub use types::{
