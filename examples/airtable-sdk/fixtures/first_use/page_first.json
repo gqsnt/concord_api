@@ -1,0 +1,1 @@
+{"records":[{"id":"recFirstUse1","createdTime":"2026-01-02T03:04:05.000Z","fields":{"Name":"First task","Count":7,"Ready":true,"Tags":["red","blue"]}},{"id":"recFirstUse2","fields":{"Name":"Second task"}}],"offset":"itrFirstUse/recNext+part%2F &?=é"}
