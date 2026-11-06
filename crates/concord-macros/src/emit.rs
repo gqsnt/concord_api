@@ -1230,10 +1230,26 @@ fn emit_owner(
                         let notes: Vec<LitStr> = notes.iter().map(|n| lit(n)).collect();
                         quote!(#docs #[doc = ""] #(#[doc = #notes])* pub #name: #fty,)
                     });
+                let later = match (
+                    owner.values.iter().any(|v| v.optional),
+                    owner
+                        .values
+                        .iter()
+                        .any(|v| !v.optional && v.default.is_some()),
+                ) {
+                    (true, true) => {
+                        " Optional and initialized values are set afterwards with the client's `set_*` and `maybe_*` methods."
+                    }
+                    (true, false) => {
+                        " Optional values are set afterwards with the client's `set_*` and `maybe_*` methods."
+                    }
+                    (false, true) => {
+                        " Initialized values are set afterwards with the client's `set_*` methods."
+                    }
+                    (false, false) => "",
+                };
                 let config_doc = lit(&format!(
-                    " The required values of [`{ty}`], passed to [`{ty}::new`]. Optional and \
-                     initialized values are set afterwards with the client's `set_*` and \
-                     `maybe_*` methods."
+                    " The required values of [`{ty}`], passed to [`{ty}::new`].{later}"
                 ));
                 let config_label = lit(&config.to_string());
                 let config_debug = debug_fields(k, model, required.iter().copied(), &quote!(self));

@@ -1355,6 +1355,17 @@ Use a send policy when the result type of the whole client changes; keep domain 
 input rule of one operation (an identifier that must not be empty), which a policy only sees after
 the request is built. Without `send`, generated `send()` returns `Result<T, concord::Error>`.
 
+Adopting a policy changes `send()` only. `prepare()` stays the declared request — for a signing
+policy, *unsigned* — and its signature does not change, so callers who inspected or executed a
+decorated request from an SDK method named `prepare` keep compiling and fail only at run time
+(observed when S3 moved to `send signer;`). Give the decorated request its own name (S3:
+`S3Client::prepare(op)` returning a signed request) and say so in the migration notes.
+
+If the declaration stays private behind the SDK's own client, do not re-export its generated
+`{Client}Config` as the SDK's construction type: its generated docs link to the hidden client and
+its `set_*` methods (observed in the Dropbox SDK). Re-export the declared client too, or give the
+SDK's constructor a configuration type of its own.
+
 ## 6. Wire formatting: `Display` and newtypes
 
 Every value written as text — path segment, subdomain label, query value, template hole — is
