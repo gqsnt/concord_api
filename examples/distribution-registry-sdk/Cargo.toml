@@ -8,6 +8,7 @@ license.workspace = true
 publish = false
 
 [dependencies]
+concord-auth = { path = "../../crates/concord-auth" }
 concord = { path = "../../crates/concord", features = ["json"] }
 concord-pagination = { path = "../../crates/concord-pagination", features = ["link"] }
 serde = { workspace = true, features = ["derive"] }
@@ -16,6 +17,7 @@ serde_json.workspace = true
 sha2 = "0.11.1"
 
 [dev-dependencies]
+base64 = "0.23.1"
 concord-example-testserver = { path = "../testserver" }
 tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
 

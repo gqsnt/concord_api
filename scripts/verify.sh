@@ -160,6 +160,10 @@ retry_features() {
   done
 }
 step test-retry-features retry_features
+# Auth has one runtime-free configuration and no optional features.
+step test-auth cargo test --locked -p concord-auth --no-default-features
+step clippy-auth cargo clippy --locked -p concord-auth --no-default-features --all-targets -- -D warnings
+step doc-auth env RUSTDOCFLAGS="-D warnings" cargo doc --locked -p concord-auth --no-default-features --no-deps
 # Lints of the feature subsets the workspace build unifies away (code used only by some formats).
 clippy_features() {
   local features

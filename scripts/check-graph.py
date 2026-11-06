@@ -25,12 +25,16 @@ ALLOWED = {
     "concord-pagination": {"futures-util", "url"},
     # Optional transport and runtime edges are checked in isolation below.
     "concord-retry": {"concord-core", "reqwest", "tokio"},
+    # Credentials and shared acquisitions know no transport, runtime or macro crate.
+    "concord-auth": {"base64", "http", "futures-util"},
     "concord-macros": {"http", "mime", "proc-macro2", "quote", "syn"},
     "concord": {"concord-core", "concord-codecs", "concord-macros"},
 }
 
 # Packages that must not appear in the resolved normal graph of `cargo tree -p PKG ARGS`.
 EXCLUDED = [
+    ("concord-auth", ["--no-default-features"], {"concord", "concord-core", "concord-codecs", "concord-extras",
+        "concord-macros", "concord-retry", "reqwest", "tokio", "serde"}),
     ("concord-core", [], {"concord-codecs", "concord-extras", "concord-macros", "concord", "serde_json", "serde_urlencoded"}),
     ("concord-codecs", ["--all-features"], {"concord-extras", "concord-macros", "concord", "concord-pagination"}),
     # The CSV parser and serde only with their features (http-body and futures-core already come
