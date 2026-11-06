@@ -489,7 +489,9 @@ pub(crate) async fn open_rows<T: DeserializeOwned>(
     if meta.exception_code().is_some() {
         return Err(head_exception(incoming.into_response(), operation, meta).await);
     }
-    let marked = meta.exception_tag().is_some();
+    // The guard cannot recognize a block without a nonempty tag. Keep the completion
+    // classification consistent with the guard, including malformed empty headers.
+    let marked = meta.exception_tag().is_some_and(|tag| !tag.is_empty());
     let reader = match format {
         OutputFormat::CsvWithNames => {
             let csv = CsvReader::new(CsvOptions::new(HeaderMode::Present, b','))

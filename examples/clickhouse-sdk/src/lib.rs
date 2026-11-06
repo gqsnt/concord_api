@@ -11,7 +11,8 @@
 //! - **Completion** ([`Outcome`]): a 2xx status is not a complete result. The SDK finds the
 //!   exception block ClickHouse writes into a started body ([`Error::LateException`]), reports a
 //!   broken body ([`Error::Read`]), and calls a clean end [`Outcome::Complete`] only when the
-//!   response announced its exception tag.
+//!   response announced a nonempty exception tag. This outcome assumes the server uses the
+//!   tagged-block contract; other exception formats are not detected.
 //! - **Cancellation** ([`ClickHouse::cancel`]): `KILL QUERY` by query ID; dropping [`Rows`] only
 //!   stops the client's read.
 //!

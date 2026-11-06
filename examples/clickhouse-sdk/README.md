@@ -187,13 +187,17 @@ The SDK's detection contract, in the order it is applied:
 | non-2xx status (exception before the response started) | `Error::Server` |
 | 2xx head whose `X-ClickHouse-Format` is not the requested format | `Error::Response` (body unread) |
 | 2xx head with `X-ClickHouse-Exception-Code` (headers were still being sent, e.g. progress headers) | `Error::LateException` (`LateSource::Head`, or `Block` if the body holds the block) |
-| 2xx, the tagged block appears in the body, split across chunks anywhere | every row before it, then `Error::LateException` (`LateSource::Block { complete }`) |
+| 2xx, the tagged block appears in the body, split across chunks anywhere, whether HTTP framing ends cleanly or breaks | every row before it, then `Error::LateException` (`LateSource::Block { complete }`) |
 | 2xx, the body breaks without a block | `Error::Read` of kind `Transport`; `Outcome::Failed` |
 | 2xx, untagged plain-text exception at the end (servers that send no tag; before 24.11 the body even ended cleanly) | detected only when the text does not parse as rows (`Error::Read` `Format`/`Decode`); a text that parses (a CSV row of the right width) is a row, and the read ends with `Outcome::EndedWithoutMarker` |
-| 2xx, clean end, tag announced, no block | `Outcome::Complete` |
+| 2xx, clean end, nonempty tag announced, no block | `Outcome::Complete` under the tagged-exception contract |
+| 2xx, clean end, tag absent or empty | `Outcome::EndedWithoutMarker` |
 
 Rows returned before an error stay returned (`next()`); `collect()` returns all rows or the error.
-Only `Outcome::Complete` claims a complete result.
+`Outcome::Complete` is conditional on the server using the tagged-block contract: the tag is not
+proof of query success if a different exception representation is enabled or a server behaves
+otherwise. In particular, `http_write_exception_in_output_format=1` is not recognized by this SDK.
+An empty tag is retained in response metadata but cannot be used to detect a block.
 
 **`wait_end_of_query=1`** (`Select::wait_end_of_query(true)`) makes the server buffer the whole
 result (memory up to `http_response_buffer_size`, then a temporary file) and send the head after

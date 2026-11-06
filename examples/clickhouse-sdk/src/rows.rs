@@ -21,18 +21,18 @@ pub(crate) enum Reader<T> {
     Json(Box<JsonLinesRecords<T, Body>>),
 }
 
-/// How far a row read got. Only [`Complete`](Self::Complete) is a complete result.
+/// How far a row read got under the documented tagged-exception contract.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 #[non_exhaustive]
 pub enum Outcome {
     /// Rows may follow (also after the caller stopped early).
     Reading,
     /// The body ended cleanly, the response announced its exception tag
-    /// (`X-ClickHouse-Exception-Tag`) and no exception block was found: every row was read and
-    /// the server marked no late exception.
+    /// (`X-ClickHouse-Exception-Tag`, nonempty) and no exception block was found. This is complete
+    /// under the tagged-exception contract; a server using another exception format can evade it.
     Complete,
-    /// The body ended cleanly, but the response carried no exception tag. A server that writes an
-    /// unmarked plain-text exception at the end of the body (before ClickHouse 24.11 the body
+    /// The body ended cleanly, but the response carried no usable exception tag. A server that
+    /// writes an unmarked plain-text exception at the end of the body (before ClickHouse 24.11 the body
     /// then even ended cleanly) is only detected when the text does not parse as rows: a clean
     /// end here does **not** prove that the query succeeded.
     EndedWithoutMarker,

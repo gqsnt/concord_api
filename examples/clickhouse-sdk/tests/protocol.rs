@@ -653,6 +653,31 @@ async fn an_untagged_plain_text_exception_is_caught_only_when_it_does_not_parse(
 }
 
 #[tokio::test]
+async fn an_empty_exception_tag_does_not_claim_a_complete_result() {
+    for format in [OutputFormat::CsvWithNames, OutputFormat::JsonEachRow] {
+        let server = TestServer::start(move |request| {
+            let body = match format {
+                OutputFormat::CsvWithNames => football_csv(),
+                OutputFormat::JsonEachRow => football_json(),
+            };
+            rows_reply_with(request, format, Some(""), Body::Full(body.into()))
+        })
+        .await;
+        let result = client(&server.url())
+            .select(Query::new("SELECT * FROM football"), format)
+            .rows::<Match>()
+            .await
+            .unwrap()
+            .collect()
+            .await
+            .unwrap();
+        assert_eq!(result.rows, football_rows());
+        assert_eq!(result.meta.exception_tag(), Some(""));
+        assert_eq!(result.outcome, Outcome::EndedWithoutMarker);
+    }
+}
+
+#[tokio::test]
 async fn wait_end_of_query_turns_an_execution_error_into_a_status_but_is_not_relied_on() {
     let calls = Arc::new(Mutex::new(0));
     let seen = Arc::clone(&calls);

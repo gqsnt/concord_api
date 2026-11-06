@@ -82,6 +82,8 @@ notes do not say).
   the `TIMEOUT_EXCEEDED` and `CANNOT_PARSE_INPUT_ASSERTION_FAILED` texts are synthetic.
 - The `wait_end_of_query` cases (an empty-body 500, then rows and a block after a 200) model the
   documented behaviour and its documented limit; no server was observed.
+- The cleanly terminated chunked responses containing the synthetic `perturbed` exception blocks
+  and the empty exception-tag header are synthetic robustness cases, not recorded server responses.
 - The fake server evaluates workflow A's two parameters and workflow B's table and season itself
   (unescaping `param_*`), and serves workflow B's inserted bytes back; it runs no SQL. The CSV
   query-back echoes the SDK's all-quoted CSV, which a real server would re-format.

@@ -137,11 +137,25 @@ struct Fixture {
     away_team_goals: u8,
 }
 
-async fn read_perturbed(format: OutputFormat, chunks: Vec<Vec<u8>>) -> (Vec<Fixture>, Error) {
+async fn read_perturbed(
+    format: OutputFormat,
+    chunks: Vec<Vec<u8>>,
+    clean_end: bool,
+) -> (Vec<Fixture>, Error) {
     let tag = "pqtrsvwxyzabcdef";
     let server = TestServer::start(move |request| {
-        let body = chunks.iter().map(|c| Bytes::from(c.clone())).collect();
-        rows_reply_with(request, format, Some(tag), Body::FailAfter(body))
+        let body = if clean_end {
+            // Give each HTTP chunk time to arrive separately, including the split UTF-8 bytes.
+            Body::Chunks(
+                chunks
+                    .iter()
+                    .map(|c| (Duration::from_millis(2), Bytes::from(c.clone())))
+                    .collect(),
+            )
+        } else {
+            Body::FailAfter(chunks.iter().map(|c| Bytes::from(c.clone())).collect())
+        };
+        rows_reply_with(request, format, Some(tag), body)
     })
     .await;
     let mut rows = client(&server.url())
@@ -190,7 +204,8 @@ async fn workflow_a_survives_split_fields_and_rows_then_reports_the_late_excepti
         offset_of(&csv, b"__exception__", 6),
         offset_of(&csv, b"pqtrsvwx", 4),
     ];
-    let (read, error) = read_perturbed(OutputFormat::CsvWithNames, split_at(&csv, &cuts)).await;
+    let (read, error) =
+        read_perturbed(OutputFormat::CsvWithNames, split_at(&csv, &cuts), false).await;
     assert_late_after_three(OutputFormat::CsvWithNames, &read, &error);
     assert_eq!(read[1].home_team, "Harrogate \"Town\", A.F.C.");
     assert_eq!(read[1].away_team, "Line\nBreak United");
@@ -203,7 +218,8 @@ async fn workflow_a_survives_split_fields_and_rows_then_reports_the_late_excepti
         offset_of(&json, "😀".as_bytes(), 2),
         offset_of(&json, b"\r\n__exception__", 1),
     ];
-    let (read, error) = read_perturbed(OutputFormat::JsonEachRow, split_at(&json, &cuts)).await;
+    let (read, error) =
+        read_perturbed(OutputFormat::JsonEachRow, split_at(&json, &cuts), false).await;
     assert_late_after_three(OutputFormat::JsonEachRow, &read, &error);
     assert_eq!(read[1].home_team, "1. FC Köln");
     assert_eq!(read[1].away_team, "Málaga CF 😀");
@@ -214,8 +230,39 @@ async fn workflow_a_survives_split_fields_and_rows_then_reports_the_late_excepti
         (OutputFormat::JsonEachRow, json),
     ] {
         let bytes: Vec<Vec<u8>> = body.iter().map(|b| vec![*b]).collect();
-        let (read, error) = read_perturbed(format, bytes).await;
+        let (read, error) = read_perturbed(format, bytes, false).await;
         assert_late_after_three(format, &read, &error);
+    }
+}
+
+#[tokio::test]
+async fn split_rows_and_tagged_exception_are_detected_even_with_clean_http_end() {
+    for (format, name, needle, delta) in [
+        (
+            OutputFormat::CsvWithNames,
+            "perturbed.csvwithnames",
+            b"\"\"Town\"\"".as_slice(),
+            1,
+        ),
+        (
+            OutputFormat::JsonEachRow,
+            "perturbed.jsoneachrow",
+            "😀".as_bytes(),
+            2,
+        ),
+    ] {
+        let body = fixture(name);
+        let cuts = [
+            offset_of(&body, needle, delta),
+            offset_of(&body, b"__exception__", 6),
+        ];
+        let (read, error) = read_perturbed(format, split_at(&body, &cuts), true).await;
+        assert_late_after_three(format, &read, &error);
+        if format == OutputFormat::CsvWithNames {
+            assert_eq!(read[1].home_team, "Harrogate \"Town\", A.F.C.");
+        } else {
+            assert_eq!(read[1].away_team, "Málaga CF 😀");
+        }
     }
 }
 
