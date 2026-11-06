@@ -15,8 +15,8 @@
 //!
 //! - **Same endpoint, GitLab's URL.** A linked page is the same generated endpoint (same
 //!   `PRIVATE-TOKEN` and `Accept` headers, same decoder, same Concord operation name in errors)
-//!   sent to the link: the listing is prepared, then its native URL is replaced
-//!   (`Prepared::into_parts`, `Decoder::execute`).
+//!   sent to the link: the listing is prepared, then its URL is replaced (`Prepared::follow`,
+//!   which also refuses another origin itself).
 //! - **The token stays on the API.** A link on another origin (scheme, host, port) is
 //!   [`PaginationProblem::ForeignLink`] and is not requested. A link that is not a project issue
 //!   collection under the API's base path (`.../projects/<one segment>/issues`) is
@@ -45,10 +45,10 @@ use concord::reqwest::Url;
 use concord_pagination::{Page, PageItems, Pages, Resume};
 
 use crate::api::GitLabProjectIssues;
-use crate::call::{api_error, decode};
 use crate::error::{GitLabError, PaginationProblem};
 use crate::meta::ResponseMeta;
 use crate::models::Issue;
+use crate::send::{api_error, decode};
 
 /// The page GitLab linked to (`rel="next"`): the key of the next request, and where an interrupted
 /// traversal resumes. `Debug` withholds the URL.
@@ -130,9 +130,9 @@ async fn fetch_prepared(
     prepared: Result<Prepared<Vec<Issue>>, concord::Error>,
     key: Option<NextPage>,
 ) -> Result<IssuePage, GitLabError> {
-    let (client, mut request, decoder) = prepared?.into_parts();
+    let mut prepared = prepared?;
     // The first page's URL: the API origin, the base path and this listing's collection path.
-    let first = request.url().clone();
+    let first = prepared.request().url().clone();
     let listing: Arc<str> = first.path().into();
     let refused = |problem| GitLabError::Pagination {
         problem,
@@ -144,12 +144,12 @@ async fn fetch_prepared(
         }
         // A key only comes from a checked response, but the caller can pass any.
         check_link(&first, &key.url).map_err(refused)?;
-        *request.url_mut() = key.url;
+        prepared = prepared.follow(key.url.as_str())?;
     }
-    let mut requested = request.url().clone();
+    let mut requested = prepared.request().url().clone();
     requested.set_fragment(None);
 
-    let received = decoder.execute(&client, request).await?;
+    let received = prepared.receive().await?;
     let meta = ResponseMeta::capture(&received);
     if !received.status().is_success() {
         return Err(api_error(received, meta).await);

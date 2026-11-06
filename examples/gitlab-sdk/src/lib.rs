@@ -10,7 +10,7 @@
 //! **Use.**
 //!
 //! ```no_run
-//! use concord_sdk_gitlab::{Call, GitLab, IssueIid, IssueState, PrivateToken, ProjectRef};
+//! use concord_sdk_gitlab::{GitLab, IssueIid, IssueState, PrivateToken, ProjectRef};
 //!
 //! # async fn run() -> Result<(), Box<dyn std::error::Error>> {
 //! let http = concord::reqwest::Client::builder()
@@ -23,7 +23,7 @@
 //! let issues = project.issues().set_state(IssueState::Opened).items().collect_complete().await?;
 //!
 //! // One request with metadata.
-//! let first = project.issue(IssueIid::new(1)?).call().await?;
+//! let first = project.issue(IssueIid::new(1)?).send().await?;
 //!
 //! // Workflow B: an issue and its project.
 //! let context = gitlab.issue_context(ProjectRef::path("acme/widgets")?, IssueIid::new(1)?).await?;
@@ -34,7 +34,8 @@
 //!
 //! - [`api`]: the declaration ([`GitLab`], [`GitLab::with_token`]). Every operation is a generated
 //!   endpoint with setters, `prepare()` and `send()`.
-//! - [`Call`]: one adapter that sends any operation with [`GitLabError`] and [`ResponseMeta`].
+//! - [`SendPolicy`]: the client's send policy; every operation's `send()` returns
+//!   [`GitLabError`] and [`ResponseMeta`] (no trait to import).
 //! - [`pages`]: the issue traversal (`project.issues().pages()`), pinned to offset pagination and
 //!   driven by `Link: rel="next"` exactly as sent.
 //! - [`context`]: workflow B ([`GitLab::issue_context`]).
@@ -44,7 +45,6 @@
 //! The SDK performs no retry, no rate-limit waiting and no concurrency.
 
 pub mod api;
-pub mod call;
 pub mod context;
 pub mod error;
 pub mod link;
@@ -52,11 +52,11 @@ pub mod meta;
 pub mod models;
 pub mod pages;
 pub mod params;
+pub mod send;
 
 use concord::reqwest::{Url, redirect};
 
 pub use api::{GITLAB_COM, GitLab, GitLabConfig, PRIVATE_TOKEN};
-pub use call::Call;
 pub use context::{ContextError, IssueContext};
 pub use error::{ApiError, ErrorBody, ErrorMessage, GitLabError, PaginationProblem};
 pub use meta::{Pagination, Response, ResponseMeta};
@@ -66,6 +66,7 @@ pub use params::{
     InputError, IssueIid, IssueOrder, IssueState, Labels, PerPage, PrivateToken, ProjectId,
     ProjectRef, SortOrder,
 };
+pub use send::SendPolicy;
 
 /// The README's examples, compiled as doctests.
 #[cfg(doctest)]

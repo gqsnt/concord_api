@@ -118,3 +118,10 @@ Attribution keys: **Concord**, **SDK**, **provider**, **application**, **docs**,
     built before `TestServer::start` returns its URL, so tests that send absolute `Link` targets
     create an empty `Script`, start the server, then `push` (`tests/workflows.rs` `serve`,
     `tests/protocol.rs` `first_page_with`). Small and local.
+
+## Between waves 2-3 (coordinator integration)
+
+Items 4 and 8 changed. The `Call` trait was replaced by the client statement
+`send SendPolicy;`, so the generated `send()` returns `GitLabError` and `ResponseMeta`. Linked
+pages use `Prepared::follow` instead of `into_parts`/`url_mut`/`Decoder::execute`; the
+throwaway first-page `prepare()` remains. See [INTEGRATION.md](INTEGRATION.md).
