@@ -192,3 +192,16 @@ Remaining gaps reported, with dispositions:
 | W1-15 | the generated `{Client}Config` takes raw declared types; validated construction keeps an SDK wrapper | DEFER: SDK construction policy; `ToHeaderValue` is sealed on purpose (credential text must not go through `Display`) |
 | W1-16 | passing a generated operation where a future is expected gives E0277 with no hint toward the adapter | DOCS_ONLY (AUTHOR_GUIDE §5.12) |
 | W1-17 | no decoder from an `Endpoint` type: following a server URL prepares a placeholder operation to borrow its decoder | DEFER, grouped with server-URL following (GitLab `Link`, Graph `nextLink` in later waves) |
+
+### D-W2-HDR — validated credential types as header values (REJECT_WITH_REASON)
+
+Twilio (W1-15) and GitLab (`PrivateToken`; the generated `new`/`set_token` accept any `HeaderValue`,
+so an empty token was built and sent) asked for an SDK type in a header placement. A trial
+unsealing of `ToHeaderValue` was reverted before commit: the seal is the mechanism behind H10b /
+K12 (`ui/to_header_value_sealed.rs`, `native_headers.rs::dual_use_values_are_withheld_everywhere_or_are_text`)
+— a value whose sensitivity is carried only by a native flag must never also be text, and a user
+type could implement both `Display` and a flagged `ToHeaderValue`, leaving its path/query
+placements unredacted unless the author also declared `#[sensitive]`. The replacement would not
+preserve the check, so the invariant stays. Validated construction remains SDK policy: keep the
+generated client behind the SDK's constructor, or refuse an invalid credential in the client's
+send policy (`send Policy;`) before execution.
