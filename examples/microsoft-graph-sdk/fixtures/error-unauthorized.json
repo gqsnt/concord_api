@@ -1,0 +1,1 @@
+{"error":{"code":"InvalidAuthenticationToken","message":"Synthetic authentication failure; do not log this body.","innerError":{"date":"2026-11-06T00:00:00Z","request-id":"synthetic-request-401"}}}

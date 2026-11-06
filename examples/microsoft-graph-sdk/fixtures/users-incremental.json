@@ -1,0 +1,9 @@
+{
+  "@odata.deltaLink":"{{BASE}}/users/delta?$deltatoken=synthetic-next-round",
+  "value":[
+    {"id":"user-a", "displayName":"Ada Updated", "mail":null, "accountEnabled":false},
+    {"id":"user-b", "@removed":{"reason":"changed"}},
+    {"id":"user-c", "@removed":{"reason":"deleted"}},
+    {"id":"user-d", "displayName":"Dee Example", "syntheticExtension":"retained"}
+  ]
+}

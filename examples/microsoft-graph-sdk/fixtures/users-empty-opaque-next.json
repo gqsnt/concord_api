@@ -1,0 +1,4 @@
+{
+  "@odata.nextLink":"{{BASE}}/users/microsoft.graph.delta?$skiptoken=synthetic%2Bempty%2Fnext%3D&opaque=%2b+&opaque=%252F",
+  "value":[]
+}

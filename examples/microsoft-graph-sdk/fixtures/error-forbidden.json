@@ -1,0 +1,1 @@
+{"error":{"code":"Authorization_RequestDenied","message":"Synthetic insufficient permissions.","innererror":{"code":"insufficient_claims","request-id":"synthetic-request-403"},"details":[{"code":"synthetic-detail","message":"Private detail"}]}}
