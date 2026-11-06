@@ -355,6 +355,11 @@ impl Incoming {
     /// stream) that reads the body without leaving Concord's boundary. A failure is
     /// [`ErrorKind::Transport`](crate::ErrorKind::Transport) naming the operation, its URL removed.
     ///
+    /// Cancel-safe: a call dropped while it waits (a timeout, a `select!` branch) takes no byte
+    /// with it; the next call returns the data in order. Every byte is held by the response,
+    /// none by the call's future (`checks/phase-a/tests/streams.rs`
+    /// `a_cancelled_chunk_call_loses_no_byte`).
+    ///
     /// A failure is not remembered: after an `Err`, a further call may return `Ok(None)`. A
     /// parser keeps the error (and stops) instead of reading on, so a broken body never looks
     /// complete.

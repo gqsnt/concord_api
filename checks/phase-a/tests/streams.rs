@@ -382,3 +382,28 @@ async fn an_own_parser_reads_incoming_chunks_with_identity() {
     assert_eq!(error.operation().unwrap().name(), "Reports.export");
     assert!(!error.to_string().contains("127.0.0.1"), "{error}");
 }
+
+#[tokio::test]
+async fn a_cancelled_chunk_call_loses_no_byte() {
+    // The second chunk arrives 300 ms after the first: a `chunk()` cancelled while waiting for
+    // it (a timeout, a `select!` branch) must leave it to the next call, whole.
+    let server = TestServer::start(|_| {
+        Reply::new(200)
+            .header("content-type", "text/event-stream")
+            .with_body(chunks(&[("data: one\n\n", 0), ("data: two\n\n", 300)]))
+    })
+    .await;
+    let mut incoming = api(&server).export("c").send().await.unwrap();
+    let mut read = Vec::new();
+    read.extend_from_slice(&incoming.chunk().await.unwrap().unwrap());
+    assert!(
+        tokio::time::timeout(Duration::from_millis(50), incoming.chunk())
+            .await
+            .is_err(),
+        "the second chunk is not there yet"
+    );
+    while let Some(chunk) = incoming.chunk().await.unwrap() {
+        read.extend_from_slice(&chunk);
+    }
+    assert_eq!(read, b"data: one\n\ndata: two\n\n");
+}

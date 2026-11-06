@@ -495,7 +495,13 @@ async fn an_owned_meta_outlives_the_body_and_never_prints_values() {
     })
     .await;
     let api = api(&server);
-    let received = api.summary("bad").prepare().unwrap().receive().await.unwrap();
+    let received = api
+        .summary("bad")
+        .prepare()
+        .unwrap()
+        .receive()
+        .await
+        .unwrap();
     let meta: concord::ResponseMeta = received.meta();
     // The body is consumed (and fails); the owned copy stays.
     let error = received.decode().await.unwrap_err();
@@ -505,12 +511,18 @@ async fn an_owned_meta_outlives_the_body_and_never_prints_values() {
     assert_eq!(meta.headers()["x-request-id"], "req-7");
     assert_eq!(meta.head().status(), 200);
     let shown = format!("{meta:?}");
-    assert!(shown.contains("x-request-id") && shown.contains("Reports.summary"), "{shown}");
+    assert!(
+        shown.contains("x-request-id") && shown.contains("Reports.summary"),
+        "{shown}"
+    );
     for value in ["req-7", "hunter2", "127.0.0.1"] {
         assert!(!shown.contains(value), "{value} in {shown}");
     }
     // The same copy from an unread body handed to a reader.
     let incoming = api.export("j").send().await.unwrap();
-    assert_eq!(incoming.meta().operation().unwrap().name(), "Reports.export");
+    assert_eq!(
+        incoming.meta().operation().unwrap().name(),
+        "Reports.export"
+    );
     assert_eq!(incoming.meta().headers()["x-request-id"], "req-7");
 }
