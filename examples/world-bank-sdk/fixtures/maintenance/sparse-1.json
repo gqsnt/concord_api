@@ -1,0 +1,7 @@
+[
+  {"page":1,"pages":3,"per_page":"2","total":5,"lastupdated":"2026-09-30"},
+  [
+    {"indicator":{"id":"XX.SYNTH.SPARSE","value":"Synthetic sparse indicator"},"country":{"id":"BR","value":"Brazil"},"countryiso3code":"BRA","date":"2005","value":null,"unit":"","obs_status":"","decimal":1},
+    {"indicator":{"id":"XX.SYNTH.SPARSE","value":"Synthetic sparse indicator"},"country":{"id":"BR","value":"Brazil"},"countryiso3code":"BRA","date":"2004","value":null,"unit":"","obs_status":"","decimal":1}
+  ]
+]

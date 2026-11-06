@@ -11,5 +11,6 @@ All fixtures are hand-authored and synthetic. The two-element metadata/data shap
 | `empty.json` | Same array shape, synthetic null data and empty paging metadata; an edge-case assumption, not an example claimed by these pages. |
 | `error.json` | Basic Call Structures, Sample invalid request response, XML error id 120, key and text; hand-translated to a synthetic JSON error array. The cited documentation does not show this JSON error shape. |
 | `malformed.json` | Synthetic incomplete observation for a negative decode test, based on the same array structure. |
+| `maintenance/sparse-1.json` … `sparse-3.json` | Added by the maintenance change (`tests/maintenance.rs`); same sources and shape as `page-1.json`/`page-2.json`. Invented three-page response (per_page 2, total 5) for a synthetic indicator code `XX.SYNTH.SPARSE`: four null values, one numeric zero on page 2, an all-null first page and a single trailing null on the last page; string `per_page` on page 1 only. |
 
 Other invalid responses written inline in the tests are also synthetic. Each fixture's bytes are protected from checkout newline conversion by `.gitattributes`.
