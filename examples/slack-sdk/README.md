@@ -108,8 +108,10 @@ codes, or contradictory success/error fields. A missing or non-boolean `ok` is a
 Status/metadata failures retain Concord's unread response where available. Non-2xx error bodies
 are consumed once, up to 64 KiB; a read failure remains inspectable without replacing the status.
 
-Success bodies are finite JSON, fully buffered per page, with no SDK byte cap. Item streaming is
-between buffered pages, not incremental JSON parsing. Unknown user and conversation fields are
+Success bodies are finite JSON, fully buffered per page, up to `SUCCESS_BODY_LIMIT` (16 MiB, an
+SDK safety bound rather than a Slack limit): a larger 2xx body is `Error::Concord` with
+`ErrorKind::Limit` and the response metadata, and nothing beyond the limit is read. Item streaming
+is between buffered pages, not incremental JSON parsing. Unknown user and conversation fields are
 kept in `extra`; only a small set of fields is projected into named properties. Pages keep HTTP
 and body metadata; flattened item traversal discards page metadata. There is no snapshot or
 deduplication guarantee if the workspace changes while listing. There is no implicit page cap or
