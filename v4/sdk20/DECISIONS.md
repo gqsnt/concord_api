@@ -497,9 +497,24 @@ reproduction test now asserts the library's refusal (record 6, `Completion::Fail
 **D-W45-CONS — `scripts/consumers.sh` removes its scratch copy after a clean run (`6acc5050`).**
 Every gate run left ~1.6 GB; with idle agent build directories the disk filled during wave 4.
 
-**R5 (in progress)** — readers over a wrapped body (`check_head` on every reader, an
-operation-naming `read_for`, `ByteSource` for `Incoming` keeping Concord's error, `ReadError`
-source by value): ntfy (W34-G2/G3/G4), OpenAI, ClickHouse (FRICTION 2, 3).
+**D-W45-R5 — readers over a checked or wrapped body; source errors by value (IMPLEMENT,
+concord-extras; Opus subagent `ac998292…`, `9e7df607`..`56c7534e`, merged `faaffee8`).**
+Evidence: ntfy (W34-G2/G3/G4), OpenAI (its `Body` adapter), ClickHouse (FRICTION 2, 3). Additions
+only: `impl ByteSource for Incoming` (a chunk failure carries Concord's own `Error`, `Transport`,
+operation named, URL-free); `SourceError::into_source_unredacted` and
+`ReadError::into_source_unredacted` (the byte source's error by value; a parser's serde error stays
+by reference); `check_head(&ResponseHead)` on the JSON Lines, JSON values and SSE readers
+(aligned with CSV's; every `open` now calls its reader's `check_head`); `read_for(source,
+operation)` on all four readers (CSV also `read_raw_for`). 22 tests (`reader_wrapping.rs`); two
+deliberate library breakages failed 7 of them. Migrations, no test edited: ClickHouse adopted
+(code −50/+20; `read_error().operation()` now `Some("ClickHouseHttp.select")`; a broken rows
+body's error is now `concord::Error`; one insert `expect` remains, resting on the documented
+`Incoming` contract); OpenAI adopted (`Body` adapter removed; code −27/+12); ntfy adopted where it
+fits (operation named; its W34-G1 line-count workaround stays). Workspace: 2185 passed.
+Updated dispositions: W34-G2 and W34-G3 RESOLVED by R5; W34-G4 RESOLVED in documentation (a custom
+`Incremental` calls `check_head` then `read_for`; AUTHOR_GUIDE §5.9, CUSTOM_FORMATS §9b; no SDK
+moved onto it); W34-G1 still DEFER. Remaining gaps: a typed `try_into_source::<E>()` (one
+consumer), a parser error by value (needs core `CodecError`), an inherent `SseEvents::operation()`.
 
 ## Wave 4 (frozen library `0983a349`; Open-Meteo, Airtable, ClickHouse, Snowflake)
 
