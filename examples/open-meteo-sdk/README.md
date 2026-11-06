@@ -123,7 +123,7 @@ invalid selected numeric cells and inconsistent JSON array lengths are errors.
 Time strings and meteorological values are not scientifically validated.
 Unknown top-level JSON fields are ignored. CSV accepts LF and CRLF through
 Concord and supports quoted commas, escaped quotes and embedded newlines.
-An SDK guard rejects an unmatched quote at EOF; other framing follows
+Concord's shared CSV framing rejects an unmatched quote at EOF; other framing follows
 Concord's parser and is not a full strict RFC 4180 validation pass.
 
 ## Evidence and implementation

@@ -164,8 +164,9 @@ URL, the token, a header value, the document's `error` text or event content. `A
 - **A poll ends.** `EndOfInput` after a poll means every message the server *chose to return* was
   read: what its cache still holds (12 hours by default), minus `Cache: no` messages, minus what
   the per-topic replay cap removed (`truncated()`). It is not complete history.
-- **Failures are terminal and never look like an end.** A broken connection (`Transport`), a
-  body that ends inside an event or a JSON line (`Format`), malformed SSE or JSON (`Format`), a
+- **Failures are terminal and never look like an end.** NDJSON accepts a complete final JSON
+  value without LF at EOF; an incomplete value fails. A broken connection (`Transport`), a
+  body that ends inside an SSE event or JSON value (`Format`), malformed SSE or JSON (`Format`), a
   well-formed value that is not an ntfy message (`Decode`) or an event over 16 MiB
   (`MAX_EVENT_BYTES`, `Limit`) end the reader with `Completion::Failed`. Events already returned
   stay returned; the cursor says where to resume.

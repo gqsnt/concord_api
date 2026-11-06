@@ -259,9 +259,9 @@ provided by reqwest automatically. Session expiration is provider-controlled
 Production dependencies are the Concord facade (including its JSON and encoded
 body formats), `concord-pagination`, `serde`/`serde_json` for Drive documents, and
 `mime` for mature MIME validation rather than handwritten media-type parsing.
-The small two-part related serializer is SDK code: reqwest's multipart support
-produces form-data, whereas Drive requires related. There is no vendor SDK,
-signer, OAuth implementation, or HTTP executor outside Concord.
+The SDK assembles its two related parts with the shared `MultipartBody::related`
+and `Part`; Concord's `Multipart` format serializes them as multipart/related.
+There is no vendor SDK, signer, OAuth implementation, or HTTP executor outside Concord.
 
 The GitHub SDK's response-head/error patterns, Stripe's bounded typed error
 adapter, the pagination README, and Concord's runtime-body examples supplied

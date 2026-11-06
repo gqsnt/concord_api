@@ -1035,8 +1035,10 @@ For a multipart body, use the standard `concord::multipart::Multipart` (feature 
 through `into_parts` and reqwest's own `multipart` support remains for large or streamed parts,
 which `MultipartBody` (in memory) does not hold.
 
-For a response consumed incrementally, use `send_raw` and native reads; typed `Decode` receives
-the collected body bytes. `examples/native` has NDJSON and pair-encoded form formats and a
+For a response consumed incrementally, declare `-> stream T` with an `Incremental<T>` format,
+or `-> stream` to obtain an unread `Incoming` for a reader chosen at run time (5.9).
+Finite `-> T` uses `Decode<T>`, which receives the collected body bytes; `send_raw` and native
+reads remain an escape. `examples/native` has NDJSON and pair-encoded form formats and a
 one-shot request stream, and `examples/multipart` a multipart upload through reqwest and a local
 multipart format of its own ([recipes](RECIPES.md)).
 

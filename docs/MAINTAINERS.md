@@ -7,13 +7,13 @@ For people changing Concord itself. Users start at the [README](../README.md).
 | Path | Contents |
 |---|---|
 | `crates/concord` | the public facade: re-exports `concord-core` and, by feature, `concord-extras`, and defines `api!` (a `macro_rules!` that hands `$crate::__macro::concord_core` to the compiler) |
-| `crates/concord-core` | the runtime: request composition, native headers, snapshots, the open `Encode`/`Decode`/`CodecError`/`ResponseHead` contracts, `Error`, `Prepared`/`Decoder`; knows no format |
-| `crates/concord-extras` | the standard formats (`Json`, `Text`, `Binary`, `Form`, `IgnoreContentType<F>`), written against the public traits only |
+| `crates/concord-core` | the runtime: request composition, native headers, snapshots, `Encode`/`EncodedBody`/`Decode`/`Incremental`/`CodecError`/`ResponseHead`, `Error`, `Prepared`/`Decoder`/`Endpoint`/`SendWith`, `Received`/`Incoming`/`Operation`/`ResponseMeta`; knows no format |
+| `crates/concord-extras` | the standard formats (including `Json`, `Text`, `Binary`, `Form`, `IgnoreContentType<F>` and the shared `multipart::Multipart`), written against the public traits only |
 | `crates/concord-macros` | the `api!` compiler (proc macro) |
 | `examples/quickstart` | the quick start; its tests also run the caller guide, doctest the author guide and the migration guide, and check every quoted excerpt in the documentation |
 | `examples/shapes` | three realistic API shapes with wire tests |
 | `examples/native` | application-owned native recipes (errors, timeouts, streaming, formats, policies) |
-| `examples/multipart` | multipart upload via reqwest's `multipart` feature (enabled only there) |
+| `examples/multipart` | native upload via reqwest's `multipart` feature and a local multipart format; declared uploads can also use the shared `multipart::Multipart` format (`request Multipart;`, feature `multipart`) |
 | `examples/renamed` | Concord depended on under another name (`$crate` paths) |
 | `checks/clone-hygiene` | types written with the same tokens by two crates' macros (`$crate::Payload`): conditional `Clone` bounds per occurrence, type-macro outputs from another crate |
 | `checks/heap` | peak-heap check that `()` outputs drain without buffering (own crate: global allocator) |
@@ -34,17 +34,18 @@ concord::api! { .. }                                  crates/concord/src/lib.rs
        model.rs     resolve, validate, compose         every rule decided at compile time
        emit.rs      generate Rust                      types, controls, navigation, prepare, Debug, docs
   └─ generated code calls <runtime path>::__private::* crates/concord-core/src/__private.rs (support)
-       prepared.rs  Prepared<T>, Decoder<T>            send, send_raw, into_parts, decode, finish
+       prepared.rs  Prepared<T>, Decoder<T>, Endpoint<T>, SendWith<T>   build/execution boundary, declared handling, send policy
+       response.rs  Received<T>, Incoming, Operation, ResponseMeta     response state, head metadata and call identity
        error.rs     Error, ErrorKind                   static Display, explicit raw accessors
-       codec.rs     Encode<T>, Decode<T>, ResponseHead, CodecError   the open format contracts
+       codec.rs     Encode<T>, EncodedBody, Decode<T>, Incremental<T>, ResponseHead, CodecError   body/media and finite/incremental format contracts
        value.rs     IntoValue<T>                       the sealed set of accepted conversions
        header.rs    ToHeaderValue (sealed)             how a value placed as a header becomes one
   └─ a statement's format is a type path               resolved by rustc where it is written
-       crates/concord-extras/src/                      Json, Text, Binary, Form, IgnoreContentType
+       crates/concord-extras/src/                      standard formats, including multipart::Multipart
 ```
 
 The macro knows no format: it emits the path you wrote, and rustc resolves it. The runtime files
-named in the table below (`__private.rs`, `prepared.rs`, `error.rs`, `codec.rs`) are in
+named in the table below (`__private.rs`, `prepared.rs`, `response.rs`, `error.rs`, `codec.rs`) are in
 `crates/concord-core/src/`.
 
 The generated code decides at runtime whether optional values are present (`if let`). Which

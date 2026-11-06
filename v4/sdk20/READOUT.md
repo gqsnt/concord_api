@@ -118,6 +118,10 @@ provider's message. `decode_limited(n)` bounds a success body (eight SDKs). Erro
 `Retry-After` and retries are the SDK's or the application's; Concord copies no header, never
 retries.
 
+**Current status (2026-11-06):** Ten SDKs use `Received::decode_limited`: Slack, Linear, Dropbox,
+Google Drive, Airtable, Snowflake, World Bank, Notion, Microsoft Graph and Distribution Registry
+(see their current `examples/*-sdk/src` implementations).
+
 ## 3. Pagination with lossless partial outcomes
 
 `concord_pagination::Pages<T, K, M, E>` starts at `Resume::Start` or `Resume::At(key)` and calls
@@ -456,6 +460,10 @@ native     \binto_parts\(|\bDecoder::|\.into_response\(|\btransport_error\(|\bOp
 | Shopify (Phase A) | — | — | `JsonLinesReader` on a native download | — | — | — | native request + `open_for` |
 | Kubernetes (Phase A) | — | — | `-> stream WatchEvent<T>` (`JsonStream`) | — | — | — | error document via `into_response` |
 | Salesforce (Phase A) | — | yes | `-> stream` + `CsvReader` | — | — | — | error document via `into_response` |
+
+**Current status (2026-11-06):** Open-Meteo's `-> stream` permits response selection at run time;
+[`OpenMeteo::forecast`](../../examples/open-meteo-sdk/src/lib.rs) buffers the bounded body before
+returning `ForecastResponse`, rather than returning an incremental reader.
 
 ResponseMeta: "Concord's" uses `concord::ResponseMeta`, "wraps" is a newtype adding provider
 accessors, "own" an SDK struct older than `concord::ResponseMeta` and of another shape. 19 of the

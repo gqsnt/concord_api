@@ -101,11 +101,15 @@
 //! | Item | Role |
 //! |---|---|
 //! | [`api!`] | the declaration macro |
-//! | [`Prepared<T>`](Prepared) | a built request, not yet sent: `request()`, `send()`, `send_raw()`, `into_parts()` |
+//! | [`Prepared<T>`](Prepared) | a built request, not yet sent: `request()`, `receive()`, `send()`, `send_raw()`, `into_parts()` |
+//! | [`Received<T>`](Received) | any-status response, body unread: `head()`, `meta()`, then `decode()`, `decode_limited()`, `bytes_limited()`, `into_incoming()` or a native exit |
+//! | [`Incoming`] | an unread 2xx body with its operation identity, for an incremental reader chosen at run time |
 //! | [`Decoder<T>`](Decoder) | a response handling (an endpoint's, or [`Decoder::new`] for a format of your choice), for a response you obtained natively: `decode`, `finish` |
-//! | [`Error`], [`ErrorKind`] | the one error type: `kind`, `endpoint`, `status`, `response`, `into_response`, `codec_error`, `transport` |
+//! | [`Endpoint<T>`](Endpoint), [`SendWith<T>`](SendWith) | generated operations implement `Endpoint`; a client's `send policy;` delegates generated `send()` to the policy's `SendWith::send`, returning its `Output` |
+//! | [`Error`], [`ErrorKind`] | Concord's error type: `kind`, `endpoint`, `status`, `response`, `into_response`, `codec_error`, `transport` |
 //! | [`Encode<T>`](Encode), [`Decode<T>`](Decode) | the open format traits, implemented by `Json` (feature `json`), `Text`, `Binary`, `IgnoreContentType<F>` (feature `extras`), `Form` (feature `form`) and by your own types; a statement names a format by its type path (`format Json;`) |
-//! | [`ResponseHead`], [`ContentTypeField`] | what a [`Decode`] implementation reads before the body: status, version, header fields |
+//! | [`Incremental<T>`](Incremental) | the open format contract for `-> stream T`: checks the head, then opens its reader over an unread `Incoming` |
+//! | [`ResponseHead`], [`ContentTypeField`] | what a [`Decode`] or [`Incremental`] implementation reads before the body: status, version, header fields |
 //! | [`ResponseMeta`] | an owned copy of a response head with its [`Operation`], kept after the body is consumed |
 //! | [`CodecError`] | a format's failure: a static label, numeric positions, an unredacted source |
 //! | [`IntoValue<T>`](IntoValue) | the closed set of conversions accepted by arguments and setters |
@@ -117,18 +121,20 @@
 //! ```text
 //! client Name(values) { base "https://..."; statements; children }
 //! scope name(values) { statements; children }
-//! GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS name(values) [-> T] { statements }
+//! GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS name(values) [-> T | -> stream T | -> stream] { statements }
 //!
 //! values:      x: T  |  x: T = expr  |  x?: T  |  x?: T = expr
 //! placements:  query x  |  query("name") x  |  header(KEY) x  |  ... each x
 //! KEY:         "x-name"  |  a native HeaderName constant or static: AUTHORIZATION, X_API_KEY, ...
 //! body:        body b: T  |  body b?: T   (at most one, endpoints only)
-//! output:      -> T  (no `->`: no typed output, any 2xx, the body is drained)
-//! FORMAT:      a type path implementing Encode and/or Decode: Json, Text, Binary, Form, yours
+//! output:      -> T (finite)  |  -> stream T (Incremental<T> reader)  |  -> stream (Incoming)
+//!              no `->`: no typed output, any 2xx, the body is drained
+//! FORMAT:      a type path implementing Encode, Decode and/or Incremental: Json, Text, yours
 //! attributes:  /// docs  |  #[sensitive] (values)  |  #[cfg(..)], #[deprecated] (scopes, endpoints)
 //! statements:  path "a/{x}";  subdomain "{x}";  query { .. }  headers { .. }
 //!              format FORMAT;  request FORMAT;  request FORMAT "media/type";  response FORMAT;
 //!              (on clients, scopes and endpoints; the nearest one wins)
+//!              send policy;  (client only: a policy value or a stateless policy type)
 //!
 //! query / headers blocks (a header key is a literal or a native constant):
 //!     KEY = v;                        set a key no enclosing owner sets
@@ -162,8 +168,10 @@
 //! # let _ = raw; Ok(()) }
 //! ```
 //!
-//! One `send()` is one `reqwest::Client::execute`: Concord performs no retry, and a request's
-//! `Clone` says nothing about whether sending it again is safe.
+//! [`Prepared::send`] and generated `send()` without a client send policy each perform one
+//! `reqwest::Client::execute`, with no Concord retry or extra request. A client `send policy;`
+//! instead calls [`SendWith::send`]; the policy may sign, make sub-requests or repeat requests.
+//! A request's `Clone` says nothing about whether sending it again is safe.
 //!
 //! # Sensitive values
 //!

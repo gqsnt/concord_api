@@ -230,8 +230,10 @@ on `ErrorKind`.
 
 ## Limitations
 
-- Every response is checked against the documented status (`200`, `201`, `202`, `204`); a
-  registry that answers another 2xx gets `ProtocolProblem::UnexpectedStatus`.
+- `ping()`, blob HEAD/GET and manifest GET require `200`, manifest PUT and upload completion require
+  `201`, upload start/chunk require `202`, and upload status requires `204`; another 2xx is
+  `ProtocolProblem::UnexpectedStatus` on those paths. Catalog, tag-list and token responses
+  accept any 2xx before their body and metadata checks.
 - A realm whose URL carries a query is refused (`InvalidRealm`): Concord's base URLs take none.
 - Tags are validated with the Distribution reference grammar's tag rule
   (`[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}`), which the API page itself does not state.

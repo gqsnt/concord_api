@@ -109,13 +109,13 @@ format statements, then children.
 | `Docs::validate_header_names()` | in a unit test: every endpoint's header names checked without building anything ([§4.9](AUTHOR_GUIDE.md#49-checking-header-names-in-a-test)) |
 | `.set_x(v)`, `.maybe_x(Some(v) / None)` | return the updated handle (`#[must_use]`); handles are cheap snapshots |
 | `docs.folder(7)`, `folder.rename(3, change)` | navigation: required values are positional, in declaration order |
-| `.send().await` | `prepare`, one `execute`, require 2xx, check the response head, read and decode the body; never retries |
+| `.send().await` (no client send policy) | `prepare`, one `execute`, require 2xx, then declared handling: finite decode, drain or open an unread stream; no Concord retry or extra request (also true of `Prepared::send`) |
 | `.prepare()?` → `Prepared` | `receive()` (below), `send()`, the native `reqwest::Request` (`request()`), `send_raw()`, `into_parts()` |
 | `.prepare()?.receive().await?` → `Received` | one execution, any status, body unread: `head()`, `meta()` (owned copy), `status()`, `url()`, then one of `decode()`, `decode_limited(n)`, `into_incoming()`, `bytes_limited(n)`, `into_response()` |
 | `-> stream T` / `-> stream` | `send()` returns the reader / the unread `Incoming`; readers' `open(..)` takes `Incoming`, `Received` or a native response; `completion()`, `into_stream()` |
 | `-> stream sse::Event` + `response Sse;` (feature `sse`) | server-sent events: `next()` → `Event` (`event()`, `data()` as text, `id()`), `last_event_id()`, `retry()`; a body ending inside an event is an error; no reconnect |
 | `prepared.follow(url)?` | the same request at a server-returned URL (same origin only; `Debug` withholds it) |
-| `send Policy;` (client) | every `send()` returns the SDK's `<Policy as SendWith<T>>::Output` (its errors, metadata, signing) |
+| `send policy;` (client value or stateless type) | generated `send()` calls `SendWith<T>::send` and returns the SDK's `Output`; the policy may sign, make sub-requests or repeat requests |
 | `concord::Endpoint<T>` | implemented by every generated endpoint for its output `T` (`prepare`, `operation()`): write one SDK adapter for all operations |
 | `into_parts()` → `(Client, Request, Decoder)` | execute it yourself, then `decoder.finish(result)` or `decoder.decode(response)` |
 | `error.kind()`, `status()`, `endpoint()` | `Build`, `Transport`, `Status`, `Metadata`, `Decode`, `Limit`; `status()` is `Some` for `Status` only |
