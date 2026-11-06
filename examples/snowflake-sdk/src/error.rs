@@ -11,7 +11,10 @@ pub enum ProtocolError {
     InvalidLink,
     /// The status is not documented for this operation.
     UnexpectedStatus,
-    /// Metadata is absent, inconsistent, unsupported or not partition zero.
+    /// Metadata is absent, inconsistent, unsupported or not partition zero, including an absent
+    /// or empty `partitionInfo`. A 200 body that does not decode as a result document (invalid
+    /// JSON, or a missing required member such as `resultSetMetaData`, `format` or `data`) is
+    /// instead [`Error::Concord`] with a decode error.
     InvalidManifest,
     /// A complete first partition is not present (including code 391908).
     IncompleteFirstPartition,

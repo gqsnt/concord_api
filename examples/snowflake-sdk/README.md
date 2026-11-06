@@ -127,8 +127,11 @@ Only partitions without a known returned target use the declared indexed GET.
 
 Discovery rejects missing/empty descriptors, inconsistent total rows, arithmetic
 overflow, unsupported format, a nonzero first-partition index, and mismatched row
-count/width. Code `391908` (incomplete first result) is refused rather than silently
-claiming completeness. String/null cells retain their provider values, including a
+count/width. An absent or empty `partitionInfo` is `ProtocolError::InvalidManifest`;
+a 200 body that does not decode as a result document (invalid JSON, or a missing
+required member such as `resultSetMetaData`) is an `Error::Concord` decode error.
+Code `391908` (incomplete first result) is refused rather than silently claiming
+completeness. String/null cells retain their provider values, including a
 literal `"null"` distinct from SQL NULL. Unknown column/partition metadata is retained.
 
 Use `FirstResult::partitions(pagination::Options)` for completion order, continue-on-error

@@ -640,3 +640,69 @@ async fn success_from_cancel_requires_documented_code_and_sqlstate() {
     ));
     s.shutdown().await;
 }
+
+#[tokio::test]
+async fn absent_and_empty_partition_info_are_invalid_manifest_with_the_head() {
+    let absent = mutate(THREE, |v| {
+        v["resultSetMetaData"]
+            .as_object_mut()
+            .unwrap()
+            .remove("partitionInfo");
+    });
+    let empty = mutate(THREE, |v| {
+        v["resultSetMetaData"]["partitionInfo"] = serde_json::json!([])
+    });
+    let script = Script::new([
+        json(200, &absent),
+        json(202, PENDING_A),
+        json(200, &absent),
+        json(200, &empty),
+    ]);
+    let s = TestServer::start(move |_| script.next()).await;
+    let c = client(&s);
+    let invalid_manifest = |result: Result<StatementState, Error>, case: &str| match result {
+        Err(Error::Protocol {
+            kind: ProtocolError::InvalidManifest,
+            meta: Some(meta),
+        }) => {
+            assert_eq!(meta.status().as_u16(), 200, "{case}");
+            assert_eq!(
+                meta.headers()["x-snowflake-request-id"],
+                "synthetic-response-id",
+                "{case}"
+            );
+        }
+        other => panic!("{case}: expected InvalidManifest, got {other:?}"),
+    };
+    // Immediate completion of the submit, then the same documents through a status check.
+    invalid_manifest(
+        c.submit(context(), statement()).await.map(|s| s.state),
+        "submit, absent",
+    );
+    let query = c.submit(context(), statement()).await.unwrap().query;
+    invalid_manifest(query.status().await, "status, absent");
+    invalid_manifest(query.status().await, "status, empty");
+    // No partition is requested from a refused manifest.
+    let requests = s.requests();
+    assert_eq!(requests.len(), 4);
+    assert!(requests.iter().all(|r| !r.target.contains("partition=")));
+    s.shutdown().await;
+
+    // A 200 that is not a result document stays a decode error with the head.
+    let missing = mutate(THREE, |v| {
+        v.as_object_mut().unwrap().remove("resultSetMetaData");
+    });
+    let s = TestServer::start(move |_| json(200, &missing)).await;
+    match client(&s).submit(context(), statement()).await.unwrap_err() {
+        Error::Concord {
+            meta: Some(meta),
+            source,
+        } => {
+            assert_eq!(meta.status().as_u16(), 200);
+            assert_eq!(source.kind(), concord::ErrorKind::Decode);
+        }
+        other => panic!("missing resultSetMetaData: expected a decode error, got {other:?}"),
+    }
+    assert_eq!(s.requests().len(), 1);
+    s.shutdown().await;
+}

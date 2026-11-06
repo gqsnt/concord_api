@@ -853,27 +853,28 @@ async fn a_malformed_result_document_is_a_decode_error_not_a_result() {
         .submit(context(SUBMIT_A), statement_a())
         .await
         .expect("submit");
-    // Invalid JSON and a missing partitionInfo field are both Concord decode errors, with the
-    // 200 head kept. (I had predicted ProtocolError::InvalidManifest for the missing field from
-    // its rustdoc, "Metadata is absent"; observed: serde rejects it first. See FIRST_USE.md.)
-    for case in ["invalid JSON", "partitionInfo missing"] {
-        match submission.query.status().await {
-            Err(Error::Concord {
-                meta: Some(meta),
-                source,
-            }) => {
-                assert_eq!(meta.status().as_u16(), 200, "{case}");
-                assert_eq!(source.kind(), concord::ErrorKind::Decode, "{case}");
-            }
-            other => panic!("{case}: expected a decode error, got {other:?}"),
-        }
-    }
+    // Invalid JSON is a Concord decode error, with the 200 head kept.
     match submission.query.status().await {
-        Err(Error::Protocol { kind, meta }) => {
-            assert_eq!(kind, ProtocolError::InvalidManifest);
-            assert_eq!(meta.map(|m| m.status().as_u16()), Some(200));
+        Err(Error::Concord {
+            meta: Some(meta),
+            source,
+        }) => {
+            assert_eq!(meta.status().as_u16(), 200);
+            assert_eq!(source.kind(), concord::ErrorKind::Decode);
         }
-        other => panic!("empty partitionInfo: expected InvalidManifest, got {other:?}"),
+        other => panic!("invalid JSON: expected a decode error, got {other:?}"),
+    }
+    // Final migration (W4-10, not the consumer): the consumer predicted InvalidManifest for the
+    // missing field from its rustdoc, "Metadata is absent", observed a decode error and pinned
+    // it here (FIRST_USE.md). The SDK now reports InvalidManifest for missing and empty alike.
+    for case in ["partitionInfo missing", "partitionInfo empty"] {
+        match submission.query.status().await {
+            Err(Error::Protocol { kind, meta }) => {
+                assert_eq!(kind, ProtocolError::InvalidManifest, "{case}");
+                assert_eq!(meta.map(|m| m.status().as_u16()), Some(200), "{case}");
+            }
+            other => panic!("{case}: expected InvalidManifest, got {other:?}"),
+        }
     }
 }
 
