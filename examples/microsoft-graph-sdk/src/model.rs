@@ -87,6 +87,7 @@ pub struct Group {
 }
 
 /// A direct member. The type and id survive permission-limited responses.
+/// Unknown types and id/type-only objects remain ordinary members; classify with `kind()`.
 /// Missing profile fields alone do not establish a permission level.
 #[derive(Clone, Debug, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]

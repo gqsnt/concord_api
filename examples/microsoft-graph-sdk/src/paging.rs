@@ -90,6 +90,7 @@ impl<T: Send + 'static> Listing<T> {
     }
 
     /// Fetches the first page (or initial delta checkpoint) with `None`, or one next page.
+    /// Empty pages retain their next link; only a delta link completes a users-delta round.
     /// Unsafe links and invalid envelopes fail before emitting the affected page's items.
     pub async fn fetch(&self, next: Option<&NextLink>) -> Result<GraphPage<T>, GraphError> {
         let mut prepared = (self.prepare)()?;

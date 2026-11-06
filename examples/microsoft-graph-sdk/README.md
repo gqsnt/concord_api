@@ -98,6 +98,11 @@ Use the page interface for delta: `.items()` intentionally drops page metadata.
 Do not derive exhaustion from the number of items or treat a next link as a final
 checkpoint.
 
+Consecutive empty pages can occur in either an initial or incremental round. Each
+counts toward the page cap. If a cap or failure occurs after an empty page, retain
+the staged changes and resume with the error's next-page link; an empty page does
+not authorize committing a completed delta checkpoint unless it has a delta link.
+
 `UserDelta` is a sparse change, not a full replacement user. `Field::Missing`
 means retain a prior property, `Field::Null` clears it, and `Field::Value` supplies
 the new value. Key application merges by `id`, handle replayed changes, and apply
@@ -157,6 +162,11 @@ inaccessibility: selection, permissions and actual data can all cause them. An
 id/type-only object remains in the results. Nested groups are returned without
 traversal. Selected member requests include `$count=true` and
 `ConsistencyLevel: eventual`; continuation calls retain the header.
+
+Unknown types also remain in the results when only id/type or null profile fields
+are supplied. Inspect `object_type` or `ObjectKind::Other(raw_type)` and retain the
+object while following its page's next link. Classify members by type rather than
+requiring a name or mail address; additional null properties remain in `additional`.
 
 Permissions and tenant roles determine visibility; use the official endpoint
 permission tables for the application's authorization flow. Hidden memberships
@@ -224,4 +234,7 @@ CARGO_BUILD_JOBS=5 CARGO_TARGET_DIR=/home/canarit/projects/Concord_Consolidation
 
 Tests use only `examples/testserver` and synthetic credentials. Fixtures and source
 versions are documented in `PROVENANCE.md`; author observations are in
-`FRICTION.md`. The README's Rust examples are compiled as crate documentation tests.
+`FRICTION.md`. Focused wire regressions in `tests/maintenance.rs` cover consecutive
+empty delta pages, caps and failed continuations, and limited/unknown member types.
+The maintenance scope and change counts are recorded in `MAINTENANCE.md`.
+The README's Rust examples are compiled as crate documentation tests.

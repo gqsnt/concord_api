@@ -29,12 +29,14 @@ the v1.0 version and 2026-11-06 access date above.
 | --- | --- | --- |
 | `users-initial.json` | U initial response; D state tokens | Two invented users, sparse fields, null mail and nextLink. Query deliberately includes percent escapes, duplicate unknown query keys and literal plus for byte-preservation tests. |
 | `users-empty-intermediate.json` | D collection flow | Synthetic required perturbation: empty `value` with a nextLink; not terminal. |
+| `users-empty-opaque-next.json` | D collection flow and `/microsoft.graph.delta` spelling; P whole nextLink URLs | Maintenance fixture: another empty intermediate page, with a fully qualified delta path and invented query bytes (duplicate keys, mixed-case escapes, literal plus and double encoding). Inserted after `users-empty-intermediate.json` in both initial and incremental rounds. |
 | `users-final.json` | U final nextLink response; U `/microsoft.graph.delta` note | One invented user and a final deltaLink, using the documented fully qualified path spelling. |
 | `users-incremental.json` | U deltaLink response and removed annotations | Invented sparse update, explicit null/false, both removal reasons, one new user and a synthetic extension. |
 | `users-no-changes.json` | D delta round flow, opaque state tokens | Synthetic empty completed round with the same final delta URL as the prior request. Used to ensure delta repetition is not mistaken for a next-page loop. |
 | `groups-first.json` | G HTTP response/example 1; P server-side paging | Invented security group and paged nextLink. |
 | `groups-final.json` | G response/example 1 | Invented Unified group with optional properties absent; no nextLink. |
 | `members-first.json` | M direct membership, limited information, query parameters; P continuation headers | Required perturbation: visible user, id/type-only user and device, and an invented future type. Synthetic count, opaque nextLink and unknown property. |
+| `members-limited-unknown.json` | M limited-information permission behavior and directoryObject response; P whole nextLink URLs | Maintenance fixture: limited device with null fields, an id/type-only invented future type, and the same future type with null profile/extension fields. Opaque nextLink continues to another member page. Future type spelling and all contents are synthetic forward-compatibility probes. |
 | `members-final.json` | M direct membership and response | Invented user, nested group and organizational contact; no nextLink. The nested group is never traversed. |
 | `members-second-group.json` | M limited information and type model | Synthetic user with null name plus a device whose id intentionally collides with the test's known user id, to verify that joins also require a user type. Not a claim about real directory id collisions. |
 | `error-unauthorized.json` | E 401 and error resource | Invented authentication code/message, inner request-id/date. |

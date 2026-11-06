@@ -1,0 +1,8 @@
+{
+  "@odata.nextLink":"{{BASE}}/groups/group-one/members?$skiptoken=synthetic%2Blimited%2Fnext%3D&opaque=%2b+&opaque=%252F",
+  "value":[
+    {"@odata.type":"#microsoft.graph.device", "id":"synthetic-limited-device", "displayName":null, "mail":null, "deviceId":null},
+    {"@odata.type":"#microsoft.graph.syntheticFutureLimitedType", "id":"synthetic-type-only"},
+    {"@odata.type":"#microsoft.graph.syntheticFutureLimitedType", "id":"synthetic-null-profile", "displayName":null, "mail":null, "syntheticProperty":null}
+  ]
+}
