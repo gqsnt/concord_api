@@ -395,6 +395,24 @@ impl ByteRange {
         Ok(Self::Suffix { len })
     }
 
+    /// The inverse of `Display` (`bytes=first-last`, `bytes=first-`, `bytes=-len`), for the
+    /// range read back from a built request.
+    pub(crate) fn from_header(text: &str) -> Option<Self> {
+        let spec = text.strip_prefix("bytes=")?;
+        let (first, last) = spec.split_once('-')?;
+        let number = |s: &str| {
+            (!s.is_empty() && s.bytes().all(|b| b.is_ascii_digit()))
+                .then(|| s.parse::<u64>().ok())
+                .flatten()
+        };
+        match (first.is_empty(), last.is_empty()) {
+            (false, false) => Self::inclusive(number(first)?, number(last)?).ok(),
+            (false, true) => Some(Self::from(number(first)?)),
+            (true, false) => Self::suffix(number(last)?).ok(),
+            (true, true) => None,
+        }
+    }
+
     /// Whether a `Content-Range: bytes first-last/complete` answers this range.
     pub(crate) fn is_answered_by(&self, range: &ContentRange) -> bool {
         match *self {
@@ -813,10 +831,11 @@ impl fmt::Display for MaxKeys {
     }
 }
 
-/// `encoding-type=url`: S3 percent-encodes keys, prefixes, the delimiter and `StartAfter` in the
-/// listing (for keys holding characters XML 1.0 cannot carry); the SDK decodes them.
+/// `encoding-type=url` (`ListObjectsV2::set_encoding_type`): S3 percent-encodes keys, prefixes,
+/// the delimiter and `StartAfter` in the listing (for keys holding characters XML 1.0 cannot
+/// carry); the SDK decodes them.
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
-pub(crate) struct UrlEncoding;
+pub struct UrlEncoding;
 
 impl fmt::Display for UrlEncoding {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -824,9 +843,9 @@ impl fmt::Display for UrlEncoding {
     }
 }
 
-/// `x-amz-request-payer: requester`.
+/// `x-amz-request-payer: requester` (`Bucket::set_requester_pays`).
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
-pub(crate) struct Requester;
+pub struct Requester;
 
 impl fmt::Display for Requester {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -834,9 +853,10 @@ impl fmt::Display for Requester {
     }
 }
 
-/// `If-None-Match: *` on `PutObject`: write only if no object has the key.
+/// `If-None-Match: *` on `PutObject` (`PutObject::set_if_none_match`): write only if no object
+/// has the key.
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
-pub(crate) struct AnyObject;
+pub struct AnyObject;
 
 impl fmt::Display for AnyObject {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -914,6 +934,31 @@ mod tests {
             "bytes */10",
         ] {
             assert!(ContentRange::parse(bad).is_none(), "{bad}");
+        }
+    }
+
+    #[test]
+    fn ranges_read_back_from_their_header() {
+        for range in [
+            ByteRange::inclusive(0, 9).unwrap(),
+            ByteRange::inclusive(7, 7).unwrap(),
+            ByteRange::from(5),
+            ByteRange::suffix(3).unwrap(),
+            ByteRange::inclusive(0, u64::MAX).unwrap(),
+        ] {
+            assert_eq!(ByteRange::from_header(&range.to_string()), Some(range));
+        }
+        for bad in [
+            "bytes=-",
+            "bytes=9-0",
+            "bytes=-0",
+            "bytes=0-9,20-29",
+            "bytes=+1-2",
+            "bytes= 0-9",
+            "items=0-9",
+            "bytes=0-18446744073709551616",
+        ] {
+            assert_eq!(ByteRange::from_header(bad), None, "{bad}");
         }
     }
 

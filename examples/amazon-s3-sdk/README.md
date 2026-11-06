@@ -19,9 +19,17 @@ fake; they show that the SDK does what AWS's documentation describes, **not** th
 
 Bucket-wide on a `Bucket` handle: `x-amz-expected-bucket-owner`, `x-amz-request-payer: requester`.
 
-Signing: Region, service `s3`, the client's credentials or a request's own (`.credentials(..)`),
-session tokens (`x-amz-security-token`, signed), a clock (`Clock::system()`, `Clock::fixed(..)`
-for tests). The payload is always signed (`x-amz-content-sha256` is the body's SHA-256).
+The bucket handle and the operation builders are generated from the Concord declaration
+(`src/api.rs`): every value has a `set_*` setter (and `maybe_*` for optional ones, taking an
+`Option`), documented with the S3 parameter it sends. The client's SigV4 context is the
+declaration's **send policy** (`send signer;`), so each builder's `send()` is signed after the
+request is built. `prepare()` is the declared request **unsigned**; `S3Client::prepare(op)` signs
+one without sending it.
+
+Signing: Region, service `s3`, the client's credentials (one request with other credentials:
+`s3.clone().with_credentials(c).bucket(..)`), session tokens (`x-amz-security-token`, signed), a
+clock (`Clock::system()`, `Clock::fixed(..)` for tests). The payload is always signed
+(`x-amz-content-sha256` is the body's SHA-256).
 
 **Excluded:** multipart uploads, presigned URLs, streaming/chunked signatures
 (`STREAMING-AWS4-HMAC-SHA256-PAYLOAD`, trailers), `UNSIGNED-PAYLOAD`, SigV4a, directory buckets
@@ -60,6 +68,10 @@ fn bucket() -> Result<Bucket, Box<dyn std::error::Error>> {
   to be signed).
 - `S3Client::sign(&mut request)` signs a native request of an operation this SDK does not
   declare, with the client's context (the target is signed as it is).
+- **User metadata** (`x-amz-meta-*`): its header names are data, which the declaration cannot
+  place, and the send policy sees only the built request. `PutObject::metadata(m)` is therefore
+  the last call of a put, and the result is sent with the client it came from:
+  `.metadata(m).send(&s3)` (or `.prepare(&s3)` to inspect the signed request).
 
 ## Workflow A: inventory, inspect, read conditionally or partially
 
@@ -70,8 +82,8 @@ async fn workflow_a(bucket: &Bucket) -> Result<(), Box<dyn std::error::Error>> {
     // Every key under a prefix, over S3's pages (opaque continuation tokens, nothing guessed).
     let objects = bucket
         .list_objects_v2()
-        .prefix("reports/2026/")
-        .max_keys(MaxKeys::new(500)?)
+        .set_prefix("reports/2026/")
+        .set_max_keys(MaxKeys::new(500)?)
         .pages()
         .items()
         .collect_complete()
@@ -92,8 +104,8 @@ async fn workflow_a(bucket: &Bucket) -> Result<(), Box<dyn std::error::Error>> {
     // A conditional read: 304 when our copy is current, 412 when the object changed.
     match bucket
         .get_object(key.clone())
-        .if_match(etag)
-        .range(ByteRange::inclusive(19, 25)?)
+        .set_if_match(etag)
+        .set_range(ByteRange::inclusive(19, 25)?)
         .send()
         .await
     {
@@ -113,17 +125,17 @@ async fn workflow_a(bucket: &Bucket) -> Result<(), Box<dyn std::error::Error>> {
 ## Workflow B: put finite bytes, read them back
 
 ```rust,no_run
-use concord_sdk_amazon_s3::{Bucket, ContentType, Metadata, ObjectKey};
+use concord_sdk_amazon_s3::{AnyObject, Bucket, Bytes, ContentType, Metadata, ObjectKey, S3Client};
 
-async fn workflow_b(bucket: &Bucket) -> Result<(), Box<dyn std::error::Error>> {
+async fn workflow_b(s3: &S3Client, bucket: &Bucket) -> Result<(), Box<dyn std::error::Error>> {
     // Sent as uploads/2026/na%C3%AFve%20caf%C3%A9.bin
     let key = ObjectKey::new("uploads/2026/naïve café.bin")?;
-    let body = vec![0u8, 1, 2, 255];
+    let body = Bytes::from(vec![0u8, 1, 2, 255]);
     let put = bucket
         .put_object(key.clone(), body.clone(), ContentType::new("application/octet-stream")?)
-        .metadata(Metadata::new().insert("author", "me")?)
-        .if_absent() // If-None-Match: *  (412 when the key exists)
-        .send()
+        .set_if_none_match(AnyObject) // If-None-Match: *  (412 when the key exists)
+        .metadata(Metadata::new().insert("author", "me")?) // last: sent with the client
+        .send(s3)
         .await?;
 
     let object = bucket.get_object(key).send().await?;
@@ -163,9 +175,9 @@ signatures, URLs, header values or S3's free-text `Message`/`Resource` (read tho
   (`max_pages`) reached while S3 has more is `PagesError::Bounded { resume }`; a failed page is
   `PagesError::Provider { error, failed }`; both end the traversal, and `collect_complete()`
   returns the collected prefix with the error. Resume with
-  `list_objects_v2().continuation_token(token).pages()` on the same request. A listing is not a
+  `list_objects_v2().set_continuation_token(token).pages()` on the same request. A listing is not a
   snapshot: objects written meanwhile may or may not appear.
-- **Object bodies.** `GetObject::send()` returns once the head is checked; the body is read by
+- **Object bodies.** `GetObject`'s `send()` returns once the head is checked; the body is read by
   `ObjectBody::chunk()` or `collect(limit)` (refuses before reading when `Content-Length`
   exceeds the limit). `chunk()` returns `Ok(None)` after exactly `Content-Length` bytes, and
   also on every call after an error: keep the first error. `ObjectBody::completion()` is
@@ -177,7 +189,7 @@ signatures, URLs, header values or S3's free-text `Message`/`Resource` (read tho
   end); a `200` to a ranged request means the whole object was sent (`head.is_partial()` false).
 - **Writes.** `PutObject` is one request; S3 documents that it never stores a partial object. A
   failed write may still have been applied if the response was lost (`Transport`): whether to
-  retry, and with which condition (`if_absent`, `if_match`), is yours.
+  retry, and with which condition (`set_if_none_match(AnyObject)`, `set_if_match`), is yours.
 - **Cancellation.** Dropping a pending `send()` or an `ObjectBody` stops the transfer and closes
   its connection; nothing continues in the background and nothing is retried. Dropping a pending
   `chunk()` loses nothing: the next call continues the body. A request already transmitted may

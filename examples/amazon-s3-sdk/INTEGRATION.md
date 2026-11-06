@@ -254,3 +254,238 @@ reverted). No existing test or expectation changed.
 
 Results: unit 9, `first_use` 13, `protocol` 29 (28 + the new one), `workflows` 4, doctests 5 —
 all pass; `cargo clippy --all-targets -D warnings` and `cargo doc` (`-D warnings`) clean.
+
+# Between waves 2-3 (after the value-form policy)
+
+Re-evaluation after the library fix that the section above asked for: `SendWith::send` takes
+`&self`, and `send signer;` names a required client value used as the policy (not on the wire,
+cloned per `send()`, withheld by the generated `Debug`). "Before" is `634b135b`, "after" the
+commit that adds this section.
+
+## Verdict
+
+**Adopted.** The generated bucket handle and operation builders are now the public ones
+(re-exported as `Bucket`, `ListObjectsV2`, `HeadObject`, `GetObject`, `PutObject`). The client
+value `signer: Signer` (Region, credentials and clock behind one `Arc`) is the send policy
+(`send signer;`), so every generated `send()` canonicalizes the target, signs, executes once and
+maps the response to `S3Error`.
+
+Decisive reason: all 36 forwarding definitions go (245 lines with their docs). A declared value is
+now the caller's setter with no other edit, so a forgotten forwarder can no longer happen. A
+forgotten policy impl for a new output is a compile error. Every S3 rule keeps its test, and the
+two inputs the policy cannot see have a domain replacement.
+
+How the three known non-expressible parts are handled:
+
+| Part | Handling | Cost |
+|---|---|---|
+| User metadata (`x-amz-meta-{name}`, names are data) | **A remaining domain method.** `PutObject::metadata(m)` returns `PutObjectWithMetadata`, which has `send(&s3)` and `prepare(&s3)`. The headers are added before signing by the client's `Signer` (the same `sign` path). | It must be the last call of a put, and it needs the client in scope (first_use's `bucket()` helper had to be split into `client()`/`bucket()`). It signs with the client passed in: pass the one the request came from (documented). |
+| Per-request credentials override (`.credentials(c)` ×3) | **Removed.** Use a client snapshot instead: `s3.clone().with_credentials(c).bucket(..)` (existing API, same immutable-snapshot semantics, one `Arc` per call). | Callers who changed the credentials of a builder they already held must now create it from the derived client. |
+| `prepare()` signed | **Moved, and documented.** The generated `prepare()` is the declared request, **unsigned** (Concord's §5.13 contract). `S3Client::prepare(op)` (generic over `Endpoint<T>`) returns the same `SignedRequest<T>` as before. | The change is silent for callers (measured below). |
+
+Also given up: `Bucket::name()` (generated scopes have no getters), and the domain spellings
+`range()`, `if_absent()`, `requester_pays()`, `url_encoded_keys()`. These are now `set_range`,
+`set_if_none_match(AnyObject)`, `set_requester_pays(Requester)` and
+`set_encoding_type(UrlEncoding)`, and the three marker types are public. The put body is now a
+`Bytes` (re-exported; `IntoValue` is sealed, so `&str`/`Vec<u8>` are no longer accepted). Kept by
+changing the declaration: `content_type: ContentType` (sent through a `CONTENT_TYPE` template)
+and `response_content_type?: ContentType`, so both stay validated. Gained: `maybe_*` on every
+optional value, `set_key`/`set_data`, and generated per-value docs (moved from the forwarders onto
+the declared values).
+
+Alternatives rejected for metadata:
+
+- **A pseudo-header that the policy expands.** `prepare()` and the generated docs would show a
+  header S3 does not have.
+- **A task-local.** It needs a runtime dependency and is hidden coupling.
+- **Keeping a domain `PutObject` builder.** It needs a domain `Bucket` holding the signer, plus 8
+  forwarders back.
+
+## How the policy signs
+
+`src/client.rs` (after):
+
+```rust
+macro_rules! signed_send {
+    ($($output:ty),* $(,)?) => {$(
+        impl SendWith<$output> for Signer {
+            type Output = Result<$output, S3Error>;
+
+            async fn send<E: Endpoint<$output> + Send>(&self, endpoint: E) -> Self::Output {
+                self.sign(endpoint.prepare(), |_| Ok(()))?.send().await
+            }
+        }
+    )*};
+}
+
+signed_send!(
+    ListObjectsV2Output,
+    ObjectHead,
+    GetObjectOutput,
+    PutObjectOutput
+);
+```
+
+`Signer::sign` is the former `Signing::sign`: `into_parts` → edit (metadata only) →
+`canonicalize_target` → `sign_request`. The per-output checks are the unchanged
+`SignedRequest<T>::send` impls.
+
+The builders' private copies are replaced by read-backs from the built request, each the exact
+inverse of what the declaration wrote:
+
+- the `GetObject` range is read from the `range` header (`ByteRange::from_header`, the inverse of
+  `Display`, with a new unit test);
+- the starting token of `pages()` is read from the `continuation-token` query pair.
+
+Both are covered by existing tests. Mutations (each reverted):
+
+- dropping the range read-back fails `refused_ranges_and_body_framing` and
+  `a_range_mismatch_is_rejected_and_200_fallback_is_explicit`;
+- starting every chain at `Resume::Start` fails `a_failed_page_retains_items_and_can_resume`,
+  `a_broken_continuation_contract_is_an_error`, `a_page_cap_is_distinct_from_exhaustion`,
+  `a_page_cap_stops_with_the_token_to_resume_from` and
+  `workflow_a_resumes_an_interrupted_inventory_from_its_token`.
+
+## Measurements
+
+`src/client.rs` ("code" excludes blank and comment lines):
+
+| Block | before total/code | after total/code |
+|---|---|---|
+| imports, `http_client_builder` | 46 / 28 | 40 / 20 |
+| `Context`, `S3Client` (after: + `prepare(op)`, `with_context`) | 173 / 110 | 192 / 119 |
+| `Bucket` handle | 90 / 70 | — (generated) |
+| `Signing::sign` → `Signer` (`sign`, `Debug`) + `signed_send!` | 35 / 32 | 83 / 66 |
+| `SignedRequest`, `operation_name`, `finish` | 89 / 67 | 89 / 67 |
+| `SignedRequest<T>::send` ×4 | 63 / 35 | 63 / 35 |
+| `ListObjectsV2` type, setters, `prepare`/`send`, `Debug` | 119 / 79 | — (generated) |
+| `ListPage`, `ObjectPages`, `pages` | in the row above + 55 / 44 | 81 / 60 |
+| `read_conditions!`, `HeadObject`, `GetObject` | 204 / 141 | — (generated) |
+| `PutObject` (after: `metadata`, `PutObjectWithMetadata`) | 127 / 88 | 67 / 40 |
+| **file** | **1000 / 694** | **614 / 407** |
+
+- **Forwarding definitions:** 36 → **0**. The callers' builder surface went from 42 hand-written
+  public methods to 82 generated `set_*`/`maybe_*` controls (counted in rustdoc), plus `pages`,
+  `metadata`, `prepare` and `send`.
+- **`src/api.rs`:** 137 / 108 → 195 / 113. That is +53 doc lines moved from the forwarders onto
+  the declared values, and +5 code lines: the `signer` value, `send signer;` and the content-type
+  template.
+- **`src/lib.rs`:** 90 / 28 → 101 / 34 (re-exports).
+- **`src/types.rs`:** +45 lines (the range read-back with its unit test, and docs on the public
+  markers).
+- **Hand-written `client.rs` + `api.rs` + `lib.rs`:** 1227 / 830 → 910 / 554.
+
+## What adding one header parameter costs
+
+| Before | After |
+|---|---|
+| `src/api.rs`: the value and its doc line | the same (2 lines) |
+| `src/client.rs`: a forwarding setter (7 lines with its doc), silent if forgotten (observed in the section above) | nothing; there is no forwarder to forget |
+
+Observed with a probe, then reverted. I added
+`header("x-amz-checksum-mode") checksum_mode?: String` to `get_object` and a temporary test
+calling `.set_checksum_mode("ENABLED").send()`. The test passed: the header reached the wire and
+is in `SignedHeaders` (independent verifier), and `cargo clippy --all-targets -D warnings` was
+clean.
+
+Adding an operation now takes the `api!` entry and, if its output type is new, one line in
+`signed_send!` plus its `SignedRequest<T>::send`. Forgetting them is a compile error. Observed
+with a probe `DELETE delete_object(key: ObjectKey)`, reverted:
+``error[E0277]: the send policy `Signer` does not send a `()` output``, pointing at
+`signer: Signer`.
+
+## Caller excerpt
+
+Before (`src/lib.rs` example):
+
+```rust
+bucket
+    .put_object(key.clone(), "hello, world", ContentType::new("text/plain")?)
+    .metadata(metadata)
+    .send()
+    .await?;
+let first_five = bucket.get_object(key).range(ByteRange::inclusive(0, 4)?).send().await?;
+```
+
+After:
+
+```rust
+bucket
+    .put_object(key.clone(), Bytes::from_static(b"hello, world"), ContentType::new("text/plain")?)
+    .metadata(metadata)
+    .send(&s3)
+    .await?;
+let first_five = bucket.get_object(key).set_range(ByteRange::inclusive(0, 4)?).send().await?;
+```
+
+| Use | Before | After |
+|---|---|---|
+| Per-request credentials | `bucket.list_objects_v2().credentials(c).send()` | `s3.clone().with_credentials(c).bucket(name).list_objects_v2().send()` |
+| Signed inspection | `bucket.get_object(k).prepare()?` | `s3.prepare(bucket.get_object(k))?` |
+
+Migrating this crate's own tests (observed):
+
+- **Renamed setters:** 67 calls. rustc's E0599 suggested each `set_*`, for example "there is a
+  method `set_prefix` with a similar name".
+- **Other edits:** 9 bodies became `Bytes`; 3 metadata puts were reordered and now call
+  `send(&s3)`; 1 per-request credentials call now uses a client snapshot; 12 signed `prepare()`
+  calls now go through `s3.prepare(op)`.
+- **No compile error for `prepare()`:** before that last step, the 12 `prepare()` sites compiled
+  unchanged against the unsigned generated `prepare()`, which has the same `request()` and
+  `into_parts()`. All 4 tests containing them failed at run time (no `authorization`, a `%2F`
+  target, a `403`). A downstream caller that inspects or executes `prepare()` gets no compile
+  error.
+- **No expectation changed:** no assertion or expected value was touched. Every removed test line
+  is a call site.
+
+## Library gaps (with reproductions)
+
+1. **A per-request input to the send policy cannot be declared.** Adding
+   `metadata?: crate::types::Metadata,` to `put_object` (no placement) fails with
+   ``error: value `metadata` is never used; place it (`query`, `header("..")`) or reference it
+   from `path`, `subdomain`, `query` or `headers` `` at `src/api.rs:181`. The policy sees only the built
+   request, so per-request metadata (and per-request credentials) stay outside the generated
+   `send()`.
+2. **A decorated endpoint cannot go through the policy.** `Endpoint::prepare` must return a
+   `Prepared<T>`, and a `Prepared` cannot be edited or rebuilt after `into_parts()`. Its public
+   methods are `follow`, `operation`, `request`, `send`, `receive`, `send_raw` and `into_parts`
+   (`crates/concord-core/src/prepared.rs`). So `PutObjectWithMetadata` signs through the client
+   (`Signer::sign` with an edit) rather than implementing `Endpoint`.
+3. **Generated handles have no read access to their values.** Hence the two read-backs above
+   (exact and tested) and the loss of `Bucket::name()`.
+4. **Not a defect: `prepare()` changes meaning silently when a policy is added.** This is
+   documented Concord behavior and a migration hazard for an SDK's callers (measured above).
+
+The generated `Debug` labels use the generated names (`S3ApiBucketGetObject { .. }`). A
+`content_type` placed through the native `CONTENT_TYPE` key prints `<redacted>`.
+
+## What stays correct, and tests
+
+These are covered by the same tests:
+
+- SigV4 against AWS's four example vectors. The GET vector is reproduced through
+  `S3Client::prepare` on the generated `GetObject`.
+- The independent verifier, which checks every request the fake receives.
+- The key `%2F` → `/` canonicalization and query re-encoding (`canonicalize_target`, unchanged,
+  now called in `Signer::sign`).
+- Conditional and range semantics, `ObjectBody::completion()`, the typed `S3Error`, and
+  `bytes_limited` error documents.
+
+New tests:
+
+- `types::tests::ranges_read_back_from_their_header`;
+- `tests/protocol.rs` `generated_builders_withhold_the_signing_context`: the `Debug` output of
+  `Bucket`, `ListObjectsV2`, `GetObject`, `PutObjectWithMetadata` and `SignedRequest` contains
+  neither secret, nor the session token, nor `Signature=`, and the generated `prepare()` carries
+  no `authorization`.
+
+Results: all pass.
+
+- unit: 10 (9 + 1);
+- `first_use`: 13;
+- `protocol`: 30 (29 + 1);
+- `workflows`: 4;
+- doctests: 5.
+
+`cargo clippy --all-targets -- -D warnings`, `cargo doc` (`-D warnings`) and `cargo fmt --check`
+are clean.

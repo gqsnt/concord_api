@@ -176,3 +176,19 @@ checks the loopback canonical requests, independently verified signatures, both 
 an unrelated HEAD. The working path needed no additional workaround; see `MAINTENANCE.md` for
 which example data and expectations changed. This test does not mutate the SDK to prove the
 failure mode when the existing rewrite is removed.
+
+## Coordinator note: after the value-form send policy (between waves 2-3)
+
+This note changes the status of entries 1, 4 and 6; the entries themselves are kept as they were
+written.
+
+- **Entry 1 is resolved.** The send policy can now be a client value (`send signer;`), so the
+  declaration is public and its generated builders are the SDK's. The 36 forwarders are gone, and
+  `Signer::sign` in `src/client.rs` does the native prepare → rewrite → sign path once.
+- **Entry 4 stands.** The metadata headers are now added in `PutObjectWithMetadata::prepare`,
+  which is sent with the client (`.metadata(m).send(&s3)`).
+- **Entry 6 has changed.** The policy reads the requested range back from the built request's
+  `range` header; the builder no longer keeps a copy.
+
+Measurements, the remaining limits and library gaps: `INTEGRATION.md`, "Between waves 2-3 (after
+the value-form policy)".

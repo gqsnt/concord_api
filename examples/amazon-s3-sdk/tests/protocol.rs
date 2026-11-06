@@ -14,9 +14,9 @@ use concord_example_testserver::{Body, Recorded, Reply, TestServer};
 use concord_pagination::{PagesError, Resume};
 use concord_sdk_amazon_s3::sigv4::sign_request;
 use concord_sdk_amazon_s3::{
-    BodyCompletion, BodyErrorKind, BucketName, ByteRange, Clock, ContentType, ContinuationToken,
-    Credentials, ETag, ErrorBody, HttpDate, MaxKeys, Metadata, ObjectKey, ProtocolErrorKind,
-    Region, S3Client, S3Error, StorageClass,
+    AnyObject, BodyCompletion, BodyErrorKind, BucketName, ByteRange, Bytes, Clock, ContentType,
+    ContinuationToken, Credentials, ETag, ErrorBody, HttpDate, MaxKeys, Metadata, ObjectKey,
+    ProtocolErrorKind, Region, S3Client, S3Error, SignedRequest, StorageClass, UrlEncoding,
 };
 
 const EMPTY_SHA256: &str = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855";
@@ -87,11 +87,13 @@ fn assert_same_authorization(sent: &str, documented: &str) {
 
 #[test]
 fn official_get_object_example_is_reproduced_by_the_sdk() {
-    let request = doc_client()
-        .bucket(bucket_name("examplebucket"))
-        .get_object(key("test.txt"))
-        .range(ByteRange::inclusive(0, 9).unwrap())
-        .prepare()
+    let s3 = doc_client();
+    let request = s3
+        .prepare(
+            s3.bucket(bucket_name("examplebucket"))
+                .get_object(key("test.txt"))
+                .set_range(ByteRange::inclusive(0, 9).unwrap()),
+        )
         .unwrap();
     let native = request.request();
     assert_eq!(native.method(), reqwest::Method::GET);
@@ -237,9 +239,9 @@ async fn list_objects_v2_request_and_documented_response() {
     let page = s3
         .bucket(bucket_name("quotes"))
         .list_objects_v2()
-        .max_keys(MaxKeys::new(3).unwrap())
-        .prefix("E")
-        .start_after(key("ExampleGuide.pdf"))
+        .set_max_keys(MaxKeys::new(3).unwrap())
+        .set_prefix("E")
+        .set_start_after(key("ExampleGuide.pdf"))
         .send()
         .await
         .unwrap();
@@ -297,7 +299,7 @@ async fn delimiter_listing_returns_common_prefixes() {
     let page = s3
         .bucket(bucket_name("example-bucket"))
         .list_objects_v2()
-        .delimiter("/")
+        .set_delimiter("/")
         .send()
         .await
         .unwrap();
@@ -316,7 +318,7 @@ async fn unknown_xml_elements_do_not_prevent_decoding() {
     let page = s3
         .bucket(bucket_name("examplebucket"))
         .list_objects_v2()
-        .fetch_owner(true)
+        .set_fetch_owner(true)
         .send()
         .await
         .unwrap();
@@ -346,9 +348,9 @@ async fn url_encoded_listing_is_decoded() {
     let page = s3
         .bucket(bucket_name("examplebucket"))
         .list_objects_v2()
-        .prefix("test/")
-        .delimiter("/")
-        .url_encoded_keys()
+        .set_prefix("test/")
+        .set_delimiter("/")
+        .set_encoding_type(UrlEncoding)
         .send()
         .await
         .unwrap();
@@ -371,8 +373,8 @@ async fn query_values_are_uri_encoded_once_and_signed() {
     let s3 = client_for(server.addr(), "us-east-1", &["examplebucket"]);
     s3.bucket(bucket_name("examplebucket"))
         .list_objects_v2()
-        .prefix("a b+c*~/é")
-        .continuation_token(token)
+        .set_prefix("a b+c*~/é")
+        .set_continuation_token(token)
         .send()
         .await
         .unwrap();
@@ -487,7 +489,7 @@ async fn a_page_repeating_its_token_is_a_protocol_error() {
     let mut pages = s3
         .bucket(bucket_name("examplebucket"))
         .list_objects_v2()
-        .prefix("reports/2026/")
+        .set_prefix("reports/2026/")
         .pages();
     let first = pages.next_page().await.unwrap().unwrap();
     assert_eq!(first.items.len(), 2);
@@ -523,7 +525,7 @@ async fn a_page_cap_stops_with_the_token_to_resume_from() {
     let listing = s3
         .bucket(bucket_name("examplebucket"))
         .list_objects_v2()
-        .prefix("reports/2026/");
+        .set_prefix("reports/2026/");
     let incomplete = listing
         .clone()
         .pages()
@@ -538,7 +540,7 @@ async fn a_page_cap_stops_with_the_token_to_resume_from() {
     };
     // Resuming from the token reads the rest, and only the rest.
     let rest = listing
-        .continuation_token(resume)
+        .set_continuation_token(resume)
         .pages()
         .items()
         .collect_complete()
@@ -607,7 +609,7 @@ async fn get_object_range_documented_206() {
     let output = s3
         .bucket(bucket_name("examplebucket"))
         .get_object(key("example-object"))
-        .range(ByteRange::inclusive(0, 9).unwrap())
+        .set_range(ByteRange::inclusive(0, 9).unwrap())
         .send()
         .await
         .unwrap();
@@ -650,15 +652,15 @@ async fn put_object_sends_exact_bytes_and_headers() {
         .bucket(bucket_name("examplebucket"))
         .put_object(
             key("my-image.jpg"),
-            body.clone(),
+            Bytes::from(body.clone()),
             ContentType::new("image/jpeg").unwrap(),
         )
+        .set_cache_control("max-age=60")
+        .set_content_disposition("attachment; filename=\"image.jpg\"")
+        .set_storage_class(StorageClass::ReducedRedundancy)
+        .set_if_none_match(AnyObject)
         .metadata(metadata)
-        .cache_control("max-age=60")
-        .content_disposition("attachment; filename=\"image.jpg\"")
-        .storage_class(StorageClass::ReducedRedundancy)
-        .if_absent()
-        .send()
+        .send(&s3)
         .await
         .unwrap();
     let recorded = server.single();
@@ -835,7 +837,7 @@ async fn conditional_reads_304_and_412() {
 
     let error = bucket
         .get_object(key("my-image.jpg"))
-        .if_none_match(current.clone())
+        .set_if_none_match(current.clone())
         .send()
         .await
         .unwrap_err();
@@ -864,8 +866,8 @@ async fn conditional_reads_304_and_412() {
     let stale = ETag::parse("\"stale\"").unwrap();
     let error = bucket
         .get_object(key("my-image.jpg"))
-        .if_match(stale)
-        .if_unmodified_since(HttpDate::parse("Mon, 12 Oct 2009 17:50:00 GMT").unwrap())
+        .set_if_match(stale)
+        .set_if_unmodified_since(HttpDate::parse("Mon, 12 Oct 2009 17:50:00 GMT").unwrap())
         .send()
         .await
         .unwrap_err();
@@ -903,7 +905,7 @@ async fn refused_ranges_and_body_framing() {
     let get = |path: &str| {
         bucket
             .get_object(key(path))
-            .range(ByteRange::inclusive(0, 9).unwrap())
+            .set_range(ByteRange::inclusive(0, 9).unwrap())
             .send()
     };
 
@@ -1035,10 +1037,10 @@ async fn per_request_credentials_and_session_token() {
         .with_session_token(SYNTHETIC_SESSION_TOKEN)
         .unwrap();
 
-    let signed = bucket
-        .list_objects_v2()
-        .credentials(temporary.clone())
-        .prepare()
+    // One request's own credentials: a client snapshot with them.
+    let own = s3.clone().with_credentials(temporary.clone());
+    let signed = own
+        .prepare(own.bucket(bucket_name("examplebucket")).list_objects_v2())
         .unwrap();
     let native = signed.request();
     assert!(native.headers()["authorization"].is_sensitive());
@@ -1094,6 +1096,43 @@ async fn per_request_credentials_and_session_token() {
     assert!(!shown.contains(SYNTHETIC_SESSION_TOKEN));
 }
 
+/// The generated builders hold the client's signing context (the send policy): their `Debug`
+/// withholds it, and their own `prepare()` is the declared request, unsigned.
+#[tokio::test]
+async fn generated_builders_withhold_the_signing_context() {
+    let server = TestServer::start(|_| Reply::new(200)).await;
+    let s3 = client_for(server.addr(), "us-east-1", &["examplebucket"]).with_credentials(
+        other_credentials()
+            .with_session_token(SYNTHETIC_SESSION_TOKEN)
+            .unwrap(),
+    );
+    let bucket = s3.bucket(bucket_name("examplebucket"));
+    let put = bucket
+        .put_object(
+            key("x"),
+            Bytes::from_static(b"x"),
+            ContentType::new("text/plain").unwrap(),
+        )
+        .metadata(Metadata::new().insert("author", "me").unwrap());
+    let get = bucket.get_object(key("x")).set_range(ByteRange::from(1));
+    let shown = format!(
+        "{bucket:?} {get:?} {put:?} {:?} {:?}",
+        bucket.list_objects_v2(),
+        s3.prepare(get.clone()).unwrap()
+    );
+    for secret in [
+        OTHER_SECRET,
+        SYNTHETIC_SECRET,
+        SYNTHETIC_SESSION_TOKEN,
+        "Signature=",
+    ] {
+        assert!(!shown.contains(secret), "{secret} in {shown}");
+    }
+    let unsigned = get.prepare().unwrap();
+    assert!(unsigned.request().headers().get("authorization").is_none());
+    assert!(server.requests().is_empty());
+}
+
 #[tokio::test]
 async fn unknown_credentials_are_answered_with_the_error_document() {
     let fake = FakeS3::default();
@@ -1120,29 +1159,22 @@ async fn unknown_credentials_are_answered_with_the_error_document() {
 /// and a GET of `target`.
 fn scenario(s3: &S3Client, target: &str) -> Vec<reqwest::Request> {
     let bucket = s3.bucket(bucket_name("examplebucket"));
-    let listing = bucket.list_objects_v2().prefix("reports/2026/");
+    let listing = bucket.list_objects_v2().set_prefix("reports/2026/");
     let token = ContinuationToken::new("1ueGcxLPRx1Tr/XYExHnhbYLgveDs2J/wm36Hy4vbOwM=").unwrap();
+    fn signed<T>(request: Result<SignedRequest<T>, S3Error>) -> reqwest::Request {
+        request.unwrap().into_parts().1
+    }
     vec![
-        listing.clone().prepare().unwrap().into_parts().1,
-        listing
-            .continuation_token(token)
-            .prepare()
-            .unwrap()
-            .into_parts()
-            .1,
-        bucket
-            .head_object(key("reports/2026/January.csv"))
-            .prepare()
-            .unwrap()
-            .into_parts()
-            .1,
-        bucket
-            .get_object(key(target))
-            .range(ByteRange::inclusive(0, 9).unwrap())
-            .prepare()
-            .unwrap()
-            .into_parts()
-            .1,
+        signed(s3.prepare(listing.clone())),
+        signed(s3.prepare(listing.set_continuation_token(token))),
+        signed(s3.prepare(bucket.head_object(key("reports/2026/January.csv")))),
+        signed(
+            s3.prepare(
+                bucket
+                    .get_object(key(target))
+                    .set_range(ByteRange::inclusive(0, 9).unwrap()),
+            ),
+        ),
     ]
 }
 
@@ -1183,12 +1215,10 @@ fn perturbing_the_key_changes_only_its_own_request() {
 
 #[test]
 fn perturbing_the_range_or_the_content_type_changes_the_signature() {
-    let bucket = doc_client().bucket(bucket_name("examplebucket"));
+    let s3 = doc_client();
+    let bucket = s3.bucket(bucket_name("examplebucket"));
     let get = |range| {
-        bucket
-            .get_object(key("test.txt"))
-            .range(range)
-            .prepare()
+        s3.prepare(bucket.get_object(key("test.txt")).set_range(range))
             .unwrap()
             .into_parts()
             .1
@@ -1209,16 +1239,14 @@ fn perturbing_the_range_or_the_content_type_changes_the_signature() {
     assert_ne!(a.authorization.signature, b.authorization.signature);
 
     let put = |media: &str| {
-        bucket
-            .put_object(
-                key("test.txt"),
-                "Welcome to Amazon S3.",
-                ContentType::new(media).unwrap(),
-            )
-            .prepare()
-            .unwrap()
-            .into_parts()
-            .1
+        s3.prepare(bucket.put_object(
+            key("test.txt"),
+            Bytes::from_static(b"Welcome to Amazon S3."),
+            ContentType::new(media).unwrap(),
+        ))
+        .unwrap()
+        .into_parts()
+        .1
     };
     let (a, b) = (
         verify_native(&put("text/plain")).unwrap(),
@@ -1258,10 +1286,12 @@ async fn changing_a_signed_part_after_signing_is_rejected() {
     let bucket = s3.bucket(bucket_name("examplebucket"));
 
     // Untouched: accepted.
-    let signed = bucket
-        .get_object(key("test.txt"))
-        .range(ByteRange::inclusive(0, 9).unwrap())
-        .prepare()
+    let signed = s3
+        .prepare(
+            bucket
+                .get_object(key("test.txt"))
+                .set_range(ByteRange::inclusive(0, 9).unwrap()),
+        )
         .unwrap();
     let (client, request, decoder) = signed.into_parts();
     let ok = decoder.execute(&client, request).await.unwrap();
@@ -1269,10 +1299,12 @@ async fn changing_a_signed_part_after_signing_is_rejected() {
     drop(ok);
 
     // The signed range changed after signing.
-    let signed = bucket
-        .get_object(key("test.txt"))
-        .range(ByteRange::inclusive(0, 9).unwrap())
-        .prepare()
+    let signed = s3
+        .prepare(
+            bucket
+                .get_object(key("test.txt"))
+                .set_range(ByteRange::inclusive(0, 9).unwrap()),
+        )
         .unwrap();
     let (client, mut request, decoder) = signed.into_parts();
     request
@@ -1283,9 +1315,8 @@ async fn changing_a_signed_part_after_signing_is_rejected() {
     drop(refused);
 
     // A new x-amz-* header after signing: S3 requires every x-amz-* header to be signed.
-    let (client, mut request, decoder) = bucket
-        .head_object(key("test.txt"))
-        .prepare()
+    let (client, mut request, decoder) = s3
+        .prepare(bucket.head_object(key("test.txt")))
         .unwrap()
         .into_parts();
     request
@@ -1296,13 +1327,12 @@ async fn changing_a_signed_part_after_signing_is_rejected() {
     drop(refused);
 
     // The body of a PUT changed after signing: the payload hash no longer matches.
-    let (client, mut request, decoder) = bucket
-        .put_object(
+    let (client, mut request, decoder) = s3
+        .prepare(bucket.put_object(
             key("new.txt"),
-            "original",
+            Bytes::from_static(b"original"),
             ContentType::new("text/plain").unwrap(),
-        )
-        .prepare()
+        ))
         .unwrap()
         .into_parts();
     *request.body_mut() = Some(reqwest::Body::from("tampered"));
@@ -1311,9 +1341,8 @@ async fn changing_a_signed_part_after_signing_is_rejected() {
     drop(refused);
 
     // The signing time changed after signing.
-    let (client, mut request, decoder) = bucket
-        .get_object(key("test.txt"))
-        .prepare()
+    let (client, mut request, decoder) = s3
+        .prepare(bucket.get_object(key("test.txt")))
         .unwrap()
         .into_parts();
     request
@@ -1385,8 +1414,12 @@ async fn invalid_inputs_send_nothing() {
     let bucket = s3.bucket(bucket_name("examplebucket"));
     // A header value that is not visible ASCII cannot be signed: refused, named, not sent.
     let error = bucket
-        .put_object(key("x"), "x", ContentType::new("text/plain").unwrap())
-        .content_disposition("attachment; filename=\"café.txt\"")
+        .put_object(
+            key("x"),
+            Bytes::from_static(b"x"),
+            ContentType::new("text/plain").unwrap(),
+        )
+        .set_content_disposition("attachment; filename=\"café.txt\"")
         .send()
         .await
         .unwrap_err();
@@ -1398,8 +1431,12 @@ async fn invalid_inputs_send_nothing() {
     assert!(!error.to_string().contains("café"));
     // A line break in a header value: Concord refuses to build the request.
     let error = bucket
-        .put_object(key("x"), "x", ContentType::new("text/plain").unwrap())
-        .cache_control("a\r\nx-injected: 1")
+        .put_object(
+            key("x"),
+            Bytes::from_static(b"x"),
+            ContentType::new("text/plain").unwrap(),
+        )
+        .set_cache_control("a\r\nx-injected: 1")
         .send()
         .await
         .unwrap_err();

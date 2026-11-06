@@ -14,24 +14,28 @@
 //!   (build it with [`http_client_builder`]). [`S3Client::bucket`] returns a [`Bucket`].
 //! - [`Bucket`] — [`list_objects_v2`](Bucket::list_objects_v2),
 //!   [`head_object`](Bucket::head_object), [`get_object`](Bucket::get_object),
-//!   [`put_object`](Bucket::put_object). Each returns a builder with typed setters,
-//!   `prepare()` (signed, not sent) and `send()` (one request).
-//! - [`ListObjectsV2::pages`] — the listing as a `concord_pagination::Pages` chain.
+//!   [`put_object`](Bucket::put_object). Each returns the operation's generated builder:
+//!   `set_*`/`maybe_*` for every value, `send()` (one signed request) and `prepare()` (the
+//!   **unsigned** request; [`S3Client::prepare`] signs one without sending it).
+//! - [`Signer`] — the client's SigV4 context and the send policy every `send()` goes through.
+//! - [`ListObjectsV2::pages`] — the listing as a `concord_pagination::Pages` chain;
+//!   [`PutObject::metadata`] — user metadata, sent with the client
+//!   ([`PutObjectWithMetadata::send`]).
 //! - [`S3Error`] — where a call stopped, with the response's [`ResponseMeta`] (request ids),
 //!   S3's `<Error>` code, `304`/`412` outcomes and body-read failures.
 //! - [`types`] — validated values ([`BucketName`], [`ObjectKey`], [`ETag`], [`ByteRange`],
 //!   [`HttpDate`], [`Metadata`], ...); [`sigv4`] — the signer, usable on native requests.
 //!
-//! The Concord declaration (`src/api.rs`) is private: S3 rejects unsigned requests, and the
-//! generated `send()` would send one. The builders wrap the generated requests and sign them
-//! between `prepare()` and execution.
+//! The builders are generated from the Concord declaration (`src/api.rs`); the client value
+//! `signer` is its send policy (`send signer;`), so every generated `send()` is signed after the
+//! request is built and before it is executed.
 //!
 //! # Example
 //!
 //! ```no_run
 //! use concord_sdk_amazon_s3::{
-//!     BucketName, ByteRange, ContentType, Credentials, Metadata, ObjectKey, Region, S3Client,
-//!     http_client_builder,
+//!     BucketName, ByteRange, Bytes, ContentType, Credentials, Metadata, ObjectKey, Region,
+//!     S3Client, http_client_builder,
 //! };
 //!
 //! # async fn run() -> Result<(), Box<dyn std::error::Error>> {
@@ -45,12 +49,12 @@
 //! let key = ObjectKey::new("notes/hello.txt")?;
 //! let metadata = Metadata::new().insert("author", "me")?;
 //! bucket
-//!     .put_object(key.clone(), "hello, world", ContentType::new("text/plain")?)
+//!     .put_object(key.clone(), Bytes::from_static(b"hello, world"), ContentType::new("text/plain")?)
 //!     .metadata(metadata)
-//!     .send()
+//!     .send(&s3)
 //!     .await?;
 //!
-//! let first_five = bucket.get_object(key).range(ByteRange::inclusive(0, 4)?).send().await?;
+//! let first_five = bucket.get_object(key).set_range(ByteRange::inclusive(0, 4)?).send().await?;
 //! let (head, bytes) = first_five.bytes(1024).await?;
 //! assert_eq!(&bytes[..], b"hello");
 //! assert_eq!(head.metadata.get("author"), Some("me"));
@@ -65,10 +69,16 @@ pub mod sigv4;
 pub mod types;
 mod xml;
 
-pub use client::{
-    Bucket, GetObject, HeadObject, ListObjectsV2, ListPage, ObjectPages, PutObject, S3Client,
-    SignedRequest, http_client_builder,
+pub use api::{
+    S3ApiBucket as Bucket, S3ApiBucketGetObject as GetObject, S3ApiBucketHeadObject as HeadObject,
+    S3ApiBucketListObjectsV2 as ListObjectsV2, S3ApiBucketPutObject as PutObject,
 };
+pub use client::{
+    ListPage, ObjectPages, PutObjectWithMetadata, S3Client, SignedRequest, Signer,
+    http_client_builder,
+};
+/// The body type of [`PutObject`] (`concord::bytes::Bytes`).
+pub use concord::bytes::Bytes;
 pub use error::{
     ApiError, BodyError, BodyErrorKind, ErrorBody, InputError, MAX_ERROR_BODY, NotModified,
     ProtocolErrorKind, ResponseMeta, S3Error, SigningError,
@@ -79,8 +89,9 @@ pub use object::{
 };
 pub use sigv4::{Clock, Credentials};
 pub use types::{
-    AccountId, BucketName, ByteRange, ContentRange, ContentType, ContinuationToken, ETag, HttpDate,
-    MaxKeys, Metadata, ObjectKey, PartNumber, Region, StorageClass, VersionId,
+    AccountId, AnyObject, BucketName, ByteRange, ContentRange, ContentType, ContinuationToken,
+    ETag, HttpDate, MaxKeys, Metadata, ObjectKey, PartNumber, Region, Requester, StorageClass,
+    UrlEncoding, VersionId,
 };
 pub use xml::{ListObjectsV2Output, ListXml, ObjectSummary, Owner};
 

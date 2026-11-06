@@ -46,3 +46,16 @@ Reproduce with `CARGO_BUILD_JOBS=5 CARGO_TARGET_DIR=/home/canarit/projects/Conco
 inspect `Signing::sign` and `canonicalize_target` for the working path. The test observes the
 encoded target and verifies the signature; it does not by itself establish what would happen if
 the rewrite were removed. No new workaround or frozen-library edit was needed.
+
+## Coordinator note: after the value-form send policy (between waves 2-3)
+
+This note supersedes the "Adapter" bullet and the paragraph above.
+
+- **Operations are sent directly.** The generated operations are now sent with their own `send()`,
+  signed by the client's send policy (`Signer::sign`, formerly `Signing::sign`).
+- **No range copy.** The requested range is read back from the built request instead of being
+  forwarded and kept by the builder.
+- **No change to this scenario's facts.** It would now need edits only to example data, tests and
+  documentation, as before. `canonicalize_target` is unchanged.
+
+See `INTEGRATION.md`, "Between waves 2-3 (after the value-form policy)".
