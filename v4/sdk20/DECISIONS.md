@@ -423,3 +423,19 @@ digit runs), the digit-run algorithm (two linear scans; a translation matched a 
 collision tests still collide; Drive payloads recovered byte for byte by an independent parse),
 feature wiring, the test-server `Gate` (no lost wakeup), §5.13 docs. The reviewer could not run
 cargo (filesystem restrictions). Verdict ACCEPT_WITH_FIXES.
+
+### Review between waves 3 and 4: SSE reader and core (Codex `gpt-6.1-sol`, xhigh, read-only, session `01a1af60-c6be-7ac3…`)
+
+| ID | Severity | Finding | Fix |
+|---|---|---|---|
+| SOL-W34-1 | high | `Content-Length: 0` was inserted when the request was built, so it survived a native body replacement after `into_parts` and hyper sent the new body with a zero length | `f2bce967`, `eaf99fa0`: the rule runs in `Decoder::execute` against the body actually sent; regression `a_natively_replaced_body_is_not_framed_as_empty` observed to fail on the old code (`["0"]` for a 3-byte body) |
+| SOL-W34-2 | medium | `max_events` advanced `last_event_id()` past the undelivered event, so a reconnect from it skips that event | R1 agent (in progress) |
+| SOL-W34-3 | medium | the reader's cancel-safety claim does not hold for a `ByteSource` whose `next_chunk` is not cancel-safe | R1 agent (in progress) |
+| SOL-W34-4 | low | a parser fault's `position().bytes` depends on chunking | R1 agent (in progress) |
+
+Areas reported clean: WHATWG interpretation and the declared deviations, `max_event_bytes`
+accounting (comments, ids, unknown fields, unfinished lines bounded), completion and fusing, the
+built-in sources' cancellation, `RecordStream`, redaction, head checks, serializer isolation,
+OpenAI's preserved behaviour, `ResponseMeta`, the framing rule for streamed/absent/non-empty
+bodies and bodyless GET, generated Config and pagination docs. The reviewer could not run cargo
+(read-only filesystem). Verdict ACCEPT_WITH_FIXES.

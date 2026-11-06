@@ -73,5 +73,5 @@ commit; the coordinator commits their files and records it.
 | Between waves 3-4: R2 multipart format + OpenAI/Drive migration | Opus subagent | `claude-opus-5-5`, effort `xhigh` sent; answered by `claude-opus-5-5` (`agent-aaa17b8c…`) | `worktree-agent-aaa17b8c…` | `238ca378`, merged `c72bb5d6` | |
 | Between waves 3-4: M1 ntfy onto the SSE reader | Opus subagent | running (transcript read at completion) | `worktree-agent-ac82248d…` | | |
 | Between waves 3-4: M2 seven SDKs onto `ResponseMeta` | Opus subagent | running (transcript read at completion) | `worktree-agent-a0d0a2ba…` | | |
-| Review between waves 3-4: SSE reader + core (`961db5c8..92775757`) | `gpt-6.1-sol`, xhigh, read-only | `gpt-6.1-sol`, `xhigh`, `read-only` (session `01a1af60-c6be-7ac3…`) | `work/rv-w34` (detached `92775757`) | running | |
+| Review between waves 3-4: SSE reader + core (`961db5c8..92775757`) | `gpt-6.1-sol`, xhigh, read-only | `gpt-6.1-sol`, `xhigh`, `read-only` (session `01a1af60-c6be-7ac3…`) | `work/rv-w34` (detached `92775757`) | ACCEPT_WITH_FIXES (SOL-W34-1..4) | |
 | Review between waves 3-4: multipart + test server + docs | `gpt-6-astra`, xhigh, read-only | `gpt-6-astra`, `xhigh`, `read-only` (session `01a1af60-c6be-7de1…`) | `work/rv-w34` | ACCEPT_WITH_FIXES, AST-W34-1 fixed `9be6134b` | |
