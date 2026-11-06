@@ -471,3 +471,32 @@ runs. Gaps it reported, dispositions:
 | W34-G2 | keeping Concord's `Error` for a broken body needs a `ByteSource` over `Incoming::chunk`; OpenAI and ntfy each wrote one | DEFER: both SDKs keep it to preserve their `Error::Concord(Transport)` variant; `SseReader::open` already gives a URL-free `ReadError` naming the operation |
 | W34-G3 | `SseReader::read` takes no operation name | DEFER with G4 |
 | W34-G4 | a custom `Incremental` format cannot open an already-checked `Incoming` with non-default limits (`open_checked` is crate-private in all four readers; W3-5) | DEFER: one consumer per reader so far; the public path (`-> stream` + a configured reader's `open`) works, at the cost of the format's typed output; revisit if a wave 4/5 SDK writes its own streaming format |
+
+## Between waves 4 and 5: refinements
+
+**D-W45-R4 — CSV input ending inside a quoted field is an error (IMPLEMENT, concord-extras csv;
+Opus subagent `ae98124f…`, `c75694dd` + `dedd494d`, merged `aa73712a`).** Wave 4 evidence: the
+Open-Meteo author (FRICTION F4) observed both finite decoding and `CsvReader` return a body ending
+inside an open quoted field as complete (`EndOfInput`); csv-core 0.1.13 ends the open field
+silently. The framer now mirrors csv-core's DFA for the configured dialect (quote, quoting,
+doubled quotes, escape, delimiter, terminators, comment lines) over the bytes of the record in
+progress; at the true end of input a record completing inside an open quote is a terminal
+`Format` error ("the CSV input ends inside a quoted field", with the record number), on the finite
+and incremental paths, the header and all BOM paths. Debug builds scan every byte and assert the
+mirror. Release throughput unchanged (242/250 vs 239/246 MB/s). Tests: 3 unit (one exhaustive over
+every ≤4-byte input in 7 dialects against csv-core) + 11 in `tests/csv_quote_eof.rs` (9 fail at
+the base). One existing expectation changed on purpose: `tests/csv_dialect.rs` `a"b,"open`
+asserted the old lenient rule and now expects the error. Side fix: a final comment line holding
+`\r` produced a phantom empty record. Follow-up (coordinator decision): a comment byte with a
+custom read terminator silently swallowed the rest of the input, so that combination is refused at
+configuration time (`CsvConfigError`; `Byte(b'\n')` stays accepted since `\n` then ends both);
+standard terminators unchanged and documented (a comment line ends only at LF).
+Migration: Open-Meteo's quote-count guard removed (`27d23b39`, also wrong for `ab"c`); its
+reproduction test now asserts the library's refusal (record 6, `Completion::Failed`).
+
+**D-W45-CONS — `scripts/consumers.sh` removes its scratch copy after a clean run (`6acc5050`).**
+Every gate run left ~1.6 GB; with idle agent build directories the disk filled during wave 4.
+
+**R5 (in progress)** — readers over a wrapped body (`check_head` on every reader, an
+operation-naming `read_for`, `ByteSource` for `Incoming` keeping Concord's error, `ReadError`
+source by value): ntfy (W34-G2/G3/G4), OpenAI, ClickHouse (FRICTION 2, 3).
