@@ -573,7 +573,7 @@ async fn b_invalid_continuation_and_detail_urls_are_rejected_without_io() {
     ];
     for url in invalid_lists {
         assert!(
-            matches!(api.follow(&url).await, Err(Error::InvalidUrl)),
+            matches!(api.follow(&url).await, Err(Error::InvalidUrl(_))),
             "{url}"
         );
     }
@@ -589,7 +589,7 @@ async fn b_invalid_continuation_and_detail_urls_are_rejected_without_io() {
     ];
     for url in invalid_details {
         assert!(
-            matches!(api.pokemon_url(&url).await, Err(Error::InvalidUrl)),
+            matches!(api.pokemon_url(&url).await, Err(Error::InvalidUrl(_))),
             "{url}"
         );
     }

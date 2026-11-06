@@ -104,14 +104,49 @@ pub enum Error {
         /// Response head, absent for build and transport errors.
         meta: Option<Box<ResponseMeta>>,
     },
-    /// The supplied URL is malformed, foreign, or outside the Pokémon endpoint.
-    InvalidUrl,
+    /// The supplied URL was refused before any request, for the given reason. Neither `Display`
+    /// nor `Debug` shows the URL.
+    InvalidUrl(UrlRejection),
 }
+
+/// Why [`Client::follow`] or [`Client::pokemon_url`] refused a URL. The checks run in this
+/// order and the first that fails is reported.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum UrlRejection {
+    /// Not an absolute URL.
+    Unparseable,
+    /// Scheme, host or port differ from the configured base.
+    ForeignOrigin,
+    /// It carries a user name or password.
+    Userinfo,
+    /// It has a fragment (`#...`).
+    Fragment,
+    /// The path is not the Pokémon list (for `follow`), or not one Pokémon of it (for
+    /// `pokemon_url`: one segment after the list path, without `/` or `%` in the name).
+    WrongPath,
+    /// A Pokémon detail URL with a query string.
+    Query,
+}
+
+impl fmt::Display for UrlRejection {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(match self {
+            Self::Unparseable => "not an absolute URL",
+            Self::ForeignOrigin => "foreign origin",
+            Self::Userinfo => "user info in the URL",
+            Self::Fragment => "fragment in the URL",
+            Self::WrongPath => "path outside the Pokémon collection",
+            Self::Query => "query on a Pokémon detail URL",
+        })
+    }
+}
+
 impl fmt::Display for Error {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Concord { error, .. } => error.fmt(f),
-            Self::InvalidUrl => f.write_str("invalid or out-of-scope PokéAPI URL"),
+            Self::InvalidUrl(reason) => write!(f, "invalid or out-of-scope PokéAPI URL: {reason}"),
         }
     }
 }
@@ -191,7 +226,19 @@ impl Client {
 }
 
 fn checked_url(list: &Url, value: &str, detail: bool) -> Result<Url, Error> {
-    let url = Url::parse(value).map_err(|_| Error::InvalidUrl)?;
+    let reject = |reason| Err(Error::InvalidUrl(reason));
+    let Ok(url) = Url::parse(value) else {
+        return reject(UrlRejection::Unparseable);
+    };
+    if url.origin() != list.origin() {
+        return reject(UrlRejection::ForeignOrigin);
+    }
+    if !url.username().is_empty() || url.password().is_some() {
+        return reject(UrlRejection::Userinfo);
+    }
+    if url.fragment().is_some() {
+        return reject(UrlRejection::Fragment);
+    }
     let list_path = list.path().trim_end_matches('/');
     let path = url.path();
     let valid_path = if detail {
@@ -201,17 +248,14 @@ fn checked_url(list: &Url, value: &str, detail: bool) -> Result<Url, Error> {
                 let name = s.trim_end_matches('/');
                 !name.is_empty() && !name.contains('/') && !name.contains('%')
             })
-            && url.query().is_none()
     } else {
         path.trim_end_matches('/') == list_path
     };
-    if url.origin() != list.origin()
-        || !url.username().is_empty()
-        || url.password().is_some()
-        || url.fragment().is_some()
-        || !valid_path
-    {
-        return Err(Error::InvalidUrl);
+    if !valid_path {
+        return reject(UrlRejection::WrongPath);
+    }
+    if detail && url.query().is_some() {
+        return reject(UrlRejection::Query);
     }
     Ok(url)
 }

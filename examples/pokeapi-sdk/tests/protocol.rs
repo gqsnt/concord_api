@@ -1,7 +1,7 @@
 //! Offline HTTP contract tests.
 use concord::reqwest;
 use concord_example_testserver::{Recorded, Reply, TestServer};
-use concord_sdk_pokeapi::{Client, Error};
+use concord_sdk_pokeapi::{Client, Error, UrlRejection};
 
 fn client(server: &TestServer) -> Client {
     Client::new(reqwest::Client::builder().no_proxy().build().unwrap())
@@ -115,24 +115,50 @@ async fn links_must_be_absolute_same_origin_and_in_scope() {
     let server = TestServer::start(|_: &Recorded| json(200, "{}")).await;
     let api = client(&server);
     let base = format!("http://{}", server.addr());
-    for bad in [
-        "/api/v2/pokemon/?offset=1".to_string(),
-        "http://example.invalid/api/v2/pokemon/".to_string(),
-        format!("{base}/api/v2/ability/"),
-        format!("{base}/api/v2/pokemon/?offset=1#frag"),
+    for (bad, reason) in [
+        (
+            "/api/v2/pokemon/?offset=1".to_string(),
+            UrlRejection::Unparseable,
+        ),
+        (
+            "http://example.invalid/api/v2/pokemon/".to_string(),
+            UrlRejection::ForeignOrigin,
+        ),
+        (format!("{base}/api/v2/ability/"), UrlRejection::WrongPath),
+        (
+            format!("{base}/api/v2/pokemon/?offset=1#frag"),
+            UrlRejection::Fragment,
+        ),
+        (
+            format!("http://user:secret@{}/api/v2/pokemon/", server.addr()),
+            UrlRejection::Userinfo,
+        ),
     ] {
+        let error = api.follow(&bad).await.unwrap_err();
         assert!(
-            matches!(api.follow(&bad).await, Err(Error::InvalidUrl)),
+            matches!(error, Error::InvalidUrl(r) if r == reason),
             "{bad}"
         );
+        for shown in [error.to_string(), format!("{error:?}")] {
+            assert!(
+                !shown.contains("/api/v2/") && !shown.contains("secret"),
+                "{shown}"
+            );
+        }
     }
-    for bad in [
-        format!("{base}/api/v2/pokemon/"),
-        format!("{base}/api/v2/pokemon/35/encounters"),
-        format!("{base}/api/v2/pokemon/35/?x=1"),
+    for (bad, reason) in [
+        (format!("{base}/api/v2/pokemon/"), UrlRejection::WrongPath),
+        (
+            format!("{base}/api/v2/pokemon/35/encounters"),
+            UrlRejection::WrongPath,
+        ),
+        (
+            format!("{base}/api/v2/pokemon/35/?x=1"),
+            UrlRejection::Query,
+        ),
     ] {
         assert!(
-            matches!(api.pokemon_url(&bad).await, Err(Error::InvalidUrl)),
+            matches!(api.pokemon_url(&bad).await, Err(Error::InvalidUrl(r)) if r == reason),
             "{bad}"
         );
     }

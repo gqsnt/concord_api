@@ -58,9 +58,11 @@ store partial results, retry or stop. `Error::Concord` retains the original
 Concord error, and `meta` contains status, headers and final URL when a head was
 received, including on body/decode errors. A status or metadata error's unread
 response can be recovered via `error.into_response()`; transport and build
-failures have no response metadata. `Error::InvalidUrl` means no request was
-sent for that URL. The provider documentation does not specify a standard
-error body; this SDK does not claim one.
+failures have no response metadata. `Error::InvalidUrl(reason)` means no request
+was sent for that URL; the `UrlRejection` reason says which check failed
+(unparseable, foreign origin, user info, fragment, wrong path, or a query on a
+detail URL), and neither `Display` nor `Debug` shows the URL. The provider
+documentation does not specify a standard error body; this SDK does not claim one.
 
 `follow` and `pokemon_url` require absolute same-origin URLs within the configured
 Pokémon collection, and reject fragments and userinfo. The HTTP transport's
