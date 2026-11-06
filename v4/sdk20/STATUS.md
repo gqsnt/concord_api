@@ -116,7 +116,7 @@ commit, so no baseline intervention was needed.
 | SDK15 | ClickHouse | medium | 4 | Opus subagent (`66f3cf00`) | `gpt-6.1-sol` xhigh, 17 tests, unassisted (`699239c2`) | `gpt-6.1-terra` xhigh (`2b584d4f`) | WAVE_4_ROLES_DONE, merged `0e0bc3df` |
 | SDK16 | Snowflake | large | 4 | `gpt-6-astra` xhigh (`04f32a9a`; first delivery enabled reqwest `gzip`, which broke a Concord test under workspace feature unification; reworked by the same session to SDK-local flate2) | Opus subagent, 18 tests, unassisted (`19ef84e3`) | `gpt-6.1-sol` xhigh (`1a78be4f`) | WAVE_4_ROLES_DONE, merged `0347edfc` |
 | SDK17 | World Bank | small | 5 | `gpt-6.1-terra` xhigh (`9b7f4e56`) | `gpt-6-astra` xhigh, 25 tests, unassisted (`3bb3d67c`) | Opus subagent (`9a3da827`) | WAVE_5_ROLES_DONE (first pass), merged |
-| SDK18 | Notion | medium | 5 | `gpt-6.1-sol` xhigh (session `01a1afdc-52e6-72a3…`, running) | `gpt-6.1-terra` | `gpt-6-astra` | WAVE_5_AUTHORING |
+| SDK18 | Notion | medium | 5 | `gpt-6.1-sol` xhigh (`7e13ff1a`) | `gpt-6.1-terra` xhigh, 6 tests; first intervention: read the test server's source (`e76187ff`) | `gpt-6-astra` xhigh (`b8d3c230`) | WAVE_5_ROLES_DONE (first pass), merged |
 | SDK19 | Microsoft Graph | large | 5 | `gpt-6-astra` xhigh (session `01a1afdc-52e8-7982…`, running) | Opus | `gpt-6.1-sol` | WAVE_5_AUTHORING |
 | SDK20 | Docker Distribution Registry | large | 5 | Opus subagent (running) | `gpt-6.1-sol` | `gpt-6.1-terra` | WAVE_5_AUTHORING |
 
