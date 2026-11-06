@@ -343,6 +343,10 @@ impl Incoming {
     /// stream) that reads the body without leaving Concord's boundary. A failure is
     /// [`ErrorKind::Transport`](crate::ErrorKind::Transport) naming the operation, its URL removed.
     ///
+    /// A failure is not remembered: after an `Err`, a further call may return `Ok(None)`. A
+    /// parser keeps the error (and stops) instead of reading on, so a broken body never looks
+    /// complete.
+    ///
     /// # Errors
     ///
     /// `Transport` if reading fails.
