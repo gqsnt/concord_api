@@ -145,6 +145,10 @@ Requested runner: {maintainer}. You did not write this SDK.
 
 {perturbation}
 
+The cohort's common contract still applies: preserve opaque cursors, tokens and server-returned
+links exactly as returned (follow them, never rewrite or construct them), keep provider errors
+typed, never turn a cap or failure into a silent end, and keep live calls and secrets out.
+
 Do it in `examples/{slug}-sdk/` (source, README, tests) preserving the existing contract: the
 existing workflows and first-use tests must keep passing unless the real provider contract
 requires caller changes (then show and justify them). Add tests that exercise the change on the
