@@ -17,14 +17,17 @@ They use only the public surface: `Prepared::{send, send_raw, into_parts}`, `Dec
 [`errors::rename_item`](../examples/native/src/errors.rs) — the API documents an error body
 (RFC 9457 problem details, a JSON error object).
 
-- **How:** `send()`; on error, return any error whose `status()` is `None` unchanged (not an
+- **Bounded, with the head:** `prepare()?.receive().await?`; for a non-2xx, read the document with
+  `received.bytes_limited(n)` (`ErrorKind::Limit` beyond `n`) and decode it as below; a send
+  policy (`send Policy;`) does this once for a whole client.
+- **How (unbounded):** `send()`; on error, return any error whose `status()` is `None` unchanged (not an
   error document), then `into_response()?` returns the unread response of the status error;
   decode its bytes with
   `<Json as Decode<Problem>>::decode_body((), bytes)`. That is a body-only decode: it checks no
   response head, so the error document's `Content-Type` is not judged. The status always stays
   with the document or with the reason it could not be read.
-- **Assumes:** the error body fits in memory. Against an untrusted server, read it with
-  `response.chunk()` up to your own limit. A native read error is stored with `without_url()`.
+- **Assumes:** the error body fits in memory; against an untrusted server, use the bounded route
+  above. A native read error is stored with `without_url()`.
   `into_response()` alone also returns the response of a `Metadata` error (a 2xx whose head the
   format refused); the recipe's `status()` guard keeps such a 2xx from being read as an error
   document.

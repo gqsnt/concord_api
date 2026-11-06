@@ -198,6 +198,16 @@ query, fragment, `%` escapes or `xn--` labels. Callers replace it at runtime wit
 `with_base_url(..)`, which returns a `Result` and accepts more than that static subset: any
 `http`/`https` URL with a host and no user information, query, fragment or port 0, including IDN
 hosts and a percent-escaped path, whose escapes are kept as written (`https://example.com/a%2Fb`).
+`with_base_url` replaces the **whole** base, path included: a version prefix that must survive
+(`/v1` for a test server at `http://127.0.0.1:port`) belongs in the client's `path "v1";`, not in
+`base`.
+
+**Credentials and redirects.** reqwest drops `Authorization`, `Cookie` and
+`Proxy-Authorization` when it follows a redirect to another host, but **not** a custom credential
+header (`PRIVATE-TOKEN`, `X-Api-Key`). An SDK with such a header documents (or builds) a client
+whose redirect policy refuses a cross-origin hop — `reqwest::redirect::Policy::custom` comparing
+`attempt.url().origin()` with `attempt.previous()[0].origin()` — or disables redirects. The
+application owns its `reqwest::Client`; Concord never changes it.
 
 **Paths.** Each owner's `path` template is relative (no leading `/`) and is appended after the base
 path, root first. Literal text is sent verbatim; each `{value}` is formatted with `Display` and

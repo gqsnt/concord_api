@@ -236,19 +236,19 @@ impl<T> Received<T> {
     /// Both name the operation.
     pub async fn bytes_limited(self, limit: usize) -> Result<bytes::Bytes, Error> {
         let operation = self.decoder.operation();
-        let mut response = self.response;
-        let mut body = bytes::BytesMut::new();
-        while let Some(chunk) = response
-            .chunk()
-            .await
-            .map_err(|e| Error::from_transport(operation, e))?
-        {
-            if body.len() + chunk.len() > limit {
-                return Err(Error::limit(operation, limit as u64));
-            }
-            body.extend_from_slice(&chunk);
-        }
-        Ok(body.freeze())
+        crate::prepared::read_limited(self.response, limit, operation).await
+    }
+
+    /// [`decode`](Self::decode) with the finite body read bounded: a `-> T` output whose body is
+    /// longer than `limit` bytes is [`ErrorKind::Limit`](crate::ErrorKind::Limit) and is not
+    /// decoded (nothing more is read). Status and head checks are unchanged. A drain, a stream
+    /// reader (which has its own limits) or an `Incoming` body is not affected.
+    ///
+    /// # Errors
+    ///
+    /// As [`decode`](Self::decode), and `Limit`.
+    pub async fn decode_limited(self, limit: usize) -> Result<T, Error> {
+        self.decoder.decode_within(self.response, Some(limit)).await
     }
 
     /// The native response, unread, **leaving Concord's boundary**: its `Debug` and `url()` show

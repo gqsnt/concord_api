@@ -433,3 +433,55 @@ async fn following_a_server_url_keeps_the_endpoint_and_its_origin() {
     }
     assert_eq!(server.requests().len(), 1);
 }
+
+#[tokio::test]
+async fn a_finite_output_can_be_decoded_with_a_byte_limit() {
+    let server = TestServer::start(|r| {
+        let body = if r.target.contains("big") {
+            format!("{{\"id\":1,\"amount\":1,\"pad\":\"{}\"}}", "x".repeat(200))
+        } else {
+            "{\"id\":1,\"amount\":1}".to_owned()
+        };
+        Reply::json(200, body)
+    })
+    .await;
+    let api = api(&server);
+    let small = api
+        .summary("small")
+        .prepare()
+        .unwrap()
+        .receive()
+        .await
+        .unwrap();
+    assert_eq!(
+        small.decode_limited(19).await.unwrap(),
+        Row { id: 1, amount: 1 },
+        "exactly at the limit"
+    );
+    let big = api
+        .summary("big")
+        .prepare()
+        .unwrap()
+        .receive()
+        .await
+        .unwrap();
+    let error = big.decode_limited(64).await.unwrap_err();
+    assert_eq!(error.kind(), ErrorKind::Limit);
+    assert_eq!(error.endpoint(), Some("Reports.summary"));
+    let status = TestServer::start(|_| Reply::json(500, "{}")).await;
+    let error = self::api(&status)
+        .summary("x")
+        .prepare()
+        .unwrap()
+        .receive()
+        .await
+        .unwrap()
+        .decode_limited(1)
+        .await
+        .unwrap_err();
+    assert_eq!(
+        error.kind(),
+        ErrorKind::Status,
+        "the status check comes first"
+    );
+}

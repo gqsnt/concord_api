@@ -140,6 +140,26 @@ impl<T> Prepared<T> {
     }
 }
 
+/// Reads a body, keeping at most `limit` bytes: `ErrorKind::Limit` beyond, `Transport` on failure.
+pub(crate) async fn read_limited(
+    mut response: reqwest::Response,
+    limit: usize,
+    operation: Option<Operation>,
+) -> Result<Bytes, Error> {
+    let mut body = bytes::BytesMut::new();
+    while let Some(chunk) = response
+        .chunk()
+        .await
+        .map_err(|e| Error::from_transport(operation, e))?
+    {
+        if body.len() + chunk.len() > limit {
+            return Err(Error::limit(operation, limit as u64));
+        }
+        body.extend_from_slice(&chunk);
+    }
+    Ok(body.freeze())
+}
+
 /// A generated endpoint request, seen generically: every endpoint type `api!` generates implements
 /// `Endpoint<T>` for its declared output `T` (the decoded `T` of `-> T`, `()` without `->`, the
 /// reader of `-> stream T`, `Incoming` for `-> stream`), so an SDK can write **one** adapter for all
@@ -466,6 +486,16 @@ impl<T> Decoder<T> {
     /// unread), [`Transport`](crate::ErrorKind::Transport) if reading the body fails,
     /// [`Decode`](crate::ErrorKind::Decode) if it does not decode.
     pub async fn decode(self, response: reqwest::Response) -> Result<T, Error> {
+        self.decode_within(response, None).await
+    }
+
+    /// [`decode`](Self::decode) with a finite body read bounded by `limit` (`-> T` outputs; a drain,
+    /// a stream or an `Incoming` is unaffected).
+    pub(crate) async fn decode_within(
+        self,
+        response: reqwest::Response,
+        limit: Option<usize>,
+    ) -> Result<T, Error> {
         let operation = self.operation;
         if !response.status().is_success() {
             return Err(Error::from_status(operation, response));
@@ -488,10 +518,13 @@ impl<T> Decoder<T> {
                     Ok(step) => step,
                     Err(e) => return Err(Error::from_metadata(operation, e, response)),
                 };
-                let body = response
-                    .bytes()
-                    .await
-                    .map_err(|e| Error::from_transport(operation, e))?;
+                let body = match limit {
+                    None => response
+                        .bytes()
+                        .await
+                        .map_err(|e| Error::from_transport(operation, e))?,
+                    Some(limit) => read_limited(response, limit, operation).await?,
+                };
                 step(body).map_err(|e| Error::from_decode(operation, e))
             }
             Kind::Open(head) => {

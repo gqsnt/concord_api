@@ -40,7 +40,8 @@ Not released: the version is unchanged (4.2.0) and no release has been decided. 
   one the server returned (`Link: rel="next"`, a `next` field), keeping the endpoint's headers,
   handling and identity; another origin is a `Build` error, and `Debug` withholds the URL.
 - **Bounded body reads.** `Received::bytes_limited(n)` reads a body (any status) up to `n` bytes,
-  `ErrorKind::Limit` beyond: for provider error documents.
+  `ErrorKind::Limit` beyond: for provider error documents. `Received::decode_limited(n)` decodes a
+  finite output with the same bound.
 
 ### Changed
 
