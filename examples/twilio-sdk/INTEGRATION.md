@@ -169,7 +169,8 @@ After:
 `read_error` now takes the `Received` instead of `received.into_response()`, so the error body
 is read inside Concord's boundary. The content-type and context checks before reading, the
 64 KiB limit (exactly 65,536 bytes accepted, 65,537 `TooLarge`) and the typed reasons are
-unchanged; `error.rs` is 6 lines shorter and no longer imports `BytesMut` or `ResponseHead`.
+unchanged; `error.rs` is 7 lines shorter (+12 −19) and no longer imports `BytesMut` or
+`ResponseHead`.
 
 ## Consumer findings (`FIRST_USE.md`)
 
