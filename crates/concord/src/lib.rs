@@ -106,6 +106,7 @@
 //! | [`Error`], [`ErrorKind`] | the one error type: `kind`, `endpoint`, `status`, `response`, `into_response`, `codec_error`, `transport` |
 //! | [`Encode<T>`](Encode), [`Decode<T>`](Decode) | the open format traits, implemented by `Json` (feature `json`), `Text`, `Binary`, `IgnoreContentType<F>` (feature `extras`), `Form` (feature `form`) and by your own types; a statement names a format by its type path (`format Json;`) |
 //! | [`ResponseHead`], [`ContentTypeField`] | what a [`Decode`] implementation reads before the body: status, version, header fields |
+//! | [`ResponseMeta`] | an owned copy of a response head with its [`Operation`], kept after the body is consumed |
 //! | [`CodecError`] | a format's failure: a static label, numeric positions, an unredacted source |
 //! | [`IntoValue<T>`](IntoValue) | the closed set of conversions accepted by arguments and setters |
 //! | [`ToHeaderValue`] | the closed set of header values: native `HeaderValue`, text, integers, `bool` (another type is sent through a template) |
