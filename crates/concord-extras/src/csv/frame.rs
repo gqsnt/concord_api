@@ -101,10 +101,12 @@ enum Scan {
 }
 
 /// `csv-core` 0.1.13's DFA, mirrored over the bytes the parser consumed since the last record it
-/// completed (the parser's state is not public; a completed record leaves it at the start of a
-/// record, so only the input of a record in progress is scanned). At the end of input that DFA
-/// completes a record in every state but the start of a record, so this tells three such records
-/// apart:
+/// completed (the parser's state is not public). A completed record leaves the parser at the
+/// start of a record, so release builds do not scan its bytes (debug builds do, and check that).
+/// In a chunk that completes no record, skipped lines (blank lines, comment lines) are passed
+/// over by a word-at-a-time search for the byte that ends them ([`find`]): only the bytes of a
+/// record in progress are stepped through one by one. At the end of input that DFA completes a
+/// record in every state but the start of a record, so this tells three such records apart:
 ///
 /// - inside a comment line without a terminator: the DFA's record of one empty field (its NFA
 ///   yields nothing), which is not a record;
@@ -124,6 +126,9 @@ struct Scanner {
     delimiter: u8,
     terminators: [u8; 2],
     comment: Option<u8>,
+    /// The bytes stepped through one by one (the work the skipped lines must not cost).
+    #[cfg(test)]
+    stepped: usize,
 }
 
 impl Scanner {
@@ -137,6 +142,8 @@ impl Scanner {
             delimiter: config.delimiter(),
             terminators: config.read_terminators(),
             comment: config.comment(),
+            #[cfg(test)]
+            stepped: 0,
         }
     }
 
@@ -155,23 +162,102 @@ impl Scanner {
         }
     }
 
-    fn consume(&mut self, bytes: &[u8]) {
-        for &b in bytes {
+    /// Follows `bytes`: skipped lines (blank lines, comment lines) are passed over by a search
+    /// for the byte that ends them, and only the bytes of a record are stepped through one by
+    /// one. The state carries over to the next call, so a span may end in a later chunk.
+    fn consume(&mut self, mut bytes: &[u8]) {
+        while !bytes.is_empty() {
+            bytes = match self.state {
+                Scan::Record => self.skip_blank_lines(bytes),
+                Scan::Comment => self.skip_comment(bytes),
+                _ => self.step_record(bytes),
+            };
+        }
+    }
+
+    /// At the start of a record: passes over terminators, then reads the byte that starts a
+    /// comment line or a record. Returns the bytes after it.
+    fn skip_blank_lines<'a>(&mut self, bytes: &'a [u8]) -> &'a [u8] {
+        let Some(start) = find(bytes, self.terminators, false) else {
+            return &[];
+        };
+        let b = bytes[start];
+        self.state = if self.comment == Some(b) {
+            Scan::Comment
+        } else if self.quote == Some(b) {
+            Scan::Quoted
+        } else {
+            self.unquoted(b)
+        };
+        &bytes[start + 1..]
+    }
+
+    /// Inside a comment line: passes over it to its line feed. Returns the bytes after it.
+    fn skip_comment<'a>(&mut self, bytes: &'a [u8]) -> &'a [u8] {
+        let Some(end) = find(bytes, [b'\n'; 2], true) else {
+            return &[];
+        };
+        self.state = Scan::Record;
+        &bytes[end + 1..]
+    }
+
+    /// Inside a record: one byte at a time until the record ends (the start of the next one) or
+    /// the bytes do. Returns the bytes after the record.
+    fn step_record<'a>(&mut self, bytes: &'a [u8]) -> &'a [u8] {
+        for (i, &b) in bytes.iter().enumerate() {
+            #[cfg(test)]
+            {
+                self.stepped += 1;
+            }
             self.state = match self.state {
-                Scan::Record if self.is_terminator(b) => Scan::Record,
-                Scan::Record if self.comment == Some(b) => Scan::Comment,
-                Scan::Record | Scan::Field if self.quote == Some(b) => Scan::Quoted,
-                Scan::Record | Scan::Field | Scan::Unquoted => self.unquoted(b),
-                Scan::Comment if b == b'\n' => Scan::Record,
-                Scan::Comment => Scan::Comment,
+                Scan::Field if self.quote == Some(b) => Scan::Quoted,
+                Scan::Field | Scan::Unquoted => self.unquoted(b),
                 Scan::Quoted if self.quote == Some(b) => Scan::Closed,
                 Scan::Quoted if self.escape == Some(b) => Scan::Escaped,
                 Scan::Quoted | Scan::Escaped => Scan::Quoted,
                 Scan::Closed if self.double_quote && self.quote == Some(b) => Scan::Quoted,
                 Scan::Closed => self.unquoted(b),
+                Scan::Record | Scan::Comment => unreachable!("not inside a record"),
             };
+            if self.state == Scan::Record {
+                return &bytes[i + 1..];
+            }
         }
+        &[]
     }
+}
+
+/// `0x7f` and `0x80` in every byte of a word.
+const LOW: u64 = u64::from_ne_bytes([0x7f; 8]);
+const HIGH: u64 = u64::from_ne_bytes([0x80; 8]);
+
+/// The high bit of every byte of `x` that is not zero, exactly: no carry crosses a byte.
+fn nonzero_bytes(x: u64) -> u64 {
+    (((x & LOW) + LOW) | x) & HIGH
+}
+
+/// The index of the first byte of `bytes` that is (`member`) or is not one of `set`: eight bytes
+/// at a time while none of them can be it, then byte by byte.
+fn find(bytes: &[u8], set: [u8; 2], member: bool) -> Option<usize> {
+    let (a, b) = (
+        u64::from_ne_bytes([set[0]; 8]),
+        u64::from_ne_bytes([set[1]; 8]),
+    );
+    let none = if member { 0 } else { HIGH };
+    let mut start = 0;
+    for word in bytes.as_chunks::<8>().0 {
+        let x = u64::from_ne_bytes(*word);
+        // The high bit of every byte that is one of `set`.
+        let in_set = !(nonzero_bytes(x ^ a) & nonzero_bytes(x ^ b)) & HIGH;
+        if in_set != none {
+            break;
+        }
+        start += 8;
+    }
+    bytes[start..]
+        .iter()
+        .position(|c| set.contains(c) == member)
+        .map(|i| start + i)
 }
 
 pub(crate) struct Table {
@@ -931,5 +1017,130 @@ mod tests {
         let mut t = table(options);
         assert_eq!(run(&mut t, &body), Ok(vec![2]));
         assert!(t.allocated() <= MIN_FIELD_BYTES);
+    }
+
+    #[test]
+    fn the_word_search_finds_what_a_byte_search_finds() {
+        let alphabet = [0x00, b'\n', b'\r', b';', 0x7f, 0x80, 0x8a, 0xff, b'a', b'#'];
+        let sets = [
+            *b"\r\n",
+            *b"\n\n",
+            *b";;",
+            [0x80, 0x80],
+            [0x00, 0xff],
+            [0x7f, 0x8a],
+        ];
+        let mut seed = 0x9e37_79b9_7f4a_7c15u64;
+        let mut next = || {
+            seed = seed.wrapping_mul(6_364_136_223_846_793_005).wrapping_add(1);
+            (seed >> 33) as usize
+        };
+        for set in sets {
+            for member in [true, false] {
+                let naive = |bytes: &[u8]| bytes.iter().position(|c| set.contains(c) == member);
+                // Random contents of every length up to five words.
+                for len in 0..=40 {
+                    for _ in 0..200 {
+                        let bytes: Vec<u8> = (0..len)
+                            .map(|_| alphabet[next() % alphabet.len()])
+                            .collect();
+                        assert_eq!(
+                            find(&bytes, set, member),
+                            naive(&bytes),
+                            "{set:?} {bytes:?}"
+                        );
+                    }
+                }
+                // One hit at every position of a run that has none.
+                let filler = if member {
+                    *alphabet.iter().find(|c| !set.contains(c)).unwrap()
+                } else {
+                    set[0]
+                };
+                let hit = *alphabet.iter().find(|c| set.contains(c) == member).unwrap();
+                for len in 0..=40 {
+                    let mut bytes = vec![filler; len];
+                    assert_eq!(find(&bytes, set, member), None, "{set:?} {len}");
+                    for at in 0..len {
+                        bytes[at] = hit;
+                        assert_eq!(find(&bytes, set, member), Some(at), "{set:?} {len} {at}");
+                        bytes[at] = filler;
+                    }
+                }
+            }
+        }
+    }
+
+    /// Long runs of blank lines and comment lines (with quotes, delimiters, a lone `\r` and bytes
+    /// above `0x7f` in them), split anywhere, are passed over by a search: the scanner steps
+    /// through no more bytes than the records have, in every build (debug builds also scan
+    /// completed records).
+    #[test]
+    fn skipped_lines_are_searched_not_stepped_through() {
+        let records: [&[u8]; 3] = [b"a,b\n", b"\"c\r\nd\",e\r\n", b"f,\"g\""];
+        let blank = b"\r\n\n\r".repeat(25_000);
+        let comment =
+            b"# a \"comment\", with a quote\r, a delimiter and \xc4\x8a\x8d\n".repeat(2_000);
+        let mut body = Vec::new();
+        for record in records {
+            body.extend_from_slice(&blank);
+            body.extend_from_slice(&comment);
+            body.extend_from_slice(record);
+        }
+        let record_bytes: usize = records.iter().map(|r| r.len()).sum();
+        let mut tail = body.clone();
+        tail.extend_from_slice(b"\n");
+        tail.extend_from_slice(&blank);
+        tail.extend_from_slice(&comment);
+        let comments = || CsvOptions::new(HeaderMode::Absent, b',').comment(Some(b'#'));
+        let cases = [
+            (comments(), &body, vec![2, 2, 2]),
+            (comments(), &tail, vec![2, 2, 2]),
+            (
+                CsvOptions::new(HeaderMode::Present, b',').comment(Some(b'#')),
+                &tail,
+                vec![2, 2],
+            ),
+        ];
+        for (options, input, expected) in cases {
+            for chunk in [1, 7, 4096, 16 * 1024, input.len()] {
+                let mut t = table(options.clone());
+                let mut out = Vec::new();
+                let mut parts = input.chunks(chunk).chain(std::iter::repeat(&b""[..]));
+                let mut part = parts.next().unwrap();
+                loop {
+                    let (n, step) = t.step(part).unwrap();
+                    part = &part[n..];
+                    match step {
+                        Step::Record(r) => out.push(r.len()),
+                        Step::End => break,
+                        Step::Progress => {}
+                    }
+                    if part.is_empty() {
+                        part = parts.next().unwrap();
+                    }
+                }
+                assert_eq!(out, expected, "chunk {chunk}");
+                assert!(
+                    t.scanner.stepped <= record_bytes,
+                    "chunk {chunk}: {} bytes stepped through, {record_bytes} in records, {} in all",
+                    t.scanner.stepped,
+                    input.len()
+                );
+            }
+        }
+        // Without a comment byte, only blank lines are skipped.
+        let mut t = table(CsvOptions::new(HeaderMode::Absent, b','));
+        let mut input = blank.clone();
+        input.extend_from_slice(b"a,b");
+        for mut part in input.chunks(5) {
+            while !part.is_empty() {
+                let (n, step) = t.step(part).unwrap();
+                assert!(matches!(step, Step::Progress));
+                part = &part[n..];
+            }
+        }
+        // `,b` of the record in progress (its first byte ends the search).
+        assert_eq!(t.scanner.stepped, 2);
     }
 }
