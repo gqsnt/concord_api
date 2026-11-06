@@ -141,6 +141,44 @@ pub trait Endpoint<T>: Sized {
     fn operation() -> Operation;
 }
 
+/// A client's **send policy**: what every generated `send()` returns, for a client declared with
+/// `send P;`. An SDK whose callers should receive its own error type and response metadata (or
+/// whose requests must be signed after they are built) implements it once, on a type of its own,
+/// and names that type in the declaration; each endpoint's `send()` then calls
+/// [`send`](Self::send) with the endpoint. No wrapper method per operation, no trait to import,
+/// one terminal method.
+///
+/// ```ignore
+/// pub struct Policy;
+/// impl<T: Send> concord::SendWith<T> for Policy {
+///     type Output = Result<WithMeta<T>, SdkError>;
+///     async fn send<E: concord::Endpoint<T> + Send>(endpoint: E) -> Self::Output {
+///         let received = endpoint.prepare()?.receive().await?;
+///         let meta = Meta::capture(&received.head());
+///         Ok(WithMeta { value: received.decode().await?, meta })
+///     }
+/// }
+/// // declaration: `pub client Api { base "…"; send Policy; … }`
+/// // caller: `api.items().get(7).send().await?` returns `Result<WithMeta<Item>, SdkError>`
+/// ```
+///
+/// Without `send P;` the generated `send()` is `prepare()?.send()` (Concord's `Error`). `prepare()`
+/// is unchanged either way, for callers that need the native request.
+#[diagnostic::on_unimplemented(
+    message = "the send policy `{Self}` does not send a `{T}` output",
+    label = "named by the client's `send` statement; it needs `{Self}: SendWith<{T}>`",
+    note = "a send policy implements `concord::SendWith<T>` for every output `T` its endpoints declare (usually generically: `impl<T: Send> SendWith<T> for Policy`)"
+)]
+pub trait SendWith<T> {
+    /// What `send()` returns.
+    type Output;
+
+    /// Sends the endpoint's request according to the policy.
+    fn send<E>(endpoint: E) -> impl std::future::Future<Output = Self::Output> + Send
+    where
+        E: Endpoint<T> + Send;
+}
+
 impl<T> fmt::Debug for Prepared<T> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let meta = self.decoder.operation.and_then(|op| op.meta());

@@ -214,7 +214,8 @@
 pub use concord_core::{
     CODEC_ERROR_CONTEXT, CodecError, ContentTypeField, Decode, Decoder, Encode, EncodedBody,
     Endpoint, Error, ErrorKind, HeaderNameError, HeaderNameErrors, Incoming, Incremental,
-    IntoValue, Operation, Prepared, Received, Records, ResponseHead, ToHeaderValue, bytes, reqwest,
+    IntoValue, Operation, Prepared, Received, Records, ResponseHead, SendWith, ToHeaderValue,
+    bytes, reqwest,
 };
 #[cfg(feature = "form")]
 pub use concord_extras::Form;

@@ -1267,6 +1267,53 @@ A provider error document on a non-2xx response is read with `received.bytes_lim
 up to `n` bytes, `ErrorKind::Limit` beyond (nothing more is read); parse it with the format's
 `decode_body`. `<E as Endpoint<T>>::operation()` names the endpoint without building a request.
 
+### 5.13 The SDK's own `send()`: `send Policy;`
+
+When every call of a client should return the SDK's result — its error type with the provider's
+error document, response metadata — or every request must be signed after it is built, name a
+**send policy** on the client. A policy is a type of the SDK implementing `concord::SendWith<T>`
+(usually generically over `T`); each generated `send()` then calls it with the endpoint and returns
+its `Output`. Callers keep one terminal method and need no import; `prepare()` still returns the
+native request with Concord's `Error`.
+
+Excerpt of `checks/phase-a/tests/send_policy.rs`:
+
+```rust,ignore
+concord::api! {
+    pub client Store {
+        base "http://store.invalid";
+        send Policy;
+        format concord::Json;
+        GET item(id: u64) -> Item { path "items/{id}"; }
+        GET events() -> stream { path "events"; }
+    }
+}
+```
+
+A signing policy builds, signs and executes (the signature covers the final URL, so it is computed
+after `prepare()`):
+
+Excerpt of `checks/phase-a/tests/send_policy.rs`:
+
+```rust,ignore
+impl<T: Send> SendWith<T> for Signed {
+    type Output = Result<T, concord::Error>;
+
+    async fn send<E: Endpoint<T> + Send>(endpoint: E) -> Self::Output {
+        let (client, mut request, decoder) = endpoint.prepare()?.into_parts();
+        let digest = format!("sig({} {})", request.method(), request.url().path());
+        let mut value = HeaderValue::try_from(digest).expect("a header value");
+        value.set_sensitive(true);
+        request.headers_mut().insert("authorization", value);
+        decoder.execute(&client, request).await?.decode().await
+    }
+}
+```
+
+Use a send policy when the result type of the whole client changes; keep domain methods for an
+input rule of one operation (an identifier that must not be empty). Without `send`, generated
+`send()` returns `Result<T, concord::Error>` as before.
+
 ## 6. Wire formatting: `Display` and newtypes
 
 Every value written as text — path segment, subdomain label, query value, template hole — is

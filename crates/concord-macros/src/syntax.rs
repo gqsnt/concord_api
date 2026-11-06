@@ -26,6 +26,7 @@ mod kw {
     syn::custom_keyword!(response);
     syn::custom_keyword!(format);
     syn::custom_keyword!(stream);
+    syn::custom_keyword!(send);
 }
 
 /// HTTP methods accepted as endpoint keywords.
@@ -557,6 +558,8 @@ pub struct Stmts {
     pub request: Option<FormatDefault>,
     /// `response FORMAT;` on any owner.
     pub response: Option<FormatDefault>,
+    /// `send POLICY;` on the client: the type whose `SendWith<T>` every generated `send()` uses.
+    pub send: Option<(Type, Span)>,
 }
 
 pub struct Param {
@@ -732,6 +735,40 @@ fn parse_owner_body(
             let lit: LitStr = input.parse()?;
             input.parse::<Token![;]>()?;
             set_once(slot, lit, kw.span, "base")?;
+            continue;
+        }
+        if input.peek(kw::send) {
+            let kw: kw::send = input.parse()?;
+            if base.is_none() {
+                return Err(syn::Error::new(
+                    kw.span,
+                    "`send` is only allowed on the client: one send policy serves every endpoint",
+                ));
+            }
+            if let Some(first) = children.first() {
+                let first: &Owner = first;
+                return Err(syn::Error::new(
+                    kw.span,
+                    format!(
+                        "owner statements (`send`, `path`, `query`, ...) must precede child declarations (first child: `{}`)",
+                        first.name
+                    ),
+                ));
+            }
+            if input.peek(Token![;]) {
+                return Err(input.error(
+                    "expected a send policy: a path to a type implementing `concord::SendWith<T>` (`send crate::Policy;`)",
+                ));
+            }
+            let ty: Type = input.parse()?;
+            input.parse::<Token![;]>()?;
+            if stmts.send.is_some() {
+                return Err(syn::Error::new(
+                    kw.span,
+                    "`send` is set twice on the client",
+                ));
+            }
+            stmts.send = Some((ty, kw.span));
             continue;
         }
         if input.peek(kw::path)

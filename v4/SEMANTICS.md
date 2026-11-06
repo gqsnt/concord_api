@@ -256,6 +256,9 @@ Each key has one **slot**, positioned at the key's first appearance on the chain
   obtained response (a signed URL) with an optional static label (`Operation::label`), which
   errors and readers print; `Error::endpoint()` names declared endpoints only,
   `Error::operation()` either.
+- `send P;` on the client (once, before children) makes every generated `send()` return
+  `<P as SendWith<T>>::Output` by calling `P::send(endpoint)`; the policy owns execution, errors and
+  metadata (it usually calls `prepare()` and `receive()`). Without it, `send()` is `prepare()?.send()`.
 - Every generated endpoint type implements the public `Endpoint<T>` trait for its output `T` (the
   generated `prepare()`, `operation()` — the declared identity without building a request); it adds
   nothing to the generated namespace. `Received::bytes_limited(n)` reads the body of any status up

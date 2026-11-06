@@ -1423,6 +1423,31 @@ fn emit_owner(
                     /// `Decode` (see `ErrorKind`).
                 }
             };
+            let policy = match &model.owners[0].kind {
+                Kind::Client { send, .. } => send.as_ref(),
+                _ => None,
+            };
+            let send_fn = match policy {
+                None => quote! {
+                    #send_docs
+                    #[inline] pub async fn send(self) -> ::core::result::Result<#out, #k::Error> {
+                        self.prepare()?.send().await
+                    }
+                },
+                Some(policy) => {
+                    let policy_text = lit(&format!(
+                        " Sends the request with the client's send policy `{}` (`send {};` on the client): returns its `SendWith<T>::Output`. The policy decides execution, errors and metadata; `prepare` gives the native request.",
+                        type_text(policy),
+                        type_text(policy)
+                    ));
+                    quote! {
+                        #[doc = #policy_text]
+                        #[inline] pub fn send(self) -> impl ::core::future::Future<Output = <#policy as #k::SendWith<#out>>::Output> + ::core::marker::Send {
+                            <#policy as #k::SendWith<#out>>::send(self)
+                        }
+                    }
+                }
+            };
             let prepare = prepare_body(
                 k,
                 headers,
@@ -1461,10 +1486,7 @@ fn emit_owner(
                         #prepare
                     }
 
-                    #send_docs
-                    #[inline] pub async fn send(self) -> ::core::result::Result<#out, #k::Error> {
-                        self.prepare()?.send().await
-                    }
+                    #send_fn
                 }
 
                 impl #k::Endpoint<#out> for #ty {

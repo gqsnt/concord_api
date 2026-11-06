@@ -117,6 +117,8 @@ pub enum Kind {
     Client {
         vis: Visibility,
         base: LitStr,
+        /// `send P;`: the send policy of every generated `send()`.
+        send: Option<Type>,
     },
     Scope,
     Endpoint {
@@ -2069,7 +2071,11 @@ fn flatten(
                 if let Err(e) = validate_base(&base) {
                     errors.push(e);
                 }
-                Kind::Client { vis, base }
+                Kind::Client {
+                    vis,
+                    base,
+                    send: owner.stmts.send.take().map(|(ty, _)| ty),
+                }
             }
             None => {
                 errors.push(syn::Error::new(
@@ -2079,6 +2085,7 @@ fn flatten(
                 Kind::Client {
                     vis,
                     base: LitStr::new("http://invalid", span),
+                    send: None,
                 }
             }
         },

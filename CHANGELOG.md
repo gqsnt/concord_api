@@ -33,6 +33,9 @@ Not released: the version is unchanged (4.2.0) and no release has been decided. 
 - **One SDK adapter for all operations.** Every generated endpoint implements `concord::Endpoint<T>`
   (`prepare()`, `operation()`; the output `T` is a parameter), so an SDK writes one generic adapter (its own error and
   metadata) instead of a wrapper method per operation. `Prepared::operation()`.
+- **The SDK's own `send()`.** A client statement `send Policy;` makes every generated `send()`
+  return `<Policy as SendWith<T>>::Output`: an SDK's result type and error, metadata, or a signed
+  request, from one policy type (`concord::SendWith<T>`), without wrapper methods or imports.
 - **Bounded body reads.** `Received::bytes_limited(n)` reads a body (any status) up to `n` bytes,
   `ErrorKind::Limit` beyond: for provider error documents.
 
