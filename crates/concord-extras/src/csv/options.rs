@@ -534,11 +534,16 @@ impl Config {
         self.options.profile.comment
     }
 
-    /// Whether the reader ends a record (or a comment line) at `b`.
-    pub(crate) fn is_terminator(&self, b: u8) -> bool {
+    /// Whether the reader treats the quote byte specially.
+    pub(crate) fn quoting(&self) -> bool {
+        self.options.profile.quoting
+    }
+
+    /// The bytes that end a record for the reader: `\r` and `\n`, or the custom byte twice.
+    pub(crate) fn read_terminators(&self) -> [u8; 2] {
         match self.options.profile.read_terminator {
-            RecordTerminator::Standard => b == b'\r' || b == b'\n',
-            RecordTerminator::Byte(t) => b == t,
+            RecordTerminator::Standard => *b"\r\n",
+            RecordTerminator::Byte(t) => [t, t],
         }
     }
 

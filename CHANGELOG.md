@@ -77,6 +77,15 @@ Not released: the version is unchanged (4.2.0) and no release has been decided. 
 - The reader `open` methods take `impl Openable` instead of `reqwest::Response` (a native
   response still works unchanged).
 - `IgnoreContentType<F>` forwards `encode_body`, so a runtime media type of `F` is kept.
+- **CSV input that ends inside a quoted field is an error.** A body cut after an opening quote
+  (`…,"12.7` at the end of input) was a complete table: `csv-core` ends such a field silently,
+  so `Decode<Vec<T>>`/`Decode<RawTable>` returned the record and `CsvReader` ended with
+  `completion() == EndOfInput`. Both routes now fail with a terminal `Format` error, "the CSV
+  input ends inside a quoted field" (with the `record` number; none for the header), in every
+  dialect: doubled quotes, an escape byte, standard or custom terminators; quotes in comment lines
+  and with `quoting(false)` open nothing. A closed quoted field without a final terminator is
+  still a record. The same tracking corrects a final comment line containing `\r` (or the custom
+  terminator byte), which yielded a record of one empty field (wave 4, Open-Meteo F4).
 
 ## Unreleased — 4.4 extensions (candidate)
 

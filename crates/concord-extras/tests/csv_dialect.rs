@@ -302,10 +302,18 @@ async fn delimiters_quoted_separators_doubled_quotes_and_embedded_terminators() 
         Outcome::ok(None, &[&["a", "b\x1fc", ","]])
     );
     // `csv-core`'s permissive grammar (documented): a stray quote inside an unquoted field is
-    // data, and input that ends inside a quoted field yields that field.
+    // data. Input that ends inside a quoted field is a truncated record, not a record (before
+    // wave 4's Open-Meteo F4 it yielded that field; see `csv_quote_eof.rs`).
+    assert_eq!(
+        outcome(absent(b','), b"a\"b,\"closed\"").await,
+        Outcome::ok(None, &[&["a\"b", "closed"]])
+    );
     assert_eq!(
         outcome(absent(b','), b"a\"b,\"open").await,
-        Outcome::ok(None, &[&["a\"b", "open"]])
+        Outcome::ok(None, &[]).failing(
+            ReadErrorKind::Format,
+            "the CSV input ends inside a quoted field"
+        )
     );
     // CR, LF and CRLF terminators mixed; blank lines skipped; no final terminator.
     assert_eq!(
