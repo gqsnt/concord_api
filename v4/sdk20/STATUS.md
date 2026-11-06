@@ -66,7 +66,7 @@ commit, so no baseline intervention was needed.
 | SDK07 | Slack Web API | medium | 2 | `gpt-6.1-sol` xhigh (`ae8ddfb1`) | `gpt-6.1-terra` xhigh, 6 tests, unassisted (`31cad62d`) | `gpt-6-astra` xhigh (`c844a878`) | WAVE_2_DONE, merged |
 | SDK08 | OpenAI | large | 2 | `gpt-6.1-terra` xhigh (`8a659204`) | `gpt-6-astra` xhigh, 18 tests, unassisted (`08f97864`) | Opus subagent (`51d0eee3`) | WAVE_2_DONE, merged |
 | SDK09 | ntfy | small | 3 | Opus subagent (running) | `gpt-6.1-sol` | `gpt-6.1-terra` | WAVE_3_AUTHORING |
-| SDK10 | Linear | medium | 3 | `gpt-6.1-terra` xhigh (session `01a1af1b-4f4c…`, running) | `gpt-6-astra` | Opus | WAVE_3_AUTHORING |
+| SDK10 | Linear | medium | 3 | `gpt-6.1-terra` xhigh (`ed548bd5`) | `gpt-6-astra` xhigh, 18 tests, unassisted (`3ae13c1c`) | Opus subagent (`9466d1eb`) | WAVE_3_ROLES_DONE (branch `sdk20/w3-sdk10-linear`) |
 | SDK11 | Dropbox | medium | 3 | `gpt-6-astra` xhigh (session `01a1af1b-4f4d-71d1…`, running) | Opus | `gpt-6.1-sol` | WAVE_3_AUTHORING |
 | SDK12 | Google Drive | large | 3 | `gpt-6.1-sol` xhigh (session `01a1af1b-4f4d-7413…`, running) | `gpt-6.1-terra` | `gpt-6-astra` | WAVE_3_AUTHORING |
 
