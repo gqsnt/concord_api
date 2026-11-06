@@ -149,7 +149,7 @@ impl TwilioError {
 
 impl From<concord::Error> for TwilioError {
     fn from(error: concord::Error) -> Self {
-        let meta = error.meta().map(Box::new);
+        let meta = error.head_meta().map(Box::new);
         Self::Concord { error, meta }
     }
 }

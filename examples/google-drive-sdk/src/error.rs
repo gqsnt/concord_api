@@ -191,7 +191,7 @@ impl From<concord::Error> for Error {
     fn from(source: concord::Error) -> Self {
         let mut error = Self::new(ErrorKind::Concord);
         error.operation = source.operation();
-        error.meta = source.meta().map(Box::new);
+        error.meta = source.head_meta().map(Box::new);
         error.source = Some(source);
         error
     }

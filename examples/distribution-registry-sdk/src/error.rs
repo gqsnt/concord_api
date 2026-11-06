@@ -134,7 +134,7 @@ impl RegistryError {
 
 impl From<concord::Error> for RegistryError {
     fn from(error: concord::Error) -> Self {
-        let meta = error.meta().map(ResponseMeta::from_concord).map(Box::new);
+        let meta = error.head_meta().map(ResponseMeta::from_concord).map(Box::new);
         Self::Request { error, meta }
     }
 }
@@ -503,7 +503,7 @@ impl AuthError {
 
     pub(crate) fn with_source(mut self, source: concord::Error) -> Self {
         if self.meta.is_none() {
-            self.meta = source.meta().map(ResponseMeta::from_concord);
+            self.meta = source.head_meta().map(ResponseMeta::from_concord);
         }
         self.source = Some(source);
         self

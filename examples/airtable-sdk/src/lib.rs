@@ -148,7 +148,7 @@ impl fmt::Debug for Error {
 }
 impl From<concord::Error> for Error {
     fn from(source: concord::Error) -> Self {
-        let meta = source.meta().map(Box::new);
+        let meta = source.head_meta().map(Box::new);
         Self::Concord { source, meta }
     }
 }

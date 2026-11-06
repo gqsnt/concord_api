@@ -275,7 +275,7 @@ impl fmt::Display for Error {
 impl std::error::Error for Error {}
 impl From<concord::Error> for Error {
     fn from(error: concord::Error) -> Self {
-        match error.meta() {
+        match error.head_meta() {
             Some(meta) => Self::Decode {
                 meta: Box::new(meta),
                 error,

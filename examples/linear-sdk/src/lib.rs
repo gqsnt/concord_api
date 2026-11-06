@@ -208,7 +208,7 @@ impl fmt::Display for Error {
 impl std::error::Error for Error {}
 impl From<concord::Error> for Error {
     fn from(source: concord::Error) -> Self {
-        match source.meta() {
+        match source.head_meta() {
             Some(meta) => Self::Response {
                 meta: Box::new(meta),
                 source,

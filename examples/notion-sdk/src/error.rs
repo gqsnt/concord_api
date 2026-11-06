@@ -160,7 +160,7 @@ impl Error {
 
 impl From<concord::Error> for Error {
     fn from(source: concord::Error) -> Self {
-        let meta = source.meta();
+        let meta = source.head_meta();
         Self::api(source, meta)
     }
 }
