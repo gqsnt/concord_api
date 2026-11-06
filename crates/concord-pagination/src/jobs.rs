@@ -524,12 +524,72 @@ impl<D, MK, R, EJ> JobsReport<D, MK, R, EJ> {
             .map(|entry| &entry.key)
     }
 
+    /// Decomposes the report, without losing anything, into what to keep, the known work to run
+    /// again and the undiscovered work; see [`JobsResume`].
+    ///
+    /// ```
+    /// use std::future::ready;
+    /// use std::num::NonZeroUsize;
+    /// use concord_pagination::{manifest_jobs, Budget, JobOptions, Manifest, Options, Outcome};
+    /// use concord_pagination::{Resume, Unfinished};
+    ///
+    /// # #[tokio::main(flavor = "current_thread")]
+    /// # async fn main() {
+    /// let n = |n| NonZeroUsize::new(n).unwrap();
+    /// // "b" fails and stops the traversal: "c" stays queued, the second manifest undiscovered.
+    /// let options = JobOptions::new(Budget::new(n(10)), Options::new(Budget::new(n(10))));
+    /// let mut jobs = manifest_jobs(
+    ///     Resume::Start,
+    ///     options,
+    ///     |key: Option<u32>| {
+    ///         ready(Ok::<_, std::io::Error>(match key {
+    ///             None => Manifest::new(vec!["a", "b", "c"], Some(1)),
+    ///             _ => Manifest::new(vec!["d"], None),
+    ///         }))
+    ///     },
+    ///     |url: &'static str| ready(if url == "b" { Err("b broke") } else { Ok(url.len()) }),
+    /// );
+    /// while let Some(outcome) = jobs.next().await {
+    ///     let _ = outcome; // "a" succeeds, then "b" fails
+    /// }
+    /// let resume = jobs.finish().into_resume();
+    /// assert_eq!(resume.outcome, Outcome::Failed);
+    /// assert_eq!(resume.progress.jobs.admitted, 2);
+    /// let rerun: Vec<_> = resume.rerun.iter().map(|job| (job.key, job.value)).collect();
+    /// assert_eq!(rerun, [("b", Unfinished::Failed)]); // attempted, to run again
+    /// assert_eq!(resume.queued, ["c"]); // known, never attempted
+    /// assert_eq!(resume.undiscovered(), Some(&Resume::At(1))); // unknown in amount
+    /// assert_eq!(resume.known().copied().collect::<Vec<_>>(), ["b", "c"]);
+    /// # }
+    /// ```
+    pub fn into_resume(self) -> JobsResume<D, MK, R, EJ> {
+        // A retained entry is represented once, by its receipt in `retained`.
+        let rerun = self
+            .unfinished
+            .into_iter()
+            .filter(|entry| entry.value != Unfinished::Retained)
+            .collect();
+        JobsResume {
+            outcome: self.outcome,
+            progress: self.progress,
+            retained: self.retained,
+            unemitted_errors: self.unemitted_errors,
+            rerun,
+            queued: self.queued,
+            discovery: self.discovery,
+        }
+    }
+
     /// Splits the report into retained receipts and the descriptors still to run (unfinished and
     /// not retained, then queued). Run those with [`independent`](crate::independent), and
     /// continue discovery from `discovery.resume` with [`manifest_jobs`]. Like
     /// [`failed`](Self::failed), these are start descriptors: a failed job with internal progress
     /// restarts from the beginning unless its error carried a later restart point that you use
     /// instead.
+    ///
+    /// This split is lossy: it drops the outcome, the counters, each descriptor's classification
+    /// (failed, cancelled or queued), the unemitted errors and the discovery state (calls,
+    /// resume and failed manifest). [`into_resume`](Self::into_resume) keeps all of them.
     pub fn into_rerun(self) -> (Vec<Keyed<D, R>>, Vec<D>) {
         let mut descriptors: Vec<D> = self
             .unfinished
@@ -539,6 +599,81 @@ impl<D, MK, R, EJ> JobsReport<D, MK, R, EJ> {
             .collect();
         descriptors.extend(self.queued);
         (self.retained, descriptors)
+    }
+}
+
+/// A [`JobsReport`] decomposed without loss ([`JobsReport::into_resume`]): what to keep, the
+/// known work to run again, and the undiscovered work.
+///
+/// Every part of the report is here, moved, never cloned (receipts and errors need no `Clone`):
+/// the outcome, the counters, the retained receipts, the unemitted errors, every unfinished
+/// entry with its classification, the queued descriptors and the whole [`DiscoveryReport`]. The
+/// report's [`Unfinished::Retained`] entries are not repeated in `rerun`: each is the `retained`
+/// entry with the same index and descriptor (one per retained entry, as [`Jobs::finish`]
+/// returns them).
+///
+/// The work left is in three disjoint parts:
+///
+/// - **keep**: `retained`, completed jobs whose sink effects exist; do not run them again;
+/// - **known work** ([`known`](Self::known)): `rerun` (attempted: failed or cancelled), then
+///   `queued` (discovered, never attempted), in discovery order; run it with
+///   [`independent`](crate::independent);
+/// - **undiscovered work** ([`undiscovered`](Self::undiscovered)): from `discovery.resume`,
+///   unknown in amount; continue it with [`manifest_jobs`].
+///
+/// As with [`JobsReport::failed`], descriptors are start descriptors: a failed job with internal
+/// progress restarts from the beginning unless its error (in `unemitted_errors`, or the one
+/// `next` returned) carried a later restart point.
+#[non_exhaustive]
+pub struct JobsResume<D, MK, R, EJ> {
+    /// How the traversal ended.
+    pub outcome: Outcome,
+    /// Final counters, as in the report.
+    pub progress: JobsProgress,
+    /// Completed jobs whose receipts were never emitted, in discovery order: keep them.
+    pub retained: Vec<Keyed<D, R>>,
+    /// Errors of failed jobs that were never emitted, in discovery order. Their descriptors are
+    /// in `rerun` as [`Unfinished::Failed`].
+    pub unemitted_errors: Vec<Keyed<D, EJ>>,
+    /// Attempted jobs to run again, with their discovery index and classification
+    /// ([`Unfinished::Failed`] or [`Unfinished::Cancelled`]), in discovery order: the report's
+    /// unfinished entries except the retained ones.
+    pub rerun: Vec<Keyed<D, Unfinished>>,
+    /// Discovered descriptors never admitted, in discovery order (after every `rerun` entry).
+    pub queued: Vec<D>,
+    /// Discovery's state: manifest calls, the undiscovered remainder (`resume`) and the
+    /// manifest whose call failed (`failed`).
+    pub discovery: DiscoveryReport<MK>,
+}
+
+impl<D, MK, R, EJ> JobsResume<D, MK, R, EJ> {
+    /// The known work still to run, in discovery order: the `rerun` descriptors, then `queued`.
+    /// Retained jobs are not in it.
+    pub fn known(&self) -> impl Iterator<Item = &D> {
+        self.rerun
+            .iter()
+            .map(|entry| &entry.key)
+            .chain(self.queued.iter())
+    }
+
+    /// Where undiscovered work starts (`discovery.resume`): `None` when every manifest was
+    /// discovered.
+    pub fn undiscovered(&self) -> Option<&Resume<MK>> {
+        self.discovery.resume.as_ref()
+    }
+}
+
+impl<D, MK, R, EJ> fmt::Debug for JobsResume<D, MK, R, EJ> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("JobsResume")
+            .field("outcome", &self.outcome)
+            .field("progress", &self.progress)
+            .field("retained", &self.retained.len())
+            .field("unemitted_errors", &self.unemitted_errors.len())
+            .field("rerun", &self.rerun.len())
+            .field("queued", &self.queued.len())
+            .field("discovery", &self.discovery)
+            .finish()
     }
 }
 
