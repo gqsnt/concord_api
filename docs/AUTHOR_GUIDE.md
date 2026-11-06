@@ -190,6 +190,67 @@ fn main() -> Result<(), concord::Error> {
 }
 ```
 
+### 2.1 Parameter groups: one fact, many endpoints
+
+Some optional values belong to a family of endpoints rather than to one — the selectors and
+page parameters every list accepts, an "act as this account" header every write accepts. A scope
+value cannot carry them (it would reach the single-object endpoints of the scope too), and
+repeating them on every endpoint repeats each fact. Declare them once on the client as a
+**parameter group**, and include the group in an endpoint's values with `..Name`:
+
+```rust
+use concord::Json;
+use serde::Deserialize;
+
+#[derive(Deserialize)]
+pub struct Page { pub items: Vec<String> }
+
+concord::api! {
+    pub client Store() {
+        base "https://store.example";
+        format Json;
+
+        /// The parameters every list accepts.
+        params ListOptions(
+            query limit?: u32,
+            #[sensitive] query("cursor") cursor?: String,
+        );
+
+        GET products(..ListOptions) -> Page { path "products"; }
+        GET orders(query("status") status?: String, ..ListOptions) -> Page { path "orders"; }
+        GET product(id: u64) -> Page { path "products/{id}"; } // no list options here
+    }
+}
+
+/// Written once, for every endpoint that includes the group.
+fn first_page<E: ListOptions>(list: E) -> E {
+    list.set_limit(50u32).maybe_cursor(None)
+}
+
+fn main() -> Result<(), concord::Error> {
+    let store = Store::new(concord::reqwest::Client::new());
+    let orders = first_page(store.orders()).set_status("open").prepare()?;
+    assert_eq!(
+        orders.request().url().query(),
+        Some("status=open&limit=50"), // the written order: `status`, then the group
+    );
+    assert_eq!(first_page(store.products()).prepare()?.request().url().query(), Some("limit=50"));
+    Ok(())
+}
+```
+
+- A group holds **optional** (`x?: T`) or **initialized** (`x: T = v`) values; a required value
+  is a positional argument and is declared on each endpoint. Placements, `#[sensitive]` and docs
+  are written in the group and apply wherever it is included.
+- `..Name` splices the group's values at the place it is written: the endpoint gets the same
+  `set_x`/`maybe_x` setters as if the values were written there, and the same wire order.
+- Each group also generates a trait `Name` of those setters, implemented by every endpoint that
+  includes the group, for SDK code written once over them (`fn first_page<E: ListOptions>`).
+  Ordinary callers use the endpoints' own setters and need not import it.
+- Endpoints include groups; scopes and the client do not (their values reach every endpoint
+  below). A group is declared on the client, may not include another group, and must be included
+  somewhere. A value declared both on an endpoint and in one of its groups is an error.
+
 ## 3. Base, paths and subdomains
 
 **Base.** `base "https://api.example.com/v2";` is checked at compile time: `http` or `https`, an
@@ -1302,38 +1363,54 @@ prepared (`Build`, before I/O; the error shows no part bytes). The complete rule
 
 A provider's rate-limit counter, request id or served version is read from the response head,
 between sending and consuming the body: `Prepared::receive()` returns a `Received<T>` for any
-status, and `decode()` then applies the declared handling. Capture what must survive a body
-failure before decoding, into a value the SDK owns.
+status, and the SDK then consumes the body once. Three facts make the ordinary policy short:
 
-Excerpt of `checks/phase-a/tests/received.rs`:
+- **A failure after the head arrived keeps the head.** `concord::Error::head()` borrows it for
+  every `Status`, `Metadata`, `Decode`, `Limit` and mid-body `Transport` error (Concord moves the
+  head out of the native response before reading the body; nothing is cloned), and
+  `Error::meta()` is the owned copy. Before a head (`Build`, a connection failure) both are
+  `None`. So an SDK error built `From<concord::Error>` keeps the status of a decode failure
+  without capturing anything by hand.
+- **`received.decode_with_meta()`** (and `decode_limited_with_meta(limit)`) applies the declared
+  handling and returns the head beside the value, moved rather than cloned for a finite output.
+- **`received.document::<F, D>(limit)`** reads the body of **any** status, bounded, and decodes it
+  with the format `F` exactly as a declared output: `F`'s `check_content_type` and `context` run
+  on the head first (a refusal is `Metadata`, the body unread), then the bounded read, then
+  `decode_body`. It returns the head beside the outcome, so a provider error stays an HTTP failure
+  whether its document is typed, absent, malformed, oversized, interrupted or of another media
+  type. A `Decode` failure keeps the body (`Error::body_unredacted()`) for an SDK that shows a
+  proxy's page raw. Use `IgnoreContentType<F>` to decode whatever the `Content-Type` says.
+
+A policy that returns a value with its metadata, or the provider's typed error document
+(Excerpt of `examples/frankfurter-sdk/src/lib.rs`):
 
 ```rust,ignore
-async fn summary_with_meta(
-    api: &Reports,
-    id: &str,
-) -> Result<(Row, Meta), (concord::Error, Option<Meta>)> {
-    let received = api
-        .summary(id)
-        .prepare()
-        .map_err(|e| (e, None))?
-        .receive()
-        .await
-        .map_err(|e| (e, None))?;
-    let meta = Meta::capture(&received.head());
-    match received.decode().await {
-        Ok(row) => Ok((row, meta)),
-        Err(e) => Err((e, Some(meta))),
+async fn send<E: Endpoint<Rate> + Send>(&self, endpoint: E) -> Self::Output {
+    let received = endpoint.prepare()?.receive().await?;
+    if !received.status().is_success() {
+        // Status is authoritative even when the document is absent, invalid or inconsistent.
+        let (meta, document) = received.document::<Json, Problem>(ERROR_BODY_LIMIT).await;
+        let document = document.map_err(ErrorBodyError::from);
+        return Err(Error::Provider(Box::new(ProviderError { meta, document })));
     }
+    // A success-body failure keeps the head in the Concord error (`Error::meta`).
+    let (rate, meta) = received.decode_with_meta().await?;
+    Ok(RateResponse { rate, meta })
 }
 ```
 
-When the SDK keeps the whole head rather than a few typed fields, `received.meta()` is that
-owned value: a `concord::ResponseMeta` (status, version, header map, operation) whose `Debug`
-prints header names only, unlike a derived `Debug` over a `HeaderMap`. `Incoming::meta()` gives
-the same before a reader consumes the body, and `concord::Error::meta()` from a `Status` or
-`Metadata` error that kept its response. To add provider accessors (`request_id()`), wrap it in
-the SDK's own type (`pub struct ResponseMeta(concord::ResponseMeta)`; the Dropbox SDK derefs to
-it): methods cannot be added to another crate's type.
+Do not decode an error document with `<Json as Decode<D>>::decode_body((), bytes)`: that skips
+the format's head checks and its `Context` (a format whose context is not `()` cannot be used
+that way at all); `document` runs them.
+
+When the SDK keeps a few typed fields rather than the whole head, read them from
+`received.head()` before consuming the body, into a value the SDK owns (GitLab's
+`ResponseMeta::capture` keeps the request id, pagination headers and `Link` relations). When it
+keeps the whole head, `concord::ResponseMeta` (status, version, header map, operation) prints
+header names only in `Debug`, unlike a derived `Debug` over a `HeaderMap`; `Incoming::meta()`
+gives the same before a reader consumes the body. To add provider accessors (`request_id()`),
+wrap it in the SDK's own type (`pub struct ResponseMeta(concord::ResponseMeta)`; the Dropbox SDK
+derefs to it): methods cannot be added to another crate's type.
 
 A provider rule on the head (a served API version) refuses by returning the SDK's error with
 `received.into_response()`, unread. A request edited natively after `into_parts()` (a `Link` URL)
