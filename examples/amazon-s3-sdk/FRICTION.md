@@ -165,3 +165,14 @@ Concord made easy.
 
 Header values are validated by `http` (a CRLF in `Cache-Control` is a Concord `Build` error,
 `invalid_inputs_send_nothing`), and nothing in the generated code needed a lint allowance.
+
+### Maintenance reproduction: Unicode key and signed range (existing entries 1, 2 and 6)
+
+The maintenance scenario uses the existing public builders and the same native prepare, target
+rewrite, signing and decoder execution described above. Run
+`CARGO_BUILD_JOBS=5 CARGO_TARGET_DIR=/home/canarit/projects/Concord_Consolidation_SDK20_Handoff/work/target-b cargo test --locked -p concord-sdk-amazon-s3 --test workflows changed_key_and_range_are_signed_on_the_wire_without_affecting_other_calls`.
+It sends an ASCII key and then a space/Unicode key, changes the signed range separately, and
+checks the loopback canonical requests, independently verified signatures, both listing pages and
+an unrelated HEAD. The working path needed no additional workaround; see `MAINTENANCE.md` for
+which example data and expectations changed. This test does not mutate the SDK to prove the
+failure mode when the existing rewrite is removed.

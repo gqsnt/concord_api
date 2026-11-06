@@ -80,6 +80,7 @@ async fn workflow_a(bucket: &Bucket) -> Result<(), Box<dyn std::error::Error>> {
     let Some(chosen) = objects.iter().max_by_key(|o| o.size.unwrap_or(0)) else {
         return Ok(());
     };
+    // Keys can contain spaces and Unicode, e.g. reports/2026/München 東京 résumé.txt.
     let key = ObjectKey::new(chosen.key.clone())?;
 
     // Metadata only.
@@ -92,7 +93,7 @@ async fn workflow_a(bucket: &Bucket) -> Result<(), Box<dyn std::error::Error>> {
     match bucket
         .get_object(key.clone())
         .if_match(etag)
-        .range(ByteRange::inclusive(0, 1023)?)
+        .range(ByteRange::inclusive(19, 25)?)
         .send()
         .await
     {
@@ -205,7 +206,10 @@ signatures, URLs, header values or S3's free-text `Message`/`Resource` (read tho
 
 - `cargo test -p concord-sdk-amazon-s3`: unit tests, `tests/protocol.rs` (wire-level requests,
   documented and synthetic responses, negative cases, perturbations, cancellation) and
-  `tests/workflows.rs` (workflows A and B end to end).
+  `tests/workflows.rs` (workflows A and B end to end). The maintenance scenario changes a
+  Unicode key and a signed range independently on loopback, compares their canonical requests
+  and signatures, and rechecks both list pages and an unrelated HEAD. Unknown elements in both
+  listing fixtures are ignored while expected fields still decode.
 - The SDK signs with `aws-sigv4`, AWS's own Rust signer. The tests check it against **AWS's four
   published signing examples** (`fixtures/sigv4/`, documentation example key only): the GET
   example is reproduced through the SDK's own `GetObject` request; the PUT, lifecycle and list

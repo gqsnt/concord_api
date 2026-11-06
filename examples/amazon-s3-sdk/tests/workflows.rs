@@ -33,7 +33,7 @@ fn inventory_store(fake: &FakeS3) {
             b"month,total\njanuary,12000\n".to_vec(),
         ),
         (
-            "reports/2026/März summary.txt",
+            "reports/2026/München 東京 résumé.txt",
             "\"9b2cf535f27731c974343645a3985328-2\"",
             "text/plain; charset=utf-8",
             "Summary for March: revenue up, costs flat.\n"
@@ -107,7 +107,7 @@ async fn workflow_a_inventory_head_and_conditional_partial_reads() {
         keys,
         [
             "reports/2026/January.csv",
-            "reports/2026/März summary.txt",
+            "reports/2026/München 東京 résumé.txt",
             "reports/2026/Q2 forecast.txt"
         ]
     );
@@ -130,7 +130,7 @@ async fn workflow_a_inventory_head_and_conditional_partial_reads() {
         .iter()
         .max_by_key(|o| o.size.unwrap_or(0))
         .unwrap();
-    assert_eq!(selected.key, "reports/2026/März summary.txt");
+    assert_eq!(selected.key, "reports/2026/München 東京 résumé.txt");
     let key = ObjectKey::new(selected.key.clone()).unwrap();
     let listed_etag = selected.etag.clone().unwrap();
     assert_eq!(
@@ -152,7 +152,10 @@ async fn workflow_a_inventory_head_and_conditional_partial_reads() {
     let recorded = server.requests().pop().unwrap();
     assert_eq!(
         (recorded.method.as_str(), recorded.target.as_str()),
-        ("HEAD", "/reports/2026/M%C3%A4rz%20summary.txt")
+        (
+            "HEAD",
+            "/reports/2026/M%C3%BCnchen%20%E6%9D%B1%E4%BA%AC%20r%C3%A9sum%C3%A9.txt"
+        )
     );
 
     // 4. Conditional GET with the tag we hold: 304, nothing to download, validators kept.
@@ -193,7 +196,7 @@ async fn workflow_a_inventory_head_and_conditional_partial_reads() {
     let part = bucket
         .get_object(key.clone())
         .if_match(listed_etag.clone())
-        .range(ByteRange::inclusive(12, 16).unwrap())
+        .range(ByteRange::inclusive(19, 25).unwrap())
         .send()
         .await
         .unwrap();
@@ -201,12 +204,12 @@ async fn workflow_a_inventory_head_and_conditional_partial_reads() {
     let range = part.head.content_range.unwrap();
     assert_eq!(
         (range.first, range.last, range.complete_length),
-        (12, 16, selected.size)
+        (19, 25, selected.size)
     );
     assert_eq!(part.head.etag.as_ref(), Some(&listed_etag));
     assert_eq!(part.head.metadata.get("department"), Some("finance"));
     let (_, bytes) = part.bytes(1024).await.unwrap();
-    assert_eq!(&bytes[..], b"March");
+    assert_eq!(&bytes[..], b"revenue");
 
     // The last 6 bytes, and the whole object when it changed after a given date.
     let tail = bucket
@@ -373,5 +376,127 @@ async fn workflow_b_put_finite_bytes_then_read_them_back() {
     for verified in fake.verified() {
         assert_eq!(verified.authorization.region, "eu-west-3");
         assert_eq!(verified.authorization.service, "s3");
+    }
+}
+
+#[tokio::test]
+async fn changed_key_and_range_are_signed_on_the_wire_without_affecting_other_calls() {
+    let fake = FakeS3::default();
+    inventory_store(&fake);
+    let changed_key = "reports/2026/München 東京 résumé.txt";
+    let original_key = "reports/2026/March-summary.txt";
+    fake.insert(
+        BUCKET,
+        original_key,
+        fake.object(BUCKET, changed_key).unwrap(),
+    );
+    let responder = fake.clone();
+    let server = TestServer::start(move |r| responder.respond(r)).await;
+    let bucket =
+        client_for(server.addr(), "us-east-1", &[BUCKET]).bucket(BucketName::new(BUCKET).unwrap());
+
+    // Run the same two-page inventory and unrelated HEAD around each independent change.
+    for (key, first, last, expected) in [
+        (original_key, 12, 16, &b"March"[..]),
+        (changed_key, 12, 16, &b"March"[..]),
+        (changed_key, 19, 25, &b"revenue"[..]),
+    ] {
+        let mut pages = bucket
+            .list_objects_v2()
+            .prefix(PREFIX)
+            .max_keys(MaxKeys::new(2).unwrap())
+            .pages();
+        let first_page = pages.next_page().await.unwrap().unwrap();
+        assert_eq!(first_page.items.len(), 2);
+        assert_eq!(first_page.items[1].key, changed_key);
+        assert_eq!(first_page.items[1].size, Some(43));
+        assert_eq!(first_page.next.as_ref().map(|t| t.as_str()), Some(TOKEN));
+        let second_page = pages.next_page().await.unwrap().unwrap();
+        assert_eq!(second_page.items.len(), 1);
+        assert_eq!(second_page.items[0].key, "reports/2026/Q2 forecast.txt");
+        assert_eq!(second_page.items[0].size, Some(31));
+        assert!(second_page.next.is_none());
+        assert!(pages.next_page().await.unwrap().is_none());
+        let head = bucket
+            .head_object(ObjectKey::new("reports/2026/January.csv").unwrap())
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(head.content_length, Some(26));
+        let part = bucket
+            .get_object(ObjectKey::new(key).unwrap())
+            .range(ByteRange::inclusive(first, last).unwrap())
+            .send()
+            .await
+            .unwrap();
+        let content_range = part.head.content_range.unwrap();
+        assert_eq!(
+            (
+                content_range.first,
+                content_range.last,
+                content_range.complete_length
+            ),
+            (first, last, Some(43))
+        );
+        assert_eq!(&part.bytes(1024).await.unwrap().1[..], expected);
+    }
+
+    let requests = server.requests();
+    assert_eq!(requests.len(), 12);
+    let verified: Vec<_> = requests
+        .iter()
+        .map(|request| verify(&WireRequest::from_recorded(request), known_secret).unwrap())
+        .collect();
+    assert!(fake.refusals().is_empty());
+    // Both pages and the HEAD keep the same canonical request and signature in every run.
+    for i in 0..3 {
+        for offset in [4, 8] {
+            assert_eq!(requests[i].target, requests[i + offset].target);
+            assert_eq!(
+                verified[i].canonical_request,
+                verified[i + offset].canonical_request
+            );
+            assert_eq!(
+                verified[i].authorization.signature,
+                verified[i + offset].authorization.signature
+            );
+        }
+    }
+    let changed = &requests[11];
+    assert_eq!(
+        changed.target,
+        "/reports/2026/M%C3%BCnchen%20%E6%9D%B1%E4%BA%AC%20r%C3%A9sum%C3%A9.txt"
+    );
+    assert_eq!(changed.header("range"), Some("bytes=19-25"));
+    let empty_hash = sha256_hex(b"");
+    assert_eq!(
+        verified[11].canonical_request,
+        format!(
+            "GET\n{}\n\nhost:{}\nrange:bytes=19-25\nx-amz-content-sha256:{}\nx-amz-date:20261106T120000Z\n\nhost;range;x-amz-content-sha256;x-amz-date\n{}",
+            changed.target, changed.host, empty_hash, empty_hash
+        )
+    );
+    for (a, b, expected_difference) in [
+        (
+            3,
+            7,
+            (
+                "/reports/2026/March-summary.txt",
+                "/reports/2026/M%C3%BCnchen%20%E6%9D%B1%E4%BA%AC%20r%C3%A9sum%C3%A9.txt",
+            ),
+        ),
+        (7, 11, ("range:bytes=12-16", "range:bytes=19-25")),
+    ] {
+        let differences: Vec<_> = verified[a]
+            .canonical_request
+            .lines()
+            .zip(verified[b].canonical_request.lines())
+            .filter(|(x, y)| x != y)
+            .collect();
+        assert_eq!(differences, [expected_difference]);
+        assert_ne!(
+            verified[a].authorization.signature,
+            verified[b].authorization.signature
+        );
     }
 }

@@ -6,10 +6,12 @@
   <KeyCount>1</KeyCount>
   <MaxKeys>2</MaxKeys>
   <IsTruncated>false</IsTruncated>
+  <FuturePageField><Nested>ignored</Nested></FuturePageField>
   <Contents>
     <Key>reports/2026/Q2 forecast.txt</Key>
     <LastModified>2026-07-01T08:00:00.000Z</LastModified>
     <ETag>&quot;opaque-not-a-digest&quot;</ETag>
+    <FutureObjectField>ignored</FutureObjectField>
     <Size>31</Size>
     <StorageClass>STANDARD</StorageClass>
   </Contents>
