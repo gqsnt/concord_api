@@ -138,11 +138,24 @@ impl SseReader {
         &self.options
     }
 
+    /// The `Content-Type` this reader accepts, as checked by [`open`](Self::open) and by the
+    /// static [`Sse`](super::Sse) format: exactly one field, `text/event-stream`, a `charset`
+    /// absent or `utf-8` (or `us-ascii`) declared once. There is no media policy: the check is the
+    /// same whatever the options. For a caller that opens responses itself, then reads the body
+    /// with [`read_for`](Self::read_for). It reads the head only; the status is not checked.
+    ///
+    /// # Errors
+    ///
+    /// The refusal, with a static label (the one an [`OpenError`] of kind `Metadata` carries).
+    pub fn check_head(&self, head: &ResponseHead<'_>) -> Result<(), CodecError> {
+        check_head(head)
+    }
+
     /// Opens a response ([`Openable`]: the [`Incoming`](concord_core::Incoming) body of an
     /// endpoint declared `-> stream`, a [`Received`](concord_core::Received) response, or a native
     /// response): requires a 2xx status and exactly one `Content-Type`, `text/event-stream` with
-    /// a `charset` absent or `utf-8`, before polling the body. A refusal keeps the response unread
-    /// ([`OpenError::into_response`]).
+    /// a `charset` absent or `utf-8` ([`check_head`](Self::check_head)), before polling the body.
+    /// A refusal keeps the response unread ([`OpenError::into_response`]).
     ///
     /// # Errors
     ///
@@ -163,6 +176,16 @@ impl SseReader {
         self.events(source, None)
     }
 
+    /// [`read`](Self::read), naming the operation in every later error (a static label the SDK
+    /// chooses; never derived from the URL), as `open` does for a declared endpoint. No status or
+    /// head check: the caller made them — an [`Incoming`](concord_core::Incoming) body is a 2xx,
+    /// and [`check_head`](Self::check_head) applies the head rules of `open`. Read through the
+    /// `Incoming` itself (it is a [`ByteSource`]), a broken body keeps Concord's own
+    /// `Transport` error ([`ReadError::into_source_unredacted`]).
+    pub fn read_for<S: ByteSource>(&self, source: S, operation: &'static str) -> SseEvents<S> {
+        self.events(source, Some(operation))
+    }
+
     fn events<S: ByteSource>(&self, source: S, operation: Option<&'static str>) -> SseEvents<S> {
         SseEvents {
             driver: Driver::new(source, operation).with_totals(None, self.options.max_events),
@@ -171,7 +194,8 @@ impl SseReader {
     }
 }
 
-/// The response head check of [`SseReader::open`] and [`Sse`](super::Sse).
+/// The response head check of [`SseReader::open`], [`SseReader::check_head`] and
+/// [`Sse`](super::Sse).
 pub(super) fn check_head(head: &ResponseHead<'_>) -> Result<(), CodecError> {
     let Some(found) = media::single(head)? else {
         return Err(CodecError::new("the response has no Content-Type"));

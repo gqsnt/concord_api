@@ -5,6 +5,7 @@
 //! | Events of an endpoint declared `-> stream Event` | `response Sse;` ([`Sse`]): `send()` returns [`SseEvents`] (head checked, body unread), default options |
 //! | Events with other limits, or of a `-> stream` body | [`SseReader::open`] → [`SseEvents`] |
 //! | Events from any byte source (no status or head check) | [`SseReader::read`] |
+//! | Events of a body whose head you checked ([`SseReader::check_head`]), or of a filter of yours over it, naming the operation | [`SseReader::read_for`] (an [`Incoming`] is a [`ByteSource`](crate::stream::ByteSource)) |
 //!
 //! The reader frames events; it does not decode them. Each [`Event`] carries its type, its data
 //! and the last event ID as text: an SDK parses `data` itself (JSON, say), so that a malformed
@@ -62,7 +63,11 @@
 //! the position (events delivered, bytes consumed), never event content. The position of a
 //! format or limit error does not depend on where the chunks were cut (see
 //! [`SseEvents::next`]). A transport failure's underlying error (its URL removed) is reachable
-//! only through [`ReadError::source_unredacted`](crate::stream::ReadError::source_unredacted).
+//! only through [`ReadError::source_unredacted`](crate::stream::ReadError::source_unredacted), or
+//! by value through
+//! [`ReadError::into_source_unredacted`](crate::stream::ReadError::into_source_unredacted): a
+//! `reqwest::Error` for an opened response, Concord's own `Error` for an [`Incoming`] read with
+//! [`SseReader::read_for`].
 //!
 //! An event refused by `max_events` does not advance [`SseEvents::last_event_id`]: resuming from
 //! it delivers that event again.

@@ -4,7 +4,7 @@
 use std::fmt;
 use std::marker::PhantomData;
 
-use concord_core::{CodecError, reqwest};
+use concord_core::{CodecError, ResponseHead, reqwest};
 use serde::de::DeserializeOwned;
 
 use super::policy::{DEFAULT_MAX_RECORD_BYTES, Family, MediaPolicy, check_media};
@@ -272,14 +272,6 @@ fn parse_value<T: DeserializeOwned>(value: &[u8]) -> Result<T, Fault> {
     })
 }
 
-/// The head check of `reader` (its media policy), for the static [`JsonStream`](super::JsonStream).
-pub(crate) fn check_head(
-    reader: &JsonValuesReader,
-    head: &concord_core::ResponseHead<'_>,
-) -> Result<(), CodecError> {
-    check_media(reader.media, &JSON, head)
-}
-
 const JSON: Family = Family {
     standard: |m| {
         m.type_() == mime::APPLICATION
@@ -357,18 +349,32 @@ impl JsonValuesReader {
         self
     }
 
-    /// The response media policy applied by [`open`](Self::open).
+    /// The response media policy applied by [`open`](Self::open) and
+    /// [`check_head`](Self::check_head).
     #[must_use]
     pub fn media(mut self, media: MediaPolicy) -> Self {
         self.media = media;
         self
     }
 
+    /// The `Content-Type` this reader accepts, as checked by [`open`](Self::open) (and by the
+    /// static [`JsonStream`](super::JsonStream) with the defaults): the
+    /// [`media`](Self::media) policy over `application/json` and `application/*+json`. For a
+    /// caller that opens responses itself, then reads the body with
+    /// [`read_for`](Self::read_for). It reads the head only; the status is not checked.
+    ///
+    /// # Errors
+    ///
+    /// The refusal, with a static label (the one an [`OpenError`] of kind `Metadata` carries).
+    pub fn check_head(&self, head: &ResponseHead<'_>) -> Result<(), CodecError> {
+        check_media(self.media, &JSON, head)
+    }
+
     /// Opens a response ([`Openable`]: the [`Incoming`](concord_core::Incoming) body of an
     /// endpoint declared `-> stream`, a [`Received`](concord_core::Received) response, or a native
-    /// response): requires a 2xx status and a `Content-Type` accepted by the media policy,
-    /// before polling the body. A refusal keeps the response unread
-    /// ([`OpenError::into_response`]).
+    /// response): requires a 2xx status and a `Content-Type` accepted by the media policy
+    /// ([`check_head`](Self::check_head)), before polling the body. A refusal keeps the response
+    /// unread ([`OpenError::into_response`]).
     ///
     /// # Errors
     ///
@@ -377,8 +383,7 @@ impl JsonValuesReader {
         &self,
         response: impl Openable,
     ) -> Result<JsonValues<T>, OpenError> {
-        let (response, operation) =
-            open_input(response, |head| check_media(self.media, &JSON, head))?;
+        let (response, operation) = open_input(response, |head| self.check_head(head))?;
         Ok(self.values(response, operation))
     }
 
@@ -409,15 +414,27 @@ impl JsonValuesReader {
         response: reqwest::Response,
         operation: Option<&'static str>,
     ) -> Result<JsonValues<T>, OpenError> {
-        let response = open_response(response, operation, |head| {
-            check_media(self.media, &JSON, head)
-        })?;
+        let response = open_response(response, operation, |head| self.check_head(head))?;
         Ok(self.values(response, operation))
     }
 
     /// Reads any byte source, without status or head checks.
     pub fn read<T: DeserializeOwned, S: ByteSource>(&self, source: S) -> JsonValues<T, S> {
         self.values(source, None)
+    }
+
+    /// [`read`](Self::read), naming the operation in every later error (a static label the SDK
+    /// chooses; never derived from the URL), as [`open_for`](Self::open_for) does. No status or
+    /// head check: the caller made them — an [`Incoming`](concord_core::Incoming) body is a 2xx,
+    /// and [`check_head`](Self::check_head) applies the head rules of `open`. Read through the
+    /// `Incoming` itself (it is a [`ByteSource`]), a broken body keeps Concord's own
+    /// `Transport` error ([`ReadError::into_source_unredacted`]).
+    pub fn read_for<T: DeserializeOwned, S: ByteSource>(
+        &self,
+        source: S,
+        operation: &'static str,
+    ) -> JsonValues<T, S> {
+        self.values(source, Some(operation))
     }
 
     fn values<T, S: ByteSource>(

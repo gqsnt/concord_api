@@ -679,7 +679,12 @@ A finite `Decode<T>` receives a collected body. A format read as the response ar
 and must not poll it. An endpoint declared `-> stream T` with your format returns that reader from
 `send()`. Put the reader's limits and framing in the reader; keep provider meaning (event types,
 replay, completion rules) in the SDK. The `concord-extras` readers implement it for `Csv<..>`,
-`JsonLines`, `Ndjson` and `JsonStream`; the trait's own documentation has a minimal example.
+`JsonLines`, `Ndjson` and `JsonStream`; the trait's own documentation has a minimal example. To
+build on a configured `concord-extras` reader instead of framing yourself, call its
+`check_head(head)` from `check_content_type` and return `reader.read_for(body, name)` from `open`:
+an `Incoming` is a `stream::ByteSource`, so the reader reads the checked body directly, or through
+a wrapper of yours, without checking it again (AUTHOR_GUIDE §5.9, "A reader over a body the SDK
+checked or wraps").
 
 ## 10. Checklist
 

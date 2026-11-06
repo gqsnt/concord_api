@@ -17,6 +17,15 @@
 //!    input bytes consumed). Records already delivered stay delivered; the reader is then fused
 //!    (every later `next()` returns `None`). A consumed body cannot be handed back unread.
 //!
+//! **Reading a source the caller checked.** Every reader also has `check_head(&head)` (its own
+//! media policy, exactly what `open` applies) and `read_for(source, operation)`: it reads any
+//! [`ByteSource`] — an [`Incoming`](concord_core::Incoming) body (status already 2xx), a filter of
+//! yours wrapped around it — without status or head checks, naming `operation` in every later
+//! error as `open` does. Read through the `Incoming` itself, a broken body is a `Transport`
+//! [`ReadError`] whose source is Concord's own `concord_core::Error` (naming the operation, URL
+//! removed), taken back by value with [`ReadError::into_source_unredacted`]; so is any error type
+//! a source of yours attaches to its [`SourceError`].
+//!
 //! Uploads are the mirror image: a one-shot record source (a [`futures_core::Stream`]) is wrapped
 //! into a lazily produced `reqwest::Body` that serializes records as the transport asks for
 //! bytes. Preparing the request polls the source **zero** times; sending polls it as needed, in
@@ -27,7 +36,8 @@
 //! Diagnostics follow Concord's policy: `Display`/`Debug` show static labels, numeric positions,
 //! the operation name the SDK supplied (never derived from a URL) and status codes; underlying
 //! errors that may quote body content or URLs are reachable only through
-//! [`ReadError::source_unredacted`].
+//! [`ReadError::source_unredacted`] (by reference) and [`ReadError::into_source_unredacted`] (the
+//! byte source's error, by value).
 
 // The internals below serve the formats (`csv`, `jsonl`, `sse`; uploads only the first two);
 // `stream` alone exposes only the public types, so they are unused there.

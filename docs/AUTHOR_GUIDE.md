@@ -1197,9 +1197,36 @@ are terminal errors; only a body ending at an event boundary completes. The head
 exactly one `text/event-stream` `Content-Type`, charset absent or UTF-8, and `Accept:
 text/event-stream` is suggested. For other limits (`SseOptions::max_event_bytes`, `max_events`),
 declare `-> stream` and open the `Incoming` body with `SseReader::new(options).open(body)`; for a
-body source of your own (one that keeps your transport error type, say), `SseReader::read(source)`
-takes any `stream::ByteSource` and checks neither status nor head. The reader does not reconnect:
-`last_event_id()` and `retry()` give the SDK what a reconnect policy needs.
+body source of your own, `SseReader::read_for(source, operation)` takes any `stream::ByteSource`
+and checks neither status nor head (below). The reader does not reconnect: `last_event_id()` and
+`retry()` give the SDK what a reconnect policy needs.
+
+**A reader over a body the SDK checked or wraps.** `open` is the usual path. When the SDK applies
+the head check itself (an `Incremental` format of its own whose `check_content_type` already ran,
+a provider header to look at first) or puts a filter of its own between the body and the reader
+(a provider's in-body error marker, a line counter), every reader — `CsvReader`,
+`JsonLinesReader`, `JsonValuesReader`, `SseReader` — offers the two halves of `open` separately:
+
+- `check_head(&head)`: the reader's own media policy, exactly what `open` applies, as a
+  `CodecError` with the same label (`head` only; the status is the caller's, and an `Incoming` is
+  2xx already);
+- `read_for(source, operation)` (and `CsvReader::read_raw_for`): reads any `stream::ByteSource`
+  without status or head checks, naming `operation` in every later `ReadError`, as `open` does
+  for a declared endpoint (`read(source)` names none).
+
+`Incoming` is a `ByteSource`, so the source is the `Incoming` itself or a wrapper of the SDK's
+around it, and the body never leaves Concord's boundary. A body that breaks off is then a
+`Transport` `ReadError` whose underlying error is Concord's own `Error` (kind `Transport`, the
+endpoint named, no URL) — where `open` keeps reqwest's. `ReadError::into_source_unredacted()`
+gives the byte source's error back **by value** (`downcast::<concord::Error>()`, or the
+provider-typed error a wrapper attached with `SourceError::with_source`), so the SDK neither
+stashes it beside the reader nor copies it; `SourceError::into_source_unredacted()` does the same
+for a wrapper the SDK drives itself. Read the kind and position first: taking the source consumes
+the error. A parser's error (serde's, for `Format` and `Decode`) stays in `codec()`, by reference
+only. `Display` and `Debug` are unchanged. Inside an `Incremental` format of your own, this is
+also how a configured reader (non-default limits) reads the already-checked body: apply its
+`check_head` in `check_content_type`, then return `reader.read_for(body, name)` from `open`
+(`Records` is then, say, `SseEvents<Incoming>`); `body.operation()` gives the endpoint's name.
 
 ### 5.10 Bodies whose media type is known at run time
 

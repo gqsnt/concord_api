@@ -91,7 +91,9 @@ impl CsvReader {
     }
 
     /// The `Content-Type` this reader accepts, as checked by [`open`](Self::open) (per the
-    /// [`MediaPolicy`](super::MediaPolicy)), for a caller that opens responses itself.
+    /// [`MediaPolicy`](super::MediaPolicy)), for a caller that opens responses itself (then reads
+    /// the body with [`read_for`](Self::read_for)). It reads the head only; the status is not
+    /// checked.
     ///
     /// # Errors
     ///
@@ -136,6 +138,20 @@ impl CsvReader {
         self.records(source, None, record::typed::<T>, Mode::Typed)
     }
 
+    /// [`read`](Self::read), naming the operation in every later error (a static label the SDK
+    /// chooses; never derived from the URL), as [`open_for`](Self::open_for) does. No status or
+    /// head check: the caller made them — an [`Incoming`](concord_core::Incoming) body is a 2xx,
+    /// and [`check_head`](Self::check_head) applies the head rules of `open`. Read through the
+    /// `Incoming` itself (it is a [`ByteSource`]), a broken body keeps Concord's own
+    /// `Transport` error ([`ReadError::into_source_unredacted`]).
+    pub fn read_for<T: DeserializeOwned, S: ByteSource>(
+        &self,
+        source: S,
+        operation: &'static str,
+    ) -> CsvRecords<T, S> {
+        self.records(source, Some(operation), record::typed::<T>, Mode::Typed)
+    }
+
     /// Opens a response ([`Openable`]) for raw byte records (no UTF-8 requirement; header names
     /// may be empty or repeated). The head checks are those of [`open`](Self::open).
     ///
@@ -163,6 +179,16 @@ impl CsvReader {
     /// Raw byte records from any byte source, without status or head checks.
     pub fn read_raw<S: ByteSource>(&self, source: S) -> CsvRecords<RawRecord, S> {
         self.records(source, None, record::raw, Mode::Raw)
+    }
+
+    /// [`read_raw`](Self::read_raw), naming the operation in every later error (see
+    /// [`read_for`](Self::read_for)).
+    pub fn read_raw_for<S: ByteSource>(
+        &self,
+        source: S,
+        operation: &'static str,
+    ) -> CsvRecords<RawRecord, S> {
+        self.records(source, Some(operation), record::raw, Mode::Raw)
     }
 
     fn opened<T>(
@@ -316,7 +342,8 @@ impl<T, S: ByteSource> CsvRecords<T, S> {
         self.table.header()
     }
 
-    /// The operation name supplied when the response was opened, if any.
+    /// The operation name supplied when the response was opened (or the source read with
+    /// `read_for`), if any.
     pub fn operation(&self) -> Option<&'static str> {
         self.driver.operation()
     }

@@ -4,7 +4,7 @@
 use std::fmt;
 use std::marker::PhantomData;
 
-use concord_core::{CodecError, reqwest};
+use concord_core::{CodecError, ResponseHead, reqwest};
 use serde::de::DeserializeOwned;
 
 use super::policy::{
@@ -425,11 +425,23 @@ impl JsonLinesReader {
         &self.options
     }
 
+    /// The `Content-Type` this reader accepts, as checked by [`open`](Self::open): the options'
+    /// [`MediaPolicy`](super::MediaPolicy) over the preset's documented media types (JSON Lines
+    /// or NDJSON). For a caller that opens responses itself, then reads the body with
+    /// [`read_for`](Self::read_for). It reads the head only; the status is not checked.
+    ///
+    /// # Errors
+    ///
+    /// The refusal, with a static label (the one an [`OpenError`] of kind `Metadata` carries).
+    pub fn check_head(&self, head: &ResponseHead<'_>) -> Result<(), CodecError> {
+        check_media(self.options.media, family(self.options.flavor), head)
+    }
+
     /// Opens a response ([`Openable`]: the [`Incoming`](concord_core::Incoming) body of an
     /// endpoint declared `-> stream`, a [`Received`](concord_core::Received) response, or a native
-    /// response): requires a 2xx status and a `Content-Type` accepted by the media policy,
-    /// before polling the body. A refusal keeps the response unread
-    /// ([`OpenError::into_response`]).
+    /// response): requires a 2xx status and a `Content-Type` accepted by the media policy
+    /// ([`check_head`](Self::check_head)), before polling the body. A refusal keeps the response
+    /// unread ([`OpenError::into_response`]).
     ///
     /// # Errors
     ///
@@ -438,10 +450,7 @@ impl JsonLinesReader {
         &self,
         response: impl Openable,
     ) -> Result<JsonLinesRecords<T>, OpenError> {
-        let family = family(self.options.flavor);
-        let (response, operation) = open_input(response, |head| {
-            check_media(self.options.media, family, head)
-        })?;
+        let (response, operation) = open_input(response, |head| self.check_head(head))?;
         Ok(self.records(response, operation))
     }
 
@@ -473,16 +482,27 @@ impl JsonLinesReader {
         response: reqwest::Response,
         operation: Option<&'static str>,
     ) -> Result<JsonLinesRecords<T>, OpenError> {
-        let family = family(self.options.flavor);
-        let response = open_response(response, operation, |head| {
-            check_media(self.options.media, family, head)
-        })?;
+        let response = open_response(response, operation, |head| self.check_head(head))?;
         Ok(self.records(response, operation))
     }
 
     /// Reads any byte source, without status or head checks.
     pub fn read<T: DeserializeOwned, S: ByteSource>(&self, source: S) -> JsonLinesRecords<T, S> {
         self.records(source, None)
+    }
+
+    /// [`read`](Self::read), naming the operation in every later error (a static label the SDK
+    /// chooses; never derived from the URL), as [`open_for`](Self::open_for) does. No status or
+    /// head check: the caller made them — an [`Incoming`](concord_core::Incoming) body is a 2xx,
+    /// and [`check_head`](Self::check_head) applies the head rules of `open`. Read through the
+    /// `Incoming` itself (it is a [`ByteSource`]), a broken body keeps Concord's own
+    /// `Transport` error ([`ReadError::into_source_unredacted`]).
+    pub fn read_for<T: DeserializeOwned, S: ByteSource>(
+        &self,
+        source: S,
+        operation: &'static str,
+    ) -> JsonLinesRecords<T, S> {
+        self.records(source, Some(operation))
     }
 
     fn records<T, S: ByteSource>(

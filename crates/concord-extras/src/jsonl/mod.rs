@@ -7,6 +7,7 @@
 //! | Records read as a response arrives | [`JsonLinesReader`] → [`JsonLinesRecords`] |
 //! | A runtime-configured upload (body and `Content-Type` together) | [`JsonLinesWriter::upload`] → [`Upload`](crate::stream::Upload) |
 //! | A Kubernetes-style watch stream (values one after another) | [`JsonValuesReader`] → [`JsonValues`] |
+//! | A body whose head you checked, or one behind a filter of yours | [`JsonLinesReader::check_head`] / [`JsonValuesReader::check_head`], then `read_for(source, operation)` (an [`Incoming`] is a [`ByteSource`](crate::stream::ByteSource)) |
 //!
 //! # Framing profile
 //!
@@ -240,7 +241,7 @@ impl<T: DeserializeOwned> Incremental<T> for JsonStream {
     const ACCEPT: Option<&'static str> = Some("application/json");
 
     fn check_content_type(head: &ResponseHead<'_>) -> Result<(), CodecError> {
-        values::check_head(&JsonValuesReader::new(), head)
+        JsonValuesReader::new().check_head(head)
     }
 
     fn context(_: &ResponseHead<'_>) -> Result<(), CodecError> {

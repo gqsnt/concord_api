@@ -485,6 +485,22 @@ A `-> stream` endpoint without an item returns the unread `Incoming` body; open 
 the SDK documents (`CsvReader::open`, `JsonLinesReader::open`, `JsonValuesReader::open`,
 `SseReader::open`).
 
+**Reading a body you checked or wrapped.** When the head was checked elsewhere, or the body goes
+through a filter of your own before the reader (a provider's in-body error marker, a line
+counter), skip `open`: every reader has `check_head(&incoming.head())`, which applies exactly the
+media rules `open` applies (head only, not the status), and `read_for(source, operation)`, which
+reads any `stream::ByteSource` without status or head checks and names `operation` in every
+later error, as `open` does for a declared endpoint. An `Incoming` is a `ByteSource` itself
+(its status is already 2xx). Read through it, a body that breaks off is a `Transport`
+`ReadError` whose underlying error is Concord's own `Error` (kind `Transport`, the endpoint named,
+no URL): `ReadError::into_source_unredacted()` hands it back by value, to
+`downcast::<concord::Error>()`, as it hands back any error type a source of yours attached to its
+`SourceError` (`SourceError::into_source_unredacted()` does the same before a reader is
+involved). `Display` and `Debug` are unchanged: they never show it. A parser's own error (the
+serde error of a `Format` or `Decode` failure) stays reachable by reference only,
+`source_unredacted()`. The cases, per reader, are tested in
+`crates/concord-extras/tests/reader_wrapping.rs`.
+
 **Server-sent events** (`concord::sse`, feature `sse`). An endpoint declared
 `-> stream sse::Event` with `response Sse;` returns `SseEvents`: each `next()` is one dispatched
 event with its type (`event()`, `message` by default), its `data()` as text — the SDK or you

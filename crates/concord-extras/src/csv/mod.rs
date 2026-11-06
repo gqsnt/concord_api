@@ -69,6 +69,7 @@
 //! | [`Encode<RawTable>`](concord_core::Encode) | [`RawTable`] | byte records, header from the table |
 //! | [`CsvReader::open`] / [`read`](CsvReader::read) | `T: DeserializeOwned` | incremental: status and head checked before the body is polled, records framed from arbitrary chunks, owned rows yielded one at a time |
 //! | [`CsvReader::open_raw`] | [`RawRecord`] | incremental byte records |
+//! | [`CsvReader::check_head`], then [`read_for`](CsvReader::read_for) / [`read_raw_for`](CsvReader::read_raw_for) | as above | a body whose head the caller checked, or one behind a filter of the caller's (any [`ByteSource`](crate::stream::ByteSource), an [`Incoming`](concord_core::Incoming) included): no status or head check, the operation named in every error |
 //! | [`CsvWriter::upload`] | [`StreamRows`] | a lazy body with the `Content-Type` of the runtime header mode |
 //!
 //! The finite and incremental routes share one framing and mapping implementation
