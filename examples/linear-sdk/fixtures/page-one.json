@@ -1,0 +1,1 @@
+{"data":{"issues":{"nodes":[{"id":"issue-one","title":"First issue","description":"First description","dueDate":"2026-12-01"}],"pageInfo":{"hasNextPage":true,"endCursor":"cursor-one"}}}}

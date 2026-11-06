@@ -1,0 +1,1 @@
+{"data":{"issue":{"id":"issue-one","title":"First issue","description":"First description","dueDate":null}},"errors":[{"message":"Synthetic due date unavailable","path":["issue","dueDate"],"locations":[{"line":1,"column":67}],"extensions":{"code":"SYNTHETIC_DUE_DATE_FAILURE"}}],"extensions":{"trace":"synthetic-due-date"}}
