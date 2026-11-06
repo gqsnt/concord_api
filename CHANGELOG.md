@@ -1,5 +1,43 @@
 # Changelog
 
+## Unreleased — interface consolidation (candidate)
+
+Not released: the version is unchanged (4.2.0) and no release has been decided. Records:
+`v4/sdk20/`. Source-compatible for callers of the existing API except where noted.
+
+### Added
+
+- **One response boundary.** `Prepared::receive()` executes once and returns `Received<T>`: any
+  status, body unread, the declared handling and the endpoint identity (`Operation`). Read the head
+  (`head()`), then consume once: `decode()` (what `send()` does), `into_incoming()` (an incremental
+  reader chosen at run time) or `into_response()` (native). `Decoder::execute`, `Decoder::receive`
+  and `Decoder::transport_error` serve natively edited requests without reconstructing execution.
+- **Truthful streaming outputs.** `-> stream T` (format `Incremental<T>`) makes `send()` return the
+  format's reader without reading the body; `-> stream` returns the unread `Incoming` body.
+  `Incremental` is implemented by `Csv<..>`, `JsonLines`, `Ndjson`, the new `jsonl::JsonStream`
+  (consecutive JSON values) and `IgnoreContentType<F>`.
+- **Readers open declared responses.** `CsvReader::open/open_raw`, `JsonLinesReader::open` and
+  `JsonValuesReader::open` accept `Incoming`, `Received<T>` or a native response
+  (`stream::Openable`); the endpoint's identity reaches every `ReadError` without `open_for`.
+  `completion()` distinguishes a clean end of input from a failure or an early stop.
+  `into_stream()` returns an owning standard `Stream` (`stream::RecordStream`).
+- **Runtime body media.** `Encode::encode_body` (defaulted) returns an `EncodedBody` whose media
+  type is bound to its bytes; contradictions with a declared media type or `content-type` header
+  are `Build` errors before I/O. The `Encoded` format sends an `EncodedBody` or `stream::Upload`
+  through a declared body.
+- **Ordinary pagination.** `concord_pagination::Pages`/`PageItems`/`ItemStream`: nameable,
+  owned traversals whose `Ok(None)` means provider exhaustion; caps and failures are typed
+  `PagesError`s; `collect_complete` returns `Incomplete` with the collected prefix.
+  `JobsReport::into_resume` / `IndependentReport::into_resume` decompose a report losslessly.
+
+### Changed
+
+- `Error`'s identity is an `Operation`; `Display` of a labelled native response starts with the
+  label. `Error::endpoint()` is unchanged for declared endpoints.
+- The reader `open` methods take `impl Openable` instead of `reqwest::Response` (a native
+  response still works unchanged).
+- `IgnoreContentType<F>` forwards `encode_body`, so a runtime media type of `F` is kept.
+
 ## Unreleased — 4.4 extensions (candidate)
 
 Additive, not released: the version is unchanged (4.2.0) and no release or version has been
