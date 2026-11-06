@@ -318,3 +318,33 @@ Library gaps it reported:
 | W23-8 | generated scope/endpoint handles have no value getters (S3 lost `Bucket::name()` and reads the range and continuation token back from the built request) | CANDIDATE between waves 3-4: with W2-12 (GitLab base URL) this is a second consumer of "read what the declaration holds"; decide on wave 3 evidence |
 | W23-9 | adopting a policy leaves `prepare()` the declared (unsigned) request: S3's 12 signed `prepare()` call sites compiled unchanged and failed only at run time | DOCS (between waves 3-4, docs frozen during the wave): AUTHOR_GUIDE §5.13 to say that an SDK whose callers relied on a decorated `prepare()` gives that a distinct name |
 
+
+## Wave 3 (frozen library `6d6d66aa`; ntfy, Linear, Dropbox, Google Drive)
+
+All twelve roles done; merged `2c1d5295` (Linear), `7354d5a3` (Drive), `0bc35457` (Dropbox),
+`961db5c8` (ntfy). Gate on `961db5c8` (library still `6d6d66aa`): `verify.sh --package --bench`
+43/43 PASS, clean tree, 3m37s (`work/logs/gate-961db5c8-verify.txt`). Process note: the Dropbox
+author's first delivery had a flaky concurrency test (1 of 8 full runs; a `Condvar` wait blocked a
+runtime worker inside a test-server generator); the same Codex session was resumed with the
+failure and fixed the test only; 10/10 coordinator runs afterwards.
+
+| ID | Evidence | Cause | Disposition |
+|---|---|---|---|
+| W3-1 | `text/event-stream` framed by hand twice, independently: OpenAI (W2-8) and ntfy (~250 lines: BOM and CRLF split across chunks, comments, multi-line data, truncation as error) | shared mechanic, 2 consumers | IMPLEMENT R1: `concord-extras` `sse` (in progress) |
+| W3-2 | multipart framed by hand three times: `examples/multipart` (form-data, scanned boundary), OpenAI (form-data, fixed boundary + collision refusal), Drive (related, scanned boundary) | shared mechanic, 3 consumers | IMPLEMENT R2: `concord-extras` `multipart` (in progress) |
+| W3-3 | eleven SDKs define their own `ResponseMeta {status, version, headers, operation}`; OpenAI's derives `Debug` and prints every header value; Linear #3, Dropbox #1, Drive #5: "the SDK still assembles an owned error boundary" | shared mechanic | IMPLEMENT `bd8b1869`: `concord::ResponseMeta` (`Received::meta`, `Incoming::meta`; `Debug` names only); SDK migrations after R1/R2 |
+| W3-4 | ntfy: an own reader cannot reuse `ReadError`, `RecordReader`, `RecordStream` (sealed, `pub(crate)` constructors) | sealed on purpose (redaction and completion invariants) | REJECT_WITH_REASON for unsealing; R1 removes the SSE case |
+| W3-5 | ntfy: media-type helpers private; an `Incremental` wrapper only gets NDJSON's preset limits | extras API | DEFER: R1 removes the need here; revisit with another custom stream format |
+| W3-6 | ntfy: `Incoming::chunk` cancel-safety undocumented | docs | FIXED `509acf3d`: tested (`a_cancelled_chunk_call_loses_no_byte`) and documented |
+| W3-7 | Dropbox consumer F2: `PagesError` rustdoc says `Display` includes the provider error; it does not (since SOL-A-1) | stale docs | FIXED `92488bcb` |
+| W3-8 | Dropbox consumer F1: generated `{Client}Config` docs promise `maybe_*` methods the client may not have; a private declaration re-exporting its Config leaks hidden names | generated docs + SDK placement | FIXED `75b3e718`: the sentence names only existing setters; AUTHOR_GUIDE §5.13 advice |
+| W3-9 | Dropbox author's flaky test; Dropbox consumer padded a body with whitespace to hold a reply | test tooling | IMPLEMENT `fbf47c3d`: `Gate` + `Reply::after` in the test server |
+| W3-10 | Drive #7: an empty PUT (resumable status probe) is sent without `Content-Length`; a declared `content-length` is refused | transport (reqwest omits it) + reserved header | IMPLEMENT `5f29596a`: `Content-Length: 0` for a declared empty buffered body (RFC 9110 §8.6); Drive's probe assertion changed from absent to `"0"`, matching Google's documented probe |
+| W3-11 | Drive #8: docs still steer runtime-boundary multipart to the native route | docs | in R2 |
+| W3-12 | Linear: GraphQL selection written three times with no compile-time tie; the `dueDate` maintenance touched 20 places in 15 files | representation (GraphQL documents) | DEFER: generating GraphQL documents is outside Concord's HTTP declaration; SDK-level options (one field-list macro, `#[non_exhaustive]` model) left to the SDK |
+| W3-13 | Linear consumer: a connection nulled by a partial-data error becomes a decode error and loses the GraphQL diagnostics (README claims retention) | SDK | OPEN SDK finding (outside the maintenance ticket); listed in STATUS open issues |
+| W3-14 | Drive: resumable `308` state machine and uncertain-progress probe | provider protocol | SDK-local (placement correct) |
+| W3-15 | Dropbox: context-bound cursors need SDK glue around `Pages` | pagination | DEFER: one consumer; the page factory carries the context |
+| W3-16 | Dropbox consumer F3/F4: a provider error tag needs three levels of unwrapping; a failed first page carries no member/root | SDK API; redaction by design | SDK |
+| W3-17 | maintenance dispersion: Linear 20 places (GraphQL); Drive and ntfy no production change; Dropbox one runtime location | measurement | — |
+| W3-18 | `checks/stream-stress` `jsonl_upload_cancellation_stops_polling_the_source` failed once in a full parallel `cargo test --workspace` while two agents were building (load ~7.8); 8/8 alone; a pre-existing timing test (`61b29e48`), unrelated to buffered bodies | observed flake | OBSERVED; not changed; watched in gates |
