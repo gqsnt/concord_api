@@ -84,6 +84,7 @@ commit; the coordinator commits their files and records it.
 | W4 consumer SDK13 Open-Meteo | `gpt-6.1-terra` xhigh | `gpt-6.1-terra`, `xhigh`, workspace-write + `work/target-a`, network (session `01a1af89-6752…`) | `work/w4-sdk13-open-meteo` | `1f6ec3e0` (8 first-use tests, no intervention), coordinator commit | |
 | W4 maintainer SDK13 Open-Meteo | `gpt-6-astra` xhigh | `gpt-6-astra`, `xhigh`, workspace-write + `work/target-a`, network (session `01a1af8b-04b5…`) | same | `7cd5e536` (maintenance wire tests; one production definition changed), coordinator commit | first run ended with exit 101 on the full disk; same session resumed after the cleanup and finished |
 | Between waves 4-5: R4 CSV quote at EOF | Opus subagent | running (transcript read at completion) | agent worktree | | |
-| W4 consumer SDK16 Snowflake | Opus subagent | running (transcript read at completion) | `work/w4-sdk16-snowflake` | | |
+| W4 consumer SDK16 Snowflake | Opus subagent | `claude-opus-5-5`, effort `xhigh` sent; answered by `claude-opus-5-5` (`agent-aab72449…`) | `work/w4-sdk16-snowflake` | `19ef84e3` (18 first-use tests, no intervention) | |
 | W4 consumer SDK15 ClickHouse | `gpt-6.1-sol` xhigh | `gpt-6.1-sol`, `xhigh`, workspace-write + `work/target-a`, network (session `01a1af9e-836f…`) | same | `699239c2` (17 first-use tests, no intervention), coordinator commit | |
-| W4 maintainer SDK15 ClickHouse | `gpt-6.1-terra` xhigh | `gpt-6.1-terra`, `xhigh`, workspace-write + `work/target-a`, network (session `01a1afa4-f459…`) | same | | |
+| W4 maintainer SDK15 ClickHouse | `gpt-6.1-terra` xhigh | `gpt-6.1-terra`, `xhigh`, workspace-write + `work/target-a`, network (session `01a1afa4-f459…`) | same | `2b584d4f` (completion classification repaired; wire tests), coordinator commit | |
+| W4 maintainer SDK16 Snowflake | `gpt-6.1-sol` xhigh | `gpt-6.1-sol`, `xhigh`, workspace-write + `work/target-b`, network (session `01a1afa6-6110…`) | same | | |
