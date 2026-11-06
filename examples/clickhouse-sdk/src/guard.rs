@@ -22,8 +22,8 @@
 //! documentation for what that means).
 //!
 //! Cancel safety: every chunk taken from the inner source is stored in `self` before the next
-//! await, so a dropped `next_chunk` future loses nothing (the inner `reqwest::Response` is
-//! cancel-safe itself).
+//! await, so a dropped `next_chunk` future loses nothing (the inner `Incoming` is cancel-safe
+//! itself).
 
 use std::error::Error as StdError;
 use std::fmt;
@@ -123,11 +123,6 @@ impl<S: ByteSource> Guarded<S> {
             held: Vec::new(),
             state: State::Scanning,
         }
-    }
-
-    /// The inner source.
-    pub(crate) fn into_inner(self) -> S {
-        self.inner
     }
 }
 

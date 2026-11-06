@@ -4,12 +4,12 @@ use std::fmt;
 
 use base64::Engine as _;
 use concord::csv::{CsvOptions, CsvReader, HeaderMode};
-use concord::jsonl::{JsonLinesOptions, JsonLinesReader, Ndjson};
+use concord::jsonl::{JsonLinesOptions, JsonLinesReader};
 use concord::reqwest::{self, header::HeaderValue};
 use concord::stream::ByteSource;
-use concord::{Endpoint, Incoming, Incremental, Received};
+use concord::{Endpoint, Incoming, Received};
 use serde::Deserialize;
-use serde::de::{DeserializeOwned, IgnoredAny};
+use serde::de::DeserializeOwned;
 
 use crate::error::{
     Error, LateException, LateSource, ResponseError, ResponseProblem, ServerException, code_of,
@@ -487,11 +487,13 @@ pub(crate) async fn open_rows<T: DeserializeOwned>(
     }
     let incoming = received.into_incoming()?;
     if meta.exception_code().is_some() {
-        return Err(head_exception(incoming.into_response(), operation, meta).await);
+        return Err(head_exception(incoming, operation, meta).await);
     }
     // The guard cannot recognize a block without a nonempty tag. Keep the completion
     // classification consistent with the guard, including malformed empty headers.
     let marked = meta.exception_tag().is_some_and(|tag| !tag.is_empty());
+    // Each reader checks the head as its `open` would; it then reads the guarded body (the
+    // `Incoming` itself is the guard's source), naming the operation in its errors.
     let reader = match format {
         OutputFormat::CsvWithNames => {
             let csv = CsvReader::new(CsvOptions::new(HeaderMode::Present, b','))
@@ -500,22 +502,17 @@ pub(crate) async fn open_rows<T: DeserializeOwned>(
                 let problem = ResponseProblem::ContentType { label: e.label() };
                 return Err(refused(operation, problem, meta));
             }
-            let body = Guarded::new(incoming.into_response(), meta.exception_tag());
-            Reader::Csv(Box::new(csv.read(body)))
+            let body = Guarded::new(incoming, meta.exception_tag());
+            Reader::Csv(Box::new(csv.read_for(body, operation)))
         }
         OutputFormat::JsonEachRow => {
-            // `JsonLinesReader` has no public head check; the static NDJSON format's is the same
-            // media policy (`application/x-ndjson`, charset absent or UTF-8).
-            if let Err(e) =
-                <Ndjson as Incremental<IgnoredAny>>::check_content_type(&incoming.head())
-            {
+            let json = JsonLinesReader::new(JsonLinesOptions::ndjson());
+            if let Err(e) = json.check_head(&incoming.head()) {
                 let problem = ResponseProblem::ContentType { label: e.label() };
                 return Err(refused(operation, problem, meta));
             }
-            let body = Guarded::new(incoming.into_response(), meta.exception_tag());
-            Reader::Json(Box::new(
-                JsonLinesReader::new(JsonLinesOptions::ndjson()).read(body),
-            ))
+            let body = Guarded::new(incoming, meta.exception_tag());
+            Reader::Json(Box::new(json.read_for(body, operation)))
         }
     };
     Ok(Rows {
