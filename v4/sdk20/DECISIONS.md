@@ -116,3 +116,7 @@ waves with at least two new distinct providers showing the same repetition.
 | MG-4 | GitHub `download::locate` | no way to build a `Status` error from an unexpected status without a branch that cannot succeed | DEFER: one call site; revisit if Phase B shows it again |
 
 Test: `checks/phase-a/tests/received.rs::the_final_url_and_labelled_native_inputs`.
+| MG-5 | Salesforce result parts | `Received::operation()`/`Incoming::operation()` are `Option` even for generated endpoints; the SDK keeps a fallback name for provider errors built from decoded JSON | DEFER: no wrong result, one SDK; revisit if Phase B SDKs repeat it (a per-endpoint `Operation` constant would be the candidate) |
+| MG-6 | Salesforce query facade | a `&self` helper returning `impl Future + 'static` captures the borrow under edition 2024 and needs `+ use<..>` for `Pages::new` | DOCS_ONLY: pagination README note |
+| MG-7 | Kubernetes / multipart | generated body docs ignored runtime media; format links tripped `rustdoc::redundant_explicit_links` under `-D warnings` | IMPLEMENT in the macro (docs wording, targeted allow on generated owner types) |
+| MG-8 | Phase A UI case | rustc lists `Incremental` implementors, which depend on enabled features; one stderr cannot hold for json-only and workspace builds | test layout: `tests/ui_stream` runs only with `json`+`csv`+`jsonl` |

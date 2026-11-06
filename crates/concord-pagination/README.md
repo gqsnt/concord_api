@@ -53,6 +53,11 @@ async fn all_invoices() -> Result<Vec<u32>, Incomplete<u32, ApiError, String>> {
 }
 ```
 
+The factory and its futures are `Send + 'static`: move a cloned client into the closure. A
+helper method that builds the page future from `&self` and returns `impl Future + 'static` still
+captures the borrow under edition 2024; write `-> impl Future<Output = ..> + use<..>` naming only
+the type parameters it needs (or return an `async move` block from a clone).
+
 ## The engine: every traversal shape
 
 | Entry point | Shape | Typical provider |
