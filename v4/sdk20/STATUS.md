@@ -70,7 +70,7 @@ commit, so no baseline intervention was needed.
 | SDK06 | GitLab | medium | 2 | Opus subagent (`debaefb7`) | `gpt-6.1-sol` xhigh, 18 tests, unassisted (`5d15bc2b`) | `gpt-6.1-terra` xhigh (`e1b813b5`) | WAVE_2_DONE, merged `8288e3e6` |
 | SDK07 | Slack Web API | medium | 2 | `gpt-6.1-sol` xhigh (`ae8ddfb1`) | `gpt-6.1-terra` xhigh, 6 tests, unassisted (`31cad62d`) | `gpt-6-astra` xhigh (`c844a878`) | WAVE_2_DONE, merged |
 | SDK08 | OpenAI | large | 2 | `gpt-6.1-terra` xhigh (`8a659204`) | `gpt-6-astra` xhigh, 18 tests, unassisted (`08f97864`) | Opus subagent (`51d0eee3`) | WAVE_2_DONE, merged |
-| SDK09 | ntfy | small | 3 | Opus subagent (`f255d4df`) | `gpt-6.1-sol` (running) | `gpt-6.1-terra` | WAVE_3_CONSUMER |
+| SDK09 | ntfy | small | 3 | Opus subagent (`f255d4df`) | `gpt-6.1-sol` xhigh, 12 tests, unassisted (`bd7861d1`) | `gpt-6.1-terra` (running) | WAVE_3_MAINTENANCE |
 | SDK10 | Linear | medium | 3 | `gpt-6.1-terra` xhigh (`ed548bd5`) | `gpt-6-astra` xhigh, 18 tests, unassisted (`3ae13c1c`) | Opus subagent (`9466d1eb`) | WAVE_3_ROLES_DONE, merged `2c1d5295` |
 | SDK11 | Dropbox | medium | 3 | `gpt-6-astra` xhigh (`69692433`; flaky test fixed by the same session) | Opus subagent, 18 tests, unassisted (`373362dc`) | `gpt-6.1-sol` xhigh (`72249e49`) | WAVE_3_ROLES_DONE, merged `0bc35457` |
 | SDK12 | Google Drive | large | 3 | `gpt-6.1-sol` xhigh (`6d9d7fb9`) | `gpt-6.1-terra` xhigh, 5 tests, unassisted (`e8968c80`) | `gpt-6-astra` xhigh (`9bc413b0`, no production change needed) | WAVE_3_ROLES_DONE, merged `7354d5a3` |
