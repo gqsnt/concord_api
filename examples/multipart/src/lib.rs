@@ -1,5 +1,11 @@
 //! U29 (R09): a `multipart/form-data` upload, two ways.
 //!
+//! **For an ordinary multipart body, use the library format:** `concord::multipart` (feature
+//! `multipart`), `body form: MultipartBody` with `request Multipart;`. It covers Route 2 below for
+//! `multipart/form-data` and `multipart/related`, with a deterministic boundary checked against
+//! every part. This crate keeps its own local [`Multipart`] as the demonstration of a custom format
+//! with a runtime media type ([`Encode::encode_body`]), and Route 1 for parts reqwest streams.
+//!
 //! # Route 1: reqwest's own `multipart` feature (native recipe, [`upload`])
 //!
 //! The endpoint is declared without a body: Concord owns the path, the authorization header and
@@ -57,7 +63,8 @@
 //! declaration, the media type checked against the declaration before anything is sent).
 //!
 //! This crate is the only one in the workspace that enables reqwest's `multipart` feature; the
-//! `concord` crate itself has no multipart policy and does not depend on it.
+//! `concord` crate does not depend on it (its own `multipart` feature is the format above, written
+//! without reqwest's).
 
 use std::collections::hash_map::RandomState;
 use std::hash::{BuildHasher, Hasher};
@@ -225,7 +232,8 @@ impl UploadForm {
 }
 
 /// `multipart/form-data` for a declared [`UploadForm`] body, with a boundary generated per body
-/// (see the [crate documentation](crate) for when to prefer the native recipe).
+/// (see the [crate documentation](crate) for when to prefer the native recipe). A demonstration of
+/// a custom format: `concord::multipart::Multipart` is the library's multipart format.
 ///
 /// [`encode_body`](Encode::encode_body) writes every part into one buffer, chooses a boundary
 /// that occurs nowhere in that buffer, and returns the bytes (known length: sent with

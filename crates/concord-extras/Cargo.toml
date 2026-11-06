@@ -1,6 +1,6 @@
 [package]
 name = "concord-extras"
-description = "Concord's standard formats (Json, Text, Binary, Form, Csv, JSON Lines), finite and incremental, written against the public Encode/Decode contracts of concord-core."
+description = "Concord's standard formats (Json, Text, Binary, Form, Csv, JSON Lines, multipart request bodies), finite and incremental, written against the public Encode/Decode contracts of concord-core."
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -25,6 +25,9 @@ stream = ["dep:futures-core", "dep:http-body"]
 csv = ["stream", "dep:csv", "dep:csv-core", "dep:serde"]
 ## JSON Lines / NDJSON (finite and incremental) and consecutive JSON values, via serde_json.
 jsonl = ["stream", "dep:serde", "dep:serde_json"]
+## `multipart::Multipart`: `multipart/form-data` and `multipart/related` request bodies with a
+## boundary chosen per body. No dependency.
+multipart = []
 
 [dependencies]
 concord-core = { path = "../concord-core", version = "=4.2.0" }

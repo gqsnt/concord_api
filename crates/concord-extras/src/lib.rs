@@ -10,6 +10,7 @@
 //! | `jsonl::JsonLines` | `jsonl` | `Vec<T: Serialize>` or a lazy `jsonl::StreamRecords<S>`, compact JSON with an LF after every record, `application/jsonl` | `Vec<T: DeserializeOwned>`; exactly one `application/jsonl`, `application/jsonlines` or `application/x-jsonlines`, charset absent or once and UTF-8 or US-ASCII; blank lines and a byte order mark refused | `application/jsonl` |
 //! | `jsonl::Ndjson` | `jsonl` | as `JsonLines`, `application/x-ndjson` | as `JsonLines` with `application/x-ndjson` or `application/ndjson`; blank lines ignored | `application/x-ndjson` |
 //! | [`IgnoreContentType<F>`] | — | `F`'s | `F`'s, without its `Content-Type` check | `F`'s |
+//! | `multipart::Multipart` | `multipart` | `multipart::MultipartBody`: `multipart/form-data` or `multipart/related` parts held in memory, `multipart/<subtype>; boundary=...` chosen per body so that it occurs in no part (a runtime media type), sent with `Content-Length` | — | none |
 //! | `csv::Csv<H, D, P>` | `csv` | `Vec<T: Serialize>`, `csv::Rows`, a lazy `csv::StreamRows`, `csv::RawTable`; `text/csv; header=present\|absent` from `H` | `Vec<T: DeserializeOwned>`, `csv::RawTable`; exactly one `text/csv` (profile can relax), charset absent or UTF-8/US-ASCII, a `header=` parameter agreeing with `H`; also an incremental reader | `text/csv` |
 //!
 //! Head checks run before the body is read; a refusal is an
@@ -32,6 +33,8 @@ mod json;
 #[cfg(feature = "jsonl")]
 pub mod jsonl;
 mod media;
+#[cfg(feature = "multipart")]
+pub mod multipart;
 #[cfg(feature = "stream")]
 pub mod stream;
 mod text;

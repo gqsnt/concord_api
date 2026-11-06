@@ -83,7 +83,7 @@ async fn workflow_a(drive: &DriveClient) -> Result<File, Box<dyn std::error::Err
         let metadata = drive.get_file(&first.id, &fields).await?;
         println!("file id: {}", metadata.value.id);
     }
-    let bytes = b"\0\xff\r\n--concord_drive_0\r\nbinary\0";
+    let bytes = b"\0\xff\r\n--concord-boundary-0\r\nbinary\0";
     let created = drive.upload_multipart(
         NewFile { name: "café-東京-🛰.bin".into(), ..NewFile::default() },
         "application/octet-stream", bytes, &fields,

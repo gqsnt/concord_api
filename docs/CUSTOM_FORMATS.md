@@ -48,12 +48,12 @@ trait Decode<T> {
   enabled in your own `Cargo.toml`). Preparing the request need not read the payload; executing
   it reads it once. [`examples/native/src/upload.rs`](../examples/native/src/upload.rs) moves a
   non-`Clone` one-shot source this way.
-- `Encode::CONTENT_TYPE` is static, and `Encode::encode` does not return per-body media headers.
-  For a media type that changes with the body (a multipart boundary), use the native
-  request-construction route (`into_parts`, then reqwest's multipart support, as in
-  [`examples/multipart`](../examples/multipart)). An explicit matching `content-type` header is
-  also possible when the endpoint or SDK controls that body/header pair: it replaces the format's
-  static value ([author guide](AUTHOR_GUIDE.md#53-media-types-and-content-type)).
+- `Encode::CONTENT_TYPE` is static. For a media type that changes with the body, override
+  `Encode::encode_body` and return the media type with the bytes ([9a](#9a-a-media-type-known-only-at-run-time)).
+  For multipart bodies there is a standard format, `concord::multipart::Multipart` (feature
+  `multipart`): write your own only for a rule it does not have. The native route (`into_parts`,
+  then reqwest's multipart support, as in [`examples/multipart`](../examples/multipart)) remains
+  for large or streamed parts.
 - For a response read incrementally, use `send_raw` and native reads: typed `Decode` receives
   the collected body bytes. See [recipes](RECIPES.md) for the native routes.
 
@@ -628,6 +628,11 @@ and withholds the body, to show that a refusal needs only the head.
 a multipart boundary generated per body, a dialect parameter chosen per job — override
 `Encode::encode_body` and return an `EncodedBody` with the runtime value; Concord calls
 `encode_body` (its default wraps `encode`), so formats that do not need this change nothing.
+
+The excerpt below writes a minimal multipart body to show the mechanism. For real multipart
+bodies use the standard `concord::multipart::Multipart` (feature `multipart`), which also chooses
+a boundary that occurs in no part and refuses names it cannot write unambiguously; it overrides
+`encode_body` exactly like this.
 
 Excerpt of `checks/phase-a/tests/bodies.rs`:
 

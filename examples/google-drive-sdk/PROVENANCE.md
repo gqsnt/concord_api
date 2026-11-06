@@ -31,8 +31,8 @@ byte-preserved by `.gitattributes` (`fixtures/** -text`).
 | File under `fixtures/` | Sources/version/access | Transformations and purpose |
 | --- | --- | --- |
 | `new-file.json` | U multipart metadata; N writable metadata; Drive v3, 2026-11-06 | Minimal `name` object using invented `café-東京-🛰.bin`; UTF-8 serialization, no LF. |
-| `small.bin` | U multipart media; Drive v3, 2026-11-06 | Entirely invented binary payload: NUL, FF, 80, ASCII, CRLF and `--concord_drive_0`; no provider byte example was used. |
-| `multipart-related.bin` | U multipart/related HTTP framing; Drive v3, 2026-11-06 | Authored expected request: two MIME parts, exact `new-file.json`, exact `small.bin`, CRLF separators, closing delimiter. Boundary `concord_drive_1` avoids the seed's collision with candidate 0. |
+| `small.bin` | U multipart media; Drive v3, 2026-11-06 | Entirely invented binary payload: NUL, FF, 80, ASCII, CRLF and `--concord-boundary-0` (`--concord_drive_0`, the SDK's own first candidate, until the shared multipart format between waves 3-4; see `INTEGRATION.md`); no provider byte example was used. 55 bytes. |
+| `multipart-related.bin` | U multipart/related HTTP framing; Drive v3, 2026-11-06 | Authored expected request: two MIME parts, exact `new-file.json`, exact `small.bin`, CRLF separators, closing delimiter. Boundary `concord-boundary-1` avoids the seed's collision with candidate 0 (was `concord_drive_1`; rewritten by byte substitution between waves 3-4 and checked against an independent reassembly of the two input fixtures). |
 | `file-created.json` | U final metadata; G/N/F File shape; Drive v3, 2026-11-06 | Invented `file-new`, Unicode name, octet-stream and string size equal to `small.bin` length. Omit unselected fields. |
 | `file-resumable.json` | U completed transfer; G/F File shape; Drive v3, 2026-11-06 | Invented `file-resumed`; string size 524325 matches the expanded workflow source. |
 | `files-page-1.json` | L response body; Drive v3, 2026-11-06 | Invented first file, `incompleteSearch:false`, opaque Unicode/reserved-character token `files/+2=é`. |
@@ -104,11 +104,11 @@ hand-authored synthetic inputs and expected output, covered by `fixtures/** -tex
 
 | Fixture | Authored bytes and purpose |
 | --- | --- |
-| `maintenance-new-file.json` | 49 bytes of compact UTF-8 JSON, no terminal LF. The name contains `e` + U+0301, Japanese text, a satellite emoji, and `concord_drive_0`. No Unicode normalization is applied. |
-| `maintenance-media.bin` | 60 invented bytes: NUL, FF, 80, FE, CRLF, a candidate-1 delimiter line and a candidate-2 closing-delimiter line. Ends in CRLF. |
-| `maintenance-multipart.bin` | 263 hand-assembled expected bytes: candidate 3 framing, the exact metadata and media fixtures, CRLF separators and final delimiter. Authored independently of SDK output. |
+| `maintenance-new-file.json` | 52 bytes of compact UTF-8 JSON, no terminal LF. The name contains `e` + U+0301, Japanese text, a satellite emoji, and `concord-boundary-0` (was `concord_drive_0`, 49 bytes, before the shared multipart format). No Unicode normalization is applied. |
+| `maintenance-media.bin` | 66 invented bytes: NUL, FF, 80, FE, CRLF, a candidate-1 delimiter line and a candidate-2 closing-delimiter line (`concord-boundary-1`/`-2`; `concord_drive_1`/`_2`, 60 bytes, before the shared multipart format). Ends in CRLF. |
+| `maintenance-multipart.bin` | 281 hand-assembled expected bytes: candidate 3 framing, the exact metadata and media fixtures, CRLF separators and final delimiter. Authored independently of SDK output (263 bytes with `concord_drive_3` before the shared multipart format; rewritten by byte substitution and checked against an independent reassembly). |
 
-`tests/maintenance.rs` repeats the 60-byte seed and truncates to
+`tests/maintenance.rs` repeats the 66-byte seed and truncates to
 `2 * CHUNK_ALIGNMENT + 37 = 524325` bytes for both restart cases. The server
 commits the first chunk; the partial-acceptance case commits only 17 bytes of
 the next request and closes the connection without a response. This models

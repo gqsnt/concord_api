@@ -13,7 +13,7 @@ use serde_json::json;
 use support::{RATE_LIMIT, auth, cap, client, fields};
 
 // Deliberately decomposed e + combining acute; normalization would change the name.
-const NAME: &str = "cafe\u{301}-東京-🛰-concord_drive_0.bin";
+const NAME: &str = "cafe\u{301}-東京-🛰-concord-boundary-0.bin";
 const METADATA: &[u8] = include_bytes!("../fixtures/maintenance-new-file.json");
 const MEDIA: &[u8] = include_bytes!("../fixtures/maintenance-media.bin");
 const MULTIPART: &[u8] = include_bytes!("../fixtures/maintenance-multipart.bin");
@@ -54,7 +54,7 @@ async fn multipart_skips_multiple_collisions_without_normalizing_name_or_media()
     assert_eq!(request.query_all("uploadType"), ["multipart"]);
     assert_eq!(
         request.header("content-type"),
-        Some("multipart/related; boundary=concord_drive_3")
+        Some("multipart/related; boundary=concord-boundary-3")
     );
     assert_eq!(
         request.header("content-length"),

@@ -208,6 +208,10 @@
 //! - `stream`, `csv`, `jsonl`: incremental bodies (`concord::stream`), `concord::csv` and
 //!   `concord::jsonl`; each implies `extras`, **not** `json` — with `default-features = false`,
 //!   add `json` too if the same client also decodes JSON documents.
+//! - `multipart`: `concord::multipart`, `multipart/form-data` and `multipart/related` request
+//!   bodies (`request Multipart;` with a `MultipartBody`) whose boundary is chosen per body and
+//!   sent as its runtime media type. Implies `extras`; no dependency (reqwest's own `multipart`
+//!   feature stays off).
 //! - `reqwest-defaults` (default): reqwest's default features (TLS, HTTP/2, system proxy).
 //!   Disable it to choose reqwest's features in your own `Cargo.toml`.
 
@@ -225,6 +229,8 @@ pub use concord_extras::Json;
 pub use concord_extras::csv;
 #[cfg(feature = "jsonl")]
 pub use concord_extras::jsonl;
+#[cfg(feature = "multipart")]
+pub use concord_extras::multipart;
 #[cfg(feature = "stream")]
 pub use concord_extras::stream;
 #[cfg(feature = "extras")]
