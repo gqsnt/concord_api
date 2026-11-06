@@ -27,7 +27,7 @@ use std::collections::VecDeque;
 use std::future::Future;
 use std::net::SocketAddr;
 use std::pin::Pin;
-use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
@@ -196,6 +196,8 @@ pub struct Reply {
     pub delay: Option<Duration>,
     /// Close the connection after reading the request, without answering.
     pub hang_up: bool,
+    /// Wait until this gate is opened (after any `delay`) before sending the head.
+    pub after: Option<Gate>,
 }
 
 impl Reply {
@@ -206,6 +208,7 @@ impl Reply {
             body: Body::Full(Bytes::new()),
             delay: None,
             hang_up: false,
+            after: None,
         }
     }
 
@@ -247,6 +250,54 @@ impl Reply {
     pub fn delay(mut self, delay: Duration) -> Self {
         self.delay = Some(delay);
         self
+    }
+
+    /// Holds the head until `gate` is opened — typically by the responder handling another
+    /// request — so a test can prove two requests overlap without a sleep and without blocking
+    /// a runtime thread in the responder.
+    pub fn after(mut self, gate: Gate) -> Self {
+        self.after = Some(gate);
+        self
+    }
+}
+
+/// A one-way latch shared between replies: [`Reply::after`] waits on it, [`Gate::open`] (from a
+/// responder or the test) releases every waiter, now and later. Clone it freely.
+#[derive(Clone, Default)]
+pub struct Gate(Arc<(AtomicBool, Notify)>);
+
+impl Gate {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Opens the gate (idempotent).
+    pub fn open(&self) {
+        self.0.0.store(true, Ordering::SeqCst);
+        self.0.1.notify_waiters();
+    }
+
+    pub fn is_open(&self) -> bool {
+        self.0.0.load(Ordering::SeqCst)
+    }
+
+    /// Waits until the gate is open.
+    pub async fn wait(&self) {
+        loop {
+            let notified = self.0.1.notified();
+            if self.is_open() {
+                return;
+            }
+            notified.await;
+        }
+    }
+}
+
+impl std::fmt::Debug for Gate {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Gate")
+            .field("open", &self.is_open())
+            .finish()
     }
 }
 
@@ -571,6 +622,9 @@ async fn serve(
         }
         if let Some(delay) = reply.delay {
             tokio::time::sleep(delay).await;
+        }
+        if let Some(gate) = &reply.after {
+            gate.wait().await;
         }
         let mut out = format!("HTTP/1.1 {} X\r\n", reply.status);
         for (n, v) in &reply.headers {
