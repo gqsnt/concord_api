@@ -80,3 +80,17 @@ DEFER_WITH_REASON, REJECT_WITH_REASON. Source review findings F1–F7 are in the
   (`Provider`, `Bounded`, `Ended`), `Incomplete` for `collect_complete`; lossless `into_resume` on
   `JobsReport` and `IndependentReport`. No hidden cap; exhaustion is checked before a cap reached on
   the last page. Engine semantics unchanged; `into_rerun` documented as lossy.
+
+## Gate A independent consumer (`checks/consumers/phase-a-dx`, Codex `gpt-6.1-terra` xhigh)
+
+Unassisted first use from public docs and rustdoc; no implementation source read (its
+`REPORT.md`). All four outcomes completed (9 tests). Findings and dispositions:
+
+| ID | Observation | Attribution | Disposition |
+|---|---|---|---|
+| FA-1 | RECIPES' metadata recipe led with `into_parts`; rustdoc of `receive` showed the shorter path | docs | DOCS_ONLY, `8bcd1015`: recipe starts from `receive()`; native recipe uses `transport_error` |
+| FA-2 | `csv`/`jsonl` do not enable `json`; the consumer wrote its own JSON decoder | docs (feature selection was the brief's) | DOCS_ONLY, `8bcd1015`: feature list says so |
+| FA-3 | moving a `RecordStream` into an upload hid its completion and terminal error; consumer wrote a shared-state `unfold` adapter and stringified the error | library (A3 composition) | IMPLEMENT, `8bcd1015`: `RecordStream::watch() -> StreamWatch` (completion, position, failure kind; the `ReadError` itself is the upload error's source); test `streams.rs::a_watch_reports_the_download_outcome_after_the_upload` |
+| FA-4 | `CsvWriter` docs still said to apply `Upload` to a native request | docs | DOCS_ONLY, `8bcd1015` |
+| FA-5 | the page projection closure and resume wrapper are written per SDK; `Incomplete` easier to find in the pagination README than in the guides | provider adapter (expected) + docs | SDK examples (Stripe/GitHub facades) and CALLER_GUIDE §6a link; re-check after migration |
+| FA-6 | reading a provider's JSON error document from a non-2xx needed the native response | library candidate | DEFER to the SDK migration evidence: bounded error-document reads already repeat in Stripe/Kubernetes/Salesforce; decide with those cases |
