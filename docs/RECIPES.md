@@ -18,9 +18,14 @@ They use only the public surface: `Prepared::{send, send_raw, into_parts}`, `Dec
 (RFC 9457 problem details, a JSON error object).
 
 - **Bounded, with the head:** `prepare()?.receive().await?`; for a non-2xx, read the document with
-  `received.bytes_limited(n)` (`ErrorKind::Limit` beyond `n`) and decode it as below; a send
-  policy (`send Policy;`) does this once for a whole client.
-- **How (unbounded):** `send()`; on error, return any error whose `status()` is `None` unchanged (not an
+  `received.document::<Json, Problem>(n).await`: it checks the format's head, reads at most `n`
+  bytes and returns metadata beside the result. Choose `IgnoreContentType<Json>` to preserve a
+  provider's policy of accepting any media label. A send policy (`send Policy;`) does this once
+  for a whole client; the [quickstart](QUICKSTART.md#4-configure-the-client-call-handle-the-result)
+  shows it for one call.
+- **Legacy native recipe (unbounded):** `errors::rename_item` retains its owned `reqwest::Error`
+  and `CodecError` payloads; `document` instead returns a `concord::Error` that only borrows
+  those inner errors. It uses `send()`; on error, return any error whose `status()` is `None` unchanged (not an
   error document), then `into_response()?` returns the unread response of the status error;
   decode its bytes with
   `<Json as Decode<Problem>>::decode_body((), bytes)`. That is a body-only decode: it checks no

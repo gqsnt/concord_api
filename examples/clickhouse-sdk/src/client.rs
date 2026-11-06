@@ -7,7 +7,7 @@ use concord::csv::{CsvOptions, CsvReader, HeaderMode};
 use concord::jsonl::{JsonLinesOptions, JsonLinesReader};
 use concord::reqwest::{self, header::HeaderValue};
 use concord::stream::ByteSource;
-use concord::{Endpoint, Incoming, Received};
+use concord::{Endpoint, IgnoreContentType, Incoming, Received, Text};
 use serde::Deserialize;
 use serde::de::DeserializeOwned;
 
@@ -262,8 +262,7 @@ impl ClickHouse {
         let operation = endpoint_name::<String, _>(&endpoint);
         let received = endpoint.prepare()?.receive().await?;
         if !received.status().is_success() {
-            let meta = ResponseMeta::new(received.meta());
-            return Err(server_exception(received, operation, meta).await);
+            return Err(server_exception(received, operation).await);
         }
         received.decode().await?;
         Ok(())
@@ -387,17 +386,15 @@ pub(crate) async fn execute<E: Endpoint<Incoming>>(
 }
 
 /// A non-2xx answer: the exception text (bounded), its code and name.
-pub(crate) async fn server_exception<T>(
-    received: Received<T>,
-    operation: &'static str,
-    meta: ResponseMeta,
-) -> Error {
-    let status = received.status();
-    let message = received
-        .bytes_limited(ERROR_BODY_LIMIT)
-        .await
+pub(crate) async fn server_exception<T>(received: Received<T>, operation: &'static str) -> Error {
+    // Decode exception text as UTF-8 regardless of the advertised media or charset.
+    let (meta, document) = received
+        .document::<IgnoreContentType<Text>, String>(ERROR_BODY_LIMIT)
+        .await;
+    let meta = ResponseMeta::new(meta);
+    let status = meta.status();
+    let message = document
         .ok()
-        .and_then(|bytes| String::from_utf8(bytes.to_vec()).ok())
         .map(|text| text.trim_end().to_owned())
         .filter(|text| !text.is_empty());
     let code = meta
@@ -472,10 +469,10 @@ pub(crate) async fn open_rows<T: DeserializeOwned>(
     format: OutputFormat,
     operation: &'static str,
 ) -> Result<Rows<T>, Error> {
-    let meta = ResponseMeta::new(received.meta());
     if !received.status().is_success() {
-        return Err(server_exception(received, operation, meta).await);
+        return Err(server_exception(received, operation).await);
     }
+    let meta = ResponseMeta::new(received.meta());
     if let Some(served) = meta.format()
         && !served.eq_ignore_ascii_case(format.name())
     {

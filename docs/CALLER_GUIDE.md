@@ -335,9 +335,11 @@ A status error keeps the **unread** response. `response()` borrows it, so its he
 returns a `Build`, `Transport` or `Decode` error unchanged as `Err`, so `?` propagates those. It
 consumes the error: read `kind()`, `status()` and `endpoint()` first if you need them. Reading the
 body is reqwest's (`response.bytes()` fails with a `reqwest::Error`, which does not convert into
-`concord::Error`). Decode the API's error document
-with a format's `decode_body`, which decodes bytes and checks no response head: the endpoint's
-format was never consulted for a non-2xx response. Excerpt of
+`concord::Error`). The compatibility example below decodes bytes with `decode_body`, without
+checking the error document's head. For new error-document handling, use
+`prepare()?.receive().await?` and `received.document::<Json, Problem>(limit).await`, as in the
+[quickstart](QUICKSTART.md#4-configure-the-client-call-handle-the-result). Use
+`IgnoreContentType<Json>` when the provider accepts any media label. Excerpt of
 [`examples/quickstart/tests/caller_guide.rs`](../examples/quickstart/tests/caller_guide.rs):
 
 ```rust

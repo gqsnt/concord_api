@@ -1,7 +1,6 @@
 //! Sending a prepared operation while keeping selected response metadata: one
-//! `Prepared::receive` (a single execute, any status, body unread), the head read into a value the
-//! SDK owns, then the declared handling (`Received::decode`), with status errors turned into
-//! Salesforce error documents.
+//! `Prepared::receive` (a single execute, any status, body unread), then the declared handling
+//! (`Received::decode_with_meta`), with status errors turned into Salesforce error documents.
 
 use concord::reqwest::header::HeaderMap;
 use concord::{Operation, Prepared};
@@ -51,9 +50,8 @@ pub(crate) async fn send_with_usage<T>(
 ) -> Result<(T, Option<ApiUsage>), SfError> {
     // `receive` fails only when no response arrived (a transport error naming the endpoint).
     let received = prepared.receive().await.map_err(SfError::from)?;
-    let usage = ApiUsage::from_headers(received.head().headers());
-    match received.decode().await {
-        Ok(value) => Ok((value, usage)),
+    match received.decode_with_meta().await {
+        Ok((value, meta)) => Ok((value, ApiUsage::from_headers(meta.headers()))),
         Err(error) => Err(SfError::from_concord(error).await),
     }
 }
@@ -97,5 +95,68 @@ mod tests {
             HeaderValue::from_static("api-usage=x/1"),
         );
         assert_eq!(ApiUsage::from_headers(&h), None);
+    }
+
+    #[tokio::test]
+    async fn failed_status_and_decode_keep_api_usage() {
+        use crate::OrgContext;
+        use crate::ids::{AccessToken, ApiVersion, InstanceUrl};
+        use concord::reqwest;
+        use concord_example_testserver::{Reply, Script, TestServer};
+
+        let script = Script::new([
+            Reply::text(
+                400,
+                "text/plain",
+                r#"[{"errorCode":"INVALID_FIELD","message":"invalid field"}]"#,
+            )
+            .header("sforce-limit-info", "api-usage=41/1000"),
+            Reply::json(200, "{").header("sforce-limit-info", "api-usage=42/1000"),
+        ]);
+        let server = TestServer::start(move |_| script.next()).await;
+        let host = "usage.my.salesforce.test";
+        let http = reqwest::Client::builder()
+            .no_proxy()
+            .resolve(host, server.addr())
+            .build()
+            .unwrap();
+        let context = OrgContext::new(
+            http,
+            InstanceUrl::parse(&format!("http://{host}:{}", server.addr().port())).unwrap(),
+            ApiVersion::PINNED,
+            AccessToken::new("usage-test-token").unwrap(),
+        )
+        .unwrap();
+
+        let status = send_with_usage(context.api().accounts().describe().prepare().unwrap())
+            .await
+            .unwrap_err();
+        assert_eq!(
+            status.api_usage(),
+            Some(ApiUsage {
+                used: 41,
+                limit: 1000
+            })
+        );
+        let api = status.api().unwrap();
+        assert_eq!(api.status().as_u16(), 400);
+        assert_eq!(api.api_usage(), status.api_usage());
+        assert!(status.has_error_code("INVALID_FIELD"));
+
+        let decode = send_with_usage(context.api().accounts().describe().prepare().unwrap())
+            .await
+            .unwrap_err();
+        assert_eq!(
+            decode.api_usage(),
+            Some(ApiUsage {
+                used: 42,
+                limit: 1000
+            })
+        );
+        assert!(
+            matches!(decode, SfError::Concord(ref error) if error.kind() == concord::ErrorKind::Decode)
+        );
+        assert_eq!(server.requests().len(), 2);
+        server.shutdown().await;
     }
 }

@@ -27,7 +27,6 @@ impl ResponseMeta {
         Self(received.meta())
     }
 
-    #[cfg(test)]
     pub(crate) fn from_concord(meta: concord::ResponseMeta) -> Self {
         Self(meta)
     }

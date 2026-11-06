@@ -207,8 +207,14 @@ impl fmt::Display for Error {
 }
 impl std::error::Error for Error {}
 impl From<concord::Error> for Error {
-    fn from(e: concord::Error) -> Self {
-        Self::Concord(e)
+    fn from(source: concord::Error) -> Self {
+        match source.meta() {
+            Some(meta) => Self::Response {
+                meta: Box::new(meta),
+                source,
+            },
+            None => Self::Concord(source),
+        }
     }
 }
 
@@ -217,16 +223,10 @@ async fn send<T: serde::de::DeserializeOwned>(
     prepared: Result<Prepared<Envelope<T>>, concord::Error>,
 ) -> Result<Response<T>, Error> {
     let received = prepared?.receive().await?;
-    let meta = received.meta();
-    if !meta.status().is_success() {
-        let body = received
-            .bytes_limited(65536)
-            .await
-            .map_err(|source| Error::Response {
-                meta: Box::new(meta.clone()),
-                source,
-            })?
-            .to_vec();
+    if !received.status().is_success() {
+        // Keep the raw bytes alongside even a successfully parsed GraphQL document.
+        let meta = received.meta();
+        let body = received.bytes_limited(65536).await?.to_vec();
         let errors = serde_json::from_slice::<Envelope<Value>>(&body)
             .map(|e| e.errors)
             .unwrap_or_default();
@@ -236,13 +236,7 @@ async fn send<T: serde::de::DeserializeOwned>(
             errors,
         });
     }
-    let envelope = received
-        .decode_limited(BODY_LIMIT)
-        .await
-        .map_err(|source| Error::Response {
-            meta: Box::new(meta.clone()),
-            source,
-        })?;
+    let (envelope, meta) = received.decode_limited_with_meta(BODY_LIMIT).await?;
     Ok(Response { envelope, meta })
 }
 

@@ -34,7 +34,7 @@ against a local stand-in server by `cargo test -p concord-example-quickstart`:
 
 ```rust
 use concord::reqwest::{self, header::AUTHORIZATION};
-use concord::{Decode, Json};
+use concord::{IgnoreContentType, Json};
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Deserialize)]
@@ -92,16 +92,21 @@ pub async fn run(base_url: &str, token: String) -> Result<(), Box<dyn std::error
     let open = project.tasks().set_done(false).send().await?; // GET ...?done=false&limit=20
     println!("{} open task(s)", open.len());
 
-    // This API rejects an empty title: a non-2xx status is an error that keeps the response.
-    match project.create(NewTask::default()).send().await {
-        Ok(task) => println!("unexpectedly created task #{}", task.id),
-        Err(error) if error.status().is_some() => {
-            let response = error.into_response()?; // a status error keeps its response
-            let status = response.status();
-            let problem = <Json as Decode<Problem>>::decode_body((), response.bytes().await?)?;
-            println!("rejected with {status}: {}", problem.title);
-        }
-        Err(error) => return Err(error.into()), // any other kind of error propagates
+    // This API rejects an empty title: read its error document with a 64 KiB bound.
+    let received = project
+        .create(NewTask::default())
+        .prepare()?
+        .receive()
+        .await?;
+    if received.status().is_success() {
+        let task = received.decode().await?;
+        println!("unexpectedly created task #{}", task.id);
+    } else {
+        // Preserve this API's policy of accepting JSON regardless of the media label.
+        let (meta, problem) = received
+            .document::<IgnoreContentType<Json>, Problem>(64 * 1024)
+            .await;
+        println!("rejected with {}: {}", meta.status(), problem?.title);
     }
     Ok(())
 }

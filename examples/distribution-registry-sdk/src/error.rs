@@ -13,7 +13,7 @@ use std::fmt;
 
 use concord::bytes::Bytes;
 use concord::reqwest::StatusCode;
-use concord::{Decode, ErrorKind, Json, Operation, Received};
+use concord::{ErrorKind, IgnoreContentType, Json, Operation, Received};
 use serde::Deserialize;
 
 use crate::auth::Challenge;
@@ -134,7 +134,8 @@ impl RegistryError {
 
 impl From<concord::Error> for RegistryError {
     fn from(error: concord::Error) -> Self {
-        Self::Request { error, meta: None }
+        let meta = error.meta().map(ResponseMeta::from_concord).map(Box::new);
+        Self::Request { error, meta }
     }
 }
 
@@ -501,6 +502,9 @@ impl AuthError {
     }
 
     pub(crate) fn with_source(mut self, source: concord::Error) -> Self {
+        if self.meta.is_none() {
+            self.meta = source.meta().map(ResponseMeta::from_concord);
+        }
         self.source = Some(source);
         self
     }
@@ -737,7 +741,6 @@ impl fmt::Display for IntegrityProblem {
 
 /// A non-2xx response as [`RegistryError::Api`], its body read up to the limit.
 pub(crate) async fn api_error<T>(received: Received<T>) -> RegistryError {
-    let meta = ResponseMeta::capture(&received);
     let operation = received.operation();
     let status = received.status();
     let challenge = if status == StatusCode::UNAUTHORIZED {
@@ -745,12 +748,22 @@ pub(crate) async fn api_error<T>(received: Received<T>) -> RegistryError {
     } else {
         None
     };
-    let body = match received.bytes_limited(ERROR_BODY_LIMIT).await {
-        Ok(bytes) if bytes.is_empty() => ErrorBody::Empty,
-        Ok(bytes) => match <Json as Decode<ErrorDocument>>::decode_body((), bytes.clone()) {
-            Ok(document) => ErrorBody::Document(document),
-            Err(_) => ErrorBody::Unrecognized(bytes),
-        },
+    // Registries and proxies are decoded regardless of their media label; malformed bytes
+    // remain available as Unrecognized, including the distinct empty-body case.
+    let (meta, document) = received
+        .document::<IgnoreContentType<Json>, ErrorDocument>(ERROR_BODY_LIMIT)
+        .await;
+    let meta = ResponseMeta::from_concord(meta);
+    let body = match document {
+        Ok(document) => ErrorBody::Document(document),
+        Err(error) if error.kind() == ErrorKind::Decode => {
+            let bytes = error.body_unredacted().cloned().unwrap_or_default();
+            if bytes.is_empty() {
+                ErrorBody::Empty
+            } else {
+                ErrorBody::Unrecognized(bytes)
+            }
+        }
         Err(error) if error.kind() == ErrorKind::Limit => ErrorBody::TooLarge {
             limit: ERROR_BODY_LIMIT,
         },
