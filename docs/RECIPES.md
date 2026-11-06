@@ -402,6 +402,7 @@ synthetic; a fake server proves nothing about the real service.
 | Read a status error's headers without consuming it | `error.response()`; `into_response()` afterwards for the body | `tests/metadata.rs` |
 | An error inside a 2xx (`{"ok": false}`) | a typed output that models the envelope, or a custom `Decode` returning a `CodecError` (its detail goes to `with_source`, read with `source_unredacted()`) | `tests/application.rs` |
 | Nested or bracket form keys (`metadata[order]=7`) | a custom `Encode<T>` with the form media type; `form` itself is flat | `tests/forms.rs` |
+| Follow a `Link: rel="next"` or a `next` URL as the same endpoint | validate the link (origin, path) in the SDK, then `prepare()?.follow(&url)?` and send it: headers and handling are kept, another origin is refused | `checks/phase-a/tests/received.rs` |
 | A key spanning path segments (`docs/2026/report.md`) | `into_parts()`, then `url_mut().path_segments_mut()`; an ordinary path value is one segment (`/` is sent as `%2F`) | `tests/resource_key.rs` |
 | JSON or nothing (`200` with a document, `204` without) | a format of your own implementing `Decode<Option<T>>` that decides on the status: a `204` needs no `Content-Type` and is `None`; any other 2xx must pass `Json`'s head check (`Json` stays strict; an empty `200` is a decode error) | `tests/json_or_empty.rs` |
 | JSON under another media type (Kubernetes server-side apply) | `request Json "application/apply-patch+yaml";` on the endpoint | `tests/apply.rs` |

@@ -381,3 +381,55 @@ async fn a_provider_error_document_is_read_with_a_limit() {
     assert_eq!(error.endpoint(), Some("Reports.summary"));
     assert!(error.to_string().contains("limit of 64 bytes"), "{error}");
 }
+
+#[tokio::test]
+async fn following_a_server_url_keeps_the_endpoint_and_its_origin() {
+    let server = TestServer::start(|r| {
+        if r.target.starts_with("/v1/next?") {
+            Reply::json(200, "{\"id\":2,\"amount\":20}")
+        } else {
+            Reply::json(200, "{\"id\":1,\"amount\":10}")
+        }
+    })
+    .await;
+    let api = api(&server);
+    let next = format!("{}/v1/next?cursor=secret-cursor&page=2", server.url());
+    let prepared = api
+        .summary("first")
+        .prepare()
+        .unwrap()
+        .follow(&next)
+        .unwrap();
+    let shown = format!("{prepared:?}");
+    assert!(!shown.contains("secret-cursor"), "{shown}");
+    assert!(shown.contains("Reports.summary"));
+    let received = prepared.receive().await.unwrap();
+    assert_eq!(received.operation().unwrap().name(), "Reports.summary");
+    assert_eq!(received.decode().await.unwrap(), Row { id: 2, amount: 20 });
+    let request = server.single();
+    assert_eq!(
+        request.target, "/v1/next?cursor=secret-cursor&page=2",
+        "verbatim"
+    );
+    assert_eq!(request.header("authorization"), Some("Bearer s3cr3t-token"));
+    // Another origin, or no URL: refused before any I/O.
+    for (url, reason) in [
+        ("http://elsewhere.test/v1/next".to_owned(), "another origin"),
+        (
+            format!("{}/v1/next", server.url().replace("http://", "https://")),
+            "another origin",
+        ),
+        ("not a url".to_owned(), "does not parse"),
+    ] {
+        let error = api
+            .summary("x")
+            .prepare()
+            .unwrap()
+            .follow(&url)
+            .unwrap_err();
+        assert_eq!(error.kind(), ErrorKind::Build);
+        assert!(error.to_string().contains(reason), "{error}");
+        assert!(!error.to_string().contains("elsewhere"), "{error}");
+    }
+    assert_eq!(server.requests().len(), 1);
+}

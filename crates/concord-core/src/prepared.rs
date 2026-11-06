@@ -24,6 +24,9 @@ pub struct Prepared<T> {
     client: reqwest::Client,
     request: reqwest::Request,
     decoder: Decoder<T>,
+    /// The URL came from the server ([`Prepared::follow`]): the endpoint's placement-based
+    /// redaction does not describe it, so `Debug` withholds it whole.
+    followed: bool,
 }
 
 impl<T> Prepared<T> {
@@ -36,7 +39,39 @@ impl<T> Prepared<T> {
             client,
             request,
             decoder,
+            followed: false,
         }
+    }
+
+    /// The same request with a URL the server returned (a `Link: rel="next"` target, a `next`
+    /// field): the endpoint's method, headers (credentials included), body, declared response
+    /// handling and identity are kept; only the URL is replaced, verbatim.
+    ///
+    /// The URL must have the **same origin** (scheme, host, port) as the prepared one, so the
+    /// endpoint's credentials never reach another host through a link; any further rule (a path
+    /// prefix, a collection) is the SDK's to check before calling this. A cross-origin URL (a
+    /// signed download) is a native request of its own, without these headers. `Debug` withholds
+    /// a followed URL whole: the endpoint's redaction describes its own placements, not the
+    /// server's.
+    ///
+    /// # Errors
+    ///
+    /// [`ErrorKind::Build`](crate::ErrorKind::Build) if `url` does not parse or has another origin;
+    /// nothing is sent.
+    pub fn follow(mut self, url: &str) -> Result<Self, Error> {
+        let meta = self.decoder.operation.and_then(|op| op.meta());
+        let parsed = reqwest::Url::parse(url)
+            .map_err(|_| Error::build(meta, "followed URL", "does not parse"))?;
+        if parsed.origin() != self.request.url().origin() {
+            return Err(Error::build(
+                meta,
+                "followed URL",
+                "has another origin than the endpoint's",
+            ));
+        }
+        *self.request.url_mut() = parsed;
+        self.followed = true;
+        Ok(self)
     }
 
     /// The identity of the endpoint that built this request.
@@ -186,7 +221,10 @@ impl<T> fmt::Debug for Prepared<T> {
         f.debug_struct("Prepared")
             .field("endpoint", &meta.map(|m| m.name))
             .field("method", &self.request.method().as_str())
-            .field("url", &DebugUrl(self.request.url(), meta))
+            .field(
+                "url",
+                &DebugUrl(self.request.url(), meta.filter(|_| !self.followed)),
+            )
             .field("headers", &headers)
             .field("body", &self.request.body().map(|_| "..."))
             .finish()

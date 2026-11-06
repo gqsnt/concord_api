@@ -256,6 +256,10 @@ Each key has one **slot**, positioned at the key's first appearance on the chain
   obtained response (a signed URL) with an optional static label (`Operation::label`), which
   errors and readers print; `Error::endpoint()` names declared endpoints only,
   `Error::operation()` either.
+- `Prepared::follow(url)` replaces the URL of a prepared request with a server-provided one,
+  verbatim, keeping method, headers, body, handling and identity; a URL that does not parse or has
+  another origin (scheme, host, port) is a `Build` error before I/O; `Debug` then withholds the
+  whole URL. Further link rules (path prefix, collection) are the SDK's.
 - `send P;` on the client (once, before children) makes every generated `send()` return
   `<P as SendWith<T>>::Output` by calling `P::send(endpoint)`; the policy owns execution, errors and
   metadata (it usually calls `prepare()` and `receive()`). Without it, `send()` is `prepare()?.send()`.
