@@ -78,7 +78,7 @@ impl SendWith<Rate> for SendPolicy {
 
     async fn send<E: Endpoint<Rate> + Send>(&self, endpoint: E) -> Self::Output {
         let received = endpoint.prepare()?.receive().await?;
-        let meta = ResponseMeta::capture(&received.head(), received.operation());
+        let meta = received.meta();
         if !received.status().is_success() {
             // Status is authoritative even when the document is absent, invalid or inconsistent.
             let document = match <Json as Decode<Problem>>::check_content_type(&received.head()) {

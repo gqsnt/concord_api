@@ -134,7 +134,7 @@ async fn historical_no_data_is_a_typed_failure_not_a_zero_rate() {
     let Error::Provider(error) = result.unwrap_err() else {
         panic!("expected provider error")
     };
-    assert_eq!(error.meta.status.as_u16(), 404);
+    assert_eq!(error.meta.status().as_u16(), 404);
     assert_eq!(error.document.unwrap().message, "no data found");
     assert_wire(&server.single(), "/v2/rate/EUR/ABC?date=1999-01-04");
     assert_eq!(server.shutdown().await.open_after, 0);

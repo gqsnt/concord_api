@@ -160,12 +160,12 @@ async fn a_latest_pair_returns_the_documented_observation() -> TestResult {
     assert_eq!(latest.rate.base, "EUR");
     assert_eq!(latest.rate.quote, "USD");
     assert_eq!(latest.rate.rate, decimal("1.1568"));
-    assert_eq!(latest.meta.status, reqwest::StatusCode::OK);
+    assert_eq!(latest.meta.status(), reqwest::StatusCode::OK);
     assert_eq!(
-        latest.meta.headers.get("x-fake").map(|v| v.as_bytes()),
+        latest.meta.headers().get("x-fake").map(|v| v.as_bytes()),
         Some(&b"frankfurter"[..])
     );
-    let operation = latest.meta.operation.expect("operation identity");
+    let operation = latest.meta.operation().expect("operation identity");
     assert_eq!(operation.name(), "Frankfurter.latest_pair");
     assert_eq!(operation.method(), Some("GET"));
 
@@ -188,7 +188,10 @@ async fn a_currency_text_is_sent_as_supplied() -> TestResult {
 
     // A slash stays inside one path segment, so it cannot reach another route.
     let error = provider_error(api.latest_pair("A/B", "USD").send().await);
-    assert_eq!(error.meta.status, reqwest::StatusCode::UNPROCESSABLE_ENTITY);
+    assert_eq!(
+        error.meta.status(),
+        reqwest::StatusCode::UNPROCESSABLE_ENTITY
+    );
 
     let requests = server.requests();
     assert_eq!(requests.len(), 2);
@@ -285,7 +288,7 @@ async fn a_documented_provider_errors_are_typed() -> TestResult {
     };
     let invalid = provider_error(result);
     assert_eq!(
-        invalid.meta.status,
+        invalid.meta.status(),
         reqwest::StatusCode::UNPROCESSABLE_ENTITY
     );
     assert_eq!(
@@ -296,7 +299,7 @@ async fn a_documented_provider_errors_are_typed() -> TestResult {
         })
     );
     assert_eq!(
-        invalid.meta.operation.map(|o| o.name()),
+        invalid.meta.operation().map(|o| o.name()),
         Some("Frankfurter.latest_pair")
     );
     // Logging an error does not print the provider's (untrusted) message text.
@@ -308,15 +311,15 @@ async fn a_documented_provider_errors_are_typed() -> TestResult {
     assert!(!shown.1.contains("invalid currency"), "Debug: {}", shown.1);
 
     let missing = provider_error(api.latest_pair("EUR", "GBP").send().await);
-    assert_eq!(missing.meta.status, reqwest::StatusCode::NOT_FOUND);
+    assert_eq!(missing.meta.status(), reqwest::StatusCode::NOT_FOUND);
     let problem = missing.document.as_ref().expect("message-only document");
     assert_eq!(problem.status, None);
     assert!(problem.message.starts_with("first-use synthetic"));
 
     let busy = provider_error(api.latest_pair("EUR", "CHF").send().await);
-    assert_eq!(busy.meta.status, reqwest::StatusCode::SERVICE_UNAVAILABLE);
+    assert_eq!(busy.meta.status(), reqwest::StatusCode::SERVICE_UNAVAILABLE);
     assert_eq!(
-        busy.meta.headers.get("retry-after").map(|v| v.as_bytes()),
+        busy.meta.headers().get("retry-after").map(|v| v.as_bytes()),
         Some(&b"7"[..])
     );
     assert!(busy.document.is_ok());
@@ -341,7 +344,7 @@ async fn a_unusable_error_documents_keep_the_status() -> TestResult {
     let api = local(&server);
 
     let html = provider_error(api.latest_pair("EUR", "HTML").send().await);
-    assert_eq!(html.meta.status, reqwest::StatusCode::BAD_GATEWAY);
+    assert_eq!(html.meta.status(), reqwest::StatusCode::BAD_GATEWAY);
     assert!(
         matches!(html.document, Err(ErrorBodyError::Metadata(_))),
         "{:?}",
@@ -350,7 +353,7 @@ async fn a_unusable_error_documents_keep_the_status() -> TestResult {
 
     let broken = provider_error(api.latest_pair("EUR", "BROKEN").send().await);
     assert_eq!(
-        broken.meta.status,
+        broken.meta.status(),
         reqwest::StatusCode::UNPROCESSABLE_ENTITY
     );
     assert!(
@@ -360,7 +363,7 @@ async fn a_unusable_error_documents_keep_the_status() -> TestResult {
     );
 
     let big = provider_error(api.latest_pair("EUR", "BIG").send().await);
-    assert_eq!(big.meta.status, reqwest::StatusCode::UNPROCESSABLE_ENTITY);
+    assert_eq!(big.meta.status(), reqwest::StatusCode::UNPROCESSABLE_ENTITY);
     assert!(
         matches!(big.document, Err(ErrorBodyError::Read(_))),
         "{:?}",
@@ -368,7 +371,7 @@ async fn a_unusable_error_documents_keep_the_status() -> TestResult {
     );
 
     let cut = provider_error(api.latest_pair("EUR", "CUT").send().await);
-    assert_eq!(cut.meta.status, reqwest::StatusCode::SERVICE_UNAVAILABLE);
+    assert_eq!(cut.meta.status(), reqwest::StatusCode::SERVICE_UNAVAILABLE);
     assert!(
         matches!(cut.document, Err(ErrorBodyError::Read(_))),
         "{:?}",
@@ -392,9 +395,9 @@ async fn a_success_body_cut_off_yields_no_rate() -> TestResult {
     let (source, meta) = concord_error(local(&server).latest_pair("EUR", "USD").send().await);
     assert_eq!(source.kind(), ErrorKind::Transport, "{source}");
     let meta = meta.expect("the 200 head arrived before the body broke");
-    assert_eq!(meta.status, reqwest::StatusCode::OK);
+    assert_eq!(meta.status(), reqwest::StatusCode::OK);
     assert_eq!(
-        meta.headers.get("x-fake").map(|v| v.as_bytes()),
+        meta.headers().get("x-fake").map(|v| v.as_bytes()),
         Some(&b"cut"[..])
     );
     shut_down(server).await;
@@ -423,7 +426,7 @@ async fn a_stalled_success_body_ends_at_the_transport_timeout() -> TestResult {
     );
     let (source, meta) = concord_error(result);
     assert_eq!(source.kind(), ErrorKind::Transport, "{source}");
-    assert_eq!(meta.map(|m| m.status), Some(reqwest::StatusCode::OK));
+    assert_eq!(meta.map(|m| m.status()), Some(reqwest::StatusCode::OK));
     shut_down(server).await;
     Ok(())
 }
@@ -434,7 +437,7 @@ async fn a_wrong_media_type_is_refused_and_recoverable() -> TestResult {
 
     let (source, meta) = concord_error(local(&server).latest_pair("EUR", "USD").send().await);
     assert_eq!(source.kind(), ErrorKind::Metadata, "{source}");
-    assert_eq!(meta.map(|m| m.status), Some(reqwest::StatusCode::OK));
+    assert_eq!(meta.map(|m| m.status()), Some(reqwest::StatusCode::OK));
     let response = source.into_response().expect("unread response");
     assert_eq!(response.bytes().await?.as_ref(), LATEST_EUR_USD);
     shut_down(server).await;
@@ -478,7 +481,7 @@ async fn a_invalid_success_documents_are_decode_errors() -> TestResult {
         let (source, meta) = concord_error(local(&server).latest_pair("EUR", "USD").send().await);
         assert_eq!(source.kind(), ErrorKind::Decode, "{name}: {source}");
         assert_eq!(
-            meta.map(|m| m.status),
+            meta.map(|m| m.status()),
             Some(reqwest::StatusCode::OK),
             "{name}"
         );
@@ -558,7 +561,10 @@ async fn a_prepared_send_skips_the_typed_error_adapter() -> TestResult {
     assert_eq!(rate, api.latest_pair("EUR", "USD").send().await?.rate);
 
     let typed = provider_error(api.latest_pair("EUR", "ABC").send().await);
-    assert_eq!(typed.meta.status, reqwest::StatusCode::UNPROCESSABLE_ENTITY);
+    assert_eq!(
+        typed.meta.status(),
+        reqwest::StatusCode::UNPROCESSABLE_ENTITY
+    );
 
     let error = api
         .latest_pair("EUR", "ABC")
@@ -607,8 +613,8 @@ async fn b_historical_pair_sends_the_date_and_returns_the_observation() -> TestR
         ("EUR", "USD")
     );
     assert_eq!(historical.rate.rate, decimal("1.0942"));
-    assert_eq!(historical.meta.status, reqwest::StatusCode::OK);
-    let operation = historical.meta.operation.expect("operation identity");
+    assert_eq!(historical.meta.status(), reqwest::StatusCode::OK);
+    let operation = historical.meta.operation().expect("operation identity");
     assert_eq!(operation.name(), "Frankfurter.historical_pair");
     assert_eq!(operation.method(), Some("GET"));
 
@@ -699,18 +705,18 @@ async fn b_dates_and_currencies_without_data_are_provider_errors() -> TestResult
             .send()
             .await,
     );
-    assert_eq!(missing.meta.status, reqwest::StatusCode::NOT_FOUND);
+    assert_eq!(missing.meta.status(), reqwest::StatusCode::NOT_FOUND);
     // `ErrorBodyError` is not `PartialEq` (E0369 on the first attempt), so compare the `Ok` side.
     assert_eq!(missing.document.as_ref().ok().map(|p| p.status), Some(None));
     assert_eq!(
-        missing.meta.operation.map(|o| o.name()),
+        missing.meta.operation().map(|o| o.name()),
         Some("Frankfurter.historical_pair")
     );
 
     let date: Date = "2024-01-15".parse()?;
     let invalid = provider_error(api.historical_pair("EUR", "XYZ", date).send().await);
     assert_eq!(
-        invalid.meta.status,
+        invalid.meta.status(),
         reqwest::StatusCode::UNPROCESSABLE_ENTITY
     );
     assert_eq!(
@@ -746,7 +752,7 @@ async fn b_one_fetch_is_one_attempt_and_a_clone_can_be_resent() -> TestResult {
     // The cut-off body is one failed attempt with its head kept; the SDK does not retry.
     let (source, meta) = concord_error(request.clone().send().await);
     assert_eq!(source.kind(), ErrorKind::Transport, "{source}");
-    assert_eq!(meta.map(|m| m.status), Some(reqwest::StatusCode::OK));
+    assert_eq!(meta.map(|m| m.status()), Some(reqwest::StatusCode::OK));
     assert_eq!(server.requests().len(), 1);
     assert_eq!(script.remaining(), 1);
 

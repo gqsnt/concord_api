@@ -26,13 +26,14 @@ async fn latest_wire_has_no_optional_query_and_no_body() {
         .send()
         .await
         .unwrap();
-    assert_eq!(result.meta.status, StatusCode::OK);
-    assert_eq!(result.meta.headers["etag"], "fixture-v1");
+    assert_eq!(result.meta.status(), StatusCode::OK);
+    assert_eq!(result.meta.headers()["etag"], "fixture-v1");
+    assert!(!format!("{:?}", result.meta).contains("fixture-v1"));
     assert_eq!(
-        result.meta.operation.unwrap().name(),
+        result.meta.operation().unwrap().name(),
         "Frankfurter.latest_pair"
     );
-    assert_eq!(result.meta.operation.unwrap().method(), Some("GET"));
+    assert_eq!(result.meta.operation().unwrap().method(), Some("GET"));
     let request = server.single();
     assert_eq!(request.host, server.addr().to_string());
     assert_wire(&request, "/v2/rate/EUR/USD");
@@ -49,7 +50,7 @@ async fn historical_wire_has_required_date_and_optional_provider_filter() {
         .await
         .unwrap();
     assert_eq!(
-        result.meta.operation.unwrap().name(),
+        result.meta.operation().unwrap().name(),
         "Frankfurter.historical_pair"
     );
     assert_wire(
@@ -130,7 +131,7 @@ async fn invalid_or_non_positive_numeric_values_never_produce_a_rate() {
         assert_eq!(concord_kind(&error), ErrorKind::Decode, "wire token {case}");
         assert_eq!(error.status(), Some(StatusCode::OK));
         assert_eq!(
-            error.meta().unwrap().headers["x-fixture-id"],
+            error.meta().unwrap().headers()["x-fixture-id"],
             "frankfurter-offline"
         );
         assert_eq!(server.requests().len(), 1);
@@ -224,7 +225,7 @@ async fn documented_http_errors_preserve_status_headers_and_typed_problem() {
         let Error::Provider(error) = error else {
             panic!("expected provider error")
         };
-        assert_eq!(error.meta.headers["retry-after"], "7");
+        assert_eq!(error.meta.headers()["retry-after"], "7");
         let problem = error.document.unwrap();
         assert_eq!(problem.status, document_status);
         assert!(!problem.message.is_empty());
@@ -316,8 +317,8 @@ async fn error_document_limit_is_exact_and_preserves_status() {
         let Error::Provider(error) = error else {
             panic!("expected provider error")
         };
-        assert_eq!(error.meta.status, StatusCode::TOO_MANY_REQUESTS);
-        assert_eq!(error.meta.headers["retry-after"], "11");
+        assert_eq!(error.meta.status(), StatusCode::TOO_MANY_REQUESTS);
+        assert_eq!(error.meta.headers()["retry-after"], "11");
         if padding == 0 {
             assert!(error.document.is_ok());
         } else {
@@ -349,7 +350,7 @@ async fn complete_json_without_http_body_completion_is_a_failure() {
     assert_eq!(concord_kind(&error), ErrorKind::Transport);
     assert_eq!(error.status(), Some(StatusCode::OK));
     assert_eq!(
-        error.meta().unwrap().headers["x-fixture-id"],
+        error.meta().unwrap().headers()["x-fixture-id"],
         "frankfurter-offline"
     );
     assert_eq!(server.requests().len(), 1);
@@ -457,7 +458,10 @@ async fn debug_and_display_do_not_expose_provider_text_or_header_values() {
         panic!("expected provider error")
     };
     assert_eq!(error.document.unwrap().message, "synthetic-private-message");
-    assert_eq!(error.meta.headers["set-cookie"], "synthetic-private-cookie");
+    assert_eq!(
+        error.meta.headers()["set-cookie"],
+        "synthetic-private-cookie"
+    );
     assert_eq!(server.shutdown().await.open_after, 0);
 }
 

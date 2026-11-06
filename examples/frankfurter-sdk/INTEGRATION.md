@@ -222,3 +222,58 @@ After the change, with `CARGO_BUILD_JOBS=6`:
 - `cargo fmt -p concord-sdk-frankfurter -- --check`: clean.
 
 Offline only; no live provider calls.
+
+## Between waves 3-4 (ResponseMeta)
+
+Concord gained `concord::ResponseMeta` (an owned head: status, version, header map, operation;
+`Received::meta()`; `Debug` prints header names only; AUTHOR_GUIDE §5.11). Base `92775757`.
+Role: implementer, a Claude agent session spawned by the coordinator (model and effort not
+re-derived from harness metadata here). Not an independent review.
+
+**Verdict: adopted (re-export).** `src/error.rs` now has `pub use concord::ResponseMeta;` in
+place of its own struct, `capture` and `Debug`; `SendPolicy` captures with `received.meta()`;
+`From<concord::Error>` calls `ResponseMeta::new` where it called `capture`. Decisive: the SDK
+type had exactly Concord's four fields and the same names-only `Debug`, so it was a copy; the
+only cost is field → method for callers.
+
+### Lines (non-blank, non-comment, from `git diff`; this file excluded)
+
+| | removed | added |
+|---|---|---|
+| `src/` | 34 | 8 |
+| `tests/` | 37 | 47 |
+| `README.md` (prose and doctest lines) | 3 | 5 |
+
+`tests/` adds more than it removes because `rustfmt` re-wrapped three assertions that no longer
+fit the line width after `()`.
+
+### Caller-visible changes
+
+- Fields become methods (README, provider error):
+
+  ```rust,ignore
+  eprintln!("HTTP {}", error.meta.status);   // before
+  eprintln!("HTTP {}", error.meta.status()); // after
+  ```
+
+  Likewise `version()`, `headers()` and `operation()`.
+- `RateResponse::meta`, `ProviderError::meta` and `Error::meta()` are now
+  `concord::ResponseMeta` (the same type as in the other adopting SDKs). It cannot be built by
+  struct literal; `ResponseMeta::new(head, operation)` builds one. No test or README built one.
+- `Debug` (from the code): the operation prints by name (`Some("Frankfurter.latest_pair")`, was
+  `Some(Operation(GET Frankfurter.latest_pair))`); status, version and header names as before;
+  no header value, as before.
+
+### Test edits, by kind
+
+1. Field → method, mechanical (37 lines in `tests/first_use.rs`, `tests/protocol.rs`,
+   `tests/workflows.rs`; three re-wrapped by `rustfmt`). Expected values unchanged.
+2. Added, one assertion (`tests/protocol.rs::latest_wire_has_no_optional_query_and_no_body`):
+   `Debug` of `result.meta` does not contain the `etag` value `fixture-v1`.
+
+### Verification (observed)
+
+`CARGO_BUILD_JOBS=6 cargo test --locked -p concord-sdk-frankfurter`, run twice: `first_use` 24,
+`protocol` 18, `workflows` 5, doctests 2 passed, 0 failed (the same counts as at `92775757`).
+`cargo clippy --locked --all-targets -- -D warnings`, `cargo fmt --check` and `cargo doc --no-deps`
+(no warnings): clean. Offline only.

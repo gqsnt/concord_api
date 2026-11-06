@@ -1,45 +1,15 @@
 use std::fmt;
 
-use concord::reqwest::{StatusCode, Version, header::HeaderMap};
+use concord::reqwest::StatusCode;
 use concord::{CodecError, Operation, ResponseHead};
 use serde::Deserialize;
 
-/// Owned response metadata, captured before any body consumer.
+/// Owned response metadata (actual status, never synthesized from the JSON document; HTTP
+/// version; all headers, including retry hints; the generated operation identity), captured
+/// before any body consumer: Concord's own type.
 ///
 /// `Debug` prints header names only; explicit header access is unredacted.
-#[derive(Clone)]
-pub struct ResponseMeta {
-    /// Actual HTTP status; never synthesized from the JSON document.
-    pub status: StatusCode,
-    /// HTTP version observed by reqwest.
-    pub version: Version,
-    /// All response headers, including retry hints when supplied.
-    pub headers: HeaderMap,
-    /// Identity supplied by the generated endpoint, without request values.
-    pub operation: Option<Operation>,
-}
-
-impl ResponseMeta {
-    pub(crate) fn capture(head: &ResponseHead<'_>, operation: Option<Operation>) -> Self {
-        Self {
-            status: head.status(),
-            version: head.version(),
-            headers: head.headers().clone(),
-            operation,
-        }
-    }
-}
-
-impl fmt::Debug for ResponseMeta {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("ResponseMeta")
-            .field("status", &self.status)
-            .field("version", &self.version)
-            .field("header_names", &self.headers.keys().collect::<Vec<_>>())
-            .field("operation", &self.operation)
-            .finish()
-    }
-}
+pub use concord::ResponseMeta;
 
 /// Documented provider error body; unknown fields are ignored.
 #[derive(Clone, Debug, PartialEq, Eq, Deserialize)]
@@ -101,7 +71,7 @@ impl fmt::Debug for ProviderError {
 
 impl fmt::Display for ProviderError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "Frankfurter HTTP {}", self.meta.status)
+        write!(f, "Frankfurter HTTP {}", self.meta.status())
     }
 }
 
@@ -140,13 +110,13 @@ impl Error {
 
     /// Actual HTTP status, also retained after success-body read/decode failures.
     pub fn status(&self) -> Option<StatusCode> {
-        self.meta().map(|meta| meta.status)
+        self.meta().map(ResponseMeta::status)
     }
 
     /// Generated operation identity, including for failures before a head arrived.
     pub fn operation(&self) -> Option<Operation> {
         match self {
-            Self::Provider(error) => error.meta.operation,
+            Self::Provider(error) => error.meta.operation(),
             Self::Concord { source, .. } => source.operation(),
         }
     }
@@ -155,8 +125,8 @@ impl Error {
 impl From<concord::Error> for Error {
     fn from(source: concord::Error) -> Self {
         let meta = source.response().map(|response| {
-            Box::new(ResponseMeta::capture(
-                &ResponseHead::of(response),
+            Box::new(ResponseMeta::new(
+                ResponseHead::of(response),
                 source.operation(),
             ))
         });
