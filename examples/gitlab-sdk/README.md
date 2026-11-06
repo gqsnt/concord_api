@@ -116,6 +116,9 @@ request goes to the previous response's `rel="next"` URL **exactly as GitLab sen
 never builds a page URL, never computes one from `x-next-page`, `x-total-pages` or `rel="last"`,
 and never adds its own `per_page` to a link. If GitLab's link carries another page size, another
 parameter order or a cursor, that is what is requested (`a_follows_the_returned_link_whatever_its_representation`).
+The wire test `changed_link_query_survives_cap_and_failed_retry` also checks repeated query keys,
+empty values and encoded cursor bytes after both a cap and a failed-page retry. Its page sizes and
+query are synthetic examples of the contract, not a new GitLab default or cursor format.
 
 Rules applied to every page (`src/pages.rs`, each with a test):
 

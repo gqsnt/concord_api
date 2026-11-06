@@ -8,7 +8,8 @@
 //! builds a page URL, never reads `x-next-page` to compute one, and never uses `rel="last"`. It
 //! does not claim keyset pagination for this or any other endpoint; a server whose `next` link
 //! carries a keyset cursor instead of a page number is followed all the same, because the link is
-//! authoritative.
+//! authoritative. The query is not decoded and rebuilt: its ordering, repeated parameters and
+//! percent-encoded values also survive a cap or failed-page continuation.
 //!
 //! **Rules, each tested:**
 //!

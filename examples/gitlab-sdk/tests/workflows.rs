@@ -177,6 +177,89 @@ async fn a_follows_the_returned_link_whatever_its_representation() {
     assert_eq!(requests[1].header("private-token"), Some(TOKEN));
 }
 
+/// A changed page size and opaque link query survive both a bound and a failed page retry.
+#[tokio::test]
+async fn changed_link_query_survives_cap_and_failed_retry() {
+    let target = format!(
+        "/api/v4/projects/{PROJECT_ID}/issues?cursor=a%2Fb%2B%3D%252F&tag=one&per_page=1&tag=two&empty=&search=hello+world"
+    );
+    let server = serve(|url| {
+        let next = format!("{url}{target}");
+        vec![
+            json(200, PAGE_1)
+                .header("x-per-page", "3")
+                .header("x-next-page", "999")
+                .header("link", link(&[(&next, "next")])),
+            json(500, br#"{"message":"500 Internal Server Error"}"#),
+            json(200, PAGE_2).header("x-per-page", "1"),
+        ]
+    })
+    .await;
+    let listing = client(&server)
+        .project(widgets())
+        .issues()
+        .set_state(IssueState::Opened)
+        .set_per_page(PerPage::new(3).unwrap());
+    let mut pages = listing
+        .clone()
+        .pages()
+        .max_pages(NonZeroUsize::new(1).unwrap());
+    assert_eq!(pages.next_page().await.unwrap().unwrap().items.len(), 2);
+    let PagesError::Bounded { resume, .. } = pages.next_page().await.unwrap_err() else {
+        panic!("the linked page must be retained at the cap");
+    };
+    assert_eq!(server.requests().len(), 1);
+    let Resume::At(next) = &resume else {
+        panic!("the cap must retain the linked URL");
+    };
+    assert_eq!(next.raw_url().as_str(), format!("{}{target}", server.url()));
+
+    let incomplete = listing
+        .clone()
+        .pages_from(resume)
+        .items()
+        .collect_complete()
+        .await
+        .unwrap_err();
+    assert!(incomplete.collected.is_empty());
+    let PagesError::Provider {
+        error: GitLabError::Api(error),
+        failed,
+        ..
+    } = incomplete.error
+    else {
+        panic!("the failed linked page must retain the typed provider error and continuation");
+    };
+    assert_eq!(error.status.as_u16(), 500);
+    let Resume::At(retry) = failed else {
+        panic!("the failed page must be retryable");
+    };
+    assert_eq!(
+        retry.raw_url().as_str(),
+        format!("{}{target}", server.url())
+    );
+    let rest = listing
+        .pages_from(Resume::At(retry))
+        .items()
+        .collect_complete()
+        .await
+        .unwrap();
+    assert_eq!(rest[0].iid.get(), 1);
+
+    let requests = server.requests();
+    assert_eq!(requests.len(), 3);
+    assert_eq!(
+        requests[0].target,
+        format!("{ISSUES_PATH}?state=opened&per_page=3")
+    );
+    assert_eq!(requests[1].target, target);
+    assert_eq!(requests[2].target, target);
+    for request in &requests {
+        assert_eq!(request.header("private-token"), Some(TOKEN));
+        assert_eq!(request.header("accept"), Some("application/json"));
+    }
+}
+
 /// Partial outcome: page 2 fails. The collected prefix and the page to retry come back; resuming
 /// from it requests that link again and completes the listing.
 #[tokio::test]

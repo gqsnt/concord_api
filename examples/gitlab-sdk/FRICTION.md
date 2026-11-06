@@ -43,7 +43,9 @@ Attribution keys: **Concord**, **SDK**, **provider**, **application**, **docs**,
    AUTHOR_GUIDE §5.11 names exactly this route, and the GitHub SDK's `paging.rs` (`fetch_page`)
    supplied the pattern; nothing failed. It is the case W1-17 deferred to this wave ("no decoder
    from an `Endpoint` type: following a server URL prepares a placeholder operation"). Reproduce:
-   any linked-page test, e.g. `tests/workflows.rs:140`.
+   any linked-page test, e.g. `a_follows_the_returned_link_whatever_its_representation` or
+   `changed_link_query_survives_cap_and_failed_retry` in `tests/workflows.rs` (the latter also
+   exercises the same native URL replacement after a cap and a failed-page retry).
 
 5. **Workaround — Concord: the base URL is not readable from a generated handle.** The link
    check needs the API origin and base path (so the token never leaves them and the link names an

@@ -55,6 +55,10 @@ above. No fixture was downloaded or copied from a response. Bytes are pinned by
   addressing the project by ID with `cursor=synthetic-opaque-cursor`, another `per_page`, extra
   and reordered parameters, and no `x-next-page` — **synthetic**, to show that the returned link
   is requested as sent. It is not a documented GitLab cursor format.
+- **Maintenance perturbation** (`changed_link_query_survives_cap_and_failed_retry`): the initial
+  size 3, linked size 1, opaque encoded cursor, repeated `tag`, empty value, `+` query spelling,
+  and conflicting `x-next-page` value are synthetic. Existing hand-authored issue fixtures are
+  reused; this is not a documented GitLab response or cursor format.
 - `{"message":"500 Internal Server Error"}` (a failed page), `Retry-After: 30`, the `301`/`302`
   redirects, the oversized `500` body, the malformed and foreign `Link` values and the HTML `200`
   are **test inventions** for negative cases.
