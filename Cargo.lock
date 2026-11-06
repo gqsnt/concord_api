@@ -328,6 +328,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "concord-check-phase-a"
+version = "0.0.0"
+dependencies = [
+ "concord",
+ "concord-example-testserver",
+ "futures-util",
+ "serde",
+ "serde_json",
+ "tokio",
+]
+
+[[package]]
 name = "concord-check-stream-stress"
 version = "0.0.0"
 dependencies = [
