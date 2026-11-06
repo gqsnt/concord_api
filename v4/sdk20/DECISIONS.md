@@ -550,7 +550,7 @@ CSV (Codex `gpt-6.1-terra`, xhigh, session `01a1afca-072f…`): ACCEPT_WITH_FIXE
 
 | ID | Severity | Finding | Fix |
 |---|---|---|---|
-| TER-W45-1 | low | release builds scanned skipped input (long blank-line or comment-only runs) byte by byte although no record was in progress | `66c23594` (R4 agent), merged `47a25fbf`: blank-line and comment spans searched 8 bytes at a time, only a record in progress stepped through; a counter test (570019 stepped bytes before, ≤ records' 19 after); release: rows unchanged, blank-line-heavy 348–350 → 398–408 MB/s, comment-heavy 464–465 → 603–607 MB/s; recheck by the same reviewer session running |
+| TER-W45-1 | low | release builds scanned skipped input (long blank-line or comment-only runs) byte by byte although no record was in progress | `66c23594` (R4 agent), merged `47a25fbf`: blank-line and comment spans searched 8 bytes at a time, only a record in progress stepped through; a counter test (570019 stepped bytes before, ≤ records' 19 after); release: rows unchanged, blank-line-heavy 348–350 → 398–408 MB/s, comment-heavy 464–465 → 603–607 MB/s; recheck (same session, resumed, on `47a25fbf`): FIXED, verdict ACCEPT (the reviewer's old/new scanner models agreed on 400,000 randomized chunked inputs) |
 
 Areas reported clean: the DFA mirror (escapes, doubled quotes, bytes after a closing quote,
 terminators, comments, BOMs, chunk boundaries), the shared EOF check, record numbering, header
