@@ -53,7 +53,8 @@ SOL-W23 fixed): `verify.sh --package --bench` 43/43 PASS on a clean tree
 candidate tree) — ubuntu success; windows success, 43 `PASS` / 0 `FAIL` lines, rustc 1.99.1;
 nightly-clone success, step log `PASS nightly-clone-compat`, 16 passed, rustc
 `1.101.0-nightly (249c1e4e3 2026-11-05)` (logs `work/logs/ci-6d6d66aa-pr-*.txt`). Push run
-`42162457389`: ubuntu and nightly success, windows still running at this record. Earlier at `634b135b` the gate
+`42162457389` on `6d6d66aa` itself: all three jobs success; windows 43 `PASS` / 0 `FAIL`
+(`work/logs/ci-6d6d66aa-push-windows.txt`). Earlier at `634b135b` the gate
 failed 3 `test` steps (one UI case, W23-5), fixed in `08df6614` (43/43). The S3 move to the
 value-form policy ran in parallel (SDK-only) and merged as `bbbf6c97`.
 
