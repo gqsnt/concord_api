@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Builds and tests a downstream consumer against the *packaged* sources of the four crates (the
+# Builds and tests a downstream consumer against the *packaged* sources of the production crates (the
 # extracted `.crate` files), not the repository: what a release would ship. Each package must hold
 # only sources, manifests, the README and the licences, with nothing that looks like a credential,
 # and the extracted sources must be the repository's current ones (never a stale extraction).
@@ -20,11 +20,11 @@ component="ünïcødé-路径"
 src="$out/extracted/$component/nested-directory-one/nested-directory-two/nested-directory-three"
 mkdir -p "$src"
 
-# The four crates are not on crates.io, so each is packaged with crates.io patches pointing at the
+# The production crates are not on crates.io, so each is packaged with crates.io patches pointing at the
 # local crates it depends on (packaging resolves dependencies even with `--no-verify`), and without
 # cargo's own verification build: the consumers below build the packaged crates together instead.
 # The "ignoring test" warnings list the test targets deliberately left out of the packages.
-crates="concord-core concord-macros concord-extras concord concord-pagination"
+crates="concord-core concord-codecs concord-extras concord-macros concord concord-pagination"
 patches=()
 for crate in $crates; do
   patches+=(--config "patch.crates-io.$crate.path=\"crates/$crate\"")
@@ -84,6 +84,7 @@ serde = { version = "1", features = ["derive"] }
 
 [patch.crates-io]
 concord-core = { path = "../concord-core-$version" }
+concord-codecs = { path = "../concord-codecs-$version" }
 concord-extras = { path = "../concord-extras-$version" }
 concord-macros = { path = "../concord-macros-$version" }
 

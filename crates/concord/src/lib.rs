@@ -217,28 +217,28 @@
 //! - `reqwest-defaults` (default): reqwest's default features (TLS, HTTP/2, system proxy).
 //!   Disable it to choose reqwest's features in your own `Cargo.toml`.
 
+#[cfg(feature = "form")]
+pub use concord_codecs::Form;
+#[cfg(feature = "json")]
+pub use concord_codecs::Json;
+#[cfg(feature = "csv")]
+pub use concord_codecs::csv;
+#[cfg(feature = "jsonl")]
+pub use concord_codecs::jsonl;
+#[cfg(feature = "multipart")]
+pub use concord_codecs::multipart;
+#[cfg(feature = "sse")]
+pub use concord_codecs::sse;
+#[cfg(feature = "stream")]
+pub use concord_codecs::stream;
+#[cfg(feature = "extras")]
+pub use concord_codecs::{Binary, Encoded, IgnoreContentType, Text};
 pub use concord_core::{
     CODEC_ERROR_CONTEXT, CodecError, ContentTypeField, Decode, Decoder, Encode, EncodedBody,
     Endpoint, Error, ErrorKind, HeaderNameError, HeaderNameErrors, Incoming, Incremental,
     IntoValue, Operation, Prepared, Received, Records, ResponseHead, ResponseMeta, SendWith,
     ToHeaderValue, bytes, reqwest,
 };
-#[cfg(feature = "form")]
-pub use concord_extras::Form;
-#[cfg(feature = "json")]
-pub use concord_extras::Json;
-#[cfg(feature = "csv")]
-pub use concord_extras::csv;
-#[cfg(feature = "jsonl")]
-pub use concord_extras::jsonl;
-#[cfg(feature = "multipart")]
-pub use concord_extras::multipart;
-#[cfg(feature = "sse")]
-pub use concord_extras::sse;
-#[cfg(feature = "stream")]
-pub use concord_extras::stream;
-#[cfg(feature = "extras")]
-pub use concord_extras::{Binary, Encoded, IgnoreContentType, Text};
 
 /// Declares an HTTP API as a client → scopes → endpoints tree and generates its typed client.
 ///
