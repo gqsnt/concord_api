@@ -62,7 +62,16 @@ differ.
 List parameters declared on every list: `labelSelector`, `fieldSelector`, `limit`, `continue`
 (`#[sensitive]`), `resourceVersion`, `resourceVersionMatch`, `timeoutSeconds`. Watch parameters:
 `labelSelector`, `fieldSelector`, `resourceVersion`, `allowWatchBookmarks` (initialized `true`),
-`timeoutSeconds`, plus the literal `watch=1`.
+`resourceVersionMatch`, `sendInitialEvents`, `timeoutSeconds`, plus the literal `watch=1`.
+
+[Streaming lists](https://kubernetes.io/docs/reference/using-api/api-concepts/#streaming-lists)
+are opt-in on all six watch endpoints: set `sendInitialEvents=true`,
+`resourceVersionMatch=NotOlderThan` and `allowWatchBookmarks=true` (the existing default).
+The watch starts with synthetic `ADDED` events and then a bookmark annotated
+`k8s.io/initial-events-end: "true"`, exposed by `Bookmark::is_initial_events_end()`, before
+following live changes. Both new query options are absent unless set. Endpoint builders expose
+`set_send_initial_events` / `set_resource_version_match`; the generic `WatchOperation` adapter
+exposes `with_send_initial_events` / `with_resource_version_match` with optional values.
 
 ## Deliberately unsupported
 
@@ -72,8 +81,6 @@ List parameters declared on every list: `labelSelector`, `fieldSelector`, `limit
   `attach`, `portforward`, `proxy`, `scale`, `ephemeralcontainers`.
 - The other `networking.k8s.io/v1` kinds (IngressClass, NetworkPolicy, IPAddress, ServiceCIDR).
 - The deprecated `/api/v1/watch/...` path prefix (watches use `?watch=1` on the list path).
-- `sendInitialEvents=true` streaming lists (the workflow lists first, then watches; a bookmark's
-  `k8s.io/initial-events-end` annotation is decoded but no streaming-list flow is offered).
 - `shardSelector` / `metadata.shardInfo` (alpha `ShardedListAndWatch`).
 - Protobuf, CBOR (`application/cbor`, `application/cbor-seq`), YAML and `Table` responses.
 - The inconsistent continuation token a `410 Expired` list answer may carry
