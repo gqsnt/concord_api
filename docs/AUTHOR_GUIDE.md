@@ -1437,6 +1437,12 @@ If the declaration stays private behind the SDK's own client, do not re-export i
 its `set_*` methods (observed in the Dropbox SDK). Re-export the declared client too, or give the
 SDK's constructor a configuration type of its own.
 
+If the SDK's public API names Concord types (`concord::Error`, `ResponseMeta`, `ErrorKind`,
+`Operation`), re-export the crate (`pub use concord;`): an application then matches on them
+without adding a `concord` dependency of its own that must stay at the same version (observed in
+the Snowflake first-use run, where telling a dropped body from a bad document needed
+`concord::ErrorKind`).
+
 ## 6. Wire formatting: `Display` and newtypes
 
 Every value written as text — path segment, subdomain label, query value, template hole — is
