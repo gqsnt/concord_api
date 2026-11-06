@@ -370,3 +370,41 @@ existed because the boundary was fixed, and refusing valid JSONL content was an 
 Drive's collision fixtures were re-pointed at the new candidates so the collision tests still
 collide (inputs and expected requests rewritten by byte substitution, checked against an
 independent reassembly). Test counts unchanged (OpenAI 31; Drive 37 + 3 doc).
+
+**D-W34-R1 — shared server-sent events reader (IMPLEMENT, concord-extras `sse`; Opus subagent
+`ad280ddd…`, `2ea817e1`, merged `92775757`).** `SseReader::{new, open, read}` → `SseEvents`
+(`next` cancel-safe, `completion`, `position`, `last_event_id`, `retry`, `into_stream`,
+`into_source`), `Event::{event, data, into_data, id}`, `SseOptions::{max_event_bytes (1 MiB
+default), max_events}`, the `Sse` format (`-> stream sse::Event`, `response Sse;`). WHATWG
+interpretation with stricter, documented terminal errors: invalid UTF-8 (`Format`, line/column),
+input ending inside a line or after undispatched fields, `Limit` on either bound (checked before a
+buffer grows), terminal URL-free `Transport` naming the operation; only an event boundary
+completes; no event bytes in `Display`/`Debug`; no serializer dependency (`check-graph.py`). 34
+tests (WHATWG examples, every chunk partition of each fixture, BOM/CRLF splits, limits,
+truncation, per-byte cancellation, HTTP drop mid-event, a declared `-> stream sse::Event`
+endpoint). The UI expectation `ui_stream/finite_format_for_stream.stderr` lists `Sse` among
+`Incremental` implementors (a new implementor, not a weakened case). OpenAI migrated (566 → 551
+lines; all 31 tests unchanged; behaviour changes listed in its `INTEGRATION.md`); ntfy migration
+M1 in progress. Gap reported: an `Incremental` wrapper cannot open with non-default limits (as for
+JSONL, W3-5); an SDK needing other limits declares `-> stream` and opens the `Incoming` with a
+configured reader, where the head check is a real check.
+
+**D-W34-R3 — `concord::ResponseMeta` (IMPLEMENT, core, `bd8b1869`, `91cfc3a9`).** W3-3. Status,
+version, header map, operation; `Received::meta()`, `Incoming::meta()`, `ResponseMeta::new`,
+`head()`; `Debug` prints header names and the operation name, never a value. Test
+`checks/phase-a/tests/received.rs` `an_owned_meta_outlives_the_body_and_never_prints_values`.
+SDK migration M2 (seven exact-shape SDKs) in progress.
+
+Other between-wave changes: `Content-Length: 0` for a declared empty buffered body (W3-10,
+`5f29596a`), `Incoming::chunk` cancel-safety test and docs (W3-6, `509acf3d`), `PagesError` docs
+(W3-7, `92488bcb`), generated Config doc sentence (W3-8, `75b3e718`), test-server `Gate` /
+`Reply::after` (W3-9, `fbf47c3d`), AUTHOR_GUIDE §5.13 notes (W23-9, W3-8).
+
+Gate on the merged refinements `92775757`: running. Independent reviews (read-only, session
+headers observed): Codex `gpt-6.1-sol` xhigh (`01a1af60-c6be-7ac3…`, SSE + core) and Codex
+`gpt-6-astra` xhigh (`01a1af60-c6be-7de1…`, multipart + test server + docs): running.
+
+Not taken between waves 3 and 4: W23-8 value getters on generated handles (S3, GitLab base URL):
+DEFER again — two different needs (client base URL vs scope/endpoint values), naming rules
+against endpoint and setter collisions unresolved, neither SDK blocked (read-backs work);
+reconsider with wave 4 evidence.
