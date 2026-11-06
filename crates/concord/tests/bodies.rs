@@ -127,6 +127,22 @@ async fn r02_no_body_vs_empty_vs_null() {
     assert_eq!(r[2].body, b"null");
 }
 
+/// A declared body that encodes to zero bytes is content of length zero: `Content-Length: 0` is
+/// sent (reqwest alone omits it); no body sends no length at all.
+#[tokio::test]
+async fn an_empty_declared_body_is_sent_with_content_length_zero() {
+    let (server, api) = shop(Reply::new(204)).await;
+    api.clone().maybe().send().await.unwrap();
+    api.clone().text(String::new()).send().await.unwrap();
+    api.clone().text("x".to_owned()).send().await.unwrap();
+    let r = server.requests();
+    assert_eq!(r[0].header("content-length"), None);
+    assert_eq!(r[1].header_all("content-length"), ["0"]);
+    assert!(r[1].body.is_empty());
+    assert_eq!(r[1].header("transfer-encoding"), None);
+    assert_eq!(r[2].header_all("content-length"), ["1"]);
+}
+
 /// An optional body: `set_*` sends it, `maybe_*(None)` sends none.
 #[tokio::test]
 async fn optional_body_controls() {

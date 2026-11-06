@@ -235,7 +235,10 @@ async fn resumable_initiation_chunks_probe_and_completion_preserve_wire() {
         requests[2].header("content-range"),
         Some(format!("bytes */{total}").as_str())
     );
-    assert_eq!(requests[2].header("content-length"), None);
+    // The status probe is an empty PUT: Concord sends `Content-Length: 0` for a declared empty
+    // body (between waves 3-4; this SDK's FRICTION.md entry 7 recorded reqwest omitting it, which
+    // differs from Google's documented probe).
+    assert_eq!(requests[2].header_all("content-length"), ["0"]);
     assert!(!requests[2].chunked);
     assert!(requests[2].body.is_empty());
     assert_eq!(

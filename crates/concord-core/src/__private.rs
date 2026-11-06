@@ -4,7 +4,7 @@
 use std::fmt::{self, Display, Write as _};
 
 use percent_encoding::{AsciiSet, NON_ALPHANUMERIC};
-use reqwest::header::{ACCEPT, CONTENT_TYPE, HeaderMap, HeaderName, HeaderValue};
+use reqwest::header::{ACCEPT, CONTENT_LENGTH, CONTENT_TYPE, HeaderMap, HeaderName, HeaderValue};
 use reqwest::{Method, Url};
 
 use crate::codec::{CodecError, Decode, Encode, EncodedBody, Incremental};
@@ -610,6 +610,15 @@ impl<'a> Parts<'a> {
                             "does not fit in the header map",
                         )
                     })?;
+            }
+            // A declared body that is buffered and empty is still content: say so with
+            // `Content-Length: 0` (RFC 9110 §8.6), which reqwest omits for an empty body, so an
+            // empty PUT/POST is not mistaken for one without content (a server may answer 411).
+            // Streamed bodies keep their own framing.
+            if body.as_bytes().is_some_and(<[u8]>::is_empty)
+                && !headers.contains_key(CONTENT_LENGTH)
+            {
+                headers.insert(CONTENT_LENGTH, HeaderValue::from_static("0"));
             }
             *request.body_mut() = Some(body);
         }
