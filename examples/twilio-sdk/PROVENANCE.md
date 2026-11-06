@@ -28,6 +28,9 @@ and access date above. No credentials, vendor SDK or live provider calls were us
 | `create.form` | M, Create / Request body parameters | Literal UTF-8 form expectation: synthetic numbers and text, spaces as `+`, literal plus/ampersand and UTF-8 bytes percent-escaped. No trailing newline. Not produced by the SDK encoder. |
 | `create-intent.form` | M, Create / `messageIntent` | Baseline plus one optional field. `通知 & + café` is an intentionally synthetic encoding stress value; acceptance as an intent is unverified. No trailing newline. |
 | `create-empty-intent.form` | M, Create / `messageIntent` | Baseline with literal `&MessageIntent=` appended; probes empty versus omitted, not provider acceptance. No trailing newline. |
+| `create-callback.form` | M, Create / `statusCallback` and request-body example's `StatusCallback` key | Maintenance addition, hand-authored baseline plus `StatusCallback`. Synthetic URL `https://callbacks.example.invalid/通知?label=café&tag=a+b`; UTF-8 and URL delimiters percent-escaped as form data, including `&` as `%26` and literal `+` as `%2B`. No trailing newline. Provider acceptance of this Unicode URL is unverified. |
+| `create-intent-callback.form` | M, Create / `messageIntent` and `statusCallback` | Maintenance addition, hand-authored existing Unicode intent form plus the same encoded callback URL, proving both fields coexist. No trailing newline. |
+| `create-empty-callback.form` | M, Create / `statusCallback` | Maintenance addition, hand-authored baseline plus literal `&StatusCallback=`. Empty versus omitted encoding probe, not a claim that the provider accepts an empty URL. No trailing newline. |
 | `created.json` | M, Create response / Message Properties | Hand-authored resource shape; synthetic SID/account, addresses, text and dates, queued status and null error fields. Some documented extra fields exercise unknown-field tolerance. |
 | `undelivered.json` | M, Fetch / Response and status values; 30007 | Reduced resource with synthetic processing-failure explanation and `30007`. Uses `undelivered`, rather than copying the rendered fetch example's `sent` status. |
 | `delivered.json` | M, Fetch / Message Properties and status values | Reduced synthetic observation, null body and errors. No real delivery occurred. |
@@ -62,6 +65,17 @@ not claimed as a vendor guarantee. The body-limit test appends JSON whitespace t
 `bad-request.json` at runtime to 65,536 and 65,537 bytes, so it needs no large fixture.
 
 No fixture establishes vendor conformance, delivery, callbacks or billing behavior.
+
+## Maintenance source check
+
+On **2026-11-06**, the maintenance task re-opened M's Create / Request body
+parameters and its displayed request-body example. The schema documents an optional
+`statusCallback` URL, a valid hostname and no underscores; the example confirms the
+wire key `StatusCallback`. The three callback form fixtures above were written by
+hand, without using the SDK encoder or copying the displayed example's bytes.
+No existing fixture bytes or credential values were changed. Callback URLs use a
+synthetic `.invalid` host and are transmitted only as form data to the loopback
+test server; neither the SDK nor the tests follow them.
 
 ## Concord material and dependency choices
 

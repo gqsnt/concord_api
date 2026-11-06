@@ -23,16 +23,23 @@ pub struct CreateMessage {
     /// synthetic Unicode value solely to exercise form encoding.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub message_intent: Option<String>,
+    /// Optional URL for provider status notifications, sent as `StatusCallback`.
+    ///
+    /// Passed through without URL validation or normalization. Form encoding preserves
+    /// Unicode and reserved characters; receiving or verifying callbacks is outside this SDK.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub status_callback: Option<String>,
 }
 
 impl CreateMessage {
-    /// Creates the required `To`, `From` and `Body` fields, with no optional intent.
+    /// Creates the required `To`, `From` and `Body` fields, with no optional form values.
     pub fn new(to: impl Into<String>, from: impl Into<String>, body: impl Into<String>) -> Self {
         Self {
             to: to.into(),
             from: from.into(),
             body: body.into(),
             message_intent: None,
+            status_callback: None,
         }
     }
 
@@ -40,6 +47,16 @@ impl CreateMessage {
     #[must_use]
     pub fn with_message_intent(mut self, intent: impl Into<String>) -> Self {
         self.message_intent = Some(intent.into());
+        self
+    }
+
+    /// Adds the optional `StatusCallback` form field to this message only.
+    ///
+    /// Supply the original URL, without pre-encoding it as a form value. As with the other
+    /// optional values, an empty string is sent explicitly and left for the provider to validate.
+    #[must_use]
+    pub fn with_status_callback(mut self, url: impl Into<String>) -> Self {
+        self.status_callback = Some(url.into());
         self
     }
 }

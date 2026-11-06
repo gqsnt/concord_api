@@ -126,6 +126,74 @@ async fn present_empty_intent_is_distinct_from_omission() {
 }
 
 #[tokio::test]
+async fn status_callback_preserves_unicode_reserved_values_and_unrelated_calls() {
+    let callback = "https://callbacks.example.invalid/通知?label=café&tag=a+b";
+    let cases: [(concord_sdk_twilio::CreateMessage, &[u8]); 5] = [
+        (
+            message().with_status_callback(callback),
+            include_bytes!("../fixtures/create-callback.form"),
+        ),
+        (message(), FORM),
+        (
+            message()
+                .with_message_intent("通知 & + café")
+                .with_status_callback(callback),
+            include_bytes!("../fixtures/create-intent-callback.form"),
+        ),
+        (message().with_message_intent("通知 & + café"), INTENT_FORM),
+        (
+            message().with_status_callback(""),
+            include_bytes!("../fixtures/create-empty-callback.form"),
+        ),
+    ];
+    let replies = (0..cases.len())
+        .map(|_| Reply::json(201, CREATED))
+        .chain([Reply::json(200, DELIVERED)]);
+    let (server, script, client) = scripted(replies).await;
+    for (input, _) in &cases {
+        client.create_message(input.clone()).await.unwrap();
+    }
+    client.get_message(SID).await.unwrap();
+
+    let requests = server.requests();
+    assert_eq!(requests.len(), cases.len() + 1, "one request per call");
+    for (request, (_, expected)) in requests.iter().zip(&cases) {
+        assert_eq!(request.method, "POST");
+        assert_eq!(request.target, CREATE_PATH);
+        assert_eq!(request.body, *expected);
+        assert_eq!(request.body_len, expected.len() as u64);
+        assert_eq!(
+            request.header("content-length"),
+            Some(expected.len().to_string().as_str())
+        );
+        assert_eq!(
+            request.header_all("content-type"),
+            ["application/x-www-form-urlencoded"]
+        );
+    }
+    assert_eq!(
+        requests[0].form_pairs(),
+        [
+            ("To".to_owned(), "+15005550006".to_owned()),
+            ("From".to_owned(), "+15005550001".to_owned()),
+            ("Body".to_owned(), "Hello café & + 🌍".to_owned()),
+            ("StatusCallback".to_owned(), callback.to_owned()),
+        ]
+    );
+    for request in &requests {
+        assert_eq!(request.header_all("authorization"), [AUTHORIZATION]);
+        assert_eq!(request.header_all("accept"), ["application/json"]);
+    }
+    let fetched = &requests[cases.len()];
+    assert_eq!(fetched.method, "GET");
+    assert_eq!(fetched.target, FETCH_PATH);
+    assert!(fetched.body.is_empty());
+    assert_eq!(fetched.header("content-type"), None);
+    assert_eq!(script.remaining(), 0);
+    server.shutdown().await;
+}
+
+#[tokio::test]
 async fn path_account_is_independent_of_auth_and_ids_are_single_segments() {
     let server = TestServer::start(|_| Reply::json(200, DELIVERED)).await;
     let client = Twilio::new(
@@ -164,13 +232,15 @@ fn credential_structure_and_diagnostics_are_safe() {
     let auth = BasicAuth::new("fixture-user", "fixture-password").unwrap();
     let auth_debug = format!("{auth:?}");
     let client = client("http://127.0.0.1:1");
-    let prepared = client.prepare_create_message(message()).unwrap();
+    let input =
+        message().with_status_callback("https://callbacks.example.invalid/通知?label=café&tag=a+b");
+    let prepared = client.prepare_create_message(input.clone()).unwrap();
     assert!(prepared.request().headers()["authorization"].is_sensitive());
     for debug in [
         auth_debug,
         format!("{client:?}"),
         format!("{prepared:?}"),
-        format!("{:?}", message()),
+        format!("{input:?}"),
     ] {
         for private in [
             "fixture-user",
@@ -179,6 +249,7 @@ fn credential_structure_and_diagnostics_are_safe() {
             ACCOUNT,
             "Hello café",
             "+15005550006",
+            "callbacks.example.invalid",
         ] {
             assert!(!debug.contains(private), "diagnostic leaked {private}");
         }
