@@ -23,9 +23,9 @@ use concord_core::{Incoming, reqwest};
 /// keeps that chunk in `self` until it returns it. Otherwise a dropped `next()` loses the chunk,
 /// and a later call may even report a clean end of input. `reqwest::Response` (its `chunk()`
 /// takes a body frame only once one is ready), [`Incoming`] (likewise: [`Incoming::chunk`]) and
-/// [`Chunks`] (it completes on its first poll) are cancel-safe. Whatever the source, a reader's `into_stream()`
-/// ([`RecordStream`](super::RecordStream)) keeps a pending read, the source's future included,
-/// across a dropped `next()`.
+/// [`Chunks`] (it completes on its first poll) are cancel-safe. Whatever the source, a reader's
+/// `into_stream()` ([`RecordStream`](super::RecordStream)) keeps a pending read, the source's
+/// future included, across a dropped `next()`.
 pub trait ByteSource: Send {
     /// The next chunk, `Ok(None)` at the end of input.
     fn next_chunk(&mut self) -> impl Future<Output = Result<Option<Bytes>, SourceError>> + Send;

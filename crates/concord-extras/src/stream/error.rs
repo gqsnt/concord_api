@@ -287,10 +287,10 @@ impl ReadError {
     ///
     /// `None` for a source failure without an underlying error, and for every other kind: a
     /// parser's error (the serde error of a `Format` or `Decode` failure) stays in
-    /// [`codec`](Self::codec), reachable by reference only ([`source_unredacted`](Self::source_unredacted)).
-    /// The kind, position and operation are dropped: read them first. To keep the `ReadError`
-    /// unless the source is of one type, test it first
-    /// (`error.source_unredacted().is_some_and(|s| s.is::<E>())`).
+    /// [`codec`](Self::codec), reachable by reference only
+    /// ([`source_unredacted`](Self::source_unredacted)). The kind, position and operation are
+    /// dropped: read them first. To keep the `ReadError` unless the source is of one type, test
+    /// it first (`error.source_unredacted().is_some_and(|s| s.is::<E>())`).
     pub fn into_source_unredacted(self) -> Option<Box<dyn StdError + Send + Sync + 'static>> {
         self.inner.source
     }
