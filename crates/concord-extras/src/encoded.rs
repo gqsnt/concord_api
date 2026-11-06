@@ -3,7 +3,7 @@
 use concord_core::{CodecError, Encode, EncodedBody, reqwest};
 
 /// The format of a body that arrives already encoded, with its runtime media type: an
-/// [`EncodedBody`], or (feature `stream`) an [`Upload`](crate::stream::Upload) from a runtime
+/// [`EncodedBody`], or (feature `stream`) a `stream::Upload` from a runtime
 /// configured writer (a `CsvWriter` whose dialect was chosen per job).
 ///
 /// It lets a declared body carry a body and its media type together, so the declaration states
