@@ -1,7 +1,7 @@
 //! Offline HTTP contract tests.
 use concord::reqwest;
 use concord_example_testserver::{Recorded, Reply, TestServer};
-use concord_sdk_pokeapi::{Client, Error, UrlRejection};
+use concord_sdk_pokeapi::{Call, Client, Error, UrlRejection};
 
 fn client(server: &TestServer) -> Client {
     Client::new(reqwest::Client::builder().no_proxy().build().unwrap())
@@ -28,14 +28,14 @@ async fn detail_and_list_wire_contract() {
     })
     .await;
     let api = client(&server);
-    let pokemon = api.pokemon("35").await.unwrap();
+    let pokemon = api.pokemon("35").call().await.unwrap();
     assert_eq!(pokemon.value.name, "clefairy");
     assert_eq!(
         pokemon.value.extra["abilities"][0]["ability"]["name"],
         "friend-guard"
     );
     assert_eq!(pokemon.meta.status, 200);
-    let page = api.list(Some(5), Some(2)).await.unwrap();
+    let page = api.list().set_limit(5).set_offset(2).call().await.unwrap();
     assert!(page.value.results.is_empty());
     assert!(page.value.next.is_none());
     let requests = server.requests();
@@ -63,7 +63,7 @@ async fn status_error_keeps_head_and_unread_body() {
             .body(include_str!("../fixtures/not-found.txt"))
     })
     .await;
-    let err = client(&server).pokemon("missing").await.unwrap_err();
+    let err = client(&server).pokemon("missing").call().await.unwrap_err();
     match err {
         Error::Concord {
             error,
@@ -97,8 +97,8 @@ async fn malformed_json_and_wrong_content_type_retain_head() {
     .await;
     let api = client(&server);
     for err in [
-        api.list(None, None).await.unwrap_err(),
-        api.list(Some(1), None).await.unwrap_err(),
+        api.list().call().await.unwrap_err(),
+        api.list().set_limit(1).call().await.unwrap_err(),
     ] {
         match err {
             Error::Concord {
@@ -171,7 +171,7 @@ async fn missing_next_is_not_mistaken_for_end() {
     let server =
         TestServer::start(|_: &Recorded| json(200, r#"{"count":0,"previous":null,"results":[]}"#))
             .await;
-    let error = client(&server).list(None, None).await.unwrap_err();
+    let error = client(&server).list().call().await.unwrap_err();
     assert!(matches!(error, Error::Concord { meta: Some(_), .. }));
     server.shutdown().await;
 }
@@ -186,7 +186,7 @@ async fn failed_body_keeps_head_and_transport_failure_has_no_head() {
     })
     .await;
     let api = client(&server);
-    let error = api.list(None, None).await.unwrap_err();
+    let error = api.list().call().await.unwrap_err();
     assert!(matches!(error, Error::Concord { meta: Some(_), .. }));
     let addr = server.addr();
     server.shutdown().await;
@@ -194,7 +194,7 @@ async fn failed_body_keeps_head_and_transport_failure_has_no_head() {
         .with_base_url(format!("http://{addr}/api/v2"))
         .unwrap();
     assert!(matches!(
-        offline.list(None, None).await.unwrap_err(),
+        offline.list().call().await.unwrap_err(),
         Error::Concord { meta: None, .. }
     ));
 }

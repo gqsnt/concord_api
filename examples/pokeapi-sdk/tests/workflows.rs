@@ -1,7 +1,7 @@
 //! Public consumer workflows, entirely against the loopback server.
 use concord::reqwest;
 use concord_example_testserver::{Recorded, Reply, TestServer};
-use concord_sdk_pokeapi::Client;
+use concord_sdk_pokeapi::{Call, Client};
 
 fn response(body: String) -> Reply {
     Reply::new(200)
@@ -19,7 +19,7 @@ async fn read_named_pokemon() {
     let server =
         TestServer::start(|_: &Recorded| response(include_str!("../fixtures/pokemon.json").into()))
             .await;
-    let pokemon = api(&server).pokemon("clefairy").await.unwrap().value;
+    let pokemon = api(&server).pokemon("clefairy").call().await.unwrap().value;
     assert_eq!(
         (pokemon.id, pokemon.name.as_str(), pokemon.height),
         (35, "clefairy", 6)
@@ -42,13 +42,27 @@ async fn change_limit_follow_next_and_fetch_detail() {
     })
     .await;
     let api = api(&server);
-    let first = api.list(Some(2), Some(0)).await.unwrap().value;
+    let first = api
+        .list()
+        .set_limit(2)
+        .set_offset(0)
+        .call()
+        .await
+        .unwrap()
+        .value;
     let next = first.next.as_deref().unwrap();
     let last = api.follow(next).await.unwrap().value;
     assert!(last.next.is_none());
     let selected = api.pokemon_url(&last.results[0].url).await.unwrap().value;
     assert_eq!(selected.id, 35);
-    let empty = api.list(Some(1), Some(2)).await.unwrap().value;
+    let empty = api
+        .list()
+        .set_limit(1)
+        .set_offset(2)
+        .call()
+        .await
+        .unwrap()
+        .value;
     assert!(empty.results.is_empty() && empty.next.is_none());
     assert_eq!(
         server
@@ -81,7 +95,7 @@ async fn follow_to_empty_end_and_keep_prefix_on_failure() {
     })
     .await;
     let api = api(&server);
-    let first = api.list(Some(1), None).await.unwrap().value;
+    let first = api.list().set_limit(1).call().await.unwrap().value;
     let final_page = api
         .follow(first.next.as_deref().unwrap())
         .await

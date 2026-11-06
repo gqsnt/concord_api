@@ -13,16 +13,22 @@ configure transport, timeouts and redirect policy. The default base is
 `https://pokeapi.co/api/v2`; `with_base_url` overrides it for local testing. The
 provider asks applications to cache requested resources; this SDK does not cache.
 
+`Client` is the generated `PokeApi` client (the name diagnostics and operation
+names use: `PokeApi.pokemon`, `PokeApi.list`). A declared operation is sent with
+`.call()` from the SDK's `Call` trait, which returns the value with the response
+head (`Response { value, meta }`) or an `Error` that keeps the head. The generated
+`send()` is also there and returns only the value, with Concord's own error.
+
 ```rust,no_run
 use concord::reqwest;
-use concord_sdk_pokeapi::Client;
+use concord_sdk_pokeapi::{Call, Client};
 
 # async fn example() -> Result<(), Box<dyn std::error::Error>> {
 let http = reqwest::Client::builder()
     .redirect(reqwest::redirect::Policy::none())
     .build()?;
 let api = Client::new(http); // no credentials or context fields
-let response = api.pokemon("clefairy").await?;
+let response = api.pokemon("clefairy").call().await?;
 println!("{}: {}", response.value.id, response.value.name);
 # Ok(()) }
 ```
@@ -30,14 +36,15 @@ println!("{}: {}", response.value.id, response.value.name);
 List one page at a time, use `next` as returned, and fetch a selected result by
 its URL. A server can return a different limit in the next URL; the caller does
 not reconstruct it. An empty page is not itself completion: only `next: null` is.
+`limit` and `offset` are optional; an omitted one uses the provider's default.
 
 ```rust,no_run
 # use concord::reqwest;
-# use concord_sdk_pokeapi::Client;
+# use concord_sdk_pokeapi::{Call, Client};
 # async fn example() -> Result<(), Box<dyn std::error::Error>> {
 let api = Client::new(reqwest::Client::builder()
     .redirect(reqwest::redirect::Policy::none()).build()?);
-let mut page = api.list(Some(20), Some(0)).await?.value;
+let mut page = api.list().set_limit(20).set_offset(0).call().await?.value;
 loop {
     if let Some(selected) = page.results.first() {
         let pokemon = api.pokemon_url(&selected.url).await?.value;
@@ -51,8 +58,9 @@ loop {
 # Ok(()) }
 ```
 
-Each call reads and decodes the entire JSON response before returning. It is a
-single page or detail, not a streaming interface. A successful page remains
+Each `call()`, `follow` and `pokemon_url` reads and decodes the entire JSON
+response before returning. It is a single page or detail, not a streaming
+interface. A successful page remains
 owned by the caller if a subsequent request fails; the caller decides how to
 store partial results, retry or stop. `Error::Concord` retains the original
 Concord error, and `meta` contains status, headers and final URL when a head was

@@ -2,9 +2,14 @@
 //!
 //! PokéAPI requires no authentication. Construct [`Client`] with a configured
 //! [`concord::reqwest::Client`]. Cache responses as requested by PokéAPI's fair-use policy.
+//!
+//! `use concord_sdk_pokeapi::{Call, Client};` is all a caller imports: a declared operation is
+//! sent with [`Call::call`] (`api.pokemon("clefairy").call().await?`), a URL the server returned
+//! with [`Client::follow`] or [`Client::pokemon_url`]. Each returns a [`Response`] with the
+//! response head, or an [`Error`] that keeps it.
 
 use concord::reqwest::{self, Url, header::HeaderMap};
-use concord::{Json, Prepared};
+use concord::{Endpoint, Json, Received};
 use serde::Deserialize;
 use std::collections::BTreeMap;
 use std::fmt;
@@ -63,7 +68,14 @@ where
 }
 
 concord::api! {
-    /// Low-level generated operations. Prefer [`Client`] for metadata and URL following.
+    /// The PokéAPI client (also named [`Client`]); `PokeApi` is the name diagnostics and
+    /// [`concord::Operation`] names use (`PokeApi.pokemon`, `PokeApi.list`).
+    ///
+    /// `PokeApi::new(http)` uses `https://pokeapi.co/api/v2` with the caller's transport
+    /// (timeouts, redirects, pooling); `with_base_url` replaces it for an offline server or
+    /// another installation. There is no authentication. Send an operation with [`Call::call`]
+    /// to get the response head with the value; the generated `send()` returns only the value
+    /// and Concord's own error.
     pub client PokeApi() {
         base "https://pokeapi.co/api/v2";
         format Json;
@@ -157,71 +169,54 @@ impl From<concord::Error> for Error {
     }
 }
 
-/// Configured client. The transport controls timeouts, redirects and connection pooling.
-/// The default base is `https://pokeapi.co/api/v2`; there is no authentication.
-#[derive(Clone)]
-pub struct Client {
-    api: PokeApi,
+/// The configured client: the generated [`PokeApi`] under this SDK's documented name.
+/// `Client::new(http)` takes the caller's transport, which controls timeouts, redirects and
+/// connection pooling; the default base is `https://pokeapi.co/api/v2` and there is no
+/// authentication.
+pub type Client = PokeApi;
+
+/// Sends any [`PokeApi`] operation once and keeps the response head: one adapter for every
+/// declared operation (`api.pokemon("clefairy").call()`,
+/// `api.list().set_limit(20).set_offset(0).call()`).
+pub trait Call<T>: Endpoint<T> {
+    /// Executes once and decodes the entire JSON body, keeping status, headers and final URL.
+    ///
+    /// # Errors
+    ///
+    /// [`Error::Concord`] with the original Concord error; `meta` is present once the response
+    /// head arrived (status, metadata and decode errors), absent for build and transport errors.
+    fn call(self) -> impl Future<Output = Result<Response<T>, Error>> + Send;
 }
-impl Client {
-    /// Construct with a caller-configured HTTP transport. No authentication is required.
-    pub fn new(http: reqwest::Client) -> Self {
-        Self {
-            api: PokeApi::new(http),
-        }
+
+impl<T: Send, E: Endpoint<T> + Send> Call<T> for E {
+    async fn call(self) -> Result<Response<T>, Error> {
+        finish(self.prepare()?.receive().await?).await
     }
-    /// Override the API base for an offline server or an alternate installation.
-    ///
-    /// # Errors
-    /// Returns Concord's build error for an invalid base URL.
-    pub fn with_base_url(mut self, base: impl AsRef<str>) -> Result<Self, Error> {
-        self.api = self.api.with_base_url(base)?;
-        Ok(self)
-    }
-    /// Retrieve one named Pokémon (or numeric ID).
-    ///
-    /// # Errors
-    /// Returns the original Concord error, with metadata once the response head arrives.
-    pub async fn pokemon(&self, id: impl Into<String>) -> Result<Response<Pokemon>, Error> {
-        send(self.api.pokemon(id.into()).prepare()?, None).await
-    }
-    /// Request a list page with optional `limit` and `offset`; omitted values use provider defaults.
-    ///
-    /// # Errors
-    /// Returns the original Concord error, with metadata once the response head arrives.
-    pub async fn list(
-        &self,
-        limit: Option<u64>,
-        offset: Option<u64>,
-    ) -> Result<Response<PokemonPage>, Error> {
-        let mut op = self.api.list();
-        if let Some(limit) = limit {
-            op = op.set_limit(limit);
-        }
-        if let Some(offset) = offset {
-            op = op.set_offset(offset);
-        }
-        send(op.prepare()?, None).await
-    }
+}
+
+impl PokeApi {
     /// Follow a `next` URL exactly, retaining its query parameters and their order.
     ///
     /// # Errors
-    /// Rejects malformed URLs and URLs outside the configured origin and Pokémon list path.
-    /// Other failures preserve the Concord error and any response head.
+    /// [`Error::InvalidUrl`] for a malformed URL or one outside the configured origin and Pokémon
+    /// list path (nothing is sent). Other failures are those of [`Call::call`].
     pub async fn follow(&self, next: &str) -> Result<Response<PokemonPage>, Error> {
-        let prepared = self.api.list().prepare()?;
-        let url = checked_url(prepared.request().url(), next, false)?;
-        send(prepared, Some(url)).await
+        let (client, mut request, decoder) = self.list().prepare()?.into_parts();
+        *request.url_mut() = checked_url(request.url(), next, false)?;
+        finish(decoder.execute(&client, request).await?).await
     }
     /// Retrieve a Pokémon by a URL supplied in a list result.
     ///
     /// # Errors
-    /// Rejects malformed, foreign or out-of-scope URLs; otherwise returns a Concord error.
+    /// [`Error::InvalidUrl`] for a malformed, foreign or out-of-scope URL (nothing is sent).
+    /// Other failures are those of [`Call::call`].
     pub async fn pokemon_url(&self, url: &str) -> Result<Response<Pokemon>, Error> {
-        let prepared = self.api.pokemon("placeholder".to_owned()).prepare()?;
-        let list = self.api.list().prepare()?;
+        let list = self.list().prepare()?;
         let url = checked_url(list.request().url(), url, true)?;
-        send(prepared, Some(url)).await
+        // The `pokemon` operation's decoder and identity; its placeholder URL is replaced.
+        let (client, mut request, decoder) = self.pokemon("placeholder").prepare()?.into_parts();
+        *request.url_mut() = url;
+        finish(decoder.execute(&client, request).await?).await
     }
 }
 
@@ -260,12 +255,13 @@ fn checked_url(list: &Url, value: &str, detail: bool) -> Result<Url, Error> {
     Ok(url)
 }
 
-async fn send<T>(prepared: Prepared<T>, url: Option<Url>) -> Result<Response<T>, Error> {
-    let (client, mut request, decoder) = prepared.into_parts();
-    if let Some(url) = url {
-        *request.url_mut() = url;
-    }
-    let received = decoder.execute(&client, request).await?;
+/// The README's examples, compiled as doctests.
+#[cfg(doctest)]
+#[doc = include_str!("../README.md")]
+struct ReadmeDoctests;
+
+/// Captures the head, then decodes; a decode failure keeps the head.
+async fn finish<T>(received: Received<T>) -> Result<Response<T>, Error> {
     let meta = ResponseMeta {
         status: received.status(),
         headers: received.head().headers().clone(),
