@@ -148,7 +148,10 @@ because that is a provider rule, not a declared operation.
 - `api.pokemon(id).await` becomes `api.pokemon(id).call().await`; `api.list(limit, offset)`
   becomes `api.list()` with `set_limit`/`set_offset` (or `maybe_limit`/`maybe_offset` for an
   `Option`) and `.call()`.
-- The `call()` future is `Send` (bound in the trait), so it can be spawned.
+- The trait states `+ Send`, so code generic over `E: Call<T>` can spawn the future. A concrete
+  call (`tokio::spawn(async move { api.pokemon("x").call().await })`) compiles without the bound
+  too, because the auto trait leaks through the one blanket impl (checked with a temporary
+  probe test, then removed).
 - Tests: 21 call sites in `tests/{first_use,protocol,workflows}.rs` (rustfmt wraps some over
   several lines) and one import line per file; no expectation changed. The README examples are
   now compiled as doctests (`ReadmeDoctests` in `src/lib.rs`).
