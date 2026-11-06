@@ -55,10 +55,10 @@ commit, so no baseline intervention was needed.
 | SDK02 | PokéAPI | small | 1 | `gpt-6.1-terra` xhigh (`2079f14b`) | `gpt-6-astra` xhigh, 14 tests; first intervention: read the testserver API (`729a8dda`) | Opus subagent (`5f72d206`; its `follow_with_limit` is reverted in integration, see W1-6) | WAVE_1_DONE, integrated |
 | SDK03 | Twilio Messaging | medium | 1 | `gpt-6-astra` xhigh (`b1e00c12`) | Opus subagent, 22 tests, unassisted (`96ff9b2b`) | `gpt-6.1-sol` xhigh (`497367eb`) | WAVE_1_DONE, integrated |
 | SDK04 | Amazon S3 | large | 1 | Opus subagent (`b30d9994`) | `gpt-6.1-sol` xhigh, 13 tests, unassisted (`715538c6`) | `gpt-6.1-terra` xhigh (`41e24beb`) | WAVE_1_DONE, integrated |
-| SDK05 | Frankfurter | small | 2 | `gpt-6-astra` xhigh (session `01a1aec4-4657-79d0…`) | | | AUTHORING |
-| SDK06 | GitLab | medium | 2 | Opus subagent | | | AUTHORING |
-| SDK07 | Slack Web API | medium | 2 | `gpt-6.1-sol` xhigh (session `01a1aec4-4657-71a0…`) | | | AUTHORING |
-| SDK08 | OpenAI | large | 2 | `gpt-6.1-terra` xhigh (session `01a1aec4-4657-7690…`) | | | AUTHORING |
+| SDK05 | Frankfurter | small | 2 | `gpt-6-astra` xhigh (`d66eb228`) | Opus subagent, 24 tests, unassisted (`3aefaf5c`) | `gpt-6.1-sol` xhigh (`64a12a6e`) | WAVE_2_DONE, merged `ab4caefe` |
+| SDK06 | GitLab | medium | 2 | Opus subagent (`debaefb7`) | `gpt-6.1-sol` xhigh, 18 tests, unassisted (`5d15bc2b`) | `gpt-6.1-terra` xhigh (`e1b813b5`) | WAVE_2_DONE, merged `8288e3e6` |
+| SDK07 | Slack Web API | medium | 2 | `gpt-6.1-sol` xhigh (`ae8ddfb1`) | `gpt-6.1-terra` xhigh, 6 tests, unassisted (`31cad62d`) | `gpt-6-astra` xhigh (`c844a878`) | WAVE_2_DONE, merged |
+| SDK08 | OpenAI | large | 2 | `gpt-6.1-terra` xhigh (`8a659204`) | `gpt-6-astra` xhigh, 18 tests, unassisted (`08f97864`) | Opus subagent (`51d0eee3`) | WAVE_2_DONE, merged |
 
 ## Model/session ledger
 

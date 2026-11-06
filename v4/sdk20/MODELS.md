@@ -33,3 +33,15 @@ commit; the coordinator commits their files and records it.
 | W1 maintainer SDK03 Twilio | `gpt-6.1-sol` xhigh | `gpt-6.1-sol`, `xhigh` (session `01a1ae7d-9e31…`) | same | `497367eb` | |
 | W1 maintainer SDK04 S3 | `gpt-6.1-terra` xhigh | `gpt-6.1-terra`, `xhigh` (session `01a1ae9c-6a24…`) | same | `41e24beb` | |
 | Review of between-wave changes after wave 1 (`94d13527..6a9dcb19`, library/test support/docs) | `gpt-6-astra`, xhigh, read-only | `gpt-6-astra`, `xhigh`, `read-only` (session `01a1ae9f-2c62…`) | `work/rv-w1` (detached `6a9dcb19`) | ACCEPT_WITH_FIXES, AST-W1-1 fixed `337da135` | |
+| W2 author SDK05 Frankfurter | `gpt-6-astra` xhigh | `gpt-6-astra`, `xhigh` (session `01a1aec4-4657-79d0…`) | `work/w2-sdk05-frankfurter` | `d66eb228` | |
+| W2 author SDK06 GitLab | Opus subagent | UNOBSERVED (inherits) | `work/w2-sdk06-gitlab` | `debaefb7` | |
+| W2 author SDK07 Slack | `gpt-6.1-sol` xhigh | `gpt-6.1-sol`, `xhigh` (session `01a1aec4-4657-71a0…`) | `work/w2-sdk07-slack` | `ae8ddfb1` | |
+| W2 author SDK08 OpenAI | `gpt-6.1-terra` xhigh | `gpt-6.1-terra`, `xhigh` (session `01a1aec4-4657-7690…`) | `work/w2-sdk08-openai` | `8a659204` | |
+| W2 consumer SDK05 | Opus subagent | UNOBSERVED (inherits) | same | `3aefaf5c` | |
+| W2 consumer SDK06 | `gpt-6.1-sol` xhigh | `gpt-6.1-sol`, `xhigh` (session `01a1aedc-227c…`) | same | `5d15bc2b` | |
+| W2 consumer SDK07 | `gpt-6.1-terra` xhigh | `gpt-6.1-terra`, `xhigh` (session `01a1aecf-9c4b-7753…`) | same | `31cad62d` | |
+| W2 consumer SDK08 | `gpt-6-astra` xhigh | `gpt-6-astra`, `xhigh` (session `01a1aecf-9c4b-7741…`) | same | `08f97864` | |
+| W2 maintainer SDK05 | `gpt-6.1-sol` xhigh | `gpt-6.1-sol`, `xhigh` (session `01a1aeda-3170…`) | same | `64a12a6e` | |
+| W2 maintainer SDK06 | `gpt-6.1-terra` xhigh | `gpt-6.1-terra`, `xhigh` (session `01a1aee4-2677…`) | same | `e1b813b5` | |
+| W2 maintainer SDK07 | `gpt-6-astra` xhigh | `gpt-6-astra`, `xhigh` (session `01a1aed6-b266…`) | same | `c844a878` | |
+| W2 maintainer SDK08 | Opus subagent | UNOBSERVED (inherits) | same | `51d0eee3` | |

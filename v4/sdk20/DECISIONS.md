@@ -205,3 +205,26 @@ placements unredacted unless the author also declared `#[sensitive]`. The replac
 preserve the check, so the invariant stays. Validated construction remains SDK policy: keep the
 generated client behind the SDK's constructor, or refuse an invalid credential in the client's
 send policy (`send Policy;`) before execution.
+
+## Wave 2 (frozen library `e04236ca`; Frankfurter, GitLab, Slack, OpenAI)
+
+All four first-use consumers reached both outcomes from public docs with no implementation-source
+intervention. Two of four authors (Frankfurter, Slack) used `Endpoint<T>` unprompted. No role
+patched Concord or used private items.
+
+| ID | Evidence | Attribution | Disposition |
+|---|---|---|---|
+| W2-1 | Frankfurter consumer: generated `send()` and SDK `fetch()` compile side by side with different error contracts; Frankfurter/Twilio consumers: two types shown as `Error`; GitLab consumer: "choosing `.call()` for SDK errors"; Slack/S3 keep the declaration private for the same reason | shared mechanic (generated terminal method fixed to `concord::Error`) | IMPLEMENT `badb2f59`: client `send P;` + `concord::SendWith<T>`; migration in progress |
+| W2-2 | GitLab (`Link`), PokéAPI (`next`), GitHub: follow a server URL by throwaway `prepare` + `url_mut` + `Decoder::execute`; GitLab noted the URL then leaves redaction | shared mechanic (3 consumers) | IMPLEMENT `e8118a44`: `Prepared::follow` (same origin, `Debug` withholds) |
+| W2-3 | Slack, Frankfurter: finite success decoding has no byte bound | shared mechanic | IMPLEMENT `1f71432c`: `Received::decode_limited` |
+| W2-4 | GitLab control test: reqwest forwards `PRIVATE-TOKEN` on a cross-origin redirect; GitHub and GitLab each build a redirect policy | application transport + docs | DOCS_ONLY `1f71432c` (author guide §3); Concord does not own the client |
+| W2-5 | OpenAI: `with_base_url` replaced the `/v1` in `base` | docs | DOCS_ONLY `1f71432c` |
+| W2-6 | Frankfurter: RECIPES error-document entry described a chunk loop | docs | DOCS_ONLY `1f71432c` |
+| W2-7 | GitLab, Twilio: a validated credential type cannot be a header value; generated `new`/`set_token` take any `HeaderValue` | shared mechanic vs H10b invariant | REJECT_WITH_REASON (D-W2-HDR, `5c507798`) |
+| W2-8 | OpenAI: SSE framed in the SDK over the native response | representation; one consumer so far | DEFER to wave 3 (ntfy is the second consumer) |
+| W2-9 | OpenAI: multipart Files body built by hand | representation; one real consumer (plus `examples/multipart`) | DEFER to wave 3 (Google Drive multipart/related) |
+| W2-10 | GitLab: second strict RFC 8288 `Link` parser (GitHub has one) | representation | DEFER: both strict parsers work and are tested; revisit with the registry (wave 5) |
+| W2-11 | Slack consumer: `PageItems` drops page metadata; a `None` after an `Err` is not completion | pagination facade | DEFER: documented contract; revisit if another SDK needs per-item page metadata |
+| W2-12 | GitLab: the generated client exposes no base URL; the SDK strips declared segments from a prepared URL | declaration | DEFER: one consumer; `follow`'s same-origin rule removes part of the need |
+| W2-13 | Frankfurter: `.parse()` into a generic setter needs `::<Date>` (E0283) | Rust inference, documented on `IntoValue` | DOCS (already documented) |
+| W2-14 | Maintenance dispersion: all four perturbations needed no production change (Frankfurter, Slack, OpenAI, GitLab: tests, fixtures, docs only) | positive | — |
