@@ -120,3 +120,16 @@ Test: `checks/phase-a/tests/received.rs::the_final_url_and_labelled_native_input
 | MG-6 | Salesforce query facade | a `&self` helper returning `impl Future + 'static` captures the borrow under edition 2024 and needs `+ use<..>` for `Pages::new` | DOCS_ONLY: pagination README note |
 | MG-7 | Kubernetes / multipart | generated body docs ignored runtime media; format links tripped `rustdoc::redundant_explicit_links` under `-D warnings` | IMPLEMENT in the macro (docs wording, targeted allow on generated owner types) |
 | MG-8 | Phase A UI case | rustc lists `Incremental` implementors, which depend on enabled features; one stderr cannot hold for json-only and workspace builds | test layout: `tests/ui_stream` runs only with `json`+`csv`+`jsonl` |
+
+## Independent reviews of Phase A (Codex `gpt-6.1-sol`, xhigh, read-only)
+
+| ID | Severity | Finding | Fix |
+|---|---|---|---|
+| SOL-A-1 | medium | `PagesError::Provider` `Display` formatted the provider error (may quote a URL) | content-free `Display`; error kept in the field and `source()`; the secrecy test now uses an error whose `Display` quotes its secret |
+| SOL-A-2 | medium | `-> stream!()` (a type macro named `stream`) was parsed as the keyword | keyword excludes a following `!`; UI regression case |
+| SOL-A-3 | low | a `StreamWatch` created after a terminal error lost its failure kind | `RecordStream` keeps the kind; `failure()`; test |
+| SOL-B-1 | medium | `examples/multipart` `UploadForm`/`FileUpload` derived `Debug` printed field values, file names and content | hand-written `Debug` (counts, media type, length); test |
+
+Verdicts: ACCEPT_WITH_FIXES (both). Areas reported clean in the second pass: GitHub, Stripe,
+Shopify, Kubernetes, Salesforce A5 (validated EOF, locator rules, `maxRecords`), dx03 resume and
+publication gating, runtime CSV upload, multipart wire encoding, library additions, tests.

@@ -95,8 +95,8 @@ concord::api! {
     }
 }
 
-/// One file part of an upload.
-#[derive(Debug, Clone)]
+/// One file part of an upload. `Debug` shows the media type and the content length only.
+#[derive(Clone)]
 pub struct FileUpload {
     /// The form field name.
     pub field: String,
@@ -163,15 +163,41 @@ pub async fn upload(api: &Files, folder: &str, form: Form) -> Result<Stored, con
 ///   error): it cannot be written as an RFC 9110 quoted string.
 /// - A file part's media type is written as its `Content-Type`; it must be a valid header value.
 /// - Text values and file content are written verbatim.
-#[derive(Debug, Clone, Default)]
+///
+/// `Debug` shows the number of text and file parts, never a field name, value, file name or
+/// content (a text field may hold a token or a signed URL).
+#[derive(Clone, Default)]
 pub struct UploadForm {
     parts: Vec<FormPart>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 enum FormPart {
     Text { name: String, value: String },
     File(FileUpload),
+}
+
+impl std::fmt::Debug for FileUpload {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("FileUpload")
+            .field("content_type", &self.content_type)
+            .field("bytes", &self.content.len())
+            .finish_non_exhaustive()
+    }
+}
+
+impl std::fmt::Debug for UploadForm {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let files = self
+            .parts
+            .iter()
+            .filter(|part| matches!(part, FormPart::File(_)))
+            .count();
+        f.debug_struct("UploadForm")
+            .field("text_fields", &(self.parts.len() - files))
+            .field("files", &files)
+            .finish()
+    }
 }
 
 impl UploadForm {
@@ -351,6 +377,28 @@ fn assemble(parts: &[EncodedPart<'_>], boundary: &str) -> Vec<u8> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn debug_withholds_values_names_and_content() {
+        let file = super::FileUpload {
+            field: "secret_field".into(),
+            file_name: "secret-name.csv".into(),
+            content_type: "text/csv".into(),
+            content: b"SECRET-CONTENT".to_vec(),
+        };
+        let form = super::UploadForm::new()
+            .text("access_token", "SECRET-TOKEN")
+            .file(file.clone());
+        for shown in [format!("{form:?}"), format!("{file:?}")] {
+            for secret in ["SECRET", "secret", "access_token"] {
+                assert!(!shown.contains(secret), "{secret} in {shown}");
+            }
+        }
+        assert_eq!(
+            format!("{form:?}"),
+            "UploadForm { text_fields: 1, files: 1 }"
+        );
+    }
+
     use super::*;
 
     #[test]
