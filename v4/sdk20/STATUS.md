@@ -55,6 +55,14 @@ targets)" — `agent-ac998292…/target` (39 GB, R5 finished) deleted; `agent-ae
 
 ## SDK cohort (Phase B)
 
+Wave 5 (held-out first-pass validation) frozen at `47a25fbf` (between-wave 4-5: R4 CSV quote at
+EOF + TER-W45-1, R5 readers over a wrapped body, `consumers.sh` cleanup, docs; reviews Terra (CSV,
+ACCEPT after recheck) and Sol (readers, ACCEPT)): `verify.sh --package --bench` 49/49 PASS, clean
+tree, 4m36s (`work/logs/gate-47a25fbf-verify.txt`). Pushed to PR #4 at `e34c3c08` (records and
+wave 5 capsules only after `47a25fbf`). Wave 5 capsules add a held-out rule: no campaign records
+(`v4/sdk20/`) and no other SDK's FRICTION/FIRST_USE/MAINTENANCE/INTEGRATION notes. First-pass
+results are kept separately from any later fix.
+
 Wave 4 integrated at `0347edfc` (all 16 cohort SDKs; library `0983a349` plus the between-wave 4-5
 CSV fix R4 and `consumers.sh` scratch cleanup): `verify.sh --package --bench` 49/49 PASS, clean
 tree, 4m55s, no consumer scratch left behind (`work/logs/gate-0347edfc-verify.txt`). Synthesis:
@@ -107,6 +115,10 @@ commit, so no baseline intervention was needed.
 | SDK14 | Airtable | medium | 4 | `gpt-6.1-terra` xhigh (`e0425cc8`) | `gpt-6-astra` xhigh, 14 tests; first intervention: corrected a doubled base path (`173e4f01`) | Opus subagent (`a4163a07`) | WAVE_4_ROLES_DONE, merged `eb801635` |
 | SDK15 | ClickHouse | medium | 4 | Opus subagent (`66f3cf00`) | `gpt-6.1-sol` xhigh, 17 tests, unassisted (`699239c2`) | `gpt-6.1-terra` xhigh (`2b584d4f`) | WAVE_4_ROLES_DONE, merged `0e0bc3df` |
 | SDK16 | Snowflake | large | 4 | `gpt-6-astra` xhigh (`04f32a9a`; first delivery enabled reqwest `gzip`, which broke a Concord test under workspace feature unification; reworked by the same session to SDK-local flate2) | Opus subagent, 18 tests, unassisted (`19ef84e3`) | `gpt-6.1-sol` xhigh (`1a78be4f`) | WAVE_4_ROLES_DONE, merged `0347edfc` |
+| SDK17 | World Bank | small | 5 | `gpt-6.1-terra` xhigh (session `01a1afdc-52e6-7d12…`, running) | `gpt-6-astra` | Opus | WAVE_5_AUTHORING |
+| SDK18 | Notion | medium | 5 | `gpt-6.1-sol` xhigh (session `01a1afdc-52e6-72a3…`, running) | `gpt-6.1-terra` | `gpt-6-astra` | WAVE_5_AUTHORING |
+| SDK19 | Microsoft Graph | large | 5 | `gpt-6-astra` xhigh (session `01a1afdc-52e8-7982…`, running) | Opus | `gpt-6.1-sol` | WAVE_5_AUTHORING |
+| SDK20 | Docker Distribution Registry | large | 5 | Opus subagent (running) | `gpt-6.1-sol` | `gpt-6.1-terra` | WAVE_5_AUTHORING |
 
 ## Open issues (not fixed; tracked)
 
