@@ -212,11 +212,20 @@ impl<S: ByteSource> SseEvents<S> {
     /// The next event; `None` at the end of input and after a terminal error (fused). Every error
     /// is terminal.
     ///
-    /// Cancel-safe: dropping the returned future loses no byte (a partly received line or event
-    /// stays buffered for the next call, the rest of the chunk pending). Work per poll is bounded:
-    /// it interprets at most 64 KiB of input between two yields to the executor (comments, blank
+    /// Cancel-safe when the source is ([`ByteSource`], "Cancellation"; `reqwest::Response` and
+    /// [`Chunks`](crate::stream::Chunks) are): dropping the returned future then loses no byte (a
+    /// partly received line or event stays buffered for the next call, the rest of the chunk
+    /// pending). With any other source, [`into_stream`](Self::into_stream) keeps a pending read,
+    /// the source's own future included, across a dropped `next()`. Work per poll is bounded: it
+    /// interprets at most 64 KiB of input between two yields to the executor (comments, blank
     /// lines, a long event, one large chunk), and yields after every 64 empty chunks from the
     /// source.
+    ///
+    /// An error's [`position`](ReadError::position) does not depend on how the input was cut:
+    /// through the end of the faulting line (invalid UTF-8), up to the first byte past
+    /// `max_event_bytes`, through the dispatching line end of the event `max_events` refused, all
+    /// of the input (an end inside a line or an event); a transport failure counts what the source
+    /// delivered before it.
     pub async fn next(&mut self) -> Option<Result<Event, ReadError>> {
         if self.driver.is_fused() {
             return None;
@@ -240,7 +249,11 @@ impl<S: ByteSource> SseEvents<S> {
             let eof = self.driver.at_eof();
             let (used, step) = match self.parser.feed(input, eof) {
                 Ok(step) => step,
-                Err(fault) => return Some(Err(self.driver.error(fault.kind, fault.codec))),
+                Err(fault) => {
+                    // The input before the fault counts, wherever the chunk ended.
+                    self.driver.consume(fault.offset);
+                    return Some(Err(self.driver.error(fault.kind, *fault.codec)));
+                }
             };
             work += used;
             self.driver.consume(used);
@@ -251,9 +264,11 @@ impl<S: ByteSource> SseEvents<S> {
                     return None;
                 }
                 Step::Event(event) => {
+                    // A refused event leaves the last event ID where it was.
                     if let Err(e) = self.driver.check_record_total() {
                         return Some(Err(e));
                     }
+                    self.parser.commit(&event);
                     self.driver.delivered();
                     return Some(Ok(event));
                 }
@@ -275,8 +290,10 @@ impl<S: ByteSource> SseEvents<S> {
     }
 
     /// The last event ID string: the most recent valid `id` value as of the last blank line
-    /// (empty if none). An `id` received in an event that has not been completed yet does not
-    /// count, so this is a safe `Last-Event-ID` for resuming.
+    /// (empty if none) that either dispatched nothing (an `id` without `data`) or dispatched an
+    /// event this reader delivered. An `id` received in an event that has not been completed yet,
+    /// or in the event `max_events` refused, does not count, so this is a safe `Last-Event-ID`
+    /// for resuming: no event after it was skipped.
     pub fn last_event_id(&self) -> &str {
         self.parser.last_event_id()
     }

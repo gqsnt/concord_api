@@ -59,9 +59,13 @@
 //! # Errors and diagnostics
 //!
 //! Failures carry static labels and numbers (`line`, `column`, `limit`), the operation name and
-//! the position (events delivered, bytes consumed), never event content. A transport failure's
-//! underlying error (its URL removed) is reachable only through
-//! [`ReadError::source_unredacted`](crate::stream::ReadError::source_unredacted).
+//! the position (events delivered, bytes consumed), never event content. The position of a
+//! format or limit error does not depend on where the chunks were cut (see
+//! [`SseEvents::next`]). A transport failure's underlying error (its URL removed) is reachable
+//! only through [`ReadError::source_unredacted`](crate::stream::ReadError::source_unredacted).
+//!
+//! An event refused by `max_events` does not advance [`SseEvents::last_event_id`]: resuming from
+//! it delivers that event again.
 //!
 //! # Resources
 //!
@@ -70,6 +74,8 @@
 //! (at most `max_event_bytes`) and the last event ID (one line at most, outside that bound). It
 //! never queues events: one `next()` produces at most one. A `next()` interprets at most 64 KiB of
 //! input between two yields to the executor and yields after every 64 empty chunks from the
+//! source. It is cancel-safe when its source is (`reqwest::Response` and `Chunks` are; see
+//! [`ByteSource`](crate::stream::ByteSource), "Cancellation"); `into_stream()` is, whatever the
 //! source. No task is spawned; dropping the reader drops the response. It does not reconnect.
 
 mod parse;

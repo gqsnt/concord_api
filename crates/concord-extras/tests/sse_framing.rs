@@ -21,10 +21,10 @@ use concord_core::reqwest::{StatusCode, Version};
 use concord_core::{Incremental, ResponseHead};
 use concord_extras::sse::{DEFAULT_MAX_EVENT_BYTES, Event, Sse, SseEvents, SseOptions, SseReader};
 use concord_extras::stream::{
-    ByteSource, Chunks, Completion, ReadError, ReadErrorKind, SourceError,
+    ByteSource, Chunks, Completion, Position, ReadError, ReadErrorKind, SourceError,
 };
 use futures_core::Stream;
-use support::partitions;
+use support::{partitions, poll_counting};
 
 const NOT_UTF8: &str = "a line is not valid UTF-8";
 const ENDS_IN_LINE: &str = "the input ends inside a line";
@@ -57,19 +57,31 @@ fn item(result: Result<Event, ReadError>) -> Item {
         })
 }
 
-/// What a whole read observed: the items, how it ended, and the stream state left behind.
+/// What a whole read observed: the items, the position after each (an error's own position),
+/// how it ended, and the stream state left behind.
 #[derive(Debug, PartialEq)]
 struct Outcome {
     items: Vec<Item>,
+    positions: Vec<Position>,
     completion: Completion,
     last_event_id: String,
     retry: Option<Duration>,
+    end: Position,
 }
 
 /// Reads every item, then checks the reader stays fused.
 async fn read_all<S: ByteSource>(mut events: SseEvents<S>) -> Outcome {
     let mut items = Vec::new();
+    let mut positions = Vec::new();
     while let Some(next) = events.next().await {
+        if let Err(e) = &next {
+            assert_eq!(
+                e.position(),
+                events.position(),
+                "the error's position is the reader's"
+            );
+        }
+        positions.push(events.position());
         items.push(item(next));
         assert!(items.len() < 100_000, "runaway reader");
     }
@@ -77,9 +89,11 @@ async fn read_all<S: ByteSource>(mut events: SseEvents<S>) -> Outcome {
     assert!(events.next().await.is_none(), "still fused");
     Outcome {
         items,
+        positions,
         completion: events.completion(),
         last_event_id: events.last_event_id().to_owned(),
         retry: events.retry(),
+        end: events.position(),
     }
 }
 
@@ -558,6 +572,97 @@ async fn max_events_is_a_limit_never_a_clean_end() {
     assert_eq!(error.codec().unwrap().get("limit"), Some(1));
 }
 
+/// SOL-W34-2: the event `max_events` refuses does not advance the last event ID, so a resume
+/// from it delivers that event again; a block with an `id` and no data still advances it.
+#[tokio::test]
+async fn a_refused_event_does_not_advance_the_last_event_id() {
+    let options = SseOptions::new().max_events(1);
+    let out = every_partition_with(
+        &options,
+        b"id: 1\ndata: a\n\nid: 2\ndata: b\n\n",
+        &[
+            ev("message", "a", "1"),
+            Err((ReadErrorKind::Limit, TOO_MANY, None)),
+        ],
+    )
+    .await;
+    assert_eq!(out.last_event_id, "1", "b was not delivered");
+    assert_eq!(out.completion, Completion::Failed);
+    let out = every_partition_with(
+        &options,
+        b"id: 1\ndata: a\n\nid: 2\n\n",
+        &[ev("message", "a", "1")],
+    )
+    .await;
+    assert_eq!(
+        out.last_event_id, "2",
+        "an ID-only block dispatches nothing"
+    );
+    assert_eq!(out.completion, Completion::EndOfInput);
+}
+
+/// SOL-W34-4: an error's position is the same however the input was cut (the partition tests
+/// compare every position too); these are its values.
+#[tokio::test]
+async fn error_positions_do_not_depend_on_the_cuts() {
+    let bytes = |out: &Outcome| out.positions.last().map(|p| (p.records, p.bytes));
+    // Through the end of the faulting line: `:x\n` (3) and `data:\xff\n` (7).
+    let out = every_partition(
+        b":x\ndata:\xff\n\n",
+        &[err(ReadErrorKind::Format, NOT_UTF8, 2)],
+    )
+    .await;
+    assert_eq!(bytes(&out), Some((0, 10)));
+    // After an event: its blank line, then the faulting line (CR LF: the LF is not yet read).
+    let out = every_partition(
+        b"data: a\r\n\r\ndata: \xc3(\r\n",
+        &[msg("a"), err(ReadErrorKind::Format, NOT_UTF8, 3)],
+    )
+    .await;
+    assert_eq!(
+        out.positions[0],
+        Position {
+            records: 1,
+            bytes: 10
+        }
+    );
+    assert_eq!(bytes(&out), Some((1, 20)));
+    // Up to the first byte past the bound: 10 bytes of `data: 12345`.
+    let options = |max| SseOptions::new().max_event_bytes(max);
+    let out = every_partition_with(
+        &options(10),
+        b"data: 12345\n\n",
+        &[err(ReadErrorKind::Limit, TOO_LARGE, 1)],
+    )
+    .await;
+    assert_eq!(bytes(&out), Some((0, 10)));
+    // The second line starts at 11 with 7 bytes left (the data buffer holds `1234\n`).
+    let out = every_partition_with(
+        &options(12),
+        b"data: 1234\ndata: 56\n\n",
+        &[err(ReadErrorKind::Limit, TOO_LARGE, 2)],
+    )
+    .await;
+    assert_eq!(bytes(&out), Some((0, 18)));
+    // A refused event: through its dispatching line end.
+    let out = every_partition_with(
+        &SseOptions::new().max_events(1),
+        b"data: a\n\ndata: b\n\n",
+        &[msg("a"), Err((ReadErrorKind::Limit, TOO_MANY, None))],
+    )
+    .await;
+    assert_eq!(bytes(&out), Some((1, 18)));
+    // An end inside a line or an event: all of the input.
+    for (input, label) in [
+        (&b"data: a\n\ndata: b"[..], ENDS_IN_LINE),
+        (b"data: a\n\ndata: b\r", ENDS_IN_EVENT),
+    ] {
+        let expected = [msg("a"), err(ReadErrorKind::Format, label, 3)];
+        let out = every_partition(input, &expected).await;
+        assert_eq!(bytes(&out), Some((1, input.len() as u64)), "{input:?}");
+    }
+}
+
 /// A source failure (here an injected one, mid-event) is a terminal `Transport` error after the
 /// delivered events; the reader is fused and its completion says it failed.
 #[tokio::test]
@@ -712,6 +817,110 @@ fn a_dropped_pending_next_loses_no_byte() {
     assert_eq!(events.completion(), Completion::EndOfInput);
     assert_eq!(events.position().bytes, FIXTURE.len() as u64);
     assert_eq!(events.retry(), Some(Duration::from_millis(250)));
+}
+
+/// `Pending` once (waking itself), then ready.
+struct YieldOnce(bool);
+
+impl Future for YieldOnce {
+    type Output = ();
+
+    fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<()> {
+        if self.0 {
+            Poll::Ready(())
+        } else {
+            self.0 = true;
+            cx.waker().wake_by_ref();
+            Poll::Pending
+        }
+    }
+}
+
+/// A source that takes its next chunk, then awaits once before returning it. `careful` keeps the
+/// taken chunk in `self` until it is returned (cancel-safe, as `ByteSource` requires); otherwise
+/// a dropped `next_chunk` future loses it.
+struct TakeThenWait {
+    queue: VecDeque<Bytes>,
+    held: Option<Bytes>,
+    careful: bool,
+}
+
+impl TakeThenWait {
+    fn new(input: &'static [u8], careful: bool) -> Self {
+        Self {
+            queue: VecDeque::from([Bytes::from_static(input)]),
+            held: None,
+            careful,
+        }
+    }
+}
+
+impl ByteSource for TakeThenWait {
+    async fn next_chunk(&mut self) -> Result<Option<Bytes>, SourceError> {
+        if self.careful {
+            if self.held.is_none() {
+                self.held = self.queue.pop_front();
+            }
+            YieldOnce(false).await;
+            Ok(self.held.take())
+        } else {
+            let chunk = self.queue.pop_front();
+            YieldOnce(false).await;
+            Ok(chunk)
+        }
+    }
+}
+
+/// SOL-W34-3: `next()` is as cancel-safe as its source. A source that takes a chunk and then
+/// awaits loses it when a pending `next()` is dropped, and the reader then sees a clean end; the
+/// same source keeping the chunk in `self` loses nothing; and `into_stream()` keeps the pending
+/// read (the source's future included), so even the first source loses nothing there.
+#[test]
+fn cancellation_is_as_safe_as_the_source() {
+    const INPUT: &[u8] = b"data: a\n\n";
+
+    let mut events = SseReader::default().read(TakeThenWait::new(INPUT, false));
+    assert!(
+        poll_once(events.next()).is_pending(),
+        "the source took the chunk"
+    );
+    let (next, _) = poll_counting(events.next());
+    assert!(next.is_none(), "the dropped future took the chunk with it");
+    assert_eq!(
+        events.completion(),
+        Completion::EndOfInput,
+        "the documented hazard: the loss looks like a clean end"
+    );
+    assert_eq!(events.position(), Position::default());
+
+    let mut events = SseReader::default().read(TakeThenWait::new(INPUT, true));
+    assert!(poll_once(events.next()).is_pending());
+    let (next, _) = poll_counting(events.next());
+    assert_eq!(item(next.expect("an event")), msg("a"));
+    let (next, _) = poll_counting(events.next());
+    assert!(next.is_none());
+    assert_eq!(events.completion(), Completion::EndOfInput);
+
+    let mut stream = SseReader::default()
+        .read(TakeThenWait::new(INPUT, false))
+        .into_stream();
+    assert!(
+        poll_stream(&mut stream).is_pending(),
+        "the read stays in the stream"
+    );
+    let next = loop {
+        if let Poll::Ready(next) = poll_stream(&mut stream) {
+            break next;
+        }
+    };
+    assert_eq!(item(next.expect("an event")), msg("a"));
+    let end = loop {
+        if let Poll::Ready(end) = poll_stream(&mut stream) {
+            break end;
+        }
+    };
+    assert!(end.is_none());
+    assert_eq!(stream.completion(), Completion::EndOfInput);
 }
 
 /// The same fixture split at every position (and in every other partition) gives the same events,

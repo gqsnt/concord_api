@@ -19,13 +19,35 @@ pub(super) const TOO_LARGE: &str = "an event exceeds max_event_bytes";
 /// A failure found while interpreting the input: terminal.
 pub(super) struct Fault {
     pub(super) kind: ReadErrorKind,
-    pub(super) codec: CodecError,
+    /// Boxed: a fault is rare, and keeps `feed`'s result small.
+    pub(super) codec: Box<CodecError>,
+    /// Bytes of the input passed to [`Parser::feed`] that precede the fault's position, so that
+    /// the reported position is the same however the input was cut: through the faulting line's
+    /// end (invalid UTF-8), up to the first byte past the bound (a limit), all of it (an end of
+    /// input inside a line or an event).
+    pub(super) offset: usize,
+}
+
+impl Fault {
+    fn new(kind: ReadErrorKind, codec: CodecError) -> Self {
+        Self {
+            kind,
+            codec: Box::new(codec),
+            offset: 0,
+        }
+    }
+
+    fn at(mut self, offset: usize) -> Self {
+        self.offset = offset;
+        self
+    }
 }
 
 /// One interpretation step.
 #[derive(Debug, PartialEq, Eq)]
 pub(super) enum Step {
-    /// A blank line dispatched this event.
+    /// A blank line dispatched this event. Its ID becomes the last event ID string only once the
+    /// reader delivers it ([`Parser::commit`]): an event a limit refuses does not advance it.
     Event(Event),
     /// The input is used up; more is needed.
     NeedMore,
@@ -45,7 +67,8 @@ pub(super) struct Parser {
     event_type: String,
     /// The last event ID buffer (`id` fields; not reset by a dispatch).
     id_buffer: String,
-    /// The last event ID string: the buffer as of the last blank line.
+    /// The last event ID string: the buffer as of the last blank line that dispatched nothing or
+    /// dispatched an event the reader delivered.
     last_id: String,
     /// The last valid `retry` value.
     retry: Option<Duration>,
@@ -79,9 +102,18 @@ impl Parser {
         }
     }
 
-    /// The last event ID string (as of the last blank line).
+    /// The last event ID string (see the field).
     pub(super) fn last_event_id(&self) -> &str {
         &self.last_id
+    }
+
+    /// Makes a dispatched event's ID the last event ID string: called by the reader when it
+    /// delivers the event, never for one it refuses.
+    pub(super) fn commit(&mut self, event: &Event) {
+        if self.last_id != event.id() {
+            self.last_id.clear();
+            self.last_id.push_str(event.id());
+        }
     }
 
     /// The last valid `retry` value.
@@ -101,7 +133,8 @@ impl Parser {
 
     /// Interprets `input` (the unconsumed part of the current chunk, or a slice of it) until one
     /// event is dispatched or `input` is used up. `eof`: the source has ended and `input` is the
-    /// last of it. Returns how many bytes of `input` were consumed. A fault is terminal.
+    /// last of it. Returns how many bytes of `input` were consumed. A fault is terminal; its
+    /// [`offset`](Fault::offset) says how much of `input` precedes it.
     ///
     /// The search for a line end covers at most what the bound still allows: a longer run
     /// without one is a limit fault however much input follows.
@@ -122,7 +155,8 @@ impl Parser {
             }
             self.bom_done = true;
             if self.bom_seen < BOM.len() {
-                self.grow(&BOM[..self.bom_seen])?;
+                self.grow(&BOM[..self.bom_seen])
+                    .map_err(|fault| fault.at(used))?;
             }
         }
         while used < input.len() {
@@ -141,8 +175,10 @@ impl Parser {
                     self.skip_lf = rest[end] == b'\r';
                     used += end + 1;
                     self.lines += 1;
+                    // Within the bound (`end <= allowance`): only `interpret` can fail here, at
+                    // the end of the line just consumed.
                     let event = if self.line.is_empty() {
-                        self.interpret(&rest[..end])?
+                        self.interpret(&rest[..end])
                     } else {
                         self.grow(&rest[..end])?;
                         let line = std::mem::take(&mut self.line);
@@ -150,14 +186,16 @@ impl Parser {
                         // Keep the allocation for the next line.
                         self.line = line;
                         self.line.clear();
-                        event?
+                        event
                     };
-                    if let Some(event) = event {
+                    if let Some(event) = event.map_err(|fault| fault.at(used))? {
                         return Ok((used, Step::Event(event)));
                     }
                 }
                 None => {
-                    self.grow(rest)?;
+                    // Refused at the first byte past the bound, wherever the chunk ends.
+                    self.grow(rest)
+                        .map_err(|fault| fault.at(used + allowance))?;
                     used = input.len();
                 }
             }
@@ -166,10 +204,14 @@ impl Parser {
             return Ok((used, Step::NeedMore));
         }
         if !self.line.is_empty() {
-            return Err(self.fault(ReadErrorKind::Format, ENDS_IN_LINE, self.lines + 1));
+            return Err(self
+                .fault(ReadErrorKind::Format, ENDS_IN_LINE, self.lines + 1)
+                .at(used));
         }
         if self.in_event {
-            return Err(self.fault(ReadErrorKind::Format, ENDS_IN_EVENT, self.lines));
+            return Err(self
+                .fault(ReadErrorKind::Format, ENDS_IN_EVENT, self.lines)
+                .at(used));
         }
         Ok((used, Step::End))
     }
@@ -179,12 +221,12 @@ impl Parser {
     fn grow(&mut self, bytes: &[u8]) -> Result<(), Fault> {
         if bytes.len() > self.max - self.assembled() {
             let max = self.max as u64;
-            return Err(Fault {
-                kind: ReadErrorKind::Limit,
-                codec: CodecError::new(TOO_LARGE)
+            return Err(Fault::new(
+                ReadErrorKind::Limit,
+                CodecError::new(TOO_LARGE)
                     .at("line", self.lines + 1)
                     .at("limit", max),
-            });
+            ));
         }
         let needed = self.line.len() + bytes.len();
         if needed > self.line.capacity() {
@@ -201,11 +243,12 @@ impl Parser {
             Ok(line) => line,
             Err(e) => {
                 let column = e.valid_up_to() as u64 + 1;
-                let fault = self.fault(ReadErrorKind::Format, NOT_UTF8, self.lines);
-                return Err(Fault {
-                    codec: fault.codec.at("column", column),
-                    ..fault
-                });
+                return Err(Fault::new(
+                    ReadErrorKind::Format,
+                    CodecError::new(NOT_UTF8)
+                        .at("line", self.lines)
+                        .at("column", column),
+                ));
             }
         };
         if line.is_empty() {
@@ -245,14 +288,17 @@ impl Parser {
         Ok(None)
     }
 
-    /// A blank line: the last event ID string takes the buffer's value; the event is dispatched
-    /// unless its data buffer is empty; the data and event type buffers are reset either way.
+    /// A blank line: the event is dispatched unless its data buffer is empty; the data and event
+    /// type buffers are reset either way. The last event ID string takes the buffer's value now
+    /// when nothing is dispatched, and when the reader delivers the event otherwise
+    /// ([`commit`](Self::commit)): an event refused by `max_events` leaves it unchanged, so a
+    /// resume from it does not skip that event.
     fn dispatch(&mut self) -> Option<Event> {
         self.in_event = false;
-        if self.last_id != self.id_buffer {
-            self.last_id.clone_from(&self.id_buffer);
-        }
         if self.data.is_empty() {
+            if self.last_id != self.id_buffer {
+                self.last_id.clone_from(&self.id_buffer);
+            }
             self.event_type.clear();
             return None;
         }
@@ -265,15 +311,12 @@ impl Parser {
         Some(Event::new(
             event,
             std::mem::take(&mut self.data),
-            self.last_id.clone(),
+            self.id_buffer.clone(),
         ))
     }
 
     fn fault(&self, kind: ReadErrorKind, label: &'static str, line: u64) -> Fault {
-        Fault {
-            kind,
-            codec: CodecError::new(label).at("line", line),
-        }
+        Fault::new(kind, CodecError::new(label).at("line", line))
     }
 }
 
@@ -314,7 +357,10 @@ mod tests {
                 .map_err(|f| (f.codec.label(), f.codec.get("line")))?;
             input = &input[used..];
             match step {
-                Step::Event(e) => out.push((e.event().into(), e.data().into(), e.id().into())),
+                Step::Event(e) => {
+                    parser.commit(&e);
+                    out.push((e.event().into(), e.data().into(), e.id().into()));
+                }
                 Step::NeedMore => assert!(input.is_empty(), "NeedMore leaves no input"),
                 Step::End => return Ok(out),
             }

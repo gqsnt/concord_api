@@ -531,8 +531,11 @@ impl<T: DeserializeOwned, S: ByteSource> JsonLinesRecords<T, S> {
 
     /// The next record; `None` at the end of input and after a terminal error (fused).
     ///
-    /// Cancel-safe: dropping the returned future loses no record (a partly received line stays
-    /// buffered for the next call, the rest of the chunk pending). Work per poll is bounded: it
+    /// Cancel-safe when the source is ([`ByteSource`], "Cancellation"; `reqwest::Response` and
+    /// [`Chunks`](crate::stream::Chunks) are): dropping the returned future then loses no record
+    /// (a partly received line stays buffered for the next call, the rest of the chunk pending);
+    /// with any other source, [`into_stream`](Self::into_stream) keeps a pending read across a
+    /// dropped `next()`. Work per poll is bounded: it
     /// frames at most 64 KiB of input between two yields to the executor (blank lines, a long
     /// line, many ready chunks or one large chunk), and yields after every 64 empty chunks from
     /// the source. Parsing the completed line is not divided.
