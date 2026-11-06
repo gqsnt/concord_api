@@ -142,8 +142,9 @@ step test-extras-jsonl cargo test --locked -p concord-extras --no-default-featur
 # The multipart request format alone (no serializer, no stream infrastructure).
 step test-extras-multipart cargo test --locked -p concord-extras --no-default-features --features multipart
 step test-extras-sse cargo test --locked -p concord-extras --no-default-features --features sse
-# The pagination crate alone (it has no features and knows no Concord crate).
+# The pagination crate alone, with and without Link syntax; neither knows a Concord crate.
 step test-pagination cargo test --locked -p concord-pagination
+step test-pagination-link cargo test --locked -p concord-pagination --features link
 # Lints of the feature subsets the workspace build unifies away (code used only by some formats).
 clippy_features() {
   local features
@@ -219,6 +220,7 @@ step doc-multipart-only env RUSTDOCFLAGS="-D warnings" cargo doc --locked -p con
 step doc-extras-multipart env RUSTDOCFLAGS="-D warnings" cargo doc --locked -p concord-extras --no-deps --no-default-features --features multipart
 step doc-extras-sse env RUSTDOCFLAGS="-D warnings" cargo doc --locked -p concord-extras --no-deps --no-default-features --features sse
 step doc-pagination env RUSTDOCFLAGS="-D warnings" cargo doc --locked -p concord-pagination --no-deps
+step doc-pagination-link env RUSTDOCFLAGS="-D warnings" cargo doc --locked -p concord-pagination --no-deps --features link
 
 if [[ $bench == 1 ]]; then
   step bench-build cargo bench --locked -p concord-bench --no-run

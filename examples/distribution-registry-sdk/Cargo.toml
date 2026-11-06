@@ -9,7 +9,7 @@ publish = false
 
 [dependencies]
 concord = { path = "../../crates/concord", features = ["json"] }
-concord-pagination = { path = "../../crates/concord-pagination" }
+concord-pagination = { path = "../../crates/concord-pagination", features = ["link"] }
 serde = { workspace = true, features = ["derive"] }
 serde_json.workspace = true
 # SHA-256 / SHA-512 content digests (a generic algorithm: a mature implementation, not ours).

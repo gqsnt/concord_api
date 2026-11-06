@@ -21,7 +21,7 @@ ALLOWED = {
     "concord-extras": {"concord-core", "csv", "csv-core", "futures-core", "http-body", "mime", "serde",
                        "serde_json", "serde_urlencoded"},
     # Pagination knows no Concord crate and no runtime: request factories are plain closures.
-    "concord-pagination": {"futures-util"},
+    "concord-pagination": {"futures-util", "url"},
     "concord-macros": {"http", "mime", "proc-macro2", "quote", "syn"},
     "concord": {"concord-core", "concord-extras", "concord-macros"},
 }
@@ -42,7 +42,9 @@ EXCLUDED = [
     ("concord-extras", ["--no-default-features", "--features", "sse"], {"csv", "csv-core", "serde", "serde_json",
                                                                        "serde_urlencoded"}),
     ("concord-pagination", [], {"concord", "concord-core", "concord-extras", "concord-macros", "reqwest",
-                                "tokio", "serde"}),
+                                "tokio", "serde", "http", "url"}),
+    ("concord-pagination", ["--features", "link"],
+     {"concord", "concord-core", "concord-extras", "concord-macros", "reqwest", "http", "tokio", "serde"}),
     ("concord-macros", [], {"concord-core", "concord-extras", "concord", "reqwest", "serde"}),
     ("concord", ["--no-default-features"], {"concord-extras", "serde_json", "serde_urlencoded"}),
     ("concord", ["--no-default-features", "--features", "extras"], {"serde_json", "serde_urlencoded", "csv",

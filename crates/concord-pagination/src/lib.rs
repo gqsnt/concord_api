@@ -104,6 +104,8 @@
 
 mod independent;
 mod jobs;
+#[cfg(feature = "link")]
+pub mod link;
 mod pages;
 mod sequential;
 mod types;

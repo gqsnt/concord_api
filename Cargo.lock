@@ -894,6 +894,7 @@ version = "4.2.0"
 dependencies = [
  "futures-util",
  "tokio",
+ "url",
 ]
 
 [[package]]
