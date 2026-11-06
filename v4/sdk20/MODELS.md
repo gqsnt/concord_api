@@ -96,6 +96,6 @@ commit; the coordinator commits their files and records it.
 | W5 author SDK19 Microsoft Graph | `gpt-6-astra` xhigh | `gpt-6-astra`, `xhigh`, workspace-write + `work/target-a`, network (session `01a1afdc-52e8-7982…`) | `work/w5-sdk19-microsoft-graph` | | held-out |
 | W5 author SDK20 Distribution Registry | Opus subagent | running (transcript read at completion) | `work/w5-sdk20-distribution-registry` | | held-out |
 | W5 consumer SDK17 World Bank | `gpt-6-astra` xhigh | `gpt-6-astra`, `xhigh`, workspace-write + `work/target-a`, network (session `01a1afde-8cda…`) | same | `3bb3d67c` (25 first-use tests, first compile, no intervention), coordinator commit | held-out |
-| W5 maintainer SDK17 World Bank | Opus subagent | running (transcript read at completion) | same | | held-out |
+| W5 maintainer SDK17 World Bank | Opus subagent | `claude-opus-5-5`, effort `xhigh` sent; answered by `claude-opus-5-5` (`agent-a82960c7…`) | same | `9a3da827` (4 maintenance tests; no SDK code change) | held-out |
 | W5 consumer SDK18 Notion | `gpt-6.1-terra` xhigh | `gpt-6.1-terra`, `xhigh`, workspace-write + `work/target-b`, network (session `01a1afe8-38f1…`) | same | `e76187ff` (6 first-use tests; first intervention: read the test server's source), coordinator commit | held-out |
 | W5 maintainer SDK18 Notion | `gpt-6-astra` xhigh | `gpt-6-astra`, `xhigh`, workspace-write + `work/target-b`, network (session `01a1afe9-c201…`) | same | | held-out |
