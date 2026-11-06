@@ -339,6 +339,20 @@ impl Incoming {
         self.response
     }
 
+    /// The next chunk of the body, `Ok(None)` at its end: for a parser of your own (an event
+    /// stream) that reads the body without leaving Concord's boundary. A failure is
+    /// [`ErrorKind::Transport`](crate::ErrorKind::Transport) naming the operation, its URL removed.
+    ///
+    /// # Errors
+    ///
+    /// `Transport` if reading fails.
+    pub async fn chunk(&mut self) -> Result<Option<bytes::Bytes>, Error> {
+        self.response
+            .chunk()
+            .await
+            .map_err(|e| Error::from_transport(self.operation, e))
+    }
+
     /// Reads the body to its end and discards it (an explicit discard; dropping the value
     /// instead closes the connection without reading). Returns the bytes read. No size or time
     /// bound beyond the client's own timeouts.

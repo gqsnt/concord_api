@@ -342,3 +342,43 @@ async fn a_watch_made_after_the_failure_still_reports_it() {
     assert_eq!(watch.completion(), Completion::Failed);
     assert_eq!(watch.failure(), Some(ReadErrorKind::Decode));
 }
+
+#[tokio::test]
+async fn an_own_parser_reads_incoming_chunks_with_identity() {
+    // A parser of the SDK's own (an event stream) reads `Incoming` chunk by chunk; a body that
+    // breaks off is a transport failure naming the endpoint, never a quiet end.
+    let server = TestServer::start(|request| {
+        let parts = vec![
+            concord::bytes::Bytes::from_static(b"data: one\n\n"),
+            concord::bytes::Bytes::from_static(b"data: two\n\n"),
+        ];
+        let body = if request.target.ends_with("/broken/export") {
+            Body::FailAfter(parts)
+        } else {
+            Body::Chunks(parts.into_iter().map(|b| (Duration::ZERO, b)).collect())
+        };
+        Reply::new(200)
+            .header("content-type", "text/event-stream")
+            .with_body(body)
+    })
+    .await;
+
+    let mut incoming = api(&server).export("whole").send().await.unwrap();
+    let mut read = Vec::new();
+    while let Some(chunk) = incoming.chunk().await.unwrap() {
+        read.extend_from_slice(&chunk);
+    }
+    assert_eq!(read, b"data: one\n\ndata: two\n\n");
+
+    let mut incoming = api(&server).export("broken").send().await.unwrap();
+    let error = loop {
+        match incoming.chunk().await {
+            Ok(Some(_)) => {}
+            Ok(None) => panic!("a broken body ended as if complete"),
+            Err(error) => break error,
+        }
+    };
+    assert_eq!(error.kind(), concord::ErrorKind::Transport);
+    assert_eq!(error.operation().unwrap().name(), "Reports.export");
+    assert!(!error.to_string().contains("127.0.0.1"), "{error}");
+}
