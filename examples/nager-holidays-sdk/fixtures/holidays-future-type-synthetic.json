@@ -1,0 +1,10 @@
+[
+  {
+    "date": "2028-02-29",
+    "name": "Synthetic future classification – fête",
+    "countryCode": "AT",
+    "nationalHoliday": false,
+    "subdivisionCodes": null,
+    "holidayTypes": ["Public", "SyntheticFutureType"]
+  }
+]
