@@ -211,7 +211,8 @@ pub async fn run(base_url: &str, token: String) -> Result<(), Box<dyn std::error
 - **A call** is navigation plus an endpoint: `api.project("demo").tasks()` returns a request value;
   setters such as `set_done(false)` return the changed request; `send()` executes it once and
   decodes a 2xx response.
-- **Errors.** Every ordinary call returns `Result<_, concord::Error>`. `error.kind()` tells the
+- **Errors.** Every ordinary call of a client without a send policy returns
+  `Result<_, concord::Error>` (a client with `send Policy;` returns its SDK's result instead). `error.kind()` tells the
   stage (`Build`, `Transport`, `Status`, `Metadata`, `Decode`, `Limit`). To interpret a provider's
   error document, `prepare()?.receive().await?` returns the response before checking its status.
   The example decodes a success normally and uses `document` for a non-2xx body, bounded to

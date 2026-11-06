@@ -18,6 +18,25 @@ help: the trait `SendWith<()>` is not implemented for `NotAPolicy`
    = note: this error originates in the macro `concord::api` (in Nightly builds, run with -Z macro-backtrace for more info)
 
 error[E0277]: the send policy `NotAPolicy` does not send a `()` output
+  --> tests/ui/send_policy_unimplemented.rs:7:1
+   |
+ 7 | / concord::api! {
+ 8 | |     pub client Store {
+ 9 | |         base "http://x.test";
+10 | |         send NotAPolicy;
+...  |
+13 | | }
+   | |_^ named by the client's `send` statement; it needs `NotAPolicy: SendWith<()>`
+   |
+help: the trait `SendWith<()>` is not implemented for `NotAPolicy`
+  --> tests/ui/send_policy_unimplemented.rs:6:1
+   |
+ 6 | struct NotAPolicy;
+   | ^^^^^^^^^^^^^^^^^
+   = note: a send policy implements `concord::SendWith<T>` for every output `T` its endpoints declare (usually generically: `impl<T: Send> SendWith<T> for Policy`)
+   = note: this error originates in the macro `concord::api` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0277]: the send policy `NotAPolicy` does not send a `()` output
   --> tests/ui/send_policy_unimplemented.rs:10:14
    |
 10 |         send NotAPolicy;

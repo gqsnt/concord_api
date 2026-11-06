@@ -244,7 +244,7 @@ pub use concord_codecs::{Binary, Encoded, IgnoreContentType, Text};
 pub use concord_core::{
     CODEC_ERROR_CONTEXT, CodecError, ContentTypeField, Decode, Decoder, Encode, EncodedBody,
     Endpoint, Error, ErrorKind, HeaderNameError, HeaderNameErrors, Incoming, Incremental,
-    IntoValue, Operation, Prepared, Received, Records, ResponseHead, ResponseMeta, SendWith,
+    IntoValue, Operation, Prepared, Received, Records, ResponseHead, ResponseMeta, SendWith, Sends,
     ToHeaderValue, bytes, reqwest,
 };
 

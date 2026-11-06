@@ -134,7 +134,10 @@ impl RegistryError {
 
 impl From<concord::Error> for RegistryError {
     fn from(error: concord::Error) -> Self {
-        let meta = error.head_meta().map(ResponseMeta::from_concord).map(Box::new);
+        let meta = error
+            .head_meta()
+            .map(ResponseMeta::from_concord)
+            .map(Box::new);
         Self::Request { error, meta }
     }
 }

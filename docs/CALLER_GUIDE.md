@@ -515,7 +515,7 @@ no URL): `ReadError::into_source_unredacted()` hands it back by value, to
 involved). `Display` and `Debug` are unchanged: they never show it. A parser's own error (the
 serde error of a `Format` or `Decode` failure) stays reachable by reference only,
 `source_unredacted()`. The cases, per reader, are tested in
-`crates/concord-extras/tests/reader_wrapping.rs`.
+`crates/concord-codecs/tests/reader_wrapping.rs`.
 
 **Server-sent events** (`concord::sse`, feature `sse`). An endpoint declared
 `-> stream sse::Event` with `response Sse;` returns `SseEvents`: each `next()` is one dispatched
