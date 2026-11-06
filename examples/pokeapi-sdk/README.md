@@ -29,7 +29,11 @@ println!("{}: {}", response.value.id, response.value.name);
 
 List one page at a time, use `next` as returned, and fetch a selected result by
 its URL. A server can return a different limit in the next URL; the caller does
-not reconstruct it. An empty page is not itself completion: only `next: null` is.
+not reconstruct it. To change the page size mid-traversal, call
+`api.follow_with_limit(next, 50)` instead of `api.follow(next)`: it replaces only
+the URL's `limit` pair (in place, dropping later duplicates, appended when
+absent) and keeps the server's `offset` and every other pair byte for byte, in
+order. An empty page is not itself completion: only `next: null` is.
 
 ```rust,no_run
 # use concord::reqwest;
@@ -62,9 +66,10 @@ failures have no response metadata. `Error::InvalidUrl` means no request was
 sent for that URL. The provider documentation does not specify a standard
 error body; this SDK does not claim one.
 
-`follow` and `pokemon_url` require absolute same-origin URLs within the configured
-Pokémon collection, and reject fragments and userinfo. The HTTP transport's
-redirect policy is separate: configure it to prohibit cross-origin redirects if
-that restriction matters. Query strings are passed through URL parsing and are
-not regenerated from `limit` or `offset`. Applications should bound traversals
+`follow`, `follow_with_limit` and `pokemon_url` require absolute same-origin URLs
+within the configured Pokémon collection, and reject fragments and userinfo. The
+HTTP transport's redirect policy is separate: configure it to prohibit
+cross-origin redirects if that restriction matters. Query strings are passed
+through URL parsing and are not regenerated from `limit` or `offset`;
+`follow_with_limit` rewrites only `limit`. Applications should bound traversals
 or detect repeated URLs if needed; this SDK does not detect cycles or retry.

@@ -17,4 +17,7 @@ samples. Files are pinned as bytes by `.gitattributes`.
 
 The wire tests also hand-author a missing-`next` JSON response, an HTML response,
 a truncated JSON response, and a 503 text response. These are test inventions,
-not documented provider error examples. Fixture trailing newlines are intentional.
+not documented provider error examples. The `follow_with_limit` tests also
+hand-author next URLs without `limit`, without a query, with a repeated `limit`,
+and with an unrelated percent-encoded pair and an empty segment; these are
+synthetic edge cases, not documented provider URLs. Fixture trailing newlines are intentional.
