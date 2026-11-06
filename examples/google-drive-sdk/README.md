@@ -240,7 +240,8 @@ contract change was necessary.
 - A changes page must have exactly one boundary: `nextPageToken` for the current
   batch, or `newStartPageToken` for the next interval. The page traversal preserves
   the latter in `ChangesPageMeta`. `.items().into_stream()` is available, but
-  flattening discards page metadata; consume changes as pages to retain boundaries.
+  flattening discards page metadata; consume changes as pages to retain boundaries, or use
+  `item_events()`, whose `Complete` event carries the final page's metadata.
 - Debug/Display for clients, errors, tokens, sessions and checkpoints withhold
   credentials, session URLs and provider text. Metadata headers, error documents,
   model values, `session_url()`, and serialized checkpoints are explicitly
