@@ -1257,6 +1257,12 @@ Excerpt of `checks/phase-a/tests/received.rs`:
     }
 ```
 
+It pays where the generated client is the client callers hold. An SDK that keeps a wrapper (a
+validated credential type at construction, an input rule per operation) keeps its domain methods:
+the trait cannot host a per-operation rule. A generated operation is not a future: code that passes
+`api.op(..)` where a future is expected (`tokio::time::timeout(d, api.op(..))`) needs the adapter's
+call (`api.op(..).call()`), and rustc's E0277 does not suggest it.
+
 A provider error document on a non-2xx response is read with `received.bytes_limited(n)`: the body
 up to `n` bytes, `ErrorKind::Limit` beyond (nothing more is read); parse it with the format's
 `decode_body`. `<E as Endpoint<T>>::operation()` names the endpoint without building a request.

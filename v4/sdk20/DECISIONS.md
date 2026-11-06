@@ -166,3 +166,29 @@ fake). No role patched Concord or used private items.
 Areas reported clean: cfg inheritance, generics, items named `Endpoint`, renamed dependency,
 inherent/trait `prepare`, all output forms, `Operation` identity and redaction, `bytes_limited`
 boundaries and kinds, `Body::HeadOnly` for HEAD, docs. Verdict ACCEPT_WITH_FIXES.
+
+### Wave 1 integration results (`8d434143`; Opus worker `a0b72bc7…`)
+
+- **W1-1 paired evidence (`Endpoint<T>`):** PokéAPI adopted (`pub type Client = PokeApi`, one
+  `Call<T>` adapter; adding an operation = declaration + README instead of declaration + a client
+  method + README; `examples/pokeapi-sdk/INTEGRATION.md`). Twilio prototype built, measured and
+  **not adopted**: construction keeps a wrapper (validated Basic credentials), its empty-SID rule
+  had no place in a generic adapter, every call gained `.call()` and an import
+  (`examples/twilio-sdk/INTEGRATION.md`). Nager not adopted (one operation; `fetch()` is already an
+  inherent method). Conclusion recorded in AUTHOR_GUIDE §5.12: the trait pays where the generated
+  client is the SDK's client; it is not a universal replacement for domain methods.
+- **W1-2:** Twilio (+12 −19) and Stripe `send.rs` (+13 −22) read error documents with
+  `bytes_limited`; classification, the exact-limit boundary and every test expectation unchanged.
+- **W1-6/9/10/11:** PokéAPI `follow_with_limit` reverted (`ac766d6a`); typed `UrlRejection`;
+  Twilio `TwilioError` in signatures, `Debug` shows sid/status/error code, empty SID refused (one
+  first-use expectation changed from "observes 404" to "refused locally", required by the fix); S3
+  `ObjectBody::completion()`; S3 test support uses `Body::HeadOnly`.
+
+Remaining gaps reported, with dispositions:
+
+| ID | Gap | Disposition |
+|---|---|---|
+| W1-14 | an empty value in a hole with a literal suffix (`"{sid}.json"`) produces `.json`; a whole-segment hole refuses empty | REJECT_WITH_REASON: a non-empty `.json` segment is a valid URL; which identifiers are valid is the provider's rule (Twilio now refuses an empty SID) |
+| W1-15 | the generated `{Client}Config` takes raw declared types; validated construction keeps an SDK wrapper | DEFER: SDK construction policy; `ToHeaderValue` is sealed on purpose (credential text must not go through `Display`) |
+| W1-16 | passing a generated operation where a future is expected gives E0277 with no hint toward the adapter | DOCS_ONLY (AUTHOR_GUIDE §5.12) |
+| W1-17 | no decoder from an `Endpoint` type: following a server URL prepares a placeholder operation to borrow its decoder | DEFER, grouped with server-URL following (GitLab `Link`, Graph `nextLink` in later waves) |
