@@ -4,6 +4,11 @@ use serde_json::value::RawValue;
 use crate::{Date, Decimal};
 
 /// A Frankfurter v2 pair observation. Additional provider fields are ignored.
+///
+/// This includes nested attribution such as the shared wire schema's `providers` field;
+/// it is not retained or used to recalculate `rate`. The optional request filter of the
+/// same name is independent. Unknown values must still be valid JSON, and the four
+/// known fields keep their usual validation.
 #[derive(Clone, Debug, PartialEq, Eq, Deserialize)]
 pub struct Rate {
     /// Provider's observation date, which need not equal the requested date.

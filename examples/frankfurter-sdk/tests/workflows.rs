@@ -3,7 +3,7 @@
 mod common;
 
 use concord_example_testserver::TestServer;
-use concord_sdk_frankfurter::{Date, Decimal, Error};
+use concord_sdk_frankfurter::{Date, Decimal, Error, Rate};
 
 use common::{HISTORICAL, LATEST, assert_wire, client, json};
 
@@ -70,6 +70,51 @@ async fn optional_filter_and_unknown_fields_keep_existing_rate_callers_working()
         &requests[2],
         "/v2/rate/EUR/USD?date=2026-03-25&providers=ECB",
     );
+    assert_eq!(server.shutdown().await.open_after, 0);
+}
+
+#[tokio::test]
+async fn unknown_provider_attribution_preserves_existing_rate_callers() {
+    let server =
+        TestServer::start(|_| json(200, include_bytes!("../fixtures/provider-attribution.json")))
+            .await;
+    let api = client(&server);
+    // Exhaustive construction also checks that existing four-field Rate callers compile.
+    let expected = Rate {
+        date: "2026-03-25".parse().unwrap(),
+        base: "EUR".into(),
+        quote: "USD".into(),
+        rate: "1.1568".parse().unwrap(),
+    };
+    let latest = api.latest_pair("EUR", "USD");
+    assert_eq!(latest.clone().fetch().await.unwrap().rate, expected);
+    assert_eq!(
+        latest
+            .clone()
+            .set_providers("ECB")
+            .fetch()
+            .await
+            .unwrap()
+            .rate,
+        expected
+    );
+    assert_eq!(latest.send().await.unwrap(), expected);
+
+    let historical = api.historical_pair("EUR", "USD", expected.date);
+    assert_eq!(historical.clone().fetch().await.unwrap().rate, expected);
+    assert_eq!(historical.send().await.unwrap(), expected);
+
+    let requests = server.requests();
+    assert_eq!(requests.len(), 5);
+    for (request, target) in requests.iter().zip([
+        "/v2/rate/EUR/USD",
+        "/v2/rate/EUR/USD?providers=ECB",
+        "/v2/rate/EUR/USD",
+        "/v2/rate/EUR/USD?date=2026-03-25",
+        "/v2/rate/EUR/USD?date=2026-03-25",
+    ]) {
+        assert_wire(request, target);
+    }
     assert_eq!(server.shutdown().await.open_after, 0);
 }
 

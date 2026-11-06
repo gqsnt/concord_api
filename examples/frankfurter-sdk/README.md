@@ -48,6 +48,14 @@ coverage or normalize case. `Date` is `chrono::NaiveDate`, so calendar parsing e
 occur before a request is made. Callers should use the provider's `YYYY-MM-DD` date range;
 chrono can represent dates beyond that range. Unknown response fields are ignored.
 
+For example, a response may gain a nested `providers` attribution field without changing
+either rate workflow or the four-field `Rate` model. The SDK ignores that field and returns
+the top-level observation date and exact rate; it does not recompute them from attribution.
+The request's optional `providers` filter remains independent. Ignoring an extra field still
+requires valid JSON and does not relax validation of known fields. The offline attribution
+fixture is a synthetic compatibility scenario based on the shared OpenAPI `Rate` schema;
+the pair endpoint does not document an `expand` parameter, and the SDK does not send one.
+
 ## Decimal policy
 
 `Rate::rate` is `Decimal` (a public alias for `bigdecimal::BigDecimal`). The field decoder
@@ -114,4 +122,6 @@ is unredacted.
 `tests/protocol.rs` asserts HTTP method, target, headers and exact empty request bodies,
 decimal policy, provider errors and failed body completion. `tests/workflows.rs` exercises
 both public workflows and optional-filter/unknown-field compatibility against
-`examples/testserver`. No live provider requests or credentials are used by tests.
+`examples/testserver`, including nested provider attribution through both `.fetch()` and
+`.send()`. No live provider requests or credentials are used by tests. The maintenance scope
+and verification record are in [MAINTENANCE.md](MAINTENANCE.md).

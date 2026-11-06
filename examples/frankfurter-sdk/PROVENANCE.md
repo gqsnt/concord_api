@@ -30,6 +30,7 @@ Every row uses the access date above. The local `.gitattributes` marks `fixtures
 | `latest.json` | OpenAPI 2.1.1, `/rate/{base}/{quote}` → 200 → JSON example | Copied field values from the documented `2026-03-25` EUR/USD `1.1568` object; minified plus LF. A documented sample, not a current live rate. |
 | `historical.json` | OpenAPI 2.1.1, `/providers/{provider}/rates` → 200 → JSON example | Extracted the `2024-01-15` EUR/USD `1.089` object from the documented array and minified it. Serving this object from the pair endpoint is a synthetic response scenario. |
 | `extended.json` | v2 Rate; OpenAPI 2.1.1 `Rate` schema | Based on `latest.json`, with invented `future_metadata` and `future_flag` fields. Synthetic compatibility perturbation; no claim those fields exist. |
+| `provider-attribution.json` | OpenAPI 2.1.1 `components.schemas.Rate.properties.providers`, rechecked 2026-11-06 | Hand-authored from the documented nested `key`/`date`/`rate`/`excluded` shape, retaining the documented latest example's top-level values. All attribution values are invented, including the long decimal and dates that differ from the top-level date. Serving attribution from the pair endpoint is a synthetic forward-compatibility scenario: its operation does not document `expand`. Not captured response bytes. |
 | `invalid-currency.json` | v2 website, Errors | Transcribed/minified the documented 422 example, retaining its status and message. |
 | `not-found.json` | OpenAPI 2.1.1, `responses.NotFound` | Hand-authored message-only error matching the documented schema; message text is synthetic. |
 | `bad-request.json` | v2 website, Errors (400) | Hand-authored date-error message/status following the website's envelope; synthetic text. |
@@ -52,6 +53,10 @@ The historical workflow's request for 2024-01-16 returning a 2024-01-15 observat
 synthetic check that the returned date is preserved. It does not verify provider fallback
 or calendar availability. Filtered and unfiltered test responses are intentionally equal;
 they test request compatibility, not provider blending or accuracy.
+
+Maintenance tests also derive two synthetic invalid responses from
+`provider-attribution.json`: quoting the top-level numeric rate, and truncating the
+unknown attribution's boolean literal from `true` to `tru`. Neither is a provider example.
 
 ## Implementation sources and dependencies
 

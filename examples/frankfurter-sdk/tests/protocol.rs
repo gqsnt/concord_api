@@ -175,6 +175,27 @@ async fn invalid_success_shapes_and_incomplete_json_do_not_succeed() {
 }
 
 #[tokio::test]
+async fn unknown_provider_attribution_keeps_known_field_and_json_validation() {
+    let extended = include_str!("../fixtures/provider-attribution.json");
+    for body in [
+        extended.replace("\"rate\":1.1568,", "\"rate\":\"1.1568\","),
+        extended.replace("\"excluded\":true", "\"excluded\":tru"),
+    ] {
+        let server = TestServer::start(move |_| json(200, &body)).await;
+        let error = client(&server)
+            .latest_pair("EUR", "USD")
+            .fetch()
+            .await
+            .unwrap_err();
+        assert_eq!(concord_kind(&error), ErrorKind::Decode);
+        assert_eq!(error.status(), Some(StatusCode::OK));
+        assert_eq!(error.operation().unwrap().name(), "Frankfurter.latest_pair");
+        assert_wire(&server.single(), "/v2/rate/EUR/USD");
+        assert_eq!(server.shutdown().await.open_after, 0);
+    }
+}
+
+#[tokio::test]
 async fn documented_http_errors_preserve_status_headers_and_typed_problem() {
     let cases: &[(u16, &[u8], Option<u16>)] = &[
         (
