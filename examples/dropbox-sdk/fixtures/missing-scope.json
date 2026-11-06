@@ -1,0 +1,7 @@
+{
+  "error_summary": "missing_scope/...",
+  "error": {
+    ".tag": "missing_scope",
+    "required_scope": "files.metadata.read"
+  }
+}

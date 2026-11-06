@@ -897,6 +897,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "concord-sdk-dropbox"
+version = "0.0.0"
+dependencies = [
+ "concord",
+ "concord-example-testserver",
+ "concord-pagination",
+ "futures-util",
+ "serde",
+ "serde_json",
+ "tokio",
+]
+
+[[package]]
 name = "concord-sdk-frankfurter"
 version = "0.0.0"
 dependencies = [

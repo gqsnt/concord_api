@@ -1,0 +1,13 @@
+{
+  "error_summary": "path/not_found/...",
+  "error": {
+    ".tag": "path",
+    "path": {
+      ".tag": "not_found"
+    }
+  },
+  "user_message": {
+    "text": "Synthetic folder is unavailable.",
+    "locale": "en"
+  }
+}
