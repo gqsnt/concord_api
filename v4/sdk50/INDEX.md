@@ -18,7 +18,7 @@ fixtures only).
 
 | Phase | Status | Records |
 |---|---|---|
-| M0 SDK20 integration | merged; local gates and CI in `M0_RECEIPT.md` | `M0_RECEIPT.md` |
+| M0 SDK20 integration | **complete**: merged as `8cae5d4c`; local gates and Linux/Windows/nightly CI on the PR head and on main | `M0_RECEIPT.md` |
 | P0 retrospective, carryovers | registry expiry fixed (M0-1); 17 stale guide passages corrected; obligation/residue inventory; 88-scenario denominator | `P0_INVENTORY.md`, `SCENARIOS.md`, `DECISIONS.md` |
 | P1 F1–F3 and first integrations | F1 retained with compiled comparison; F2 head retention, `decode_with_meta`, `document` adopted in 24 SDKs/examples; F3 parameter groups and `Sends<O>`; codecs package, Link parser, retry pilot; pagination lane in progress | `DECISIONS.md`, `checks/core-concepts/` |
 | P2 waves SDK21–50 | not started | `waves/` |

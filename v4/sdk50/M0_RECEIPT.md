@@ -15,7 +15,7 @@ The handoff authorized merging PR #4 (SDK20) after verification. Done 2026-11-07
 | CI on the synthetic merge (pull_request run 42303151752) | same three jobs, same step counts, on `7e7a34ac` |
 | Merge | `gh pr merge --merge --match-head-commit 5c3ef5f6…`; merge commit **`8cae5d4cda10d47fb6036ac72ba54256e7a5536b`**, parents `a95fb2fb`, `5c3ef5f6`; tree `da1de36d` = the verified head's tree |
 | Local gate on main `8cae5d4c` | `scripts/verify.sh --package --bench` 49/49 PASS, clean tree, 3m39s, **reusing the M0 target** (identical tree; cached artifacts, stated); `--nightly-only` PASS (16 passed) |
-| CI on main (push run 42309603283) | FILL |
+| CI on main (push run 42309603283) | `verify (ubuntu-latest)` 49 PASS, `verify (windows-latest)` 49 PASS (native Windows runner), `nightly-clone` with `nightly-clone-compat` 16 passed (rustc 1.101.0-nightly 249c1e4e3 2026-11-05); each job log `head: 8cae5d4c… dirty: 0`. **M0 complete.** |
 | Logs (outside the repository) | `work/logs/m0-gate-5c3ef5f6-*`, `work/logs/main-8cae5d4c-*` |
 
 No tag, release or publication. The campaign branch `concord-ecosystem-sdk50` starts at `8cae5d4c`.
