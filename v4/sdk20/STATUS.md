@@ -46,7 +46,7 @@ Wave 3 frozen at `6d6d66aa` (waves 1-2 integrated; between-wave refinements D-W2
 SOL-W23 fixed): `verify.sh --package --bench` 43/43 PASS on a clean tree
 (`work/logs/gate-6d6d66aa-verify.txt`, 4m19s); pushed to PR #4. Earlier at `634b135b` the gate
 failed 3 `test` steps (one UI case, W23-5), fixed in `08df6614` (43/43). The S3 move to the
-value-form policy runs in parallel (SDK-only; merges after the freeze).
+value-form policy ran in parallel (SDK-only) and merged as `bbbf6c97`.
 
 Wave 2 frozen at `e04236ca` (wave 1 integrated): `verify.sh --package --bench` 43/43 PASS on a
 clean tree (`work/logs/gate-e04236ca-verify.txt`), the four wave 1 SDKs pass alone.
@@ -60,7 +60,7 @@ commit, so no baseline intervention was needed.
 | SDK01 | Nager.Holidays | small | 1 | `gpt-6.1-sol` xhigh (`38dbaa29`) | `gpt-6.1-terra` xhigh, 9 tests, unassisted (`9b99ef07`) | `gpt-6-astra` xhigh (`2e23393b`) | WAVE_1_DONE, integrated `6a9dcb19` |
 | SDK02 | PokéAPI | small | 1 | `gpt-6.1-terra` xhigh (`2079f14b`) | `gpt-6-astra` xhigh, 14 tests; first intervention: read the testserver API (`729a8dda`) | Opus subagent (`5f72d206`; its `follow_with_limit` is reverted in integration, see W1-6) | WAVE_1_DONE, integrated |
 | SDK03 | Twilio Messaging | medium | 1 | `gpt-6-astra` xhigh (`b1e00c12`) | Opus subagent, 22 tests, unassisted (`96ff9b2b`) | `gpt-6.1-sol` xhigh (`497367eb`) | WAVE_1_DONE, integrated |
-| SDK04 | Amazon S3 | large | 1 | Opus subagent (`b30d9994`) | `gpt-6.1-sol` xhigh, 13 tests, unassisted (`715538c6`) | `gpt-6.1-terra` xhigh (`41e24beb`) | WAVE_1_DONE, integrated |
+| SDK04 | Amazon S3 | large | 1 | Opus subagent (`b30d9994`) | `gpt-6.1-sol` xhigh, 13 tests, unassisted (`715538c6`) | `gpt-6.1-terra` xhigh (`41e24beb`) | WAVE_1_DONE, integrated; value-form policy `bbbf6c97` |
 | SDK05 | Frankfurter | small | 2 | `gpt-6-astra` xhigh (`d66eb228`) | Opus subagent, 24 tests, unassisted (`3aefaf5c`) | `gpt-6.1-sol` xhigh (`64a12a6e`) | WAVE_2_DONE, merged `ab4caefe` |
 | SDK06 | GitLab | medium | 2 | Opus subagent (`debaefb7`) | `gpt-6.1-sol` xhigh, 18 tests, unassisted (`5d15bc2b`) | `gpt-6.1-terra` xhigh (`e1b813b5`) | WAVE_2_DONE, merged `8288e3e6` |
 | SDK07 | Slack Web API | medium | 2 | `gpt-6.1-sol` xhigh (`ae8ddfb1`) | `gpt-6.1-terra` xhigh, 6 tests, unassisted (`31cad62d`) | `gpt-6-astra` xhigh (`c844a878`) | WAVE_2_DONE, merged |

@@ -271,7 +271,7 @@ SDKs) and `aadef365…` (wave 2 SDKs), each with a measured before/after in the 
 | Nager.Holidays | adopted (`send KeepHead;`) | n/a | no | rustdoc then shows a projection type (cost noted) |
 | PokéAPI | adopted | adopted | no | replaces the throwaway prepare + `url_mut` + `Decoder::execute` |
 | Twilio | not adopted (prototype compiled, measured, reverted) | n/a | no | empty-SID rule stays a domain method; generic misuse gives E0277 without a hint |
-| Amazon S3 | re-evaluated on the value form: see below | n/a | | |
+| Amazon S3 | adopted on the value form (`send signer;`, `38e6333d`, merged `bbbf6c97`) | n/a | no | 36 forwarding definitions (245 lines) gone; a new declared header reaches callers with no other edit (probe: `x-amz-checksum-mode` signed and sent); metadata puts stay a domain method |
 | Frankfurter | adopted | n/a | no | no success-cap friction |
 | GitLab | adopted | adopted | no | 8 mutation runs caught by tests; `follow` alone blocks the cross-origin token leak |
 | Slack | not adopted (prototype measured, reverted) | n/a | adopted (16 MiB) | declaration stays private; made public, its `prepare()?.send()` would still return an `ok: false` envelope as success and expose an unvalidated `limit` |
@@ -303,3 +303,18 @@ client/config/endpoint, cfg, concurrency (independent clients share nothing),
 `Incoming::chunk` (URL-free `Transport` with identity; a failure is not sticky: a caller must
 keep the error, a later read may return EOF), §5.13. The reviewer could not run cargo (read-only
 temp dirs); it used source tracing and rustc type/MIR probes. Verdict ACCEPT_WITH_FIXES.
+
+S3 on the value-form policy (Opus subagent `aa6a8748…`, `examples/amazon-s3-sdk/INTEGRATION.md`
+"Between waves 2-3 (after the value-form policy)"): `src/client.rs` + `src/api.rs` + `src/lib.rs`
+1227 → 910 lines (830 → 554 code); every first-use and existing test kept its assertions (only
+setter renames, `Bytes` bodies, 12 calls moved to the signed `S3Client::prepare`; one protocol
+test added). Not yet independently reviewed (scheduled with the wave 3 integration review).
+Library gaps it reported:
+
+| ID | Gap | Disposition |
+|---|---|---|
+| W23-6 | a per-request input meant only for the policy (S3 user metadata, a per-request credentials override) cannot be declared: an unplaced value is "never used" | DEFER: one consumer; reconsider between waves 3-4 if a wave 3 SDK needs the same |
+| W23-7 | a decorated request cannot go back through the policy: `Endpoint::prepare` returns `Prepared<T>`, which cannot be edited or rebuilt after `into_parts()` | DEFER with W23-6 (same need: S3 adds metadata headers before signing) |
+| W23-8 | generated scope/endpoint handles have no value getters (S3 lost `Bucket::name()` and reads the range and continuation token back from the built request) | CANDIDATE between waves 3-4: with W2-12 (GitLab base URL) this is a second consumer of "read what the declaration holds"; decide on wave 3 evidence |
+| W23-9 | adopting a policy leaves `prepare()` the declared (unsigned) request: S3's 12 signed `prepare()` call sites compiled unchanged and failed only at run time | DOCS (between waves 3-4, docs frozen during the wave): AUTHOR_GUIDE §5.13 to say that an SDK whose callers relied on a decorated `prepare()` gives that a distinct name |
+
