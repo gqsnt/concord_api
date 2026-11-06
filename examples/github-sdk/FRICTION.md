@@ -45,6 +45,13 @@ Every 4.4 SDK needs the same plumbing for its own provider headers.
 (or the same on `Decoder`). It would remove the plumbing above, the `unreachable!` and the
 "was a head received" bookkeeping from each SDK.
 
+**Status (Concord response boundary, `Received`).** Addressed by `Prepared::receive` /
+`Decoder::execute` (one execution, any status, body unread) and `Received::decode`: `send_edited`,
+`send_with_meta` and `send_conditional` no longer execute or convert anything themselves, and a
+transport failure has no metadata by construction. The headers are still copied from the native
+response (`Received::into_parts`, then `Decoder::receive`), because `Received::head` carries no
+URL and relative `Link` targets resolve against the response URL.
+
 ## F2 — Converting a native transport error needs an async call and `unreachable!` (friction)
 
 `Decoder::finish(Err(e))` is the only public way to turn a `reqwest::Error` into Concord's
@@ -53,6 +60,10 @@ redacted `Transport` error. It is `async` and returns `Result<T, Error>`, so eac
 twice, `download.rs` twice, the latter with `Decoder::<()>::drain()` for a request no declaration
 owns). **Proposal:** a synchronous `Decoder::transport_error(&self, e: reqwest::Error) -> Error`
 (or `concord::Error::from_transport_unlabeled`).
+
+**Status.** `Decoder::transport_error` exists, and none of the four uses remains: `meta.rs` and
+`download::locate` use `receive`/`Decoder::execute`; `download::stream_to` uses
+`Decoder::incoming().execute(..)` and `Received::into_incoming` (status check, response unread).
 
 ## F3 — Following a provider's `next` URL with a declared endpoint (justified escape hatch)
 

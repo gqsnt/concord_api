@@ -22,9 +22,13 @@
 
 use std::fmt;
 
-use concord::jsonl::{JsonLinesOptions, JsonLinesReader, MediaPolicy, RecordErrors};
+use concord::jsonl::{
+    JsonLinesOptions, JsonLinesReader, JsonLinesRecords, MediaPolicy, RecordErrors,
+};
+use concord::reqwest;
+use concord::stream::OpenError;
 use serde::Deserialize;
-use serde::de::Deserializer;
+use serde::de::{DeserializeOwned, Deserializer};
 
 use crate::graphql::string_literal;
 use crate::ops::bulk::RunBulkQuery;
@@ -32,7 +36,8 @@ use crate::ops::catalog::{ProductStatus, VariantInventoryItem};
 use crate::scalars::{DateTime, Decimal, MetafieldId, ProductId, ProductVariantId};
 use crate::search::SearchQuery;
 
-/// The operation label of result-download errors (`ReadError::operation`, `OpenError::operation`).
+/// The operation label of result-download errors (`ReadError::operation`, `OpenError::operation`),
+/// attached by [`open_result`].
 pub const BULK_RESULT_OPERATION: &str = "shopify: bulk result";
 
 /// The default per-line limit of [`result_reader`]: 1 MiB, far above the selection's lines
@@ -144,6 +149,29 @@ pub fn result_reader(max_line_bytes: usize, record_errors: RecordErrors) -> Json
             .record_errors(record_errors)
             .media(MediaPolicy::any()),
     )
+}
+
+/// Opens the response of a signed bulk-result download
+/// ([`ShopContext::result_download`](crate::ShopContext::result_download), executed natively)
+/// with `reader`, its errors naming [`BULK_RESULT_OPERATION`]: the label is the SDK's, not each
+/// caller's. The reader checks the status before polling the body: a non-2xx (a refused or
+/// expired signature is a `403`) is an [`OpenError`] of kind `Status` that keeps the response
+/// unread ([`OpenError::into_response`]).
+///
+/// No declaration produced this response, so its identity is a static label. It is given to
+/// the reader rather than wrapped as `concord::Incoming::new(response, Some(label))`: that
+/// would make the refused status a `concord::Error` before the reader sees the response, and
+/// split the download's one refusal (`OpenError`, the type existing consumers handle) into two
+/// error types, the reader's own open error then being unreachable under [`MediaPolicy::any`].
+///
+/// # Errors
+///
+/// An [`OpenError`] of kind `Status` for a non-2xx response.
+pub fn open_result<T: DeserializeOwned>(
+    reader: &JsonLinesReader,
+    response: reqwest::Response,
+) -> Result<JsonLinesRecords<T>, OpenError> {
+    reader.open_for(response, BULK_RESULT_OPERATION)
 }
 
 /// One line of a [`CatalogExport`] result.

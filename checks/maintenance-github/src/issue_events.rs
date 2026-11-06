@@ -6,7 +6,10 @@
 //! credentials or the version pin, and without editing this SDK", through
 //! [`RepoContext::request`]; Concord's recipe ("An operation the SDK does not declare",
 //! `docs/RECIPES.md`) then says: execute once with the context's client, finish with
-//! `Decoder::<T>::new::<Json>()`, and name the operation in your own error type.
+//! `Decoder::<T>::new::<Json>()`, and name the operation in your own error type. Since Concord's
+//! response boundary, that is `Decoder::execute` (one execution, any status, body unread), the
+//! metadata copied before the body is read, then `Decoder::decode`: no `finish(Err(_))`
+//! conversion.
 //!
 //! What the context gives this module: the path prefix `repos/{owner}/{repo}` with each segment
 //! encoded like a Concord path value, and the four service headers (token flagged sensitive,
@@ -182,17 +185,15 @@ async fn send(
     request: reqwest::Request,
     binding: Binding,
 ) -> Result<EventsPage, GitHubError> {
-    let decoder = Decoder::<Vec<IssueEvent>>::new::<Json>();
-    let response = match context.http().execute(request).await {
-        Ok(response) => response,
-        Err(e) => {
-            // `finish(Err(_))` removes the URL from reqwest's error.
-            let Err(error) = decoder.finish(Err(e)).await else {
-                unreachable!("`Decoder::finish(Err(_))` is always `Err`")
-            };
-            return Err(GitHubError::Api { error, meta: None });
-        }
-    };
+    // One execution, any status, body unread; a transport failure has its URL removed and no
+    // metadata (no head arrived).
+    let received = Decoder::<Vec<IssueEvent>>::new::<Json>()
+        .execute(context.http(), request)
+        .await
+        .map_err(|error| GitHubError::Api { error, meta: None })?;
+    // The metadata is read on the native response: relative `Link` targets resolve against its
+    // URL, which `Received::head` does not carry.
+    let (response, decoder) = received.into_parts();
     let meta = ResponseMeta::capture(&response);
     let events = match decoder.decode(response).await {
         Ok(events) => events,

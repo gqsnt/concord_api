@@ -378,8 +378,9 @@ impl RepoContext {
 
     /// A native request for `method` and the path `repos/{owner}/{repo}/` followed by
     /// `segments` (each one percent-encoded segment), with the service headers. For an operation
-    /// this SDK does not declare; execute it with [`GitHubContext::http`] and finish it with
-    /// `concord::Decoder::<T>::new::<concord::Json>()`.
+    /// this SDK does not declare: execute it once with
+    /// `concord::Decoder::<T>::new::<concord::Json>().execute(github.http(), request)`, which
+    /// returns the response for any status with its body unread, then `decode()` it.
     ///
     /// # Errors
     ///

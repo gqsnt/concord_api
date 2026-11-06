@@ -232,6 +232,11 @@ About 80 lines repeat SDK logic that exists but is reachable only from a generat
 `let Err(error) = decoder.finish(Err(e)).await else { unreachable!() }` idiom (FRICTION.md F2)
 appears once more.
 
+Later status (Concord response boundary, after this measurement): `send` now executes with
+`Decoder::execute` (one execution, any status, body unread; a transport failure is the `Err`
+directly), so the `finish(Err(_))` idiom and its `unreachable!` are gone from the extension too.
+The line counts above are those of the stage 3 measurement and were not re-measured.
+
 An honest misstep: the first draft (kept outside the repository) also had its own 91-line
 `EventsError` mirroring `GitHubError`, because `GitHubError::api` is `pub(crate)` and I assumed
 `#[non_exhaustive]` on the enum forbade building its variants elsewhere. A probe showed
