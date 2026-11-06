@@ -1302,9 +1302,12 @@ concord::api! {
 }
 ```
 
-A policy with state — credentials, a region, a clock — is a client value: `send signer;` names it
-(it is not placed on the wire; each `send()` clones it, so keep it cheap to clone, and the
-generated `Debug` withholds it):
+A policy with state — credentials, a region, a clock — is a client value: `send signer;` names it.
+The value is required (no `?`, no default: it is the one given to the constructor), the
+statement itself does not place it on the wire, and each `send()` clones it, so keep it cheap to
+clone. It is withheld like a `#[sensitive]` value: generated `Debug` never prints it, and if the
+declaration also places it (a path segment, a query value, a header template), that placement is
+withheld from `Prepared`'s `Debug` too:
 
 Excerpt of `checks/phase-a/tests/send_policy.rs`:
 

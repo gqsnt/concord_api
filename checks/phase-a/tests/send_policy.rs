@@ -218,3 +218,62 @@ async fn a_signing_policy_signs_the_built_request_with_client_state() {
     let prepared = a.objects().object("k").prepare().unwrap();
     assert!(prepared.request().headers().get("authorization").is_none());
 }
+
+/// SOL-W23-1 regression: a policy value that is also placed (path, query, header template) is
+/// withheld at every placement, like a `#[sensitive]` value; the wire still carries it.
+#[derive(Clone)]
+pub struct Tenant(String);
+
+impl std::fmt::Display for Tenant {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.0)
+    }
+}
+
+impl<T: Send> SendWith<T> for Tenant {
+    type Output = Result<T, concord::Error>;
+
+    async fn send<E: Endpoint<T> + Send>(&self, endpoint: E) -> Self::Output {
+        endpoint.prepare()?.send().await
+    }
+}
+
+concord::api! {
+    pub client Tenanted(tenant: Tenant) {
+        base "http://tenant.invalid";
+        send tenant;
+        format concord::Json;
+        headers { "x-tenant" = "t-{tenant}"; }
+        GET in_path() -> Item { path "tenants/{client.tenant}/item"; }
+        GET in_query() -> Item { path "item"; query { "t" = client.tenant; } }
+    }
+}
+
+#[tokio::test]
+async fn a_placed_policy_value_is_withheld_at_every_placement() {
+    let secret = "tenant-s3cr3t";
+    let server = TestServer::start(|_| Reply::json(200, "{\"id\":1}")).await;
+    let api = Tenanted::new(
+        concord::reqwest::Client::new(),
+        TenantedConfig {
+            tenant: Tenant(secret.to_owned()),
+        },
+    )
+    .with_base_url(server.url())
+    .unwrap();
+    let shown = [
+        format!("{api:?}"),
+        format!("{:?}", api.in_path()),
+        format!("{:?}", api.in_path().prepare().unwrap()),
+        format!("{:?}", api.in_query().prepare().unwrap()),
+    ];
+    for text in &shown {
+        assert!(!text.contains(secret), "{text}");
+    }
+    assert_eq!(api.in_path().send().await.unwrap(), Item { id: 1 });
+    assert_eq!(api.in_query().send().await.unwrap(), Item { id: 1 });
+    let requests = server.requests();
+    assert_eq!(requests[0].target, format!("/tenants/{secret}/item"));
+    assert_eq!(requests[1].target, format!("/item?t={secret}"));
+    assert_eq!(requests[0].header("x-tenant"), Some("t-tenant-s3cr3t"));
+}

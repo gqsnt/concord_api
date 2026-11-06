@@ -535,6 +535,29 @@ impl Model {
         }
         errors.check()?;
 
+        // `send value;`: the named client value is the send policy (its use; never on the wire
+        // by itself). A policy usually holds credentials, so it is withheld like a `#[sensitive]`
+        // value: marked before propagation, every placement that also reads it (path, query,
+        // headers) is sensitive too, and generated `Debug` needs neither `Display` nor a header
+        // value from its type.
+        if let Some(index) = model.send_value() {
+            let value = &model.owners[0].values[index];
+            let span = value.name.span();
+            if value.optional || value.default.is_some() {
+                errors.push(syn::Error::new(
+                    span,
+                    "a send policy value must be required (no `?`, no default): `send` uses the value given to the constructor for every request",
+                ));
+            }
+            model.mark(
+                ValueRef { owner: 0, index },
+                Usage::Scalar,
+                span,
+                &mut errors,
+            );
+            model.owners[0].values[index].debug_sensitive = true;
+        }
+
         // Effective sensitivity: a value is withheld if it is marked or feeds a sensitive key on
         // some chain, and every path segment, host label and key that reads a withheld value is
         // itself sensitive. Slot membership does not depend on sensitivity, so the slots are
@@ -554,26 +577,6 @@ impl Model {
                 model.check_media_conflict(index, &composed, &mut errors);
                 model.owners[index].composed = Some(composed);
             }
-        }
-
-        // `send value;`: the named client value is the send policy (its use; never on the wire).
-        if let Some(index) = model.send_value() {
-            let span = model.owners[0].values[index].name.span();
-            if model.owners[0].values[index].optional {
-                errors.push(syn::Error::new(
-                    span,
-                    "a send policy value must be required: `send` uses it for every request",
-                ));
-            }
-            model.mark(
-                ValueRef { owner: 0, index },
-                Usage::Scalar,
-                span,
-                &mut errors,
-            );
-            // A policy usually holds credentials: generated `Debug` withholds it (and so needs
-            // neither `Display` nor a header value from its type).
-            model.owners[0].values[index].debug_sensitive = true;
         }
 
         // Liveness. An unused value changes nothing else in the model, so on its own it is

@@ -286,3 +286,20 @@ Gaps reported by the workers, with dispositions:
 | W23-3 | `Incoming` has no chunk reader (OpenAI) | IMPLEMENT D-W23-2 |
 | W23-4 | following a server URL still prepares a placeholder operation (PokéAPI `pokemon("placeholder").prepare()?.follow(url)`) | DEFER (W1-17): revisit with Graph `@odata.nextLink` / registry `Link` in waves 4–5 evidence |
 | W23-5 | the gate on `634b135b` failed its three `test` steps: `ui/send_policy_unimplemented` used `concord::Text` (absent without `extras`) and its expected `Default` spelling depended on the build | FIXED `08df6614`: the case checks only the `SendWith` diagnostic with a unit output |
+
+### Review of the between-wave changes before wave 3 (Codex `gpt-6.1-sol`, xhigh, read-only, session `01a1af0c…`)
+
+Scope `1f71432c..08df6614` (crates, checks/phase-a, docs).
+
+| ID | Severity | Finding | Fix |
+|---|---|---|---|
+| SOL-W23-1 | high | the policy value was marked withheld after sensitivity propagation and composition, so a policy value also placed in a path, query or header template was printed by `Prepared`'s `Debug` | marked before propagation (`model.rs`); regression `checks/phase-a/tests/send_policy.rs` `a_placed_policy_value_is_withheld_at_every_placement`, observed to fail without the fix (URL and `x-tenant` printed) |
+| SOL-W23-2 | medium | a defaulted value (`signer: Signer = ..`) was accepted as the policy, contradicting "required" | refused like an optional value; UI `send_policy_value` second case |
+
+Areas reported clean: value-vs-type resolution (qualified paths, generics, lowercase types, scope
+values not selected, renamed crate), one clone/default per `send()` outside the future, no borrow
+of the caller's client, bounds (`Clone + Send + Sync` value, `Default + Send` type), `Debug` of
+client/config/endpoint, cfg, concurrency (independent clients share nothing),
+`Incoming::chunk` (URL-free `Transport` with identity; a failure is not sticky: a caller must
+keep the error, a later read may return EOF), §5.13. The reviewer could not run cargo (read-only
+temp dirs); it used source tracing and rustc type/MIR probes. Verdict ACCEPT_WITH_FIXES.

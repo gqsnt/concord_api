@@ -1,5 +1,11 @@
-error: a send policy value must be required: `send` uses it for every request
+error: a send policy value must be required (no `?`, no default): `send` uses the value given to the constructor for every request
  --> tests/ui/send_policy_value.rs:5:25
   |
 5 |     pub client Optional(signer?: Signer) {
   |                         ^^^^^^
+
+error: a send policy value must be required (no `?`, no default): `send` uses the value given to the constructor for every request
+  --> tests/ui/send_policy_value.rs:12:26
+   |
+12 |     pub client Defaulted(signer: Signer = Signer) {
+   |                          ^^^^^^
