@@ -52,6 +52,11 @@ agent's kept) and the `consumers.*` scratch copies in `work/gate/target` and
 
 ## SDK cohort (Phase B)
 
+Wave 4 integrated at `0347edfc` (all 16 cohort SDKs; library `0983a349` plus the between-wave 4-5
+CSV fix R4 and `consumers.sh` scratch cleanup): `verify.sh --package --bench` 49/49 PASS, clean
+tree, 4m55s, no consumer scratch left behind (`work/logs/gate-0347edfc-verify.txt`). Synthesis:
+DECISIONS "Wave 4" (W4-1..15).
+
 Wave 4 frozen at `0983a349` (between-wave 3-4 refinements: `sse`, `multipart`, `ResponseMeta`,
 `Error::meta`, `Content-Length: 0` at execution, test-server `Gate`; migrations M1/M2; reviews
 SOL-W34 and AST-W34 fixed and rechecked): `verify.sh --package --bench` 49/49 PASS, clean tree,
