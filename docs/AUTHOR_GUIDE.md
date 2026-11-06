@@ -1277,14 +1277,16 @@ A provider error document on a non-2xx response is read with `received.bytes_lim
 up to `n` bytes, `ErrorKind::Limit` beyond (nothing more is read); parse it with the format's
 `decode_body`. `<E as Endpoint<T>>::operation()` names the endpoint without building a request.
 
-### 5.13 The SDK's own `send()`: `send Policy;`
+### 5.13 The SDK's own `send()`: `send policy;`
 
 When every call of a client should return the SDK's result — its error type with the provider's
 error document, response metadata — or every request must be signed after it is built, name a
-**send policy** on the client. A policy is a type of the SDK implementing `concord::SendWith<T>`
-(usually generically over `T`); each generated `send()` then calls it with the endpoint and returns
-its `Output`. Callers keep one terminal method and need no import; `prepare()` still returns the
-native request with Concord's `Error`.
+**send policy** on the client. A policy implements `concord::SendWith<T>` (usually generically over
+`T`); each generated `send()` then calls it with the endpoint and returns its `Output`. Callers keep
+one terminal method and need no import; `prepare()` still returns the declared, native request with
+Concord's `Error`.
+
+A stateless policy is a type, built with `Default` for each call:
 
 Excerpt of `checks/phase-a/tests/send_policy.rs`:
 
@@ -1300,18 +1302,39 @@ concord::api! {
 }
 ```
 
-A signing policy builds, signs and executes (the signature covers the final URL, so it is computed
-after `prepare()`):
+A policy with state — credentials, a region, a clock — is a client value: `send signer;` names it
+(it is not placed on the wire; each `send()` clones it, so keep it cheap to clone, and the
+generated `Debug` withholds it):
 
 Excerpt of `checks/phase-a/tests/send_policy.rs`:
 
 ```rust,ignore
-impl<T: Send> SendWith<T> for Signed {
+concord::api! {
+    pub client Bucket(signer: Signer) {
+        base "http://bucket.invalid";
+        send signer;
+        format concord::Json;
+        scope objects {
+            GET object(key: String) -> Item { path "objects/{key}"; }
+        }
+    }
+}
+```
+
+Excerpt of `checks/phase-a/tests/send_policy.rs`:
+
+```rust,ignore
+impl<T: Send> SendWith<T> for Signer {
     type Output = Result<T, concord::Error>;
 
-    async fn send<E: Endpoint<T> + Send>(endpoint: E) -> Self::Output {
+    async fn send<E: Endpoint<T> + Send>(&self, endpoint: E) -> Self::Output {
         let (client, mut request, decoder) = endpoint.prepare()?.into_parts();
-        let digest = format!("sig({} {})", request.method(), request.url().path());
+        let (key_id, region) = &*self.0;
+        let digest = format!(
+            "sig({key_id}/{region} {} {})",
+            request.method(),
+            request.url().path()
+        );
         let mut value = HeaderValue::try_from(digest).expect("a header value");
         value.set_sensitive(true);
         request.headers_mut().insert("authorization", value);
@@ -1321,8 +1344,8 @@ impl<T: Send> SendWith<T> for Signed {
 ```
 
 Use a send policy when the result type of the whole client changes; keep domain methods for an
-input rule of one operation (an identifier that must not be empty). Without `send`, generated
-`send()` returns `Result<T, concord::Error>` as before.
+input rule of one operation (an identifier that must not be empty), which a policy only sees after
+the request is built. Without `send`, generated `send()` returns `Result<T, concord::Error>`.
 
 ## 6. Wire formatting: `Display` and newtypes
 

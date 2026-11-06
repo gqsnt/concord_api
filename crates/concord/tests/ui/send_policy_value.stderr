@@ -1,0 +1,5 @@
+error: a send policy value must be required: `send` uses it for every request
+ --> tests/ui/send_policy_value.rs:5:25
+  |
+5 |     pub client Optional(signer?: Signer) {
+  |                         ^^^^^^

@@ -196,18 +196,26 @@ pub trait Endpoint<T>: Sized {
     fn operation() -> Operation;
 }
 
-/// A client's **send policy**: what every generated `send()` returns, for a client declared with
-/// `send P;`. An SDK whose callers should receive its own error type and response metadata (or
-/// whose requests must be signed after they are built) implements it once, on a type of its own,
-/// and names that type in the declaration; each endpoint's `send()` then calls
-/// [`send`](Self::send) with the endpoint. No wrapper method per operation, no trait to import,
-/// one terminal method.
+/// A client's **send policy**: what every generated `send()` returns. An SDK whose callers should
+/// receive its own error type and response metadata, or whose requests must be signed after they
+/// are built, implements it once and names the policy on the client; each endpoint's `send()` then
+/// calls [`send`](Self::send) with the endpoint. No wrapper method per operation, no trait to
+/// import, one terminal method.
+///
+/// The policy is a **value**:
+///
+/// - `send value;` names a required client value (`pub client S3(signer: Signer) { send signer; }`)
+///   holding the state the policy needs — credentials, a region, a clock. It is not placed on the
+///   wire; each `send()` clones it (keep it cheap: an `Arc` inside), so it must be `Clone`, and
+///   `Send + Sync` for the future to be `Send`.
+/// - `send Policy;` names a stateless type; each `send()` uses `Policy::default()`.
 ///
 /// ```ignore
+/// #[derive(Default)]
 /// pub struct Policy;
 /// impl<T: Send> concord::SendWith<T> for Policy {
 ///     type Output = Result<WithMeta<T>, SdkError>;
-///     async fn send<E: concord::Endpoint<T> + Send>(endpoint: E) -> Self::Output {
+///     async fn send<E: concord::Endpoint<T> + Send>(&self, endpoint: E) -> Self::Output {
 ///         let received = endpoint.prepare()?.receive().await?;
 ///         let meta = Meta::capture(&received.head());
 ///         Ok(WithMeta { value: received.decode().await?, meta })
@@ -217,8 +225,8 @@ pub trait Endpoint<T>: Sized {
 /// // caller: `api.items().get(7).send().await?` returns `Result<WithMeta<Item>, SdkError>`
 /// ```
 ///
-/// Without `send P;` the generated `send()` is `prepare()?.send()` (Concord's `Error`). `prepare()`
-/// is unchanged either way, for callers that need the native request.
+/// Without `send`, the generated `send()` is `prepare()?.send()` (Concord's `Error`). `prepare()`
+/// is unchanged either way, for callers that need the native (unsigned) request.
 #[diagnostic::on_unimplemented(
     message = "the send policy `{Self}` does not send a `{T}` output",
     label = "named by the client's `send` statement; it needs `{Self}: SendWith<{T}>`",
@@ -228,8 +236,10 @@ pub trait SendWith<T> {
     /// What `send()` returns.
     type Output;
 
-    /// Sends the endpoint's request according to the policy.
-    fn send<E>(endpoint: E) -> impl std::future::Future<Output = Self::Output> + Send
+    /// Sends the endpoint's request according to the policy. `self` is the policy value: a client
+    /// value named by `send value;` (credentials, a signer, a region, a clock), cloned for each
+    /// call, or `P::default()` for `send P;`.
+    fn send<E>(&self, endpoint: E) -> impl std::future::Future<Output = Self::Output> + Send
     where
         E: Endpoint<T> + Send;
 }

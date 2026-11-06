@@ -556,6 +556,26 @@ impl Model {
             }
         }
 
+        // `send value;`: the named client value is the send policy (its use; never on the wire).
+        if let Some(index) = model.send_value() {
+            let span = model.owners[0].values[index].name.span();
+            if model.owners[0].values[index].optional {
+                errors.push(syn::Error::new(
+                    span,
+                    "a send policy value must be required: `send` uses it for every request",
+                ));
+            }
+            model.mark(
+                ValueRef { owner: 0, index },
+                Usage::Scalar,
+                span,
+                &mut errors,
+            );
+            // A policy usually holds credentials: generated `Debug` withholds it (and so needs
+            // neither `Display` nor a header value from its type).
+            model.owners[0].values[index].debug_sensitive = true;
+        }
+
         // Liveness. An unused value changes nothing else in the model, so on its own it is
         // reported next to the full expansion instead of replacing it.
         let mut unused = Errors::default();
@@ -690,6 +710,26 @@ impl Model {
             Kind::Client { .. } => "client".to_owned(),
             _ => plain(&self.owners[owner].name),
         }
+    }
+
+    /// The client value a `send value;` statement names (a single identifier equal to a client
+    /// value's name), if any; otherwise the statement names a type.
+    pub fn send_value(&self) -> Option<usize> {
+        let Kind::Client {
+            send: Some(Type::Path(path)),
+            ..
+        } = &self.owners[0].kind
+        else {
+            return None;
+        };
+        let ident = path.path.get_ident()?;
+        if path.qself.is_some() {
+            return None;
+        }
+        self.owners[0]
+            .values
+            .iter()
+            .position(|v| plain(&v.name) == plain(ident))
     }
 
     fn mark(&mut self, r: ValueRef, usage: Usage, span: Span, errors: &mut Errors) {

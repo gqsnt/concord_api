@@ -952,10 +952,15 @@ fn request_summary(model: &Model, endpoint: usize, method: &Ident) -> TokenStrea
             send: Some(policy), ..
         } = &model.owners[0].kind
         {
+            let shown = match model.send_value() {
+                Some(vi) => format!(
+                    "the client value `{}`",
+                    plain(&model.owners[0].values[vi].name)
+                ),
+                None => format!("`{}`", type_text(policy)),
+            };
             lines.push(lit(&format!(
-                " With the client's send policy `{}`, `send()` returns `<{} as SendWith<T>>::Output` for this output `T`; `prepare()` (then `send()` or `receive()` on the `Prepared`) applies the declared handling above.",
-                type_text(policy),
-                type_text(policy)
+                " With the client's send policy {shown}, `send()` returns its `SendWith<T>::Output` for this output `T`; `prepare()` (then `send()` or `receive()` on the `Prepared`) applies the declared handling above."
             )));
         }
     }
@@ -1446,15 +1451,37 @@ fn emit_owner(
                     }
                 },
                 Some(policy) => {
+                    // `send value;`: clone the client value; `send Type;`: `Type::default()`.
+                    let (policy_ty, policy_init, shown) = match model.send_value() {
+                        Some(vi) => {
+                            let value = &model.owners[0].values[vi];
+                            let name = &value.name;
+                            let vty = &value.ty;
+                            let depth = model.chain(index).len() - 1;
+                            let mut root = quote!(self.__parent.__s);
+                            for _ in 1..depth {
+                                root = quote!(#root.__parent.__s);
+                            }
+                            (
+                                quote!(#vty),
+                                quote!(::core::clone::Clone::clone(&#root.#name)),
+                                format!("the client value `{}`", plain(name)),
+                            )
+                        }
+                        None => (
+                            quote!(#policy),
+                            quote!(<#policy as ::core::default::Default>::default()),
+                            format!("`{}`", type_text(policy)),
+                        ),
+                    };
                     let policy_text = lit(&format!(
-                        " Sends the request with the client's send policy `{}` (`send {};` on the client): returns its `SendWith<T>::Output`. The policy decides execution, errors and metadata; `prepare` gives the native request.",
-                        type_text(policy),
-                        type_text(policy)
+                        " Sends the request with the client's send policy {shown}: returns its `SendWith<T>::Output`. The policy decides execution (signing), errors and metadata; `prepare` gives the native request."
                     ));
                     quote! {
                         #[doc = #policy_text]
-                        #[inline] pub fn send(self) -> impl ::core::future::Future<Output = <#policy as #k::SendWith<#out>>::Output> + ::core::marker::Send {
-                            <#policy as #k::SendWith<#out>>::send(self)
+                        #[inline] pub fn send(self) -> impl ::core::future::Future<Output = <#policy_ty as #k::SendWith<#out>>::Output> + ::core::marker::Send {
+                            let __policy: #policy_ty = #policy_init;
+                            async move { <#policy_ty as #k::SendWith<#out>>::send(&__policy, self).await }
                         }
                     }
                 }

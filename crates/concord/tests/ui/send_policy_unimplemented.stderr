@@ -1,15 +1,14 @@
-error[E0277]: the send policy `NotAPolicy` does not send a `String` output
+error[E0277]: the trait bound `NotAPolicy: Default` is not satisfied
  --> tests/ui/send_policy_unimplemented.rs:6:14
   |
 6 |         send NotAPolicy;
-  |              ^^^^^^^^^^ named by the client's `send` statement; it needs `NotAPolicy: SendWith<String>`
+  |              ^^^^^^^^^^ the trait `Default` is not implemented for `NotAPolicy`
   |
-help: the trait `SendWith<String>` is not implemented for `NotAPolicy`
- --> tests/ui/send_policy_unimplemented.rs:2:1
+help: consider annotating `NotAPolicy` with `#[derive(Default)]`
   |
-2 | struct NotAPolicy;
-  | ^^^^^^^^^^^^^^^^^
-  = note: a send policy implements `concord::SendWith<T>` for every output `T` its endpoints declare (usually generically: `impl<T: Send> SendWith<T> for Policy`)
+2 + #[derive(Default)]
+3 | struct NotAPolicy;
+  |
 
 error[E0277]: the send policy `NotAPolicy` does not send a `String` output
  --> tests/ui/send_policy_unimplemented.rs:3:1
@@ -28,4 +27,17 @@ help: the trait `SendWith<String>` is not implemented for `NotAPolicy`
 2 | struct NotAPolicy;
   | ^^^^^^^^^^^^^^^^^
   = note: a send policy implements `concord::SendWith<T>` for every output `T` its endpoints declare (usually generically: `impl<T: Send> SendWith<T> for Policy`)
-  = note: this error originates in the macro `$crate::__macro::api` which comes from the expansion of the macro `concord::api` (in Nightly builds, run with -Z macro-backtrace for more info)
+  = note: this error originates in the macro `concord::api` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0277]: the send policy `NotAPolicy` does not send a `String` output
+ --> tests/ui/send_policy_unimplemented.rs:6:14
+  |
+6 |         send NotAPolicy;
+  |              ^^^^^^^^^^ named by the client's `send` statement; it needs `NotAPolicy: SendWith<String>`
+  |
+help: the trait `SendWith<String>` is not implemented for `NotAPolicy`
+ --> tests/ui/send_policy_unimplemented.rs:2:1
+  |
+2 | struct NotAPolicy;
+  | ^^^^^^^^^^^^^^^^^
+  = note: a send policy implements `concord::SendWith<T>` for every output `T` its endpoints declare (usually generically: `impl<T: Send> SendWith<T> for Policy`)

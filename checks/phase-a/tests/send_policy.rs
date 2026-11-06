@@ -37,13 +37,15 @@ fn meta(head: &concord::ResponseHead<'_>) -> Meta {
     }
 }
 
-/// A policy that classifies provider errors and keeps metadata.
+/// A stateless policy (`send Policy;`, built with `Default`) that classifies provider errors and
+/// keeps metadata.
+#[derive(Default)]
 pub struct Policy;
 
 impl<T: Send> SendWith<T> for Policy {
     type Output = Result<(T, Meta), SdkError>;
 
-    async fn send<E: Endpoint<T> + Send>(endpoint: E) -> Self::Output {
+    async fn send<E: Endpoint<T> + Send>(&self, endpoint: E) -> Self::Output {
         let prepared = endpoint.prepare().map_err(|e| SdkError::Concord(e, None))?;
         let received = prepared
             .receive()
@@ -79,16 +81,30 @@ concord::api! {
     }
 }
 
-/// A policy that signs the built request (the S3 case): the signature covers the final URL, so it
-/// is computed after `prepare()`, and the generated `send()` of a public declaration is signed.
-pub struct Signed;
+/// A stateful policy that signs the built request (the S3 case): the client value `signer` holds
+/// the credentials and region (cloned per call: an `Arc` inside); the signature covers the final
+/// URL, so it is computed after `prepare()`, and the generated `send()` of a public declaration is
+/// signed.
+#[derive(Clone)]
+pub struct Signer(std::sync::Arc<(String, String)>);
 
-impl<T: Send> SendWith<T> for Signed {
+impl Signer {
+    pub fn new(key_id: &str, region: &str) -> Self {
+        Self(std::sync::Arc::new((key_id.to_owned(), region.to_owned())))
+    }
+}
+
+impl<T: Send> SendWith<T> for Signer {
     type Output = Result<T, concord::Error>;
 
-    async fn send<E: Endpoint<T> + Send>(endpoint: E) -> Self::Output {
+    async fn send<E: Endpoint<T> + Send>(&self, endpoint: E) -> Self::Output {
         let (client, mut request, decoder) = endpoint.prepare()?.into_parts();
-        let digest = format!("sig({} {})", request.method(), request.url().path());
+        let (key_id, region) = &*self.0;
+        let digest = format!(
+            "sig({key_id}/{region} {} {})",
+            request.method(),
+            request.url().path()
+        );
         let mut value = HeaderValue::try_from(digest).expect("a header value");
         value.set_sensitive(true);
         request.headers_mut().insert("authorization", value);
@@ -97,11 +113,13 @@ impl<T: Send> SendWith<T> for Signed {
 }
 
 concord::api! {
-    pub client Bucket {
+    pub client Bucket(signer: Signer) {
         base "http://bucket.invalid";
-        send Signed;
+        send signer;
         format concord::Json;
-        GET object(key: String) -> Item { path "objects/{key}"; }
+        scope objects {
+            GET object(key: String) -> Item { path "objects/{key}"; }
+        }
     }
 }
 
@@ -156,21 +174,47 @@ async fn every_send_returns_the_policy_output() {
 }
 
 #[tokio::test]
-async fn a_signing_policy_signs_the_built_request() {
+async fn a_signing_policy_signs_the_built_request_with_client_state() {
     let server = TestServer::start(|r| {
-        if r.header("authorization") == Some("sig(GET /objects/a%2Fb)") {
+        if r.header("authorization") == Some("sig(AK1/eu-west-3 GET /objects/a%2Fb)") {
             Reply::json(200, "{\"id\":1}")
         } else {
             Reply::new(403)
         }
     })
     .await;
-    let bucket = Bucket::new(concord::reqwest::Client::new())
+    let bucket = |key_id: &str| {
+        Bucket::new(
+            concord::reqwest::Client::new(),
+            BucketConfig {
+                signer: Signer::new(key_id, "eu-west-3"),
+            },
+        )
         .with_base_url(server.url())
-        .unwrap();
-    assert_eq!(bucket.object("a/b").send().await.unwrap(), Item { id: 1 });
-    assert_eq!(
-        server.single().header("authorization"),
-        Some("sig(GET /objects/a%2Fb)")
+        .unwrap()
+    };
+    let (a, b) = (bucket("AK1"), bucket("AK2"));
+    // Two clients with different credentials, concurrently: each request is signed with its own.
+    let (ra, rb) = tokio::join!(
+        a.objects().object("a/b").send(),
+        b.objects().object("a/b").send()
     );
+    assert_eq!(ra.unwrap(), Item { id: 1 });
+    assert!(rb.is_err(), "the fake accepts only AK1");
+    let mut seen: Vec<_> = server
+        .requests()
+        .iter()
+        .map(|r| r.header("authorization").unwrap().to_owned())
+        .collect();
+    seen.sort();
+    assert_eq!(
+        seen,
+        [
+            "sig(AK1/eu-west-3 GET /objects/a%2Fb)",
+            "sig(AK2/eu-west-3 GET /objects/a%2Fb)"
+        ]
+    );
+    // `prepare()` stays the declared (unsigned) request.
+    let prepared = a.objects().object("k").prepare().unwrap();
+    assert!(prepared.request().headers().get("authorization").is_none());
 }
