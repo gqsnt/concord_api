@@ -136,4 +136,11 @@ PY
     status=1
   fi
 done
+# The scratch directory holds each consumer's own build (about 1.6 GB per run): kept when a
+# consumer failed (its logs are the evidence), removed after a clean run so repeated gates do not
+# fill the disk (observed: the disk filled during the campaign's wave 4).
+if [[ $status == 0 ]]; then
+  rm -rf -- "$scratch"
+  echo "consumer scratch removed after a clean run"
+fi
 exit "$status"
