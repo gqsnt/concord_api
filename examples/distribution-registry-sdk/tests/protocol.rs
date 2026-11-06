@@ -326,6 +326,38 @@ async fn token_service_failures_are_auth_errors_without_the_token() {
     assert_eq!(server.requests().len(), 3, "no retry without a token");
 }
 
+/// `expires_in` is the token service's number: one past what an `Instant` can hold is a typed
+/// answer error, not a panic in the client, and nothing is cached or sent with that token.
+#[tokio::test]
+async fn an_unrepresentable_token_lifetime_is_a_token_response_error() {
+    let auth = scripted([
+        json(
+            200,
+            br#"{"token":"synthetic-forever-token","expires_in":18446744073709551615}"#,
+        ),
+        json(
+            200,
+            br#"{"token":"synthetic-forever-token","expires_in":18446744073709551615}"#,
+        ),
+    ])
+    .await;
+    let realm = format!("{}/token", auth.url());
+    let server = scripted([challenge(&realm, None), challenge(&realm, None)]).await;
+    let registry = registry(&server, Some(&auth));
+
+    for _ in 0..2 {
+        let error = registry.ping().await.unwrap_err();
+        assert_eq!(error.auth_problem(), Some(AuthProblem::TokenResponse));
+        assert!(!format!("{error:?}").contains("synthetic-forever-token"));
+    }
+    assert_eq!(auth.requests().len(), 2, "the refused token was not cached");
+    assert_eq!(
+        server.requests().len(),
+        2,
+        "the refused token was never sent"
+    );
+}
+
 #[tokio::test]
 async fn a_second_401_is_the_registrys_answer_not_another_round() {
     let auth = scripted([json(200, TOKEN)]).await;

@@ -85,7 +85,8 @@ with `Authorization: Bearer <token>`. A second `401` is the registry's answer, n
 round. Tokens (`token`, or the OAuth 2.0 alias `access_token`) are cached per access — pull
 (`repository:<name>:pull`), push (`repository:<name>:pull,push`), catalog
 (`registry:catalog:*`), none (`GET /v2/`) — and sent pre-emptively until `expires_in` (60 s when
-absent) has passed. A pull token is never sent with a push request. Tokens, credentials and
+absent) has passed; an `expires_in` too large for the clock is `AuthProblem::TokenResponse`, and
+that token is neither cached nor sent. A pull token is never sent with a push request. Tokens, credentials and
 upload URLs never appear in this SDK's `Debug` or `Display` output.
 
 ## Workflow A: discover, pull, verify

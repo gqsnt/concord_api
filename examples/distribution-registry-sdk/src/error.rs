@@ -550,8 +550,9 @@ pub enum AuthProblem {
     TokenTransport,
     /// The token service answered with a non-2xx status.
     TokenRefused,
-    /// The token service's answer is not a token document with `token` or `access_token`, or the
-    /// token cannot be sent in a header.
+    /// The token service's answer is not a token document with `token` or `access_token`, the
+    /// token cannot be sent in a header, or its `expires_in` is a lifetime the client cannot
+    /// represent.
     TokenResponse,
 }
 

@@ -250,12 +250,17 @@ impl Registry {
         let lifetime = body
             .expires_in
             .map_or(DEFAULT_TOKEN_LIFETIME, Duration::from_secs);
+        // `expires_in` is the token service's number: a lifetime past what `Instant` can hold
+        // is an answer the client cannot honour, not a reason to panic.
+        let expires = sent
+            .checked_add(lifetime)
+            .ok_or_else(|| AuthError::new(AuthProblem::TokenResponse).with_meta(meta.clone()))?;
         let mut tokens = self.tokens.lock().unwrap_or_else(PoisonError::into_inner);
         tokens.insert(
             access.clone(),
             CachedToken {
                 header: header.clone(),
-                expires: sent + lifetime,
+                expires,
             },
         );
         Ok(header)

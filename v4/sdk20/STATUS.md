@@ -30,6 +30,23 @@ Baseline gate at `a95fb2fb` (detached worktree `work/baseline`, 2026-11-06):
 Commits after `90b69011` on the branch are records only (this section's CI results, the delivery
 tools under `v4/sdk20/tasks/`); they are not the verified identity and carry their own CI.
 
+CI on `90b69011` (read from the GitHub API and job logs, 2026-11-06): push run `42194334758` —
+`verify (ubuntu-latest)` 49 PASS, `verify (windows-latest)` 49 PASS, `nightly-clone` with
+`nightly-clone-compat` PASS (16 passed, rustc 1.101.0-nightly 249c1e4e3 2026-11-05); pull_request
+run `42194341264` on the synthetic merge `5bcbcf28` — the same three jobs green.
+
+## M0 — integration into `main` (SDK50 handoff, 2026-11-06)
+
+The SDK50 handoff authorized merging PR #4 after verification and asked that the registry
+token-expiry risk be checked first. It was a real panic: `sent + lifetime` added the token
+service's `expires_in` to an `Instant` unchecked, and `{"expires_in":18446744073709551615}`
+panicked the client (`overflow when adding duration to instant`, reproduced by
+`examples/distribution-registry-sdk/tests/protocol.rs::an_unrepresentable_token_lifetime_is_a_token_response_error`
+before the fix). The fix uses `Instant::checked_add`; an unrepresentable lifetime is
+`AuthProblem::TokenResponse`, and that token is neither cached nor sent. This commit is the only
+implementation change after `90b69011`; its identity, gate and CI are recorded in the SDK50
+campaign's integration receipt (`v4/sdk50/`).
+
 ## Phase A
 
 | Requirement | Implementation | Evidence | Status |

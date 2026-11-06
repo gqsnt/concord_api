@@ -14,7 +14,9 @@
 //! `repository:<name>:pull,push` for writes, `registry:catalog:*` for the catalog). Tokens are
 //! cached per operation access — pull, push, catalog, none — never shared between them: a pull
 //! token is never sent with a push request. A cached token is sent pre-emptively until its
-//! `expires_in` (60 s when absent, counted from when the token request was sent) has passed.
+//! `expires_in` (60 s when absent, counted from when the token request was sent) has passed. An
+//! `expires_in` too large for the platform's clock is [`AuthProblem::TokenResponse`]: that token is
+//! neither cached nor sent.
 //!
 //! **Origins.** Concord's `Prepared::follow` and the SDK's `Location` and `Link` checks keep
 //! server-provided URLs on the registry's origin. Token requests go to a realm whose origin is the
