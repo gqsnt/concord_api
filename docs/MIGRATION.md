@@ -80,7 +80,7 @@ declared that way and opened with `send_raw()` + `reader.open_for(response, "Nam
 declare its stream instead: `-> stream T` with an incremental `response` format returns the reader
 from `send()`, `-> stream` returns the unread `Incoming` body for a reader configured at run time
 (`reader.open(incoming)`), and the reader names the endpoint without the string. See the
-[author guide](AUTHOR_GUIDE.md#59-streaming-outputs--stream).
+[author guide](AUTHOR_GUIDE.md#59-streaming-outputs---stream).
 
 **Runtime-encoded bodies.** An upload declared without a body and given an `Upload` with
 `upload.apply(&mut request)` after `into_parts()` declares its body instead:
