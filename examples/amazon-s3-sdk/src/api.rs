@@ -3,7 +3,9 @@
 //! It is private to the SDK: every S3 request must be signed after Concord built it and before it
 //! is sent, so the generated `send()` (which would send the request unsigned) is never handed to
 //! callers. [`crate::S3Client`] and the operation builders wrap the generated requests and send
-//! them through [`crate::client`]'s signing pipeline.
+//! them through [`crate::client`]'s signing pipeline. A client send policy (`send P;`) does not
+//! change this: `SendWith::send` receives only the endpoint, never the client's credentials,
+//! Region and clock (`INTEGRATION.md`, "Between waves 2-3").
 //!
 //! Addressing is virtual-hosted style: the bucket is the leftmost host label
 //! (`{bucket}.s3.{region}.amazonaws.com`); the object key is the path. The declared base is a

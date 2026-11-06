@@ -774,6 +774,44 @@ async fn documented_error_document_and_head_errors() {
 }
 
 #[tokio::test]
+async fn error_documents_are_read_up_to_the_bound() {
+    // A documented `<Error>` padded with trailing whitespace to exactly `MAX_ERROR_BODY` bytes.
+    let mut at_limit = fixture("error-no-such-key.xml");
+    at_limit.resize(concord_sdk_amazon_s3::MAX_ERROR_BODY, b' ');
+    let server = TestServer::start(move |r| {
+        let xml = |body: Vec<u8>| Reply::text(503, "application/xml", body);
+        match r.path() {
+            "/at-limit" => xml(at_limit.clone()),
+            "/over-limit" => xml(vec![b' '; concord_sdk_amazon_s3::MAX_ERROR_BODY + 1]),
+            "/not-a-document" => Reply::text(502, "text/html", "<html>bad gateway</html>"),
+            _ => Reply::new(500)
+                .header("content-type", "application/xml")
+                .with_body(Body::FailAfter(vec!["<Error><Code>Int".into()])),
+        }
+    })
+    .await;
+    let s3 = client_for(server.addr(), "us-east-1", &["mybucket"]);
+    let bucket = s3.bucket(bucket_name("mybucket"));
+    let api_error = |error: S3Error| match error {
+        S3Error::Api(api) => api,
+        other => panic!("{other:?}"),
+    };
+    for (path, status, body, code) in [
+        ("at-limit", 503, ErrorBody::Parsed, Some("NoSuchKey")),
+        ("over-limit", 503, ErrorBody::TooLarge, None),
+        ("not-a-document", 502, ErrorBody::Unrecognized, None),
+        ("cut", 500, ErrorBody::ReadFailed, None),
+    ] {
+        let error = bucket.get_object(key(path)).send().await.unwrap_err();
+        let api = api_error(error);
+        assert_eq!(api.status().as_u16(), status, "{path}");
+        assert_eq!((api.body(), api.code()), (body, code), "{path}");
+        assert_eq!(api.operation(), "S3Api.bucket.get_object");
+    }
+    assert_eq!(server.requests().len(), 4);
+}
+
+#[tokio::test]
 async fn conditional_reads_304_and_412() {
     let server = TestServer::start(|r| {
         if r.header("if-none-match").is_some() {
