@@ -1,0 +1,7 @@
+{
+  "object": "list", "type": "block", "block": {},
+  "results": [
+    {"object": "block", "id": "nested", "has_children": false, "type": "paragraph", "paragraph": {"rich_text": [{"type": "text", "text": {"content": "Nested detail.", "link": null}, "plain_text": "Nested detail.", "href": null}], "color": "default"}}
+  ],
+  "has_more": false, "next_cursor": null
+}

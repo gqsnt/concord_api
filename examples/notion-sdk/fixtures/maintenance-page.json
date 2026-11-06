@@ -1,0 +1,14 @@
+{
+  "object": "page",
+  "id": "maintenance-page",
+  "url": "https://example.invalid/notion/page%2fsynthetic?key=a%2Bb+%252F&empty=#part%2F1",
+  "properties": {
+    "Name": {"id": "title", "type": "title", "title": [{"type": "text", "text": {"content": "Maintenance café", "link": null}}]},
+    "Notes": {"id": "notes", "type": "rich_text", "rich_text": [{"type": "text", "text": {"content": "Guide", "link": {"url": "https://example.invalid/guide%2fkeep?q=a%2Bb+%252F#part%2F1"}}}, {"type": "equation", "equation": {"expression": "x+1"}}]},
+    "Estimate": {"id": "estimate", "type": "number", "number": 3.5},
+    "Done": {"id": "done", "type": "checkbox", "checkbox": false},
+    "Priority": {"id": "priority", "type": "select", "select": {"id": "option-ready", "name": "Ready", "color": "blue"}},
+    "Due": {"id": "due", "type": "date", "date": {"start": "2026-11-06", "end": null, "time_zone": null}},
+    "Progress": {"id": "progress%3A%2f+", "type": "future_progress", "future_progress": {"ratio": 0.75, "labels": ["café", null, {"ready": true}], "url": "https://example.invalid/progress%2fkeep?key=a%2Bb+%252F"}, "has_more": true, "extra": {"preserve": []}}
+  }
+}

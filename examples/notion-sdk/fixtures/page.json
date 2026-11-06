@@ -1,0 +1,20 @@
+{
+  "object": "page",
+  "id": "22222222-2222-4222-8222-222222222222",
+  "parent": {"type": "data_source_id", "data_source_id": "44444444-4444-4444-8444-444444444444", "database_id": "55555555-5555-4555-8555-555555555555"},
+  "url": "https://www.notion.so/22222222222242228222222222222222",
+  "properties": {
+    "Name": {"id": "title", "type": "title", "title": [{"type": "text", "text": {"content": "Plan café 🚀", "link": null}, "annotations": {"bold": true, "italic": false, "strikethrough": false, "underline": false, "code": false, "color": "default"}, "plain_text": "Plan café 🚀", "href": null}]},
+    "Notes": {"id": "notes", "type": "rich_text", "rich_text": [
+      {"type": "text", "text": {"content": "Read ", "link": {"url": "https://example.invalid/guide"}}, "plain_text": "Read ", "href": "https://example.invalid/guide"},
+      {"type": "equation", "equation": {"expression": "E=mc^2"}, "plain_text": "E=mc^2", "href": null},
+      {"type": "mention", "mention": {"type": "page", "page": {"id": "11111111-1111-4111-8111-111111111111"}}, "plain_text": "First task", "href": null}
+    ]},
+    "Estimate": {"id": "est", "type": "number", "number": 42.5},
+    "Done": {"id": "done", "type": "checkbox", "checkbox": true},
+    "Priority": {"id": "prio", "type": "select", "select": {"id": "option-done", "name": "Done", "color": "green"}},
+    "Due": {"id": "due", "type": "date", "date": {"start": "2026-11-06", "end": "2026-11-07", "time_zone": null}},
+    "Future": {"id": "future", "type": "future_metric", "future_metric": {"magnitude": 7, "unit": "widgets"}},
+    "Related": {"id": "rel%3A1", "type": "relation", "relation": [{"id": "11111111-1111-4111-8111-111111111111"}], "has_more": true}
+  }
+}
