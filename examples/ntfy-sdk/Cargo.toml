@@ -9,11 +9,12 @@ publish = false
 
 [dependencies]
 # `json`: the publish response and the error document; `jsonl`: the NDJSON reader behind the
-# JSON stream and poll endpoints.
-concord = { path = "../../crates/concord", features = ["json", "jsonl"] }
+# JSON stream and poll endpoints; `sse`: the server-sent events reader behind the SSE endpoint.
+concord = { path = "../../crates/concord", features = ["json", "jsonl", "sse"] }
 serde = { workspace = true, features = ["derive"] }
-# The SSE `data` payload is parsed here (the SSE framing is this crate's own); serde_json's error
-# category separates malformed JSON (Format) from a well-formed event of the wrong shape (Decode).
+# The SSE `data` payload is parsed here (Concord's reader frames events, it does not decode them);
+# serde_json's error category separates malformed JSON (Format) from a well-formed event of the
+# wrong shape (Decode).
 serde_json.workspace = true
 
 [dev-dependencies]

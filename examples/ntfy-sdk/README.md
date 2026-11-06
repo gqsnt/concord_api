@@ -178,10 +178,11 @@ URL, the token, a header value, the document's `error` text or event content. `A
 
 ## Limitations
 
-- The SSE framer is this crate's own (Concord has no SSE reader; see `FRICTION.md`). It follows
-  the WHATWG event-stream rules for line ends, a leading byte order mark, comments, multi-line
-  `data` and unknown fields, and departs from a browser deliberately: input that ends inside an
-  event is an error instead of a silent discard, and events are bounded.
+- The SSE framing is Concord's reader (`concord::sse`; this crate decodes each event's `data`, see
+  `INTEGRATION.md`). It follows the WHATWG event-stream rules for line ends, a leading byte order
+  mark, comments, multi-line `data` and unknown fields, and departs from a browser deliberately:
+  invalid UTF-8, a body that ends inside a line or an event, and an event over the bound are
+  errors instead of a silent repair or discard.
 - The per-event bound is fixed at 16 MiB (the same as Concord's NDJSON default), far above ntfy's
   documented limits; it is not configurable.
 - `Since::Ago(n)` is sent as `<n>s`; `Since::Time` is interpreted by the server, whose inclusive
