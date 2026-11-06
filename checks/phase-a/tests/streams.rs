@@ -19,7 +19,7 @@ fn api(server: &TestServer) -> Reports {
             token: "Bearer t".to_owned(),
         },
     )
-    .with_base_url(&format!("{}/v1", server.url()))
+    .with_base_url(format!("{}/v1", server.url()))
     .unwrap()
 }
 

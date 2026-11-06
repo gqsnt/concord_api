@@ -20,7 +20,7 @@ fn api(server: &TestServer) -> Reports {
             token: "Bearer t".to_owned(),
         },
     )
-    .with_base_url(&format!("{}/v1", server.url()))
+    .with_base_url(format!("{}/v1", server.url()))
     .unwrap()
 }
 
@@ -229,7 +229,7 @@ concord::api! {
 async fn a_generated_multipart_boundary_is_bound_to_its_bytes() {
     let server = ok_server().await;
     let store = Store::new(concord::reqwest::Client::new())
-        .with_base_url(&server.url())
+        .with_base_url(server.url())
         .unwrap();
     let form = || Form {
         fields: vec![("purpose", "batch".into())],
@@ -293,7 +293,7 @@ concord::api! {
 async fn static_encoders_keep_their_precedence() {
     let server = TestServer::start(|_| Reply::new(204)).await;
     let old = Old::new(concord::reqwest::Client::new())
-        .with_base_url(&server.url())
+        .with_base_url(server.url())
         .unwrap();
     old.plain("x").send().await.unwrap();
     old.overridden("y").send().await.unwrap();

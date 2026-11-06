@@ -1422,7 +1422,6 @@ fn emit_owner(
                 index,
                 method,
                 output.as_ref(),
-                incoming,
                 body.as_ref(),
             );
             let shapes = shapes_static(k, model, index);
@@ -2123,10 +2122,10 @@ fn prepare_body(
     index: usize,
     method: &Ident,
     output: Option<&Output>,
-    incoming: bool,
     body: Option<&Body>,
 ) -> TokenStream {
     let owner: &Owner = &model.owners[index];
+    let incoming = matches!(owner.kind, Kind::Endpoint { incoming: true, .. });
     let composed: &Composed = owner.composed.as_ref().expect("endpoints are composed");
     let places = Places {
         chain: model.chain(index),

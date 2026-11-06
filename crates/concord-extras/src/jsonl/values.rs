@@ -571,6 +571,47 @@ impl<T, S> fmt::Debug for JsonValues<T, S> {
     }
 }
 
+impl<T, S> crate::stream::RecordSealed for JsonValues<T, S> {}
+
+impl<T, S> crate::stream::RecordReader for JsonValues<T, S>
+where
+    T: DeserializeOwned + Send + 'static,
+    S: ByteSource + 'static,
+{
+    type Record = T;
+
+    fn next_record(
+        &mut self,
+    ) -> impl std::future::Future<Output = Option<Result<T, ReadError>>> + Send {
+        self.next()
+    }
+
+    fn record_position(&self) -> Position {
+        self.position()
+    }
+
+    fn record_operation(&self) -> Option<&'static str> {
+        self.driver.operation()
+    }
+
+    fn record_completion(&self) -> crate::stream::Completion {
+        self.driver.completion()
+    }
+}
+
+impl<T, S> JsonValues<T, S>
+where
+    T: DeserializeOwned + Send + 'static,
+    S: ByteSource + 'static,
+{
+    /// This reader as an owning standard [`Stream`](futures_core::Stream) of
+    /// `Result<T, ReadError>` ([`RecordStream`](crate::stream::RecordStream)): no read-ahead,
+    /// cancellation-safe, errors and completion unchanged.
+    pub fn into_stream(self) -> crate::stream::RecordStream<Self> {
+        crate::stream::RecordStream::new(self)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -706,46 +747,5 @@ mod tests {
             assert!(used <= SKIP_BUDGET);
         }
         assert_eq!(steps, 4);
-    }
-}
-
-impl<T, S> crate::stream::RecordSealed for JsonValues<T, S> {}
-
-impl<T, S> crate::stream::RecordReader for JsonValues<T, S>
-where
-    T: DeserializeOwned + Send + 'static,
-    S: ByteSource + 'static,
-{
-    type Record = T;
-
-    fn next_record(
-        &mut self,
-    ) -> impl std::future::Future<Output = Option<Result<T, ReadError>>> + Send {
-        self.next()
-    }
-
-    fn record_position(&self) -> Position {
-        self.position()
-    }
-
-    fn record_operation(&self) -> Option<&'static str> {
-        self.driver.operation()
-    }
-
-    fn record_completion(&self) -> crate::stream::Completion {
-        self.driver.completion()
-    }
-}
-
-impl<T, S> JsonValues<T, S>
-where
-    T: DeserializeOwned + Send + 'static,
-    S: ByteSource + 'static,
-{
-    /// This reader as an owning standard [`Stream`](futures_core::Stream) of
-    /// `Result<T, ReadError>` ([`RecordStream`](crate::stream::RecordStream)): no read-ahead,
-    /// cancellation-safe, errors and completion unchanged.
-    pub fn into_stream(self) -> crate::stream::RecordStream<Self> {
-        crate::stream::RecordStream::new(self)
     }
 }

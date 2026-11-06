@@ -14,7 +14,7 @@ fn api(server: &TestServer) -> Reports {
             token: "Bearer s3cr3t-token".to_owned(),
         },
     )
-    .with_base_url(&format!("{}/v1", server.url()))
+    .with_base_url(format!("{}/v1", server.url()))
     .unwrap()
 }
 
