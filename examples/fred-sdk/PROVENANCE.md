@@ -136,3 +136,27 @@ the guide, but supplied no multipart implementation here. RECIPES' embedded
 were read but supplied no native-edit code. CHEATSHEET examples reinforced scope
 inheritance and format selection. No private reasoning transcript or independent
 reviewer/consumer claim is made; this is one author implementation.
+
+## Maintenance ticket — 2026-11-07
+
+Maintenance starts from `e1995ff7d60426e921da88b96f7c994606da79ae`.
+Read-only official research, read **2026-11-07 (Europe/Paris)**:
+
+- [Series search](https://fred.stlouisfed.org/docs/api/fred/series_search.html):
+  search/selection contract, XML default, JSON, query key and limit/offset.
+- [Series observations](https://fred.stlouisfed.org/docs/api/fred/series_observations.html):
+  exact `units`, `frequency` (including weekly/biweekly periods) and
+  `aggregation_method` value sets, omitted defaults, CSV-in-ZIP transport.
+  Its frequency section explicitly limits aggregation to XML/JSON. The ticket's
+  common CSV controls are therefore validated query forwarding, not a claim of
+  provider-side CSV aggregation. No local financial calculation is added.
+
+No dependency was added or updated; the existing workspace member and lock entry
+were present on arrival. An offline build without `--locked` succeeded and left
+Cargo.lock unchanged; subsequent Cargo checks use `--locked`.
+
+The new tests reuse the authored synthetic corpus above and separately enumerate
+the documented option codes. They verify wire behavior and lossless decoding,
+not computed provider transformations. **Live provider calls: NOT_RUN.**
+`MAINTENANCE.md` records the maintainer's prior exposure, files read, changes,
+diagnostic experiment and verification separately from the original author record.

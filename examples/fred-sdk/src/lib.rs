@@ -7,6 +7,7 @@
 mod codecs;
 mod error;
 mod models;
+mod options;
 mod pagination;
 
 pub use concord;
@@ -14,6 +15,7 @@ pub use concord_pagination;
 pub use concord_retry;
 pub use error::{Error, HttpError, Problem};
 pub use models::{CsvExport, Metadata, Observation, Observations, SearchPage, Series};
+pub use options::{AggregationMethod, Frequency, Units};
 pub use pagination::{OffsetEnvelope, pages};
 
 use codecs::{ProblemDocument, Xml, ZippedCsv};
@@ -82,6 +84,15 @@ concord::api! {
         /// Shared offset parameter for pageable operations.
         params OffsetOptions(query offset: u64 = 0);
 
+        /// Validated observation controls, omitted until explicitly set.
+        /// FRED documents frequency aggregation for XML/JSON only; CSV forwards
+        /// these same controls without promising provider-side aggregation.
+        params ObservationOptions(
+            query units?: Units,
+            query frequency?: Frequency,
+            query aggregation_method?: AggregationMethod,
+        );
+
         /// Search series using FRED's default XML representation.
         GET search(query search_text: String, query limit: SearchLimit = SearchLimit::default(), ..OffsetOptions) -> SearchPage {
             path "series/search";
@@ -104,17 +115,19 @@ concord::api! {
                 response concord::Json;
             }
             /// Read observations as XML (no file_type parameter means XML).
-            GET observations(query limit: ObservationLimit = ObservationLimit::default(), ..OffsetOptions) -> Observations {
+            GET observations(query limit: ObservationLimit = ObservationLimit::default(), ..OffsetOptions, ..ObservationOptions) -> Observations {
                 path "observations";
             }
             /// Read observations as JSON, preserving every value as a string.
-            GET observations_json(query limit: ObservationLimit = ObservationLimit::default(), ..OffsetOptions) -> Observations {
+            GET observations_json(query limit: ObservationLimit = ObservationLimit::default(), ..OffsetOptions, ..ObservationOptions) -> Observations {
                 path "observations";
                 query { "file_type" = "json"; }
                 response concord::Json;
             }
             /// Export a ZIP with one CSV and an optional text README, without CSV coercion.
-            GET export_csv(query limit: ObservationLimit = ObservationLimit::default(), ..OffsetOptions) -> CsvExport {
+            /// Observation controls are forwarded; FRED documents frequency
+            /// aggregation only for XML/JSON, not for CSV exports.
+            GET export_csv(query limit: ObservationLimit = ObservationLimit::default(), ..OffsetOptions, ..ObservationOptions) -> CsvExport {
                 path "observations";
                 query { "file_type" = "csv"; }
                 response ZippedCsv;

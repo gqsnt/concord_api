@@ -48,6 +48,11 @@ pub enum Error {
         /// Inclusive maximum.
         maximum: u32,
     },
+    /// An observation control outside the documented value set; input is not retained.
+    InvalidParameter {
+        /// The rejected parameter's static wire name.
+        parameter: &'static str,
+    },
     /// Offset/count/limit/items contradict the request or cannot advance safely.
     Pagination,
 }
@@ -64,6 +69,7 @@ impl fmt::Display for Error {
             Self::Concord(e) => e.fmt(f),
             Self::Http(e) => write!(f, "FRED HTTP {}", e.meta.status().as_u16()),
             Self::InvalidLimit { maximum } => write!(f, "FRED limit must be in 1..={maximum}"),
+            Self::InvalidParameter { parameter } => write!(f, "invalid FRED {parameter}"),
             Self::Pagination => f.write_str("FRED pagination envelope is inconsistent"),
         }
     }

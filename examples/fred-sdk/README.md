@@ -1,6 +1,6 @@
 # concord-sdk-fred
 
-A bounded FRED v1 slice built on Concord at baseline `56a16ee3`.
+A bounded FRED v1 slice, maintained against frozen Concord baseline `e1995ff7`.
 **Live provider calls: NOT_RUN.** Every test uses `concord-example-testserver` on loopback.
 This is documentation/example-assisted work; the complete reading record is in
 [PROVENANCE.md](PROVENANCE.md) and [FRICTION.md](FRICTION.md).
@@ -45,6 +45,42 @@ converted. `CsvExport::csv()` returns the exact uncompressed member bytes, witho
 parsing cells or assuming a header layout. `readme()` exposes the optional text
 README; `into_csv()` transfers ownership for application-controlled export.
 There is no automatic extraction to archive-supplied paths.
+
+## Observation controls
+
+XML, JSON and zipped-CSV requests expose the same `set_units`, `set_frequency`
+and `set_aggregation_method` setters. Their closed types accept only documented
+codes; `new(code)` or `code.parse()` returns `Error::InvalidParameter` for an
+unknown, differently cased or whitespace-padded value, before any request.
+The error identifies the parameter without retaining the input.
+
+```no_run
+use concord_sdk_fred::{AggregationMethod, Frequency, ObservationOptions, Units};
+
+// Reuse one selection for observations(), observations_json() or export_csv().
+fn annual_changes<E: ObservationOptions>(request: E) -> E {
+    request.set_units(Units::PercentChange)
+        .set_frequency(Frequency::Annual)
+        .set_aggregation_method(AggregationMethod::EndOfPeriod)
+}
+
+let weekly = Frequency::new("weth")?;
+assert_eq!(weekly, Frequency::WeeklyEndingThursday);
+# Ok::<(), concord_sdk_fred::Error>(())
+```
+
+Each control is initially absent; `maybe_units(None)`, `maybe_frequency(None)`
+and `maybe_aggregation_method(None)` clear it. FRED defaults to `lin`, the native
+frequency and `avg`; an aggregation method alone has no effect. Pagination keeps
+the selected controls when cloning the request; use the same controls on resume.
+
+The SDK forwards and validates these controls identically in all three forms.
+**FRED documents frequency aggregation only for XML/JSON**, so CSV query parity
+does not promise aggregated CSV results. Native-frequency compatibility remains
+a provider check. The SDK performs no local transformation, aggregation or numeric
+conversion: `"."` and numeric-looking strings remain exact, including inside CSV.
+Source: [FRED observations, units/frequency/aggregation_method](https://fred.stlouisfed.org/docs/api/fred/series_observations.html#units),
+read **2026-11-07**. Local fixtures establish request behavior, not service support.
 
 ## Bounded pagination
 
@@ -91,6 +127,7 @@ including HTTP dates, and distinguishes invalid/repeated/overflowing fields.
 | Failure | Observable result |
 |---|---|
 | Invalid page size | `Error::InvalidLimit`; nothing sent |
+| Invalid observation control code | `Error::InvalidParameter`; nothing sent |
 | Build or connection/body transport failure | `Error::Concord`, kind `Build` or `Transport` |
 | Any non-2xx, including documented 400/404/423/429/500 | `Error::Http`; HTTP status stays authoritative |
 | Missing, repeated, malformed or wrong Content-Type / unsupported charset | Concord kind `Metadata`, before reading the body |
@@ -122,7 +159,7 @@ Native request/URL/response accessors and provider data are deliberate raw acces
 generated operation's `send()` for the documented bounded behavior.
 
 Excluded: FRED v2 bulk release archives, XLSX parsing, CSV cell/schema parsing,
-authentication registration/rotation, advanced search/observation transforms,
+authentication registration/rotation, advanced search,
 real-time/vintage selectors and automatic retry/rate scheduling.
 
 ## Verification
@@ -137,3 +174,4 @@ CARGO_BUILD_JOBS=4 RUSTDOCFLAGS="-D warnings" cargo doc --locked -p concord-sdk-
 
 See [EVIDENCE.md](EVIDENCE.md) for executed commands, initial diagnostics, resource
 measurements and scope checks. No claim of live provider compatibility is made.
+See [MAINTENANCE.md](MAINTENANCE.md) for the observation-control change and checks.
