@@ -156,3 +156,13 @@ fake). No role patched Concord or used private items.
 | W1-11 | PokéAPI consumer: `InvalidUrl` gives no reason | SDK | SDK fix in integration |
 | W1-12 | Consumers/maintainers: the capsule said "frozen commit" while HEAD carried the SDK's own role commits | harness | capsule wording fixed `cd1f659b` |
 | W1-13 | Maintenance dispersion: Nager (fixture + docs only, model already tolerant), Twilio (one model file + fixtures/tests/docs), S3 (fixtures + fake store + docs; no declaration/adapter change) | positive | — |
+
+### Review of the between-wave changes (Codex `gpt-6-astra`, xhigh, read-only, session `01a1ae9f…`)
+
+| ID | Severity | Finding | Fix |
+|---|---|---|---|
+| AST-W1-1 | high | the generated `impl Endpoint for Op { type Output = .. }` made a `pub` client with a private output type (or a private stream format) fail with E0446 — a source break for previously valid declarations | `337da135`: `Endpoint<T>` with the output as a trait parameter (probed with rustc 1.99.1: an associated type is E0446, a parameter compiles without warning); compile-pass regression `checks/phase-a/src/lib.rs` `private_outputs` |
+
+Areas reported clean: cfg inheritance, generics, items named `Endpoint`, renamed dependency,
+inherent/trait `prepare`, all output forms, `Operation` identity and redaction, `bytes_limited`
+boundaries and kinds, `Body::HeadOnly` for HEAD, docs. Verdict ACCEPT_WITH_FIXES.

@@ -32,3 +32,4 @@ commit; the coordinator commits their files and records it.
 | W1 maintainer SDK02 PokéAPI | Opus subagent | UNOBSERVED (the agent quoted its system prompt's model id; not harness metadata) | same | `5f72d206` | |
 | W1 maintainer SDK03 Twilio | `gpt-6.1-sol` xhigh | `gpt-6.1-sol`, `xhigh` (session `01a1ae7d-9e31…`) | same | `497367eb` | |
 | W1 maintainer SDK04 S3 | `gpt-6.1-terra` xhigh | `gpt-6.1-terra`, `xhigh` (session `01a1ae9c-6a24…`) | same | `41e24beb` | |
+| Review of between-wave changes after wave 1 (`94d13527..6a9dcb19`, library/test support/docs) | `gpt-6-astra`, xhigh, read-only | `gpt-6-astra`, `xhigh`, `read-only` (session `01a1ae9f-2c62…`) | `work/rv-w1` (detached `6a9dcb19`) | ACCEPT_WITH_FIXES, AST-W1-1 fixed `337da135` | |
