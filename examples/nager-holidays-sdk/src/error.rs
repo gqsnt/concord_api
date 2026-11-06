@@ -2,8 +2,8 @@
 
 use std::fmt;
 
+use concord::ErrorKind as ConcordErrorKind;
 use concord::reqwest::StatusCode;
-use concord::{ErrorKind as ConcordErrorKind, ResponseHead};
 
 /// An owned response head (status, version, all headers, operation) that survives a subsequent
 /// body or decoding failure: Concord's own type. `Debug` prints header names only.
@@ -75,12 +75,7 @@ impl Error {
 
 impl From<concord::Error> for Error {
     fn from(source: concord::Error) -> Self {
-        let meta = source.response().map(|response| {
-            Box::new(ResponseMeta::new(
-                ResponseHead::of(response),
-                source.operation(),
-            ))
-        });
+        let meta = source.meta().map(Box::new);
         Self { source, meta }
     }
 }

@@ -4,8 +4,8 @@ use std::error::Error as StdError;
 use std::fmt;
 
 use crate::__private::EndpointMeta;
-use crate::codec::CodecError;
-use crate::response::Operation;
+use crate::codec::{CodecError, ResponseHead};
+use crate::response::{Operation, ResponseMeta};
 
 /// Why a Concord call failed.
 ///
@@ -187,6 +187,14 @@ impl Error {
             Repr::Status(response) | Repr::Metadata(_, response) => Some(response),
             _ => None,
         }
+    }
+
+    /// An owned copy of the kept response's head with this error's operation, for an SDK error
+    /// that outlives this one ([`Status`](ErrorKind::Status) and
+    /// [`Metadata`](ErrorKind::Metadata) only, like [`response`](Self::response)).
+    pub fn meta(&self) -> Option<ResponseMeta> {
+        self.response()
+            .map(|response| ResponseMeta::new(ResponseHead::of(response), self.operation()))
     }
 
     /// The unread response of an [`ErrorKind::Status`] or [`ErrorKind::Metadata`] error; any other

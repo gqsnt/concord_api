@@ -1303,7 +1303,10 @@ async fn summary_with_meta(
 When the SDK keeps the whole head rather than a few typed fields, `received.meta()` is that
 owned value: a `concord::ResponseMeta` (status, version, header map, operation) whose `Debug`
 prints header names only, unlike a derived `Debug` over a `HeaderMap`. `Incoming::meta()` gives
-the same before a reader consumes the body.
+the same before a reader consumes the body, and `concord::Error::meta()` from a `Status` or
+`Metadata` error that kept its response. To add provider accessors (`request_id()`), wrap it in
+the SDK's own type (`pub struct ResponseMeta(concord::ResponseMeta)`; the Dropbox SDK derefs to
+it): methods cannot be added to another crate's type.
 
 A provider rule on the head (a served API version) refuses by returning the SDK's error with
 `received.into_response()`, unread. A request edited natively after `into_parts()` (a `Link` URL)

@@ -1,7 +1,7 @@
 use std::fmt;
 
 use concord::reqwest::StatusCode;
-use concord::{CodecError, Operation, ResponseHead};
+use concord::{CodecError, Operation};
 use serde::Deserialize;
 
 /// Owned response metadata (actual status, never synthesized from the JSON document; HTTP
@@ -124,12 +124,7 @@ impl Error {
 
 impl From<concord::Error> for Error {
     fn from(source: concord::Error) -> Self {
-        let meta = source.response().map(|response| {
-            Box::new(ResponseMeta::new(
-                ResponseHead::of(response),
-                source.operation(),
-            ))
-        });
+        let meta = source.meta().map(Box::new);
         Self::Concord { source, meta }
     }
 }

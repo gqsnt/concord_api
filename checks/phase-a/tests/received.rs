@@ -526,3 +526,21 @@ async fn an_owned_meta_outlives_the_body_and_never_prints_values() {
     );
     assert_eq!(incoming.meta().headers()["x-request-id"], "req-7");
 }
+
+#[tokio::test]
+async fn a_status_error_gives_the_same_owned_meta() {
+    let server =
+        TestServer::start(|_| Reply::json(404, "{}").header("x-request-id", "req-4")).await;
+    let error = api(&server).summary("x").send().await.unwrap_err();
+    assert_eq!(error.kind(), ErrorKind::Status);
+    let meta = error.meta().expect("a status error keeps its response");
+    assert_eq!(meta.status(), 404);
+    assert_eq!(meta.operation().unwrap().name(), "Reports.summary");
+    assert_eq!(meta.headers()["x-request-id"], "req-4");
+    assert!(!format!("{meta:?}").contains("req-4"));
+    // An error without a response has none.
+    let dead = TestServer::start(|_| Reply::hang_up()).await;
+    let error = api(&dead).summary("x").send().await.unwrap_err();
+    assert_eq!(error.kind(), ErrorKind::Transport);
+    assert!(error.meta().is_none());
+}
