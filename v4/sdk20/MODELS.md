@@ -80,7 +80,7 @@ commit; the coordinator commits their files and records it.
 | W4 author SDK15 ClickHouse | Opus subagent | running (transcript read at completion) | `work/w4-sdk15-clickhouse` | | |
 | W4 author SDK16 Snowflake | `gpt-6-astra` xhigh | `gpt-6-astra`, `xhigh`, workspace-write + `work/target-b`, network (session `01a1af7e-2606-70d1…`) | `work/w4-sdk16-snowflake` | | same relaunch |
 | W4 consumer SDK14 Airtable | `gpt-6-astra` xhigh | `gpt-6-astra`, `xhigh`, workspace-write + `work/target-b`, network (session `01a1af80-6cda…`) | same | `173e4f01` (14 first-use tests; intervention: corrected a doubled base path), coordinator commit | |
-| W4 maintainer SDK14 Airtable | Opus subagent | running (transcript read at completion) | `work/w4-sdk14-airtable` | | |
+| W4 maintainer SDK14 Airtable | Opus subagent | `claude-opus-5-5`, effort `xhigh` sent; answered by `claude-opus-5-5` (`agent-ab655070…`) | `work/w4-sdk14-airtable` | `a4163a07` (3 maintenance tests; no SDK code change) | |
 | W4 consumer SDK13 Open-Meteo | `gpt-6.1-terra` xhigh | `gpt-6.1-terra`, `xhigh`, workspace-write + `work/target-a`, network (session `01a1af89-6752…`) | `work/w4-sdk13-open-meteo` | `1f6ec3e0` (8 first-use tests, no intervention), coordinator commit | |
 | W4 maintainer SDK13 Open-Meteo | `gpt-6-astra` xhigh | `gpt-6-astra`, `xhigh`, workspace-write + `work/target-a`, network (session `01a1af8b-04b5…`) | same | `7cd5e536` (maintenance wire tests; one production definition changed), coordinator commit | first run ended with exit 101 on the full disk; same session resumed after the cleanup and finished |
 | Between waves 4-5: R4 CSV quote at EOF | Opus subagent | running (transcript read at completion) | agent worktree | | |
