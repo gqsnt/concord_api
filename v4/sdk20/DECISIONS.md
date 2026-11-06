@@ -348,3 +348,25 @@ failure and fixed the test only; 10/10 coordinator runs afterwards.
 | W3-16 | Dropbox consumer F3/F4: a provider error tag needs three levels of unwrapping; a failed first page carries no member/root | SDK API; redaction by design | SDK |
 | W3-17 | maintenance dispersion: Linear 20 places (GraphQL); Drive and ntfy no production change; Dropbox one runtime location | measurement | — |
 | W3-18 | `checks/stream-stress` `jsonl_upload_cancellation_stops_polling_the_source` failed once in a full parallel `cargo test --workspace` while two agents were building (load ~7.8); 8/8 alone; a pre-existing timing test (`61b29e48`), unrelated to buffered bodies | observed flake | OBSERVED; not changed; watched in gates |
+
+## Between waves 3 and 4: refinements
+
+**D-W34-R2 — shared multipart request format (IMPLEMENT, concord-extras `multipart`; Opus
+subagent `aaa17b8c…`, `238ca378`, merged `c72bb5d6`).** `Multipart` (`Encode<MultipartBody>`,
+runtime media `multipart/<form-data|related>; boundary=...` through `EncodedBody`),
+`MultipartBody::{form_data, related, related_with_type, part, text, file}`, `Part::{new,
+header}`. Boundary `concord-boundary-<n>`: the smallest `n` found in no part (checked, not random;
+brute-force oracle over >10k inputs). Encode-time refusals (a `Build` error before I/O, no bytes
+or names in `Display`/`Debug`): control characters, `"` or `\` in form-data names/file names,
+non-token part header names, control characters in header values, an empty `related` body, a
+malformed `related` `type`, form-data fields inside `related`. No new dependency
+(`check-graph.py` entry). Gate in the agent's worktree: 44/44 (new steps `test-multipart-only`,
+`test-extras-multipart`, `doc-multipart-only`, `doc-extras-multipart`).
+Migrated: OpenAI `upload_batch_file`, Drive `upload_multipart` (before/after in their
+`INTEGRATION.md`). Test changes, decided by the coordinator: OpenAI's exact-bytes expectation
+uses the new boundary; its `is_err()` on content containing the old fixed boundary is replaced by
+an exact-bytes assertion that such content is sent under `concord-boundary-1` — the refusal only
+existed because the boundary was fixed, and refusing valid JSONL content was an SDK limitation.
+Drive's collision fixtures were re-pointed at the new candidates so the collision tests still
+collide (inputs and expected requests rewritten by byte substitution, checked against an
+independent reassembly). Test counts unchanged (OpenAI 31; Drive 37 + 3 doc).
