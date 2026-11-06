@@ -539,7 +539,9 @@ impl<T, K, E> fmt::Debug for ItemStream<T, K, E> {
 /// Every variant carries the page chain's counters and the page to continue from: pass it as
 /// `from` to a new traversal over the same listing. `Debug` prints variants, positions as
 /// `Start` or `At(..)`, and counters: never a key or the provider's error (reach it through the
-/// field). `Display` adds the provider error's own `Display`.
+/// field). `Display` does not include the provider's error either (it may quote a URL or
+/// content): it says which stage failed and how many pages were emitted. Log the provider error
+/// through the `error` field or [`source()`](std::error::Error::source), deliberately.
 pub enum PagesError<E, K> {
     /// The factory failed on a page; the traversal is over.
     #[non_exhaustive]
