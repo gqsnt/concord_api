@@ -15,6 +15,21 @@ Baseline gate at `a95fb2fb` (detached worktree `work/baseline`, 2026-11-06):
 `scripts/verify.sh --package --bench` 43/43 PASS (6m18s), `--nightly-only` PASS
 (`nightly-clone-compat` 16 passed). Logs: `work/logs/baseline-a95fb2fb-*.txt` (outside the repo).
 
+## Final candidate
+
+| What | Value |
+|---|---|
+| Final candidate commit | `90b69011` (`90b69011db92c8b900c23dd0c35176ad100d1204`), tree `6a654331178f2124d96318637a75b2a854bc5a9e`, branch `concord-dx-sdk20`, draft PR #4 |
+| Base | `a95fb2fb` (`main`); cumulative diff: 1031 files, +108301 −1116 |
+| Local gate on the exact commit | `scripts/verify.sh --package --bench` 49/49 PASS, clean tree, 3m22s (`work/logs/gate-90b69011-verify.txt`); the isolated-examples step ran each of the 25 SDKs alone; no consumer scratch left |
+| CI on the exact commit | push run `42194334758`, pull_request run `42194341264` (results in the records-only successor below) |
+| Delivery (outside the repository, `work/delivery/`) | `concord_api-90b69011.diff` (sha256 `abee7ffb…`), `concord_api-90b69011.tar.gz` (`2669e73d…`), `concord_api-90b69011.bundle` (incremental, prerequisite `a95fb2fb`; `8eadffac…`), `concord_api-90b69011-full.bundle` (`f1157e6d…`), `SHA256SUMS`, `checks.txt`; made by `v4/sdk20/tasks/make_delivery.sh` |
+| Delivery checks | archive paths safe (4000 entries under one prefix); extracted archive tree = commit tree; both bundles verify; a clone of the full bundle checks out the same tree; relative links in 15 documents resolve; bounded replay from the extraction: `cargo test --locked --offline -p concord-example-quickstart` (47 tests) |
+| Not part of the mission | merge into `main`, release tag, publication, version change |
+
+Commits after `90b69011` on the branch are records only (this section's CI results, the delivery
+tools under `v4/sdk20/tasks/`); they are not the verified identity and carry their own CI.
+
 ## Phase A
 
 | Requirement | Implementation | Evidence | Status |
