@@ -97,7 +97,7 @@ commit, so no baseline intervention was needed.
 | SDK12 | Google Drive | large | 3 | `gpt-6.1-sol` xhigh (`6d9d7fb9`) | `gpt-6.1-terra` xhigh, 5 tests, unassisted (`e8968c80`) | `gpt-6-astra` xhigh (`9bc413b0`, no production change needed) | WAVE_3_ROLES_DONE, merged `7354d5a3` |
 | SDK13 | Open-Meteo | small | 4 | `gpt-6.1-sol` xhigh (`0d94ba92`) | `gpt-6.1-terra` xhigh, 8 tests, unassisted (`1f6ec3e0`) | `gpt-6-astra` xhigh (`7cd5e536`) | WAVE_4_ROLES_DONE, merged `fb3f519c` |
 | SDK14 | Airtable | medium | 4 | `gpt-6.1-terra` xhigh (`e0425cc8`) | `gpt-6-astra` xhigh, 14 tests; first intervention: corrected a doubled base path (`173e4f01`) | Opus subagent (`a4163a07`) | WAVE_4_ROLES_DONE, merged `eb801635` |
-| SDK15 | ClickHouse | medium | 4 | Opus subagent (running) | `gpt-6.1-sol` | `gpt-6.1-terra` | WAVE_4_AUTHORING |
+| SDK15 | ClickHouse | medium | 4 | Opus subagent (`66f3cf00`) | `gpt-6.1-sol` (running) | `gpt-6.1-terra` | WAVE_4_CONSUMER |
 | SDK16 | Snowflake | large | 4 | `gpt-6-astra` xhigh (`04f32a9a`; first delivery enabled reqwest `gzip`, which broke a Concord test under workspace feature unification; reworked by the same session to SDK-local flate2) | Opus (running) | `gpt-6.1-sol` | WAVE_4_CONSUMER |
 
 ## Open issues (not fixed; tracked)
