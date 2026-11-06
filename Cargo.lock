@@ -983,6 +983,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "concord-sdk-open-meteo"
+version = "0.0.0"
+dependencies = [
+ "concord",
+ "concord-example-testserver",
+ "serde",
+ "tokio",
+]
+
+[[package]]
 name = "concord-sdk-openai"
 version = "0.0.0"
 dependencies = [

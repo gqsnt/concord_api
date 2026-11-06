@@ -1,0 +1,6 @@
+latitude,longitude,elevation,utc_offset_seconds,timezone,timezone_abbreviation
+52.52,13.419,44.8,3600,Europe/Berlin,CET
+
+time,wind_speed_10m (km/h),temperature_2m (°C),note
+2024-01-01T00:00,4.5,13.0,"clear, cold"
+2024-01-01T01:00,5.0,NaN,"say ""hello"""

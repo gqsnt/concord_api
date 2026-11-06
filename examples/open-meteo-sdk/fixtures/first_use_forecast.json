@@ -1,0 +1,1 @@
+{"latitude":52.52,"longitude":13.419,"elevation":44.8,"generationtime_ms":2.2,"utc_offset_seconds":3600,"timezone":"Europe/Berlin","timezone_abbreviation":"CET","hourly_units":{"time":"iso8601","temperature_2m":"°C","wind_speed_10m":"km/h"},"hourly":{"time":["2024-01-01T00:00","2024-01-01T01:00"],"temperature_2m":[13.0,null],"wind_speed_10m":[4.5,5.0]}}
