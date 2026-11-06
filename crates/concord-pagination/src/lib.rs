@@ -80,15 +80,19 @@
 
 mod independent;
 mod jobs;
+mod pages;
 mod sequential;
 mod types;
 mod window;
 
-pub use independent::{Independent, IndependentReport, first_page_then, independent};
+pub use independent::{
+    Independent, IndependentReport, IndependentResume, first_page_then, independent,
+};
 pub use jobs::{
     DiscoveryReport, JobOptions, Jobs, JobsCheckpoint, JobsError, JobsProgress, JobsReport,
-    manifest_jobs,
+    JobsResume, manifest_jobs,
 };
+pub use pages::{Incomplete, ItemStream, PageItems, Pages, PagesError};
 pub use sequential::{
     ItemCheckpoint, Items, ItemsProgress, ItemsReport, Sequential, SequentialReport, resume_items,
     sequential,
