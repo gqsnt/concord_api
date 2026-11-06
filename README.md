@@ -135,9 +135,11 @@ over a format of yours.
 
 ## The transport boundary
 
-You build the `reqwest::Client` and pass it to `new`; Concord uses it for every request of that
-client and never configures it. One `send()` is one `reqwest::Client::execute` — no retry, no
-extra request. For anything the declaration does not cover there is a native exit:
+You build the `reqwest::Client` and pass it to `new`; Concord's default execution path uses it
+without configuring it. `Prepared::send` and generated `send()` without a client send policy each
+perform one `reqwest::Client::execute`, with no Concord retry or extra request. A client
+`send policy;` delegates generated `send()` to `SendWith<T>::send`; that policy may sign, make
+sub-requests or repeat requests. For anything the declaration does not cover there is a native exit:
 
 - `prepare()` builds the native `reqwest::Request` without any I/O;
 - `prepare()?.into_parts()` returns your client, that request and the endpoint's decoder, so you

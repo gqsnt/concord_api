@@ -245,11 +245,13 @@ The same test sends a missing, unsupported and non-numeric version through `vers
 through `versioned_any_type()`, and every one is `ErrorKind::Metadata`: the adapter skips the
 `Content-Type` check only (section 7).
 
-`Decode<T>` returns only `T`. When the caller needs what the head said (the version itself),
+`Decode<T>` returns only `T`. To include head-derived data (the version itself) in that value,
 decode into an output type of yours that carries it, such as `WithVersion<T> { version, value }`,
 and declare that as the endpoint's output (`-> WithVersion<Item>`, with
 `impl Decode<WithVersion<Item>> for Versioned`); the context carries the version from `context`
 to `decode_body`.
+
+To keep head metadata without changing the declared output, read `Received::head` or call `Received::meta` to keep an owned `concord::ResponseMeta` before decoding.
 
 ### Narrowing to one exact vendor media type
 

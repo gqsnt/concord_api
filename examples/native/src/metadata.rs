@@ -7,7 +7,7 @@
 //!    [`concord::Decoder`];
 //! 2. your edit of the native `reqwest::Request` (a header, a timeout, a query pair);
 //! 3. exactly **one** `client.execute(request)`. A failure before any response head becomes a
-//!    Concord [`ErrorKind::Transport`] error through `decoder.finish(Err(e))`, the documented
+//!    Concord [`ErrorKind::Transport`] error through `decoder.transport_error(e)`, the documented
 //!    conversion that removes the URL — never a raw `reqwest::Error`;
 //! 4. [`Received`]: the head arrived, the body is unread. The headers you selected, the status,
 //!    the version and the final URL are copied into a [`Meta`] by borrowing the response;

@@ -1,8 +1,10 @@
 //! U30 / U31 (R10–R12): application-owned policies composed around Concord.
 //!
-//! Concord performs no retries, pagination, admission or authentication: one `send()` is one
-//! `reqwest::Client::execute` (R11). Each policy below is ordinary application code with its
-//! assumptions stated; none is a recommended default for arbitrary APIs.
+//! `Prepared::send` and generated `send()` without a client send policy perform one
+//! `reqwest::Client::execute` (R11), with no Concord retry or extra request. A client
+//! `send policy;` instead delegates to `SendWith<T>::send`, which may sign, make sub-requests or
+//! repeat requests. Each recipe below is ordinary application code with its assumptions stated;
+//! none is a recommended default for arbitrary APIs.
 
 use std::future::Future;
 use std::sync::{Arc, RwLock};
