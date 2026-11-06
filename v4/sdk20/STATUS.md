@@ -40,6 +40,16 @@ reused for every full gate), `work/implementation/target` (integration), `work/t
 the Phase A agent worktrees' own targets (about 17 GB, idle). At Phase B start: 372 GB free of
 915 GB. Pruning, if needed, is limited to these directories and recorded here.
 
+Disk exhaustion during wave 4 (2026-11-06): the root filesystem reached 100% (0 of 915 GB
+free); builds failed with `No space left on device`, and one role session (SDK13 maintainer)
+ended with exit 101 (resumed and finished afterwards). With the owner's answer "Yes, delete it
+(option 1)", the coordinator deleted only campaign build output: the `target/` directories of 12
+finished agent worktrees under `concord_api/.claude/worktrees/agent-*/` (~158 GB; the running
+agent's kept) and the `consumers.*` scratch copies in `work/gate/target` and
+`work/implementation/target` (~37 GB). No source, branch, commit or worktree was removed; the
+`work/baseline/target/consumers.*` copies were not on the list and remain. Free afterwards:
+200 GB.
+
 ## SDK cohort (Phase B)
 
 Wave 4 frozen at `0983a349` (between-wave 3-4 refinements: `sse`, `multipart`, `ResponseMeta`,
