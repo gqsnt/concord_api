@@ -705,6 +705,7 @@ name = "concord-example-native"
 version = "0.0.0"
 dependencies = [
  "concord",
+ "concord-retry",
  "futures-core",
  "reqwest",
  "serde",
@@ -736,6 +737,7 @@ name = "concord-example-riot"
 version = "0.0.0"
 dependencies = [
  "concord",
+ "concord-retry",
  "serde",
  "serde_json",
  "tokio",
@@ -902,6 +904,18 @@ dependencies = [
  "futures-util",
  "tokio",
  "url",
+]
+
+[[package]]
+name = "concord-retry"
+version = "4.2.0"
+dependencies = [
+ "concord",
+ "concord-core",
+ "concord-example-testserver",
+ "futures-util",
+ "reqwest",
+ "tokio",
 ]
 
 [[package]]

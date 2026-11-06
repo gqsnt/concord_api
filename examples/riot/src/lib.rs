@@ -108,11 +108,23 @@ impl From<concord::Error> for Stop {
             return Stop::Failed(error);
         }
         Stop::RateLimited {
-            retry_after: error
-                .response()
-                .and_then(|r| r.headers().get(RETRY_AFTER))
-                .and_then(|v| v.to_str().ok())
-                .and_then(|v| v.parse().ok()),
+            retry_after: error.response().and_then(|r| {
+                // Riot projects its documented numeric-seconds contract, not HTTP-dates.
+                let first = r.headers().get(RETRY_AFTER)?;
+                if !first.as_bytes().iter().all(u8::is_ascii_digit) {
+                    return None;
+                }
+                concord_retry::http::retry_after(
+                    r.headers()
+                        .get_all(RETRY_AFTER)
+                        .iter()
+                        .map(|v| v.as_bytes()),
+                    std::time::UNIX_EPOCH,
+                )
+                .ok()
+                .flatten()
+                .map(|delay| delay.as_secs())
+            }),
         }
     }
 }

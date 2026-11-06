@@ -148,6 +148,18 @@ step test-extras-facade-all cargo test --locked -p concord-extras --all-features
 # The pagination crate alone, with and without Link syntax; neither knows a Concord crate.
 step test-pagination cargo test --locked -p concord-pagination
 step test-pagination-link cargo test --locked -p concord-pagination --features link
+# Retry: runtime-free engine, each optional feature, and their composition independently.
+retry_features() {
+  local features
+  for features in "" concord tokio concord,tokio; do
+    cargo test --locked -p concord-retry --no-default-features ${features:+--features "$features"} || return 1
+    cargo clippy --locked -p concord-retry --no-default-features ${features:+--features "$features"} \
+      --all-targets -- -D warnings || return 1
+    RUSTDOCFLAGS="-D warnings" cargo doc --locked -p concord-retry --no-deps \
+      --no-default-features ${features:+--features "$features"} || return 1
+  done
+}
+step test-retry-features retry_features
 # Lints of the feature subsets the workspace build unifies away (code used only by some formats).
 clippy_features() {
   local features

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Checks the production dependency graph of the six crates.
+"""Checks the production crates' dependency graph.
 
 Direct edges come from the manifests (`cargo metadata`, normal dependencies only: dev-dependencies
 and the workspace build do not count). Resolved-graph exclusions come from `cargo tree -e normal`
@@ -23,6 +23,8 @@ ALLOWED = {
     "concord-extras": {"concord-codecs"},
     # Pagination knows no Concord crate and no runtime: request factories are plain closures.
     "concord-pagination": {"futures-util", "url"},
+    # Optional transport and runtime edges are checked in isolation below.
+    "concord-retry": {"concord-core", "reqwest", "tokio"},
     "concord-macros": {"http", "mime", "proc-macro2", "quote", "syn"},
     "concord": {"concord-core", "concord-codecs", "concord-macros"},
 }
@@ -47,6 +49,13 @@ EXCLUDED = [
     ("concord-pagination", ["--features", "link"],
      {"concord", "concord-core", "concord-codecs", "concord-extras", "concord-macros", "reqwest", "http", "tokio",
       "serde"}),
+    ("concord-retry", ["--no-default-features"], {"concord", "concord-core", "concord-codecs", "concord-extras",
+        "concord-macros", "reqwest", "tokio"}),
+    ("concord-retry", ["--no-default-features", "--features", "tokio"],
+        {"concord", "concord-core", "concord-codecs", "concord-extras", "concord-macros", "reqwest"}),
+    ("concord-retry", ["--no-default-features", "--features", "concord"],
+        {"concord", "concord-codecs", "concord-extras", "concord-macros"}),
+    ("concord-retry", ["--all-features"], {"concord", "concord-codecs", "concord-extras", "concord-macros"}),
     ("concord-macros", [], {"concord-core", "concord-codecs", "concord-extras", "concord", "reqwest", "serde"}),
     ("concord", ["--no-default-features"], {"concord-codecs", "concord-extras", "serde_json", "serde_urlencoded"}),
     ("concord", ["--no-default-features", "--features", "extras"], {"concord-extras", "serde_json", "serde_urlencoded", "csv",
@@ -67,6 +76,14 @@ def main():
         extra = normal - allowed
         if extra:
             problems.append(f"{name}: unexpected direct dependencies {sorted(extra)}")
+        if name == "concord-retry":
+            dependencies = {d["name"]: d for d in packages[name]["dependencies"] if d["kind"] is None}
+            for edge in ("concord-core", "reqwest", "tokio"):
+                if not dependencies[edge]["optional"]:
+                    problems.append(f"concord-retry: {edge} must be optional")
+            features = packages[name]["features"]
+            if set(features.get("concord", [])) != {"dep:concord-core", "dep:reqwest"}:
+                problems.append("concord-retry: concord must gate concord-core and reqwest")
         print(f"{name}: {', '.join(sorted(normal))}")
     for name, args, excluded in EXCLUDED:
         tree = subprocess.run(
