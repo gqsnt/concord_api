@@ -98,3 +98,9 @@ Observed tests: **17 protocol + 4 workflow + 2 compiled README doctests passed**
 unit tests, failures or ignored tests. Loopback tests explicitly shut down their servers.
 Clippy with `--all-targets -- -D warnings` passed, and package formatting completed.
 All fixture/protocol scenarios are offline evidence, not live provider verification.
+
+## Between waves 2-3 (coordinator integration)
+
+Item 3 changed: the two forwarding `fetch()` methods were replaced by the client statement
+`send SendPolicy;` (`impl SendWith<Rate> for SendPolicy`), so the generated `send()` returns
+the typed SDK result. See [INTEGRATION.md](INTEGRATION.md).

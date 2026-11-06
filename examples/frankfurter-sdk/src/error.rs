@@ -56,7 +56,8 @@ pub struct Problem {
 pub enum ErrorBodyError {
     /// Missing, repeated or non-JSON media type; body was not read.
     Metadata(CodecError),
-    /// Body exceeded [`crate::ERROR_BODY_LIMIT`] or could not be read completely.
+    /// Body exceeded [`crate::ERROR_BODY_LIMIT`] or could not be read completely: a
+    /// [`concord::Error`] (kind `Limit` or `Transport`), not this crate's [`Error`](crate::Error).
     Read(concord::Error),
     /// Body was JSON-labelled but did not decode as a [`Problem`].
     Decode(CodecError),
@@ -110,14 +111,18 @@ impl std::error::Error for ProviderError {
     }
 }
 
-/// SDK failure. Response metadata survives both HTTP failures and body failures.
+/// SDK failure, returned by every request's `send()`. Response metadata survives both HTTP
+/// failures and body failures.
+///
+/// Distinct from [`concord::Error`], which `with_base_url` and `prepare()` return (signatures
+/// show both as `Error`); `From<concord::Error>` converts it into [`Error::Concord`].
 #[derive(Debug)]
 pub enum Error {
     /// Non-2xx status, with a bounded typed error-document attempt.
     Provider(Box<ProviderError>),
     /// Request build, transport, success media-type or success decode failure.
     Concord {
-        /// Original Concord error and its generated operation identity.
+        /// Original [`concord::Error`] and its generated operation identity.
         source: concord::Error,
         /// Head captured before decoding; absent when no response arrived.
         meta: Option<Box<ResponseMeta>>,

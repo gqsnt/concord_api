@@ -3,7 +3,7 @@
 mod error;
 mod model;
 
-use concord::{Decode, Endpoint, Json};
+use concord::{Decode, Endpoint, Json, SendWith};
 
 pub use bigdecimal::BigDecimal as Decimal;
 pub use chrono::NaiveDate as Date;
@@ -22,10 +22,16 @@ concord::api! {
     /// Construct with `Frankfurter::new(http)`. Transport timeouts, redirects and default
     /// headers belong to the supplied `concord::reqwest::Client`. No config record or token
     /// is needed. `with_base_url(origin)` replaces the origin, retaining any path prefix;
-    /// the operations themselves declare `/v2`. Use `fetch()` for typed provider errors
-    /// and response metadata; generated `send()` returns just `Rate` and Concord errors.
+    /// the operations themselves declare `/v2`.
+    ///
+    /// Every request's `send()` returns `Result<`[`RateResponse`]`, `[`Error`]`>` (this
+    /// crate's error, through [`SendPolicy`]): typed provider errors and response metadata.
+    /// Two calls return [`concord::Error`] instead: `with_base_url` and `prepare()` (no
+    /// request is sent). Signatures show both as a bare `Error`; this crate's [`Error`]
+    /// implements `From<concord::Error>`, so `?` converts.
     pub client Frankfurter() {
         base "https://api.frankfurter.dev";
+        send SendPolicy;
         format Json;
 
         /// Latest available observation for one pair, not necessarily today's date.
@@ -56,45 +62,40 @@ pub struct RateResponse {
     pub meta: ResponseMeta,
 }
 
-impl FrankfurterLatestPair {
-    /// Executes once, returning a complete rate or a typed error with available metadata.
-    ///
-    /// No retries or partial rate are returned. See [`Error`] and the crate documentation
-    /// for body/completion semantics. Build and pre-head transport errors have no metadata.
-    pub async fn fetch(self) -> Result<RateResponse, Error> {
-        fetch(self).await
-    }
-}
+/// The send policy of [`Frankfurter`] (`send SendPolicy;`): what every generated `send()`
+/// returns. Callers never name it.
+///
+/// `send()` executes once and returns a complete rate or this crate's [`Error`] with the
+/// metadata available: any non-2xx status is [`Error::Provider`] with a bounded typed error
+/// document; build, transport, success media-type and success decode failures are
+/// [`Error::Concord`]. No retries or partial rate are returned. Build and pre-head transport
+/// errors have no metadata.
+pub struct SendPolicy;
 
-impl FrankfurterHistoricalPair {
-    /// Executes once, returning a complete historical rate or a typed error.
-    ///
-    /// Same error and completion semantics as [`FrankfurterLatestPair::fetch`].
-    pub async fn fetch(self) -> Result<RateResponse, Error> {
-        fetch(self).await
-    }
-}
+impl SendWith<Rate> for SendPolicy {
+    type Output = Result<RateResponse, Error>;
 
-async fn fetch(endpoint: impl Endpoint<Rate>) -> Result<RateResponse, Error> {
-    let received = endpoint.prepare()?.receive().await?;
-    let meta = ResponseMeta::capture(&received.head(), received.operation());
-    if !received.status().is_success() {
-        // Status is authoritative even when the document is absent, invalid or inconsistent.
-        let document = match <Json as Decode<Problem>>::check_content_type(&received.head()) {
-            Err(error) => Err(ErrorBodyError::Metadata(error)),
-            Ok(()) => match received.bytes_limited(ERROR_BODY_LIMIT).await {
-                Err(error) => Err(ErrorBodyError::Read(error)),
-                Ok(bytes) => <Json as Decode<Problem>>::decode_body((), bytes)
-                    .map_err(ErrorBodyError::Decode),
-            },
-        };
-        return Err(Error::Provider(Box::new(ProviderError { meta, document })));
-    }
-    match received.decode().await {
-        Ok(rate) => Ok(RateResponse { rate, meta }),
-        Err(source) => Err(Error::Concord {
-            source,
-            meta: Some(Box::new(meta)),
-        }),
+    async fn send<E: Endpoint<Rate> + Send>(endpoint: E) -> Self::Output {
+        let received = endpoint.prepare()?.receive().await?;
+        let meta = ResponseMeta::capture(&received.head(), received.operation());
+        if !received.status().is_success() {
+            // Status is authoritative even when the document is absent, invalid or inconsistent.
+            let document = match <Json as Decode<Problem>>::check_content_type(&received.head()) {
+                Err(error) => Err(ErrorBodyError::Metadata(error)),
+                Ok(()) => match received.bytes_limited(ERROR_BODY_LIMIT).await {
+                    Err(error) => Err(ErrorBodyError::Read(error)),
+                    Ok(bytes) => <Json as Decode<Problem>>::decode_body((), bytes)
+                        .map_err(ErrorBodyError::Decode),
+                },
+            };
+            return Err(Error::Provider(Box::new(ProviderError { meta, document })));
+        }
+        match received.decode().await {
+            Ok(rate) => Ok(RateResponse { rate, meta }),
+            Err(source) => Err(Error::Concord {
+                source,
+                meta: Some(Box::new(meta)),
+            }),
+        }
     }
 }

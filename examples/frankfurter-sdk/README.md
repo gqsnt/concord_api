@@ -28,16 +28,16 @@ let api = Frankfurter::new(http);
 // Offline/self-hosted alternative: api.with_base_url("http://127.0.0.1:3000")?;
 
 // A: latest available pair observation. This need not be today's rate.
-let latest = api.latest_pair("EUR", "USD").fetch().await?;
+let latest = api.latest_pair("EUR", "USD").send().await?;
 println!("{}: {} EUR/USD", latest.rate.date, latest.rate.rate);
 
 // B: a historical observation. Read the returned date; don't substitute the request date.
 let date: Date = "2024-01-15".parse()?;
-let historical = api.historical_pair("EUR", "USD", date).fetch().await?;
+let historical = api.historical_pair("EUR", "USD", date).send().await?;
 println!("{}: {} EUR/USD", historical.rate.date, historical.rate.rate);
 
 // Optional filter; the two original callers above do not change.
-let ecb = api.latest_pair("EUR", "USD").set_providers("ECB").fetch().await?;
+let ecb = api.latest_pair("EUR", "USD").set_providers("ECB").send().await?;
 assert!(ecb.meta.status.is_success());
 # Ok(()) }
 ```
@@ -73,7 +73,10 @@ parser and representation; the SDK does not implement a decimal parser or genera
 
 ## Errors and completion
 
-Use `.fetch().await` for `Result<RateResponse, Error>`:
+Every request's `.send().await` returns `Result<RateResponse, Error>`, where `Error` is this
+crate's error (the client declares `send SendPolicy;`). Only `with_base_url` and `.prepare()`
+return `concord::Error`; signatures show both types as a bare `Error`, and this crate's
+`Error` implements `From<concord::Error>`, so `?` converts. The cases:
 
 - `Error::Provider` represents every non-2xx status. It retains the actual status, version,
   headers (including retry hints), and generated operation identity. Its `document` is
@@ -88,7 +91,7 @@ Use `.fetch().await` for `Result<RateResponse, Error>`:
 ```no_run
 use concord_sdk_frankfurter::{Error, Frankfurter};
 # async fn handle(api: &Frankfurter) {
-match api.latest_pair("EUR", "ABC").fetch().await {
+match api.latest_pair("EUR", "ABC").send().await {
     Ok(observation) => println!("{}", observation.rate.rate),
     Err(Error::Provider(error)) => {
         eprintln!("HTTP {}", error.meta.status);
@@ -110,10 +113,10 @@ cancels local processing and produces no completion result. Success bodies are b
 by Concord's finite JSON decoder and have **no SDK byte cap**; configure a transport
 timeout and use a trusted endpoint. Error-body limits do not limit success bodies.
 
-Generated `.prepare()` and `.send()` remain available; use `.prepare()?.receive()` to
-inspect the response head before consuming it. `.send()` yields only
-`Rate` and Concord's error; it does not run the SDK's typed provider-error adapter. The
-ordinary documented path is `.fetch()`. Errors and metadata redact header values and
+`.send()` is the one terminal method. `.prepare()` gives Concord's native request: use
+`.prepare()?.receive()` to inspect the response head before consuming it. Its own
+`.prepare()?.send()` yields only `Rate` and `concord::Error`; it does not run the SDK's typed
+provider-error adapter. Errors and metadata redact header values and
 provider messages from their own `Debug`/`Display`; explicit `Problem` and header access
 is unredacted.
 
@@ -122,6 +125,6 @@ is unredacted.
 `tests/protocol.rs` asserts HTTP method, target, headers and exact empty request bodies,
 decimal policy, provider errors and failed body completion. `tests/workflows.rs` exercises
 both public workflows and optional-filter/unknown-field compatibility against
-`examples/testserver`, including nested provider attribution through both `.fetch()` and
-`.send()`. No live provider requests or credentials are used by tests. The maintenance scope
+`examples/testserver`, including nested provider attribution through both `.send()` and
+`.prepare()?.send()`. No live provider requests or credentials are used by tests. The maintenance scope
 and verification record are in [MAINTENANCE.md](MAINTENANCE.md).

@@ -12,7 +12,7 @@ async fn workflow_a_read_latest_pair_with_exact_decimal_and_observation_date() {
     let server = TestServer::start(|_| json(200, LATEST)).await;
     let observation = client(&server)
         .latest_pair("EUR", "USD")
-        .fetch()
+        .send()
         .await
         .unwrap();
     assert_eq!(observation.rate.base, "EUR");
@@ -30,7 +30,7 @@ async fn workflow_b_read_historical_pair_without_substituting_the_requested_date
     let requested: Date = "2024-01-16".parse().unwrap();
     let observation = client(&server)
         .historical_pair("EUR", "USD", requested)
-        .fetch()
+        .send()
         .await
         .unwrap();
     assert_eq!(observation.rate.date, "2024-01-15".parse::<Date>().unwrap());
@@ -52,12 +52,12 @@ async fn optional_filter_and_unknown_fields_keep_existing_rate_callers_working()
         TestServer::start(|_| json(200, include_bytes!("../fixtures/extended.json"))).await;
     let api = client(&server);
     let original = api.latest_pair("EUR", "USD");
-    let plain = original.clone().fetch().await.unwrap();
-    let filtered = original.set_providers("ECB").fetch().await.unwrap();
+    let plain = original.clone().send().await.unwrap();
+    let filtered = original.set_providers("ECB").send().await.unwrap();
     let historical = api
         .historical_pair("EUR", "USD", "2026-03-25".parse::<Date>().unwrap())
         .set_providers("ECB")
-        .fetch()
+        .send()
         .await
         .unwrap();
     assert_eq!(plain.rate, filtered.rate);
@@ -87,22 +87,27 @@ async fn unknown_provider_attribution_preserves_existing_rate_callers() {
         rate: "1.1568".parse().unwrap(),
     };
     let latest = api.latest_pair("EUR", "USD");
-    assert_eq!(latest.clone().fetch().await.unwrap().rate, expected);
+    assert_eq!(latest.clone().send().await.unwrap().rate, expected);
     assert_eq!(
         latest
             .clone()
             .set_providers("ECB")
-            .fetch()
+            .send()
             .await
             .unwrap()
             .rate,
         expected
     );
-    assert_eq!(latest.send().await.unwrap(), expected);
+    // Concord's own path (`prepare()?.send()`: `Rate` and `concord::Error`), which the
+    // generated `send()` was before the client declared `send SendPolicy;`.
+    assert_eq!(latest.prepare().unwrap().send().await.unwrap(), expected);
 
     let historical = api.historical_pair("EUR", "USD", expected.date);
-    assert_eq!(historical.clone().fetch().await.unwrap().rate, expected);
-    assert_eq!(historical.send().await.unwrap(), expected);
+    assert_eq!(historical.clone().send().await.unwrap().rate, expected);
+    assert_eq!(
+        historical.prepare().unwrap().send().await.unwrap(),
+        expected
+    );
 
     let requests = server.requests();
     assert_eq!(requests.len(), 5);
@@ -124,7 +129,7 @@ async fn historical_no_data_is_a_typed_failure_not_a_zero_rate() {
         TestServer::start(|_| json(404, include_bytes!("../fixtures/not-found.json"))).await;
     let result = client(&server)
         .historical_pair("EUR", "ABC", "1999-01-04".parse::<Date>().unwrap())
-        .fetch()
+        .send()
         .await;
     let Error::Provider(error) = result.unwrap_err() else {
         panic!("expected provider error")

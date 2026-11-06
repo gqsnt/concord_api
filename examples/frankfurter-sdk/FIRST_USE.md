@@ -215,3 +215,10 @@ bodies, and the dropped connection.
 
 `cargo test --locked -p concord-sdk-frankfurter --test first_use`: 24 passed, 0 failed
 (14 for outcome A, 8 for outcome B, 2 extra checks).
+
+## Between waves 2-3 (coordinator integration)
+
+The client now declares `send SendPolicy;`: the generated `send()` returns
+`Result<RateResponse, Error>` and the `fetch()` methods described above were removed. The
+tests in `tests/first_use.rs` call `.send()`; the Concord-only check now uses
+`prepare()?.send()`. Details and each test change: [INTEGRATION.md](INTEGRATION.md).

@@ -87,3 +87,9 @@ CARGO_BUILD_JOBS=5 CARGO_TARGET_DIR=/home/canarit/projects/Concord_Consolidation
 - New fixture is covered by `text: unset` in `git check-attr text`.
 - No live provider calls, credentials or secrets. This is offline compatibility
   evidence, not provider conformance or rate-accuracy verification.
+
+## Between waves 2-3 (coordinator integration)
+
+`fetch()` is now the generated `send()` (client statement `send SendPolicy;`). The
+maintenance test calls `.send()`, and its Concord-only check calls `prepare()?.send()`;
+expected values are unchanged. See [INTEGRATION.md](INTEGRATION.md).
