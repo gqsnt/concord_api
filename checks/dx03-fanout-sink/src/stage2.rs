@@ -2,6 +2,11 @@
 //!
 //! Resume tokens own their job, sink and completed receipts. They are in-memory tokens,
 //! not a crash-recovery journal; do not drop an export future if you need its resume token.
+//!
+//! Each part is read by the SDK's validated part reader (`ResultPartReader`: the job's
+//! dialect, the selected header, the link's `maxRecords`, provider error documents and the
+//! declared record count). This module stages rows, aborts on any failure and publishes a
+//! part only after the SDK returned its validated completion.
 
 use std::{
     collections::BTreeMap,
@@ -13,12 +18,10 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use concord::csv::CsvReader;
 use concord_example_salesforce_sdk::{
     OrgContext, ProtocolError, ProtocolErrorKind, SfError,
     bulk::{BulkDialect, JobState},
-    bulk_query::{BulkQueryJob, ManifestCursor, RESULTS, ResultPart},
-    csv::{CsvError, SalesforceCsv},
+    bulk_query::{BulkQueryJob, ManifestCursor, ResultPart, ResultPartReader},
     ids::{QueryJobId, RecordId},
     soql::FieldPath,
 };
@@ -132,7 +135,8 @@ pub struct PartFailure {
 
 /// Completion ledger and an owned resume token tied to the same job and sink.
 pub struct ExportReport<S> {
-    job: BulkQueryJob,
+    /// The job's validated part reader (it holds the job).
+    parts: ResultPartReader<AccountRow>,
     sink: S,
     completed: BTreeMap<u64, PartReceipt>,
     redo: Vec<ResultPart>,
@@ -186,14 +190,14 @@ impl<S: PartSink> ExportReport<S> {
         self.result_requests = 0;
         self.discovery_requests = 0;
         self.outcomes.clear();
-        let job = &self.job;
+        let parts = &self.parts;
         let sink = &self.sink;
 
         if !self.redo.is_empty() {
             let mut jobs = independent(
                 std::mem::take(&mut self.redo),
                 limits.jobs(limits.result_requests),
-                |part| download_part(job, sink, part),
+                |part| download_part(parts, sink, part),
             );
             while let Some(result) = jobs.next().await {
                 match result {
@@ -206,28 +210,34 @@ impl<S: PartSink> ExportReport<S> {
                     }),
                 }
             }
-            let mut report = jobs.finish();
-            self.result_requests += report.progress.admitted;
-            self.outcomes.push(report.outcome);
-            for failed in std::mem::take(&mut report.unemitted_errors) {
+            // Lossless: every part of the report is moved out, nothing cloned or taken.
+            let resume = jobs.finish().into_resume();
+            self.result_requests += resume.progress.admitted;
+            self.outcomes.push(resume.outcome);
+            for failed in resume.unemitted_errors {
                 self.failures.push(PartFailure {
                     part: failed.key,
                     error: failed.value,
                 });
             }
-            let (retained, redo) = report.into_rerun();
-            for done in retained {
+            for done in resume.retained {
                 self.completed.insert(done.key.ordinal, done.value);
             }
-            self.redo = redo.collect();
+            // Attempted parts (failed or cancelled), then the never-admitted rest of the plan.
+            self.redo = resume
+                .rerun
+                .into_iter()
+                .map(|entry| entry.key)
+                .chain(resume.rest.into_iter().flatten())
+                .collect();
         }
 
         // The two phases share one result-request budget and never overlap their windows.
         let remaining = limits.result_requests.get() - self.result_requests as usize;
-        if let (Some(from), Some(remaining)) =
-            (self.discovery.clone(), NonZeroUsize::new(remaining))
+        if let Some(remaining) = NonZeroUsize::new(remaining)
+            && let Some(from) = self.discovery.take()
         {
-            let manifests = job.result_manifests();
+            let manifests = parts.job().result_manifests();
             let mut jobs = manifest_jobs(
                 from,
                 JobOptions::new(
@@ -235,7 +245,7 @@ impl<S: PartSink> ExportReport<S> {
                     limits.jobs(remaining),
                 ),
                 |key| manifests.fetch(key),
-                |part| download_part(job, sink, part),
+                |part| download_part(parts, sink, part),
             );
             while let Some(result) = jobs.next().await {
                 match result {
@@ -249,22 +259,28 @@ impl<S: PartSink> ExportReport<S> {
                     Err(JobsError::Discovery(error)) => self.discovery_error = Some(error),
                 }
             }
-            let mut report = jobs.finish();
-            self.result_requests += report.progress.jobs.admitted;
-            self.discovery_requests = report.discovery.calls;
-            self.outcomes.push(report.outcome);
-            self.discovery = report.discovery.resume.clone();
-            for failed in std::mem::take(&mut report.unemitted_errors) {
+            let resume = jobs.finish().into_resume();
+            self.result_requests += resume.progress.jobs.admitted;
+            self.discovery_requests = resume.discovery.calls;
+            self.outcomes.push(resume.outcome);
+            for failed in resume.unemitted_errors {
                 self.failures.push(PartFailure {
                     part: failed.key,
                     error: failed.value,
                 });
             }
-            let (retained, redo) = report.into_rerun();
-            for done in retained {
+            for done in resume.retained {
                 self.completed.insert(done.key.ordinal, done.value);
             }
-            self.redo.extend(redo);
+            // Known work (attempted, then queued), in discovery order; then undiscovered work.
+            self.redo.extend(
+                resume
+                    .rerun
+                    .into_iter()
+                    .map(|entry| entry.key)
+                    .chain(resume.queued),
+            );
+            self.discovery = resume.discovery.resume;
         }
         self
     }
@@ -312,8 +328,12 @@ pub async fn export<S: PartSink>(
         info.column_delimiter.ok_or(ExportError::MissingDialect)?,
         info.line_ending.ok_or(ExportError::MissingDialect)?,
     );
+    let columns =
+        ACCOUNT_COLUMNS.map(|name| FieldPath::parse(name).expect("static API field name"));
+    let job = BulkQueryJob::attach(ctx, job_id, dialect);
+    let parts = ResultPartReader::new(&job, &columns).map_err(SfError::from)?;
     Ok(ExportReport {
-        job: BulkQueryJob::attach(ctx, job_id, dialect),
+        parts,
         sink,
         completed: BTreeMap::new(),
         redo: Vec::new(),
@@ -329,50 +349,25 @@ pub async fn export<S: PartSink>(
 }
 
 async fn download_part<S: PartSink>(
-    job: &BulkQueryJob,
+    parts: &ResultPartReader<AccountRow>,
     sink: &S,
     part: ResultPart,
 ) -> Result<PartReceipt, PartError> {
-    let set = job.open_result_set(&part.link).await?;
-    let columns =
-        ACCOUNT_COLUMNS.map(|name| FieldPath::parse(name).expect("static API field name"));
-    let reader = SalesforceCsv::new(job.dialect())
-        .result_reader(&columns)
-        .map_err(|error| SfError::Csv(Box::new(error)))?;
-    let reader = if let Some(max) = part.link.max_records {
-        CsvReader::new(reader.options().clone().max_records(u64::from(max.get())))
-            .map_err(|error| SfError::Csv(Box::new(CsvError::Config(error))))?
-    } else {
-        reader
-    };
-    let mut rows = match reader.open_for::<AccountRow>(set.response, RESULTS) {
-        Ok(rows) => rows,
-        Err(error) => return Err(SfError::from_open(error).await.into()),
-    };
+    // Status/provider error document, head, `Sforce-*` headers and `maxRecords`: the SDK's.
+    let mut rows = parts.open(&part.link).await?;
     let mut staged = sink.begin(part.ordinal)?;
     while let Some(row) = rows.next().await {
-        let row = row.map_err(|error| SfError::Read(Box::new(error)))?;
-        staged.push(&row)?;
+        staged.push(&row?)?;
     }
-    let position = rows.position();
-    if let Some(declared) = set.declared_records
-        && declared != position.records
-    {
-        return Err(SfError::Protocol(Box::new(ProtocolError::new(
-            RESULTS,
-            ProtocolErrorKind::RecordCountMismatch {
-                declared,
-                parsed: position.records,
-            },
-        )))
-        .into());
-    }
+    // Only a validated end of input (declared count checked) completes; `staged` aborts on
+    // drop for every error above or here.
+    let complete = rows.finish()?;
     staged.publish()?;
     Ok(PartReceipt {
         ordinal: part.ordinal,
-        rows: position.records,
-        bytes: position.bytes,
-        declared_records: set.declared_records,
+        rows: complete.records,
+        bytes: complete.bytes,
+        declared_records: complete.declared_records,
     })
 }
 

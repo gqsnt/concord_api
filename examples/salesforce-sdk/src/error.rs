@@ -32,6 +32,9 @@ pub enum SfError {
     Open(Box<OpenError>),
     /// A CSV body failed while it was read (transport, format, decode or limit).
     Read(Box<ReadError>),
+    /// A result part's completion was asked for before its validated end
+    /// ([`crate::bulk_query::ResultPartRows::finish`]).
+    Incomplete(Box<IncompletePart>),
     /// A job ended `Failed` or `Aborted`.
     Job(Box<JobFailure>),
     /// A CSV configuration or encoding failure before anything was sent.
@@ -116,6 +119,12 @@ impl From<ReadError> for SfError {
     }
 }
 
+impl From<IncompletePart> for SfError {
+    fn from(e: IncompletePart) -> Self {
+        SfError::Incomplete(Box::new(e))
+    }
+}
+
 impl From<crate::csv::CsvError> for SfError {
     fn from(e: crate::csv::CsvError) -> Self {
         SfError::Csv(Box::new(e))
@@ -131,6 +140,7 @@ impl fmt::Display for SfError {
             SfError::Link(e) => fmt::Display::fmt(e, f),
             SfError::Open(e) => fmt::Display::fmt(e, f),
             SfError::Read(e) => fmt::Display::fmt(e, f),
+            SfError::Incomplete(e) => fmt::Display::fmt(e, f),
             SfError::Job(e) => fmt::Display::fmt(e, f),
             SfError::Csv(e) => fmt::Display::fmt(e, f),
         }
@@ -146,6 +156,7 @@ impl fmt::Debug for SfError {
             SfError::Link(e) => f.debug_tuple("Link").field(e).finish(),
             SfError::Open(e) => f.debug_tuple("Open").field(e).finish(),
             SfError::Read(e) => f.debug_tuple("Read").field(e).finish(),
+            SfError::Incomplete(e) => f.debug_tuple("Incomplete").field(e).finish(),
             SfError::Job(e) => f.debug_tuple("Job").field(e).finish(),
             SfError::Csv(e) => f.debug_tuple("Csv").field(e).finish(),
         }
@@ -403,6 +414,70 @@ impl fmt::Display for ProtocolError {
 }
 
 impl std::error::Error for ProtocolError {}
+
+/// A result part that did not reach its validated end when its completion was asked for: the
+/// caller stopped reading before the end of input, or a read error, a limit or a record-count
+/// mismatch ended it (that error was returned by the part's `next`). Its rows are not a complete
+/// part.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct IncompletePart {
+    operation: &'static str,
+    failed: bool,
+    records: u64,
+    bytes: u64,
+}
+
+impl IncompletePart {
+    pub(crate) fn new(
+        operation: &'static str,
+        failed: bool,
+        position: concord::stream::Position,
+    ) -> Self {
+        Self {
+            operation,
+            failed,
+            records: position.records,
+            bytes: position.bytes,
+        }
+    }
+
+    /// The operation.
+    pub fn operation(&self) -> &'static str {
+        self.operation
+    }
+
+    /// Whether an error ended the part (`false`: it was not read to its end).
+    pub fn failed(&self) -> bool {
+        self.failed
+    }
+
+    /// Rows delivered before it stopped.
+    pub fn records(&self) -> u64 {
+        self.records
+    }
+
+    /// CSV bytes consumed before it stopped.
+    pub fn bytes(&self) -> u64 {
+        self.bytes
+    }
+}
+
+impl fmt::Display for IncompletePart {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let why = if self.failed {
+            "ended by an error"
+        } else {
+            "not read to its end"
+        };
+        write!(
+            f,
+            "{}: result part incomplete ({why}, {} records delivered)",
+            self.operation, self.records
+        )
+    }
+}
+
+impl std::error::Error for IncompletePart {}
 
 /// Which returned link was refused.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

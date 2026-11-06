@@ -1,11 +1,19 @@
-//! Sending a prepared operation while keeping selected response metadata: Concord's documented
-//! native route (`into_parts`, one `execute`, `Decoder::decode`/`finish`), with status errors
-//! turned into Salesforce error documents.
+//! Sending a prepared operation while keeping selected response metadata: one
+//! `Prepared::receive` (a single execute, any status, body unread), the head read into a value the
+//! SDK owns, then the declared handling (`Received::decode`), with status errors turned into
+//! Salesforce error documents.
 
-use concord::Prepared;
 use concord::reqwest::header::HeaderMap;
+use concord::{Operation, Prepared};
 
 use crate::error::SfError;
+
+/// The name of the declared endpoint that produced a body (`SalesforceApi.bulk_query.job.results`),
+/// for the SDK's own protocol errors about it. Generated endpoints always attach their identity;
+/// the `Option` exists only for native bodies, which this SDK does not create.
+pub(crate) fn operation_name(operation: Option<Operation>) -> &'static str {
+    operation.map_or("<undeclared operation>", |op| op.name())
+}
 
 /// `Sforce-Limit-Info: api-usage=USED/LIMIT[; api-bursts=..]`, returned by every REST request.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -35,23 +43,18 @@ impl ApiUsage {
 }
 
 /// Sends `prepared` once and decodes it with its declared format, returning the value and the
-/// response headers' [`ApiUsage`]. A non-2xx status becomes [`SfError::Api`].
+/// response headers' [`ApiUsage`] (read from the head before the body, whatever the status). A
+/// non-2xx status becomes [`SfError::Api`]; a transport failure (no response) stays
+/// [`SfError::Concord`].
 pub(crate) async fn send_with_usage<T>(
     prepared: Prepared<T>,
 ) -> Result<(T, Option<ApiUsage>), SfError> {
-    let (client, request, decoder) = prepared.into_parts();
-    match client.execute(request).await {
-        Err(e) => match decoder.finish(Err(e)).await {
-            Ok(value) => Ok((value, None)),
-            Err(error) => Err(SfError::from_concord(error).await),
-        },
-        Ok(response) => {
-            let usage = ApiUsage::from_headers(response.headers());
-            match decoder.decode(response).await {
-                Ok(value) => Ok((value, usage)),
-                Err(error) => Err(SfError::from_concord(error).await),
-            }
-        }
+    // `receive` fails only when no response arrived (a transport error naming the endpoint).
+    let received = prepared.receive().await.map_err(SfError::from)?;
+    let usage = ApiUsage::from_headers(received.head().headers());
+    match received.decode().await {
+        Ok(value) => Ok((value, usage)),
+        Err(error) => Err(SfError::from_concord(error).await),
     }
 }
 

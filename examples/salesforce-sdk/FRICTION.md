@@ -58,6 +58,16 @@ output (F1), no bounded known-length encode route (F4), the reader cannot enforc
   per-job delimiter). The status/head checks move from `Decoder` to the reader; the two error
   types (`concord::Error` with endpoint name vs `OpenError` with an SDK label) have to be unified
   in the SDK's error type.
+- **Since the response/body boundary (Phase A).** The CSV endpoints are declared `-> stream`:
+  `send()` returns the unread 2xx body (`concord::Incoming`) with the declared identity, and a
+  non-2xx is a `Status` error that `SfError::from_concord` reads as the error document. The
+  runtime reader opens the `Incoming` (`reader.open(body)`), so reader errors name
+  `SalesforceApi.bulk_query.job.results` (or the ingest result endpoint) without an SDK label;
+  the `RESULTS` constant and `ResultFile::operation` are gone. Result parts are read by one SDK
+  adapter (`bulk_query::ResultPartReader`) for both the collected chain and streaming consumers;
+  it owns the dialect, header, `maxRecords`, error documents and the declared-count check, and
+  returns a completion only after the validated end. The metadata send (`Sforce-Limit-Info`) is
+  `receive()` + `head()` + `decode()` instead of `into_parts`/`execute`/`finish`.
 
 ## F3 — Writer media type `text/csv; header=present` vs the provider's `text/csv` (friction, minor)
 

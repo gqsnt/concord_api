@@ -3,12 +3,13 @@
 use std::{convert::Infallible, error::Error as StdError, fmt};
 
 use concord::{
+    Encoded,
     csv::{
         Csv, CsvConfigError, CsvOptions, CsvReader, CsvRecords, CsvWriter, HasHeader, HeaderMode,
         ReadMapping, Semicolon, StreamRows,
     },
     reqwest::{self, StatusCode, header::HeaderValue},
-    stream::{OpenError, from_iter},
+    stream::{OpenError, Upload, from_iter},
 };
 use serde::{Deserialize, Serialize};
 
@@ -34,10 +35,15 @@ concord::api! {
             path "reports/{id}";
             response ReportCsv;
         }
-        /// Download a job export; opened with runtime options by `open_export`.
-        GET download(id: String) { path "jobs/{id}/export"; }
-        /// Upload a job export; the runtime writer fills the request body.
-        POST upload(id: String) { path "jobs/{id}/export"; }
+        /// Download a job export: the unread body, opened with the job's runtime dialect by
+        /// `open_export`.
+        GET download(id: String) -> stream { path "jobs/{id}/export"; }
+        /// Upload a job export encoded at run time: the body carries the runtime writer's
+        /// media type.
+        POST upload(id: String, body export: Upload) {
+            path "jobs/{id}/export";
+            request Encoded;
+        }
     }
 }
 
@@ -133,21 +139,23 @@ pub async fn open_export(
     job: &JobDescriptor,
 ) -> Result<ExportDownload, ExportError> {
     let reader = job.reader()?;
-    let response = api
+    // One execute; any status comes back with its body unread and the declared identity.
+    let received = api
         .download(id)
         .prepare()
         .map_err(ExportError::Request)?
-        .send_raw()
+        .receive()
         .await
         .map_err(ExportError::Request)?;
+    let head = received.head();
     let metadata = ExportMetadata {
-        status: response.status(),
-        export_id: response.headers().get("x-export-id").cloned(),
-        request_id: response.headers().get("x-request-id").cloned(),
+        status: head.status(),
+        export_id: head.headers().get("x-export-id").cloned(),
+        request_id: head.headers().get("x-request-id").cloned(),
     };
-    let rows = reader
-        .open_for(response, "Exports.download")
-        .map_err(ExportError::Open)?;
+    // The runtime reader requires a 2xx status and checks the head before polling the body;
+    // its errors name `Exports.download`.
+    let rows = reader.open(received).map_err(ExportError::Open)?;
     Ok(ExportDownload { metadata, rows })
 }
 
@@ -163,14 +171,9 @@ pub async fn upload_export(
     let upload = writer
         .upload(StreamRows::new(source).with_columns(job.columns.clone()))
         .map_err(ExportError::Encode)?;
-    let (client, mut request, decoder) = api
-        .upload(id)
-        .prepare()
-        .map_err(ExportError::Request)?
-        .into_parts();
-    upload.apply(&mut request);
-    decoder
-        .finish(client.execute(request).await)
+    // The declared body carries the writer's media type (`request Encoded`).
+    api.upload(id, upload)
+        .send()
         .await
         .map_err(ExportError::Request)
 }
