@@ -448,3 +448,21 @@ Caller change: field access becomes methods (`meta.status()`). Test edits field 
 plus one added `Debug`-has-no-header-value assertion per SDK; 280 tests before and after. Gaps:
 `Error::meta()` added (`82496ad1`, two consumers: Nager, Frankfurter); the wrapper pattern is
 documented (AUTHOR_GUIDE §5.11); by-value `into_parts` and `PartialEq` deferred (no consumer).
+
+**D-W34-M1 — ntfy on the shared SSE reader (Opus subagent `ac82248d…`, `4594f72b`, merged
+`aa099e97`).** Production `src/` 608 → 417 non-comment lines (`src/sse.rs` and the hand-written
+head check removed; ~30 lines of workaround added). Public API unchanged; `SseFormat` delegates
+its head check to `concord::sse::Sse` and reads with `SseReader::read` at ntfy's 16 MiB bound.
+Behaviour changes (probed on old and new code; listed in `examples/ntfy-sdk/INTEGRATION.md`):
+the reader's labels and positions for truncation and invalid UTF-8; bodies ending after `id:`/
+`retry:` without a blank line, or a partial BOM, now fail; the event type counts toward the bound;
+the head check accepts `us-ascii` and refuses a repeated or malformed `charset`. Test edits: one
+expected label, one invalid-UTF-8 position; two tests added. 50 tests (was 48), 3/3 coordinator
+runs. Gaps it reported, dispositions:
+
+| ID | Gap | Disposition |
+|---|---|---|
+| W34-G1 | the reader does not report the line that ended an event; ntfy counts line ends in its byte source to keep payload-error lines (~30 lines, a second pass) | DEFER: one consumer (ntfy's own diagnostic choice); a line counter on `SseEvents` would remove it |
+| W34-G2 | keeping Concord's `Error` for a broken body needs a `ByteSource` over `Incoming::chunk`; OpenAI and ntfy each wrote one | DEFER: both SDKs keep it to preserve their `Error::Concord(Transport)` variant; `SseReader::open` already gives a URL-free `ReadError` naming the operation |
+| W34-G3 | `SseReader::read` takes no operation name | DEFER with G4 |
+| W34-G4 | a custom `Incremental` format cannot open an already-checked `Incoming` with non-default limits (`open_checked` is crate-private in all four readers; W3-5) | DEFER: one consumer per reader so far; the public path (`-> stream` + a configured reader's `open`) works, at the cost of the format's typed output; revisit if a wave 4/5 SDK writes its own streaming format |
