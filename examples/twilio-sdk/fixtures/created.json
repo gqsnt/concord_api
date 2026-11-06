@@ -1,0 +1,18 @@
+{
+  "sid": "SM_fixture_message",
+  "account_sid": "AC_fixture_account",
+  "api_version": "2010-04-01",
+  "status": "queued",
+  "body": "Hello café & + 🌍",
+  "from": "+15005550001",
+  "to": "+15005550006",
+  "error_code": null,
+  "error_message": null,
+  "date_created": "Fri, 06 Nov 2026 10:00:00 +0000",
+  "date_sent": null,
+  "num_segments": "1",
+  "num_media": "0",
+  "price": null,
+  "price_unit": null,
+  "uri": "/2010-04-01/Accounts/AC_fixture_account/Messages/SM_fixture_message.json"
+}
