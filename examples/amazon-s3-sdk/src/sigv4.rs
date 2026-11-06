@@ -35,7 +35,7 @@ pub const SERVICE: &str = "s3";
 ///
 /// `Debug` shows the access key id (it is printed in every `Authorization` header) and never the
 /// secret or the token. Obtaining and refreshing credentials is the application's: a new value
-/// is passed to [`crate::S3Client::with_credentials`] or to one request.
+/// is passed to [`crate::S3Client::with_credentials`] (for one request too: a client snapshot).
 #[derive(Clone)]
 pub struct Credentials {
     access_key_id: Arc<str>,

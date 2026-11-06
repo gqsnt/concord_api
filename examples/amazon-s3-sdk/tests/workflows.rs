@@ -15,8 +15,8 @@ use common::*;
 use concord_example_testserver::TestServer;
 use concord_pagination::Resume;
 use concord_sdk_amazon_s3::{
-    BucketName, ByteRange, ContentType, ETag, HttpDate, MaxKeys, Metadata, ObjectKey, S3Error,
-    StorageClass,
+    AnyObject, BucketName, ByteRange, Bytes, ContentType, ETag, HttpDate, MaxKeys, Metadata,
+    ObjectKey, S3Error, StorageClass,
 };
 
 const BUCKET: &str = "examplebucket";
@@ -88,8 +88,8 @@ async fn workflow_a_inventory_head_and_conditional_partial_reads() {
     // 1. Inventory: every key under the prefix, over S3's pages (opaque continuation token).
     let listing = bucket
         .list_objects_v2()
-        .prefix(PREFIX)
-        .max_keys(MaxKeys::new(2).unwrap());
+        .set_prefix(PREFIX)
+        .set_max_keys(MaxKeys::new(2).unwrap());
     let mut pages = listing.pages();
     let mut inventory = Vec::new();
     let mut tokens = Vec::new();
@@ -161,7 +161,7 @@ async fn workflow_a_inventory_head_and_conditional_partial_reads() {
     // 4. Conditional GET with the tag we hold: 304, nothing to download, validators kept.
     let error = bucket
         .get_object(key.clone())
-        .if_none_match(listed_etag.clone())
+        .set_if_none_match(listed_etag.clone())
         .send()
         .await
         .unwrap_err();
@@ -174,7 +174,7 @@ async fn workflow_a_inventory_head_and_conditional_partial_reads() {
     // Also by date: unchanged since its Last-Modified.
     let error = bucket
         .get_object(key.clone())
-        .if_modified_since(last_modified)
+        .set_if_modified_since(last_modified)
         .send()
         .await
         .unwrap_err();
@@ -184,8 +184,8 @@ async fn workflow_a_inventory_head_and_conditional_partial_reads() {
     let stale = ETag::parse("\"an-older-version\"").unwrap();
     let error = bucket
         .get_object(key.clone())
-        .if_match(stale)
-        .range(ByteRange::inclusive(0, 6).unwrap())
+        .set_if_match(stale)
+        .set_range(ByteRange::inclusive(0, 6).unwrap())
         .send()
         .await
         .unwrap_err();
@@ -195,8 +195,8 @@ async fn workflow_a_inventory_head_and_conditional_partial_reads() {
     // 6. One byte range of the version we inspected (If-Match guards it): 206 with metadata.
     let part = bucket
         .get_object(key.clone())
-        .if_match(listed_etag.clone())
-        .range(ByteRange::inclusive(19, 25).unwrap())
+        .set_if_match(listed_etag.clone())
+        .set_range(ByteRange::inclusive(19, 25).unwrap())
         .send()
         .await
         .unwrap();
@@ -214,7 +214,7 @@ async fn workflow_a_inventory_head_and_conditional_partial_reads() {
     // The last 6 bytes, and the whole object when it changed after a given date.
     let tail = bucket
         .get_object(key.clone())
-        .range(ByteRange::suffix(6).unwrap())
+        .set_range(ByteRange::suffix(6).unwrap())
         .send()
         .await
         .unwrap();
@@ -223,7 +223,7 @@ async fn workflow_a_inventory_head_and_conditional_partial_reads() {
     let earlier = HttpDate::parse("Sun, 01 Mar 2026 00:00:00 GMT").unwrap();
     let whole = bucket
         .get_object(key)
-        .if_modified_since(earlier)
+        .set_if_modified_since(earlier)
         .send()
         .await
         .unwrap();
@@ -251,8 +251,8 @@ async fn workflow_a_resumes_an_interrupted_inventory_from_its_token() {
     let listing = s3
         .bucket(BucketName::new(BUCKET).unwrap())
         .list_objects_v2()
-        .prefix(PREFIX)
-        .max_keys(MaxKeys::new(2).unwrap());
+        .set_prefix(PREFIX)
+        .set_max_keys(MaxKeys::new(2).unwrap());
 
     // A budget of one page: the first page, then the token to continue with.
     let incomplete = listing
@@ -270,7 +270,7 @@ async fn workflow_a_resumes_an_interrupted_inventory_from_its_token() {
     assert_eq!(token.as_str(), TOKEN);
     // Later, perhaps in another process: continue from the stored token.
     let rest = listing
-        .continuation_token(token)
+        .set_continuation_token(token)
         .pages()
         .items()
         .collect_complete()
@@ -299,12 +299,12 @@ async fn workflow_b_put_finite_bytes_then_read_them_back() {
 
     // 1. Put: one request, the whole body, created only if absent.
     let put = bucket
-        .put_object(key.clone(), body.clone(), content_type.clone())
+        .put_object(key.clone(), Bytes::from(body.clone()), content_type.clone())
+        .set_cache_control("no-cache")
+        .set_storage_class(StorageClass::StandardIa)
+        .set_if_none_match(AnyObject)
         .metadata(metadata.clone())
-        .cache_control("no-cache")
-        .storage_class(StorageClass::StandardIa)
-        .if_absent()
-        .send()
+        .send(&s3)
         .await
         .unwrap();
     let put_etag = put.etag.clone().unwrap();
@@ -359,8 +359,8 @@ async fn workflow_b_put_finite_bytes_then_read_them_back() {
 
     // 4. The same create-only write again: the object exists, 412, nothing overwritten.
     let error = bucket
-        .put_object(key, b"other".to_vec(), content_type)
-        .if_absent()
+        .put_object(key, Bytes::from_static(b"other"), content_type)
+        .set_if_none_match(AnyObject)
         .send()
         .await
         .unwrap_err();
@@ -403,8 +403,8 @@ async fn changed_key_and_range_are_signed_on_the_wire_without_affecting_other_ca
     ] {
         let mut pages = bucket
             .list_objects_v2()
-            .prefix(PREFIX)
-            .max_keys(MaxKeys::new(2).unwrap())
+            .set_prefix(PREFIX)
+            .set_max_keys(MaxKeys::new(2).unwrap())
             .pages();
         let first_page = pages.next_page().await.unwrap().unwrap();
         assert_eq!(first_page.items.len(), 2);
@@ -425,7 +425,7 @@ async fn changed_key_and_range_are_signed_on_the_wire_without_affecting_other_ca
         assert_eq!(head.content_length, Some(26));
         let part = bucket
             .get_object(ObjectKey::new(key).unwrap())
-            .range(ByteRange::inclusive(first, last).unwrap())
+            .set_range(ByteRange::inclusive(first, last).unwrap())
             .send()
             .await
             .unwrap();

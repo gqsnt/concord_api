@@ -121,3 +121,19 @@ still return `Ok(None)` after an error, so this suite's
 `a_interrupted_body_requires_caller_to_remember_failure` is unchanged and still passes. The
 bodyless-HEAD harness limitation was answered in the test server (`Body::HeadOnly`), which the
 author's test support now uses; this suite's `no_body_response` is unchanged.
+
+## Coordinator note: generated builders (between waves 2-3, after the value-form policy)
+
+The SDK's builders are now the generated ones, and `tests/first_use.rs` was migrated
+mechanically. Its predictions and its trace above describe the earlier API.
+
+What changed in the suite:
+
+- the setters were renamed (`if_match` → `set_if_match`, `range` → `set_range`, `if_absent()` →
+  `set_if_none_match(AnyObject)`, `url_encoded_keys()` → `set_encoding_type(UrlEncoding)`, ...);
+- bodies are now `Bytes`;
+- the metadata put ends with `.metadata(m).send(&s3)`, which is why `bucket()` became
+  `client()` + `bucket()`.
+
+No assertion or expected value changed, and all 13 tests pass. Details: `INTEGRATION.md`,
+"Between waves 2-3 (after the value-form policy)".

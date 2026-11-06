@@ -11,9 +11,9 @@ use concord::reqwest::StatusCode;
 use concord_example_testserver::{Body, Recorded, Reply, TestServer};
 use concord_pagination::{PagesError, Resume};
 use concord_sdk_amazon_s3::{
-    BodyErrorKind, Bucket, BucketName, ByteRange, Clock, ContentType, ContinuationToken,
-    Credentials, ETag, ErrorBody, MaxKeys, Metadata, ObjectKey, ProtocolErrorKind, Region,
-    S3Client, S3Error, http_client_builder,
+    AnyObject, BodyErrorKind, Bucket, BucketName, ByteRange, Bytes, Clock, ContentType,
+    ContinuationToken, Credentials, ETag, ErrorBody, MaxKeys, Metadata, ObjectKey,
+    ProtocolErrorKind, Region, S3Client, S3Error, UrlEncoding, http_client_builder,
 };
 use hmac::{Hmac, KeyInit, Mac};
 use sha2::{Digest, Sha256};
@@ -38,6 +38,10 @@ const MISSING: &[u8] = include_bytes!("../fixtures/first-use/missing.xml");
 const SLOW_DOWN: &[u8] = include_bytes!("../fixtures/first-use/slow-down.xml");
 
 fn bucket(server: &TestServer) -> Bucket {
+    client(server).bucket(BucketName::new("first-use-bucket").unwrap())
+}
+
+fn client(server: &TestServer) -> S3Client {
     // The SDK documents virtual-host addressing and reqwest's resolve hook for local fakes.
     let http = http_client_builder()
         .no_proxy()
@@ -62,7 +66,6 @@ fn bucket(server: &TestServer) -> Bucket {
     .with_clock(Clock::fixed(
         UNIX_EPOCH + Duration::from_secs(1_700_000_000),
     ))
-    .bucket(BucketName::new("first-use-bucket").unwrap())
 }
 
 fn key() -> ObjectKey {
@@ -72,10 +75,10 @@ fn key() -> ObjectKey {
 fn listing(bucket: &Bucket) -> concord_sdk_amazon_s3::ListObjectsV2 {
     bucket
         .list_objects_v2()
-        .prefix(PREFIX)
-        .max_keys(MaxKeys::new(2).unwrap())
-        .fetch_owner(true)
-        .url_encoded_keys()
+        .set_prefix(PREFIX)
+        .set_max_keys(MaxKeys::new(2).unwrap())
+        .set_fetch_owner(true)
+        .set_encoding_type(UrlEncoding)
 }
 
 fn response(status: u16, id: &str) -> Reply {
@@ -276,8 +279,8 @@ async fn a_inventory_head_and_partial_download() {
     assert_eq!(head.meta.request_id(), Some("synthetic-head-id"));
     let part = bucket
         .get_object(key)
-        .if_match(head.etag.unwrap())
-        .range(ByteRange::inclusive(2, 5).unwrap())
+        .set_if_match(head.etag.unwrap())
+        .set_range(ByteRange::inclusive(2, 5).unwrap())
         .send()
         .await
         .unwrap();
@@ -335,7 +338,7 @@ async fn a_failed_page_retains_items_and_can_resume() {
     };
     assert_eq!(server.requests().len(), 2); // No automatic retry.
     let rest = listing(&bucket)
-        .continuation_token(token)
+        .set_continuation_token(token)
         .pages()
         .items()
         .collect_complete()
@@ -372,7 +375,7 @@ async fn a_page_cap_is_distinct_from_exhaustion() {
         Err(PagesError::Ended { .. })
     ));
     assert_eq!(server.requests().len(), 1);
-    let mut resumed = listing(&bucket).continuation_token(token).pages();
+    let mut resumed = listing(&bucket).set_continuation_token(token).pages();
     assert!(resumed.next_page().await.unwrap().is_some());
     assert!(resumed.next_page().await.unwrap().is_some());
     assert!(resumed.next_page().await.unwrap().is_none());
@@ -401,7 +404,7 @@ async fn a_broken_continuation_contract_is_an_error() {
         })
         .await;
         let mut pages = listing(&bucket(&server))
-            .continuation_token(ContinuationToken::new(LAST_TOKEN).unwrap())
+            .set_continuation_token(ContinuationToken::new(LAST_TOKEN).unwrap())
             .pages();
         match pages.next_page().await.unwrap_err() {
             PagesError::Provider {
@@ -472,7 +475,7 @@ async fn a_cached_copy_and_stale_validator_are_distinct() {
     let bucket = bucket(&server);
     let current = bucket
         .get_object(key())
-        .if_none_match(ETag::parse(ETAG).unwrap())
+        .set_if_none_match(ETag::parse(ETAG).unwrap())
         .send()
         .await
         .unwrap_err();
@@ -487,7 +490,7 @@ async fn a_cached_copy_and_stale_validator_are_distinct() {
     }
     let stale = bucket
         .get_object(key())
-        .if_match(ETag::parse("\"stale\"").unwrap())
+        .set_if_match(ETag::parse("\"stale\"").unwrap())
         .send()
         .await
         .unwrap_err();
@@ -565,7 +568,7 @@ async fn a_range_mismatch_is_rejected_and_200_fallback_is_explicit() {
     let read = || {
         bucket
             .get_object(key())
-            .range(ByteRange::inclusive(2, 5).unwrap())
+            .set_range(ByteRange::inclusive(2, 5).unwrap())
     };
     match read().send().await.unwrap_err() {
         S3Error::Protocol {
@@ -702,17 +705,18 @@ async fn b_put_retrieve_and_conditional_create_conflict() {
         }
     })
     .await;
-    let bucket = bucket(&server);
+    let s3 = client(&server);
+    let bucket = s3.bucket(BucketName::new("first-use-bucket").unwrap());
     let put = bucket
         .put_object(
             key(),
-            PAYLOAD.to_vec(),
+            Bytes::from_static(PAYLOAD),
             ContentType::new("application/octet-stream").unwrap(),
         )
+        .set_cache_control("private, max-age=60")
+        .set_if_none_match(AnyObject)
         .metadata(Metadata::new().insert("author", "first-use").unwrap())
-        .cache_control("private, max-age=60")
-        .if_absent()
-        .send()
+        .send(&s3)
         .await
         .unwrap();
     assert_eq!(put.etag.as_ref().unwrap().as_str(), ETAG);
@@ -737,10 +741,10 @@ async fn b_put_retrieve_and_conditional_create_conflict() {
     let error = bucket
         .put_object(
             key(),
-            b"replacement".to_vec(),
+            Bytes::from_static(b"replacement"),
             ContentType::new("application/octet-stream").unwrap(),
         )
-        .if_absent()
+        .set_if_none_match(AnyObject)
         .send()
         .await
         .unwrap_err();
@@ -787,10 +791,10 @@ async fn b_lost_put_response_is_reconciled_by_reading_without_retry() {
     let error = bucket
         .put_object(
             key(),
-            PAYLOAD.to_vec(),
+            Bytes::from_static(PAYLOAD),
             ContentType::new("application/octet-stream").unwrap(),
         )
-        .if_absent()
+        .set_if_none_match(AnyObject)
         .send()
         .await
         .unwrap_err();
