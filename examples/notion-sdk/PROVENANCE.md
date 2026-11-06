@@ -71,6 +71,33 @@ page, and item-stream failure. All are synthetic scheduling/completion scenarios
 Requests and response content remain offline. Tests establish behavior against these
 fixtures and Concord's loopback transport, **not vendor conformance**.
 
+## Maintenance fixtures (2026-11-06)
+
+The maintenance role rechecked [Retrieve block children](https://developers.notion.com/reference/get-block-children),
+[Block](https://developers.notion.com/reference/block),
+[Page property values](https://developers.notion.com/reference/page-property-values),
+[Introduction](https://developers.notion.com/reference/intro),
+[Pagination](https://developers.notion.com/reference/pagination), and
+[Versioning](https://developers.notion.com/reference/versioning). The contract remains
+2026-03-11. These new fixtures were hand-authored from the documented shapes, not
+downloaded examples or live responses. Unmodeled resource metadata is omitted.
+
+| File under fixtures/ | Documented shape and synthetic additions |
+| --- | --- |
+| `maintenance-page.json` | Page and property-value shapes; all six supported properties, text and equation fragments. `future_progress`, its nested payload/extra fields, and all IDs, dates, text and example.invalid links are invented. The percent-encoded property ID is an opaque retention probe. |
+| `maintenance-children-1.json` | Block-children list with heading_1, paragraph and bulleted_list_item. Three results are fewer than requested page_size=5 but have a continuation. The opaque cursor includes leading space, a literal `%2F`, plus, reserved characters, Unicode, trailing space and tab; its entire value is synthetic. |
+| `maintenance-children-2.json` | Final list page with invented `future_panel` followed by heading_2, heading_3, to_do and divider. The unknown block has_children=true. All payload data and the two-page split are synthetic. |
+
+`tests/maintenance.rs` reuses `unknown-children.json` for that unknown parent's child
+and `error-429.json` for a failed second page. It mutates the new second page's to_do
+checked value to a string for a decoding failure. These cases are synthetic, not
+provider examples. Reply gates force overlapping requests for two version contexts at both
+page boundaries; 2025-09-03 is only a distinct header value, not a tested schema.
+The synthetic response version header must not change subsequent request versions.
+Cursor wire encoding is checked against a literal request target as well as the
+decoded parameter. Returned links are compared unchanged and never fetched.
+The existing `fixtures/** -text` rule protects all three new fixture files.
+
 ## Implementation reading and dependency choices
 
 Concord README, author/caller/custom-format guides, concord-pagination and

@@ -20,6 +20,9 @@ Unknown property, block and rich-text variants keep their entire JSON object in
 `Unknown { kind, raw }` and render an explicit `[unsupported …: type]` marker. This
 preserves parsed JSON values, not original whitespace or object-key order. Malformed
 supported types fail decoding. Non-page wiki query results remain `QueryResult::Other`.
+New discriminators need no SDK registration to be retained as unknowns. An unknown
+block remains an item in provider order, including on later pages, and its
+`has_children` flag still lets callers expand it. Common identity fields remain required.
 
 Excluded: mutations, general filters/sorts, data source schema retrieval, full rich-text
 and property schemas, property-item pagination, comments, Views, and automatic API
@@ -47,6 +50,9 @@ assert!(!format!("{local:?}").contains("synthetic-notion-token"));
 Every declared request receives bearer auth and a version header from its owned
 context. `client.clone().with_version(...)` changes that clone only; concurrent
 clients can share the connection pool. Synthetic tests check version/auth isolation.
+Lazy traversals capture the client's context when created: even if the originating
+client is later consumed by `with_version`, every page of the existing traversal
+keeps its captured version. Response version headers do not reconfigure the client.
 An actual integration would need read-content capabilities and access to the selected
 pages and data source's parent database. No credentials or live provider calls were used.
 
@@ -196,6 +202,12 @@ apply to the `NotionClient` domain methods above.
 All tests run against `examples/testserver` on loopback. Fixtures are hand-authored
 from the official docs and include synthetic perturbations; they are **not vendor
 conformance**. See [PROVENANCE.md](PROVENANCE.md) and [FRICTION.md](FRICTION.md).
+The [maintenance tests](tests/maintenance.rs) add fresh unknown property/block types
+and a second children page with all supported variants preserved. Server gates force
+versioned clones to overlap on both pages. The tests also cover exact opaque cursor
+round trips, retained links, expansion of an unknown parent, cap/resume, typed provider
+failure, and a malformed supported block after an unknown block. See
+[MAINTENANCE.md](MAINTENANCE.md) for the change record; existing callers need no changes.
 No vendor SDK, signer or additional HTTP stack is used. `serde`/`serde_json` handle
 JSON and retained unknown variants; `concord-pagination` supplies lazy traversal,
 streams, caps, checkpoints and partial outcomes. The GitHub SDK's source helped locate

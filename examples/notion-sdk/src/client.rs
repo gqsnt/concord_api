@@ -67,6 +67,8 @@ impl NotionClient {
 
     /// Explicitly changes this owned client's version header. No automatic schema migration
     /// is attempted; only the pinned version has been fixture-tested.
+    /// Existing clones and lazy traversals keep the context captured when they were created,
+    /// including for later pages. Response version headers do not change that context.
     pub fn with_version(mut self, version: impl Into<String>) -> Self {
         self.api = self.api.set_version(version.into());
         self

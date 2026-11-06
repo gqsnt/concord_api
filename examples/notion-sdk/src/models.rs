@@ -1,5 +1,9 @@
 //! Narrow typed payloads. Unknown discriminators retain the entire JSON object.
 //! Malformed payloads of a supported type fail decoding instead of becoming unknowns.
+//!
+//! New property and block discriminators need no registration to be retained as `Unknown`.
+//! Common identity fields (and a block's `has_children`) must still decode. Unknown blocks
+//! remain ordinary items in provider order and can have separately retrieved children.
 
 use serde::{
     Deserialize, Deserializer,
