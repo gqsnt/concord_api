@@ -84,7 +84,11 @@ async fn country_is_one_encoded_segment_and_synthetic_400_keeps_exact_body() {
 
 #[tokio::test]
 async fn optional_unknown_fields_and_null_subdivisions_preserve_known_fields() {
-    let script = Script::new([Reply::json(200, AUSTRIA), Reply::json(200, PERTURBED)]);
+    let script = Script::new([
+        Reply::json(200, AUSTRIA),
+        Reply::json(200, PERTURBED),
+        Reply::json(200, PERTURBED),
+    ]);
     let server = TestServer::start(move |_| script.next()).await;
     let api = client(&server);
     let original = api.holidays("AT", 2026).fetch().await.unwrap();
@@ -96,8 +100,49 @@ async fn optional_unknown_fields_and_null_subdivisions_preserve_known_fields() {
             .iter()
             .all(|h| h.subdivision_codes.is_none())
     );
-    assert_eq!(server.requests().len(), 2);
-    server.shutdown().await;
+    let sent = api.holidays("AT", 2026).send().await.unwrap();
+    assert_eq!(sent, original.holidays);
+    let requests = server.requests();
+    assert_eq!(requests.len(), 3);
+    for request in requests {
+        assert_read(&request, &server, "/api/v4/Holidays/AT/2026");
+    }
+    assert_eq!(server.shutdown().await.open_after, 0);
+}
+
+#[tokio::test]
+async fn new_null_subdivision_and_unknown_field_preserve_other_known_fields() {
+    let script = Script::new([
+        Reply::json(200, GERMANY),
+        Reply::json(
+            200,
+            include_bytes!("../fixtures/holidays-de-2027-perturbed-synthetic.json"),
+        )
+        .header("x-synthetic-request-id", "synthetic-maintenance"),
+    ]);
+    let server = TestServer::start(move |_| script.next()).await;
+    let api = client(&server);
+    let original = api.holidays("DE", 2027).fetch().await.unwrap();
+    let perturbed = api.holidays("DE", 2027).fetch().await.unwrap();
+
+    let mut expected = original.holidays;
+    assert_eq!(expected[1].subdivision_codes.as_deref().unwrap(), ["DE-BY"]);
+    // Only this known value changed on the wire. All other fields and entries,
+    // including nationalHoliday=false and the populated/empty/omitted lists, survive.
+    expected[1].subdivision_codes = None;
+    assert_eq!(perturbed.holidays, expected);
+    assert!(!perturbed.holidays[1].national_holiday);
+    assert_eq!(perturbed.meta.status, StatusCode::OK);
+    assert_eq!(
+        perturbed.meta.headers["x-synthetic-request-id"],
+        "synthetic-maintenance"
+    );
+    let requests = server.requests();
+    assert_eq!(requests.len(), 2);
+    for request in requests {
+        assert_read(&request, &server, "/api/v4/Holidays/DE/2027");
+    }
+    assert_eq!(server.shutdown().await.open_after, 0);
 }
 
 #[tokio::test]

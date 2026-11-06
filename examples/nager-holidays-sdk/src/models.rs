@@ -5,6 +5,10 @@ use serde::{Deserialize, Deserializer};
 use crate::Date;
 
 /// One holiday as reported by the v4 endpoint.
+///
+/// Unknown JSON fields are ignored without changing the known fields. A null
+/// subdivision list remains `None` even when `national_holiday` is false; callers
+/// should use the provider's flag for national filtering.
 #[derive(Clone, Debug, PartialEq, Eq, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Holiday {

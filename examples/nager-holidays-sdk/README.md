@@ -63,6 +63,13 @@ ignored. JSON `null` or an omitted subdivision list is `None`, while `[]` is
 `Some(vec![])`; the SDK does not infer national status from that list. Other documented
 fields are required, including the `holidayTypes` array.
 
+These compatibility rules apply to both `.fetch()` and generated `.send()`. If a
+response adds an optional unknown field and changes a populated `subdivisionCodes`
+list to `null`, callers keep every other known value and receive `None` for that
+list. In particular, a regional holiday's `national_holiday: false` stays false;
+no caller changes are needed. See [MAINTENANCE.md](MAINTENANCE.md) for the regression
+and change record.
+
 ## Workflow B: another country/year and local filters
 
 ```rust,no_run
@@ -153,6 +160,9 @@ not a published package or a vendor conformance result.
 `tests/protocol.rs` checks wire method, country/year order, percent encoding, headers,
 exact empty request bytes, documented success fields, synthetic HTTP errors, unknown
 fields/types, nullable/empty/omitted subdivisions, invalid data and interrupted reads.
+The maintenance regression compares an original and perturbed DE array over HTTP:
+one populated list becomes null, unknown fields are added, and all other known
+values remain equal. The AT perturbation also exercises generated `.send()`.
 `tests/workflows.rs` exercises both public workflows and a failed second read.
 `fixtures/** -text` in `.gitattributes` preserves fixture bytes across Windows checkouts.
 Fixtures and loopback tests **are not vendor conformance evidence**.
