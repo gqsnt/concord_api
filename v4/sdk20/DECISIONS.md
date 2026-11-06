@@ -94,3 +94,14 @@ Unassisted first use from public docs and rustdoc; no implementation source read
 | FA-4 | `CsvWriter` docs still said to apply `Upload` to a native request | docs | DOCS_ONLY, `8bcd1015` |
 | FA-5 | the page projection closure and resume wrapper are written per SDK; `Incomplete` easier to find in the pagination README than in the guides | provider adapter (expected) + docs | SDK examples (Stripe/GitHub facades) and CALLER_GUIDE §6a link; re-check after migration |
 | FA-6 | reading a provider's JSON error document from a non-2xx needed the native response | library candidate | DEFER to the SDK migration evidence: bounded error-document reads already repeat in Stripe/Kubernetes/Salesforce; decide with those cases |
+
+### D-A5 — repeated parameter placement (F7): DEFER_WITH_REASON (measured)
+
+Kubernetes repeats its list selector block in 19 places (13 list + 6 watch endpoints across 4
+groups × cluster/namespaced scopes); adding one list parameter today is ~13 identical edits.
+Scope values do not help: they would also reach the single-object endpoints of the same scope.
+Stripe's account override and Salesforce's per-type query declarations show the same pattern in
+smaller form. A parameter-group construct needs collision, docs, override and cfg semantics; the
+contract allows it only as a targeted experiment. Decision: collect the Phase B cases (GitLab,
+Microsoft Graph, Notion, Airtable list endpoints) before designing anything; revisit between
+waves with at least two new distinct providers showing the same repetition.

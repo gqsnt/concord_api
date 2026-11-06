@@ -18,3 +18,4 @@ commit; the coordinator commits their files and records it.
 | Phase A: GitHub/Stripe/Shopify metadata migration | Opus subagent | UNOBSERVED (inherits) | agent worktree | pending | |
 | Phase A: Kubernetes watch + multipart migration | Opus subagent | UNOBSERVED (inherits) | agent worktree | pending | |
 | Gate A independent packaged consumer (`checks/consumers/phase-a-dx`) | `gpt-6.1-terra`, xhigh | `gpt-6.1-terra`, `xhigh`, `workspace-write … (network access enabled)` (session `01a1ae4a…`) | `work/wt-gatea-consumer` `sdk20/gatea-consumer` at `c16e6faf` | pending | outcome-only brief: `work/sessions/gatea-consumer.prompt.md` |
+| Phase A library review (diff `a95fb2fb..4bcd8980`, crates/checks/docs) | `gpt-6.1-sol`, xhigh, read-only | `gpt-6.1-sol`, `xhigh`, `read-only` (session `01a1ae51…`) | `work/rv-phase-a` (detached `4bcd8980`) | pending | prompt `work/sessions/review-phase-a-core.prompt.md` |
