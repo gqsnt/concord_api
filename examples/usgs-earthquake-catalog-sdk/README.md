@@ -14,7 +14,7 @@ The public hierarchy is `Usgs → catalog → window → geojson/csv`, with
 use std::num::{NonZeroU64, NonZeroUsize};
 use concord_sdk_usgs_earthquake_catalog::{
     concord::reqwest, concord_codecs::stream::Completion,
-    Magnitude, PageSize, Usgs, Window,
+    Magnitude, OrderBy, PageSize, Usgs, Window,
 };
 
 # async fn demo(local_base: &str) -> Result<(), Box<dyn std::error::Error>> {
@@ -28,7 +28,10 @@ let api = Usgs::new(http).with_base_url(local_base)?;
 let catalog = api.catalog();
 let filter = Window::new("2014-01-01T00:00:00Z", "2014-01-02T00:00:00Z")?
     .min_magnitude(Magnitude::new(4.0)?)
+    .max_magnitude(Magnitude::new(6.0)?)
+    .with_order_by(OrderBy::Magnitude)
     .with_page_size(PageSize::new(500)?);
+filter.validate()?; // Optional preflight; send() also checks the final scope values.
 let budget = NonZeroUsize::new(4).unwrap();
 let mut pages = catalog.pages(&filter, NonZeroU64::MIN, budget);
 let mut selected = None;
@@ -61,12 +64,24 @@ Set a one-based offset with the endpoint's `set_offset(NonZeroU64)`.
 Inputs accept RFC 3339 instants with explicit offsets and normalize them to UTC.
 Bounds are inclusive and ordered, with at most 31 days between them. That maximum
 is this SDK's scope limit, not a USGS limit. Page sizes are 1–20,000 (default 500),
-minimum magnitude must be finite, and event IDs are nonempty opaque strings up to
-256 bytes without controls. Queries fix `orderby=time-asc`, `eventtype=earthquake`,
+both magnitude bounds must be finite, and event IDs are nonempty opaque strings up to
+256 bytes without controls. Use `min_magnitude` and `max_magnitude` independently;
+if both are present, the SDK requires min ≤ max (equal bounds are allowed).
+These builders preserve the existing infallible caller contract: `Window::validate()`
+checks their relation explicitly, and generated `send()` always checks it before I/O,
+including after scope setters. `with_order_by` accepts `OrderBy::{Time, TimeAsc,
+Magnitude, MagnitudeAsc}`. The SDK keeps `TimeAsc` (`time-asc`) as its default;
+the service's own default is `time`. Queries fix `eventtype=earthquake`
 and `nodata=404`. The filter is declared once on the window scope; only `format`
 and the response type differ between GeoJSON and CSV. Event lookup sends no
 window, sorting, magnitude, page-size or offset parameters. Detail products are
 retained as JSON; their links and the event's `detail` URL are never fetched.
+
+The [USGS query parameter documentation](https://earthquake.usgs.gov/fdsnws/event/1/#parameters)
+(read **2026-11-07**, “Other”) specifies decimal `minmagnitude`/`maxmagnitude`
+and the four `orderby` strings. It publishes no numeric magnitude range; the SDK
+does not impose one. Rejecting inverted bounds is the SDK guard requested by the
+maintenance ticket, rather than a scientific validation claim.
 
 A full page advances by its actual row/feature count; a short page or 204/404
 ends traversal. An exact multiple requires a further empty/no-data request.
@@ -95,7 +110,8 @@ headers even if the bounded error document is invalid or interrupted:
 | Any 5xx / any other non-200 | `Server` / `Unexpected` |
 | Connection failure, wrong media, malformed/truncated GeoJSON, finite body limit | `Concord` with its stage and available response head |
 | Bad CSV width, UTF-8, quoting, numeric value, transport or size | `Stream(ReadError)` with operation and record/byte position |
-| Missing required CSV columns, inconsistent page counts, excess rows, offset overflow | `Protocol` |
+| Missing required CSV columns | `Protocol`, or `Stream(ReadError)` with kind `Decode` if row decoding fails first |
+| Inconsistent page counts, excess rows, offset overflow | `Protocol` |
 
 429 coverage is defensive HTTP behavior, not a claim that USGS documents a fixed
 throttling policy. `HttpFailure::retry_after(now)` uses `concord-retry`'s strict
@@ -126,7 +142,7 @@ SDK and Concord diagnostics withhold provider bodies, response header values and
 the lookup request's event ID. `document_unredacted()`, native accessors, explicit
 model formatting, and raw header access intentionally expose data. `prepare()`
 is Concord's lower-level boundary: executing a prepared request directly bypasses
-the SDK send policy's interval check, status mapping and finite-body limit.
+the SDK send policy's time/magnitude bound checks, status mapping and finite-body limit.
 
 Excluded: full QuakeML, scientific validation, product downloading, realtime feeds,
 unbounded harvesting, snapshot consistency, credential flows and automatic retry.

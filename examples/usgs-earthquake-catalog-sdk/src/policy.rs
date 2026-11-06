@@ -1,4 +1,5 @@
-use crate::{Error, HttpFailure, HttpKind, Timestamp, Window};
+use crate::input::validate_magnitude_bounds;
+use crate::{Error, HttpFailure, HttpKind, Magnitude, Timestamp, Window};
 use concord::{Endpoint, SendWith};
 use concord_codecs::Text;
 use std::fmt;
@@ -33,14 +34,28 @@ impl<T: Send> SendWith<T> for Policy {
 
     async fn send<E: Endpoint<T> + Send>(&self, endpoint: E) -> Self::Output {
         let prepared = endpoint.prepare()?;
-        // Scope setters can replace either endpoint of an interval. Validate their relation
-        // here too, so every generated send() checks it before any I/O.
+        // Scope setters can replace time or magnitude bounds. Check their relations on the
+        // prepared request so every generated send() validates the final values before I/O.
         let mut start = None;
         let mut end = None;
+        let mut min_magnitude = None;
+        let mut max_magnitude = None;
         for (key, value) in prepared.request().url().query_pairs() {
             match key.as_ref() {
                 "starttime" => start = Some(Timestamp::parse(&value)?),
                 "endtime" => end = Some(Timestamp::parse(&value)?),
+                "minmagnitude" | "maxmagnitude" => {
+                    let magnitude = Magnitude::new(
+                        value
+                            .parse()
+                            .map_err(|_| Error::InvalidInput("magnitude must be a decimal"))?,
+                    )?;
+                    if key == "minmagnitude" {
+                        min_magnitude = Some(magnitude);
+                    } else {
+                        max_magnitude = Some(magnitude);
+                    }
+                }
                 _ => {}
             }
         }
@@ -51,6 +66,7 @@ impl<T: Send> SendWith<T> for Policy {
             (None, None) => {}
             _ => return Err(Error::InvalidInput("both window bounds are required")),
         }
+        validate_magnitude_bounds(min_magnitude, max_magnitude)?;
         let received = prepared.receive().await?;
         let status = received.status().as_u16();
         if status != 200 {

@@ -126,3 +126,37 @@ The initial unlocked command was offline and successful:
 Subsequent cargo builds/checks used `--locked`. All builds used this worktree's
 default `target/`; no CARGO_TARGET_DIR was set, no cargo commands overlapped,
 and no commit was attempted. Final command results are recorded in `FRICTION.md`.
+
+## Maintenance addendum — 2026-11-07
+
+Maintenance baseline: `9f59f9a6`, after the first consumer. The original evidence
+above remains historical. This session read the implementation and consumer tests,
+implemented the filter ticket and passed the focused and complete test suites
+**before opening `FRICTION.md` or `FIRST_USE.md`**. No subagents were used.
+The complete reading/edit/verification record is in `MAINTENANCE.md`.
+
+Documentation retrieved read-only on **2026-11-07**:
+
+- [USGS FDSN event API](https://earthquake.usgs.gov/fdsnws/event/1/), Query method
+  Parameters → Other: magnitude bounds are decimals; `orderby` accepts `time`,
+  `time-asc`, `magnitude`, `magnitude-asc`. The service defaults to `time`;
+  retaining the SDK's `time-asc` default is a compatibility decision. This page
+  gives no numeric magnitude interval or explicit magnitude min/max relation;
+  the ticket's min ≤ max guard is implemented with equality allowed.
+- [Linked FDSN specification v1.0](https://www.fdsn.org/webservices/FDSN-WS-Specifications-1.0.pdf),
+  parameter table (p. 5) and event descriptions (p. 12), corroborate the
+  magnitude parameter types and ordering spellings.
+
+`tests/filters.rs` uses the existing synthetic fixtures. Its consumer rearranges
+`window.geojson` features and `page-1.csv`/`page-2.csv` records into descending
+time order C, B, A, repartitioned 2 + 1. It delays the second CSV record for two
+seconds and fragments that record byte by byte. Its event B detail is authored
+inline from the same synthetic values, without the SDK's model serializers.
+Empty responses exercise the wire matrix without claiming provider sorting or
+filter implementation. The bad-number fixture still includes an unreachable
+later row, proving failure is terminal with the new filters too.
+
+**Live provider calls: NOT_RUN.** Only documentation URLs were fetched; all
+executed requests use the local TestServer. No new dependency, package version,
+workspace member or lockfile change was needed: this SDK was already registered
+and locked at the maintenance baseline.

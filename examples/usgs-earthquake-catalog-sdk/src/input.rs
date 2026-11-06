@@ -22,8 +22,8 @@ impl fmt::Display for Timestamp {
     }
 }
 
-/// A finite minimum magnitude; this type does not perform scientific validation.
-#[derive(Clone, Copy, Debug, PartialEq)]
+/// A finite magnitude bound; this type does not perform scientific validation.
+#[derive(Clone, Copy, Debug, PartialEq, PartialOrd)]
 pub struct Magnitude(f64);
 
 impl Magnitude {
@@ -39,6 +39,46 @@ impl Magnitude {
 impl fmt::Display for Magnitude {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         self.0.fmt(f)
+    }
+}
+
+pub(crate) fn validate_magnitude_bounds(
+    min: Option<Magnitude>,
+    max: Option<Magnitude>,
+) -> Result<(), Error> {
+    if let (Some(min), Some(max)) = (min, max)
+        && min > max
+    {
+        return Err(Error::InvalidInput(
+            "minimum magnitude must not exceed maximum magnitude",
+        ));
+    }
+    Ok(())
+}
+
+/// The four `orderby` values supported by the USGS FDSN event query.
+/// See <https://earthquake.usgs.gov/fdsnws/event/1/#parameters> (read 2026-11-07).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum OrderBy {
+    /// Origin time, newest first (`time`).
+    Time,
+    /// Origin time, oldest first (`time-asc`); the SDK's compatibility default.
+    #[default]
+    TimeAsc,
+    /// Largest magnitude first (`magnitude`).
+    Magnitude,
+    /// Smallest magnitude first (`magnitude-asc`).
+    MagnitudeAsc,
+}
+
+impl fmt::Display for OrderBy {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(match self {
+            Self::Time => "time",
+            Self::TimeAsc => "time-asc",
+            Self::Magnitude => "magnitude",
+            Self::MagnitudeAsc => "magnitude-asc",
+        })
     }
 }
 
@@ -77,7 +117,9 @@ pub struct Window {
     start: Timestamp,
     end: Timestamp,
     magnitude: Option<Magnitude>,
+    max_magnitude: Option<Magnitude>,
     size: PageSize,
+    order_by: OrderBy,
 }
 
 impl Window {
@@ -97,15 +139,39 @@ impl Window {
             start,
             end,
             magnitude: None,
+            max_magnitude: None,
             size: PageSize::DEFAULT,
+            order_by: OrderBy::default(),
         })
     }
 
     /// Set the minimum magnitude for GeoJSON and CSV alike.
+    /// Bound ordering is checked by `validate()` or generated `send()` before I/O.
     #[must_use]
     pub fn min_magnitude(mut self, value: Magnitude) -> Self {
         self.magnitude = Some(value);
         self
+    }
+
+    /// Set the maximum magnitude for GeoJSON and CSV alike.
+    /// Bound ordering is checked by `validate()` or generated `send()` before I/O.
+    #[must_use]
+    pub fn max_magnitude(mut self, value: Magnitude) -> Self {
+        self.max_magnitude = Some(value);
+        self
+    }
+
+    /// Set the same provider ordering for GeoJSON and CSV, including later pages.
+    #[must_use]
+    pub fn with_order_by(mut self, value: OrderBy) -> Self {
+        self.order_by = value;
+        self
+    }
+
+    /// Check that the minimum magnitude does not exceed the maximum, if both are set.
+    /// Equal bounds are allowed. Generated `send()` repeats this check after scope setters.
+    pub fn validate(&self) -> Result<(), Error> {
+        validate_magnitude_bounds(self.magnitude, self.max_magnitude)
     }
 
     /// Set the result limit for both output formats.
@@ -126,6 +192,14 @@ impl Window {
     /// Optional minimum magnitude.
     pub fn magnitude(&self) -> Option<Magnitude> {
         self.magnitude
+    }
+    /// Optional maximum magnitude.
+    pub fn maximum_magnitude(&self) -> Option<Magnitude> {
+        self.max_magnitude
+    }
+    /// Provider ordering, defaulting to `time-asc` for compatibility.
+    pub fn order_by(&self) -> OrderBy {
+        self.order_by
     }
     /// Per-response result limit.
     pub fn page_size(&self) -> PageSize {

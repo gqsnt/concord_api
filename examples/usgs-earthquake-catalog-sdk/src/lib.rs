@@ -14,7 +14,7 @@ pub use concord_retry;
 pub use csv::{CSV_BODY_LIMIT, CSV_RECORD_LIMIT, CatalogCsv, CatalogCsvProfile, CsvRows};
 pub use error::{Error, HttpFailure, HttpKind};
 pub use export::CsvExport;
-pub use input::{EventId, Magnitude, PageSize, Timestamp, Window};
+pub use input::{EventId, Magnitude, OrderBy, PageSize, Timestamp, Window};
 pub use models::{CsvRow, Feature, FeatureCollection, Metadata, Point, Properties};
 pub use policy::{ERROR_BODY_LIMIT, Policy, Response, SUCCESS_BODY_LIMIT};
 
@@ -37,14 +37,16 @@ concord::api! {
         /// Catalog operations; lookup does not inherit window filters.
         scope catalog {
             /// A bounded filter shared by both output formats.
-            /// Prefer `catalog.query(&Window)` for validation before constructing a scope.
+            /// Prefer `catalog.query(&Window)`; `send()` validates bounds before I/O.
             scope window(
                 query starttime: Timestamp,
                 query endtime: Timestamp,
                 query minmagnitude?: Magnitude,
+                query maxmagnitude?: Magnitude,
                 query limit: PageSize = PageSize::DEFAULT,
+                query orderby: OrderBy = OrderBy::default(),
             ) {
-                query { "orderby" = "time-asc"; "eventtype" = "earthquake"; }
+                query { "eventtype" = "earthquake"; }
 
                 /// A single GeoJSON page; generated `send()` applies the SDK policy.
                 GET geojson(query offset: NonZeroU64 = NonZeroU64::MIN) -> FeatureCollection {
@@ -75,11 +77,14 @@ impl UsgsCatalog {
         CsvExport::new(self.query(window), window.page_size(), from, max_pages)
     }
 
-    /// Map one validated query into the shared generated scope, without I/O.
+    /// Map one window into the shared generated scope, without I/O.
+    /// Generated `send()` validates magnitude bounds, including subsequent setter changes.
     pub fn query(&self, window: &Window) -> UsgsCatalogWindow {
         self.window(window.start(), window.end())
             .maybe_minmagnitude(window.magnitude())
+            .maybe_maxmagnitude(window.maximum_magnitude())
             .set_limit(window.page_size())
+            .set_orderby(window.order_by())
     }
 
     /// Walk GeoJSON pages sequentially, with an explicit page budget and start offset.
