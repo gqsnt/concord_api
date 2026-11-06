@@ -48,10 +48,10 @@ commit, so no baseline intervention was needed.
 
 | ID | Provider | Size | Wave | Author (observed) | Consumer | Maintainer | Status |
 |---|---|---|---|---|---|---|---|
-| SDK01 | Nager.Holidays | small | 1 | `gpt-6.1-sol` xhigh (`38dbaa29`) | `gpt-6.1-terra` xhigh, 9 tests (`9b99ef07`) | `gpt-6-astra` xhigh (`2e23393b`) | WAVE_COMPLETE |
-| SDK02 | PokéAPI | small | 1 | `gpt-6.1-terra` xhigh (`2079f14b`) | `gpt-6-astra` xhigh, 14 tests (`729a8dda`) | Opus subagent (running) | MAINTENANCE |
-| SDK03 | Twilio Messaging | medium | 1 | `gpt-6-astra` xhigh (`b1e00c12`) | Opus subagent (running) | | FIRST_USE |
-| SDK04 | Amazon S3 | large | 1 | Opus subagent (UNOBSERVED) | | | AUTHORING |
+| SDK01 | Nager.Holidays | small | 1 | `gpt-6.1-sol` xhigh (`38dbaa29`) | `gpt-6.1-terra` xhigh, 9 tests, unassisted (`9b99ef07`) | `gpt-6-astra` xhigh (`2e23393b`) | WAVE_1_DONE, integrated `6a9dcb19` |
+| SDK02 | PokéAPI | small | 1 | `gpt-6.1-terra` xhigh (`2079f14b`) | `gpt-6-astra` xhigh, 14 tests; first intervention: read the testserver API (`729a8dda`) | Opus subagent (`5f72d206`; its `follow_with_limit` is reverted in integration, see W1-6) | WAVE_1_DONE, integrated |
+| SDK03 | Twilio Messaging | medium | 1 | `gpt-6-astra` xhigh (`b1e00c12`) | Opus subagent, 22 tests, unassisted (`96ff9b2b`) | `gpt-6.1-sol` xhigh (`497367eb`) | WAVE_1_DONE, integrated |
+| SDK04 | Amazon S3 | large | 1 | Opus subagent (`b30d9994`) | `gpt-6.1-sol` xhigh, 13 tests, unassisted (`715538c6`) | `gpt-6.1-terra` xhigh (`41e24beb`) | WAVE_1_DONE, integrated |
 
 ## Model/session ledger
 

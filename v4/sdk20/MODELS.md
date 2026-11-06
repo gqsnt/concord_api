@@ -20,7 +20,15 @@ commit; the coordinator commits their files and records it.
 | Gate A independent packaged consumer (`checks/consumers/phase-a-dx`) | `gpt-6.1-terra`, xhigh | `gpt-6.1-terra`, `xhigh`, `workspace-write … (network access enabled)` (session `01a1ae4a…`) | `work/wt-gatea-consumer` `sdk20/gatea-consumer` at `c16e6faf` | files committed by the coordinator in `8bcd1015` | outcome-only brief: `work/sessions/gatea-consumer.prompt.md` |
 | Phase A library review (diff `a95fb2fb..4bcd8980`, crates/checks/docs) | `gpt-6.1-sol`, xhigh, read-only | `gpt-6.1-sol`, `xhigh`, `read-only` (session `01a1ae51…`) | `work/rv-phase-a` (detached `4bcd8980`) | ACCEPT_WITH_FIXES, 3 findings (SOL-A-1..3), fixed in `4fc5e26e`'s parent | prompt `work/sessions/review-phase-a-core.prompt.md` |
 | Phase A second review (diff `4bcd8980..756f408e`: later library additions + five SDK migrations) | `gpt-6.1-sol`, xhigh, read-only | `gpt-6.1-sol`, `xhigh`, `read-only` (session `01a1ae61…`) | `work/rv-phase-a2` (detached `756f408e`) | ACCEPT_WITH_FIXES, 1 finding (SOL-B-1), fixed | prompt `work/sessions/review-phase-a-delta.prompt.md` |
-| W1 author SDK01 Nager | `gpt-6.1-sol` xhigh | `gpt-6.1-sol`, `xhigh`, workspace-write + `work/target-a`, network (session `01a1ae69-4eb8…`) | `work/w1-sdk01-nager-holidays` | pending | capsule `tasks/wave1/SDK01-*-author.md` |
-| W1 author SDK02 PokéAPI | `gpt-6.1-terra` xhigh | `gpt-6.1-terra`, `xhigh`, workspace-write + `work/target-b`, network (session `01a1ae69-4eba…`) | `work/w1-sdk02-pokeapi` | pending | |
-| W1 author SDK03 Twilio | `gpt-6-astra` xhigh | `gpt-6-astra`, `xhigh`, workspace-write + `work/target-a`, network (session `01a1ae69-4eb9…`) | `work/w1-sdk03-twilio` | pending | |
-| W1 author SDK04 S3 | Opus subagent | UNOBSERVED (inherits) | `work/w1-sdk04-amazon-s3` | pending | |
+| W1 author SDK01 Nager | `gpt-6.1-sol` xhigh | `gpt-6.1-sol`, `xhigh`, workspace-write + `work/target-a`, network (session `01a1ae69-4eb8…`) | `work/w1-sdk01-nager-holidays` | `38dbaa29` | capsule `tasks/wave1/SDK01-*-author.md` |
+| W1 author SDK02 PokéAPI | `gpt-6.1-terra` xhigh | `gpt-6.1-terra`, `xhigh`, workspace-write + `work/target-b`, network (session `01a1ae69-4eba…`) | `work/w1-sdk02-pokeapi` | `2079f14b` | |
+| W1 author SDK03 Twilio | `gpt-6-astra` xhigh | `gpt-6-astra`, `xhigh`, workspace-write + `work/target-a`, network (session `01a1ae69-4eb9…`) | `work/w1-sdk03-twilio` | `b1e00c12` | |
+| W1 author SDK04 S3 | Opus subagent | UNOBSERVED (inherits) | `work/w1-sdk04-amazon-s3` | `b30d9994` | |
+| W1 consumer SDK01 Nager | `gpt-6.1-terra` xhigh | `gpt-6.1-terra`, `xhigh` (session `01a1ae72-9d45…`) | same worktree | `9b99ef07` | |
+| W1 consumer SDK02 PokéAPI | `gpt-6-astra` xhigh | `gpt-6-astra`, `xhigh` (session `01a1ae72-9d44…`) | same | `729a8dda` | |
+| W1 consumer SDK03 Twilio | Opus subagent | UNOBSERVED (inherits) | same | `96ff9b2b` | |
+| W1 consumer SDK04 S3 | `gpt-6.1-sol` xhigh | `gpt-6.1-sol`, `xhigh` (session `01a1ae95-6f18…`) | same | `715538c6` | |
+| W1 maintainer SDK01 Nager | `gpt-6-astra` xhigh | `gpt-6-astra`, `xhigh` (session `01a1ae78-1be4…`) | same | `2e23393b` | |
+| W1 maintainer SDK02 PokéAPI | Opus subagent | UNOBSERVED (the agent quoted its system prompt's model id; not harness metadata) | same | `5f72d206` | |
+| W1 maintainer SDK03 Twilio | `gpt-6.1-sol` xhigh | `gpt-6.1-sol`, `xhigh` (session `01a1ae7d-9e31…`) | same | `497367eb` | |
+| W1 maintainer SDK04 S3 | `gpt-6.1-terra` xhigh | `gpt-6.1-terra`, `xhigh` (session `01a1ae9c-6a24…`) | same | `41e24beb` | |

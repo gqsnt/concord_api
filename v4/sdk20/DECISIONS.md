@@ -133,3 +133,26 @@ Test: `checks/phase-a/tests/received.rs::the_final_url_and_labelled_native_input
 Verdicts: ACCEPT_WITH_FIXES (both). Areas reported clean in the second pass: GitHub, Stripe,
 Shopify, Kubernetes, Salesforce A5 (validated EOF, locator rules, `maxRecords`), dx03 resume and
 publication gating, runtime CSV upload, multipart wire encoding, library additions, tests.
+
+## Wave 1 (frozen library `94d13527`; Nager, PokéAPI, Twilio, S3)
+
+Sources: each SDK's `FRICTION.md` (author), `FIRST_USE.md` (consumer), `MAINTENANCE.md`
+(maintainer), committed unmodified. All four first-use consumers reached both outcomes from public
+docs; none needed implementation source (PokéAPI's consumer read the testserver API to build its
+fake). No role patched Concord or used private items.
+
+| ID | Evidence | Attribution | Disposition |
+|---|---|---|---|
+| W1-1 | Nager `fetch()`, Twilio `create_message`/`get_message` + `prepare_*`, PokéAPI methods: a wrapper per operation only to return the SDK's error and metadata (as GitHub, Stripe, Salesforce, Shopify do); Twilio author: "maintenance must keep declaration, preparation and wrapper methods aligned" | shared mechanic (generated operations cannot be addressed generically) | IMPLEMENT `db02ca02`: `concord::Endpoint` on every generated endpoint; migration with paired before/after in progress |
+| W1-2 | Twilio re-implements a bounded error-document read through `into_response()` (64 KiB loop); Stripe/Kubernetes/Salesforce already do; Nager/PokéAPI consumers needed the native escape for error bodies | shared mechanic | IMPLEMENT `db02ca02`: `Received::bytes_limited`, `ErrorKind::Limit`; Twilio + Stripe migration in progress |
+| W1-3 | Nager author: CHEATSHEET/RECIPES summary rows still lead to `into_parts`; Twilio author: RECIPES says the URL is not exposed | docs | DOCS_ONLY `db02ca02` |
+| W1-4 | S3: signing must happen after `prepare()`; the generated `send()` would go unsigned, so the declaration is private and 37 forwarding setters re-create the generated builder | shared mechanic, one cohort consumer | DEFER_WITH_REASON: one consumer (AWS-style signing); revisit if a second provider needs a per-request finalizer (candidate: Snowflake key-pair JWT, wave 4). With `Endpoint` the SDK could expose generated types and one signed adapter, at the cost of an unsigned `send()` that fails with 403 |
+| W1-5 | S3: object keys span path segments; Concord writes `/` as `%2F`; the SDK rewrites it after `prepare()` | declaration/placement limit | DEFER_WITH_REASON: one wave 1–4 consumer; the held-out registry (wave 5) must not tune it; revisit after wave 5's first pass |
+| W1-6 | PokéAPI maintenance added `follow_with_limit`, rewriting `limit` inside a server `next` URL; conflicts with the cohort rule to follow returned links as returned | harness (ticket wording too loose) + SDK | SDK_ONLY: reverted in integration, evidence kept in history; capsule wording to name the contract explicitly |
+| W1-7 | S3: SigV4 requires `%20` where Concord form-encodes `+` in queries; the SDK re-encodes before signing | provider signing rule | SDK_ONLY |
+| W1-8 | S3: the testserver could not answer HEAD with a `Content-Length` without sending bytes | harness | IMPLEMENT `3b7d081b`: `Body::HeadOnly` |
+| W1-9 | Twilio consumer: two `Error` types in public signatures; diagnostics name the hidden `TwilioApi`; `Debug` hides the status field the workflow is about; empty SID sent | SDK | SDK fix in integration |
+| W1-10 | S3 consumer: after a body failure later reads return `Ok(None)`, like a clean end | SDK completion semantics | SDK fix in integration (observable completion) |
+| W1-11 | PokéAPI consumer: `InvalidUrl` gives no reason | SDK | SDK fix in integration |
+| W1-12 | Consumers/maintainers: the capsule said "frozen commit" while HEAD carried the SDK's own role commits | harness | capsule wording fixed `cd1f659b` |
+| W1-13 | Maintenance dispersion: Nager (fixture + docs only, model already tolerant), Twilio (one model file + fixtures/tests/docs), S3 (fixtures + fake store + docs; no declaration/adapter change) | positive | — |
