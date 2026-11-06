@@ -1,5 +1,5 @@
 //! Watches: one watch connection as a stream of typed events, read with Concord's
-//! consecutive-JSON-values reader (`concord::jsonl::JsonValuesReader`).
+//! consecutive-JSON-values reader (`concord::jsonl::JsonValues`).
 //!
 //! # The provider contract (Kubernetes API concepts, "Efficient detection of changes")
 //!
@@ -20,6 +20,49 @@
 //!
 //! This module covers **one** connection. Reconnecting, relisting and the current-state map are
 //! the caller's workflow (the decoder never reopens a watch, and neither does [`WatchStream`]).
+//!
+//! # Opening a watch
+//!
+//! The six watch endpoints are declared `-> stream WatchEvent<T>` with `response JsonStream;`, so
+//! the generated `send()` sends the request once and returns the open [`WatchStream`] as soon as
+//! the response head is accepted, **without reading the body**:
+//!
+//! ```no_run
+//! # use concord_example_kubernetes_sdk::{KubeContext, ResourceVersion};
+//! # use concord_example_kubernetes_sdk::watch::WatchEvent;
+//! # type Failure = Box<dyn std::error::Error>;
+//! # async fn run(kube: KubeContext, rv: ResourceVersion) -> Result<(), Failure> {
+//! let mut events = kube.core().watch_pods().set_resource_version(rv).send().await?;
+//! while let Some(event) = events.next().await {
+//!     match event? {
+//!         WatchEvent::Added(pod) | WatchEvent::Modified(pod) => { /* upsert */ let _ = pod; }
+//!         WatchEvent::Deleted(pod) => { /* remove */ let _ = pod; }
+//!         WatchEvent::Bookmark(_) => {}
+//!         WatchEvent::Error(status) if status.is_expired() => { /* relist */ break; }
+//!         WatchEvent::Error(_) => break,
+//!     }
+//! }
+//! # Ok(()) }
+//! ```
+//!
+//! `send()` fails with Concord's error: a non-2xx answer is `ErrorKind::Status` holding the
+//! unread response, which [`KubeError::from_concord`](crate::KubeError::from_concord) reads into
+//! [`ApiError`] (`410`: [`ApiError::is_expired`]); a 2xx head the reader refuses (not JSON) is
+//! `ErrorKind::Metadata`, the response kept unread (`concord::Error::into_response`). Every read
+//! error of the stream names the declared endpoint (`ReadError::operation`), and
+//! `completion()` tells the true end of the body from a failure or an early stop.
+//!
+//! **Why `JsonStream`'s defaults.** Kubernetes serves a JSON watch as `application/json` (the
+//! OpenAPI response map also lists `application/json;stream=watch`; the standard JSON media policy
+//! compares the media type's essence, so both are accepted). A watch has no natural length, so no
+//! total is set. An event carries one stored object (etcd's default request limit, which bounds a
+//! stored object, is 1.5 MiB), so the default 16 MiB per-value bound leaves headroom for its JSON
+//! form (an inference from etcd's default, not checked against a real server here). The SDK
+//! therefore has no provider limit of its own to impose. An application that wants a tighter
+//! bound per event (its own memory policy) passes its configured `JsonValuesReader` to [`open`],
+//! which sends the **same declared operation** with `Prepared::receive` and opens it with that
+//! reader; both routes return a [`WatchStream`] whose errors name the endpoint from the
+//! declaration.
 
 use serde::Deserialize;
 use std::collections::BTreeMap;
@@ -27,7 +70,7 @@ use std::fmt;
 
 use concord::jsonl::{JsonValues, JsonValuesReader};
 use concord::reqwest;
-use concord::stream::{ByteSource, OpenError, OpenErrorKind, Position, ReadError};
+use concord::stream::{OpenError, OpenErrorKind};
 
 use crate::error::ApiError;
 use crate::ids::ResourceVersion;
@@ -122,12 +165,11 @@ impl Bookmark {
 }
 
 /// A generated watch operation (the six `GET .../{plural}?watch=1` endpoints), seen through the
-/// parameters every watch shares; each method forwards to the generated `maybe_*` setter.
+/// parameters every watch shares; each method forwards to the generated `maybe_*` setter. The
+/// operation's identity (its endpoint name in errors) comes from the declaration.
 pub trait WatchOperation: Clone + Send + Sync + 'static {
     /// The watched object type.
     type Item: Resource;
-    /// The endpoint name, used as the reader's operation label.
-    const ENDPOINT: &'static str;
 
     /// `labelSelector`.
     fn with_label_selector(self, selector: Option<LabelSelector>) -> Self;
@@ -139,15 +181,15 @@ pub trait WatchOperation: Clone + Send + Sync + 'static {
     fn with_bookmarks(self, allow: Option<bool>) -> Self;
     /// `timeoutSeconds`: the server ends the watch after this long.
     fn with_timeout_seconds(self, seconds: Option<u32>) -> Self;
-    /// The generated `prepare()`.
-    fn prepare_watch(self) -> Result<concord::Prepared<()>, concord::Error>;
+    /// The generated `prepare()`: the request with its declared stream handling (`send()` on
+    /// the result returns the [`WatchStream`]).
+    fn prepare_watch(self) -> Result<concord::Prepared<WatchStream<Self::Item>>, concord::Error>;
 }
 
 macro_rules! watch_operation {
-    ($($op:ty => $item:ty, $endpoint:literal);* $(;)?) => {$(
+    ($($op:ty => $item:ty),* $(,)?) => {$(
         impl WatchOperation for $op {
             type Item = $item;
-            const ENDPOINT: &'static str = $endpoint;
             fn with_label_selector(self, selector: Option<LabelSelector>) -> Self {
                 self.maybe_label_selector(selector)
             }
@@ -163,7 +205,9 @@ macro_rules! watch_operation {
             fn with_timeout_seconds(self, seconds: Option<u32>) -> Self {
                 self.maybe_timeout_seconds(seconds)
             }
-            fn prepare_watch(self) -> Result<concord::Prepared<()>, concord::Error> {
+            fn prepare_watch(
+                self,
+            ) -> Result<concord::Prepared<WatchStream<Self::Item>>, concord::Error> {
                 self.prepare()
             }
         }
@@ -171,19 +215,17 @@ macro_rules! watch_operation {
 }
 
 watch_operation! {
-    KubeCoreV1WatchPods => crate::model::Pod, "Kube.core_v1.watch_pods";
-    KubeCoreV1NamespacedWatchPods => crate::model::Pod, "Kube.core_v1.namespaced.watch_pods";
-    KubeAppsV1WatchDeployments => crate::model::Deployment, "Kube.apps_v1.watch_deployments";
+    KubeCoreV1WatchPods => crate::model::Pod,
+    KubeCoreV1NamespacedWatchPods => crate::model::Pod,
+    KubeAppsV1WatchDeployments => crate::model::Deployment,
     KubeAppsV1NamespacedWatchDeployments => crate::model::Deployment,
-        "Kube.apps_v1.namespaced.watch_deployments";
     KubeNetworkingV1WatchIngresses => crate::model::Ingress,
-        "Kube.networking_v1.watch_ingresses";
     KubeNetworkingV1NamespacedWatchIngresses => crate::model::Ingress,
-        "Kube.networking_v1.namespaced.watch_ingresses";
 }
 
-/// Why a watch could not be opened: the complete classification (no response, non-2xx, refused
-/// head), so callers can match it exhaustively.
+/// Why [`open`] could not open a watch: the complete classification (no response, non-2xx,
+/// refused head), so callers can match it exhaustively. (The generated `send()` reports the same
+/// cases as Concord's `Transport` / `Status` / `Metadata` errors.)
 #[derive(Debug)]
 pub enum WatchOpenError {
     /// The request was not built, or no response arrived (Concord's error, redacted).
@@ -207,67 +249,48 @@ impl fmt::Display for WatchOpenError {
 
 impl std::error::Error for WatchOpenError {}
 
-/// One open watch connection: typed events decoded incrementally from the response body.
+/// One open watch connection: typed events decoded incrementally from the response body. It is
+/// what a watch endpoint's generated `send()` returns, and what [`open`] returns.
+///
+/// It **is** Concord's consecutive-JSON-values reader of [`WatchEvent<T>`] (the output type the
+/// declaration `-> stream WatchEvent<T>` with `response JsonStream;` generates), so it has the
+/// reader's whole contract: `next()` (cancel-safe; `None` at the true end of the body and after a
+/// terminal error), `position()`, `peak_retained_bytes()`, `completion()` (only `EndOfInput`
+/// proves the server ended the stream; stopping early or dropping it is not an end of input) and
+/// `into_stream()` (an owning `futures_core::Stream`). A `ReadError` of kind `Transport` is a lost
+/// connection, `Limit` an event larger than the reader's `max_value_bytes`, `Format`/`Decode` a
+/// malformed event; each names the declared endpoint.
 ///
 /// Nothing runs ahead of the caller; at most the current chunk and one unfinished event are
 /// retained. Dropping it drops the response (the connection is closed, not returned to the pool).
-/// After the end of the stream or a read error it is fused.
-pub struct WatchStream<T, S = reqwest::Response> {
-    values: JsonValues<WatchEvent<T>, S>,
-}
+/// The same reader over an in-memory source (`JsonValuesReader::read`) is a
+/// `WatchStream<T, concord::stream::Chunks>`.
+pub type WatchStream<T, S = reqwest::Response> = JsonValues<WatchEvent<T>, S>;
 
-impl<T: Resource, S: ByteSource> WatchStream<T, S> {
-    /// Wraps a JSON values reader over any byte source (an in-memory [`concord::stream::Chunks`]
-    /// in segmentation tests). [`open`] is the HTTP route.
-    pub fn from_values(values: JsonValues<WatchEvent<T>, S>) -> Self {
-        Self { values }
-    }
-
-    /// The next event; `None` when the server ended the stream (or after an error).
-    ///
-    /// A `ReadError` of kind `Transport` is a lost connection, `Limit` an event larger than the
-    /// reader's `max_value_bytes`, `Format`/`Decode` a malformed event. Cancel-safe.
-    pub async fn next(&mut self) -> Option<Result<WatchEvent<T>, ReadError>> {
-        self.values.next().await
-    }
-
-    /// Events delivered and bytes consumed so far.
-    pub fn position(&self) -> Position {
-        self.values.position()
-    }
-
-    /// The most bytes the decoder retained at once on this connection (an unfinished event,
-    /// excluding the shared transport chunk), at most the reader's `max_value_bytes`.
-    pub fn peak_retained_bytes(&self) -> usize {
-        self.values.peak_retained_bytes()
-    }
-}
-
-impl<T, S> fmt::Debug for WatchStream<T, S> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("WatchStream").finish_non_exhaustive()
-    }
-}
-
-/// Opens one watch: prepares the generated operation, sends it once with `send_raw`, and hands
-/// the 2xx response to `reader` (which checks the media type before polling the body). A non-2xx
-/// answer's `Status` document is read (bounded) into [`WatchOpenError::Api`].
+/// Opens one watch with a caller-configured `reader` (a per-event bound of the application's
+/// choosing): prepares the generated operation, sends it once with `Prepared::receive`, and opens
+/// the declared response with `reader` (a 2xx status and the reader's media policy are checked
+/// before the body is polled). A non-2xx answer's `Status` document is read (bounded) into
+/// [`WatchOpenError::Api`]. The endpoint's identity comes from the declaration: the stream's read
+/// errors and the [`ApiError`] name it.
+///
+/// With the reader defaults, the generated `send()` of the operation is the shorter route.
 ///
 /// # Errors
 ///
-/// [`WatchOpenError`]: not built / no response, non-2xx, refused head.
+/// [`WatchOpenError`]: not built / no response, non-2xx, refused head (kept unread).
 pub async fn open<W: WatchOperation>(
     operation: W,
     reader: &JsonValuesReader,
 ) -> Result<WatchStream<W::Item>, WatchOpenError> {
     let prepared = operation.prepare_watch().map_err(WatchOpenError::Request)?;
-    let response = prepared.send_raw().await.map_err(WatchOpenError::Request)?;
-    match reader.open_for::<WatchEvent<W::Item>>(response, W::ENDPOINT) {
-        Ok(values) => Ok(WatchStream { values }),
+    let received = prepared.receive().await.map_err(WatchOpenError::Request)?;
+    match reader.open::<WatchEvent<W::Item>>(received) {
+        Ok(events) => Ok(events),
         Err(refused) if refused.kind() == OpenErrorKind::Status => {
-            let response = refused.into_response();
+            let endpoint = refused.operation();
             Err(WatchOpenError::Api(
-                ApiError::from_response(Some(W::ENDPOINT), response).await,
+                ApiError::from_response(endpoint, refused.into_response()).await,
             ))
         }
         Err(refused) => Err(WatchOpenError::Refused(refused)),

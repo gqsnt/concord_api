@@ -21,6 +21,7 @@ Offline (default gate; loopback test server, no credentials):
 cargo test --locked -p concord-example-kubernetes-app --test ku_a_inventory     # KU-A
 cargo test --locked -p concord-example-kubernetes-app --test ku_b_list_watch    # KU-B (wire)
 cargo test --locked -p concord-example-kubernetes-app --test ku_b_segmentation  # KU-B (framing)
+cargo test --locked -p concord-example-kubernetes-app --test watch_operation    # one watch, generated send()
 cargo test --locked -p concord-example-kubernetes-app --test fixtures_manifest  # fixture digests
 cargo test --locked -p concord-example-kubernetes-sdk                           # SDK
 ```
@@ -58,3 +59,8 @@ are authorized to read.
 | consumer drop | `ku_b_dropping_the_workflow_releases_the_watch_connection`, `ku_b_a_consumer_can_stop_the_run` |
 | cancellation while awaiting data | `ku_b_cancellation_while_awaiting_data` |
 | bounded lifetime | `WatchPolicy` budgets in every KU-B test; `ku_b_a_long_watch_keeps_bounded_state` |
+| one watch through the SDK's generated `send()` (no workflow): returns before the body is read, chunk splits, `410` answer and `ERROR` event, refused head kept unread, declared identity in read errors, early drop is not end of input | `watch_operation.rs` (seven tests) |
+
+The workflow opens each watch with `watch::open` and a reader configured from
+`WatchPolicy::max_event_bytes` (an application bound); a caller content with the reader's
+defaults uses the generated `send()` directly, as `watch_operation.rs` does.

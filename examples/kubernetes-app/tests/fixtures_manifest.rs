@@ -115,6 +115,7 @@ fn manifest_matches_the_fixture_files() {
         "ku_a_inventory.rs",
         "ku_b_list_watch.rs",
         "ku_b_segmentation.rs",
+        "watch_operation.rs",
     ]
     .iter()
     .map(|f| {

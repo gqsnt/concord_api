@@ -377,6 +377,19 @@ the prepared request instead of a hand-written constant.
   `e0950f3`; the 7-request audit test ran inside the 0.02 s reported for the whole `after.rs`
   binary).
 
+## Later SDK change — truthful watch outputs
+
+After the stages above, the six watch endpoints were redeclared `-> stream WatchEvent<T>` with
+`response JsonStream;` (their generated `send()` now returns the open event stream instead of
+draining the body), `WatchOperation::ENDPOINT` and the hand-written watch labels were removed (the
+endpoint name now comes from the declaration, which removes one of the three hand-maintained
+group/version places noted in stage 2), `watch::open` sends the declared operation with
+`Prepared::receive`, and `WatchStream<T>` became an alias of the reader
+(`JsonValues<WatchEvent<T>>`). `src/before.rs`, `src/after.rs` and both test files compiled and
+passed **unedited** (`cargo test --locked -p concord-check-maintenance-kubernetes`: after.rs 4,
+before.rs 2): `follow` uses only `watch::open`, `WatchOperation`'s setters, `WatchEvent` and
+`WatchOpenError`, which kept their shape.
+
 ## Limits
 
 - Loopback test server only; no real API server was contacted. Fixtures are schema-derived
