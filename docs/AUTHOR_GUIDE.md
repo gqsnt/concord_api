@@ -1229,19 +1229,20 @@ is executed with `Decoder::execute(&client, request)`, which returns the same `R
 ### 5.12 One adapter for every operation: `concord::Endpoint`
 
 An SDK that returns its own error type and response metadata does not need a wrapper method per
-operation. Every generated endpoint implements `concord::Endpoint` (its `Output`, `prepare()`,
-and `operation()`), so one trait of the SDK, implemented for every `E: Endpoint`, serves all of
-them; callers import it once.
+operation. Every generated endpoint implements `concord::Endpoint<T>` for its output `T`
+(`prepare()` and `operation()`), so one trait of the SDK, implemented for every `E: Endpoint<T>`,
+serves all of them; callers import it once. The output is a parameter, so private output types
+stay allowed in a public client.
 
 Excerpt of `checks/phase-a/tests/received.rs`:
 
 ```rust,ignore
-    pub trait Call: Endpoint {
-        fn call(self) -> impl Future<Output = Result<(Self::Output, Meta), SdkError>>;
+    pub trait Call<T>: Endpoint<T> {
+        fn call(self) -> impl Future<Output = Result<(T, Meta), SdkError>>;
     }
 
-    impl<E: Endpoint> Call for E {
-        async fn call(self) -> Result<(E::Output, Meta), SdkError> {
+    impl<T, E: Endpoint<T>> Call<T> for E {
+        async fn call(self) -> Result<(T, Meta), SdkError> {
             let prepared = self.prepare().map_err(|e| SdkError::Concord(e, None))?;
             let received = prepared
                 .receive()
@@ -1258,7 +1259,7 @@ Excerpt of `checks/phase-a/tests/received.rs`:
 
 A provider error document on a non-2xx response is read with `received.bytes_limited(n)`: the body
 up to `n` bytes, `ErrorKind::Limit` beyond (nothing more is read); parse it with the format's
-`decode_body`. `E::operation()` names the endpoint without building a request.
+`decode_body`. `<E as Endpoint<T>>::operation()` names the endpoint without building a request.
 
 ## 6. Wire formatting: `Display` and newtypes
 

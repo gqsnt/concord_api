@@ -106,15 +106,17 @@ impl<T> Prepared<T> {
 }
 
 /// A generated endpoint request, seen generically: every endpoint type `api!` generates implements
-/// it, so an SDK can write **one** adapter for all of its operations instead of a wrapper method
-/// per operation — a send that returns the SDK's own error and response metadata, say:
+/// `Endpoint<T>` for its declared output `T` (the decoded `T` of `-> T`, `()` without `->`, the
+/// reader of `-> stream T`, `Incoming` for `-> stream`), so an SDK can write **one** adapter for all
+/// of its operations instead of a wrapper method per operation — a send that returns the SDK's own
+/// error and response metadata, say:
 ///
 /// ```ignore
-/// pub trait Call: concord::Endpoint {
-///     fn call(self) -> impl Future<Output = Result<WithMeta<Self::Output>, SdkError>>;
+/// pub trait Call<T>: concord::Endpoint<T> {
+///     fn call(self) -> impl Future<Output = Result<WithMeta<T>, SdkError>>;
 /// }
-/// impl<E: concord::Endpoint> Call for E {
-///     async fn call(self) -> Result<WithMeta<E::Output>, SdkError> {
+/// impl<T, E: concord::Endpoint<T>> Call<T> for E {
+///     async fn call(self) -> Result<WithMeta<T>, SdkError> {
 ///         let received = self.prepare()?.receive().await?;
 ///         let meta = Meta::capture(&received.head());
 ///         Ok(WithMeta { value: received.decode().await?, meta })
@@ -123,20 +125,17 @@ impl<T> Prepared<T> {
 /// // caller: `use my_sdk::Call;` then `api.items().get(7).call().await?`
 /// ```
 ///
-/// The generated type's own `prepare()` and `send()` stay what callers use directly; the trait adds
-/// no method to the generated namespace (call it through a trait of yours, or as
-/// `Endpoint::prepare(e)`).
-pub trait Endpoint: Sized {
-    /// The declared output: the decoded `T` of `-> T`, `()` without `->`, the reader of
-    /// `-> stream T`, `Incoming` for `-> stream`.
-    type Output;
-
+/// The output is a type parameter, not an associated type, so a public client may keep private
+/// output types (an associated type in this public impl would be E0446). The generated type's own
+/// `prepare()` and `send()` stay what callers use directly; the trait adds no method to the generated
+/// namespace.
+pub trait Endpoint<T>: Sized {
     /// The generated `prepare()`: builds the request, no I/O.
     ///
     /// # Errors
     ///
     /// As the generated `prepare()` (`ErrorKind::Build`).
-    fn prepare(self) -> Result<Prepared<Self::Output>, Error>;
+    fn prepare(self) -> Result<Prepared<T>, Error>;
 
     /// The endpoint's declared identity, without building a request.
     fn operation() -> Operation;

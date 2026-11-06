@@ -85,12 +85,10 @@ error[E0599]: the method `prepare` exists for struct `FiniteEvents`, but its tra
   |
   = note: the following trait bounds were not satisfied:
           `Json: Incremental<String>`
-  = help: items from traits can only be used if the trait is in scope
+  = help: items from traits can only be used if the trait is implemented and in scope
+  = note: the following trait defines an item `prepare`, perhaps you need to implement it:
+          candidate #1: `Endpoint`
   = note: this error originates in the macro `$crate::__macro::api` which comes from the expansion of the macro `concord::api` (in Nightly builds, run with -Z macro-backtrace for more info)
-help: trait `Endpoint` which provides `prepare` is implemented but not in scope; perhaps you want to import it
-  |
-3 + use concord::Endpoint;
-  |
 
 error[E0277]: the format `Json` cannot open a stream of `String`
  --> tests/ui_stream/finite_format_for_stream.rs:6:50

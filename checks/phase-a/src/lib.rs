@@ -83,3 +83,37 @@ concord::api! {
         }
     }
 }
+
+/// AST-W1-1 regression: a public client keeps private output types and a private stream format
+/// (the generated `Endpoint<T>` impl names them as a trait parameter, never in an associated type).
+#[allow(dead_code)]
+mod private_outputs {
+    use concord::{CodecError, Incoming, Incremental, ResponseHead};
+
+    #[derive(serde::Deserialize)]
+    struct Secret {
+        #[allow(dead_code)]
+        id: u64,
+    }
+
+    struct Opaque;
+
+    impl Incremental<u32> for Opaque {
+        type Records = Incoming;
+        type Context = ();
+        fn context(_: &ResponseHead<'_>) -> Result<(), CodecError> {
+            Ok(())
+        }
+        fn open((): (), body: Incoming) -> Incoming {
+            body
+        }
+    }
+
+    concord::api! {
+        pub client Private {
+            base "http://private.invalid";
+            GET secret() -> Secret { response concord::Json; }
+            GET rows() -> stream u32 { response Opaque; }
+        }
+    }
+}

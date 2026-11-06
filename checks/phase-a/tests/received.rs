@@ -279,12 +279,12 @@ mod adapter {
         Concord(concord::Error, Option<Meta>),
     }
 
-    pub trait Call: Endpoint {
-        fn call(self) -> impl Future<Output = Result<(Self::Output, Meta), SdkError>>;
+    pub trait Call<T>: Endpoint<T> {
+        fn call(self) -> impl Future<Output = Result<(T, Meta), SdkError>>;
     }
 
-    impl<E: Endpoint> Call for E {
-        async fn call(self) -> Result<(E::Output, Meta), SdkError> {
+    impl<T, E: Endpoint<T>> Call<T> for E {
+        async fn call(self) -> Result<(T, Meta), SdkError> {
             let prepared = self.prepare().map_err(|e| SdkError::Concord(e, None))?;
             let received = prepared
                 .receive()

@@ -1467,8 +1467,7 @@ fn emit_owner(
                     }
                 }
 
-                impl #k::Endpoint for #ty {
-                    type Output = #out;
+                impl #k::Endpoint<#out> for #ty {
                     #[inline] fn prepare(self) -> ::core::result::Result<#k::Prepared<#out>, #k::Error> {
                         #ty::prepare(self)
                     }

@@ -256,7 +256,7 @@ Each key has one **slot**, positioned at the key's first appearance on the chain
   obtained response (a signed URL) with an optional static label (`Operation::label`), which
   errors and readers print; `Error::endpoint()` names declared endpoints only,
   `Error::operation()` either.
-- Every generated endpoint type implements the public `Endpoint` trait (`type Output`, the
+- Every generated endpoint type implements the public `Endpoint<T>` trait for its output `T` (the
   generated `prepare()`, `operation()` — the declared identity without building a request); it adds
   nothing to the generated namespace. `Received::bytes_limited(n)` reads the body of any status up
   to `n` bytes (`ErrorKind::Limit` beyond, the rest unread), without the declared handling.
