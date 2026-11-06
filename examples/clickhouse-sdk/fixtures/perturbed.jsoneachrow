@@ -1,0 +1,9 @@
+{"date":"2022-04-30","season":2021,"home_team":"Sutton United","away_team":"Bradford City","home_team_goals":1,"away_team_goals":4}
+{"date":"2026-01-17","season":2026,"home_team":"1. FC Köln","away_team":"Málaga CF 😀","home_team_goals":2,"away_team_goals":2}
+{"date":"2026-01-18","season":2026,"home_team":"Walsall","away_team":"Swindon Town","home_team_goals":0,"away_team_goals":3}
+
+__exception__
+pqtrsvwxyzabcdef
+Code: 241. DB::Exception: Memory limit (total) exceeded: synthetic fixture. (MEMORY_LIMIT_EXCEEDED) (version 26.10.1.1)
+120 pqtrsvwxyzabcdef
+__exception__
