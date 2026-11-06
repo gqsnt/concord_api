@@ -383,8 +383,8 @@ dependencies = [
 name = "concord"
 version = "4.2.0"
 dependencies = [
+ "concord-codecs",
  "concord-core",
- "concord-extras",
  "concord-macros",
  "rustls-pki-types",
  "serde",
@@ -392,6 +392,20 @@ dependencies = [
  "tokio",
  "tokio-rustls",
  "trybuild",
+]
+
+[[package]]
+name = "concord-auth"
+version = "4.2.0"
+dependencies = [
+ "base64",
+ "concord",
+ "concord-example-testserver",
+ "concord-retry",
+ "futures-util",
+ "http",
+ "reqwest",
+ "tokio",
 ]
 
 [[package]]
@@ -419,6 +433,18 @@ dependencies = [
  "serde_json",
  "tokio",
  "url",
+]
+
+[[package]]
+name = "concord-check-core-concepts"
+version = "0.0.0"
+dependencies = [
+ "concord",
+ "concord-example-testserver",
+ "futures-core",
+ "reqwest",
+ "serde",
+ "tokio",
 ]
 
 [[package]]
@@ -564,6 +590,22 @@ name = "concord-clone-hygiene-d"
 version = "0.0.0"
 
 [[package]]
+name = "concord-codecs"
+version = "4.2.0"
+dependencies = [
+ "concord-core",
+ "csv",
+ "csv-core",
+ "futures-core",
+ "http-body",
+ "mime",
+ "serde",
+ "serde_json",
+ "serde_urlencoded",
+ "tokio",
+]
+
+[[package]]
 name = "concord-core"
 version = "4.2.0"
 dependencies = [
@@ -656,6 +698,7 @@ name = "concord-example-kubernetes-sdk"
 version = "0.0.0"
 dependencies = [
  "concord",
+ "concord-example-testserver",
  "concord-pagination",
  "serde",
  "serde_json",
@@ -677,6 +720,7 @@ name = "concord-example-native"
 version = "0.0.0"
 dependencies = [
  "concord",
+ "concord-retry",
  "futures-core",
  "reqwest",
  "serde",
@@ -708,6 +752,7 @@ name = "concord-example-riot"
 version = "0.0.0"
 dependencies = [
  "concord",
+ "concord-retry",
  "serde",
  "serde_json",
  "tokio",
@@ -821,16 +866,7 @@ dependencies = [
 name = "concord-extras"
 version = "4.2.0"
 dependencies = [
- "concord-core",
- "csv",
- "csv-core",
- "futures-core",
- "http-body",
- "mime",
- "serde",
- "serde_json",
- "serde_urlencoded",
- "tokio",
+ "concord-codecs",
 ]
 
 [[package]]
@@ -882,6 +918,19 @@ version = "4.2.0"
 dependencies = [
  "futures-util",
  "tokio",
+ "url",
+]
+
+[[package]]
+name = "concord-retry"
+version = "4.2.0"
+dependencies = [
+ "concord",
+ "concord-core",
+ "concord-example-testserver",
+ "futures-util",
+ "reqwest",
+ "tokio",
 ]
 
 [[package]]
@@ -919,8 +968,8 @@ dependencies = [
 name = "concord-sdk-clickhouse"
 version = "0.0.0"
 dependencies = [
- "base64",
  "concord",
+ "concord-auth",
  "concord-example-testserver",
  "futures-core",
  "serde",
@@ -932,7 +981,9 @@ dependencies = [
 name = "concord-sdk-distribution-registry"
 version = "0.0.0"
 dependencies = [
+ "base64",
  "concord",
+ "concord-auth",
  "concord-example-testserver",
  "concord-pagination",
  "serde",
@@ -1115,8 +1166,8 @@ dependencies = [
 name = "concord-sdk-twilio"
 version = "0.0.0"
 dependencies = [
- "base64",
  "concord",
+ "concord-auth",
  "concord-example-testserver",
  "serde",
  "tokio",

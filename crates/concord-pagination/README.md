@@ -28,6 +28,17 @@ explicit:
 The factory and its futures must be `Send + 'static` (the facade erases their types); each page
 request costs one allocation for its future.
 
+When item consumers also need metadata, `Pages::item_events()` returns an item for each record
+and moves metadata once after each page's items, including empty pages. `PageItemEvent::Page`
+marks an intermediate page; `PageItemEvent::Complete` carries the final page's metadata only
+after all its items were delivered. A bound or failure returns a `PagesError`, and stopping
+early has no completion event. `finish()` reports the outcome, item checkpoint and remainder.
+A completion token in metadata is not a next-page key. Start the event traversal before reading
+the final page; it cannot recover metadata from pages already consumed. Plain `items()` is
+unchanged. Access a typed factory error with `provider_error()` or move it with
+`into_provider_error()`, which also returns its failed position and progress (and returns the
+original error for non-provider endings). Neither accessor changes redacted formatting.
+
 ```rust
 use std::num::NonZeroUsize;
 use concord_pagination::{Incomplete, Page, Pages, Resume};

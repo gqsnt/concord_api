@@ -1,0 +1,22 @@
+[package]
+name = "concord-check-core-concepts"
+description = "SDK50 P1 executable comparisons F1–F3: request representation, response interpretation and metadata, declaration to generated usage."
+version = "0.0.0"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish = false
+
+[dependencies]
+concord = { path = "../../crates/concord" }
+serde = { workspace = true, features = ["derive"] }
+
+[dev-dependencies]
+futures-core.workspace = true
+# `Body::wrap_stream`, for the one-shot source of the F1 comparison.
+reqwest = { workspace = true, features = ["stream"] }
+concord-example-testserver = { path = "../../examples/testserver" }
+tokio = { workspace = true, features = ["macros", "rt", "time"] }
+
+[lints]
+workspace = true

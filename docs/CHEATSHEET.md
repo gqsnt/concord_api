@@ -87,6 +87,7 @@ fn main() -> Result<(), concord::Error> {
 | `scope name(..) { .. }` | a level the caller navigates: shared path, subdomain, keys, values | [§1](AUTHOR_GUIDE.md#1-model-the-api-as-a-tree) |
 | `GET name(..) -> T { .. }` | an endpoint (`GET POST PUT PATCH DELETE HEAD OPTIONS`); no `->`: no typed output | [§5.5](AUTHOR_GUIDE.md#55-no-output-versus---) |
 | `x: T`, `x: T = e`, `x?: T`, `x?: T = e` | required, initialized, optional, optional and initially present | [§2](AUTHOR_GUIDE.md#2-values-required-optional-initialized) |
+| `params Name(x?: T, ..);` (client), `GET op(..Name)` | a parameter group: optional/initialized values written once, spliced where `..Name` is written; trait `Name` holds their setters for every including endpoint | [§2.1](AUTHOR_GUIDE.md#21-parameter-groups-one-fact-many-endpoints) |
 | `path "a/{x}"`, `subdomain "{x}"` | templates; `{client.x}` or `{scope.x}` reads an enclosing owner's value | [§3](AUTHOR_GUIDE.md#3-base-paths-and-subdomains) |
 | `query x`, `query("k") x`, `header("k") x`, `header(KEY) x`, `body x` | placements in the parameter list; `each` sends one occurrence per item | [§4.1](AUTHOR_GUIDE.md#41-placing-a-value) |
 | `query { "k" = v; }`, `headers { "k" = "t {x}"; KEY = v; }` | blocks. **Left of `=` is a key**: a literal, or for headers a Rust path to a `HeaderName`. **Right of `=` is a value**: a template, or a value's name | [§4.2](AUTHOR_GUIDE.md#42-blocks-templates-and-references), [§4.8](AUTHOR_GUIDE.md#48-header-names-and-values) |
@@ -99,7 +100,7 @@ fn main() -> Result<(), concord::Error> {
 | `#[cfg(..)]`, `#[deprecated]`, `///` on scopes and endpoints | applied to the subtree or the navigation method; names are checked as if every `cfg` were on, so cfg-exclusive siblings need distinct names | [§8](AUTHOR_GUIDE.md#8-attributes) |
 
 Usual order inside an owner: `base` (client), `path`, `subdomain`, `query { }`, `headers { }`,
-format statements, then children.
+format statements, `send` (client), parameter groups `params Name(..);` (client), then children.
 
 ## Calling
 
@@ -109,20 +110,21 @@ format statements, then children.
 | `Docs::validate_header_names()` | in a unit test: every endpoint's header names checked without building anything ([§4.9](AUTHOR_GUIDE.md#49-checking-header-names-in-a-test)) |
 | `.set_x(v)`, `.maybe_x(Some(v) / None)` | return the updated handle (`#[must_use]`); handles are cheap snapshots |
 | `docs.folder(7)`, `folder.rename(3, change)` | navigation: required values are positional, in declaration order |
-| `.send().await` | `prepare`, one `execute`, require 2xx, check the response head, read and decode the body; never retries |
+| `.send().await` (no client send policy) | `prepare`, one `execute`, require 2xx, then declared handling: finite decode, drain or open an unread stream; no Concord retry or extra request (also true of `Prepared::send`) |
 | `.prepare()?` → `Prepared` | `receive()` (below), `send()`, the native `reqwest::Request` (`request()`), `send_raw()`, `into_parts()` |
-| `.prepare()?.receive().await?` → `Received` | one execution, any status, body unread: `head()`, `meta()` (owned copy), `status()`, `url()`, then one of `decode()`, `decode_limited(n)`, `into_incoming()`, `bytes_limited(n)`, `into_response()` |
+| `.prepare()?.receive().await?` → `Received` | one execution, any status, body unread: `head()`, `meta()` (owned copy), `status()`, `url()`, then one of `decode()`, `decode_limited(n)`, `decode_with_meta()` (value and head), `document::<F, D>(n)` (any status, bounded, the format's head checks first: provider error documents), `into_incoming()`, `bytes_limited(n)`, `into_response()` ([§5.11](AUTHOR_GUIDE.md#511-reading-response-metadata-in-an-sdk)) |
 | `-> stream T` / `-> stream` | `send()` returns the reader / the unread `Incoming`; readers' `open(..)` takes `Incoming`, `Received` or a native response; `completion()`, `into_stream()` |
 | `-> stream sse::Event` + `response Sse;` (feature `sse`) | server-sent events: `next()` → `Event` (`event()`, `data()` as text, `id()`), `last_event_id()`, `retry()`; a body ending inside an event is an error; no reconnect |
 | `prepared.follow(url)?` | the same request at a server-returned URL (same origin only; `Debug` withholds it) |
-| `send Policy;` (client) | every `send()` returns the SDK's `<Policy as SendWith<T>>::Output` (its errors, metadata, signing) |
+| `send policy;` (client value or stateless type) | generated `send()` calls `SendWith<T>::send` and returns the SDK's `Output`; the policy may sign, make sub-requests or repeat requests |
 | `concord::Endpoint<T>` | implemented by every generated endpoint for its output `T` (`prepare`, `operation()`): write one SDK adapter for all operations |
 | `into_parts()` → `(Client, Request, Decoder)` | execute it yourself, then `decoder.finish(result)` or `decoder.decode(response)` |
 | `error.kind()`, `status()`, `endpoint()` | `Build`, `Transport`, `Status`, `Metadata`, `Decode`, `Limit`; `status()` is `Some` for `Status` only |
-| `error.response()`, `error.into_response()` | the unread response of a `Status` or a `Metadata` error: borrowed (headers) or taken (body) |
+| `error.head()`, `error.head_meta()` | the head of the response any failure after it arrived concerns (`Status`, `Metadata`, `Decode`, `Limit`, a mid-body `Transport`): borrowed, or an owned copy; `None` before a head |
+| `error.response()`, `error.into_response()`, `error.meta()` | the unread response of a `Status` or a `Metadata` error: borrowed (headers), taken (body), or its head owned |
 | `error.codec_error()` | the format's `CodecError` (a `Metadata`, `Decode` or encoding `Build` error): static `label()`, `get("line")`, and `source_unredacted()` |
 | `error.transport()` | the reqwest error, which may contain URLs |
-| `<Json as Decode<T>>::decode_body((), bytes)` | decode an error document you read yourself: bytes only, no head check |
+| `<Json as Decode<T>>::decode_body((), bytes)` | decode bytes you already hold: no head check and no context (for a received error document, `document` runs both) |
 
 ## Remember
 

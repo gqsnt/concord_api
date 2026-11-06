@@ -22,6 +22,12 @@ pub struct Error {
 struct Inner {
     operation: Option<Operation>,
     repr: Repr,
+    /// The head of the response whose body was being read when the call failed (`Decode`,
+    /// `Limit`, a mid-body `Transport`), moved out of the native response before its body was
+    /// consumed. `Status` and `Metadata` errors keep the whole response in `repr` instead.
+    head: Option<ResponseMeta>,
+    /// The body that did not decode, kept by [`Received::document`](crate::Received::document).
+    body: Option<bytes::Bytes>,
 }
 
 enum Repr {
@@ -38,7 +44,8 @@ enum Repr {
     Encode(CodecError),
     Transport(reqwest::Error),
     Status(reqwest::Response),
-    /// A 2xx response whose head the format refused; the response is unread.
+    /// A response whose head the format refused (a 2xx of a declared output, or any status read
+    /// with `Received::document`); the response is unread.
     Metadata(CodecError, reqwest::Response),
     Decode(CodecError),
     /// A body read with a byte limit was longer.
@@ -56,11 +63,13 @@ pub enum ErrorKind {
     Transport,
     /// The server answered with a non-2xx status.
     Status,
-    /// The server answered 2xx, but the declared format refused the response head (its
-    /// `Content-Type`, or another header the format checks) before the body was read. The
-    /// response is kept unread ([`Error::response`], [`Error::into_response`]).
+    /// The format refused the response head (its `Content-Type`, or another header the format
+    /// checks) before the body was read: a 2xx response of a declared output, or a response of
+    /// any status read with [`Received::document`](crate::Received::document). The response is
+    /// kept unread ([`Error::response`], [`Error::into_response`]).
     Metadata,
-    /// A 2xx response body could not be decoded with the declared format.
+    /// A response body could not be decoded with the format: a 2xx body of a declared output, or
+    /// a document of any status read with [`Received::document`](crate::Received::document).
     Decode,
     /// A body read with a byte limit ([`Received::bytes_limited`](crate::Received::bytes_limited))
     /// was longer than the limit; the rest was not read.
@@ -120,8 +129,25 @@ impl Error {
 
     fn new(operation: Option<Operation>, repr: Repr) -> Self {
         Self {
-            inner: Box::new(Inner { operation, repr }),
+            inner: Box::new(Inner {
+                operation,
+                repr,
+                head: None,
+                body: None,
+            }),
         }
+    }
+
+    /// The same error, with the head of the response whose body it concerns.
+    pub(crate) fn with_head(mut self, head: ResponseMeta) -> Self {
+        self.inner.head = Some(head);
+        self
+    }
+
+    /// The same error, with the body that did not decode.
+    pub(crate) fn with_body(mut self, body: bytes::Bytes) -> Self {
+        self.inner.body = Some(body);
+        self
     }
 
     /// The stage at which the call failed.
@@ -154,8 +180,8 @@ impl Error {
         self.inner.operation
     }
 
-    /// The response status, for [`ErrorKind::Status`] only. A [`Metadata`](ErrorKind::Metadata)
-    /// error's response was a 2xx; read it with [`response`](Self::response).
+    /// The response status, for [`ErrorKind::Status`] only. The status of any other failed call
+    /// that received a response is `self.head().map(|h| h.status())` ([`head`](Self::head)).
     pub fn status(&self) -> Option<reqwest::StatusCode> {
         match &self.inner.repr {
             Repr::Status(response) => Some(response.status()),
@@ -164,7 +190,7 @@ impl Error {
     }
 
     /// The unread response of an [`ErrorKind::Status`] error (a non-2xx) or an
-    /// [`ErrorKind::Metadata`] error (a 2xx whose head the format refused), borrowed: its status
+    /// [`ErrorKind::Metadata`] error (a response whose head the format refused), borrowed: its status
     /// and headers (`Retry-After`, a request id, the `Content-Type` the format refused) can be read
     /// while the error is kept, for example by a predicate written as `Fn(&Error) -> bool`. To
     /// read the body, take the response with [`into_response`](Self::into_response).
@@ -189,19 +215,53 @@ impl Error {
         }
     }
 
-    /// An owned copy of the kept response's head with this error's operation, for an SDK error
-    /// that outlives this one ([`Status`](ErrorKind::Status) and
-    /// [`Metadata`](ErrorKind::Metadata) only, like [`response`](Self::response)).
+    /// The head of the response this error concerns — status, version and header fields,
+    /// borrowed — whenever a response arrived: a [`Status`](ErrorKind::Status) or
+    /// [`Metadata`](ErrorKind::Metadata) error (the response is kept unread), and a
+    /// [`Decode`](ErrorKind::Decode), [`Limit`](ErrorKind::Limit) or
+    /// [`Transport`](ErrorKind::Transport) error raised while that response's body was read
+    /// (Concord moved the head out of the native response before reading the body: no header is
+    /// cloned). `None` when no response arrived (`Build`, a transport failure before a head) and
+    /// for a body-only call ([`Decode::decode_body`](crate::Decode::decode_body) sees no head).
+    /// The header values are the server's, unredacted.
+    ///
+    /// The HTTP status of any failed call is `error.head().map(|h| h.status())`, after a decode
+    /// failure too; [`status`](Self::status) stays the status of a `Status` error only, and
+    /// [`meta`](Self::meta) / [`response`](Self::response) the kept response of a `Status` or
+    /// `Metadata` error only.
+    pub fn head(&self) -> Option<ResponseHead<'_>> {
+        match &self.inner.repr {
+            Repr::Status(response) | Repr::Metadata(_, response) => {
+                Some(ResponseHead::of(response))
+            }
+            _ => self.inner.head.as_ref().map(ResponseMeta::head),
+        }
+    }
+
+    /// An owned copy of [`head`](Self::head) with this error's operation, for an SDK error that
+    /// outlives this one: available for every error raised after a response arrived. Clones the
+    /// header map.
+    pub fn head_meta(&self) -> Option<ResponseMeta> {
+        self.head()
+            .map(|head| ResponseMeta::new(head, self.operation()))
+    }
+
+    /// An owned copy of the kept response's head with this error's operation
+    /// ([`Status`](ErrorKind::Status) and [`Metadata`](ErrorKind::Metadata) only, like
+    /// [`response`](Self::response): `meta()` is `Some` exactly when
+    /// [`into_response`](Self::into_response) returns the response). For the head of any failure
+    /// after a response arrived (a `Decode` error too), use [`head_meta`](Self::head_meta).
     pub fn meta(&self) -> Option<ResponseMeta> {
         self.response()
             .map(|response| ResponseMeta::new(ResponseHead::of(response), self.operation()))
     }
 
     /// The unread response of an [`ErrorKind::Status`] or [`ErrorKind::Metadata`] error; any other
-    /// error is returned unchanged as `Err`. Concord never reads or prints the body: use it to
-    /// decode an API error document, for example with
-    /// `<Json as Decode<Problem>>::decode_body((), response.bytes().await?)` (a body-only decode:
-    /// no head check), or to read a body the format refused.
+    /// error is returned unchanged as `Err`. Concord never reads or prints the body: read it
+    /// yourself (unbounded, with reqwest), or to read a provider's error document **bounded and
+    /// with the format's head checks**, receive the response instead of sending it
+    /// (`prepare()?.receive().await?`) and use
+    /// [`Received::document`](crate::Received::document).
     ///
     /// ```no_run
     /// # async fn run(request: impl std::future::Future<Output = Result<(), concord_core::Error>>)
@@ -217,11 +277,21 @@ impl Error {
     /// # Ok(()) }
     /// ```
     pub fn into_response(self) -> Result<reqwest::Response, Error> {
-        let Inner { operation, repr } = *self.inner;
+        let Inner {
+            operation,
+            repr,
+            head,
+            body,
+        } = *self.inner;
         match repr {
             Repr::Status(response) | Repr::Metadata(_, response) => Ok(response),
             repr => Err(Error {
-                inner: Box::new(Inner { operation, repr }),
+                inner: Box::new(Inner {
+                    operation,
+                    repr,
+                    head,
+                    body,
+                }),
             }),
         }
     }
@@ -237,6 +307,15 @@ impl Error {
             Repr::Transport(error) => Some(error),
             _ => None,
         }
+    }
+
+    /// The body that did not decode, for a [`Decode`](ErrorKind::Decode) error raised by
+    /// [`Received::document`](crate::Received::document): an error document an SDK keeps raw when
+    /// it is not the provider's (an HTML page from a proxy, an empty body). The declared
+    /// `decode()` path does not keep it. **Unredacted** — body content can quote request values —
+    /// and never printed by Concord.
+    pub fn body_unredacted(&self) -> Option<&bytes::Bytes> {
+        self.inner.body.as_ref()
     }
 
     /// The format's error, for [`ErrorKind::Metadata`], [`ErrorKind::Decode`] and a body that

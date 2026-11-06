@@ -18,9 +18,14 @@ They use only the public surface: `Prepared::{send, send_raw, into_parts}`, `Dec
 (RFC 9457 problem details, a JSON error object).
 
 - **Bounded, with the head:** `prepare()?.receive().await?`; for a non-2xx, read the document with
-  `received.bytes_limited(n)` (`ErrorKind::Limit` beyond `n`) and decode it as below; a send
-  policy (`send Policy;`) does this once for a whole client.
-- **How (unbounded):** `send()`; on error, return any error whose `status()` is `None` unchanged (not an
+  `received.document::<Json, Problem>(n).await`: it checks the format's head, reads at most `n`
+  bytes and returns metadata beside the result. Choose `IgnoreContentType<Json>` to preserve a
+  provider's policy of accepting any media label. A send policy (`send Policy;`) does this once
+  for a whole client; the [quickstart](QUICKSTART.md#4-configure-the-client-call-handle-the-result)
+  shows it for one call.
+- **Legacy native recipe (unbounded):** `errors::rename_item` retains its owned `reqwest::Error`
+  and `CodecError` payloads; `document` instead returns a `concord::Error` that only borrows
+  those inner errors. It uses `send()`; on error, return any error whose `status()` is `None` unchanged (not an
   error document), then `into_response()?` returns the unread response of the status error;
   decode its bytes with
   `<Json as Decode<Problem>>::decode_body((), bytes)`. That is a body-only decode: it checks no
@@ -87,6 +92,7 @@ request, a request id, a count) together with the decoded value, possibly after 
   bound. Values are read deliberately with `raw_header`, `raw_headers`, `raw_url` and `value`.
   Never return the raw `reqwest::Error` of `client.execute(..).await?`: its `Display` prints the
   full URL, sensitive query values included.
+- **Whole head, same output:** read `Received::head` or keep `Received::meta` as a `concord::ResponseMeta` before decoding, without changing the declared output type.
 - **When not:** for the value alone, `send()`; for the headers of a status error alone,
   `error.response()`.
 - **Evidence:** [`examples/native/tests/metadata_recipe.rs`](../examples/native/tests/metadata_recipe.rs)
@@ -104,8 +110,12 @@ feed that must not be buffered.
 - **Assumes:** the per-chunk deadline (`tokio::time::timeout`) and the chunk limit are the
   application's. Dropping a response before its end closes that connection instead of returning it
   to the pool.
-- **Note:** any declared typed output (`-> Bytes` with `response Binary;`, `-> T`) buffers the whole body, as every
-  `Decode` does; an endpoint without `->` drains it without buffering but discards it.
+- **Note:** a finite typed output (`-> Bytes` with `response Binary;`, `-> T`) buffers the whole
+  body for `Decode<T>`. `-> stream T` uses `Incremental<T>` and opens its reader without reading
+  the body; `-> stream` returns the unread `Incoming` for a reader chosen at run time (see
+  [author guide, 5.9](AUTHOR_GUIDE.md#59-streaming-outputs---stream)). An endpoint without `->`
+  drains the body without buffering but discards it. This is the declared handling used by
+  `Prepared::send` and generated `send()` without a client send policy.
 - **Request bodies** go the other way: a body produced while it is sent, with one fixed media
   type, is a format. [`upload::Streamed`](../examples/native/src/upload.rs) implements
   `Encode<OneShot>` and moves a non-`Clone` one-shot source into `reqwest::Body::wrap_stream`
@@ -310,9 +320,12 @@ without a body.
 
 ## Application policies
 
-Concord performs no retries, pagination, admission or authentication: one `send()` is one
-`execute`. These are ordinary application code with their assumptions stated; none is a
-recommended default for every API. All are in [`policies.rs`](../examples/native/src/policies.rs).
+`Prepared::send` and generated `send()` without a client send policy perform one `execute`,
+with no Concord retry or extra request. A client `send policy;` delegates generated `send()` to
+`SendWith<T>::send`; that policy may sign, make sub-requests or repeat requests. The recipes here
+implement retries, pagination, admission and authentication as ordinary application code with
+their assumptions stated; none is a recommended default for every API. All are in
+[`policies.rs`](../examples/native/src/policies.rs).
 
 | Recipe | When | Assumptions stated by the recipe |
 |---|---|---|
@@ -405,9 +418,28 @@ that each read a whole streamed body (`manifest_jobs`), all with budgets, a boun
 reports that keep failed keys apart from the resume point. It does not depend on Concord: the SDK
 supplies a factory from a key to an owned future (a generated operation with the key set, `send()`,
 and a projection of the response into a page), so the continuation rules stay in the SDK adapter,
-and core Concord still sends one request per `send()`. Its README states the bounds and what the
-crate cannot check; the provider SDK examples (`examples/{github,stripe,shopify,salesforce,kubernetes}-sdk`)
+and `Prepared::send` or generated `send()` without a client send policy performs one `execute`.
+A client `send policy;` delegates to `SendWith<T>::send`, which may sign, make sub-requests or
+repeat requests. The pagination README states the bounds and what the crate cannot check;
+the provider SDK examples (`examples/{github,stripe,shopify,salesforce,kubernetes}-sdk`)
 show adapters over real provider contracts.
+
+For item-level consumption that also needs page metadata, use `Pages::item_events()`:
+`PageItemEvent::Item` yields each record, `Page` moves metadata after an intermediate page,
+and `Complete` moves the final page's metadata after its last item (empty pages still produce
+an event). Only `Complete` establishes a finished traversal; bounded and failed walks return
+errors, and `finish` reports a stop and any unreturned items. Drive's next polling token and
+Graph's final delta link stay provider-specific metadata, never pagination keys. Extract a
+typed factory error with `PagesError::provider_error()` or `into_provider_error()`; the owned
+form also preserves the failed page and counters.
+
+For `Link` headers, enable the crate's optional `link` feature and use
+[`concord_pagination::link`](../crates/concord-pagination/src/link.rs): pass all field values as
+byte slices and the response URL to `link::parse`. It returns ordered, resolved targets,
+relation types and raw parameters, or a redacted syntax error; `link::relation` distinguishes
+absent, one and several matches. GitHub, GitLab, Snowflake and the registry use this shared
+grammar while keeping relation selection, duplicate-target policy, origin/collection checks and
+partition-index rules in their SDKs. The feature adds only `url`, with no HTTP or Concord crate.
 
 ## Patterns from other APIs
 

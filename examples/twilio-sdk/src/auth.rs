@@ -2,7 +2,6 @@
 
 use std::fmt;
 
-use base64::{Engine as _, engine::general_purpose::STANDARD};
 use concord::reqwest::header::HeaderValue;
 
 /// Configured Basic authentication, independent of the account in the request path.
@@ -24,11 +23,9 @@ impl BasicAuth {
         if password.is_empty() || password.chars().any(char::is_control) {
             return Err(AuthError::Password);
         }
-        let encoded = STANDARD.encode(format!("{username}:{password}"));
-        let mut header =
-            HeaderValue::from_str(&format!("Basic {encoded}")).map_err(|_| AuthError::Header)?;
-        header.set_sensitive(true);
-        Ok(Self(header))
+        concord_auth::basic(username, password)
+            .map(Self)
+            .map_err(|_| AuthError::Header)
     }
 
     pub(crate) fn into_header(self) -> HeaderValue {

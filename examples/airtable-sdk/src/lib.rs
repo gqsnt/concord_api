@@ -148,7 +148,8 @@ impl fmt::Debug for Error {
 }
 impl From<concord::Error> for Error {
     fn from(source: concord::Error) -> Self {
-        Self::Concord { source, meta: None }
+        let meta = source.head_meta().map(Box::new);
+        Self::Concord { source, meta }
     }
 }
 impl Error {
@@ -203,8 +204,9 @@ impl SendWith<RecordPage> for Policy {
     type Output = Result<Response<RecordPage>, Error>;
     async fn send<E: Endpoint<RecordPage> + Send>(&self, endpoint: E) -> Self::Output {
         let received = endpoint.prepare()?.receive().await?;
-        let meta = received.meta();
-        if !meta.status().is_success() {
+        if !received.status().is_success() {
+            // Keep the complete raw body even when the provider document decodes.
+            let meta = received.meta();
             let (body, body_error) = match received.bytes_limited(ERROR_BODY_LIMIT).await {
                 Ok(bytes) => (Some(bytes), None),
                 Err(error) => (None, Some(error)),
@@ -220,14 +222,9 @@ impl SendWith<RecordPage> for Policy {
                 body_error,
             });
         }
-        let value: RecordPage =
-            received
-                .decode_limited(SUCCESS_BODY_LIMIT)
-                .await
-                .map_err(|source| Error::Concord {
-                    source,
-                    meta: Some(Box::new(meta.clone())),
-                })?;
+        let (value, meta) = received
+            .decode_limited_with_meta(SUCCESS_BODY_LIMIT)
+            .await?;
         if value.offset.as_deref() == Some("") {
             return Err(Error::EmptyOffset {
                 meta: Box::new(meta),

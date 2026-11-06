@@ -10,10 +10,14 @@ publish.workspace = true
 readme = "README.md"
 include = ["/src/**/*.rs", "/Cargo.toml", "/README.md", "/LICENSE-APACHE", "/LICENSE-MIT"]
 
+[features]
+link = ["dep:url"]
+
 [dependencies]
 # `FuturesUnordered` only: futures owned by the traversal, polled concurrently on the caller's
 # task. No executor, no spawned task, no Tokio.
 futures-util = { workspace = true, features = ["alloc"] }
+url = { workspace = true, optional = true }
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["macros", "rt", "time"] }

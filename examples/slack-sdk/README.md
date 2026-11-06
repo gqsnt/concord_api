@@ -115,8 +115,9 @@ is between buffered pages, not incremental JSON parsing. Unknown user and conver
 kept in `extra`; only a small set of fields is projected into named properties. Pages keep HTTP
 and body metadata; flattened item traversal discards page metadata. There is no snapshot or
 deduplication guarantee if the workspace changes while listing. There is no implicit page cap or
-repeated-cursor detector; applications can set `max_pages`. Checkpoints are short-lived and
-bound to the originating listing; do not reuse them with different options or store them long term.
+repeated-cursor detector; applications can set `max_pages`. Checkpoints are short-lived;
+`Cursor(String)` carries no listing context, so the caller must reuse it only with the same
+listing and options and must not store it long term.
 
 Tokens and cursors are redacted in the SDK's client/cursor debug output, and HTTP metadata debug
 prints header names only. Explicit header/body access and domain objects contain server data.

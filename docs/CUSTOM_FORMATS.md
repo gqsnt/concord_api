@@ -245,11 +245,13 @@ The same test sends a missing, unsupported and non-numeric version through `vers
 through `versioned_any_type()`, and every one is `ErrorKind::Metadata`: the adapter skips the
 `Content-Type` check only (section 7).
 
-`Decode<T>` returns only `T`. When the caller needs what the head said (the version itself),
+`Decode<T>` returns only `T`. To include head-derived data (the version itself) in that value,
 decode into an output type of yours that carries it, such as `WithVersion<T> { version, value }`,
 and declare that as the endpoint's output (`-> WithVersion<Item>`, with
 `impl Decode<WithVersion<Item>> for Versioned`); the context carries the version from `context`
 to `decode_body`.
+
+To keep head metadata without changing the declared output, read `Received::head` or call `Received::meta` to keep an owned `concord::ResponseMeta` before decoding.
 
 ### Narrowing to one exact vendor media type
 
@@ -257,7 +259,7 @@ to `decode_body`.
 `Json`'s checks first, then compares the essence (type and subtype, case-insensitive, parameters
 ignored) with its own. `Json` has already refused a missing, repeated, non-ASCII or malformed
 field, so the text before the first `;` is the essence; no media-type parser is needed. Excerpt of
-[`crates/concord-extras/tests/media.rs`](../crates/concord-extras/tests/media.rs):
+[`crates/concord-codecs/tests/media.rs`](../crates/concord-codecs/tests/media.rs):
 
 ```rust
 impl<T: serde::de::DeserializeOwned> Decode<T> for AcmeV2 {
@@ -409,7 +411,7 @@ body.
 ## 7. Strict `Json`, and the explicit adapter
 
 `Json` checks the response head before it reads the body. The rules are tested in
-[`crates/concord-extras/tests/media.rs`](../crates/concord-extras/tests/media.rs).
+[`crates/concord-codecs/tests/media.rs`](../crates/concord-codecs/tests/media.rs).
 
 | `Content-Type` of the 2xx response | `Json` |
 |---|---|
@@ -451,7 +453,7 @@ GET legacy(id: u64) -> Item {
 It works with any format that keeps its `Content-Type` checks in `check_content_type`, yours
 included: in section 5, `response IgnoreContentType<Versioned>;` still refuses a missing version
 header. The adapter's own test on `Json` shows each guarantee. Excerpt of
-[`crates/concord-extras/tests/media.rs`](../crates/concord-extras/tests/media.rs):
+[`crates/concord-codecs/tests/media.rs`](../crates/concord-codecs/tests/media.rs):
 
 ```rust
 /// The adapter skips exactly the `Content-Type` check; the body is still `Json`'s.
@@ -572,7 +574,7 @@ through the trait with the payload named, `<AcmeV2 as Decode<Item>>::check_conte
 `AcmeV2::check_content_type(&head)` alone cannot choose `T` (rustc's E0283). The standard formats'
 tests use one helper for every case. In an application crate, import
 `ResponseHead` from `concord`, `StatusCode` and `Version` from `concord::reqwest`. Excerpt of
-[`crates/concord-extras/tests/media.rs`](../crates/concord-extras/tests/media.rs):
+[`crates/concord-codecs/tests/media.rs`](../crates/concord-codecs/tests/media.rs):
 
 ```rust
 fn headers(content_types: &[&[u8]]) -> HeaderMap {

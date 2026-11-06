@@ -1,8 +1,10 @@
 //! U30 / U31 (R10–R12): application-owned policies composed around Concord.
 //!
-//! Concord performs no retries, pagination, admission or authentication: one `send()` is one
-//! `reqwest::Client::execute` (R11). Each policy below is ordinary application code with its
-//! assumptions stated; none is a recommended default for arbitrary APIs.
+//! `Prepared::send` and generated `send()` without a client send policy perform one
+//! `reqwest::Client::execute` (R11), with no Concord retry or extra request. A client
+//! `send policy;` instead delegates to `SendWith<T>::send`, which may sign, make sub-requests or
+//! repeat requests. Each recipe below is ordinary application code with its assumptions stated;
+//! none is a recommended default for arbitrary APIs.
 
 use std::future::Future;
 use std::sync::{Arc, RwLock};
@@ -65,16 +67,27 @@ where
     F: FnMut() -> Fut,
     Fut: Future<Output = Result<T, concord::Error>>,
 {
-    let mut tried: u32 = 0;
-    loop {
-        tried += 1;
-        match attempt().await {
-            Err(error) if (tried as usize) < max_attempts && retryable(&error) => {
-                tokio::time::sleep(backoff * tried).await;
-            }
-            result => return result,
-        }
-    }
+    use concord_retry::{Decision, Policy, Replay, Retry};
+    use std::num::NonZeroUsize;
+
+    let policy = Policy {
+        initial_delay: backoff,
+        max_delay: Duration::MAX,
+        ..Policy::new(NonZeroUsize::new(max_attempts.max(1)).expect("at least once"))
+    };
+    Retry::new(policy, Replay::Permitted)
+        .run_tokio(
+            |_| attempt(),
+            |result| match result {
+                Err(error) if retryable(error) => Decision::RetryAfter(None),
+                _ => Decision::Done,
+            },
+            // Preserve this recipe's linear schedule within the engine's exponential ceiling.
+            |n, _| backoff.saturating_mul(u32::try_from(n).unwrap_or(u32::MAX)),
+        )
+        .await
+        .outcome
+        .expect("a nonzero attempt budget without a deadline always completes an attempt")
 }
 
 /// Fetches an item, retrying a bounded number of times when the connection failed (U30).

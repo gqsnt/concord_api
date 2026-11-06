@@ -13,6 +13,7 @@
 //! | [`Pages`] ([`Pages::new`]) | an owned dependent chain an SDK can name and return; [`next_page`](Pages::next_page) is `Ok(None)` only on provider exhaustion |
 //! | [`PageItems`] ([`Pages::items`]) | the same chain item by item, with item-level checkpoints |
 //! | [`ItemStream`] ([`PageItems::into_stream`]) | a `futures_core::Stream` of `Result<item, PagesError>` |
+//! | [`PageItemEvents`] ([`Pages::item_events`]) | items and page metadata, including final completion metadata |
 //!
 //! The end is explicit: a cap (opt-in, [`Pages::max_pages`]; there is none by default) reached
 //! while the provider has a next page, and a failed page, are [`PagesError`]s carrying the page
@@ -104,6 +105,8 @@
 
 mod independent;
 mod jobs;
+#[cfg(feature = "link")]
+pub mod link;
 mod pages;
 mod sequential;
 mod types;
@@ -116,7 +119,9 @@ pub use jobs::{
     DiscoveryReport, JobOptions, Jobs, JobsCheckpoint, JobsError, JobsProgress, JobsReport,
     JobsResume, manifest_jobs,
 };
-pub use pages::{Incomplete, ItemStream, PageItems, Pages, PagesError};
+pub use pages::{
+    Incomplete, ItemStream, PageItemEvent, PageItemEvents, PageItems, Pages, PagesError,
+};
 pub use sequential::{
     ItemCheckpoint, Items, ItemsProgress, ItemsReport, Sequential, SequentialReport, resume_items,
     sequential,

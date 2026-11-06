@@ -23,7 +23,8 @@ pub enum Error {
     /// or query ID).
     Request(RequestError),
     /// Concord could not build or send the request, or the transport failed before a response
-    /// head arrived (`kind()` is `Build` or `Transport`).
+    /// head arrived or while reading an insert receipt body after the head (`kind()` is `Build`
+    /// or `Transport`).
     Concord(concord::Error),
     /// The server answered a non-2xx status: an exception raised before the response started.
     Server(Box<ServerException>),
@@ -42,7 +43,9 @@ pub enum Error {
 }
 
 impl Error {
-    /// The response head, when a response arrived.
+    /// The response head retained by `Server`, `LateException`, `Response` and `Read`.
+    /// `Request` and `Concord` return `None`, including an insert receipt-body transport failure
+    /// after the response head arrived.
     pub fn meta(&self) -> Option<&ResponseMeta> {
         match self {
             Self::Server(e) => Some(&e.meta),

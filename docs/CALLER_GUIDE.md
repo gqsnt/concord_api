@@ -244,15 +244,21 @@ local stand-in server.)
 ## 5. Preparing and sending
 
 - `prepare()` builds the native `reqwest::Request` with no I/O and returns
-  `Result<Prepared<T>, Error>`, `T` being the declared output (`()` without `->`). A value that
-  cannot form a valid request (an empty path segment, an invalid header value or host label) is an
+  `Result<Prepared<T>, Error>`, where `T` is the finite output, the stream reader, `Incoming` for
+  `-> stream`, or `()` without `->`. A value that cannot form a valid request (an empty path
+  segment, an invalid header value or host label) is an
   error of kind `Build`. `Prepared`'s `Debug` is redacted; `request()` gives read-only access to
   the native request, whose own `Debug` prints the full URL (sensitive query values and path
   segments included; flagged header values show as `Sensitive`).
-- `send()` is `prepare()?.send()`: one `reqwest::Client::execute`, a 2xx check, the format's
-  check of the response head, then reading and decoding the body with the endpoint's format (the
-  navigation method's documentation names it, with the body's `Content-Type`). An endpoint without
-  typed output accepts any 2xx and drains the body. No retry, no extra request.
+- Without a client send policy, generated `send()` is `prepare()?.send()`: one
+  `reqwest::Client::execute` and a 2xx check, then the declared response handling. A finite `-> T`
+  checks the head and buffers and decodes the body with its format. `-> stream T` checks the head
+  and opens the format's reader without reading the body; `-> stream` returns an unread
+  `Incoming`. Without `->`, any 2xx body is drained. `Prepared::send` applies this same handling;
+  neither path retries or makes an extra request in Concord.
+- A client `send policy;` instead delegates generated `send()` to `SendWith<T>::send`, returning
+  the policy's `Output`. The policy may sign, make sub-requests or repeat requests; `prepare()`
+  still builds the declared request without I/O.
 - No `->` and `-> ()` both give `()`, but are not the same endpoint: without `->` any 2xx
   succeeds and the body is drained without being buffered; `-> ()` is a typed output its format
   decodes (under `Json`, a response labelled JSON whose body is `null`; a `204` without
@@ -297,7 +303,11 @@ safe is your decision, not something `Clone` promises; see the
 
 ## 6. Errors
 
-Every call returns `Result<_, concord::Error>`.
+`prepare()` returns `Result<Prepared<T>, concord::Error>`, including on a client with a send
+policy. Generated `send()` without a policy and `Prepared::send` return
+`Result<T, concord::Error>`. With a client `send policy;`, generated `send()` returns the SDK's
+`SendWith<T>::Output`, which defines its own result and error shape. The following describes
+Concord's `Error`.
 
 | `error.kind()` | Meaning | Useful accessors |
 |---|---|---|
@@ -335,9 +345,11 @@ A status error keeps the **unread** response. `response()` borrows it, so its he
 returns a `Build`, `Transport` or `Decode` error unchanged as `Err`, so `?` propagates those. It
 consumes the error: read `kind()`, `status()` and `endpoint()` first if you need them. Reading the
 body is reqwest's (`response.bytes()` fails with a `reqwest::Error`, which does not convert into
-`concord::Error`). Decode the API's error document
-with a format's `decode_body`, which decodes bytes and checks no response head: the endpoint's
-format was never consulted for a non-2xx response. Excerpt of
+`concord::Error`). The compatibility example below decodes bytes with `decode_body`, without
+checking the error document's head. For new error-document handling, use
+`prepare()?.receive().await?` and `received.document::<Json, Problem>(limit).await`, as in the
+[quickstart](QUICKSTART.md#4-configure-the-client-call-handle-the-result). Use
+`IgnoreContentType<Json>` when the provider accepts any media label. Excerpt of
 [`examples/quickstart/tests/caller_guide.rs`](../examples/quickstart/tests/caller_guide.rs):
 
 ```rust
@@ -375,8 +387,12 @@ assert_eq!(
 );
 ```
 
-The error body is read into memory; against an untrusted server, read it with `chunk()` up to
-your own limit (see the [error-document recipe](RECIPES.md#error-documents)).
+The example reads the error body into memory without a bound. Against an untrusted server,
+start with `prepare()?.receive().await?` and use `Received::bytes_limited(n)` for any status to
+bound the collected body to `n` bytes; limit and transport errors name the operation. For a
+finite declared success output, `Received::decode_limited(n)` keeps the status and head checks and bounds the
+body read. A native `chunk()` loop remains an escape for custom read rules (see the
+[error-document recipe](RECIPES.md#error-documents)).
 
 ### A 2xx response the format refuses
 
@@ -499,7 +515,7 @@ no URL): `ReadError::into_source_unredacted()` hands it back by value, to
 involved). `Display` and `Debug` are unchanged: they never show it. A parser's own error (the
 serde error of a `Format` or `Decode` failure) stays reachable by reference only,
 `source_unredacted()`. The cases, per reader, are tested in
-`crates/concord-extras/tests/reader_wrapping.rs`.
+`crates/concord-codecs/tests/reader_wrapping.rs`.
 
 **Server-sent events** (`concord::sse`, feature `sse`). An endpoint declared
 `-> stream sse::Event` with `response Sse;` returns `SseEvents`: each `next()` is one dispatched

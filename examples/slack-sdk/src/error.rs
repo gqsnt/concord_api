@@ -19,6 +19,14 @@ pub struct ResponseMeta {
 }
 
 impl ResponseMeta {
+    pub(crate) fn capture(head: concord::ResponseHead<'_>, operation: Option<Operation>) -> Self {
+        Self {
+            status: head.status(),
+            headers: head.headers().clone(),
+            operation,
+        }
+    }
+
     /// Slack's request ID, when present and representable as text.
     pub fn request_id(&self) -> Option<&str> {
         self.headers.get("x-slack-req-id")?.to_str().ok()
@@ -242,7 +250,10 @@ impl Error {
 
 impl From<concord::Error> for Error {
     fn from(error: concord::Error) -> Self {
-        Self::Concord { error, meta: None }
+        let meta = error
+            .head()
+            .map(|head| Box::new(ResponseMeta::capture(head, error.operation())));
+        Self::Concord { error, meta }
     }
 }
 

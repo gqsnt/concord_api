@@ -140,10 +140,10 @@ impl Insert {
             .maybe_query_id(self.query_id.clone());
         let operation = endpoint_name::<Incoming, _>(&endpoint);
         let received: Received<Incoming> = endpoint.prepare()?.receive().await?;
-        let meta = ResponseMeta::new(received.meta());
         if !received.status().is_success() {
-            return Err(server_exception(received, operation, meta).await);
+            return Err(server_exception(received, operation).await);
         }
+        let meta = ResponseMeta::new(received.meta());
         let incoming = received.into_incoming()?;
         if meta.exception_code().is_some() {
             return Err(head_exception(incoming, operation, meta).await);

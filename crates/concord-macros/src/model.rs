@@ -18,6 +18,9 @@ pub struct Model {
     pub owners: Vec<Owner>,
     /// Native `HeaderName` paths written as header keys, one per occurrence.
     pub key_paths: Vec<KeyPath>,
+    /// The client's parameter groups (`params Name(..);`), each generating a trait of its
+    /// setters implemented by the endpoints that include it.
+    pub groups: Vec<syntax::Group>,
 }
 
 /// A query or header key after resolution.
@@ -202,6 +205,8 @@ pub struct Owner {
     pub request: Option<OwnerDefault>,
     /// `response FORMAT;` declared here (clients and scopes).
     pub response: Option<OwnerDefault>,
+    /// The parameter groups this endpoint includes (`..Name`).
+    pub groups: Vec<Ident>,
 }
 
 impl Owner {
@@ -478,15 +483,33 @@ impl Model {
     /// The model, and the errors that leave it complete (a value that is never used): the
     /// declaration is still rejected, but the client is emitted so that code using it resolves
     /// while the author finishes the declaration.
-    pub fn build(api: syntax::Api) -> syn::Result<(Model, Option<syn::Error>)> {
+    pub fn build(mut api: syntax::Api) -> syn::Result<(Model, Option<syn::Error>)> {
         let mut errors = Errors::default();
+        syntax::expand_groups(&mut api)?;
         let mut owners = Vec::new();
         let mut stmts = Vec::new();
         flatten(api.client, None, &mut owners, &mut stmts, &mut errors);
         errors.check()?;
+        for group in &api.groups {
+            let name = plain(&group.name);
+            let taken = owners.iter().any(|o: &Owner| {
+                plain(&o.type_name) == name
+                    || (matches!(o.kind, Kind::Client { .. }) && plain(&o.config_name()) == name)
+            });
+            if taken {
+                errors.push(syn::Error::new(
+                    group.name.span(),
+                    format!(
+                        "parameter group `{name}` has the name of a type this declaration generates; rename the group"
+                    ),
+                ));
+            }
+        }
+        errors.check()?;
         let mut model = Model {
             owners,
             key_paths: Vec::new(),
+            groups: api.groups,
         };
 
         // Value-level checks.
@@ -2249,6 +2272,7 @@ fn flatten(
         composed: None,
         request,
         response,
+        groups: owner.groups,
     });
     stmts.push(owner.stmts);
 

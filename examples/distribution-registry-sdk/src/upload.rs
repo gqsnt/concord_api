@@ -113,7 +113,7 @@ impl Repository {
             ));
         }
         let uuid = meta.upload_uuid().map(str::to_owned);
-        drain(received, &meta).await?;
+        drain(received).await?;
         Ok(BlobUpload {
             repository: self.clone(),
             location,
@@ -247,7 +247,7 @@ impl BlobUpload {
                 Some(meta),
             ));
         }
-        drain(received, &meta).await?;
+        drain(received).await?;
         self.location = location;
         self.offset = offset;
         self.needs_status = false;
@@ -296,7 +296,7 @@ impl BlobUpload {
                 Some(meta),
             ));
         }
-        drain(received, &meta).await?;
+        drain(received).await?;
         if let Some(location) = new_location {
             self.location = location;
         }
@@ -341,7 +341,7 @@ impl BlobUpload {
         let header = meta
             .digest_header()
             .map_err(|problem| RegistryError::protocol(problem, Some(meta.clone())))?;
-        drain(received, &meta).await?;
+        drain(received).await?;
         self.finished = true;
         self.needs_status = false;
         self.offset += body.len() as u64;

@@ -15,7 +15,7 @@ command), **partial** (what is missing is said), **NOT_RUN** (environment), **de
 | T04 | met | UI snapshots reviewed on 1.99.1 (`686cd24`); nightly lane `scripts/verify.sh --nightly-only` (`checks/clone-compat`) |
 | A01 | met | `checks/consumers/core-only` |
 | A02 | met | `checks/consumers/facade-no-extras` (graph without extras); `scripts/check-graph.py` |
-| A03 | met | `checks/consumers/extras-core`; `crates/concord-extras/tests/media.rs` |
+| A03 | met | `checks/consumers/extras-core`; `crates/concord-codecs/tests/media.rs` |
 | A04 | met | `checks/consumers/facade-full`, `facade-json-only` (`Form` absent: compile_fail); verify lanes per feature |
 | A05 | met | `crates/concord-macros/src/syntax.rs` (no `Word`, no keywords); `ui/format_unknown_type.rs` |
 | A06 | met | `formats.rs::lexical_precedence`, `checks/consumers/facade-no-extras` (`type json = MyJson;`), `hygiene.rs` (absolute path), `bodies.rs` (`IgnoreContentType<Json>`) |
@@ -29,17 +29,17 @@ command), **partial** (what is missing is said), **NOT_RUN** (environment), **de
 | ID | Status | Evidence |
 |---|---|---|
 | C01 | met | `metadata.rs`, `bodies.rs::r01_post_json` |
-| C02 | met | `crates/concord-extras/tests/media.rs::accepted_media_types`; `metadata.rs::a_downstream_format_uses_response_metadata` |
+| C02 | met | `crates/concord-codecs/tests/media.rs::accepted_media_types`; `metadata.rs::a_downstream_format_uses_response_metadata` |
 | C03 | met | `bodies.rs::r03_content_type_is_checked_unless_deliberately_ignored`, `metadata.rs::the_head_is_refused_before_the_body_exists` |
-| C04 | met | `crates/concord-extras/tests/media.rs::refused_media_types_with_their_labels` (missing, repeated equal/conflicting, comma-joined, malformed, obs-text); `charset::the_parameter_grammar_is_rfc_9110` (RFC 9110 forms `mime` refused alone are accepted; what the grammar excludes, an empty subtype included, stays refused) |
-| C05 | met | `crates/concord-extras/tests/media.rs` (case, parameters, `charset`: quoted before another parameter, repeated refused); `metadata.rs::charset_parameters_are_read_exactly`; no transcoding (Json, Text docs). Closes final-audit X-F1/X-F2 |
+| C04 | met | `crates/concord-codecs/tests/media.rs::refused_media_types_with_their_labels` (missing, repeated equal/conflicting, comma-joined, malformed, obs-text); `charset::the_parameter_grammar_is_rfc_9110` (RFC 9110 forms `mime` refused alone are accepted; what the grammar excludes, an empty subtype included, stays refused) |
+| C05 | met | `crates/concord-codecs/tests/media.rs` (case, parameters, `charset`: quoted before another parameter, repeated refused); `metadata.rs::charset_parameters_are_read_exactly`; no transcoding (Json, Text docs). Closes final-audit X-F1/X-F2 |
 | C06 | met | `metadata.rs::metadata_errors_print_no_response_content` |
 | C07 | met | `metadata.rs::status_comes_before_the_format` |
-| C08 | met | `error_inspection.rs::empty_responses_are_not_null`, `crates/concord-extras/tests/media.rs::empty_bodies_are_not_null` |
+| C08 | met | `error_inspection.rs::empty_responses_are_not_null`, `crates/concord-codecs/tests/media.rs::empty_bodies_are_not_null` |
 | C09 | met | `metadata.rs::no_output_checks_nothing`; `accept.rs` (no suggestion without `->`) |
 | C10 | met | `examples/compat/tests/json_or_empty.rs` |
-| C11 | met | `crates/concord-extras/tests/media.rs::binary_checks_nothing`, `text_accepts_any_media_type_but_a_foreign_charset`; `representations.rs` |
-| C12 | met | `forms.rs::with_json::form_in_json_out`, `crates/concord-extras/tests/media.rs::form_response_head` |
+| C11 | met | `crates/concord-codecs/tests/media.rs::binary_checks_nothing`, `text_accepts_any_media_type_but_a_foreign_charset`; `representations.rs` |
+| C12 | met | `forms.rs::with_json::form_in_json_out`, `crates/concord-codecs/tests/media.rs::form_response_head` |
 | C13 | met | `metadata.rs::a_downstream_format_uses_response_metadata` |
 | C14 | met | `metadata.rs::a_one_shot_payload_is_moved_into_the_body` |
 | C15 | met | `metadata.rs::futures_stay_send`; `Decoder` is `Copy`; Json's context is `()` (no header clone) |
@@ -90,7 +90,7 @@ command), **partial** (what is missing is said), **NOT_RUN** (environment), **de
 | ID | Status | Evidence |
 |---|---|---|
 | E01 | met | `concord-core` doctest `compile_fail,E0308` on `CodecError::new(e.to_string())` |
-| E02 | met | `crates/concord-extras/tests/media.rs::decode_errors_show_positions_not_content`; `error_inspection.rs::source_of_a_codec_error` |
+| E02 | met | `crates/concord-codecs/tests/media.rs::decode_errors_show_positions_not_content`; `error_inspection.rs::source_of_a_codec_error` |
 | E03 | met | `examples/native/tests/bodies.rs` (record/line/column) |
 | E04 | met | `metadata.rs` (unread response; `Error::response` documented unredacted) |
 | E05 | met | `scripts/check-graph.py` (no serializer in core/macro graphs); core diagnostics name `Encode`/`Decode` only |

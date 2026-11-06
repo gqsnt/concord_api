@@ -864,3 +864,21 @@ impl<V> Future for Held<V> {
         }
     }
 }
+
+#[test]
+fn item_events_keep_in_flight_requests_and_redact_values() {
+    use concord_pagination::PageItemEvent;
+    let gate = Gate::new();
+    let mut events = Pages::new(Resume::Start, gate.factory()).item_events();
+    assert!(now(events.next()).is_none());
+    assert!(now(events.next()).is_none());
+    assert_eq!(gate.call_count(), 1);
+    gate.open(None, page(&[1], None));
+    let item = now(events.next()).unwrap().unwrap().unwrap();
+    assert_eq!(format!("{item:?}"), "Item(..)");
+    assert!(matches!(item, PageItemEvent::Item(Item(1))));
+    let completed = now(events.next()).unwrap().unwrap().unwrap();
+    assert_eq!(format!("{completed:?}"), "Complete(..)");
+    assert!(matches!(completed, PageItemEvent::Complete(Meta("meta"))));
+    assert!(now(events.next()).unwrap().unwrap().is_none());
+}

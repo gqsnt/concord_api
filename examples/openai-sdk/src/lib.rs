@@ -3,7 +3,7 @@
 #![allow(missing_docs)]
 
 use concord::{
-    Binary, Endpoint, Json, Received, SendWith,
+    Binary, Endpoint, IgnoreContentType, Json, Received, SendWith,
     multipart::{Multipart, MultipartBody},
     reqwest::{
         self,
@@ -274,25 +274,28 @@ impl fmt::Display for Error {
 }
 impl std::error::Error for Error {}
 impl From<concord::Error> for Error {
-    fn from(e: concord::Error) -> Self {
-        Self::Concord(e)
+    fn from(error: concord::Error) -> Self {
+        match error.head_meta() {
+            Some(meta) => Self::Decode {
+                meta: Box::new(meta),
+                error,
+            },
+            None => Self::Concord(error),
+        }
     }
 }
-async fn checked<T>(r: Received<T>) -> Result<(Received<T>, ResponseMeta), Error> {
-    let meta = r.meta();
-    if !meta.status().is_success() {
-        let error = r
-            .bytes_limited(65536)
-            .await
-            .ok()
-            .and_then(|b| serde_json::from_slice::<ErrorEnvelope>(&b).ok())
-            .map(|e| Box::new(e.error));
+async fn checked<T>(r: Received<T>) -> Result<Received<T>, Error> {
+    if !r.status().is_success() {
+        let (meta, document) = r
+            .document::<IgnoreContentType<Json>, ErrorEnvelope>(65536)
+            .await;
+        let error = document.ok().map(|e| Box::new(e.error));
         return Err(Error::Provider {
             meta: Box::new(meta),
             error,
         });
     }
-    Ok((r, meta))
+    Ok(r)
 }
 /// The send policy of [`OpenAiApi`] (`send SendPolicy;`): every generated `send()` returns
 /// `Result<Response<T>, Error>`, with OpenAI's error document on a non-2xx status.
@@ -303,11 +306,8 @@ impl<T: Send> SendWith<T> for SendPolicy {
     type Output = Result<Response<T>, Error>;
 
     async fn send<E: Endpoint<T> + Send>(&self, endpoint: E) -> Self::Output {
-        let (r, meta) = checked(endpoint.prepare()?.receive().await?).await?;
-        let value = r.decode().await.map_err(|error| Error::Decode {
-            meta: Box::new(meta.clone()),
-            error,
-        })?;
+        let r = checked(endpoint.prepare()?.receive().await?).await?;
+        let (value, meta) = r.decode_with_meta().await?;
         Ok(Response { value, meta })
     }
 }
@@ -391,15 +391,8 @@ impl OpenAi {
         if id.is_empty() {
             return Err(Error::Invalid("empty file ID"));
         }
-        let (r, meta) = checked(self.api.content(id).prepare()?.receive().await?).await?;
-        let value = r
-            .bytes_limited(limit)
-            .await
-            .map_err(|error| Error::Decode {
-                meta: Box::new(meta.clone()),
-                error,
-            })?
-            .to_vec();
+        let r = checked(self.api.content(id).prepare()?.receive().await?).await?;
+        let (value, meta) = r.decode_limited_with_meta(limit).await?;
         Ok(Response { value, meta })
     }
     pub async fn create_batch(&self, request: BatchRequest) -> Result<Response<Batch>, Error> {

@@ -1,16 +1,17 @@
 //! The client: construction, repositories, the Bearer challenge and retry, and `GET /v2/`.
 
-use std::collections::HashMap;
 use std::fmt;
-use std::sync::{Arc, Mutex, PoisonError};
+use std::num::NonZeroUsize;
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use concord::reqwest::header::{HeaderValue, LOCATION};
+use concord::reqwest::header::{AUTHORIZATION, HeaderValue, LOCATION};
 use concord::reqwest::{self, StatusCode, Url};
 use concord::{Prepared, Received};
+use concord_auth::{RefreshError, Token, TokenCache};
 
 use crate::api::{Registry as RootApi, Repository as RepoApi, TokenService as TokenApi};
-use crate::auth::{Access, CachedToken, Challenge, TokenAuth};
+use crate::auth::{Access, Challenge, TokenAuth};
 use crate::error::{
     AuthError, AuthProblem, ERROR_BODY_LIMIT, InputError, ProtocolProblem, RegistryError,
     expect_status,
@@ -51,7 +52,9 @@ pub struct Registry {
     base: Arc<Url>,
     root: RootApi,
     auth: Option<Arc<TokenAuth>>,
-    tokens: Arc<Mutex<HashMap<Access, CachedToken>>>,
+    // This instance fixes registry destination and principal/auth policy. Access supplies the
+    // remaining scope; a differently configured client never shares this cache.
+    tokens: Arc<TokenCache<Access, Box<AuthError>>>,
 }
 
 impl Registry {
@@ -83,7 +86,7 @@ impl Registry {
             base: Arc::new(base),
             root,
             auth: None,
-            tokens: Arc::new(Mutex::new(HashMap::new())),
+            tokens: new_token_cache(),
         })
     }
 
@@ -91,7 +94,7 @@ impl Registry {
     /// token cache.
     pub fn token_auth(mut self, auth: TokenAuth) -> Self {
         self.auth = Some(Arc::new(auth));
-        self.tokens = Arc::new(Mutex::new(HashMap::new()));
+        self.tokens = new_token_cache();
         self
     }
 
@@ -130,7 +133,7 @@ impl Registry {
             })
             .await?;
         let (received, meta) = expect_status(received, StatusCode::OK).await?;
-        drain(received, &meta).await?;
+        drain(received).await?;
         Ok(ApiVersion { meta })
     }
 
@@ -150,66 +153,86 @@ impl Registry {
         F: Fn(Option<HeaderValue>) -> Result<Prepared<T>, concord::Error> + Send,
         T: Send,
     {
-        let mut authorization = self.cached_token(access);
-        let mut answered = false;
-        loop {
-            let received = build(authorization.clone())?.receive().await?;
-            if received.status() != StatusCode::UNAUTHORIZED || answered {
-                return Ok(received);
-            }
-            let Some(auth) = self.auth.clone() else {
-                return Ok(received);
-            };
-            let challenge = match Challenge::bearer(received.head().headers()) {
-                Ok(Some(challenge)) => challenge,
-                Ok(None) => return Ok(received),
-                Err(problem) => {
-                    let meta = ResponseMeta::capture(&received);
-                    return Err(AuthError::new(problem).with_meta(meta).into());
-                }
-            };
-            let meta = ResponseMeta::capture(&received);
-            // The `401`'s body (an `UNAUTHORIZED` document) is read, bounded, and dropped.
-            let _ = received.bytes_limited(ERROR_BODY_LIMIT).await;
-            let token = self
-                .fetch_token(&auth, &challenge, access)
-                .await
-                .map_err(|error| match error {
-                    RegistryError::Auth(mut auth) if auth.meta.is_none() => {
-                        auth.meta = Some(meta);
-                        RegistryError::Auth(auth)
-                    }
-                    other => other,
-                })?;
-            authorization = Some(token);
-            answered = true;
+        let used = self.tokens.get(access);
+        let authorization = used.as_ref().map(|token| token.header().clone());
+        let (client, request, decoder) = build(authorization)?.into_parts();
+        // The SDK permits one challenge replay for these operations. Byte recreation is a
+        // separate requirement: never poll or buffer a one-shot body just to resend it.
+        let replay = request.try_clone();
+        let received = decoder.execute(&client, request).await?;
+        if received.status() != StatusCode::UNAUTHORIZED {
+            return Ok(received);
         }
-    }
-
-    fn cached_token(&self, access: &Access) -> Option<HeaderValue> {
-        let tokens = self.tokens.lock().unwrap_or_else(PoisonError::into_inner);
-        tokens
-            .get(access)
-            .filter(|token| Instant::now() < token.expires)
-            .map(|token| token.header.clone())
-    }
-
-    /// Asks the challenge's realm for a token and caches it for `access`.
-    async fn fetch_token(
-        &self,
-        auth: &TokenAuth,
-        challenge: &Challenge,
-        access: &Access,
-    ) -> Result<HeaderValue, RegistryError> {
+        if let Some(token) = used {
+            self.tokens.invalidate(access, &token.generation());
+        }
+        let Some(auth) = self.auth.clone() else {
+            return Ok(received);
+        };
+        let Some(mut replay) = replay else {
+            return Ok(received);
+        };
+        let challenge = match Challenge::bearer(received.head().headers()) {
+            Ok(Some(challenge)) => challenge,
+            Ok(None) => return Ok(received),
+            Err(problem) => {
+                let meta = ResponseMeta::capture(&received);
+                return Err(AuthError::new(problem).with_meta(meta).into());
+            }
+        };
+        let meta = ResponseMeta::capture(&received);
+        // Validate every challenge, including a stale 401 received after a newer token was
+        // cached. Reusing that token never grants permission to trust a different realm.
         let realm = auth
             .check_realm(&challenge.realm, &self.base)
-            .map_err(AuthError::new)?;
+            .map_err(|problem| AuthError::new(problem).with_meta(meta.clone()))?;
+        // The 401 body is read bounded and dropped; token calls are separate from the two
+        // application attempts. A token acquisition contains no application retry loop.
+        let _ = received.bytes_limited(ERROR_BODY_LIMIT).await;
+        let http = self.http.clone();
+        let acquisition_access = access.clone();
+        let token = self
+            .tokens
+            .get_or_refresh(access.clone(), move || {
+                Self::fetch_token(http, realm, auth, challenge, acquisition_access)
+            })
+            .await
+            .map_err(|error| {
+                let mut error = match error {
+                    RefreshError::Acquire(error) => (**error).clone(),
+                    RefreshError::LifetimeOverflow => AuthError::new(AuthProblem::TokenResponse),
+                    RefreshError::Capacity => AuthError::new(AuthProblem::TokenTransport),
+                };
+                if error.meta.is_none() {
+                    error.meta = Some(meta);
+                }
+                error
+            })?;
+        replay
+            .headers_mut()
+            .insert(AUTHORIZATION, token.header().clone());
+        let received = decoder.execute(&client, replay).await?;
+        if received.status() == StatusCode::UNAUTHORIZED {
+            self.tokens.invalidate(access, &token.generation());
+        }
+        Ok(received)
+    }
+
+    /// Asks the already trusted realm for one token. This future deliberately owns only the
+    /// inputs it needs, never the Registry/cache: an in-flight entry cannot retain itself.
+    async fn fetch_token(
+        http: reqwest::Client,
+        realm: Url,
+        auth: Arc<TokenAuth>,
+        challenge: Challenge,
+        access: Access,
+    ) -> Result<Token, Box<AuthError>> {
         let scopes: Vec<String> = if challenge.scopes.is_empty() {
             access.scope().into_iter().collect()
         } else {
             challenge.scopes.clone()
         };
-        let api = TokenApi::new(self.http.clone())
+        let api = TokenApi::new(http)
             .with_base_url(realm.as_str())
             .map_err(|error| AuthError::new(AuthProblem::InvalidRealm).with_source(error))?
             .maybe_credentials(auth.credentials());
@@ -217,53 +240,41 @@ impl Registry {
             .token(scopes)
             .maybe_service(challenge.service.clone())
             .maybe_client_id(auth.client_id_value())
-            .prepare()?;
+            .prepare()
+            .map_err(|error| AuthError::new(AuthProblem::TokenTransport).with_source(error))?;
         let sent = Instant::now();
         let received = request
             .receive()
             .await
             .map_err(|error| AuthError::new(AuthProblem::TokenTransport).with_source(error))?;
-        let meta = ResponseMeta::capture(&received);
         if !received.status().is_success() {
+            let meta = ResponseMeta::capture(&received);
             let status = received.status();
             let _ = received.bytes_limited(ERROR_BODY_LIMIT).await;
             let mut error = AuthError::new(AuthProblem::TokenRefused).with_meta(meta);
             error.status = Some(status);
-            return Err(error.into());
+            return Err(Box::new(error));
         }
-        let body = received
-            .decode_limited(TOKEN_BODY_LIMIT)
+        let (body, meta) = received
+            .decode_limited_with_meta(TOKEN_BODY_LIMIT)
             .await
-            .map_err(|error| {
-                AuthError::new(AuthProblem::TokenResponse)
-                    .with_meta(meta.clone())
-                    .with_source(error)
-            })?;
+            .map_err(|error| AuthError::new(AuthProblem::TokenResponse).with_source(error))?;
+        let meta = ResponseMeta::from_concord(meta);
         let token = body
             .token
             .filter(|token| !token.is_empty())
             .or(body.access_token.filter(|token| !token.is_empty()))
             .ok_or_else(|| AuthError::new(AuthProblem::TokenResponse).with_meta(meta.clone()))?;
-        let mut header = HeaderValue::try_from(format!("Bearer {token}"))
+        let header = concord_auth::bearer(&token)
             .map_err(|_| AuthError::new(AuthProblem::TokenResponse).with_meta(meta.clone()))?;
-        header.set_sensitive(true);
         let lifetime = body
             .expires_in
             .map_or(DEFAULT_TOKEN_LIFETIME, Duration::from_secs);
-        // `expires_in` is the token service's number: a lifetime past what `Instant` can hold
-        // is an answer the client cannot honour, not a reason to panic.
-        let expires = sent
-            .checked_add(lifetime)
+        // Preserve the token response's metadata on the existing M0 overflow refusal. The
+        // generic cache independently checks its own acquisition-start clock plus lifetime.
+        sent.checked_add(lifetime)
             .ok_or_else(|| AuthError::new(AuthProblem::TokenResponse).with_meta(meta.clone()))?;
-        let mut tokens = self.tokens.lock().unwrap_or_else(PoisonError::into_inner);
-        tokens.insert(
-            access.clone(),
-            CachedToken {
-                header: header.clone(),
-                expires,
-            },
-        );
-        Ok(header)
+        Ok(Token::new(header, lifetime))
     }
 
     /// The single `Location` of a response, resolved against the URL that was requested, and
@@ -298,6 +309,13 @@ impl Registry {
         }
         Ok(Some(url))
     }
+}
+
+fn new_token_cache() -> Arc<TokenCache<Access, Box<AuthError>>> {
+    Arc::new(TokenCache::new(
+        NonZeroUsize::new(1024).expect("nonzero cache capacity"),
+        Duration::ZERO,
+    ))
 }
 
 impl fmt::Debug for Registry {
@@ -363,15 +381,9 @@ impl fmt::Debug for Repository {
 }
 
 /// Reads and drops a body the protocol documents as empty (bounded).
-pub(crate) async fn drain<T>(
-    received: Received<T>,
-    meta: &ResponseMeta,
-) -> Result<(), RegistryError> {
-    received
-        .bytes_limited(ERROR_BODY_LIMIT)
-        .await
-        .map(|_| ())
-        .map_err(|error| RegistryError::request(error, meta.clone()))
+pub(crate) async fn drain<T>(received: Received<T>) -> Result<(), RegistryError> {
+    received.bytes_limited(ERROR_BODY_LIMIT).await?;
+    Ok(())
 }
 
 /// The same request with its last path segment written verbatim: a digest's `:` (and `+`) are
