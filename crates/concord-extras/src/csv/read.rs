@@ -229,7 +229,8 @@ impl<T, S: ByteSource> CsvRecords<T, S> {
     ///
     /// A failure is a [`ReadError`]: [`Transport`](crate::stream::ReadErrorKind::Transport) (the
     /// source failed), [`Format`](crate::stream::ReadErrorKind::Format) (width, header names,
-    /// UTF-8, a refused BOM, a missing header), [`Decode`](crate::stream::ReadErrorKind::Decode)
+    /// UTF-8, a refused BOM, a missing header, input that ends inside a quoted field),
+    /// [`Decode`](crate::stream::ReadErrorKind::Decode)
     /// (a well-formed record that is not a `T`) or [`Limit`](crate::stream::ReadErrorKind::Limit).
     /// Rows already returned stay returned.
     pub async fn next(&mut self) -> Option<Result<T, ReadError>> {

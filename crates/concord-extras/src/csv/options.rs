@@ -281,6 +281,15 @@ setters! {
     fn quoting(yes: bool) => quoting = yes;
     /// A comment byte: a record starting with it is skipped by readers (writers quote a field
     /// that starts with it). Default none: `#` is ordinary data.
+    ///
+    /// A comment line ends only at a line feed (`csv-core`), whatever the record terminators:
+    /// with the standard ones, a lone `\r` does not end it, so `#note\rb,c\nd` is one comment
+    /// line (`#note\rb,c`) and then the record `d`. Quotes inside a comment line are comment
+    /// text. A comment byte therefore needs a [`read_terminator`](Self::read_terminator) that
+    /// ends lines at `\n`: [`Standard`](RecordTerminator::Standard) or
+    /// [`Byte(b'\n')`](RecordTerminator::Byte). With any other custom terminator byte a comment
+    /// line would silently run to the end of input, so that combination is a
+    /// [`CsvConfigError`].
     fn comment(comment: Option<u8>) => comment = comment;
     /// Whitespace trimming of parsed fields (default none).
     fn trim(trim: Trim) => trim = trim;
@@ -368,8 +377,9 @@ impl CsvOptions {
 }
 
 /// An invalid CSV configuration, found before anything is read or sent: a delimiter that is a
-/// record terminator or equals the quote, colliding quote/escape/comment bytes, a byte above
-/// `0x7f`, a zero limit, an ambiguous or repeated column list.
+/// record terminator or equals the quote, colliding quote/escape/comment bytes, a comment byte
+/// with a custom read terminator other than `\n`, a byte above `0x7f`, a zero limit, an
+/// ambiguous or repeated column list.
 ///
 /// A static description only. On the [`Encode`](concord_core::Encode) and
 /// [`Decode`](concord_core::Decode) routes it becomes a [`CodecError`] with the same label
@@ -534,11 +544,16 @@ impl Config {
         self.options.profile.comment
     }
 
-    /// Whether the reader ends a record (or a comment line) at `b`.
-    pub(crate) fn is_terminator(&self, b: u8) -> bool {
+    /// Whether the reader treats the quote byte specially.
+    pub(crate) fn quoting(&self) -> bool {
+        self.options.profile.quoting
+    }
+
+    /// The bytes that end a record for the reader: `\r` and `\n`, or the custom byte twice.
+    pub(crate) fn read_terminators(&self) -> [u8; 2] {
         match self.options.profile.read_terminator {
-            RecordTerminator::Standard => b == b'\r' || b == b'\n',
-            RecordTerminator::Byte(t) => b == t,
+            RecordTerminator::Standard => *b"\r\n",
+            RecordTerminator::Byte(t) => [t, t],
         }
     }
 
@@ -677,6 +692,13 @@ fn validate(options: &CsvOptions) -> Result<(), CsvConfigError> {
     {
         return Err(CsvConfigError::new(
             "the CSV record terminator equals the delimiter, the quote, the escape or the comment byte",
+        ));
+    }
+    // `csv-core` ends a comment line only at a line feed, and with a custom terminator byte its
+    // DFA does not even see one there: the comment line would run to the end of input.
+    if p.comment.is_some() && matches!(p.read_terminator, RecordTerminator::Byte(t) if t != b'\n') {
+        return Err(CsvConfigError::new(
+            "a CSV comment byte needs a read_terminator that ends lines at \\n (Standard or Byte(b'\\n')): a comment line ends only at a line feed",
         ));
     }
     if p.max_record_bytes == 0 || p.max_header_bytes == 0 || p.max_fields == 0 {

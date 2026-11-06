@@ -77,6 +77,24 @@ Not released: the version is unchanged (4.2.0) and no release has been decided. 
 - The reader `open` methods take `impl Openable` instead of `reqwest::Response` (a native
   response still works unchanged).
 - `IgnoreContentType<F>` forwards `encode_body`, so a runtime media type of `F` is kept.
+- **CSV input that ends inside a quoted field is an error.** A body cut after an opening quote
+  (`…,"12.7` at the end of input) was a complete table: `csv-core` ends such a field silently,
+  so `Decode<Vec<T>>`/`Decode<RawTable>` returned the record and `CsvReader` ended with
+  `completion() == EndOfInput`. Both routes now fail with a terminal `Format` error, "the CSV
+  input ends inside a quoted field" (with the `record` number; none for the header), in every
+  dialect: doubled quotes, an escape byte, standard or custom terminators; quotes in comment lines
+  and with `quoting(false)` open nothing. A closed quoted field without a final terminator is
+  still a record. The same tracking corrects a final comment line containing `\r`, which yielded
+  a record of one empty field (wave 4, Open-Meteo F4).
+- **A comment byte with a custom read terminator is a `CsvConfigError`.** `csv-core` ends a
+  comment line only at a line feed, which its DFA does not see when the read terminator is a
+  custom byte: everything after the first comment line was silently skipped and the read ended
+  cleanly. `comment(Some(_))` with `read_terminator(RecordTerminator::Byte(t))` for any `t` other
+  than `\n` is now refused by `CsvReader::new`, `CsvWriter::new` and the static formats (before
+  anything is read or sent): "a CSV comment byte needs a read_terminator that ends lines at \n
+  (Standard or Byte(b'\n')): a comment line ends only at a line feed". With the standard
+  terminators nothing changes; the `comment` option now documents that a lone `\r` does not end
+  a comment line (it runs to the next `\n`).
 
 ## Unreleased — 4.4 extensions (candidate)
 
