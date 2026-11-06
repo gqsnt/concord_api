@@ -1,0 +1,8 @@
+{
+  "object": "list", "type": "block", "block": {},
+  "results": [
+    {"object": "block", "id": "heading", "has_children": false, "type": "heading_2", "heading_2": {"rich_text": [{"type": "text", "text": {"content": "Plan", "link": null}, "plain_text": "Plan", "href": null}], "color": "default", "is_toggleable": false}},
+    {"object": "block", "id": "paragraph-with-children", "has_children": true, "type": "paragraph", "paragraph": {"rich_text": [{"type": "text", "text": {"content": "Hello café 🚀", "link": null}, "plain_text": "Hello café 🚀", "href": null}], "color": "default"}}
+  ],
+  "has_more": true, "next_cursor": "children/cursor+two"
+}

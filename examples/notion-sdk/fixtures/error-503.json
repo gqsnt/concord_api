@@ -1,0 +1,1 @@
+{"object":"error","status":503,"code":"service_unavailable","message":"Synthetic fixture: query temporarily unavailable.","additional_data":{"endpoint_name":"public_queryDataSource","retry_guidance":["Reduce page_size"]}}
