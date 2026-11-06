@@ -1,6 +1,7 @@
 //! Wire contract and failure cases.
 use concord::reqwest;
 use concord_example_testserver::{Reply, Script, TestServer};
+use concord_pagination::{Outcome, PagesError, Resume};
 use concord_sdk_linear::{Error, Linear};
 use serde_json::{Value, json};
 
@@ -191,7 +192,7 @@ async fn repeated_cursor_is_refused_with_data() {
         Error::Page { response, reason } => {
             assert_eq!(reason, "cursor did not advance");
             assert_eq!(
-                response.envelope.data.unwrap().issues.nodes[0].id,
+                response.envelope.data.unwrap().issues.unwrap().nodes[0].id,
                 "issue-one"
             );
         }
@@ -280,5 +281,95 @@ async fn due_date_field_error_keeps_data_diagnostics_and_presence_rule() {
     // The fixture's location (line 1, column 67) points at `dueDate` in the sent document.
     let body: Value = serde_json::from_slice(&requests[0].body).unwrap();
     assert_eq!(&body["query"].as_str().unwrap()[66..73], "dueDate");
+    server.shutdown().await;
+}
+#[tokio::test]
+async fn null_connection_is_a_page_error_that_keeps_its_diagnostics() {
+    let (server, client) = setup(
+        vec![
+            Reply::json(200, include_bytes!("../fixtures/page-one.json")),
+            Reply::json(200, include_bytes!("../fixtures/connection-null.json"))
+                .header("x-request-id", "synthetic-null-connection"),
+            Reply::json(200, br#"{"data":{"issues":null}}"#),
+            Reply::json(
+                200,
+                br#"{"data":{},"errors":[{"message":"Synthetic connection failure","path":["issues"]}]}"#,
+            ),
+        ],
+        false,
+    )
+    .await;
+    // A GraphQL error at `["issues"]` nulls the connection: the page fails with the response.
+    let mut pages = client.issues(1, Resume::Start);
+    assert_eq!(
+        pages.next_page().await.unwrap().unwrap().items[0].id,
+        "issue-one"
+    );
+    let error = pages.next_page().await.unwrap_err();
+    assert_eq!(error.resume(), Some(&Resume::At("cursor-one".to_owned())));
+    let PagesError::Provider {
+        error: Error::Page { response, reason },
+        ..
+    } = error
+    else {
+        panic!("expected a page error with the response");
+    };
+    assert_eq!(reason, "connection is null");
+    assert_eq!(response.meta.status(), 200);
+    assert_eq!(
+        response.meta.headers()["x-request-id"],
+        "synthetic-null-connection"
+    );
+    assert!(response.envelope.data.unwrap().issues.is_none());
+    let errors = &response.envelope.errors;
+    assert_eq!(errors.len(), 1);
+    assert_eq!(errors[0].message, "Synthetic connection failure");
+    assert_eq!(errors[0].path, Some(vec![json!("issues")]));
+    assert_eq!(
+        errors[0].locations,
+        Some(vec![json!({"line":1,"column":46})])
+    );
+    assert_eq!(
+        errors[0].extensions.as_ref().unwrap()["code"],
+        "SYNTHETIC_CONNECTION_ERROR"
+    );
+    assert_eq!(
+        response.envelope.extensions.unwrap()["trace"],
+        "synthetic-null-connection"
+    );
+    assert!(matches!(
+        pages.next_page().await,
+        Err(PagesError::Ended {
+            outcome: Outcome::Failed,
+            ..
+        })
+    ));
+    // A null connection without a diagnostic is still a page error, never an empty page.
+    match client.issue_page(1, None).await.unwrap_err() {
+        Error::Page { response, reason } => {
+            assert_eq!(reason, "connection is null");
+            assert!(response.envelope.data.unwrap().issues.is_none());
+            assert!(response.envelope.errors.is_empty());
+        }
+        e => panic!("{e:?}"),
+    }
+    // An absent `issues` member is not a GraphQL partial-data shape: still a decode error.
+    match client.issue_page(1, None).await.unwrap_err() {
+        Error::Response { meta, source } => {
+            assert_eq!(meta.status().as_u16(), 200);
+            assert_eq!(source.kind(), concord::ErrorKind::Decode);
+        }
+        e => panic!("{e:?}"),
+    }
+    let requests = server.requests();
+    assert_eq!(requests.len(), 4);
+    assert!(
+        std::str::from_utf8(&requests[1].body)
+            .unwrap()
+            .contains("\"after\":\"cursor-one\"")
+    );
+    // The fixture's location (line 1, column 46) points at `issues` in the sent document.
+    let body: Value = serde_json::from_slice(&requests[1].body).unwrap();
+    assert_eq!(&body["query"].as_str().unwrap()[45..51], "issues");
     server.shutdown().await;
 }

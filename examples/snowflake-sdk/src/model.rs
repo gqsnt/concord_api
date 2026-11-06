@@ -185,7 +185,9 @@ pub struct ResultMetadata {
     pub format: String,
     /// Column descriptions retained without imposing SQL type conversions.
     pub row_type: Vec<serde_json::Value>,
-    /// Ordered descriptors, including index zero already received.
+    /// Ordered descriptors, including index zero already received. An absent member reads as
+    /// empty; discovery rejects both as [`ProtocolError::InvalidManifest`](crate::ProtocolError::InvalidManifest).
+    #[serde(default)]
     pub partition_info: Vec<PartitionInfo>,
     /// Additional metadata retained verbatim.
     #[serde(flatten)]

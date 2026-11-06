@@ -313,31 +313,50 @@ async fn partial_page_keeps_diagnostics_for_application_acceptance_policy() {
 }
 
 #[tokio::test]
-async fn missing_connections_are_decode_failures_without_the_graphql_envelope() {
+async fn null_connection_keeps_diagnostics_and_absent_connection_is_a_decode_failure() {
+    // Final migration (W3-13): the consumer observed a decode error for the null connection
+    // (FIRST_USE.md trace 5-6) and pinned it here. The SDK now returns the README's Page error.
+    let server = fake(vec![json_reply(CONNECTION_NULL)]).await;
+    let error = client(&server).issue_page(2, None).await.unwrap_err();
+    let Error::Page { response, .. } = error else {
+        panic!("expected the README's Page error for a null connection");
+    };
+    assert_eq!(response.meta.status(), 200);
+    assert_eq!(
+        response.meta.headers()["x-synthetic-request-id"],
+        "synthetic-response"
+    );
+    assert!(response.meta.operation().is_some());
+    assert!(response.envelope.data.unwrap().issues.is_none());
+    let diagnostics = &response.envelope.errors;
+    assert_eq!(diagnostics.len(), 1);
+    assert_eq!(diagnostics[0].message, "Synthetic connection unavailable");
+    assert_eq!(diagnostics[0].path, Some(vec![json!("issues")]));
+    assert_eq!(
+        diagnostics[0].extensions.as_ref().unwrap()["code"],
+        "SYNTHETIC_CONNECTION_FAILURE"
+    );
+    assert_list_requests(&server, &[None]);
+    server.shutdown().await;
+
+    // An absent `issues` member is not a null connection: it stays a decode failure.
     let mut missing: Value = serde_json::from_slice(CONNECTION_NULL).unwrap();
     missing["data"].as_object_mut().unwrap().remove("issues");
-    for body in [
-        CONNECTION_NULL.to_vec(),
-        serde_json::to_vec(&missing).unwrap(),
-    ] {
-        let server = fake(vec![json_reply(&body)]).await;
-        let error = client(&server).issue_page(2, None).await.unwrap_err();
-        // Observed contract gap: the README predicts Page for a missing connection.
-        // Record the actual behavior; do not reconstruct or re-execute the request.
-        let Error::Response { meta, source } = error else {
-            panic!("expected the observed missing-connection decode failure");
-        };
-        assert_eq!(meta.status(), 200);
-        assert_eq!(
-            meta.headers()["x-synthetic-request-id"],
-            "synthetic-response"
-        );
-        assert_eq!(source.kind(), ErrorKind::Decode);
-        assert_eq!(source.operation(), meta.operation());
-        assert!(source.response().is_none());
-        assert_list_requests(&server, &[None]);
-        server.shutdown().await;
-    }
+    let server = fake(vec![json_reply(&serde_json::to_vec(&missing).unwrap())]).await;
+    let error = client(&server).issue_page(2, None).await.unwrap_err();
+    let Error::Response { meta, source } = error else {
+        panic!("expected a missing-connection decode failure");
+    };
+    assert_eq!(meta.status(), 200);
+    assert_eq!(
+        meta.headers()["x-synthetic-request-id"],
+        "synthetic-response"
+    );
+    assert_eq!(source.kind(), ErrorKind::Decode);
+    assert_eq!(source.operation(), meta.operation());
+    assert!(source.response().is_none());
+    assert_list_requests(&server, &[None]);
+    server.shutdown().await;
 }
 
 #[tokio::test]
@@ -362,7 +381,7 @@ async fn invalid_continuations_keep_the_received_page_and_stop() {
             panic!("expected unusable cursor error");
         };
         assert_eq!(
-            response.envelope.data.unwrap().issues.nodes[0].id,
+            response.envelope.data.unwrap().issues.unwrap().nodes[0].id,
             "synthetic-issue-1"
         );
         assert!(matches!(

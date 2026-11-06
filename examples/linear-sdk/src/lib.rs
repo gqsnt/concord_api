@@ -103,8 +103,11 @@ pub struct PageInfo {
 /// Issue connection query data.
 #[derive(Clone, Debug, Deserialize)]
 pub struct IssuesData {
-    /// The requested connection.
-    pub issues: Connection,
+    /// The requested connection; `None` when it was returned as null, as a GraphQL error whose
+    /// `path` is `["issues"]` returns it. [`Linear::issue_page`] reports a null connection as
+    /// [`Error::Page`]. The member must be present: an absent one is a decode error.
+    #[serde(deserialize_with = "required_nullable")]
+    pub issues: Option<Connection>,
 }
 /// Issue query data.
 #[derive(Clone, Debug, Deserialize)]
@@ -181,7 +184,8 @@ pub enum Error {
         /// Concord's error, including an unread response for metadata failures.
         source: concord::Error,
     },
-    /// A connection response had no usable data or had invalid continuation information.
+    /// A connection response had no usable data (`data` absent or null, or a null connection)
+    /// or had invalid continuation information.
     Page {
         /// The entire response, including any partial data and diagnostics.
         response: Box<Response<IssuesData>>,
@@ -310,12 +314,12 @@ impl Linear {
                 .prepare(),
         )
         .await?;
-        let reason = match &response.envelope.data {
+        let reason = match response.envelope.data.as_ref().map(|data| &data.issues) {
             None => Some("connection data missing"),
-            Some(data)
-                if data.issues.page_info.has_next_page
-                    && data
-                        .issues
+            Some(None) => Some("connection is null"),
+            Some(Some(issues))
+                if issues.page_info.has_next_page
+                    && issues
                         .page_info
                         .end_cursor
                         .as_deref()
@@ -323,9 +327,8 @@ impl Linear {
             {
                 Some("next page has no cursor")
             }
-            Some(data)
-                if data.issues.page_info.has_next_page
-                    && data.issues.page_info.end_cursor == after =>
+            Some(Some(issues))
+                if issues.page_info.has_next_page && issues.page_info.end_cursor == after =>
             {
                 Some("cursor did not advance")
             }
@@ -338,14 +341,17 @@ impl Linear {
             });
         }
         let Response { envelope, meta } = response;
-        let data = envelope.data.expect("checked above");
-        let next = if data.issues.page_info.has_next_page {
-            data.issues.page_info.end_cursor
+        let issues = envelope
+            .data
+            .and_then(|data| data.issues)
+            .expect("checked above");
+        let next = if issues.page_info.has_next_page {
+            issues.page_info.end_cursor
         } else {
             None
         };
         Ok(Page {
-            items: data.issues.nodes,
+            items: issues.nodes,
             next,
             meta: PageMeta {
                 http: meta,
