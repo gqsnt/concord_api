@@ -622,6 +622,60 @@ assert_eq!(item, Item { id: 3 });
 **Through a declaration, on loopback**: the same file starts a server that sends a response head
 and withholds the body, to show that a refusal needs only the head.
 
+## 9a. A media type known only at run time
+
+`Encode::CONTENT_TYPE` is one static value per format. When the media type depends on the bytes —
+a multipart boundary generated per body, a dialect parameter chosen per job — override
+`Encode::encode_body` and return an `EncodedBody` with the runtime value; Concord calls
+`encode_body` (its default wraps `encode`), so formats that do not need this change nothing.
+
+Excerpt of `checks/phase-a/tests/bodies.rs`:
+
+```rust
+impl Encode<Form> for Multipart {
+    const CONTENT_TYPE: Option<&'static str> = None;
+
+    fn encode(_: Form) -> Result<concord::reqwest::Body, CodecError> {
+        Err(CodecError::new("a multipart body has a runtime media type"))
+    }
+
+    fn encode_body(form: Form) -> Result<EncodedBody, CodecError> {
+        let boundary = format!("concord-{:08}", BOUNDARIES.fetch_add(1, Ordering::SeqCst));
+        let mut out = Vec::new();
+        for (name, value) in &form.fields {
+            out.extend_from_slice(
+                format!("--{boundary}\r\ncontent-disposition: form-data; name=\"{name}\"\r\n\r\n{value}\r\n").as_bytes(),
+            );
+        }
+        let (name, filename, bytes) = &form.file;
+        out.extend_from_slice(
+            format!("--{boundary}\r\ncontent-disposition: form-data; name=\"{name}\"; filename=\"{filename}\"\r\ncontent-type: application/octet-stream\r\n\r\n").as_bytes(),
+        );
+        out.extend_from_slice(bytes);
+        out.extend_from_slice(format!("\r\n--{boundary}--\r\n").as_bytes());
+        let media = HeaderValue::try_from(format!("multipart/form-data; boundary={boundary}"))
+            .map_err(|_| CodecError::new("the boundary is not a header value"))?;
+        Ok(EncodedBody::with_content_type(out.into(), media))
+    }
+}
+```
+
+The runtime value is never separated from the bytes: a declared media type or a `content-type`
+header that differs is a `Build` error before anything is sent (the table on `EncodedBody`). A
+body built from bytes is sent with `Content-Length`; a lazily produced one with an exact size hint
+likewise; any other stream chunked. An adapter format that wraps another (`IgnoreContentType<F>`)
+must forward `encode_body` as well as `encode`, or it drops the inner format's runtime media type.
+
+## 9b. An incremental format: `Incremental<T>`
+
+A finite `Decode<T>` receives a collected body. A format read as the response arrives implements
+`Incremental<T>` instead: the same two head steps (`check_content_type`, `context`), then
+`open(context, body: Incoming) -> Self::Records`, which builds the reader over the **unread** body
+and must not poll it. An endpoint declared `-> stream T` with your format returns that reader from
+`send()`. Put the reader's limits and framing in the reader; keep provider meaning (event types,
+replay, completion rules) in the SDK. The `concord-extras` readers implement it for `Csv<..>`,
+`JsonLines`, `Ndjson` and `JsonStream`; the trait's own documentation has a minimal example.
+
 ## 10. Checklist
 
 - One `Encode<T>`/`Decode<T>` impl per payload type, or a bound; the statement names the format.

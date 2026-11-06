@@ -1135,6 +1135,97 @@ fn main() -> Result<(), concord::Error> {
 }
 ```
 
+### 5.9 Streaming outputs: `-> stream`
+
+An endpoint whose useful result is read as it arrives (a watch, an export, a log) declares it.
+`-> stream T` names the item and needs a format implementing `Incremental<T>` (`Csv<..>`,
+`JsonLines`, `Ndjson`, `JsonStream` for consecutive JSON values, or your own): `send()` checks the
+status and the head, then returns the format's reader **without reading the body**. `-> stream`
+without an item returns the unread `Incoming` body, for a reader whose options are known only at
+run time. Neither drains: draining is what an endpoint without `->` does, and a watch declared that
+way would discard its events.
+
+Excerpt of `checks/phase-a/src/lib.rs`:
+
+```rust,ignore
+        GET rows(id: String) -> stream Row {
+            path "reports/{id}";
+            response ReportCsv;
+        }
+        /// Change events (consecutive JSON values).
+        GET events(#[sensitive] query("token") resume?: String) -> stream Event {
+            path "events";
+            response JsonStream;
+        }
+        /// Audit lines (JSON Lines).
+        GET audit() -> stream Row { path "audit"; response JsonLines; }
+        /// A job export whose dialect is known only at run time.
+        GET export(id: String) -> stream { path "jobs/{id}/export"; }
+```
+
+The reader names the endpoint in every later error (`ReadError::operation`), with no string to
+repeat. `completion()` says whether the input ended cleanly (`EndOfInput`), failed, or is still
+being read; only the first proves every record was seen. `into_stream()` turns any reader into a
+standard `futures_core::Stream` with the same errors (a recoverable JSON Lines line error does not
+end it) and a cancellation-safe pending read. Reconnecting a watch, resuming an export and
+deduplicating replays stay the SDK's or the application's policy.
+
+### 5.10 Bodies whose media type is known at run time
+
+When the bytes and their media type are produced together — a CSV dialect chosen per job, a
+generated multipart boundary — the body still belongs in the declaration. Give it a type that
+carries both and the `Encoded` format: `stream::Upload` (from `CsvWriter::upload` or
+`JsonLinesWriter::upload`) or `EncodedBody`.
+
+Excerpt of `checks/phase-a/src/lib.rs`:
+
+```rust,ignore
+        POST upload(id: String, body export: Upload) -> Row {
+            path "jobs/{id}/export";
+            request Encoded;
+        }
+```
+
+A format of yours does the same by overriding `Encode::encode_body` (see
+[CUSTOM_FORMATS](CUSTOM_FORMATS.md)). The media type stays bound to the bytes: a declared media
+type (`request Encoded "m";`) or a `content-type` header that differs is a `Build` error before
+anything is sent; an equal one is sent once; `remove content-type` keeps the runtime value. The
+body's own length decides `Content-Length` versus chunked transfer, and preparing the request polls
+a lazy source zero times.
+
+### 5.11 Reading response metadata in an SDK
+
+A provider's rate-limit counter, request id or served version is read from the response head,
+between sending and consuming the body: `Prepared::receive()` returns a `Received<T>` for any
+status, and `decode()` then applies the declared handling. Capture what must survive a body
+failure before decoding, into a value the SDK owns.
+
+Excerpt of `checks/phase-a/tests/received.rs`:
+
+```rust,ignore
+async fn summary_with_meta(
+    api: &Reports,
+    id: &str,
+) -> Result<(Row, Meta), (concord::Error, Option<Meta>)> {
+    let received = api
+        .summary(id)
+        .prepare()
+        .map_err(|e| (e, None))?
+        .receive()
+        .await
+        .map_err(|e| (e, None))?;
+    let meta = Meta::capture(&received.head());
+    match received.decode().await {
+        Ok(row) => Ok((row, meta)),
+        Err(e) => Err((e, Some(meta))),
+    }
+}
+```
+
+A provider rule on the head (a served API version) refuses by returning the SDK's error with
+`received.into_response()`, unread. A request edited natively after `into_parts()` (a `Link` URL)
+is executed with `Decoder::execute(&client, request)`, which returns the same `Received<T>`.
+
 ## 6. Wire formatting: `Display` and newtypes
 
 Every value written as text — path segment, subdomain label, query value, template hole — is

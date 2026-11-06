@@ -450,6 +450,46 @@ assert_eq!(source.to_string(), "refused: CONTENT");
 To log a source, pass it explicitly (`error.transport().map(|e| e as &dyn std::error::Error)`)
 where that output may contain them.
 
+## 6a. Streams and pages
+
+An endpoint declared `-> stream T` returns a reader from `send()`: nothing of the body has been
+read yet, and each `next()` reads only what the next record needs. Its errors name the endpoint.
+`completion()` is `EndOfInput` only once the input ended cleanly — an error, a limit, or simply
+stopping early is not the end. `into_stream()` gives a standard `Stream` for combinators and for
+upload sources; a pending read survives a dropped `next()` future.
+
+Excerpt of `checks/phase-a/tests/streams.rs`:
+
+```rust
+let mut stream = api(&server).rows("r").send().await.unwrap().into_stream();
+assert_eq!(
+    stream.next().await.unwrap().unwrap(),
+    Row { id: 1, amount: 10 }
+);
+let cancelled = tokio::time::timeout(Duration::from_millis(50), stream.next()).await;
+assert!(
+    cancelled.is_err(),
+    "the read was pending and its future was dropped"
+);
+assert_eq!(stream.completion(), Completion::Reading);
+assert_eq!(
+    stream.next().await.unwrap().unwrap(),
+    Row { id: 2, amount: 20 }
+);
+assert!(stream.next().await.is_none());
+assert_eq!(stream.completion(), Completion::EndOfInput);
+assert_eq!(stream.position().records, 2);
+```
+
+A `-> stream` endpoint without an item returns the unread `Incoming` body; open it with the reader
+the SDK documents (`CsvReader::open`, `JsonLinesReader::open`, `JsonValuesReader::open`).
+
+Paged listings from an SDK are usually `concord_pagination::Pages` or `PageItems`: `Ok(None)`
+means the provider's last page was read; a configured cap reached while more pages exist, or a
+provider failure, is an `Err(PagesError::..)` carrying where to resume. `collect_complete()`
+returns everything or an `Incomplete` with what was collected. A `None` after an `Err` from an
+item stream does not mean the listing is complete.
+
 ## 7. Native requests
 
 When one call needs something the declaration does not carry — a per-request timeout, an extra
