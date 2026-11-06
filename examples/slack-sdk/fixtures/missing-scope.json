@@ -1,0 +1,1 @@
+{"ok":false,"error":"missing_scope","needed":"channels:read","provided":"users:read","response_metadata":{"messages":["Synthetic missing permission"]}}
