@@ -1232,6 +1232,11 @@ async fn summary_with_meta(
 }
 ```
 
+When the SDK keeps the whole head rather than a few typed fields, `received.meta()` is that
+owned value: a `concord::ResponseMeta` (status, version, header map, operation) whose `Debug`
+prints header names only, unlike a derived `Debug` over a `HeaderMap`. `Incoming::meta()` gives
+the same before a reader consumes the body.
+
 A provider rule on the head (a served API version) refuses by returning the SDK's error with
 `received.into_response()`, unread. A request edited natively after `into_parts()` (a `Link` URL)
 is executed with `Decoder::execute(&client, request)`, which returns the same `Received<T>`.

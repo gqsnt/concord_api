@@ -7,6 +7,9 @@ Not released: the version is unchanged (4.2.0) and no release has been decided. 
 
 ### Added
 
+- **Owned response metadata.** `concord::ResponseMeta` (status, version, header map, operation;
+  `Debug` prints header names, never values), from `Received::meta()` and `Incoming::meta()`:
+  the value SDKs kept beside a decoded value or provider error after the body is consumed.
 - **One response boundary.** `Prepared::receive()` executes once and returns `Received<T>`: any
   status, body unread, the declared handling and the endpoint identity (`Operation`). Read the head
   (`head()`), then consume once: `decode()` (what `send()` does), `into_incoming()` (an incremental

@@ -16,6 +16,7 @@
 
 use std::fmt;
 
+use reqwest::header::HeaderMap;
 use reqwest::{StatusCode, Version};
 
 use crate::__private::EndpointMeta;
@@ -172,6 +173,12 @@ impl<T> Received<T> {
         ResponseHead::of(&self.response)
     }
 
+    /// An owned copy of the head and the operation, to keep next to the decoded value or a
+    /// provider error after the body is consumed. Clones the header map.
+    pub fn meta(&self) -> ResponseMeta {
+        ResponseMeta::new(self.head(), self.operation())
+    }
+
     /// The response status.
     pub fn status(&self) -> StatusCode {
         self.response.status()
@@ -322,6 +329,11 @@ impl Incoming {
         ResponseHead::of(&self.response)
     }
 
+    /// An owned copy of the head and the operation (see [`Received::meta`]).
+    pub fn meta(&self) -> ResponseMeta {
+        ResponseMeta::new(self.head(), self.operation)
+    }
+
     /// The identity of the call that produced the body.
     pub fn operation(&self) -> Option<Operation> {
         self.operation
@@ -386,6 +398,72 @@ impl fmt::Debug for Incoming {
         f.debug_struct("Incoming")
             .field("operation", &self.operation)
             .field("head", &self.head())
+            .finish()
+    }
+}
+
+/// An owned copy of a response head — status, version, header fields — and the [`Operation`]
+/// that produced it: what an SDK keeps beside a decoded value, a provider error or a page after
+/// the body is gone ([`Received::meta`], [`Incoming::meta`]).
+///
+/// Header values are reachable, unredacted, through [`headers`](Self::headers); `Debug` prints
+/// the status, the version, the header **names** and the operation name, never a value
+/// (`Set-Cookie` and provider tokens are header values).
+#[derive(Clone)]
+pub struct ResponseMeta {
+    status: StatusCode,
+    version: Version,
+    headers: HeaderMap,
+    operation: Option<Operation>,
+}
+
+impl ResponseMeta {
+    /// A copy of `head` (its header map is cloned) with the call's identity.
+    pub fn new(head: ResponseHead<'_>, operation: Option<Operation>) -> Self {
+        Self {
+            status: head.status(),
+            version: head.version(),
+            headers: head.headers().clone(),
+            operation,
+        }
+    }
+
+    /// The response status.
+    pub fn status(&self) -> StatusCode {
+        self.status
+    }
+
+    /// The HTTP version.
+    pub fn version(&self) -> Version {
+        self.version
+    }
+
+    /// The header fields, as received. Unredacted.
+    pub fn headers(&self) -> &HeaderMap {
+        &self.headers
+    }
+
+    /// The identity of the call (`None` for an unlabelled native response).
+    pub fn operation(&self) -> Option<Operation> {
+        self.operation
+    }
+
+    /// The copy as a borrowed head, for code written against [`ResponseHead`].
+    pub fn head(&self) -> ResponseHead<'_> {
+        ResponseHead::new(self.status, self.version, &self.headers)
+    }
+}
+
+impl fmt::Debug for ResponseMeta {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("ResponseMeta")
+            .field("status", &self.status.as_u16())
+            .field("version", &self.version)
+            .field(
+                "header_names",
+                &self.headers.keys().map(|k| k.as_str()).collect::<Vec<_>>(),
+            )
+            .field("operation", &self.operation.map(|o| o.name()))
             .finish()
     }
 }
