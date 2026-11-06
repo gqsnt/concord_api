@@ -615,7 +615,7 @@ made; the deferred items are listed as product decisions in the final report.
 | ID | Severity | Finding | Fix |
 |---|---|---|---|
 | SOL-FIN-1 | medium | READOUT §9 still listed "an `Incremental` wrapper cannot open with non-default limits" as a limit although D-W45-R5 resolved it | READOUT now gives the recipe (`check_head` + `read_for` from `open`, keeping `-> stream T`) |
-| SOL-FIN-2 | low | STATUS quoted CI synthetic merges (`0c0748fa`, and likewise `6fa955a0`) as if verifiable locally; GitHub's `refs/pull/4/merge` objects are not in the local repository | STATUS now says both were read from the GitHub API at the time and are not kept locally |
+| SOL-FIN-2 | low | STATUS quoted the CI synthetic merge `0c0748fa` as if verifiable locally; that `refs/pull/4/merge` object is not in the local repository | STATUS now says it was read from the GitHub API at the time; the Gate A merge `6fa955a0` is present locally and is cited as such |
 
 Areas reported clean: the Linear and Snowflake post-freeze fixes (they follow the earlier README
 contracts; no other behaviour changed); every other readout behaviour claim; all 25 feature-table
