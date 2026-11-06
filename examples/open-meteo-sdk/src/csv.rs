@@ -83,17 +83,6 @@ fn unique(names: &[String]) -> Result<(), CodecError> {
 }
 
 pub(crate) fn decode(bytes: Bytes, query: &ForecastQuery) -> Result<CsvForecast, CodecError> {
-    // The underlying CSV parser permits EOF inside quotes. Every valid CSV document
-    // has an even number of quote bytes (escaped quotes are doubled). Refuse an odd
-    // count before parsing so a truncated final quoted field cannot look complete.
-    if !bytes
-        .iter()
-        .filter(|&&byte| byte == b'"')
-        .count()
-        .is_multiple_of(2)
-    {
-        return Err(CodecError::new("CSV document has an unmatched quote"));
-    }
     let context = CsvContext::of::<NoHeader, Comma, EnvelopeProfile>()?;
     let table = <Envelope as Decode<RawTable>>::decode_body(context, bytes.clone())?;
     let mut records = table.records.into_iter();

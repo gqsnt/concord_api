@@ -433,8 +433,11 @@ fn invalid_query_shapes_are_rejected_locally() {
     assert!(HourlyVariable::named("").is_err());
 }
 
+/// A final quoted field that never closes is a truncated body. Concord's CSV reader refuses it
+/// since the between-wave 4-5 fix (this SDK's FRICTION.md F4 recorded the frozen reader accepting
+/// it, and an SDK quote-count guard that is now removed).
 #[tokio::test]
-async fn frozen_csv_decoder_quote_eof_reproduction_and_sdk_guard() {
+async fn csv_ending_inside_a_quoted_field_is_refused() {
     use concord::csv::{CsvOptions, CsvReader, HeaderMode};
     use concord::stream::{Chunks, Completion};
 
@@ -442,13 +445,17 @@ async fn frozen_csv_decoder_quote_eof_reproduction_and_sdk_guard() {
     let reader = CsvReader::new(CsvOptions::new(HeaderMode::Absent, b',').flexible(true)).unwrap();
     let mut records = reader.read_raw(Chunks::new([fixture]));
     let mut count = 0;
-    while let Some(record) = records.next().await {
-        record.unwrap();
-        count += 1;
-    }
-    // Observed frozen-library behavior: a final open quote is accepted as complete.
-    assert_eq!(count, 6);
-    assert_eq!(records.completion(), Completion::EndOfInput);
+    let error = loop {
+        match records.next().await {
+            Some(Ok(_)) => count += 1,
+            Some(Err(error)) => break error,
+            None => panic!("a truncated quoted field ended as if complete"),
+        }
+    };
+    // The five complete records arrive; the sixth, still inside its quoted field, is refused.
+    assert_eq!(count, 5);
+    assert!(error.is_terminal());
+    assert_eq!(records.completion(), Completion::Failed);
 
     let server = TestServer::start(move |_| {
         Reply::new(200)
@@ -464,7 +471,7 @@ async fn frozen_csv_decoder_quote_eof_reproduction_and_sdk_guard() {
         panic!("CSV refusal")
     };
     assert_eq!(kind, ResponseErrorKind::Csv);
-    assert_eq!(source.label(), "CSV document has an unmatched quote");
+    assert_eq!(source.label(), "the CSV input ends inside a quoted field");
     server.shutdown().await;
 }
 
