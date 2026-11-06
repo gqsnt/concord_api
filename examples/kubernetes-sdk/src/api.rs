@@ -22,7 +22,8 @@ use crate::model::{
 use crate::selector::{FieldSelector, LabelSelector};
 use crate::watch::WatchEvent;
 
-/// `resourceVersionMatch` of a list request.
+/// `resourceVersionMatch` of a list or watch request. Streaming lists require
+/// [`NotOlderThan`](Self::NotOlderThan).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ResourceVersionMatch {
     /// `NotOlderThan`: data at least as new as `resourceVersion`.
@@ -72,10 +73,17 @@ concord::api! {
         );
 
         /// The parameters every watch endpoint (`GET .../{plural}?watch=1`) shares.
+        /// For [streaming lists](https://kubernetes.io/docs/reference/using-api/api-concepts/#streaming-lists),
+        /// set `send_initial_events` to `true` and `resource_version_match` to
+        /// [`ResourceVersionMatch::NotOlderThan`], keeping `allow_watch_bookmarks` enabled.
         params WatchOptions(
             query("labelSelector") label_selector?: LabelSelector,
             query("fieldSelector") field_selector?: FieldSelector,
             query("resourceVersion") resource_version?: ResourceVersion,
+            /// `resourceVersionMatch`: streaming lists require `NotOlderThan`.
+            query("resourceVersionMatch") resource_version_match?: ResourceVersionMatch,
+            /// `sendInitialEvents`: opt into synthetic `ADDED` events for the current state.
+            query("sendInitialEvents") send_initial_events?: bool,
             query("allowWatchBookmarks") allow_watch_bookmarks?: bool = true,
             query("timeoutSeconds") timeout_seconds?: u32,
         );
