@@ -40,7 +40,7 @@ async fn submit(fixture_url: &str) -> Result<String, Box<dyn std::error::Error>>
             .with_message_intent("notifications")
             .with_status_callback("https://callbacks.example.invalid/status"),
     ).await?;
-    assert_eq!(submitted.meta.status.as_u16(), 201);
+    assert_eq!(submitted.meta.status().as_u16(), 201);
     assert_eq!(submitted.value.status, MessageStatus::Queued);
     Ok(submitted.value.sid)
 }
