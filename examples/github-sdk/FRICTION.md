@@ -208,6 +208,13 @@ exactly this duplication.
 - `concord_pagination::sequential` with a borrowing closure (`|key| pages.fetch(key)`), mandatory
   budgets and the `SequentialReport { failed, resume }` split mapped directly onto GH-A's child
   collections and GH-B's run/job/artifact scans; early stop (`break` + `finish`) was natural.
+  **Later status (`concord_pagination::Pages`):** every listing now also has ordinary
+  traversals (`LinkPages::pages`/`items`, owned, a cap or a failed page is a typed error), and
+  GH-B's three scans use them: their end comes from the traversal (`Ok(None)`, `Bounded`,
+  `Provider`) rather than from a separately read report, and each page's metadata from the page
+  itself (no `record_page` side channel). GH-A stays on the engine: its parent resumes from an
+  item checkpoint (`resume_items`), which the facade cannot start from, and its continuation is
+  assembled from the engine's reports.
 - `Page<T, K, M>` with a typed `M` let the SDK keep `ResponseMeta` per page without wrappers.
 - Typed errors stayed typed end to end (`GitHubError::Api` keeps the Concord error and its unread
   response; the workflow outcomes keep `GitHubError`, `LocateError`, `StreamError<E>`).

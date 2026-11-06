@@ -8,8 +8,11 @@
 //! Steps (serial):
 //!
 //! 1. Walk the workflow runs (`GET .../actions/runs` with the filter; items moved out of the
-//!    `workflow_runs` envelope) with a `concord-pagination` sequential chain until a run matches
-//!    the selector; stop there (a finished early chain, not exhaustion).
+//!    `workflow_runs` envelope) page by page (the SDK's `pages()`, capped by the run budget)
+//!    until a run matches the selector; stop there (an early stop, not exhaustion). The run, job
+//!    and artifact walks read their end from the traversal: `Ok(None)` is exhaustion, the
+//!    budget reached while GitHub lists more is reported as such (`exhausted: false`, a resume
+//!    link, `complete: false`), a failed page is [`RetrievalOutcome::Incomplete`].
 //! 2. Fetch that run (`GET .../actions/runs/{id}`) and walk all of its jobs (`jobs` envelope).
 //! 3. Walk the run's artifacts filtered by name (`artifacts` envelope) and take the first with
 //!    exactly that name, then fetch it (`GET .../actions/artifacts/{id}`) for a current `expired`
@@ -34,9 +37,9 @@ use concord_example_github_sdk::models::{Artifact, Conclusion, Job, RunState, Wo
 use concord_example_github_sdk::paging::{NextLink, operation};
 use concord_example_github_sdk::params::Timestamp;
 use concord_example_github_sdk::{GitHubError, RepoContext};
-use concord_pagination::{Budget, Outcome, Resume, sequential};
+use concord_pagination::{PagesError, Resume};
 
-use crate::requests::{RequestLog, RequestRecord, record_page};
+use crate::requests::{RequestLog, RequestRecord, record_next};
 use crate::sink::ArtifactSink;
 
 /// Which run to select: the first one GitHub lists (newest first) that is completed and, when
@@ -401,36 +404,41 @@ async fn run<S: ArtifactSink>(
     let mut partial = Partial::default();
 
     // 1. Scan runs until one matches.
-    let runs = repo.run_pages(repo.runs(&input.runs));
-    let mut chain = sequential(Resume::Start, Budget::new(input.budget.run_pages), |key| {
-        let page = runs.fetch(key);
-        async move { record_page(operation::RUNS, page.await, log) }
-    });
+    let mut runs = repo
+        .run_pages(repo.runs(&input.runs))
+        .pages()
+        .max_pages(input.budget.run_pages);
     let mut scanned = 0u64;
-    let mut selected = None;
-    while let Some(page) = chain.next().await {
-        let page = match page {
-            Ok(page) => page,
-            Err(error) => return incomplete(Stage::Runs, RetrievalError::GitHub(error), partial),
+    let listed = 'scan: loop {
+        let next = runs.next_page().await;
+        record_next(&next, operation::RUNS, log);
+        let page = match next {
+            Ok(Some(page)) => page,
+            Ok(None) => {
+                return RetrievalOutcome::NoMatchingRun {
+                    runs_scanned: scanned,
+                    exhausted: true,
+                    resume: None,
+                };
+            }
+            Err(PagesError::Provider { error, .. }) => {
+                return incomplete(Stage::Runs, RetrievalError::GitHub(error), partial);
+            }
+            // The run budget, reached while GitHub lists more runs: continue from there later.
+            Err(bounded) => {
+                return RetrievalOutcome::NoMatchingRun {
+                    runs_scanned: scanned,
+                    exhausted: false,
+                    resume: bounded.resume().cloned(),
+                };
+            }
         };
         for run in page.items {
             scanned += 1;
             if input.select.matches(&run) {
-                selected = Some(run);
-                break;
+                break 'scan run;
             }
         }
-        if selected.is_some() {
-            break;
-        }
-    }
-    let report = chain.finish();
-    let Some(listed) = selected else {
-        return RetrievalOutcome::NoMatchingRun {
-            runs_scanned: scanned,
-            exhausted: report.outcome == Outcome::Exhausted,
-            resume: report.resume,
-        };
     };
 
     // 2. The run itself, then all of its jobs.
@@ -453,20 +461,29 @@ async fn run<S: ArtifactSink>(
         runs_scanned: scanned,
     };
     partial.run = Some(run_report.clone());
-    let job_pages = repo.run_job_pages(run.id, |op| op);
-    let mut chain = sequential(Resume::Start, Budget::new(input.budget.job_pages), |key| {
-        let page = job_pages.fetch(key);
-        async move { record_page(operation::RUN_JOBS, page.await, log) }
-    });
+    let mut job_pages = repo
+        .run_job_pages(run.id, |op| op)
+        .pages()
+        .max_pages(input.budget.job_pages);
     let mut jobs = JobsReport {
         jobs: Vec::new(),
         total_count: None,
         complete: false,
     };
-    while let Some(page) = chain.next().await {
-        let page = match page {
-            Ok(page) => page,
-            Err(error) => return incomplete(Stage::Jobs, RetrievalError::GitHub(error), partial),
+    loop {
+        let next = job_pages.next_page().await;
+        record_next(&next, operation::RUN_JOBS, log);
+        let page = match next {
+            Ok(Some(page)) => page,
+            Ok(None) => {
+                jobs.complete = true;
+                break;
+            }
+            Err(PagesError::Provider { error, .. }) => {
+                return incomplete(Stage::Jobs, RetrievalError::GitHub(error), partial);
+            }
+            // The job budget, reached while GitHub lists more jobs: `complete` stays `false`.
+            Err(_bounded) => break,
         };
         jobs.total_count = page.meta.total_count;
         jobs.jobs
@@ -478,37 +495,34 @@ async fn run<S: ArtifactSink>(
                 steps: job.steps.len(),
             }));
     }
-    jobs.complete = chain.finish().outcome == Outcome::Exhausted;
     partial.jobs = Some(jobs.clone());
 
     // 3. The artifact by name, then its current state.
     let name = input.artifact_name.clone();
-    let artifact_pages = repo.run_artifact_pages(run.id, |op| op.set_name(name.as_str()));
-    let mut chain = sequential(
-        Resume::Start,
-        Budget::new(input.budget.artifact_pages),
-        |key| {
-            let page = artifact_pages.fetch(key);
-            async move { record_page(operation::RUN_ARTIFACTS, page.await, log) }
-        },
-    );
-    let mut found = None;
-    while let Some(page) = chain.next().await {
-        let page = match page {
-            Ok(page) => page,
-            Err(error) => {
+    let mut artifact_pages = repo
+        .run_artifact_pages(run.id, |op| op.set_name(name.as_str()))
+        .pages()
+        .max_pages(input.budget.artifact_pages);
+    let (found, exhausted) = loop {
+        let next = artifact_pages.next_page().await;
+        record_next(&next, operation::RUN_ARTIFACTS, log);
+        let page = match next {
+            Ok(Some(page)) => page,
+            Ok(None) => break (None, true),
+            Err(PagesError::Provider { error, .. }) => {
                 return incomplete(Stage::Artifacts, RetrievalError::GitHub(error), partial);
             }
+            // The artifact budget, reached while GitHub lists more artifacts.
+            Err(_bounded) => break (None, false),
         };
-        found = page
+        let found = page
             .items
             .into_iter()
             .find(|a| a.name == input.artifact_name);
         if found.is_some() {
-            break;
+            break (found, false);
         }
-    }
-    let exhausted = chain.finish().outcome == Outcome::Exhausted;
+    };
     let Some(listed) = found else {
         return RetrievalOutcome::NoMatchingArtifact {
             run: run_report,

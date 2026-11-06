@@ -1,12 +1,16 @@
-//! The cursor adapter under `concord_pagination`: page and item traversal, item-level
+//! The ordinary traversals (`items()`, `pages()`: typed end, opt-in cap, kept prefix) and the
+//! cursor adapter under `concord_pagination`'s engine: page and item traversal, item-level
 //! checkpoints with a mid-page stop and a replayed resume, a backward chain, and budgets.
 
 use std::num::NonZeroUsize;
 
 use concord_example_stripe_sdk::pages::{CursorList, Direction};
-use concord_example_stripe_sdk::{AccountId, CustomerId, Limit, SecretKey, StripeContext};
+use concord_example_stripe_sdk::{
+    AccountId, Customer, CustomerId, Limit, ProtocolError, SecretKey, StripeContext,
+    StripeCustomersList,
+};
 use concord_example_testserver::{Recorded, Reply, TestServer};
-use concord_pagination::{Budget, Outcome, Resume, resume_items, sequential};
+use concord_pagination::{Budget, Outcome, PagesError, Resume, resume_items, sequential};
 
 const KEY: &str = "sk_test_SYNTHETIC_pages";
 
@@ -271,4 +275,156 @@ async fn generated_list_is_walked_exactly_once_by_object_cursors() {
         );
     }
     assert_eq!(server.shutdown().await.open_after, 0);
+}
+
+fn customers(stripe: &StripeContext) -> StripeCustomersList {
+    stripe
+        .api()
+        .customers()
+        .list()
+        .set_limit(Limit::new(2).unwrap())
+}
+
+fn ids(customers: &[Customer]) -> Vec<&str> {
+    customers.iter().map(|c| c.id.as_str()).collect()
+}
+
+/// The ordinary path: the generated list operation's `items()` reads every page, forward, and
+/// ends only after the page with `has_more: false`.
+#[tokio::test]
+async fn ordinary_items_read_every_page_to_the_end() {
+    let server = TestServer::start(respond).await;
+    let stripe = context(&server);
+    let all = customers(&stripe)
+        .items()
+        .unwrap()
+        .collect_complete()
+        .await
+        .unwrap();
+    assert_eq!(ids(&all), ["cus_e", "cus_d", "cus_c", "cus_b", "cus_a"]);
+
+    let mut pages = customers(&stripe).pages().unwrap();
+    let mut sizes = Vec::new();
+    while let Some(page) = pages.next_page().await.unwrap() {
+        assert_eq!(page.meta.status, 200);
+        sizes.push(page.items.len());
+    }
+    assert_eq!(sizes, [2, 2, 1]);
+    assert!(
+        pages.next_page().await.unwrap().is_none(),
+        "the end repeats"
+    );
+    assert_eq!(server.requests().len(), 6);
+    server.shutdown().await;
+}
+
+/// A cap reached while Stripe has more is an error carrying the next cursor, never a silent
+/// prefix; continuing from it reads the rest. A cap reached exactly on the last page is the end.
+#[tokio::test]
+async fn a_cap_with_more_pages_is_an_error_and_on_the_last_page_is_the_end() {
+    let server = TestServer::start(respond).await;
+    let stripe = context(&server);
+    let two = NonZeroUsize::new(2).unwrap();
+
+    let incomplete = customers(&stripe)
+        .items()
+        .unwrap()
+        .max_pages(two)
+        .collect_complete()
+        .await
+        .unwrap_err();
+    assert_eq!(
+        ids(&incomplete.collected),
+        ["cus_e", "cus_d", "cus_c", "cus_b"]
+    );
+    let PagesError::Bounded { resume, .. } = incomplete.error else {
+        panic!("a cap with more pages is `Bounded`: {:?}", incomplete.error)
+    };
+    let Resume::At(cursor) = &resume else {
+        panic!("the resume point is the next cursor")
+    };
+    assert_eq!(cursor.id().as_str(), "cus_b");
+    assert_eq!(server.requests().len(), 2, "the cap is not exceeded");
+
+    let list = CursorList::forward(customers(&stripe)).unwrap();
+    let rest = list
+        .pages_from(resume)
+        .items()
+        .collect_complete()
+        .await
+        .unwrap();
+    assert_eq!(ids(&rest), ["cus_a"]);
+
+    let three = NonZeroUsize::new(3).unwrap();
+    let mut pages = customers(&stripe).pages().unwrap().max_pages(three);
+    let mut read = 0;
+    while let Some(page) = pages.next_page().await.unwrap() {
+        read += page.items.len();
+    }
+    assert_eq!(read, 5, "a cap exactly on the last page is exhaustion");
+    server.shutdown().await;
+}
+
+/// A failed page ends the traversal with the SDK's typed error and the failed cursor; the
+/// objects of the pages before it are kept by `collect_complete`. A cursor of another list is
+/// refused before anything is sent, and a traversal that failed never reads as ended.
+#[tokio::test]
+async fn a_failed_second_page_keeps_the_first_pages_items() {
+    let server = TestServer::start(|request: &Recorded| {
+        if request
+            .query_all("starting_after")
+            .first()
+            .map(String::as_str)
+            == Some("cus_d")
+        {
+            Reply::json(
+                429,
+                r#"{"error":{"type":"invalid_request_error","code":"rate_limit"}}"#,
+            )
+            .header("request-id", "req_page2")
+            .header("stripe-rate-limited-reason", "global-rate")
+        } else {
+            respond(request)
+        }
+    })
+    .await;
+    let stripe = context(&server);
+    let incomplete = customers(&stripe)
+        .items()
+        .unwrap()
+        .collect_complete()
+        .await
+        .unwrap_err();
+    assert_eq!(ids(&incomplete.collected), ["cus_e", "cus_d"]);
+    let PagesError::Provider { error, failed, .. } = incomplete.error else {
+        panic!("a failed page is `Provider`: {:?}", incomplete.error)
+    };
+    assert!(error.is_rate_limited());
+    assert_eq!(
+        error.meta().unwrap().request_id.as_deref(),
+        Some("req_page2")
+    );
+    let Resume::At(cursor) = failed else {
+        panic!("the failed page is the second one")
+    };
+    assert_eq!(cursor.id().as_str(), "cus_d");
+    assert_eq!(server.requests().len(), 2, "nothing is retried");
+
+    let other =
+        CursorList::forward(customers(&stripe).set_email("x@example.test".to_owned())).unwrap();
+    let mut pages = other.pages_from(Resume::At(cursor));
+    let Err(PagesError::Provider { error, .. }) = pages.next_page().await else {
+        panic!("a cursor of another list is refused")
+    };
+    assert_eq!(error.protocol(), Some(ProtocolError::CursorBindingMismatch));
+    assert!(matches!(
+        pages.next_page().await,
+        Err(PagesError::Ended { .. })
+    ));
+    assert_eq!(
+        server.requests().len(),
+        2,
+        "the refused cursor sent nothing"
+    );
+    server.shutdown().await;
 }

@@ -181,6 +181,12 @@ or a URL rewrite.
 - An invoice's embedded `lines` list is the first page of the line chain; the adapter's
   `after_embedded` applies the same `has_more` rules and the chain starts at `Resume::At`. No
   pagination API change was needed.
+- **Status (`concord_pagination::Pages`).** The facade removes the first point: the SDK now
+  returns a named traversal (`StripePages<T>` / `StripeItems<T>`) from every list operation's
+  `pages()` / `items()` and from `CursorList::pages_from`, so an ordinary caller writes no
+  closure, budget or report check; a cap or a failed page is a typed error. ST-A's `drain` reads
+  its sections from that end. `CursorList::fetch` stays the engine's factory for item
+  checkpoints and engine reports.
 
 ## F7 — Small observations (no change proposed)
 

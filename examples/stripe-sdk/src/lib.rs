@@ -15,8 +15,10 @@
 //!   [`AccountOverride`]/[`OnAccount`] for a per-request `Stripe-Account`.
 //! - [`send()`] — sends any prepared operation once and keeps Stripe's response metadata
 //!   (`Request-Id`, `Idempotent-Replayed`, rate-limit reason) and typed error documents.
-//! - [`pages`] — the cursor adapter (`starting_after`/`ending_before`, `has_more`) for
-//!   `concord-pagination`'s sequential traversal.
+//! - [`pages`] — cursor pagination (`starting_after`/`ending_before`, `has_more`): every list
+//!   operation's `items()` / `pages()` (`concord-pagination`'s owned traversals: `Ok(None)`
+//!   only at the end, a cap or a failed page is an error), and the [`pages::CursorList`] adapter
+//!   for the backward direction, resuming and the pagination engine.
 //! - [`form::StripeForm`] — Stripe's bracketed form encoding, a custom Concord format.
 //!
 //! ```
