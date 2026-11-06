@@ -84,10 +84,9 @@ enum Scan {
     /// comment line (the DFA's `StartRecord`, `EndRecord` and `CRLF`, which read every byte
     /// alike).
     Record,
-    /// Inside a comment line. Only a line feed ends it, and only when the line feed is a record
-    /// terminator: the DFA maps every byte that is not a delimiter, quote, escape, comment or
-    /// terminator byte to one class, whose transition out of a comment is "stay", so with a
-    /// custom terminator a comment line runs to the end of input.
+    /// Inside a comment line, which only a line feed ends (a lone `\r` does not). The DFA sees a
+    /// line feed only when it is a record terminator; the configuration refuses a comment byte
+    /// with any other read terminator, so here it always is.
     Comment,
     /// At the start of a field after a delimiter.
     Field,
@@ -163,7 +162,7 @@ impl Scanner {
                 Scan::Record if self.comment == Some(b) => Scan::Comment,
                 Scan::Record | Scan::Field if self.quote == Some(b) => Scan::Quoted,
                 Scan::Record | Scan::Field | Scan::Unquoted => self.unquoted(b),
-                Scan::Comment if b == b'\n' && self.is_terminator(b) => Scan::Record,
+                Scan::Comment if b == b'\n' => Scan::Record,
                 Scan::Comment => Scan::Comment,
                 Scan::Quoted if self.quote == Some(b) => Scan::Closed,
                 Scan::Quoted if self.escape == Some(b) => Scan::Escaped,
@@ -694,6 +693,7 @@ mod tests {
             // Only a line feed ends a comment line (`csv-core`), so these end inside one too.
             (b"a\n#c\r", vec![1]),
             (b"a\n#c\rb,d", vec![1]),
+            (b"a\n#c\rb,d\ne", vec![1, 1]),
         ] {
             for split in 0..=body.len() {
                 let mut t = table(options.clone());
@@ -871,8 +871,9 @@ mod tests {
             absent().double_quote(false).escape(Some(b'\\')),
             absent().escape(Some(b'\\')).comment(Some(b'#')),
             absent().quoting(false).comment(Some(b'#')),
+            absent().read_terminator(RecordTerminator::Byte(b';')),
             absent()
-                .read_terminator(RecordTerminator::Byte(b';'))
+                .read_terminator(RecordTerminator::Byte(b'\n'))
                 .comment(Some(b'#')),
             absent().quote(b'\'').escape(Some(b'\\')),
         ];

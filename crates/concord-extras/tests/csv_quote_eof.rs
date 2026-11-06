@@ -41,12 +41,20 @@ impl CsvProfile for Backslash {
     }
 }
 
-/// A custom record terminator, with comment lines.
+/// A custom record terminator (no comment byte: that combination is refused).
 struct Tilde;
 impl CsvProfile for Tilde {
     fn options() -> CsvProfileOptions {
+        CsvProfileOptions::default().read_terminator(RecordTerminator::Byte(b'~'))
+    }
+}
+
+/// The line feed as the only record terminator, with comment lines.
+struct LineFeed;
+impl CsvProfile for LineFeed {
+    fn options() -> CsvProfileOptions {
         CsvProfileOptions::default()
-            .read_terminator(RecordTerminator::Byte(b'~'))
+            .read_terminator(RecordTerminator::Byte(b'\n'))
             .comment(Some(b'#'))
     }
 }
@@ -353,10 +361,24 @@ async fn quotes_in_comment_lines_are_comment_text() {
         read::<Csv<NoHeader, Comma, Comments>>(b"\"#\"\n#\"").await,
         Outcome::ok(None, &[&["#"]])
     );
-    // With a custom terminator, `csv-core`'s DFA ends a comment line only at the end of input.
+    // A comment line ends only at a line feed: a lone `\r` (and a quote) inside it is comment
+    // text, and the record after the line feed is read.
     assert_eq!(
-        read::<Csv<NoHeader, Comma, Tilde>>(b"a~# \"~\n\"b~").await,
+        read::<Csv<NoHeader, Comma, Comments>>(b"a\n# \"\r\"b,c\nd").await,
+        Outcome::ok(None, &[&["a"], &["d"]])
+    );
+    assert_eq!(
+        read::<Csv<NoHeader, Comma, Comments>>(b"a\n# \r\"b").await,
         Outcome::ok(None, &[&["a"]])
+    );
+    // `Byte(b'\n')`: `\r` is data, and a line feed ends both records and comment lines.
+    assert_eq!(
+        read::<Csv<NoHeader, Comma, LineFeed>>(b"a\r\n# \"\n\"b\r\"\n").await,
+        Outcome::ok(None, &[&["a\r"], &["b\r"]])
+    );
+    assert_eq!(
+        read::<Csv<NoHeader, Comma, LineFeed>>(b"a\n# x\n\"b\r").await,
+        Outcome::ok(None, &[&["a"]]).failing(ReadErrorKind::Format, OPEN)
     );
 }
 
