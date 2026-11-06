@@ -1,7 +1,7 @@
 //! Public consumer workflows, entirely against the loopback server.
 use concord::reqwest;
 use concord_example_testserver::{Recorded, Reply, TestServer};
-use concord_sdk_pokeapi::{Call, Client};
+use concord_sdk_pokeapi::Client;
 
 fn response(body: String) -> Reply {
     Reply::new(200)
@@ -19,7 +19,7 @@ async fn read_named_pokemon() {
     let server =
         TestServer::start(|_: &Recorded| response(include_str!("../fixtures/pokemon.json").into()))
             .await;
-    let pokemon = api(&server).pokemon("clefairy").call().await.unwrap().value;
+    let pokemon = api(&server).pokemon("clefairy").send().await.unwrap().value;
     assert_eq!(
         (pokemon.id, pokemon.name.as_str(), pokemon.height),
         (35, "clefairy", 6)
@@ -46,7 +46,7 @@ async fn change_limit_follow_next_and_fetch_detail() {
         .list()
         .set_limit(2)
         .set_offset(0)
-        .call()
+        .send()
         .await
         .unwrap()
         .value;
@@ -59,7 +59,7 @@ async fn change_limit_follow_next_and_fetch_detail() {
         .list()
         .set_limit(1)
         .set_offset(2)
-        .call()
+        .send()
         .await
         .unwrap()
         .value;
@@ -95,7 +95,7 @@ async fn follow_to_empty_end_and_keep_prefix_on_failure() {
     })
     .await;
     let api = api(&server);
-    let first = api.list().set_limit(1).call().await.unwrap().value;
+    let first = api.list().set_limit(1).send().await.unwrap().value;
     let final_page = api
         .follow(first.next.as_deref().unwrap())
         .await

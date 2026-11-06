@@ -4,7 +4,7 @@ use std::time::Duration;
 
 use concord::{ErrorKind, reqwest};
 use concord_example_testserver::{Body, Reply, TestServer};
-use concord_sdk_pokeapi::{Call, Client, Error, Pokemon, PokemonPage, Response};
+use concord_sdk_pokeapi::{Client, Error, Pokemon, PokemonPage, Response};
 use serde_json::{Value, json};
 
 const CLEFAIRY: &[u8] = include_bytes!("../fixtures/first_use/clefairy.json");
@@ -71,7 +71,7 @@ async fn a_named_pokemon_has_typed_fields_extra_json_and_response_head() {
     let server = TestServer::start(|_| json_reply(200, CLEFAIRY)).await;
     let api = local(&server);
 
-    let response = api.pokemon("clefairy").call().await.expect("named detail");
+    let response = api.pokemon("clefairy").send().await.expect("named detail");
     let pokemon = response.value;
     assert_eq!(pokemon.id, 35);
     assert_eq!(pokemon.name, "clefairy");
@@ -101,7 +101,7 @@ async fn a_numeric_id_and_nullable_experience_use_the_same_public_entry_point() 
     fixture["base_experience"] = Value::Null;
     let bytes = serde_json::to_vec(&fixture).unwrap();
     let server = TestServer::start(move |_| json_reply(200, &bytes)).await;
-    let response = local(&server).pokemon("35").call().await.unwrap();
+    let response = local(&server).pokemon("35").send().await.unwrap();
 
     assert_eq!(response.value.name, "clefairy");
     assert_eq!(response.value.id, 35);
@@ -117,7 +117,7 @@ async fn a_not_found_preserves_the_unstandardized_error_body() {
     .await;
     let failure = local(&server)
         .pokemon("missing-pokemon")
-        .call()
+        .send()
         .await
         .unwrap_err();
     let error = checked_error(
@@ -139,7 +139,7 @@ async fn a_wrong_success_content_type_keeps_the_unread_body() {
         Reply::text(200, "text/plain", CLEFAIRY).header("x-fixture", "first-use")
     })
     .await;
-    let failure = local(&server).pokemon("clefairy").call().await.unwrap_err();
+    let failure = local(&server).pokemon("clefairy").send().await.unwrap_err();
     let error = checked_error(
         failure,
         ErrorKind::Metadata,
@@ -166,7 +166,7 @@ async fn a_wrong_success_content_type_keeps_the_unread_body() {
 #[tokio::test]
 async fn a_incomplete_json_in_a_complete_http_body_is_a_decode_failure() {
     let server = TestServer::start(|_| json_reply(200, INCOMPLETE)).await;
-    let failure = local(&server).pokemon("clefairy").call().await.unwrap_err();
+    let failure = local(&server).pokemon("clefairy").send().await.unwrap_err();
     let error = checked_error(
         failure,
         ErrorKind::Decode,
@@ -188,7 +188,7 @@ async fn a_complete_json_does_not_hide_an_unfinished_chunked_transfer() {
         json_reply(200, b"").with_body(Body::FailAfter(vec![CLEFAIRY.into()]))
     })
     .await;
-    let failure = local(&server).pokemon("clefairy").call().await.unwrap_err();
+    let failure = local(&server).pokemon("clefairy").send().await.unwrap_err();
     let error = checked_error(
         failure,
         ErrorKind::Transport,
@@ -203,7 +203,7 @@ async fn a_complete_json_does_not_hide_an_unfinished_chunked_transfer() {
 #[tokio::test]
 async fn a_disconnect_before_headers_has_no_response_metadata_or_retry() {
     let server = TestServer::start(|_| Reply::hang_up()).await;
-    let failure = local(&server).pokemon("clefairy").call().await.unwrap_err();
+    let failure = local(&server).pokemon("clefairy").send().await.unwrap_err();
     let Error::Concord { error, meta } = failure else {
         panic!("expected transport error, got {failure:?}");
     };
@@ -241,7 +241,7 @@ async fn select_named(api: &Client, name: &str, max_pages: usize) -> Selection {
     loop {
         let result = match next.as_deref() {
             Some(url) => api.follow(url).await,
-            None => api.list().set_limit(2).set_offset(0).call().await,
+            None => api.list().set_limit(2).set_offset(0).send().await,
         };
         let response = match result {
             Ok(response) => response,
@@ -361,7 +361,7 @@ async fn b_follow_empty_intermediate_page_and_fetch_only_selected_detail() {
 async fn b_provider_defaults_and_an_empty_final_page_require_no_followup() {
     let server = TestServer::start(|_| page_reply(0, None, None, json!([]))).await;
     let api = local(&server);
-    let default_page = api.list().call().await.unwrap();
+    let default_page = api.list().send().await.unwrap();
     assert_eq!(default_page.value.count, 0);
     assert!(default_page.value.results.is_empty());
     assert_eq!(default_page.value.next, None);

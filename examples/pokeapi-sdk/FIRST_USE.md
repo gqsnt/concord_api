@@ -175,3 +175,10 @@ for two SDK changes, with no case or expectation changed:
   `api.pokemon(id).call()`, `api.list().set_limit(2).set_offset(0).call()` and
   `api.list().call()`, and the import adds `Call`. `follow` and `pokemon_url`
   are unchanged.
+
+## Between waves 2-3 (coordinator integration)
+
+The record above is unchanged. The `Call` trait was replaced by the client's send policy
+(`INTEGRATION.md`, "Between waves 2-3"), so the coordinator changed the nine `.call()` sites of
+`tests/first_use.rs` to `.send()` and dropped `Call` from its import; no case or expectation
+changed, and the suite still passes (14 tests).
