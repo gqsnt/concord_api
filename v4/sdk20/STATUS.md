@@ -32,6 +32,14 @@ Baseline gate at `a95fb2fb` (detached worktree `work/baseline`, 2026-11-06):
 Cost check (A1): `concord-bench --bin alloc-count`, release, base `a95fb2fb` vs candidate
 `d83b4782`: all 94 rows identical (prepare and decode stages, encode through `encode_body`).
 
+## Build cache budget
+
+Campaign-owned, reproducible build output only: `work/gate/target` (the one full-gate cache,
+reused for every full gate), `work/implementation/target` (integration), `work/target-a` and
+`work/target-b` (shared by the Phase B role sessions, at most two concurrent heavy builds), plus
+the Phase A agent worktrees' own targets (about 17 GB, idle). At Phase B start: 372 GB free of
+915 GB. Pruning, if needed, is limited to these directories and recorded here.
+
 ## SDK cohort (Phase B)
 
 Not started. Roster: handoff `cohort/providers.json`.
