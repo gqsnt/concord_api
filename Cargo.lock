@@ -422,6 +422,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "concord-check-core-concepts"
+version = "0.0.0"
+dependencies = [
+ "concord",
+ "concord-example-testserver",
+ "serde",
+ "tokio",
+]
+
+[[package]]
 name = "concord-check-dx03-csv-runtime"
 version = "0.0.0"
 dependencies = [
