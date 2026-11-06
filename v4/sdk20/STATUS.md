@@ -42,6 +42,9 @@ the Phase A agent worktrees' own targets (about 17 GB, idle). At Phase B start: 
 
 ## SDK cohort (Phase B)
 
+Wave 2 frozen at `e04236ca` (wave 1 integrated): `verify.sh --package --bench` 43/43 PASS on a
+clean tree (`work/logs/gate-e04236ca-verify.txt`), the four wave 1 SDKs pass alone.
+
 Roster: handoff `cohort/providers.json`; capsules `v4/sdk20/tasks/wave*/`. Wave 1 frozen at
 `94d13527`; started while Gate A's remote CI was still pending; CI then passed on that exact
 commit, so no baseline intervention was needed.
@@ -52,6 +55,10 @@ commit, so no baseline intervention was needed.
 | SDK02 | PokéAPI | small | 1 | `gpt-6.1-terra` xhigh (`2079f14b`) | `gpt-6-astra` xhigh, 14 tests; first intervention: read the testserver API (`729a8dda`) | Opus subagent (`5f72d206`; its `follow_with_limit` is reverted in integration, see W1-6) | WAVE_1_DONE, integrated |
 | SDK03 | Twilio Messaging | medium | 1 | `gpt-6-astra` xhigh (`b1e00c12`) | Opus subagent, 22 tests, unassisted (`96ff9b2b`) | `gpt-6.1-sol` xhigh (`497367eb`) | WAVE_1_DONE, integrated |
 | SDK04 | Amazon S3 | large | 1 | Opus subagent (`b30d9994`) | `gpt-6.1-sol` xhigh, 13 tests, unassisted (`715538c6`) | `gpt-6.1-terra` xhigh (`41e24beb`) | WAVE_1_DONE, integrated |
+| SDK05 | Frankfurter | small | 2 | `gpt-6-astra` xhigh (session `01a1aec4-4657-79d0…`) | | | AUTHORING |
+| SDK06 | GitLab | medium | 2 | Opus subagent | | | AUTHORING |
+| SDK07 | Slack Web API | medium | 2 | `gpt-6.1-sol` xhigh (session `01a1aec4-4657-71a0…`) | | | AUTHORING |
+| SDK08 | OpenAI | large | 2 | `gpt-6.1-terra` xhigh (session `01a1aec4-4657-7690…`) | | | AUTHORING |
 
 ## Model/session ledger
 
