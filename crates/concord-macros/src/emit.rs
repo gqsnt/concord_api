@@ -947,6 +947,17 @@ fn request_summary(model: &Model, endpoint: usize, method: &Ident) -> TokenStrea
                 )
             }
         }));
+        // With a send policy, `send()` returns the policy's output, not the declared handling's.
+        if let Kind::Client {
+            send: Some(policy), ..
+        } = &model.owners[0].kind
+        {
+            lines.push(lit(&format!(
+                " With the client's send policy `{}`, `send()` returns `<{} as SendWith<T>>::Output` for this output `T`; `prepare()` (then `send()` or `receive()` on the `Prepared`) applies the declared handling above.",
+                type_text(policy),
+                type_text(policy)
+            )));
+        }
     }
     let query = keys(&composed.query);
     if !query.is_empty() {

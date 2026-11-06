@@ -45,3 +45,4 @@ commit; the coordinator commits their files and records it.
 | W2 maintainer SDK06 | `gpt-6.1-terra` xhigh | `gpt-6.1-terra`, `xhigh` (session `01a1aee4-2677…`) | same | `e1b813b5` | |
 | W2 maintainer SDK07 | `gpt-6-astra` xhigh | `gpt-6-astra`, `xhigh` (session `01a1aed6-b266…`) | same | `c844a878` | |
 | W2 maintainer SDK08 | Opus subagent | UNOBSERVED (inherits) | same | `51d0eee3` | |
+| Review of between-wave changes after wave 2 (`e04236ca..1f71432c`, library/docs) | `gpt-6.1-sol`, xhigh, read-only | `gpt-6.1-sol`, `xhigh`, `read-only` (session `01a1aee8-0314…`) | `work/rv-w2` (detached `1f71432c`) | ACCEPT_WITH_FIXES, SOL-W2-1 fixed | |

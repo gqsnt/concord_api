@@ -202,9 +202,9 @@ hosts and a percent-escaped path, whose escapes are kept as written (`https://ex
 (`/v1` for a test server at `http://127.0.0.1:port`) belongs in the client's `path "v1";`, not in
 `base`.
 
-**Credentials and redirects.** reqwest drops `Authorization`, `Cookie` and
-`Proxy-Authorization` when it follows a redirect to another host, but **not** a custom credential
-header (`PRIVATE-TOKEN`, `X-Api-Key`). An SDK with such a header documents (or builds) a client
+**Credentials and redirects.** reqwest drops `Authorization`, `Cookie`, `Cookie2`,
+`Proxy-Authorization` and `WWW-Authenticate` when a redirect changes the host, port or scheme, but
+**not** a custom credential header (`PRIVATE-TOKEN`, `X-Api-Key`). An SDK with such a header documents (or builds) a client
 whose redirect policy refuses a cross-origin hop — `reqwest::redirect::Policy::custom` comparing
 `attempt.url().origin()` with `attempt.previous()[0].origin()` — or disables redirects. The
 application owns its `reqwest::Client`; Concord never changes it.

@@ -228,3 +228,16 @@ patched Concord or used private items.
 | W2-12 | GitLab: the generated client exposes no base URL; the SDK strips declared segments from a prepared URL | declaration | DEFER: one consumer; `follow`'s same-origin rule removes part of the need |
 | W2-13 | Frankfurter: `.parse()` into a generic setter needs `::<Date>` (E0283) | Rust inference, documented on `IntoValue` | DOCS (already documented) |
 | W2-14 | Maintenance dispersion: all four perturbations needed no production change (Frankfurter, Slack, OpenAI, GitLab: tests, fixtures, docs only) | positive | — |
+
+### Review of the between-wave changes after wave 2 (Codex `gpt-6.1-sol`, xhigh, read-only, session `01a1aee8…`)
+
+| ID | Severity | Finding | Fix |
+|---|---|---|---|
+| SOL-W2-1 | low | with a send policy, generated docs of a `-> stream T` endpoint still said `send()` returns the reader | generated docs add a policy line: `send()` returns `<P as SendWith<T>>::Output`, `prepare()` keeps the declared handling |
+
+Areas reported clean: `send` parsing, cfg, generics, collision checks, renamed crate, privacy (a
+private policy/output in a pub client fails visibly), the `+ Send` future (a `Send` future may
+return a non-`Send` output), non-`Send` endpoints (E0277 naming the field), `follow` origins
+(default ports, IDN, IP), redaction, `decode_limited`. The reviewer confirmed reqwest's
+cross-origin redirect header removal (Authorization, Cookie, Cookie2, Proxy-Authorization,
+WWW-Authenticate); the author guide now lists exactly those. Verdict ACCEPT_WITH_FIXES.
