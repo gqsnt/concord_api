@@ -1,0 +1,23 @@
+[package]
+name = "concord-sdk-distribution-registry"
+description = "Provider SDK slice: the CNCF Distribution registry HTTP API v2 (catalog, tags, manifests, blobs, chunked blob uploads) with Bearer token challenges, declared with concord::api!."
+version = "0.0.0"
+edition = "2024"
+rust-version.workspace = true
+license.workspace = true
+publish = false
+
+[dependencies]
+concord = { path = "../../crates/concord", features = ["json"] }
+concord-pagination = { path = "../../crates/concord-pagination" }
+serde = { workspace = true, features = ["derive"] }
+serde_json.workspace = true
+# SHA-256 / SHA-512 content digests (a generic algorithm: a mature implementation, not ours).
+sha2 = "0.11.1"
+
+[dev-dependencies]
+concord-example-testserver = { path = "../testserver" }
+tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
+
+[lints]
+workspace = true

@@ -929,6 +929,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "concord-sdk-distribution-registry"
+version = "0.0.0"
+dependencies = [
+ "concord",
+ "concord-example-testserver",
+ "concord-pagination",
+ "serde",
+ "serde_json",
+ "sha2",
+ "tokio",
+]
+
+[[package]]
 name = "concord-sdk-dropbox"
 version = "0.0.0"
 dependencies = [
