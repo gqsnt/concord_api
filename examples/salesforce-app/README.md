@@ -23,7 +23,7 @@ cargo test -p concord-example-salesforce-app --test sf_b_bulk_csv_round_trip
 cargo test -p concord-example-salesforce-app --test sf_b_ingest_round_trip
 cargo test -p concord-example-salesforce-app --test generic_streaming_upload_transport   # labelled transport fixture, not Salesforce evidence
 cargo test -p concord-example-salesforce-app --test manifest                             # fixture hashes and provenance
-cargo test -p concord-example-salesforce-sdk                                             # SDK unit and single-operation wire tests
+cargo test -p concord-example-salesforce-sdk                                             # SDK unit, single-operation wire and result-part tests
 ```
 
 Live runs (the same functions, another transport target):
@@ -62,6 +62,7 @@ for this delivery (no org was available): live status `NOT_RUN`.
 | SF-B non-comma delimiter, LF and CRLF, field-name headers, quoted separators/newlines, escaped quotes | `sf_b_every_bulk_dialect_round_trips_with_quoted_separators_and_newlines`, `sf_b_discovered_…` |
 | SF-B empty/null profile behaviour | SDK `csv::tests::ingest_body_uses_the_job_dialect_and_null_marker`, `ingest_spooled_upload_round_trip`, `assert_rows_equal` (empty → `None`) |
 | SF-B row-width/schema errors; each part parsed with its own header | `sf_b_width_schema_decode_and_count_errors_fail_only_their_part` |
+| SF-B one validated part reader for both routes: a shard is published only after `ResultPartRows::finish` (end of input, declared count equal; early stop, limit or read error is never a completion) | SDK `result_parts::*`, `sf_b_width_schema_decode_and_count_errors_fail_only_their_part`, `sf_b_large_generated_parts_stream_through_bounded_readers` |
 | SF-B `nextRecordUrl` vs `nextRecordsUrl` (aliases, ambiguity) | `sf_b_next_manifest_link_alias_policy_on_the_wire`, `sf_b_official_parallel_results_example_agrees_with_the_link_policy`, SDK `bulk::tests::next_link_alias_policy` |
 | SF-B Salesforce adapter enforces provider header/dialect rules (CSV item 16) | SDK `csv::tests::headers_follow_salesforce_rules`, `results_are_read_with_the_job_dialect_and_exact_header` |
 | SF-B ingest: public encoder, create → upload → close → poll → result files | `ingest_spooled_upload_round_trip` |
