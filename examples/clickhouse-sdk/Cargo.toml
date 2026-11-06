@@ -1,0 +1,29 @@
+[package]
+name = "concord-sdk-clickhouse"
+description = "A bounded ClickHouse HTTP interface SDK slice declared with concord::api!: typed parameterized SELECTs read incrementally as CSVWithNames or JSONEachRow, streamed JSONEachRow/CSVWithNames inserts, query IDs, summary/progress metadata, late in-body exceptions and query cancellation."
+version = "0.0.0"
+edition = "2024"
+rust-version.workspace = true
+license.workspace = true
+publish = false
+
+[dependencies]
+# `csv` and `jsonl`: the incremental readers (CSVWithNames, JSONEachRow responses) and the lazy
+# upload writers (insert bodies). The default `json` feature is not used by the SDK itself.
+concord = { path = "../../crates/concord", features = ["csv", "jsonl"] }
+# HTTP Basic authentication: `Authorization: Basic base64(user:password)`. A generic encoding,
+# already in the workspace lock through reqwest; written by hand it would be SDK code to test.
+base64 = "0.23"
+# The upload source bound (`Stream<Item = Result<T, E>>`) of the insert operations.
+futures-core.workspace = true
+serde = { workspace = true, features = ["derive"] }
+# The `X-ClickHouse-Summary` / `X-ClickHouse-Progress` header documents (JSON objects whose
+# counters are strings).
+serde_json.workspace = true
+
+[dev-dependencies]
+concord-example-testserver = { path = "../testserver" }
+tokio = { workspace = true, features = ["macros", "rt", "rt-multi-thread", "time", "sync"] }
+
+[lints]
+workspace = true

@@ -1,0 +1,11 @@
+"date","season","home_team","away_team","home_team_goals","away_team_goals"
+"2022-04-30",2021,"Sutton United","Bradford City",1,4
+"2026-01-17",2026,"Harrogate ""Town"", A.F.C.","Line
+Break United",2,2
+"2026-01-18",2026,"Walsall","Swindon Town",0,3
+
+__exception__
+pqtrsvwxyzabcdef
+Code: 241. DB::Exception: Memory limit (total) exceeded: synthetic fixture. (MEMORY_LIMIT_EXCEEDED) (version 26.10.1.1)
+120 pqtrsvwxyzabcdef
+__exception__
