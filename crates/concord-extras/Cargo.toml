@@ -1,6 +1,6 @@
 [package]
 name = "concord-extras"
-description = "Concord's standard formats (Json, Text, Binary, Form, Csv, JSON Lines, server-sent events, multipart request bodies), finite and incremental, written against the public Encode/Decode contracts of concord-core."
+description = "Compatibility facade for Concord standard codecs."
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -14,41 +14,16 @@ include = ["/src/**/*.rs", "/Cargo.toml", "/README.md", "/LICENSE-APACHE", "/LIC
 all-features = true
 
 [features]
-## `Json`, via serde and serde_json.
-json = ["dep:serde", "dep:serde_json"]
-## `Form` (`application/x-www-form-urlencoded`), via serde and serde_urlencoded.
-form = ["dep:serde", "dep:serde_urlencoded"]
-## The incremental-body infrastructure shared by the streaming formats: response opening with
-## unread refusals, byte sources, safe read errors and lazily produced upload bodies.
-stream = ["dep:futures-core", "dep:http-body"]
-## `Csv<HasHeader, Delimiter>`: finite and incremental CSV, via `csv`/`csv-core` and serde.
-csv = ["stream", "dep:csv", "dep:csv-core", "dep:serde"]
-## JSON Lines / NDJSON (finite and incremental) and consecutive JSON values, via serde_json.
-jsonl = ["stream", "dep:serde", "dep:serde_json"]
-## `multipart::Multipart`: `multipart/form-data` and `multipart/related` request bodies with a
-## boundary chosen per body. No dependency.
-multipart = []
-## Server-sent events (`text/event-stream`) read incrementally: the WHATWG framing, no JSON
-## decoding (an SDK decodes each event's `data` itself).
-sse = ["stream"]
+json = ["concord-codecs/json"]
+form = ["concord-codecs/form"]
+stream = ["concord-codecs/stream"]
+csv = ["concord-codecs/csv"]
+jsonl = ["concord-codecs/jsonl"]
+multipart = ["concord-codecs/multipart"]
+sse = ["concord-codecs/sse"]
 
 [dependencies]
-concord-core = { path = "../concord-core", version = "=4.2.0" }
-# Response media types are parsed by `mime` (the formats' own policy; core parses none).
-mime.workspace = true
-serde = { workspace = true, optional = true }
-serde_json = { workspace = true, optional = true }
-serde_urlencoded = { workspace = true, optional = true }
-csv = { workspace = true, optional = true }
-csv-core = { workspace = true, optional = true }
-futures-core = { workspace = true, optional = true }
-http-body = { workspace = true, optional = true }
-
-[dev-dependencies]
-serde = { workspace = true, features = ["derive"] }
-# `raw_value`: the JSON Lines writer's guard against a raw value spanning lines is tested with one.
-serde_json = { workspace = true, features = ["raw_value"] }
-tokio = { workspace = true, features = ["macros", "rt", "net", "io-util", "time", "sync"] }
+concord-codecs = { path = "../concord-codecs", version = "=4.2.0" }
 
 [lints]
 workspace = true

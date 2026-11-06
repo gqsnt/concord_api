@@ -56,7 +56,7 @@ socket_snapshot() {
 no_reqwest_multipart() {
   local args tree
   for args in "-p concord" "-p concord --no-default-features" "-p concord --all-features" \
-    "-p concord-core" "-p concord-extras --all-features" "-p concord-example-native" \
+    "-p concord-core" "-p concord-codecs --all-features" "-p concord-extras --all-features" "-p concord-example-native" \
     "-p concord-sdk-openai" "-p concord-sdk-google-drive"; do
     # shellcheck disable=SC2086
     tree=$(cargo tree --locked -e features -i reqwest $args) || return 1
@@ -104,7 +104,7 @@ step tool-tests "$python" -I -B -m unittest discover -s scripts/tests -p "test_*
 # Designated output directories (scripts/fresh-output.sh): recreated only from their owner's mark,
 # anything else refused and left untouched, stale extracted sources detected; builds nothing.
 step output-dirs scripts/tests/output-dirs.sh
-# The production edges of the four crates (manifests, then one resolved graph per package).
+# The production edges of the crates (manifests, then one resolved graph per package).
 step graph "$python" -I scripts/check-graph.py
 step fmt cargo fmt --all -- --check
 step records "$python" -I scripts/check-records.py
@@ -130,18 +130,21 @@ step test-multipart-only cargo test --locked -p concord --no-default-features --
 step test-extras-only cargo test --locked -p concord --no-default-features --features extras
 # The runtime and the standard formats on their own, each feature separately.
 step test-core cargo test --locked -p concord-core
-step test-extras-none cargo test --locked -p concord-extras --no-default-features
-step test-extras-json cargo test --locked -p concord-extras --no-default-features --features json
-step test-extras-form cargo test --locked -p concord-extras --no-default-features --features form
+step test-codecs-none cargo test --locked -p concord-codecs --no-default-features
+step test-codecs-json cargo test --locked -p concord-codecs --no-default-features --features json
+step test-codecs-form cargo test --locked -p concord-codecs --no-default-features --features form
 # The incremental-body infrastructure alone, and each streaming format alone (CSV without
 # serde_json, JSON Lines without csv, server-sent events without serde), so none can lean on
 # another's dependencies.
-step test-extras-stream cargo test --locked -p concord-extras --no-default-features --features stream
-step test-extras-csv cargo test --locked -p concord-extras --no-default-features --features csv
-step test-extras-jsonl cargo test --locked -p concord-extras --no-default-features --features jsonl
+step test-codecs-stream cargo test --locked -p concord-codecs --no-default-features --features stream
+step test-codecs-csv cargo test --locked -p concord-codecs --no-default-features --features csv
+step test-codecs-jsonl cargo test --locked -p concord-codecs --no-default-features --features jsonl
 # The multipart request format alone (no serializer, no stream infrastructure).
-step test-extras-multipart cargo test --locked -p concord-extras --no-default-features --features multipart
-step test-extras-sse cargo test --locked -p concord-extras --no-default-features --features sse
+step test-codecs-multipart cargo test --locked -p concord-codecs --no-default-features --features multipart
+step test-codecs-sse cargo test --locked -p concord-codecs --no-default-features --features sse
+step test-codecs-all cargo test --locked -p concord-codecs --all-features
+step test-extras-facade-none cargo test --locked -p concord-extras --no-default-features
+step test-extras-facade-all cargo test --locked -p concord-extras --all-features
 # The pagination crate alone, with and without Link syntax; neither knows a Concord crate.
 step test-pagination cargo test --locked -p concord-pagination
 step test-pagination-link cargo test --locked -p concord-pagination --features link
@@ -149,7 +152,7 @@ step test-pagination-link cargo test --locked -p concord-pagination --features l
 clippy_features() {
   local features
   for features in "" json form stream csv jsonl multipart sse; do
-    cargo clippy --locked -p concord-extras --no-default-features ${features:+--features "$features"} \
+    cargo clippy --locked -p concord-codecs --no-default-features ${features:+--features "$features"} \
       --all-targets -- -D warnings || return 1
   done
   cargo clippy --locked -p concord --no-default-features --features extras -- -D warnings
@@ -213,12 +216,19 @@ step doc-form-only env RUSTDOCFLAGS="-D warnings" cargo doc --locked -p concord 
 step doc-form env RUSTDOCFLAGS="-D warnings" cargo doc --locked -p concord --no-deps --features form
 step doc-extras-only env RUSTDOCFLAGS="-D warnings" cargo doc --locked -p concord --no-deps --no-default-features --features extras
 step doc-core env RUSTDOCFLAGS="-D warnings" cargo doc --locked -p concord-core --no-deps
-step doc-extras env RUSTDOCFLAGS="-D warnings" cargo doc --locked -p concord-extras --no-deps --all-features
-step doc-extras-none env RUSTDOCFLAGS="-D warnings" cargo doc --locked -p concord-extras --no-deps --no-default-features
+step doc-codecs env RUSTDOCFLAGS="-D warnings" cargo doc --locked -p concord-codecs --no-deps --all-features
+step doc-codecs-none env RUSTDOCFLAGS="-D warnings" cargo doc --locked -p concord-codecs --no-deps --no-default-features
+step doc-codecs-json env RUSTDOCFLAGS="-D warnings" cargo doc --locked -p concord-codecs --no-deps --no-default-features --features json
+step doc-codecs-form env RUSTDOCFLAGS="-D warnings" cargo doc --locked -p concord-codecs --no-deps --no-default-features --features form
+step doc-codecs-stream env RUSTDOCFLAGS="-D warnings" cargo doc --locked -p concord-codecs --no-deps --no-default-features --features stream
+step doc-codecs-csv env RUSTDOCFLAGS="-D warnings" cargo doc --locked -p concord-codecs --no-deps --no-default-features --features csv
+step doc-codecs-jsonl env RUSTDOCFLAGS="-D warnings" cargo doc --locked -p concord-codecs --no-deps --no-default-features --features jsonl
 step doc-streaming env RUSTDOCFLAGS="-D warnings" cargo doc --locked -p concord --no-deps --no-default-features --features csv,jsonl,sse
 step doc-multipart-only env RUSTDOCFLAGS="-D warnings" cargo doc --locked -p concord --no-deps --no-default-features --features multipart
-step doc-extras-multipart env RUSTDOCFLAGS="-D warnings" cargo doc --locked -p concord-extras --no-deps --no-default-features --features multipart
-step doc-extras-sse env RUSTDOCFLAGS="-D warnings" cargo doc --locked -p concord-extras --no-deps --no-default-features --features sse
+step doc-codecs-multipart env RUSTDOCFLAGS="-D warnings" cargo doc --locked -p concord-codecs --no-deps --no-default-features --features multipart
+step doc-codecs-sse env RUSTDOCFLAGS="-D warnings" cargo doc --locked -p concord-codecs --no-deps --no-default-features --features sse
+step doc-extras-facade env RUSTDOCFLAGS="-D warnings" cargo doc --locked -p concord-extras --no-deps --all-features
+step doc-extras-facade-none env RUSTDOCFLAGS="-D warnings" cargo doc --locked -p concord-extras --no-deps --no-default-features
 step doc-pagination env RUSTDOCFLAGS="-D warnings" cargo doc --locked -p concord-pagination --no-deps
 step doc-pagination-link env RUSTDOCFLAGS="-D warnings" cargo doc --locked -p concord-pagination --no-deps --features link
 

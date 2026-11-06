@@ -6,9 +6,10 @@ For people changing Concord itself. Users start at the [README](../README.md).
 
 | Path | Contents |
 |---|---|
-| `crates/concord` | the public facade: re-exports `concord-core` and, by feature, `concord-extras`, and defines `api!` (a `macro_rules!` that hands `$crate::__macro::concord_core` to the compiler) |
+| `crates/concord` | the public facade: re-exports `concord-core` and, by feature, `concord-codecs`, and defines `api!` (a `macro_rules!` that hands `$crate::__macro::concord_core` to the compiler) |
 | `crates/concord-core` | the runtime: request composition, native headers, snapshots, `Encode`/`EncodedBody`/`Decode`/`Incremental`/`CodecError`/`ResponseHead`, `Error`, `Prepared`/`Decoder`/`Endpoint`/`SendWith`, `Received`/`Incoming`/`Operation`/`ResponseMeta`; knows no format |
-| `crates/concord-extras` | the standard formats (including `Json`, `Text`, `Binary`, `Form`, `IgnoreContentType<F>` and the shared `multipart::Multipart`), written against the public traits only |
+| `crates/concord-codecs` | standard formats (`Json`, `Text`, `Binary`, `Form`, CSV, JSON Lines, SSE and multipart), `Encoded`, `IgnoreContentType<F>` and shared streaming infrastructure, written against the public traits |
+| `crates/concord-extras` | compatibility facade re-exporting `concord-codecs` |
 | `crates/concord-macros` | the `api!` compiler (proc macro) |
 | `examples/quickstart` | the quick start; its tests also run the caller guide, doctest the author guide and the migration guide, and check every quoted excerpt in the documentation |
 | `examples/shapes` | three realistic API shapes with wire tests |
@@ -41,7 +42,7 @@ concord::api! { .. }                                  crates/concord/src/lib.rs
        value.rs     IntoValue<T>                       the sealed set of accepted conversions
        header.rs    ToHeaderValue (sealed)             how a value placed as a header becomes one
   └─ a statement's format is a type path               resolved by rustc where it is written
-       crates/concord-extras/src/                      standard formats, including multipart::Multipart
+       crates/concord-codecs/src/                      standard formats, including multipart::Multipart
 ```
 
 The macro knows no format: it emits the path you wrote, and rustc resolves it. The runtime files
@@ -190,10 +191,10 @@ Generated code calls `<runtime path>::__private::*`, where the runtime path is
 proc macro): items that are public only so that expansions in other crates can reach them. They are
 `#[doc(hidden)]`, not part of the user API, and may change in any release. Consequences:
 
-- `concord`, `concord-core` and `concord-macros` change together. `concord` depends on all three
-  and on `concord-extras`, and `concord-extras` on `concord-core`, with exact version
-  requirements (`version = "=4.2.0"`); every crate takes the workspace version, so a
-  published set can never mix. `concord-extras` uses only the public traits of `concord-core`.
+- `concord`, `concord-core` and `concord-macros` change together. `concord` depends on the
+  core, macros and `concord-codecs`; `concord-extras` forwards to `concord-codecs`, which depends
+  on `concord-core`. These dependencies have exact version requirements (`version = "=4.2.0"`); every crate takes the workspace version, so a
+  published set can never mix. `concord-codecs` uses only the public traits of `concord-core`.
 - Any change to a `__private` signature that `emit.rs` relies on is made in the same commit as the
   `emit.rs` change, and the crates' versions move together.
 - Users never name `__private` items; a UI or doctest that needs one is a sign that a public API
