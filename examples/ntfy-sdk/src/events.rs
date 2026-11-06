@@ -142,7 +142,7 @@ struct SseSource {
     /// The reader; `None` once a `data` payload did not decode (its body was taken back to name
     /// the line, then dropped: the connection is closed).
     events: Option<SseEvents<Body>>,
-    /// The endpoint, for the errors ([`SseReader::read`] does not take one).
+    /// The endpoint, for this crate's payload errors (the reader names it in its own).
     operation: Option<&'static str>,
     /// Where reading stopped when a payload did not decode (that event not delivered).
     stopped: Position,
@@ -221,14 +221,19 @@ impl SseSource {
     fn new(body: Incoming) -> Self {
         let operation = body.operation().map(|op| op.name());
         let reader = SseReader::new(SseOptions::new().max_event_bytes(MAX_EVENT_BYTES));
+        let body = Body {
+            incoming: body,
+            chunk: Bytes::new(),
+            offset: 0,
+            lines: LineEnds::default(),
+        };
+        // The head was checked by `SseFormat::check_content_type`: `read_for` checks nothing.
+        let events = match operation {
+            Some(operation) => reader.read_for(body, operation),
+            None => reader.read(body),
+        };
         Self {
-            // The head was checked by `SseFormat::check_content_type`: `read` checks nothing.
-            events: Some(reader.read(Body {
-                incoming: body,
-                chunk: Bytes::new(),
-                offset: 0,
-                lines: LineEnds::default(),
-            })),
+            events: Some(events),
             operation,
             stopped: Position::default(),
         }
@@ -278,10 +283,10 @@ impl SseSource {
     }
 }
 
-/// The `/sse` body as the SSE reader's byte source. Concord's own transport error (naming the
-/// endpoint, URL removed) travels as the reader error's source, for [`EventsError::transport`].
-/// It also counts line ends, for a payload error's `line`: the reader does not say which line
-/// dispatched an event.
+/// The `/sse` body as the SSE reader's byte source: the `Incoming` (itself a byte source, whose
+/// failure carries Concord's own transport error, naming the endpoint, URL removed, for
+/// [`EventsError::transport`]), counting line ends for a payload error's `line`: the reader does
+/// not say which line dispatched an event.
 struct Body {
     incoming: Incoming,
     /// The chunk the reader is consuming (shared with it, not copied) and its offset in the body.
@@ -304,10 +309,8 @@ impl Body {
 
 impl ByteSource for Body {
     async fn next_chunk(&mut self) -> Result<Option<Bytes>, SourceError> {
-        // Cancel-safe: nothing changes until `chunk` returns, and it loses no byte.
-        let next = self.incoming.chunk().await.map_err(|error| {
-            SourceError::new("reading the response body failed").with_source(error)
-        })?;
+        // Cancel-safe: nothing changes until `Incoming`'s returns, and it loses no byte.
+        let next = self.incoming.next_chunk().await?;
         // The reader asks for a chunk only once it has used up the one it had.
         self.lines.add(&self.chunk);
         self.offset += self.chunk.len() as u64;
@@ -428,7 +431,8 @@ impl EventsError {
 
     /// Concord's `Transport` error, for a broken SSE body.
     pub fn transport(&self) -> Option<&concord::Error> {
-        // The SSE body's source error is Concord's (`Body`); the NDJSON reader's is reqwest's.
+        // The SSE body's source error is Concord's (`Incoming` read as the byte source); the
+        // NDJSON reader's is reqwest's (`Ndjson` opens the native response).
         self.read_error()
             .filter(|error| error.kind() == ReadErrorKind::Transport)?
             .source_unredacted()?

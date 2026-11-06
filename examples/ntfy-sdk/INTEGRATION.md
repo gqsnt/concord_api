@@ -244,3 +244,76 @@ cancel safety, fusing and `completion()`.
   `cargo fmt -p concord-sdk-ntfy -- --check`: clean. `cargo doc -p concord-sdk-ntfy --no-deps`: no
   warnings.
 - Not run: the repository gate (`scripts/verify.sh`), Windows. Offline only; no ntfy server.
+
+## Between waves 4-5 (reader wrapping)
+
+Library refinement R5 (`concord-extras`: `impl ByteSource for Incoming`, `SseReader::read_for`,
+`check_head` on every reader, `ReadError::into_source_unredacted`), on top of Concord `27d23b39`.
+Role: implementer, a Claude agent session spawned by the coordinator (the session's system prompt
+names model `claude-opus-5-5`; effort is not visible to the session; the coordinator records
+requested vs observed). Not an independent review.
+
+**Verdict: adopted where it fits; the line-count workaround (W34-G1) stays.** Gaps 2 and 3 of the
+waves 3-4 record are closed; gap 1 is unchanged and is why `Body` still exists.
+
+- **Transport error (gap 2, W34-G2).** `Body::next_chunk` asks the `Incoming` itself for the next
+  chunk (`self.incoming.next_chunk().await?`, the library's `ByteSource` impl) instead of mapping
+  `Incoming::chunk`'s error into a `SourceError` by hand; the source error is the same
+  `concord::Error`, so `EventsError::transport()` is unchanged. `Body` remains only to count line
+  ends.
+- **Operation (gap 3, W34-G3).** `SseSource::new` reads with `SseReader::read_for(body,
+  operation)` when the `Incoming` names its endpoint (always, for the declared endpoints; `read`
+  otherwise). The SDK keeps its `operation` field: its own payload errors (an event's `data` that
+  does not decode) still need the name, and `SseEvents` has no inherent accessor for it.
+- **Not used.** `check_head`: `SseFormat::check_content_type` already delegates to the static
+  `Sse` format (the same function). `into_source_unredacted`: `EventsError::transport()` is a
+  `&self` accessor over a kept `ReadError`, so by reference is the right shape. The `/json` mode
+  still opens through the static `Ndjson` format (reqwest's error underneath, `transport()` is
+  `None` there, as documented); reading it through the `Incoming` with a configured
+  `JsonLinesReader::read_for` would give both modes Concord's error, a public change not made
+  here.
+
+### Lines (`src/events.rs`; `git diff -U0`, this file excluded)
+
+| | added | removed | of which non-blank, non-comment: added / removed |
+|---|---|---|---|
+| `src/events.rs` | 21 | 17 | 12 / 9 |
+| `tests/` | 0 | 0 | 0 / 0 |
+
+Net +4 lines (+3 of code): the hand-written error mapping (3 lines) is gone, the choice between
+`read_for` and `read` (4 lines) and a `let` for the body are added. The workaround's ~30 lines
+are unchanged.
+
+### Behaviour changes
+
+Observed with a throwaway probe through the public API (a broken `/sse` body, invalid UTF-8 in
+`data`, a payload that is not JSON; printing `Display`, `kind()`, `operation()`,
+`read_error().operation()`, `transport()` and whether `source_unredacted()` is set), run on the
+SDK code at `27d23b39` (with the R5 library) and on this change, then removed:
+
+| Observed | Before | After |
+|---|---|---|
+| `read_error().operation()`, SSE reader failure (broken body, invalid UTF-8) | `None` | `Some("Ntfy.topic.subscribe_sse")` |
+| `Display` of a broken body | `Ntfy.topic.subscribe_sse: reading the events failed: reading the response body failed (after 2 events, 187 bytes)` | identical |
+| `transport()` of a broken body | `GET Ntfy.topic.subscribe_sse: transport error (reading the response body)` | identical |
+| `kind()`, `operation()`, `source_unredacted()` set or not, all three cases; `read_error()` of the payload error (`None`) | | identical |
+
+### Tests
+
+None edited, none added: `tests/protocol.rs::a_broken_connection_is_a_transport_error_naming_the_endpoint`
+still covers `transport()` (kind and endpoint) and the line-count tests cover `Body`.
+
+### Gaps
+
+1. W34-G1 (the line that dispatched an event) is unchanged; `Body` keeps counting.
+2. `SseEvents` has no inherent `operation()` (only through the sealed `RecordReader`), so the SDK
+   keeps the endpoint name beside the reader for its own payload errors.
+
+### Verification (observed)
+
+- `CARGO_BUILD_JOBS=6 cargo test --locked -p concord-sdk-ntfy`: 5 unit + 12 first_use +
+  22 protocol + 6 workflows + 5 doctests passed, 0 failed; the same counts as at `27d23b39`.
+- `cargo clippy --locked -p concord-sdk-ntfy --all-targets -- -D warnings`: clean.
+  `cargo fmt -p concord-sdk-ntfy -- --check`: clean. `cargo doc -p concord-sdk-ntfy --no-deps`
+  with `-D warnings`: clean.
+- Not run: Windows. Offline only; no ntfy server.

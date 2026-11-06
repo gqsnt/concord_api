@@ -63,6 +63,26 @@ Not released: the version is unchanged (4.2.0) and no release has been decided. 
   than a browser: invalid UTF-8, a body ending inside a line or an event, and an event over
   `max_event_bytes` (1 MiB) or past `max_events` are terminal errors. `examples/openai-sdk` reads
   its event stream with it.
+- **Readers over a body the SDK checked or wraps; source errors back by value** (`concord-extras`,
+  feature `stream` and the readers). Additions only; `open`, `read` and every existing error stay
+  as they were.
+  - `check_head(&self, &ResponseHead) -> Result<(), CodecError>` on `JsonLinesReader`,
+    `JsonValuesReader` and `SseReader`, as `CsvReader` already had: the reader's own media policy,
+    exactly what its `open` applies (same label), head only.
+  - `read_for(source, operation: &'static str)` on `CsvReader` (and `read_raw_for`),
+    `JsonLinesReader`, `JsonValuesReader` and `SseReader`: `read` of any `ByteSource`, without
+    status or head checks, naming the operation in every later `ReadError` (as `open_for`).
+  - `impl ByteSource for concord_core::Incoming`: a failure is a `SourceError` ("reading the
+    response body failed") whose underlying error is Concord's own `Error` (kind `Transport`, the
+    operation named, URL removed), where `open(incoming)` keeps reqwest's.
+  - `ReadError::into_source_unredacted(self)` and `SourceError::into_source_unredacted(self)`
+    (`-> Option<Box<dyn Error + Send + Sync + 'static>>`): the byte source's underlying error by
+    value, to `downcast` Concord's error or a provider-typed one without stashing it. A parser's
+    error (`Format`/`Decode`) stays in `codec()`, by reference only. `Display`/`Debug` unchanged.
+
+  From wave 4 (`examples/ntfy-sdk`, `examples/openai-sdk`, `examples/clickhouse-sdk` each wrote a
+  byte source over `Incoming::chunk` to keep Concord's error, and could not name the operation of
+  `read`); tested per reader in `crates/concord-extras/tests/reader_wrapping.rs`.
 
 ### Changed
 

@@ -3,10 +3,9 @@
 use std::error::Error as StdError;
 use std::fmt;
 
-use concord::bytes::Bytes;
 use concord::csv::{CsvOptions, CsvWriter, HeaderMode, LineEnding, QuoteStyle, StreamRows};
 use concord::jsonl::{JsonLinesOptions, JsonLinesWriter, StreamRecords};
-use concord::stream::{ByteSource, SourceError, Upload};
+use concord::stream::{ByteSource, Upload};
 use concord::{Incoming, Received};
 use futures_core::Stream;
 use serde::Serialize;
@@ -147,11 +146,11 @@ impl Insert {
         }
         let incoming = received.into_incoming()?;
         if meta.exception_code().is_some() {
-            return Err(head_exception(Body::new(incoming), operation, meta).await);
+            return Err(head_exception(incoming, operation, meta).await);
         }
         // An insert answers an empty body; read it to its end through the guard, so an
         // exception block written after a 2xx head is not mistaken for success.
-        let mut body = Guarded::new(Body::new(incoming), meta.exception_tag());
+        let mut body = Guarded::new(incoming, meta.exception_tag());
         let mut bytes = 0u64;
         loop {
             match body.next_chunk().await {
@@ -167,12 +166,13 @@ impl Insert {
                         ))));
                     }
                     // The guard fails only with an exception block (above) or with the body's
-                    // own failure, which `Body` kept; the loop stops at the first failure.
-                    let transport = body
-                        .into_inner()
-                        .failure
+                    // own failure, passed through: an `Incoming`'s failure carries Concord's
+                    // `Transport` error, taken back by value. The loop stops at the first one.
+                    let transport = error
+                        .into_source_unredacted()
+                        .and_then(|source| source.downcast::<concord::Error>().ok())
                         .expect("a guard failure without a block is the body's failure");
-                    return Err(Error::Concord(transport));
+                    return Err(Error::Concord(*transport));
                 }
             }
         }
@@ -191,33 +191,6 @@ impl fmt::Debug for Insert {
             .field("columns", &self.columns)
             .field("query_id", &self.query_id)
             .finish()
-    }
-}
-
-/// An `Incoming` body as a byte source that keeps Concord's transport error.
-struct Body {
-    incoming: Incoming,
-    failure: Option<concord::Error>,
-}
-
-impl Body {
-    fn new(incoming: Incoming) -> Self {
-        Self {
-            incoming,
-            failure: None,
-        }
-    }
-}
-
-impl ByteSource for Body {
-    async fn next_chunk(&mut self) -> Result<Option<Bytes>, SourceError> {
-        match self.incoming.chunk().await {
-            Ok(chunk) => Ok(chunk),
-            Err(error) => {
-                self.failure = Some(error);
-                Err(SourceError::new("reading the response body failed"))
-            }
-        }
     }
 }
 

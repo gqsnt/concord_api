@@ -6,10 +6,11 @@ use std::fmt;
 use std::future::Future;
 
 use concord_core::bytes::Bytes;
-use concord_core::reqwest;
+use concord_core::{Incoming, reqwest};
 
-/// A one-shot sequence of byte chunks read by an incremental reader: a native response body, or
-/// another source (an in-memory [`Chunks`] list, a file adapter of yours).
+/// A one-shot sequence of byte chunks read by an incremental reader: a native response body, an
+/// [`Incoming`] body, or another source (an in-memory [`Chunks`] list, a file adapter of yours, a
+/// filter of yours wrapped around one of these).
 ///
 /// `Ok(None)` is the true end of input; a chunk boundary is never an end. Chunks may be empty and
 /// may split a record, a UTF-8 character or a CSV quote anywhere.
@@ -21,10 +22,10 @@ use concord_core::reqwest;
 /// from wherever the source gets it. A source that takes a chunk and then awaits something else
 /// keeps that chunk in `self` until it returns it. Otherwise a dropped `next()` loses the chunk,
 /// and a later call may even report a clean end of input. `reqwest::Response` (its `chunk()`
-/// takes a body frame only once one is ready) and [`Chunks`] (it completes on its first poll)
-/// are cancel-safe. Whatever the source, a reader's `into_stream()`
-/// ([`RecordStream`](super::RecordStream)) keeps a pending read, the source's future included,
-/// across a dropped `next()`.
+/// takes a body frame only once one is ready), [`Incoming`] (likewise: [`Incoming::chunk`]) and
+/// [`Chunks`] (it completes on its first poll) are cancel-safe. Whatever the source, a reader's
+/// `into_stream()` ([`RecordStream`](super::RecordStream)) keeps a pending read, the source's
+/// future included, across a dropped `next()`.
 pub trait ByteSource: Send {
     /// The next chunk, `Ok(None)` at the end of input.
     fn next_chunk(&mut self) -> impl Future<Output = Result<Option<Bytes>, SourceError>> + Send;
@@ -37,6 +38,31 @@ impl ByteSource for reqwest::Response {
         self.chunk().await.map_err(|e| {
             SourceError::new("reading the response body failed").with_source(e.without_url())
         })
+    }
+}
+
+/// The unread body of an endpoint declared `-> stream` (or of [`Received::into_incoming`], or of
+/// [`Incoming::new`]) as a byte source, for a reader's `read_for(body, operation)`: when the head
+/// was already checked (an `Incremental` format's `check_content_type`, a reader's `check_head`),
+/// or when a filter of yours sits between the body and the reader. Nothing is checked here; the
+/// status is a 2xx already.
+///
+/// A transport failure is a [`SourceError`] labelled "reading the response body failed" whose
+/// underlying error is Concord's own [`concord_core::Error`]: kind
+/// [`Transport`](concord_core::ErrorKind::Transport), naming the operation the `Incoming` carries,
+/// its URL removed. A reader's [`ReadError`](super::ReadError) of kind `Transport` gives it back by
+/// value ([`ReadError::into_source_unredacted`](super::ReadError::into_source_unredacted), then
+/// `downcast::<concord_core::Error>()`). A reader's `open(incoming)` reads the native response
+/// instead, whose failure carries a `reqwest::Error`.
+///
+/// [`Received::into_incoming`]: concord_core::Received::into_incoming
+impl ByteSource for Incoming {
+    /// The next chunk of the body ([`Incoming::chunk`]); a failure keeps Concord's `Transport`
+    /// error as the [`SourceError`]'s source.
+    async fn next_chunk(&mut self) -> Result<Option<Bytes>, SourceError> {
+        self.chunk()
+            .await
+            .map_err(|e| SourceError::new("reading the response body failed").with_source(e))
     }
 }
 
@@ -95,7 +121,8 @@ impl ByteSource for Chunks {
 }
 
 /// A [`ByteSource`] failed: a static label, and the underlying error kept for deliberate
-/// inspection only ([`source_unredacted`](Self::source_unredacted)).
+/// inspection only ([`source_unredacted`](Self::source_unredacted), or by value with
+/// [`into_source_unredacted`](Self::into_source_unredacted)).
 pub struct SourceError {
     label: &'static str,
     source: Option<Box<dyn StdError + Send + Sync>>,
@@ -127,7 +154,10 @@ impl SourceError {
         self.source.as_deref()
     }
 
-    pub(crate) fn into_source(self) -> Option<Box<dyn StdError + Send + Sync>> {
+    /// The underlying error, **unredacted**, taken back by value: `downcast` it to the type the
+    /// source attached (Concord's `Error` for an [`Incoming`], a `reqwest::Error` for a native
+    /// response, a type of yours) to keep it without a copy. The label is dropped.
+    pub fn into_source_unredacted(self) -> Option<Box<dyn StdError + Send + Sync + 'static>> {
         self.source
     }
 }

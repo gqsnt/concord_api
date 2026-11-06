@@ -2,9 +2,9 @@
 
 use std::fmt;
 
+use concord::Incoming;
 use concord::csv::CsvRecords;
 use concord::jsonl::JsonLinesRecords;
-use concord::reqwest;
 use concord::stream::{Completion, Position, ReadError, ReadErrorKind};
 use serde::de::DeserializeOwned;
 
@@ -13,7 +13,8 @@ use crate::format::OutputFormat;
 use crate::guard::{BodyException, Guarded};
 use crate::meta::ResponseMeta;
 
-pub(crate) type Body = Guarded<reqwest::Response>;
+/// The body, inside Concord's boundary (`Incoming` is a byte source), behind the guard.
+pub(crate) type Body = Guarded<Incoming>;
 
 /// Both readers are boxed (several hundred bytes each; one allocation per query).
 pub(crate) enum Reader<T> {
@@ -91,6 +92,7 @@ impl<T: DeserializeOwned> Rows<T> {
     }
 
     fn failure(&self, error: ReadError) -> Error {
+        // By reference: when the source is not a block, the `ReadError` is kept whole.
         if error.kind() == ReadErrorKind::Transport
             && let Some(block) = error
                 .source_unredacted()

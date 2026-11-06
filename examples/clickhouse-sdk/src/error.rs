@@ -388,7 +388,8 @@ impl ReadFailure {
 
 impl fmt::Display for ReadFailure {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}: {}", self.operation, self.error)
+        // The reader names the operation itself (`read_for`): `<operation>: <reader error>`.
+        fmt::Display::fmt(&self.error, f)
     }
 }
 

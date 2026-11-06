@@ -464,3 +464,59 @@ SDK's three fields plus `version`.
 `protocol` 4, `split_and_reorder` 4, `workflows` 5 passed, 0 failed, 0 doctests (the same counts
 as at `92775757`). `cargo clippy --locked --all-targets -- -D warnings`, `cargo fmt --check` and
 `cargo doc --no-deps` (no warnings): clean. Offline only; no OpenAI API calls.
+
+## Between waves 4-5 (reader wrapping)
+
+Library refinement R5 (`concord-extras`: `impl ByteSource for Incoming`,
+`ReadError::into_source_unredacted`, `SseReader::check_head`, `read_for`), on top of Concord
+`27d23b39`. Role: implementer, a Claude agent session spawned by the coordinator (the session's
+system prompt names model `claude-opus-5-5`; effort is not visible to the session; the
+coordinator records requested vs observed). Not an independent review.
+
+**Verdict: adopted; public behaviour kept.** The `Body` adapter (a `ByteSource` over
+`Incoming::chunk` that stashed the `concord::Error` in a field, retrieved after the failure with
+`into_source()`) is gone: `EventStream` reads `SseEvents<concord::Incoming>`, and a broken body's
+error comes back by value from the reader's own error:
+
+```rust,ignore
+Some(Err(error)) => {
+    self.events = None;
+    let text = error.to_string();
+    // Only a broken body carries a source: Concord's transport error, by value.
+    return Err(match error.into_source_unredacted().map(|s| s.downcast()) {
+        Some(Ok(failure)) => Error::Concord(*failure),
+        _ => Error::Stream(text),
+    });
+}
+```
+
+The head check is the reader's `check_head` (the same function `<Sse as
+Incremental<_>>::check_content_type` calls), so `Sse` and `Incremental` are no longer imported.
+The stream keeps `read`, not `read_for`: naming the operation would prefix every `Error::Stream`
+message with `OpenAiApi.response_stream: `, a public change this migration avoids.
+
+### Lines (`src/lib.rs`, 540 → 526; `git diff -U0`, this file excluded)
+
+| | added | removed | of which non-blank, non-comment: added / removed |
+|---|---|---|---|
+| `src/lib.rs` | 16 | 30 | 12 / 27 |
+| `tests/` | 0 | 0 | 0 / 0 |
+
+### Behaviour changes
+
+None found (from the code; not probed beyond the tests). `Error::Concord` for a broken body is
+the same `concord::Error` that `Incoming::chunk` returned (kind `Transport`, operation
+`OpenAiApi.response_stream`, URL removed: `tests/workflows.rs::stream_failure_transport_failure_and_local_cancellation`);
+`Error::Stream` texts are unchanged (the reader names no operation, as before); the head check and
+its refusal (`Error::Stream("expected text/event-stream")`) are the same function and value; the
+response is dropped at the same point (when the reader error is returned). The branch that turned
+a `Transport` error without a stashed failure into `Error::Stream` is now the branch for a
+`Transport` error whose source is not Concord's; neither happens with an `Incoming` source.
+
+### Verification (observed)
+
+`CARGO_BUILD_JOBS=6 cargo test --locked -p concord-sdk-openai`: 18 first_use + 4 protocol + 4
+split_and_reorder + 5 workflows passed, 0 failed, 0 doctests (the same counts as at `27d23b39`);
+`git diff` of `tests/` is empty. `cargo clippy --locked -p concord-sdk-openai --all-targets -- -D
+warnings` and `cargo fmt -p concord-sdk-openai -- --check`: clean. Offline only; no OpenAI API
+calls.
