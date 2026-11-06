@@ -5,7 +5,8 @@ use std::sync::{Arc, Mutex};
 
 use concord_example_github_sdk::GitHubError;
 use concord_example_github_sdk::meta::{RateLimit, ResponseMeta};
-use concord_example_github_sdk::paging::LinkPage;
+use concord_example_github_sdk::paging::{LinkPage, NextLink};
+use concord_pagination::PagesError;
 
 /// One request of a workflow.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -75,6 +76,19 @@ pub fn last_rate(records: &[RequestRecord]) -> Option<&RateLimit> {
         .rev()
         .map(|r| &r.rate)
         .find(|r| r.remaining.is_some())
+}
+
+/// The result of one `next_page()` of an ordinary traversal.
+pub(crate) type NextPage<T> = Result<Option<LinkPage<T>>, PagesError<GitHubError, NextLink>>;
+
+/// Records the request behind one step of an ordinary traversal: a page, or a failed page (a
+/// budget reached sends nothing and records nothing).
+pub(crate) fn record_next<T>(next: &NextPage<T>, operation: &'static str, log: &RequestLog) {
+    match next {
+        Ok(Some(page)) => log.meta(operation, &page.meta.response),
+        Err(PagesError::Provider { error, .. }) => log.error(operation, error),
+        Ok(None) | Err(_) => {}
+    }
 }
 
 /// Records a page's request (success or failure) and passes the result on: the page factories'

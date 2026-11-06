@@ -26,9 +26,11 @@ separate per currency, balance-transaction totals per currency (`expand[]=data.s
 `Request-Id`/rate-limit metadata of every response, and one section per chain (outcome, pages,
 resume cursor, typed error).
 
-Traversal: `concord_pagination::sequential` over the SDK's `CursorList` adapter — dependent
-forward cursors (`starting_after` = last id), one request at a time, invoice line chains
-continuing each invoice's embedded `lines` list, no cursor derived from a count, no retry. See the
+Traversal: the SDK's `CursorList::pages_from` (`concord_pagination::Pages`, each budget as its
+`max_pages`) — dependent forward cursors (`starting_after` = last id), one request at a time,
+invoice line chains continuing each invoice's embedded `lines` list, no cursor derived from a
+count, no retry. A budget reached while Stripe has more is the section's `Bounded` outcome with its
+next cursor, a failed page its `Failed` outcome with the failed cursor and the typed error. See the
 module documentation of `src/reconciliation.rs` for the policy.
 
 ## ST-B — form and idempotency scenario

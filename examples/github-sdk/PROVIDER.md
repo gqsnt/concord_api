@@ -73,9 +73,11 @@ description's own examples (`tests/official_examples.rs`).
 | Actions | `actions/get-artifact` | `GET .../actions/artifacts/{artifact_id}` | `GitHubRepoActions::artifact` |
 | Actions | `actions/download-artifact` | `GET .../actions/artifacts/{artifact_id}/zip` → `302` | `GitHubRepoActions::download_artifact` + `download::{locate, stream_to}` |
 
-Every list operation has a page factory (`RepoContext::*_pages`, `paging::LinkPages`) for
-`concord-pagination`. Operations the SDK does not declare can be built from the same context
-(`RepoContext::request`, see `tests/operations.rs::undeclared_operation_through_the_context`).
+Every list operation has a listing (`RepoContext::*_pages`, `paging::LinkPages`) with ordinary
+traversals (`items()`, `pages()`: `concord-pagination`'s `PageItems`/`Pages`, a cap or a failed
+page is an error) and a page factory (`fetch`) for `concord-pagination`'s engine. Operations
+the SDK does not declare can be built from the same context (`RepoContext::request`, see
+`tests/operations.rs::undeclared_operation_through_the_context`).
 
 ## Deliberately unsupported
 
