@@ -23,7 +23,9 @@ COMMON = """\
 ## Ground rules (all roles)
 
 - Repository: Rust workspace `concord_api`, pinned toolchain 1.99.1, edition 2024. Your working
-  directory is a git worktree of the frozen candidate commit `{sha}`. Prefix every cargo command
+  directory is a git worktree whose Concord library is frozen at commit `{sha}`; its `HEAD` may
+  also contain this SDK's own earlier role commits (author, consumer), which is expected. Prefix
+  every cargo command
   with `CARGO_BUILD_JOBS=5 CARGO_TARGET_DIR={target}` (a shared build cache; if cargo says it is
   waiting for a lock, wait).
 - **Frozen library:** do not edit `crates/`, `scripts/`, `docs/`, `checks/` or other examples.
