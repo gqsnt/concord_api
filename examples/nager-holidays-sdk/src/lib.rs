@@ -43,7 +43,7 @@ concord::api! {
 pub struct HolidayResponse {
     /// All decoded entries, in the provider's order; no calendar interpretation is applied.
     pub holidays: Vec<Holiday>,
-    /// Status, HTTP version and headers, captured before decoding the body.
+    /// Status, HTTP version, headers and operation, captured before decoding the body.
     pub meta: ResponseMeta,
 }
 
@@ -64,7 +64,7 @@ impl SendWith<Vec<Holiday>> for KeepHead {
 
     async fn send<E: Endpoint<Vec<Holiday>> + Send>(&self, endpoint: E) -> Self::Output {
         let received = endpoint.prepare()?.receive().await?;
-        let meta = ResponseMeta::capture(&received.head());
+        let meta = received.meta();
         match received.decode().await {
             Ok(holidays) => Ok(HolidayResponse { holidays, meta }),
             Err(error) => Err(Error::with_meta(error, meta)),
