@@ -1,0 +1,8 @@
+{
+  "@odata.context": "{{BASE}}/$metadata#users(id,displayName,mail)",
+  "@odata.nextLink": "{{BASE}}/users/delta?$skiptoken=synthetic%2Bpage%2F2%3D&opaque=a+b&opaque=%252F",
+  "value": [
+    {"id":"user-a", "displayName":"Ada Example", "mail":"ada@example.invalid", "accountEnabled":true},
+    {"id":"user-b", "displayName":"Ben Example", "mail":null}
+  ]
+}

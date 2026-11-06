@@ -1,0 +1,1 @@
+{"error":{"code":"TooManyRequests","message":"Synthetic throttle.","innerError":{"request-id":"synthetic-request-429","date":"2026-11-06T00:00:00Z"}}}
