@@ -741,6 +741,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "concord-sdk-twilio"
+version = "0.0.0"
+dependencies = [
+ "base64",
+ "concord",
+ "concord-example-testserver",
+ "serde",
+ "tokio",
+]
+
+[[package]]
 name = "core-foundation"
 version = "0.9.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"

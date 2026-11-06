@@ -1,0 +1,10 @@
+{
+  "sid": "SM_fixture_message",
+  "account_sid": "AC_fixture_account",
+  "status": "delivered",
+  "body": null,
+  "from": "+15005550001",
+  "to": "+15005550006",
+  "error_code": null,
+  "error_message": null
+}

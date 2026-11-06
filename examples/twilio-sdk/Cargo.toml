@@ -1,0 +1,20 @@
+[package]
+name = "concord-sdk-twilio"
+description = "Offline-tested Twilio Messaging create/fetch slice using Concord"
+version = "0.0.0"
+publish = false
+edition = "2024"
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+concord = { path = "../../crates/concord", features = ["form", "json"] }
+base64 = "0.23.1"
+serde = { workspace = true, features = ["derive"] }
+
+[dev-dependencies]
+concord-example-testserver = { path = "../testserver" }
+tokio = { workspace = true, features = ["macros", "rt", "time"] }
+
+[lints]
+workspace = true
