@@ -283,8 +283,8 @@ impl<T> Received<T> {
     /// The second element is [`Metadata`](crate::ErrorKind::Metadata) when the format refuses the
     /// head (the response is kept unread in the error), [`Limit`](crate::ErrorKind::Limit) when
     /// the body is longer than `limit`, [`Transport`](crate::ErrorKind::Transport) when reading
-    /// fails, [`Decode`](crate::ErrorKind::Decode) when it does not decode — each naming the
-    /// operation, with the head ([`Error::head`]).
+    /// fails, [`Decode`](crate::ErrorKind::Decode) when it does not decode (the body is kept:
+    /// [`Error::body_unredacted`]) — each naming the operation, with the head ([`Error::head`]).
     pub async fn document<F, D>(self, limit: usize) -> (ResponseMeta, Result<D, Error>)
     where
         F: crate::Decode<D>,
@@ -302,7 +302,8 @@ impl<T> Received<T> {
         };
         let head = ResponseMeta::take(&mut response, operation);
         let outcome = match crate::prepared::read_limited(response, limit, operation).await {
-            Ok(body) => F::decode_body(context, body).map_err(|e| Error::from_decode(operation, e)),
+            Ok(body) => F::decode_body(context, body.clone())
+                .map_err(|e| Error::from_decode(operation, e).with_body(body)),
             Err(e) => Err(e),
         };
         let outcome = outcome.map_err(|e| e.with_head(head.clone()));

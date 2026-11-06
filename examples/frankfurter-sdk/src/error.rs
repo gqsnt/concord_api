@@ -1,7 +1,7 @@
 use std::fmt;
 
 use concord::reqwest::StatusCode;
-use concord::{CodecError, Operation};
+use concord::{ErrorKind, Operation};
 use serde::Deserialize;
 
 /// Owned response metadata (actual status, never synthesized from the JSON document; HTTP
@@ -21,23 +21,35 @@ pub struct Problem {
     pub message: String,
 }
 
-/// Why a non-2xx response's optional error document could not be obtained.
+/// Why a non-2xx response's optional error document could not be obtained. Each variant holds
+/// the [`concord::Error`] of `Received::document` (its kind, operation and the response head).
 #[derive(Debug)]
 pub enum ErrorBodyError {
-    /// Missing, repeated or non-JSON media type; body was not read.
-    Metadata(CodecError),
+    /// Missing, repeated or non-JSON media type; body was not read (kind `Metadata`).
+    Metadata(concord::Error),
     /// Body exceeded [`crate::ERROR_BODY_LIMIT`] or could not be read completely: a
     /// [`concord::Error`] (kind `Limit` or `Transport`), not this crate's [`Error`](crate::Error).
     Read(concord::Error),
-    /// Body was JSON-labelled but did not decode as a [`Problem`].
-    Decode(CodecError),
+    /// Body was JSON-labelled but did not decode as a [`Problem`] (kind `Decode`).
+    Decode(concord::Error),
+}
+
+impl From<concord::Error> for ErrorBodyError {
+    fn from(error: concord::Error) -> Self {
+        match error.kind() {
+            ErrorKind::Metadata => Self::Metadata(error),
+            ErrorKind::Decode => Self::Decode(error),
+            _ => Self::Read(error),
+        }
+    }
 }
 
 impl fmt::Display for ErrorBodyError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::Metadata(error) | Self::Decode(error) => fmt::Display::fmt(error, f),
-            Self::Read(error) => fmt::Display::fmt(error, f),
+            Self::Metadata(error) | Self::Decode(error) | Self::Read(error) => {
+                fmt::Display::fmt(error, f)
+            }
         }
     }
 }
@@ -45,8 +57,7 @@ impl fmt::Display for ErrorBodyError {
 impl std::error::Error for ErrorBodyError {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         match self {
-            Self::Metadata(error) | Self::Decode(error) => Some(error),
-            Self::Read(error) => Some(error),
+            Self::Metadata(error) | Self::Decode(error) | Self::Read(error) => Some(error),
         }
     }
 }
@@ -94,7 +105,7 @@ pub enum Error {
     Concord {
         /// Original [`concord::Error`] and its generated operation identity.
         source: concord::Error,
-        /// Head captured before decoding; absent when no response arrived.
+        /// The response head (`concord::Error::meta`); absent when no response arrived.
         meta: Option<Box<ResponseMeta>>,
     },
 }

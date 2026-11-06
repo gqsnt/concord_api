@@ -52,18 +52,18 @@ impl<T: Send> SendWith<T> for DropboxPolicy {
 
     async fn send<E: Endpoint<T> + Send>(&self, endpoint: E) -> Self::Output {
         let received = endpoint.prepare()?.receive().await?;
-        let meta = ResponseMeta(received.meta());
-        if !meta.status().is_success() {
+        if !received.status().is_success() {
+            let meta = ResponseMeta(received.meta());
             let body = ErrorBody::new(received.bytes_limited(crate::ERROR_BODY_LIMIT).await);
             return Err(Error::Http(Box::new(HttpError { meta, body })));
         }
-        let value = received
-            .decode_limited(crate::SUCCESS_BODY_LIMIT)
-            .await
-            .map_err(|error| Error::Concord {
-                error,
-                meta: Some(Box::new(meta.clone())),
-            })?;
-        Ok(Response { value, meta })
+        // A failure after the head arrived keeps it in the Concord error (`From` reads it).
+        let (value, meta) = received
+            .decode_limited_with_meta(crate::SUCCESS_BODY_LIMIT)
+            .await?;
+        Ok(Response {
+            value,
+            meta: ResponseMeta(meta),
+        })
     }
 }

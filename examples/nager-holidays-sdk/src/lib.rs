@@ -63,11 +63,9 @@ impl SendWith<Vec<Holiday>> for KeepHead {
     type Output = Result<HolidayResponse, Error>;
 
     async fn send<E: Endpoint<Vec<Holiday>> + Send>(&self, endpoint: E) -> Self::Output {
+        // A failure after the head arrived keeps it in the Concord error (`Error::meta`).
         let received = endpoint.prepare()?.receive().await?;
-        let meta = received.meta();
-        match received.decode().await {
-            Ok(holidays) => Ok(HolidayResponse { holidays, meta }),
-            Err(error) => Err(Error::with_meta(error, meta)),
-        }
+        let (holidays, meta) = received.decode_with_meta().await?;
+        Ok(HolidayResponse { holidays, meta })
     }
 }

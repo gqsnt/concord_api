@@ -26,6 +26,8 @@ struct Inner {
     /// `Limit`, a mid-body `Transport`), moved out of the native response before its body was
     /// consumed. `Status` and `Metadata` errors keep the whole response in `repr` instead.
     head: Option<ResponseMeta>,
+    /// The body that did not decode, kept by [`Received::document`](crate::Received::document).
+    body: Option<bytes::Bytes>,
 }
 
 enum Repr {
@@ -128,6 +130,7 @@ impl Error {
                 operation,
                 repr,
                 head: None,
+                body: None,
             }),
         }
     }
@@ -135,6 +138,12 @@ impl Error {
     /// The same error, with the head of the response whose body it concerns.
     pub(crate) fn with_head(mut self, head: ResponseMeta) -> Self {
         self.inner.head = Some(head);
+        self
+    }
+
+    /// The same error, with the body that did not decode.
+    pub(crate) fn with_body(mut self, body: bytes::Bytes) -> Self {
+        self.inner.body = Some(body);
         self
     }
 
@@ -256,6 +265,7 @@ impl Error {
             operation,
             repr,
             head,
+            body,
         } = *self.inner;
         match repr {
             Repr::Status(response) | Repr::Metadata(_, response) => Ok(response),
@@ -264,6 +274,7 @@ impl Error {
                     operation,
                     repr,
                     head,
+                    body,
                 }),
             }),
         }
@@ -280,6 +291,15 @@ impl Error {
             Repr::Transport(error) => Some(error),
             _ => None,
         }
+    }
+
+    /// The body that did not decode, for a [`Decode`](ErrorKind::Decode) error raised by
+    /// [`Received::document`](crate::Received::document): an error document an SDK keeps raw when
+    /// it is not the provider's (an HTML page from a proxy, an empty body). The declared
+    /// `decode()` path does not keep it. **Unredacted** — body content can quote request values —
+    /// and never printed by Concord.
+    pub fn body_unredacted(&self) -> Option<&bytes::Bytes> {
+        self.inner.body.as_ref()
     }
 
     /// The format's error, for [`ErrorKind::Metadata`], [`ErrorKind::Decode`] and a body that

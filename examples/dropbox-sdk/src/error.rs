@@ -303,7 +303,8 @@ impl Error {
 
 impl From<concord::Error> for Error {
     fn from(error: concord::Error) -> Self {
-        Self::Concord { error, meta: None }
+        let meta = error.meta().map(|meta| Box::new(ResponseMeta(meta)));
+        Self::Concord { error, meta }
     }
 }
 

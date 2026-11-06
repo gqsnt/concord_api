@@ -3,7 +3,7 @@
 mod error;
 mod model;
 
-use concord::{Decode, Endpoint, Json, SendWith};
+use concord::{Endpoint, Json, SendWith};
 
 pub use bigdecimal::BigDecimal as Decimal;
 pub use chrono::NaiveDate as Date;
@@ -78,25 +78,14 @@ impl SendWith<Rate> for SendPolicy {
 
     async fn send<E: Endpoint<Rate> + Send>(&self, endpoint: E) -> Self::Output {
         let received = endpoint.prepare()?.receive().await?;
-        let meta = received.meta();
         if !received.status().is_success() {
             // Status is authoritative even when the document is absent, invalid or inconsistent.
-            let document = match <Json as Decode<Problem>>::check_content_type(&received.head()) {
-                Err(error) => Err(ErrorBodyError::Metadata(error)),
-                Ok(()) => match received.bytes_limited(ERROR_BODY_LIMIT).await {
-                    Err(error) => Err(ErrorBodyError::Read(error)),
-                    Ok(bytes) => <Json as Decode<Problem>>::decode_body((), bytes)
-                        .map_err(ErrorBodyError::Decode),
-                },
-            };
+            let (meta, document) = received.document::<Json, Problem>(ERROR_BODY_LIMIT).await;
+            let document = document.map_err(ErrorBodyError::from);
             return Err(Error::Provider(Box::new(ProviderError { meta, document })));
         }
-        match received.decode().await {
-            Ok(rate) => Ok(RateResponse { rate, meta }),
-            Err(source) => Err(Error::Concord {
-                source,
-                meta: Some(Box::new(meta)),
-            }),
-        }
+        // A success-body failure keeps the head in the Concord error (`Error::meta`).
+        let (rate, meta) = received.decode_with_meta().await?;
+        Ok(RateResponse { rate, meta })
     }
 }
