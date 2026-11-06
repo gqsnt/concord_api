@@ -1,0 +1,19 @@
+: synthetic keepalive
+
+event: response.created
+data: {"type":"response.created","sequence_number":0,"response":{"id":"resp_consumer","object":"response","status":"in_progress","output":[],"error":null}}
+
+event: response.in_progress
+data: {"type":"response.in_progress","sequence_number":1,"response":{"id":"resp_consumer","status":"in_progress"}}
+
+event: response.output_text.delta
+id: synthetic-event-2
+data: {"type":"response.output_text.delta","sequence_number":2,"item_id":"msg_consumer","output_index":0,"content_index":0,
+data: "delta":"Bon"}
+
+event: response.output_text.delta
+data: {"type":"response.output_text.delta","sequence_number":3,"item_id":"msg_consumer","output_index":0,"content_index":0,"delta":"jour 🌍"}
+
+event: response.completed
+data: {"type":"response.completed","sequence_number":4,"response":{"id":"resp_consumer","object":"response","status":"completed","output":[{"type":"message","role":"assistant","content":[{"type":"output_text","text":"Bonjour 🌍"}]}],"error":null}}
+
