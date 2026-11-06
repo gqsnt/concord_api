@@ -8,6 +8,7 @@ license.workspace = true
 publish = false
 
 [dependencies]
+concord-retry = { path = "../../crates/concord-retry", features = ["tokio"] }
 concord = { path = "../../crates/concord" }
 serde = { workspace = true, features = ["derive"] }
 serde_json.workspace = true

@@ -144,6 +144,18 @@ step test-extras-multipart cargo test --locked -p concord-extras --no-default-fe
 step test-extras-sse cargo test --locked -p concord-extras --no-default-features --features sse
 # The pagination crate alone (it has no features and knows no Concord crate).
 step test-pagination cargo test --locked -p concord-pagination
+# Retry: runtime-free engine, each optional feature, and their composition independently.
+retry_features() {
+  local features
+  for features in "" concord tokio concord,tokio; do
+    cargo test --locked -p concord-retry --no-default-features ${features:+--features "$features"} || return 1
+    cargo clippy --locked -p concord-retry --no-default-features ${features:+--features "$features"} \
+      --all-targets -- -D warnings || return 1
+    RUSTDOCFLAGS="-D warnings" cargo doc --locked -p concord-retry --no-deps \
+      --no-default-features ${features:+--features "$features"} || return 1
+  done
+}
+step test-retry-features retry_features
 # Lints of the feature subsets the workspace build unifies away (code used only by some formats).
 clippy_features() {
   local features
