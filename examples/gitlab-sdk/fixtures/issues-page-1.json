@@ -1,0 +1,148 @@
+[
+  {
+    "project_id": 4021,
+    "milestone": {
+      "due_date": "2026-12-01",
+      "project_id": 4021,
+      "state": "active",
+      "description": "Synthetic milestone for fixtures.",
+      "iid": 2,
+      "id": 7102,
+      "title": "v2.0",
+      "created_at": "2026-09-01T08:00:00.000Z",
+      "updated_at": "2026-09-01T08:00:00.000Z"
+    },
+    "author": {
+      "state": "active",
+      "web_url": "https://gitlab.example.com/fixture-author",
+      "avatar_url": null,
+      "username": "fixture-author",
+      "id": 501,
+      "name": "Fixture Author"
+    },
+    "description": "Synthetic issue three: the widget list flickers.",
+    "state": "opened",
+    "iid": 3,
+    "assignees": [
+      {
+        "state": "active",
+        "web_url": "https://gitlab.example.com/fixture-dev",
+        "avatar_url": null,
+        "username": "fixture-dev",
+        "id": 502,
+        "name": "Fixture Developer"
+      }
+    ],
+    "assignee": {
+      "state": "active",
+      "web_url": "https://gitlab.example.com/fixture-dev",
+      "avatar_url": null,
+      "username": "fixture-dev",
+      "id": 502,
+      "name": "Fixture Developer"
+    },
+    "type": "ISSUE",
+    "labels": ["bug", "ui"],
+    "upvotes": 2,
+    "downvotes": 0,
+    "merge_requests_count": 0,
+    "id": 9003,
+    "title": "Widget list flickers on refresh",
+    "updated_at": "2026-10-20T10:15:00.000Z",
+    "created_at": "2026-10-19T09:00:00.000Z",
+    "closed_at": null,
+    "closed_by": null,
+    "user_notes_count": 4,
+    "due_date": null,
+    "imported": false,
+    "imported_from": "none",
+    "web_url": "https://gitlab.example.com/acme/tools/widgets/-/issues/3",
+    "references": {
+      "short": "#3",
+      "relative": "#3",
+      "full": "acme/tools/widgets#3"
+    },
+    "time_stats": {
+      "time_estimate": 0,
+      "total_time_spent": 0,
+      "human_time_estimate": null,
+      "human_total_time_spent": null
+    },
+    "has_tasks": false,
+    "confidential": false,
+    "discussion_locked": false,
+    "issue_type": "issue",
+    "severity": "UNKNOWN",
+    "_links": {
+      "self": "https://gitlab.example.com/api/v4/projects/4021/issues/3",
+      "notes": "https://gitlab.example.com/api/v4/projects/4021/issues/3/notes",
+      "award_emoji": "https://gitlab.example.com/api/v4/projects/4021/issues/3/award_emoji",
+      "project": "https://gitlab.example.com/api/v4/projects/4021",
+      "closed_as_duplicate_of": null
+    },
+    "task_completion_status": {
+      "count": 0,
+      "completed_count": 0
+    }
+  },
+  {
+    "project_id": 4021,
+    "milestone": null,
+    "author": {
+      "state": "active",
+      "web_url": "https://gitlab.example.com/fixture-dev",
+      "avatar_url": null,
+      "username": "fixture-dev",
+      "id": 502,
+      "name": "Fixture Developer"
+    },
+    "description": null,
+    "state": "opened",
+    "iid": 2,
+    "assignees": [],
+    "assignee": null,
+    "type": "ISSUE",
+    "labels": ["bug"],
+    "upvotes": 0,
+    "downvotes": 0,
+    "merge_requests_count": 1,
+    "id": 9002,
+    "title": "Crash when the name contains café & 🌍",
+    "updated_at": "2026-10-18T16:40:00.000Z",
+    "created_at": "2026-10-12T11:30:00.000Z",
+    "closed_at": null,
+    "closed_by": null,
+    "user_notes_count": 0,
+    "due_date": "2026-11-30",
+    "imported": false,
+    "imported_from": "none",
+    "web_url": "https://gitlab.example.com/acme/tools/widgets/-/issues/2",
+    "references": {
+      "short": "#2",
+      "relative": "#2",
+      "full": "acme/tools/widgets#2"
+    },
+    "time_stats": {
+      "time_estimate": 3600,
+      "total_time_spent": 0,
+      "human_time_estimate": "1h",
+      "human_total_time_spent": null
+    },
+    "has_tasks": false,
+    "confidential": false,
+    "discussion_locked": false,
+    "issue_type": "issue",
+    "severity": "UNKNOWN",
+    "_links": {
+      "self": "https://gitlab.example.com/api/v4/projects/4021/issues/2",
+      "notes": "https://gitlab.example.com/api/v4/projects/4021/issues/2/notes",
+      "award_emoji": "https://gitlab.example.com/api/v4/projects/4021/issues/2/award_emoji",
+      "project": "https://gitlab.example.com/api/v4/projects/4021",
+      "closed_as_duplicate_of": null
+    },
+    "task_completion_status": {
+      "count": 0,
+      "completed_count": 0
+    }
+  }
+]

@@ -1,0 +1,23 @@
+{
+  "id": 4022,
+  "description": null,
+  "default_branch": "main",
+  "visibility": "private",
+  "web_url": "https://gitlab.example.com/acme/tools/gadgets",
+  "name": "Gadgets",
+  "name_with_namespace": "Acme / Tools / Gadgets",
+  "path": "gadgets",
+  "path_with_namespace": "acme/tools/gadgets",
+  "issues_enabled": true,
+  "open_issues_count": 0,
+  "archived": false,
+  "namespace": {
+    "id": 3120,
+    "name": "Tools",
+    "path": "tools",
+    "kind": "group",
+    "full_path": "acme/tools",
+    "avatar_url": null,
+    "web_url": "https://gitlab.example.com/groups/acme/tools"
+  }
+}
