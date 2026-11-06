@@ -10,6 +10,7 @@
 //! a URL.
 
 use std::fmt;
+use std::sync::Arc;
 
 use concord::bytes::Bytes;
 use concord::reqwest::StatusCode;
@@ -174,7 +175,7 @@ impl std::error::Error for RegistryError {
             Self::Request { error, .. } => Some(error),
             Self::Auth(error) => error
                 .source
-                .as_ref()
+                .as_deref()
                 .map(|e| e as &(dyn std::error::Error + 'static)),
             _ => None,
         }
@@ -478,6 +479,7 @@ impl From<String> for ErrorCode {
 }
 
 /// A failure of the Bearer token flow.
+#[derive(Clone)]
 #[non_exhaustive]
 pub struct AuthError {
     /// What failed.
@@ -486,7 +488,7 @@ pub struct AuthError {
     pub status: Option<StatusCode>,
     /// The metadata of the registry's `401`, or of the token service's answer.
     pub meta: Option<ResponseMeta>,
-    pub(crate) source: Option<concord::Error>,
+    pub(crate) source: Option<Arc<concord::Error>>,
 }
 
 impl AuthError {
@@ -508,14 +510,14 @@ impl AuthError {
         if self.meta.is_none() {
             self.meta = source.head_meta().map(ResponseMeta::from_concord);
         }
-        self.source = Some(source);
+        self.source = Some(Arc::new(source));
         self
     }
 
     /// Concord's error behind a [`TokenTransport`](AuthProblem::TokenTransport) or
     /// [`TokenResponse`](AuthProblem::TokenResponse) problem.
     pub fn source_error(&self) -> Option<&concord::Error> {
-        self.source.as_ref()
+        self.source.as_deref()
     }
 }
 
@@ -535,7 +537,7 @@ impl fmt::Debug for AuthError {
             .field("problem", &self.problem)
             .field("status", &self.status.map(|s| s.as_u16()))
             .field("meta", &self.meta)
-            .field("source", &self.source.as_ref().map(concord::Error::kind))
+            .field("source", &self.source.as_deref().map(concord::Error::kind))
             .finish()
     }
 }

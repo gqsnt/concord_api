@@ -13,10 +13,13 @@
 //! without one gets the scope of the operation (`repository:<name>:pull` for reads,
 //! `repository:<name>:pull,push` for writes, `registry:catalog:*` for the catalog). Tokens are
 //! cached per operation access — pull, push, catalog, none — never shared between them: a pull
-//! token is never sent with a push request. A cached token is sent pre-emptively until its
-//! `expires_in` (60 s when absent, counted from when the token request was sent) has passed. An
+//! token is never sent with a push request. Each cache belongs to one registry destination and
+//! credential configuration; changing `TokenAuth` starts a new cache. Concurrent callers for
+//! the same access share one token acquisition. A cached token is sent pre-emptively until its
+//! `expires_in` (60 s when absent, counted from when acquisition began) has passed. An
 //! `expires_in` too large for the platform's clock is [`AuthProblem::TokenResponse`]: that token is
-//! neither cached nor sent.
+//! neither cached nor sent. The cache holds at most 1024 access keys, evicting completed entries
+//! when needed; if all 1024 are acquiring, another key is refused as `TokenTransport`.
 //!
 //! **Origins.** Concord's `Prepared::follow` and the SDK's `Location` and `Link` checks keep
 //! server-provided URLs on the registry's origin. Token requests go to a realm whose origin is the
@@ -26,7 +29,6 @@
 //! sees the response, including for token requests and URLs containing opaque state.
 
 use std::fmt;
-use std::time::Instant;
 
 use concord::reqwest::Url;
 use concord::reqwest::header::{HeaderMap, HeaderValue, WWW_AUTHENTICATE};
@@ -154,18 +156,9 @@ impl BasicCredentials {
     /// [`InputError::Credentials`] when the user name contains `:` or either contains a control
     /// character.
     pub fn new(username: &str, password: &str) -> Result<Self, InputError> {
-        if username.contains(':')
-            || format!("{username}{password}")
-                .chars()
-                .any(char::is_control)
-        {
-            return Err(InputError::Credentials);
-        }
-        let encoded = base64(format!("{username}:{password}").as_bytes());
-        let mut value = HeaderValue::try_from(format!("Basic {encoded}"))
-            .map_err(|_| InputError::Credentials)?;
-        value.set_sensitive(true);
-        Ok(Self(value))
+        concord_auth::basic(username, password)
+            .map(Self)
+            .map_err(|_| InputError::Credentials)
     }
 }
 
@@ -175,26 +168,11 @@ impl fmt::Debug for BasicCredentials {
     }
 }
 
-/// RFC 4648 base64 with padding.
+// Retain the existing SDK's RFC vectors against the shared mature encoder.
+#[cfg(test)]
 fn base64(input: &[u8]) -> String {
-    const ALPHABET: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
-    let mut out = String::with_capacity(input.len().div_ceil(3) * 4);
-    for chunk in input.chunks(3) {
-        let b = [
-            chunk[0],
-            chunk.get(1).copied().unwrap_or(0),
-            chunk.get(2).copied().unwrap_or(0),
-        ];
-        let n = (u32::from(b[0]) << 16) | (u32::from(b[1]) << 8) | u32::from(b[2]);
-        for (i, shift) in [18u32, 12, 6, 0].into_iter().enumerate() {
-            if i <= chunk.len() {
-                out.push(char::from(ALPHABET[((n >> shift) & 0x3f) as usize]));
-            } else {
-                out.push('=');
-            }
-        }
-    }
-    out
+    use base64::Engine as _;
+    base64::engine::general_purpose::STANDARD.encode(input)
 }
 
 /// A parsed `WWW-Authenticate: Bearer ...` challenge.
@@ -407,13 +385,6 @@ impl Access {
             Self::Push(name) => Some(format!("repository:{name}:pull,push")),
         }
     }
-}
-
-/// A token and when it stops being sent pre-emptively.
-#[derive(Clone)]
-pub(crate) struct CachedToken {
-    pub(crate) header: HeaderValue,
-    pub(crate) expires: Instant,
 }
 
 #[cfg(test)]

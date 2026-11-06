@@ -2,7 +2,6 @@
 
 use std::fmt;
 
-use base64::Engine as _;
 use concord::csv::{CsvOptions, CsvReader, HeaderMode};
 use concord::jsonl::{JsonLinesOptions, JsonLinesReader};
 use concord::reqwest::{self, header::HeaderValue};
@@ -46,18 +45,9 @@ impl Credentials {
     /// [`RequestError::InvalidCredentials`] if `user` contains `:` or a control character, or
     /// `password` a control character.
     pub fn basic(user: &str, password: &str) -> Result<Self, RequestError> {
-        if user.contains(':')
-            || user.chars().any(char::is_control)
-            || password.chars().any(char::is_control)
-        {
-            return Err(RequestError::InvalidCredentials);
-        }
-        let encoded =
-            base64::engine::general_purpose::STANDARD.encode(format!("{user}:{password}"));
-        let mut value = HeaderValue::try_from(format!("Basic {encoded}"))
-            .map_err(|_| RequestError::InvalidCredentials)?;
-        value.set_sensitive(true);
-        Ok(Self(Auth::Basic(value)))
+        concord_auth::basic(user, password)
+            .map(|value| Self(Auth::Basic(value)))
+            .map_err(|_| RequestError::InvalidCredentials)
     }
 
     /// The documented headers `X-ClickHouse-User` and `X-ClickHouse-Key`. A custom credential

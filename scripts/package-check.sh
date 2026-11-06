@@ -24,7 +24,7 @@ mkdir -p "$src"
 # local crates it depends on (packaging resolves dependencies even with `--no-verify`), and without
 # cargo's own verification build: the consumers below build the packaged crates together instead.
 # The "ignoring test" warnings list the test targets deliberately left out of the packages.
-crates="concord-core concord-codecs concord-extras concord-macros concord concord-pagination concord-retry"
+crates="concord-core concord-codecs concord-extras concord-macros concord concord-pagination concord-retry concord-auth"
 patches=()
 for crate in $crates; do
   patches+=(--config "patch.crates-io.$crate.path=\"crates/$crate\"")

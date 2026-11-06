@@ -395,6 +395,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "concord-auth"
+version = "4.2.0"
+dependencies = [
+ "base64",
+ "concord",
+ "concord-example-testserver",
+ "concord-retry",
+ "futures-util",
+ "http",
+ "reqwest",
+ "tokio",
+]
+
+[[package]]
 name = "concord-baselines"
 version = "0.0.0"
 dependencies = [
@@ -954,8 +968,8 @@ dependencies = [
 name = "concord-sdk-clickhouse"
 version = "0.0.0"
 dependencies = [
- "base64",
  "concord",
+ "concord-auth",
  "concord-example-testserver",
  "futures-core",
  "serde",
@@ -967,7 +981,9 @@ dependencies = [
 name = "concord-sdk-distribution-registry"
 version = "0.0.0"
 dependencies = [
+ "base64",
  "concord",
+ "concord-auth",
  "concord-example-testserver",
  "concord-pagination",
  "serde",
@@ -1150,8 +1166,8 @@ dependencies = [
 name = "concord-sdk-twilio"
 version = "0.0.0"
 dependencies = [
- "base64",
  "concord",
+ "concord-auth",
  "concord-example-testserver",
  "serde",
  "tokio",
