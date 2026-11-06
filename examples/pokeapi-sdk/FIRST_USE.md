@@ -162,3 +162,16 @@ offline SDK behavior, not live provider conformance.
 - No private reach-through, handwritten operation names, library changes,
   retries, live provider calls, or credentials were used. The working paths are
   the README's `Client::pokemon`, `list`, `follow`, and `pokemon_url`.
+
+## Post-wave-1 integration (coordinator)
+
+The record above is unchanged; `tests/first_use.rs` was edited by the coordinator
+for two SDK changes, with no case or expectation changed:
+
+- URL rejection diagnostics (friction above): `Error::InvalidUrl` now carries a
+  `UrlRejection` reason, so the two patterns read `Error::InvalidUrl(_)`.
+- One adapter for every operation (`INTEGRATION.md`): `Client::pokemon` and
+  `Client::list` were replaced by the `Call` trait, so nine call sites read
+  `api.pokemon(id).call()`, `api.list().set_limit(2).set_offset(0).call()` and
+  `api.list().call()`, and the import adds `Call`. `follow` and `pokemon_url`
+  are unchanged.
