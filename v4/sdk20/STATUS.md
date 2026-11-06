@@ -115,9 +115,9 @@ commit, so no baseline intervention was needed.
 | SDK14 | Airtable | medium | 4 | `gpt-6.1-terra` xhigh (`e0425cc8`) | `gpt-6-astra` xhigh, 14 tests; first intervention: corrected a doubled base path (`173e4f01`) | Opus subagent (`a4163a07`) | WAVE_4_ROLES_DONE, merged `eb801635` |
 | SDK15 | ClickHouse | medium | 4 | Opus subagent (`66f3cf00`) | `gpt-6.1-sol` xhigh, 17 tests, unassisted (`699239c2`) | `gpt-6.1-terra` xhigh (`2b584d4f`) | WAVE_4_ROLES_DONE, merged `0e0bc3df` |
 | SDK16 | Snowflake | large | 4 | `gpt-6-astra` xhigh (`04f32a9a`; first delivery enabled reqwest `gzip`, which broke a Concord test under workspace feature unification; reworked by the same session to SDK-local flate2) | Opus subagent, 18 tests, unassisted (`19ef84e3`) | `gpt-6.1-sol` xhigh (`1a78be4f`) | WAVE_4_ROLES_DONE, merged `0347edfc` |
-| SDK17 | World Bank | small | 5 | `gpt-6.1-terra` xhigh (`9b7f4e56`) | `gpt-6-astra` xhigh, 25 tests, unassisted (`3bb3d67c`) | Opus subagent (`9a3da827`) | WAVE_5_ROLES_DONE (first pass), merged |
-| SDK18 | Notion | medium | 5 | `gpt-6.1-sol` xhigh (`7e13ff1a`) | `gpt-6.1-terra` xhigh, 6 tests; first intervention: read the test server's source (`e76187ff`) | `gpt-6-astra` xhigh (`b8d3c230`) | WAVE_5_ROLES_DONE (first pass), merged |
-| SDK19 | Microsoft Graph | large | 5 | `gpt-6-astra` xhigh (`e80ef9e3`) | Opus (running) | `gpt-6.1-sol` | WAVE_5_CONSUMER |
+| SDK17 | World Bank | small | 5 | `gpt-6.1-terra` xhigh (`9b7f4e56`) | `gpt-6-astra` xhigh, 25 tests, unassisted (`3bb3d67c`) | Opus subagent (`9a3da827`) | WAVE_5_ROLES_DONE (first pass), merged `acee368d` |
+| SDK18 | Notion | medium | 5 | `gpt-6.1-sol` xhigh (`7e13ff1a`) | `gpt-6.1-terra` xhigh, 6 tests; first intervention: read the test server's source (`e76187ff`) | `gpt-6-astra` xhigh (`b8d3c230`) | WAVE_5_ROLES_DONE (first pass), merged `f4b1a4dd` |
+| SDK19 | Microsoft Graph | large | 5 | `gpt-6-astra` xhigh (`e80ef9e3`) | Opus subagent, 18 tests, unassisted (`e23f95c2`) | `gpt-6.1-sol` xhigh (`a93ffad5`) | WAVE_5_ROLES_DONE (first pass), merged `48ba16f8` |
 | SDK20 | Docker Distribution Registry | large | 5 | Opus subagent (`bdea8b71`) | `gpt-6.1-sol` xhigh, 15 tests, unassisted (`e22a77be`) | `gpt-6.1-terra` xhigh (`a3c0b53a`) | WAVE_5_ROLES_DONE (first pass), merged `3479a367` |
 
 ## Open issues (not fixed; tracked)

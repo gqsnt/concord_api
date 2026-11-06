@@ -577,3 +577,35 @@ like an empty one; a body without `resultSetMetaData` stays a decode error; the 
 expectation for that reply changed accordingly; one wire test added (observed to fail with the
 fix removed). Both pending independent review.
 
+
+## Wave 5 — held-out first-pass validation (frozen library `47a25fbf`; World Bank, Notion, Microsoft Graph, Docker Distribution Registry)
+
+Protocol: capsules generated from the cohort after the freeze; a held-out rule barred the campaign
+records (`v4/sdk20/`) and other SDKs' FRICTION/FIRST_USE/MAINTENANCE/INTEGRATION notes; no library
+change was made for these providers before or during the wave. All twelve roles done; each
+delivery committed unchanged (one exception: the coordinator applied clippy's own
+`useless_format` suggestion to the registry consumer's test, recorded). Merged `acee368d`,
+`f4b1a4dd`, `48ba16f8`, `3479a367`.
+
+**First-pass result (preserved).** All four SDKs reached both workflows through Concord's public
+API without a library change. Independent consumers: World Bank 25 tests, no intervention;
+Notion 6 tests, first intervention reading the test server's source (not the SDK); Graph 18
+tests, no intervention; registry 15 tests, no intervention. All four maintenance changes needed
+no runtime change (World Bank and Graph: tests that close evidence gaps; Notion: generic models
+already absorbed the perturbation; registry: tests plus a documented client redirect policy).
+
+First-pass findings about Concord (none fixed during the wave; dispositions after it):
+
+| ID | Evidence (first pass) | Cause | Disposition |
+|---|---|---|---|
+| W5-1 | Registry F1: a repository name spans path segments (`acme/app`); a Concord path value is one segment (`acme%2Fapp`); the SDK built one client per repository with a validated base URL | declaration | DEFER (product decision): two consumers now (S3 keys, registry names); a multi-segment value needs syntax, `.`/`..`/empty-segment rules and encoding decisions |
+| W5-2 | Registry F2: `:` in a digest path segment is percent-encoded (`sha256%3A…`); the SDK rewrites the last segment through `Prepared::follow` | path encoding policy | DEFER (product decision): RFC 3986 allows `:` in a segment literally, but changing Concord's encoding set changes wire bytes for every SDK; one consumer |
+| W5-3 | Registry F3: a send policy cannot replay a request after a `401` Bearer challenge (the endpoint is consumed, not `Clone`) | policy contract | DEFER: one consumer; a `Prepared::try_clone` would be the smallest mechanism |
+| W5-4 | Graph F2 (and Slack W2-11): `PageItems` drops page metadata, needed for delta checkpoints | concord-pagination | DEFER (product decision): two consumers; both SDKs work through `Pages` |
+| W5-5 | Graph consumer F1/F2 (and Dropbox W3-16): `PagesError` has no accessor for the provider error (a pattern match each time) and is large enough for clippy's `result_large_err` | concord-pagination ergonomics | DEFER: an accessor is small and additive; recorded for the next library iteration |
+| W5-6 | Registry F4–F8: operation names come from private declaration identifiers (renamed); a token realm with a query is refused (base URLs carry none) | naming / declaration | DOCS exist (AUTHOR_GUIDE §5.13 private declarations); one consumer |
+| W5-7 | World Bank, Notion, Graph authors: typed provider errors still need SDK orchestration | shared, already addressed | as W4-5 |
+| W5-8 | Registry maintainer: a caller must configure its own client to refuse cross-origin redirects; the SDK cannot enforce it on a supplied client | transport placement | DOCS (AUTHOR_GUIDE §3 already says so) |
+
+No reproduced Concord defect came out of the held-out wave, so no post-validation library fix was
+made; the deferred items are listed as product decisions in the final report.
