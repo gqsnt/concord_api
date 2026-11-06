@@ -152,7 +152,13 @@ async fn a_natively_replaced_body_is_not_framed_as_empty() {
     assert!(prepared.request().headers().get("content-length").is_none());
     let (client, mut request, decoder) = prepared.into_parts();
     *request.body_mut() = Some(concord::reqwest::Body::from("abc"));
-    decoder.execute(&client, request).await.unwrap();
+    decoder
+        .execute(&client, request)
+        .await
+        .unwrap()
+        .decode()
+        .await
+        .unwrap();
     let r = server.requests();
     assert_eq!(r[0].header_all("content-length"), ["3"]);
     assert_eq!(r[0].body, b"abc");
