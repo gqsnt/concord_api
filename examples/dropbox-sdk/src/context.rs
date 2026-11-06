@@ -92,6 +92,8 @@ impl PathRoot {
 }
 
 /// An owned member/root snapshot. No client-wide selected user or root exists.
+/// Derive a new selection with [`Self::with_member`] and [`Self::with_path_root`].
+/// Previously created requests, traversals and cursors retain their own snapshots.
 #[derive(Clone, PartialEq, Eq)]
 pub struct RequestContext {
     member: String,
@@ -110,6 +112,21 @@ impl RequestContext {
             return Err(InputError::MemberId);
         }
         Ok(Self { member, root })
+    }
+
+    /// Return a context selecting another member, preserving the current root.
+    /// Uses the same validation as [`Self::new`]; no request is sent.
+    /// Start a new listing with this context; existing cursors keep their original member.
+    pub fn with_member(self, member: impl Into<String>) -> Result<Self, InputError> {
+        Self::new(member, self.root)
+    }
+
+    /// Return a context selecting another root, preserving the current member.
+    /// Start a new listing with this context; existing cursors keep their original root.
+    #[must_use]
+    pub fn with_path_root(mut self, root: PathRoot) -> Self {
+        self.root = root;
+        self
     }
 
     /// Selected member ID, for explicit inspection.

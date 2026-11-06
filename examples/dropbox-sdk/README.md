@@ -43,13 +43,18 @@ while let Some(page) = pages.next_page().await? {
 
 Workflow B runs two explicitly selected contexts against the same client. Changing
 the local selection does not modify a client, pending request, traversal or cursor.
+The context methods consume a local snapshot and return a new one; clone first when
+the old selection is still needed. `with_member` validates the new member exactly as
+`RequestContext::new` does. `with_path_root` takes an already validated `PathRoot`.
 
 ```no_run
 # use concord_sdk_dropbox::{Client, RequestContext, PathRoot, ListFolderOptions};
 # async fn concurrent(client: &Client) -> Result<(), Box<dyn std::error::Error>> {
 let mut selected = RequestContext::new("dbmid:SYNTHETIC_MEMBER_A", PathRoot::root("100")?)?;
 let first = client.list_folder_pages(selected.clone(), ListFolderOptions::new("/Projects"));
-selected = RequestContext::new("dbmid:SYNTHETIC_MEMBER_B", PathRoot::namespace("200")?)?;
+selected = selected
+    .with_member("dbmid:SYNTHETIC_MEMBER_B")?
+    .with_path_root(PathRoot::namespace("200")?);
 let second = client.list_folder_pages(selected, ListFolderOptions::new("/Projects"));
 let (a, b) = tokio::join!(
     first.items().collect_complete(),
@@ -60,6 +65,14 @@ let b = b?;
 println!("A: {}, B: {}", a.len(), b.len());
 # Ok(()) }
 ```
+
+The first traversal captures A's selection when it is created, before polling.
+Changing the local selection is also safe while A's response is still arriving.
+The maintenance wire tests hold A's initial or continuation response open until B
+finishes, then check both selections' headers, response metadata and cursor bytes.
+Changing just the member or just the root works the same way. A selection error on
+B stays typed and does not alter A. Use a new listing for a changed selection;
+continuing an existing cursor always uses that cursor's original member and root.
 
 For one page use `client.list_folder(context, options).await?`, then
 `client.list_folder_continue(&response.value.cursor).await?` while `has_more` is
