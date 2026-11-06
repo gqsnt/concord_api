@@ -1084,6 +1084,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "concord-sdk-world-bank"
+version = "0.0.0"
+dependencies = [
+ "concord",
+ "concord-example-testserver",
+ "concord-pagination",
+ "serde",
+ "serde_json",
+ "tokio",
+]
+
+[[package]]
 name = "const-oid"
 version = "0.10.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
