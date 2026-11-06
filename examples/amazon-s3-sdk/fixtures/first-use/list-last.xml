@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ListBucketResult xmlns="http://s3.amazonaws.com/doc/2006-03-01/">
+<Name>first-use-bucket</Name><Prefix>reports%2F2026%2F</Prefix><MaxKeys>2</MaxKeys><EncodingType>url</EncodingType>
+<KeyCount>1</KeyCount><IsTruncated>false</IsTruncated>
+<ContinuationToken>opaque+/= last</ContinuationToken>
+<Contents><Key>reports%2F2026%2Fna%C3%AFve%20caf%C3%A9%2B100%25.bin</Key><Size>24</Size><ETag>&quot;opaque-validator-7&quot;</ETag><LastModified>2026-11-06T00:00:00.000Z</LastModified><StorageClass>STANDARD</StorageClass><Owner><ID>synthetic-owner</ID></Owner></Contents>
+</ListBucketResult>

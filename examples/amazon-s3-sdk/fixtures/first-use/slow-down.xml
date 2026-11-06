@@ -1,0 +1,2 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Error><Code>SlowDown</Code><Message>Please reduce your request rate.</Message><Resource>/first-use-bucket/private-report.bin</Resource><RequestId>synthetic-document-id</RequestId><HostId>synthetic-document-host</HostId></Error>

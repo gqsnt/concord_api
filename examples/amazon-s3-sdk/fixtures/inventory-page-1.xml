@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ListBucketResult xmlns="http://s3.amazonaws.com/doc/2006-03-01/" synthetic-attribute="ignored">
+  <Name>examplebucket</Name>
+  <Prefix>reports/2026/</Prefix>
+  <NextContinuationToken>1ueGcxLPRx1Tr/XYExHnhbYLgveDs2J/wm36Hy4vbOwM=</NextContinuationToken>
+  <KeyCount>2</KeyCount>
+  <MaxKeys>2</MaxKeys>
+  <IsTruncated>true</IsTruncated>
+  <FutureListingField>an element this SDK does not know</FutureListingField>
+  <Contents>
+    <Key>reports/2026/January.csv</Key>
+    <LastModified>2026-02-01T08:00:00.000Z</LastModified>
+    <ETag>&quot;70ee1738b6b21e2c8a43f3a5ab0eee71&quot;</ETag>
+    <ChecksumAlgorithm>CRC32</ChecksumAlgorithm>
+    <ChecksumType>FULL_OBJECT</ChecksumType>
+    <Size>26</Size>
+    <StorageClass>STANDARD</StorageClass>
+  </Contents>
+  <Contents>
+    <Key>reports/2026/München 東京 résumé.txt</Key>
+    <LastModified>2026-04-01T08:00:00.000Z</LastModified>
+    <ETag>&quot;9b2cf535f27731c974343645a3985328-2&quot;</ETag>
+    <Size>43</Size>
+    <StorageClass>STANDARD_IA</StorageClass>
+    <RestoreStatus>
+      <IsRestoreInProgress>false</IsRestoreInProgress>
+    </RestoreStatus>
+  </Contents>
+</ListBucketResult>

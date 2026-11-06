@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ListBucketResult xmlns="http://s3.amazonaws.com/doc/2006-03-01/">
+  <Name>examplebucket</Name>
+  <Prefix>test%2F</Prefix>
+  <Delimiter>%2F</Delimiter>
+  <EncodingType>url</EncodingType>
+  <KeyCount>3</KeyCount>
+  <MaxKeys>1000</MaxKeys>
+  <IsTruncated>false</IsTruncated>
+  <Contents>
+    <Key>test%2Ftest_file%283%29.png</Key>
+    <ETag>"opaque-1"</ETag>
+    <Size>1</Size>
+  </Contents>
+  <Contents>
+    <Key>test%2Fm%C3%A4rz+report%2B1.txt</Key>
+    <ETag>"opaque-2"</ETag>
+    <Size>2</Size>
+  </Contents>
+  <CommonPrefixes>
+    <Prefix>test%2Fsub+dir%2F</Prefix>
+  </CommonPrefixes>
+</ListBucketResult>

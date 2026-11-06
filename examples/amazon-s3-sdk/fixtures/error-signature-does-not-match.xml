@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Error>
+  <Code>SignatureDoesNotMatch</Code>
+  <Message>The request signature we calculated does not match the signature you provided. Check your key and signing method.</Message>
+  <SyntheticDetail>elements beyond the documented ones are ignored</SyntheticDetail>
+  <RequestId>SYNTHETIC0000001</RequestId>
+  <HostId>synthetic-host-id</HostId>
+</Error>
