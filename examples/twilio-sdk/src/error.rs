@@ -2,7 +2,7 @@
 
 use std::fmt;
 
-use concord::{Decode, ErrorKind, Json, Operation, Prepared, Received};
+use concord::{ErrorKind, Json, Operation, Prepared};
 use serde::Deserialize;
 
 /// Maximum retained bytes of a non-success response body (64 KiB).
@@ -149,7 +149,8 @@ impl TwilioError {
 
 impl From<concord::Error> for TwilioError {
     fn from(error: concord::Error) -> Self {
-        Self::Concord { error, meta: None }
+        let meta = error.meta().map(Box::new);
+        Self::Concord { error, meta }
     }
 }
 
@@ -183,34 +184,21 @@ impl std::error::Error for TwilioError {}
 
 pub(crate) async fn send<T>(prepared: Prepared<T>) -> Result<Response<T>, TwilioError> {
     let received = prepared.receive().await?;
-    let meta = received.meta();
-    if !meta.status().is_success() {
+    if !received.status().is_success() {
+        let (meta, document) = received
+            .document::<Json, ProviderError>(MAX_ERROR_BODY)
+            .await;
+        let document = document.map_err(|error| match error.kind() {
+            ErrorKind::Metadata => ErrorDocumentProblem::ContentType,
+            ErrorKind::Limit => ErrorDocumentProblem::TooLarge,
+            ErrorKind::Decode => ErrorDocumentProblem::Decode,
+            _ => ErrorDocumentProblem::Read,
+        });
         return Err(TwilioError::Provider {
             meta: Box::new(meta),
-            document: read_error(received).await,
+            document,
         });
     }
-    match received.decode().await {
-        Ok(value) => Ok(Response { value, meta }),
-        Err(error) => Err(TwilioError::Concord {
-            error,
-            meta: Some(Box::new(meta)),
-        }),
-    }
-}
-
-async fn read_error<T>(received: Received<T>) -> Result<ProviderError, ErrorDocumentProblem> {
-    let head = received.head();
-    <Json as Decode<ProviderError>>::check_content_type(&head)
-        .map_err(|_| ErrorDocumentProblem::ContentType)?;
-    <Json as Decode<ProviderError>>::context(&head).map_err(|_| ErrorDocumentProblem::Decode)?;
-    let bytes = received
-        .bytes_limited(MAX_ERROR_BODY)
-        .await
-        .map_err(|error| match error.kind() {
-            ErrorKind::Limit => ErrorDocumentProblem::TooLarge,
-            _ => ErrorDocumentProblem::Read,
-        })?;
-    <Json as Decode<ProviderError>>::decode_body((), bytes)
-        .map_err(|_| ErrorDocumentProblem::Decode)
+    let (value, meta) = received.decode_with_meta().await?;
+    Ok(Response { value, meta })
 }

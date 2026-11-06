@@ -151,10 +151,7 @@ async fn catalog_page(
     }
     let meta = ResponseMeta::capture(&received);
     let next = next_link(&registry, &collection, received.url(), &meta)?;
-    let body = received
-        .decode()
-        .await
-        .map_err(|error| RegistryError::request(error, meta.clone()))?;
+    let body = received.decode().await?;
     Ok(Page {
         items: body.repositories.unwrap_or_default(),
         next,
@@ -196,10 +193,7 @@ async fn tag_page(
     }
     let meta = ResponseMeta::capture(&received);
     let next = next_link(&registry, &collection, received.url(), &meta)?;
-    let body = received
-        .decode()
-        .await
-        .map_err(|error| RegistryError::request(error, meta.clone()))?;
+    let body = received.decode().await?;
     if body.name != repository.name().as_str() {
         return Err(RegistryError::protocol(
             ProtocolProblem::NameMismatch,

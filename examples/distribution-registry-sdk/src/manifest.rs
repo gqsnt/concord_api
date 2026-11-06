@@ -285,10 +285,7 @@ impl Repository {
         }
         .ok_or_else(|| protocol(ProtocolProblem::UnexpectedMediaType))?;
         let header_digest = meta.digest_header().map_err(protocol)?;
-        let bytes = received
-            .decode_limited(MANIFEST_LIMIT)
-            .await
-            .map_err(|error| RegistryError::request(error, meta.clone()))?;
+        let bytes = received.decode_limited(MANIFEST_LIMIT).await?;
         let digest = Digest::compute(algorithm, &bytes);
         let integrity = |problem| RegistryError::integrity(problem, Some(meta.clone()));
         if let Some(expected) = reference.as_digest()
@@ -370,7 +367,7 @@ impl Repository {
         let header = meta
             .digest_header()
             .map_err(|problem| RegistryError::protocol(problem, Some(meta.clone())))?;
-        drain(received, &meta).await?;
+        drain(received).await?;
         if let Some(header) = header
             && header.algorithm() == manifest.digest.algorithm()
             && header != manifest.digest

@@ -242,7 +242,8 @@ impl GraphError {
 
 impl From<concord::Error> for GraphError {
     fn from(error: concord::Error) -> Self {
-        Self::Concord { error, meta: None }
+        let meta = error.meta().map(Box::new);
+        Self::Concord { error, meta }
     }
 }
 impl fmt::Display for GraphError {

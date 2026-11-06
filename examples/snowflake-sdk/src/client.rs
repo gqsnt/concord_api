@@ -185,8 +185,8 @@ impl Client {
         expected: Option<&StatementHandle>,
     ) -> Result<Reply<T>, Error> {
         let received = prepared.receive().await?;
-        let meta = received.meta();
-        if !meta.status().is_success() {
+        if !received.status().is_success() {
+            let meta = received.meta();
             let mut error = ServerError {
                 meta: meta.clone(),
                 document: None,
@@ -217,19 +217,15 @@ impl Client {
             }
             return Err(Error::Server(Box::new(error)));
         }
-        if !statuses.contains(&meta.status().as_u16()) {
+        if !statuses.contains(&received.status().as_u16()) {
             return Err(Error::protocol(
                 ProtocolError::UnexpectedStatus,
-                Some(&meta),
+                Some(&received.meta()),
             ));
         }
-        let value = received
-            .decode_limited(self.options.max_response_bytes)
-            .await
-            .map_err(|source| Error::Concord {
-                meta: Some(Box::new(meta.clone())),
-                source,
-            })?;
+        let (value, meta) = received
+            .decode_limited_with_meta(self.options.max_response_bytes)
+            .await?;
         Ok(Reply { value, meta })
     }
 }

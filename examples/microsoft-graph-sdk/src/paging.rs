@@ -1,7 +1,7 @@
 //! Finite JSON page traversal with explicit completion and resumable partial outcomes.
 use std::{fmt, num::NonZeroUsize, sync::Arc};
 
-use concord::{Prepared, ResponseMeta};
+use concord::{ErrorKind, IgnoreContentType, Json, Prepared, ResponseMeta};
 use concord_pagination::{Page, Pages, Resume};
 
 use crate::{
@@ -108,13 +108,13 @@ impl<T: Send + 'static> Listing<T> {
         }
         let requested = prepared.request().url().clone();
         let received = prepared.receive().await?;
-        let meta = received.meta();
         if !received.status().is_success() {
-            let body = match received.bytes_limited(self.error_limit).await {
-                Ok(bytes) => match serde_json::from_slice::<ErrorEnvelope>(&bytes) {
-                    Ok(envelope) => ErrorBody::Parsed(Box::new(envelope.error)),
-                    Err(_) => ErrorBody::Malformed,
-                },
+            let (meta, document) = received
+                .document::<IgnoreContentType<Json>, ErrorEnvelope>(self.error_limit)
+                .await;
+            let body = match document {
+                Ok(envelope) => ErrorBody::Parsed(Box::new(envelope.error)),
+                Err(error) if error.kind() == ErrorKind::Decode => ErrorBody::Malformed,
                 Err(error) => ErrorBody::Unavailable(error),
             };
             return Err(GraphError::Provider {
@@ -125,16 +125,12 @@ impl<T: Send + 'static> Listing<T> {
         if received.status().as_u16() != 200 {
             return Err(GraphError::Protocol {
                 problem: ProtocolProblem::UnexpectedStatus,
-                meta: Box::new(meta),
+                meta: Box::new(received.meta()),
             });
         }
-        let envelope = received
-            .decode_limited(self.success_limit)
-            .await
-            .map_err(|error| GraphError::Concord {
-                error,
-                meta: Some(Box::new(meta.clone())),
-            })?;
+        let (envelope, meta) = received
+            .decode_limited_with_meta(self.success_limit)
+            .await?;
         let protocol = |problem| GraphError::Protocol {
             problem,
             meta: Box::new(meta.clone()),

@@ -130,7 +130,7 @@ impl Registry {
             })
             .await?;
         let (received, meta) = expect_status(received, StatusCode::OK).await?;
-        drain(received, &meta).await?;
+        drain(received).await?;
         Ok(ApiVersion { meta })
     }
 
@@ -223,22 +223,19 @@ impl Registry {
             .receive()
             .await
             .map_err(|error| AuthError::new(AuthProblem::TokenTransport).with_source(error))?;
-        let meta = ResponseMeta::capture(&received);
         if !received.status().is_success() {
+            let meta = ResponseMeta::capture(&received);
             let status = received.status();
             let _ = received.bytes_limited(ERROR_BODY_LIMIT).await;
             let mut error = AuthError::new(AuthProblem::TokenRefused).with_meta(meta);
             error.status = Some(status);
             return Err(error.into());
         }
-        let body = received
-            .decode_limited(TOKEN_BODY_LIMIT)
+        let (body, meta) = received
+            .decode_limited_with_meta(TOKEN_BODY_LIMIT)
             .await
-            .map_err(|error| {
-                AuthError::new(AuthProblem::TokenResponse)
-                    .with_meta(meta.clone())
-                    .with_source(error)
-            })?;
+            .map_err(|error| AuthError::new(AuthProblem::TokenResponse).with_source(error))?;
+        let meta = ResponseMeta::from_concord(meta);
         let token = body
             .token
             .filter(|token| !token.is_empty())
@@ -363,15 +360,9 @@ impl fmt::Debug for Repository {
 }
 
 /// Reads and drops a body the protocol documents as empty (bounded).
-pub(crate) async fn drain<T>(
-    received: Received<T>,
-    meta: &ResponseMeta,
-) -> Result<(), RegistryError> {
-    received
-        .bytes_limited(ERROR_BODY_LIMIT)
-        .await
-        .map(|_| ())
-        .map_err(|error| RegistryError::request(error, meta.clone()))
+pub(crate) async fn drain<T>(received: Received<T>) -> Result<(), RegistryError> {
+    received.bytes_limited(ERROR_BODY_LIMIT).await?;
+    Ok(())
 }
 
 /// The same request with its last path segment written verbatim: a digest's `:` (and `+`) are

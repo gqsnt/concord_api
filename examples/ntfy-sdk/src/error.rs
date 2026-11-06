@@ -5,7 +5,7 @@ use std::time::Duration;
 
 use concord::reqwest::StatusCode;
 use concord::reqwest::header::RETRY_AFTER;
-use concord::{Decode, Endpoint, Json, Operation, Received, SendWith};
+use concord::{Endpoint, IgnoreContentType, Json, Operation, Received, SendWith};
 
 use crate::model::ErrorDocument;
 
@@ -40,12 +40,10 @@ impl ApiError {
             .and_then(|value| value.to_str().ok())
             .and_then(|text| text.trim().parse::<u64>().ok())
             .map(Duration::from_secs);
-        let document = match received.bytes_limited(ERROR_BODY_LIMIT).await {
-            Ok(body) => <Json as Decode<ErrorDocument>>::decode_body((), body)
-                .ok()
-                .map(Box::new),
-            Err(_) => None,
-        };
+        let (_, document) = received
+            .document::<IgnoreContentType<Json>, ErrorDocument>(ERROR_BODY_LIMIT)
+            .await;
+        let document = document.ok().map(Box::new);
         Self {
             operation,
             status,

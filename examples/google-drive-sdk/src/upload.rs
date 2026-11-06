@@ -140,10 +140,7 @@ impl DriveClient {
             .session_url(location)
             .map_err(|error| error.with_meta(meta.clone()))?;
         // Initiation is documented as empty: bound and check it instead of draining arbitrarily.
-        received
-            .bytes_limited(0)
-            .await
-            .map_err(|error| Error::from(error).with_meta(meta.clone()))?;
+        received.bytes_limited(0).await?;
         Ok(Response {
             value: UploadSession {
                 client: self.clone(),
@@ -322,8 +319,7 @@ impl UploadSession {
             // Range defines progress; the documented 308 body carries no file metadata.
             received
                 .bytes_limited(self.client.config.max_response_bytes)
-                .await
-                .map_err(|error| Error::from(error).with_meta(meta.clone()))?;
+                .await?;
             self.acknowledged = acknowledged;
             self.needs_probe = false;
             return Ok(UploadStatus::Incomplete { acknowledged, meta });
