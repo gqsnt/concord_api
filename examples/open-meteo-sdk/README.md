@@ -3,7 +3,7 @@
 `concord-sdk-open-meteo` is an unpublished Concord example for the public
 `GET /v1/forecast` interface. One operation retrieves a single location's hourly
 forecast, selecting JSON or CSV at runtime. Any documented numeric hourly
-variable can be named; temperature, humidity and wind speed have convenience
+variable can be named; temperature, humidity, wind speed and precipitation have convenience
 constructors. The optional timezone and forecast-day settings are supported.
 Time is ISO-8601 and units use provider defaults, retained in the results.
 
@@ -52,7 +52,11 @@ use concord_sdk_open_meteo::{
 };
 
 # async fn example(client: &OpenMeteo) -> Result<(), Box<dyn std::error::Error>> {
-let variables = [HourlyVariable::temperature_2m(), HourlyVariable::wind_speed_10m()];
+let variables = [
+    HourlyVariable::temperature_2m(),
+    HourlyVariable::wind_speed_10m(),
+    HourlyVariable::precipitation(),
+];
 let query = ForecastQuery::new(52.52, 13.41, variables)?;
 // This can equally be an application setting chosen at runtime.
 let format = ResponseFormat::Csv;
@@ -64,7 +68,8 @@ for column in &csv.columns {
     println!("header: {} / unit: {:?}", column.header, column.unit);
 }
 for row in &csv.rows {
-    println!("{}: {:?}", row.time, row.values["wind_speed_10m"]);
+    println!("{}: wind {:?}, precipitation {:?}",
+        row.time, row.values["wind_speed_10m"], row.values["precipitation"]);
     // Unselected columns retain their complete header and decoded string value.
     println!("additional columns: {:?}", row.unknown);
 }
@@ -79,6 +84,15 @@ available as text in every row. `NaN` and empty selected CSV cells become `None`
 JSON `null` likewise becomes `None`. No unit conversion is performed. CSV
 location header order, all location fields, exact hourly headers and units are
 retained. JSON retains all numeric hourly arrays and the entire hourly-unit map.
+
+`HourlyVariable::precipitation()` selects the documented `precipitation`
+variable in either format: total rain, showers and snow during the preceding
+hour, in millimeters by default ([hourly parameter definitions](https://open-meteo.com/en/docs#hourly-parameter-definition)).
+CSV exposes it as `row.values["precipitation"]` when selected, with the returned
+header and unit in `csv.columns`. If it is returned without being selected,
+it remains text in `row.unknown["precipitation (mm)"]`, just like any other
+unselected column. Adding a convenience constructor does not change that rule.
+Existing selections and `HourlyVariable::named("precipitation")` continue to work.
 
 ## Errors and completion
 
@@ -118,6 +132,8 @@ Tests use only `examples/testserver` on loopback. Fixtures are hand-authored
 documentation-derived examples and synthetic perturbations, **not vendor
 conformance evidence**. See [PROVENANCE.md](PROVENANCE.md) for source pins and
 transformations and [FRICTION.md](FRICTION.md) for reproducible observations.
+The precipitation change and its verification are recorded in
+[MAINTENANCE.md](MAINTENANCE.md).
 
 Dependencies are `concord` (JSON and CSV features) and `serde` (JSON domain
 models). The mature CSV implementation already behind Concord's facade handles

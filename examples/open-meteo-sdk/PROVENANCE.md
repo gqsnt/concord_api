@@ -61,6 +61,16 @@ intentionally incomplete files alike.
 | `missing-location.csv` | `forecast.csv` → remove the entire location table and separator; synthetic envelope failure. |
 | `wrong-location-width.csv` | `forecast.csv` → remove the timezone-abbreviation cell from the metadata row; synthetic metadata width failure. |
 | `non-utf8.csv` | `forecast.csv` → replace the first `12.7` byte sequence with one byte `FF`; synthetic invalid UTF-8 failure. |
+| `maintenance-precipitation.csv` | D, hourly `precipitation` definition and default `mm` unit; C, two-table layout and unit-bearing headers → hand-authored four-hour synthetic forecast. Precipitation is first, time third, temperature last; numeric unknown pressure values retain trailing zeros. Synthetic precipitation cells are `0.00`, `NaN`, empty and `1.20`. Quoted `provider_note (text)` cells exercise commas, escaped quotes, an embedded LF and empty text; this note is not a provider field. LF and UTF-8 bytes. |
+| `maintenance-precipitation.json` | D, JSON envelope and hourly variables → hand-authored JSON counterpart of the maintenance CSV's numeric arrays, with `null` for missing values. Four synthetic timestamps, GMT/zero offset and synthetic wind, pressure and precipitation observations; coordinates/elevation/generation time reused from `forecast.json`. No textual note in the numeric JSON arrays. |
+
+For the maintenance change, D's hourly parameter definition and precipitation
+unit default were rechecked on 2026-11-06. C was downloaded again at the same
+pinned commit; its SHA-256 matched the fingerprint above. The web tool's raw
+GitHub fetch returned a cache miss; a Python HTTPS download of that source file
+succeeded. Neither request fetched a forecast. Reordered fields, extra columns,
+empty numeric cells and the note text are synthetic compatibility probes, not
+claims about the provider's current output order or observed responses.
 
 ## Synthetic transport cases and dependencies
 

@@ -50,6 +50,11 @@ impl HourlyVariable {
     pub fn wind_speed_10m() -> Self {
         Self("wind_speed_10m".into())
     }
+    /// Total rain, showers and snow over the preceding hour (`precipitation`).
+    /// The provider's default unit is millimeters; returned unit labels are retained.
+    pub fn precipitation() -> Self {
+        Self("precipitation".into())
+    }
     /// Select another documented hourly variable without modifying this SDK.
     /// Names must be nonempty ASCII letters, digits or underscores. Provider availability
     /// is checked by Open-Meteo; this only validates the query token's shape.
