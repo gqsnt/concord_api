@@ -65,4 +65,4 @@ commit; the coordinator commits their files and records it.
 | W3 maintainer SDK10 Linear | Opus subagent | running (transcript read at completion) | same | | |
 | W3 consumer SDK12 Google Drive | `gpt-6.1-terra` xhigh | `gpt-6.1-terra`, `xhigh`, workspace-write + `work/target-b`, network (session `01a1af29-6b0c…`) | `work/w3-sdk12-google-drive` | `e8968c80` (5 first-use tests, no intervention) | coordinator commit |
 | W3 consumer SDK11 Dropbox | Opus subagent | running (transcript read at completion) | `work/w3-sdk11-dropbox` | | |
-| W3 maintainer SDK12 Google Drive | `gpt-6-astra` xhigh | see session header (recorded at completion) | `work/w3-sdk12-google-drive` | | |
+| W3 maintainer SDK12 Google Drive | `gpt-6-astra` xhigh | `gpt-6-astra`, `xhigh`, workspace-write + `work/target-b`, network (session `01a1af2b-3b13…`) | `work/w3-sdk12-google-drive` | | |
