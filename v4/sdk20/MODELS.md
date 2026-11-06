@@ -95,4 +95,5 @@ commit; the coordinator commits their files and records it.
 | W5 author SDK18 Notion | `gpt-6.1-sol` xhigh | `gpt-6.1-sol`, `xhigh`, workspace-write + `work/target-b`, network (session `01a1afdc-52e6-72a3…`) | `work/w5-sdk18-notion` | | held-out |
 | W5 author SDK19 Microsoft Graph | `gpt-6-astra` xhigh | `gpt-6-astra`, `xhigh`, workspace-write + `work/target-a`, network (session `01a1afdc-52e8-7982…`) | `work/w5-sdk19-microsoft-graph` | | held-out |
 | W5 author SDK20 Distribution Registry | Opus subagent | running (transcript read at completion) | `work/w5-sdk20-distribution-registry` | | held-out |
-| W5 consumer SDK17 World Bank | `gpt-6-astra` xhigh | `gpt-6-astra`, `xhigh`, workspace-write + `work/target-a`, network (session `01a1afde-8cda…`) | same | | held-out |
+| W5 consumer SDK17 World Bank | `gpt-6-astra` xhigh | `gpt-6-astra`, `xhigh`, workspace-write + `work/target-a`, network (session `01a1afde-8cda…`) | same | `3bb3d67c` (25 first-use tests, first compile, no intervention), coordinator commit | held-out |
+| W5 maintainer SDK17 World Bank | Opus subagent | running (transcript read at completion) | same | | held-out |
