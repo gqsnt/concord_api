@@ -488,8 +488,9 @@ the SDK documents (`CsvReader::open`, `JsonLinesReader::open`, `JsonValuesReader
 **Server-sent events** (`concord::sse`, feature `sse`). An endpoint declared
 `-> stream sse::Event` with `response Sse;` returns `SseEvents`: each `next()` is one dispatched
 event with its type (`event()`, `message` by default), its `data()` as text — the SDK or you
-decode it — and the last event ID (`id()`). `last_event_id()` is the ID as of the last event
-delivered (an event cut off or refused by a limit does not count), the value to resume from;
+decode it — and the last event ID (`id()`). `last_event_id()` is the ID as of the last completed
+block — an event delivered, or an `id` line with no data — (an event cut off or refused by a limit
+does not count), the value to resume from;
 `retry()` is the server's reconnection hint. The reader never reconnects. Where a browser repairs
 silently, it fails: invalid UTF-8, a body that ends inside an event and an event over 1 MiB are
 terminal errors, so only `completion() == EndOfInput` proves the stream ended at an event
