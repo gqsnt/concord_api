@@ -184,12 +184,13 @@ pub type Client = PokeApi;
 /// Errors: [`Error::Concord`] with the original Concord error; `meta` is present once the
 /// response head arrived (status, metadata and decode errors), absent for build and transport
 /// errors.
+#[derive(Default)]
 pub struct KeepHead;
 
 impl<T: Send> SendWith<T> for KeepHead {
     type Output = Result<Response<T>, Error>;
 
-    async fn send<E: Endpoint<T> + Send>(endpoint: E) -> Self::Output {
+    async fn send<E: Endpoint<T> + Send>(&self, endpoint: E) -> Self::Output {
         finish(endpoint.prepare()?.receive().await?).await
     }
 }

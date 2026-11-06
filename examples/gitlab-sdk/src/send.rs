@@ -25,12 +25,13 @@ use crate::meta::{Response, ResponseMeta};
 /// println!("{} (request {:?})", issue.value.title, issue.meta.request_id());
 /// # Ok(()) }
 /// ```
+#[derive(Default)]
 pub struct SendPolicy;
 
 impl<T: Send + 'static> SendWith<T> for SendPolicy {
     type Output = Result<Response<T>, GitLabError>;
 
-    async fn send<E: Endpoint<T> + Send>(endpoint: E) -> Self::Output {
+    async fn send<E: Endpoint<T> + Send>(&self, endpoint: E) -> Self::Output {
         let received = endpoint.prepare()?.receive().await?;
         finish(received).await
     }

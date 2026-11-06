@@ -70,12 +70,13 @@ pub struct RateResponse {
 /// document; build, transport, success media-type and success decode failures are
 /// [`Error::Concord`]. No retries or partial rate are returned. Build and pre-head transport
 /// errors have no metadata.
+#[derive(Default)]
 pub struct SendPolicy;
 
 impl SendWith<Rate> for SendPolicy {
     type Output = Result<RateResponse, Error>;
 
-    async fn send<E: Endpoint<Rate> + Send>(endpoint: E) -> Self::Output {
+    async fn send<E: Endpoint<Rate> + Send>(&self, endpoint: E) -> Self::Output {
         let received = endpoint.prepare()?.receive().await?;
         let meta = ResponseMeta::capture(&received.head(), received.operation());
         if !received.status().is_success() {

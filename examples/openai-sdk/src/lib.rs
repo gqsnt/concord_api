@@ -308,12 +308,13 @@ async fn checked<T>(r: Received<T>) -> Result<(Received<T>, ResponseMeta), Error
 }
 /// The send policy of [`OpenAiApi`] (`send SendPolicy;`): every generated `send()` returns
 /// `Result<Response<T>, Error>`, with OpenAI's error document on a non-2xx status.
+#[derive(Default)]
 pub struct SendPolicy;
 
 impl<T: Send> SendWith<T> for SendPolicy {
     type Output = Result<Response<T>, Error>;
 
-    async fn send<E: Endpoint<T> + Send>(endpoint: E) -> Self::Output {
+    async fn send<E: Endpoint<T> + Send>(&self, endpoint: E) -> Self::Output {
         let (r, meta) = checked(endpoint.prepare()?.receive().await?).await?;
         let value = r.decode().await.map_err(|error| Error::Decode {
             meta: Box::new(meta.clone()),

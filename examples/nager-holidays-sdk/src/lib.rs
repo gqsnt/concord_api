@@ -56,12 +56,13 @@ pub struct HolidayResponse {
 ///
 /// Errors: [`ErrorKind::InvalidRequest`] for HTTP 400, [`ErrorKind::Http`] for another non-2xx
 /// status, or [`ErrorKind::Concord`] for build, transport, media-type or decode failures.
+#[derive(Default)]
 pub struct KeepHead;
 
 impl SendWith<Vec<Holiday>> for KeepHead {
     type Output = Result<HolidayResponse, Error>;
 
-    async fn send<E: Endpoint<Vec<Holiday>> + Send>(endpoint: E) -> Self::Output {
+    async fn send<E: Endpoint<Vec<Holiday>> + Send>(&self, endpoint: E) -> Self::Output {
         let received = endpoint.prepare()?.receive().await?;
         let meta = ResponseMeta::capture(&received.head());
         match received.decode().await {
