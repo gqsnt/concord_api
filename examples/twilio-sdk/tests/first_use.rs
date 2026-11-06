@@ -875,13 +875,16 @@ async fn b_a_sid_is_always_one_path_segment() {
         ("..", ".."),
         // A percent sign is data, not a pre-encoded escape.
         ("%2F", "%252F"),
-        // Not validated locally (documented): an empty SID is sent as `Messages/.json`.
-        ("", ""),
     ];
     for (sid, _) in cases {
         let error = client.get_message(sid).await.expect_err(sid);
         assert_eq!(provider_parts(&error).0, 404, "{sid}");
     }
+    // Post-wave-1 integration (coordinator): this row used to observe the documented behaviour
+    // "an empty SID is sent as `Messages/.json`" (a 404 from the fake). The SDK now refuses an
+    // empty SID before sending, as this suite's FIRST_USE.md friction 4 suggested.
+    let empty = client.get_message("").await.expect_err("empty SID");
+    assert!(matches!(empty, Error::EmptySid { .. }), "{empty:?}");
     let requests = server.requests();
     assert_eq!(requests.len(), cases.len());
     for (wire, (_, encoded)) in requests.iter().zip(cases) {

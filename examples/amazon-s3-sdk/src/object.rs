@@ -192,6 +192,7 @@ impl Incremental<Bytes> for Download {
                 response: Some(response),
                 operation,
                 received: 0,
+                failure: None,
             },
             head,
         }
@@ -221,18 +222,37 @@ impl GetObjectOutput {
     }
 }
 
+/// How far an [`ObjectBody`] got, like the `completion()` of Concord's incremental readers.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum BodyCompletion {
+    /// The end has not been read yet: more bytes may follow.
+    Reading,
+    /// The body ended cleanly after exactly `Content-Length` bytes (or, without a
+    /// `Content-Length`, at the clean end of a chunked body): the only state that proves every
+    /// byte was received.
+    EndOfInput,
+    /// A [`BodyError`] of this kind ended the transfer: not the end of the object. Later
+    /// [`ObjectBody::chunk`] calls read nothing and return `Ok(None)`.
+    Failed(BodyErrorKind),
+}
+
 /// An object body being received.
 ///
-/// [`chunk`](Self::chunk) returns the bytes as they arrive; `Ok(None)` is returned **only** after
-/// exactly `Content-Length` bytes were read (a shorter body is [`BodyErrorKind::Truncated`]).
-/// Dropping the value (or the future reading it) stops the transfer and closes the connection;
-/// nothing keeps reading in the background.
+/// [`chunk`](Self::chunk) returns the bytes as they arrive and `Ok(None)` once nothing more will
+/// be read: at the verified end (exactly `Content-Length` bytes; a shorter body is
+/// [`BodyErrorKind::Truncated`]), **and also on every call after an error**. The first error is
+/// the one to keep; [`completion`](Self::completion) is
+/// [`EndOfInput`](BodyCompletion::EndOfInput) only at the verified end, so a loop that went on
+/// after an error can still tell the two apart. Dropping the value (or the future reading it)
+/// stops the transfer and closes the connection; nothing keeps reading in the background.
 pub struct ObjectBody {
     response: Option<reqwest::Response>,
     operation: Option<Operation>,
     expected: Option<u64>,
     received: u64,
     meta: ResponseMeta,
+    failure: Option<BodyErrorKind>,
 }
 
 impl ObjectBody {
@@ -242,6 +262,7 @@ impl ObjectBody {
 
     fn fail(&mut self, kind: BodyErrorKind, transport: Option<concord::Error>) -> S3Error {
         self.response = None;
+        self.failure = Some(kind);
         S3Error::Body(Box::new(BodyError::new(
             self.operation_name(),
             kind,
@@ -252,12 +273,14 @@ impl ObjectBody {
         )))
     }
 
-    /// The next chunk, `Ok(None)` at the verified end.
+    /// The next chunk; `Ok(None)` at the verified end, or after an earlier error (see
+    /// [`completion`](Self::completion)).
     ///
     /// # Errors
     ///
     /// [`S3Error::Body`] ([`BodyErrorKind::Transport`] or [`BodyErrorKind::Truncated`]); every
-    /// later call returns `Ok(None)`.
+    /// later call returns `Ok(None)` and [`completion`](Self::completion) stays
+    /// [`Failed`](BodyCompletion::Failed).
     pub async fn chunk(&mut self) -> Result<Option<Bytes>, S3Error> {
         let Some(response) = self.response.as_mut() else {
             return Ok(None);
@@ -315,9 +338,19 @@ impl ObjectBody {
         self.expected
     }
 
-    /// Whether the verified end was reached or the transfer stopped.
+    /// Whether nothing more will be read: the verified end was reached **or** an error stopped
+    /// the transfer. [`completion`](Self::completion) says which.
     pub fn is_finished(&self) -> bool {
         self.response.is_none()
+    }
+
+    /// Whether the body ended cleanly, failed, or may still yield bytes.
+    pub fn completion(&self) -> BodyCompletion {
+        match (&self.response, self.failure) {
+            (Some(_), _) => BodyCompletion::Reading,
+            (None, Some(kind)) => BodyCompletion::Failed(kind),
+            (None, None) => BodyCompletion::EndOfInput,
+        }
     }
 }
 
@@ -328,6 +361,7 @@ impl std::fmt::Debug for ObjectBody {
             .field("received", &self.received)
             .field("expected", &self.expected)
             .field("finished", &self.is_finished())
+            .field("completion", &self.completion())
             .finish()
     }
 }

@@ -1,7 +1,7 @@
 //! Offline HTTP contract tests.
 use concord::reqwest;
 use concord_example_testserver::{Recorded, Reply, TestServer};
-use concord_sdk_pokeapi::{Client, Error};
+use concord_sdk_pokeapi::{Call, Client, Error, UrlRejection};
 
 fn client(server: &TestServer) -> Client {
     Client::new(reqwest::Client::builder().no_proxy().build().unwrap())
@@ -28,14 +28,14 @@ async fn detail_and_list_wire_contract() {
     })
     .await;
     let api = client(&server);
-    let pokemon = api.pokemon("35").await.unwrap();
+    let pokemon = api.pokemon("35").call().await.unwrap();
     assert_eq!(pokemon.value.name, "clefairy");
     assert_eq!(
         pokemon.value.extra["abilities"][0]["ability"]["name"],
         "friend-guard"
     );
     assert_eq!(pokemon.meta.status, 200);
-    let page = api.list(Some(5), Some(2)).await.unwrap();
+    let page = api.list().set_limit(5).set_offset(2).call().await.unwrap();
     assert!(page.value.results.is_empty());
     assert!(page.value.next.is_none());
     let requests = server.requests();
@@ -63,7 +63,7 @@ async fn status_error_keeps_head_and_unread_body() {
             .body(include_str!("../fixtures/not-found.txt"))
     })
     .await;
-    let err = client(&server).pokemon("missing").await.unwrap_err();
+    let err = client(&server).pokemon("missing").call().await.unwrap_err();
     match err {
         Error::Concord {
             error,
@@ -97,8 +97,8 @@ async fn malformed_json_and_wrong_content_type_retain_head() {
     .await;
     let api = client(&server);
     for err in [
-        api.list(None, None).await.unwrap_err(),
-        api.list(Some(1), None).await.unwrap_err(),
+        api.list().call().await.unwrap_err(),
+        api.list().set_limit(1).call().await.unwrap_err(),
     ] {
         match err {
             Error::Concord {
@@ -115,24 +115,50 @@ async fn links_must_be_absolute_same_origin_and_in_scope() {
     let server = TestServer::start(|_: &Recorded| json(200, "{}")).await;
     let api = client(&server);
     let base = format!("http://{}", server.addr());
-    for bad in [
-        "/api/v2/pokemon/?offset=1".to_string(),
-        "http://example.invalid/api/v2/pokemon/".to_string(),
-        format!("{base}/api/v2/ability/"),
-        format!("{base}/api/v2/pokemon/?offset=1#frag"),
+    for (bad, reason) in [
+        (
+            "/api/v2/pokemon/?offset=1".to_string(),
+            UrlRejection::Unparseable,
+        ),
+        (
+            "http://example.invalid/api/v2/pokemon/".to_string(),
+            UrlRejection::ForeignOrigin,
+        ),
+        (format!("{base}/api/v2/ability/"), UrlRejection::WrongPath),
+        (
+            format!("{base}/api/v2/pokemon/?offset=1#frag"),
+            UrlRejection::Fragment,
+        ),
+        (
+            format!("http://user:secret@{}/api/v2/pokemon/", server.addr()),
+            UrlRejection::Userinfo,
+        ),
     ] {
+        let error = api.follow(&bad).await.unwrap_err();
         assert!(
-            matches!(api.follow(&bad).await, Err(Error::InvalidUrl)),
+            matches!(error, Error::InvalidUrl(r) if r == reason),
             "{bad}"
         );
+        for shown in [error.to_string(), format!("{error:?}")] {
+            assert!(
+                !shown.contains("/api/v2/") && !shown.contains("secret"),
+                "{shown}"
+            );
+        }
     }
-    for bad in [
-        format!("{base}/api/v2/pokemon/"),
-        format!("{base}/api/v2/pokemon/35/encounters"),
-        format!("{base}/api/v2/pokemon/35/?x=1"),
+    for (bad, reason) in [
+        (format!("{base}/api/v2/pokemon/"), UrlRejection::WrongPath),
+        (
+            format!("{base}/api/v2/pokemon/35/encounters"),
+            UrlRejection::WrongPath,
+        ),
+        (
+            format!("{base}/api/v2/pokemon/35/?x=1"),
+            UrlRejection::Query,
+        ),
     ] {
         assert!(
-            matches!(api.pokemon_url(&bad).await, Err(Error::InvalidUrl)),
+            matches!(api.pokemon_url(&bad).await, Err(Error::InvalidUrl(r)) if r == reason),
             "{bad}"
         );
     }
@@ -141,65 +167,11 @@ async fn links_must_be_absolute_same_origin_and_in_scope() {
 }
 
 #[tokio::test]
-async fn follow_with_limit_rewrites_only_the_limit_pair() {
-    let server = TestServer::start(|r: &Recorded| {
-        json(
-            200,
-            include_str!("../fixtures/page-empty.json").replace("HOST", &r.host),
-        )
-    })
-    .await;
-    let api = client(&server);
-    let base = format!("http://{}/api/v2/pokemon/", server.addr());
-    let cases = [
-        ("?offset=20&limit=20", "?offset=20&limit=5"),
-        ("?offset=20", "?offset=20&limit=5"),
-        ("", "?limit=5"),
-        ("?limit=1&offset=3&limit=9", "?limit=5&offset=3"),
-        ("?offset=1&x=a%20b&&limit=1", "?offset=1&x=a%20b&limit=5"),
-    ];
-    for (next, _) in cases {
-        let page = api
-            .follow_with_limit(&format!("{base}{next}"), 5)
-            .await
-            .unwrap();
-        assert!(page.value.next.is_none());
-    }
-    for bad in [
-        "http://example.invalid/api/v2/pokemon/?offset=1&limit=1".to_string(),
-        format!("{base}?offset=1&limit=1#frag"),
-        format!("http://{}/api/v2/ability/?offset=1&limit=1", server.addr()),
-    ] {
-        assert!(
-            matches!(api.follow_with_limit(&bad, 5).await, Err(Error::InvalidUrl)),
-            "{bad}"
-        );
-    }
-    let requests = server.requests();
-    assert_eq!(
-        requests
-            .iter()
-            .map(|r| r.target.as_str())
-            .collect::<Vec<_>>(),
-        cases
-            .iter()
-            .map(|(_, sent)| format!("/api/v2/pokemon/{sent}"))
-            .collect::<Vec<_>>()
-    );
-    for req in requests {
-        assert_eq!(req.method, "GET");
-        assert_eq!(req.body_len, 0);
-        assert_eq!(req.header("accept"), Some("application/json"));
-    }
-    server.shutdown().await;
-}
-
-#[tokio::test]
 async fn missing_next_is_not_mistaken_for_end() {
     let server =
         TestServer::start(|_: &Recorded| json(200, r#"{"count":0,"previous":null,"results":[]}"#))
             .await;
-    let error = client(&server).list(None, None).await.unwrap_err();
+    let error = client(&server).list().call().await.unwrap_err();
     assert!(matches!(error, Error::Concord { meta: Some(_), .. }));
     server.shutdown().await;
 }
@@ -214,7 +186,7 @@ async fn failed_body_keeps_head_and_transport_failure_has_no_head() {
     })
     .await;
     let api = client(&server);
-    let error = api.list(None, None).await.unwrap_err();
+    let error = api.list().call().await.unwrap_err();
     assert!(matches!(error, Error::Concord { meta: Some(_), .. }));
     let addr = server.addr();
     server.shutdown().await;
@@ -222,7 +194,7 @@ async fn failed_body_keeps_head_and_transport_failure_has_no_head() {
         .with_base_url(format!("http://{addr}/api/v2"))
         .unwrap();
     assert!(matches!(
-        offline.list(None, None).await.unwrap_err(),
+        offline.list().call().await.unwrap_err(),
         Error::Concord { meta: None, .. }
     ));
 }

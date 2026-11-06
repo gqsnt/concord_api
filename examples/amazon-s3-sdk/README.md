@@ -166,9 +166,12 @@ signatures, URLs, header values or S3's free-text `Message`/`Resource` (read tho
   `list_objects_v2().continuation_token(token).pages()` on the same request. A listing is not a
   snapshot: objects written meanwhile may or may not appear.
 - **Object bodies.** `GetObject::send()` returns once the head is checked; the body is read by
-  `ObjectBody::chunk()` (returns `Ok(None)` only after exactly `Content-Length` bytes) or
-  `collect(limit)` (refuses before reading when `Content-Length` exceeds the limit). A failure
-  reports the bytes received; a partial body is never returned as complete.
+  `ObjectBody::chunk()` or `collect(limit)` (refuses before reading when `Content-Length`
+  exceeds the limit). `chunk()` returns `Ok(None)` after exactly `Content-Length` bytes, and
+  also on every call after an error: keep the first error. `ObjectBody::completion()` is
+  `BodyCompletion::EndOfInput` only at the verified end (`Failed(kind)` after an error,
+  `Reading` before the end), as the Concord readers' `completion()`. A failure reports the bytes
+  received; a partial body is never returned as complete.
 - **Ranges.** One range per request (S3 serves no multi-range `GET`). A `206` must carry one
   valid `Content-Range` that answers the requested range (S3 may shorten a range at the object's
   end); a `200` to a ranged request means the whole object was sent (`head.is_partial()` false).

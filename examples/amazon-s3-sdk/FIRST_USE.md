@@ -111,3 +111,13 @@ CARGO_BUILD_JOBS=5 CARGO_TARGET_DIR=/home/canarit/projects/Concord_Consolidation
 
 Result: **13 passed, 0 failed**. The SDK root's existing `fixtures/** -text` attribute is kept.
 This is offline loopback fixture evidence, not verification against AWS.
+
+## Post-wave-1 integration (coordinator)
+
+Disposition of "Stopped body and verified completion look alike after an error": the SDK added
+`ObjectBody::completion() -> BodyCompletion` (`Reading`, `EndOfInput` only at the verified end,
+`Failed(kind)` after an error), like the Concord readers' `completion()`. Later `chunk()` calls
+still return `Ok(None)` after an error, so this suite's
+`a_interrupted_body_requires_caller_to_remember_failure` is unchanged and still passes. The
+bodyless-HEAD harness limitation was answered in the test server (`Body::HeadOnly`), which the
+author's test support now uses; this suite's `no_body_response` is unchanged.

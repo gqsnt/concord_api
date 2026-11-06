@@ -2,9 +2,8 @@
 
 use std::fmt;
 
-use concord::bytes::BytesMut;
-use concord::reqwest::{self, StatusCode, Version, header::HeaderMap};
-use concord::{Decode, Json, Operation, Prepared, Received, ResponseHead};
+use concord::reqwest::{StatusCode, Version, header::HeaderMap};
+use concord::{Decode, ErrorKind, Json, Operation, Prepared, Received};
 use serde::Deserialize;
 
 /// Maximum retained bytes of a non-success response body (64 KiB).
@@ -61,11 +60,14 @@ pub struct Response<T> {
     pub meta: ResponseMeta,
 }
 
-impl<T> fmt::Debug for Response<T> {
+/// Shows the value through its own `Debug` (for [`crate::Message`]: SID, status and error code,
+/// without addresses, text or explanations) and the metadata.
+impl<T: fmt::Debug> fmt::Debug for Response<T> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("Response")
+            .field("value", &self.value)
             .field("meta", &self.meta)
-            .finish_non_exhaustive()
+            .finish()
     }
 }
 
@@ -105,10 +107,14 @@ pub enum ErrorDocumentProblem {
     Decode,
 }
 
-/// A request failure. An HTTP 200 message with `status: failed` is instead successful data.
+/// The SDK's error for building or sending an operation (every [`crate::Twilio`] operation
+/// method returns it). An HTTP 200 message with `status: failed` is instead successful data.
+///
+/// Only [`crate::Twilio::with_base_url`] returns Concord's own `concord::Error` (a `Build`
+/// error for an unusable base URL); `?` converts it into [`TwilioError::Concord`].
 #[derive(Debug)]
 #[non_exhaustive]
-pub enum Error {
+pub enum TwilioError {
     /// A non-2xx response, with a provider exception or the reason it could not be decoded.
     Provider {
         /// Metadata retained even for malformed, oversized or truncated error documents.
@@ -123,14 +129,26 @@ pub enum Error {
         /// Present once the response head arrived, including failures while reading its body.
         meta: Option<Box<ResponseMeta>>,
     },
+    /// An empty message SID: refused before building the request, which would address
+    /// `Messages/.json`. Nothing was sent.
+    EmptySid {
+        /// The operation that was refused (`TwilioApi.get_message`).
+        operation: Operation,
+    },
 }
 
-impl Error {
+/// The former name of [`TwilioError`], kept so existing code compiles; hidden from the docs so
+/// that no signature reads as an ambiguous `Error`.
+#[doc(hidden)]
+pub type Error = TwilioError;
+
+impl TwilioError {
     /// Response metadata, or `None` if the request failed before receiving a head.
     pub fn meta(&self) -> Option<&ResponseMeta> {
         match self {
             Self::Provider { meta, .. } => Some(meta),
             Self::Concord { meta, .. } => meta.as_deref(),
+            Self::EmptySid { .. } => None,
         }
     }
 
@@ -155,19 +173,22 @@ impl Error {
 
     /// Operation identity, available even on a transport error without response metadata.
     pub fn operation(&self) -> Option<Operation> {
+        if let Self::EmptySid { operation } = self {
+            return Some(*operation);
+        }
         self.meta()
             .and_then(|meta| meta.operation)
             .or_else(|| self.concord().and_then(concord::Error::operation))
     }
 }
 
-impl From<concord::Error> for Error {
+impl From<concord::Error> for TwilioError {
     fn from(error: concord::Error) -> Self {
         Self::Concord { error, meta: None }
     }
 }
 
-impl fmt::Display for Error {
+impl fmt::Display for TwilioError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Concord { error, .. } => fmt::Display::fmt(error, f),
@@ -186,48 +207,45 @@ impl fmt::Display for Error {
                     Err(problem) => write!(f, " (error document: {problem:?})"),
                 }
             }
+            Self::EmptySid { operation } => {
+                write!(f, "{operation}: empty message SID (nothing sent)")
+            }
         }
     }
 }
 
-impl std::error::Error for Error {}
+impl std::error::Error for TwilioError {}
 
-pub(crate) async fn send<T>(prepared: Prepared<T>) -> Result<Response<T>, Error> {
+pub(crate) async fn send<T>(prepared: Prepared<T>) -> Result<Response<T>, TwilioError> {
     let received = prepared.receive().await?;
     let meta = ResponseMeta::capture(&received);
     if !meta.status.is_success() {
-        return Err(Error::Provider {
+        return Err(TwilioError::Provider {
             meta: Box::new(meta),
-            document: read_error(received.into_response()).await,
+            document: read_error(received).await,
         });
     }
     match received.decode().await {
         Ok(value) => Ok(Response { value, meta }),
-        Err(error) => Err(Error::Concord {
+        Err(error) => Err(TwilioError::Concord {
             error,
             meta: Some(Box::new(meta)),
         }),
     }
 }
 
-async fn read_error(
-    mut response: reqwest::Response,
-) -> Result<ProviderError, ErrorDocumentProblem> {
-    let head = ResponseHead::of(&response);
+async fn read_error<T>(received: Received<T>) -> Result<ProviderError, ErrorDocumentProblem> {
+    let head = received.head();
     <Json as Decode<ProviderError>>::check_content_type(&head)
         .map_err(|_| ErrorDocumentProblem::ContentType)?;
     <Json as Decode<ProviderError>>::context(&head).map_err(|_| ErrorDocumentProblem::Decode)?;
-    let mut bytes = BytesMut::new();
-    while let Some(chunk) = response
-        .chunk()
+    let bytes = received
+        .bytes_limited(MAX_ERROR_BODY)
         .await
-        .map_err(|_| ErrorDocumentProblem::Read)?
-    {
-        if chunk.len() > MAX_ERROR_BODY - bytes.len() {
-            return Err(ErrorDocumentProblem::TooLarge);
-        }
-        bytes.extend_from_slice(&chunk);
-    }
-    <Json as Decode<ProviderError>>::decode_body((), bytes.freeze())
+        .map_err(|error| match error.kind() {
+            ErrorKind::Limit => ErrorDocumentProblem::TooLarge,
+            _ => ErrorDocumentProblem::Read,
+        })?;
+    <Json as Decode<ProviderError>>::decode_body((), bytes)
         .map_err(|_| ErrorDocumentProblem::Decode)
 }

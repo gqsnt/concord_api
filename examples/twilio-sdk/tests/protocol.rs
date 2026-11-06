@@ -7,6 +7,7 @@ use concord::bytes::Bytes;
 use concord_example_testserver::{Body, Reply, TestServer};
 use concord_sdk_twilio::{
     AuthError, BasicAuth, Error, ErrorDocumentProblem, MAX_ERROR_BODY, MessageStatus, Twilio,
+    TwilioError,
 };
 use support::*;
 
@@ -290,6 +291,60 @@ async fn bad_request_is_typed_and_preserves_metadata_without_echoing_input() {
         assert!(!diagnostic.contains("fixture-private-header"));
         assert!(!diagnostic.contains("fixture-password"));
         assert!(diagnostic.contains("21201"));
+    }
+    server.shutdown().await;
+}
+
+#[tokio::test]
+async fn an_empty_sid_is_refused_before_sending() {
+    let (server, script, client) = scripted([Reply::json(200, DELIVERED)]).await;
+    for error in [
+        client.get_message("").await.unwrap_err(),
+        client.prepare_get_message(String::new()).unwrap_err(),
+    ] {
+        assert!(matches!(error, TwilioError::EmptySid { .. }), "{error:?}");
+        assert_eq!(error.operation().unwrap().name(), "TwilioApi.get_message");
+        assert!(error.meta().is_none());
+        assert_eq!(
+            error.to_string(),
+            "GET TwilioApi.get_message: empty message SID (nothing sent)"
+        );
+    }
+    assert!(server.requests().is_empty());
+    // A one-character SID is still sent: only emptiness is checked locally.
+    client.get_message("x").await.unwrap();
+    assert_eq!(
+        server.single().target,
+        "/2010-04-01/Accounts/AC_fixture_account/Messages/x.json"
+    );
+    assert_eq!(script.remaining(), 0);
+    server.shutdown().await;
+}
+
+#[tokio::test]
+async fn message_debug_shows_identity_and_outcome_but_not_contents() {
+    let (server, _, client) = scripted([Reply::json(200, UNDELIVERED)]).await;
+    let fetched = client.get_message(SID).await.unwrap();
+    let message = format!("{:?}", fetched.value);
+    assert_eq!(
+        message,
+        "Message { sid: \"SM_fixture_message\", status: Undelivered, error_code: Some(30007), .. }"
+    );
+    let response = format!("{fetched:?}");
+    assert!(response.starts_with(&format!("Response {{ value: {message}, meta: ")));
+    let prepared = format!("{:?}", client.prepare_get_message(SID).unwrap());
+    assert!(prepared.contains("SM_fixture_message"), "{prepared}");
+    for shown in [message, response, prepared] {
+        for private in [
+            ACCOUNT,
+            "+15005550001",
+            "+15005550006",
+            "Hello café",
+            "Synthetic carrier filtering failure",
+            "fixture-password",
+        ] {
+            assert!(!shown.contains(private), "{private} in {shown}");
+        }
     }
     server.shutdown().await;
 }

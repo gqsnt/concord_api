@@ -17,7 +17,7 @@ use std::net::SocketAddr;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
-use concord_example_testserver::{Recorded, Reply};
+use concord_example_testserver::{Body, Recorded, Reply};
 use concord_sdk_amazon_s3::{Clock, Credentials, Region, S3Client, http_client_builder};
 use hmac::{Hmac, KeyInit, Mac};
 use sha2::{Digest, Sha256};
@@ -679,15 +679,10 @@ fn object_reply(recorded: &Recorded, object: &StoredObject, head: bool) -> Reply
     }
 }
 
-/// A `HEAD` answer whose `Content-Length` is the length a `GET` would send.
-///
-/// The loopback test server always derives `content-length` from the body it writes, and has no
-/// way to declare a length without sending the bytes. So the bytes are written and the reply says
-/// `connection: close`: the client does not read a body after `HEAD` and does not reuse the
-/// connection, so the unread bytes are discarded with it. (A limitation of the test support, not
-/// of the SDK.)
+/// A `HEAD` answer whose `Content-Length` is the length a `GET` would send (`body`'s length),
+/// with no body bytes on the wire ([`Body::HeadOnly`]), so the connection stays reusable.
 pub fn head_reply(reply: Reply, body: &[u8]) -> Reply {
-    reply.header("connection", "close").body(body)
+    reply.with_body(Body::HeadOnly(body.len() as u64))
 }
 
 fn precondition_failed(head: bool) -> Reply {

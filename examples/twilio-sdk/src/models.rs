@@ -132,7 +132,7 @@ impl From<String> for MessageStatus {
 /// `error_message`. That is distinct from an HTTP error rejecting the fetch itself.
 #[derive(Clone, PartialEq, Eq, Deserialize)]
 pub struct Message {
-    /// Resource SID to pass to [`crate::Twilio::get_message`].
+    /// Resource SID to pass to [`crate::Twilio::get_message`]. An identifier, shown by `Debug`.
     pub sid: String,
     /// Account owning the message.
     pub account_sid: String,
@@ -150,9 +150,15 @@ pub struct Message {
     pub error_message: Option<String>,
 }
 
+/// Shows `sid`, `status` and `error_code`: the message SID is a resource identifier (what a
+/// workflow correlates on and what Twilio support asks for), not a credential. Withholds the
+/// account SID (the Basic username in account-SID/auth-token authentication), `from`, `to`,
+/// `body` and `error_message` (which can quote submitted data).
 impl fmt::Debug for Message {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("Message")
+            .field("sid", &self.sid)
+            .field("status", &self.status)
             .field("error_code", &self.error_code)
             .finish_non_exhaustive()
     }

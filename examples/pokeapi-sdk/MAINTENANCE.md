@@ -147,3 +147,15 @@ All with `CARGO_BUILD_JOBS=5 CARGO_TARGET_DIR=/home/canarit/projects/Concord_Con
 - Mutation check (temporary, reverted): with the `replace_pair` call removed,
   `follow_with_limit_rewrites_only_the_limit_pair` failed, so the test detects a
   `follow_with_limit` that does not change `limit`.
+
+## Post-wave-1 integration (coordinator)
+
+The public `Client::follow_with_limit` added by this trial was reverted after the wave, in one
+commit with its two tests (`follow_with_limit_rewrites_only_the_limit_pair`,
+`caller_changes_limit_while_following_the_server_next_url`), its README paragraphs and its
+PROVENANCE sentence. Reason: it rewrites the `limit` inside a URL the server returned, which
+conflicts with the cohort rule to follow server links as returned. The ticket's ordinary case
+(change the first request's `limit`, then follow the server's `next` unchanged) is already
+covered by the author's `tests/workflows.rs::change_limit_follow_next_and_fetch_detail`. The
+record above stays as the evidence of the trial; its line references describe the trial's
+state, not the current one.
