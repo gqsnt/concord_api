@@ -141,60 +141,6 @@ async fn links_must_be_absolute_same_origin_and_in_scope() {
 }
 
 #[tokio::test]
-async fn follow_with_limit_rewrites_only_the_limit_pair() {
-    let server = TestServer::start(|r: &Recorded| {
-        json(
-            200,
-            include_str!("../fixtures/page-empty.json").replace("HOST", &r.host),
-        )
-    })
-    .await;
-    let api = client(&server);
-    let base = format!("http://{}/api/v2/pokemon/", server.addr());
-    let cases = [
-        ("?offset=20&limit=20", "?offset=20&limit=5"),
-        ("?offset=20", "?offset=20&limit=5"),
-        ("", "?limit=5"),
-        ("?limit=1&offset=3&limit=9", "?limit=5&offset=3"),
-        ("?offset=1&x=a%20b&&limit=1", "?offset=1&x=a%20b&limit=5"),
-    ];
-    for (next, _) in cases {
-        let page = api
-            .follow_with_limit(&format!("{base}{next}"), 5)
-            .await
-            .unwrap();
-        assert!(page.value.next.is_none());
-    }
-    for bad in [
-        "http://example.invalid/api/v2/pokemon/?offset=1&limit=1".to_string(),
-        format!("{base}?offset=1&limit=1#frag"),
-        format!("http://{}/api/v2/ability/?offset=1&limit=1", server.addr()),
-    ] {
-        assert!(
-            matches!(api.follow_with_limit(&bad, 5).await, Err(Error::InvalidUrl)),
-            "{bad}"
-        );
-    }
-    let requests = server.requests();
-    assert_eq!(
-        requests
-            .iter()
-            .map(|r| r.target.as_str())
-            .collect::<Vec<_>>(),
-        cases
-            .iter()
-            .map(|(_, sent)| format!("/api/v2/pokemon/{sent}"))
-            .collect::<Vec<_>>()
-    );
-    for req in requests {
-        assert_eq!(req.method, "GET");
-        assert_eq!(req.body_len, 0);
-        assert_eq!(req.header("accept"), Some("application/json"));
-    }
-    server.shutdown().await;
-}
-
-#[tokio::test]
 async fn missing_next_is_not_mistaken_for_end() {
     let server =
         TestServer::start(|_: &Recorded| json(200, r#"{"count":0,"previous":null,"results":[]}"#))

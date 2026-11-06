@@ -178,24 +178,6 @@ impl Client {
         let url = checked_url(prepared.request().url(), next, false)?;
         send(prepared, Some(url)).await
     }
-    /// Follow a `next` URL with a different page size. The URL's `limit` pair is replaced in
-    /// place (later duplicates are dropped; it is appended when absent); `offset` and every other
-    /// pair keep their bytes and order, so the position stays the one the server returned.
-    ///
-    /// # Errors
-    /// The same as [`Client::follow`].
-    pub async fn follow_with_limit(
-        &self,
-        next: &str,
-        limit: u64,
-    ) -> Result<Response<PokemonPage>, Error> {
-        let prepared = self.api.list().set_limit(limit).prepare()?;
-        let declared = prepared.request().url();
-        let mut url = checked_url(declared, next, false)?;
-        // With only `limit` set, the declared query is exactly the encoded `limit` pair.
-        replace_pair(&mut url, declared.query().unwrap_or_default());
-        send(prepared, Some(url)).await
-    }
     /// Retrieve a Pokémon by a URL supplied in a list result.
     ///
     /// # Errors
@@ -232,33 +214,6 @@ fn checked_url(list: &Url, value: &str, detail: bool) -> Result<Url, Error> {
         return Err(Error::InvalidUrl);
     }
     Ok(url)
-}
-
-/// Puts the encoded `key=value` `pair` at the first query pair with the same key, drops later ones,
-/// or appends it. Other non-empty segments are kept byte for byte, in order.
-fn replace_pair(url: &mut Url, pair: &str) {
-    fn key_of(segment: &str) -> &str {
-        segment.split_once('=').map_or(segment, |(key, _)| key)
-    }
-    let key = key_of(pair);
-    let mut placed = false;
-    let mut segments = Vec::new();
-    for segment in url.query().unwrap_or_default().split('&') {
-        if segment.is_empty() {
-            continue;
-        }
-        if key_of(segment) != key {
-            segments.push(segment);
-        } else if !placed {
-            segments.push(pair);
-            placed = true;
-        }
-    }
-    if !placed {
-        segments.push(pair);
-    }
-    let query = segments.join("&");
-    url.set_query(Some(&query));
 }
 
 async fn send<T>(prepared: Prepared<T>, url: Option<Url>) -> Result<Response<T>, Error> {
