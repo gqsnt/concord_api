@@ -2,18 +2,21 @@
 //! [`ShopContext`] (one shop and its token), which hand out the generated operations and own the
 //! two things a declaration does not carry:
 //!
-//! - [`ShopContext::send`] executes a prepared operation and checks `X-Shopify-API-Version`
-//!   before decoding: Shopify silently serves a retired version with a newer one ("falls
-//!   forward"), and a pinned SDK must not decode another version's answer as its own;
+//! - [`ShopContext::send`] executes a prepared operation once (`Prepared::receive`: any status,
+//!   body unread) and checks `X-Shopify-API-Version` on the response head before the body is
+//!   read: Shopify silently serves a retired version with a newer one ("falls forward"), and a
+//!   pinned SDK must not decode another version's answer as its own; an accepted head then goes
+//!   to the endpoint's own handling (`Received::decode`);
 //! - [`ShopContext::result_download`] builds the native `GET` of a signed bulk-result URL, on
-//!   another host and **without** the access token.
+//!   another host and **without** the access token
+//!   ([`bulk_export::open_result`](crate::bulk_export::open_result) opens its response).
 //!
 //! Like Concord's handles, contexts are immutable snapshots, cheap to clone.
 
 use std::fmt;
 
-use concord::Prepared;
 use concord::reqwest::{self, Method, header};
+use concord::{Prepared, ResponseHead};
 
 use crate::api::{ShopifyAdmin, ShopifyAdminShop};
 use crate::graphql::GraphqlResponse;
@@ -144,47 +147,45 @@ impl ShopContext {
     /// [`RequestError::Concord`] for a build, transport, status, metadata or decode failure
     /// (Concord's own error, with its unread response for a status error);
     /// [`RequestError::VersionMismatch`] / [`RequestError::VersionUnconfirmed`] for a 2xx answer
-    /// served under another version or without the header (the body is not read).
+    /// served under another version or without the header (refused on the head: the body is not
+    /// read, and the response is dropped).
     pub async fn send<D>(
         &self,
         prepared: Result<Prepared<GraphqlResponse<D>>, concord::Error>,
     ) -> Result<GraphqlResponse<D>, RequestError> {
-        let (client, request, decoder) = prepared.map_err(RequestError::Concord)?.into_parts();
-        let response = match client.execute(request).await {
-            Ok(response) => response,
-            // Concord's transport error (URL removed), through the endpoint's own decoder.
-            Err(e) => return decoder.finish(Err(e)).await.map_err(RequestError::Concord),
-        };
-        if response.status().is_success() {
-            let served = response
-                .headers()
-                .get(X_SHOPIFY_API_VERSION)
-                .map(|v| v.to_str().ok().and_then(|v| v.parse::<ApiVersion>().ok()));
-            match served {
-                None => return Err(RequestError::VersionUnconfirmed),
-                Some(None) => {
-                    return Err(RequestError::VersionMismatch {
-                        requested: self.version,
-                        served: None,
-                    });
-                }
-                Some(Some(served)) if served != self.version => {
-                    return Err(RequestError::VersionMismatch {
-                        requested: self.version,
-                        served: Some(served),
-                    });
-                }
-                Some(Some(_)) => {}
-            }
-        }
-        decoder
-            .decode(response)
+        // One execution; any status comes back with its body unread (a transport failure is
+        // Concord's error, URL removed).
+        let received = prepared
+            .map_err(RequestError::Concord)?
+            .receive()
             .await
-            .map_err(RequestError::Concord)
+            .map_err(RequestError::Concord)?;
+        if received.status().is_success() {
+            // A refusal drops the response unread: its connection is closed, not drained.
+            self.check_served_version(&received.head())?;
+        }
+        received.decode().await.map_err(RequestError::Concord)
+    }
+
+    /// Shopify's served-version rule, applied to the head of a 2xx answer before its body is read.
+    fn check_served_version(&self, head: &ResponseHead<'_>) -> Result<(), RequestError> {
+        let served = head
+            .headers()
+            .get(X_SHOPIFY_API_VERSION)
+            .map(|v| v.to_str().ok().and_then(|v| v.parse::<ApiVersion>().ok()));
+        match served {
+            None => Err(RequestError::VersionUnconfirmed),
+            Some(Some(served)) if served == self.version => Ok(()),
+            Some(served) => Err(RequestError::VersionMismatch {
+                requested: self.version,
+                served,
+            }),
+        }
     }
 
     /// The native `GET` of a signed bulk-result URL (`url` or `partialDataUrl`), to execute with
-    /// [`http`](Self::http) and open with [`result_reader`](crate::bulk_export::result_reader).
+    /// [`http`](Self::http) and open with [`open_result`](crate::bulk_export::open_result) and a
+    /// [`result_reader`](crate::bulk_export::result_reader).
     ///
     /// The URL is used verbatim: its query is the signature, so it is neither declared nor
     /// rebuilt. The request carries no Shopify credential (the signature is the authorization;

@@ -3,20 +3,27 @@
 //!
 //! Concord's `send()` returns the decoded value only. GitHub puts information an application
 //! needs in headers (`x-github-request-id` for support requests, `x-ratelimit-*` to pace itself,
-//! `ETag` for conditional refreshes, `Link` for pagination), so this module uses the documented
-//! native boundary (`Prepared::into_parts` → one `execute` → copy the selected headers while the
-//! body is unread → `Decoder::decode`). The endpoint's own decoder still applies the status check,
-//! the `Json` head check and decoding, and a transport failure is converted by
-//! `Decoder::finish(Err(_))`, which removes the URL.
+//! `ETag` for conditional refreshes, `Link` for pagination), so this module sends through
+//! Concord's response boundary: `Prepared::receive` (or `Decoder::execute` for a request edited
+//! natively, [`send_edited`]) executes once and returns the response for any status with its body
+//! unread; the selected headers are copied into a [`ResponseMeta`]; then `Received::decode`
+//! applies the endpoint's own handling (status check, `Json` head check, decoding). A transport
+//! failure is Concord's `Transport` error (URL removed) and carries no metadata: no head arrived.
+//! A failure after the head keeps the metadata ([`GitHubError::Api`] with `meta: Some`).
+//!
+//! The headers are copied from the native response (`Received::into_parts`) rather than from
+//! `Received::head`, because the head carries no URL: relative `Link` targets resolve against the
+//! URL of the response that carried them, which is not the request's after a followed same-origin
+//! redirect (a renamed repository). The response goes back to its decoder unread.
 //!
 //! `Debug` of [`ResponseMeta`] shows the status, the request id, the rate-limit numbers and which
 //! links exist; never a link URL (it carries filters and cursors) or any other header value.
 
 use std::fmt;
 
-use concord::Prepared;
 use concord::reqwest::header::{ETAG, HeaderMap, HeaderName, LAST_MODIFIED, LINK, RETRY_AFTER};
 use concord::reqwest::{self, StatusCode, Url};
+use concord::{Prepared, Received};
 
 use crate::error::GitHubError;
 use crate::link::{self, LinkError, Links};
@@ -66,8 +73,8 @@ pub struct ResponseMeta {
 }
 
 impl ResponseMeta {
-    /// Copies the metadata from a response whose body is unread. `request_url` resolves relative
-    /// `Link` targets (normally the response's own URL).
+    /// Copies the metadata from a response whose body is unread. Relative `Link` targets resolve
+    /// against the response's own URL.
     pub fn capture(response: &reqwest::Response) -> Self {
         Self::from_head(response.status(), response.headers(), response.url())
     }
@@ -222,29 +229,23 @@ pub async fn send_edited<T>(
 ) -> Result<WithMeta<T>, GitHubError> {
     let (client, mut request, decoder) = prepared.into_parts();
     edit(&mut request)?;
-    let response = match client.execute(request).await {
-        Ok(response) => response,
-        Err(e) => {
-            let Err(error) = decoder.finish(Err(e)).await else {
-                unreachable!("`Decoder::finish(Err(_))` is always `Err`")
-            };
-            return Err(GitHubError::api(error, None));
-        }
-    };
-    let meta = ResponseMeta::capture(&response);
-    match decoder.decode(response).await {
-        Ok(value) => Ok(WithMeta { value, meta }),
-        Err(error) => Err(GitHubError::api(error, Some(meta))),
-    }
+    let received = decoder
+        .execute(&client, request)
+        .await
+        .map_err(no_response)?;
+    let (meta, received) = capture(received);
+    decode_with_meta(meta, received).await
 }
 
-/// [`send_edited`] without an edit: the typed value with its metadata.
+/// The typed value with its metadata: [`send_edited`] without an edit.
 ///
 /// # Errors
 ///
 /// See [`send_edited`].
 pub async fn send_with_meta<T>(prepared: Prepared<T>) -> Result<WithMeta<T>, GitHubError> {
-    send_edited(prepared, |_| Ok(())).await
+    let received = prepared.receive().await.map_err(no_response)?;
+    let (meta, received) = capture(received);
+    decode_with_meta(meta, received).await
 }
 
 /// Sends a request that carries `If-None-Match` (set it on the operation, for example
@@ -255,23 +256,37 @@ pub async fn send_with_meta<T>(prepared: Prepared<T>) -> Result<WithMeta<T>, Git
 ///
 /// See [`send_edited`].
 pub async fn send_conditional<T>(prepared: Prepared<T>) -> Result<Conditional<T>, GitHubError> {
-    let (client, request, decoder) = prepared.into_parts();
-    let response = match client.execute(request).await {
-        Ok(response) => response,
-        Err(e) => {
-            let Err(error) = decoder.finish(Err(e)).await else {
-                unreachable!("`Decoder::finish(Err(_))` is always `Err`")
-            };
-            return Err(GitHubError::api(error, None));
-        }
-    };
-    let meta = ResponseMeta::capture(&response);
-    if response.status() == StatusCode::NOT_MODIFIED {
+    let received = prepared.receive().await.map_err(no_response)?;
+    let (meta, received) = capture(received);
+    if received.status() == StatusCode::NOT_MODIFIED {
         // A 304 has no body; dropping it returns the connection to the pool.
         return Ok(Conditional::NotModified { meta });
     }
-    match decoder.decode(response).await {
-        Ok(value) => Ok(Conditional::Modified(WithMeta { value, meta })),
+    decode_with_meta(meta, received)
+        .await
+        .map(Conditional::Modified)
+}
+
+/// No response arrived (a transport failure): no metadata.
+fn no_response(error: concord::Error) -> GitHubError {
+    GitHubError::api(error, None)
+}
+
+/// Copies the metadata of a received response, body unread, and hands the response back to its
+/// decoder (see the [module documentation](self) for why the native response is read).
+fn capture<T>(received: Received<T>) -> (ResponseMeta, Received<T>) {
+    let (response, decoder) = received.into_parts();
+    let meta = ResponseMeta::capture(&response);
+    (meta, decoder.receive(response))
+}
+
+/// The endpoint's declared handling, the metadata kept on success and on failure.
+async fn decode_with_meta<T>(
+    meta: ResponseMeta,
+    received: Received<T>,
+) -> Result<WithMeta<T>, GitHubError> {
+    match received.decode().await {
+        Ok(value) => Ok(WithMeta { value, meta }),
         Err(error) => Err(GitHubError::api(error, Some(meta))),
     }
 }

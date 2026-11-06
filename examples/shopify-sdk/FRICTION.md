@@ -74,6 +74,10 @@ generated requests share no trait, the helper takes the `prepare()` result:
 
 **Assessment:** intentional flexibility; the recipe exists and worked first time.
 
+**Status (Concord response boundary).** `ShopContext::send` is now `Prepared::receive` (one
+execution, any status, body unread), the version check on `Received::head` of a 2xx answer, then
+`Received::decode`; no transport conversion remains in the SDK.
+
 ## F4 — The signed result download is a native request (intentional; one sharp edge)
 
 **Provider:** `url` / `partialDataUrl` are opaque signed URLs on another host
@@ -90,6 +94,14 @@ the full URL — the signature. The workflow must remember `error.without_url()`
 `ByteSource` strips the URL). **Proposal:** a reader entry that takes the execute result,
 `open_for_result(Result<reqwest::Response, reqwest::Error>, operation)`, returning an error type
 that also covers "no response", so the URL cannot leak by omission.
+
+**Status (Concord response boundary).** The label is now attached in one SDK place,
+`bulk_export::open_result` (the reader's own status check, so a refused signature stays the
+reader's `OpenError`, response unread). `Incoming::new(response, Some(Operation::label(..)))`
+would name the download too, but turns a non-2xx into a `concord::Error` before the reader sees
+it. The sharp edge persists: a transport failure of the native download is still a raw
+`reqwest::Error` the caller must strip with `without_url()`; there is no public conversion into a
+labelled Concord `Transport` error.
 
 ## F5 — One explicit loop per traversal (mild friction)
 

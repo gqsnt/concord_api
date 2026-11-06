@@ -12,7 +12,9 @@ use concord_example_github_sdk::filters::{IssueFilter, RunFilter};
 use concord_example_github_sdk::ids::{
     ArtifactId, CommentId, IssueNumber, JobId, PullNumber, ReviewId, RunId, WorkflowRef,
 };
-use concord_example_github_sdk::meta::{Conditional, send_conditional, send_with_meta};
+use concord_example_github_sdk::meta::{
+    Conditional, send_conditional, send_edited, send_with_meta,
+};
 use concord_example_github_sdk::params::{
     ApiVersion, CommentSort, Direction, ETag, IssueSort, JobFilter, Labels, PerPage, PullSort,
     RunStatus, StateFilter, Timestamp,
@@ -389,9 +391,86 @@ async fn status_errors_keep_response_and_metadata() {
     server.shutdown().await;
 }
 
+/// On every send path, the metadata of a response that arrived survives a refusal of its head
+/// (`Metadata`) or of its body (`Decode`); a transport failure has none, since no head arrived.
+/// A refused edit sends nothing.
+#[tokio::test]
+async fn metadata_is_kept_after_the_head_and_absent_without_a_response() {
+    let server = TestServer::start(|r: &Recorded| {
+        let path = r.path();
+        if path.ends_with("/issues/1") {
+            gh_json(200, r#"{"number":"not a number"}"#).header("etag", "W/\"undecodable\"")
+        } else if path.ends_with("/issues/2") {
+            Reply::text(200, "text/html", "<html></html>").header("x-github-request-id", "HTML:2")
+        } else {
+            Reply::hang_up()
+        }
+    })
+    .await;
+    let github = context(server.addr(), TOKEN_A);
+    let repo = github.repo(RepoRef::new("octo-org", "hello-world"));
+    let issue = |n| repo.handle().issue(IssueNumber(n)).prepare().unwrap();
+
+    let decode = send_with_meta(issue(1)).await.unwrap_err();
+    assert_eq!(decode.concord().unwrap().kind(), ErrorKind::Decode);
+    let meta = decode.meta().unwrap();
+    assert_eq!(meta.status(), StatusCode::OK);
+    assert_eq!(meta.request_id(), Some("0000:1111:2222:3333:4444"));
+    assert_eq!(meta.rate_limit().remaining, Some(4990));
+    assert_eq!(meta.etag(), Some(&ETag::new("W/\"undecodable\"")));
+
+    let conditional = send_conditional(issue(1)).await.unwrap_err();
+    assert_eq!(conditional.concord().unwrap().kind(), ErrorKind::Decode);
+    assert_eq!(
+        conditional.meta().unwrap().etag(),
+        Some(&ETag::new("W/\"undecodable\""))
+    );
+
+    // The edited request goes where the edit says; its response's head is refused unread.
+    let head = send_edited(issue(3), |request| {
+        request
+            .url_mut()
+            .set_path("/repos/octo-org/hello-world/issues/2");
+        Ok(())
+    })
+    .await
+    .unwrap_err();
+    assert_eq!(head.concord().unwrap().kind(), ErrorKind::Metadata);
+    assert_eq!(head.meta().unwrap().request_id(), Some("HTML:2"));
+    assert!(head.concord().unwrap().response().is_some());
+
+    let lost = [
+        send_with_meta(issue(3)).await.map(drop).unwrap_err(),
+        send_conditional(issue(3)).await.map(drop).unwrap_err(),
+        send_edited(issue(3), |_| Ok(()))
+            .await
+            .map(drop)
+            .unwrap_err(),
+    ];
+    for error in &lost {
+        let concord = error.concord().unwrap();
+        assert_eq!(concord.kind(), ErrorKind::Transport);
+        assert_eq!(concord.endpoint(), Some("GitHub.repo.issue"));
+        assert!(error.meta().is_none(), "{error:?}");
+        assert_hidden(&format!("{error} {error:?}"), &[TOKEN_A, API_HOST]);
+    }
+
+    let sent = server.requests().len();
+    let refused = send_edited(issue(1), |_| Err(GitHubError::MalformedStoredLink))
+        .await
+        .unwrap_err();
+    assert!(matches!(refused, GitHubError::MalformedStoredLink));
+    assert_eq!(
+        server.requests().len(),
+        sent,
+        "a refused edit sends nothing"
+    );
+    server.shutdown().await;
+}
+
 /// The extension boundary: a native request built by the context carries the same service
-/// headers as a generated endpoint, the token flagged sensitive, and can be finished with a
-/// Concord decoder.
+/// headers as a generated endpoint, the token flagged sensitive, and is executed once by a
+/// Concord decoder (`Decoder::execute`): head first, then the declared handling.
 #[tokio::test]
 async fn undeclared_operation_through_the_context() {
     let server =
@@ -420,11 +499,15 @@ async fn undeclared_operation_through_the_context() {
         id: u64,
         event: String,
     }
-    let decoder = concord::Decoder::<Vec<Event>>::new::<concord::Json>();
-    let events = decoder
-        .finish(repo.context().http().execute(native).await)
+    let received = concord::Decoder::<Vec<Event>>::new::<concord::Json>()
+        .execute(repo.context().http(), native)
         .await
         .unwrap();
+    assert_eq!(
+        received.head().headers()["x-github-request-id"],
+        "0000:1111:2222:3333:4444"
+    );
+    let events = received.decode().await.unwrap();
     assert_eq!((events[0].id, events[0].event.as_str()), (1, "closed"));
     let wire = server.single();
     assert_eq!(wire.target, "/repos/octo-org/hello-world/issues/events");
