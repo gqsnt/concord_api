@@ -56,3 +56,8 @@ commit; the coordinator commits their files and records it.
 | Between waves 2-3: wave 1 SDKs to send policy / follow | Opus subagent | `claude-opus-5-5`, effort `xhigh` sent; answered by `claude-opus-5-5` (`agent-a776f091…`) | `worktree-agent-a776f091…` | merged `0f096e63` | |
 | Between waves 2-3: wave 2 SDKs to send policy / follow | Opus subagent | `claude-opus-5-5`, effort `xhigh` sent; answered by `claude-opus-5-5` (`agent-aadef365…`) | `worktree-agent-aadef365…` | merged `91103d63` | |
 | Between waves 2-3: S3 on a stateful signing send policy | Opus subagent | `claude-opus-5-5`, effort `xhigh` sent; answered by `claude-opus-5-5` (`agent-aa6a8748…`) | `worktree-agent-aa6a8748…` | pending | |
+| Review of between-wave changes before wave 3 (`1f71432c..08df6614`) | `gpt-6.1-sol`, xhigh, read-only | `gpt-6.1-sol`, `xhigh`, `read-only` (session `01a1af0c-7a3c…`) | `work/rv-w23` (detached `08df6614`) | ACCEPT_WITH_FIXES, SOL-W23-1/2 fixed `610145e1` | |
+| W3 author SDK09 ntfy | Opus subagent | running (transcript read at completion) | `work/w3-sdk09-ntfy` | | |
+| W3 author SDK10 Linear | `gpt-6.1-terra` xhigh | `gpt-6.1-terra`, `xhigh`, workspace-write + `work/target-b`, network (session `01a1af1b-4f4c…`) | `work/w3-sdk10-linear` | | |
+| W3 author SDK11 Dropbox | `gpt-6-astra` xhigh | `gpt-6-astra`, `xhigh`, workspace-write + `work/target-a`, network (session `01a1af1b-4f4d-71d1…`) | `work/w3-sdk11-dropbox` | | |
+| W3 author SDK12 Google Drive | `gpt-6.1-sol` xhigh | `gpt-6.1-sol`, `xhigh`, workspace-write + `work/target-b`, network (session `01a1af1b-4f4d-7413…`) | `work/w3-sdk12-google-drive` | | |

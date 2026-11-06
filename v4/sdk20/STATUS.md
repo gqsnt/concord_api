@@ -42,6 +42,12 @@ the Phase A agent worktrees' own targets (about 17 GB, idle). At Phase B start: 
 
 ## SDK cohort (Phase B)
 
+Wave 3 frozen at `6d6d66aa` (waves 1-2 integrated; between-wave refinements D-W23-1/2, review
+SOL-W23 fixed): `verify.sh --package --bench` 43/43 PASS on a clean tree
+(`work/logs/gate-6d6d66aa-verify.txt`, 4m19s); pushed to PR #4. Earlier at `634b135b` the gate
+failed 3 `test` steps (one UI case, W23-5), fixed in `08df6614` (43/43). The S3 move to the
+value-form policy runs in parallel (SDK-only; merges after the freeze).
+
 Wave 2 frozen at `e04236ca` (wave 1 integrated): `verify.sh --package --bench` 43/43 PASS on a
 clean tree (`work/logs/gate-e04236ca-verify.txt`), the four wave 1 SDKs pass alone.
 
@@ -59,6 +65,10 @@ commit, so no baseline intervention was needed.
 | SDK06 | GitLab | medium | 2 | Opus subagent (`debaefb7`) | `gpt-6.1-sol` xhigh, 18 tests, unassisted (`5d15bc2b`) | `gpt-6.1-terra` xhigh (`e1b813b5`) | WAVE_2_DONE, merged `8288e3e6` |
 | SDK07 | Slack Web API | medium | 2 | `gpt-6.1-sol` xhigh (`ae8ddfb1`) | `gpt-6.1-terra` xhigh, 6 tests, unassisted (`31cad62d`) | `gpt-6-astra` xhigh (`c844a878`) | WAVE_2_DONE, merged |
 | SDK08 | OpenAI | large | 2 | `gpt-6.1-terra` xhigh (`8a659204`) | `gpt-6-astra` xhigh, 18 tests, unassisted (`08f97864`) | Opus subagent (`51d0eee3`) | WAVE_2_DONE, merged |
+| SDK09 | ntfy | small | 3 | Opus subagent (running) | `gpt-6.1-sol` | `gpt-6.1-terra` | WAVE_3_AUTHORING |
+| SDK10 | Linear | medium | 3 | `gpt-6.1-terra` xhigh (session `01a1af1b-4f4c…`, running) | `gpt-6-astra` | Opus | WAVE_3_AUTHORING |
+| SDK11 | Dropbox | medium | 3 | `gpt-6-astra` xhigh (session `01a1af1b-4f4d-71d1…`, running) | Opus | `gpt-6.1-sol` | WAVE_3_AUTHORING |
+| SDK12 | Google Drive | large | 3 | `gpt-6.1-sol` xhigh (session `01a1af1b-4f4d-7413…`, running) | `gpt-6.1-terra` | `gpt-6-astra` | WAVE_3_AUTHORING |
 
 ## Model/session ledger
 
