@@ -131,6 +131,8 @@ impl Client {
 
     /// Fetch one page, using the exact cursor from the previous response or `None` to start.
     /// Do not pre-encode the cursor or change options while continuing a listing.
+    /// Concord query-encodes the raw value once: `=` becomes `%3D`, while literal `%3D`
+    /// becomes `%253D`. Nonempty cursors made only of padding or punctuation still continue.
     ///
     /// # Errors
     /// Returns [`Error`] for HTTP, application, metadata, envelope, transport, or decoding errors.
@@ -142,6 +144,7 @@ impl Client {
         let response = execute(
             self.api
                 .users_list(options.limit.get())
+                // Keep the provider string raw; the declared query placement owns encoding.
                 .maybe_cursor(cursor.map(|c| c.as_str().to_owned()))
                 .maybe_include_locale(options.include_locale)
                 .maybe_team_id(options.team_id.clone()),

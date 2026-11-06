@@ -65,6 +65,14 @@ query-encoded once. Never decode or pre-encode it. Keep the same workspace and o
 promptly, and restart from the beginning after long pauses. Slack says not to persist cursors for
 hours or days. This SDK supplies no persistence or automatic expiry policy.
 
+The SDK owns query encoding for both manual and lazy paging. For example, raw cursor `==`
+travels as `cursor=%3D%3D`, and literal cursor text `%3D` travels as `cursor=%253D`; `+` travels
+as `%2B`, separately from a space (`+` on the wire). Those nonempty values are continuations,
+even on an empty page. This follows Slack's [pagination contract](https://docs.slack.dev/apis/web-api/pagination/);
+pass the returned `Cursor` directly to `users_page`. The reserved-character regression tests
+also cover empty-page chains, each supported terminal shape, cap checkpoints, and typed
+`invalid_cursor` failures. See [MAINTENANCE.md](MAINTENANCE.md) for the maintenance evidence.
+
 Workflow B retrieves a conversation and surfaces a failure even when HTTP status is 200.
 
 ```rust

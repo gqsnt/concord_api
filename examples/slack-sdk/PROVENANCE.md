@@ -34,6 +34,8 @@ when their shape is documented.
 | `users-last-missing-metadata.json` | P / Walkthrough | Synthetic empty page with no metadata envelope. |
 | `users-last-null-metadata.json` | P / termination rules (adjacent defensive case) | Synthetic null metadata envelope. This tolerance is an SDK choice; the docs explicitly discuss null cursors, not null metadata objects. |
 | `users-whitespace-cursor.json` | P / Just the facts, Walkthrough | Synthetic nonempty whitespace/padding cursor. Tests that the SDK never trims opaque values; not claimed as a Slack-issued value. |
+| `users-cursor-padding.json` | P / Just the facts, Walkthrough; U / cursor argument | Maintenance fixture: synthetic empty page with cursor `==`, exercising padding-only continuation and encoding of each `=`. Not a Slack-issued cursor or an unchanged vendor example. |
+| `users-cursor-percent-text.json` | P / Just the facts, Walkthrough; U / cursor argument | Maintenance fixture: synthetic empty page with literal percent-escape-looking text, lowercase `f`, query/fragment delimiters, a space, plus, slash, and padding. Exercises opaque preservation and prevents parameter injection; not a documented Slack-issued value. |
 | `conversation.json` | C / public-channel Response and optional member count | Synthetic public-channel projection with locale/member count and a nested topic. Omitted unrelated fields and replaced content/IDs. |
 | `conversation-dm.json` | C / direct-message Response | Synthetic reduced DM shape, omitting `name` and retaining `user` and `created`. |
 | `channel-not-found.json` | C / missing-channel Response | Hand-authored compact rendering of the documented `ok: false` and `channel_not_found` shape; not a captured response. |
@@ -56,6 +58,11 @@ error body, and interrupted chunked transfers are generated in `tests/protocol.r
 synthetic robustness cases, not claims about documented Slack behavior. The virtual-clock test
 in `tests/workflows.rs` models an application waiting 30 seconds and explicitly trying again;
 there is no SDK retry implementation.
+
+Maintenance re-opened P and U on **2026-11-06**. The two maintenance fixtures above were
+hand-authored as compact ASCII JSON with a final LF and are served directly with `include_bytes!`.
+`tests/cursors.rs` independently spells the expected raw cursor and HTTP query bytes; it does
+not use a URL encoder to generate its oracle. It reuses the existing terminal/error fixtures.
 
 Concord evidence: frozen checkout `e04236ca`, root `README.md`, the caller/author guides,
 custom-format and recipe docs, the `concord-pagination` and `concord-extras` READMEs, and
