@@ -1409,6 +1409,10 @@ Do not decode an error document with `<Json as Decode<D>>::decode_body((), bytes
 the format's head checks and its `Context` (a format whose context is not `()` cannot be used
 that way at all); `document` runs them.
 
+An SDK error that holds a `ResponseMeta` and a `concord::Error` inline is large (a few hundred
+bytes): box the variant payloads that carry them (`Provider(Box<ProviderError>)` above), or
+Clippy's `result_large_err` flags every function returning it.
+
 When the SDK keeps a few typed fields rather than the whole head, read them from
 `received.head()` before consuming the body, into a value the SDK owns (GitLab's
 `ResponseMeta::capture` keeps the request id, pagination headers and `Link` relations). When it

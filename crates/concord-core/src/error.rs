@@ -257,10 +257,11 @@ impl Error {
     }
 
     /// The unread response of an [`ErrorKind::Status`] or [`ErrorKind::Metadata`] error; any other
-    /// error is returned unchanged as `Err`. Concord never reads or prints the body: use it to
-    /// decode an API error document, for example with
-    /// `<Json as Decode<Problem>>::decode_body((), response.bytes().await?)` (a body-only decode:
-    /// no head check), or to read a body the format refused.
+    /// error is returned unchanged as `Err`. Concord never reads or prints the body: read it
+    /// yourself (unbounded, with reqwest), or to read a provider's error document **bounded and
+    /// with the format's head checks**, receive the response instead of sending it
+    /// (`prepare()?.receive().await?`) and use
+    /// [`Received::document`](crate::Received::document).
     ///
     /// ```no_run
     /// # async fn run(request: impl std::future::Future<Output = Result<(), concord_core::Error>>)

@@ -1557,6 +1557,9 @@ fn emit_owner(
                 Kind::Client { send, .. } => send.as_ref(),
                 _ => None,
             };
+            // `Sends<O>` for an endpoint whose client names a send policy (its `send()` future is
+            // already `Send`); none otherwise.
+            let mut sends_impl = TokenStream::new();
             let send_fn = match policy {
                 None => quote! {
                     #send_docs
@@ -1591,6 +1594,18 @@ fn emit_owner(
                     let policy_text = lit(&format!(
                         " Sends the request with the client's send policy {shown}: returns its `SendWith<T>::Output`. The policy decides execution (signing), errors and metadata; `prepare` gives the native request."
                     ));
+                    // Spanned at the `send` statement: a type that is no policy is reported there
+                    // (with the generated `send()`'s own error), not inside Concord's trait.
+                    let at = policy.span();
+                    let send_output =
+                        quote_spanned!(at=> <#policy_ty as #k::SendWith<#out>>::Output);
+                    sends_impl = quote_spanned! {at=>
+                        impl #k::Sends<#send_output> for #ty where #policy_ty: #k::SendWith<#out> {
+                            #[inline] fn send(self) -> impl ::core::future::Future<Output = #send_output> + ::core::marker::Send {
+                                #ty::send(self)
+                            }
+                        }
+                    };
                     quote! {
                         #[doc = #policy_text]
                         #[inline] pub fn send(self) -> impl ::core::future::Future<Output = <#policy_ty as #k::SendWith<#out>>::Output> + ::core::marker::Send {
@@ -1640,6 +1655,8 @@ fn emit_owner(
 
                     #send_fn
                 }
+
+                #sends_impl
 
                 impl #k::Endpoint<#out> for #ty {
                     #[inline] fn prepare(self) -> ::core::result::Result<#k::Prepared<#out>, #k::Error> {

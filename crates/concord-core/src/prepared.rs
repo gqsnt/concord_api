@@ -244,6 +244,28 @@ pub trait SendWith<T> {
         E: Endpoint<T> + Send;
 }
 
+/// The generated `send()` of an endpoint whose client names a send policy (`send P;` or
+/// `send value;`), seen generically: each such endpoint implements `Sends<O>` for `O`, the
+/// policy's [`SendWith::Output`] for its output. An SDK helper written once over several
+/// endpoints — every page of a listing, a batch — then sends through the client's policy (its
+/// errors, metadata, signing, the policy value cloned from the client) exactly as callers do,
+/// without being handed the policy:
+///
+/// ```ignore
+/// async fn all_pages<E>(first: E) -> Result<Vec<Item>, SdkError>
+/// where
+///     E: concord::Sends<Result<Response<Page>, SdkError>> + ListOptions + Clone,
+/// { /* first.clone().set_cursor(..).send().await? ... */ }
+/// ```
+///
+/// The output is a type parameter, as in [`Endpoint`], so a public client may keep private
+/// output types. A client without a policy generates no `Sends`: its `send()` is
+/// `prepare()?.send()`, which generic code reaches through [`Endpoint`].
+pub trait Sends<O>: Sized {
+    /// The endpoint's generated `send()`.
+    fn send(self) -> impl std::future::Future<Output = O> + Send;
+}
+
 impl<T> fmt::Debug for Prepared<T> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let meta = self.decoder.operation.and_then(|op| op.meta());

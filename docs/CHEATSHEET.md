@@ -100,7 +100,7 @@ fn main() -> Result<(), concord::Error> {
 | `#[cfg(..)]`, `#[deprecated]`, `///` on scopes and endpoints | applied to the subtree or the navigation method; names are checked as if every `cfg` were on, so cfg-exclusive siblings need distinct names | [§8](AUTHOR_GUIDE.md#8-attributes) |
 
 Usual order inside an owner: `base` (client), `path`, `subdomain`, `query { }`, `headers { }`,
-format statements, then children.
+format statements, `send` (client), parameter groups `params Name(..);` (client), then children.
 
 ## Calling
 
