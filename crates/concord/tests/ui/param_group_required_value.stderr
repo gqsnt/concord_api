@@ -1,0 +1,5 @@
+error: a parameter group holds optional (`limit?: T`) or initialized (`limit: T = v`) values: a required value is a positional argument, declared on each endpoint
+ --> tests/ui/param_group_required_value.rs:4:29
+  |
+4 |         params Paging(query limit: u32);
+  |                             ^^^^^

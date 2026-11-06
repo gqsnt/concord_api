@@ -79,7 +79,7 @@ use crate::selector::{FieldSelector, LabelSelector};
 use crate::{
     KubeAppsV1NamespacedWatchDeployments, KubeAppsV1WatchDeployments,
     KubeCoreV1NamespacedWatchPods, KubeCoreV1WatchPods, KubeNetworkingV1NamespacedWatchIngresses,
-    KubeNetworkingV1WatchIngresses,
+    KubeNetworkingV1WatchIngresses, WatchOptions,
 };
 
 /// One watch event, decoded by its `type` into the watched object, a bookmark or a `Status`.
@@ -165,22 +165,33 @@ impl Bookmark {
 }
 
 /// A generated watch operation (the six `GET .../{plural}?watch=1` endpoints), seen through the
-/// parameters every watch shares; each method forwards to the generated `maybe_*` setter. The
-/// operation's identity (its endpoint name in errors) comes from the declaration.
-pub trait WatchOperation: Clone + Send + Sync + 'static {
+/// parameters every watch shares: the declaration's parameter group [`WatchOptions`], whose
+/// generated setters each watch endpoint implements; the `with_*` methods are written once here
+/// over them. The operation's identity (its endpoint name in errors) comes from the declaration.
+pub trait WatchOperation: WatchOptions + Clone + Send + Sync + 'static {
     /// The watched object type.
     type Item: Resource;
 
     /// `labelSelector`.
-    fn with_label_selector(self, selector: Option<LabelSelector>) -> Self;
+    fn with_label_selector(self, selector: Option<LabelSelector>) -> Self {
+        self.maybe_label_selector(selector)
+    }
     /// `fieldSelector`.
-    fn with_field_selector(self, selector: Option<FieldSelector>) -> Self;
+    fn with_field_selector(self, selector: Option<FieldSelector>) -> Self {
+        self.maybe_field_selector(selector)
+    }
     /// `resourceVersion`: the watch starts after it.
-    fn with_resource_version(self, version: Option<ResourceVersion>) -> Self;
+    fn with_resource_version(self, version: Option<ResourceVersion>) -> Self {
+        self.maybe_resource_version(version)
+    }
     /// `allowWatchBookmarks` (`None`: absent; the declaration's initial value is `true`).
-    fn with_bookmarks(self, allow: Option<bool>) -> Self;
+    fn with_bookmarks(self, allow: Option<bool>) -> Self {
+        self.maybe_allow_watch_bookmarks(allow)
+    }
     /// `timeoutSeconds`: the server ends the watch after this long.
-    fn with_timeout_seconds(self, seconds: Option<u32>) -> Self;
+    fn with_timeout_seconds(self, seconds: Option<u32>) -> Self {
+        self.maybe_timeout_seconds(seconds)
+    }
     /// The generated `prepare()`: the request with its declared stream handling (`send()` on
     /// the result returns the [`WatchStream`]).
     fn prepare_watch(self) -> Result<concord::Prepared<WatchStream<Self::Item>>, concord::Error>;
@@ -190,21 +201,6 @@ macro_rules! watch_operation {
     ($($op:ty => $item:ty),* $(,)?) => {$(
         impl WatchOperation for $op {
             type Item = $item;
-            fn with_label_selector(self, selector: Option<LabelSelector>) -> Self {
-                self.maybe_label_selector(selector)
-            }
-            fn with_field_selector(self, selector: Option<FieldSelector>) -> Self {
-                self.maybe_field_selector(selector)
-            }
-            fn with_resource_version(self, version: Option<ResourceVersion>) -> Self {
-                self.maybe_resource_version(version)
-            }
-            fn with_bookmarks(self, allow: Option<bool>) -> Self {
-                self.maybe_allow_watch_bookmarks(allow)
-            }
-            fn with_timeout_seconds(self, seconds: Option<u32>) -> Self {
-                self.maybe_timeout_seconds(seconds)
-            }
             fn prepare_watch(
                 self,
             ) -> Result<concord::Prepared<WatchStream<Self::Item>>, concord::Error> {

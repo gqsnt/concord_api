@@ -1,0 +1,5 @@
+error: a parameter group (`..Group`) is included by endpoints only: a scope's or the client's value reaches every endpoint below it
+ --> tests/ui/param_group_on_scope.rs:5:23
+  |
+5 |         scope items(..Paging) {
+  |                       ^^^^^^
