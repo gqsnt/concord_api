@@ -341,6 +341,23 @@ impl<T, K: Clone, M, E> Pages<T, K, M, E> {
         }
     }
 
+    /// Flatten into items and page-boundary metadata events. See [`PageItemEvents`].
+    pub fn item_events(self) -> PageItemEvents<T, K, M, E> {
+        let checkpoint = self
+            .checkpoint()
+            .cloned()
+            .map(|page| ItemCheckpoint { page, skip: 0 });
+        PageItemEvents {
+            pages: self,
+            buffer: Vec::new().into_iter(),
+            meta: None,
+            after: None,
+            checkpoint,
+            items: 0,
+            pages_consumed: 0,
+        }
+    }
+
     /// Reads every page. `Ok` only after the provider's last page; otherwise the pages already
     /// read come back with the error in [`Incomplete`].
     pub async fn collect_complete(
@@ -360,6 +377,135 @@ impl<T, K: Clone, M, E> Pages<T, K, M, E> {
     /// failed page. A page in flight is dropped (outcome [`Outcome::Stopped`]).
     pub fn finish(self) -> SequentialReport<K> {
         self.chain.report()
+    }
+}
+
+/// An item or the metadata at the end of a page.
+///
+/// `Complete` is emitted only after every item of the provider's final page; its metadata
+/// can carry a provider-specific completion token, which is never used as a page key.
+pub enum PageItemEvent<T, M> {
+    /// An item from the current page.
+    Item(T),
+    /// Metadata of a fully consumed page with a following page.
+    Page(M),
+    /// Metadata of the fully consumed final page.
+    Complete(M),
+}
+
+impl<T, M> fmt::Debug for PageItemEvent<T, M> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(match self {
+            Self::Item(_) => "Item(..)",
+            Self::Page(_) => "Page(..)",
+            Self::Complete(_) => "Complete(..)",
+        })
+    }
+}
+
+/// An opt-in item traversal that moves metadata once per page, after its items.
+///
+/// Empty pages still produce an event. `Complete` is the only completion evidence: a cap or
+/// provider failure returns a [`PagesError`], and stopping early cannot produce `Complete`.
+/// A pending `next` is cancellation-safe. Converting a chain after its last page was already
+/// read cannot recover that page's metadata, so start this traversal before reading that page.
+pub struct PageItemEvents<T, K, M, E = Infallible> {
+    pages: Pages<T, K, M, E>,
+    buffer: std::vec::IntoIter<T>,
+    meta: Option<M>,
+    after: Option<Option<K>>,
+    checkpoint: Option<ItemCheckpoint<K>>,
+    items: u64,
+    pages_consumed: u64,
+}
+
+impl<T, K: Clone, M, E> PageItemEvents<T, K, M, E> {
+    /// Returns the next item or page event. `Ok(None)` follows exhaustion; errors retain the
+    /// same semantics as [`Pages::next_page`].
+    pub async fn next(&mut self) -> Result<Option<PageItemEvent<T, M>>, PagesError<E, K>> {
+        poll_fn(|cx| self.poll_next(cx)).await
+    }
+
+    fn poll_next(&mut self, cx: &mut Context<'_>) -> Next<PageItemEvent<T, M>, E, K> {
+        loop {
+            if let Some(item) = self.buffer.next() {
+                self.items += 1;
+                if let Some(checkpoint) = &mut self.checkpoint {
+                    checkpoint.skip += 1;
+                }
+                return Poll::Ready(Ok(Some(PageItemEvent::Item(item))));
+            }
+            if let Some(meta) = self.meta.take() {
+                self.pages_consumed += 1;
+                let next = self.after.take().expect("metadata belongs to a page");
+                self.checkpoint = next.clone().map(|key| ItemCheckpoint {
+                    page: Resume::At(key),
+                    skip: 0,
+                });
+                return Poll::Ready(Ok(Some(if next.is_some() {
+                    PageItemEvent::Page(meta)
+                } else {
+                    PageItemEvent::Complete(meta)
+                })));
+            }
+            let page = match ready!(self.pages.poll_page(cx)) {
+                Ok(Some(page)) => page,
+                Ok(None) => return Poll::Ready(Ok(None)),
+                Err(error) => return Poll::Ready(Err(error)),
+            };
+            self.buffer = page.items.into_iter();
+            self.meta = Some(page.meta);
+            self.after = Some(page.next);
+        }
+    }
+
+    /// The item-level position; it advances past a page when its metadata event is returned.
+    pub fn checkpoint(&self) -> Option<&ItemCheckpoint<K>> {
+        self.checkpoint.as_ref()
+    }
+
+    /// Stop and return the item report, including any unreturned items. If a page event has not
+    /// been returned, the outcome is stopped even if the final page has been fetched.
+    /// Pending metadata is dropped; replay the checkpoint page to observe it again. Processing
+    /// `remainder` and resuming at `after_remainder` skips that page's metadata event.
+    pub fn finish(self) -> ItemsReport<K, T> {
+        let remainder: Vec<_> = self.buffer.collect();
+        let after_remainder = if self.meta.is_some() {
+            self.after.flatten().map(|key| ItemCheckpoint {
+                page: Resume::At(key),
+                skip: 0,
+            })
+        } else {
+            self.checkpoint.clone()
+        };
+        let pages = self.pages.finish();
+        let outcome = if self.meta.is_some() {
+            Outcome::Stopped
+        } else {
+            pages.outcome
+        };
+        ItemsReport {
+            outcome,
+            progress: ItemsProgress {
+                items: self.items,
+                pages_consumed: self.pages_consumed,
+                pages: pages.progress,
+            },
+            resume: self.checkpoint,
+            remainder,
+            after_remainder,
+            failed: pages.failed,
+        }
+    }
+}
+
+impl<T, K, M, E> fmt::Debug for PageItemEvents<T, K, M, E> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("PageItemEvents")
+            .field("pages", &self.pages)
+            .field("buffered", &self.buffer.len())
+            .field("items", &self.items)
+            .finish_non_exhaustive()
     }
 }
 
@@ -576,6 +722,27 @@ pub enum PagesError<E, K> {
 }
 
 impl<E, K> PagesError<E, K> {
+    /// The factory's typed error, if this is the original provider failure.
+    pub fn provider_error(&self) -> Option<&E> {
+        match self {
+            Self::Provider { error, .. } => Some(error),
+            _ => None,
+        }
+    }
+
+    /// Extract the provider error, failed page and counters; return the original error unchanged
+    /// for a bound or an already-ended traversal.
+    pub fn into_provider_error(self) -> Result<(E, Resume<K>, Progress), Self> {
+        match self {
+            Self::Provider {
+                error,
+                failed,
+                progress,
+            } => Ok((error, failed, progress)),
+            other => Err(other),
+        }
+    }
+
     /// How the traversal ended: [`Outcome::Failed`] for `Provider`, [`Outcome::Bounded`] for
     /// `Bounded`, the earlier outcome for `Ended`.
     pub fn outcome(&self) -> Outcome {

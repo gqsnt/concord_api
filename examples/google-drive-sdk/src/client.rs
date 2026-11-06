@@ -259,7 +259,8 @@ impl DriveClient {
     }
 
     /// Traverse a finite changes batch. Process pages and save final-page `new_start_page_token`
-    /// after committing those changes. `items()` intentionally drops page metadata.
+    /// after committing those changes. `item_events()` yields final metadata on completion;
+    /// `items()` intentionally drops page metadata.
     pub fn changes(
         &self,
         start: PageToken,

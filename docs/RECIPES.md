@@ -424,6 +424,15 @@ repeat requests. The pagination README states the bounds and what the crate cann
 the provider SDK examples (`examples/{github,stripe,shopify,salesforce,kubernetes}-sdk`)
 show adapters over real provider contracts.
 
+For item-level consumption that also needs page metadata, use `Pages::item_events()`:
+`PageItemEvent::Item` yields each record, `Page` moves metadata after an intermediate page,
+and `Complete` moves the final page's metadata after its last item (empty pages still produce
+an event). Only `Complete` establishes a finished traversal; bounded and failed walks return
+errors, and `finish` reports a stop and any unreturned items. Drive's next polling token and
+Graph's final delta link stay provider-specific metadata, never pagination keys. Extract a
+typed factory error with `PagesError::provider_error()` or `into_provider_error()`; the owned
+form also preserves the failed page and counters.
+
 For `Link` headers, enable the crate's optional `link` feature and use
 [`concord_pagination::link`](../crates/concord-pagination/src/link.rs): pass all field values as
 byte slices and the response URL to `link::parse`. It returns ordered, resolved targets,
