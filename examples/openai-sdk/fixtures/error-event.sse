@@ -1,0 +1,10 @@
+event: response.created
+data: {"type":"response.created","response":{"id":"resp_split_error","status":"in_progress","output":[]}}
+
+event: response.output_text.delta
+data: {"type":"response.output_text.delta",
+data: "delta":"partiel é"}
+
+event: error
+data: {"type":"error","code":"server_error","message":"Synthetic failure — réessayez 🌍","param":null}
+

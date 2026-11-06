@@ -1,0 +1,6 @@
+event: response.output_text.delta
+data: {"type":"response.output_text.delta","sequence_number":0,"item_id":"msg_consumer","output_index":0,"content_index":0,"delta":"Partial"}
+
+event: error
+data: {"type":"error","sequence_number":1,"code":"server_error","message":"Synthetic event failure","param":null}
+
