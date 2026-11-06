@@ -5,13 +5,6 @@
 Not released: the version is unchanged (4.2.0) and no release has been decided. Records:
 `v4/sdk20/`. Source-compatible for callers of the existing API except where noted.
 
-### Changed
-
-- **An empty declared body is sent with `Content-Length: 0`.** reqwest omits the field for an
-  empty buffered body, so an empty PUT/POST looked like a request without content (RFC 9110
-  §8.6; Google Drive's resumable-upload status probe documents `Content-Length: 0`). A request
-  without a declared body and streamed bodies are unchanged.
-
 ### Added
 
 - **Owned response metadata.** `concord::ResponseMeta` (status, version, header map, operation;
@@ -55,6 +48,10 @@ Not released: the version is unchanged (4.2.0) and no release has been decided. 
 
 ### Changed
 
+- **An empty declared body is sent with `Content-Length: 0`.** reqwest omits the field for an
+  empty buffered body, so an empty PUT/POST looked like a request without content (RFC 9110
+  §8.6; Google Drive's resumable-upload status probe documents `Content-Length: 0`). A request
+  without a declared body and streamed bodies are unchanged.
 - `Error`'s identity is an `Operation`; `Display` of a labelled native response starts with the
   label. `Error::endpoint()` is unchanged for declared endpoints.
 - The reader `open` methods take `impl Openable` instead of `reqwest::Response` (a native
