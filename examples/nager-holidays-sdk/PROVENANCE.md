@@ -65,7 +65,8 @@ prefix. `Received::head`, `operation`, `decode`, and `into_response` were inspec
 
 Existing provider SDK reading supplied implementation patterns: GitHub's declaration,
 error and metadata approach, and Stripe's `send::send` use of `Prepared::receive()`
-and pre-decode metadata capture. This SDK keeps only a concrete holiday fetch method;
+and pre-decode metadata capture. This SDK keeps only a concrete holiday send policy
+(`KeepHead`; a `fetch()` method until the between-waves 2-3 integration);
 it does not copy their generic send/pagination/context infrastructure. No private
 Concord APIs, native HTTP execution, vendor SDK or handwritten operation labels are used.
 

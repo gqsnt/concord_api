@@ -25,3 +25,11 @@ The first-use fixtures are hand-authored JSON using the field names and types in
 - First intervention: for a synthetic HTTP 400 body, the SDK's typed error exposes classification, status and metadata, but reading the body requires the documented native response escape. Reproduction: return 400 with `text/plain` from the loopback fake; `fetch().await.unwrap_err().into_concord().into_response().unwrap().bytes().await` recovers the unread bytes. The official pages reviewed provide no error-document schema, so the test does not invent one or treat the body as a typed provider error. This is not needed for either successful outcome.
 - The JSON decoder buffers the complete response, and a malformed or interrupted body yields no partial vector. Reproduction: serve `first-use-truncated.json` as JSON or end a chunked response without its terminating chunk; `fetch()` errors even if the chunk contained a complete JSON array. Applications needing partial progress cannot obtain it through this finite fetch. For these country/year outcomes, a successful earlier fetch remains available when a later fetch fails.
 - Environment discrepancy: `git rev-parse HEAD` reports `38dbaa29`, not the stated `94d13527`; `git merge-base --is-ancestor 94d13527 HEAD` succeeds. Verification therefore describes the checked-out SDK at HEAD, not a checkout of the named commit.
+
+## Between waves 2-3 (coordinator integration)
+
+The record above is unchanged and still describes the `fetch()` path it used. The SDK now names
+a send policy in its declaration (`INTEGRATION.md`, "Between waves 2-3"): the generated `send()`
+returns `HolidayResponse`/`Error` and `fetch()` was removed, so the coordinator changed the ten
+`.fetch()` sites of `tests/first_use.rs` to `.send()`. No case or expectation changed; the suite
+still passes (9 tests).

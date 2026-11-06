@@ -100,3 +100,12 @@ Final package results: **26 integration tests** (9 first-use, 14 protocol,
 Clippy emitted no warnings. A separate JSON comparison confirmed exactly the
 documented fixture changes; `git diff --check` passed. These results establish
 local compatibility, not live provider conformance.
+
+## Between waves 2-3 (coordinator integration)
+
+The record above is unchanged. `fetch()` was replaced by the client's send policy
+(`INTEGRATION.md`, "Between waves 2-3"), so the generated `send()` is now the SDK path. In
+`tests/protocol.rs` the `.fetch()` sites read `.send()`, and the AT comparison's third read,
+which exercised the Concord path ("generated `.send()`" above), now reads
+`.prepare().unwrap().send()`: the same Concord execution and `Vec<Holiday>`, compared with the
+same `original.holidays`. The one production response model is still shared by both paths.

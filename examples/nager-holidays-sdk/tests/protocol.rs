@@ -19,7 +19,7 @@ async fn v4_wire_and_documented_array() {
             .header("x-synthetic-multi", "two")
     })
     .await;
-    let response = client(&server).holidays("AT", 2026).fetch().await.unwrap();
+    let response = client(&server).holidays("AT", 2026).send().await.unwrap();
     assert_eq!(API_VERSION, "v4");
     assert_eq!(response.holidays.len(), 2);
     let first = &response.holidays[0];
@@ -55,7 +55,7 @@ async fn country_is_one_encoded_segment_and_synthetic_400_keeps_exact_body() {
     .await;
     let error = client(&server)
         .holidays("A/T ?#%é", 0)
-        .fetch()
+        .send()
         .await
         .unwrap_err();
     assert_eq!(error.kind(), ErrorKind::InvalidRequest);
@@ -91,8 +91,8 @@ async fn optional_unknown_fields_and_null_subdivisions_preserve_known_fields() {
     ]);
     let server = TestServer::start(move |_| script.next()).await;
     let api = client(&server);
-    let original = api.holidays("AT", 2026).fetch().await.unwrap();
-    let perturbed = api.holidays("AT", 2026).fetch().await.unwrap();
+    let original = api.holidays("AT", 2026).send().await.unwrap();
+    let perturbed = api.holidays("AT", 2026).send().await.unwrap();
     assert_eq!(perturbed.holidays, original.holidays);
     assert!(
         perturbed
@@ -100,7 +100,13 @@ async fn optional_unknown_fields_and_null_subdivisions_preserve_known_fields() {
             .iter()
             .all(|h| h.subdivision_codes.is_none())
     );
-    let sent = api.holidays("AT", 2026).send().await.unwrap();
+    let sent = api
+        .holidays("AT", 2026)
+        .prepare()
+        .unwrap()
+        .send()
+        .await
+        .unwrap();
     assert_eq!(sent, original.holidays);
     let requests = server.requests();
     assert_eq!(requests.len(), 3);
@@ -122,8 +128,8 @@ async fn new_null_subdivision_and_unknown_field_preserve_other_known_fields() {
     ]);
     let server = TestServer::start(move |_| script.next()).await;
     let api = client(&server);
-    let original = api.holidays("DE", 2027).fetch().await.unwrap();
-    let perturbed = api.holidays("DE", 2027).fetch().await.unwrap();
+    let original = api.holidays("DE", 2027).send().await.unwrap();
+    let perturbed = api.holidays("DE", 2027).send().await.unwrap();
 
     let mut expected = original.holidays;
     assert_eq!(expected[1].subdivision_codes.as_deref().unwrap(), ["DE-BY"]);
@@ -148,7 +154,7 @@ async fn new_null_subdivision_and_unknown_field_preserve_other_known_fields() {
 #[tokio::test]
 async fn all_documented_types_and_nullable_empty_or_missing_subdivisions() {
     let server = TestServer::start(|_| Reply::json(200, GERMANY)).await;
-    let response = client(&server).holidays("DE", 2027).fetch().await.unwrap();
+    let response = client(&server).holidays("DE", 2027).send().await.unwrap();
     let holidays = response.holidays;
     assert_eq!(holidays[0].subdivision_codes, None);
     assert_eq!(holidays[1].subdivision_codes.as_deref().unwrap(), ["DE-BY"]);
@@ -185,7 +191,7 @@ async fn future_type_is_retained_and_unicode_and_leap_day_decode() {
         )
     })
     .await;
-    let response = client(&server).holidays("AT", 2028).fetch().await.unwrap();
+    let response = client(&server).holidays("AT", 2028).send().await.unwrap();
     assert_eq!(
         response.holidays[0].date,
         Date::from_ymd_opt(2028, 2, 29).unwrap()
@@ -210,7 +216,7 @@ async fn empty_array_is_complete() {
     let server =
         TestServer::start(|_| Reply::json(200, include_bytes!("../fixtures/empty-array.json")))
             .await;
-    let response = client(&server).holidays("AT", 2026).fetch().await.unwrap();
+    let response = client(&server).holidays("AT", 2026).send().await.unwrap();
     assert!(response.holidays.is_empty());
     assert_eq!(server.requests().len(), 1);
     server.shutdown().await;
@@ -242,7 +248,7 @@ async fn invalid_dates_missing_fields_v3_wrong_root_and_truncation_are_decode_fa
     .await;
     let api = client(&server);
     for _ in 0..5 {
-        let error = api.holidays("AT", 2026).fetch().await.unwrap_err();
+        let error = api.holidays("AT", 2026).send().await.unwrap_err();
         assert_eq!(error.kind(), ErrorKind::Concord(ConcordErrorKind::Decode));
         assert_eq!(error.status(), Some(StatusCode::OK));
         assert_eq!(
@@ -273,7 +279,7 @@ async fn wrong_or_missing_media_type_is_refused_before_body_decode() {
         include_bytes!("../fixtures/proxy-error-synthetic.html").as_slice(),
         AUSTRIA,
     ] {
-        let error = api.holidays("AT", 2026).fetch().await.unwrap_err();
+        let error = api.holidays("AT", 2026).send().await.unwrap_err();
         assert_eq!(error.kind(), ErrorKind::Concord(ConcordErrorKind::Metadata));
         assert_eq!(error.status(), Some(StatusCode::OK));
         assert_eq!(
@@ -304,7 +310,7 @@ async fn other_status_keeps_headers_and_unread_non_json_body() {
     .await;
     let error = client(&server)
         .holidays("AT", 2026)
-        .fetch()
+        .send()
         .await
         .unwrap_err();
     assert_eq!(error.kind(), ErrorKind::Http);
@@ -330,7 +336,7 @@ async fn dropped_connection_before_head_has_no_fabricated_status() {
     let server = TestServer::start(|_| Reply::hang_up()).await;
     let error = client(&server)
         .holidays("AT", 2026)
-        .fetch()
+        .send()
         .await
         .unwrap_err();
     assert_eq!(
@@ -356,7 +362,7 @@ async fn dropped_body_keeps_head_and_never_returns_a_partial_array() {
     .await;
     let error = client(&server)
         .holidays("AT", 2026)
-        .fetch()
+        .send()
         .await
         .unwrap_err();
     assert_eq!(
@@ -392,7 +398,7 @@ async fn dot_segments_fail_building_without_sending() {
     let server = TestServer::start(|_| panic!("invalid segment must not be sent")).await;
     let error = client(&server)
         .holidays("..", 2026)
-        .fetch()
+        .send()
         .await
         .unwrap_err();
     assert_eq!(error.kind(), ErrorKind::Concord(ConcordErrorKind::Build));

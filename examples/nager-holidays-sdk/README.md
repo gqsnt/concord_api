@@ -45,7 +45,7 @@ are compiled without execution; none of the tests contacts the provider.
 use concord_sdk_nager_holidays::{Date, NagerHolidays};
 
 async fn austria(api: &NagerHolidays) -> Result<(), Box<dyn std::error::Error>> {
-    let response = api.holidays("AT", 2026).fetch().await?;
+    let response = api.holidays("AT", 2026).send().await?;
     println!("HTTP {}", response.meta.status);
     for holiday in &response.holidays {
         let date: Date = holiday.date; // chrono::NaiveDate, no timezone
@@ -63,7 +63,7 @@ ignored. JSON `null` or an omitted subdivision list is `None`, while `[]` is
 `Some(vec![])`; the SDK does not infer national status from that list. Other documented
 fields are required, including the `holidayTypes` array.
 
-These compatibility rules apply to both `.fetch()` and generated `.send()`. If a
+These compatibility rules apply to both `.send()` and Concord's `.prepare()?.send()`. If a
 response adds an optional unknown field and changes a populated `subdivisionCodes`
 list to `null`, callers keep every other known value and receive `None` for that
 list. In particular, a regional holiday's `national_holiday: false` stays false;
@@ -76,8 +76,8 @@ and change record.
 use concord_sdk_nager_holidays::{Holiday, HolidayType, NagerHolidays};
 
 async fn compare(api: &NagerHolidays) -> Result<(), Box<dyn std::error::Error>> {
-    let austria = api.holidays("AT", 2026).fetch().await?;
-    let germany = api.holidays("DE", 2027).fetch().await?;
+    let austria = api.holidays("AT", 2026).send().await?;
+    let germany = api.holidays("DE", 2027).send().await?;
 
     let national: Vec<&Holiday> = germany.holidays.iter()
         .filter(|h| h.national_holiday).collect();
@@ -97,7 +97,9 @@ HTTP calls. Test DE entries are synthetic examples of the model, not a German ca
 
 ## Errors and response metadata
 
-`.fetch()` returns `HolidayResponse` or the SDK's `Error`. `Error::kind()` distinguishes
+`.send()` returns `HolidayResponse` or the SDK's `Error`: the declaration names the
+SDK's send policy (`send KeepHead;`), so the generated `send()` is the SDK path and
+needs no import. `Error::kind()` distinguishes
 HTTP 400 (`InvalidRequest`), other non-2xx statuses (`Http`) and Concord's build,
 transport, metadata and decode stages (`Concord(concord::ErrorKind)`). The 400
 classification follows HTTP status only; the official pages reviewed do not specify
@@ -113,7 +115,7 @@ operation identity, codec diagnostics and source are available through `concord(
 use concord_sdk_nager_holidays::{ErrorKind, NagerHolidays};
 
 async fn inspect_failure(api: &NagerHolidays) -> Result<(), Box<dyn std::error::Error>> {
-    match api.holidays("XX", 0).fetch().await {
+    match api.holidays("XX", 0).send().await {
         Ok(response) => println!("{} entries", response.holidays.len()),
         Err(error) => {
             if error.kind() == ErrorKind::InvalidRequest {
@@ -133,13 +135,13 @@ async fn inspect_failure(api: &NagerHolidays) -> Result<(), Box<dyn std::error::
 
 To take an unread response, use `error.into_concord().into_response()`. Error
 `Display`/`Debug` omit response header values, bodies and URLs; named metadata accessors
-are unredacted. The generated `.send()` and `.prepare()` remain available for ordinary
-Concord use; `.send()` returns `Vec<Holiday>`/`concord::Error` without the SDK's captured
-metadata and HTTP classification. The documented SDK path is `.fetch()`.
+are unredacted. The generated `.prepare()` remains available for ordinary Concord use;
+`.prepare()?.send()` returns `Vec<Holiday>`/`concord::Error` without the SDK's captured
+metadata and HTTP classification. The documented SDK path is `.send()`.
 
 ## Completion and limitations
 
-One fetch performs one Concord execution, with no SDK retry. A reqwest transport's
+One `send()` performs one Concord execution, with no SDK retry. A reqwest transport's
 configured redirect behavior still applies. Success means the whole finite JSON array
 was decoded; `[]` is a complete empty result. A missing/wrong media type, malformed JSON,
 missing required field, invalid date or interrupted body returns an error and no partial
@@ -162,7 +164,7 @@ exact empty request bytes, documented success fields, synthetic HTTP errors, unk
 fields/types, nullable/empty/omitted subdivisions, invalid data and interrupted reads.
 The maintenance regression compares an original and perturbed DE array over HTTP:
 one populated list becomes null, unknown fields are added, and all other known
-values remain equal. The AT perturbation also exercises generated `.send()`.
+values remain equal. The AT perturbation also exercises Concord's `.prepare()?.send()`.
 `tests/workflows.rs` exercises both public workflows and a failed second read.
 `fixtures/** -text` in `.gitattributes` preserves fixture bytes across Windows checkouts.
 Fixtures and loopback tests **are not vendor conformance evidence**.
