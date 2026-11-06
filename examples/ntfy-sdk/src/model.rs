@@ -377,7 +377,7 @@ pub enum Since {
     All,
     /// `latest`: the most recent cached message only.
     Latest,
-    /// A message id: the cached messages after that message.
+    /// A message id used by the server to select cached messages; replay may include duplicates.
     Id(EventId),
     /// A Unix timestamp in seconds: the cached messages from that time. Messages published within
     /// the same second as an already received one can come again: deduplicate by

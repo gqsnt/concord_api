@@ -500,8 +500,8 @@ impl std::error::Error for EventsError {}
 ///
 /// Feed it every event received ([`observe`](Self::observe)); [`since`](Self::since) then gives:
 ///
-/// 1. the id of the last `message` received ([`Since::Id`]): the server replays the cached
-///    messages after it;
+/// 1. the id of the last `message` received ([`Since::Id`]), sent to the server as the replay
+///    cursor; replay may include messages already received;
 /// 2. before any message, the time of the first `open` received ([`Since::Time`]): the cached
 ///    messages from the moment the first connection was established. Messages of that second
 ///    that were already delivered can come again;

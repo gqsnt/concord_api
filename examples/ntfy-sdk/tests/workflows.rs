@@ -424,3 +424,142 @@ async fn workflow_b_a_protected_topic_without_credentials_is_a_typed_error() {
     assert_eq!(refused.api().and_then(|a| a.code()), Some(40301));
     assert_eq!(fake.cached(), 0, "nothing was published");
 }
+
+#[tokio::test]
+async fn split_live_event_and_duplicate_replay_leave_deduplication_to_the_caller() {
+    use std::sync::Arc;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    const REPLAY: &[u8] = include_bytes!("../fixtures/maintenance_replay.jsonl");
+    const DEADLINE: Duration = Duration::from_secs(5);
+    let live = SSE_PERTURBED;
+    let inside_message = after(live, "successful ".as_bytes()) + 2; // inside UTF-8
+    let inside_delimiter = after(live, b"\"nested\":[1,2]}}\n");
+    let after_keepalive = after(live, b"\"keepalive\",\"topic\":\"alerts\"}\n\n");
+    let stage = Arc::new(AtomicUsize::new(0));
+    let server_stage = Arc::clone(&stage);
+    let server = TestServer::start(move |request| match request.path() {
+        "/alerts/sse" => {
+            let stage = Arc::clone(&server_stage);
+            let mut sent = 0;
+            let next = Box::new(move || {
+                let ready = stage.load(Ordering::SeqCst);
+                let bytes = match (sent, ready) {
+                    (0, _) => &live[..inside_message],
+                    (1, 1..) => &live[inside_message..inside_delimiter],
+                    (2, 2..) => &live[inside_delimiter..after_keepalive],
+                    (3, _) => return None,
+                    _ => return Some(Bytes::new()),
+                };
+                sent += 1;
+                Some(Bytes::copy_from_slice(bytes))
+            });
+            Reply::new(200)
+                .header("content-type", SSE_TYPE)
+                .with_body(Body::Generate(next, Some(Duration::from_millis(5))))
+        }
+        "/alerts/json" => Reply::new(200)
+            .header("content-type", NDJSON_TYPE)
+            .with_body(cut(REPLAY, &[27, 123])),
+        path => panic!("unexpected path {path}"),
+    })
+    .await;
+
+    let topic = alerts(&server);
+    let mut stream = topic.subscribe_sse().send().await.unwrap();
+    let mut cursor = ReplayCursor::new();
+    let open = tokio::time::timeout(DEADLINE, stream.next())
+        .await
+        .unwrap()
+        .unwrap()
+        .unwrap();
+    assert_eq!(open.kind, EventKind::Open);
+    cursor.observe(&open);
+    assert!(
+        server
+            .wait_until(DEADLINE, |s| s.body_bytes_sent() >= inside_message as u64)
+            .await
+    );
+    assert!(
+        tokio::time::timeout(Duration::from_millis(50), stream.next())
+            .await
+            .is_err()
+    );
+    assert_eq!(stream.completion(), Completion::Reading);
+    assert_eq!(stream.position().records, 1);
+    assert_eq!(stream.position().bytes, inside_message as u64);
+
+    stage.store(1, Ordering::SeqCst);
+    assert!(
+        server
+            .wait_until(DEADLINE, |s| s.body_bytes_sent() >= inside_delimiter as u64)
+            .await
+    );
+    assert!(
+        tokio::time::timeout(Duration::from_millis(50), stream.next())
+            .await
+            .is_err()
+    );
+    assert_eq!(stream.position().records, 1); // no dispatch until the second LF
+    assert_eq!(stream.position().bytes, inside_delimiter as u64);
+    stage.store(2, Ordering::SeqCst);
+    let message = tokio::time::timeout(DEADLINE, stream.next())
+        .await
+        .unwrap()
+        .unwrap()
+        .unwrap();
+    assert_eq!(message.id.as_str(), "synMsg000001");
+    assert_eq!(message.message.as_deref(), Some("Backup successful 😀"));
+    cursor.observe(&message);
+    let keepalive = tokio::time::timeout(DEADLINE, stream.next())
+        .await
+        .unwrap()
+        .unwrap()
+        .unwrap();
+    assert_eq!(keepalive.kind, EventKind::Keepalive);
+    cursor.observe(&keepalive);
+    assert_eq!(cursor.last_message(), Some(&message.id));
+    assert!(
+        tokio::time::timeout(DEADLINE, stream.next())
+            .await
+            .unwrap()
+            .is_none()
+    );
+    assert_eq!(stream.completion(), Completion::EndOfInput);
+
+    let mut replay = topic
+        .poll()
+        .maybe_since(cursor.since())
+        .send()
+        .await
+        .unwrap();
+    let mut raw = Vec::new();
+    tokio::time::timeout(DEADLINE, async {
+        while let Some(item) = replay.next().await {
+            raw.push(item.unwrap());
+        }
+    })
+    .await
+    .unwrap();
+    assert_eq!(replay.completion(), Completion::EndOfInput);
+    assert!(!replay.truncated());
+    assert_eq!(replay.position().records, 2);
+    assert_eq!(raw[0], message); // the server replayed the already delivered item
+    assert_eq!(raw[1].id.as_str(), "synMsg000002");
+    let mut seen = HashSet::from([message.id]);
+    let delivered: Vec<_> = raw
+        .into_iter()
+        .filter(|event| seen.insert(event.id.clone()))
+        .collect();
+    assert_eq!(delivered.len(), 1);
+    assert_eq!(delivered[0].id.as_str(), "synMsg000002");
+    let requests = server.requests();
+    assert_eq!(requests.len(), 2);
+    assert_eq!(requests[0].method, "GET");
+    assert_eq!(requests[0].target, "/alerts/sse");
+    assert_eq!(requests[1].method, "GET");
+    assert_eq!(requests[1].path(), "/alerts/json");
+    assert_eq!(requests[1].query_all("poll"), ["1"]);
+    assert_eq!(requests[1].query_all("since"), ["synMsg000001"]);
+    assert_eq!(server.shutdown().await.open_after, 0);
+}

@@ -90,10 +90,10 @@ async fn follow(
 }
 ```
 
-`ReplayCursor::since()` is the id of the last `message` received (`since=<id>`: the cached
-messages after it), or before any message the time of the first `open` (`since=<unix time>`), or
-`None`. `open` and `keepalive` ids are per connection and never move it. The loop, its reconnect
-budget and its backoff are the application's: the SDK never reconnects by itself
+`ReplayCursor::since()` is the id of the last `message` received (`since=<id>`), or before any
+message the time of the first `open` (`since=<unix time>`), or `None`. The server selects the
+replay; callers must allow it to include messages already received. `open` and `keepalive` ids
+are per connection and never move it. The loop, its reconnect budget and its backoff are the application's: the SDK never reconnects by itself
 (`tests/workflows.rs`, `follow`, adds a bounded budget).
 
 ## Workflow B: publish while offline, then replay the cache
@@ -120,7 +120,7 @@ async fn catch_up(
     // ...or delivered to connected subscribers only, never replayed.
     let _live_only = alerts.publish(MessageText::new("ping")?).set_cache(Cache::No).send().await?;
 
-    // Back online: the cached messages after the last one seen, as a JSON poll.
+    // Back online: request a JSON poll from the last message seen.
     let mut replay = alerts.poll().set_since(Since::Id(last_seen)).send().await?;
     let mut new = Vec::new();
     while let Some(event) = replay.next().await {
@@ -198,8 +198,9 @@ cargo test --locked -p concord-sdk-ntfy
 
 `tests/protocol.rs` checks the wire (method, target, headers, exact body bytes), the documented
 success and error shapes and the negative cases; `tests/workflows.rs` runs both workflows through
-the public API against the loopback server of `examples/testserver`, including a stateful
-in-memory fake (`tests/common/mod.rs`) with a cache, live SSE subscribers and an auth rule.
+the public API against the loopback server of `examples/testserver`, including a gated split SSE
+message and delimiter followed by a keepalive and a replay that repeats an already delivered
+message. The caller filters that duplicate by ID. The suite also uses a stateful in-memory fake (`tests/common/mod.rs`) with a cache, live SSE subscribers and an auth rule.
 
 **The fixtures are not vendor conformance.** They are hand-authored from the documentation's
 examples or synthetic (see `PROVENANCE.md`), the fake server's replay rules are this test suite's

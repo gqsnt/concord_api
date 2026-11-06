@@ -32,6 +32,7 @@ answered 404; it was not used.
 | `publish_response.json` | publish page, the JSON returned by a publish (`"message":"Downloading file..."`) | a trailing LF added (inferred from the server's JSON encoder, not observed) | documented example |
 | `error_unauthorized.json`, `error_forbidden.json`, `error_rate_limited.json` | `server/errors.go` (struct tags and the three variables) | hand-assembled into the JSON the struct serializes to, field order as declared, trailing LF (the server's error writer) | hand-authored from source, not from the docs |
 | `sse_perturbed.txt` | layout as ntfy writes it (above) | synthetic ids (`syn…`) and times (2026); an unknown member `unknown_future_field`, a 4-byte UTF-8 character, `title`, `tags`, `priority`, `expires` = `time` + 12 h | synthetic |
+| `maintenance_replay.jsonl` | ntfy subscription documentation JSON message shape | hand-authored synthetic replay: repeats the message from `sse_perturbed.txt`, including its unknown optional member, and adds a second message; LF line ends. The repeated ID is a test scenario, not an observed server response | synthetic |
 | `sse_crlf_bom.txt` | WHATWG SSE rules | synthetic: a leading BOM before a `data:` line, CRLF and lone-CR line ends, a comment, `id:`/`retry:`/unknown fields, one event in two `data:` lines. ntfy sends none of these; they exercise the framer | synthetic |
 
 `.gitattributes` marks `fixtures/** -text` so a checkout keeps these bytes (CR, BOM) unchanged.
