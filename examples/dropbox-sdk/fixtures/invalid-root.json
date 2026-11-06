@@ -1,0 +1,10 @@
+{
+  "error_summary": "invalid_root/..",
+  "error": {
+    ".tag": "invalid_root",
+    "invalid_root": {
+      ".tag": "user",
+      "root_namespace_id": "300"
+    }
+  }
+}
