@@ -181,7 +181,7 @@ async fn workflow_b_restores_uncertain_session_reconstructs_exact_bytes_and_reta
         .unwrap();
     let mut upload = initiated.value;
     let location = upload.session_url().as_str().to_owned();
-    assert_eq!(initiated.meta.headers["location"], location);
+    assert_eq!(initiated.meta.headers()["location"], location);
     upload.send_chunk(&source[..CHUNK_ALIGNMENT]).await.unwrap();
     assert_eq!(upload.acknowledged(), CHUNK_ALIGNMENT as u64);
     let uncertain = upload

@@ -187,7 +187,7 @@ async fn restart_and_poll(partially_accept_next_chunk: bool) {
         )
         .await
         .unwrap();
-    let location = initiated.meta.headers["location"]
+    let location = initiated.meta.headers()["location"]
         .to_str()
         .unwrap()
         .to_owned();
@@ -294,7 +294,7 @@ async fn restart_and_poll(partially_accept_next_chunk: bool) {
     let PagesError::Provider { error, .. } = failure else {
         panic!("expected a provider error")
     };
-    assert_eq!(error.meta().unwrap().status.as_u16(), 403);
+    assert_eq!(error.meta().unwrap().status().as_u16(), 403);
     assert_eq!(
         error.provider().unwrap().errors[0].reason,
         "rateLimitExceeded"

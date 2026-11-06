@@ -126,14 +126,14 @@ impl DriveClient {
                 Error::provider_response(received, self.config.max_error_bytes, false).await,
             );
         }
-        let meta = ResponseMeta::capture(&received);
-        if meta.status != StatusCode::OK {
+        let meta = received.meta();
+        if meta.status() != StatusCode::OK {
             return Err(Error::protocol(
                 "resumable initiation must return HTTP 200",
                 Some(meta),
             ));
         }
-        let location = single_header(&meta.headers, LOCATION.as_str())
+        let location = single_header(meta.headers(), LOCATION.as_str())
             .map_err(|message| Error::protocol(message, Some(meta.clone())))?
             .ok_or_else(|| Error::protocol("session Location is missing", Some(meta.clone())))?;
         let url = self
@@ -297,9 +297,9 @@ impl UploadSession {
         max_ack: u64,
         probing: bool,
     ) -> Result<UploadStatus, Error> {
-        let meta = ResponseMeta::capture(&received);
-        if meta.status.as_u16() == 308 {
-            let range = single_header(&meta.headers, RANGE.as_str())
+        let meta = received.meta();
+        if meta.status().as_u16() == 308 {
+            let range = single_header(meta.headers(), RANGE.as_str())
                 .map_err(|message| Error::protocol(message, Some(meta.clone())))?;
             let acknowledged = match range {
                 None => 0,
@@ -328,7 +328,7 @@ impl UploadSession {
             self.needs_probe = false;
             return Ok(UploadStatus::Incomplete { acknowledged, meta });
         }
-        if meta.status == StatusCode::OK || meta.status == StatusCode::CREATED {
+        if meta.status() == StatusCode::OK || meta.status() == StatusCode::CREATED {
             if !probing && max_ack != self.total {
                 return Err(Error::protocol(
                     "upload completed before the final chunk",
@@ -341,7 +341,7 @@ impl UploadSession {
             self.complete = true;
             return Ok(UploadStatus::Complete(response));
         }
-        if meta.status.is_success() {
+        if meta.status().is_success() {
             return Err(Error::protocol(
                 "unexpected resumable success status",
                 Some(meta),

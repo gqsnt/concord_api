@@ -167,8 +167,9 @@ async fn resumable_initiation_chunks_probe_and_completion_preserve_wire() {
     let mut session = started.value;
     assert_eq!(
         session.session_url().as_str(),
-        started.meta.headers["location"]
+        started.meta.headers()["location"]
     );
+    assert!(!format!("{:?}", started.meta).contains(session.session_url().as_str()));
     assert!(matches!(
         session
             .send_chunk(&vec![0xff; CHUNK_ALIGNMENT])
@@ -317,7 +318,7 @@ async fn location_policy_rejects_cross_origin_credentials_fragments_paths_and_du
             .await
             .unwrap_err();
         assert!(matches!(error.kind(), ErrorKind::Protocol(_)));
-        assert_eq!(error.meta().unwrap().status.as_u16(), 200);
+        assert_eq!(error.meta().unwrap().status().as_u16(), 200);
         assert!(error.operation().unwrap().name().ends_with("initiate"));
     }
     assert!(sink.requests().is_empty());
@@ -335,7 +336,7 @@ async fn redirects_are_not_followed_even_within_origin() {
     })
     .await;
     let error = client(&server).get_file("id", &fields()).await.unwrap_err();
-    assert_eq!(error.meta().unwrap().status.as_u16(), 307);
+    assert_eq!(error.meta().unwrap().status().as_u16(), 307);
     assert_eq!(server.requests().len(), 1);
     server.shutdown().await;
 }
@@ -404,7 +405,7 @@ async fn malformed_or_impossible_ranges_leave_a_probe_required() {
             .await
             .unwrap_err();
         assert!(matches!(error.kind(), ErrorKind::Protocol(_)));
-        assert_eq!(error.meta().unwrap().status.as_u16(), 308);
+        assert_eq!(error.meta().unwrap().status().as_u16(), 308);
         assert!(session.needs_probe());
         assert_eq!(session.acknowledged(), 0);
         assert!(session.send_chunk(&vec![0; CHUNK_ALIGNMENT]).await.is_err());
@@ -549,8 +550,8 @@ async fn expired_session_and_503_keep_metadata_and_never_retry() {
         .unwrap()
         .value;
     let error = session.send_chunk(&[0]).await.unwrap_err();
-    assert_eq!(error.meta().unwrap().status.as_u16(), 503);
-    assert_eq!(error.meta().unwrap().headers["retry-after"], "7");
+    assert_eq!(error.meta().unwrap().status().as_u16(), 503);
+    assert_eq!(error.meta().unwrap().headers()["retry-after"], "7");
     assert_eq!(
         error.provider().unwrap().errors[0].reason,
         "rateLimitExceeded"
@@ -651,9 +652,9 @@ async fn errors_keep_typed_documents_headers_and_safe_diagnostics() {
         error.provider().unwrap().errors[0].reason,
         "rateLimitExceeded"
     );
-    assert_eq!(error.meta().unwrap().headers["retry-after"], "3");
+    assert_eq!(error.meta().unwrap().headers()["retry-after"], "3");
     assert_eq!(
-        error.meta().unwrap().headers["x-guploader-uploadid"],
+        error.meta().unwrap().headers()["x-guploader-uploadid"],
         "SYNTHETIC_REQUEST_ID"
     );
     let error = drive.get_file("id", &fields()).await.unwrap_err();
@@ -694,7 +695,7 @@ async fn malformed_oversized_or_truncated_error_bodies_keep_the_head() {
     ] {
         let error = drive.get_file("id", &fields()).await.unwrap_err();
         assert_eq!(error.document_problem(), Some(problem));
-        assert_eq!(error.meta().unwrap().headers["retry-after"], "9");
+        assert_eq!(error.meta().unwrap().headers()["retry-after"], "9");
         assert!(error.provider().is_none());
     }
     server.shutdown().await;
@@ -730,9 +731,9 @@ async fn successful_metadata_failures_keep_response_information() {
     ] {
         let error = drive.get_file("id", &fields()).await.unwrap_err();
         assert_eq!(error.concord().unwrap().kind(), kind);
-        assert_eq!(error.meta().unwrap().status.as_u16(), 200);
+        assert_eq!(error.meta().unwrap().status().as_u16(), 200);
         assert_eq!(
-            error.meta().unwrap().headers["x-request-id"],
+            error.meta().unwrap().headers()["x-request-id"],
             "SYNTHETIC_ID"
         );
     }
@@ -813,7 +814,7 @@ async fn changes_reject_ambiguous_missing_repeated_or_empty_tokens() {
             error.kind(),
             ErrorKind::Protocol(_) | ErrorKind::Concord
         ));
-        assert_eq!(error.meta().unwrap().status.as_u16(), 200);
+        assert_eq!(error.meta().unwrap().status().as_u16(), 200);
         server.shutdown().await;
     }
 }
@@ -995,7 +996,7 @@ async fn configured_chunk_bound_and_failed_308_body_preserve_confirmed_state() {
         .await
         .unwrap_err();
     assert_eq!(error.concord().unwrap().kind(), concord::ErrorKind::Limit);
-    assert_eq!(error.meta().unwrap().status.as_u16(), 308);
+    assert_eq!(error.meta().unwrap().status().as_u16(), 308);
     assert_eq!(session.acknowledged(), 0);
     assert!(session.needs_probe());
     server.shutdown().await;
@@ -1024,7 +1025,7 @@ async fn failed_final_metadata_requires_probe_and_never_repeats_final_bytes() {
         .value;
     let error = session.send_chunk(SMALL).await.unwrap_err();
     assert_eq!(error.concord().unwrap().kind(), concord::ErrorKind::Decode);
-    assert_eq!(error.meta().unwrap().status.as_u16(), 201);
+    assert_eq!(error.meta().unwrap().status().as_u16(), 201);
     assert!(session.needs_probe());
     assert!(!session.is_complete());
     assert!(session.send_chunk(SMALL).await.is_err());
@@ -1057,13 +1058,13 @@ async fn initiation_requires_documented_status_and_empty_body() {
         .await
         .unwrap_err();
     assert!(matches!(error.kind(), ErrorKind::Protocol(_)));
-    assert_eq!(error.meta().unwrap().status.as_u16(), 201);
+    assert_eq!(error.meta().unwrap().status().as_u16(), 201);
     let error = drive
         .initiate_upload(metadata(), "application/octet-stream", 2, &fields())
         .await
         .unwrap_err();
     assert_eq!(error.concord().unwrap().kind(), concord::ErrorKind::Limit);
-    assert_eq!(error.meta().unwrap().status.as_u16(), 200);
+    assert_eq!(error.meta().unwrap().status().as_u16(), 200);
     assert_eq!(server.requests().len(), 2);
     server.shutdown().await;
 }

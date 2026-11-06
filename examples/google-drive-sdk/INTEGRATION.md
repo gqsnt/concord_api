@@ -108,3 +108,62 @@ as before the change). The repository gate (`scripts/verify.sh`) result is in th
 records.
 
 Offline only; no Google API calls.
+
+## Between waves 3-4 (ResponseMeta)
+
+Concord gained `concord::ResponseMeta` (an owned head: status, version, header map, operation;
+`Received::meta()`; `Debug` prints header names only; AUTHOR_GUIDE §5.11). Base `92775757`.
+Role: implementer, a Claude agent session spawned by the coordinator (model and effort not
+re-derived from harness metadata here). Not an independent review.
+
+**Verdict: adopted (re-export).** `src/error.rs` now has `pub use concord::ResponseMeta;` in
+place of its own struct, `capture` and `Debug`; the four capture sites (`client.rs`,
+`upload.rs` ×2, `Error::provider_response`) call `received.meta()`. Decisive: the SDK type was
+Concord's minus `version`, with the same names-only `Debug`, so it was a copy; the upload
+session code reads `Location` and `Range` through `meta.headers()` exactly as before.
+
+### Lines (non-blank, non-comment, from `git diff`; this file excluded)
+
+| | removed | added |
+|---|---|---|
+| `src/` | 41 | 17 |
+| `tests/` | 21 | 22 |
+| `README.md` | 0 | 0 |
+
+`src/` additions are the re-export, two import lines, the four `received.meta()` captures and
+ten field → method edits in the SDK's own reads (`meta.status()`, `meta.headers()`,
+`meta.operation()`).
+
+### Caller-visible changes
+
+- Fields become methods, on `Response::meta`, `ChangesPageMeta::response`,
+  `UploadStatus::Incomplete { meta }`, `Error::meta()` and the `FilePages` page metadata:
+
+  ```rust,ignore
+  let location = initiated.meta.headers["location"]   // before
+  let location = initiated.meta.headers()["location"] // after
+  ```
+
+  Likewise `status()` and `operation()`. New: `version()`.
+- The type is now `concord::ResponseMeta` (the same type as in the other adopting SDKs). It
+  cannot be built by struct literal; `ResponseMeta::new(head, operation)` builds one. No test or
+  README built one.
+- `Debug` (from the code): adds `version`; the operation prints by name
+  (`Some("DriveApi.files.get")`, was `Some(Operation(GET DriveApi.files.get))`); header names
+  only, as before. `Display` is unchanged.
+
+### Test edits, by kind
+
+1. Field → method, mechanical (21 lines in `tests/first_use.rs`, `tests/maintenance.rs`,
+   `tests/protocol.rs`, `tests/workflows.rs`): `.status` → `.status()`, `.headers` →
+   `.headers()`. Expected values unchanged.
+2. Added, one assertion
+   (`tests/protocol.rs::resumable_initiation_chunks_probe_and_completion_preserve_wire`): `Debug`
+   of the initiation's `meta` does not contain its `Location` value (the session URL).
+
+### Verification (observed)
+
+`CARGO_BUILD_JOBS=6 cargo test --locked -p concord-sdk-google-drive`, run twice: `first_use` 5,
+`maintenance` 3, `protocol` 25, `workflows` 4, doctests 3 passed, 0 failed (the same counts as at
+`92775757`). `cargo clippy --locked --all-targets -- -D warnings`, `cargo fmt --check` and
+`cargo doc --no-deps` (no warnings): clean. Offline only.

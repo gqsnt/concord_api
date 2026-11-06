@@ -133,7 +133,7 @@ impl DriveClient {
                 Error::provider_response(received, self.config.max_error_bytes, false).await,
             );
         }
-        let meta = ResponseMeta::capture(&received);
+        let meta = received.meta();
         let value = received
             .decode_limited(self.config.max_response_bytes)
             .await
