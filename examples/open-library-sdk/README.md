@@ -8,7 +8,7 @@ Concord guide excerpts and the shared test server were consulted; the complete l
 The slice supports these connected workflows:
 
 1. Search works at `/search.json` with `q`, a one-based `page`, and `limit`, then
-   retrieve a selected work at `/works/{id}.json`.
+   retrieve a selected work at `/works/{id}.json`. An optional `sort` selects ordering.
 2. Search authors at `/search/authors.json` with `q`, then retrieve a selected
    author's work batch at `/authors/{id}/works.json`, optionally using `limit` and `offset`.
 
@@ -19,7 +19,7 @@ There is no wrapper client, custom codec or native request rewrite.
 ```no_run
 use std::{num::NonZeroU32, time::Duration};
 use concord_sdk_open_library::{
-    AuthorWorks, Error, OpenLibrary, Work, concord::reqwest,
+    AuthorWorks, Error, OpenLibrary, Work, WorkSort, concord::reqwest,
 };
 
 // The application supplies its transport and any identification headers.
@@ -35,6 +35,7 @@ async fn selected_work(api: &OpenLibrary) -> Result<Option<Work>, Error> {
     let page = api.search().works("the lord of the rings")
         .set_page(NonZeroU32::new(2).unwrap())
         .set_limit(NonZeroU32::new(10).unwrap())
+        .set_sort(WorkSort::New)
         .send().await?;
     match page.docs.first() {
         Some(hit) => Ok(Some(api.works().get(hit.id()?).send().await?)),
@@ -59,8 +60,13 @@ The declaration's default base is the official service, but **live provider call
 Only documentation pages were fetched during authoring. Tests always replace the base with a
 loopback `TestServer` URL, disable proxies and redirects, and verify request targets.
 
-Work search sends page 1 and limit 20 by SDK default. `NonZeroU32` prevents zero-valued
-page/limit inputs without claiming an undocumented provider maximum. Author search declares
+Work search sends page 1 and limit 20 by SDK default. Optional `.set_sort(WorkSort::New)`
+accepts `New`, `Old`, `Random`, or `Key`, encoded as `new`, `old`, `random`, or `key`.
+These are the four values named on the [Search API page](https://openlibrary.org/dev/docs/api/search)
+(read 2026-11-07); this bounded enum does not enumerate every facet in the linked server source.
+Omission (or `.maybe_sort(None)`) leaves relevance ordering to the provider. Key order is
+lexicographic, not numeric. `NonZeroU32` prevents zero-valued page/limit inputs without claiming
+an undocumented provider maximum. Author search declares
 only `q`. Work retrieval has no pagination parameters. Author works uses offset rather than
 page; absent limit/offset are omitted (the cited author docs describe a default batch of 50).
 Each call retrieves one page or batch; it never follows returned links or silently gathers all
@@ -74,7 +80,16 @@ injection. Calling `hit.id()` performs the same conversion; a missing key is an 
 
 Successful empty searches have `docs: []`. Common descriptive fields are `Option`, so missing
 or null titles, author names, publication years, descriptions and subjects are safe to inspect.
-Unknown fields are ignored. Description JSON is retained without a string/object guarantee.
+Unknown fields are ignored. `work.description_text()` returns one borrowed `Option<&str>`
+from either a plain string or `{"type":"/type/text","value":"..."}`. Missing/null is `None`;
+empty text in either shape is `Some("")`. Whitespace and markup remain unchanged. This also
+works on every `Work` in `AuthorWorks.entries`. The original `description: Option<Value>`
+remains available for compatibility; unrecognized shapes yield no text and remain in that raw
+field. The [data dumps format documentation](https://openlibrary.org/developers/dumps#format-of-json-records)
+links the [work schema](https://github.com/internetarchive/openlibrary-client/blob/master/olclient/schemata/work.schema.json)
+and [text-block definition](https://github.com/internetarchive/openlibrary-client/blob/master/olclient/schemata/shared_definitions.json)
+(read 2026-11-07). The schema documents the object form; accepting the plain string is the
+maintenance ticket's compatibility requirement, not a claim that the schema enumerates both.
 The SDK requires the collection envelope (`docs` or `entries`) to be an array and rejects
 wrong types for modelled fields; it does not turn malformed envelopes into empty pages.
 `numFound` and `num_found` are accepted because both appear on the official search page.
@@ -126,3 +141,4 @@ CARGO_BUILD_JOBS=4 RUSTDOCFLAGS="-D warnings" cargo doc --locked -p concord-sdk-
 
 Fixtures, sources and retrieval dates are in [PROVENANCE.md](PROVENANCE.md).
 Concord costs and proposed shared changes are in [FRICTION.md](FRICTION.md).
+The subsequent maintenance change and its checks are recorded in [MAINTENANCE.md](MAINTENANCE.md).

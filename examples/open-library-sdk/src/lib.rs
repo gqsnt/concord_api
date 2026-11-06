@@ -8,7 +8,7 @@ mod policy;
 pub use concord;
 pub use error::{Error, HttpError, RecordKind};
 pub use models::{
-    AuthorHit, AuthorId, AuthorSearch, AuthorWorks, Work, WorkHit, WorkId, WorkSearch,
+    AuthorHit, AuthorId, AuthorSearch, AuthorWorks, Work, WorkHit, WorkId, WorkSearch, WorkSort,
 };
 pub use policy::{ERROR_BODY_LIMIT, RESPONSE_BODY_LIMIT, ReadPolicy};
 
@@ -29,10 +29,12 @@ concord::api! {
         /// Public search operations; pagination is specific to each endpoint.
         scope search {
             /// Searches works, with a one-based page and explicit page size (SDK default: 20).
+            /// Optional sort uses the documented values; omission keeps relevance order.
             GET works(
                 #[sensitive] query q: String,
                 query page: NonZeroU32 = NonZeroU32::MIN,
                 query limit: NonZeroU32 = search_limit(),
+                query sort?: WorkSort,
             ) -> WorkSearch { path "search.json"; }
 
             /// Searches authors by text. This slice declares only the documented `q` input.

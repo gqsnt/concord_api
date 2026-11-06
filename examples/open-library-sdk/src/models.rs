@@ -63,6 +63,33 @@ identifier!(
     "A validated author identifier, stored without `/authors/`."
 );
 
+/// Sort values listed on the [Search API page](https://openlibrary.org/dev/docs/api/search).
+///
+/// Omitting the search's sort option uses the provider's relevance order.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum WorkSort {
+    /// Newest first (`new`).
+    New,
+    /// Oldest first (`old`).
+    Old,
+    /// Random order (`random`).
+    Random,
+    /// Lexicographic key order (`key`), not numeric OLID order.
+    Key,
+}
+
+impl fmt::Display for WorkSort {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(match self {
+            Self::New => "new",
+            Self::Old => "old",
+            Self::Random => "random",
+            Self::Key => "key",
+        })
+    }
+}
+
 /// A search page. `docs: []` is an ordinary successful empty page.
 #[derive(Debug, Deserialize)]
 #[non_exhaustive]
@@ -145,10 +172,32 @@ pub struct Work {
     pub key: Option<String>,
     /// Display title, when present.
     pub title: Option<String>,
-    /// Description retained as JSON: this slice imposes no string/object schema guarantee.
+    /// Original description JSON; use [`Self::description_text`] for either text shape.
     pub description: Option<Value>,
     /// Subject labels, when present.
     pub subjects: Option<Vec<String>>,
+}
+
+impl Work {
+    /// Borrows the description as text, whether it is a string or a `/type/text` object.
+    ///
+    /// Missing/null descriptions yield `None`; an empty string in either shape yields
+    /// `Some("")`. Text is returned unchanged, including whitespace and markup.
+    /// Unrecognized shapes yield `None` and remain available in [`Self::description`].
+    ///
+    /// The [data dumps documentation](https://openlibrary.org/developers/dumps)
+    /// links the work schema and its `text_block` definition (`type` plus string `value`).
+    pub fn description_text(&self) -> Option<&str> {
+        match self.description.as_ref()? {
+            Value::String(text) => Some(text),
+            Value::Object(object)
+                if object.get("type").and_then(Value::as_str) == Some("/type/text") =>
+            {
+                object.get("value").and_then(Value::as_str)
+            }
+            _ => None,
+        }
+    }
 }
 
 /// One batch of an author's works. The SDK does not claim this is the entire collection.

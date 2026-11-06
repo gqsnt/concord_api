@@ -135,3 +135,40 @@ time. After the first tests, target was 877 MiB and free disk 363 GiB. No cleanu
 This is a focused package gate, not a full campaign or cross-platform gate.
 
 Validation results and final counts are recorded in [VALIDATION.md](VALIDATION.md).
+
+## Independent maintenance addendum — 2026-11-07
+
+The historical author record above is preserved. Maintenance started at
+`ba6ac11b0e990a701b806e15f5d1ab5b0d8a155e`; see [MAINTENANCE.md](MAINTENANCE.md) for
+the new session's exposure, edit ledger and observed checks. No dependency was added or changed;
+the existing workspace member and lock entry were already present. The initial unlocked offline
+build left Cargo.lock byte-for-byte unchanged. **Live provider calls: NOT_RUN**; research fetched
+documentation/schema/source pages only, never search/record endpoints or data dumps.
+
+All sources below were read on **2026-11-07 (Europe/Paris)**:
+
+| Exact page | Maintenance use |
+|---|---|
+| https://openlibrary.org/dev/docs/api/search | Four explicitly named sort values (`new`, `old`, `random`, `key`), default relevance, lexicographic key ordering, page/limit boundary. |
+| https://openlibrary.org/dev/docs/api/authors | Author search and works routes; full author lookup exists at the provider but is outside the existing SDK slice. |
+| https://openlibrary.org/dev/docs/api/books | Works API section: selected work retrieval by canonical ID with `.json`. |
+| https://openlibrary.org/developers/dumps | Format of JSON records section links official work/author schemata and their shared text-block definition; no dump downloaded. |
+| https://openlibrary.org/type/work | Work description has `/type/text`. |
+| https://openlibrary.org/type/author | Author bio has `/type/text`; inspected for applicability only, since the SDK has no bio field. |
+| https://github.com/internetarchive/openlibrary-client/tree/master/olclient/schemata | Official schema directory linked by the dumps page. |
+| https://raw.githubusercontent.com/internetarchive/openlibrary-client/master/olclient/schemata/work.schema.json | `description` references `text_block`. |
+| https://raw.githubusercontent.com/internetarchive/openlibrary-client/master/olclient/schemata/author.schema.json | `bio` references `text_block`; no author lookup was added. |
+| https://raw.githubusercontent.com/internetarchive/openlibrary-client/master/olclient/schemata/shared_definitions.json | Text object uses `/type/text` and string `value`. The schema documents the object form only; plain-string compatibility comes from the ticket and existing synthetic fixture. |
+| https://openlibrary.org/dev/docs/restful_api | Read-only content and collection examples corroborate JSON resource addressing; no write examples executed. |
+| https://raw.githubusercontent.com/internetarchive/openlibrary/master/openlibrary/plugins/worksearch/schemes/works.py | Corroborates new/old publication-year semantics and contains additional server sort facets not included in this bounded SDK. |
+
+`https://openlibrary.org/dev/docs/api/works` was attempted but inaccessible; the Books API's
+Works section supplied route evidence instead. Two web searches for text handling returned no
+usable primary-source evidence; unrelated results were not adopted or opened. No page above is
+treated as an exhaustive stable schema guarantee.
+
+`tests/maintenance.rs` adds authored synthetic inline fixtures, not provider captures: raw and
+text-object descriptions, Unicode/whitespace/markup, empty/missing/null text, unrecognized
+shapes, a selectable work search, and an author work batch. Literal sort wire expectations
+come from the search page, not from SDK output. Unknown-shape retention is an SDK compatibility
+choice, not a provider guarantee. Existing fixtures and all existing assertions remain intact.
