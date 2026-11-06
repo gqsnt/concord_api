@@ -543,3 +543,23 @@ feature unification broke `crates/concord/tests/metadata.rs` `content_encoding_i
 | W4-13 | Airtable maintainer: rename-proof keys need Airtable's `returnFieldsByFieldId`; adding a public options field breaks two tests that build it by literal | SDK API (`#[non_exhaustive]`) | SDK choice, not taken (outside the ticket) |
 | W4-14 | ClickHouse consumer: a broken insert response can lose metadata; collection still requires checking `Outcome` | SDK | recorded in its FIRST_USE.md |
 | W4-15 | maintenance dispersion: Airtable 0 production changes, Open-Meteo 1 definition, ClickHouse 2 production decisions, Snowflake one fact in 7 places | measurement | — |
+
+### Reviews between waves 4 and 5 (read-only, on `25f126bd`)
+
+CSV (Codex `gpt-6.1-terra`, xhigh, session `01a1afca-072f…`): ACCEPT_WITH_FIXES.
+
+| ID | Severity | Finding | Fix |
+|---|---|---|---|
+| TER-W45-1 | low | release builds scanned skipped input (long blank-line or comment-only runs) byte by byte although no record was in progress | R4 agent (in progress) |
+
+Areas reported clean: the DFA mirror (escapes, doubled quotes, bytes after a closing quote,
+terminators, comments, BOMs, chunk boundaries), the shared EOF check, record numbering, header
+handling, terminal completion, redaction, the configuration refusal on every construction route,
+the Open-Meteo migration, `consumers.sh` (cleanup only after a clean run, quoted paths).
+
+Readers over a wrapped body (Codex `gpt-6.1-sol`, xhigh, session `01a1afca-072f-7f83…`): ACCEPT, no
+findings. Areas reported clean: redaction (sources stay out of `Display`/`Debug`/`source()`),
+by-value extraction, `Incoming` as a cancel-safe source, `check_head` identical to `open`,
+operation naming, fused terminal behaviour after a source failure, the three SDK migrations (the
+ClickHouse insert `expect` unreachable on current paths), docs. Both reviewers could not run cargo
+(read-only filesystem).
