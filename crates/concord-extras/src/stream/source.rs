@@ -13,6 +13,18 @@ use concord_core::reqwest;
 ///
 /// `Ok(None)` is the true end of input; a chunk boundary is never an end. Chunks may be empty and
 /// may split a record, a UTF-8 character or a CSV quote anywhere.
+///
+/// # Cancellation
+///
+/// A reader's `next()` is cancel-safe (a dropped pending call loses nothing) only if
+/// `next_chunk` is: a `next_chunk` future dropped before it completes must not have taken input
+/// from wherever the source gets it. A source that takes a chunk and then awaits something else
+/// keeps that chunk in `self` until it returns it. Otherwise a dropped `next()` loses the chunk,
+/// and a later call may even report a clean end of input. `reqwest::Response` (its `chunk()`
+/// takes a body frame only once one is ready) and [`Chunks`] (it completes on its first poll)
+/// are cancel-safe. Whatever the source, a reader's `into_stream()`
+/// ([`RecordStream`](super::RecordStream)) keeps a pending read, the source's future included,
+/// across a dropped `next()`.
 pub trait ByteSource: Send {
     /// The next chunk, `Ok(None)` at the end of input.
     fn next_chunk(&mut self) -> impl Future<Output = Result<Option<Bytes>, SourceError>> + Send;

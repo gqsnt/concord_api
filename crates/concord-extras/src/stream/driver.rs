@@ -89,8 +89,9 @@ impl<S: ByteSource> Driver<S> {
 
     /// Reads the next nonempty chunk once the current one is used up. `Ok(false)`: end of input.
     ///
-    /// Yields to the executor after every [`EMPTY_CHUNK_BUDGET`] empty chunks. Cancel-safe: a
-    /// dropped call has consumed only empty chunks.
+    /// Yields to the executor after every [`EMPTY_CHUNK_BUDGET`] empty chunks. Cancel-safe when
+    /// the source's `next_chunk` is ([`ByteSource`], "Cancellation"): a dropped call has then
+    /// consumed only empty chunks.
     pub(crate) async fn refill(&mut self) -> Result<bool, ReadError> {
         debug_assert!(self.chunk.is_empty());
         if self.eof {

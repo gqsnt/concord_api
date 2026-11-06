@@ -66,8 +66,9 @@ enum State<R: RecordReader> {
 ///
 /// - **No read-ahead**: a record is read only when the stream is polled; no task is spawned and
 ///   nothing is buffered beyond the reader's own bounded state.
-/// - **Cancellation-safe**: the read in progress belongs to the stream, so dropping a pending
-///   `next()` future (from `StreamExt::next`, a `select!`) loses nothing; the next poll resumes it.
+/// - **Cancellation-safe**: the read in progress (the source's own future included) belongs to
+///   the stream, so dropping a pending `next()` future (from `StreamExt::next`, a `select!`)
+///   loses nothing, whatever the [`ByteSource`](super::ByteSource); the next poll resumes it.
 ///   Dropping the stream drops the reader and its response.
 /// - **Errors unchanged**: each [`ReadError`] is yielded as the reader returned it, with its
 ///   operation, position and [`is_terminal`](ReadError::is_terminal) flag. The stream does not
