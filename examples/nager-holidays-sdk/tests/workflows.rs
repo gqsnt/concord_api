@@ -11,11 +11,11 @@ async fn workflow_a_retrieves_one_country_year_and_retains_known_fields_after_pe
     let script = Script::new([Reply::json(200, AUSTRIA), Reply::json(200, PERTURBED)]);
     let server = TestServer::start(move |_| script.next()).await;
     let api = client(&server);
-    let original = api.holidays("AT", 2026).fetch().await.unwrap();
+    let original = api.holidays("AT", 2026).send().await.unwrap();
     let names: Vec<_> = original.holidays.iter().map(|h| h.name.as_str()).collect();
     assert_eq!(names, ["New Year's Day", "Epiphany"]);
     assert!(original.holidays.iter().all(|h| h.national_holiday));
-    let perturbed = api.holidays("AT", 2026).fetch().await.unwrap();
+    let perturbed = api.holidays("AT", 2026).send().await.unwrap();
     assert_eq!(perturbed.holidays, original.holidays);
     for request in server.requests() {
         assert_read(&request, &server, "/api/v4/Holidays/AT/2026");
@@ -28,8 +28,8 @@ async fn workflow_b_retrieves_different_country_year_and_filters_locally() {
     let script = Script::new([Reply::json(200, AUSTRIA), Reply::json(200, GERMANY)]);
     let server = TestServer::start(move |_| script.next()).await;
     let api = client(&server);
-    let austria = api.holidays("AT", 2026).fetch().await.unwrap();
-    let germany = api.holidays("DE", 2027).fetch().await.unwrap();
+    let austria = api.holidays("AT", 2026).send().await.unwrap();
+    let germany = api.holidays("DE", 2027).send().await.unwrap();
     assert!(austria.holidays.iter().all(|h| h.country_code == "AT"));
     assert!(germany.holidays.iter().all(|h| h.country_code == "DE"));
     let national: Vec<_> = germany
@@ -68,8 +68,8 @@ async fn failed_second_read_keeps_the_completed_first_workflow_result() {
     ]);
     let server = TestServer::start(move |_| script.next()).await;
     let api = client(&server);
-    let first = api.holidays("AT", 2026).fetch().await.unwrap();
-    let second = api.holidays("XX", 0).fetch().await.unwrap_err();
+    let first = api.holidays("AT", 2026).send().await.unwrap();
+    let second = api.holidays("XX", 0).send().await.unwrap_err();
     assert_eq!(second.kind(), ErrorKind::InvalidRequest);
     assert_eq!(
         first.holidays.len(),

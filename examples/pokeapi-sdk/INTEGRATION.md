@@ -155,3 +155,186 @@ because that is a provider rule, not a declared operation.
 - Tests: 21 call sites in `tests/{first_use,protocol,workflows}.rs` (rustfmt wraps some over
   several lines) and one import line per file; no expectation changed. The README examples are
   now compiled as doctests (`ReadmeDoctests` in `src/lib.rs`).
+
+# Between waves 2-3
+
+Coordinator integration of two library refinements: a client **send policy** (`send P;`, every
+generated `send()` returns `<P as concord::SendWith<T>>::Output`) and **`Prepared::follow(url)`**
+(the same endpoint request at a server-returned, same-origin URL). "Before" is `1f71432c` (the
+`Call` adapter recorded above), "after" is the commit that adds this section.
+
+## Verdict: adopted (send policy and `Prepared::follow`)
+
+The send policy is the `Call` adapter without its cost to callers: the same one-line body now
+runs behind the generated `send()`, so callers write `api.pokemon(id).send()` with only `Client`
+imported, and there is one terminal method per operation instead of two (`call()` returning the
+SDK's `Response`/`Error` next to a generated `send()` returning Concord's error). `follow` and
+`pokemon_url` keep the SDK's checks and typed `UrlRejection`, then replace the URL with
+`Prepared::follow` instead of `into_parts` → `url_mut` → `Decoder::execute`.
+
+## Declaration
+
+Before (`src/lib.rs`):
+
+```rust
+    pub client PokeApi() {
+        base "https://pokeapi.co/api/v2";
+        format Json;
+```
+
+After:
+
+```rust
+    pub client PokeApi() {
+        base "https://pokeapi.co/api/v2";
+        send KeepHead;
+        format Json;
+```
+
+The two operations are unchanged.
+
+## SDK adapter
+
+Before, the trait every caller imported:
+
+```rust
+pub trait Call<T>: Endpoint<T> {
+    fn call(self) -> impl Future<Output = Result<Response<T>, Error>> + Send;
+}
+
+impl<T: Send, E: Endpoint<T> + Send> Call<T> for E {
+    async fn call(self) -> Result<Response<T>, Error> {
+        finish(self.prepare()?.receive().await?).await
+    }
+}
+```
+
+After, the policy the declaration names (doc comment omitted):
+
+```rust
+pub struct KeepHead;
+
+impl<T: Send> SendWith<T> for KeepHead {
+    type Output = Result<Response<T>, Error>;
+
+    async fn send<E: Endpoint<T> + Send>(endpoint: E) -> Self::Output {
+        finish(endpoint.prepare()?.receive().await?).await
+    }
+}
+```
+
+URL following, before:
+
+```rust
+    pub async fn follow(&self, next: &str) -> Result<Response<PokemonPage>, Error> {
+        let (client, mut request, decoder) = self.list().prepare()?.into_parts();
+        *request.url_mut() = checked_url(request.url(), next, false)?;
+        finish(decoder.execute(&client, request).await?).await
+    }
+```
+
+```rust
+        let list = self.list().prepare()?;
+        let url = checked_url(list.request().url(), url, true)?;
+        // The `pokemon` operation's decoder and identity; its placeholder URL is replaced.
+        let (client, mut request, decoder) = self.pokemon("placeholder").prepare()?.into_parts();
+        *request.url_mut() = url;
+        finish(decoder.execute(&client, request).await?).await
+```
+
+After (`checked_url` now only validates, `-> Result<(), Error>`; `Prepared::follow` parses the
+same string and replaces the URL verbatim):
+
+```rust
+    pub async fn follow(&self, next: &str) -> Result<Response<PokemonPage>, Error> {
+        let list = self.list().prepare()?;
+        checked_url(list.request().url(), next, false)?;
+        finish(list.follow(next)?.receive().await?).await
+    }
+```
+
+```rust
+        checked_url(self.list().prepare()?.request().url(), url, true)?;
+        // The `pokemon` operation's request (decoder, identity) at the checked URL.
+        let detail = self.pokemon("placeholder").prepare()?.follow(url)?;
+        finish(detail.receive().await?).await
+```
+
+The SDK's checks still run first and report the typed reason (`ForeignOrigin`, `Userinfo`,
+`Fragment`, `WrongPath`, `Query`, `Unparseable`) with nothing sent; `Prepared::follow`'s own
+same-origin refusal (a Concord `Build` error) is therefore unreachable here and stays as a second
+line of defence. The followed request keeps the endpoint's method, headers, decoder and identity
+(`PokeApi.list` / `PokeApi.pokemon` in errors), as before.
+
+## One caller call
+
+Before (`tests/workflows.rs`):
+
+```rust
+use concord_sdk_pokeapi::{Call, Client};
+```
+
+```rust
+    let pokemon = api(&server).pokemon("clefairy").call().await.unwrap().value;
+```
+
+After:
+
+```rust
+use concord_sdk_pokeapi::Client;
+```
+
+```rust
+    let pokemon = api(&server).pokemon("clefairy").send().await.unwrap().value;
+```
+
+## Lines of SDK adapter code
+
+Measured on `src/lib.rs` (adapter type/trait and its impl, `impl PokeApi` with `follow` and
+`pokemon_url`, `checked_url`, `finish`); "code" excludes blank and comment lines.
+
+| | lines | code |
+|---|---|---|
+| before (`Call` trait + impl) | 89 | 68 |
+| after (`KeepHead` + impl) | 88 | 65 |
+
+The adapter is the same size; the change is on the caller's side (no import, one `send()`) and
+in `follow`/`pokemon_url` (no native parts).
+
+## Adding an operation (say `GET pokemon_species(id: String) -> Species`)
+
+| Before | After |
+|---|---|
+| 1. the `api!` entry | 1. the `api!` entry |
+| — (`Call` served it; callers needed the import) | — (`KeepHead` serves it through the generated `send()`) |
+| 2. README | 2. README |
+
+A new output type needs nothing more: the policy is generic (`impl<T: Send> SendWith<T>`). A
+policy written for fixed outputs makes a new output a compile error naming the policy instead
+(observed in the Nager SDK's record, which uses one).
+
+## What a caller sees (observed)
+
+- Rustdoc of a generated `send()` (`PokeApiPokemon::send`) reads
+  `pub fn send(self) -> impl Future<Output = <KeepHead as SendWith<Pokemon>>::Output> + Send`
+  with the generated sentence "Sends the request with the client's send policy `KeepHead` ...";
+  the concrete `Result<Response<Pokemon>, Error>` is one click away, on `KeepHead`. The
+  `Call::call` signature showed it directly. This is the cost of the change.
+- rustc normalises the projection in diagnostics. A temporary probe (compiled, then removed)
+  `let pokemon: Pokemon = api.pokemon("clefairy").send().await?;` reported
+  `error[E0308]: ... expected 'Pokemon', found 'Response<Pokemon>'`.
+- Passing the operation itself where a future is expected
+  (`tokio::time::timeout(d, api.pokemon("clefairy"))`) is still `error[E0277]: 'PokeApiPokemon'
+  is not a future`, with no hint towards `.send()` (and a misleading "remove the `.await`"); the
+  same as with `.call()` before.
+- `prepare()` is unchanged (Concord's `Prepared` and error).
+
+## Tests
+
+21 call sites `.call()` → `.send()` and the import line of each of the three test files
+(`Call` removed); no expectation changed. README: the caller paragraph and two examples (compiled
+as doctests). Results: `first_use` 14, `protocol` 6, `workflows` 3, doctests 2 — all pass, as at
+`1f71432c`; `cargo clippy --all-targets -D warnings` and `cargo doc` (`-D warnings`) clean.
+
+`Received::decode_limited` was not adopted: PokéAPI documents no size for a Pokémon document
+(it embeds every move and sprite), and an invented bound would turn valid responses into errors.

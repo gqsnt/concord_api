@@ -3,13 +3,13 @@
 //! PokéAPI requires no authentication. Construct [`Client`] with a configured
 //! [`concord::reqwest::Client`]. Cache responses as requested by PokéAPI's fair-use policy.
 //!
-//! `use concord_sdk_pokeapi::{Call, Client};` is all a caller imports: a declared operation is
-//! sent with [`Call::call`] (`api.pokemon("clefairy").call().await?`), a URL the server returned
-//! with [`Client::follow`] or [`Client::pokemon_url`]. Each returns a [`Response`] with the
-//! response head, or an [`Error`] that keeps it.
+//! `use concord_sdk_pokeapi::Client;` is all a caller imports: a declared operation is sent with
+//! its `send()` (`api.pokemon("clefairy").send().await?`, through the client's send policy
+//! [`KeepHead`]), a URL the server returned with [`Client::follow`] or [`Client::pokemon_url`].
+//! Each returns a [`Response`] with the response head, or an [`Error`] that keeps it.
 
 use concord::reqwest::{self, Url, header::HeaderMap};
-use concord::{Endpoint, Json, Received};
+use concord::{Endpoint, Json, Received, SendWith};
 use serde::Deserialize;
 use std::collections::BTreeMap;
 use std::fmt;
@@ -73,11 +73,12 @@ concord::api! {
     ///
     /// `PokeApi::new(http)` uses `https://pokeapi.co/api/v2` with the caller's transport
     /// (timeouts, redirects, pooling); `with_base_url` replaces it for an offline server or
-    /// another installation. There is no authentication. Send an operation with [`Call::call`]
-    /// to get the response head with the value; the generated `send()` returns only the value
-    /// and Concord's own error.
+    /// another installation. There is no authentication. Every operation's `send()` goes through
+    /// [`KeepHead`]: it returns the value with the response head ([`Response`]) or this SDK's
+    /// [`Error`]. `prepare()` builds the native request with Concord's own error.
     pub client PokeApi() {
         base "https://pokeapi.co/api/v2";
+        send KeepHead;
         format Json;
         /// Retrieve one Pokémon by name or numeric ID.
         GET pokemon(id: String) -> Pokemon { path "pokemon/{id}/"; }
@@ -175,22 +176,21 @@ impl From<concord::Error> for Error {
 /// authentication.
 pub type Client = PokeApi;
 
-/// Sends any [`PokeApi`] operation once and keeps the response head: one adapter for every
-/// declared operation (`api.pokemon("clefairy").call()`,
-/// `api.list().set_limit(20).set_offset(0).call()`).
-pub trait Call<T>: Endpoint<T> {
-    /// Executes once and decodes the entire JSON body, keeping status, headers and final URL.
-    ///
-    /// # Errors
-    ///
-    /// [`Error::Concord`] with the original Concord error; `meta` is present once the response
-    /// head arrived (status, metadata and decode errors), absent for build and transport errors.
-    fn call(self) -> impl Future<Output = Result<Response<T>, Error>> + Send;
-}
+/// The send policy of [`PokeApi`] (`send KeepHead;`): every operation's `send()`
+/// (`api.pokemon("clefairy").send()`, `api.list().set_limit(20).set_offset(0).send()`) executes
+/// once, decodes the entire JSON body, keeps status, headers and final URL, and returns
+/// `Result<Response<T>, Error>`.
+///
+/// Errors: [`Error::Concord`] with the original Concord error; `meta` is present once the
+/// response head arrived (status, metadata and decode errors), absent for build and transport
+/// errors.
+pub struct KeepHead;
 
-impl<T: Send, E: Endpoint<T> + Send> Call<T> for E {
-    async fn call(self) -> Result<Response<T>, Error> {
-        finish(self.prepare()?.receive().await?).await
+impl<T: Send> SendWith<T> for KeepHead {
+    type Output = Result<Response<T>, Error>;
+
+    async fn send<E: Endpoint<T> + Send>(endpoint: E) -> Self::Output {
+        finish(endpoint.prepare()?.receive().await?).await
     }
 }
 
@@ -199,28 +199,28 @@ impl PokeApi {
     ///
     /// # Errors
     /// [`Error::InvalidUrl`] for a malformed URL or one outside the configured origin and Pokémon
-    /// list path (nothing is sent). Other failures are those of [`Call::call`].
+    /// list path (nothing is sent). Other failures are those of [`KeepHead`].
     pub async fn follow(&self, next: &str) -> Result<Response<PokemonPage>, Error> {
-        let (client, mut request, decoder) = self.list().prepare()?.into_parts();
-        *request.url_mut() = checked_url(request.url(), next, false)?;
-        finish(decoder.execute(&client, request).await?).await
+        let list = self.list().prepare()?;
+        checked_url(list.request().url(), next, false)?;
+        finish(list.follow(next)?.receive().await?).await
     }
     /// Retrieve a Pokémon by a URL supplied in a list result.
     ///
     /// # Errors
     /// [`Error::InvalidUrl`] for a malformed, foreign or out-of-scope URL (nothing is sent).
-    /// Other failures are those of [`Call::call`].
+    /// Other failures are those of [`KeepHead`].
     pub async fn pokemon_url(&self, url: &str) -> Result<Response<Pokemon>, Error> {
-        let list = self.list().prepare()?;
-        let url = checked_url(list.request().url(), url, true)?;
-        // The `pokemon` operation's decoder and identity; its placeholder URL is replaced.
-        let (client, mut request, decoder) = self.pokemon("placeholder").prepare()?.into_parts();
-        *request.url_mut() = url;
-        finish(decoder.execute(&client, request).await?).await
+        checked_url(self.list().prepare()?.request().url(), url, true)?;
+        // The `pokemon` operation's request (decoder, identity) at the checked URL.
+        let detail = self.pokemon("placeholder").prepare()?.follow(url)?;
+        finish(detail.receive().await?).await
     }
 }
 
-fn checked_url(list: &Url, value: &str, detail: bool) -> Result<Url, Error> {
+/// The SDK's rules for a server-returned URL, checked against the list request's URL before
+/// `Prepared::follow` (which itself refuses only another origin).
+fn checked_url(list: &Url, value: &str, detail: bool) -> Result<(), Error> {
     let reject = |reason| Err(Error::InvalidUrl(reason));
     let Ok(url) = Url::parse(value) else {
         return reject(UrlRejection::Unparseable);
@@ -252,7 +252,7 @@ fn checked_url(list: &Url, value: &str, detail: bool) -> Result<Url, Error> {
     if detail && url.query().is_some() {
         return reject(UrlRejection::Query);
     }
-    Ok(url)
+    Ok(())
 }
 
 /// The README's examples, compiled as doctests.

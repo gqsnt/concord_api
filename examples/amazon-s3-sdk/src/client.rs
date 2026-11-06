@@ -425,9 +425,8 @@ async fn finish<T>(received: Received<T>) -> Result<(T, ResponseMeta), S3Error> 
         let not_modified = NotModified::from_headers(operation, meta, received.head().headers());
         Err(S3Error::NotModified(Box::new(not_modified)))
     } else {
-        let response = received.into_response();
         Err(S3Error::Api(Box::new(
-            ApiError::read(operation, response, meta).await,
+            ApiError::read(operation, received, meta).await,
         )))
     }
 }

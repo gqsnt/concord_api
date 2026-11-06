@@ -10,8 +10,8 @@
 
 use std::fmt;
 
-use concord::bytes::BytesMut;
-use concord::reqwest::{self, StatusCode, header::HeaderMap};
+use concord::reqwest::{StatusCode, header::HeaderMap};
+use concord::{ErrorKind, Received};
 
 use crate::types::{ETag, HttpDate};
 
@@ -261,9 +261,9 @@ impl ApiError {
     }
 
     /// Reads the (bounded) body of an error response and parses it as an S3 `<Error>` document.
-    pub(crate) async fn read(
+    pub(crate) async fn read<T>(
         operation: &'static str,
-        mut response: reqwest::Response,
+        received: Received<T>,
         meta: ResponseMeta,
     ) -> Self {
         let mut error = Self {
@@ -276,23 +276,16 @@ impl ApiError {
             document_request_id: None,
             host_id: None,
         };
-        let mut buffer = BytesMut::new();
-        loop {
-            match response.chunk().await {
-                Ok(Some(chunk)) => {
-                    if buffer.len() + chunk.len() > MAX_ERROR_BODY {
-                        error.body = ErrorBody::TooLarge;
-                        return error;
-                    }
-                    buffer.extend_from_slice(&chunk);
-                }
-                Ok(None) => break,
-                Err(_) => {
-                    error.body = ErrorBody::ReadFailed;
-                    return error;
-                }
+        let buffer = match received.bytes_limited(MAX_ERROR_BODY).await {
+            Ok(bytes) => bytes,
+            Err(e) => {
+                error.body = match e.kind() {
+                    ErrorKind::Limit => ErrorBody::TooLarge,
+                    _ => ErrorBody::ReadFailed,
+                };
+                return error;
             }
-        }
+        };
         if buffer.is_empty() {
             return error;
         }
