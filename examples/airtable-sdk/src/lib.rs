@@ -47,7 +47,8 @@ fn present_offset<'de, D: serde::Deserializer<'de>>(
 pub struct ListOptions {
     /// Optional filter expression passed verbatim as `filterByFormula`.
     pub filter_by_formula: Option<String>,
-    /// Selected field names, repeated as `fields[]`; empty means no selection parameter.
+    /// Selected field names or field IDs, repeated as `fields[]`; empty means no selection
+    /// parameter. Response keys are field names either way.
     pub fields: Vec<String>,
     /// Optional page size, from 1 through 100 inclusive.
     pub page_size: Option<u8>,
