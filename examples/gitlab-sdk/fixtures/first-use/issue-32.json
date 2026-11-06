@@ -1,0 +1,23 @@
+{
+  "id": 900032,
+  "iid": 32,
+  "project_id": 73,
+  "title": "Explain the next page",
+  "description": "Document pagination for readers.",
+  "state": "opened",
+  "labels": ["bug", "help wanted"],
+  "author": {
+    "id": 55,
+    "username": "fixture-reader",
+    "name": "Fixture Reader"
+  },
+  "assignees": [],
+  "milestone": null,
+  "created_at": "2026-01-04T03:04:05.000Z",
+  "updated_at": "2026-01-04T03:04:05.000Z",
+  "closed_at": null,
+  "user_notes_count": 0,
+  "confidential": false,
+  "issue_type": "issue",
+  "web_url": "https://gitlab.example.com/demo/platform/reader/-/issues/32"
+}
