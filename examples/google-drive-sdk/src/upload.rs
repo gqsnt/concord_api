@@ -232,6 +232,10 @@ impl UploadSession {
         self.complete
     }
     /// Capture protected persistence state, without credentials or source bytes.
+    /// Save after an acknowledgement and before the next write. A restored checkpoint
+    /// must be probed even after a clean stop: an interrupted write may have advanced
+    /// the server beyond this saved prefix. This checkpoint has no changes-feed token;
+    /// persist that token too when the upload is part of a changes workflow.
     pub fn checkpoint(&self) -> UploadCheckpoint {
         UploadCheckpoint {
             url: self.url.as_str().to_owned(),
@@ -243,6 +247,8 @@ impl UploadSession {
 
     /// Send one bounded chunk beginning at the acknowledged position.
     /// Non-final lengths must be multiples of 256 KiB. No retry or automatic status request.
+    /// The acknowledged offset itself need not be aligned; slice the original bytes at
+    /// that exact offset after every response or probe, including partial acknowledgements.
     /// Cancellation after the first poll leaves `needs_probe=true`.
     pub async fn send_chunk(&mut self, bytes: &[u8]) -> Result<UploadStatus, Error> {
         if self.complete {

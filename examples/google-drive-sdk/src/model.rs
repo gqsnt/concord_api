@@ -33,6 +33,7 @@ pub struct File {
 #[serde(rename_all = "camelCase")]
 pub struct NewFile {
     /// File name, preferably including its extension.
+    /// Serialized as supplied, without Unicode normalization or MIME filename encoding.
     pub name: String,
     /// Optional explicit stored MIME type; use the media type supplied to the upload normally.
     #[serde(skip_serializing_if = "Option::is_none")]

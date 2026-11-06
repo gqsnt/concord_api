@@ -61,6 +61,8 @@ control fields, preventing a projection from accidentally hiding a continuation.
 Multipart media is limited to 5 MiB and buffered with its metadata. Both MIME parts
 are scanned when selecting the boundary. Unicode names and arbitrary binary bytes,
 including boundary-like sequences, pass through unchanged.
+Names remain JSON metadata, with no Unicode normalization or MIME filename
+encoding; a decomposed combining character remains decomposed.
 
 ```no_run
 use concord_sdk_google_drive::{
@@ -101,6 +103,10 @@ An upload session fixes the total length and MIME type. Each non-final chunk mus
 have a length divisible by `CHUNK_ALIGNMENT` (256 KiB); the final chunk may be
 smaller. Read the source beginning at `acknowledged()`, rather than assuming a
 whole submitted chunk was accepted.
+The acknowledged offset can be unaligned after a partial acceptance; the alignment
+rule applies to the next non-final chunk's length. Save an upload checkpoint after
+an acknowledgement and before sending more bytes, and retain the changes token
+alongside it. Restoring requires a probe even after stopping between requests.
 
 The following code resumes a saved session from an interruption, finishes within
 an application request budget, then returns a finite changes batch and its next
@@ -184,6 +190,16 @@ the server commits the next chunk but drops its response, a serialized checkpoin
 is restored, and an empty PUT discovers the accepted prefix. Only the remaining
 37 bytes are sent. Three changes pages follow, including a budget stop/resumption
 before the final `newStartPageToken`, then a further poll with that saved token.
+
+`tests/maintenance.rs` adds three wire regressions: multiple boundary collisions
+across metadata and media with a decomposed Unicode name; restart immediately
+after an acknowledged chunk; and restart from the same saved checkpoint after
+only 17 bytes of the next chunk are committed and its response is lost. Both
+restart cases reconstruct the exact source, preserve the returned session query
+(including escape spelling and repeated parameters), and retain opaque changes
+tokens through an empty continuation page, a budget stop, a typed provider error,
+and the extra terminal page. `MAINTENANCE.md` records why no runtime or caller
+contract change was necessary.
 
 ## Completion, errors and partial outcomes
 

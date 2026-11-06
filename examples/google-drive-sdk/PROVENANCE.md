@@ -92,3 +92,34 @@ adds this SDK package's dependency list only.
 
 No live provider requests, credentials, OAuth minting, or vendor-conformance
 verification occurred. Execution evidence is offline fixture evidence only.
+
+## Maintenance fixture additions (2026-11-06)
+
+Re-opened the official [upload guide](https://developers.google.com/workspace/drive/api/guides/manage-uploads)
+(HTTP multipart, multiple requests, and interrupted-upload sections) and
+[changes.list reference](https://developers.google.com/workspace/drive/api/reference/rest/v3/changes/list)
+(response boundary fields). These describe the protocol structure; none of the
+new bytes or documents was downloaded or copied from an example. All remain
+hand-authored synthetic inputs and expected output, covered by `fixtures/** -text`.
+
+| Fixture | Authored bytes and purpose |
+| --- | --- |
+| `maintenance-new-file.json` | 49 bytes of compact UTF-8 JSON, no terminal LF. The name contains `e` + U+0301, Japanese text, a satellite emoji, and `concord_drive_0`. No Unicode normalization is applied. |
+| `maintenance-media.bin` | 60 invented bytes: NUL, FF, 80, FE, CRLF, a candidate-1 delimiter line and a candidate-2 closing-delimiter line. Ends in CRLF. |
+| `maintenance-multipart.bin` | 263 hand-assembled expected bytes: candidate 3 framing, the exact metadata and media fixtures, CRLF separators and final delimiter. Authored independently of SDK output. |
+
+`tests/maintenance.rs` repeats the 60-byte seed and truncates to
+`2 * CHUNK_ALIGNMENT + 37 = 524325` bytes for both restart cases. The server
+commits the first chunk; the partial-acceptance case commits only 17 bytes of
+the next request and closes the connection without a response. This models
+uncertain provider progress using the local server's hangup facility; it is not
+a TCP-level truncated request capture. Expected ranges, final metadata size,
+and exact reconstruction derive from the immutable source.
+
+Inline synthetic JSON uses `serde_json::json!` for metadata and changes pages.
+Invented opaque token constants contain spaces, plus signs, literal percent
+sequences, Unicode and equals signs. The server returns a synthetic session URL
+with unusual query escape spelling, repeated pairs and an empty value. These
+probe preservation, not the actual format of Google's tokens or upload IDs.
+The existing `rate-limit.json` supplies the intervening 403 response. No original
+fixture or first-use test was changed.
