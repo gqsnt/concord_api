@@ -429,9 +429,9 @@ cargo (filesystem restrictions). Verdict ACCEPT_WITH_FIXES.
 | ID | Severity | Finding | Fix |
 |---|---|---|---|
 | SOL-W34-1 | high | `Content-Length: 0` was inserted when the request was built, so it survived a native body replacement after `into_parts` and hyper sent the new body with a zero length | `f2bce967`, `eaf99fa0`: the rule runs in `Decoder::execute` against the body actually sent; regression `a_natively_replaced_body_is_not_framed_as_empty` observed to fail on the old code (`["0"]` for a 3-byte body) |
-| SOL-W34-2 | medium | `max_events` advanced `last_event_id()` past the undelivered event, so a reconnect from it skips that event | R1 agent (in progress) |
-| SOL-W34-3 | medium | the reader's cancel-safety claim does not hold for a `ByteSource` whose `next_chunk` is not cancel-safe | R1 agent (in progress) |
-| SOL-W34-4 | low | a parser fault's `position().bytes` depends on chunking | R1 agent (in progress) |
+| SOL-W34-2 | medium | `max_events` advanced `last_event_id()` past the undelivered event, so a reconnect from it skips that event | `90aa6fd3` (R1 agent): an event's ID is committed only after the limit check; `a_refused_event_does_not_advance_the_last_event_id` over every partition |
+| SOL-W34-3 | medium | the reader's cancel-safety claim does not hold for a `ByteSource` whose `next_chunk` is not cancel-safe | `90aa6fd3`: the guarantee is qualified ("cancel-safe when the source is") on the SSE, JSON Lines and JSON-values readers; `ByteSource` documents the requirement and names the built-in sources that meet it; `into_stream()` keeps a pending read whatever the source; test `cancellation_is_as_safe_as_the_source` |
+| SOL-W34-4 | low | a parser fault's `position().bytes` depends on chunking | `90aa6fd3`: faults carry their offset; the partition helper now compares positions (three existing tests caught the old behaviour); `error_positions_do_not_depend_on_the_cuts` |
 
 Areas reported clean: WHATWG interpretation and the declared deviations, `max_event_bytes`
 accounting (comments, ids, unknown fields, unfinished lines bounded), completion and fusing, the
@@ -439,3 +439,12 @@ built-in sources' cancellation, `RecordStream`, redaction, head checks, serializ
 OpenAI's preserved behaviour, `ResponseMeta`, the framing rule for streamed/absent/non-empty
 bodies and bodyless GET, generated Config and pagination docs. The reviewer could not run cargo
 (read-only filesystem). Verdict ACCEPT_WITH_FIXES.
+
+**D-W34-M2 — seven SDKs on `concord::ResponseMeta` (Opus subagent `a0d0a2ba…`, merged
+`14d065d2`).** Nager, Twilio, Frankfurter, Linear, Drive, OpenAI re-export it; Dropbox wraps it
+(`request_id()`, `retry_after()` kept). `src` lines −197 / +64 across the seven. Linear and OpenAI
+had real leaks (derived `Debug` over the header map; OpenAI's `Display` is `{:?}`), now fixed.
+Caller change: field access becomes methods (`meta.status()`). Test edits field → method only,
+plus one added `Debug`-has-no-header-value assertion per SDK; 280 tests before and after. Gaps:
+`Error::meta()` added (`82496ad1`, two consumers: Nager, Frankfurter); the wrapper pattern is
+documented (AUTHOR_GUIDE §5.11); by-value `into_parts` and `PartialEq` deferred (no consumer).
