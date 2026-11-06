@@ -180,3 +180,20 @@ edited.
 - `concord::Error` has no public constructor, so protocol and integrity failures are variants of
   the SDK's own error with a `ResponseMeta` beside them; this matched the documented pattern
   (`docs/AUTHOR_GUIDE.md` §5.11).
+
+## Maintenance: redirect policy at the transport boundary
+
+- **Observed.** The caller supplies the `reqwest::Client`; Concord does not change its redirect
+  policy (`docs/AUTHOR_GUIDE.md`, “Credentials and redirects”). Redirects happen before the SDK
+  can inspect the response. A same-origin check on `Location` or `Prepared::follow` therefore
+  cannot by itself prevent a request or URL query from crossing origins through an HTTP redirect.
+- **Done.** The SDK's construction examples disable redirects, and its docs state that callers
+  must disable them or reject cross-origin hops. Existing callers keep control of their client and
+  must configure that policy themselves. No client was rebuilt inside the SDK.
+- **Reproduction.** Run `cargo test --locked -p concord-sdk-distribution-registry --test
+  protocol authenticated_upload_refuses_foreign_location_and_redirect` with the required Cargo
+  environment prefix. With redirects disabled, the test sees the `307`, keeps the upload
+  uncertain and records no request at the foreign loopback server. The redirect policy is set in
+  `tests/support/mod.rs` `http()`; the SDK cannot enforce it on an arbitrary supplied client.
+- **Cause:** Concord/transport boundary (caller-owned redirect policy); also an SDK documentation
+  correction. This test does not claim that arbitrary clients are protected.

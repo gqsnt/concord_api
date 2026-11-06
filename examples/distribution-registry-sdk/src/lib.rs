@@ -21,7 +21,10 @@
 //! };
 //!
 //! # async fn run() -> Result<(), Box<dyn std::error::Error>> {
-//! let registry = Registry::new(concord::reqwest::Client::new(), "https://registry.example.test")?
+//! let http = concord::reqwest::Client::builder()
+//!     .redirect(concord::reqwest::redirect::Policy::none())
+//!     .build()?;
+//! let registry = Registry::new(http, "https://registry.example.test")?
 //!     .token_auth(TokenAuth::anonymous().trust_realm("https://auth.example.test")?);
 //! let repository = registry.repository(&RepositoryName::new("acme/app")?)?;
 //!

@@ -16,11 +16,12 @@
 //! token is never sent with a push request. A cached token is sent pre-emptively until its
 //! `expires_in` (60 s when absent, counted from when the token request was sent) has passed.
 //!
-//! **Origins.** The Bearer token is only ever sent to the registry's origin (Concord's
-//! `Prepared::follow` and the SDK's `Location` and `Link` checks keep server-provided URLs on it).
-//! Token requests, and with them any Basic credentials, go only to a realm whose origin is the
+//! **Origins.** Concord's `Prepared::follow` and the SDK's `Location` and `Link` checks keep
+//! server-provided URLs on the registry's origin. Token requests go to a realm whose origin is the
 //! registry's or was trusted with [`TokenAuth::trust_realm`]; another realm is
-//! [`AuthProblem::UntrustedRealm`] and nothing is sent to it.
+//! [`AuthProblem::UntrustedRealm`] and nothing is sent to it. The caller's HTTP client must also
+//! disable redirects or reject cross-origin redirects: it can follow a redirect before the SDK
+//! sees the response, including for token requests and URLs containing opaque state.
 
 use std::fmt;
 use std::time::Instant;

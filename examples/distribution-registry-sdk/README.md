@@ -53,6 +53,7 @@ use concord_sdk_distribution_registry::{BasicCredentials, Registry, RepositoryNa
 // Timeouts, proxies, TLS and redirects belong to your reqwest::Client.
 let http = concord::reqwest::Client::builder()
     .timeout(std::time::Duration::from_secs(30))
+    .redirect(concord::reqwest::redirect::Policy::none())
     .build()?;
 let credentials = BasicCredentials::new("ci-bot", "synthetic-password-for-docs")?;
 let registry = Registry::new(http, "https://registry.example.test")?
@@ -64,6 +65,10 @@ let repository = registry.repository(&RepositoryName::new("acme/tools/app")?)?;
 - `Registry::new` takes the registry's base URL (a path prefix is kept: `https://host/mirror`
   sends `/mirror/v2/...`). Without `token_auth`, a `401` is returned as the registry's answer
   with its parsed challenge (`ApiError::challenge`).
+- Disable redirects on the supplied HTTP client as above, or configure a policy that rejects
+  cross-origin redirects. The SDK validates returned upload locations and token realms, but the
+  supplied client follows redirects before the SDK can inspect the response. A redirect can send
+  a request or its URL query to another origin even when reqwest removes `Authorization`.
 - `TokenAuth::anonymous()` or `TokenAuth::basic(credentials)`; `trust_realm(url)` trusts that
   realm's **origin**. A challenge naming any other realm is refused before anything is sent to it
   (`AuthProblem::UntrustedRealm`), so credentials never follow a registry's challenge to a host
@@ -232,8 +237,9 @@ on `ErrorKind`.
 - Tokens are cached in memory per `Registry` (shared by its clones); two concurrent calls may
   both fetch a token. `issued_at` is not read: the lifetime counts from when the token request was
   sent.
-- No redirect policy is imposed. reqwest drops `Authorization` when a redirect changes origin;
-  this SDK's tests run with redirects disabled.
+- The supplied HTTP client's redirect policy is outside the SDK's control. Disable redirects or
+  reject cross-origin redirects to keep requests and URL query state on authorized origins; the
+  SDK's tests use redirects disabled.
 
 ## Tests and fixtures
 

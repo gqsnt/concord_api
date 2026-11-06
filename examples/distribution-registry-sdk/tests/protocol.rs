@@ -1197,6 +1197,51 @@ async fn a_location_that_leaves_the_registry_is_never_requested() {
 }
 
 #[tokio::test]
+async fn authenticated_upload_refuses_foreign_location_and_redirect() {
+    let rogue = scripted([]).await;
+    let auth = scripted([json(200, TOKEN)]).await;
+    let realm = format!("{}/token", auth.url());
+    let foreign = format!("{}/upload?_state=synthetic-opaque-state", rogue.url());
+    let server = scripted([
+        challenge(&realm, Some("repository:acme/app:pull,push")),
+        empty(202)
+            .header("location", "/v2/acme/app/blobs/uploads/u1?_state=A")
+            .header("range", "0-0"),
+        empty(202)
+            .header("location", foreign.clone())
+            .header("range", "0-3"),
+        empty(204)
+            .header("location", "/v2/acme/app/blobs/uploads/u2?_state=B")
+            .header("range", "0-3"),
+        empty(307).header("location", foreign),
+    ])
+    .await;
+    let repository = repo(&registry(&server, Some(&auth)), "acme/app");
+    let mut upload = repository.start_upload().await.unwrap();
+    let error = upload.patch(Bytes::from_static(b"0123")).await.unwrap_err();
+    assert_eq!(
+        error.protocol_problem(),
+        Some(&ProtocolProblem::ForeignLocation)
+    );
+    assert!(upload.needs_status());
+    assert_hides(&error, &[TOKEN_VALUE, "synthetic-opaque-state"]);
+    assert_eq!(upload.status().await.unwrap().offset, 4);
+    let error = upload.patch(Bytes::from_static(b"45")).await.unwrap_err();
+    assert_eq!(error.status().map(|s| s.as_u16()), Some(307));
+    assert!(upload.needs_status());
+    assert_hides(&error, &[TOKEN_VALUE, "synthetic-opaque-state"]);
+    assert!(rogue.requests().is_empty());
+    let requests = server.requests();
+    assert_eq!(requests[3].target, "/v2/acme/app/blobs/uploads/u1?_state=A");
+    assert_eq!(requests[4].target, "/v2/acme/app/blobs/uploads/u2?_state=B");
+    assert!(
+        requests[1..]
+            .iter()
+            .all(|r| r.header("authorization") == Some(format!("Bearer {TOKEN_VALUE}").as_str()))
+    );
+}
+
+#[tokio::test]
 async fn an_interrupted_chunk_requires_a_status_query_then_resumes_from_the_reported_range() {
     let server = scripted([
         empty(202)

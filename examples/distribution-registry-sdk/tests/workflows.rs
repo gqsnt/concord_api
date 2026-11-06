@@ -391,3 +391,119 @@ async fn workflow_b_wrong_digest_and_missing_blob_are_refused()
     );
     Ok(())
 }
+
+/// A pull token precedes an interrupted push; the resumed upload then fails digest validation.
+#[tokio::test]
+async fn scoped_interrupted_upload_uses_rotated_state_and_reports_digest_failure()
+-> Result<(), Box<dyn std::error::Error>> {
+    let fake = Fake::start().await;
+    fake.with(|s| s.perturb.hang_up_patch = Some((2, true)));
+    let repository = fake
+        .client()
+        .repository(&RepositoryName::new("acme/app")?)?;
+    let blob = Bytes::from_static(b"0123456789abcdefghijklmn");
+    let actual = Digest::sha256_of(&blob);
+    let claimed = Digest::sha256_of(b"different bytes");
+    assert!(repository.blob_info(&actual).await?.is_none());
+
+    let mut upload = repository.start_upload().await?;
+    upload.patch(blob.slice(0..8)).await?;
+    let interrupted = upload.patch(blob.slice(8..16)).await.unwrap_err();
+    assert_eq!(interrupted.request_kind(), Some(ErrorKind::Transport));
+    assert!(upload.needs_status());
+    assert_eq!(upload.status().await?.offset, 16);
+    upload.patch(blob.slice(16..)).await?;
+    let error = upload.complete(&claimed, None).await.unwrap_err();
+    assert_eq!(error.status().map(|s| s.as_u16()), Some(400));
+    assert!(error.has_code(&ErrorCode::DigestInvalid));
+    assert!(!upload.is_finished());
+    assert!(upload.needs_status());
+    assert!(repository.blob_info(&actual).await?.is_none());
+    assert!(repository.blob_info(&claimed).await?.is_none());
+
+    let (scopes, tokens) = fake.with(|s| {
+        (
+            s.token_requests
+                .iter()
+                .map(|(_, scopes, _)| scopes.clone())
+                .collect::<Vec<_>>(),
+            s.tokens
+                .iter()
+                .map(|(token, scopes)| (token.clone(), scopes.clone()))
+                .collect::<Vec<_>>(),
+        )
+    });
+    assert_eq!(
+        scopes,
+        [
+            vec!["repository:acme/app:pull"],
+            vec!["repository:acme/app:pull,push"]
+        ]
+    );
+    let push_token = &tokens.iter().find(|(_, s)| s == &scopes[1]).unwrap().0;
+    let pull_token = &tokens.iter().find(|(_, s)| s == &scopes[0]).unwrap().0;
+    let secrets: Vec<&str> = tokens
+        .iter()
+        .map(|(t, _)| t.as_str())
+        .chain(["_state"])
+        .collect();
+    assert_hides(&interrupted, &secrets);
+    assert_hides(&error, &secrets);
+    let requests = fake.registry.requests();
+    let session: Vec<_> = requests
+        .iter()
+        .filter(|r| r.target.contains("/blobs/uploads/p1-"))
+        .collect();
+    let wire: Vec<_> = session
+        .iter()
+        .map(|r| {
+            (
+                r.method.as_str(),
+                r.target.as_str(),
+                r.header("content-range"),
+            )
+        })
+        .collect();
+    let final_target = format!(
+        "/v2/acme/app/blobs/uploads/p1-g3?_state=s1.3%2Bopaque%3D%3D&digest=sha256%3A{}",
+        claimed.hex()
+    );
+    assert_eq!(
+        wire,
+        [
+            (
+                "PATCH",
+                "/v2/acme/app/blobs/uploads/p1-g0?_state=s1.0%2Bopaque%3D%3D",
+                Some("0-7")
+            ),
+            (
+                "PATCH",
+                "/v2/acme/app/blobs/uploads/p1-g1?_state=s1.1%2Bopaque%3D%3D",
+                Some("8-15")
+            ),
+            (
+                "GET",
+                "/v2/acme/app/blobs/uploads/p1-g1?_state=s1.1%2Bopaque%3D%3D",
+                None
+            ),
+            (
+                "PATCH",
+                "/v2/acme/app/blobs/uploads/p1-g2?_state=s1.2%2Bopaque%3D%3D",
+                Some("16-23")
+            ),
+            ("PUT", final_target.as_str(), None),
+        ]
+    );
+    assert!(
+        session
+            .iter()
+            .all(|r| r.header("authorization") == Some(format!("Bearer {push_token}").as_str()))
+    );
+    assert!(
+        requests
+            .iter()
+            .filter(|r| r.method == "HEAD" && r.header("authorization").is_some())
+            .all(|r| r.header("authorization") == Some(format!("Bearer {pull_token}").as_str()))
+    );
+    Ok(())
+}

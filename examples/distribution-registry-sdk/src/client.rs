@@ -27,14 +27,19 @@ const DEFAULT_TOKEN_LIFETIME: Duration = Duration::from_secs(60);
 /// A client for one registry.
 ///
 /// Construct it with [`Registry::new`] over your `reqwest::Client` (timeouts, proxies, TLS and
-/// redirects are the client's), then answer Bearer challenges with
+/// redirects are the client's). Disable redirects or reject cross-origin redirects: the client
+/// follows them before the SDK can validate a response, and a redirect can expose URL query
+/// state to another origin. Then answer Bearer challenges with
 /// [`token_auth`](Self::token_auth). Cloning is cheap; clones share the token cache.
 ///
 /// ```
 /// use concord_sdk_distribution_registry::{Registry, RepositoryName, TokenAuth};
 ///
 /// # fn main() -> Result<(), Box<dyn std::error::Error>> {
-/// let registry = Registry::new(concord::reqwest::Client::new(), "https://registry.example.test")?
+/// let http = concord::reqwest::Client::builder()
+///     .redirect(concord::reqwest::redirect::Policy::none())
+///     .build()?;
+/// let registry = Registry::new(http, "https://registry.example.test")?
 ///     .token_auth(TokenAuth::anonymous().trust_realm("https://auth.example.test")?);
 /// let repository = registry.repository(&RepositoryName::new("acme/app")?)?;
 /// assert_eq!(repository.name().as_str(), "acme/app");
