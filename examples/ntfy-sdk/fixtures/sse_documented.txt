@@ -1,0 +1,8 @@
+event: open
+data: {"id":"weSj9RtNkj","time":1635528898,"event":"open","topic":"mytopic"}
+
+data: {"id":"p0M5y6gcCY","time":1635528909,"event":"message","topic":"mytopic","message":"Hi!"}
+
+event: keepalive
+data: {"id":"VNxNIg5fpt","time":1635528928,"event":"keepalive","topic":"test"}
+
