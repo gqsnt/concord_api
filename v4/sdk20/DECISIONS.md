@@ -432,6 +432,7 @@ cargo (filesystem restrictions). Verdict ACCEPT_WITH_FIXES.
 | SOL-W34-2 | medium | `max_events` advanced `last_event_id()` past the undelivered event, so a reconnect from it skips that event | `90aa6fd3` (R1 agent): an event's ID is committed only after the limit check; `a_refused_event_does_not_advance_the_last_event_id` over every partition |
 | SOL-W34-3 | medium | the reader's cancel-safety claim does not hold for a `ByteSource` whose `next_chunk` is not cancel-safe | `90aa6fd3`: the guarantee is qualified ("cancel-safe when the source is") on the SSE, JSON Lines and JSON-values readers; `ByteSource` documents the requirement and names the built-in sources that meet it; `into_stream()` keeps a pending read whatever the source; test `cancellation_is_as_safe_as_the_source` |
 | SOL-W34-4 | low | a parser fault's `position().bytes` depends on chunking | `90aa6fd3`: faults carry their offset; the partition helper now compares positions (three existing tests caught the old behaviour); `error_positions_do_not_depend_on_the_cuts` |
+| SOL-W34-5 | low | (recheck) CALLER_GUIDE §6a said `last_event_id()` follows the last delivered event; an `id`-only block also advances it | `275667e3` |
 
 Areas reported clean: WHATWG interpretation and the declared deviations, `max_event_bytes`
 accounting (comments, ids, unknown fields, unfinished lines bounded), completion and fusing, the
@@ -439,6 +440,10 @@ built-in sources' cancellation, `RecordStream`, redaction, head checks, serializ
 OpenAI's preserved behaviour, `ResponseMeta`, the framing rule for streamed/absent/non-empty
 bodies and bodyless GET, generated Config and pagination docs. The reviewer could not run cargo
 (read-only filesystem). Verdict ACCEPT_WITH_FIXES.
+
+Recheck (same session `01a1af60-c6be-7ac3…`, resumed, read-only, on `84a2bf50`): SOL-W34-1..4
+and AST-W34-1 FIXED, `Error::meta()` clean, one new low doc finding SOL-W34-5 (fixed). Source
+review only (cargo blocked). Verdict ACCEPT_WITH_FIXES.
 
 **D-W34-M2 — seven SDKs on `concord::ResponseMeta` (Opus subagent `a0d0a2ba…`, merged
 `14d065d2`).** Nager, Twilio, Frankfurter, Linear, Drive, OpenAI re-export it; Dropbox wraps it
