@@ -71,6 +71,14 @@ impl Operation {
         matches!(self.0, Ident::Endpoint(_))
     }
 
+    /// Converts a transport failure of a request executed natively for this operation (a signed
+    /// download labelled with [`Operation::label`]) into Concord's
+    /// [`ErrorKind::Transport`](crate::ErrorKind::Transport) error naming it, with the URL removed
+    /// from the underlying error. For a declared endpoint, [`Decoder::transport_error`] is the same.
+    pub fn transport_error(&self, error: reqwest::Error) -> Error {
+        Error::from_transport(Some(*self), error)
+    }
+
     pub(crate) fn meta(&self) -> Option<&'static EndpointMeta> {
         match self.0 {
             Ident::Endpoint(meta) => Some(meta),
@@ -165,6 +173,14 @@ impl<T> Received<T> {
     /// The HTTP version.
     pub fn version(&self) -> Version {
         self.response.version()
+    }
+
+    /// The URL the response came from — after any redirect the client followed — **unredacted**:
+    /// it can hold sensitive query values and path segments. For resolving a relative `Link` or
+    /// `Location` against it, or checking where a redirect led; never log it. `Debug` of
+    /// `Received` does not print it.
+    pub fn url(&self) -> &reqwest::Url {
+        self.response.url()
     }
 
     /// The call's identity: the declared endpoint (`None` for a [`Decoder::new`] decoder).

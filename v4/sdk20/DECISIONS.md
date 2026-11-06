@@ -105,3 +105,14 @@ smaller form. A parameter-group construct needs collision, docs, override and cf
 contract allows it only as a targeted experiment. Decision: collect the Phase B cases (GitLab,
 Microsoft Graph, Notion, Airtable list endpoints) before designing anything; revisit between
 waves with at least two new distinct providers showing the same repetition.
+
+## Phase A migration findings (existing five SDKs)
+
+| ID | Source | Observation | Disposition |
+|---|---|---|---|
+| MG-1 | GitHub migration (`meta.rs`, `download.rs`) | relative `Link`/`Location` resolve against the final response URL, which `Received` did not expose; the SDK took `into_parts()` to read `response.url()` and re-wrapped with `Decoder::receive` | IMPLEMENT: `Received::url()` (unredacted, documented, not in `Debug`); GitHub `capture` now uses `head()` + `url()` |
+| MG-2 | Shopify bulk result download | a labelled native response could reach a reader only via `Incoming::new`, which turns a non-2xx into a `concord::Error` instead of the reader's `OpenError` | IMPLEMENT: `Openable for (reqwest::Response, Operation)` |
+| MG-3 | Shopify bulk result download | no public conversion of a native `reqwest::Error` to a labelled Concord error (URL removed) | IMPLEMENT: `Operation::transport_error` |
+| MG-4 | GitHub `download::locate` | no way to build a `Status` error from an unexpected status without a branch that cannot succeed | DEFER: one call site; revisit if Phase B shows it again |
+
+Test: `checks/phase-a/tests/received.rs::the_final_url_and_labelled_native_inputs`.

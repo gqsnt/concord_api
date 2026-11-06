@@ -220,3 +220,50 @@ async fn a_native_response_opens_with_a_chosen_label() {
     );
     assert!(!error.to_string().contains("sig=abc"));
 }
+
+#[tokio::test]
+async fn the_final_url_and_labelled_native_inputs() {
+    use concord::csv::{CsvOptions, CsvReader, HeaderMode};
+    use concord::stream::OpenErrorKind;
+    let server = TestServer::start(|r| {
+        if r.target.starts_with("/signed") {
+            Reply::new(403)
+        } else {
+            Reply::json(200, "{\"id\":1,\"amount\":1}")
+        }
+    })
+    .await;
+    // The final URL, for resolving a relative `Link`/`Location`; `Debug` still hides it.
+    let received = api(&server)
+        .summary("a b")
+        .prepare()
+        .unwrap()
+        .receive()
+        .await
+        .unwrap();
+    assert_eq!(received.url().path(), "/v1/reports/a%20b/summary");
+    assert!(!format!("{received:?}").contains("/v1/reports"));
+    // A labelled native response: the reader's own refusal names the label.
+    let label = Operation::label("Reports.signed_export");
+    let response = concord::reqwest::get(format!("{}/signed?sig=x", server.url()))
+        .await
+        .unwrap();
+    let reader = CsvReader::new(CsvOptions::new(HeaderMode::Present, b',')).unwrap();
+    let refused = reader.open::<Row>((response, label)).unwrap_err();
+    assert_eq!(refused.kind(), OpenErrorKind::Status);
+    assert_eq!(refused.operation(), Some("Reports.signed_export"));
+    // A native transport failure under the same label.
+    let dead = TestServer::start(|_| Reply::hang_up()).await;
+    let failed = concord::reqwest::get(format!("{}/signed", dead.url()))
+        .await
+        .unwrap_err();
+    let error = label.transport_error(failed);
+    assert_eq!(error.kind(), ErrorKind::Transport);
+    assert_eq!(error.operation(), Some(label));
+    assert!(
+        error
+            .to_string()
+            .starts_with("Reports.signed_export: transport error"),
+        "{error}"
+    );
+}

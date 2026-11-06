@@ -10,6 +10,7 @@ mod sealed {
     impl Sealed for concord_core::reqwest::Response {}
     impl Sealed for concord_core::Incoming {}
     impl<T> Sealed for concord_core::Received<T> {}
+    impl Sealed for (concord_core::reqwest::Response, concord_core::Operation) {}
 }
 
 /// A response an incremental reader can open (`reader.open(..)`): sealed, implemented for
@@ -19,8 +20,11 @@ mod sealed {
 ///   the label of a native [`Incoming::new`]);
 /// - [`Received<T>`]: a received response of any declared endpoint, any status; a non-2xx is an
 ///   [`OpenError`] of kind `Status` that keeps it unread and names the endpoint;
-/// - `reqwest::Response`: a native response, no identity (use the reader's `open_for` to name
-///   it, or [`Incoming::new`] with a label).
+/// - `reqwest::Response`: a native response, no identity;
+/// - `(reqwest::Response, Operation)`: a native response named by an operation, typically
+///   [`Operation::label`](concord_core::Operation::label) for a signed download: a non-2xx is an
+///   [`OpenError`] of kind `Status` naming it (where [`Incoming::new`] would return a
+///   `concord::Error` instead).
 ///
 /// Opening requires a 2xx status, then applies the reader's head checks, before the body is
 /// polled.
@@ -39,6 +43,12 @@ impl Openable for Incoming {
     fn into_open(self) -> (reqwest::Response, Option<&'static str>) {
         let (response, operation) = self.into_parts();
         (response, operation.map(|op| op.name()))
+    }
+}
+
+impl Openable for (reqwest::Response, concord_core::Operation) {
+    fn into_open(self) -> (reqwest::Response, Option<&'static str>) {
+        (self.0, Some(self.1.name()))
     }
 }
 

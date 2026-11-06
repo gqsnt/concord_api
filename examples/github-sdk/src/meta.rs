@@ -11,10 +11,9 @@
 //! failure is Concord's `Transport` error (URL removed) and carries no metadata: no head arrived.
 //! A failure after the head keeps the metadata ([`GitHubError::Api`] with `meta: Some`).
 //!
-//! The headers are copied from the native response (`Received::into_parts`) rather than from
-//! `Received::head`, because the head carries no URL: relative `Link` targets resolve against the
-//! URL of the response that carried them, which is not the request's after a followed same-origin
-//! redirect (a renamed repository). The response goes back to its decoder unread.
+//! The headers come from `Received::head` and the base URL from `Received::url`: relative `Link`
+//! targets resolve against the URL of the response that carried them, which is not the request's
+//! after a followed same-origin redirect (a renamed repository). Nothing is read from the body.
 //!
 //! `Debug` of [`ResponseMeta`] shows the status, the request id, the rate-limit numbers and which
 //! links exist; never a link URL (it carries filters and cursors) or any other header value.
@@ -272,12 +271,12 @@ fn no_response(error: concord::Error) -> GitHubError {
     GitHubError::api(error, None)
 }
 
-/// Copies the metadata of a received response, body unread, and hands the response back to its
-/// decoder (see the [module documentation](self) for why the native response is read).
+/// Copies the metadata of a received response, body unread (see the
+/// [module documentation](self) for the base URL of relative links).
 fn capture<T>(received: Received<T>) -> (ResponseMeta, Received<T>) {
-    let (response, decoder) = received.into_parts();
-    let meta = ResponseMeta::capture(&response);
-    (meta, decoder.receive(response))
+    let meta =
+        ResponseMeta::from_head(received.status(), received.head().headers(), received.url());
+    (meta, received)
 }
 
 /// The endpoint's declared handling, the metadata kept on success and on failure.
