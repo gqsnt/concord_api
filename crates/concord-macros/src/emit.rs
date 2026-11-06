@@ -868,7 +868,7 @@ fn request_summary(model: &Model, endpoint: usize, method: &Ident) -> TokenStrea
                 }));
             let media = match (&b.media, &b.format) {
                 (Some((m, origin)), _) => format!(
-                    " `Content-Type: {}` ({}) is sent with the body.",
+                    " `Content-Type: {}` ({}) is sent with the body; a format that binds another media type to the body at run time (`Encode::encode_body`) is a `Build` error.",
                     m.value(),
                     match origin {
                         Origin::Endpoint => "declared by the endpoint request statement".to_owned(),
@@ -876,9 +876,9 @@ fn request_summary(model: &Model, endpoint: usize, method: &Ident) -> TokenStrea
                             format!("from the `request` default of {}", model.describe(*o)),
                     }
                 ),
-                (None, _) if header => " `Content-Type`: the declared `content-type` header when it is sent (with or without the body), otherwise the format's `Encode::CONTENT_TYPE` with the body.".to_owned(),
+                (None, _) if header => " `Content-Type`: the declared `content-type` header when it is sent (with or without the body), otherwise the format's media type with the body; a media type the format binds to the body at run time (`Encode::encode_body`) must equal a sent header, else a `Build` error.".to_owned(),
                 (None, _) => {
-                    " `Content-Type`: the format's `Encode::CONTENT_TYPE`, sent with the body."
+                    " `Content-Type`: the format's media type, sent with the body: the one its `Encode::encode_body` binds to the body at run time, else its `Encode::CONTENT_TYPE`."
                         .to_owned()
                 }
             };
@@ -1245,6 +1245,9 @@ fn emit_owner(
                 #config_item
 
                 #docs
+                // The generated docs link each format by its path (`[`F`](F)`); rustdoc calls such a
+                // link redundant when the path also resolves as an intra-doc link.
+                #[allow(rustdoc::redundant_explicit_links)]
                 #[derive(::core::clone::Clone)]
                 #vis struct #ty {
                     __s: ::std::sync::Arc<#state>,
@@ -1316,6 +1319,9 @@ fn emit_owner(
             let debug = debug_fields(k, model, &owner.values, &quote!(__s));
             quote! {
                 #docs
+                // The generated docs link each format by its path (`[`F`](F)`); rustdoc calls such a
+                // link redundant when the path also resolves as an intra-doc link.
+                #[allow(rustdoc::redundant_explicit_links)]
                 #[derive(::core::clone::Clone)]
                 #vis struct #ty {
                     __s: ::std::sync::Arc<#state>,
@@ -1429,6 +1435,7 @@ fn emit_owner(
                 #shapes
 
                 #docs
+                #[allow(rustdoc::redundant_explicit_links)]
                 #[must_use = "an endpoint request does nothing until `send` or `prepare` is called"]
                 #vis struct #ty {
                     __parent: #parent_ty,
@@ -2486,15 +2493,15 @@ mod tests {
         });
         for expected in [
             " Formats of the endpoints below: request bodies `Json` (declared here); typed outputs `Json` (declared here).",
-            " Body (`item`): `NewItem`, encoded with the format [`Json`](Json) (the `request` default of the client `Shop`). `Content-Type`: the format's `Encode::CONTENT_TYPE`, sent with the body.",
+            " Body (`item`): `NewItem`, encoded with the format [`Json`](Json) (the `request` default of the client `Shop`). `Content-Type`: the format's media type, sent with the body: the one its `Encode::encode_body` binds to the body at run time, else its `Encode::CONTENT_TYPE`.",
             " Output: `Item`, decoded from a 2xx response with the format [`Json`](Json) (the `response` default of the client `Shop`): the format checks the response head before the body is read (a refusal is `ErrorKind::Metadata`, the response kept unread), and its `Decode::ACCEPT`, if any, is sent when this endpoint's headers leave no `accept` and do not end by removing it.",
-            " Body (`p`): `Patch`, encoded with the format [`Json`](Json) (the endpoint statement). `Content-Type: application/merge-patch+json` (declared by the endpoint request statement) is sent with the body.",
+            " Body (`p`): `Patch`, encoded with the format [`Json`](Json) (the endpoint statement). `Content-Type: application/merge-patch+json` (declared by the endpoint request statement) is sent with the body; a format that binds another media type to the body at run time (`Encode::encode_body`) is a `Build` error.",
             " Output: `String`, decoded from a 2xx response with the format [`Text`](Text) (the endpoint statement): the format checks the response head before the body is read (a refusal is `ErrorKind::Metadata`, the response kept unread), and its `Decode::ACCEPT`, if any, is sent when this endpoint's headers leave no `accept` and do not end by removing it.",
             " Absent: no body, and the format adds no `Content-Type`.",
             " Output: none (`()`): any 2xx succeeds and the response body is drained; the `response` default `Json` of the client `Shop` does not apply.",
             " `()` is decoded like any output type, with `Json`. An endpoint without `->` decodes no output and accepts any 2xx.",
             " Formats of the endpoints below: request bodies `crate::Csv` (declared here, media type `text/csv; header=present`); typed outputs `crate::Csv` (declared here).",
-            " Body (`rows`): `Rows`, encoded with the format [`crate::Csv`](crate::Csv) (the `request` default of scope `Shop.csv`). `Content-Type: text/csv; header=present` (from the `request` default of scope `Shop.csv`) is sent with the body.",
+            " Body (`rows`): `Rows`, encoded with the format [`crate::Csv`](crate::Csv) (the `request` default of scope `Shop.csv`). `Content-Type: text/csv; header=present` (from the `request` default of scope `Shop.csv`) is sent with the body; a format that binds another media type to the body at run time (`Encode::encode_body`) is a `Build` error.",
         ] {
             // The expected text, escaped as in a doc literal of the token stream.
             let quoted = format!("{expected:?}");
@@ -2513,7 +2520,7 @@ mod tests {
                 POST up(body data: Vec<u8>) { request Binary; }
             }
         });
-        let expected = " Body (`data`): `Vec<u8>`, encoded with the format [`Binary`](Binary) (the endpoint statement). `Content-Type`: the declared `content-type` header when it is sent (with or without the body), otherwise the format's `Encode::CONTENT_TYPE` with the body.";
+        let expected = " Body (`data`): `Vec<u8>`, encoded with the format [`Binary`](Binary) (the endpoint statement). `Content-Type`: the declared `content-type` header when it is sent (with or without the body), otherwise the format's media type with the body; a media type the format binds to the body at run time (`Encode::encode_body`) must equal a sent header, else a `Build` error.";
         assert!(
             docs.contains(&format!("{expected:?}")),
             "missing {expected:?}"

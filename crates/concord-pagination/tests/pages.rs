@@ -676,7 +676,7 @@ async fn an_sdk_names_returns_and_moves_the_traversal_across_tasks() {
     assert!(incomplete.collected.is_empty());
     assert_eq!(
         incomplete.to_string(),
-        "incomplete after 0 collected: page request failed: cursor 2 expired"
+        "incomplete after 0 collected: a page request failed (after 0 pages emitted)"
     );
     assert!(matches!(
         incomplete.error,
@@ -694,11 +694,13 @@ fn diagnostics_print_counts_and_outcomes_only() {
     let assert_clean = |what: &str, text: String| {
         assert!(!text.contains(SECRET), "{what} leaked: {text}");
     };
+    // A provider error whose own `Display` quotes its URL, as `std::io::Error` or a raw
+    // `reqwest::Error` can: the traversal's diagnostics must not format it.
     #[derive(Debug)]
-    struct Fail(#[allow(dead_code)] String);
+    struct Fail(String);
     impl std::fmt::Display for Fail {
         fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-            f.write_str("request failed")
+            write!(f, "request failed: {}", self.0)
         }
     }
     impl std::error::Error for Fail {}
@@ -722,7 +724,10 @@ fn diagnostics_print_counts_and_outcomes_only() {
     };
     assert_clean("PagesError::Provider Debug", format!("{error:?}"));
     assert_clean("PagesError::Provider Display", error.to_string());
-    assert_eq!(error.to_string(), "page request failed: request failed");
+    assert_eq!(
+        error.to_string(),
+        "a page request failed (after 1 pages emitted)"
+    );
     assert!(std::error::Error::source(&error).is_some());
     let Some(Err(ended)) = now(pages.next_page()) else {
         panic!("ended");

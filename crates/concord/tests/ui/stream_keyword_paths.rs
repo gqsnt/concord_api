@@ -1,5 +1,5 @@
-// `stream` is the keyword only when it is not the start of a path or a generic type: these are
-// ordinary finite outputs, and a missing format is reported as such.
+// `stream` is the keyword only when it is not the start of a path, a generic type or a type
+// macro: these are ordinary finite outputs, and a missing format is reported as such.
 mod paths {
     pub mod stream {
         pub struct Event;
@@ -18,6 +18,20 @@ mod generic {
         pub client Generic {
             base "http://x.test";
             GET generic() -> stream<u8>;
+        }
+    }
+}
+mod type_macro {
+    #[allow(unused_macros)]
+    macro_rules! stream {
+        () => {
+            String
+        };
+    }
+    concord::api! {
+        pub client Macro {
+            base "http://x.test";
+            GET mac() -> stream!();
         }
     }
 }

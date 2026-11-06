@@ -471,9 +471,14 @@ fn parse_output(input: ParseStream<'_>) -> syn::Result<Output> {
     let at_end = |input: ParseStream<'_>| {
         input.peek(syn::token::Brace) || input.peek(Token![;]) || input.is_empty()
     };
-    // `-> stream T` / `-> stream`: the keyword, unless `stream` begins a path or a generic type
-    // (`-> stream::Event`, `-> stream<T>`; `r#stream` is never the keyword).
-    if input.peek(kw::stream) && !input.peek2(Token![::]) && !input.peek2(Token![<]) {
+    // `-> stream T` / `-> stream`: the keyword, unless `stream` begins a path, a generic type or
+    // a type macro (`-> stream::Event`, `-> stream<T>`, `-> stream!()`; `r#stream` is never the
+    // keyword).
+    if input.peek(kw::stream)
+        && !input.peek2(Token![::])
+        && !input.peek2(Token![<])
+        && !input.peek2(Token![!])
+    {
         let keyword: kw::stream = input.parse()?;
         if at_end(input) {
             return Ok(Output {

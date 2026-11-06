@@ -326,3 +326,19 @@ async fn a_watch_reports_the_download_outcome_after_the_upload() {
         }
     }
 }
+
+#[tokio::test]
+async fn a_watch_made_after_the_failure_still_reports_it() {
+    let server = TestServer::start(|_| {
+        Reply::new(200)
+            .header("content-type", "text/csv")
+            .body("id;amount\n1;x\n")
+    })
+    .await;
+    let mut stream = api(&server).rows("r").send().await.unwrap().into_stream();
+    assert!(stream.next().await.unwrap().is_err());
+    assert_eq!(stream.failure(), Some(ReadErrorKind::Decode));
+    let watch = stream.watch();
+    assert_eq!(watch.completion(), Completion::Failed);
+    assert_eq!(watch.failure(), Some(ReadErrorKind::Decode));
+}

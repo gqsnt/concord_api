@@ -9,3 +9,9 @@ error: output `stream<u8>` has no format: say `response F;` (`F` a type implemen
    |
 20 |             GET generic() -> stream<u8>;
    |                              ^^^^^^
+
+error: output `stream!()` has no format: say `response F;` (`F` a type implementing `Decode`) on this endpoint, a scope or the client; omit `->` to drain
+  --> tests/ui/stream_keyword_paths.rs:34:26
+   |
+34 |             GET mac() -> stream!();
+   |                          ^^^^^^

@@ -630,10 +630,16 @@ impl<E, K> fmt::Debug for PagesError<E, K> {
     }
 }
 
-impl<E: fmt::Display, K> fmt::Display for PagesError<E, K> {
+impl<E, K> fmt::Display for PagesError<E, K> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::Provider { error, .. } => write!(f, "page request failed: {error}"),
+            // The provider's error may quote a URL or content: it is reachable through the
+            // `error` field and `source()`, never formatted here.
+            Self::Provider { progress, .. } => write!(
+                f,
+                "a page request failed (after {} pages emitted)",
+                progress.emitted
+            ),
             Self::Bounded { .. } => {
                 f.write_str("page cap reached while the provider had more pages")
             }
@@ -673,7 +679,7 @@ impl<V, E, K> fmt::Debug for Incomplete<V, E, K> {
     }
 }
 
-impl<V, E: fmt::Display, K> fmt::Display for Incomplete<V, E, K> {
+impl<V, E, K> fmt::Display for Incomplete<V, E, K> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(
             f,

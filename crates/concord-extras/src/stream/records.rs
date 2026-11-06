@@ -86,6 +86,8 @@ pub struct RecordStream<R: RecordReader> {
     position: Position,
     operation: Option<&'static str>,
     completion: Completion,
+    /// The kind of the terminal error that ended the stream, if one did.
+    failure: Option<ReadErrorKind>,
     watch: Option<StreamWatch>,
 }
 
@@ -162,6 +164,7 @@ impl<R: RecordReader> RecordStream<R> {
             operation: reader.record_operation(),
             completion: reader.record_completion(),
             state: State::Idle(reader),
+            failure: None,
             watch: None,
         }
     }
@@ -172,7 +175,7 @@ impl<R: RecordReader> RecordStream<R> {
         let watched = Watched {
             completion: self.completion,
             position: self.position,
-            failure: None,
+            failure: self.failure,
         };
         self.watch
             .get_or_insert_with(|| StreamWatch(Arc::new(Mutex::new(watched))))
@@ -192,6 +195,11 @@ impl<R: RecordReader> RecordStream<R> {
     /// Whether the input ended cleanly, failed, or may still yield records.
     pub fn completion(&self) -> Completion {
         self.completion
+    }
+
+    /// The kind of the terminal error this stream yielded, if one ended it.
+    pub fn failure(&self) -> Option<ReadErrorKind> {
+        self.failure
     }
 
     /// The reader back, when no read is in progress (`None` while a polled read is pending: drop
@@ -230,12 +238,13 @@ impl<R: RecordReader> Stream for RecordStream<R> {
                     Poll::Ready((reader, item)) => {
                         this.position = reader.record_position();
                         this.completion = reader.record_completion();
+                        if let Some(Err(e)) = &item
+                            && e.is_terminal()
+                        {
+                            this.failure = Some(e.kind());
+                        }
                         if let Some(watch) = &this.watch {
-                            let failure = match &item {
-                                Some(Err(e)) if e.is_terminal() => Some(e.kind()),
-                                _ => None,
-                            };
-                            watch.update(this.completion, this.position, failure);
+                            watch.update(this.completion, this.position, this.failure);
                         }
                         this.state = if item.is_none() || this.completion != Completion::Reading {
                             // The reader is fused: it yields nothing more.
