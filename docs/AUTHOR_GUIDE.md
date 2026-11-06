@@ -1259,6 +1259,10 @@ root part, then the media):
             ));
 ```
 
+Drive's documented upload request carries no `type` parameter, so the SDK uses `related()`;
+RFC 2387 requires one (the root part's media type), and `related_with_type(root)` sends it — use
+that form unless the provider documents the bare one.
+
 The boundary is `concord-boundary-<n>`, the first candidate found in no part (header lines
 included): deterministic, so tests can predict it, and checked against the parts rather than made
 unlikely by randomness. The body is sent with `Content-Length`. A name, file name or part header

@@ -283,7 +283,8 @@ file and field) and `upload_multipart` in
 JSON metadata, then the media).
 
 - **How:** `MultipartBody::form_data().text(name, value).file(name, file_name, content_type,
-  bytes)`, or `MultipartBody::related()` / `related_with_type(root)` with
+  bytes)`, or `MultipartBody::related_with_type(root)` (RFC 2387's `type` parameter) /
+  `related()` (without it, only where the provider documents that form) with
   `.part(Part::new(bytes).header(name, value))`; then the generated `send()`.
 - **What it does:** writes the parts in order, chooses the boundary `concord-boundary-<n>` that
   occurs in no part (deterministic: checked, not left to chance), and sends

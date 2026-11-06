@@ -208,8 +208,13 @@ impl MultipartBody {
         }
     }
 
-    /// An empty `multipart/related` body (RFC 2387) without a `type` parameter. The first part
-    /// added is the root.
+    /// An empty `multipart/related` body **without** the `type` parameter. The first part added
+    /// is the root.
+    ///
+    /// RFC 2387 §3.1 requires `type` (the root part's media type); this form deviates on purpose,
+    /// for providers whose documented request omits it (Google Drive's `uploadType=multipart`
+    /// upload sends `multipart/related; boundary=...`). Use
+    /// [`related_with_type`](Self::related_with_type) unless the provider documents the bare form.
     pub fn related() -> Self {
         Self {
             subtype: Subtype::Related { root_type: None },
