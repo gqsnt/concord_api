@@ -77,6 +77,8 @@ pub use policy::{
     BlankLines, BomPolicy, DEFAULT_MAX_RECORD_BYTES, JsonLinesOptions, MediaPolicy, RecordErrors,
 };
 pub use values::{JsonValues, JsonValuesReader};
+
+use concord_core::{Incoming, Incremental};
 pub use writer::{JsonLinesWriter, StreamRecords};
 
 const JSON_LINES_MEDIA: &str = "application/jsonl";
@@ -180,5 +182,72 @@ impl<T: DeserializeOwned> Decode<Vec<T>> for Ndjson {
 
     fn decode_body((): (), body: Bytes) -> Result<Vec<T>, CodecError> {
         lines::decode_all(&JsonLinesOptions::ndjson(), &body)
+    }
+}
+
+/// Records read as the response arrives: an endpoint declared `-> stream T` with
+/// `response JsonLines;` returns these [`JsonLinesRecords`] from `send()` (head checked, body
+/// unread), read with [`JsonLinesOptions::json_lines`].
+impl<T: DeserializeOwned> Incremental<T> for JsonLines {
+    type Records = JsonLinesRecords<T>;
+    type Context = ();
+    const ACCEPT: Option<&'static str> = Some(JSON_LINES_MEDIA);
+
+    fn check_content_type(head: &ResponseHead<'_>) -> Result<(), CodecError> {
+        policy::check_media(MediaPolicy::standard(), &lines::JSON_LINES, head)
+    }
+
+    fn context(_: &ResponseHead<'_>) -> Result<(), CodecError> {
+        Ok(())
+    }
+
+    fn open((): (), body: Incoming) -> JsonLinesRecords<T> {
+        JsonLinesReader::new(JsonLinesOptions::json_lines()).open_checked(body)
+    }
+}
+
+/// NDJSON records read as the response arrives (`-> stream T`, [`JsonLinesOptions::ndjson`]).
+impl<T: DeserializeOwned> Incremental<T> for Ndjson {
+    type Records = JsonLinesRecords<T>;
+    type Context = ();
+    const ACCEPT: Option<&'static str> = Some(NDJSON_MEDIA);
+
+    fn check_content_type(head: &ResponseHead<'_>) -> Result<(), CodecError> {
+        policy::check_media(MediaPolicy::standard(), &lines::NDJSON, head)
+    }
+
+    fn context(_: &ResponseHead<'_>) -> Result<(), CodecError> {
+        Ok(())
+    }
+
+    fn open((): (), body: Incoming) -> JsonLinesRecords<T> {
+        JsonLinesReader::new(JsonLinesOptions::ndjson()).open_checked(body)
+    }
+}
+
+/// Consecutive JSON values framed by value, not by line (a Kubernetes watch): the format of an
+/// endpoint declared `-> stream T` whose `send()` returns [`JsonValues<T>`] read with the
+/// [`JsonValuesReader`] defaults (16 MiB per value, no totals, the standard JSON media policy:
+/// `application/json` or `application/*+json`, charset absent or utf-8). For other limits, declare
+/// `-> stream` and open the [`Incoming`] body with a configured [`JsonValuesReader`].
+///
+/// It has no finite decoding (a collected body of JSON values is not one document).
+pub struct JsonStream(());
+
+impl<T: DeserializeOwned> Incremental<T> for JsonStream {
+    type Records = JsonValues<T>;
+    type Context = ();
+    const ACCEPT: Option<&'static str> = Some("application/json");
+
+    fn check_content_type(head: &ResponseHead<'_>) -> Result<(), CodecError> {
+        values::check_head(&JsonValuesReader::new(), head)
+    }
+
+    fn context(_: &ResponseHead<'_>) -> Result<(), CodecError> {
+        Ok(())
+    }
+
+    fn open((): (), body: Incoming) -> JsonValues<T> {
+        JsonValuesReader::new().open_checked(body)
     }
 }

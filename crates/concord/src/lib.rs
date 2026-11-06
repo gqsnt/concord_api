@@ -209,9 +209,9 @@
 //!   Disable it to choose reqwest's features in your own `Cargo.toml`.
 
 pub use concord_core::{
-    CODEC_ERROR_CONTEXT, CodecError, ContentTypeField, Decode, Decoder, Encode, Error, ErrorKind,
-    HeaderNameError, HeaderNameErrors, IntoValue, Prepared, ResponseHead, ToHeaderValue, bytes,
-    reqwest,
+    CODEC_ERROR_CONTEXT, CodecError, ContentTypeField, Decode, Decoder, Encode, EncodedBody, Error,
+    ErrorKind, HeaderNameError, HeaderNameErrors, Incoming, Incremental, IntoValue, Operation,
+    Prepared, Received, Records, ResponseHead, ToHeaderValue, bytes, reqwest,
 };
 #[cfg(feature = "form")]
 pub use concord_extras::Form;
@@ -224,7 +224,7 @@ pub use concord_extras::jsonl;
 #[cfg(feature = "stream")]
 pub use concord_extras::stream;
 #[cfg(feature = "extras")]
-pub use concord_extras::{Binary, IgnoreContentType, Text};
+pub use concord_extras::{Binary, Encoded, IgnoreContentType, Text};
 
 /// Declares an HTTP API as a client → scopes → endpoints tree and generates its typed client.
 ///

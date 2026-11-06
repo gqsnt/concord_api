@@ -9,8 +9,8 @@ use serde::de::DeserializeOwned;
 
 use super::policy::{DEFAULT_MAX_RECORD_BYTES, Family, MediaPolicy, check_media};
 use crate::stream::{
-    ByteSource, Driver, OpenError, Position, ReadError, ReadErrorKind, SKIP_BUDGET, open_response,
-    yield_now,
+    ByteSource, Driver, OpenError, Openable, Position, ReadError, ReadErrorKind, SKIP_BUDGET,
+    open_input, open_response, yield_now,
 };
 
 /// Where the scanner stands.
@@ -272,6 +272,14 @@ fn parse_value<T: DeserializeOwned>(value: &[u8]) -> Result<T, Fault> {
     })
 }
 
+/// The head check of `reader` (its media policy), for the static [`JsonStream`](super::JsonStream).
+pub(crate) fn check_head(
+    reader: &JsonValuesReader,
+    head: &concord_core::ResponseHead<'_>,
+) -> Result<(), CodecError> {
+    check_media(reader.media, &JSON, head)
+}
+
 const JSON: Family = Family {
     standard: |m| {
         m.type_() == mime::APPLICATION
@@ -356,7 +364,9 @@ impl JsonValuesReader {
         self
     }
 
-    /// Opens a response: requires a 2xx status and a `Content-Type` accepted by the media policy,
+    /// Opens a response ([`Openable`]: the [`Incoming`](concord_core::Incoming) body of an
+    /// endpoint declared `-> stream`, a [`Received`](concord_core::Received) response, or a native
+    /// response): requires a 2xx status and a `Content-Type` accepted by the media policy,
     /// before polling the body. A refusal keeps the response unread
     /// ([`OpenError::into_response`]).
     ///
@@ -365,9 +375,20 @@ impl JsonValuesReader {
     /// An [`OpenError`] of kind `Status` or `Metadata`.
     pub fn open<T: DeserializeOwned>(
         &self,
-        response: reqwest::Response,
+        response: impl Openable,
     ) -> Result<JsonValues<T>, OpenError> {
-        self.open_with(response, None)
+        let (response, operation) =
+            open_input(response, |head| check_media(self.media, &JSON, head))?;
+        Ok(self.values(response, operation))
+    }
+
+    /// The values of a body whose head a static format already checked (`Incremental`).
+    pub(crate) fn open_checked<T: DeserializeOwned>(
+        &self,
+        body: concord_core::Incoming,
+    ) -> JsonValues<T> {
+        let (response, operation) = body.into_parts();
+        self.values(response, operation.map(|op| op.name()))
     }
 
     /// [`open`](Self::open), naming the operation in later errors.
@@ -424,6 +445,14 @@ pub struct JsonValues<T, S = reqwest::Response> {
 }
 
 impl<T: DeserializeOwned, S: ByteSource> JsonValues<T, S> {
+    /// Whether the input ended cleanly ([`Completion::EndOfInput`](crate::stream::Completion)),
+    /// a terminal error ended the reader (`Failed`), or records may follow (`Reading`). Only
+    /// `EndOfInput` proves every record was read; stopping early or dropping the reader is not
+    /// an end of input.
+    pub fn completion(&self) -> crate::stream::Completion {
+        self.driver.completion()
+    }
+
     /// The next value; `None` at the end of input and after a terminal error (fused).
     ///
     /// Cancel-safe: dropping the returned future loses no value (a partly received value stays
@@ -677,5 +706,46 @@ mod tests {
             assert!(used <= SKIP_BUDGET);
         }
         assert_eq!(steps, 4);
+    }
+}
+
+impl<T, S> crate::stream::RecordSealed for JsonValues<T, S> {}
+
+impl<T, S> crate::stream::RecordReader for JsonValues<T, S>
+where
+    T: DeserializeOwned + Send + 'static,
+    S: ByteSource + 'static,
+{
+    type Record = T;
+
+    fn next_record(
+        &mut self,
+    ) -> impl std::future::Future<Output = Option<Result<T, ReadError>>> + Send {
+        self.next()
+    }
+
+    fn record_position(&self) -> Position {
+        self.position()
+    }
+
+    fn record_operation(&self) -> Option<&'static str> {
+        self.driver.operation()
+    }
+
+    fn record_completion(&self) -> crate::stream::Completion {
+        self.driver.completion()
+    }
+}
+
+impl<T, S> JsonValues<T, S>
+where
+    T: DeserializeOwned + Send + 'static,
+    S: ByteSource + 'static,
+{
+    /// This reader as an owning standard [`Stream`](futures_core::Stream) of
+    /// `Result<T, ReadError>` ([`RecordStream`](crate::stream::RecordStream)): no read-ahead,
+    /// cancellation-safe, errors and completion unchanged.
+    pub fn into_stream(self) -> crate::stream::RecordStream<Self> {
+        crate::stream::RecordStream::new(self)
     }
 }

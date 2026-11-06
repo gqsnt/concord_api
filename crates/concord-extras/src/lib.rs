@@ -23,6 +23,7 @@
 mod binary;
 #[cfg(feature = "csv")]
 pub mod csv;
+mod encoded;
 #[cfg(feature = "form")]
 mod form;
 mod ignore;
@@ -36,6 +37,7 @@ pub mod stream;
 mod text;
 
 pub use binary::Binary;
+pub use encoded::Encoded;
 #[cfg(feature = "form")]
 pub use form::Form;
 pub use ignore::IgnoreContentType;

@@ -4,13 +4,15 @@ use std::error::Error as StdError;
 use std::sync::Arc;
 
 use concord_core::bytes::Bytes;
-use concord_core::{CodecError, Decode, Encode, ResponseHead, reqwest};
+use concord_core::{CodecError, Decode, Encode, Incoming, Incremental, ResponseHead, reqwest};
 use futures_core::Stream;
 use serde::Serialize;
 use serde::de::DeserializeOwned;
 
 use super::frame::{Mode, decode_all};
 use super::options::{Config, MediaPolicy};
+use super::read::{CsvReader, CsvRecords};
+use super::record::RawRecord;
 use super::record::{self, RawTable};
 use super::write::{Rows, StreamRows, encode_raw, encode_rows, stream_body};
 use super::{Csv, CsvProfile, DelimiterPolicy, HeaderPolicy, content_type};
@@ -216,5 +218,56 @@ where
 
     fn encode(value: RawTable) -> Result<reqwest::Body, CodecError> {
         encode_raw(config::<H, D, P>()?, value).map(reqwest::Body::from)
+    }
+}
+
+/// Typed rows read as the response arrives: an endpoint declared `-> stream T` with
+/// `response Csv<..>;` returns these [`CsvRecords`] from `send()`, its head checked and its body
+/// unread. The reader is the static type's ([`Csv::reader`]); its errors name the endpoint.
+impl<T, H, D, P> Incremental<T> for Csv<H, D, P>
+where
+    T: DeserializeOwned,
+    H: HeaderPolicy,
+    D: DelimiterPolicy,
+    P: CsvProfile,
+{
+    type Records = CsvRecords<T>;
+    type Context = CsvReader;
+    const ACCEPT: Option<&'static str> = Some("text/csv");
+
+    fn check_content_type(head: &ResponseHead<'_>) -> Result<(), CodecError> {
+        check_media(head, H::HAS_HEADER, P::options().media_policy())
+    }
+
+    fn context(_: &ResponseHead<'_>) -> Result<CsvReader, CodecError> {
+        Ok(CsvReader::from_config(config::<H, D, P>()?))
+    }
+
+    fn open(reader: CsvReader, body: Incoming) -> CsvRecords<T> {
+        reader.open_checked(body)
+    }
+}
+
+/// Byte records read as the response arrives (`-> stream RawRecord`).
+impl<H, D, P> Incremental<RawRecord> for Csv<H, D, P>
+where
+    H: HeaderPolicy,
+    D: DelimiterPolicy,
+    P: CsvProfile,
+{
+    type Records = CsvRecords<RawRecord>;
+    type Context = CsvReader;
+    const ACCEPT: Option<&'static str> = Some("text/csv");
+
+    fn check_content_type(head: &ResponseHead<'_>) -> Result<(), CodecError> {
+        check_media(head, H::HAS_HEADER, P::options().media_policy())
+    }
+
+    fn context(_: &ResponseHead<'_>) -> Result<CsvReader, CodecError> {
+        Ok(CsvReader::from_config(config::<H, D, P>()?))
+    }
+
+    fn open(reader: CsvReader, body: Incoming) -> CsvRecords<RawRecord> {
+        reader.open_raw_checked(body)
     }
 }

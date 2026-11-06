@@ -35,11 +35,19 @@
 mod driver;
 #[cfg_attr(not(any(feature = "csv", feature = "jsonl")), allow(dead_code))]
 mod error;
+#[cfg_attr(not(any(feature = "csv", feature = "jsonl")), allow(dead_code))]
+mod open;
+#[cfg_attr(not(any(feature = "csv", feature = "jsonl")), allow(dead_code))]
+mod records;
 mod source;
 #[cfg_attr(not(any(feature = "csv", feature = "jsonl")), allow(dead_code))]
 mod upload;
 
 pub use error::{OpenError, OpenErrorKind, Position, ReadError, ReadErrorKind};
+pub use open::Openable;
+#[allow(unused_imports)]
+pub(crate) use records::sealed::Sealed as RecordSealed;
+pub use records::{Completion, RecordReader, RecordStream};
 pub use source::{ByteSource, Chunks, SourceError};
 pub use upload::{FromIter, Upload, UploadError, from_iter};
 
@@ -47,5 +55,7 @@ pub use upload::{FromIter, Upload, UploadError, from_iter};
 pub(crate) use driver::{Driver, SKIP_BUDGET, yield_now};
 #[allow(unused_imports)]
 pub(crate) use error::open_response;
+#[allow(unused_imports)]
+pub(crate) use open::open_input;
 #[allow(unused_imports)]
 pub(crate) use upload::{RecordBody, RecordEncoder};

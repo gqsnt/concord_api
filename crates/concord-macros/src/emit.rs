@@ -318,6 +318,15 @@ fn format_for(
     }
 }
 
+/// The format path of an output, as its decoder names it (for the stream reader's type).
+fn output_format(model: &Model, o: &Output) -> TokenStream {
+    let at = match o.origin {
+        Origin::Endpoint => o.format.span(),
+        Origin::Default(_) => o.ty.span(),
+    };
+    format_for(model, &o.format, o.origin, false, at)
+}
+
 /// One hidden alias per `request`/`response` default that has consumers:
 /// `type __Concord{Owner}{Request|Response}Format = <format>;`, located at the default. It carries
 /// `#[cfg(any(all(<cfgs of consumer 1>), ...))]`, the union of its consuming endpoints' effective
@@ -831,7 +840,13 @@ fn request_summary(model: &Model, endpoint: usize, method: &Ident) -> TokenStrea
     };
     let content_type = KeyName::Lit("content-type".to_owned());
     let mut lines = vec![lit(""), lit(&format!(" Request: `{method} {url}`."))];
-    if let Kind::Endpoint { output, body, .. } = &model.owners[endpoint].kind {
+    if let Kind::Endpoint {
+        output,
+        incoming,
+        body,
+        ..
+    } = &model.owners[endpoint].kind
+    {
         if let Some(b) = body {
             let presence = if b.optional { "optional " } else { "" };
             // 8b: a `content-type` header contribution surviving composition replaces the
@@ -887,6 +902,12 @@ fn request_summary(model: &Model, endpoint: usize, method: &Ident) -> TokenStrea
             )));
         }
         lines.push(lit(&match output {
+            Some(o) if o.stream => format!(
+                " Output: a stream of `{}`, opened from a 2xx response with the format {} (`Incremental<{}>`): `send()` returns the format's reader without reading the body; the format checks the response head first (a refusal is `ErrorKind::Metadata`, the response kept unread), its later read errors name this endpoint, and its `Incremental::ACCEPT`, if any, is sent when this endpoint's headers leave no `accept` and do not end by removing it.",
+                type_text(&o.ty),
+                format_origin(model, &o.format, o.origin, false),
+                type_text(&o.ty),
+            ),
             Some(o) => {
                 let unit = if matches!(&o.ty, syn::Type::Tuple(t) if t.elems.is_empty()) {
                     format!(" `()` is decoded like any output type, with `{}`. An endpoint without `->` decodes no output and accepts any 2xx.", o.format.text())
@@ -897,6 +918,19 @@ fn request_summary(model: &Model, endpoint: usize, method: &Ident) -> TokenStrea
                     " Output: `{}`, decoded from a 2xx response with the format {}: the format checks the response head before the body is read (a refusal is `ErrorKind::Metadata`, the response kept unread), and its `Decode::ACCEPT`, if any, is sent when this endpoint's headers leave no `accept` and do not end by removing it.{unit}",
                     type_text(&o.ty),
                     format_origin(model, &o.format, o.origin, false),
+                )
+            }
+            None if *incoming => {
+                let ignored = match model.nearest_default(endpoint, false) {
+                    Some(o) => format!(
+                        "; the `response` default `{}` of {} does not apply",
+                        model.owners[o].response.as_ref().expect("nearest").format.text(),
+                        model.describe(o)
+                    ),
+                    None => String::new(),
+                };
+                format!(
+                    " Output: the unread body (`Incoming`) of a 2xx response, for an incremental reader chosen by the caller (it checks the head itself and names this endpoint in its errors); nothing is read here{ignored}."
                 )
             }
             None => {
@@ -1313,8 +1347,10 @@ fn emit_owner(
         Kind::Endpoint {
             method,
             output,
+            incoming,
             body,
         } => {
+            let incoming = *incoming;
             let parent_ty = &model.owners[owner.parent.unwrap()].type_name;
             let controls = controls(
                 k,
@@ -1339,11 +1375,45 @@ fn emit_owner(
             });
             let clone_impl = endpoint_clone(ty, &owner.values, body.as_ref());
             let out = match output {
+                Some(p) if p.stream => {
+                    let t = &p.ty;
+                    let r = output_format(model, p);
+                    quote!(#k::Records<#r, #t>)
+                }
                 Some(p) => {
                     let t = &p.ty;
                     quote!(#t)
                 }
+                None if incoming => quote!(#k::Incoming),
                 None => quote!(()),
+            };
+            let send_docs = if incoming || output.as_ref().is_some_and(|o| o.stream) {
+                quote! {
+                    /// Sends the request once (`prepare` then one `reqwest::Client::execute`) and,
+                    /// for a 2xx response, returns the body **unread** for incremental reading
+                    /// (the stream format's reader, or the `Incoming` body for a reader you
+                    /// choose): nothing is drained or collected. A non-2xx status is
+                    /// `ErrorKind::Status` holding the unread response (`Error::into_response`);
+                    /// Concord never retries. Dropping the result closes the response.
+                    ///
+                    /// # Errors
+                    ///
+                    /// `Build` as for `prepare`, then `Transport`, `Status` or `Metadata` (the
+                    /// stream format refused the response head; the response is kept unread).
+                    /// Later read errors come from the reader and name this endpoint.
+                }
+            } else {
+                quote! {
+                    /// Sends the request once (`prepare` then one `reqwest::Client::execute`) and
+                    /// decodes a 2xx response. A non-2xx status is `ErrorKind::Status` holding the
+                    /// unread response (`Error::into_response`); Concord never retries.
+                    ///
+                    /// # Errors
+                    ///
+                    /// `Build` as for `prepare`, then `Transport`, `Status`, `Metadata` (the
+                    /// format refused the response head; the response is kept unread) or
+                    /// `Decode` (see `ErrorKind`).
+                }
             };
             let prepare = prepare_body(
                 k,
@@ -1352,6 +1422,7 @@ fn emit_owner(
                 index,
                 method,
                 output.as_ref(),
+                incoming,
                 body.as_ref(),
             );
             let shapes = shapes_static(k, model, index);
@@ -1382,15 +1453,7 @@ fn emit_owner(
                         #prepare
                     }
 
-                    /// Sends the request once (`prepare` then one `reqwest::Client::execute`) and
-                    /// decodes a 2xx response. A non-2xx status is `ErrorKind::Status` holding the
-                    /// unread response (`Error::into_response`); Concord never retries.
-                    ///
-                    /// # Errors
-                    ///
-                    /// `Build` as for `prepare`, then `Transport`, `Status`, `Metadata` (the
-                    /// format refused the response head; the response is kept unread) or
-                    /// `Decode` (see `ErrorKind`).
+                    #send_docs
                     #[inline] pub async fn send(self) -> ::core::result::Result<#out, #k::Error> {
                         self.prepare()?.send().await
                     }
@@ -2060,6 +2123,7 @@ fn prepare_body(
     index: usize,
     method: &Ident,
     output: Option<&Output>,
+    incoming: bool,
     body: Option<&Body>,
 ) -> TokenStream {
     let owner: &Owner = &model.owners[index];
@@ -2230,8 +2294,27 @@ fn prepare_body(
     let label_count = composed.labels.len();
     let segment_count = composed.segments.len() + usize::from(composed.trailing_slash);
     let root = format_ident!("__o0");
-    // No `->`: drained, whatever the defaults (a `response` default never applies).
+    // No `->`: drained, whatever the defaults (a `response` default never applies). `-> stream`
+    // without an item: the unread body, likewise without a format.
     let decoder = match output {
+        Some(o) if o.stream => {
+            let t = &o.ty;
+            let at = match o.origin {
+                Origin::Endpoint => o.format.span(),
+                Origin::Default(_) => t.span(),
+            };
+            let r = format_for(model, &o.format, o.origin, false, at);
+            // The item type is named first, so an unsupported pair is reported as
+            // `Incremental<T>`.
+            let init = located(
+                quote!(#k::__private::OpenFormat::<#k::Records<#r, #t>>::new::<#t, #r>()),
+                at,
+            );
+            quote!({
+                static __OPEN: #k::__private::OpenFormat<#k::Records<#r, #t>> = #init;
+                (__OPEN.decoder(&__META), __OPEN.accept())
+            })
+        }
         Some(o) => {
             let t = &o.ty;
             let at = match o.origin {
@@ -2246,6 +2329,9 @@ fn prepare_body(
                 static __DECODE: #k::__private::DecodeFormat<#t> = #init;
                 (__DECODE.decoder(&__META), __DECODE.accept())
             })
+        }
+        None if incoming => {
+            quote!((#k::__private::incoming(&__META), ::core::option::Option::None))
         }
         None => quote!((#k::__private::drain(&__META), ::core::option::Option::None)),
     };

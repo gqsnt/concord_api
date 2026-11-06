@@ -73,7 +73,7 @@ mod header_map_capacity {
         let base = Base::parse("http://capacity.example.test").unwrap();
         let mut parts = Parts::new(&META, &base);
         fill(&mut parts);
-        let body = Some((
+        let body = Some(concord_core::__private::BodyParts::new(
             reqwest::Body::from("x"),
             Some(HeaderValue::from_static("text/plain")),
         ));

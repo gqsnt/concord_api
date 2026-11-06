@@ -5,6 +5,7 @@ use std::fmt;
 
 use crate::__private::EndpointMeta;
 use crate::codec::CodecError;
+use crate::response::Operation;
 
 /// Why a Concord call failed.
 ///
@@ -19,7 +20,7 @@ pub struct Error {
 }
 
 struct Inner {
-    endpoint: Option<&'static EndpointMeta>,
+    operation: Option<Operation>,
     repr: Repr,
 }
 
@@ -67,7 +68,10 @@ impl Error {
         what: &'static str,
         reason: &'static str,
     ) -> Self {
-        Self::new(endpoint, Repr::Build { what, reason })
+        Self::new(
+            endpoint.map(Operation::endpoint),
+            Repr::Build { what, reason },
+        )
     }
 
     pub(crate) fn header_conflict(
@@ -75,42 +79,39 @@ impl Error {
         what: &'static str,
         earlier: &'static str,
     ) -> Self {
-        Self::new(Some(endpoint), Repr::HeaderConflict { what, earlier })
+        Self::new(
+            Some(Operation::endpoint(endpoint)),
+            Repr::HeaderConflict { what, earlier },
+        )
     }
 
     pub(crate) fn from_encode(endpoint: &'static EndpointMeta, error: CodecError) -> Self {
-        Self::new(Some(endpoint), Repr::Encode(error))
+        Self::new(Some(Operation::endpoint(endpoint)), Repr::Encode(error))
     }
 
-    pub(crate) fn from_transport(
-        endpoint: Option<&'static EndpointMeta>,
-        error: reqwest::Error,
-    ) -> Self {
-        Self::new(endpoint, Repr::Transport(error.without_url()))
+    pub(crate) fn from_transport(operation: Option<Operation>, error: reqwest::Error) -> Self {
+        Self::new(operation, Repr::Transport(error.without_url()))
     }
 
-    pub(crate) fn from_status(
-        endpoint: Option<&'static EndpointMeta>,
-        response: reqwest::Response,
-    ) -> Self {
-        Self::new(endpoint, Repr::Status(response))
+    pub(crate) fn from_status(operation: Option<Operation>, response: reqwest::Response) -> Self {
+        Self::new(operation, Repr::Status(response))
     }
 
     pub(crate) fn from_metadata(
-        endpoint: Option<&'static EndpointMeta>,
+        operation: Option<Operation>,
         error: CodecError,
         response: reqwest::Response,
     ) -> Self {
-        Self::new(endpoint, Repr::Metadata(error, response))
+        Self::new(operation, Repr::Metadata(error, response))
     }
 
-    pub(crate) fn from_decode(endpoint: Option<&'static EndpointMeta>, error: CodecError) -> Self {
-        Self::new(endpoint, Repr::Decode(error))
+    pub(crate) fn from_decode(operation: Option<Operation>, error: CodecError) -> Self {
+        Self::new(operation, Repr::Decode(error))
     }
 
-    fn new(endpoint: Option<&'static EndpointMeta>, repr: Repr) -> Self {
+    fn new(operation: Option<Operation>, repr: Repr) -> Self {
         Self {
-            inner: Box::new(Inner { endpoint, repr }),
+            inner: Box::new(Inner { operation, repr }),
         }
     }
 
@@ -126,11 +127,21 @@ impl Error {
     }
 
     /// The endpoint's declared name, such as `GitHub.repo.issue` (`None` for a [`Decoder`]
-    /// built with [`Decoder::new`](crate::Decoder::new) or a base URL given to `with_base_url`).
+    /// built with [`Decoder::new`](crate::Decoder::new), a base URL given to `with_base_url`, or
+    /// a natively obtained [`Incoming`](crate::Incoming), labelled or not).
     ///
     /// [`Decoder`]: crate::Decoder
     pub fn endpoint(&self) -> Option<&'static str> {
-        self.inner.endpoint.map(|m| m.name)
+        self.inner
+            .operation
+            .and_then(|op| op.meta())
+            .map(|meta| meta.name)
+    }
+
+    /// The call's identity: a declared endpoint, or the label given to a natively obtained
+    /// [`Incoming`](crate::Incoming). `None` when neither exists.
+    pub fn operation(&self) -> Option<Operation> {
+        self.inner.operation
     }
 
     /// The response status, for [`ErrorKind::Status`] only. A [`Metadata`](ErrorKind::Metadata)
@@ -188,11 +199,11 @@ impl Error {
     /// # Ok(()) }
     /// ```
     pub fn into_response(self) -> Result<reqwest::Response, Error> {
-        let Inner { endpoint, repr } = *self.inner;
+        let Inner { operation, repr } = *self.inner;
         match repr {
             Repr::Status(response) | Repr::Metadata(_, response) => Ok(response),
             repr => Err(Error {
-                inner: Box::new(Inner { endpoint, repr }),
+                inner: Box::new(Inner { operation, repr }),
             }),
         }
     }
@@ -224,12 +235,12 @@ impl Error {
 
 impl fmt::Display for Error {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        if let Some(meta) = self.inner.endpoint {
-            write!(f, "{} {}: ", meta.method, meta.name)?;
+        if let Some(operation) = self.inner.operation {
+            write!(f, "{operation}: ")?;
         }
         match &self.inner.repr {
             // Without an endpoint no request was involved: a base URL given to `with_base_url`.
-            Repr::Build { what, reason } if self.inner.endpoint.is_none() => {
+            Repr::Build { what, reason } if self.inner.operation.is_none() => {
                 write!(f, "invalid {what}: it {reason}")
             }
             Repr::Build { what, reason } => write!(f, "request not built: {what} {reason}"),

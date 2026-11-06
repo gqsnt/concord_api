@@ -3,7 +3,9 @@
 use std::marker::PhantomData;
 
 use concord_core::bytes::Bytes;
-use concord_core::{CodecError, Decode, Encode, ResponseHead, reqwest};
+use concord_core::{
+    CodecError, Decode, Encode, EncodedBody, Incoming, Incremental, ResponseHead, reqwest,
+};
 
 /// The format `F` without its checks of the response `Content-Type` field.
 ///
@@ -41,5 +43,27 @@ impl<T, F: Encode<T>> Encode<T> for IgnoreContentType<F> {
 
     fn encode(value: T) -> Result<reqwest::Body, CodecError> {
         F::encode(value)
+    }
+
+    /// `F`'s, unchanged: a runtime media type `F` binds to the body is kept.
+    fn encode_body(value: T) -> Result<EncodedBody, CodecError> {
+        F::encode_body(value)
+    }
+}
+
+/// The streaming counterpart (`-> stream T`): skips exactly `F`'s
+/// [`check_content_type`](Incremental::check_content_type); `F`'s other head checks, its reader
+/// and its `Accept` suggestion are kept.
+impl<T, F: Incremental<T>> Incremental<T> for IgnoreContentType<F> {
+    type Records = F::Records;
+    type Context = F::Context;
+    const ACCEPT: Option<&'static str> = F::ACCEPT;
+
+    fn context(head: &ResponseHead<'_>) -> Result<F::Context, CodecError> {
+        F::context(head)
+    }
+
+    fn open(context: F::Context, body: Incoming) -> F::Records {
+        F::open(context, body)
     }
 }
