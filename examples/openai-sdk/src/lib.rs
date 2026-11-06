@@ -4,6 +4,7 @@
 
 use concord::{
     Binary, Endpoint, Json, Received, SendWith,
+    multipart::{Multipart, MultipartBody},
     reqwest::{
         self,
         header::{AUTHORIZATION, HeaderMap, HeaderValue},
@@ -34,11 +35,10 @@ concord::api! {
             path "responses";
             headers { "accept" = "text/event-stream"; }
         }
-        /// Upload batch input.
-        POST upload(body bytes: Vec<u8>) -> FileObject {
+        /// Upload batch input: a `multipart/form-data` body whose boundary the format chooses.
+        POST upload(body form: MultipartBody) -> FileObject {
             path "files";
-            request Binary;
-            headers { "content-type" = "multipart/form-data; boundary=concord-batch-boundary"; }
+            request Multipart;
         }
         /// Retrieve metadata.
         GET file(id: String) -> FileObject { path "files/{id}"; }
@@ -380,7 +380,8 @@ impl OpenAi {
             done: false,
         })
     }
-    /// Upload buffered JSONL; rejects unsafe filenames and boundary collisions.
+    /// Upload buffered JSONL; rejects unsafe filenames. The multipart boundary is chosen by
+    /// `concord::multipart` so that it occurs nowhere in the parts.
     pub async fn upload_batch_file(
         &self,
         filename: &str,
@@ -390,16 +391,16 @@ impl OpenAi {
             || filename
                 .bytes()
                 .any(|b| b < 32 || b == 127 || b == b'"' || b == b'\\')
-            || bytes.windows(22).any(|w| w == b"concord-batch-boundary")
         {
-            return Err(Error::Invalid(
-                "unsafe filename or multipart boundary collision",
-            ));
+            return Err(Error::Invalid("unsafe filename"));
         }
-        let mut body = format!("--concord-batch-boundary\r\nContent-Disposition: form-data; name=\"purpose\"\r\n\r\nbatch\r\n--concord-batch-boundary\r\nContent-Disposition: form-data; name=\"file\"; filename=\"{filename}\"\r\nContent-Type: application/jsonl\r\n\r\n").into_bytes();
-        body.extend_from_slice(bytes);
-        body.extend_from_slice(b"\r\n--concord-batch-boundary--\r\n");
-        self.api.upload(body).send().await
+        let form = MultipartBody::form_data().text("purpose", "batch").file(
+            "file",
+            filename,
+            "application/jsonl",
+            bytes.to_vec(),
+        );
+        self.api.upload(form).send().await
     }
     pub async fn file(&self, id: &str) -> Result<Response<FileObject>, Error> {
         if id.is_empty() {

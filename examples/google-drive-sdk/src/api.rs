@@ -1,5 +1,6 @@
 //! Transport declaration. Domain validation and session state live in the public client.
 
+use concord::multipart::{Multipart, MultipartBody};
 use concord::reqwest::header::{AUTHORIZATION, CONTENT_RANGE};
 use concord::{Encoded, EncodedBody, Json};
 
@@ -25,9 +26,9 @@ concord::api! {
         }
         scope uploads {
             path "upload/drive/v3/files";
-            POST multipart(body payload: EncodedBody, query fields: String) -> File {
+            POST multipart(body payload: MultipartBody, query fields: String) -> File {
                 query { "uploadType" = "multipart"; }
-                request Encoded;
+                request Multipart;
             }
             POST initiate(
                 body metadata: NewFile, query fields: String,

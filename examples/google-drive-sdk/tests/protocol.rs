@@ -82,7 +82,7 @@ async fn multipart_related_is_byte_exact_and_collision_free() {
     auth(&request);
     assert_eq!(
         request.header("content-type"),
-        Some("multipart/related; boundary=concord_drive_1")
+        Some("multipart/related; boundary=concord-boundary-1")
     );
     assert_eq!(
         request.header("content-length"),
@@ -98,14 +98,14 @@ async fn multipart_scans_metadata_too_and_invalid_media_never_sends() {
     let server = TestServer::start(|_| Reply::json(200, CREATED)).await;
     let drive = client(&server);
     let mut metadata = metadata();
-    metadata.name = "concord_drive_0.bin".into();
+    metadata.name = "concord-boundary-0.bin".into();
     drive
         .upload_multipart(metadata, "application/octet-stream", b"", &fields())
         .await
         .unwrap();
     assert_eq!(
         server.single().header("content-type"),
-        Some("multipart/related; boundary=concord_drive_1")
+        Some("multipart/related; boundary=concord-boundary-1")
     );
     for media in [
         "text/plain\r\nx-injected: yes",

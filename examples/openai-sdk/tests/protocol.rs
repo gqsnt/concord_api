@@ -55,30 +55,40 @@ async fn response_and_typed_http_error() {
 }
 #[tokio::test]
 async fn multipart_exact_bytes_and_validation() {
-    let (s, c) = setup(vec![Reply::json(
-        200,
-        include_bytes!("../fixtures/file.json"),
-    )])
+    let (s, c) = setup(vec![
+        Reply::json(200, include_bytes!("../fixtures/file.json")),
+        Reply::json(200, include_bytes!("../fixtures/file.json")),
+    ])
     .await;
     let bytes = b"{\"custom_id\":\"one\"}\n";
     c.upload_batch_file("batch.jsonl", bytes).await.unwrap();
     let r = s.single();
     assert_eq!(r.method, "POST");
     assert_eq!(r.target, "/v1/files");
+    // The boundary is `concord::multipart`'s first candidate (the SDK no longer frames the body
+    // with its own fixed `concord-batch-boundary`); the bytes are otherwise unchanged.
     assert_eq!(
         r.header("content-type"),
-        Some("multipart/form-data; boundary=concord-batch-boundary")
+        Some("multipart/form-data; boundary=concord-boundary-0")
     );
-    let mut expected = b"--concord-batch-boundary\r\nContent-Disposition: form-data; name=\"purpose\"\r\n\r\nbatch\r\n--concord-batch-boundary\r\nContent-Disposition: form-data; name=\"file\"; filename=\"batch.jsonl\"\r\nContent-Type: application/jsonl\r\n\r\n".to_vec();
+    let mut expected = b"--concord-boundary-0\r\nContent-Disposition: form-data; name=\"purpose\"\r\n\r\nbatch\r\n--concord-boundary-0\r\nContent-Disposition: form-data; name=\"file\"; filename=\"batch.jsonl\"\r\nContent-Type: application/jsonl\r\n\r\n".to_vec();
     expected.extend_from_slice(bytes);
-    expected.extend_from_slice(b"\r\n--concord-batch-boundary--\r\n");
+    expected.extend_from_slice(b"\r\n--concord-boundary-0--\r\n");
     assert_eq!(r.body, expected);
     assert!(c.upload_batch_file("bad\r\nname", bytes).await.is_err());
-    assert!(
-        c.upload_batch_file("ok", b"concord-batch-boundary")
-            .await
-            .is_err()
+    // Bytes that contain a boundary candidate are no longer refused: the format chooses one that
+    // occurs in no part (here the next candidate), so they are sent byte for byte.
+    let colliding = b"concord-batch-boundary\n--concord-boundary-0\n";
+    c.upload_batch_file("ok", colliding).await.unwrap();
+    let r = &s.requests()[1];
+    assert_eq!(
+        r.header("content-type"),
+        Some("multipart/form-data; boundary=concord-boundary-1")
     );
+    let mut expected = b"--concord-boundary-1\r\nContent-Disposition: form-data; name=\"purpose\"\r\n\r\nbatch\r\n--concord-boundary-1\r\nContent-Disposition: form-data; name=\"file\"; filename=\"ok\"\r\nContent-Type: application/jsonl\r\n\r\n".to_vec();
+    expected.extend_from_slice(colliding);
+    expected.extend_from_slice(b"\r\n--concord-boundary-1--\r\n");
+    assert_eq!(r.body, expected);
     let row = BatchInput::response("same", ResponseRequest::new("fixture", "text"));
     assert!(batch_jsonl(&[row.clone(), row]).is_err());
     s.shutdown().await;

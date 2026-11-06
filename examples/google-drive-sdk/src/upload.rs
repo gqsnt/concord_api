@@ -1,5 +1,6 @@
 use std::fmt;
 
+use concord::multipart::{MultipartBody, Part};
 use concord::reqwest::{
     StatusCode, Url,
     header::{HeaderMap, HeaderValue, LOCATION, RANGE},
@@ -71,7 +72,8 @@ pub enum UploadStatus {
 
 impl DriveClient {
     /// Upload at most 5 MiB of media with metadata as multipart/related.
-    /// The boundary is chosen after scanning both parts, so boundary-like bytes survive exactly.
+    /// The boundary is chosen by `concord::multipart` after scanning both parts, so
+    /// boundary-like bytes survive exactly.
     /// A lost response is an uncertain create; nothing is automatically replayed.
     pub async fn upload_multipart(
         &self,
@@ -86,30 +88,12 @@ impl DriveClient {
         let media = media_header(media_type)?;
         let json = serde_json::to_vec(&metadata)
             .map_err(|_| Error::invalid("metadata could not be serialized"))?;
-        let mut sequence = 0_u64;
-        let boundary = loop {
-            let candidate = format!("concord_drive_{sequence}");
-            if !contains(&json, candidate.as_bytes()) && !contains(bytes, candidate.as_bytes()) {
-                break candidate;
-            }
-            sequence += 1;
-        };
-        let mut body =
-            format!("--{boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n")
-                .into_bytes();
-        body.extend_from_slice(&json);
-        body.extend_from_slice(
-            format!(
-                "\r\n--{boundary}\r\nContent-Type: {}\r\n\r\n",
-                media.to_str().expect("validated MIME is ASCII")
-            )
-            .as_bytes(),
-        );
-        body.extend_from_slice(bytes);
-        body.extend_from_slice(format!("\r\n--{boundary}--\r\n").as_bytes());
-        let content_type = HeaderValue::try_from(format!("multipart/related; boundary={boundary}"))
-            .map_err(|_| Error::invalid("invalid multipart boundary"))?;
-        let payload = EncodedBody::with_content_type(body.into(), content_type);
+        let payload = MultipartBody::related()
+            .part(Part::new(json).header("Content-Type", "application/json; charset=UTF-8"))
+            .part(Part::new(bytes.to_vec()).header(
+                "Content-Type",
+                media.to_str().expect("validated MIME is ASCII"),
+            ));
         let prepared = self
             .api
             .uploads()
@@ -380,12 +364,6 @@ fn media_header(value: &str) -> Result<HeaderValue, Error> {
         ));
     }
     HeaderValue::try_from(value).map_err(|_| Error::invalid("invalid upload MIME header"))
-}
-
-fn contains(haystack: &[u8], needle: &[u8]) -> bool {
-    haystack
-        .windows(needle.len())
-        .any(|window| window == needle)
 }
 
 fn single_header<'a>(headers: &'a HeaderMap, name: &str) -> Result<Option<&'a str>, &'static str> {

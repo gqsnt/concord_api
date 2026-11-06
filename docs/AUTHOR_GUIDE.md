@@ -727,6 +727,7 @@ output's format, and which statement they come from.
 | `Binary` (feature `extras`) | `Bytes` or `Vec<u8>`; `application/octet-stream` | `Bytes` or `Vec<u8>`, unchanged; nothing is checked (`image/png` is fine) | none |
 | `Form` (feature `form`) | any `T: Serialize` with flat fields (a struct, a map, pairs); `application/x-www-form-urlencoded` | any `T: DeserializeOwned`; exactly one `application/x-www-form-urlencoded`, `charset` absent or once and UTF-8 or US-ASCII | `application/x-www-form-urlencoded` |
 | `IgnoreContentType<F>` (feature `extras`) | `F`'s | `F`'s, without its `Content-Type` check | `F`'s |
+| `multipart::Multipart` (feature `multipart`) | `multipart::MultipartBody`, `multipart/form-data` or `multipart/related` parts held in memory; `multipart/<subtype>; boundary=...` with a boundary chosen per body ([5.10](#510-bodies-whose-media-type-is-known-at-run-time)) | none (a request format) | none |
 | a type path: `Csv`, `codecs::Csv` | your `Encode<T>` ([5.7](#57-custom-formats)) | your `Decode<T>` | your `ACCEPT`, if any |
 
 The check of the response head runs on a 2xx response **before the body is read**. A refusal is an
@@ -1026,16 +1027,18 @@ those constructors. The encoder runs during preparation, but it need not read th
 [`examples/native/src/upload.rs`](../examples/native/src/upload.rs) prepares a non-`Clone`
 one-shot source without polling it, and one `send()` reads it once.
 
-`Encode::CONTENT_TYPE` is static, and the encoder does not return per-body media headers. A
-`request F "type/subtype";` statement or a `content-type` header replaces that static value (5.3,
-5.8). For a media type that varies with the body (a multipart boundary), use the documented native
-request-construction route through `into_parts` and reqwest's multipart support. An explicit
-matching `content-type` header can also carry it when the endpoint or SDK controls that
-body/header pair.
+`Encode::CONTENT_TYPE` is static. A `request F "type/subtype";` statement or a `content-type`
+header replaces that static value (5.3, 5.8). A media type that varies with the body is a runtime
+media type: the format overrides `Encode::encode_body` and returns it bound to the bytes (5.10).
+For a multipart body, use the standard `concord::multipart::Multipart` (feature `multipart`):
+`body form: MultipartBody` with `request Multipart;`, the boundary chosen per body. The native route
+through `into_parts` and reqwest's own `multipart` support remains for large or streamed parts,
+which `MultipartBody` (in memory) does not hold.
 
 For a response consumed incrementally, use `send_raw` and native reads; typed `Decode` receives
 the collected body bytes. `examples/native` has NDJSON and pair-encoded form formats and a
-one-shot request stream, and `examples/multipart` a multipart upload ([recipes](RECIPES.md)).
+one-shot request stream, and `examples/multipart` a multipart upload through reqwest and a local
+multipart format of its own ([recipes](RECIPES.md)).
 
 ### 5.8 What goes on the wire: `Accept` and `Content-Type`
 
@@ -1202,6 +1205,49 @@ type (`request Encoded "m";`) or a `content-type` header that differs is a `Buil
 anything is sent; an equal one is sent once; `remove content-type` keeps the runtime value. The
 body's own length decides `Content-Length` versus chunked transfer, and preparing the request polls
 a lazy source zero times.
+
+A multipart body has its own format, `multipart::Multipart` (feature `multipart`), which chooses
+the boundary once the parts are known. The declaration states the body; the call builds it.
+Excerpt of `examples/openai-sdk/src/lib.rs` (`multipart/form-data`):
+
+```rust,ignore
+        POST upload(body form: MultipartBody) -> FileObject {
+            path "files";
+            request Multipart;
+        }
+```
+
+Excerpt of `examples/openai-sdk/src/lib.rs` (a field, then a file):
+
+```rust,ignore
+        let form = MultipartBody::form_data().text("purpose", "batch").file(
+            "file",
+            filename,
+            "application/jsonl",
+            bytes.to_vec(),
+        );
+        self.api.upload(form).send().await
+```
+
+Excerpt of `examples/google-drive-sdk/src/upload.rs` (`multipart/related`: JSON metadata as the
+root part, then the media):
+
+```rust,ignore
+        let payload = MultipartBody::related()
+            .part(Part::new(json).header("Content-Type", "application/json; charset=UTF-8"))
+            .part(Part::new(bytes.to_vec()).header(
+                "Content-Type",
+                media.to_str().expect("validated MIME is ASCII"),
+            ));
+```
+
+The boundary is `concord-boundary-<n>`, the first candidate found in no part (header lines
+included): deterministic, so tests can predict it, and checked against the parts rather than made
+unlikely by randomness. The body is sent with `Content-Length`. A name, file name or part header
+value with a control character other than tab (CR, LF and NUL among them), a quote or backslash in
+a form-data name or file name, and an empty `related` body are refused when the request is
+prepared (`Build`, before I/O; the error shows no part bytes). The complete rules are on
+`concord::multipart::Multipart`.
 
 ### 5.11 Reading response metadata in an SDK
 

@@ -67,7 +67,7 @@ pub(crate) fn single(head: &ResponseHead<'_>) -> Result<Option<Media>, CodecErro
 }
 
 /// An RFC 9110 `token`: one or more `tchar`.
-fn is_token(text: &str) -> bool {
+pub(crate) fn is_token(text: &str) -> bool {
     !text.is_empty() && text.bytes().all(tchar)
 }
 

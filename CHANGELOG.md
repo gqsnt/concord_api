@@ -45,6 +45,17 @@ Not released: the version is unchanged (4.2.0) and no release has been decided. 
 - **Bounded body reads.** `Received::bytes_limited(n)` reads a body (any status) up to `n` bytes,
   `ErrorKind::Limit` beyond: for provider error documents. `Received::decode_limited(n)` decodes a
   finite output with the same bound.
+- **Multipart request bodies** (feature `multipart` of `concord-extras` and of the facade,
+  `concord::multipart`; no new dependency, reqwest's own `multipart` feature stays off). A declared
+  `body form: MultipartBody` with `request Multipart;` sends `multipart/form-data`
+  (`MultipartBody::form_data()`, `.text(name, value)`, `.file(name, file_name, content_type,
+  bytes)`) or `multipart/related` (`MultipartBody::related()`, `related_with_type(root)`,
+  `.part(Part::new(bytes).header(name, value))`). The boundary, `concord-boundary-<n>`, is the
+  first deterministic candidate that occurs in no part; it is the body's runtime media type
+  (`EncodedBody` precedence) and the body is sent with `Content-Length`. Control characters in
+  names, file names and part header values (tab excepted), `"`/`\` in form-data names and file
+  names, and an empty `related` body are encode errors (`Build`, before I/O) that show no part
+  bytes. The OpenAI and Google Drive SDK examples moved onto it from hand-written framing.
 
 ### Changed
 

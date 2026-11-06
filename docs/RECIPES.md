@@ -274,19 +274,35 @@ Without the feature, or without serde: [`repr::Form`](../examples/native/src/rep
 
 ### Multipart uploads
 
-[`concord_example_multipart::upload`](../examples/multipart/src/lib.rs) — `multipart/form-data`
-through reqwest's own `multipart` feature, enabled in that example crate only.
+With the `multipart` feature, `concord::multipart` declares a `multipart/form-data` or
+`multipart/related` body like any other: `body form: MultipartBody` with `request Multipart;`
+([author guide](AUTHOR_GUIDE.md#510-bodies-whose-media-type-is-known-at-run-time)). Used by
+`upload_batch_file` in [`examples/openai-sdk`](../examples/openai-sdk/src/lib.rs) (a form-data
+file and field) and `upload_multipart` in
+[`examples/google-drive-sdk`](../examples/google-drive-sdk/src/upload.rs) (`multipart/related`:
+JSON metadata, then the media).
 
-- **How:** declare the endpoint without a body; `prepare()?.into_parts()`, then
+- **How:** `MultipartBody::form_data().text(name, value).file(name, file_name, content_type,
+  bytes)`, or `MultipartBody::related()` / `related_with_type(root)` with
+  `.part(Part::new(bytes).header(name, value))`; then the generated `send()`.
+- **What it does:** writes the parts in order, chooses the boundary `concord-boundary-<n>` that
+  occurs in no part (deterministic: checked, not left to chance), and sends
+  `multipart/<subtype>; boundary=...` as the body's runtime media type with `Content-Length`. A
+  declared media type or `content-type` header that differs is a `Build` error before I/O.
+- **Assumes:** the parts fit in memory. Names, file names and part header values with control
+  characters (tab excepted), and `"` or `\` in form-data names and file names, are refused rather
+  than escaped; sanitize them first if they come from users.
+
+For large or streamed files, [`concord_example_multipart::upload`](../examples/multipart/src/lib.rs)
+attaches reqwest's own `multipart` form (enabled in that example crate only) to a declared endpoint
+without a body.
+
+- **How:** `prepare()?.into_parts()`, then
   `reqwest::RequestBuilder::from_parts(client, request).multipart(form).send().await` and
   `decoder.finish(result).await`. The declared path, headers and decoder still apply; reqwest
   writes the boundary, `Content-Type` and (for parts of known length) `Content-Length`.
-- **Why native:** `Encode::CONTENT_TYPE` is a constant and `encode` returns no headers, while a
-  multipart boundary is chosen per body; Concord has no multipart policy. (A `content-type` header
-  on the endpoint replaces the format's media type, so an SDK that chooses the boundary itself and
-  passes the matching header can also use a format; reqwest's multipart support does both for
-  you.) A fixed-media stream needs neither: see the request side of
-  [streaming](#streaming-a-large-or-endless-body).
+- **When:** a part is streamed (`Part::stream_with_length`) or too large to buffer, or reqwest's
+  `Form` is already the application's currency.
 - **Assumes:** field names use `Form::percent_encode_attr_chars()` (reqwest's default leaves `\`
   raw inside `name="..."`); file names with CR/LF are escaped by reqwest in a form a strict
   RFC 9110 recipient may reject, so sanitize them if the server is unknown.

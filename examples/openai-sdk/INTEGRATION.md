@@ -243,3 +243,112 @@ request URL; it is now `Error::Concord(e)` with `e.kind() == Transport` and
 the variant. Code: 3 changed lines in `src/lib.rs`, one variant removed. The SSE parser itself is
 unchanged; whether it becomes shared code is decided with ntfy in wave 3.
 
+
+## Between waves 3-4 (shared multipart format)
+
+Library refinement R2: `concord::multipart` (feature `multipart` of `concord-extras` and the
+facade), on top of Concord `7354d5a3`. Role: implementer, a Claude agent session spawned by the
+coordinator (model and effort not re-derived from harness metadata here). Not an independent
+review: nobody has reviewed this change yet.
+
+**Verdict: adopted.** `upload_batch_file` no longer frames the body by hand; the declaration
+states a `MultipartBody` and the format writes the parts, chooses the boundary and sends it as
+the body's runtime media type. `OpenAi::upload_batch_file` keeps its signature, its unsafe-filename
+refusal (`Error::Invalid`, before any HTTP) and the exact part layout.
+
+### Declaration and method
+
+Before (`src/lib.rs`, `7354d5a3`):
+
+```rust,ignore
+        /// Upload batch input.
+        POST upload(body bytes: Vec<u8>) -> FileObject {
+            path "files";
+            request Binary;
+            headers { "content-type" = "multipart/form-data; boundary=concord-batch-boundary"; }
+        }
+
+        if filename.is_empty()
+            || filename
+                .bytes()
+                .any(|b| b < 32 || b == 127 || b == b'"' || b == b'\\')
+            || bytes.windows(22).any(|w| w == b"concord-batch-boundary")
+        {
+            return Err(Error::Invalid(
+                "unsafe filename or multipart boundary collision",
+            ));
+        }
+        let mut body = format!("--concord-batch-boundary\r\nContent-Disposition: form-data; name=\"purpose\"\r\n\r\nbatch\r\n--concord-batch-boundary\r\nContent-Disposition: form-data; name=\"file\"; filename=\"{filename}\"\r\nContent-Type: application/jsonl\r\n\r\n").into_bytes();
+        body.extend_from_slice(bytes);
+        body.extend_from_slice(b"\r\n--concord-batch-boundary--\r\n");
+        self.api.upload(body).send().await
+```
+
+After:
+
+```rust,ignore
+        /// Upload batch input: a `multipart/form-data` body whose boundary the format chooses.
+        POST upload(body form: MultipartBody) -> FileObject {
+            path "files";
+            request Multipart;
+        }
+
+        if filename.is_empty()
+            || filename
+                .bytes()
+                .any(|b| b < 32 || b == 127 || b == b'"' || b == b'\\')
+        {
+            return Err(Error::Invalid("unsafe filename"));
+        }
+        let form = MultipartBody::form_data().text("purpose", "batch").file(
+            "file",
+            filename,
+            "application/jsonl",
+            bytes.to_vec(),
+        );
+        self.api.upload(form).send().await
+```
+
+The SDK's own filename check stays: its rule is stricter than the format's (it also refuses an
+empty name and a tab) and its `Error::Invalid` is what `tests/first_use.rs` asserts. The format
+refuses the rest (control characters, `"`, `\`) on its own as a `Build` error, so the check is
+policy, not the only guard. `Cargo.toml` adds the facade feature `multipart`.
+
+### Behaviour changes
+
+- **Boundary.** `concord-batch-boundary` (fixed, declared as a `content-type` header) becomes
+  the format's first candidate `concord-boundary-0`, or the next free one. The part bytes are
+  otherwise identical.
+- **Collision.** File bytes containing the boundary were refused (`Error::Invalid`, "unsafe
+  filename or multipart boundary collision"); now the format chooses a boundary that occurs in no
+  part, so such a file is uploaded byte for byte. The message is now `"unsafe filename"`, the only
+  case left.
+- **Low-level declaration.** The public `OpenAiApi::upload` takes a `MultipartBody` instead of
+  pre-framed `Vec<u8>` bytes.
+
+### Tests
+
+`tests/protocol.rs::multipart_exact_bytes_and_validation` still asserts the exact header and
+body. Two changes, both required by the boundary now being chosen by the format:
+
+1. The expected `content-type` and the four delimiters change from `concord-batch-boundary` to
+   `concord-boundary-0`: the SDK no longer declares a fixed boundary, and the format's first
+   candidate does not occur in `{"custom_id":"one"}\n`. Every other expected byte is unchanged.
+2. `upload_batch_file("ok", b"concord-batch-boundary").is_err()` asserted the collision refusal,
+   which no longer exists (behaviour change above). In its place the test uploads
+   `concord-batch-boundary\n--concord-boundary-0\n` (the former boundary and the format's first
+   candidate) and asserts the exact request: boundary `concord-boundary-1`, the bytes verbatim.
+   The script gains one reply for that upload.
+
+The unsafe-filename assertions (`tests/protocol.rs` and
+`tests/first_use.rs::invalid_batch_input_and_unsafe_filename_are_rejected_before_http`) and the
+independent multipart reader of `tests/first_use.rs` (which takes the boundary from the header)
+are unchanged.
+
+### Verification (observed)
+
+`CARGO_BUILD_JOBS=6 cargo test --locked -p concord-sdk-openai`: 18 first_use + 4 protocol +
+4 split_and_reorder + 5 workflows passed, 0 failed; 0 doctests (the same counts as before the
+change). The repository gate (`scripts/verify.sh`) result is in the coordinator's records.
+
+Offline only; no OpenAI API calls.
