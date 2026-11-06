@@ -834,6 +834,34 @@ fn expand_owner(owner: &mut Owner, groups: &[Group], used: &mut [bool]) -> syn::
     if !spreads.is_empty() && !matches!(owner.kind, OwnerKind::Endpoint { .. }) {
         reject_spreads(&spreads)?;
     }
+    // A value in two included groups, reported as such (not as an endpoint value).
+    for (i, a) in spreads.iter().enumerate() {
+        for b in &spreads[i + 1..] {
+            let (Some(ga), Some(gb)) = (
+                groups.iter().find(|g| g.name == a.name),
+                groups.iter().find(|g| g.name == b.name),
+            ) else {
+                continue;
+            };
+            if ga.name == gb.name {
+                continue;
+            }
+            if let Some(value) = ga
+                .params
+                .iter()
+                .find(|v| gb.params.iter().any(|w| w.name == v.name))
+            {
+                return Err(syn::Error::new(
+                    b.name.span(),
+                    format!(
+                        "value `{}` is in both parameter groups `{}` and `{}` included here; keep it in one",
+                        value.name, a.name, b.name
+                    ),
+                ));
+            }
+        }
+    }
+    let declared: Vec<Ident> = owner.params.iter().map(|p| p.name.clone()).collect();
     // From the last spread to the first, so earlier insertion points stay valid.
     for spread in spreads.iter().rev() {
         let Some(index) = groups.iter().position(|g| g.name == spread.name) else {
@@ -853,7 +881,11 @@ fn expand_owner(owner: &mut Owner, groups: &[Group], used: &mut [bool]) -> syn::
             ));
         };
         for value in &groups[index].params {
-            if let Some(own) = owner.params.iter().find(|p| p.name == value.name) {
+            if let Some(own) = owner
+                .params
+                .iter()
+                .find(|p| p.name == value.name && declared.contains(&p.name))
+            {
                 let mut e = syn::Error::new(
                     own.name.span(),
                     format!(

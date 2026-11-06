@@ -44,7 +44,8 @@ enum Repr {
     Encode(CodecError),
     Transport(reqwest::Error),
     Status(reqwest::Response),
-    /// A 2xx response whose head the format refused; the response is unread.
+    /// A response whose head the format refused (a 2xx of a declared output, or any status read
+    /// with `Received::document`); the response is unread.
     Metadata(CodecError, reqwest::Response),
     Decode(CodecError),
     /// A body read with a byte limit was longer.
@@ -62,11 +63,13 @@ pub enum ErrorKind {
     Transport,
     /// The server answered with a non-2xx status.
     Status,
-    /// The server answered 2xx, but the declared format refused the response head (its
-    /// `Content-Type`, or another header the format checks) before the body was read. The
-    /// response is kept unread ([`Error::response`], [`Error::into_response`]).
+    /// The format refused the response head (its `Content-Type`, or another header the format
+    /// checks) before the body was read: a 2xx response of a declared output, or a response of
+    /// any status read with [`Received::document`](crate::Received::document). The response is
+    /// kept unread ([`Error::response`], [`Error::into_response`]).
     Metadata,
-    /// A 2xx response body could not be decoded with the declared format.
+    /// A response body could not be decoded with the format: a 2xx body of a declared output, or
+    /// a document of any status read with [`Received::document`](crate::Received::document).
     Decode,
     /// A body read with a byte limit ([`Received::bytes_limited`](crate::Received::bytes_limited))
     /// was longer than the limit; the rest was not read.
@@ -177,8 +180,8 @@ impl Error {
         self.inner.operation
     }
 
-    /// The response status, for [`ErrorKind::Status`] only. A [`Metadata`](ErrorKind::Metadata)
-    /// error's response was a 2xx; read it with [`response`](Self::response).
+    /// The response status, for [`ErrorKind::Status`] only. The status of any other failed call
+    /// that received a response is `self.head().map(|h| h.status())` ([`head`](Self::head)).
     pub fn status(&self) -> Option<reqwest::StatusCode> {
         match &self.inner.repr {
             Repr::Status(response) => Some(response.status()),
@@ -187,7 +190,7 @@ impl Error {
     }
 
     /// The unread response of an [`ErrorKind::Status`] error (a non-2xx) or an
-    /// [`ErrorKind::Metadata`] error (a 2xx whose head the format refused), borrowed: its status
+    /// [`ErrorKind::Metadata`] error (a response whose head the format refused), borrowed: its status
     /// and headers (`Retry-After`, a request id, the `Content-Type` the format refused) can be read
     /// while the error is kept, for example by a predicate written as `Fn(&Error) -> bool`. To
     /// read the body, take the response with [`into_response`](Self::into_response).

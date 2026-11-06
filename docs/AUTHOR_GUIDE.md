@@ -1372,14 +1372,17 @@ status, and the SDK then consumes the body once. Three facts make the ordinary p
   `None`. So an SDK error built `From<concord::Error>` keeps the status of a decode failure
   without capturing anything by hand.
 - **`received.decode_with_meta()`** (and `decode_limited_with_meta(limit)`) applies the declared
-  handling and returns the head beside the value, moved rather than cloned for a finite output.
+  handling and returns the head beside the value, moved rather than cloned for a finite output
+  (a stream reader keeps its response, so its head is a copy).
 - **`received.document::<F, D>(limit)`** reads the body of **any** status, bounded, and decodes it
   with the format `F` exactly as a declared output: `F`'s `check_content_type` and `context` run
   on the head first (a refusal is `Metadata`, the body unread), then the bounded read, then
   `decode_body`. It returns the head beside the outcome, so a provider error stays an HTTP failure
   whether its document is typed, absent, malformed, oversized, interrupted or of another media
   type. A `Decode` failure keeps the body (`Error::body_unredacted()`) for an SDK that shows a
-  proxy's page raw. Use `IgnoreContentType<F>` to decode whatever the `Content-Type` says.
+  proxy's page raw. Use `IgnoreContentType<F>` to decode whatever the `Content-Type` says. The
+  returned head is moved out of the response when the document is read; a failure's error also
+  carries a copy of it (`Error::head`), so a failed document costs one header-map clone.
 
 A policy that returns a value with its metadata, or the provider's typed error document
 (Excerpt of `examples/frankfurter-sdk/src/lib.rs`):
@@ -1453,9 +1456,11 @@ the trait cannot host a per-operation rule. A generated operation is not a futur
 `api.op(..)` where a future is expected (`tokio::time::timeout(d, api.op(..))`) needs the adapter's
 call (`api.op(..).call()`), and rustc's E0277 does not suggest it.
 
-A provider error document on a non-2xx response is read with `received.bytes_limited(n)`: the body
-up to `n` bytes, `ErrorKind::Limit` beyond (nothing more is read); parse it with the format's
-`decode_body`. `<E as Endpoint<T>>::operation()` names the endpoint without building a request.
+A provider error document on a non-2xx response is read with `received.document::<F, D>(n)`
+(§5.11): the format's head checks and context, then the body up to `n` bytes (`ErrorKind::Limit`
+beyond; nothing more is read), then its `decode_body`. `received.bytes_limited(n)` is the raw
+read for an SDK that keeps or parses the bytes itself. `<E as Endpoint<T>>::operation()` names
+the endpoint without building a request.
 
 ### 5.13 The SDK's own `send()`: `send policy;`
 
