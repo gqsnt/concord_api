@@ -1,0 +1,12 @@
+# Provenance
+
+Accessed 2026-11-06. Airtable's help pages have no numbered version; the displayed update labels at access time are pinned below. All fixture bytes were hand-authored; none were copied as a complete vendor example or obtained from a live API. Identifiers, timestamps, field values, error messages and reserved-character tokens are synthetic. Final newlines are part of the files. Tests are offline and are not vendor conformance evidence.
+
+| Fixtures | Source and section, version at access | Transformation / synthetic coverage |
+| --- | --- | --- |
+| `page-first.json`, `page-last.json` | [Getting started with Airtable's Web API](https://support.airtable.com/articles/6292134965-getting-started-with-airtable-s-web-api), API record limits and missing fields; displayed “Last updated 2 months ago” | Authored record pages using `records` and optional `offset`, and omitted empty/missing fields. Synthetic record structure, field values and offset; the token adds reserved characters to the illustrated slash. |
+| `selected-first.json`, `selected-last.json`, `filtered.json` | [URL length limitations](https://support.airtable.com/articles/9428033215-url-length-limitations-for-web-api-requests), GET example; displayed “Last updated 3 months ago”; [Getting started](https://support.airtable.com/articles/6292134965-getting-started-with-airtable-s-web-api), missing fields; displayed “Last updated 2 months ago” | Synthetic selected/filtered responses and renamed/unknown fields; the SDK does not evaluate formulas or assert actual provider matching. |
+| `error-object.json`, `error-string.json` | [Airtable API: Common troubleshooting](https://support.airtable.com/articles/2111090641-Airtable-API%3A-Common-troubleshooting), Example error responses, last updated 2026-08-14 | Hand-authored object and string forms; type strings are documented, text is synthetic. |
+| `invalid-page.json` | [Getting started](https://support.airtable.com/articles/6292134965-getting-started-with-airtable-s-web-api), API record limits; displayed “Last updated 2 months ago” | Synthetic malformed present-but-empty offset, used to test that the SDK does not report exhaustion. |
+
+The long-query article documents GET repeated `fields[]` and `filterByFormula`, and a separate POST route. This SDK implements GET only. It does not assume that the article's displayed POST JSON example (which lacks a comma) is executable JSON.
