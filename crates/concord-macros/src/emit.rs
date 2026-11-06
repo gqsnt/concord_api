@@ -37,6 +37,104 @@ pub fn emit(model: &Model, krate: TokenStream) -> TokenStream {
             ));
         }
     }
+    out.extend(group_traits(k, model, &vis));
+    out
+}
+
+/// One trait per parameter group (`params Name(..);`): the group's setters, implemented by every
+/// endpoint that includes it (`..Name`) by forwarding to the endpoint's own generated setters.
+/// Code written once over `E: Name` configures any of those endpoints; the endpoints' inherent
+/// setters stay what ordinary callers use.
+fn group_traits(k: &TokenStream, model: &Model, vis: &syn::Visibility) -> TokenStream {
+    let mut out = TokenStream::new();
+    for group in &model.groups {
+        let name = &group.name;
+        let docs = &group.docs;
+        let user_indices: Vec<usize> = model
+            .owners
+            .iter()
+            .enumerate()
+            .filter(|(_, o)| o.groups.iter().any(|g| plain(g) == plain(name)))
+            .map(|(i, _)| i)
+            .collect();
+        let users: Vec<&Owner> = user_indices.iter().map(|&i| &model.owners[i]).collect();
+        // Names, not links: an including endpoint may be compiled out by its `cfg`.
+        let listed = users
+            .iter()
+            .map(|o| format!("`{}`", plain(&o.type_name)))
+            .collect::<Vec<_>>()
+            .join(", ");
+        // The trait exists where one of its endpoints does: its signatures may name types that
+        // only those endpoints' configurations define.
+        let cfg = owners_cfg(model, &user_indices);
+        let about = lit(&format!(
+            " The setters of the parameter group `{}`, implemented by every endpoint that includes it (`..{0}`): {listed}. Each method is the endpoint's own setter of the same name.",
+            plain(name)
+        ));
+        let mut methods = TokenStream::new();
+        let mut forwards = TokenStream::new();
+        for param in &group.params {
+            let shown = plain(&param.name);
+            let ty = &param.ty;
+            let pdocs = &param.docs;
+            let set = format_ident!("set_{}", shown);
+            let set_doc = lit(&if param.optional {
+                format!(" Sets `{shown}` (present).")
+            } else {
+                format!(" Replaces `{shown}`.")
+            });
+            methods.extend(quote! {
+                #(#pdocs)*
+                #[doc = ""]
+                #[doc = #set_doc]
+                #[must_use = "a setter returns the updated handle; discarding it discards the change"]
+                fn #set(self, value: impl #k::IntoValue<#ty>) -> Self;
+            });
+            forwards.extend(quote! {
+                #[inline] fn #set(self, value: impl #k::IntoValue<#ty>) -> Self {
+                    Self::#set(self, value)
+                }
+            });
+            if param.optional {
+                let maybe = format_ident!("maybe_{}", shown);
+                let maybe_doc = lit(&format!(
+                    " Sets whether `{shown}` is present: `Some(v)` is `set_{shown}(v)`; `None` makes it absent."
+                ));
+                methods.extend(quote! {
+                    #(#pdocs)*
+                    #[doc = ""]
+                    #[doc = #maybe_doc]
+                    #[must_use = "a setter returns the updated handle; discarding it discards the change"]
+                    fn #maybe(self, value: ::core::option::Option<#ty>) -> Self;
+                });
+                forwards.extend(quote! {
+                    #[inline] fn #maybe(self, value: ::core::option::Option<#ty>) -> Self {
+                        Self::#maybe(self, value)
+                    }
+                });
+            }
+        }
+        out.extend(quote! {
+            #cfg
+            #(#docs)*
+            #[doc = ""]
+            #[doc = #about]
+            #vis trait #name: ::core::marker::Sized {
+                #methods
+            }
+        });
+        for owner in users {
+            let ty = &owner.type_name;
+            let cfgs = &owner.cfgs;
+            out.extend(quote! {
+                #(#cfgs)*
+                #[allow(deprecated)]
+                impl #name for #ty {
+                    #forwards
+                }
+            });
+        }
+    }
     out
 }
 

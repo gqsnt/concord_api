@@ -28,9 +28,10 @@ with one endpoint (Excerpt of `examples/nager-holidays-sdk/src/lib.rs`):
 }
 ```
 
-and the policy, written once (`send Type;` uses `Type::default()`; Excerpt of
-`examples/nager-holidays-sdk/src/lib.rs`):
-```rust,ignore
+and the policy, written once (`send Type;` uses `Type::default()`; `examples/nager-holidays-sdk/src/lib.rs`
+at `90b69011` — current status 2026-11-07: the SDK50 campaign shortened it to
+`received.decode_with_meta()`, see `v4/sdk50/INDEX.md`):
+```text
 #[derive(Default)]
 pub struct KeepHead;
 
@@ -80,9 +81,10 @@ domain method; Slack's `prepare()?.send()` would return an `ok: false` envelope 
 value) comes from `Received::meta()` or `Incoming::meta()`. `concord::Error::meta()` returns it
 for `Status` and `Metadata` errors only, the kinds that keep the response; Nager's
 `From<concord::Error>` uses it, so `?` keeps a head when one arrived. Reading a provider's error
-document is the SDK's job, deliberately and bounded. Frankfurter's policy (Excerpt of
-`examples/frankfurter-sdk/src/lib.rs`):
-```rust,ignore
+document is the SDK's job, deliberately and bounded. Frankfurter's policy
+(`examples/frankfurter-sdk/src/lib.rs` at `90b69011` — current status 2026-11-07: replaced by
+`Received::document` and `decode_with_meta`, see `v4/sdk50/INDEX.md`):
+```text
 let received = endpoint.prepare()?.receive().await?;
 let meta = received.meta();
 if !received.status().is_success() {

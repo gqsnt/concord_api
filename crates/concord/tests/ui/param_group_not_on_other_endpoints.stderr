@@ -1,0 +1,31 @@
+error[E0599]: no method named `set_limit` found for struct `CItem` in the current scope
+  --> tests/ui/param_group_not_on_other_endpoints.rs:14:23
+   |
+ 2 | / concord::api! {
+ 3 | |     pub client C() {
+ 4 | |         base "https://x.test";
+ 5 | |         params Paging(query limit?: u32);
+...  |
+ 9 | | }
+   | |_- method `set_limit` not found for this struct
+...
+14 |       let _ = c.item(7).set_limit(5u32);
+   |                         ^^^^^^^^^
+   |
+   = help: items from traits can only be used if the trait is implemented and in scope
+note: `Paging` defines an item `set_limit`, perhaps you need to implement it
+  --> tests/ui/param_group_not_on_other_endpoints.rs:2:1
+   |
+ 2 | / concord::api! {
+ 3 | |     pub client C() {
+ 4 | |         base "https://x.test";
+ 5 | |         params Paging(query limit?: u32);
+...  |
+ 9 | | }
+   | |_^
+   = note: this error originates in the macro `$crate::__macro::api` which comes from the expansion of the macro `concord::api` (in Nightly builds, run with -Z macro-backtrace for more info)
+help: there is a method `set_id` with a similar name
+   |
+14 -     let _ = c.item(7).set_limit(5u32);
+14 +     let _ = c.item(7).set_id(5u32);
+   |

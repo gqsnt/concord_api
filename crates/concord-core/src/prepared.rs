@@ -7,7 +7,7 @@ use bytes::Bytes;
 use crate::__private::{EndpointMeta, redacted_url};
 use crate::codec::{CodecError, Decode, Incremental, ResponseHead};
 use crate::error::Error;
-use crate::response::{Incoming, Operation, Received};
+use crate::response::{Incoming, Operation, Received, ResponseMeta};
 
 /// A request built by an endpoint, not yet sent. `T` is the endpoint's output type (`()` when it
 /// declares none).
@@ -513,46 +513,74 @@ impl<T> Decoder<T> {
         response: reqwest::Response,
         limit: Option<usize>,
     ) -> Result<T, Error> {
+        self.decode_keeping(response, limit, false)
+            .await
+            .map(|(value, _)| value)
+    }
+
+    /// The declared handling, also returning the response head. A finite output or a drain moves
+    /// the head out of the response once the format accepted it (an error while reading or
+    /// decoding the body carries it; nothing is cloned); a reader or an `Incoming` keeps its
+    /// response, so its head is a copy when `keep` is set and holds no header otherwise.
+    pub(crate) async fn decode_keeping(
+        self,
+        mut response: reqwest::Response,
+        limit: Option<usize>,
+        keep: bool,
+    ) -> Result<(T, ResponseMeta), Error> {
         let operation = self.operation;
         if !response.status().is_success() {
             return Err(Error::from_status(operation, response));
         }
         match self.kind {
             Kind::Drain(unit) => {
-                let mut response = response;
-                while response
-                    .chunk()
-                    .await
-                    .map_err(|e| Error::from_transport(operation, e))?
-                    .is_some()
-                {}
-                Ok(unit())
+                let head = ResponseMeta::take(&mut response, operation);
+                loop {
+                    match response.chunk().await {
+                        Ok(Some(_)) => {}
+                        Ok(None) => break,
+                        Err(e) => return Err(Error::from_transport(operation, e).with_head(head)),
+                    }
+                }
+                Ok((unit(), head))
             }
-            Kind::Typed(head) => {
+            Kind::Typed(step) => {
                 // The head is borrowed only for the format's checks; the response is then moved,
-                // either into the error (unread) or into `bytes()`.
-                let step = match head(&ResponseHead::of(&response)) {
+                // either into the error (unread) or into the body read, its head moved out first.
+                let step = match step(&ResponseHead::of(&response)) {
                     Ok(step) => step,
                     Err(e) => return Err(Error::from_metadata(operation, e, response)),
                 };
+                let head = ResponseMeta::take(&mut response, operation);
                 let body = match limit {
                     None => response
                         .bytes()
                         .await
-                        .map_err(|e| Error::from_transport(operation, e))?,
-                    Some(limit) => read_limited(response, limit, operation).await?,
+                        .map_err(|e| Error::from_transport(operation, e)),
+                    Some(limit) => read_limited(response, limit, operation).await,
                 };
-                step(body).map_err(|e| Error::from_decode(operation, e))
+                let body = match body {
+                    Ok(body) => body,
+                    Err(e) => return Err(e.with_head(head)),
+                };
+                match step(body) {
+                    Ok(value) => Ok((value, head)),
+                    Err(e) => Err(Error::from_decode(operation, e).with_head(head)),
+                }
             }
-            Kind::Open(head) => {
+            Kind::Open(step) => {
                 // Same head discipline as `Typed`; the body is not polled, only handed over.
-                let step = match head(&ResponseHead::of(&response)) {
+                let step = match step(&ResponseHead::of(&response)) {
                     Ok(step) => step,
                     Err(e) => return Err(Error::from_metadata(operation, e, response)),
                 };
-                Ok(step(Incoming::checked(response, operation)?))
+                let head = ResponseMeta::kept(&response, operation, keep);
+                Ok((step(Incoming::checked(response, operation)?), head))
             }
-            Kind::Incoming(wrap) => Ok(wrap(Incoming::checked(response, operation)?)),
+            Kind::Incoming(wrap) => {
+                let head = ResponseMeta::kept(&response, operation, keep);
+                Ok((wrap(Incoming::checked(response, operation)?), head))
+            }
         }
     }
 

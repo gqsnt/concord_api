@@ -1,0 +1,5 @@
+error: parameter group `Paging` is not included by any endpoint; include it with `..Paging` in an endpoint's values
+ --> tests/ui/param_group_unused.rs:4:16
+  |
+4 |         params Paging(query limit?: u32);
+  |                ^^^^^^
