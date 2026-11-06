@@ -400,7 +400,8 @@ Other between-wave changes: `Content-Length: 0` for a declared empty buffered bo
 (W3-7, `92488bcb`), generated Config doc sentence (W3-8, `75b3e718`), test-server `Gate` /
 `Reply::after` (W3-9, `fbf47c3d`), AUTHOR_GUIDE §5.13 notes (W23-9, W3-8).
 
-Gate on the merged refinements `92775757`: running. Independent reviews (read-only, session
+Gate on the merged refinements `92775757`: `verify.sh --package --bench` 49/49 PASS (43 + the
+new `sse`/`multipart` steps), clean tree, 6m37s (`work/logs/gate-92775757-verify.txt`). Independent reviews (read-only, session
 headers observed): Codex `gpt-6.1-sol` xhigh (`01a1af60-c6be-7ac3…`, SSE + core) and Codex
 `gpt-6-astra` xhigh (`01a1af60-c6be-7de1…`, multipart + test server + docs): running.
 
@@ -408,3 +409,17 @@ Not taken between waves 3 and 4: W23-8 value getters on generated handles (S3, G
 DEFER again — two different needs (client base URL vs scope/endpoint values), naming rules
 against endpoint and setter collisions unresolved, neither SDK blocked (read-backs work);
 reconsider with wave 4 evidence.
+
+### Review between waves 3 and 4: multipart, test server, docs (Codex `gpt-6-astra`, xhigh, read-only, session `01a1af60-c6be-7de1…`)
+
+| ID | Severity | Finding | Fix |
+|---|---|---|---|
+| AST-W34-1 | medium | `MultipartBody::related()` omits the `type` parameter RFC 2387 §3.1 requires, without saying so | `9be6134b`: kept (Google Drive's documented upload omits it) and documented as a deliberate deviation; rustdoc, AUTHOR_GUIDE §5.10 and RECIPES lead with `related_with_type(root)` |
+
+Areas reported clean: RFC 2046 framing (delimiters, CRLF, close delimiter, no preamble), the
+boundary-absence proof (CRLF between header and content; prefixes, leading zeroes, overflowing
+digit runs), the digit-run algorithm (two linear scans; a translation matched a substring oracle on
+93,676 cases), refusals and redaction, precedence and length, the OpenAI/Drive migrations (the
+collision tests still collide; Drive payloads recovered byte for byte by an independent parse),
+feature wiring, the test-server `Gate` (no lost wakeup), §5.13 docs. The reviewer could not run
+cargo (filesystem restrictions). Verdict ACCEPT_WITH_FIXES.
