@@ -1,0 +1,26 @@
+[package]
+name = "concord-sdk-fred"
+version = "0.0.0"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish = false
+description = "Bounded FRED v1 search, metadata, observations and zipped CSV, tested offline"
+
+[dependencies]
+concord = { path = "../../crates/concord" }
+concord-pagination = { path = "../../crates/concord-pagination" }
+concord-retry = { path = "../../crates/concord-retry" }
+mime.workspace = true
+roxmltree = "=0.21.2"
+serde = { workspace = true, features = ["derive"] }
+serde_json.workspace = true
+zip = { version = "=2.4.2", default-features = false, features = ["deflate-flate2", "flate2"] }
+flate2 = { version = "=1.1.10", default-features = false, features = ["rust_backend"] }
+
+[dev-dependencies]
+concord-example-testserver = { path = "../testserver" }
+tokio = { workspace = true, features = ["macros", "rt-multi-thread", "time"] }
+
+[lints]
+workspace = true
