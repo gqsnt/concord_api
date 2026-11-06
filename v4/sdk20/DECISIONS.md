@@ -241,3 +241,48 @@ return a non-`Send` output), non-`Send` endpoints (E0277 naming the field), `fol
 (default ports, IDN, IP), redaction, `decode_limited`. The reviewer confirmed reqwest's
 cross-origin redirect header removal (Authorization, Cookie, Cookie2, Proxy-Authorization,
 WWW-Authenticate); the author guide now lists exactly those. Verdict ACCEPT_WITH_FIXES.
+
+### Between waves 2 and 3: integration (`5ee3dfd6`..`a40aaa00`)
+
+**D-W23-1 — send policy as a value (IMPLEMENT, macros + core, `5ee3dfd6`).** The S3 migration
+attempt showed the type form could not express S3's need: SigV4 signs every request with the
+client's credentials, region and clock, and a policy built by `<P as Default>::default()` with
+a receiver-less `SendWith::send(endpoint)` has nowhere to get them. (An earlier phase-a signing
+test signed without credentials and hid this.) Now `SendWith<T>::send(&self, endpoint)`; the
+client statement `send value;` names a required client value (cloned per call, `Debug`-redacted
+like a sensitive value; an optional value is refused, UI `send_policy_value`), and `send Type;`
+keeps `Default`. Every policy in the cohort moved to `&self` + `#[derive(Default)]` (`634b135b`).
+Test: `checks/phase-a/tests/send_policy.rs` signs two concurrent clients with different
+credentials and checks each request carries its own client's signature.
+
+**D-W23-2 — `Incoming::chunk` (IMPLEMENT, core, `08df6614`).** OpenAI's event-stream reader had
+to leave the boundary with `into_response()` because `Incoming` could not read its own body; its
+mid-stream failure then printed the URL. One primitive, no framing (SSE stays SDK-local until
+ntfy, W2-8). OpenAI migrated (`a40aaa00`, `examples/openai-sdk/INTEGRATION.md`). Test:
+`checks/phase-a/tests/streams.rs` `an_own_parser_reads_incoming_chunks_with_identity`.
+
+Migration of the eight cohort SDKs to the between-wave refinements (`send` policy,
+`Prepared::follow`, `Received::decode_limited`); workers: Opus subagents `a776f091…` (wave 1
+SDKs) and `aadef365…` (wave 2 SDKs), each with a measured before/after in the SDK's
+`INTEGRATION.md`:
+
+| SDK | Send policy | `follow` | `decode_limited` | Reason recorded |
+|---|---|---|---|---|
+| Nager.Holidays | adopted (`send KeepHead;`) | n/a | no | rustdoc then shows a projection type (cost noted) |
+| PokéAPI | adopted | adopted | no | replaces the throwaway prepare + `url_mut` + `Decoder::execute` |
+| Twilio | not adopted (prototype compiled, measured, reverted) | n/a | no | empty-SID rule stays a domain method; generic misuse gives E0277 without a hint |
+| Amazon S3 | re-evaluated on the value form: see below | n/a | | |
+| Frankfurter | adopted | n/a | no | no success-cap friction |
+| GitLab | adopted | adopted | no | 8 mutation runs caught by tests; `follow` alone blocks the cross-origin token leak |
+| Slack | not adopted (prototype measured, reverted) | n/a | adopted (16 MiB) | declaration stays private; made public, its `prepare()?.send()` would still return an `ok: false` envelope as success and expose an unvalidated `limit` |
+| OpenAI | adopted (+ `-> stream` for the event stream) | n/a | no | buffered event stream with no bound before; endless-stream test fixed |
+
+Gaps reported by the workers, with dispositions:
+
+| ID | Gap | Disposition |
+|---|---|---|
+| W23-1 | rustdoc of a policy `send()` shows `<P as SendWith<T>>::Output` (Nager, PokéAPI) | ACCEPT: it is the real type; the generated doc line names the policy and output (SOL-W2-1) |
+| W23-2 | a policy missing `SendWith<Out>` reports E0277 twice (at the `api!` call and at the `send` statement) | MEASURED, KEPT: spanning only the trait path at the endpoint name left the output unchanged and was reverted; both errors name the policy, the output and the fix |
+| W23-3 | `Incoming` has no chunk reader (OpenAI) | IMPLEMENT D-W23-2 |
+| W23-4 | following a server URL still prepares a placeholder operation (PokéAPI `pokemon("placeholder").prepare()?.follow(url)`) | DEFER (W1-17): revisit with Graph `@odata.nextLink` / registry `Link` in waves 4–5 evidence |
+| W23-5 | the gate on `634b135b` failed its three `test` steps: `ui/send_policy_unimplemented` used `concord::Text` (absent without `extras`) and its expected `Default` spelling depended on the build | FIXED `08df6614`: the case checks only the `SendWith` diagnostic with a unit output |
