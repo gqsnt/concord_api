@@ -68,8 +68,10 @@ Not released: the version is unchanged (4.2.0) and no release has been decided. 
 
 - **An empty declared body is sent with `Content-Length: 0`.** reqwest omits the field for an
   empty buffered body, so an empty PUT/POST looked like a request without content (RFC 9110
-  §8.6; Google Drive's resumable-upload status probe documents `Content-Length: 0`). A request
-  without a declared body and streamed bodies are unchanged.
+  §8.6; Google Drive's resumable-upload status probe documents `Content-Length: 0`). Applied when
+  Concord executes (`Decoder::execute`, behind `send()`/`receive()`), to the body actually sent,
+  so a body replaced natively after `into_parts` keeps its own length. A request without a body
+  and streamed bodies are unchanged.
 - `Error`'s identity is an `Operation`; `Display` of a labelled native response starts with the
   label. `Error::endpoint()` is unchanged for declared endpoints.
 - The reader `open` methods take `impl Openable` instead of `reqwest::Response` (a native

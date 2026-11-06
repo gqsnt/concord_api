@@ -459,14 +459,21 @@ impl<T> Decoder<T> {
     /// any status, unread, with this handling attached: the same boundary as
     /// [`Prepared::receive`].
     ///
+    /// A request whose body is buffered and empty is sent with `Content-Length: 0` (unless it
+    /// already has one): reqwest omits the field, and an empty PUT/POST would otherwise look like
+    /// a request without content. The rule is applied here, to the body actually sent, so a body
+    /// replaced natively after `into_parts` is framed by its own length; a request executed with
+    /// `reqwest::Client::execute` directly gets reqwest's framing.
+    ///
     /// # Errors
     ///
     /// [`ErrorKind::Transport`](crate::ErrorKind::Transport) only, naming the endpoint.
     pub async fn execute(
         self,
         client: &reqwest::Client,
-        request: reqwest::Request,
+        mut request: reqwest::Request,
     ) -> Result<Received<T>, Error> {
+        frame_empty_body(&mut request);
         match client.execute(request).await {
             Ok(response) => Ok(Received::new(response, self)),
             Err(e) => Err(self.transport_error(e)),
@@ -591,5 +598,20 @@ impl<T> fmt::Debug for Decoder<T> {
         f.debug_struct("Decoder")
             .field("endpoint", &self.operation.map(|op| op.name()))
             .finish()
+    }
+}
+
+/// `Content-Length: 0` for a buffered empty body (RFC 9110 §8.6: content of length zero is still
+/// content), which reqwest omits; streamed bodies and requests without a body are left alone.
+fn frame_empty_body(request: &mut reqwest::Request) {
+    use reqwest::header::{CONTENT_LENGTH, HeaderValue};
+    let empty = request
+        .body()
+        .and_then(reqwest::Body::as_bytes)
+        .is_some_and(<[u8]>::is_empty);
+    if empty && !request.headers().contains_key(CONTENT_LENGTH) {
+        request
+            .headers_mut()
+            .insert(CONTENT_LENGTH, HeaderValue::from_static("0"));
     }
 }
