@@ -52,12 +52,8 @@ impl<T: Send> SendWith<T> for DropboxPolicy {
 
     async fn send<E: Endpoint<T> + Send>(&self, endpoint: E) -> Self::Output {
         let received = endpoint.prepare()?.receive().await?;
-        let meta = ResponseMeta {
-            status: received.status(),
-            headers: received.head().headers().clone(),
-            operation: received.operation(),
-        };
-        if !meta.status.is_success() {
+        let meta = ResponseMeta(received.meta());
+        if !meta.status().is_success() {
             let body = ErrorBody::new(received.bytes_limited(crate::ERROR_BODY_LIMIT).await);
             return Err(Error::Http(Box::new(HttpError { meta, body })));
         }

@@ -61,10 +61,10 @@ fn assert_page(
     continuing: bool,
 ) {
     let expected: serde_json::Value = serde_json::from_slice(fixture).unwrap();
-    assert_eq!(response.meta.status, StatusCode::OK);
+    assert_eq!(response.meta.status(), StatusCode::OK);
     assert_eq!(response.meta.request_id(), Some(request_id));
     assert_eq!(
-        response.meta.operation.unwrap().name(),
+        response.meta.operation().unwrap().name(),
         if continuing {
             "DropboxApi.selected.list_folder_continue"
         } else {
@@ -172,10 +172,10 @@ async fn overlap(
         if fail_changed {
             let error = b.unwrap_err();
             let meta = error.meta().unwrap();
-            assert_eq!(meta.status, StatusCode::UNPROCESSABLE_ENTITY);
+            assert_eq!(meta.status(), StatusCode::UNPROCESSABLE_ENTITY);
             assert_eq!(meta.request_id(), Some("synthetic-b-root-error"));
             assert_eq!(
-                meta.operation.unwrap().name(),
+                meta.operation().unwrap().name(),
                 "DropboxApi.selected.list_folder"
             );
             assert!(matches!(

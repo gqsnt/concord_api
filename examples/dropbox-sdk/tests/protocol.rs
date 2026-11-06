@@ -24,13 +24,14 @@ async fn root_listing_and_continuation_preserve_exact_wire_and_metadata() {
         .list_folder(context_a(), ListFolderOptions::default())
         .await
         .unwrap();
-    assert_eq!(first.meta.status, reqwest::StatusCode::OK);
+    assert_eq!(first.meta.status(), reqwest::StatusCode::OK);
     assert_eq!(first.meta.request_id(), Some("synthetic-a-first"));
+    assert!(!format!("{:?}", first.meta).contains("synthetic-a-first"));
     assert_eq!(
-        first.meta.operation.unwrap().name(),
+        first.meta.operation().unwrap().name(),
         "DropboxApi.selected.list_folder"
     );
-    assert_eq!(first.meta.operation.unwrap().method(), Some("POST"));
+    assert_eq!(first.meta.operation().unwrap().method(), Some("POST"));
     assert!(first.value.has_more);
     assert_eq!(first.value.cursor.context(), &context_a());
     assert!(!format!("{:?}", first.value.cursor).contains("SYNTHETIC_CURSOR"));
@@ -47,7 +48,7 @@ async fn root_listing_and_continuation_preserve_exact_wire_and_metadata() {
     assert!(matches!(last.value.entries[1], Entry::Deleted(_)));
     assert_eq!(last.meta.request_id(), Some("synthetic-a-last"));
     assert_eq!(
-        last.meta.operation.unwrap().name(),
+        last.meta.operation().unwrap().name(),
         "DropboxApi.selected.list_folder_continue"
     );
     let requests = server.requests();
@@ -189,13 +190,13 @@ async fn documented_tagged_failures_keep_status_request_id_and_typed_detail() {
             .list_folder(context_a(), ListFolderOptions::default())
             .await
             .unwrap_err();
-        assert_eq!(error.meta().unwrap().status.as_u16(), *status);
+        assert_eq!(error.meta().unwrap().status().as_u16(), *status);
         assert_eq!(
             error.meta().unwrap().request_id(),
             Some("synthetic-failure-id")
         );
         assert_eq!(
-            error.meta().unwrap().operation.unwrap().name(),
+            error.meta().unwrap().operation().unwrap().name(),
             "DropboxApi.selected.list_folder"
         );
         let provider = error.provider().unwrap();
@@ -246,7 +247,7 @@ async fn stale_root_reports_new_root_without_switching_context() {
     };
     assert_eq!(invalid_root.root_namespace_id, "300");
     assert_eq!(invalid_root.kind, "user");
-    assert_eq!(error.meta().unwrap().status.as_u16(), 422);
+    assert_eq!(error.meta().unwrap().status().as_u16(), 422);
     assert_request(
         &server.single(),
         MEMBER_A,
@@ -282,7 +283,7 @@ async fn expired_continuation_is_a_typed_reset_with_its_own_operation() {
         ProviderErrorKind::Tagged(TaggedError::Reset)
     ));
     assert_eq!(
-        error.meta().unwrap().operation.unwrap().name(),
+        error.meta().unwrap().operation().unwrap().name(),
         "DropboxApi.selected.list_folder_continue"
     );
     assert_eq!(error.meta().unwrap().request_id(), Some("synthetic-reset"));
@@ -345,7 +346,7 @@ async fn retry_after_distinguishes_missing_invalid_and_zero_on_plaintext_429() {
             .list_folder(context_a(), ListFolderOptions::default())
             .await
             .unwrap_err();
-        assert_eq!(error.meta().unwrap().status.as_u16(), 429);
+        assert_eq!(error.meta().unwrap().status().as_u16(), 429);
         assert_eq!(error.meta().unwrap().retry_after(), expected);
         assert!(error.provider().is_none());
         server.shutdown().await;
@@ -376,7 +377,7 @@ async fn plain_bad_request_html_server_error_and_future_error_are_retained() {
             .list_folder(context_a(), ListFolderOptions::default())
             .await
             .unwrap_err();
-        assert_eq!(error.meta().unwrap().status.as_u16(), status);
+        assert_eq!(error.meta().unwrap().status().as_u16(), status);
         assert_eq!(
             error.meta().unwrap().request_id(),
             Some("synthetic-unusual")
@@ -496,7 +497,7 @@ async fn oversized_or_interrupted_error_body_never_hides_http_status_and_request
             .list_folder(context_a(), ListFolderOptions::default())
             .await
             .unwrap_err();
-        assert_eq!(error.meta().unwrap().status.as_u16(), 429);
+        assert_eq!(error.meta().unwrap().status().as_u16(), 429);
         assert_eq!(
             error.meta().unwrap().request_id(),
             Some("synthetic-body-failure")
