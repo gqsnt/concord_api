@@ -46,6 +46,12 @@ COMMON = """\
 - Record facts, not private reasoning: what you tried, diagnostics, interventions, results.
 """
 
+HELD_OUT = """\
+- **Held-out wave:** this is first-pass validation of a frozen library. Do not read the campaign
+  records under `v4/sdk20/`, or any other SDK's `FRICTION.md`, `FIRST_USE.md`, `MAINTENANCE.md` or
+  `INTEGRATION.md`. Other SDKs' source, README and tests remain normal reading material.
+"""
+
 AUTHOR = """\
 # {id} {provider} — SDK author ({size} slice)
 
@@ -196,6 +202,10 @@ def main() -> int:
             target=target,
         )
         fields["common"] = COMMON.format(**fields)
+        if wave == 5:
+            # Held-out first-pass validation (handoff contracts/PHASE_B.md "Final validation
+            # wave"): public docs and provider material only, no discovery-ledger remedies.
+            fields["common"] += HELD_OUT
         for role, template in (("author", AUTHOR), ("consumer", CONSUMER), ("maintainer", MAINTAINER)):
             (out / f"{p['id']}-{p['slug']}-{role}.md").write_text(template.format(**fields))
     return 0
