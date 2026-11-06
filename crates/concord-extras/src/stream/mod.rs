@@ -47,7 +47,7 @@ pub use error::{OpenError, OpenErrorKind, Position, ReadError, ReadErrorKind};
 pub use open::Openable;
 #[allow(unused_imports)]
 pub(crate) use records::sealed::Sealed as RecordSealed;
-pub use records::{Completion, RecordReader, RecordStream};
+pub use records::{Completion, RecordReader, RecordStream, StreamWatch};
 pub use source::{ByteSource, Chunks, SourceError};
 pub use upload::{FromIter, Upload, UploadError, from_iter};
 

@@ -112,9 +112,12 @@ impl<S> fmt::Debug for StreamRows<S> {
 /// (`Csv::<HasHeader, Semicolon>::writer()`) or from runtime options ([`CsvWriter::new`]).
 ///
 /// A runtime-selected header mode changes the `Content-Type` (`header=present`/`absent`), which a
-/// static [`Encode`](concord_core::Encode) cannot express: [`upload`](Self::upload) returns the
-/// body together with its `Content-Type` ([`Upload`]), for the SDK to apply to the native
-/// request.
+/// static [`Encode::CONTENT_TYPE`](concord_core::Encode::CONTENT_TYPE) cannot express:
+/// [`upload`](Self::upload) returns the body together with its `Content-Type` ([`Upload`]). Send
+/// it as a declared body with the [`Encoded`](crate::Encoded) format (`body rows: Upload` with
+/// `request Encoded;`), which keeps the two together; [`Upload::apply`] is for a native request.
+/// A table whose header is written from configuration needs its columns
+/// ([`StreamRows::with_columns`]) when the source may be empty.
 #[derive(Clone)]
 pub struct CsvWriter {
     config: Arc<Config>,

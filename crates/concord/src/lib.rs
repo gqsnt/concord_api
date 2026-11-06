@@ -199,12 +199,15 @@
 //! # Features
 //!
 //! - `json` (default): the `Json` format, via serde and serde_json. Implies `extras`.
-//! - `extras`: the standard formats without serializer dependencies, `Text` and `Binary`, and
-//!   the `IgnoreContentType` adapter.
+//! - `extras`: the standard formats without serializer dependencies, `Text` and `Binary`, the
+//!   `IgnoreContentType` adapter and the `Encoded` format of pre-encoded bodies.
 //!   Without `extras` (`default-features = false`), the facade has no standard format: formats
 //!   of your own work the same way.
 //! - `form`: the `Form` format, `application/x-www-form-urlencoded` via serde and
 //!   serde_urlencoded. Off by default, like reqwest's own `form` feature. Implies `extras`.
+//! - `stream`, `csv`, `jsonl`: incremental bodies (`concord::stream`), `concord::csv` and
+//!   `concord::jsonl`; each implies `extras`, **not** `json` — with `default-features = false`,
+//!   add `json` too if the same client also decodes JSON documents.
 //! - `reqwest-defaults` (default): reqwest's default features (TLS, HTTP/2, system proxy).
 //!   Disable it to choose reqwest's features in your own `Cargo.toml`.
 

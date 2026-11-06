@@ -287,3 +287,42 @@ async fn download_transform_upload_round_trip() {
     // The writer's default terminator is CRLF (RFC 4180).
     assert_eq!(put.body_text(), "id,amount\r\n1,20\r\n2,40\r\n");
 }
+
+#[tokio::test]
+async fn a_watch_reports_the_download_outcome_after_the_upload() {
+    let server = TestServer::start(|r| {
+        if r.method == "POST" {
+            return Reply::json(200, "{\"id\":0,\"amount\":0}");
+        }
+        let body = if r.target.contains("broken") {
+            "id;amount\n1;10\n2;x\n"
+        } else {
+            "id;amount\n1;10\n2;20\n"
+        };
+        Reply::new(200)
+            .header("content-type", "text/csv")
+            .body(body)
+    })
+    .await;
+    let api = api(&server);
+    for (id, upload_ok, completion) in [
+        ("whole", true, Completion::EndOfInput),
+        ("broken", false, Completion::Failed),
+    ] {
+        let mut rows = api.rows(id).send().await.unwrap().into_stream();
+        let watch = rows.watch();
+        let writer = CsvWriter::new(CsvOptions::new(HeaderMode::Present, b',')).unwrap();
+        let upload = writer
+            .upload(StreamRows::new(
+                rows.map_err(Box::<dyn std::error::Error + Send + Sync>::from),
+            ))
+            .unwrap();
+        let sent = api.upload("dst", upload).send().await;
+        assert_eq!(sent.is_ok(), upload_ok, "{id}: {sent:?}");
+        assert_eq!(watch.completion(), completion, "{id}");
+        if !upload_ok {
+            assert_eq!(watch.failure(), Some(ReadErrorKind::Decode));
+            assert_eq!(watch.position().records, 1);
+        }
+    }
+}

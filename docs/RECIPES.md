@@ -64,10 +64,16 @@ the versions you support.
 endpoint packaged) — the caller needs a few response headers (an `ETag` for a later conditional
 request, a request id, a count) together with the decoded value, possibly after a native edit.
 
+- **Without a native edit, start with `receive`:** `prepare()?.receive().await?` returns a
+  `concord::Received` for any status; read the headers you need from `received.head()`, then
+  `received.decode().await` (the [author guide](AUTHOR_GUIDE.md#511-reading-response-metadata-in-an-sdk)
+  shows the pattern). The recipe below adds a native edit and keeps the final URL, which
+  `Received` deliberately does not expose.
 - **How:** `prepare()?.into_parts()`; edit the native request; one `client.execute(request)`. On
-  `Err(e)`, convert with `decoder.finish(Err(e))` (Concord's `Transport` error, URL removed). On a
-  response, copy the status, the final URL and the headers you select by borrowing it, then
-  `decoder.decode(response)` as usual. The recipe returns `WithMeta { value, meta }` or a
+  `Err(e)`, convert with `decoder.transport_error(e)` (Concord's `Transport` error naming the
+  endpoint, URL removed); `Decoder::execute(&client, request)` does both and returns a
+  `concord::Received`. On a response, copy the status, the final URL and the headers you select by
+  borrowing it, then `decoder.decode(response)` as usual. The recipe returns `WithMeta { value, meta }` or a
   `MetaError` holding the `concord::Error` and `Option<Meta>`: `None` when no response head
   arrived, `Some` once one did. `Status` and `Metadata` errors still keep the whole unread response
   (`into_response()`); after a body-read failure (`Transport`) or a `Decode` failure only the

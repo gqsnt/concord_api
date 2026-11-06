@@ -269,14 +269,12 @@ pub async fn execute<T>(
             response,
             decoder,
         }),
-        Err(e) => {
-            // `Decoder::finish` is the public conversion of a native transport error into
-            // Concord's (`ErrorKind::Transport`, URL removed); it never succeeds on `Err`.
-            let Err(error) = decoder.finish(Err(e)).await else {
-                unreachable!("`Decoder::finish(Err(_))` is always `Err`")
-            };
-            Err(MetaError { error, meta: None })
-        }
+        // `Decoder::transport_error` converts a native transport failure into Concord's
+        // (`ErrorKind::Transport`, naming the endpoint, URL removed).
+        Err(e) => Err(MetaError {
+            error: decoder.transport_error(e),
+            meta: None,
+        }),
     }
 }
 

@@ -3,11 +3,12 @@
 use std::fmt;
 use std::future::Future;
 use std::pin::Pin;
+use std::sync::{Arc, Mutex};
 use std::task::{Context, Poll};
 
 use futures_core::Stream;
 
-use super::error::{Position, ReadError};
+use super::error::{Position, ReadError, ReadErrorKind};
 
 /// An incremental reader of records `T` (`CsvRecords`, `JsonLinesRecords`, `JsonValues`): what
 /// [`RecordStream`] drives. Sealed; implemented by this crate's readers.
@@ -85,6 +86,73 @@ pub struct RecordStream<R: RecordReader> {
     position: Position,
     operation: Option<&'static str>,
     completion: Completion,
+    watch: Option<StreamWatch>,
+}
+
+/// What a [`StreamWatch`] saw last.
+#[derive(Clone, Copy, Debug)]
+struct Watched {
+    completion: Completion,
+    position: Position,
+    failure: Option<ReadErrorKind>,
+}
+
+/// An observer of a [`RecordStream`] that stays with the caller when the stream moves away (into
+/// an upload body, a spawned task, a combinator chain): after the upload, it tells whether the
+/// source reached the end of its input, failed (and how), or was dropped while still
+/// [`Reading`](Completion::Reading) — for example because the server answered before the whole
+/// body was sent.
+///
+/// The failure's [`ReadError`] itself travels with the stream (an upload reports it as the
+/// source of its body error); the watch keeps its kind. Cloning shares the same state.
+#[derive(Clone)]
+pub struct StreamWatch(Arc<Mutex<Watched>>);
+
+impl StreamWatch {
+    fn read(&self) -> Watched {
+        match self.0.lock() {
+            Ok(watched) => *watched,
+            Err(poisoned) => *poisoned.into_inner(),
+        }
+    }
+
+    fn update(&self, completion: Completion, position: Position, failure: Option<ReadErrorKind>) {
+        let mut watched = match self.0.lock() {
+            Ok(watched) => watched,
+            Err(poisoned) => poisoned.into_inner(),
+        };
+        watched.completion = completion;
+        watched.position = position;
+        if failure.is_some() {
+            watched.failure = failure;
+        }
+    }
+
+    /// The stream's completion as of its last yielded item.
+    pub fn completion(&self) -> Completion {
+        self.read().completion
+    }
+
+    /// Records delivered and bytes consumed as of the last yielded item.
+    pub fn position(&self) -> Position {
+        self.read().position
+    }
+
+    /// The kind of the terminal error that ended the stream, if one did.
+    pub fn failure(&self) -> Option<ReadErrorKind> {
+        self.read().failure
+    }
+}
+
+impl fmt::Debug for StreamWatch {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let watched = self.read();
+        f.debug_struct("StreamWatch")
+            .field("completion", &watched.completion)
+            .field("position", &watched.position)
+            .field("failure", &watched.failure)
+            .finish()
+    }
 }
 
 impl<R: RecordReader> RecordStream<R> {
@@ -94,7 +162,21 @@ impl<R: RecordReader> RecordStream<R> {
             operation: reader.record_operation(),
             completion: reader.record_completion(),
             state: State::Idle(reader),
+            watch: None,
         }
+    }
+
+    /// A [`StreamWatch`] on this stream, for after it has moved (into an upload source, say).
+    /// The stream updates it on every item; without a watch nothing is shared or locked.
+    pub fn watch(&mut self) -> StreamWatch {
+        let watched = Watched {
+            completion: self.completion,
+            position: self.position,
+            failure: None,
+        };
+        self.watch
+            .get_or_insert_with(|| StreamWatch(Arc::new(Mutex::new(watched))))
+            .clone()
     }
 
     /// Records delivered and input bytes consumed as of the last record (or error) yielded.
@@ -148,6 +230,13 @@ impl<R: RecordReader> Stream for RecordStream<R> {
                     Poll::Ready((reader, item)) => {
                         this.position = reader.record_position();
                         this.completion = reader.record_completion();
+                        if let Some(watch) = &this.watch {
+                            let failure = match &item {
+                                Some(Err(e)) if e.is_terminal() => Some(e.kind()),
+                                _ => None,
+                            };
+                            watch.update(this.completion, this.position, failure);
+                        }
                         this.state = if item.is_none() || this.completion != Completion::Reading {
                             // The reader is fused: it yields nothing more.
                             State::Done(Some(reader))
