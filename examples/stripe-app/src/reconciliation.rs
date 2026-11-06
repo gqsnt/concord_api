@@ -428,7 +428,7 @@ where
     <R::Item as Object>::Id: Send + 'static,
     F: AsyncFnMut(StripePage<R::Item>, &mut ReconciliationReport),
 {
-    let mut pages = list.pages_from(from).max_pages(page_cap(budget));
+    let mut pages = list.pages_from(from).max_pages(budget);
     let (outcome, resume, error) = loop {
         match pages.next_page().await {
             Ok(Some(page)) => {
@@ -452,12 +452,6 @@ where
         resume,
         error,
     }
-}
-
-/// A budget as the traversal's page cap (`Pages::max_pages` takes the count as a
-/// `NonZeroUsize`; a `Budget` is never zero).
-fn page_cap(budget: Budget) -> NonZeroUsize {
-    NonZeroUsize::new(budget.get()).expect("a Budget is never zero")
 }
 
 async fn walk_invoices(

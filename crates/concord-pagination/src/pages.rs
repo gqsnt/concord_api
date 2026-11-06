@@ -291,8 +291,9 @@ impl<T, K: Clone, M, E> Pages<T, K, M, E> {
     /// At most `max` page requests by this traversal, counting those already made, failed ones
     /// included. Reaching it while the provider has a next page ends the traversal with
     /// [`PagesError::Bounded`]. Set it before reading: a traversal that already ended stays
-    /// ended.
-    pub fn max_pages(mut self, max: NonZeroUsize) -> Self {
+    /// ended. A [`Budget`] converts into the cap (`max_pages(budget)`).
+    pub fn max_pages(mut self, max: impl Into<NonZeroUsize>) -> Self {
+        let max: NonZeroUsize = max.into();
         self.chain.limit(max.get() as u64);
         self
     }
@@ -393,7 +394,8 @@ pub struct PageItems<T, K, E = Infallible> {
 
 impl<T, K: Clone, E> PageItems<T, K, E> {
     /// See [`Pages::max_pages`].
-    pub fn max_pages(mut self, max: NonZeroUsize) -> Self {
+    pub fn max_pages(mut self, max: impl Into<NonZeroUsize>) -> Self {
+        let max: NonZeroUsize = max.into();
         self.chain.limit(max.get() as u64);
         self
     }
