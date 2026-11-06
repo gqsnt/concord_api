@@ -170,3 +170,64 @@ type errors (observed in the PokéAPI record: "expected `Pokemon`, found `Respon
   `cargo clippy --all-targets -D warnings` and `cargo doc` (`-D warnings`) clean.
 - `FIRST_USE.md` and `MAINTENANCE.md` carry a short coordinator note on the edited test lines;
   `PROVENANCE.md` names the policy instead of the `fetch()` method.
+
+# Between waves 3-4 (ResponseMeta)
+
+Concord gained `concord::ResponseMeta` (an owned head: status, version, header map, operation;
+`Received::meta()`; `Debug` prints header names only; AUTHOR_GUIDE §5.11). Base `92775757`.
+Role: implementer, a Claude agent session spawned by the coordinator (model and effort not
+re-derived from harness metadata here). Not an independent review.
+
+## Verdict: adopted (re-export)
+
+`src/error.rs` now has `pub use concord::ResponseMeta;` in place of its own struct, `capture`
+and `Debug`; `KeepHead` captures with `received.meta()`. Decisive: the SDK type held Concord's
+status, version and header map (Concord's adds the operation) with the same names-only `Debug`:
+a copy with no SDK rule of its own. Removing it costs callers field → method access
+(`meta.status()`) and gives them `operation()`.
+
+## Lines (non-blank, non-comment, from `git diff`; this file excluded)
+
+| | removed | added |
+|---|---|---|
+| `src/` | 30 | 10 |
+| `tests/` | 14 | 16 |
+| `README.md` (prose and doctest lines) | 4 | 5 |
+
+`src/` additions: the re-export, one import, `received.meta()`, `meta.status()`, and
+`From<concord::Error>` (3 → 6 lines), which now builds `ResponseMeta::new(ResponseHead::of(..),
+source.operation())`.
+
+## Caller-visible changes
+
+- Fields become methods (README workflow A):
+
+  ```rust,ignore
+  println!("HTTP {}", response.meta.status);   // before
+  println!("HTTP {}", response.meta.status()); // after
+  ```
+
+  Likewise `version()` and `headers()` (`meta.headers()["etag"]`).
+- New: `meta.operation()` (`NagerHolidays.holidays`), also on the metadata built in
+  `From<concord::Error>`.
+- `HolidayResponse::meta` and `Error::meta()` are now `concord::ResponseMeta` (the same type as
+  in the other adopting SDKs). It cannot be built by struct literal; `ResponseMeta::new(head,
+  operation)` builds one. No test or README built one.
+- `Debug` (from the code): an `operation` field is added (name only); status, version and
+  header names print as before; no header value, as before.
+
+## Test edits, by kind
+
+1. Field → method, mechanical (14 lines in `tests/first_use.rs`, `tests/protocol.rs`):
+   `.status` → `.status()`, `.version` → `.version()`, `.headers` → `.headers()`. Expected values
+   unchanged.
+2. Added, one assertion (`tests/protocol.rs::v4_wire_and_documented_array`): `Debug` of
+   `response.meta` names `x-synthetic-request-id` and does not contain its value
+   `synthetic-read-1`.
+
+## Verification (observed)
+
+`CARGO_BUILD_JOBS=6 cargo test --locked -p concord-sdk-nager-holidays`, run twice:
+`first_use` 9, `protocol` 14, `workflows` 3, doctests 4 passed, 0 failed (the same counts as at
+`92775757`). `cargo clippy --locked --all-targets -- -D warnings`, `cargo fmt --check` and
+`cargo doc --no-deps` (no warnings): clean. Offline only.

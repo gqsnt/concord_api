@@ -3,7 +3,7 @@ use concord::{
     CodecError, Encode, Json, Prepared,
     reqwest::{
         self,
-        header::{AUTHORIZATION, HeaderMap, HeaderValue},
+        header::{AUTHORIZATION, HeaderValue},
     },
 };
 use concord_pagination::{Page, Pages, Resume};
@@ -143,16 +143,9 @@ pub struct Envelope<T> {
     #[serde(default)]
     pub extensions: Option<Value>,
 }
-/// HTTP response metadata.
-#[derive(Clone, Debug)]
-pub struct ResponseMeta {
-    /// HTTP status.
-    pub status: reqwest::StatusCode,
-    /// Response headers.
-    pub headers: HeaderMap,
-    /// Concord operation identity.
-    pub operation: Option<concord::Operation>,
-}
+/// HTTP response metadata (status, version, headers, operation identity): Concord's own type,
+/// whose `Debug` prints header names only.
+pub use concord::ResponseMeta;
 /// A decoded GraphQL answer and its HTTP metadata.
 #[derive(Clone, Debug)]
 pub struct Response<T> {
@@ -202,7 +195,7 @@ impl fmt::Display for Error {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Concord(e) => write!(f, "Linear request: {e}"),
-            Self::Http { meta, .. } => write!(f, "Linear HTTP {}", meta.status),
+            Self::Http { meta, .. } => write!(f, "Linear HTTP {}", meta.status()),
             Self::Response { source, .. } => write!(f, "Linear response: {source}"),
             Self::Page { reason, .. } | Self::Invalid(reason) => write!(f, "Linear: {reason}"),
         }
@@ -220,12 +213,8 @@ async fn send<T: serde::de::DeserializeOwned>(
     prepared: Result<Prepared<Envelope<T>>, concord::Error>,
 ) -> Result<Response<T>, Error> {
     let received = prepared?.receive().await?;
-    let meta = ResponseMeta {
-        status: received.status(),
-        headers: received.head().headers().clone(),
-        operation: received.operation(),
-    };
-    if !meta.status.is_success() {
+    let meta = received.meta();
+    if !meta.status().is_success() {
         let body = received
             .bytes_limited(65536)
             .await

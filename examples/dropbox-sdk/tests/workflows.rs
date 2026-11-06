@@ -296,7 +296,7 @@ async fn item_stream_yields_typed_failure_before_ending() {
         error.meta().unwrap().request_id(),
         Some("synthetic-stream-rate")
     );
-    assert_eq!(error.meta().unwrap().status.as_u16(), 429);
+    assert_eq!(error.meta().unwrap().status().as_u16(), 429);
     assert!(stream.next().await.is_none());
     assert_eq!(server.requests().len(), 2);
     server.shutdown().await;

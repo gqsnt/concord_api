@@ -46,7 +46,7 @@ use concord_sdk_nager_holidays::{Date, NagerHolidays};
 
 async fn austria(api: &NagerHolidays) -> Result<(), Box<dyn std::error::Error>> {
     let response = api.holidays("AT", 2026).send().await?;
-    println!("HTTP {}", response.meta.status);
+    println!("HTTP {}", response.meta.status());
     for holiday in &response.holidays {
         let date: Date = holiday.date; // chrono::NaiveDate, no timezone
         println!("{date}: {}", holiday.name);
@@ -105,9 +105,10 @@ transport, metadata and decode stages (`Concord(concord::ErrorKind)`). The 400
 classification follows HTTP status only; the official pages reviewed do not specify
 an error-document schema, so no JSON problem type or provider message is invented.
 
-`ResponseMeta` contains the actual `StatusCode`, HTTP version and all response headers,
-including duplicate values. It is kept on both success and any failure after a head
-arrives. For a pre-head transport or build failure, `Error::meta()` and `status()` are
+`ResponseMeta` is Concord's `concord::ResponseMeta`, re-exported: `status()`, `version()`,
+`headers()` (all response headers, including duplicate values) and `operation()`. It is
+kept on both success and any failure after a head arrives; its `Debug` shows header names,
+never values. For a pre-head transport or build failure, `Error::meta()` and `status()` are
 `None`. A body decode/transport failure can therefore have status **200**. The original
 operation identity, codec diagnostics and source are available through `concord()`.
 

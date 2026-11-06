@@ -136,12 +136,12 @@ async fn pages_forward_opaque_cursors_through_empty_pages_and_exhaust_at_exact_c
     );
     assert_eq!(first.next.as_deref(), Some(CURSOR));
     assert!(first.meta.errors.is_empty());
-    assert_eq!(first.meta.http.status, 200);
+    assert_eq!(first.meta.http.status(), 200);
     assert_eq!(
-        first.meta.http.headers["x-synthetic-request-id"],
+        first.meta.http.headers()["x-synthetic-request-id"],
         "synthetic-response"
     );
-    assert!(first.meta.http.operation.is_some());
+    assert!(first.meta.http.operation().is_some());
     assert_eq!(first.meta.extensions.unwrap()["syntheticTrace"], "page-one");
 
     let empty = pages.next_page().await.unwrap().unwrap();
@@ -225,9 +225,9 @@ async fn failed_page_preserves_collected_prefix_http_document_and_retry_position
     else {
         panic!("expected typed HTTP failure");
     };
-    assert_eq!(meta.status, 503);
-    assert_eq!(meta.headers["retry-after"], "7");
-    assert!(meta.operation.is_some());
+    assert_eq!(meta.status(), 503);
+    assert_eq!(meta.headers()["retry-after"], "7");
+    assert!(meta.operation().is_some());
     assert_eq!(body, ERRORS);
     assert_eq!(errors[0].message, "Synthetic provider rejection");
     assert_eq!(errors[0].path, Some(vec![json!("issues")]));
@@ -248,7 +248,7 @@ async fn graphql_errors_without_data_are_page_failure_and_never_exhaustion() {
     else {
         panic!("expected retained GraphQL envelope");
     };
-    assert_eq!(response.meta.status, 200);
+    assert_eq!(response.meta.status(), 200);
     assert!(response.envelope.data.is_none());
     assert_eq!(
         response.envelope.errors[0].message,
@@ -327,10 +327,13 @@ async fn missing_connections_are_decode_failures_without_the_graphql_envelope() 
         let Error::Response { meta, source } = error else {
             panic!("expected the observed missing-connection decode failure");
         };
-        assert_eq!(meta.status, 200);
-        assert_eq!(meta.headers["x-synthetic-request-id"], "synthetic-response");
+        assert_eq!(meta.status(), 200);
+        assert_eq!(
+            meta.headers()["x-synthetic-request-id"],
+            "synthetic-response"
+        );
         assert_eq!(source.kind(), ErrorKind::Decode);
-        assert_eq!(source.operation(), meta.operation);
+        assert_eq!(source.operation(), meta.operation());
         assert!(source.response().is_none());
         assert_list_requests(&server, &[None]);
         server.shutdown().await;
@@ -414,10 +417,10 @@ async fn interrupted_page_body_is_not_success_even_when_json_is_complete() {
     else {
         panic!("expected interrupted response body");
     };
-    assert_eq!(meta.status, 200);
-    assert_eq!(meta.headers["x-synthetic-request-id"], "synthetic-cutoff");
+    assert_eq!(meta.status(), 200);
+    assert_eq!(meta.headers()["x-synthetic-request-id"], "synthetic-cutoff");
     assert_eq!(source.kind(), ErrorKind::Transport);
-    assert_eq!(source.operation(), meta.operation);
+    assert_eq!(source.operation(), meta.operation());
     assert_list_requests(&server, &[None, Some(CURSOR)]);
     server.shutdown().await;
 }
@@ -461,12 +464,12 @@ async fn selected_issue_fields_use_oauth_and_identifiers_stay_in_json_variables(
     for id in ids {
         let answer = api.issue(id).await.unwrap();
         assert!(answer.is_success());
-        assert_eq!(answer.meta.status, 200);
+        assert_eq!(answer.meta.status(), 200);
         assert_eq!(
-            answer.meta.headers["x-synthetic-request-id"],
+            answer.meta.headers()["x-synthetic-request-id"],
             "synthetic-response"
         );
-        assert!(answer.meta.operation.is_some());
+        assert!(answer.meta.operation().is_some());
         assert!(answer.envelope.errors.is_empty());
         assert_eq!(
             answer.envelope.extensions.unwrap()["syntheticTrace"],
@@ -493,7 +496,7 @@ async fn partial_issue_preserves_data_error_paths_locations_and_extensions() {
     let server = fake(vec![json_reply(ISSUE_PARTIAL)]).await;
     let answer = client(&server).issue("SYNTHETIC-1").await.unwrap();
     assert!(!answer.is_success());
-    assert_eq!(answer.meta.status, 200);
+    assert_eq!(answer.meta.status(), 200);
     let issue = answer.envelope.data.unwrap().issue.unwrap();
     assert_eq!(issue.id, "synthetic-issue-1");
     assert_eq!(issue.title, "Review the draft");
@@ -586,13 +589,13 @@ async fn http_rejections_keep_status_headers_and_exact_body_without_retrying() {
         else {
             panic!("expected typed HTTP rejection");
         };
-        assert_eq!(meta.status.as_u16(), status);
-        assert_eq!(meta.headers["retry-after"], "11");
+        assert_eq!(meta.status().as_u16(), status);
+        assert_eq!(meta.headers()["retry-after"], "11");
         assert_eq!(
-            meta.headers["x-synthetic-request-id"],
+            meta.headers()["x-synthetic-request-id"],
             "synthetic-http-failure"
         );
-        assert!(meta.operation.is_some());
+        assert!(meta.operation().is_some());
         assert_eq!(received, body);
         assert_eq!(errors.len(), expected_errors);
         if let Some(diagnostic) = errors.first() {
@@ -628,14 +631,14 @@ async fn bad_media_json_or_missing_selected_fields_fail_with_response_metadata()
         let Error::Response { meta, source } = error else {
             panic!("expected a response error, not a successful issue");
         };
-        assert_eq!(meta.status, 200);
+        assert_eq!(meta.status(), 200);
         assert_eq!(
-            meta.headers["x-synthetic-request-id"],
+            meta.headers()["x-synthetic-request-id"],
             "synthetic-invalid-response"
         );
-        assert!(meta.operation.is_some());
+        assert!(meta.operation().is_some());
         assert_eq!(source.kind(), kind);
-        assert_eq!(source.operation(), meta.operation);
+        assert_eq!(source.operation(), meta.operation());
         if kind == ErrorKind::Metadata {
             assert_eq!(source.response().unwrap().status(), 200);
         }
@@ -657,10 +660,10 @@ async fn interrupted_issue_body_cannot_publish_a_complete_json_prefix() {
     let Error::Response { meta, source } = error else {
         panic!("HTTP framing must complete before returning an issue");
     };
-    assert_eq!(meta.status, 200);
-    assert_eq!(meta.headers["x-synthetic-request-id"], "synthetic-cutoff");
+    assert_eq!(meta.status(), 200);
+    assert_eq!(meta.headers()["x-synthetic-request-id"], "synthetic-cutoff");
     assert_eq!(source.kind(), ErrorKind::Transport);
-    assert_eq!(source.operation(), meta.operation);
+    assert_eq!(source.operation(), meta.operation());
     assert_issue_requests(&server, KEY, &["SYNTHETIC-1"]);
     assert_eq!(server.shutdown().await.open_after, 0);
 }
@@ -684,13 +687,13 @@ async fn oversized_success_and_error_bodies_fail_instead_of_returning_truncated_
         let Error::Response { meta, source } = error else {
             panic!("expected the documented bounded-body failure");
         };
-        assert_eq!(meta.status.as_u16(), status);
+        assert_eq!(meta.status().as_u16(), status);
         assert_eq!(
-            meta.headers["x-synthetic-request-id"],
+            meta.headers()["x-synthetic-request-id"],
             "synthetic-too-large"
         );
         assert_eq!(source.kind(), ErrorKind::Limit);
-        assert_eq!(source.operation(), meta.operation);
+        assert_eq!(source.operation(), meta.operation());
         assert_issue_requests(&server, KEY, &["SYNTHETIC-1"]);
         assert_eq!(server.shutdown().await.open_after, 0);
     }

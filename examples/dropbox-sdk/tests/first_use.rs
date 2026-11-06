@@ -401,7 +401,7 @@ async fn a_member_folder_is_read_page_by_page_until_has_more_is_false() {
     assert_eq!(plan.path.path_lower.as_deref(), Some("/projects/plan.txt"));
     assert_eq!(plan.server_modified, "2026-01-02T03:04:06Z");
     assert!(first.meta.has_more);
-    assert_eq!(first.meta.http.status, 200);
+    assert_eq!(first.meta.http.status(), 200);
     assert_eq!(first.meta.http.request_id(), Some("synthetic-a-0"));
     assert_eq!(first.meta.cursor.as_str(), fake.cursor(0, 1));
     assert_eq!(first.meta.cursor.context(), &context);
@@ -482,8 +482,8 @@ async fn a_single_page_calls_follow_has_more_with_the_returned_cursor() {
         .list_folder(member_a(), ListFolderOptions::new(""))
         .await
         .unwrap();
-    assert_eq!(first.meta.status, 200);
-    let start_op = first.meta.operation.expect("declared operation identity");
+    assert_eq!(first.meta.status(), 200);
+    let start_op = first.meta.operation().expect("declared operation identity");
     assert_eq!(start_op.method(), Some("POST"));
 
     let mut entries = first.value.entries;
@@ -492,7 +492,7 @@ async fn a_single_page_calls_follow_has_more_with_the_returned_cursor() {
     let mut continue_op = None;
     while has_more {
         let next = client.list_folder_continue(&cursor).await.unwrap();
-        continue_op = next.meta.operation;
+        continue_op = next.meta.operation();
         entries.extend(next.value.entries);
         has_more = next.value.has_more;
         cursor = next.value.cursor;
@@ -624,7 +624,7 @@ async fn a_provider_error_document_on_the_first_page_is_typed_and_ends_the_trave
     let Error::Http(http) = error else {
         panic!("{error:?}")
     };
-    assert_eq!(http.meta.status, 409);
+    assert_eq!(http.meta.status(), 409);
     assert_eq!(http.meta.request_id(), Some("synthetic-error-409"));
     assert!(matches!(
         tagged(error),
@@ -722,7 +722,7 @@ async fn a_reset_continuation_keeps_the_prefix_and_the_failed_cursor() {
     assert_eq!(cursor.context(), &member_a());
     let error = provider_error(&incomplete.error);
     assert!(matches!(tagged(error), TaggedError::Reset));
-    assert_eq!(error.meta().unwrap().status, 409);
+    assert_eq!(error.meta().unwrap().status(), 409);
     no_more_requests(&server, 2).await;
 }
 
@@ -768,7 +768,7 @@ async fn a_page_body_cut_off_mid_stream_is_an_error_not_completion() {
     };
     assert_eq!(error.kind(), concord::ErrorKind::Transport, "{error}");
     let meta = meta.as_ref().expect("the head arrived");
-    assert_eq!(meta.status, 200);
+    assert_eq!(meta.status(), 200);
     assert_eq!(meta.request_id(), Some("synthetic-a-1"));
     assert!(
         stream.next().await.is_none(),
@@ -804,7 +804,7 @@ async fn a_rate_limit_is_an_http_failure_with_its_delay_and_is_not_retried() {
     let Error::Http(http) = &error else {
         panic!("{error:?}")
     };
-    assert_eq!(http.meta.status, 429);
+    assert_eq!(http.meta.status(), 429);
     assert_eq!(
         error.meta().map(|m| m.retry_after()),
         Some(RetryAfter::Seconds(Duration::from_secs(7)))
@@ -822,7 +822,7 @@ async fn a_rate_limit_is_an_http_failure_with_its_delay_and_is_not_retried() {
     let Error::Http(http) = &error else {
         panic!("{error:?}")
     };
-    assert_eq!(http.meta.status, 429);
+    assert_eq!(http.meta.status(), 429);
     assert_eq!(http.meta.retry_after(), RetryAfter::Seconds(Duration::ZERO));
     assert!(
         error.provider().is_none(),
@@ -852,7 +852,7 @@ async fn a_non_json_error_bodies_stay_http_failures_with_the_raw_text() {
     let Error::Http(http) = provider_error(&error) else {
         panic!("{error:?}")
     };
-    assert_eq!(http.meta.status, 500);
+    assert_eq!(http.meta.status(), 500);
     assert!(http.body.provider().is_none());
     assert!(http.body.read_error().is_none());
     assert_eq!(
@@ -898,7 +898,7 @@ async fn a_invalid_success_pages_fail_with_metadata_instead_of_completing() {
         let meta = error
             .meta()
             .unwrap_or_else(|| panic!("{path}: metadata survives: {error:?}"));
-        assert_eq!(meta.status, 200, "{path}");
+        assert_eq!(meta.status(), 200, "{path}");
         assert_eq!(meta.request_id(), request_id, "{path}");
         match (path, error) {
             ("/EmptyCursor", Error::EmptyCursor { .. }) => {}
@@ -1212,7 +1212,7 @@ async fn b_one_member_failing_does_not_disturb_the_other() {
         }
     ));
     let error = provider_error(&incomplete.error);
-    assert_eq!(error.meta().unwrap().status, 422);
+    assert_eq!(error.meta().unwrap().status(), 422);
     assert!(matches!(tagged(error), TaggedError::NoPermission));
     assert!(
         error
@@ -1249,7 +1249,7 @@ async fn b_a_stale_root_is_reported_with_the_actual_root_and_never_switched() {
     let mut pages = client.list_folder_pages(stale, ListFolderOptions::new(""));
     let failure = pages.next_page().await.unwrap_err();
     let error = provider_error(&failure);
-    assert_eq!(error.meta().unwrap().status, 422);
+    assert_eq!(error.meta().unwrap().status(), 422);
     let TaggedError::InvalidRoot { invalid_root } = tagged(error) else {
         panic!("{error:?}")
     };
@@ -1308,7 +1308,7 @@ async fn b_an_unknown_member_is_invalid_select_user_while_the_other_completes() 
     assert_eq!(names(&a.unwrap()), ["A-1.txt"]);
     let incomplete = c.unwrap_err();
     let error = provider_error(&incomplete.error);
-    assert_eq!(error.meta().unwrap().status, 401);
+    assert_eq!(error.meta().unwrap().status(), 401);
     assert!(matches!(tagged(error), TaggedError::InvalidSelectUser));
 
     let requests = server.requests();

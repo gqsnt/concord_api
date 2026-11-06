@@ -402,3 +402,65 @@ The second independent SSE consumer (ntfy, wave 3) met decision W2-8's condition
 workflows passed, 0 failed; `git diff` of `tests/` is empty. The every-boundary perturbation
 (`tests/split_and_reorder.rs`: every single cut and one byte per chunk, LF and CRLF copies)
 passes unchanged on the shared reader. Offline only; no OpenAI API calls.
+
+## Between waves 3-4 (ResponseMeta)
+
+Concord gained `concord::ResponseMeta` (an owned head: status, version, header map, operation;
+`Received::meta()`; `Debug` prints header names only; AUTHOR_GUIDE §5.11). Base `92775757`.
+Role: implementer, a Claude agent session spawned by the coordinator (model and effort not
+re-derived from harness metadata here). Not an independent review.
+
+**Verdict: adopted (re-export).** `src/lib.rs` now has `pub use concord::ResponseMeta;` in place
+of its own struct and `from`; `checked` captures with `r.meta()`. Decisive: the SDK type derived
+`Debug` over its `HeaderMap`, and `Display for Error` is `write!(f, "{self:?}")`, so both `Debug`
+and `Display` of `Error::Provider` / `Error::Decode` (and `Debug` of `Response`, `EventStream`)
+printed every response header value. Concord's type prints names only and is otherwise the
+SDK's three fields plus `version`.
+
+### Lines (non-blank, non-comment, from `git diff`; this file excluded)
+
+| | removed | added |
+|---|---|---|
+| `src/lib.rs` | 18 | 4 |
+| `tests/` | 13 | 11 |
+| `README.md` | 0 | 0 |
+
+### Caller-visible changes
+
+- Fields become methods, on `Response::meta`, `EventStream::meta` and the `meta` of
+  `Error::Provider` / `Error::Decode`:
+
+  ```rust,ignore
+  assert_eq!(meta.headers["retry-after"], "7");   // before
+  assert_eq!(meta.headers()["retry-after"], "7"); // after
+  ```
+
+  Likewise `status()` and `operation()` (now an owned `Option<Operation>`; `Operation` is
+  `Copy`). New: `version()`.
+- The type is now `concord::ResponseMeta` (the same type as in the other adopting SDKs). It
+  cannot be built by struct literal; `ResponseMeta::new(head, operation)` builds one. No test or
+  README built one.
+- `Debug` and therefore `Display` of errors (from the code): `ResponseMeta { status: 400,
+  version: HTTP/1.1, header_names: [..], operation: Some("OpenAiApi.response") }`; before,
+  `headers: {"x-request-id": "synthetic-request", ..}` and
+  `Some(Operation(POST OpenAiApi.response))`.
+
+### Test edits, by kind
+
+1. Field → method, mechanical (9 lines in `tests/first_use.rs`, `tests/protocol.rs`):
+   `.status` → `.status()`, `.headers` → `.headers()`, `.operation` → `.operation()`. Expected
+   values unchanged.
+2. Field → method that also drops a borrow (`tests/first_use.rs::assert_meta`, 4 lines → 1):
+   `meta.operation.as_ref().expect(..)` borrowed the field; `meta.operation()` returns the
+   `Option<Operation>` by value, so `.as_ref()` would borrow a temporary and is removed:
+   `meta.operation().expect("declared operation identity")`. The three assertions on the
+   operation are unchanged.
+3. Added, one assertion (`tests/protocol.rs::response_and_typed_http_error`): `Debug` of the
+   `Error::Provider` metadata does not contain the `x-request-id` value `synthetic-request`.
+
+### Verification (observed)
+
+`CARGO_BUILD_JOBS=6 cargo test --locked -p concord-sdk-openai`, run twice: `first_use` 18,
+`protocol` 4, `split_and_reorder` 4, `workflows` 5 passed, 0 failed, 0 doctests (the same counts
+as at `92775757`). `cargo clippy --locked --all-targets -- -D warnings`, `cargo fmt --check` and
+`cargo doc --no-deps` (no warnings): clean. Offline only; no OpenAI API calls.

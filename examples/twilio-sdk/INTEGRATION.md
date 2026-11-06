@@ -304,3 +304,60 @@ integration hold (`Message` shows `sid`, `status`, `error_code`; the message SID
 documents no size for a Message resource), and `Prepared::follow` has no use in this slice.
 Tests at the recorded state: `first_use` 22, `protocol` 21, `workflows` 4, doctests 2 — all pass
 after the prototype was reverted (`git checkout -- src/lib.rs`, probe test removed).
+
+# Between waves 3-4 (ResponseMeta)
+
+Concord gained `concord::ResponseMeta` (an owned head: status, version, header map, operation;
+`Received::meta()`; `Debug` prints header names only; AUTHOR_GUIDE §5.11). Base `92775757`.
+Role: implementer, a Claude agent session spawned by the coordinator (model and effort not
+re-derived from harness metadata here). Not an independent review.
+
+## Verdict: adopted (re-export)
+
+`src/error.rs` now has `pub use concord::ResponseMeta;` in place of its own struct, `capture`,
+`headers()` and `Debug`; `send` captures with `received.meta()`. Decisive: the SDK type had
+exactly Concord's four values and already kept `headers` behind a method with a names-only
+`Debug`; the only SDK-specific text was documentation, now on the re-export. Callers already
+wrote `meta.headers()`; the other three fields become methods too, so access is uniform.
+
+## Lines (non-blank, non-comment, from `git diff`; this file excluded)
+
+| | removed | added |
+|---|---|---|
+| `src/` | 36 | 6 |
+| `tests/` | 30 | 31 |
+| `README.md` (doctest line) | 1 | 1 |
+
+## Caller-visible changes
+
+- Fields become methods (README example):
+
+  ```rust,ignore
+  assert_eq!(submitted.meta.status.as_u16(), 201);   // before
+  assert_eq!(submitted.meta.status().as_u16(), 201); // after
+  ```
+
+  Likewise `meta.version()` and `meta.operation()`; `meta.headers()` is unchanged.
+- `Response::meta`, `TwilioError::meta()` and `TwilioError::Provider { meta }` are now
+  `concord::ResponseMeta` (the same type as in the other adopting SDKs); `ResponseMeta::new(head,
+  operation)` builds one (before, the private `headers` field prevented building one at all).
+- `Debug` (from the code): fields are `status, version, header_names, operation` (was `status,
+  version, operation, header_names`) and the operation prints by name
+  (`Some("TwilioApi.create_message")`, was `Some(Operation(POST TwilioApi.create_message))`).
+  No header value, as before. `Display` of errors is unchanged.
+
+## Test edits, by kind
+
+1. Field → method, mechanical (30 lines in `tests/first_use.rs`, `tests/protocol.rs`,
+   `tests/workflows.rs`): `.status` → `.status()`, `.operation` → `.operation()`. Expected
+   values unchanged.
+2. Added, one assertion
+   (`tests/first_use.rs::a_submit_sends_the_documented_form_and_returns_the_queued_resource`):
+   `Debug` of `submitted.meta` does not contain the `Twilio-Request-Id` value.
+
+## Verification (observed)
+
+`CARGO_BUILD_JOBS=6 cargo test --locked -p concord-sdk-twilio`, run twice: `first_use` 22,
+`protocol` 21, `workflows` 4, doctests 2 passed, 0 failed (the same counts as at `92775757`).
+`cargo clippy --locked --all-targets -- -D warnings`, `cargo fmt --check` and `cargo doc --no-deps`
+(no warnings): clean. Offline only.

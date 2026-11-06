@@ -46,7 +46,8 @@ async fn lookup_wire_and_partial_diagnostics() {
         response.envelope.errors[0].extensions.as_ref().unwrap()["code"],
         "FIELD_ERROR"
     );
-    assert_eq!(response.meta.headers["x-request-id"], "synthetic-request");
+    assert_eq!(response.meta.headers()["x-request-id"], "synthetic-request");
+    assert!(!format!("{:?}", response.meta).contains("synthetic-request"));
     let request = server.single();
     assert_eq!(
         (request.method.as_str(), request.target.as_str()),
@@ -99,8 +100,8 @@ async fn http_error_and_missing_data_retain_diagnostics() {
     .await;
     match client.issue("x").await.unwrap_err() {
         Error::Http { meta, body, errors } => {
-            assert_eq!(meta.status.as_u16(), 401);
-            assert_eq!(meta.headers["x-request-id"], "synthetic-request");
+            assert_eq!(meta.status().as_u16(), 401);
+            assert_eq!(meta.headers()["x-request-id"], "synthetic-request");
             assert_eq!(body, include_bytes!("../fixtures/errors.json"));
             assert_eq!(
                 errors[0].extensions.as_ref().unwrap()["code"],
@@ -212,7 +213,7 @@ async fn body_limits_keep_response_metadata() {
     for expected in ["synthetic-large-success", "synthetic-large-error"] {
         match client.issue("x").await.unwrap_err() {
             Error::Response { meta, source } => {
-                assert_eq!(meta.headers["x-request-id"], expected);
+                assert_eq!(meta.headers()["x-request-id"], expected);
                 assert_eq!(source.kind(), concord::ErrorKind::Limit);
             }
             other => panic!("{other:?}"),
@@ -239,8 +240,11 @@ async fn due_date_field_error_keeps_data_diagnostics_and_presence_rule() {
     .await;
     let response = client.issue("ABC-1").await.unwrap();
     assert!(!response.is_success());
-    assert_eq!(response.meta.status, 200);
-    assert_eq!(response.meta.headers["x-request-id"], "synthetic-due-date");
+    assert_eq!(response.meta.status(), 200);
+    assert_eq!(
+        response.meta.headers()["x-request-id"],
+        "synthetic-due-date"
+    );
     let issue = response.envelope.data.unwrap().issue.unwrap();
     assert_eq!(
         (issue.description.as_deref(), issue.due_date),
@@ -265,7 +269,7 @@ async fn due_date_field_error_keeps_data_diagnostics_and_presence_rule() {
     // A selected nullable field that is absent is a decode failure, never a null.
     match client.issue("x").await.unwrap_err() {
         Error::Response { meta, source } => {
-            assert_eq!(meta.status.as_u16(), 200);
+            assert_eq!(meta.status().as_u16(), 200);
             assert_eq!(source.kind(), concord::ErrorKind::Decode);
         }
         e => panic!("{e:?}"),

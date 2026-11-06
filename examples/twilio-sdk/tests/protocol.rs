@@ -37,13 +37,13 @@ async fn create_sends_exact_form_bytes_and_configured_basic_auth() {
     assert_eq!(response.value.status, MessageStatus::Queued);
     assert_eq!(response.value.body.as_deref(), Some("Hello café & + 🌍"));
     assert_eq!(response.value.error_code, None);
-    assert_eq!(response.meta.status.as_u16(), 201);
+    assert_eq!(response.meta.status().as_u16(), 201);
     assert_eq!(
         response.meta.headers()["twilio-request-id"],
         "fixture-create-request"
     );
     assert_eq!(
-        response.meta.operation.unwrap().name(),
+        response.meta.operation().unwrap().name(),
         "TwilioApi.create_message"
     );
     assert_eq!(script.remaining(), 0);
@@ -67,9 +67,9 @@ async fn fetch_has_no_form_body_and_exposes_message_processing_failure() {
         response.value.error_message.as_deref(),
         Some("Synthetic carrier filtering failure")
     );
-    assert_eq!(response.meta.status.as_u16(), 200);
+    assert_eq!(response.meta.status().as_u16(), 200);
     assert_eq!(
-        response.meta.operation.unwrap().name(),
+        response.meta.operation().unwrap().name(),
         "TwilioApi.get_message"
     );
     server.shutdown().await;
@@ -273,7 +273,7 @@ async fn bad_request_is_typed_and_preserves_metadata_without_echoing_input() {
         document.more_info.as_deref(),
         Some("https://www.twilio.com/docs/errors/21201")
     );
-    assert_eq!(error.meta().unwrap().status.as_u16(), 400);
+    assert_eq!(error.meta().unwrap().status().as_u16(), 400);
     assert_eq!(
         error
             .meta()
@@ -353,7 +353,7 @@ async fn message_debug_shows_identity_and_outcome_but_not_contents() {
 async fn unauthorized_get_keeps_http_status_and_provider_code() {
     let (server, _, client) = scripted([Reply::json(401, UNAUTHORIZED)]).await;
     let error = client.get_message(SID).await.unwrap_err();
-    assert_eq!(error.meta().unwrap().status.as_u16(), 401);
+    assert_eq!(error.meta().unwrap().status().as_u16(), 401);
     assert_eq!(error.provider_error().unwrap().code, Some(20003));
     assert_eq!(error.operation().unwrap().name(), "TwilioApi.get_message");
     assert_eq!(server.single().target, FETCH_PATH);
@@ -367,7 +367,7 @@ async fn not_found_can_omit_optional_exception_fields() {
     let document = error.provider_error().unwrap();
     assert_eq!(document.code, None);
     assert_eq!(document.more_info, None);
-    assert_eq!(error.meta().unwrap().status.as_u16(), 404);
+    assert_eq!(error.meta().unwrap().status().as_u16(), 404);
     server.shutdown().await;
 }
 
@@ -377,7 +377,7 @@ async fn rate_limit_keeps_retry_advice_and_does_not_repeat_post() {
         scripted([Reply::json(429, RATE_LIMITED).header("retry-after", "7")]).await;
     let error = client.create_message(message()).await.unwrap_err();
     assert_eq!(error.provider_error().unwrap().code, Some(20429));
-    assert_eq!(error.meta().unwrap().status.as_u16(), 429);
+    assert_eq!(error.meta().unwrap().status().as_u16(), 429);
     assert_eq!(error.meta().unwrap().headers()["retry-after"], "7");
     assert_eq!(server.requests().len(), 1);
     server.shutdown().await;
@@ -387,7 +387,7 @@ async fn rate_limit_keeps_retry_advice_and_does_not_repeat_post() {
 async fn actual_status_is_not_replaced_by_status_in_error_body() {
     let (server, _, client) = scripted([Reply::json(503, BAD_REQUEST)]).await;
     let error = client.get_message(SID).await.unwrap_err();
-    assert_eq!(error.meta().unwrap().status.as_u16(), 503);
+    assert_eq!(error.meta().unwrap().status().as_u16(), 503);
     assert_eq!(error.provider_error().unwrap().status, 400);
     server.shutdown().await;
 }
@@ -402,7 +402,7 @@ async fn malformed_or_wrong_shape_success_keeps_head_and_decode_kind() {
     for _ in 0..3 {
         let error = client.get_message(SID).await.unwrap_err();
         assert_eq!(error.concord().unwrap().kind(), ErrorKind::Decode);
-        assert_eq!(error.meta().unwrap().status.as_u16(), 200);
+        assert_eq!(error.meta().unwrap().status().as_u16(), 200);
         assert_eq!(
             error.meta().unwrap().headers()["twilio-request-id"],
             "fixture-decode"
@@ -425,7 +425,7 @@ async fn success_requires_one_json_content_type() {
         let error = client.get_message(SID).await.unwrap_err();
         assert_eq!(error.concord().unwrap().kind(), ErrorKind::Metadata);
         assert!(error.concord().unwrap().response().is_some());
-        assert_eq!(error.meta().unwrap().status.as_u16(), 200);
+        assert_eq!(error.meta().unwrap().status().as_u16(), 200);
     }
     server.shutdown().await;
 }
@@ -448,7 +448,7 @@ async fn malformed_error_documents_remain_http_failures() {
         (400, ErrorDocumentProblem::ContentType),
     ] {
         let error = client.get_message(SID).await.unwrap_err();
-        assert_eq!(error.meta().unwrap().status.as_u16(), status);
+        assert_eq!(error.meta().unwrap().status().as_u16(), status);
         assert!(
             matches!(error, Error::Provider { document: Err(problem), .. } if problem == expected)
         );
@@ -487,7 +487,7 @@ async fn error_body_limit_accepts_exact_boundary_and_rejects_one_more_byte() {
             .is_some()
     );
     let error = client.get_message(SID).await.unwrap_err();
-    assert_eq!(error.meta().unwrap().status.as_u16(), 400);
+    assert_eq!(error.meta().unwrap().status().as_u16(), 400);
     assert!(matches!(
         error,
         Error::Provider {
@@ -511,9 +511,9 @@ async fn complete_json_prefix_is_not_success_without_transport_eof() {
     .await;
     let error = client.create_message(message()).await.unwrap_err();
     assert_eq!(error.concord().unwrap().kind(), ErrorKind::Transport);
-    assert_eq!(error.meta().unwrap().status.as_u16(), 201);
+    assert_eq!(error.meta().unwrap().status().as_u16(), 201);
     let error = client.create_message(message()).await.unwrap_err();
-    assert_eq!(error.meta().unwrap().status.as_u16(), 400);
+    assert_eq!(error.meta().unwrap().status().as_u16(), 400);
     assert!(matches!(
         error,
         Error::Provider {

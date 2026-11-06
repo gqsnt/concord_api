@@ -2,54 +2,19 @@
 
 use std::fmt;
 
-use concord::reqwest::{StatusCode, Version, header::HeaderMap};
 use concord::{Decode, ErrorKind, Json, Operation, Prepared, Received};
 use serde::Deserialize;
 
 /// Maximum retained bytes of a non-success response body (64 KiB).
 pub const MAX_ERROR_BODY: usize = 64 * 1024;
 
-/// Metadata captured before consuming any response body, including failed decodes.
-#[derive(Clone)]
-pub struct ResponseMeta {
-    /// Actual HTTP status, independent of any status claimed in an error document.
-    pub status: StatusCode,
-    /// Received HTTP version.
-    pub version: Version,
-    /// Identity automatically supplied by Concord's declaration.
-    pub operation: Option<Operation>,
-    headers: HeaderMap,
-}
-
-impl ResponseMeta {
-    fn capture<T>(received: &Received<T>) -> Self {
-        Self {
-            status: received.status(),
-            version: received.version(),
-            operation: received.operation(),
-            headers: received.head().headers().clone(),
-        }
-    }
-
-    /// All response headers, unredacted (including duplicate values).
-    ///
-    /// Useful for provider request identifiers and retry advice when present. This SDK does
-    /// not require any particular request-id header or invent one if absent.
-    pub fn headers(&self) -> &HeaderMap {
-        &self.headers
-    }
-}
-
-impl fmt::Debug for ResponseMeta {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("ResponseMeta")
-            .field("status", &self.status)
-            .field("version", &self.version)
-            .field("operation", &self.operation)
-            .field("header_names", &self.headers.keys().collect::<Vec<_>>())
-            .finish()
-    }
-}
+/// Metadata captured before consuming any response body, including failed decodes: Concord's
+/// own type. `status()` is the actual HTTP status, independent of any status claimed in an
+/// error document; `headers()` are all response headers, unredacted (including duplicate
+/// values), for provider request identifiers and retry advice when present (this SDK does not
+/// require any particular request-id header or invent one if absent); `operation()` is the
+/// identity supplied by Concord's declaration. `Debug` prints header names only.
+pub use concord::ResponseMeta;
 
 /// One complete resource and the response metadata that accompanied it.
 #[derive(Clone)]
@@ -177,7 +142,7 @@ impl TwilioError {
             return Some(*operation);
         }
         self.meta()
-            .and_then(|meta| meta.operation)
+            .and_then(ResponseMeta::operation)
             .or_else(|| self.concord().and_then(concord::Error::operation))
     }
 }
@@ -193,10 +158,10 @@ impl fmt::Display for TwilioError {
         match self {
             Self::Concord { error, .. } => fmt::Display::fmt(error, f),
             Self::Provider { meta, document } => {
-                if let Some(operation) = meta.operation {
+                if let Some(operation) = meta.operation() {
                     write!(f, "{operation}: ")?;
                 }
-                write!(f, "Twilio HTTP {}", meta.status.as_u16())?;
+                write!(f, "Twilio HTTP {}", meta.status().as_u16())?;
                 match document {
                     Ok(document) => {
                         if let Some(code) = document.code {
@@ -218,8 +183,8 @@ impl std::error::Error for TwilioError {}
 
 pub(crate) async fn send<T>(prepared: Prepared<T>) -> Result<Response<T>, TwilioError> {
     let received = prepared.receive().await?;
-    let meta = ResponseMeta::capture(&received);
-    if !meta.status.is_success() {
+    let meta = received.meta();
+    if !meta.status().is_success() {
         return Err(TwilioError::Provider {
             meta: Box::new(meta),
             document: read_error(received).await,

@@ -36,8 +36,9 @@ async fn response_and_typed_http_error() {
             meta,
             error: Some(e),
         } => {
-            assert_eq!(meta.status.as_u16(), 400);
-            assert_eq!(meta.headers["x-request-id"], "synthetic-request");
+            assert_eq!(meta.status().as_u16(), 400);
+            assert_eq!(meta.headers()["x-request-id"], "synthetic-request");
+            assert!(!format!("{meta:?}").contains("synthetic-request"));
             assert_eq!(e.param.as_deref(), Some("model"));
         }
         e => panic!("{e:?}"),
@@ -136,7 +137,7 @@ async fn generated_send_has_the_sdk_error_and_does_not_read_the_event_stream() {
             meta,
             error: Some(e),
         } => {
-            assert_eq!(meta.status.as_u16(), 400);
+            assert_eq!(meta.status().as_u16(), 400);
             assert_eq!(e.param.as_deref(), Some("model"));
         }
         e => panic!("{e:?}"),
@@ -149,9 +150,9 @@ async fn generated_send_has_the_sdk_error_and_does_not_read_the_event_stream() {
     .await
     .expect("send() does not read the event stream")
     .unwrap();
-    assert_eq!(opened.meta.status.as_u16(), 200);
+    assert_eq!(opened.meta.status().as_u16(), 200);
     assert_eq!(
-        opened.meta.operation.unwrap().name(),
+        opened.meta.operation().unwrap().name(),
         "OpenAiApi.response_stream"
     );
     drop(opened);

@@ -38,7 +38,7 @@ println!("{}: {} EUR/USD", historical.rate.date, historical.rate.rate);
 
 // Optional filter; the two original callers above do not change.
 let ecb = api.latest_pair("EUR", "USD").set_providers("ECB").send().await?;
-assert!(ecb.meta.status.is_success());
+assert!(ecb.meta.status().is_success());
 # Ok(()) }
 ```
 
@@ -79,7 +79,9 @@ return `concord::Error`; signatures show both types as a bare `Error`, and this 
 `Error` implements `From<concord::Error>`, so `?` converts. The cases:
 
 - `Error::Provider` represents every non-2xx status. It retains the actual status, version,
-  headers (including retry hints), and generated operation identity. Its `document` is
+  headers (including retry hints), and generated operation identity: `meta` is a
+  `ResponseMeta`, Concord's `concord::ResponseMeta` re-exported (`status()`, `version()`,
+  `headers()`, `operation()`). Its `document` is
   either a typed `Problem { status: Option<u16>, message }` or an `ErrorBodyError` distinguishing
   media refusal, body read/size failure and decode failure. The HTTP status wins over a
   contradictory JSON `status`. Provider bodies are capped at 16 KiB.
@@ -94,7 +96,7 @@ use concord_sdk_frankfurter::{Error, Frankfurter};
 match api.latest_pair("EUR", "ABC").send().await {
     Ok(observation) => println!("{}", observation.rate.rate),
     Err(Error::Provider(error)) => {
-        eprintln!("HTTP {}", error.meta.status);
+        eprintln!("HTTP {}", error.meta.status());
         match &error.document {
             Ok(problem) => eprintln!("provider message: {}", problem.message),
             Err(cause) => eprintln!("error document unavailable: {cause}"),

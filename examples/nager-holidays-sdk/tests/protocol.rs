@@ -30,18 +30,20 @@ async fn v4_wire_and_documented_array() {
     assert_eq!(first.subdivision_codes, None);
     assert_eq!(first.holiday_types, [HolidayType::Public]);
     assert_eq!(response.holidays[1].name, "Epiphany");
-    assert_eq!(response.meta.status, StatusCode::OK);
-    assert_eq!(response.meta.version, Version::HTTP_11);
-    assert_eq!(response.meta.headers["etag"], "\"synthetic-fixture\"");
+    assert_eq!(response.meta.status(), StatusCode::OK);
+    assert_eq!(response.meta.version(), Version::HTTP_11);
+    assert_eq!(response.meta.headers()["etag"], "\"synthetic-fixture\"");
     assert_eq!(
         response
             .meta
-            .headers
+            .headers()
             .get_all("x-synthetic-multi")
             .iter()
             .count(),
         2
     );
+    let shown = format!("{:?}", response.meta);
+    assert!(shown.contains("x-synthetic-request-id") && !shown.contains("synthetic-read-1"));
     assert_read(&server.single(), &server, "/api/v4/Holidays/AT/2026");
     assert_eq!(server.shutdown().await.open_after, 0);
 }
@@ -64,7 +66,7 @@ async fn country_is_one_encoded_segment_and_synthetic_400_keeps_exact_body() {
     assert_eq!(error.concord().endpoint(), Some("NagerHolidays.holidays"));
     assert_eq!(error.concord().operation().unwrap().method(), Some("GET"));
     assert_eq!(
-        error.meta().unwrap().headers["x-synthetic-request-id"],
+        error.meta().unwrap().headers()["x-synthetic-request-id"],
         "synthetic-invalid-1"
     );
     assert!(std::error::Error::source(&error).is_some());
@@ -138,9 +140,9 @@ async fn new_null_subdivision_and_unknown_field_preserve_other_known_fields() {
     expected[1].subdivision_codes = None;
     assert_eq!(perturbed.holidays, expected);
     assert!(!perturbed.holidays[1].national_holiday);
-    assert_eq!(perturbed.meta.status, StatusCode::OK);
+    assert_eq!(perturbed.meta.status(), StatusCode::OK);
     assert_eq!(
-        perturbed.meta.headers["x-synthetic-request-id"],
+        perturbed.meta.headers()["x-synthetic-request-id"],
         "synthetic-maintenance"
     );
     let requests = server.requests();
@@ -252,7 +254,7 @@ async fn invalid_dates_missing_fields_v3_wrong_root_and_truncation_are_decode_fa
         assert_eq!(error.kind(), ErrorKind::Concord(ConcordErrorKind::Decode));
         assert_eq!(error.status(), Some(StatusCode::OK));
         assert_eq!(
-            error.meta().unwrap().headers["x-synthetic-request-id"],
+            error.meta().unwrap().headers()["x-synthetic-request-id"],
             "synthetic-decode"
         );
         assert_eq!(error.concord().endpoint(), Some("NagerHolidays.holidays"));
@@ -315,7 +317,7 @@ async fn other_status_keeps_headers_and_unread_non_json_body() {
         .unwrap_err();
     assert_eq!(error.kind(), ErrorKind::Http);
     assert_eq!(error.status(), Some(StatusCode::SERVICE_UNAVAILABLE));
-    assert_eq!(error.meta().unwrap().headers["retry-after"], "5");
+    assert_eq!(error.meta().unwrap().headers()["retry-after"], "5");
     assert_eq!(
         error
             .into_concord()
@@ -371,7 +373,7 @@ async fn dropped_body_keeps_head_and_never_returns_a_partial_array() {
     );
     assert_eq!(error.status(), Some(StatusCode::OK));
     assert_eq!(
-        error.meta().unwrap().headers["x-synthetic-request-id"],
+        error.meta().unwrap().headers()["x-synthetic-request-id"],
         "synthetic-body-drop"
     );
     assert_eq!(error.concord().endpoint(), Some("NagerHolidays.holidays"));

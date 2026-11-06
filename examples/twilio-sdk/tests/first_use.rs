@@ -293,7 +293,7 @@ fn concord_kind(error: &Error) -> Option<ErrorKind> {
 
 fn provider_parts(error: &Error) -> (u16, &Result<ProviderError, ErrorDocumentProblem>) {
     match error {
-        Error::Provider { meta, document } => (meta.status.as_u16(), document),
+        Error::Provider { meta, document } => (meta.status().as_u16(), document),
         other => panic!("expected a provider error, got {other:?}"),
     }
 }
@@ -336,14 +336,15 @@ async fn a_submit_sends_the_documented_form_and_returns_the_queued_resource() {
     );
 
     // Returned value and metadata.
-    assert_eq!(submitted.meta.status.as_u16(), 201);
+    assert_eq!(submitted.meta.status().as_u16(), 201);
     assert_eq!(
         submitted.meta.headers().get("twilio-request-id").unwrap(),
         REQUEST_ID
     );
+    assert!(!format!("{:?}", submitted.meta).contains(REQUEST_ID));
     let operation: Operation = submitted
         .meta
-        .operation
+        .operation()
         .expect("declared endpoint identity");
     assert!(operation.is_endpoint());
     assert_eq!(operation.method(), Some("POST"));
@@ -593,7 +594,7 @@ async fn a_success_status_with_a_non_json_body_keeps_its_metadata() {
         .expect_err("refused content type");
     assert_eq!(concord_kind(&error), Some(ErrorKind::Metadata));
     let meta = error.meta().expect("the 201 head arrived");
-    assert_eq!(meta.status.as_u16(), 201);
+    assert_eq!(meta.status().as_u16(), 201);
     assert_eq!(meta.headers().get("content-type").unwrap(), "text/html");
     assert!(error.provider_error().is_none());
 }
@@ -620,7 +621,7 @@ async fn a_cut_off_success_body_is_an_error_not_a_partial_message() {
     // Observed (my prediction allowed Transport or Decode): a body that stops before EOF is a
     // transport failure while reading the body, with the 201 head kept.
     assert_eq!(concord_kind(&error), Some(ErrorKind::Transport));
-    assert_eq!(error.meta().expect("head arrived").status.as_u16(), 201);
+    assert_eq!(error.meta().expect("head arrived").status().as_u16(), 201);
     assert_eq!(server.requests().len(), 1);
 }
 
@@ -722,7 +723,7 @@ async fn b_fetch_by_the_returned_sid_follows_the_status_lifecycle() {
     let mut observed = Vec::new();
     for _ in 0..4 {
         let fetched = client.get_message(&sid).await.expect("fetched");
-        assert_eq!(fetched.meta.status.as_u16(), 200);
+        assert_eq!(fetched.meta.status().as_u16(), 200);
         assert_eq!(fetched.value.sid, sid);
         assert_eq!(fetched.value.error_code, None);
         observed.push(report(&fetched.value));
@@ -747,7 +748,7 @@ async fn b_fetch_by_the_returned_sid_follows_the_status_lifecycle() {
         .await
         .unwrap()
         .meta
-        .operation
+        .operation()
         .unwrap();
     assert_eq!(operation.method(), Some("GET"));
     assert_eq!(operation.name(), "TwilioApi.get_message");
@@ -789,7 +790,7 @@ async fn b_processing_failures_are_successful_fetches_that_expose_the_error() {
             .get_message(&sid)
             .await
             .expect("an HTTP 200 carrying a failure is not an Err");
-        assert_eq!(last.meta.status.as_u16(), 200);
+        assert_eq!(last.meta.status().as_u16(), 200);
         assert_eq!(last.value.status, expected);
         assert_eq!(
             report(&last.value),
@@ -925,7 +926,7 @@ async fn b_invalid_resource_documents_are_decode_errors_with_metadata() {
         assert!(matches!(error, Error::Concord { .. }), "{name}: {error:?}");
         assert_eq!(concord_kind(&error), Some(ErrorKind::Decode), "{name}");
         let meta = error.meta().expect("head arrived");
-        assert_eq!(meta.status.as_u16(), 200, "{name}");
+        assert_eq!(meta.status().as_u16(), 200, "{name}");
         assert_eq!(meta.headers().get("content-type").unwrap(), JSON, "{name}");
         assert!(error.provider_error().is_none(), "{name}");
         let shown = error.to_string();
@@ -988,7 +989,7 @@ async fn b_a_stalled_fetch_ends_with_the_client_timeout_and_keeps_the_head() {
         .expect("the client timeout ends the call")
         .expect_err("stalled body");
     assert_eq!(concord_kind(&stalled), Some(ErrorKind::Transport));
-    assert_eq!(stalled.meta().expect("head arrived").status.as_u16(), 200);
+    assert_eq!(stalled.meta().expect("head arrived").status().as_u16(), 200);
 
     let late = tokio::time::timeout(Duration::from_secs(5), client.get_message("SM_b"))
         .await

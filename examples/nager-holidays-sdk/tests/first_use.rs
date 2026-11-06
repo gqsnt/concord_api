@@ -39,8 +39,8 @@ fn assert_request(request: &Recorded, target: &str) {
 async fn reads_a_country_and_year() {
     let server = TestServer::start(|_| Reply::json(200, AT).header("x-example", "first")).await;
     let response = client(&server).holidays("AT", 2026).send().await.unwrap();
-    assert_eq!(response.meta.status, StatusCode::OK);
-    assert_eq!(response.meta.headers["x-example"], "first");
+    assert_eq!(response.meta.status(), StatusCode::OK);
+    assert_eq!(response.meta.headers()["x-example"], "first");
     assert_eq!(response.holidays.len(), 2);
     let first = &response.holidays[0];
     assert_eq!(first.date.to_string(), "2026-01-01");
@@ -97,7 +97,7 @@ async fn filters_another_country_locally() {
 async fn an_empty_array_is_a_completed_read() {
     let server = TestServer::start(|_| Reply::json(200, EMPTY)).await;
     let response = client(&server).holidays("AT", 2026).send().await.unwrap();
-    assert_eq!(response.meta.status, StatusCode::OK);
+    assert_eq!(response.meta.status(), StatusCode::OK);
     assert!(response.holidays.is_empty());
     assert_request(&server.single(), "/api/v4/Holidays/AT/2026");
     assert_eq!(server.shutdown().await.open_after, 0);
@@ -109,7 +109,7 @@ async fn invalid_request_retains_the_unread_error_body() {
     let error = client(&server).holidays("XX", 0).send().await.unwrap_err();
     assert_eq!(error.kind(), ErrorKind::InvalidRequest);
     assert_eq!(error.status(), Some(StatusCode::BAD_REQUEST));
-    assert_eq!(error.meta().unwrap().status, StatusCode::BAD_REQUEST);
+    assert_eq!(error.meta().unwrap().status(), StatusCode::BAD_REQUEST);
     let response = error.into_concord().into_response().unwrap();
     assert_eq!(response.bytes().await.unwrap().as_ref(), REJECTION);
     assert_request(&server.single(), "/api/v4/Holidays/XX/0");

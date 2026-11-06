@@ -2,39 +2,12 @@
 
 use std::fmt;
 
-use concord::reqwest::{StatusCode, Version, header::HeaderMap};
+use concord::reqwest::StatusCode;
 use concord::{ErrorKind as ConcordErrorKind, ResponseHead};
 
-/// An owned response head that survives a subsequent body or decoding failure.
-#[derive(Clone)]
-pub struct ResponseMeta {
-    /// Actual HTTP status, including a successful status on a decoding failure.
-    pub status: StatusCode,
-    /// HTTP protocol version.
-    pub version: Version,
-    /// All response headers, with duplicate values preserved. Values are unredacted.
-    pub headers: HeaderMap,
-}
-
-impl ResponseMeta {
-    pub(crate) fn capture(head: &ResponseHead<'_>) -> Self {
-        Self {
-            status: head.status(),
-            version: head.version(),
-            headers: head.headers().clone(),
-        }
-    }
-}
-
-impl fmt::Debug for ResponseMeta {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("ResponseMeta")
-            .field("status", &self.status)
-            .field("version", &self.version)
-            .field("header_names", &self.headers.keys().collect::<Vec<_>>())
-            .finish()
-    }
-}
+/// An owned response head (status, version, all headers, operation) that survives a subsequent
+/// body or decoding failure: Concord's own type. `Debug` prints header names only.
+pub use concord::ResponseMeta;
 
 /// SDK failure classification. No error-document schema is assumed.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -79,7 +52,7 @@ impl Error {
 
     /// Actual response status, including on body failures; `None` if no head arrived.
     pub fn status(&self) -> Option<StatusCode> {
-        self.meta.as_ref().map(|meta| meta.status)
+        self.meta.as_ref().map(|meta| meta.status())
     }
 
     /// Captured response head; absent for request-building or pre-head transport failures.
@@ -102,9 +75,12 @@ impl Error {
 
 impl From<concord::Error> for Error {
     fn from(source: concord::Error) -> Self {
-        let meta = source
-            .response()
-            .map(|response| Box::new(ResponseMeta::capture(&ResponseHead::of(response))));
+        let meta = source.response().map(|response| {
+            Box::new(ResponseMeta::new(
+                ResponseHead::of(response),
+                source.operation(),
+            ))
+        });
         Self { source, meta }
     }
 }

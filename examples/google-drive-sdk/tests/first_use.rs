@@ -87,7 +87,7 @@ async fn list_inspect_upload_and_retrieve() {
         .await
         .unwrap();
     assert_eq!(created.value.id, "created");
-    assert_eq!(created.meta.status.as_u16(), 200);
+    assert_eq!(created.meta.status().as_u16(), 200);
     let fetched = drive.get_file(&created.value.id, &fields()).await.unwrap();
     assert_eq!(fetched.value.name.as_deref(), Some("café.bin"));
     let requests = server.requests();
@@ -175,7 +175,7 @@ async fn failed_list_page_keeps_prefix_and_provider_error() {
             assert_eq!(provider.code, 403);
             assert_eq!(provider.message, "Synthetic denial");
             assert_eq!(provider.errors[0].reason, "rateLimitExceeded");
-            assert_eq!(error.meta().unwrap().status.as_u16(), 403);
+            assert_eq!(error.meta().unwrap().status().as_u16(), 403);
         }
         other => panic!("unexpected error {other:?}"),
     }

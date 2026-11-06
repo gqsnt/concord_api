@@ -98,12 +98,9 @@ fn assert_response_wire(request: &Recorded, streaming: bool) {
 }
 
 fn assert_meta(meta: &ResponseMeta, status: u16, method: &str) {
-    assert_eq!(meta.status.as_u16(), status);
-    assert_eq!(meta.headers["x-request-id"], "synthetic-request-id");
-    let operation = meta
-        .operation
-        .as_ref()
-        .expect("declared operation identity");
+    assert_eq!(meta.status().as_u16(), status);
+    assert_eq!(meta.headers()["x-request-id"], "synthetic-request-id");
+    let operation = meta.operation().expect("declared operation identity");
     assert!(operation.is_endpoint());
     assert!(!operation.name().is_empty());
     assert_eq!(operation.method(), Some(method));
@@ -178,7 +175,7 @@ async fn http_errors_preserve_document_and_headers_for_both_response_modes() {
                 Error::Provider { meta, error } => {
                     assert_meta(&meta, if readable { 429 } else { 502 }, "POST");
                     if readable {
-                        assert_eq!(meta.headers["retry-after"], "7");
+                        assert_eq!(meta.headers()["retry-after"], "7");
                         let error = error.unwrap();
                         assert_eq!(error.message, "Synthetic request rejected");
                         assert_eq!(error.kind.as_deref(), Some("invalid_request_error"));
@@ -652,7 +649,7 @@ async fn failed_poll_request_returns_provider_error_without_retrying_to_completi
     {
         Error::Provider { meta, error } => {
             assert_meta(&meta, 503, "GET");
-            assert_eq!(meta.headers["retry-after"], "9");
+            assert_eq!(meta.headers()["retry-after"], "9");
             assert_eq!(error.unwrap().message, "Synthetic request rejected");
         }
         other => panic!("expected provider error, got {other:?}"),

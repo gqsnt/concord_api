@@ -1,33 +1,33 @@
 //! Typed failures and response metadata; diagnostic formatting omits provider payloads.
 
-use concord::{
-    Operation,
-    bytes::Bytes,
-    reqwest::{StatusCode, header::HeaderMap},
-};
+use concord::bytes::Bytes;
 use serde::Deserialize;
-use std::{fmt, time::Duration};
+use std::{fmt, ops::Deref, time::Duration};
 
-/// Response metadata captured before consuming the body, on success and failure.
+/// Response metadata captured before consuming the body, on success and failure: Concord's
+/// [`concord::ResponseMeta`] (actual status, never synthesized; HTTP version; all headers,
+/// including request ID and raw Retry-After; the declared operation identity), reached through
+/// `Deref`, plus Dropbox's header readings. `Debug` prints header names only.
 #[derive(Clone)]
-pub struct ResponseMeta {
-    /// Actual HTTP status (never synthesized).
-    pub status: StatusCode,
-    /// All response headers, including request ID and raw Retry-After.
-    pub headers: HeaderMap,
-    /// Operation identity supplied by the Concord declaration.
-    pub operation: Option<Operation>,
+pub struct ResponseMeta(pub concord::ResponseMeta);
+
+impl Deref for ResponseMeta {
+    type Target = concord::ResponseMeta;
+
+    fn deref(&self) -> &concord::ResponseMeta {
+        &self.0
+    }
 }
 
 impl ResponseMeta {
     /// Dropbox's request ID when present and valid header text.
     pub fn request_id(&self) -> Option<&str> {
-        self.headers.get("x-dropbox-request-id")?.to_str().ok()
+        self.headers().get("x-dropbox-request-id")?.to_str().ok()
     }
 
     /// Parse a single Retry-After header as unsigned seconds. No retry is performed.
     pub fn retry_after(&self) -> RetryAfter {
-        let mut values = self.headers.get_all("retry-after").iter();
+        let mut values = self.headers().get_all("retry-after").iter();
         let Some(value) = values.next() else {
             return RetryAfter::Missing;
         };
@@ -49,11 +49,7 @@ impl ResponseMeta {
 
 impl fmt::Debug for ResponseMeta {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("ResponseMeta")
-            .field("status", &self.status)
-            .field("operation", &self.operation)
-            .field("header_names", &self.headers.keys().collect::<Vec<_>>())
-            .finish()
+        fmt::Debug::fmt(&self.0, f)
     }
 }
 
@@ -315,7 +311,7 @@ impl fmt::Display for Error {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Concord { error, .. } => error.fmt(f),
-            Self::Http(e) => write!(f, "Dropbox HTTP failure ({})", e.meta.status),
+            Self::Http(e) => write!(f, "Dropbox HTTP failure ({})", e.meta.status()),
             Self::EmptyCursor { .. } => f.write_str("Dropbox returned an empty cursor"),
         }
     }
