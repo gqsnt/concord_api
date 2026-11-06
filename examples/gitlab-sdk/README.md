@@ -170,15 +170,17 @@ different ID is refused (`ContextError::Mismatch`).
 
 ## Single calls and errors
 
-Every generated operation has `prepare()` and `send()` (Concord's `concord::Error`). The `Call`
-trait sends any of them with this SDK's error and the response metadata:
+Every generated operation's `send()` returns this SDK's error and the response metadata,
+`Result<Response<T>, GitLabError>` (the client declares `send SendPolicy;`; nothing to import).
+`prepare()` gives Concord's native request (`concord::Error`; its own `prepare()?.send()` has no
+GitLab error document):
 
 ```rust,no_run
-use concord_sdk_gitlab::{Call, ErrorBody, GitLab, GitLabError, IssueIid, ProjectRef};
+use concord_sdk_gitlab::{ErrorBody, GitLab, GitLabError, IssueIid, ProjectRef};
 
 # async fn run(gitlab: GitLab) -> Result<(), Box<dyn std::error::Error>> {
 let project = gitlab.project(ProjectRef::id(4021)?);
-match project.issue(IssueIid::new(2)?).call().await {
+match project.issue(IssueIid::new(2)?).send().await {
     Ok(issue) => println!("{} (request {:?})", issue.value.title, issue.meta.request_id()),
     Err(GitLabError::Api(api)) => {
         // Non-2xx: status, GitLab's `message` if the body was its error document, metadata.
@@ -210,7 +212,7 @@ match project.issue(IssueIid::new(2)?).call().await {
 
 ## Completion and partial outcomes
 
-- One `call()` or `send()` is one request; nothing is retried.
+- One `send()` is one request; nothing is retried.
 - A traversal is complete only when `next_page()` returns `Ok(None)` or `collect_complete()`
   returns `Ok`. A cap is `PagesError::Bounded { resume }`; a failed or refused page is
   `PagesError::Provider { error, failed }` with the `GitLabError` and the page to retry;

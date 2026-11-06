@@ -51,3 +51,8 @@ reproduction. No library code was changed.
 
 The first full offline run passed: 18 first-use, 23 protocol, 11 workflow and 9 doc tests.
 No live GitLab calls or real credentials were used.
+
+## Between waves 2-3 (coordinator integration)
+
+The URL replacement described above is now `Prepared::follow` followed by `receive()`. The
+maintenance test is unmodified and passes. See [INTEGRATION.md](INTEGRATION.md).

@@ -23,7 +23,7 @@ async fn latest_wire_has_no_optional_query_and_no_body() {
     let server = TestServer::start(|_| json(200, LATEST).header("etag", "fixture-v1")).await;
     let result = client(&server)
         .latest_pair("EUR", "USD")
-        .fetch()
+        .send()
         .await
         .unwrap();
     assert_eq!(result.meta.status, StatusCode::OK);
@@ -45,7 +45,7 @@ async fn historical_wire_has_required_date_and_optional_provider_filter() {
     let result = client(&server)
         .historical_pair("EUR", "USD", "2024-01-15".parse::<Date>().unwrap())
         .set_providers("ECB,TCMB")
-        .fetch()
+        .send()
         .await
         .unwrap();
     assert_eq!(
@@ -66,7 +66,7 @@ async fn path_segments_and_query_values_cannot_inject_routes_or_parameters() {
     let error = client(&server)
         .latest_pair("EUR/USD", "U?S#D")
         .set_providers("ECB&date=2000-01-01")
-        .fetch()
+        .send()
         .await
         .unwrap_err();
     assert_eq!(error.status(), Some(StatusCode::UNPROCESSABLE_ENTITY));
@@ -96,7 +96,7 @@ async fn decimals_are_exact_including_more_than_f64_precision_and_exponent_range
         let server = TestServer::start(move |_| json(200, &body)).await;
         let result = client(&server)
             .latest_pair("EUR", "USD")
-            .fetch()
+            .send()
             .await
             .unwrap();
         let expected: Decimal = case.exact.parse().unwrap();
@@ -124,7 +124,7 @@ async fn invalid_or_non_positive_numeric_values_never_produce_a_rate() {
         let server = TestServer::start(move |_| json(200, &body)).await;
         let error = client(&server)
             .latest_pair("EUR", "USD")
-            .fetch()
+            .send()
             .await
             .unwrap_err();
         assert_eq!(concord_kind(&error), ErrorKind::Decode, "wire token {case}");
@@ -165,7 +165,7 @@ async fn invalid_success_shapes_and_incomplete_json_do_not_succeed() {
         let server = TestServer::start(move |_| json(200, &body)).await;
         let error = client(&server)
             .latest_pair("EUR", "USD")
-            .fetch()
+            .send()
             .await
             .unwrap_err();
         assert_eq!(concord_kind(&error), ErrorKind::Decode);
@@ -184,7 +184,7 @@ async fn unknown_provider_attribution_keeps_known_field_and_json_validation() {
         let server = TestServer::start(move |_| json(200, &body)).await;
         let error = client(&server)
             .latest_pair("EUR", "USD")
-            .fetch()
+            .send()
             .await
             .unwrap_err();
         assert_eq!(concord_kind(&error), ErrorKind::Decode);
@@ -216,7 +216,7 @@ async fn documented_http_errors_preserve_status_headers_and_typed_problem() {
             TestServer::start(move |_| json(status, body).header("retry-after", "7")).await;
         let error = client(&server)
             .latest_pair("EUR", "ABC")
-            .fetch()
+            .send()
             .await
             .unwrap_err();
         assert_eq!(error.status().unwrap().as_u16(), status);
@@ -242,7 +242,7 @@ async fn http_status_remains_authoritative_when_document_disagrees() {
         TestServer::start(|_| json(422, include_bytes!("../fixtures/status-mismatch.json"))).await;
     let error = client(&server)
         .latest_pair("EUR", "USD")
-        .fetch()
+        .send()
         .await
         .unwrap_err();
     assert_eq!(error.status(), Some(StatusCode::UNPROCESSABLE_ENTITY));
@@ -263,7 +263,7 @@ async fn malformed_error_document_keeps_http_failure() {
         let server = TestServer::start(move |_| json(502, body)).await;
         let error = client(&server)
             .latest_pair("EUR", "USD")
-            .fetch()
+            .send()
             .await
             .unwrap_err();
         assert_eq!(error.status(), Some(StatusCode::BAD_GATEWAY));
@@ -285,7 +285,7 @@ async fn non_json_error_is_distinct_from_invalid_json_error() {
     .await;
     let error = client(&server)
         .latest_pair("EUR", "USD")
-        .fetch()
+        .send()
         .await
         .unwrap_err();
     assert_eq!(error.status(), Some(StatusCode::BAD_GATEWAY));
@@ -310,7 +310,7 @@ async fn error_document_limit_is_exact_and_preserves_status() {
         let server = TestServer::start(move |_| json(429, &body).header("retry-after", "11")).await;
         let error = client(&server)
             .latest_pair("EUR", "USD")
-            .fetch()
+            .send()
             .await
             .unwrap_err();
         let Error::Provider(error) = error else {
@@ -343,7 +343,7 @@ async fn complete_json_without_http_body_completion_is_a_failure() {
     .await;
     let error = client(&server)
         .latest_pair("EUR", "USD")
-        .fetch()
+        .send()
         .await
         .unwrap_err();
     assert_eq!(concord_kind(&error), ErrorKind::Transport);
@@ -364,7 +364,7 @@ async fn truncated_error_body_retains_the_failure_status_and_read_cause() {
     .await;
     let error = client(&server)
         .latest_pair("EUR", "USD")
-        .fetch()
+        .send()
         .await
         .unwrap_err();
     assert_eq!(error.status(), Some(StatusCode::SERVICE_UNAVAILABLE));
@@ -394,7 +394,7 @@ async fn success_requires_exactly_one_json_content_type() {
         .await;
         let error = client(&server)
             .latest_pair("EUR", "USD")
-            .fetch()
+            .send()
             .await
             .unwrap_err();
         assert_eq!(concord_kind(&error), ErrorKind::Metadata);
@@ -426,7 +426,7 @@ async fn failure_before_response_has_no_fabricated_status_or_metadata() {
     .await;
     let error = client(&server)
         .latest_pair("EUR", "USD")
-        .fetch()
+        .send()
         .await
         .unwrap_err();
     assert_eq!(concord_kind(&error), ErrorKind::Transport);
@@ -446,7 +446,7 @@ async fn debug_and_display_do_not_expose_provider_text_or_header_values() {
     .await;
     let error = client(&server)
         .latest_pair("EUR", "USD")
-        .fetch()
+        .send()
         .await
         .unwrap_err();
     let rendered = format!("{error:?} {error}");

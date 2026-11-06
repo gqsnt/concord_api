@@ -88,3 +88,10 @@ example was edited. No live provider calls or credentials were used.
    `PROVENANCE.md`. Dependencies reuse already locked versions; the lockfile adds only this
    package. No generic protocol dependency was necessary beyond serde JSON and the Concord
    traversal/format APIs.
+
+## Between waves 2-3 (coordinator integration)
+
+Item 5 changed: `execute` now decodes 2xx bodies with `Received::decode_limited` at
+`SUCCESS_BODY_LIMIT` (16 MiB, an SDK bound). Item 2 is unchanged: the declaration stays
+private; a public declaration with a send policy was evaluated and not adopted. See
+[INTEGRATION.md](INTEGRATION.md).

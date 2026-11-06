@@ -7,8 +7,8 @@ use concord::ErrorKind;
 use concord_example_testserver::{Body, Recorded, Reply, Script, TestServer};
 use concord_pagination::{PagesError, Resume};
 use concord_sdk_gitlab::{
-    Call, ContextError, ErrorBody, GitLab, GitLabError, IssueIid, IssueOrder, IssueState,
-    IssueStatus, Labels, PaginationProblem, PerPage, PrivateToken, ProjectRef, SortOrder,
+    ContextError, ErrorBody, GitLab, GitLabError, IssueIid, IssueOrder, IssueState, IssueStatus,
+    Labels, PaginationProblem, PerPage, PrivateToken, ProjectRef, SortOrder,
 };
 
 const TOKEN: &str = "synthetic-first-use-token";
@@ -539,7 +539,10 @@ async fn b_project_mismatch_keeps_both_responses_for_diagnosis() {
 }
 
 #[tokio::test]
-async fn b_single_calls_require_call_for_the_sdk_error_document_and_metadata() {
+async fn b_single_calls_send_the_sdk_error_document_and_metadata() {
+    // Between waves 2-3 (coordinator integration): the client declares `send SendPolicy;`, so
+    // the generated `send()` is the SDK path (formerly `Call::call()`). The Concord-only path
+    // this test compared it with is now `prepare()?.send()`; expected values are unchanged.
     let (server, script, gitlab) = fake().await;
     script.push(Reply::json(404, NOT_FOUND).header("x-request-id", "first-use-send"));
     script.push(Reply::json(404, NOT_FOUND).header("x-request-id", "first-use-call"));
@@ -547,11 +550,11 @@ async fn b_single_calls_require_call_for_the_sdk_error_document_and_metadata() {
         .project(ProjectRef::path(PROJECT).unwrap())
         .issue(IssueIid::new(31).unwrap());
 
-    let error: concord::Error = issue.clone().send().await.unwrap_err();
+    let error: concord::Error = issue.clone().prepare().unwrap().send().await.unwrap_err();
     assert_eq!(error.kind(), ErrorKind::Status);
     assert_eq!(error.status().unwrap().as_u16(), 404);
-    let GitLabError::Api(api) = issue.call().await.unwrap_err() else {
-        panic!("Call adds the SDK's provider error document and metadata");
+    let GitLabError::Api(api) = issue.send().await.unwrap_err() else {
+        panic!("send() adds the SDK's provider error document and metadata");
     };
     assert_eq!(api.status.as_u16(), 404);
     assert_eq!(
@@ -570,7 +573,7 @@ async fn b_non_gitlab_proxy_failure_keeps_exact_error_bytes() {
     let error = gitlab
         .project(ProjectRef::path(PROJECT).unwrap())
         .issue(IssueIid::new(31).unwrap())
-        .call()
+        .send()
         .await
         .unwrap_err();
     let GitLabError::Api(api) = error else {

@@ -8,7 +8,7 @@ use concord::{ErrorKind, reqwest};
 use concord_example_testserver::{Body, Reply, TestServer};
 use concord_sdk_slack::{
     Client, ClientConfig, ConversationOptions, EnvelopeProblem, Error, ErrorCode, PageSize,
-    RetryAfter, UsersOptions,
+    RetryAfter, SUCCESS_BODY_LIMIT, UsersOptions,
 };
 use support::{assert_get, client, fixture};
 
@@ -496,4 +496,53 @@ async fn invalid_auth_header_fails_before_io_and_keeps_secret_out_of_diagnostics
     assert!(matches!(failure, Error::Concord { error, .. } if error.kind() == ErrorKind::Build));
     assert!(server.requests().is_empty());
     server.shutdown().await;
+}
+
+/// A synthetic `ok: true` users page of exactly `len` bytes (padding in an ignored field).
+fn users_page_of(len: usize) -> Vec<u8> {
+    let (prefix, suffix) = (r#"{"ok":true,"members":[],"pad":""#, r#""}"#);
+    let mut body = prefix.as_bytes().to_vec();
+    body.resize(len - suffix.len(), b'x');
+    body.extend_from_slice(suffix.as_bytes());
+    body
+}
+
+#[tokio::test]
+async fn success_body_is_decoded_up_to_the_limit_and_refused_beyond() {
+    // Between waves 2-3 (coordinator integration): `Received::decode_limited` bounds 2xx bodies.
+    for len in [SUCCESS_BODY_LIMIT, SUCCESS_BODY_LIMIT + 1] {
+        let body = users_page_of(len);
+        assert_eq!(body.len(), len);
+        let server = TestServer::start(move |_| {
+            Reply::json(200, body.clone()).header("x-slack-req-id", "synthetic-large-id")
+        })
+        .await;
+        let result = client(&server)
+            .users_page(&UsersOptions::default(), None)
+            .await;
+        if len == SUCCESS_BODY_LIMIT {
+            assert!(
+                result.unwrap().value.members.is_empty(),
+                "exactly at the limit"
+            );
+        } else {
+            match result.unwrap_err() {
+                Error::Concord {
+                    error,
+                    meta: Some(meta),
+                } => {
+                    assert_eq!(error.kind(), ErrorKind::Limit);
+                    assert_eq!(
+                        error.operation().unwrap().to_string(),
+                        "GET SlackApi.users_list"
+                    );
+                    assert_eq!(meta.status.as_u16(), 200);
+                    assert_eq!(meta.request_id(), Some("synthetic-large-id"));
+                }
+                other => panic!("unexpected failure {other:?}"),
+            }
+        }
+        assert_eq!(server.requests().len(), 1);
+        server.shutdown().await;
+    }
 }

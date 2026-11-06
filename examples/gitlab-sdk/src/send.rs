@@ -1,47 +1,38 @@
-//! One adapter for every operation: [`Call::call`] sends a generated endpoint and returns the
-//! typed value with its [`ResponseMeta`], or a [`GitLabError`] that keeps GitLab's error document.
+//! The client's send policy: every generated `send()` returns the typed value with its
+//! [`ResponseMeta`], or a [`GitLabError`] that keeps GitLab's error document.
 
-use std::future::Future;
-
-use concord::{Decode, Endpoint, Json, Received};
+use concord::{Decode, Endpoint, Json, Received, SendWith};
 
 use crate::error::{ApiError, ERROR_BODY_LIMIT, ErrorBody, ErrorDocument, GitLabError};
 use crate::meta::{Response, ResponseMeta};
 
-/// Sends any operation of the [`GitLab`](crate::GitLab) declaration with the SDK's error.
+/// The send policy of [`GitLab`](crate::GitLab) (`send SendPolicy;`): what every generated
+/// `send()` returns, `Result<`[`Response<T>`]`, `[`GitLabError`]`>`. Callers never name it.
+///
+/// `send()` prepares, executes once and decodes as declared; it never retries.
+/// [`GitLabError::Api`] is a non-2xx status (GitLab's document read up to
+/// [`ERROR_BODY_LIMIT`]); [`GitLabError::Request`] is a request that could not be built (nothing
+/// sent), a transport failure, a 2xx response not labelled JSON, or a body that does not decode —
+/// with the response metadata once a response arrived. `prepare()` still returns the native
+/// request with `concord::Error`.
 ///
 /// ```no_run
-/// use concord_sdk_gitlab::{Call, GitLab, IssueIid, ProjectRef};
+/// use concord_sdk_gitlab::{GitLab, IssueIid, ProjectRef};
 ///
 /// # async fn run(gitlab: GitLab) -> Result<(), Box<dyn std::error::Error>> {
 /// let project = gitlab.project(ProjectRef::path("acme/widgets")?);
-/// let issue = project.issue(IssueIid::new(7)?).call().await?;
+/// let issue = project.issue(IssueIid::new(7)?).send().await?;
 /// println!("{} (request {:?})", issue.value.title, issue.meta.request_id());
 /// # Ok(()) }
 /// ```
-pub trait Call<T>: Endpoint<T> {
-    /// Prepares, executes once and decodes as declared. Never retries.
-    ///
-    /// # Errors
-    ///
-    /// [`GitLabError::Api`] for a non-2xx status (GitLab's document read up to
-    /// [`ERROR_BODY_LIMIT`]); [`GitLabError::Request`] for a request that could not be built
-    /// (nothing sent), a transport failure, a 2xx response not labelled JSON, or a body that does
-    /// not decode — with the response metadata once a response arrived.
-    fn call(self) -> impl Future<Output = Result<Response<T>, GitLabError>> + Send;
-}
+pub struct SendPolicy;
 
-impl<T, E> Call<T> for E
-where
-    T: Send + 'static,
-    E: Endpoint<T>,
-{
-    fn call(self) -> impl Future<Output = Result<Response<T>, GitLabError>> + Send {
-        let prepared = self.prepare();
-        async move {
-            let received = prepared?.receive().await?;
-            finish(received).await
-        }
+impl<T: Send + 'static> SendWith<T> for SendPolicy {
+    type Output = Result<Response<T>, GitLabError>;
+
+    async fn send<E: Endpoint<T> + Send>(endpoint: E) -> Self::Output {
+        let received = endpoint.prepare()?.receive().await?;
+        finish(received).await
     }
 }
 

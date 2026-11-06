@@ -154,7 +154,7 @@ async fn a_latest_pair_returns_the_documented_observation() -> TestResult {
     let server = TestServer::start(fake_frankfurter).await;
     let api = local(&server);
 
-    let latest = api.latest_pair("EUR", "USD").fetch().await?;
+    let latest = api.latest_pair("EUR", "USD").send().await?;
 
     assert_eq!(latest.rate.date, "2026-03-25".parse()?);
     assert_eq!(latest.rate.base, "EUR");
@@ -180,14 +180,14 @@ async fn a_currency_text_is_sent_as_supplied() -> TestResult {
     let api = local(&server);
 
     // Lower-case is not normalized by the SDK; the provider answers with its own spelling.
-    let latest = api.latest_pair("eur", "usd").fetch().await?;
+    let latest = api.latest_pair("eur", "usd").send().await?;
     assert_eq!(
         (latest.rate.base.as_str(), latest.rate.quote.as_str()),
         ("EUR", "USD")
     );
 
     // A slash stays inside one path segment, so it cannot reach another route.
-    let error = provider_error(api.latest_pair("A/B", "USD").fetch().await);
+    let error = provider_error(api.latest_pair("A/B", "USD").send().await);
     assert_eq!(error.meta.status, reqwest::StatusCode::UNPROCESSABLE_ENTITY);
 
     let requests = server.requests();
@@ -206,12 +206,12 @@ async fn a_providers_filter_is_one_query_value() -> TestResult {
     let filtered = api
         .latest_pair("EUR", "USD")
         .set_providers("ECB,TCMB")
-        .fetch()
+        .send()
         .await?;
     let unfiltered = api
         .latest_pair("EUR", "USD")
         .maybe_providers(None)
-        .fetch()
+        .send()
         .await?;
     assert_eq!(filtered.rate, unfiltered.rate);
 
@@ -232,7 +232,7 @@ async fn a_rate_is_an_exact_decimal() -> TestResult {
     let server = TestServer::start(fake_frankfurter).await;
     let api = local(&server);
 
-    let jpy = api.latest_pair("EUR", "JPY").fetch().await?;
+    let jpy = api.latest_pair("EUR", "JPY").send().await?;
     let exact = decimal("172.345678901234567890123456789");
     assert_eq!(jpy.rate.rate, exact);
     // The same token through f64 loses digits, so equality above rules out a float detour.
@@ -240,7 +240,7 @@ async fn a_rate_is_an_exact_decimal() -> TestResult {
     assert_ne!(decimal(&via_float.to_string()), exact);
 
     // The documented identity rate of a same-currency pair is the JSON integer 1.
-    let identity = api.latest_pair("EUR", "EUR").fetch().await?;
+    let identity = api.latest_pair("EUR", "EUR").send().await?;
     assert_eq!(identity.rate.rate, decimal("1"));
     shut_down(server).await;
     Ok(())
@@ -250,7 +250,7 @@ async fn a_rate_is_an_exact_decimal() -> TestResult {
 async fn a_unknown_and_optional_fields_are_ignored() -> TestResult {
     // The schema's optional `providers` array (present with `expand=providers`) plus nesting.
     let server = TestServer::start(|_| Reply::json(200, EXPANDED_EUR_USD)).await;
-    let latest = local(&server).latest_pair("EUR", "USD").fetch().await?;
+    let latest = local(&server).latest_pair("EUR", "USD").send().await?;
     assert_eq!(latest.rate.rate, decimal("1.1568"));
     assert_eq!(latest.rate.date, "2026-03-25".parse()?);
     shut_down(server).await;
@@ -262,7 +262,7 @@ async fn a_self_hosted_prefix_is_kept() -> TestResult {
     let server = TestServer::start(|_| Reply::json(200, LATEST_EUR_USD)).await;
     let api =
         Frankfurter::new(reqwest::Client::new()).with_base_url(format!("{}/fx", server.url()))?;
-    api.latest_pair("EUR", "USD").fetch().await?;
+    api.latest_pair("EUR", "USD").send().await?;
     assert_plain_get(&server.single(), "/fx/v2/rate/EUR/USD");
     shut_down(server).await;
     Ok(())
@@ -278,7 +278,7 @@ async fn a_documented_provider_errors_are_typed() -> TestResult {
     .await;
     let api = local(&server);
 
-    let result = api.latest_pair("EUR", "ABC").fetch().await;
+    let result = api.latest_pair("EUR", "ABC").send().await;
     let shown = match &result {
         Err(error) => (format!("{error}"), format!("{error:?}")),
         Ok(_) => panic!("expected an error"),
@@ -307,13 +307,13 @@ async fn a_documented_provider_errors_are_typed() -> TestResult {
     );
     assert!(!shown.1.contains("invalid currency"), "Debug: {}", shown.1);
 
-    let missing = provider_error(api.latest_pair("EUR", "GBP").fetch().await);
+    let missing = provider_error(api.latest_pair("EUR", "GBP").send().await);
     assert_eq!(missing.meta.status, reqwest::StatusCode::NOT_FOUND);
     let problem = missing.document.as_ref().expect("message-only document");
     assert_eq!(problem.status, None);
     assert!(problem.message.starts_with("first-use synthetic"));
 
-    let busy = provider_error(api.latest_pair("EUR", "CHF").fetch().await);
+    let busy = provider_error(api.latest_pair("EUR", "CHF").send().await);
     assert_eq!(busy.meta.status, reqwest::StatusCode::SERVICE_UNAVAILABLE);
     assert_eq!(
         busy.meta.headers.get("retry-after").map(|v| v.as_bytes()),
@@ -340,7 +340,7 @@ async fn a_unusable_error_documents_keep_the_status() -> TestResult {
     .await;
     let api = local(&server);
 
-    let html = provider_error(api.latest_pair("EUR", "HTML").fetch().await);
+    let html = provider_error(api.latest_pair("EUR", "HTML").send().await);
     assert_eq!(html.meta.status, reqwest::StatusCode::BAD_GATEWAY);
     assert!(
         matches!(html.document, Err(ErrorBodyError::Metadata(_))),
@@ -348,7 +348,7 @@ async fn a_unusable_error_documents_keep_the_status() -> TestResult {
         html.document
     );
 
-    let broken = provider_error(api.latest_pair("EUR", "BROKEN").fetch().await);
+    let broken = provider_error(api.latest_pair("EUR", "BROKEN").send().await);
     assert_eq!(
         broken.meta.status,
         reqwest::StatusCode::UNPROCESSABLE_ENTITY
@@ -359,7 +359,7 @@ async fn a_unusable_error_documents_keep_the_status() -> TestResult {
         broken.document
     );
 
-    let big = provider_error(api.latest_pair("EUR", "BIG").fetch().await);
+    let big = provider_error(api.latest_pair("EUR", "BIG").send().await);
     assert_eq!(big.meta.status, reqwest::StatusCode::UNPROCESSABLE_ENTITY);
     assert!(
         matches!(big.document, Err(ErrorBodyError::Read(_))),
@@ -367,7 +367,7 @@ async fn a_unusable_error_documents_keep_the_status() -> TestResult {
         big.document
     );
 
-    let cut = provider_error(api.latest_pair("EUR", "CUT").fetch().await);
+    let cut = provider_error(api.latest_pair("EUR", "CUT").send().await);
     assert_eq!(cut.meta.status, reqwest::StatusCode::SERVICE_UNAVAILABLE);
     assert!(
         matches!(cut.document, Err(ErrorBodyError::Read(_))),
@@ -389,7 +389,7 @@ async fn a_success_body_cut_off_yields_no_rate() -> TestResult {
     })
     .await;
 
-    let (source, meta) = concord_error(local(&server).latest_pair("EUR", "USD").fetch().await);
+    let (source, meta) = concord_error(local(&server).latest_pair("EUR", "USD").send().await);
     assert_eq!(source.kind(), ErrorKind::Transport, "{source}");
     let meta = meta.expect("the 200 head arrived before the body broke");
     assert_eq!(meta.status, reqwest::StatusCode::OK);
@@ -415,7 +415,7 @@ async fn a_stalled_success_body_ends_at_the_transport_timeout() -> TestResult {
     let api = Frankfurter::new(http).with_base_url(server.url())?;
 
     let started = std::time::Instant::now();
-    let result = api.latest_pair("EUR", "USD").fetch().await;
+    let result = api.latest_pair("EUR", "USD").send().await;
     assert!(
         started.elapsed() < Duration::from_secs(4),
         "{:?}",
@@ -432,7 +432,7 @@ async fn a_stalled_success_body_ends_at_the_transport_timeout() -> TestResult {
 async fn a_wrong_media_type_is_refused_and_recoverable() -> TestResult {
     let server = TestServer::start(|_| Reply::text(200, "text/html", LATEST_EUR_USD)).await;
 
-    let (source, meta) = concord_error(local(&server).latest_pair("EUR", "USD").fetch().await);
+    let (source, meta) = concord_error(local(&server).latest_pair("EUR", "USD").send().await);
     assert_eq!(source.kind(), ErrorKind::Metadata, "{source}");
     assert_eq!(meta.map(|m| m.status), Some(reqwest::StatusCode::OK));
     let response = source.into_response().expect("unread response");
@@ -475,7 +475,7 @@ async fn a_invalid_success_documents_are_decode_errors() -> TestResult {
     ];
     for (name, body) in cases {
         let server = TestServer::start(move |_| Reply::json(200, body)).await;
-        let (source, meta) = concord_error(local(&server).latest_pair("EUR", "USD").fetch().await);
+        let (source, meta) = concord_error(local(&server).latest_pair("EUR", "USD").send().await);
         assert_eq!(source.kind(), ErrorKind::Decode, "{name}: {source}");
         assert_eq!(
             meta.map(|m| m.status),
@@ -490,7 +490,7 @@ async fn a_invalid_success_documents_are_decode_errors() -> TestResult {
 #[tokio::test]
 async fn a_connection_closed_before_a_head_has_no_status() -> TestResult {
     let server = TestServer::start(|_| Reply::hang_up()).await;
-    let result = local(&server).latest_pair("EUR", "USD").fetch().await;
+    let result = local(&server).latest_pair("EUR", "USD").send().await;
     let error = result.as_ref().expect_err("no answer");
     assert_eq!(error.status(), None);
     assert!(error.meta().is_none());
@@ -508,7 +508,7 @@ async fn a_connection_closed_before_a_head_has_no_status() -> TestResult {
 #[tokio::test]
 async fn a_empty_currency_is_rejected_before_sending() -> TestResult {
     let server = TestServer::start(fake_frankfurter).await;
-    let (source, meta) = concord_error(local(&server).latest_pair("", "USD").fetch().await);
+    let (source, meta) = concord_error(local(&server).latest_pair("", "USD").send().await);
     assert_eq!(source.kind(), ErrorKind::Build, "{source}");
     assert!(meta.is_none());
     assert!(server.requests().is_empty());
@@ -529,7 +529,7 @@ fn connect(base_url: &str) -> Result<Frankfurter, Error> {
 async fn a_base_url_is_validated_as_configuration() -> TestResult {
     let server = TestServer::start(fake_frankfurter).await;
     let api = connect(&server.url())?;
-    api.latest_pair("EUR", "USD").fetch().await?;
+    api.latest_pair("EUR", "USD").send().await?;
 
     let refused = connect(&format!("{}/?region=eu", server.url()));
     let error = refused
@@ -547,14 +547,25 @@ async fn a_base_url_is_validated_as_configuration() -> TestResult {
 }
 
 #[tokio::test]
-async fn a_generated_send_skips_the_typed_error_adapter() -> TestResult {
+async fn a_prepared_send_skips_the_typed_error_adapter() -> TestResult {
+    // Between waves 2-3 (coordinator integration): the client declares `send SendPolicy;`, so
+    // the generated `send()` is the typed adapter (formerly `fetch()`). The Concord-only path
+    // this test checked is now `prepare()?.send()`; its expected values are unchanged.
     let server = TestServer::start(fake_frankfurter).await;
     let api = local(&server);
 
-    let rate = api.latest_pair("EUR", "USD").send().await?;
-    assert_eq!(rate, api.latest_pair("EUR", "USD").fetch().await?.rate);
+    let rate = api.latest_pair("EUR", "USD").prepare()?.send().await?;
+    assert_eq!(rate, api.latest_pair("EUR", "USD").send().await?.rate);
 
-    let error = api.latest_pair("EUR", "ABC").send().await.expect_err("422");
+    let typed = provider_error(api.latest_pair("EUR", "ABC").send().await);
+    assert_eq!(typed.meta.status, reqwest::StatusCode::UNPROCESSABLE_ENTITY);
+
+    let error = api
+        .latest_pair("EUR", "ABC")
+        .prepare()?
+        .send()
+        .await
+        .expect_err("422");
     assert_eq!(error.kind(), ErrorKind::Status);
     assert_eq!(
         error.status(),
@@ -585,7 +596,7 @@ async fn b_historical_pair_sends_the_date_and_returns_the_observation() -> TestR
     let api = local(&server);
 
     let date: Date = "2024-01-15".parse()?;
-    let historical = api.historical_pair("EUR", "USD", date).fetch().await?;
+    let historical = api.historical_pair("EUR", "USD", date).send().await?;
 
     assert_eq!(historical.rate.date, date);
     assert_eq!(
@@ -615,7 +626,7 @@ async fn b_the_returned_date_is_the_providers() -> TestResult {
 
     let historical = local(&server)
         .historical_pair("EUR", "USD", saturday)
-        .fetch()
+        .send()
         .await?;
 
     assert_eq!(historical.rate.date, "2024-01-12".parse::<Date>()?);
@@ -635,7 +646,7 @@ async fn b_providers_filter_follows_the_date() -> TestResult {
     let filtered = local(&server)
         .historical_pair("EUR", "USD", date)
         .set_providers("ECB")
-        .fetch()
+        .send()
         .await?;
 
     assert_eq!(filtered.rate.date, date);
@@ -685,7 +696,7 @@ async fn b_dates_and_currencies_without_data_are_provider_errors() -> TestResult
     let before_series: Date = "1998-12-31".parse()?;
     let missing = provider_error(
         api.historical_pair("EUR", "USD", before_series)
-            .fetch()
+            .send()
             .await,
     );
     assert_eq!(missing.meta.status, reqwest::StatusCode::NOT_FOUND);
@@ -697,7 +708,7 @@ async fn b_dates_and_currencies_without_data_are_provider_errors() -> TestResult
     );
 
     let date: Date = "2024-01-15".parse()?;
-    let invalid = provider_error(api.historical_pair("EUR", "XYZ", date).fetch().await);
+    let invalid = provider_error(api.historical_pair("EUR", "XYZ", date).send().await);
     assert_eq!(
         invalid.meta.status,
         reqwest::StatusCode::UNPROCESSABLE_ENTITY
@@ -733,14 +744,14 @@ async fn b_one_fetch_is_one_attempt_and_a_clone_can_be_resent() -> TestResult {
     let request = local(&server).historical_pair("EUR", "USD", date);
 
     // The cut-off body is one failed attempt with its head kept; the SDK does not retry.
-    let (source, meta) = concord_error(request.clone().fetch().await);
+    let (source, meta) = concord_error(request.clone().send().await);
     assert_eq!(source.kind(), ErrorKind::Transport, "{source}");
     assert_eq!(meta.map(|m| m.status), Some(reqwest::StatusCode::OK));
     assert_eq!(server.requests().len(), 1);
     assert_eq!(script.remaining(), 1);
 
     // Retrying is the application's decision: the cloned request sends the same thing again.
-    let retried = request.fetch().await?;
+    let retried = request.send().await?;
     assert_eq!(retried.rate.rate, decimal("1.0942"));
     let requests = server.requests();
     assert_eq!(requests.len(), 2);
@@ -758,8 +769,8 @@ async fn b_latest_and_historical_share_one_client_concurrently() -> TestResult {
     let date: Date = "2024-01-15".parse()?;
 
     let (latest, historical) = tokio::join!(
-        api.latest_pair("EUR", "USD").fetch(),
-        worker.historical_pair("EUR", "USD", date).fetch(),
+        api.latest_pair("EUR", "USD").send(),
+        worker.historical_pair("EUR", "USD", date).send(),
     );
     assert_eq!(latest?.rate.date, "2026-03-25".parse::<Date>()?);
     assert_eq!(historical?.rate.date, date);

@@ -10,8 +10,8 @@ use concord_example_testserver::{Reply, TestServer};
 use concord_pagination::{PagesError, Resume};
 use concord_sdk_gitlab::link::{self, LinkError};
 use concord_sdk_gitlab::{
-    Call, ErrorBody, ErrorMessage, GitLab, GitLabError, InputError, IssueIid, IssueOrder,
-    IssueState, Labels, PaginationProblem, PerPage, PrivateToken, ProjectRef, SortOrder,
+    ErrorBody, ErrorMessage, GitLab, GitLabError, InputError, IssueIid, IssueOrder, IssueState,
+    Labels, PaginationProblem, PerPage, PrivateToken, ProjectRef, SortOrder,
 };
 use support::*;
 
@@ -39,7 +39,7 @@ async fn the_issue_listing_on_the_wire() {
         .set_order_by(IssueOrder::UpdatedAt)
         .set_sort(SortOrder::Asc)
         .set_per_page(PerPage::new(50).unwrap())
-        .call()
+        .send()
         .await
         .unwrap();
     assert_eq!(page.value.len(), 2);
@@ -123,14 +123,14 @@ async fn one_issue_and_one_project_on_the_wire() {
     let issue = gitlab
         .project(widgets())
         .issue(IssueIid::new(2).unwrap())
-        .call()
+        .send()
         .await
         .unwrap()
         .into_value();
     let project = gitlab
         .project(ProjectRef::id(PROJECT_ID).unwrap())
         .get()
-        .call()
+        .send()
         .await
         .unwrap()
         .into_value();
@@ -201,7 +201,7 @@ async fn documented_error_documents_are_kept_with_their_status() {
         let error = gitlab
             .project(widgets())
             .issue(IssueIid::new(2).unwrap())
-            .call()
+            .send()
             .await
             .unwrap_err();
         assert_eq!(error.status().map(|s| s.as_u16()), Some(status));
@@ -237,7 +237,7 @@ async fn the_error_display_names_the_operation_and_status_only() {
     let error = gitlab
         .project(widgets())
         .issue(IssueIid::new(2).unwrap())
-        .call()
+        .send()
         .await
         .unwrap_err();
     assert_eq!(
@@ -250,7 +250,7 @@ async fn the_error_display_names_the_operation_and_status_only() {
 async fn a_rate_limit_keeps_retry_after_and_the_unrecognized_body() {
     let (_server, gitlab) =
         scripted([Reply::text(429, "text/plain", RATE_LIMITED).header("retry-after", "30")]).await;
-    let error = gitlab.project(widgets()).issues().call().await.unwrap_err();
+    let error = gitlab.project(widgets()).issues().send().await.unwrap_err();
     assert_eq!(error.meta().and_then(|m| m.retry_after()), Some(30));
     let GitLabError::Api(api) = error else {
         panic!("an API error");
@@ -268,14 +268,14 @@ async fn a_proxy_page_and_an_oversized_body_are_not_error_documents() {
         json(500, &vec![b' '; 64 * 1024 + 1]),
     ])
     .await;
-    let proxy = gitlab.project(widgets()).issues().call().await.unwrap_err();
+    let proxy = gitlab.project(widgets()).issues().send().await.unwrap_err();
     let GitLabError::Api(api) = proxy else {
         panic!("an API error");
     };
     assert_eq!(api.status.as_u16(), 502);
     assert!(matches!(api.body, ErrorBody::Unrecognized(_)) && api.message().is_none());
 
-    let large = gitlab.project(widgets()).issues().call().await.unwrap_err();
+    let large = gitlab.project(widgets()).issues().send().await.unwrap_err();
     let GitLabError::Api(api) = large else {
         panic!("an API error");
     };
@@ -285,7 +285,7 @@ async fn a_proxy_page_and_an_oversized_body_are_not_error_documents() {
 #[tokio::test]
 async fn a_2xx_that_is_not_json_is_refused_before_its_body_is_read() {
     let (_server, gitlab) = scripted([Reply::text(200, "text/html", PROXY_ERROR)]).await;
-    let error = gitlab.project(widgets()).issues().call().await.unwrap_err();
+    let error = gitlab.project(widgets()).issues().send().await.unwrap_err();
     assert_eq!(error.request_kind(), Some(ErrorKind::Metadata));
     assert_eq!(error.meta().map(|m| m.status().as_u16()), Some(200));
 }
@@ -294,7 +294,7 @@ async fn a_2xx_that_is_not_json_is_refused_before_its_body_is_read() {
 async fn a_malformed_2xx_body_is_a_decode_error_with_its_metadata() {
     let (_server, gitlab) =
         scripted([json(200, MALFORMED).header("x-request-id", "req-fixture-malformed")]).await;
-    let error = gitlab.project(widgets()).issues().call().await.unwrap_err();
+    let error = gitlab.project(widgets()).issues().send().await.unwrap_err();
     assert_eq!(error.request_kind(), Some(ErrorKind::Decode));
     assert_eq!(
         error.meta().and_then(|m| m.request_id()),
@@ -305,7 +305,7 @@ async fn a_malformed_2xx_body_is_a_decode_error_with_its_metadata() {
 #[tokio::test]
 async fn a_transport_failure_has_no_metadata_and_no_url() {
     let (_server, gitlab) = scripted([Reply::hang_up()]).await;
-    let error = gitlab.project(widgets()).issues().call().await.unwrap_err();
+    let error = gitlab.project(widgets()).issues().send().await.unwrap_err();
     assert_eq!(error.request_kind(), Some(ErrorKind::Transport));
     assert!(error.meta().is_none());
     let shown = format!("{error} {error:?}");
@@ -483,7 +483,7 @@ async fn page_metadata_never_prints_a_url() {
         "<http://127.0.0.1:1/api/v4/projects/1/issues?search=private-term&page=1>; rel=\"first\"",
     )])
     .await;
-    let page = gitlab.project(widgets()).issues().call().await.unwrap();
+    let page = gitlab.project(widgets()).issues().send().await.unwrap();
     let shown = format!("{:?}", page.meta);
     assert!(
         !shown.contains("private-term") && !shown.contains("127.0.0.1"),
@@ -557,7 +557,7 @@ async fn a_same_origin_redirect_is_followed_and_a_foreign_one_is_not() {
     let issue = gitlab
         .project(old.clone())
         .issue(IssueIid::new(2).unwrap())
-        .call()
+        .send()
         .await
         .unwrap();
     assert_eq!(issue.value.iid.get(), 2);
@@ -568,7 +568,7 @@ async fn a_same_origin_redirect_is_followed_and_a_foreign_one_is_not() {
     let error = gitlab
         .project(old)
         .issue(IssueIid::new(2).unwrap())
-        .call()
+        .send()
         .await
         .unwrap_err();
     assert_eq!(error.status().map(|s| s.as_u16()), Some(302));
@@ -597,7 +597,7 @@ async fn control_the_default_redirect_policy_forwards_the_token() {
     gitlab
         .project(widgets())
         .issue(IssueIid::new(2).unwrap())
-        .call()
+        .send()
         .await
         .unwrap();
     assert_eq!(elsewhere.single().header("private-token"), Some(TOKEN));

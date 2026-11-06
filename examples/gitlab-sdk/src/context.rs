@@ -3,7 +3,6 @@
 use std::fmt;
 
 use crate::api::GitLab;
-use crate::call::Call;
 use crate::error::GitLabError;
 use crate::meta::Response;
 use crate::models::{Issue, Project};
@@ -112,11 +111,11 @@ impl GitLab {
         let issue = self
             .project(project)
             .issue(iid)
-            .call()
+            .send()
             .await
             .map_err(ContextError::Issue)?;
         let project_id = issue.value.project_id;
-        let project = match self.project(ProjectRef::Id(project_id)).get().call().await {
+        let project = match self.project(ProjectRef::Id(project_id)).get().send().await {
             Ok(project) => project,
             Err(error) => {
                 return Err(ContextError::Project {

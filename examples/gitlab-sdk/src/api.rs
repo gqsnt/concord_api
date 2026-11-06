@@ -1,9 +1,10 @@
 //! The Concord declaration of the slice, and the client's construction.
 //!
-//! Every operation is an ordinary generated endpoint: its setters, `prepare()` and `send()` (which
-//! returns `concord::Error`) stay available, and [`Call::call`](crate::Call::call) sends it with
-//! this SDK's error and metadata. Shared configuration lives where GitLab applies it: the token on
-//! the client, `projects/:id` on the project scope.
+//! Every operation is an ordinary generated endpoint with its setters, `prepare()` (the native
+//! request, `concord::Error`) and `send()`, which the client's send policy
+//! ([`SendPolicy`]) makes return this SDK's error and metadata. Shared
+//! configuration lives where GitLab applies it: the token on the client, `projects/:id` on the
+//! project scope.
 //!
 //! What the declaration deliberately does not have:
 //!
@@ -23,6 +24,7 @@ use crate::models::{Issue, Project};
 use crate::params::{
     IssueIid, IssueOrder, IssueState, Labels, PerPage, PrivateToken, ProjectRef, SortOrder,
 };
+use crate::send::SendPolicy;
 
 /// `PRIVATE-TOKEN` (HTTP/1.1 sends header names in lowercase; GitLab reads them
 /// case-insensitively).
@@ -37,12 +39,17 @@ concord::api! {
     ///
     /// Construct it with [`GitLab::with_token`]; a self-managed instance with
     /// `.with_base_url("https://gitlab.example.com/api/v4")?`.
+    ///
+    /// Every operation's `send()` returns `Result<`[`Response<T>`](crate::Response)`, `
+    /// [`GitLabError`](crate::GitLabError)`>` ([`SendPolicy`]). `with_base_url` and `prepare()`
+    /// return `concord::Error` (no request is sent).
     pub client GitLab(
         /// A personal, project or group access token, sent as `PRIVATE-TOKEN`. Never printed by
         /// Concord. Build it with [`PrivateToken`].
         #[sensitive] header(PRIVATE_TOKEN) token: HeaderValue,
     ) {
         base "https://gitlab.com/api/v4";
+        send SendPolicy;
         format Json;
 
         /// One project: `projects/:id`, the ID or the full path sent as one URL-encoded segment.

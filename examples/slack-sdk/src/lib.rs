@@ -19,6 +19,13 @@ use concord::{Endpoint, reqwest};
 use pagination::{Page, Pages, Resume};
 use wire::{Envelope, SlackApi};
 
+/// Maximum bytes of a 2xx body decoded per request (16 MiB). An SDK safety bound against an
+/// endpoint that never stops sending, not a Slack-documented size: a larger body is
+/// [`Error::Concord`] with `ErrorKind::Limit` and the response metadata, and nothing beyond the
+/// limit is read. A full `users.list` page at `limit` 1000 is expected to be far smaller; lower
+/// [`UsersOptions::limit`] if a page reaches it.
+pub const SUCCESS_BODY_LIMIT: usize = 16 * 1024 * 1024;
+
 /// A completely decoded, successful response. Warnings are preserved even when `ok` is true.
 #[derive(Debug)]
 pub struct Response<T> {
@@ -245,10 +252,13 @@ async fn execute<T>(endpoint: impl Endpoint<Envelope<T>>) -> Result<Response<T>,
             }
         });
     }
-    let envelope = received.decode().await.map_err(|error| Error::Concord {
-        error,
-        meta: Some(Box::new(meta.clone())),
-    })?;
+    let envelope = received
+        .decode_limited(SUCCESS_BODY_LIMIT)
+        .await
+        .map_err(|error| Error::Concord {
+            error,
+            meta: Some(Box::new(meta.clone())),
+        })?;
     if !envelope.ok {
         return Err(match envelope.into_provider() {
             Ok(error) => Error::Api {

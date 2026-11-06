@@ -140,3 +140,9 @@ are concrete, documented adoption costs rather than failed SDK promises:
   one issue, receives a 429, reads both layers, and explicitly retries only the
   returned continuation. No manual page URL or operation identity is constructed
   in the application traversal.
+
+## Between waves 2-3 (coordinator integration)
+
+`Call::call()` is now the generated `send()` (client statement `send SendPolicy;`). The tests
+in `tests/first_use.rs` call `.send()`, and the Concord-only comparison calls
+`prepare()?.send()`; expected values are unchanged. See [INTEGRATION.md](INTEGRATION.md).
