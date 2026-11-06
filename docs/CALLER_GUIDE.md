@@ -482,7 +482,36 @@ assert_eq!(stream.position().records, 2);
 ```
 
 A `-> stream` endpoint without an item returns the unread `Incoming` body; open it with the reader
-the SDK documents (`CsvReader::open`, `JsonLinesReader::open`, `JsonValuesReader::open`).
+the SDK documents (`CsvReader::open`, `JsonLinesReader::open`, `JsonValuesReader::open`,
+`SseReader::open`).
+
+**Server-sent events** (`concord::sse`, feature `sse`). An endpoint declared
+`-> stream sse::Event` with `response Sse;` returns `SseEvents`: each `next()` is one dispatched
+event with its type (`event()`, `message` by default), its `data()` as text — the SDK or you
+decode it — and the last event ID (`id()`). `last_event_id()` is the ID as of the last complete
+event, the value to resume from; `retry()` is the server's reconnection hint. The reader never
+reconnects. Where a browser repairs silently, it fails: invalid UTF-8, a body that ends inside an
+event and an event over 1 MiB are terminal errors, so only `completion() == EndOfInput` proves the
+stream ended at an event boundary.
+
+Excerpt of `checks/phase-a/tests/sse.rs`, after `let mut events = api(&server).live().send().await.unwrap();`:
+
+```rust
+let first = events.next().await.unwrap().unwrap();
+assert_eq!(
+    (first.event(), first.data(), first.id()),
+    ("update", "{\"id\":1}", "41")
+);
+let second = events.next().await.unwrap().unwrap();
+assert_eq!(
+    (second.event(), second.data(), second.id()),
+    ("message", "{\"id\":2}\n{\"id\":3}", "42")
+);
+assert!(events.next().await.is_none());
+assert_eq!(events.completion(), Completion::EndOfInput);
+assert_eq!(events.last_event_id(), "42");
+assert_eq!(events.retry(), Some(Duration::from_millis(1500)));
+```
 
 Paged listings from an SDK are usually `concord_pagination::Pages` or `PageItems`: `Ok(None)`
 means the provider's last page was read; a configured cap reached while more pages exist, or a

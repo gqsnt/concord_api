@@ -1149,11 +1149,11 @@ fn main() -> Result<(), concord::Error> {
 
 An endpoint whose useful result is read as it arrives (a watch, an export, a log) declares it.
 `-> stream T` names the item and needs a format implementing `Incremental<T>` (`Csv<..>`,
-`JsonLines`, `Ndjson`, `JsonStream` for consecutive JSON values, or your own): `send()` checks the
-status and the head, then returns the format's reader **without reading the body**. `-> stream`
-without an item returns the unread `Incoming` body, for a reader whose options are known only at
-run time. Neither drains: draining is what an endpoint without `->` does, and a watch declared that
-way would discard its events.
+`JsonLines`, `Ndjson`, `JsonStream` for consecutive JSON values, `Sse` for server-sent events, or
+your own): `send()` checks the status and the head, then returns the format's reader **without
+reading the body**. `-> stream` without an item returns the unread `Incoming` body, for a reader
+whose options are known only at run time. Neither drains: draining is what an endpoint without `->`
+does, and a watch declared that way would discard its events.
 
 Excerpt of `checks/phase-a/src/lib.rs`:
 
@@ -1169,6 +1169,8 @@ Excerpt of `checks/phase-a/src/lib.rs`:
         }
         /// Audit lines (JSON Lines).
         GET audit() -> stream Row { path "audit"; response JsonLines; }
+        /// Live report updates (server-sent events; the SDK decodes each `data`).
+        GET live() -> stream sse::Event { path "live"; response Sse; }
         /// A job export whose dialect is known only at run time.
         GET export(id: String) -> stream { path "jobs/{id}/export"; }
 ```
@@ -1179,6 +1181,22 @@ being read; only the first proves every record was seen. `into_stream()` turns a
 standard `futures_core::Stream` with the same errors (a recoverable JSON Lines line error does not
 end it) and a cancellation-safe pending read. Reconnecting a watch, resuming an export and
 deduplicating replays stay the SDK's or the application's policy.
+
+**Server-sent events** (`concord::sse`, feature `sse`). `response Sse;` frames a
+`text/event-stream` body as the WHATWG HTML standard interprets it (one leading byte order mark,
+CR/LF/CRLF line ends split anywhere, comments, `event`/`data`/`id`/`retry`, dispatch on a blank
+line) and yields `sse::Event` values: type, `data` as text, last event ID. It does **not** decode
+`data`; the SDK parses it (`serde_json::from_str(event.data())`) and keeps its own distinction
+between a malformed payload and one of the wrong shape. Concord is stricter than a browser where a
+silent repair would lose an event unnoticed: invalid UTF-8, a body ending inside a line or inside
+an event (fields without their blank line), and an event over `max_event_bytes` (1 MiB by default)
+are terminal errors; only a body ending at an event boundary completes. The head check requires
+exactly one `text/event-stream` `Content-Type`, charset absent or UTF-8, and `Accept:
+text/event-stream` is suggested. For other limits (`SseOptions::max_event_bytes`, `max_events`),
+declare `-> stream` and open the `Incoming` body with `SseReader::new(options).open(body)`; for a
+body source of your own (one that keeps your transport error type, say), `SseReader::read(source)`
+takes any `stream::ByteSource` and checks neither status nor head. The reader does not reconnect:
+`last_event_id()` and `retry()` give the SDK what a reconnect policy needs.
 
 ### 5.10 Bodies whose media type is known at run time
 

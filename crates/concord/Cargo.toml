@@ -32,6 +32,8 @@ stream = ["extras", "concord-extras/stream"]
 csv = ["stream", "concord-extras/csv"]
 ## `concord::jsonl`: JSON Lines / NDJSON and consecutive JSON values (implies `stream`).
 jsonl = ["stream", "concord-extras/jsonl"]
+## `concord::sse`: server-sent events (`text/event-stream`) read incrementally (implies `stream`).
+sse = ["stream", "concord-extras/sse"]
 ## Enables reqwest's own default features (TLS, HTTP/2, charset, system proxy).
 ## Disable it to choose reqwest features yourself in your own Cargo.toml.
 reqwest-defaults = ["concord-core/reqwest-defaults"]

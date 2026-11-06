@@ -130,16 +130,18 @@ step test-extras-none cargo test --locked -p concord-extras --no-default-feature
 step test-extras-json cargo test --locked -p concord-extras --no-default-features --features json
 step test-extras-form cargo test --locked -p concord-extras --no-default-features --features form
 # The incremental-body infrastructure alone, and each streaming format alone (CSV without
-# serde_json, JSON Lines without csv), so neither can lean on the other's dependencies.
+# serde_json, JSON Lines without csv, server-sent events without serde), so none can lean on
+# another's dependencies.
 step test-extras-stream cargo test --locked -p concord-extras --no-default-features --features stream
 step test-extras-csv cargo test --locked -p concord-extras --no-default-features --features csv
 step test-extras-jsonl cargo test --locked -p concord-extras --no-default-features --features jsonl
+step test-extras-sse cargo test --locked -p concord-extras --no-default-features --features sse
 # The pagination crate alone (it has no features and knows no Concord crate).
 step test-pagination cargo test --locked -p concord-pagination
 # Lints of the feature subsets the workspace build unifies away (code used only by some formats).
 clippy_features() {
   local features
-  for features in "" json form stream csv jsonl; do
+  for features in "" json form stream csv jsonl sse; do
     cargo clippy --locked -p concord-extras --no-default-features ${features:+--features "$features"} \
       --all-targets -- -D warnings || return 1
   done
@@ -206,7 +208,8 @@ step doc-extras-only env RUSTDOCFLAGS="-D warnings" cargo doc --locked -p concor
 step doc-core env RUSTDOCFLAGS="-D warnings" cargo doc --locked -p concord-core --no-deps
 step doc-extras env RUSTDOCFLAGS="-D warnings" cargo doc --locked -p concord-extras --no-deps --all-features
 step doc-extras-none env RUSTDOCFLAGS="-D warnings" cargo doc --locked -p concord-extras --no-deps --no-default-features
-step doc-streaming env RUSTDOCFLAGS="-D warnings" cargo doc --locked -p concord --no-deps --no-default-features --features csv,jsonl
+step doc-extras-sse env RUSTDOCFLAGS="-D warnings" cargo doc --locked -p concord-extras --no-deps --no-default-features --features sse
+step doc-streaming env RUSTDOCFLAGS="-D warnings" cargo doc --locked -p concord --no-deps --no-default-features --features csv,jsonl,sse
 step doc-pagination env RUSTDOCFLAGS="-D warnings" cargo doc --locked -p concord-pagination --no-deps
 
 if [[ $bench == 1 ]]; then

@@ -205,9 +205,10 @@
 //!   of your own work the same way.
 //! - `form`: the `Form` format, `application/x-www-form-urlencoded` via serde and
 //!   serde_urlencoded. Off by default, like reqwest's own `form` feature. Implies `extras`.
-//! - `stream`, `csv`, `jsonl`: incremental bodies (`concord::stream`), `concord::csv` and
-//!   `concord::jsonl`; each implies `extras`, **not** `json` — with `default-features = false`,
-//!   add `json` too if the same client also decodes JSON documents.
+//! - `stream`, `csv`, `jsonl`, `sse`: incremental bodies (`concord::stream`), `concord::csv`,
+//!   `concord::jsonl` and `concord::sse` (server-sent events); each implies `extras`, **not**
+//!   `json` — with `default-features = false`, add `json` too if the same client also decodes
+//!   JSON documents.
 //! - `reqwest-defaults` (default): reqwest's default features (TLS, HTTP/2, system proxy).
 //!   Disable it to choose reqwest's features in your own `Cargo.toml`.
 
@@ -225,6 +226,8 @@ pub use concord_extras::Json;
 pub use concord_extras::csv;
 #[cfg(feature = "jsonl")]
 pub use concord_extras::jsonl;
+#[cfg(feature = "sse")]
+pub use concord_extras::sse;
 #[cfg(feature = "stream")]
 pub use concord_extras::stream;
 #[cfg(feature = "extras")]

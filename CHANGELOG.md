@@ -42,6 +42,13 @@ Not released: the version is unchanged (4.2.0) and no release has been decided. 
 - **Bounded body reads.** `Received::bytes_limited(n)` reads a body (any status) up to `n` bytes,
   `ErrorKind::Limit` beyond: for provider error documents. `Received::decode_limited(n)` decodes a
   finite output with the same bound.
+- **Server-sent events.** Feature `sse` of `concord-extras` (facade: `concord::sse`): `SseReader`
+  (`open`, `read`) → `SseEvents` (`next`, `completion`, `position`, `last_event_id`, `retry`,
+  `into_stream`, `into_source`), `Event` (`event`, `data`, `id`) and the `Sse` format
+  (`-> stream sse::Event` with `response Sse;`). WHATWG framing, no decoding of `data`; stricter
+  than a browser: invalid UTF-8, a body ending inside a line or an event, and an event over
+  `max_event_bytes` (1 MiB) or past `max_events` are terminal errors. `examples/openai-sdk` reads
+  its event stream with it.
 
 ### Changed
 

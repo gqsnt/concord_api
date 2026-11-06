@@ -1,5 +1,5 @@
 //! Incremental bodies: the infrastructure shared by the streaming formats (feature `stream`, implied
-//! by `csv` and `jsonl`).
+//! by `csv`, `jsonl` and `sse`).
 //!
 //! The finite formats ([`Decode`](concord_core::Decode)) receive a body Concord has already
 //! collected. The readers of this crate instead **open** a native `reqwest::Response` — obtained
@@ -29,15 +29,27 @@
 //! errors that may quote body content or URLs are reachable only through
 //! [`ReadError::source_unredacted`].
 
-// The internals below serve the formats (`csv`, `jsonl`); `stream` alone exposes only the public
-// types, so they are unused there.
-#[cfg_attr(not(any(feature = "csv", feature = "jsonl")), allow(dead_code))]
+// The internals below serve the formats (`csv`, `jsonl`, `sse`; uploads only the first two);
+// `stream` alone exposes only the public types, so they are unused there.
+#[cfg_attr(
+    not(any(feature = "csv", feature = "jsonl", feature = "sse")),
+    allow(dead_code)
+)]
 mod driver;
-#[cfg_attr(not(any(feature = "csv", feature = "jsonl")), allow(dead_code))]
+#[cfg_attr(
+    not(any(feature = "csv", feature = "jsonl", feature = "sse")),
+    allow(dead_code)
+)]
 mod error;
-#[cfg_attr(not(any(feature = "csv", feature = "jsonl")), allow(dead_code))]
+#[cfg_attr(
+    not(any(feature = "csv", feature = "jsonl", feature = "sse")),
+    allow(dead_code)
+)]
 mod open;
-#[cfg_attr(not(any(feature = "csv", feature = "jsonl")), allow(dead_code))]
+#[cfg_attr(
+    not(any(feature = "csv", feature = "jsonl", feature = "sse")),
+    allow(dead_code)
+)]
 mod records;
 mod source;
 #[cfg_attr(not(any(feature = "csv", feature = "jsonl")), allow(dead_code))]

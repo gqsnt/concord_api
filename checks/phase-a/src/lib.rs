@@ -3,6 +3,7 @@
 
 use concord::csv::{Csv, HasHeader, Semicolon};
 use concord::jsonl::{JsonLines, JsonStream};
+use concord::sse::{self, Sse};
 use concord::stream::Upload;
 use concord::{Encoded, EncodedBody, Json};
 use serde::{Deserialize, Serialize};
@@ -49,6 +50,8 @@ concord::api! {
         }
         /// Audit lines (JSON Lines).
         GET audit() -> stream Row { path "audit"; response JsonLines; }
+        /// Live report updates (server-sent events; the SDK decodes each `data`).
+        GET live() -> stream sse::Event { path "live"; response Sse; }
         /// A job export whose dialect is known only at run time.
         GET export(id: String) -> stream { path "jobs/{id}/export"; }
         /// Uploads a job export encoded at run time.

@@ -11,14 +11,15 @@
 //! | `jsonl::Ndjson` | `jsonl` | as `JsonLines`, `application/x-ndjson` | as `JsonLines` with `application/x-ndjson` or `application/ndjson`; blank lines ignored | `application/x-ndjson` |
 //! | [`IgnoreContentType<F>`] | — | `F`'s | `F`'s, without its `Content-Type` check | `F`'s |
 //! | `csv::Csv<H, D, P>` | `csv` | `Vec<T: Serialize>`, `csv::Rows`, a lazy `csv::StreamRows`, `csv::RawTable`; `text/csv; header=present\|absent` from `H` | `Vec<T: DeserializeOwned>`, `csv::RawTable`; exactly one `text/csv` (profile can relax), charset absent or UTF-8/US-ASCII, a `header=` parameter agreeing with `H`; also an incremental reader | `text/csv` |
+//! | `sse::Sse` | `sse` | — | none (incremental only: `-> stream sse::Event` returns `sse::SseEvents`); exactly one `text/event-stream`, charset absent or once and UTF-8 or US-ASCII | `text/event-stream` |
 //!
 //! Head checks run before the body is read; a refusal is an
 //! [`ErrorKind::Metadata`](concord_core::ErrorKind::Metadata) error that keeps the response
 //! unread. The `jsonl` module also reads JSON Lines and consecutive JSON values (a Kubernetes
-//! watch) incrementally as a response arrives, on the `stream` infrastructure. None of these
-//! formats is known to the `api!` macro: a statement names them by their
-//! type path (`format Json;`), exactly like a format of your own. Applications normally get them
-//! through the `concord` crate.
+//! watch) incrementally as a response arrives, on the `stream` infrastructure; the `sse` module
+//! reads server-sent events the same way. None of these formats is known to the `api!` macro: a
+//! statement names them by their type path (`format Json;`), exactly like a format of your own.
+//! Applications normally get them through the `concord` crate.
 
 mod binary;
 #[cfg(feature = "csv")]
@@ -32,6 +33,8 @@ mod json;
 #[cfg(feature = "jsonl")]
 pub mod jsonl;
 mod media;
+#[cfg(feature = "sse")]
+pub mod sse;
 #[cfg(feature = "stream")]
 pub mod stream;
 mod text;
