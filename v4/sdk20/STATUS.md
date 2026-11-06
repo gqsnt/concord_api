@@ -120,6 +120,37 @@ commit, so no baseline intervention was needed.
 | SDK19 | Microsoft Graph | large | 5 | `gpt-6-astra` xhigh (`e80ef9e3`) | Opus subagent, 18 tests, unassisted (`e23f95c2`) | `gpt-6.1-sol` xhigh (`a93ffad5`) | WAVE_5_ROLES_DONE (first pass), merged `48ba16f8` |
 | SDK20 | Docker Distribution Registry | large | 5 | Opus subagent (`bdea8b71`) | `gpt-6.1-sol` xhigh, 15 tests, unassisted (`e22a77be`) | `gpt-6.1-terra` xhigh (`a3c0b53a`) | WAVE_5_ROLES_DONE (first pass), merged `3479a367` |
 
+## SDK scope, workflows and test references
+
+Scope and workflows as locked in the handoff's `cohort/providers.json` (exclusions there); every
+SDK's tests run in the gate's workspace `test` step and alone in `test-examples-isolated`. Each SDK
+directory also holds README, PROVENANCE, FRICTION (author), FIRST_USE (independent consumer),
+MAINTENANCE (maintainer) and, where a between-wave change touched it, INTEGRATION. Live tier for
+all twenty: NOT_RUN (fixtures only; no credentials, no live calls).
+
+| ID | Provider | Scope | Workflows | Tests |
+|---|---|---|---|---|
+| SDK01 | Nager.Holidays | v4 holiday JSON array and country/year path; nullable subdivisions | A: Read holidays for one country and year; B: Read another country/year and filter known types | `examples/nager-holidays-sdk/tests/` `first_use.rs`, `protocol.rs`, `workflows.rs` |
+| SDK02 | PokéAPI | GET Pokémon resource; limit/offset and nullable next URL | A: Read named Pokémon; B: Follow list pages and retrieve selected detail | `examples/pokeapi-sdk/tests/` `first_use.rs`, `protocol.rs`, `workflows.rs` |
+| SDK03 | Twilio Messaging | form encoding; Basic auth; message resource | A: Submit a synthetic message; B: Retrieve message status and expose error | `examples/twilio-sdk/tests/` `first_use.rs`, `protocol.rs`, `workflows.rs` |
+| SDK04 | Amazon S3 | ListObjectsV2 XML pages; HeadObject, GetObject, PutObject; SigV4, bytes and XML errors | A: List prefix, HEAD object and conditionally or partially download; B: Put finite bytes and retrieve them | `examples/amazon-s3-sdk/tests/` `first_use.rs`, `protocol.rs`, `workflows.rs` |
+| SDK05 | Frankfurter | v2 JSON rate; decimal handling | A: Read latest pair rate; B: Read historical pair rate | `examples/frankfurter-sdk/tests/` `first_use.rs`, `protocol.rs`, `workflows.rs` |
+| SDK06 | GitLab | documented issue endpoint; Link pagination; encoded project path | A: Page through project issues; B: Retrieve issue and project context | `examples/gitlab-sdk/tests/` `first_use.rs`, `protocol.rs`, `workflows.rs` |
+| SDK07 | Slack Web API | cursor envelope; 200 error body; 429 and Retry-After | A: Page through users; B: Retrieve conversation information and surface application failure | `examples/slack-sdk/tests/` `cursors.rs`, `first_use.rs`, `protocol.rs`, `workflows.rs` |
+| SDK08 | OpenAI | Responses, Files and Batch; SSE, JSONL and multipart | A: Create ordinary and streaming Responses; B: Upload batch JSONL, poll batch and read output/error files | `examples/openai-sdk/tests/` `first_use.rs`, `protocol.rs`, `split_and_reorder.rs`, `workflows.rs` |
+| SDK09 | ntfy | SSE and JSON streams; bounded replay | A: Subscribe to SSE topic through cancellation; B: Offline publish then replay cached messages in JSON | `examples/ntfy-sdk/tests/` `first_use.rs`, `protocol.rs`, `workflows.rs` |
+| SDK10 | Linear | GraphQL variables; connection pagination; partial data and errors | A: Page issue connection; B: Fetch issue with selected fields | `examples/linear-sdk/tests/` `first_use.rs`, `protocol.rs`, `workflows.rs` |
+| SDK11 | Dropbox | per-request Select-User and Path-Root; error/request ID retention | A: List folder for one team member/root; B: List for another member/root concurrently | `examples/dropbox-sdk/tests/` `first_use.rs`, `maintenance.rs`, `protocol.rs`, `workflows.rs` |
+| SDK12 | Google Drive | v3 files and changes; multipart and resumable upload | A: List and retrieve metadata, multipart upload; B: Resume interrupted upload and consume changes feed | `examples/google-drive-sdk/tests/` `first_use.rs`, `maintenance.rs`, `protocol.rs`, `workflows.rs` |
+| SDK13 | Open-Meteo | forecast query; JSON and CSV response formats | A: Retrieve forecast as JSON; B: Read forecast CSV rows at runtime | `examples/open-meteo-sdk/tests/` `first_use.rs`, `maintenance.rs`, `protocol.rs`, `workflows.rs` |
+| SDK14 | Airtable | dynamic fields; opaque offset; query encoding | A: List records across offset-token pages; B: List with a filter or field selection | `examples/airtable-sdk/tests/` `first_use.rs`, `maintenance.rs`, `protocol.rs`, `workflows.rs` |
+| SDK15 | ClickHouse HTTP | HTTP query parameters and ID; CSV and line-delimited JSON streams; late errors | A: Parameterized SELECT returning runtime CSVWithNames or JSONEachRow; B: Stream JSONEachRow or CSV insert and query back | `examples/clickhouse-sdk/tests/` `first_use.rs`, `protocol.rs`, `workflows.rs` |
+| SDK16 | Snowflake SQL API | submit/status/result partitions/cancel; bounded independent fanout proved by metadata | A: Submit async statement, reuse first result and discover then fan out remaining partitions; B: Submit and explicitly cancel a separate long-running statement | `examples/snowflake-sdk/tests/` `first_use.rs`, `maintenance.rs`, `protocol.rs`, `workflows.rs` |
+| SDK17 | World Bank Indicators | Indicators API JSON metadata/data; nullable values | A: Read country indicator for one year; B: Read a time range across pages | `examples/world-bank-sdk/tests/` `first_use.rs`, `maintenance.rs`, `protocol.rs`, `workflows.rs` |
+| SDK18 | Notion | versioned data source, pages and blocks; typed properties and rich text | A: Query data source over pages and retrieve page; B: Traverse paginated block children and render selected rich text | `examples/notion-sdk/tests/` `first_use.rs`, `maintenance.rs`, `protocol.rs`, `workflows.rs` |
+| SDK19 | Microsoft Graph | user delta; groups and direct members; opaque links and object types | A: Sync users through delta and reuse final link; B: Enumerate groups and direct members | `examples/microsoft-graph-sdk/tests/` `first_use.rs`, `maintenance.rs`, `protocol.rs`, `workflows.rs` |
+| SDK20 | Docker Distribution Registry v2 | v2 catalog/tags/manifests/blobs; chunk upload and token challenge | A: Discover catalog and tags, retrieve manifest and verify referenced blobs; B: Upload chunked blob, resume and publish manifest in fake registry | `examples/distribution-registry-sdk/tests/` `first_use.rs`, `protocol.rs`, `workflows.rs` |
+
 ## Open issues (not fixed; tracked)
 
 | ID | Where | Issue | Status |
