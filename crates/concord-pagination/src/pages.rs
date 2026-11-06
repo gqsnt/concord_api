@@ -185,7 +185,7 @@ fn after_end<V, E, K: Clone>(
 /// traversal in a signature (`fn invoices(&self) -> Pages<Invoice, Cursor, Meta, Error>`); the
 /// price is that the factory and its futures must be `Send + 'static`, and the items `Send`.
 /// Each page request costs one heap allocation for its future (the engine's), plus one for the
-/// traversal when it is built.
+/// traversal when it is built and one when [`items`](Self::items) converts it.
 ///
 /// # The end is explicit
 ///

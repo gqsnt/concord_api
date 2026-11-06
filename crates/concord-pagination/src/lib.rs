@@ -3,8 +3,25 @@
 //! A traversal never knows Concord: an SDK adapter supplies a *factory* that turns a key into an
 //! owned future (typically a generated operation with the key set, then `send()` and a projection
 //! of the typed response into a [`Page`]). The crate schedules those futures, bounds them, orders
-//! their outcomes and reports what is left. It spawns no task, needs no runtime, requires neither
-//! `Send` nor `'static`, and never retries.
+//! their outcomes and reports what is left. It spawns no task, needs no runtime and never
+//! retries.
+//!
+//! # Ordinary use: reading a cursor listing
+//!
+//! | Type | What it is |
+//! |---|---|
+//! | [`Pages`] ([`Pages::new`]) | an owned dependent chain an SDK can name and return; [`next_page`](Pages::next_page) is `Ok(None)` only on provider exhaustion |
+//! | [`PageItems`] ([`Pages::items`]) | the same chain item by item, with item-level checkpoints |
+//! | [`ItemStream`] ([`PageItems::into_stream`]) | a `futures_core::Stream` of `Result<item, PagesError>` |
+//!
+//! The end is explicit: a cap (opt-in, [`Pages::max_pages`]; there is none by default) reached
+//! while the provider has a next page, and a failed page, are [`PagesError`]s carrying the page
+//! to continue from, and no call after them returns `Ok(None)`. `collect_complete` returns the
+//! whole listing or an [`Incomplete`] prefix with its error, never a silent prefix. The facade
+//! erases the factory and future types, so they must be `Send + 'static` (and the items `Send`);
+//! `finish` returns the engine's reports below.
+//!
+//! # The engine: every traversal shape
 //!
 //! | Entry point | Shape | Typical provider |
 //! |---|---|---|
@@ -14,12 +31,17 @@
 //! | [`first_page_then`] → [`Independent`] | the first page fixes the plan (a total), then independent keys | `total_pages` / `total_count` envelopes |
 //! | [`manifest_jobs`] → [`Jobs`] | a sequential manifest chain discovers job descriptors; each job runs a whole streamed download | result manifests listing result URLs |
 //!
-//! Each traversal has an `async fn next(&mut self)`, cheap `progress()` counters, a
-//! `checkpoint()` snapshot and `finish(self)`, which drops what is in flight and returns a report.
+//! Each engine traversal has an `async fn next(&mut self)` that returns `None` when it ended for
+//! *any* reason (exhaustion, budget, failure), cheap `progress()` counters, a `checkpoint()`
+//! snapshot and `finish(self)`, which drops what is in flight and returns a report whose
+//! [`Outcome`] says how it ended. Engine traversals require neither `Send` nor `'static`, and
+//! their types name the factory and future types. [`JobsReport::into_resume`] and
+//! [`IndependentReport::into_resume`] decompose a report without loss for a rerun.
 //!
 //! Keys (cursors, page numbers, job descriptors) must be `Clone`: the traversal keeps a copy of
 //! each admitted key until its outcome is emitted, to report failed and restart identities. Items,
-//! results and errors are moved, never cloned, and need no `Clone`, `Send` or `'static`.
+//! metadata, results and errors are moved, never cloned, and need no `Clone`; in the engine they
+//! need no `Send` or `'static` either.
 //!
 //! # Budgets and bounds
 //!
@@ -67,7 +89,9 @@
 //!
 //! # Cancellation
 //!
-//! `next` is cancellation-safe: owned futures stay in the traversal between calls. Dropping a
+//! `next` (and [`Pages::next_page`], [`PageItems::next`], and a pending `next()` of an
+//! [`ItemStream`]) is cancellation-safe: owned futures stay in the traversal between calls, so
+//! the following call resumes the same request instead of making another. Dropping a
 //! traversal (or `finish`) drops every owned future; nothing detached keeps fetching. Requests
 //! already transmitted may still execute on the server, and sink records already written stay
 //! written: a job cleans up its own partial output.
