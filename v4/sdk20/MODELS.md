@@ -87,5 +87,5 @@ commit; the coordinator commits their files and records it.
 | W4 consumer SDK16 Snowflake | Opus subagent | `claude-opus-5-5`, effort `xhigh` sent; answered by `claude-opus-5-5` (`agent-aab72449…`) | `work/w4-sdk16-snowflake` | `19ef84e3` (18 first-use tests, no intervention) | |
 | W4 consumer SDK15 ClickHouse | `gpt-6.1-sol` xhigh | `gpt-6.1-sol`, `xhigh`, workspace-write + `work/target-a`, network (session `01a1af9e-836f…`) | same | `699239c2` (17 first-use tests, no intervention), coordinator commit | |
 | W4 maintainer SDK15 ClickHouse | `gpt-6.1-terra` xhigh | `gpt-6.1-terra`, `xhigh`, workspace-write + `work/target-a`, network (session `01a1afa4-f459…`) | same | `2b584d4f` (completion classification repaired; wire tests), coordinator commit | |
-| W4 maintainer SDK16 Snowflake | `gpt-6.1-sol` xhigh | `gpt-6.1-sol`, `xhigh`, workspace-write + `work/target-b`, network (session `01a1afa6-6110…`) | same | | |
+| W4 maintainer SDK16 Snowflake | `gpt-6.1-sol` xhigh | `gpt-6.1-sol`, `xhigh`, workspace-write + `work/target-b`, network (session `01a1afa6-6110…`) | same | `1a78be4f` (returned links followed; race/partition coverage), coordinator commit | |
 | Between waves 4-5: R5 readers over a wrapped body | Opus subagent | running (transcript read at completion) | agent worktree | | |
