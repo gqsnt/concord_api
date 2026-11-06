@@ -409,6 +409,14 @@ and core Concord still sends one request per `send()`. Its README states the bou
 crate cannot check; the provider SDK examples (`examples/{github,stripe,shopify,salesforce,kubernetes}-sdk`)
 show adapters over real provider contracts.
 
+For `Link` headers, enable the crate's optional `link` feature and use
+[`concord_pagination::link`](../crates/concord-pagination/src/link.rs): pass all field values as
+byte slices and the response URL to `link::parse`. It returns ordered, resolved targets,
+relation types and raw parameters, or a redacted syntax error; `link::relation` distinguishes
+absent, one and several matches. GitHub, GitLab, Snowflake and the registry use this shared
+grammar while keeping relation selection, duplicate-target policy, origin/collection checks and
+partition-index rules in their SDKs. The feature adds only `url`, with no HTTP or Concord crate.
+
 ## Patterns from other APIs
 
 [`examples/compat`](../examples/compat) is a downstream crate (edition 2021, a private client) with

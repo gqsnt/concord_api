@@ -17,6 +17,7 @@ use std::fmt;
 
 use concord::reqwest::Url;
 use concord::reqwest::header::HeaderValue;
+use concord_pagination::link as syntax;
 
 /// The pagination relations of one response.
 #[derive(Clone, Default, PartialEq, Eq)]
@@ -112,8 +113,6 @@ impl fmt::Display for LinkError {
 
 impl std::error::Error for LinkError {}
 
-const RELATIONS: [&str; 4] = ["next", "prev", "first", "last"];
-
 /// Parses every `Link` header value of one response, resolving relative targets against
 /// `response_url`.
 ///
@@ -124,15 +123,10 @@ pub fn parse<'a>(
     values: impl IntoIterator<Item = &'a HeaderValue>,
     response_url: &Url,
 ) -> Result<Links, LinkError> {
-    let mut combined = String::new();
-    for value in values {
-        let text = value.to_str().map_err(|_| LinkError::NotText)?;
-        if !combined.is_empty() {
-            combined.push(',');
-        }
-        combined.push_str(text);
-    }
-    parse_str(&combined, response_url)
+    project(syntax::parse(
+        values.into_iter().map(HeaderValue::as_bytes),
+        response_url,
+    )?)
 }
 
 /// Parses one (combined) `Link` field value. See [`parse`].
@@ -141,154 +135,41 @@ pub fn parse<'a>(
 ///
 /// A [`LinkError`].
 pub fn parse_str(text: &str, response_url: &Url) -> Result<Links, LinkError> {
-    let bytes = text.as_bytes();
-    let mut links = Links::default();
-    let mut i = 0;
-    loop {
-        // Separators and optional whitespace between link-values (empty list elements allowed).
-        while i < bytes.len() && matches!(bytes[i], b' ' | b'\t' | b',') {
-            i += 1;
-        }
-        if i >= bytes.len() {
-            return Ok(links);
-        }
-        if bytes[i] != b'<' {
-            return Err(LinkError::ExpectedTarget { at: i });
-        }
-        let start = i;
-        let end = text[i + 1..]
-            .find('>')
-            .map(|offset| i + 1 + offset)
-            .ok_or(LinkError::Unterminated { at: start })?;
-        let target = &text[i + 1..end];
-        i = end + 1;
-        let mut rels: Vec<String> = Vec::new();
-        // Parameters until the next top-level comma or the end.
-        loop {
-            while i < bytes.len() && matches!(bytes[i], b' ' | b'\t') {
-                i += 1;
-            }
-            if i >= bytes.len() || bytes[i] == b',' {
-                break;
-            }
-            if bytes[i] != b';' {
-                return Err(LinkError::Parameter { at: i });
-            }
-            i += 1;
-            while i < bytes.len() && matches!(bytes[i], b' ' | b'\t') {
-                i += 1;
-            }
-            let name_start = i;
-            while i < bytes.len() && is_tchar(bytes[i]) {
-                i += 1;
-            }
-            if i == name_start {
-                // `;` followed by nothing, or by a non-token: tolerate a trailing `;` only.
-                if i >= bytes.len() || bytes[i] == b',' {
-                    break;
-                }
-                return Err(LinkError::Parameter { at: i });
-            }
-            let name = text[name_start..i].to_ascii_lowercase();
-            while i < bytes.len() && matches!(bytes[i], b' ' | b'\t') {
-                i += 1;
-            }
-            let mut value = None;
-            if i < bytes.len() && bytes[i] == b'=' {
-                i += 1;
-                while i < bytes.len() && matches!(bytes[i], b' ' | b'\t') {
-                    i += 1;
-                }
-                if i < bytes.len() && bytes[i] == b'"' {
-                    let quote = i;
-                    i += 1;
-                    let mut out = String::new();
-                    loop {
-                        match bytes.get(i) {
-                            None => return Err(LinkError::Unterminated { at: quote }),
-                            Some(b'"') => {
-                                i += 1;
-                                break;
-                            }
-                            Some(b'\\') => {
-                                let escaped = bytes
-                                    .get(i + 1)
-                                    .ok_or(LinkError::Unterminated { at: quote })?;
-                                out.push(char::from(*escaped));
-                                i += 2;
-                            }
-                            Some(&c) => {
-                                out.push(char::from(c));
-                                i += 1;
-                            }
-                        }
-                    }
-                    value = Some(out);
-                } else {
-                    let value_start = i;
-                    while i < bytes.len() && is_tchar(bytes[i]) {
-                        i += 1;
-                    }
-                    if i == value_start {
-                        return Err(LinkError::Parameter { at: i });
-                    }
-                    value = Some(text[value_start..i].to_owned());
-                }
-            }
-            // RFC 8288 §3.3: only the first `rel` parameter counts.
-            if name == "rel"
-                && rels.is_empty()
-                && let Some(value) = value
-            {
-                rels = value
-                    .split_ascii_whitespace()
-                    .map(str::to_ascii_lowercase)
-                    .collect();
-            }
-        }
-        let wanted: Vec<&'static str> = RELATIONS
-            .iter()
-            .copied()
-            .filter(|r| rels.iter().any(|rel| rel == r))
-            .collect();
-        if wanted.is_empty() {
-            continue;
-        }
-        let url = response_url.join(target).map_err(|_| LinkError::Url)?;
-        for rel in wanted {
-            let slot = match rel {
-                "next" => &mut links.next,
-                "prev" => &mut links.prev,
-                "first" => &mut links.first,
-                _ => &mut links.last,
-            };
-            match slot {
-                Some(existing) if *existing != url => return Err(LinkError::Conflict { rel }),
-                Some(_) => {}
-                None => *slot = Some(url.clone()),
-            }
+    project(syntax::parse([text.as_bytes()], response_url)?)
+}
+
+// Keep the SDK's public diagnostics and relation/ambiguity policy; grammar lives in pagination.
+impl From<syntax::LinkError> for LinkError {
+    fn from(error: syntax::LinkError) -> Self {
+        match error {
+            syntax::LinkError::NotText { .. } => Self::NotText,
+            syntax::LinkError::ExpectedTarget { at } => Self::ExpectedTarget { at },
+            syntax::LinkError::Unterminated { at } => Self::Unterminated { at },
+            syntax::LinkError::Parameter { at } => Self::Parameter { at },
+            syntax::LinkError::Url { .. } => Self::Url,
         }
     }
 }
 
-/// RFC 9110 `tchar`.
-fn is_tchar(c: u8) -> bool {
-    c.is_ascii_alphanumeric()
-        || matches!(
-            c,
-            b'!' | b'#'
-                | b'$'
-                | b'%'
-                | b'&'
-                | b'\''
-                | b'*'
-                | b'+'
-                | b'-'
-                | b'.'
-                | b'^'
-                | b'_'
-                | b'`'
-                | b'|'
-                | b'~'
-        )
+fn project(parsed: Vec<syntax::Link>) -> Result<Links, LinkError> {
+    let mut links = Links::default();
+    for link in parsed {
+        for (rel, slot) in [
+            ("next", &mut links.next),
+            ("prev", &mut links.prev),
+            ("first", &mut links.first),
+            ("last", &mut links.last),
+        ] {
+            if link.has_relation(rel) {
+                match slot {
+                    Some(existing) if *existing != link.target => {
+                        return Err(LinkError::Conflict { rel });
+                    }
+                    Some(_) => {}
+                    None => *slot = Some(link.target.clone()),
+                }
+            }
+        }
+    }
+    Ok(links)
 }

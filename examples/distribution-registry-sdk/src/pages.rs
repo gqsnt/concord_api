@@ -28,7 +28,7 @@ use std::sync::Arc;
 
 use concord::reqwest::Url;
 use concord::reqwest::header::{HeaderMap, LINK};
-use concord_pagination::{Page, Pages, Resume};
+use concord_pagination::{Page, Pages, Resume, link};
 
 use crate::auth::Access;
 use crate::client::{Registry, Repository};
@@ -275,105 +275,19 @@ fn check_link(registry: &Registry, collection: &str, url: &Url) -> Result<(), Pr
 /// are [`ProtocolProblem::MalformedLink`]. Other relations are ignored; only the first `rel`
 /// parameter of a link counts, and it may list several relation types.
 pub(crate) fn parse_next(headers: &HeaderMap, base: &Url) -> Result<Option<Url>, ProtocolProblem> {
-    let mut combined = String::new();
-    for value in headers.get_all(LINK) {
-        let text = value.to_str().map_err(|_| ProtocolProblem::MalformedLink)?;
-        if !combined.is_empty() {
-            combined.push(',');
-        }
-        combined.push_str(text);
-    }
-    let malformed = ProtocolProblem::MalformedLink;
-    let bytes = combined.as_bytes();
-    let mut at = 0;
-    let mut next: Option<Url> = None;
-    let skip_ows = |at: &mut usize| {
-        while *at < bytes.len() && matches!(bytes[*at], b' ' | b'\t') {
-            *at += 1;
-        }
-    };
-    loop {
-        while at < bytes.len() && matches!(bytes[at], b' ' | b'\t' | b',') {
-            at += 1;
-        }
-        if at == bytes.len() {
-            break;
-        }
-        if bytes[at] != b'<' {
-            return Err(malformed);
-        }
-        let end = combined[at..].find('>').ok_or(malformed.clone())? + at;
-        let target = &combined[at + 1..end];
-        at = end + 1;
-        let mut rel: Option<String> = None;
-        loop {
-            skip_ows(&mut at);
-            if bytes.get(at) != Some(&b';') {
-                break;
+    let links = link::parse(
+        headers.get_all(LINK).iter().map(|value| value.as_bytes()),
+        base,
+    )
+    .map_err(|_| ProtocolProblem::MalformedLink)?;
+    // Identical repeated targets are harmless; distinct next targets are ambiguous.
+    let mut next = None;
+    for link in links.into_iter().filter(|link| link.has_relation("next")) {
+        match &next {
+            Some(existing) if *existing != link.target => {
+                return Err(ProtocolProblem::MalformedLink);
             }
-            at += 1;
-            skip_ows(&mut at);
-            let start = at;
-            while at < bytes.len()
-                && (bytes[at].is_ascii_alphanumeric() || b"!#$&+-.^_`|~*".contains(&bytes[at]))
-            {
-                at += 1;
-            }
-            if start == at {
-                return Err(malformed);
-            }
-            let name = combined[start..at].to_ascii_lowercase();
-            skip_ows(&mut at);
-            let mut value = String::new();
-            if bytes.get(at) == Some(&b'=') {
-                at += 1;
-                skip_ows(&mut at);
-                if bytes.get(at) == Some(&b'"') {
-                    at += 1;
-                    loop {
-                        match bytes.get(at) {
-                            None => return Err(malformed),
-                            Some(b'"') => {
-                                at += 1;
-                                break;
-                            }
-                            Some(b'\\') => {
-                                let escaped = *bytes.get(at + 1).ok_or(malformed.clone())?;
-                                value.push(char::from(escaped));
-                                at += 2;
-                            }
-                            Some(&byte) => {
-                                value.push(char::from(byte));
-                                at += 1;
-                            }
-                        }
-                    }
-                } else {
-                    let start = at;
-                    while at < bytes.len() && !matches!(bytes[at], b';' | b',' | b' ' | b'\t') {
-                        at += 1;
-                    }
-                    value.push_str(&combined[start..at]);
-                }
-            }
-            if name == "rel" && rel.is_none() {
-                rel = Some(value);
-            }
-        }
-        skip_ows(&mut at);
-        if at < bytes.len() && bytes[at] != b',' {
-            return Err(malformed);
-        }
-        let is_next = rel.as_deref().is_some_and(|rel| {
-            rel.split_ascii_whitespace()
-                .any(|r| r.eq_ignore_ascii_case("next"))
-        });
-        if is_next {
-            let url = base.join(target).map_err(|_| malformed.clone())?;
-            match &next {
-                Some(existing) if *existing != url => return Err(malformed),
-                _ => next = Some(url),
-            }
+            _ => next = Some(link.target),
         }
     }
     Ok(next)
