@@ -3,15 +3,13 @@
 #![allow(missing_docs)]
 
 use concord::{
-    Binary, Endpoint, Incremental, Json, Received, SendWith,
-    bytes::Bytes,
+    Binary, Endpoint, Json, Received, SendWith,
     multipart::{Multipart, MultipartBody},
     reqwest::{
         self,
         header::{AUTHORIZATION, HeaderValue},
     },
-    sse::{Sse, SseEvents, SseOptions, SseReader},
-    stream::{ByteSource, ReadErrorKind, SourceError},
+    sse::{SseEvents, SseOptions, SseReader},
 };
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -349,15 +347,14 @@ impl OpenAi {
             value: incoming,
             meta,
         } = self.api.response_stream(request).send().await?;
-        // Concord's `text/event-stream` head check (one Content-Type, charset absent or UTF-8).
-        <Sse as Incremental<concord::sse::Event>>::check_content_type(&incoming.head())
-            .map_err(|_| Error::Stream("expected text/event-stream".into()))?;
         let reader = SseReader::new(SseOptions::new().max_event_bytes(MAX_EVENT_BYTES));
+        // Concord's `text/event-stream` head check (one Content-Type, charset absent or UTF-8).
+        reader
+            .check_head(&incoming.head())
+            .map_err(|_| Error::Stream("expected text/event-stream".into()))?;
+        // The `Incoming` is the byte source: a broken body keeps Concord's own transport error.
         Ok(EventStream {
-            events: Some(reader.read(Body {
-                incoming,
-                failure: None,
-            })),
+            events: Some(reader.read(incoming)),
             meta,
         })
     }
@@ -479,25 +476,12 @@ pub enum Event {
 /// The largest SSE event being assembled (its `data` lines, event type and unfinished line).
 const MAX_EVENT_BYTES: usize = 1024 * 1024;
 
-/// The response body as a byte source for Concord's SSE reader. It keeps Concord's own transport
-/// error (naming `OpenAiApi.response_stream`, URL removed), which [`EventStream`] returns.
-struct Body {
-    incoming: concord::Incoming,
-    failure: Option<concord::Error>,
-}
-impl ByteSource for Body {
-    async fn next_chunk(&mut self) -> Result<Option<Bytes>, SourceError> {
-        self.incoming.chunk().await.map_err(|error| {
-            self.failure = Some(error);
-            SourceError::new("reading the response body failed")
-        })
-    }
-}
-
 /// Typed Responses events over Concord's SSE reader (`concord::sse`). EOF before a completion
 /// event is an error; every error except malformed event JSON ends the stream. Drop to cancel.
 pub struct EventStream {
-    events: Option<SseEvents<Body>>,
+    /// The reader over the `Incoming` body: a broken body's error is Concord's own (naming
+    /// `OpenAiApi.response_stream`, URL removed), which [`EventStream::next`] returns.
+    events: Option<SseEvents<concord::Incoming>>,
     pub meta: ResponseMeta,
 }
 impl EventStream {
@@ -512,10 +496,12 @@ impl EventStream {
                 return Err(Error::Stream("SSE ended before response.completed".into()));
             }
             Some(Err(error)) => {
-                let failure = self.events.take().and_then(|e| e.into_source().failure);
-                return Err(match (error.kind(), failure) {
-                    (ReadErrorKind::Transport, Some(failure)) => Error::Concord(failure),
-                    _ => Error::Stream(error.to_string()),
+                self.events = None;
+                let text = error.to_string();
+                // Only a broken body carries a source: Concord's transport error, by value.
+                return Err(match error.into_source_unredacted().map(|s| s.downcast()) {
+                    Some(Ok(failure)) => Error::Concord(*failure),
+                    _ => Error::Stream(text),
                 });
             }
         };
