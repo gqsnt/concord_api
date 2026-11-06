@@ -28,6 +28,7 @@ fn documents() -> Vec<String> {
     let mut docs = vec![
         "README.md".to_owned(),
         "examples/native/README.md".to_owned(),
+        "v4/sdk20/READOUT.md".to_owned(),
     ];
     for entry in fs::read_dir(root().join("docs")).expect("docs/ exists") {
         let name = entry.unwrap().file_name().into_string().unwrap();
