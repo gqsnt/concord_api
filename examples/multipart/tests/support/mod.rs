@@ -71,6 +71,11 @@ impl Server {
         assert_eq!(all.len(), 1, "expected exactly one request");
         all.into_iter().next().unwrap()
     }
+
+    /// Every request received so far, in arrival order.
+    pub fn requests(&self) -> Vec<Recorded> {
+        self.requests.lock().unwrap().clone()
+    }
 }
 
 impl Drop for Server {

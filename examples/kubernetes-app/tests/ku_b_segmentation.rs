@@ -13,7 +13,8 @@ use support::fixture;
 
 async fn decode(chunks: Chunks) -> (Vec<WatchEvent<Pod>>, Option<ReadErrorKind>) {
     let reader = JsonValuesReader::new().max_value_bytes(64 * 1024);
-    let mut stream: WatchStream<Pod, Chunks> = WatchStream::from_values(reader.read(chunks));
+    // The SDK's watch stream is the JSON values reader itself, here over an in-memory source.
+    let mut stream: WatchStream<Pod, Chunks> = reader.read(chunks);
     let mut events = Vec::new();
     while let Some(event) = stream.next().await {
         match event {

@@ -17,8 +17,9 @@
 //! - [`LabelSelector`] / [`FieldSelector`] — typed selectors rendered in Kubernetes syntax.
 //! - [`list`] — the chunked-list adapter for `concord-pagination` (opaque `continue`, consistent
 //!   snapshot check, typed `410 Expired`).
-//! - [`watch`] — a typed watch stream over `concord::jsonl::JsonValuesReader` (one connection;
-//!   reconnection and resync are the caller's workflow).
+//! - [`watch`] — typed watch events: every watch endpoint is declared
+//!   `-> stream WatchEvent<T>`, so its `send()` returns the open [`watch::WatchStream`] without
+//!   reading the body (one connection; reconnection and resync are the caller's workflow).
 //!
 //! # Example
 //!

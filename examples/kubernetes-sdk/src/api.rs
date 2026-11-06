@@ -4,11 +4,14 @@
 //! Paths follow the pinned OpenAPI v3 documents (Kubernetes v1.37.2): core/v1 under `api/v1`,
 //! named groups under `apis/{group}/{version}`, namespaced collections under
 //! `namespaces/{namespace}/{plural}`. Watches use the collection path with `watch=1` (the
-//! deprecated `/watch/` path prefix is not declared).
+//! deprecated `/watch/` path prefix is not declared) and are declared with their truthful output,
+//! `-> stream WatchEvent<T>` read with `JsonStream` (see [`crate::watch`] for why its defaults
+//! fit).
 
 use std::fmt;
 
 use concord::Json;
+use concord::jsonl::JsonStream;
 use concord::reqwest::header::{ACCEPT, AUTHORIZATION, HeaderValue};
 
 use crate::ids::{ContinueToken, NamespaceName, ObjectName, ResourceVersion};
@@ -17,6 +20,7 @@ use crate::model::{
     Namespace, NamespaceList, Pod, PodList, Service, ServiceList, VersionInfo,
 };
 use crate::selector::{FieldSelector, LabelSelector};
+use crate::watch::WatchEvent;
 
 /// `resourceVersionMatch` of a list request.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -43,9 +47,9 @@ concord::api! {
     ///
     /// List endpoints share one parameter set (`labelSelector`, `fieldSelector`, `limit`,
     /// `continue`, `resourceVersion`, `resourceVersionMatch`, `timeoutSeconds`); the `continue`
-    /// value is `#[sensitive]`. Watch endpoints have no typed output: open them with
-    /// [`crate::watch::open`] (or `prepare()?.send_raw()` and a
-    /// `concord::jsonl::JsonValuesReader`).
+    /// value is `#[sensitive]`. Watch endpoints are `-> stream WatchEvent<T>`: their `send()`
+    /// returns the open [`crate::watch::WatchStream`] without reading the body;
+    /// [`crate::watch::open`] opens the same declared operation with a caller-configured reader.
     pub client Kube(
         /// `Authorization: Bearer <token>` (see [`crate::BearerToken::header_value`]). Absent:
         /// no `Authorization` header (an authenticating proxy such as `kubectl proxy`, or a
@@ -88,17 +92,18 @@ concord::api! {
             ) -> PodList { path "pods"; }
 
             /// `listCoreV1PodForAllNamespaces` with `watch=1`: `GET /api/v1/pods?watch=1`. A stream
-            /// of consecutive JSON watch events; no typed output.
+            /// of consecutive JSON watch events, returned unread by `send()`.
             GET watch_pods(
                 query("labelSelector") label_selector?: LabelSelector,
                 query("fieldSelector") field_selector?: FieldSelector,
                 query("resourceVersion") resource_version?: ResourceVersion,
                 query("allowWatchBookmarks") allow_watch_bookmarks?: bool = true,
                 query("timeoutSeconds") timeout_seconds?: u32,
-            ) {
+            ) -> stream WatchEvent<Pod> {
                 path "pods";
                 query { "watch" = "1"; }
                 headers { ACCEPT = "application/json"; }
+                response JsonStream;
             }
 
             /// `listCoreV1ServiceForAllNamespaces`: `GET /api/v1/services`.
@@ -148,10 +153,11 @@ concord::api! {
                     query("resourceVersion") resource_version?: ResourceVersion,
                     query("allowWatchBookmarks") allow_watch_bookmarks?: bool = true,
                     query("timeoutSeconds") timeout_seconds?: u32,
-                ) {
+                ) -> stream WatchEvent<Pod> {
                     path "pods";
                     query { "watch" = "1"; }
                     headers { ACCEPT = "application/json"; }
+                    response JsonStream;
                 }
 
                 /// `listCoreV1NamespacedService`.
@@ -206,10 +212,11 @@ concord::api! {
                 query("resourceVersion") resource_version?: ResourceVersion,
                 query("allowWatchBookmarks") allow_watch_bookmarks?: bool = true,
                 query("timeoutSeconds") timeout_seconds?: u32,
-            ) {
+            ) -> stream WatchEvent<Deployment> {
                 path "deployments";
                 query { "watch" = "1"; }
                 headers { ACCEPT = "application/json"; }
+                response JsonStream;
             }
 
             /// One namespace of `apps/v1`.
@@ -237,10 +244,11 @@ concord::api! {
                     query("resourceVersion") resource_version?: ResourceVersion,
                     query("allowWatchBookmarks") allow_watch_bookmarks?: bool = true,
                     query("timeoutSeconds") timeout_seconds?: u32,
-                ) {
+                ) -> stream WatchEvent<Deployment> {
                     path "deployments";
                     query { "watch" = "1"; }
                     headers { ACCEPT = "application/json"; }
+                    response JsonStream;
                 }
             }
         }
@@ -302,10 +310,11 @@ concord::api! {
                 query("resourceVersion") resource_version?: ResourceVersion,
                 query("allowWatchBookmarks") allow_watch_bookmarks?: bool = true,
                 query("timeoutSeconds") timeout_seconds?: u32,
-            ) {
+            ) -> stream WatchEvent<Ingress> {
                 path "ingresses";
                 query { "watch" = "1"; }
                 headers { ACCEPT = "application/json"; }
+                response JsonStream;
             }
 
             /// One namespace of `networking.k8s.io/v1`.
@@ -333,10 +342,11 @@ concord::api! {
                     query("resourceVersion") resource_version?: ResourceVersion,
                     query("allowWatchBookmarks") allow_watch_bookmarks?: bool = true,
                     query("timeoutSeconds") timeout_seconds?: u32,
-                ) {
+                ) -> stream WatchEvent<Ingress> {
                     path "ingresses";
                     query { "watch" = "1"; }
                     headers { ACCEPT = "application/json"; }
+                    response JsonStream;
                 }
             }
         }

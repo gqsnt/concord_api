@@ -309,6 +309,49 @@ fn watch_parameters() -> Result<(), concord::Error> {
     Ok(())
 }
 
+/// Every watch is declared with its truthful output: `send()` returns the typed event stream,
+/// and the declared endpoint name is the operation's identity.
+#[test]
+fn watch_outputs_are_typed_event_streams() -> Result<(), concord::Error> {
+    use concord_example_kubernetes_sdk::model::{Deployment, Ingress, Pod};
+    use concord_example_kubernetes_sdk::watch::WatchStream;
+
+    fn endpoint<T>(prepared: concord::Prepared<T>) -> Option<&'static str> {
+        prepared.into_parts().2.operation().map(|op| op.name())
+    }
+    let kube = kube();
+    let a = kube.namespace(ns("team-a"));
+    let pods: concord::Prepared<WatchStream<Pod>> = kube.core().watch_pods().prepare()?;
+    let ns_pods: concord::Prepared<WatchStream<Pod>> = a.core().watch_pods().prepare()?;
+    let deployments: concord::Prepared<WatchStream<Deployment>> =
+        kube.apps().watch_deployments().prepare()?;
+    let ns_deployments: concord::Prepared<WatchStream<Deployment>> =
+        a.apps().watch_deployments().prepare()?;
+    let ingresses: concord::Prepared<WatchStream<Ingress>> =
+        kube.networking().watch_ingresses().prepare()?;
+    let ns_ingresses: concord::Prepared<WatchStream<Ingress>> =
+        a.networking().watch_ingresses().prepare()?;
+    assert_eq!(
+        [
+            endpoint(pods),
+            endpoint(ns_pods),
+            endpoint(deployments),
+            endpoint(ns_deployments),
+            endpoint(ingresses),
+            endpoint(ns_ingresses),
+        ],
+        [
+            Some("Kube.core_v1.watch_pods"),
+            Some("Kube.core_v1.namespaced.watch_pods"),
+            Some("Kube.apps_v1.watch_deployments"),
+            Some("Kube.apps_v1.namespaced.watch_deployments"),
+            Some("Kube.networking_v1.watch_ingresses"),
+            Some("Kube.networking_v1.namespaced.watch_ingresses"),
+        ]
+    );
+    Ok(())
+}
+
 #[test]
 fn two_namespaces_do_not_share_scope() -> Result<(), concord::Error> {
     let kube = kube();
