@@ -124,8 +124,8 @@ commit, so no baseline intervention was needed.
 
 | ID | Where | Issue | Status |
 |---|---|---|---|
-| W3-13 | `examples/linear-sdk` | a connection nulled by a GraphQL partial-data error becomes a decode error and loses the diagnostics, contrary to the README | OPEN (SDK) |
-| W4-10 | `examples/snowflake-sdk` | a missing `partitionInfo` is a decode error, an empty one `InvalidManifest`, contrary to the README | OPEN (SDK) |
+| W3-13 | `examples/linear-sdk` | a connection nulled by a GraphQL partial-data error becomes a decode error and loses the diagnostics, contrary to the README | FIXED `ca1d1ee0` (final migration): `Error::Page` keeping the diagnostics |
+| W4-10 | `examples/snowflake-sdk` | a missing `partitionInfo` is a decode error, an empty one `InvalidManifest`, contrary to the README | FIXED `1e0685ba` (final migration): both `InvalidManifest` |
 | W3-18 | `checks/stream-stress` | one timing-sensitive smoke test failed once under heavy parallel load | OBSERVED |
 | W23-6/7 | Concord | a per-request input for the send policy cannot be declared; a decorated request cannot re-enter the policy | DEFERRED (one consumer, S3) |
 | — | all SDKs | live provider tier | NOT_RUN (no credentials, no live calls) |

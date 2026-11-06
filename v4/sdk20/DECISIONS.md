@@ -563,3 +563,17 @@ by-value extraction, `Incoming` as a cancel-safe source, `check_head` identical 
 operation naming, fused terminal behaviour after a source failure, the three SDK migrations (the
 ClickHouse insert `expect` unreachable on current paths), docs. Both reviewers could not run cargo
 (read-only filesystem).
+
+## Final migration
+
+**F1 — SDK defects found by independent consumers (Opus subagent `adeff1db…`, merged
+`3b4797d4`).** Linear W3-13 (`ca1d1ee0`): a connection nulled by a partial-data error is now
+`Error::Page { reason: "connection is null" }` keeping errors, paths, locations, extensions and
+headers (the README's documented outcome); `data: {}` stays a decode error; caller change: an
+`Error::Page` response's `issues` is an `Option`. The consumer's test that pinned the defect now
+asserts the corrected behaviour (renamed; fixture bytes unchanged); one wire test added.
+Snowflake W4-10 (`1e0685ba`): an absent `partitionInfo` is `InvalidManifest` with the 200 head,
+like an empty one; a body without `resultSetMetaData` stays a decode error; the consumer's
+expectation for that reply changed accordingly; one wire test added (observed to fail with the
+fix removed). Both pending independent review.
+
