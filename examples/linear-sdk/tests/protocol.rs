@@ -2,6 +2,7 @@
 use concord::reqwest;
 use concord_example_testserver::{Reply, Script, TestServer};
 use concord_sdk_linear::{Error, Linear};
+use serde_json::{Value, json};
 
 async fn setup(replies: Vec<Reply>, oauth: bool) -> (TestServer, Linear) {
     let script = Script::new(replies);
@@ -54,7 +55,7 @@ async fn lookup_wire_and_partial_diagnostics() {
     assert_eq!(request.header("authorization"), Some("synthetic-value"));
     assert_eq!(request.header("content-type"), Some("application/json"));
     assert_eq!(request.header("accept"), Some("application/json"));
-    assert_eq!(request.body, br#"{"query":"query Issue($id: String!) { issue(id: $id) { id title description } }","operationName":"Issue","variables":{"id":"ABC-1\"\\"}}"#);
+    assert_eq!(request.body, br#"{"query":"query Issue($id: String!) { issue(id: $id) { id title description dueDate } }","operationName":"Issue","variables":{"id":"ABC-1\"\\"}}"#);
     server.shutdown().await;
 }
 #[tokio::test]
@@ -82,7 +83,7 @@ async fn page_wire_and_oauth() {
         Some("Bearer synthetic-value")
     );
     assert_eq!(request.header("content-type"), Some("application/json"));
-    assert_eq!(request.body, br#"{"query":"query Issues($first: Int!, $after: String) { issues(first: $first, after: $after) { nodes { id title description } pageInfo { hasNextPage endCursor } } }","operationName":"Issues","variables":{"first":10,"after":"prior\"cursor"}}"#);
+    assert_eq!(request.body, br#"{"query":"query Issues($first: Int!, $after: String) { issues(first: $first, after: $after) { nodes { id title description dueDate } pageInfo { hasNextPage endCursor } } }","operationName":"Issues","variables":{"first":10,"after":"prior\"cursor"}}"#);
     server.shutdown().await;
 }
 #[tokio::test]
@@ -217,5 +218,63 @@ async fn body_limits_keep_response_metadata() {
             other => panic!("{other:?}"),
         }
     }
+    server.shutdown().await;
+}
+#[tokio::test]
+async fn due_date_field_error_keeps_data_diagnostics_and_presence_rule() {
+    let (server, client) = setup(
+        vec![
+            Reply::json(
+                200,
+                include_bytes!("../fixtures/issue-due-date-partial.json"),
+            )
+            .header("x-request-id", "synthetic-due-date"),
+            Reply::json(
+                200,
+                br#"{"data":{"issue":{"id":"x","title":"t","description":null}}}"#,
+            ),
+        ],
+        false,
+    )
+    .await;
+    let response = client.issue("ABC-1").await.unwrap();
+    assert!(!response.is_success());
+    assert_eq!(response.meta.status, 200);
+    assert_eq!(response.meta.headers["x-request-id"], "synthetic-due-date");
+    let issue = response.envelope.data.unwrap().issue.unwrap();
+    assert_eq!(
+        (issue.description.as_deref(), issue.due_date),
+        (Some("First description"), None)
+    );
+    let errors = &response.envelope.errors;
+    assert_eq!(errors.len(), 1);
+    assert_eq!(errors[0].message, "Synthetic due date unavailable");
+    assert_eq!(errors[0].path, Some(vec![json!("issue"), json!("dueDate")]));
+    assert_eq!(
+        errors[0].locations,
+        Some(vec![json!({"line":1,"column":67})])
+    );
+    assert_eq!(
+        errors[0].extensions.as_ref().unwrap()["code"],
+        "SYNTHETIC_DUE_DATE_FAILURE"
+    );
+    assert_eq!(
+        response.envelope.extensions.unwrap()["trace"],
+        "synthetic-due-date"
+    );
+    // A selected nullable field that is absent is a decode failure, never a null.
+    match client.issue("x").await.unwrap_err() {
+        Error::Response { meta, source } => {
+            assert_eq!(meta.status.as_u16(), 200);
+            assert_eq!(source.kind(), concord::ErrorKind::Decode);
+        }
+        e => panic!("{e:?}"),
+    }
+    let requests = server.requests();
+    assert_eq!(requests.len(), 2);
+    assert_eq!(requests[0].body, br#"{"query":"query Issue($id: String!) { issue(id: $id) { id title description dueDate } }","operationName":"Issue","variables":{"id":"ABC-1"}}"#);
+    // The fixture's location (line 1, column 67) points at `dueDate` in the sent document.
+    let body: Value = serde_json::from_slice(&requests[0].body).unwrap();
+    assert_eq!(&body["query"].as_str().unwrap()[66..73], "dueDate");
     server.shutdown().await;
 }

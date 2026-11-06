@@ -1,1 +1,1 @@
-{"data":{"issue":{"id":"synthetic-issue-1","title":"Review the draft","description":"A selected description\nwith a second line."}},"extensions":{"syntheticTrace":"issue"}}
+{"data":{"issue":{"id":"synthetic-issue-1","title":"Review the draft","description":"A selected description\nwith a second line.","dueDate":null}},"extensions":{"syntheticTrace":"issue"}}

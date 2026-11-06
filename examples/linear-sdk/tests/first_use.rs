@@ -96,7 +96,7 @@ fn assert_list_requests(server: &TestServer, cursors: &[Option<&str>]) {
             KEY,
             "$first: Int!, $after: String) {
                 issues(first: $first, after: $after) {
-                    nodes { id title description }
+                    nodes { id title description dueDate }
                     pageInfo { hasNextPage endCursor }
                 }
             }",
@@ -443,7 +443,7 @@ fn assert_issue_requests(server: &TestServer, auth: &str, ids: &[&str]) {
         let variables = wire(
             request,
             auth,
-            "$id: String!) { issue(id: $id) { id title description } }",
+            "$id: String!) { issue(id: $id) { id title description dueDate } }",
         );
         assert_eq!(variables, json!({"id": id}));
     }

@@ -11,8 +11,8 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::fmt;
 
-const LIST: &str = "query Issues($first: Int!, $after: String) { issues(first: $first, after: $after) { nodes { id title description } pageInfo { hasNextPage endCursor } } }";
-const ISSUE: &str = "query Issue($id: String!) { issue(id: $id) { id title description } }";
+const LIST: &str = "query Issues($first: Int!, $after: String) { issues(first: $first, after: $after) { nodes { id title description dueDate } pageInfo { hasNextPage endCursor } } }";
+const ISSUE: &str = "query Issue($id: String!) { issue(id: $id) { id title description dueDate } }";
 
 /// A request body for a fixed SDK query and its variables.
 #[derive(Clone, Debug, Serialize)]
@@ -66,7 +66,8 @@ where
     Option::<T>::deserialize(deserializer)
 }
 
-/// A selected issue. Description is nullable, including on a partial GraphQL response.
+/// A selected issue. Description and due date are nullable, including on a partial GraphQL
+/// response; only an error `path` ending at the field tells a failed field from a null value.
 #[derive(Clone, Debug, Deserialize, PartialEq, Eq)]
 pub struct Issue {
     /// Linear's identifier.
@@ -76,6 +77,9 @@ pub struct Issue {
     /// Selected nullable description.
     #[serde(deserialize_with = "required_nullable")]
     pub description: Option<String>,
+    /// Selected nullable `dueDate` (`TimelessDate`), passed through as returned, not parsed.
+    #[serde(rename = "dueDate", deserialize_with = "required_nullable")]
+    pub due_date: Option<String>,
 }
 /// GraphQL issue connection.
 #[derive(Clone, Debug, Deserialize)]
