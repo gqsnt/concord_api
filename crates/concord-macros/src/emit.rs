@@ -1357,6 +1357,8 @@ fn emit_owner(
             body,
         } => {
             let incoming = *incoming;
+            let op_name = lit(&owner.dotted);
+            let op_method = lit(&method.to_string());
             let parent_ty = &model.owners[owner.parent.unwrap()].type_name;
             let controls = controls(
                 k,
@@ -1462,6 +1464,16 @@ fn emit_owner(
                     #send_docs
                     #[inline] pub async fn send(self) -> ::core::result::Result<#out, #k::Error> {
                         self.prepare()?.send().await
+                    }
+                }
+
+                impl #k::Endpoint for #ty {
+                    type Output = #out;
+                    #[inline] fn prepare(self) -> ::core::result::Result<#k::Prepared<#out>, #k::Error> {
+                        #ty::prepare(self)
+                    }
+                    #[inline] fn operation() -> #k::Operation {
+                        #k::__private::declared(#op_name, #op_method)
                     }
                 }
 

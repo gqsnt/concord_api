@@ -1226,6 +1226,40 @@ A provider rule on the head (a served API version) refuses by returning the SDK'
 `received.into_response()`, unread. A request edited natively after `into_parts()` (a `Link` URL)
 is executed with `Decoder::execute(&client, request)`, which returns the same `Received<T>`.
 
+### 5.12 One adapter for every operation: `concord::Endpoint`
+
+An SDK that returns its own error type and response metadata does not need a wrapper method per
+operation. Every generated endpoint implements `concord::Endpoint` (its `Output`, `prepare()`,
+and `operation()`), so one trait of the SDK, implemented for every `E: Endpoint`, serves all of
+them; callers import it once.
+
+Excerpt of `checks/phase-a/tests/received.rs`:
+
+```rust,ignore
+    pub trait Call: Endpoint {
+        fn call(self) -> impl Future<Output = Result<(Self::Output, Meta), SdkError>>;
+    }
+
+    impl<E: Endpoint> Call for E {
+        async fn call(self) -> Result<(E::Output, Meta), SdkError> {
+            let prepared = self.prepare().map_err(|e| SdkError::Concord(e, None))?;
+            let received = prepared
+                .receive()
+                .await
+                .map_err(|e| SdkError::Concord(e, None))?;
+            let meta = Meta::capture(&received.head());
+            match received.decode().await {
+                Ok(value) => Ok((value, meta)),
+                Err(e) => Err(SdkError::Concord(e, Some(meta))),
+            }
+        }
+    }
+```
+
+A provider error document on a non-2xx response is read with `received.bytes_limited(n)`: the body
+up to `n` bytes, `ErrorKind::Limit` beyond (nothing more is read); parse it with the format's
+`decode_body`. `E::operation()` names the endpoint without building a request.
+
 ## 6. Wire formatting: `Display` and newtypes
 
 Every value written as text — path segment, subdomain label, query value, template hole — is

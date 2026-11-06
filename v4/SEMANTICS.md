@@ -256,6 +256,10 @@ Each key has one **slot**, positioned at the key's first appearance on the chain
   obtained response (a signed URL) with an optional static label (`Operation::label`), which
   errors and readers print; `Error::endpoint()` names declared endpoints only,
   `Error::operation()` either.
+- Every generated endpoint type implements the public `Endpoint` trait (`type Output`, the
+  generated `prepare()`, `operation()` — the declared identity without building a request); it adds
+  nothing to the generated namespace. `Received::bytes_limited(n)` reads the body of any status up
+  to `n` bytes (`ErrorKind::Limit` beyond, the rest unread), without the declared handling.
 - Concord performs no retries, no authentication, no rate limiting, no pagination and has no
   transport settings. One `send` is one `Client::execute` call; redirects, proxies, timeouts,
   compression and default headers are whatever the reqwest client does.

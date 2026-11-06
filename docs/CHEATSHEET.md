@@ -109,9 +109,12 @@ format statements, then children.
 | `.set_x(v)`, `.maybe_x(Some(v) / None)` | return the updated handle (`#[must_use]`); handles are cheap snapshots |
 | `docs.folder(7)`, `folder.rename(3, change)` | navigation: required values are positional, in declaration order |
 | `.send().await` | `prepare`, one `execute`, require 2xx, check the response head, read and decode the body; never retries |
-| `.prepare()?` → `Prepared` | the native `reqwest::Request` (`request()`), `send()`, `send_raw()`, `into_parts()` |
+| `.prepare()?` → `Prepared` | `receive()` (below), `send()`, the native `reqwest::Request` (`request()`), `send_raw()`, `into_parts()` |
+| `.prepare()?.receive().await?` → `Received` | one execution, any status, body unread: `head()`, `status()`, `url()`, then one of `decode()`, `into_incoming()`, `bytes_limited(n)`, `into_response()` |
+| `-> stream T` / `-> stream` | `send()` returns the reader / the unread `Incoming`; readers' `open(..)` takes `Incoming`, `Received` or a native response; `completion()`, `into_stream()` |
+| `concord::Endpoint` | implemented by every generated endpoint (`Output`, `prepare`, `operation()`): write one SDK adapter for all operations |
 | `into_parts()` → `(Client, Request, Decoder)` | execute it yourself, then `decoder.finish(result)` or `decoder.decode(response)` |
-| `error.kind()`, `status()`, `endpoint()` | `Build`, `Transport`, `Status`, `Metadata`, `Decode`; `status()` is `Some` for `Status` only |
+| `error.kind()`, `status()`, `endpoint()` | `Build`, `Transport`, `Status`, `Metadata`, `Decode`, `Limit`; `status()` is `Some` for `Status` only |
 | `error.response()`, `error.into_response()` | the unread response of a `Status` or a `Metadata` error: borrowed (headers) or taken (body) |
 | `error.codec_error()` | the format's `CodecError` (a `Metadata`, `Decode` or encoding `Build` error): static `label()`, `get("line")`, and `source_unredacted()` |
 | `error.transport()` | the reqwest error, which may contain URLs |

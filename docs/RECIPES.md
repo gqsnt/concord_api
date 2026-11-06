@@ -67,8 +67,8 @@ request, a request id, a count) together with the decoded value, possibly after 
 - **Without a native edit, start with `receive`:** `prepare()?.receive().await?` returns a
   `concord::Received` for any status; read the headers you need from `received.head()`, then
   `received.decode().await` (the [author guide](AUTHOR_GUIDE.md#511-reading-response-metadata-in-an-sdk)
-  shows the pattern). The recipe below adds a native edit and keeps the final URL, which
-  `Received` deliberately does not expose.
+  shows the pattern; `received.url()` gives the final URL). The recipe below adds a native edit
+  and copies the selected headers into a value of its own.
 - **How:** `prepare()?.into_parts()`; edit the native request; one `client.execute(request)`. On
   `Err(e)`, convert with `decoder.transport_error(e)` (Concord's `Transport` error naming the
   endpoint, URL removed); `Decoder::execute(&client, request)` does both and returns a
@@ -398,7 +398,7 @@ synthetic; a fake server proves nothing about the real service.
 
 | Need | How | Case |
 |---|---|---|
-| Read response headers (`ETag`, `Link`) and keep the typed decoding | `prepare()?.into_parts()`, execute (a failure goes through `decoder.finish(Err(e))`, not `?`), read the headers, then `decoder.decode(response)`; packaged with failure stages in [response metadata](#response-metadata-with-the-typed-value) | `tests/metadata.rs` |
+| Read response headers (`ETag`, `Link`) and keep the typed decoding | `prepare()?.receive().await?`, read `head()` (and `url()`), then `decode()`; with a native edit, `into_parts()` then `decoder.execute(&client, request)`; packaged with failure stages in [response metadata](#response-metadata-with-the-typed-value) | `tests/metadata.rs` |
 | Read a status error's headers without consuming it | `error.response()`; `into_response()` afterwards for the body | `tests/metadata.rs` |
 | An error inside a 2xx (`{"ok": false}`) | a typed output that models the envelope, or a custom `Decode` returning a `CodecError` (its detail goes to `with_source`, read with `source_unredacted()`) | `tests/application.rs` |
 | Nested or bracket form keys (`metadata[order]=7`) | a custom `Encode<T>` with the form media type; `form` itself is flat | `tests/forms.rs` |

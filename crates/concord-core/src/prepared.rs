@@ -39,6 +39,11 @@ impl<T> Prepared<T> {
         }
     }
 
+    /// The identity of the endpoint that built this request.
+    pub fn operation(&self) -> Option<Operation> {
+        self.decoder.operation
+    }
+
     /// The native request, for inspection. Its `Debug` output is **not** Concord's: it prints the full
     /// URL, sensitive query values and path segments included; only header values flagged sensitive
     /// (by Concord or already on a native value) are masked (reqwest prints them as `Sensitive`).
@@ -98,6 +103,43 @@ impl<T> Prepared<T> {
     pub fn into_parts(self) -> (reqwest::Client, reqwest::Request, Decoder<T>) {
         (self.client, self.request, self.decoder)
     }
+}
+
+/// A generated endpoint request, seen generically: every endpoint type `api!` generates implements
+/// it, so an SDK can write **one** adapter for all of its operations instead of a wrapper method
+/// per operation — a send that returns the SDK's own error and response metadata, say:
+///
+/// ```ignore
+/// pub trait Call: concord::Endpoint {
+///     fn call(self) -> impl Future<Output = Result<WithMeta<Self::Output>, SdkError>>;
+/// }
+/// impl<E: concord::Endpoint> Call for E {
+///     async fn call(self) -> Result<WithMeta<E::Output>, SdkError> {
+///         let received = self.prepare()?.receive().await?;
+///         let meta = Meta::capture(&received.head());
+///         Ok(WithMeta { value: received.decode().await?, meta })
+///     }
+/// }
+/// // caller: `use my_sdk::Call;` then `api.items().get(7).call().await?`
+/// ```
+///
+/// The generated type's own `prepare()` and `send()` stay what callers use directly; the trait adds
+/// no method to the generated namespace (call it through a trait of yours, or as
+/// `Endpoint::prepare(e)`).
+pub trait Endpoint: Sized {
+    /// The declared output: the decoded `T` of `-> T`, `()` without `->`, the reader of
+    /// `-> stream T`, `Incoming` for `-> stream`.
+    type Output;
+
+    /// The generated `prepare()`: builds the request, no I/O.
+    ///
+    /// # Errors
+    ///
+    /// As the generated `prepare()` (`ErrorKind::Build`).
+    fn prepare(self) -> Result<Prepared<Self::Output>, Error>;
+
+    /// The endpoint's declared identity, without building a request.
+    fn operation() -> Operation;
 }
 
 impl<T> fmt::Debug for Prepared<T> {

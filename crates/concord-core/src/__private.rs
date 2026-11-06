@@ -319,6 +319,11 @@ impl<R> OpenFormat<R> {
     }
 }
 
+/// The identity of a declared endpoint, for its generated `Endpoint::operation()`.
+pub fn declared(name: &'static str, method: &'static str) -> crate::Operation {
+    crate::Operation::declared(name, method)
+}
+
 /// The response handling of an endpoint declared `-> stream` without an item: any 2xx, the body
 /// returned unread (a `response` default does not apply).
 pub fn incoming(meta: &'static EndpointMeta) -> Decoder<Incoming> {

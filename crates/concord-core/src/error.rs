@@ -41,6 +41,8 @@ enum Repr {
     /// A 2xx response whose head the format refused; the response is unread.
     Metadata(CodecError, reqwest::Response),
     Decode(CodecError),
+    /// A body read with a byte limit was longer.
+    Limit(u64),
 }
 
 /// The stage at which a call failed.
@@ -60,6 +62,9 @@ pub enum ErrorKind {
     Metadata,
     /// A 2xx response body could not be decoded with the declared format.
     Decode,
+    /// A body read with a byte limit ([`Received::bytes_limited`](crate::Received::bytes_limited))
+    /// was longer than the limit; the rest was not read.
+    Limit,
 }
 
 impl Error {
@@ -109,6 +114,10 @@ impl Error {
         Self::new(operation, Repr::Decode(error))
     }
 
+    pub(crate) fn limit(operation: Option<Operation>, limit: u64) -> Self {
+        Self::new(operation, Repr::Limit(limit))
+    }
+
     fn new(operation: Option<Operation>, repr: Repr) -> Self {
         Self {
             inner: Box::new(Inner { operation, repr }),
@@ -123,6 +132,7 @@ impl Error {
             Repr::Status(_) => ErrorKind::Status,
             Repr::Metadata(..) => ErrorKind::Metadata,
             Repr::Decode(_) => ErrorKind::Decode,
+            Repr::Limit(_) => ErrorKind::Limit,
         }
     }
 
@@ -134,8 +144,8 @@ impl Error {
     pub fn endpoint(&self) -> Option<&'static str> {
         self.inner
             .operation
-            .and_then(|op| op.meta())
-            .map(|meta| meta.name)
+            .filter(Operation::is_endpoint)
+            .map(|op| op.name())
     }
 
     /// The call's identity: a declared endpoint, or the label given to a natively obtained
@@ -277,6 +287,9 @@ impl fmt::Display for Error {
             }
             Repr::Metadata(e, _) => write!(f, "response metadata not accepted: {e}"),
             Repr::Decode(e) => write!(f, "response not decoded: {e}"),
+            Repr::Limit(limit) => {
+                write!(f, "response body longer than the limit of {limit} bytes")
+            }
         }
     }
 }

@@ -36,12 +36,18 @@ pub struct Operation(Ident);
 #[derive(Clone, Copy)]
 enum Ident {
     Endpoint(&'static EndpointMeta),
+    /// A declared endpoint named by its generated `Endpoint::operation()` (no request built).
+    Declared(&'static str, &'static str),
     Label(&'static str),
 }
 
 impl Operation {
     pub(crate) fn endpoint(meta: &'static EndpointMeta) -> Self {
         Self(Ident::Endpoint(meta))
+    }
+
+    pub(crate) fn declared(name: &'static str, method: &'static str) -> Self {
+        Self(Ident::Declared(name, method))
     }
 
     /// A static label for a response that no declared endpoint produced (a signed URL fetched
@@ -54,7 +60,7 @@ impl Operation {
     pub fn name(&self) -> &'static str {
         match self.0 {
             Ident::Endpoint(meta) => meta.name,
-            Ident::Label(name) => name,
+            Ident::Declared(name, _) | Ident::Label(name) => name,
         }
     }
 
@@ -62,13 +68,14 @@ impl Operation {
     pub fn method(&self) -> Option<&'static str> {
         match self.0 {
             Ident::Endpoint(meta) => Some(meta.method),
+            Ident::Declared(_, method) => Some(method),
             Ident::Label(_) => None,
         }
     }
 
     /// Whether this is a declared endpoint (not a label).
     pub fn is_endpoint(&self) -> bool {
-        matches!(self.0, Ident::Endpoint(_))
+        matches!(self.0, Ident::Endpoint(_) | Ident::Declared(..))
     }
 
     /// Converts a transport failure of a request executed natively for this operation (a signed
@@ -82,7 +89,7 @@ impl Operation {
     pub(crate) fn meta(&self) -> Option<&'static EndpointMeta> {
         match self.0 {
             Ident::Endpoint(meta) => Some(meta),
-            Ident::Label(_) => None,
+            Ident::Declared(..) | Ident::Label(_) => None,
         }
     }
 }
@@ -214,6 +221,34 @@ impl<T> Received<T> {
     /// unread ([`Error::into_response`]).
     pub fn into_incoming(self) -> Result<Incoming, Error> {
         Incoming::checked(self.response, self.decoder.operation())
+    }
+
+    /// Reads the body, whatever the status, keeping at most `limit` bytes: for a provider's error
+    /// document on a non-2xx response, read deliberately and bounded (a format's
+    /// [`Decode::decode_body`](crate::Decode::decode_body) can then parse it, with no head
+    /// check). The declared handling is not applied. Bytes reqwest decompressed count after
+    /// decompression.
+    ///
+    /// # Errors
+    ///
+    /// [`ErrorKind::Limit`](crate::ErrorKind::Limit) when the body is longer than `limit` (the
+    /// rest is not read); [`ErrorKind::Transport`](crate::ErrorKind::Transport) if reading fails.
+    /// Both name the operation.
+    pub async fn bytes_limited(self, limit: usize) -> Result<bytes::Bytes, Error> {
+        let operation = self.decoder.operation();
+        let mut response = self.response;
+        let mut body = bytes::BytesMut::new();
+        while let Some(chunk) = response
+            .chunk()
+            .await
+            .map_err(|e| Error::from_transport(operation, e))?
+        {
+            if body.len() + chunk.len() > limit {
+                return Err(Error::limit(operation, limit as u64));
+            }
+            body.extend_from_slice(&chunk);
+        }
+        Ok(body.freeze())
     }
 
     /// The native response, unread, **leaving Concord's boundary**: its `Debug` and `url()` show

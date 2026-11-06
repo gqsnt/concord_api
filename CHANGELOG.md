@@ -30,6 +30,12 @@ Not released: the version is unchanged (4.2.0) and no release has been decided. 
   `PagesError`s; `collect_complete` returns `Incomplete` with the collected prefix.
   `JobsReport::into_resume` / `IndependentReport::into_resume` decompose a report losslessly.
 
+- **One SDK adapter for all operations.** Every generated endpoint implements `concord::Endpoint`
+  (`Output`, `prepare()`, `operation()`), so an SDK writes one generic adapter (its own error and
+  metadata) instead of a wrapper method per operation. `Prepared::operation()`.
+- **Bounded body reads.** `Received::bytes_limited(n)` reads a body (any status) up to `n` bytes,
+  `ErrorKind::Limit` beyond: for provider error documents.
+
 ### Changed
 
 - `Error`'s identity is an `Operation`; `Display` of a labelled native response starts with the

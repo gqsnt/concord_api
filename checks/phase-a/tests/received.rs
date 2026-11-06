@@ -20,7 +20,7 @@ fn api(server: &TestServer) -> Reports {
 
 /// A provider-owned metadata value, parsed from the head before the body is consumed.
 #[derive(Debug, Clone, PartialEq, Eq)]
-struct Meta {
+pub struct Meta {
     status: u16,
     request_id: Option<String>,
 }
@@ -266,4 +266,118 @@ async fn the_final_url_and_labelled_native_inputs() {
             .starts_with("Reports.signed_export: transport error"),
         "{error}"
     );
+}
+
+/// One SDK adapter for every generated endpoint (`concord::Endpoint`), instead of a wrapper
+/// method per operation: the SDK's own error and metadata on every call.
+mod adapter {
+    use super::Meta;
+    use concord::Endpoint;
+
+    #[derive(Debug)]
+    pub enum SdkError {
+        Concord(concord::Error, Option<Meta>),
+    }
+
+    pub trait Call: Endpoint {
+        fn call(self) -> impl Future<Output = Result<(Self::Output, Meta), SdkError>>;
+    }
+
+    impl<E: Endpoint> Call for E {
+        async fn call(self) -> Result<(E::Output, Meta), SdkError> {
+            let prepared = self.prepare().map_err(|e| SdkError::Concord(e, None))?;
+            let received = prepared
+                .receive()
+                .await
+                .map_err(|e| SdkError::Concord(e, None))?;
+            let meta = Meta::capture(&received.head());
+            match received.decode().await {
+                Ok(value) => Ok((value, meta)),
+                Err(e) => Err(SdkError::Concord(e, Some(meta))),
+            }
+        }
+    }
+}
+
+#[tokio::test]
+async fn one_generic_adapter_serves_every_endpoint() {
+    use adapter::{Call, SdkError};
+    use concord::Endpoint;
+    let server = TestServer::start(|r| {
+        if r.target.contains("summary") {
+            Reply::json(200, "{\"id\":1,\"amount\":2}").header("x-request-id", "s")
+        } else {
+            Reply::new(200)
+                .header("content-type", "text/csv")
+                .header("x-request-id", "e")
+                .body("id;amount\n5;6\n")
+        }
+    })
+    .await;
+    let api = api(&server);
+    // A finite endpoint, a `-> stream T` endpoint and a `-> stream` endpoint, one adapter.
+    let (row, meta) = api.summary("a").call().await.unwrap();
+    assert_eq!(
+        (row, meta.request_id.as_deref()),
+        (Row { id: 1, amount: 2 }, Some("s"))
+    );
+    let (mut rows, meta) = api.rows("b").call().await.unwrap();
+    assert_eq!(meta.request_id.as_deref(), Some("e"));
+    assert_eq!(
+        rows.next().await.unwrap().unwrap(),
+        Row { id: 5, amount: 6 }
+    );
+    let (incoming, _) = api.export("c").call().await.unwrap();
+    assert_eq!(
+        incoming.operation(),
+        Some(concord_check_phase_a::ReportsExport::operation())
+    );
+    // The identity without building a request, equal to the response's.
+    assert_eq!(
+        concord_check_phase_a::ReportsSummary::operation().name(),
+        "Reports.summary"
+    );
+    assert_eq!(
+        concord_check_phase_a::ReportsSummary::operation().method(),
+        Some("GET")
+    );
+    let dead = TestServer::start(|_| Reply::hang_up()).await;
+    let SdkError::Concord(e, meta) = self::api(&dead).summary("x").call().await.unwrap_err();
+    assert_eq!(e.endpoint(), Some("Reports.summary"));
+    assert!(meta.is_none(), "no response, no metadata");
+}
+
+#[tokio::test]
+async fn a_provider_error_document_is_read_with_a_limit() {
+    let server = TestServer::start(|r| {
+        let body = if r.target.contains("big") {
+            "x".repeat(65)
+        } else {
+            "{\"code\":20404}".to_owned()
+        };
+        Reply::json(404, body)
+    })
+    .await;
+    let api = api(&server);
+    let received = api
+        .summary("small")
+        .prepare()
+        .unwrap()
+        .receive()
+        .await
+        .unwrap();
+    assert_eq!(received.status(), 404);
+    let document = received.bytes_limited(14).await.unwrap();
+    assert_eq!(&document[..], b"{\"code\":20404}", "exactly at the limit");
+    let received = api
+        .summary("big")
+        .prepare()
+        .unwrap()
+        .receive()
+        .await
+        .unwrap();
+    let error = received.bytes_limited(64).await.unwrap_err();
+    assert_eq!(error.kind(), ErrorKind::Limit);
+    assert_eq!(error.endpoint(), Some("Reports.summary"));
+    assert!(error.to_string().contains("limit of 64 bytes"), "{error}");
 }
