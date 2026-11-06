@@ -183,3 +183,124 @@ unchanged; `error.rs` is 7 lines shorter (+12 −19) and no longer imports `Byte
    `#[sensitive]`; the account SID, addresses, body and `error_message` stay withheld.
 4. An empty SID is `TwilioError::EmptySid` before sending (one row of
    `first_use.rs::b_a_sid_is_always_one_path_segment` changed accordingly).
+
+# Between waves 2-3
+
+Coordinator evaluation of the client **send policy** (`send P;`: every generated `send()` returns
+`<P as concord::SendWith<T>>::Output`) for this SDK. "Before" is `1f71432c`. The source is
+unchanged; this section is the record.
+
+## Verdict: not adopted
+
+A send policy fixes the one thing the wave-1 `Call` prototype added for callers (an import), but
+not the two that decided against it: the validated construction keeps `Twilio` a wrapper, and the
+empty-SID rule becomes weaker as a policy check. The kept design has the shortest correct call
+(`client.get_message(sid).await`) and refuses an empty SID on both of its paths.
+
+## Prototype (compiled and run, then reverted)
+
+`src/lib.rs` was changed to the adopted form: `send crate::Classified;` on the private
+declaration, the policy below, `impl Deref for Twilio { type Target = wire::TwilioApi; .. }`, a
+re-export of the generated types, and the four per-operation methods removed. A temporary test
+(`tests/probe_tmp.rs`, removed) ran against the fixtures:
+
+```rust
+pub struct Classified;
+
+impl<T: Send> SendWith<T> for Classified {
+    type Output = Result<Response<T>, TwilioError>;
+
+    async fn send<E: Endpoint<T> + Send>(endpoint: E) -> Self::Output {
+        let prepared = endpoint.prepare()?;
+        // Twilio names a resource `<Sid>.json`: a last segment `.json` means an empty SID.
+        if prepared
+            .request()
+            .url()
+            .path_segments()
+            .and_then(|mut s| s.next_back())
+            == Some(".json")
+        {
+            return Err(TwilioError::EmptySid {
+                operation: E::operation(),
+            });
+        }
+        error::send(prepared).await
+    }
+}
+```
+
+Observed:
+
+1. `client.create_message(message()).send().await` and `client.get_message(SID).send().await`
+   returned `Response<Message>` with no import (the policy works as documented).
+2. `client.get_message("").send().await` was `TwilioError::EmptySid`, displayed
+   `GET TwilioApi.get_message: empty message SID (nothing sent)`, with no request.
+3. `client.get_message("").prepare()` returned `Ok`, a request for
+   `/2010-04-01/Accounts/AC_fixture_account/Messages/.json`. A policy sees only the built
+   request, so the rule runs in `send()` and nowhere else; the generated `prepare()` (and
+   `Prepared::send` after it) bypass it. Today both `get_message` and `prepare_get_message`
+   refuse it (`tests/protocol.rs` `an_empty_sid_is_refused_before_sending`).
+4. The existing suites stopped compiling with 78 errors: 71 `error[E0277]: 'TwilioApiGetMessage'
+   is not a future` / `'TwilioApiCreateMessage' is not a future` (every
+   `client.op(..).await`, each with the help "remove the `.await`", which is wrong: the fix is
+   `.send()`), 3 `E0599` for the removed `prepare_*` methods, and 4 follow-on `E0277` (`str` is
+   not `Sized`) where the error type could no longer be inferred.
+
+## The empty-SID rule: stays a domain method
+
+Decided for the domain method. As a policy check it would have to recognise the empty SID from
+the URL shape (a last segment `.json`), which is an inference about the built request rather
+than the input rule itself, and it would not cover `prepare()`, the path the SDK documents for
+inspection. In `prepare_get_message` it is one `is_empty()` on the argument, before anything is
+built, and `get_message` goes through it.
+
+## Lines of SDK adapter code
+
+| | lines | code (no blank/comment lines) |
+|---|---|---|
+| kept: `create_message`, `get_message`, `prepare_create_message`, `prepare_get_message` (with docs) | 44 | 30 |
+| prototype: policy + `Deref` + re-export (one-line docs), plus `send crate::Classified;` | 29 + 1 | 26 + 1 |
+
+Documented like the methods, the policy and the `Deref` would be about the same size as what
+they replace.
+
+## One caller call
+
+Kept (`tests/workflows.rs`):
+
+```rust
+    let observation = client.get_message(&submission.value.sid).await.unwrap();
+```
+
+prototype:
+
+```rust
+    let observation = client
+        .get_message(&submission.value.sid)
+        .send()
+        .await
+        .unwrap();
+```
+
+## Adding an operation
+
+| Kept design | With a send policy |
+|---|---|
+| 1. the `api!` entry | 1. the `api!` entry |
+| 2. `Twilio::op` (one line: `error::send(self.prepare_op(..)?)`) with its docs | — (reached through `Deref`, sent by the policy) |
+| 3. `Twilio::prepare_op` (one line, plus any input rule) with its docs | an input rule goes into the policy as a check on the built request (seen by `send()` only), or into a validating newtype every caller constructs |
+| 4. README | 2. README |
+
+The policy would start to pay as operations multiply, if their input rules can be expressed in
+the declaration's types; for this two-operation slice it does not.
+
+## Unchanged
+
+`TwilioError` stays the SDK error in every operation signature (`Error` the hidden alias),
+`with_base_url` alone returns `concord::Error`, and the `Debug` decisions of the post-wave-1
+integration hold (`Message` shows `sid`, `status`, `error_code`; the message SID is not
+`#[sensitive]`, the account SID, credentials, addresses, body and `error_message` are withheld).
+`Received::bytes_limited` was already adopted; `Received::decode_limited` was not (Twilio
+documents no size for a Message resource), and `Prepared::follow` has no use in this slice.
+Tests at the recorded state: `first_use` 22, `protocol` 21, `workflows` 4, doctests 2 — all pass
+after the prototype was reverted (`git checkout -- src/lib.rs`, probe test removed).
