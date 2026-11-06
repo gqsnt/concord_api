@@ -211,3 +211,21 @@ the body claims another; error bodies are bounded at exactly 65,536 bytes (65,53
 `TooLarge`); a cut-off 2xx body is `Transport` with metadata, never a partial `Message`; no call
 retried or polled on its own; `Display` of every error omitted credentials, numbers, body text,
 SIDs and provider explanations in all cases tested.
+
+## Post-wave-1 integration (coordinator)
+
+Dispositions of the frictions above, made after this record by the coordinator (the record itself
+is unchanged):
+
+1. Two `Error` types: the SDK error is now `TwilioError` in every signature; every operation method
+   including both `prepare_*` returns it, and only `with_base_url` returns `concord::Error`. The
+   old name `Error` stays as a `#[doc(hidden)]` alias, so this suite compiles unchanged.
+2. `TwilioApi`: the `Twilio` rustdoc and the README now name the generated client and the
+   operation names diagnostics show.
+3. `Debug` of `Message` (and of `Response<Message>`) shows `sid`, `status` and `error_code`; the
+   message SID is no longer marked sensitive in the fetch path.
+4. An empty SID is refused before sending (`TwilioError::EmptySid`). This changed one row of
+   `tests/first_use.rs::b_a_sid_is_always_one_path_segment`: the `("", "")` case, which observed
+   `GET .../Messages/.json` and a 404, now asserts the local refusal; the other four cases and
+   the request count of the sent cases are unchanged.
+5. and 6.: unchanged (no action).

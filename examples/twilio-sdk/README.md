@@ -67,9 +67,9 @@ Use the SID returned by creation. A fetched resource with `Failed` or `Undeliver
 is an HTTP success containing a message-processing failure, not a rejected GET.
 
 ```no_run
-use concord_sdk_twilio::{Error, MessageStatus, Twilio};
+use concord_sdk_twilio::{MessageStatus, Twilio, TwilioError};
 
-async fn inspect(client: &Twilio, submitted_sid: &str) -> Result<(), Error> {
+async fn inspect(client: &Twilio, submitted_sid: &str) -> Result<(), TwilioError> {
     let observed = client.get_message(submitted_sid).await?;
     match observed.value.status {
         MessageStatus::Failed | MessageStatus::Undelivered => {
@@ -87,19 +87,35 @@ async fn inspect(client: &Twilio, submitted_sid: &str) -> Result<(), Error> {
 }
 ```
 
+An empty SID is refused locally (`TwilioError::EmptySid`, nothing sent): it would
+address `Messages/.json`. Other SID spellings are sent as one encoded path segment.
+
 ## Errors and completion
 
-`Error::Provider` represents any non-2xx HTTP response. It keeps actual HTTP status,
-version, all headers and Concord's generated operation identity, plus a typed
-`ProviderError` (`status`, optional `code`, `message`, optional `more_info`). The
-body's claimed status never replaces the HTTP status. The document is JSON-checked
-and limited to 64 KiB; wrong media type, truncation, oversized bodies and malformed
-documents remain HTTP failures with an `ErrorDocumentProblem` and metadata.
+Every operation method (`create_message`, `get_message` and both `prepare_*`)
+returns the SDK's `TwilioError`. Only `with_base_url` returns Concord's own
+`concord::Error` (a `Build` error for an unusable base); `?` converts it. The old
+name `Error` remains as a hidden alias of `TwilioError` for existing code.
 
-`Error::Concord` keeps the original build/transport/metadata/decode error and
+`TwilioError::Provider` represents any non-2xx HTTP response. It keeps actual HTTP
+status, version, all headers and Concord's generated operation identity, plus a
+typed `ProviderError` (`status`, optional `code`, `message`, optional `more_info`).
+The body's claimed status never replaces the HTTP status. The document is
+JSON-checked and read with Concord's `Received::bytes_limited` up to 64 KiB; wrong
+media type, truncation, oversized bodies and malformed documents remain HTTP
+failures with an `ErrorDocumentProblem` and metadata.
+
+`TwilioError::Concord` keeps the original build/transport/metadata/decode error and
 response metadata whenever a head arrived. `error.concord()`, `error.meta()` and
 `error.operation()` provide inspection; `error.provider_error()` exposes a decoded
 provider exception. There is no fabricated status for a lost response.
+
+The operations are declared on a generated client named `TwilioApi`, held inside
+`Twilio` and not exported (its configuration takes a raw header; `Twilio::new` takes
+validated `BasicAuth`). Diagnostics use that name: operation identities are
+`TwilioApi.create_message` and `TwilioApi.get_message`, error `Display` starts with
+`POST TwilioApi.create_message:` or `GET TwilioApi.get_message:`, and `Debug` of the
+client is `Twilio { api: TwilioApi { .. } }` with the credentials and account redacted.
 
 Each operation makes one Concord execution and completes only after decoding the
 whole JSON resource. There is no streaming or pagination in this scope. A successful
@@ -113,17 +129,22 @@ or rollback across those calls. Canceling a future similarly cannot undo a write
 
 Successful JSON bodies are buffered by Concord without an SDK byte cap; configure
 transport timeouts for stalled responses. The SDK validates Basic credential
-structure, but not SID formats, phone numbers, message lengths, intent vocabulary,
-callback URLs or whether the authenticated principal can access the path account. Provider
+structure and refuses an empty message SID, but not SID formats, phone numbers,
+message lengths, intent vocabulary, callback URLs or whether the authenticated
+principal can access the path account. Provider
 acceptance is outside fixture verification. Missing/null optional resource fields
 stay `None`; missing identity/status fields or wrong field types are decode errors.
 
 `prepare_create_message` and `prepare_get_message` build native inspectable Concord
 requests without I/O. Sending those prepared values directly bypasses the SDK error
 adapter and metadata envelope. The normal `create_message`/`get_message` methods
-always use it. SDK diagnostics withhold credentials, message contents, addresses,
-header values and provider explanations. Explicit field/header access and native
-request inspection are unredacted; credentials are marked sensitive on the header.
+always use it. SDK diagnostics withhold credentials, the account SID, message
+contents, addresses, header values and provider explanations. `Debug` of a
+`Message` (and of a `Response<Message>`) shows its `sid`, `status` and `error_code`:
+the message SID is a resource identifier, not a credential, so the fetch path does
+not mark it sensitive either and a prepared fetch's `Debug` shows it. Explicit
+field/header access and native request inspection are unredacted; credentials are
+marked sensitive on the header.
 
 ## Evidence and maintenance perturbation
 
