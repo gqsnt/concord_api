@@ -3,7 +3,7 @@
 #![allow(missing_docs)]
 
 use concord::{
-    Binary, Json, Prepared, Received,
+    Binary, Endpoint, Json, Received, SendWith,
     reqwest::{
         self,
         header::{AUTHORIZATION, HeaderMap, HeaderValue},
@@ -18,18 +18,20 @@ use std::{
 };
 
 concord::api! {
-    /// Wire declarations for the supported operations.
+    /// Wire declarations for the supported operations. Every `send()` returns
+    /// `Result<Response<T>, Error>` (this crate's, through [`SendPolicy`]); [`OpenAi`] adds the
+    /// per-operation input rules, the SSE parser and the bounded downloads.
     pub client OpenAiApi(#[sensitive] header(AUTHORIZATION) authorization: HeaderValue) {
         base "https://api.openai.com";
         path "v1";
+        send SendPolicy;
         request Json;
         response Json;
         /// Create a response.
         POST response(body request: ResponseRequest) -> ResponseObject { path "responses"; }
-        /// Open a response event stream.
-        POST response_stream(body request: ResponseRequest) -> Vec<u8> {
+        /// Open a response event stream: the unread body, for the SDK's SSE parser.
+        POST response_stream(body request: ResponseRequest) -> stream {
             path "responses";
-            response Binary;
             headers { "accept" = "text/event-stream"; }
         }
         /// Upload batch input.
@@ -304,13 +306,21 @@ async fn checked<T>(r: Received<T>) -> Result<(Received<T>, ResponseMeta), Error
     }
     Ok((r, meta))
 }
-async fn send<T>(p: Prepared<T>) -> Result<Response<T>, Error> {
-    let (r, meta) = checked(p.receive().await?).await?;
-    let value = r.decode().await.map_err(|error| Error::Decode {
-        meta: Box::new(meta.clone()),
-        error,
-    })?;
-    Ok(Response { value, meta })
+/// The send policy of [`OpenAiApi`] (`send SendPolicy;`): every generated `send()` returns
+/// `Result<Response<T>, Error>`, with OpenAI's error document on a non-2xx status.
+pub struct SendPolicy;
+
+impl<T: Send> SendWith<T> for SendPolicy {
+    type Output = Result<Response<T>, Error>;
+
+    async fn send<E: Endpoint<T> + Send>(endpoint: E) -> Self::Output {
+        let (r, meta) = checked(endpoint.prepare()?.receive().await?).await?;
+        let value = r.decode().await.map_err(|error| Error::Decode {
+            meta: Box::new(meta.clone()),
+            error,
+        })?;
+        Ok(Response { value, meta })
+    }
 }
 
 /// Configured client. Use an application-supplied transport with timeouts and redirect policy.
@@ -336,7 +346,7 @@ impl OpenAi {
         mut request: ResponseRequest,
     ) -> Result<Response<ResponseObject>, Error> {
         request.stream = Some(false);
-        send(self.api.response(request).prepare()?).await
+        self.api.response(request).send().await
     }
     /// Dropping this future or the returned stream cancels local consumption; it does not cancel server-side work.
     pub async fn stream_response(
@@ -344,14 +354,10 @@ impl OpenAi {
         mut request: ResponseRequest,
     ) -> Result<EventStream, Error> {
         request.stream = Some(true);
-        let (r, meta) = checked(
-            self.api
-                .response_stream(request)
-                .prepare()?
-                .receive()
-                .await?,
-        )
-        .await?;
+        let Response {
+            value: incoming,
+            meta,
+        } = self.api.response_stream(request).send().await?;
         let content_type = meta
             .headers
             .get("content-type")
@@ -367,7 +373,7 @@ impl OpenAi {
             return Err(Error::Stream("expected text/event-stream".into()));
         }
         Ok(EventStream {
-            response: r.into_response(),
+            response: incoming.into_response(),
             meta,
             buffer: Vec::new(),
             data: Vec::new(),
@@ -393,13 +399,13 @@ impl OpenAi {
         let mut body = format!("--concord-batch-boundary\r\nContent-Disposition: form-data; name=\"purpose\"\r\n\r\nbatch\r\n--concord-batch-boundary\r\nContent-Disposition: form-data; name=\"file\"; filename=\"{filename}\"\r\nContent-Type: application/jsonl\r\n\r\n").into_bytes();
         body.extend_from_slice(bytes);
         body.extend_from_slice(b"\r\n--concord-batch-boundary--\r\n");
-        send(self.api.upload(body).prepare()?).await
+        self.api.upload(body).send().await
     }
     pub async fn file(&self, id: &str) -> Result<Response<FileObject>, Error> {
         if id.is_empty() {
             return Err(Error::Invalid("empty file ID"));
         }
-        send(self.api.file(id).prepare()?).await
+        self.api.file(id).send().await
     }
     /// Buffer at most `limit` bytes of file content.
     pub async fn content(&self, id: &str, limit: usize) -> Result<Response<Vec<u8>>, Error> {
@@ -418,13 +424,13 @@ impl OpenAi {
         Ok(Response { value, meta })
     }
     pub async fn create_batch(&self, request: BatchRequest) -> Result<Response<Batch>, Error> {
-        send(self.api.batch(request).prepare()?).await
+        self.api.batch(request).send().await
     }
     pub async fn batch(&self, id: &str) -> Result<Response<Batch>, Error> {
         if id.is_empty() {
             return Err(Error::Invalid("empty batch ID"));
         }
-        send(self.api.batch_status(id).prepare()?).await
+        self.api.batch_status(id).send().await
     }
     /// Poll at most `attempts` times, returning the last batch on exhaustion. Drop the future to cancel.
     pub async fn poll_batch(

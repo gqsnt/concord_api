@@ -98,3 +98,55 @@ async fn malformed_error_and_file_limit() {
     assert!(c.file("").await.is_err());
     s.shutdown().await;
 }
+/// Between waves 2-3 (coordinator integration): the public declaration's own `send()` goes
+/// through `SendPolicy`, and the SSE endpoint is `-> stream` (its body is not read by `send()`).
+#[tokio::test]
+async fn generated_send_has_the_sdk_error_and_does_not_read_the_event_stream() {
+    use concord::reqwest::header::HeaderValue;
+    use concord_example_testserver::Body;
+    use concord_sdk_openai::{OpenAiApi, OpenAiApiConfig};
+    let script = Script::new(vec![
+        Reply::json(400, include_bytes!("../fixtures/error.json")),
+        Reply::new(200)
+            .header("content-type", "text/event-stream")
+            .with_body(Body::Stall),
+    ]);
+    let s = TestServer::start(move |_| script.next()).await;
+    let api = OpenAiApi::new(
+        reqwest::Client::new(),
+        OpenAiApiConfig {
+            authorization: HeaderValue::from_static("Bearer synthetic-token"),
+        },
+    )
+    .with_base_url(s.url())
+    .unwrap();
+    let request = ResponseRequest::new("model-fixture", "hello");
+    match api.response(request.clone()).send().await.unwrap_err() {
+        Error::Provider {
+            meta,
+            error: Some(e),
+        } => {
+            assert_eq!(meta.status.as_u16(), 400);
+            assert_eq!(e.param.as_deref(), Some("model"));
+        }
+        e => panic!("{e:?}"),
+    }
+    // The body never ends: `send()` must return with the head only.
+    let opened = tokio::time::timeout(
+        std::time::Duration::from_secs(5),
+        api.response_stream(request).send(),
+    )
+    .await
+    .expect("send() does not read the event stream")
+    .unwrap();
+    assert_eq!(opened.meta.status.as_u16(), 200);
+    assert_eq!(
+        opened.meta.operation.unwrap().name(),
+        "OpenAiApi.response_stream"
+    );
+    drop(opened);
+    let r = s.requests();
+    assert_eq!(r.len(), 2);
+    assert_eq!(r[1].header("accept"), Some("text/event-stream"));
+    s.shutdown().await;
+}
