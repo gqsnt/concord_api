@@ -42,6 +42,12 @@ the Phase A agent worktrees' own targets (about 17 GB, idle). At Phase B start: 
 
 ## SDK cohort (Phase B)
 
+Wave 4 frozen at `0983a349` (between-wave 3-4 refinements: `sse`, `multipart`, `ResponseMeta`,
+`Error::meta`, `Content-Length: 0` at execution, test-server `Gate`; migrations M1/M2; reviews
+SOL-W34 and AST-W34 fixed and rechecked): `verify.sh --package --bench` 49/49 PASS, clean tree,
+4m00s (`work/logs/gate-0983a349-verify.txt`); pushed to PR #4. Earlier gate on `92775757` (merged
+refinements before fixes) 49/49.
+
 Wave 3 integrated at `961db5c8` (library still `6d6d66aa`): `verify.sh --package --bench`
 43/43 PASS, clean tree (`work/logs/gate-961db5c8-verify.txt`, 3m37s). Synthesis: DECISIONS
 "Wave 3" (W3-1..18).
@@ -79,6 +85,10 @@ commit, so no baseline intervention was needed.
 | SDK10 | Linear | medium | 3 | `gpt-6.1-terra` xhigh (`ed548bd5`) | `gpt-6-astra` xhigh, 18 tests, unassisted (`3ae13c1c`) | Opus subagent (`9466d1eb`) | WAVE_3_ROLES_DONE, merged `2c1d5295` |
 | SDK11 | Dropbox | medium | 3 | `gpt-6-astra` xhigh (`69692433`; flaky test fixed by the same session) | Opus subagent, 18 tests, unassisted (`373362dc`) | `gpt-6.1-sol` xhigh (`72249e49`) | WAVE_3_ROLES_DONE, merged `0bc35457` |
 | SDK12 | Google Drive | large | 3 | `gpt-6.1-sol` xhigh (`6d9d7fb9`) | `gpt-6.1-terra` xhigh, 5 tests, unassisted (`e8968c80`) | `gpt-6-astra` xhigh (`9bc413b0`, no production change needed) | WAVE_3_ROLES_DONE, merged `7354d5a3` |
+| SDK13 | Open-Meteo | small | 4 | `gpt-6.1-sol` xhigh (session `01a1af7e-2606-7e53…`, running) | `gpt-6.1-terra` | `gpt-6-astra` | WAVE_4_AUTHORING |
+| SDK14 | Airtable | medium | 4 | `gpt-6.1-terra` xhigh (session `01a1af7e-2607…`, running) | `gpt-6-astra` | Opus | WAVE_4_AUTHORING |
+| SDK15 | ClickHouse | medium | 4 | Opus subagent (running) | `gpt-6.1-sol` | `gpt-6.1-terra` | WAVE_4_AUTHORING |
+| SDK16 | Snowflake | large | 4 | `gpt-6-astra` xhigh (session `01a1af7e-2606-70d1…`, running) | Opus | `gpt-6.1-sol` | WAVE_4_AUTHORING |
 
 ## Open issues (not fixed; tracked)
 
