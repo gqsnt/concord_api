@@ -229,3 +229,17 @@ After the change (`CARGO_BUILD_JOBS=6`):
 - `cargo fmt -p concord-sdk-openai -- --check`: clean.
 
 Offline only; no OpenAI API calls.
+
+### After `Incoming::chunk` (coordinator, `08df6614`)
+
+The gap above ("`Incoming` has no chunk-reading method of its own") was closed in the library
+by `Incoming::chunk()`. `EventStream` now keeps the `Incoming` instead of the native response
+(`body: concord::Incoming`; `self.body.chunk().await?`), so the parser never leaves Concord's
+boundary. Behaviour change, observed in `tests/workflows.rs`: a body that breaks off mid-stream
+was `Error::Transport(reqwest::Error)`, whose `Display` (this SDK prints `{:?}`) included the
+request URL; it is now `Error::Concord(e)` with `e.kind() == Transport` and
+`e.operation()` = `OpenAiApi.response_stream`, URL removed. The `Transport` variant is gone
+(nothing else produced it). The test now asserts kind, operation and redaction instead of only
+the variant. Code: 3 changed lines in `src/lib.rs`, one variant removed. The SSE parser itself is
+unchanged; whether it becomes shared code is decided with ntfy in wave 3.
+

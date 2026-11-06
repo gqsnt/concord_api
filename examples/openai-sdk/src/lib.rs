@@ -269,7 +269,6 @@ pub enum Error {
         error: concord::Error,
     },
     Json(serde_json::Error),
-    Transport(reqwest::Error),
     Invalid(&'static str),
     Stream(String),
     StreamFailed(Box<ResponseObject>),
@@ -374,7 +373,7 @@ impl OpenAi {
             return Err(Error::Stream("expected text/event-stream".into()));
         }
         Ok(EventStream {
-            response: incoming.into_response(),
+            body: incoming,
             meta,
             buffer: Vec::new(),
             data: Vec::new(),
@@ -497,7 +496,7 @@ pub enum Event {
 }
 /// Incremental SSE reader. EOF before a completion event is an error. Drop to cancel.
 pub struct EventStream {
-    response: reqwest::Response,
+    body: concord::Incoming,
     pub meta: ResponseMeta,
     buffer: Vec<u8>,
     data: Vec<Vec<u8>>,
@@ -546,7 +545,7 @@ impl EventStream {
                 }
                 continue;
             }
-            match self.response.chunk().await.map_err(Error::Transport)? {
+            match self.body.chunk().await? {
                 Some(chunk) => {
                     if self.buffer.len()
                         + self.data.iter().map(Vec::len).sum::<usize>()

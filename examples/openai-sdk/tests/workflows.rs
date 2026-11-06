@@ -202,7 +202,15 @@ async fn stream_failure_transport_failure_and_local_cancellation() {
         stream.next().await.unwrap(),
         Some(Event::OutputTextDelta { .. })
     ));
-    assert!(matches!(stream.next().await, Err(Error::Transport(_))));
+    // A body that breaks off is a Concord transport failure naming the operation, not an end.
+    match stream.next().await {
+        Err(Error::Concord(e)) => {
+            assert_eq!(e.kind(), concord::ErrorKind::Transport);
+            assert_eq!(e.operation().unwrap().name(), "OpenAiApi.response_stream");
+            assert!(!e.to_string().contains("127.0.0.1"), "{e}");
+        }
+        other => panic!("expected a transport failure, got {other:?}"),
+    }
     let mut stream = c.stream_response(request).await.unwrap();
     assert!(
         tokio::time::timeout(Duration::from_millis(50), stream.next())
