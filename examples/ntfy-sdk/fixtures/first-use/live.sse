@@ -1,0 +1,10 @@
+event: open
+data: {"id":"opening001","time":1700000000,"event":"open","topic":"first-use"}
+
+data: {"id":"message001","time":1700000001,"event":"message","topic":"first-use","message":"Backup ready"}
+
+event: keepalive
+data: {"id":"keepalive1","time":1700000002,"event":"keepalive","topic":"first-use"}
+
+data: {"id":"message002","time":1700000003,"event":"message","topic":"first-use","message":"Backup done 🦀"}
+
