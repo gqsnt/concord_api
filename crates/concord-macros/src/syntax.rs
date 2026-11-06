@@ -789,7 +789,7 @@ fn parse_group(input: ParseStream<'_>) -> syn::Result<Group> {
 pub fn expand_groups(api: &mut Api) -> syn::Result<()> {
     let mut seen: Vec<&Ident> = Vec::new();
     for group in &api.groups {
-        if let Some(first) = seen.iter().find(|n| **n == &group.name) {
+        if let Some(first) = seen.iter().find(|n| same(n, &group.name)) {
             let mut e = syn::Error::new(
                 group.name.span(),
                 format!("duplicate parameter group `{}`", group.name),
@@ -811,6 +811,11 @@ pub fn expand_groups(api: &mut Api) -> syn::Result<()> {
         ));
     }
     Ok(())
+}
+
+/// The same identifier, whatever its spelling (`Paging` and `r#Paging` name one group).
+fn same(a: &Ident, b: &Ident) -> bool {
+    a.unraw() == b.unraw()
 }
 
 /// Levenshtein distance, for a "did you mean" suggestion between short identifiers.
@@ -838,18 +843,18 @@ fn expand_owner(owner: &mut Owner, groups: &[Group], used: &mut [bool]) -> syn::
     for (i, a) in spreads.iter().enumerate() {
         for b in &spreads[i + 1..] {
             let (Some(ga), Some(gb)) = (
-                groups.iter().find(|g| g.name == a.name),
-                groups.iter().find(|g| g.name == b.name),
+                groups.iter().find(|g| same(&g.name, &a.name)),
+                groups.iter().find(|g| same(&g.name, &b.name)),
             ) else {
                 continue;
             };
-            if ga.name == gb.name {
+            if same(&ga.name, &gb.name) {
                 continue;
             }
             if let Some(value) = ga
                 .params
                 .iter()
-                .find(|v| gb.params.iter().any(|w| w.name == v.name))
+                .find(|v| gb.params.iter().any(|w| same(&w.name, &v.name)))
             {
                 return Err(syn::Error::new(
                     b.name.span(),
@@ -864,7 +869,7 @@ fn expand_owner(owner: &mut Owner, groups: &[Group], used: &mut [bool]) -> syn::
     let declared: Vec<Ident> = owner.params.iter().map(|p| p.name.clone()).collect();
     // From the last spread to the first, so earlier insertion points stay valid.
     for spread in spreads.iter().rev() {
-        let Some(index) = groups.iter().position(|g| g.name == spread.name) else {
+        let Some(index) = groups.iter().position(|g| same(&g.name, &spread.name)) else {
             let written = spread.name.to_string();
             let near = groups
                 .iter()
@@ -884,7 +889,7 @@ fn expand_owner(owner: &mut Owner, groups: &[Group], used: &mut [bool]) -> syn::
             if let Some(own) = owner
                 .params
                 .iter()
-                .find(|p| p.name == value.name && declared.contains(&p.name))
+                .find(|p| same(&p.name, &value.name) && declared.iter().any(|d| same(d, &p.name)))
             {
                 let mut e = syn::Error::new(
                     own.name.span(),
@@ -900,7 +905,7 @@ fn expand_owner(owner: &mut Owner, groups: &[Group], used: &mut [bool]) -> syn::
                 return Err(e);
             }
         }
-        if owner.groups.contains(&spread.name) {
+        if owner.groups.iter().any(|g| same(g, &spread.name)) {
             return Err(syn::Error::new(
                 spread.name.span(),
                 format!("parameter group `{}` is included twice", spread.name),

@@ -457,10 +457,12 @@ impl Incoming {
     ///
     /// `Transport` if reading fails.
     pub async fn chunk(&mut self) -> Result<Option<bytes::Bytes>, Error> {
-        self.response
-            .chunk()
-            .await
-            .map_err(|e| Error::from_transport(self.operation, e))
+        match self.response.chunk().await {
+            Ok(chunk) => Ok(chunk),
+            // The response stays with this `Incoming`, so its error carries a copy of the head.
+            Err(e) => Err(Error::from_transport(self.operation, e)
+                .with_head(ResponseMeta::new(self.head(), self.operation))),
+        }
     }
 
     /// Reads the body to its end and discards it (an explicit discard; dropping the value
@@ -475,15 +477,15 @@ impl Incoming {
             mut response,
             operation,
         } = self;
+        let head = ResponseMeta::take(&mut response, operation);
         let mut read = 0u64;
-        while let Some(chunk) = response
-            .chunk()
-            .await
-            .map_err(|e| Error::from_transport(operation, e))?
-        {
-            read += chunk.len() as u64;
+        loop {
+            match response.chunk().await {
+                Ok(Some(chunk)) => read += chunk.len() as u64,
+                Ok(None) => return Ok(read),
+                Err(e) => return Err(Error::from_transport(operation, e).with_head(head)),
+            }
         }
-        Ok(read)
     }
 }
 

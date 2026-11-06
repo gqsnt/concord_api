@@ -1368,8 +1368,9 @@ status, and the SDK then consumes the body once. Three facts make the ordinary p
 - **A failure after the head arrived keeps the head.** `concord::Error::head()` borrows it for
   every `Status`, `Metadata`, `Decode`, `Limit` and mid-body `Transport` error (Concord moves the
   head out of the native response before reading the body; nothing is cloned), and
-  `Error::meta()` is the owned copy. Before a head (`Build`, a connection failure) both are
-  `None`. So an SDK error built `From<concord::Error>` keeps the status of a decode failure
+  `Error::head_meta()` is the owned copy. Before a head (`Build`, a connection failure) both
+  are `None`. (`Error::meta()` keeps its narrower meaning: the head of the response a `Status` or
+  `Metadata` error keeps, `Some` exactly when `into_response()` returns it.) So an SDK error built `From<concord::Error>` keeps the status of a decode failure
   without capturing anything by hand.
 - **`received.decode_with_meta()`** (and `decode_limited_with_meta(limit)`) applies the declared
   handling and returns the head beside the value, moved rather than cloned for a finite output
@@ -1396,7 +1397,7 @@ async fn send<E: Endpoint<Rate> + Send>(&self, endpoint: E) -> Self::Output {
         let document = document.map_err(ErrorBodyError::from);
         return Err(Error::Provider(Box::new(ProviderError { meta, document })));
     }
-    // A success-body failure keeps the head in the Concord error (`Error::meta`).
+    // A success-body failure keeps the head in the Concord error (`Error::head_meta`).
     let (rate, meta) = received.decode_with_meta().await?;
     Ok(RateResponse { rate, meta })
 }

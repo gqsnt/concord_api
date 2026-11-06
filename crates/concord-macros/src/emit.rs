@@ -50,16 +50,23 @@ fn group_traits(k: &TokenStream, model: &Model, vis: &syn::Visibility) -> TokenS
     for group in &model.groups {
         let name = &group.name;
         let docs = &group.docs;
-        let users: Vec<&Owner> = model
+        let user_indices: Vec<usize> = model
             .owners
             .iter()
-            .filter(|o| o.groups.iter().any(|g| g == name))
+            .enumerate()
+            .filter(|(_, o)| o.groups.iter().any(|g| plain(g) == plain(name)))
+            .map(|(i, _)| i)
             .collect();
+        let users: Vec<&Owner> = user_indices.iter().map(|&i| &model.owners[i]).collect();
+        // Names, not links: an including endpoint may be compiled out by its `cfg`.
         let listed = users
             .iter()
-            .map(|o| format!("[`{}`]", plain(&o.type_name)))
+            .map(|o| format!("`{}`", plain(&o.type_name)))
             .collect::<Vec<_>>()
             .join(", ");
+        // The trait exists where one of its endpoints does: its signatures may name types that
+        // only those endpoints' configurations define.
+        let cfg = owners_cfg(model, &user_indices);
         let about = lit(&format!(
             " The setters of the parameter group `{}`, implemented by every endpoint that includes it (`..{0}`): {listed}. Each method is the endpoint's own setter of the same name.",
             plain(name)
@@ -108,6 +115,7 @@ fn group_traits(k: &TokenStream, model: &Model, vis: &syn::Visibility) -> TokenS
             }
         }
         out.extend(quote! {
+            #cfg
             #(#docs)*
             #[doc = ""]
             #[doc = #about]

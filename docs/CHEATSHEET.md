@@ -120,8 +120,8 @@ format statements, then children.
 | `concord::Endpoint<T>` | implemented by every generated endpoint for its output `T` (`prepare`, `operation()`): write one SDK adapter for all operations |
 | `into_parts()` → `(Client, Request, Decoder)` | execute it yourself, then `decoder.finish(result)` or `decoder.decode(response)` |
 | `error.kind()`, `status()`, `endpoint()` | `Build`, `Transport`, `Status`, `Metadata`, `Decode`, `Limit`; `status()` is `Some` for `Status` only |
-| `error.head()`, `error.meta()` | the head of the response any failure after it arrived concerns (`Status`, `Metadata`, `Decode`, `Limit`, a mid-body `Transport`): borrowed, or an owned copy; `None` before a head |
-| `error.response()`, `error.into_response()` | the unread response of a `Status` or a `Metadata` error: borrowed (headers) or taken (body) |
+| `error.head()`, `error.head_meta()` | the head of the response any failure after it arrived concerns (`Status`, `Metadata`, `Decode`, `Limit`, a mid-body `Transport`): borrowed, or an owned copy; `None` before a head |
+| `error.response()`, `error.into_response()`, `error.meta()` | the unread response of a `Status` or a `Metadata` error: borrowed (headers), taken (body), or its head owned |
 | `error.codec_error()` | the format's `CodecError` (a `Metadata`, `Decode` or encoding `Build` error): static `label()`, `get("line")`, and `source_unredacted()` |
 | `error.transport()` | the reqwest error, which may contain URLs |
 | `<Json as Decode<T>>::decode_body((), bytes)` | decode bytes you already hold: no head check and no context (for a received error document, `document` runs both) |

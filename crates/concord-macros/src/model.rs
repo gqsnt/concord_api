@@ -490,6 +490,22 @@ impl Model {
         let mut stmts = Vec::new();
         flatten(api.client, None, &mut owners, &mut stmts, &mut errors);
         errors.check()?;
+        for group in &api.groups {
+            let name = plain(&group.name);
+            let taken = owners.iter().any(|o: &Owner| {
+                plain(&o.type_name) == name
+                    || (matches!(o.kind, Kind::Client { .. }) && plain(&o.config_name()) == name)
+            });
+            if taken {
+                errors.push(syn::Error::new(
+                    group.name.span(),
+                    format!(
+                        "parameter group `{name}` has the name of a type this declaration generates; rename the group"
+                    ),
+                ));
+            }
+        }
+        errors.check()?;
         let mut model = Model {
             owners,
             key_paths: Vec::new(),

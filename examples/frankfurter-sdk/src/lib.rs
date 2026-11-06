@@ -84,7 +84,7 @@ impl SendWith<Rate> for SendPolicy {
             let document = document.map_err(ErrorBodyError::from);
             return Err(Error::Provider(Box::new(ProviderError { meta, document })));
         }
-        // A success-body failure keeps the head in the Concord error (`Error::meta`).
+        // A success-body failure keeps the head in the Concord error (`Error::head_meta`).
         let (rate, meta) = received.decode_with_meta().await?;
         Ok(RateResponse { rate, meta })
     }

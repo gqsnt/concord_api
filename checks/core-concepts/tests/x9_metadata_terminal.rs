@@ -64,11 +64,14 @@ async fn a_decode_failure_keeps_the_status_and_headers() {
         None,
         "`status` stays the status of a Status error"
     );
-    let meta = error.meta().expect("owned copy");
+    let meta = error.head_meta().expect("owned copy");
     assert_eq!(meta.operation().unwrap().name(), "Rates.rate");
+    // `meta()` keeps its contract: `Some` exactly when `into_response()` has a response.
+    assert!(error.meta().is_none());
     for text in [format!("{error}"), format!("{error:?}")] {
         assert!(!text.contains(SECRET) && !text.contains("req-42"), "{text}");
     }
+    assert!(error.into_response().is_err());
 }
 
 #[tokio::test]
@@ -165,4 +168,38 @@ async fn status_and_media_errors_keep_their_unread_response_as_before() {
     assert_eq!(media.kind(), ErrorKind::Metadata);
     assert_eq!(media.head().unwrap().headers()["content-type"], "text/html");
     assert!(media.response().is_some());
+}
+
+#[tokio::test]
+async fn an_incoming_body_that_fails_keeps_its_head_through_chunk_and_drain() {
+    let server = TestServer::start(|_| {
+        tagged(Reply::new(200).with_body(Body::FailAfter(vec![b"partial".as_slice().into()])))
+    })
+    .await;
+    let incoming = || async {
+        rates(&server)
+            .rate("EUR", "USD")
+            .prepare()
+            .unwrap()
+            .receive()
+            .await
+            .unwrap()
+            .into_incoming()
+            .unwrap()
+    };
+    let mut body = incoming().await;
+    let error = loop {
+        match body.chunk().await {
+            Ok(Some(_)) => continue,
+            Ok(None) => panic!("the body fails"),
+            Err(error) => break error,
+        }
+    };
+    assert_eq!(error.kind(), ErrorKind::Transport);
+    assert_eq!(error.head().unwrap().headers()["x-request-id"], "req-42");
+
+    let error = incoming().await.drain().await.unwrap_err();
+    assert_eq!(error.kind(), ErrorKind::Transport);
+    assert_eq!(error.head().unwrap().status().as_u16(), 200);
+    assert!(error.meta().is_none(), "no kept response");
 }

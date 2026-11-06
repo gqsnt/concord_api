@@ -226,7 +226,9 @@ impl Error {
     /// The header values are the server's, unredacted.
     ///
     /// The HTTP status of any failed call is `error.head().map(|h| h.status())`, after a decode
-    /// failure too; [`status`](Self::status) stays the status of a `Status` error only.
+    /// failure too; [`status`](Self::status) stays the status of a `Status` error only, and
+    /// [`meta`](Self::meta) / [`response`](Self::response) the kept response of a `Status` or
+    /// `Metadata` error only.
     pub fn head(&self) -> Option<ResponseHead<'_>> {
         match &self.inner.repr {
             Repr::Status(response) | Repr::Metadata(_, response) => {
@@ -237,11 +239,21 @@ impl Error {
     }
 
     /// An owned copy of [`head`](Self::head) with this error's operation, for an SDK error that
-    /// outlives this one: available for every error raised after a response arrived (see
-    /// `head`). Clones the header map.
-    pub fn meta(&self) -> Option<ResponseMeta> {
+    /// outlives this one: available for every error raised after a response arrived. Clones the
+    /// header map.
+    pub fn head_meta(&self) -> Option<ResponseMeta> {
         self.head()
             .map(|head| ResponseMeta::new(head, self.operation()))
+    }
+
+    /// An owned copy of the kept response's head with this error's operation
+    /// ([`Status`](ErrorKind::Status) and [`Metadata`](ErrorKind::Metadata) only, like
+    /// [`response`](Self::response): `meta()` is `Some` exactly when
+    /// [`into_response`](Self::into_response) returns the response). For the head of any failure
+    /// after a response arrived (a `Decode` error too), use [`head_meta`](Self::head_meta).
+    pub fn meta(&self) -> Option<ResponseMeta> {
+        self.response()
+            .map(|response| ResponseMeta::new(ResponseHead::of(response), self.operation()))
     }
 
     /// The unread response of an [`ErrorKind::Status`] or [`ErrorKind::Metadata`] error; any other
