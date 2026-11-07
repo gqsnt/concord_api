@@ -351,7 +351,7 @@ pub struct Parts<'a> {
     labels: Vec<String>,
     segments: Vec<String>,
     trailing_slash: bool,
-    query: Vec<(&'static str, String)>,
+    query: Vec<(std::borrow::Cow<'static, str>, String)>,
     headers: HeaderMap,
     /// Set by [`HeaderPlan`] when a native key classified `content-type` as sensitive.
     content_type_sensitive: bool,
@@ -442,8 +442,22 @@ impl<'a> Parts<'a> {
         what: &'static str,
     ) -> Result<(), Error> {
         let text = display(value, self.meta, what)?;
-        self.query.push((key, text));
+        self.query.push((std::borrow::Cow::Borrowed(key), text));
         Ok(())
+    }
+
+    /// Adds the pairs a `query(..)` value writes, in its order. `what` names the parameter.
+    pub fn query_pairs<P: crate::QueryPairs + ?Sized>(
+        &mut self,
+        value: &P,
+        what: &'static str,
+    ) -> Result<(), Error> {
+        let mut writer = crate::value::QueryPairsWriter::new(&mut self.query);
+        value.query_pairs(&mut writer);
+        match writer.finish() {
+            Ok(()) => Ok(()),
+            Err(reason) => Err(Error::build(Some(self.meta), what, reason)),
+        }
     }
 
     /// Adds one query occurrence per item, in iteration order.

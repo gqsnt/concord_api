@@ -1232,7 +1232,12 @@ fn debug_fields<'a>(
         } else {
             (quote!(DebugHeader), quote!(DebugHeaderEach))
         };
-        let shown = match (value.debug_sensitive, value.optional, value.usage) {
+        // A `query(..)` value has no `Display`: withheld like a sensitive one.
+        let shown = match (
+            value.debug_sensitive || value.pairs.is_some(),
+            value.optional,
+            value.usage,
+        ) {
             // Never used: the declaration is rejected (`Model::build`); its value is not shown
             // and adds no trait obligation to the error.
             (_, _, None) => quote_spanned!(span=> &#k::__private::Redacted),
@@ -2457,6 +2462,19 @@ fn prepare_body(
             slot,
             Family::Query,
         ));
+    }
+    // `query(..)` values of the endpoint: their pairs follow the declared query, in order.
+    for value in &owner.values {
+        let Some(at) = value.pairs else { continue };
+        let name = &value.name;
+        let what = lit(&format!("query value `{}`", plain(name)));
+        let call = if value.optional {
+            quote!(if let ::core::option::Option::Some(__v) = &self.#name { __p.query_pairs(__v, #what)?; })
+        } else {
+            quote!(__p.query_pairs(&self.#name, #what)?;)
+        };
+        // Located at the placement (an unimplemented `QueryPairs` points there), macro hygiene kept.
+        code.extend(located(call, at));
     }
     match &composed.headers {
         HeaderComposition::Static(slots) => {

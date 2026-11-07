@@ -364,6 +364,64 @@ The shortest form places a value directly in its parameter list:
 | `header(ACCEPT) accept: HeaderValue` | `accept: <the native value, byte for byte>` |
 | `query("tag") each tags: Vec<String>` | one `tag=<item>` per item (any `IntoIterator` whose items are `Display`) |
 | `header("x-tag") each tags: Vec<HeaderValue>` | one `x-tag` line per item, in order |
+| `query(..) anchor?: Anchor` | the pairs the value writes (`T: QueryPairs`), after the declared query (§4.1a) |
+
+### 4.1a Values that choose their own keys: `query(..)`
+
+Every other placement names its key in the declaration. When the key itself is part of the
+value — exactly one of several mutually exclusive cursors, or parameters named at run time
+(`param_<name>`) — declare the value with `query(..)` and implement
+[`QueryPairs`](https://docs.rs/concord/latest/concord/trait.QueryPairs.html) for its type. The
+caller then cannot send two cursors together, and the SDK writes no wrapper endpoints to enforce it.
+
+```rust
+use concord::{QueryPairs, QueryPairsWriter, reqwest};
+
+/// Exactly one anchor for a page of messages.
+pub enum Anchor { Before(u64), After(u64), Around(u64) }
+
+impl QueryPairs for Anchor {
+    fn query_pairs(&self, out: &mut QueryPairsWriter<'_>) {
+        match self {
+            Anchor::Before(id) => out.pair("before", id),
+            Anchor::After(id) => out.pair("after", id),
+            Anchor::Around(id) => out.pair("around", id),
+        }
+    }
+}
+
+concord::api! {
+    pub client Chat() {
+        base "https://chat.example.com";
+        GET messages(channel: u64, query limit?: u8, query(..) anchor?: Anchor) {
+            path "channels/{channel}/messages";
+        }
+    }
+}
+
+fn main() -> Result<(), concord::Error> {
+    let chat = Chat::new(reqwest::Client::new());
+    let prepared = chat.messages(7).set_limit(50).set_anchor(Anchor::Before(99)).prepare()?;
+    assert_eq!(prepared.request().url().query(), Some("limit=50&before=99"));
+    Ok(())
+}
+```
+
+Rules, each checked when the declaration compiles:
+
+- **Endpoints only.** A scope's or client's requests cannot know the pairs of a value they do not
+  own; `query(..)` on a scope or client is an error. It can sit in a parameter group (§2.1) that
+  only endpoints include.
+- **No key, no `each`, no `header(..)`.** The value writes every pair, repeated keys included.
+- **Never `#[sensitive]`.** Concord redacts by key, and these keys are only known at run time;
+  give a secret its own keyed placement (`#[sensitive] query("token") token: String`). The
+  endpoint's `Debug` withholds a `query(..)` value; the prepared URL shows its pairs like any
+  other query.
+- **Order:** the pairs follow every declared query key of the chain (§4.7), in the order the value
+  writes them. An empty key is a build error (`ErrorKind::Build`) before anything is sent.
+
+`QueryPairs` is implemented for `Vec<(K, V)>`, `[(K, V)]` and `BTreeMap<K, V>` (`K: AsRef<str>`,
+`V: Display`) for ad-hoc pairs; prefer your own type when the set of keys is a provider rule.
 
 ### 4.2 Blocks, templates and references
 
@@ -499,7 +557,8 @@ fn main() -> Result<(), concord::Error> {
 ### 4.7 Order on the wire
 
 - **Query:** each key keeps the position of its first appearance on the chain (root first), and
-  its occurrences are in contribution order. The query string is exactly that sequence.
+  its occurrences are in contribution order. The query string is exactly that sequence, followed by
+  the pairs of the endpoint's `query(..)` values (§4.1a).
 - **Headers:** the values of one name are sent in contribution order. The order *between*
   different header names is not specified (the native `HeaderMap` groups by name, and reqwest and
   hyper add their own headers).

@@ -1,5 +1,7 @@
 //! The closed set of conversions accepted wherever a declared value is supplied.
 
+use std::fmt;
+
 use reqwest::header::HeaderValue;
 
 mod sealed {
@@ -82,5 +84,103 @@ impl IntoValue<HeaderValue> for &HeaderValue {
     #[inline]
     fn into_value(self) -> HeaderValue {
         self.clone()
+    }
+}
+
+/// A value that writes its own query pairs: the parameter of an endpoint declared with
+/// `query(..) name?: T`. Use it when the key itself depends on the value — one of several
+/// mutually exclusive cursors (`around`/`before`/`after`), provider parameters named at run time
+/// (`param_<name>`):
+///
+/// ```
+/// use concord_core::{QueryPairs, QueryPairsWriter};
+///
+/// /// Exactly one of three cursors.
+/// pub enum Anchor { Before(u64), After(u64), Around(u64) }
+///
+/// impl QueryPairs for Anchor {
+///     fn query_pairs(&self, out: &mut QueryPairsWriter<'_>) {
+///         match self {
+///             Anchor::Before(id) => out.pair("before", id),
+///             Anchor::After(id) => out.pair("after", id),
+///             Anchor::Around(id) => out.pair("around", id),
+///         }
+///     }
+/// }
+/// ```
+///
+/// The pairs follow the endpoint's declared query keys, in the order written. An empty key is a
+/// build error. Concord cannot redact a key it only learns at run time, so such a parameter
+/// cannot be `#[sensitive]`, and its values appear in the request's `Debug` URL.
+#[diagnostic::on_unimplemented(
+    message = "`{Self}` cannot be a `query(..)` value: it does not implement `QueryPairs`",
+    label = "a `query(..)` value writes its own query pairs",
+    note = "implement `concord::QueryPairs` for the type, or give the value a key: `query(\"k\") x: T`"
+)]
+pub trait QueryPairs {
+    /// Writes the pairs, in order.
+    fn query_pairs(&self, out: &mut QueryPairsWriter<'_>);
+}
+
+impl<T: QueryPairs + ?Sized> QueryPairs for &T {
+    fn query_pairs(&self, out: &mut QueryPairsWriter<'_>) {
+        (**self).query_pairs(out);
+    }
+}
+
+impl<K: AsRef<str>, V: fmt::Display> QueryPairs for [(K, V)] {
+    fn query_pairs(&self, out: &mut QueryPairsWriter<'_>) {
+        for (key, value) in self {
+            out.pair(key.as_ref(), value);
+        }
+    }
+}
+
+impl<K: AsRef<str>, V: fmt::Display> QueryPairs for Vec<(K, V)> {
+    fn query_pairs(&self, out: &mut QueryPairsWriter<'_>) {
+        self.as_slice().query_pairs(out);
+    }
+}
+
+impl<K: AsRef<str>, V: fmt::Display> QueryPairs for std::collections::BTreeMap<K, V> {
+    fn query_pairs(&self, out: &mut QueryPairsWriter<'_>) {
+        for (key, value) in self {
+            out.pair(key.as_ref(), value);
+        }
+    }
+}
+
+/// Where a [`QueryPairs`] value writes its pairs.
+pub struct QueryPairsWriter<'a> {
+    out: &'a mut Vec<(std::borrow::Cow<'static, str>, String)>,
+    failed: Option<&'static str>,
+}
+
+impl<'a> QueryPairsWriter<'a> {
+    pub(crate) fn new(out: &'a mut Vec<(std::borrow::Cow<'static, str>, String)>) -> Self {
+        Self { out, failed: None }
+    }
+
+    /// Appends `key=value` (`value` formatted with `Display`, then percent-encoded with the rest
+    /// of the query).
+    pub fn pair(&mut self, key: &str, value: impl fmt::Display) {
+        if self.failed.is_some() {
+            return;
+        }
+        if key.is_empty() {
+            self.failed = Some("writes a query pair with an empty key");
+            return;
+        }
+        let mut text = String::new();
+        if fmt::Write::write_fmt(&mut text, format_args!("{value}")).is_err() {
+            self.failed = Some("could not be formatted (its Display failed)");
+            return;
+        }
+        self.out
+            .push((std::borrow::Cow::Owned(key.to_owned()), text));
+    }
+
+    pub(crate) fn finish(self) -> Result<(), &'static str> {
+        self.failed.map_or(Ok(()), Err)
     }
 }

@@ -1,15 +1,16 @@
 //! Fresh-caller workflows, with FRED represented only by loopback fixtures.
 use concord_example_testserver::{Recorded, Reply, TestServer};
 use concord_sdk_fred::{
+    Error, Fred, FredConfig, ObservationLimit, SearchLimit,
     concord::ErrorKind,
     concord_pagination::{PagesError, Resume},
-    http_client, pages, Error, Fred, FredConfig, ObservationLimit, SearchLimit,
+    http_client, pages,
 };
 use std::{
     io::{Cursor, Write},
     num::NonZeroUsize,
 };
-use zip::{write::SimpleFileOptions, CompressionMethod, ZipWriter};
+use zip::{CompressionMethod, ZipWriter, write::SimpleFileOptions};
 
 const KEY: &str = "synthetic-local-key";
 const SERIES: &str = r#"<series id="INDPRO" title="Industrial Production" realtime_start="2024-01-01" realtime_end="2024-01-01" observation_start="1919-01-01" observation_end="2024-01-01" frequency="Monthly" frequency_short="M" units="Index 2017=100" units_short="Index" seasonal_adjustment="Seasonally Adjusted" seasonal_adjustment_short="SA" last_updated="2024-02-01 09:15:00-06" popularity="80"/>"#;
