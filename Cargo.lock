@@ -1028,6 +1028,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "concord-sdk-datadog-events"
+version = "0.0.0"
+dependencies = [
+ "concord",
+ "concord-example-testserver",
+ "concord-pagination",
+ "serde",
+ "serde_json",
+ "tokio",
+]
+
+[[package]]
 name = "concord-sdk-digitalocean"
 version = "0.0.0"
 dependencies = [

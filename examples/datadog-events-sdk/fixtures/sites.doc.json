@@ -1,0 +1,56 @@
+[
+  {
+    "label": "US1",
+    "site": "app.datadoghq.com",
+    "dd_site": "datadoghq.com",
+    "api_host": "api.datadoghq.com"
+  },
+  {
+    "label": "US3",
+    "site": "us3.datadoghq.com",
+    "dd_site": "us3.datadoghq.com",
+    "api_host": "api.us3.datadoghq.com"
+  },
+  {
+    "label": "US5",
+    "site": "us5.datadoghq.com",
+    "dd_site": "us5.datadoghq.com",
+    "api_host": "api.us5.datadoghq.com"
+  },
+  {
+    "label": "EU",
+    "site": "app.datadoghq.eu",
+    "dd_site": "datadoghq.eu",
+    "api_host": "api.datadoghq.eu"
+  },
+  {
+    "label": "AP1",
+    "site": "ap1.datadoghq.com",
+    "dd_site": "ap1.datadoghq.com",
+    "api_host": "api.ap1.datadoghq.com"
+  },
+  {
+    "label": "AP2",
+    "site": "ap2.datadoghq.com",
+    "dd_site": "ap2.datadoghq.com",
+    "api_host": "api.ap2.datadoghq.com"
+  },
+  {
+    "label": "UK1",
+    "site": "uk1.datadoghq.com",
+    "dd_site": "uk1.datadoghq.com",
+    "api_host": "api.uk1.datadoghq.com"
+  },
+  {
+    "label": "US1-FED",
+    "site": "app.ddog-gov.com",
+    "dd_site": "ddog-gov.com",
+    "api_host": "api.ddog-gov.com"
+  },
+  {
+    "label": "US2-FED",
+    "site": "us2.ddog-gov.com",
+    "dd_site": "us2.ddog-gov.com",
+    "api_host": "api.us2.ddog-gov.com"
+  }
+]
