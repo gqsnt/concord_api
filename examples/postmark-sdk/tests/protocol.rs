@@ -1,0 +1,125 @@
+//! Wire protocol and failure handling.
+
+use concord::ErrorKind;
+use concord_example_testserver::{Body, Recorded, Reply, TestServer};
+use concord_sdk_postmark::{ERROR_LIMIT, Error, Postmark, PostmarkConfig, RESPONSE_LIMIT};
+
+fn client(server: &TestServer) -> Postmark {
+    Postmark::new(
+        concord_sdk_postmark::http_client_builder().build().unwrap(),
+        PostmarkConfig {
+            token: "synthetic-secret-token".into(),
+        },
+    )
+    .with_base_url(server.url())
+    .unwrap()
+}
+
+#[tokio::test]
+async fn all_documented_http_error_classes_and_redaction() {
+    for status in [401, 404, 413, 415, 422, 429, 500, 503] {
+        let server = TestServer::start(move |_: &Recorded| {
+            Reply::json(status, include_str!("../fixtures/error.json")).header("retry-after", "7")
+        })
+        .await;
+        let api = client(&server);
+        let prepared = api.outbound().details("id/with space").prepare().unwrap();
+        assert!(prepared.request().headers()["x-postmark-server-token"].is_sensitive());
+        assert!(!format!("{api:?} {prepared:?}").contains("synthetic-secret-token"));
+        let error = api
+            .outbound()
+            .details("id/with space")
+            .send()
+            .await
+            .unwrap_err();
+        assert_eq!(
+            server.single().path(),
+            "/messages/outbound/id%2Fwith%20space/details"
+        );
+        assert!(!format!("{error:?} {error}").contains("synthetic-secret-token"));
+        match error {
+            Error::Api {
+                status: actual,
+                document,
+                retry_after_seconds,
+            } => {
+                assert_eq!(actual.as_u16(), status);
+                assert_eq!(document.unwrap().error_code, 403);
+                assert_eq!(retry_after_seconds, Some(7));
+            }
+            _ => panic!("expected provider error"),
+        }
+        server.shutdown().await;
+    }
+}
+
+#[tokio::test]
+async fn bad_success_responses_are_bounded_and_classified() {
+    for (case, kind) in [
+        (0, ErrorKind::Decode),
+        (1, ErrorKind::Transport),
+        (2, ErrorKind::Limit),
+        (3, ErrorKind::Metadata),
+    ] {
+        let server = TestServer::start(move |_: &Recorded| match case {
+            0 => Reply::json(200, "{bad json"),
+            1 => Reply::json(200, "").with_body(Body::FailAfter(vec!["{\"TotalCount\":".into()])),
+            2 => Reply::json(200, vec![b'x'; RESPONSE_LIMIT + 1]),
+            _ => Reply::text(200, "text/html", "{}"),
+        })
+        .await;
+        let error = client(&server)
+            .outbound()
+            .list(5, 2)
+            .send()
+            .await
+            .unwrap_err();
+        match error {
+            Error::Request(e) => assert_eq!(e.kind(), kind),
+            _ => panic!("expected request error"),
+        }
+        server.shutdown().await;
+    }
+}
+
+#[tokio::test]
+async fn bad_error_bodies_preserve_status_without_disclosing_content() {
+    for case in 0..4 {
+        let server = TestServer::start(move |_: &Recorded| match case {
+            0 => Reply::json(422, "{bad"),
+            1 => Reply::json(422, "").with_body(Body::FailAfter(vec!["{\"ErrorCode\":".into()])),
+            2 => Reply::json(422, vec![b'x'; ERROR_LIMIT + 1]),
+            _ => Reply::text(422, "text/html", include_str!("../fixtures/error.json")),
+        })
+        .await;
+        let error = client(&server)
+            .outbound()
+            .list(1, 0)
+            .send()
+            .await
+            .unwrap_err();
+        assert!(
+            matches!(error, Error::Api { status, document: None, .. } if status.as_u16() == 422)
+        );
+        server.shutdown().await;
+    }
+}
+
+#[tokio::test]
+async fn error_document_message_is_not_formatted() {
+    let server = TestServer::start(|_: &Recorded| {
+        Reply::json(
+            422,
+            r#"{"ErrorCode":403,"Message":"synthetic-secret-token"}"#,
+        )
+    })
+    .await;
+    let error = client(&server)
+        .outbound()
+        .list(1, 0)
+        .send()
+        .await
+        .unwrap_err();
+    assert!(!format!("{error:?} {error}").contains("synthetic-secret-token"));
+    server.shutdown().await;
+}

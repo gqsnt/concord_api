@@ -1210,6 +1210,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "concord-sdk-postmark"
+version = "0.0.0"
+dependencies = [
+ "concord",
+ "concord-example-testserver",
+ "serde",
+ "serde_json",
+ "tokio",
+]
+
+[[package]]
 name = "concord-sdk-slack"
 version = "0.0.0"
 dependencies = [
