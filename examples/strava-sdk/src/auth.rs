@@ -190,14 +190,18 @@ impl Session {
         self.0
             .cache
             .get_or_refresh((), move || async move {
-                let mut stored = tokens.lock().await;
-                if stored.expires_at.saturating_sub(unix_now()?) <= 30 {
+                let refresh_token = {
+                    let stored = tokens.lock().await;
+                    (stored.expires_at.saturating_sub(unix_now()?) <= 30)
+                        .then(|| stored.refresh_token.clone())
+                };
+                // The lock is not held across the provider call: the cache keeps a cancelled
+                // refresh paused, and readers of the stored tokens must not wait on it. The cache
+                // already runs one acquisition at a time.
+                if let Some(refresh_token) = refresh_token {
                     let next = oauth
                         .oauth()
-                        .token(TokenRequest::refresh(
-                            &credentials,
-                            stored.refresh_token.clone(),
-                        ))
+                        .token(TokenRequest::refresh(&credentials, refresh_token))
                         .send()
                         .await?
                         .value;
@@ -205,10 +209,12 @@ impl Session {
                     if next.refresh_token.is_empty() {
                         return Err(Error::Invalid("empty rotated refresh token"));
                     }
+                    let mut stored = tokens.lock().await;
                     let scope = next.scope.clone().or_else(|| stored.scope.clone());
                     *stored = next;
                     stored.scope = scope;
                 }
+                let stored = tokens.lock().await;
                 if !stored.token_type.eq_ignore_ascii_case("bearer") {
                     return Err(Error::Invalid("unsupported token type"));
                 }
@@ -430,5 +436,43 @@ mod tests {
             state.upgrade().is_none(),
             "the abandoned refresh keeps the session alive"
         );
+    }
+
+    /// A refresh cancelled mid-request stays paused in the cache; the stored tokens must stay
+    /// readable meanwhile (and the update path, which reads the granted scope first, usable).
+    #[tokio::test]
+    async fn an_abandoned_refresh_does_not_block_token_readers() {
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let url = format!("http://{}/", listener.local_addr().unwrap());
+        let http = reqwest::Client::builder()
+            .redirect(reqwest::redirect::Policy::none())
+            .retry(reqwest::retry::never())
+            .timeout(Duration::from_secs(30))
+            .build()
+            .unwrap();
+        let tokens = Tokens {
+            token_type: "Bearer".into(),
+            access_token: "access".into(),
+            refresh_token: "refresh".into(),
+            expires_at: 0,
+            expires_in: 0,
+            scope: Some("read".into()),
+        };
+        let credentials = Credentials::new(1, "secret".into()).unwrap();
+        let session = Session::new(http, &url, &url, credentials, tokens).unwrap();
+        let caller = tokio::spawn({
+            let session = session.clone();
+            async move { session.token().await.map(drop) }
+        });
+        let (_connection, _) = tokio::task::spawn_blocking(move || listener.accept())
+            .await
+            .unwrap()
+            .unwrap();
+        caller.abort();
+        assert!(caller.await.unwrap_err().is_cancelled());
+        let stored = tokio::time::timeout(Duration::from_secs(5), session.latest_tokens())
+            .await
+            .expect("the paused refresh holds the token lock");
+        assert_eq!(stored.refresh_token, "refresh");
     }
 }

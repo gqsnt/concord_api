@@ -260,3 +260,30 @@ async fn empty_page_with_fresh_cursor_continues_and_a_multi_page_cycle_stops() {
     assert_eq!(server.requests().len(), 3);
     server.shutdown().await;
 }
+
+#[tokio::test]
+async fn a_raised_cap_still_stops_at_the_twenty_page_ceiling_without_sending() {
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    let served = AtomicUsize::new(0);
+    let server = TestServer::start(move |_: &Recorded| -> Reply {
+        let n = served.fetch_add(1, Ordering::SeqCst);
+        Reply::json(200, FIRST_JSON.replace("p+1/==?&", &format!("fresh-{n}")))
+    })
+    .await;
+    let api = api(&server);
+    let incomplete = search(&api)
+        .pages(SearchFormat::Json, Resume::Start, cap(20))
+        .unwrap()
+        .max_pages(cap(21))
+        .items()
+        .collect_complete()
+        .await
+        .unwrap_err();
+    assert!(matches!(
+        incomplete.error.provider_error(),
+        Some(Error::InvalidInput(_))
+    ));
+    assert_eq!(incomplete.collected.len(), 40);
+    assert_eq!(server.requests().len(), 20);
+    server.shutdown().await;
+}
