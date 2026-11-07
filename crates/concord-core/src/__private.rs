@@ -351,7 +351,7 @@ pub struct Parts<'a> {
     labels: Vec<String>,
     segments: Vec<String>,
     trailing_slash: bool,
-    query: Vec<(&'static str, String)>,
+    query: Vec<(std::borrow::Cow<'static, str>, String)>,
     headers: HeaderMap,
     /// Set by [`HeaderPlan`] when a native key classified `content-type` as sensitive.
     content_type_sensitive: bool,
@@ -442,8 +442,22 @@ impl<'a> Parts<'a> {
         what: &'static str,
     ) -> Result<(), Error> {
         let text = display(value, self.meta, what)?;
-        self.query.push((key, text));
+        self.query.push((std::borrow::Cow::Borrowed(key), text));
         Ok(())
+    }
+
+    /// Adds the pairs a `query(..)` value writes, in its order. `what` names the parameter.
+    pub fn query_pairs<P: crate::QueryPairs + ?Sized>(
+        &mut self,
+        value: &P,
+        what: &'static str,
+    ) -> Result<(), Error> {
+        let mut writer = crate::value::QueryPairsWriter::new(&mut self.query);
+        value.query_pairs(&mut writer);
+        match writer.finish() {
+            Ok(()) => Ok(()),
+            Err(reason) => Err(Error::build(Some(self.meta), what, reason)),
+        }
     }
 
     /// Adds one query occurrence per item, in iteration order.
@@ -694,7 +708,12 @@ pub(crate) fn redacted_url(url: &Url, meta: &EndpointMeta) -> String {
             let key = url::form_urlencoded::parse(raw_key.as_bytes())
                 .next()
                 .map(|(k, _)| k);
-            let sensitive = key.is_some_and(|k| meta.sensitive_query.contains(&k.as_ref()));
+            // Declared sensitive keys, and any key on the well-known list: a `query(..)` value's
+            // keys are only known now (literal keys on the list are already in
+            // `sensitive_query`, so this adds no redaction to them).
+            let sensitive = key.is_some_and(|k| {
+                meta.sensitive_query.contains(&k.as_ref()) || sensitive_text_name(&k)
+            });
             if sensitive {
                 out.push_str(raw_key);
                 out.push('=');
@@ -878,6 +897,20 @@ impl NativeKey for HeaderName {
     fn native_key(&self) -> &HeaderName {
         self
     }
+}
+
+/// Whether a query key is on [`SENSITIVE_NAMES`], with the macro's normalization (ASCII
+/// lowercase, `_` as `-`).
+fn sensitive_text_name(key: &str) -> bool {
+    SENSITIVE_NAMES.iter().any(|listed| {
+        listed.len() == key.len()
+            && listed.bytes().zip(key.bytes()).all(|(l, k)| {
+                l == match k.to_ascii_lowercase() {
+                    b'_' => b'-',
+                    other => other,
+                }
+            })
+    })
 }
 
 /// Whether a native header name is on [`SENSITIVE_NAMES`]. Native names are lowercase.

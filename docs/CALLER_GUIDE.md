@@ -619,6 +619,10 @@ Not covered:
   included; header values Concord flagged sensitive print as `Sensitive` (reqwest's own masking);
 - `Error::transport()` and the source of `Error::codec_error()`
   (`CodecError::source_unredacted()`), and reqwest errors from requests you execute yourself;
+- the response an `Error` keeps: `Error::meta()`, `head()` and `head_meta()` return its status and
+  headers exactly as received (a `Set-Cookie`, an echoed token), `body_unredacted()` the body
+  bytes a failed decode kept, `into_response()` the native response. `Error`'s own `Display` and
+  `Debug` show none of these; reading them is an explicit choice;
 - redirects: reqwest forwards custom headers and sends a `Referer` with the query;
 - tracing, middleware, proxies and server logs;
 - the base URL, which is never treated as sensitive.

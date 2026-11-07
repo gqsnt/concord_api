@@ -253,6 +253,9 @@ pub struct Value {
     pub text: bool,
     /// Placed directly as a whole header value somewhere (`ToHeaderValue`).
     pub header: bool,
+    /// `query(..) x: T`: the value writes its own query pairs (`QueryPairs`); it has no static
+    /// key and takes no part in key composition. Endpoints only; never `#[sensitive]`.
+    pub pairs: Option<Span>,
 }
 
 impl Value {
@@ -945,6 +948,17 @@ impl Model {
                     }
                 }
             }
+        }
+
+        // `query(..)` values: used by their own endpoint's request, after its declared query.
+        let pairs: Vec<(usize, Span)> = self.owners[at]
+            .values
+            .iter()
+            .enumerate()
+            .filter_map(|(index, value)| value.pairs.map(|span| (index, span)))
+            .collect();
+        for (index, span) in pairs {
+            self.mark(ValueRef { owner: at, index }, Usage::Scalar, span, errors);
         }
 
         // Direct placements, in declaration order, come before block statements.
@@ -2260,8 +2274,27 @@ fn flatten(
     }
     let mut values = Vec::new();
     for p in owner.params {
-        let placement = p.placement.map(|pl| (pl.family, pl.key, pl.span, pl.each));
+        let pairs = p.placement.as_ref().filter(|pl| pl.pairs).map(|pl| pl.span);
+        let placement = p
+            .placement
+            .filter(|pl| !pl.pairs)
+            .map(|pl| (pl.family, pl.key, pl.span, pl.each));
+        if let Some(at) = pairs {
+            if !endpoint {
+                errors.push(syn::Error::new(
+                    at,
+                    "`query(..)` is an endpoint value: its pairs are not known to the requests of other endpoints",
+                ));
+            }
+            if p.sensitive {
+                errors.push(syn::Error::new(
+                    at,
+                    "`query(..)` cannot be `#[sensitive]`: its keys are only known at run time, so Concord could not redact them; declare sensitive parameters with their key (`#[sensitive] query(\"k\") x: T`)",
+                ));
+            }
+        }
         values.push(Value {
+            pairs,
             placement,
             docs: p.docs,
             name: p.name,

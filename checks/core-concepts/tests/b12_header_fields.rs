@@ -14,9 +14,12 @@ fn head(pairs: &[(&'static str, &'static [u8])]) -> HeaderMap {
     map
 }
 
+/// Header lines of one case.
+type Lines = &'static [(&'static str, &'static [u8])];
+
 #[test]
 fn unsigned_distinguishes_every_outcome() {
-    let cases: &[(&[(&str, &[u8])], Result<Option<u64>, FieldError>)] = &[
+    let cases: &[(Lines, Result<Option<u64>, FieldError>)] = &[
         (&[], Ok(None)),
         (&[("x-remaining", b"42")], Ok(Some(42))),
         (&[("x-remaining", b" 7\t")], Ok(Some(7))),
@@ -27,8 +30,14 @@ fn unsigned_distinguishes_every_outcome() {
         (&[("x-remaining", b"")], Err(FieldError::Invalid)),
         (&[("x-remaining", b"0x10")], Err(FieldError::Invalid)),
         (&[("x-remaining", b"\xff")], Err(FieldError::Invalid)),
-        (&[("x-remaining", b"18446744073709551616")], Err(FieldError::Overflow)),
-        (&[("x-remaining", b"1"), ("x-remaining", b"1")], Err(FieldError::Repeated)),
+        (
+            &[("x-remaining", b"18446744073709551616")],
+            Err(FieldError::Overflow),
+        ),
+        (
+            &[("x-remaining", b"1"), ("x-remaining", b"1")],
+            Err(FieldError::Repeated),
+        ),
     ];
     for (pairs, expected) in cases {
         let map = head(pairs);

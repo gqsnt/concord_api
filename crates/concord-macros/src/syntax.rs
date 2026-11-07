@@ -640,6 +640,8 @@ pub struct Placement {
     pub key: Option<Key>,
     pub each: bool,
     pub span: Span,
+    /// `query(..) x: T`: the value writes its own pairs (`T: concord::QueryPairs`).
+    pub pairs: bool,
 }
 
 pub struct BodyParam {
@@ -1810,17 +1812,37 @@ fn parse_placement(input: ParseStream<'_>) -> syn::Result<Option<Placement>> {
         }
         return Ok(None);
     };
+    let mut pairs = false;
     let key = if input.peek(syn::token::Paren) {
         let content;
         parenthesized!(content in input);
-        let key = parse_key(
-            &content,
-            "expected a quoted name (`header(\"x-request-id\")`) or a native `HeaderName` constant (`header(AUTHORIZATION)`)",
-        )?;
-        if !content.is_empty() {
-            return Err(content.error("expected a single key"));
+        if content.peek(Token![..]) {
+            let dots: Token![..] = content.parse()?;
+            if !content.is_empty() {
+                return Err(
+                    content.error("`query(..)` takes no key: the value writes its own pairs")
+                );
+            }
+            if family.0 == Family::Header {
+                return Err(syn::Error::new(
+                    dots.spans[0],
+                    "`header(..)` is not supported: a header placement names its field",
+                ));
+            }
+            pairs = true;
         }
-        Some(key)
+        if pairs {
+            None
+        } else {
+            let key = parse_key(
+                &content,
+                "expected a quoted name (`header(\"x-request-id\")`) or a native `HeaderName` constant (`header(AUTHORIZATION)`)",
+            )?;
+            if !content.is_empty() {
+                return Err(content.error("expected a single key"));
+            }
+            Some(key)
+        }
     } else {
         None
     };
@@ -1836,11 +1858,18 @@ fn parse_placement(input: ParseStream<'_>) -> syn::Result<Option<Placement>> {
     } else {
         false
     };
+    if pairs && each {
+        return Err(syn::Error::new(
+            family.1,
+            "`query(..)` writes its own pairs, so it takes no `each`: write every pair in the value's `QueryPairs` implementation",
+        ));
+    }
     Ok(Some(Placement {
         family: family.0,
         key,
         each,
         span: family.1,
+        pairs,
     }))
 }
 
