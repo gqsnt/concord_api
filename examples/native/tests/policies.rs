@@ -8,7 +8,9 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Duration;
 
 use concord::ErrorKind;
-use concord_example_native::policies::{Session, collect_items, item_with_retry, items_admitted};
+use concord_example_native::policies::{
+    Admission, Session, collect_items, item_with_retry, items_admitted,
+};
 use support::{Reply, Server, inventory_at};
 
 fn pages() -> impl Fn(&support::Recorded) -> Reply + Send + Sync + 'static {
@@ -138,7 +140,7 @@ async fn admission_bounds_requests_in_flight() {
     })
     .await;
     let api = inventory_at(server.addr, "Bearer t");
-    let admission = Arc::new(tokio::sync::Semaphore::new(2));
+    let admission = Arc::new(Admission::new(std::num::NonZeroUsize::new(2).unwrap()));
     let ids: Vec<u64> = (1..=8).collect();
     let results = items_admitted(&api, &ids, Arc::clone(&admission)).await;
     let got: Vec<u64> = results.into_iter().map(|r| r.unwrap().id).collect();
@@ -149,7 +151,7 @@ async fn admission_bounds_requests_in_flight() {
     assert_eq!(admission.available_permits(), 2);
 
     // Control: with enough permits for everyone, the same fixture does see more than two.
-    let wide = Arc::new(tokio::sync::Semaphore::new(8));
+    let wide = Arc::new(Admission::new(std::num::NonZeroUsize::new(8).unwrap()));
     let before = server.requests().len();
     for result in items_admitted(&api, &ids, wide).await {
         result.unwrap();

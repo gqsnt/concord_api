@@ -27,12 +27,14 @@ ALLOWED = {
     "concord-retry": {"concord-core", "reqwest", "tokio"},
     # Credentials and shared acquisitions know no transport, runtime or macro crate.
     "concord-auth": {"base64", "http", "futures-util"},
+    "concord-ratelimit": {"tokio"},
     "concord-macros": {"http", "mime", "proc-macro2", "quote", "syn"},
     "concord": {"concord-core", "concord-codecs", "concord-macros"},
 }
 
 # Packages that must not appear in the resolved normal graph of `cargo tree -p PKG ARGS`.
 EXCLUDED = [
+    ("concord-ratelimit", ["--no-default-features"], {"tokio", "reqwest", "concord", "concord-core", "concord-macros", "serde"}),
     ("concord-auth", ["--no-default-features"], {"concord", "concord-core", "concord-codecs", "concord-extras",
         "concord-macros", "concord-retry", "reqwest", "tokio", "serde"}),
     ("concord-core", [], {"concord-codecs", "concord-extras", "concord-macros", "concord", "serde_json", "serde_urlencoded"}),
@@ -80,6 +82,10 @@ def main():
         extra = normal - allowed
         if extra:
             problems.append(f"{name}: unexpected direct dependencies {sorted(extra)}")
+        if name == "concord-ratelimit":
+            dependencies = {d["name"]: d for d in packages[name]["dependencies"] if d["kind"] is None}
+            if not dependencies["tokio"]["optional"] or packages[name]["features"].get("tokio") != ["dep:tokio"]:
+                problems.append("concord-ratelimit: Tokio must be optional and feature-gated")
         if name == "concord-retry":
             dependencies = {d["name"]: d for d in packages[name]["dependencies"] if d["kind"] is None}
             for edge in ("concord-core", "reqwest", "tokio"):

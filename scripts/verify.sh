@@ -160,6 +160,16 @@ retry_features() {
   done
 }
 step test-retry-features retry_features
+# Rate admission: runtime-free and optional Tokio clock, independently.
+ratelimit_features() {
+  local features
+  for features in "" tokio; do
+    cargo test --locked -p concord-ratelimit --no-default-features ${features:+--features "$features"} || return 1
+    cargo clippy --locked -p concord-ratelimit --no-default-features ${features:+--features "$features"} --all-targets -- -D warnings || return 1
+    RUSTDOCFLAGS="-D warnings" cargo doc --locked -p concord-ratelimit --no-deps --no-default-features ${features:+--features "$features"} || return 1
+  done
+}
+step test-ratelimit-features ratelimit_features
 # Auth has one runtime-free configuration and no optional features.
 step test-auth cargo test --locked -p concord-auth --no-default-features
 step clippy-auth cargo clippy --locked -p concord-auth --no-default-features --all-targets -- -D warnings
