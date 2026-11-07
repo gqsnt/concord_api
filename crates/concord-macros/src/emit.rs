@@ -2448,8 +2448,39 @@ fn prepare_body(
     if composed.trailing_slash {
         code.extend(quote!(__p.trailing_slash();));
     }
+    // `query(..)` values of the endpoint, in parameter order: each is written where it is
+    // declared among the endpoint's own query keys (inherited keys first, block keys last).
+    let mut pairs = owner
+        .values
+        .iter()
+        .enumerate()
+        .filter_map(|(param, value)| value.pairs.map(|at| (param, value, at)))
+        .peekable();
+    let mut pairs_code = |code: &mut TokenStream, before: usize| {
+        while let Some((_, value, at)) = pairs.next_if(|&(param, _, _)| param < before) {
+            let name = &value.name;
+            let what = lit(&format!("query value `{}`", plain(name)));
+            let call = if value.optional {
+                quote!(if let ::core::option::Option::Some(__v) = &self.#name { __p.query_pairs(__v, #what)?; })
+            } else {
+                quote!(__p.query_pairs(&self.#name, #what)?;)
+            };
+            // Located at the placement (an unimplemented `QueryPairs` points there), macro
+            // hygiene kept.
+            code.extend(located(call, at));
+        }
+    };
     let mut sensitive_query = Vec::new();
     for slot in &composed.query {
+        // Where the slot's key first appears: an ancestor's key comes first; one introduced by
+        // this endpoint's direct placement sits at that parameter; a block entry comes last.
+        let rank = match slot.history.first() {
+            Some(first) if first.owner == index => model.owners[index].query[first.index]
+                .param
+                .unwrap_or(usize::MAX),
+            _ => 0,
+        };
+        pairs_code(&mut code, rank);
         if slot.sensitive {
             sensitive_query.push(lit(&model.key_text(&slot.key)));
         }
@@ -2463,19 +2494,7 @@ fn prepare_body(
             Family::Query,
         ));
     }
-    // `query(..)` values of the endpoint: their pairs follow the declared query, in order.
-    for value in &owner.values {
-        let Some(at) = value.pairs else { continue };
-        let name = &value.name;
-        let what = lit(&format!("query value `{}`", plain(name)));
-        let call = if value.optional {
-            quote!(if let ::core::option::Option::Some(__v) = &self.#name { __p.query_pairs(__v, #what)?; })
-        } else {
-            quote!(__p.query_pairs(&self.#name, #what)?;)
-        };
-        // Located at the placement (an unimplemented `QueryPairs` points there), macro hygiene kept.
-        code.extend(located(call, at));
-    }
+    pairs_code(&mut code, usize::MAX);
     match &composed.headers {
         HeaderComposition::Static(slots) => {
             for slot in slots {
