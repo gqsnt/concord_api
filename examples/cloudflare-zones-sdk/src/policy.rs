@@ -4,7 +4,7 @@ use std::num::NonZeroUsize;
 use std::time::{Duration, Instant};
 
 use concord::reqwest::StatusCode;
-use concord::{Endpoint, Json, Prepared, Received, SendWith};
+use concord::{Endpoint, ErrorKind, Json, Prepared, Received, SendWith};
 use concord_retry::concord::ReplayMode;
 use concord_retry::{Decision, Replay, Retry};
 
@@ -13,7 +13,7 @@ use crate::error::{EnvelopeError, EnvelopeProblem, Error, ProviderError, Respons
 use crate::ratelimit::RetryAfter;
 use crate::wire::{ErrorEnvelope, PageInfo, Paged, ResponseInfo, Single};
 
-/// A successful single-object call (Zone Details, DNS Record Details).
+/// A successful single-object call (zone/record details, or a created DNS record).
 #[derive(Debug)]
 #[non_exhaustive]
 pub struct Response<R> {
@@ -57,6 +57,8 @@ pub struct PageResponse<R> {
 ///   outcome is repeated, no local backoff is added, and no client-side quota is assumed:
 ///   Cloudflare's global and per-service limits are only observed
 ///   ([`ResponseMeta::rate_limits`]).
+/// - Creates are sent once. Transport failures and successful bodies failing decode, media
+///   or size checks become [`Error::CreateUncertain`]; callers list records to reconcile.
 ///
 /// The policy is the client value `policy` (`send policy;`), replaced with
 /// [`Cloudflare::set_policy`](crate::Cloudflare::set_policy). `prepare()` bypasses it.
@@ -156,8 +158,22 @@ impl<R: Send + 'static> SendWith<Single<R>> for SendPolicy {
 
     async fn send<E: Endpoint<Single<R>> + Send>(&self, endpoint: E) -> Self::Output {
         let read = is_read::<E, Single<R>>();
-        let (received, attempts) = self.receive(endpoint.prepare()?, read).await?;
-        let (envelope, meta) = received.decode_with_meta().await?;
+        let create = matches!(E::operation().method(), Some("POST"));
+        let prepared = endpoint.prepare()?;
+        if create {
+            crate::create::validate_target(&prepared)?;
+        }
+        let (received, attempts) =
+            self.receive(prepared, read)
+                .await
+                .map_err(|error| match error {
+                    Error::Concord(error) => create_failure(error, create),
+                    other => other,
+                })?;
+        let (envelope, meta) = received
+            .decode_with_meta()
+            .await
+            .map_err(|error| create_failure(error, create))?;
         let meta = ResponseMeta::from(meta);
         match envelope {
             Single::Failure(document) => Err(Error::Provider(Box::new(ProviderError::new(
@@ -179,6 +195,14 @@ impl<R: Send + 'static> SendWith<Single<R>> for SendPolicy {
                 EnvelopeError::new(meta, EnvelopeProblem::MissingResult),
             ))),
         }
+    }
+}
+
+fn create_failure(error: concord::Error, create: bool) -> Error {
+    if create && error.kind() != ErrorKind::Build {
+        Error::CreateUncertain(error)
+    } else {
+        Error::Concord(error)
     }
 }
 

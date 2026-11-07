@@ -1,5 +1,49 @@
 # Provenance
 
+## Maintenance research — 2026-11-07
+
+The maintainer reread these exact official pages using read-only browser retrieval on
+**2026-11-07**. No other external documentation was consulted:
+
+- [Create DNS Record](https://developers.cloudflare.com/api/resources/dns/subresources/records/methods/create/):
+  POST path, JSON request, `DNS Write`, zone-ID/name lengths, address and target content,
+  TTL ranges, TXT syntax, response envelope and created `result`.
+- [List Zones](https://developers.cloudflare.com/api/resources/zones/methods/list/):
+  Bearer authentication, account filtering, paging and envelope retained.
+- [List DNS Records](https://developers.cloudflare.com/api/resources/dns/subresources/records/methods/list/):
+  reconciliation listing, per-endpoint paging and read contract retained.
+- [Rate limits](https://developers.cloudflare.com/fundamentals/api/reference/limits/):
+  concurrent global/service limits and Retry-After observation retained.
+
+Create accepts the documented automatic TTL or 60–86400 seconds; 30–59 requires the explicit
+Enterprise constructor. The application asserts the zone's plan. The create input name is
+bounded to 1–255 ASCII/Punycode bytes. IPv4/IPv6 content and CNAME self-target restrictions
+follow the reference. Quoted TXT is checked locally; long strings are passed for provider
+splitting. Owner/target DNS-label checks, requiring preconverted Punycode, supporting six
+content-based types and allowing `proxied: true` only for A/AAAA/CNAME are conservative SDK
+choices; the reference's shared schema itself exposes `proxied` on other types. MX and URI
+require priority, and other types need more validation/fields, so this change refuses them.
+The allowed reading list supplies no complete plan/proxy capability contract. Provider-side
+permissions, entitlements and cross-record conflicts remain authoritative.
+
+No idempotency or safe POST replay guarantee was found on these pages. Treating transport
+loss as uncertain and reconciling by listing are SDK safety decisions required by the ticket,
+not claims that Cloudflare guarantees exactly-once creation or immediate list consistency.
+Duplicate fixture code **81057** and its message are synthetic test data, not a documented
+stable code contract; callers retain every provider code/message without special-casing it.
+
+Added fixtures: `dns_record_created.json` uses the create response envelope and a minimal
+record with synthetic values; `dns_record_exists.json` is a synthetic refusal with an
+intentionally wrong-shaped result. Inline create-consumer replies, timeouts, dropped
+connections and stalled bodies are synthetic. All run through the local fixture server.
+
+The only new **direct dependency** is already-locked `percent-encoding` **2.3.2**,
+**MIT OR Apache-2.0** (license verified in its local cargo-registry manifest). It decodes the
+prepared zone path segment before checking its character count, avoiding incorrect rejection
+of percent-encoded IDs. No new crate package or version is added to the lock; cargo adds
+only this dependency edge to the SDK package entry. No other package version changes.
+The earlier sections below describe the original authoring pass and were retained as history.
+
 Live provider calls: **NOT_RUN**. Nothing in this package has been sent to
 `api.cloudflare.com`; every request in the tests goes to `concord-example-testserver` on
 127.0.0.1. Agreement with the real service is not established by these tests.

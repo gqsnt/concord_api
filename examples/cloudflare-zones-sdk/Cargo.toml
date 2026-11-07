@@ -5,13 +5,14 @@ edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 publish = false
-description = "A bounded, read-only Cloudflare API v4 slice: list zones of an account and fetch one zone, list a zone's DNS records and fetch one record, tested offline"
+description = "A bounded Cloudflare API v4 slice: list and fetch zones, list, fetch and create DNS records, tested offline"
 
 [dependencies]
 concord = { path = "../../crates/concord" }
 concord-auth = { path = "../../crates/concord-auth" }
 concord-pagination = { path = "../../crates/concord-pagination" }
 concord-retry = { path = "../../crates/concord-retry", features = ["concord"] }
+percent-encoding.workspace = true
 serde = { workspace = true, features = ["derive"] }
 # `raw_value`: an envelope's `result` is kept unparsed until `success` is known, so a refused
 # request whose `result` has an unexpected shape still surfaces Cloudflare's errors.

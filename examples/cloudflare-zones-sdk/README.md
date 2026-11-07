@@ -1,7 +1,7 @@
 # concord-sdk-cloudflare-zones
 
-A bounded, read-only slice of the Cloudflare API v4 on [Concord](../../README.md): list the zones
-of an account and fetch one zone; list a zone's DNS records and fetch one record. It is tested
+A bounded slice of the Cloudflare API v4 on [Concord](../../README.md): list the zones
+of an account and fetch one zone; list, fetch and create a zone's DNS records. It is tested
 offline against local fixtures only: **no request has been made to the real API** (live status
 NOT_RUN), so agreement with the service rests on the cited documentation
 ([`PROVENANCE.md`](PROVENANCE.md)).
@@ -12,6 +12,7 @@ NOT_RUN), so agreement with the service rests on the cited documentation
 | `cf.zone(zone_id).get()` | `GET /client/v4/zones/{zone_id}` (Zone Details) |
 | `cf.zone(zone_id).dns_records().list()` | `GET /client/v4/zones/{zone_id}/dns_records` (List DNS Records) |
 | `cf.zone(zone_id).dns_record(record_id).get()` | `GET /client/v4/zones/{zone_id}/dns_records/{record_id}` (DNS Record Details) |
+| `cf.zone(zone_id).dns_records().create(record)` | `POST /client/v4/zones/{zone_id}/dns_records` (Create DNS Record) |
 
 ## Calling it
 
@@ -64,7 +65,7 @@ What `send()` returns (the generated rustdoc shows it as
 
 | Endpoint | `send()` |
 |---|---|
-| `get()` (zone, record) | `Result<Response<T>, Error>`: `result: T`, `messages`, `errors` (non-fatal, see below), `meta` |
+| `get()` (zone, record), `create(record)` | `Result<Response<T>, Error>`: `result: T`, `messages`, `errors` (non-fatal, see below), `meta` |
 | `list()` (zones, records) | `Result<PageResponse<T>, Error>`: `result: Vec<T>`, `result_info: Option<PageInfo>`, `messages`, `errors`, `meta` |
 | `list().pages()` | `ZonePages` / `RecordPages` (`concord_pagination::Pages`): `next_page()`, `items()`, `collect_complete()`, `max_pages(..)`, `finish()` |
 
@@ -74,6 +75,68 @@ segment (`a/b` becomes `a%2Fb`).
 
 `prepare()` builds the native request without the send policy, and `prepare()?.send()` returns
 the wire envelope (`wire::Single`, `wire::Paged`), a refusal included, for callers that want it.
+For local fixtures, use `.with_base_url(server.url())`: the declaration appends `/client/v4`.
+
+## Creating a DNS record
+
+```rust,no_run
+use concord_sdk_cloudflare_zones::{
+    Cloudflare, Error, NewDnsRecord, RecordTtl, RecordType, ZoneId,
+};
+
+async fn create(cf: &Cloudflare, zone: ZoneId) -> Result<(), Error> {
+    let body = NewDnsRecord::new(
+        RecordType::A, "new.example.com", "192.0.2.42",
+        RecordTtl::AUTOMATIC, Some(true),
+    )?;
+    match cf.zone(zone.clone()).dns_records().create(body).send().await {
+        Ok(created) => println!("created {}", created.result.id),
+        Err(Error::CreateUncertain(cause)) => {
+            // The write may have committed. Fetch every page and inspect matching records.
+            let listing = cf.zone(zone).dns_records().list()
+                .set_record_type(RecordType::A)
+                .pages().items().collect_complete().await;
+            match listing {
+                Ok(records) => {
+                    for record in records.iter().filter(|r| r.name == "new.example.com"
+                        && r.content.as_deref() == Some("192.0.2.42")) {
+                        println!("reconciliation candidate: {}", record.id);
+                    }
+                }
+                Err(incomplete) => eprintln!("reconciliation listing incomplete: {incomplete:?}"),
+            }
+            // The application decides how to handle candidates; preserve uncertainty here.
+            return Err(Error::CreateUncertain(cause));
+        }
+        Err(other) => return Err(other),
+    }
+    Ok(())
+}
+```
+
+Create supports **A, AAAA, CNAME, NS, PTR and TXT**. `NewDnsRecord::new` returns
+`RecordInputError`; `?` converts it to `Error::Input`. Fields are private and have no unchecked
+deserializer. Names must be complete ASCII/Punycode DNS names of 1–255 bytes. Address content
+must match the IP family, CNAME targets must differ from the owner name, and NS/PTR targets
+must be domain names. TXT uses quoted character strings; Cloudflare splits long strings.
+`proxied: true` is allowed for A/AAAA/CNAME; `None` omits the field and `Some(false)` sends false.
+These rules follow the [create reference](https://developers.cloudflare.com/api/resources/dns/subresources/records/methods/create/),
+read **2026-11-07**, with conservative SDK restrictions recorded in `PROVENANCE.md`.
+
+`RecordTtl::new` accepts `1` or 60–86400 seconds. `RecordTtl::enterprise` accepts `1` or
+30–86400; calling it asserts that the selected zone is Enterprise. The create send policy
+checks the zone ID's 32-character maximum before sending. Empty/dot path segments are refused
+by Concord as `Error::Concord`/`Build`; overlong IDs are `Error::Input`. Cross-record conflicts,
+permissions and zone-plan entitlement are provider responsibilities. The token needs `DNS Write`.
+
+Create is sent **once**, including when the opt-in read retry policy is enabled and the response
+is 429. `Error::CreateUncertain` covers transport failures, including timeouts before headers or
+during a successful body read, and successful bodies that fail decoding/media/size checks.
+List all pages to reconcile by type, name and content; an absent or ambiguous match does not
+establish that resubmission is safe. A missing/null successful `result` remains `Error::Envelope`
+and also needs reconciliation. Use `http_client()` or a custom client with retries and redirects
+disabled. Native `prepare()?.send()` bypasses SDK target validation and error classification;
+it is the caller's transport contract.
 
 ## Failure semantics
 
@@ -92,6 +155,12 @@ Every failure is a `concord_sdk_cloudflare_zones::Error`:
 | A success body over 16 MiB (`SUCCESS_BODY_LIMIT`) | `Error::Concord`, `ErrorKind::Limit` |
 | No response | `Error::Concord`, `ErrorKind::Transport`, `status()` is `None` |
 | An invalid token at `connect`; an identifier that cannot be a path segment (`..`) | `Error::Credential` / `Error::Concord` `ErrorKind::Build`; nothing is sent |
+| Invalid create input | `RecordInputError` / `Error::Input`; nothing is sent |
+| Create transport failure or unusable successful body | `Error::CreateUncertain`; inspect the underlying Concord diagnostic, list records to reconcile, never automatically resend |
+
+The existing `Error::Concord` transport/decode/media/size rows describe reads; create uses the
+uncertainty rule above. Provider refusals (including `success: false` on 2xx) and 429 retain
+their typed error classes for create as well.
 
 `success` is authoritative: the documented 200 examples carry an `errors` entry beside
 `success: true`, so such entries are returned in `Response::errors` and do not fail the call.
@@ -134,11 +203,13 @@ Cloudflare's message texts are read through `errors()`/`messages()` and do appea
 
 ## Excluded
 
-Zone and DNS record mutation (create, edit, delete, import, export, batch, scan), Workers, WAF,
+Zone mutation and DNS record edit, delete, import, export, batch and scan, Workers, WAF,
 GraphQL, the legacy `X-Auth-Email`/`X-Auth-Key` scheme, and any global token-bucket assumption.
 Not implemented on the two listings: `match`, zone `type` and `account.name` filters, and the
 record filters `comment.*`, `content.*`, `name.*`, `tag.*`, `search`, `tag_match` and shadow
-metadata; type-specific record fields (`priority`, `data`) are not modelled. Timestamps are kept as
+metadata; type-specific record fields (`priority`, `data`) are not modelled, and create rejects
+types beyond the six listed above. Create comments, tags and advanced settings are excluded.
+Timestamps are kept as
 the RFC 3339 text Cloudflare sends.
 
 ## Tests
@@ -152,3 +223,6 @@ middle of a listing and on both detail calls); `tests/protocol.rs` checks the re
 every error class above, the 429 policy and redaction. Fixtures are in `fixtures/`, each derived
 from a cited example or labelled synthetic in [`PROVENANCE.md`](PROVENANCE.md). The Concord costs
 met are in [`FRICTION.md`](FRICTION.md).
+`tests/create_record.rs` covers validation, wire shape, duplicate refusal, single-attempt 429
+and timeouts; `tests/create_consumer.rs` exercises public caller flows and post-timeout
+reconciliation. Maintenance findings are in [`MAINTENANCE.md`](MAINTENANCE.md).

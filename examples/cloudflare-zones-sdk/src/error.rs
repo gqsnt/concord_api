@@ -218,13 +218,20 @@ pub enum Error {
     Envelope(Box<EnvelopeError>),
     /// The API token is not a valid bearer credential; nothing was sent.
     Credential(concord_auth::CredentialError),
+    /// Invalid create input; no request was sent.
+    Input(crate::RecordInputError),
+    /// A create reached the transport but no usable success envelope was received (including
+    /// a timeout before headers or while reading a successful body). The record may exist.
+    /// List the zone's records to reconcile before deciding whether to create again.
+    /// The SDK never resends a create automatically.
+    CreateUncertain(concord::Error),
     /// Concord's failure: `Build` (nothing sent), `Transport`, `Metadata` (a 2xx that is not
     /// JSON), `Decode` (a body that is not an envelope), `Limit` (a body over
     /// [`SUCCESS_BODY_LIMIT`](crate::SUCCESS_BODY_LIMIT)). Once a response head arrived,
     /// `error.head()` has it.
     Concord(concord::Error),
     /// The retry owner completed no attempt. Not expected with this SDK's policy (no deadline,
-    /// requests without a body); kept so that its outcome is mapped totally.
+    /// reads); kept so that its outcome is mapped totally.
     NoAttempt,
 }
 
@@ -242,15 +249,15 @@ impl Error {
         match self {
             Self::Provider(e) | Self::RateLimited(e) => Some(e.status()),
             Self::Envelope(e) => Some(e.meta.status()),
-            Self::Concord(e) => e.head().map(|head| head.status()),
-            Self::Credential(_) | Self::NoAttempt => None,
+            Self::Concord(e) | Self::CreateUncertain(e) => e.head().map(|head| head.status()),
+            Self::Credential(_) | Self::Input(_) | Self::NoAttempt => None,
         }
     }
 
-    /// Concord's error kind, for [`Error::Concord`].
+    /// Concord's error kind, for [`Error::Concord`] and [`Error::CreateUncertain`].
     pub fn concord_kind(&self) -> Option<ErrorKind> {
         match self {
-            Self::Concord(e) => Some(e.kind()),
+            Self::Concord(e) | Self::CreateUncertain(e) => Some(e.kind()),
             _ => None,
         }
     }
@@ -259,6 +266,12 @@ impl Error {
 impl From<concord::Error> for Error {
     fn from(error: concord::Error) -> Self {
         Self::Concord(error)
+    }
+}
+
+impl From<crate::RecordInputError> for Error {
+    fn from(error: crate::RecordInputError) -> Self {
+        Self::Input(error)
     }
 }
 
@@ -279,6 +292,11 @@ impl fmt::Display for Error {
                 write!(f, "unusable Cloudflare envelope for {op}: {}", e.problem)
             }
             Self::Credential(e) => write!(f, "invalid Cloudflare API token: {e}"),
+            Self::Input(e) => write!(f, "invalid Cloudflare DNS create input: {e}"),
+            Self::CreateUncertain(e) => write!(
+                f,
+                "Cloudflare DNS create is uncertain; list the zone's records to reconcile: {e}"
+            ),
             Self::Concord(e) => e.fmt(f),
             Self::NoAttempt => f.write_str("no attempt completed"),
         }
@@ -288,8 +306,9 @@ impl fmt::Display for Error {
 impl std::error::Error for Error {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         match self {
-            Self::Concord(e) => Some(e),
+            Self::Concord(e) | Self::CreateUncertain(e) => Some(e),
             Self::Credential(e) => Some(e),
+            Self::Input(e) => Some(e),
             _ => None,
         }
     }

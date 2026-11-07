@@ -1,5 +1,5 @@
-//! A bounded, read-only slice of the Cloudflare API v4: list the zones of an account and fetch
-//! one zone; list a zone's DNS records and fetch one record. Tests run against local fixtures
+//! A bounded slice of the Cloudflare API v4: list the zones of an account and fetch
+//! one zone; list, fetch and create a zone's DNS records. Tests run against local fixtures
 //! only.
 //!
 //! The declared client is [`Cloudflare`]. Navigation follows Cloudflare's resources:
@@ -9,6 +9,7 @@
 //! cf.zone(zone_id).get()                    GET /client/v4/zones/{zone_id}
 //! cf.zone(zone_id).dns_records().list()     GET /client/v4/zones/{zone_id}/dns_records
 //! cf.zone(zone_id).dns_record(id).get()     GET /client/v4/zones/{zone_id}/dns_records/{id}
+//! cf.zone(zone_id).dns_records().create(record) POST /client/v4/zones/{zone_id}/dns_records
 //! ```
 //!
 //! Each generated `send()` goes through [`SendPolicy`] and returns
@@ -17,6 +18,7 @@
 //! listings also walk every page: `cf.zones().list().pages()` ([`ZonePages`]). See the package
 //! README for failure semantics and what is excluded.
 
+mod create;
 mod error;
 mod models;
 mod pagination;
@@ -28,6 +30,7 @@ pub use concord;
 pub use concord_auth;
 pub use concord_pagination;
 
+pub use create::{NewDnsRecord, RecordInputError, RecordTtl};
 pub use error::{EnvelopeError, EnvelopeProblem, Error, ProviderError, ResponseMeta};
 pub use models::{
     AccountId, Direction, DnsRecord, RecordId, RecordOrder, RecordType, RecordsPerPage, Zone,
@@ -104,6 +107,10 @@ concord::api! {
             /// The zone's DNS records.
             scope dns_records {
                 path "dns_records";
+
+                /// Create a record from validated input. Never retried, even with the opt-in
+                /// 429 policy. On [`Error::CreateUncertain`], list records to reconcile.
+                POST create(body record: NewDnsRecord) -> Single<DnsRecord>;
 
                 /// List DNS Records of the zone; walk every page with `.pages()`.
                 GET list(
