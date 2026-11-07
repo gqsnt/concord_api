@@ -48,9 +48,7 @@ Discord permits only one of `around`, `before`, and `after` in a request
 ([Get Channel Messages](https://docs.discord.com/developers/resources/message#get-channel-messages),
 read 2026-11-07). Use `anchor(Anchor::Around(id))`, `Anchor::Before(id)`, or
 `Anchor::After(id)`; a later `anchor` replaces the earlier one. Use
-`maybe_anchor(None)` to clear it. The former generated `set_before`, `set_after`,
-and `set_around` (and their `maybe_` forms) are no longer exposed; migrate them
-to `anchor` or `maybe_anchor`.
+`maybe_anchor(None)` to clear it. `set_anchor` is also available.
 
 ```rust,no_run
 use std::num::NonZeroUsize;

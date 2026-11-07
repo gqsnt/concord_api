@@ -235,9 +235,10 @@ impl ClickHouse {
         let params = query.url_params()?;
         let endpoint = self
             .api
-            .command(query.sql().to_owned(), OutputFormat::JsonEachRow);
+            .command(query.sql().to_owned(), OutputFormat::JsonEachRow)
+            .set_params(params);
         let operation = endpoint_name::<Incoming, _>(&endpoint);
-        let received = execute(endpoint, &params).await?;
+        let received = endpoint.prepare()?.receive().await?;
         let rows = open_rows(received, OutputFormat::JsonEachRow, operation).await?;
         Ok(rows.collect().await?.rows)
     }
@@ -336,9 +337,10 @@ impl Select {
             .select(self.query.sql().to_owned(), self.format)
             .maybe_query_id(self.query_id)
             .maybe_wait_end_of_query(self.wait_end_of_query.then_some(1))
-            .maybe_progress(self.progress.then_some(1));
+            .maybe_progress(self.progress.then_some(1))
+            .set_params(params);
         let operation = endpoint_name::<Incoming, _>(&endpoint);
-        let received = execute(endpoint, &params).await?;
+        let received = endpoint.prepare()?.receive().await?;
         open_rows(received, self.format, operation).await
     }
 }
@@ -358,21 +360,6 @@ impl fmt::Debug for Select {
 /// The declared name of an endpoint (`ClickHouseHttp.select`), without building a request.
 pub(crate) fn endpoint_name<T, E: Endpoint<T>>(_: &E) -> &'static str {
     E::operation().name()
-}
-
-/// Prepares `endpoint`, appends the `param_<name>` pairs and executes it once.
-pub(crate) async fn execute<E: Endpoint<Incoming>>(
-    endpoint: E,
-    params: &[(String, String)],
-) -> Result<Received<Incoming>, Error> {
-    let (client, mut request, decoder) = endpoint.prepare()?.into_parts();
-    if !params.is_empty() {
-        let mut pairs = request.url_mut().query_pairs_mut();
-        for (name, value) in params {
-            pairs.append_pair(name, value);
-        }
-    }
-    Ok(decoder.execute(&client, request).await?)
 }
 
 /// A non-2xx answer: the exception text (bounded), its code and name.

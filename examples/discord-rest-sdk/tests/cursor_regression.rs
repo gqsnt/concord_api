@@ -43,3 +43,33 @@ fn every_cursor_replaces_every_other_and_can_be_cleared() {
         assert!(cleared.request().url().query().is_none());
     }
 }
+
+#[test]
+fn query_pairs_preserve_order_and_endpoint_debug_withholds_the_cursor() {
+    use concord_sdk_discord_rest::MessageLimit;
+
+    let request = Discord::new(
+        reqwest::Client::new(),
+        DiscordConfig {
+            token: "fixture-token".into(),
+            limiter: RateLimiter::new(),
+        },
+    )
+    .channel(ChannelId::new(123))
+    .messages()
+    .set_anchor(Anchor::Before(MessageId::new(987654321)))
+    .set_limit(MessageLimit::new(42).unwrap());
+    // The endpoint's Debug withholds the `query(..)` cursor; the keyed limit is shown.
+    let debug = format!("{request:?}");
+    assert!(
+        !debug.contains("987654321") && debug.contains("42"),
+        "{debug}"
+    );
+    let prepared = request.prepare().unwrap();
+    assert_eq!(
+        prepared.request().url().query(),
+        Some("before=987654321&limit=42")
+    );
+    let debug = format!("{prepared:?}");
+    assert!(debug.contains("before=987654321&limit=42"), "{debug}");
+}

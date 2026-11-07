@@ -196,3 +196,47 @@ fn a_well_known_secret_key_is_redacted_in_prepared_debug() {
     let query = prepared.request().url().query().unwrap().to_owned();
     assert!(query.ends_with("API_Key=s3cr3t&Token=t0k3n"), "{query}");
 }
+
+concord::api! {
+    /// Order witnesses: a `query(..)` value sits where it is declared among the endpoint's keys.
+    pub client Ordered() {
+        base "http://ordered.invalid";
+        query { "v" = "1"; }
+        /// Discord's wire order: the cursor, then `limit`.
+        GET first(query(..) anchor?: Anchor, query limit?: u8) {
+            path "a";
+            query { "tail" = "t"; }
+        }
+        /// Between two keyed values; block entries (even referencing an earlier value) last.
+        GET middle(query a: u8, query(..) anchor: Anchor, query b: u8) {
+            path "b";
+            query { "again" = a; }
+        }
+    }
+}
+
+#[test]
+fn pairs_keep_their_declared_position_among_the_endpoints_keys() {
+    let ordered = Ordered::new(concord::reqwest::Client::new());
+    let query = |p: concord::Prepared<()>| p.request().url().query().unwrap().to_owned();
+    assert_eq!(
+        query(
+            ordered
+                .first()
+                .set_anchor(Anchor::Before(9))
+                .set_limit(5)
+                .prepare()
+                .unwrap()
+        ),
+        "v=1&before=9&limit=5&tail=t"
+    );
+    // Absent: nothing is written at its position.
+    assert_eq!(
+        query(ordered.first().set_limit(5).prepare().unwrap()),
+        "v=1&limit=5&tail=t"
+    );
+    assert_eq!(
+        query(ordered.middle(1, Anchor::After(2), 3).prepare().unwrap()),
+        "v=1&a=1&after=2&b=3&again=1"
+    );
+}

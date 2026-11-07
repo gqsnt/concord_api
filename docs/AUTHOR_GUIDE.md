@@ -444,8 +444,10 @@ Rules, each checked when the declaration compiles:
   endpoint's `Debug` withholds a `query(..)` value; `Prepared`'s `Debug` shows its pairs, except
   that a key on the well-known secret list (`token`, `api_key`, ... §7) is still shown as
   `<redacted>`, as a declared key would be.
-- **Order:** the pairs follow every declared query key of the chain (§4.7), in the order the value
-  writes them. An empty key is a build error (`ErrorKind::Build`) before anything is sent.
+- **Order:** a `query(..)` value is written where it is declared among the endpoint's own
+  parameters — after every key inherited from the client and scopes, before the endpoint's
+  `query { }` block entries (§4.7) — and its pairs in the order it writes them. Absent, it writes
+  nothing. An empty key is a build error (`ErrorKind::Build`) before anything is sent.
 
 `QueryPairs` is implemented for `Vec<(K, V)>`, `[(K, V)]` and `BTreeMap<K, V>` (`K: AsRef<str>`,
 `V: Display`) for ad-hoc pairs; prefer your own type when the set of keys is a provider rule.
@@ -584,8 +586,8 @@ fn main() -> Result<(), concord::Error> {
 ### 4.7 Order on the wire
 
 - **Query:** each key keeps the position of its first appearance on the chain (root first), and
-  its occurrences are in contribution order. The query string is exactly that sequence, followed by
-  the pairs of the endpoint's `query(..)` values (§4.1a).
+  its occurrences are in contribution order. The query string is exactly that sequence; an
+  endpoint's `query(..)` value contributes its pairs at its own position (§4.1a).
 - **Headers:** the values of one name are sent in contribution order. The order *between*
   different header names is not specified (the native `HeaderMap` groups by name, and reqwest and
   hyper add their own headers).
