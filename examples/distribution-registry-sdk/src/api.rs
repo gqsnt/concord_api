@@ -67,6 +67,7 @@ concord::api! {
         GET manifest(reference: Reference, header(ACCEPT) accept: HeaderValue) -> Bytes {
             path "manifests/{reference}";
             response Binary;
+            limit crate::manifest::MANIFEST_LIMIT;
         }
 
         /// `PUT /v2/<name>/manifests/<reference>`: the manifest bytes with their media type.
@@ -111,6 +112,7 @@ concord::api! {
         #[sensitive] header(AUTHORIZATION) credentials?: HeaderValue,
     ) {
         base "https://auth.invalid/token";
+        limit crate::client::TOKEN_BODY_LIMIT;
 
         /// `GET <realm>?service=..&scope=..`: a Bearer token.
         GET token(
@@ -132,5 +134,60 @@ mod tests {
         Registry::validate_header_names().unwrap();
         Repository::validate_header_names().unwrap();
         TokenService::validate_header_names().unwrap();
+    }
+
+    #[tokio::test]
+    async fn native_manifest_send_keeps_its_declared_body_limit() {
+        use concord_example_testserver::{Reply, TestServer};
+
+        let server = TestServer::start(|_| {
+            Reply::new(200).body(vec![b' '; crate::manifest::MANIFEST_LIMIT + 1])
+        })
+        .await;
+        let api = Repository::new(
+            concord::reqwest::Client::builder()
+                .no_proxy()
+                .build()
+                .unwrap(),
+        )
+        .with_base_url(server.url())
+        .unwrap();
+        let error = api
+            .manifest(
+                Reference::tag("latest").unwrap(),
+                HeaderValue::from_static("application/vnd.oci.image.manifest.v1+json"),
+            )
+            .prepare()
+            .unwrap()
+            .send()
+            .await
+            .unwrap_err();
+        assert_eq!(error.kind(), concord::ErrorKind::Limit);
+        assert_eq!(error.head().unwrap().status().as_u16(), 200);
+        server.shutdown().await;
+    }
+
+    #[tokio::test]
+    async fn native_token_send_keeps_its_declared_body_limit() {
+        use concord_example_testserver::{Reply, TestServer};
+
+        let server = TestServer::start(|_| {
+            Reply::json(200, vec![b' '; crate::client::TOKEN_BODY_LIMIT + 1])
+        })
+        .await;
+        let api = TokenService::new(
+            concord::reqwest::Client::builder()
+                .no_proxy()
+                .build()
+                .unwrap(),
+        )
+        .with_base_url(server.url())
+        .unwrap();
+        let Err(error) = api.token(Vec::new()).prepare().unwrap().send().await else {
+            panic!("native send must reject an oversized token body");
+        };
+        assert_eq!(error.kind(), concord::ErrorKind::Limit);
+        assert_eq!(error.head().unwrap().status().as_u16(), 200);
+        server.shutdown().await;
     }
 }

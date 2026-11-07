@@ -37,6 +37,7 @@ concord::api! {
         base "https://slack.com/api";
         headers { AUTHORIZATION = "Bearer {token}"; }
         format Json;
+        limit crate::SUCCESS_BODY_LIMIT;
 
         GET users_list(
             query limit: u16,
@@ -50,5 +51,39 @@ concord::api! {
             query include_locale?: bool,
             query include_num_members?: bool,
         ) -> Envelope<ConversationPayload> { path "conversations.info"; }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use concord_example_testserver::{Reply, TestServer};
+
+    #[tokio::test]
+    async fn native_send_keeps_the_declared_success_body_limit() {
+        let server =
+            TestServer::start(|_| Reply::json(200, vec![b' '; crate::SUCCESS_BODY_LIMIT + 1]))
+                .await;
+        let api = SlackApi::new(
+            concord::reqwest::Client::builder()
+                .no_proxy()
+                .build()
+                .unwrap(),
+            SlackApiConfig {
+                token: "synthetic-token".into(),
+            },
+        )
+        .with_base_url(server.url())
+        .unwrap();
+        let error = api
+            .users_list(1u16)
+            .prepare()
+            .unwrap()
+            .send()
+            .await
+            .unwrap_err();
+        assert_eq!(error.kind(), concord::ErrorKind::Limit);
+        assert_eq!(error.head().unwrap().status().as_u16(), 200);
+        server.shutdown().await;
     }
 }

@@ -207,6 +207,8 @@ pub struct Owner {
     pub response: Option<OwnerDefault>,
     /// The parameter groups this endpoint includes (`..Name`).
     pub groups: Vec<Ident>,
+    /// `limit EXPR;` declared here: the finite body bound for typed outputs at and below.
+    pub limit: Option<syn::Expr>,
 }
 
 impl Owner {
@@ -251,6 +253,9 @@ pub struct Value {
     pub text: bool,
     /// Placed directly as a whole header value somewhere (`ToHeaderValue`).
     pub header: bool,
+    /// `query(..) x: T`: the value writes its own query pairs (`QueryPairs`); it has no static
+    /// key and takes no part in key composition. Endpoints only; never `#[sensitive]`.
+    pub pairs: Option<Span>,
 }
 
 impl Value {
@@ -299,6 +304,9 @@ pub struct Contrib {
     pub total: bool,
     /// `override ... else inherit`: absence keeps the inherited occurrences.
     pub else_inherit: bool,
+    /// The parameter (owner value index) whose direct placement this is; `None` for a block
+    /// entry. Orders an endpoint's `query(..)` values among its own keys.
+    pub param: Option<usize>,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
@@ -945,6 +953,17 @@ impl Model {
             }
         }
 
+        // `query(..)` values: used by their own endpoint's request, after its declared query.
+        let pairs: Vec<(usize, Span)> = self.owners[at]
+            .values
+            .iter()
+            .enumerate()
+            .filter_map(|(index, value)| value.pairs.map(|span| (index, span)))
+            .collect();
+        for (index, span) in pairs {
+            self.mark(ValueRef { owner: at, index }, Usage::Scalar, span, errors);
+        }
+
         // Direct placements, in declaration order, come before block statements.
         let direct: Vec<(usize, Family, syntax::Key, Span, bool)> = self.owners[at]
             .values
@@ -980,6 +999,7 @@ impl Model {
                     total: !v.optional,
                     else_inherit: false,
                     source: Some(Source::Ref { value, each }),
+                    param: Some(index),
                 };
                 self.push_contrib(at, family, contrib);
             }
@@ -1084,6 +1104,7 @@ impl Model {
                     sensitive,
                     total,
                     else_inherit: entry.else_inherit,
+                    param: None,
                 };
                 self.push_contrib(at, family, contrib);
             }
@@ -1736,6 +1757,18 @@ impl Model {
 
     /// The nearest owner from `owner` (inclusive) up to the client that declares a `request`
     /// (`request == true`) or `response` default.
+    /// The `limit` declared on `owner` or its nearest ancestor.
+    pub fn nearest_limit(&self, owner: usize) -> Option<&syn::Expr> {
+        let mut cur = Some(owner);
+        while let Some(o) = cur {
+            if let Some(limit) = &self.owners[o].limit {
+                return Some(limit);
+            }
+            cur = self.owners[o].parent;
+        }
+        None
+    }
+
     pub fn nearest_default(&self, owner: usize, request: bool) -> Option<usize> {
         nearest(&self.owners, Some(owner), request)
     }
@@ -2131,6 +2164,19 @@ fn flatten(
     } else {
         default(owner.stmts.response.take(), "Response")
     };
+    let limit = owner.stmts.limit.take().and_then(|(expr, span)| {
+        if let OwnerKind::Endpoint { output, .. } = &owner.kind {
+            let finite = output.as_ref().is_some_and(|o| o.ty.is_some() && o.stream.is_none());
+            if !finite {
+                errors.push(syn::Error::new(
+                    span,
+                    "`limit` bounds a finite typed output (`-> T`): a drained body is not buffered, and a stream reader (`-> stream`) has its own limits",
+                ));
+                return None;
+            }
+        }
+        Some(expr)
+    });
     let kind = match owner.kind {
         OwnerKind::Client { vis, base } => match base {
             Some(base) => {
@@ -2233,8 +2279,27 @@ fn flatten(
     }
     let mut values = Vec::new();
     for p in owner.params {
-        let placement = p.placement.map(|pl| (pl.family, pl.key, pl.span, pl.each));
+        let pairs = p.placement.as_ref().filter(|pl| pl.pairs).map(|pl| pl.span);
+        let placement = p
+            .placement
+            .filter(|pl| !pl.pairs)
+            .map(|pl| (pl.family, pl.key, pl.span, pl.each));
+        if let Some(at) = pairs {
+            if !endpoint {
+                errors.push(syn::Error::new(
+                    at,
+                    "`query(..)` is an endpoint value: its pairs are not known to the requests of other endpoints",
+                ));
+            }
+            if p.sensitive {
+                errors.push(syn::Error::new(
+                    at,
+                    "`query(..)` cannot be `#[sensitive]`: its keys are only known at run time, so Concord could not redact them; declare sensitive parameters with their key (`#[sensitive] query(\"k\") x: T`)",
+                ));
+            }
+        }
         values.push(Value {
+            pairs,
             placement,
             docs: p.docs,
             name: p.name,
@@ -2273,6 +2338,7 @@ fn flatten(
         request,
         response,
         groups: owner.groups,
+        limit,
     });
     stmts.push(owner.stmts);
 

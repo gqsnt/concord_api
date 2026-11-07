@@ -129,6 +129,73 @@ impl From<concord::Error> for Stop {
     }
 }
 
+/// Optional shared gate for starting player-summary workflows after a 429.
+///
+/// It records Riot's numeric `Retry-After` when present. Workflows already in flight are not
+/// cancelled, and the workflow itself still stops at its first 429 without retrying.
+#[derive(Clone)]
+pub struct RiotAdmission(concord_ratelimit::Limiter<()>);
+
+impl Default for RiotAdmission {
+    fn default() -> Self {
+        Self(concord_ratelimit::Limiter::new(
+            std::num::NonZeroUsize::new(1).unwrap(),
+            concord_ratelimit::TokioClock::default(),
+        ))
+    }
+}
+
+impl RiotAdmission {
+    /// Start a workflow unless the shared cooldown is active.
+    #[allow(clippy::too_many_arguments)]
+    pub async fn player_summary(
+        &self,
+        riot: &Riot,
+        game_name: &str,
+        tag_line: &str,
+        account_route: AccountRoute,
+        platform: Platform,
+        match_route: MatchRoute,
+        matches: u32,
+    ) -> Result<PlayerSummary, Stop> {
+        use concord_ratelimit::{Error, Mode, Observation};
+        match self.0.acquire(&[()], Mode::Refuse).await {
+            Ok(()) => {}
+            Err(Error::Gated(delay)) => {
+                return Err(Stop::RateLimited {
+                    retry_after: delay
+                        .map(|d| d.as_secs().saturating_add(u64::from(d.subsec_nanos() != 0))),
+                });
+            }
+            Err(_) => unreachable!("the single fixed key fits and has no local budget"),
+        }
+        let result = player_summary(
+            riot,
+            game_name,
+            tag_line,
+            account_route,
+            platform,
+            match_route,
+            matches,
+        )
+        .await;
+        if let Err(Stop::RateLimited {
+            retry_after: Some(seconds),
+        }) = &result
+        {
+            // An unrepresentable deadline cannot be safely shortened.
+            let until = self
+                .0
+                .after(Duration::from_secs(*seconds))
+                .unwrap_or(Duration::MAX);
+            self.0
+                .observe((), Observation::Cooldown(until))
+                .expect("the fixed key exists");
+        }
+        result
+    }
+}
+
 /// Resolves a Riot ID and reads its summoner, top masteries and up to `matches` recent games
 /// ([`MAX_MATCHES`] at most): `4 + matches` requests in all.
 ///

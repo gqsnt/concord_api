@@ -518,6 +518,44 @@ impl<T: serde::de::DeserializeOwned> Decode<Option<T>> for JsonOrEmpty {
 }
 ```
 
+### Reusing the strict media check in a custom format
+
+`concord_codecs::check_content_type(head, accepted, charset)` exposes the standard
+formats' strict singleton parser without exposing parsed headers or adding a dependency
+on `mime` to your SDK. It is available without features. Keep the provider's allowlist
+in the format; call the helper from `Decode::check_content_type` or
+`Incremental::check_content_type` so rejection precedes reading the body. FRED's problem
+document accepts XML or JSON, refusing anything else before the body is read (Excerpt of
+[`examples/fred-sdk/src/codecs.rs`](../examples/fred-sdk/src/codecs.rs)):
+
+```rust,ignore
+impl Decode<Problem> for ProblemDocument {
+    type Context = ();
+    fn check_content_type(head: &ResponseHead<'_>) -> Result<(), CodecError> {
+        check_content_type(
+            head,
+            &["text/xml", "application/xml", "application/json"],
+            Charset::Utf8,
+        )
+    }
+```
+
+Entries match case-insensitively, with no parameters. An exact entry includes the
+entire subtype; `application/xml` does not accept `application/xml+json`.
+`type/*+suffix` matches the final suffix under that top-level type; no other wildcard
+rules are supported. An empty list accepts nothing. A missing, repeated, malformed,
+non-ASCII or media-range response is refused with the standard static labels.
+A type outside the allowlist returns `the response Content-Type is not an accepted media type`.
+
+`Charset::Utf8` allows no charset or exactly one `utf-8`/`us-ascii`, including quoted
+values followed by more parameters. Duplicate charsets use the standard
+`the response Content-Type declares charset more than once` label; other charsets
+use `the response declares a charset other than utf-8`. `Charset::Ignore` skips
+charset interpretation while still validating the field and parameter syntax; it
+does not transcode bytes. Body parsing and other header checks remain the format's
+responsibility. FRED's XML, ZIP and problem formats use this helper with exact allowlists.
+The tolerant `Text` format retains its separate acceptance policy.
+
 ## 8. The `Accept` suggestion
 
 `const ACCEPT: Option<&'static str>` is a request preference a format may suggest. Concord sends

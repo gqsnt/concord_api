@@ -20,8 +20,8 @@ fixtures only).
 |---|---|---|
 | M0 SDK20 integration | **complete**: merged as `8cae5d4c`; local gates and Linux/Windows/nightly CI on the PR head and on main | `M0_RECEIPT.md` |
 | P0 retrospective, carryovers | registry expiry fixed (M0-1); 17 stale guide passages corrected; obligation/residue inventory; 88-scenario denominator | `P0_INVENTORY.md`, `SCENARIOS.md`, `DECISIONS.md` |
-| P1 F1–F3 and first integrations | F1 retained with compiled comparison; F2 head retention, `decode_with_meta`, `document` adopted in 24 SDKs/examples; F3 parameter groups and `Sends<O>`; codecs package, Link parser, retry pilot; pagination lane in progress | `DECISIONS.md`, `checks/core-concepts/` |
-| P2 waves SDK21–50 | not started | `waves/` |
+| P1 F1–F3 and first integrations | **complete**: F1 retained with compiled comparison; F2 head retention, `decode_with_meta`, `document` adopted in 24 SDKs/examples; F3 parameter groups and `Sends<O>`; codecs package, Link parser, retry and auth pilots, pagination provider error / item events | `DECISIONS.md`, `checks/core-concepts/` |
+| P2 waves SDK21–50 | **Wave 1 (SDK21–25) complete**; between-waves changes A–E, H, `query(..)` accepted and adopted, ratelimit pilot not accepted (its review defects fixed); Wave 2 next | `waves/W1/{PLAN,STATUS,FINDINGS,CANDIDATES,SYNTHESIS}.md` |
 | P3 final adoption and retrospective | not started | — |
 
 ## Lanes (branches; each merged into `sdk50/integration` after coordinator verification)
@@ -34,7 +34,16 @@ fixtures only).
 | Link parser | `sdk50/p1-link` | Codex `gpt-6-astra` xhigh | merged |
 | Stale docs | `sdk50/p0-docs` | Codex `gpt-6.1-sol` xhigh | merged |
 | concord-retry pilot | `sdk50/p1-retry` | Codex `gpt-6.1-sol` xhigh | merged |
-| Pagination provider error / item metadata | `sdk50/p1-pagination` | Codex `gpt-6.1-terra` xhigh | in progress |
+| Pagination provider error / item metadata | `sdk50/p1-pagination` | Codex `gpt-6.1-terra` xhigh | merged (frozen first-use tests restored by the coordinator) |
+| concord-auth pilot | `sdk50/p2-auth` | Codex `gpt-6-astra` xhigh | merged |
+| concord-ratelimit pilot | `sdk50/p2-ratelimit` | Codex `gpt-6.1-terra` xhigh | merged as a pilot; not accepted (B12-G) |
+| Wave 1 SDK21–25 | `sdk50/w1-sdk2N-<slug>` | 15 roles, see `MODELS.md` | merged |
+| Declared limit, generated docs, header fields | `sdk50/b12-limit` | coordinator | merged |
+| Codecs media check, offset helper, FRED/USGS adoption | `sdk50/b12-x` | Codex `gpt-6-astra` xhigh | merged |
+| Limit/field adoption in 12 SDKs, Discord overlap fix | `sdk50/b12-y` | Codex `gpt-6.1-sol` xhigh (Discord ratelimit migration dropped by the coordinator) | merged |
+| `query(..)` and docs H | `sdk50/b12-pairs` | coordinator | merged |
+| `query(..)` adoption (Discord, ClickHouse) | `sdk50/b12-pairs-adopt` | Codex `gpt-6.1-terra` xhigh | merged |
+| Ratelimit review fixes | `sdk50/b12-ratefix` | Codex `gpt-6-astra` xhigh | merged |
 
 Independent evidence on P1: docs-only prediction probe (Terra, `roles/p1-predict.md`), independent
 review (Sol, `roles/p1-review.md`), first-use probe building a Desk SDK from the docs (Opus

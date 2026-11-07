@@ -256,7 +256,7 @@ impl Registry {
             return Err(Box::new(error));
         }
         let (body, meta) = received
-            .decode_limited_with_meta(TOKEN_BODY_LIMIT)
+            .decode_with_meta()
             .await
             .map_err(|error| AuthError::new(AuthProblem::TokenResponse).with_source(error))?;
         let meta = ResponseMeta::from_concord(meta);

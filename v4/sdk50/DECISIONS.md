@@ -60,3 +60,19 @@ Evidence identities: P1 work lives on `sdk50/integration` (from `5c3ef5f6`), mer
 | S-1 | ClickHouse `Insert::send` drops a received head on a post-head receipt failure. | **SDK, bounded**: a frozen first-use assertion pins `meta().is_none()`; documented in the README; revisit in a ClickHouse maintenance ticket. |
 | S-2 | Salesforce lost `ApiUsage` on failed status/decode. | **corrected** (adoption lane, regression test). |
 | S-3 | OpenAI drops `incomplete_details`; ClickHouse collapses unusable error-text causes. | **SDK, open** (P0 inventory); not blocking. |
+
+## Between waves 1 and 2 (full reasoning in `waves/W1/SYNTHESIS.md`)
+
+| ID | Obligation / proposal | Disposition | Witnesses, counterexample, cost, reversal |
+|---|---|---|---|
+| B12-A | Declared finite-body bound `limit EXPR;` (client/scope/endpoint) carried by `Decoder`; honoured by generated `send()`, `Received::decode()`, `prepare()?.send()`; refused on streams/drains. | **MACRO + CORE_CHANGE**, accepted | 4 W1 authors + 10 SDK20 SDKs bounded in a policy and the native path bypassed it; 12 adopters, `decode_limited` sites 13 → 0. Counterexample kept: runtime-configured limits (Drive, Snowflake, Graph) stay explicit. Review fixes: forwarded-fragment grouping, caller-name capture (`__LIMIT`, `usize` alias, then `__DECODE`/`__META` — all reproduced; the bound is now a private associated constant). Not achieved: no policy removed (8 → 8) — see B12-K. |
+| B12-B | Generated docs name the policy type, included groups, declared `limit`, `prepare()` bypass. | **MACRO (docs)**, accepted | 5 consumer/maintainer witnesses; rustdoc artifact `for<'__concord> T: Clone` still open. |
+| B12-C | `ResponseHead::single` / `unsigned`, `FieldError`. | **CORE**, accepted | NASA, GitHub (5), GitLab (7) adopted; GitHub/GitLab now refuse `+N`/repeated (tested). Receiver friction → B12-L. |
+| B12-D | `concord_codecs::check_content_type` + `Charset`. | **EXTERNAL**, accepted | FRED drops its parser and `mime`. |
+| B12-E | `concord_pagination::next_offset` + `OffsetError`. | **EXTERNAL**, accepted | FRED, USGS. |
+| B12-F3-4 | `query(..) x?: T`, `T: QueryPairs`; pairs at their declared position. | **MACRO + CORE**, accepted (was F3-4 EXPERIMENT) | Discord anchors (api.rs 316 → 177, wrappers gone) and ClickHouse bindings (URL mutation gone) adopted by gpt-6.1-terra; the declared-position rule came from that adoption (Discord's pinned `before=..&limit=..`). Never `#[sensitive]`; run-time keys on the well-known list redacted in `Prepared` Debug. |
+| B12-G | `concord-ratelimit` adoption by Discord. | **EXTERNAL pilot, not accepted; migration not merged** | Grew Discord's `limiter.rs` 505 → 625 (crate `Window` charges admissions; `Gated` lacks global/key attribution; `Duration` epoch). Found a real SDK defect (late success reopened an exhausted window), fixed in the SDK with two tests failing before. Review findings 1, 2, 4 (race, deadlock, composition order) each reproduced by a failing test and fixed (`7f24df8c`, Astra). Wave 2 brings the second provider. |
+| B12-H | Docs: query-credential transport, Error accessors. | **DOCS**, done | Compiled recipe (AUTHOR_GUIDE §3), CALLER_GUIDE §8. |
+| B12-K | Declared error documents / SDK error mapping. | **EXPERIMENT for W2** | Every remaining policy exists for error vocabulary or status documents. |
+| B12-L | Header-field readers on a `HeaderMap`. | **CORE candidate for W2** | GitHub built a `ResponseHead` with an invented version to call `unsigned`. |
+| B12-M | Policy access to declared values / `Operation: Hash`. | **EXPERIMENT for W2** | SDK24 `resource_of` (22 lines) re-parses the URL; SDK23 maintainer. |

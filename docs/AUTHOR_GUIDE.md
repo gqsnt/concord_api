@@ -270,6 +270,32 @@ whose redirect policy refuses a cross-origin hop — `reqwest::redirect::Policy:
 `attempt.url().origin()` with `attempt.previous()[0].origin()` — or disables redirects. The
 application owns its `reqwest::Client`; Concord never changes it.
 
+**A credential in the query** (`#[sensitive] query("api_key") key: String`) is redacted in
+Concord's output but is part of the URL on the wire, so the transport must not copy that URL
+elsewhere: reqwest sends the previous URL, query included, as `Referer` on a redirect, and its
+own retries replay it. An SDK whose provider takes a query key documents or offers a client like
+FRED's (`examples/fred-sdk/src/lib.rs`, `http_client()`):
+
+```rust
+use concord::reqwest;
+
+/// A transport for a provider that takes its key in the query.
+pub fn query_key_transport() -> reqwest::Result<reqwest::Client> {
+    reqwest::Client::builder()
+        .redirect(reqwest::redirect::Policy::none()) // no hop carries the URL anywhere
+        .referer(false) // and no `Referer` repeats it
+        .retry(reqwest::retry::never()) // replays belong to the SDK's policy
+        .build()
+}
+
+fn main() {
+    query_key_transport().unwrap();
+}
+```
+
+and tests that a redirect is not followed. Prefer a header credential where the provider offers
+one.
+
 **Paths.** Each owner's `path` template is relative (no leading `/`) and is appended after the base
 path, root first. Literal text is sent verbatim; each `{value}` is formatted with `Display` and
 percent-encoded so that it is always exactly **one** segment (`a/b` becomes `a%2Fb`). A segment
@@ -364,6 +390,69 @@ The shortest form places a value directly in its parameter list:
 | `header(ACCEPT) accept: HeaderValue` | `accept: <the native value, byte for byte>` |
 | `query("tag") each tags: Vec<String>` | one `tag=<item>` per item (any `IntoIterator` whose items are `Display`) |
 | `header("x-tag") each tags: Vec<HeaderValue>` | one `x-tag` line per item, in order |
+| `query(..) anchor?: Anchor` | the pairs the value writes (`T: QueryPairs`), after the declared query (§4.1a) |
+
+### 4.1a Values that choose their own keys: `query(..)`
+
+Every other placement names its key in the declaration. When the key itself is part of the
+value — exactly one of several mutually exclusive cursors, or parameters named at run time
+(`param_<name>`) — declare the value with `query(..)` and implement
+[`QueryPairs`](https://docs.rs/concord/latest/concord/trait.QueryPairs.html) for its type. The
+caller then cannot send two cursors together, and the SDK writes no wrapper endpoints to enforce it.
+
+```rust
+use concord::{QueryPairs, QueryPairsWriter, reqwest};
+
+/// Exactly one anchor for a page of messages.
+pub enum Anchor { Before(u64), After(u64), Around(u64) }
+
+impl QueryPairs for Anchor {
+    fn query_pairs(&self, out: &mut QueryPairsWriter<'_>) {
+        match self {
+            Anchor::Before(id) => out.pair("before", id),
+            Anchor::After(id) => out.pair("after", id),
+            Anchor::Around(id) => out.pair("around", id),
+        }
+    }
+}
+
+concord::api! {
+    pub client Chat() {
+        base "https://chat.example.com";
+        GET messages(channel: u64, query limit?: u8, query(..) anchor?: Anchor) {
+            path "channels/{channel}/messages";
+        }
+    }
+}
+
+fn main() -> Result<(), concord::Error> {
+    let chat = Chat::new(reqwest::Client::new());
+    let prepared = chat.messages(7).set_limit(50).set_anchor(Anchor::Before(99)).prepare()?;
+    assert_eq!(prepared.request().url().query(), Some("limit=50&before=99"));
+    Ok(())
+}
+```
+
+Rules, each checked when the declaration compiles:
+
+- **Endpoints only.** A scope's or client's requests cannot know the pairs of a value they do not
+  own; `query(..)` on a scope or client is an error. It can sit in a parameter group (§2.1) that
+  only endpoints include.
+- **No key, no `each`, no `header(..)`.** The value writes every pair, repeated keys included.
+- **Never `#[sensitive]`.** Concord redacts by key, and these keys are only known at run time;
+  give a secret its own keyed placement (`#[sensitive] query("token") token: String`). The
+  endpoint's `Debug` withholds a `query(..)` value; `Prepared`'s `Debug` shows its pairs, except
+  that a key on the well-known secret list (`token`, `api_key`, ... §7) is still shown as
+  `<redacted>`, as a declared key would be.
+- **Order:** a `query(..)` value is written where it is declared among the endpoint's own
+  parameters: after every key the chain already has — an inherited key keeps its first position
+  with all its occurrences, so an endpoint's `append "v" = ..` to an inherited `v` still comes
+  first (§4.7) — and before keys first introduced by the endpoint's `query { }` block. Its pairs
+  follow in the order it writes them; absent, it writes nothing. An empty key is a build error
+  (`ErrorKind::Build`) before anything is sent.
+
+`QueryPairs` is implemented for `Vec<(K, V)>`, `[(K, V)]` and `BTreeMap<K, V>` (`K: AsRef<str>`,
+`V: Display`) for ad-hoc pairs; prefer your own type when the set of keys is a provider rule.
 
 ### 4.2 Blocks, templates and references
 
@@ -499,7 +588,8 @@ fn main() -> Result<(), concord::Error> {
 ### 4.7 Order on the wire
 
 - **Query:** each key keeps the position of its first appearance on the chain (root first), and
-  its occurrences are in contribution order. The query string is exactly that sequence.
+  its occurrences are in contribution order. The query string is exactly that sequence; an
+  endpoint's `query(..)` value contributes its pairs at its own position (§4.1a).
 - **Headers:** the values of one name are sent in contribution order. The order *between*
   different header names is not specified (the native `HeaderMap` groups by name, and reqwest and
   hyper add their own headers).
@@ -1360,6 +1450,48 @@ value with a control character other than tab (CR, LF and NUL among them), a quo
 a form-data name or file name, and an empty `related` body are refused when the request is
 prepared (`Build`, before I/O; the error shows no part bytes). The complete rules are on
 `concord::multipart::Multipart`.
+
+### 5.10a Bounding finite bodies: `limit`
+
+A finite typed output (`-> T`) is read into memory before it is decoded. `limit N;` on the
+client, a scope or the endpoint (the nearest wins) bounds that read to `N` bytes, a `usize`
+constant expression: a longer body is `ErrorKind::Limit` and is not decoded (nothing more is
+read). The bound travels with the endpoint's response handling, so every path that applies it
+honours it — the generated `send()`, a send policy's `received.decode()`, and the native
+`prepare()?.send()`. `received.decode_limited(n)` still replaces it for one call. A drained body
+(no `->`) is never buffered and a stream reader (`-> stream`) has its own limits, so `limit` on such
+an endpoint is a declaration error.
+
+```rust
+use concord::Json;
+use serde::Deserialize;
+
+#[derive(Deserialize)]
+pub struct Doc { pub text: String }
+
+concord::api! {
+    pub client Archive() {
+        base "https://archive.example";
+        format Json;
+        limit 4 * 1024 * 1024; // every finite output below: at most 4 MiB
+
+        GET doc(id: u64) -> Doc { path "docs/{id}"; }
+        scope thumbnails {
+            limit 64 * 1024; // nearer: these documents are small
+            GET meta(id: u64) -> Doc { path "thumbs/{id}"; }
+        }
+    }
+}
+
+fn main() -> Result<(), concord::Error> {
+    let archive = Archive::new(concord::reqwest::Client::new());
+    let (_, _, decoder) = archive.doc(1).prepare()?.into_parts();
+    assert_eq!(decoder.limit(), Some(4 * 1024 * 1024));
+    let (_, _, decoder) = archive.thumbnails().meta(1).prepare()?.into_parts();
+    assert_eq!(decoder.limit(), Some(64 * 1024));
+    Ok(())
+}
+```
 
 ### 5.11 Reading response metadata in an SDK
 

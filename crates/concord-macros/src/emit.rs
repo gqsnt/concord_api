@@ -1232,7 +1232,12 @@ fn debug_fields<'a>(
         } else {
             (quote!(DebugHeader), quote!(DebugHeaderEach))
         };
-        let shown = match (value.debug_sensitive, value.optional, value.usage) {
+        // A `query(..)` value has no `Display`: withheld like a sensitive one.
+        let shown = match (
+            value.debug_sensitive || value.pairs.is_some(),
+            value.optional,
+            value.usage,
+        ) {
             // Never used: the declaration is rejected (`Model::build`); its value is not shown
             // and adds no trait obligation to the error.
             (_, _, None) => quote_spanned!(span=> &#k::__private::Redacted),
@@ -1591,8 +1596,19 @@ fn emit_owner(
                             format!("`{}`", type_text(policy)),
                         ),
                     };
+                    // Name the policy as a link when it is a plain path, so a reader reaches the
+                    // `SendWith` implementation that defines this method's result.
+                    let policy_ty_text = type_text(&policy_ty_for_docs(model, policy));
+                    let linked = if policy_ty_text
+                        .chars()
+                        .all(|c| c.is_alphanumeric() || c == '_' || c == ':')
+                    {
+                        format!("[`{policy_ty_text}`]")
+                    } else {
+                        format!("`{policy_ty_text}`")
+                    };
                     let policy_text = lit(&format!(
-                        " Sends the request with the client's send policy {shown}: returns its `SendWith<T>::Output`. The policy decides execution (signing), errors and metadata; `prepare` gives the native request."
+                        " Sends the request with the client's send policy {shown}: the result is `<{policy_ty_text} as SendWith<T>>::Output`, defined by the `SendWith` implementation of {linked} (its errors, metadata, signing). `prepare()` builds the declared request without the policy, and `prepare()?.send()` uses Concord's own handling and error instead."
                     ));
                     // Spanned at the `send` statement: a type that is no policy is reported there
                     // (with the generated `send()`'s own error), not inside Concord's trait.
@@ -1624,7 +1640,16 @@ fn emit_owner(
                 output.as_ref(),
                 body.as_ref(),
             );
+            let prepare_note = if policy.is_some() {
+                quote! {
+                    #[doc = ""]
+                    #[doc = " With the client's send policy this is the declared request **before** the policy (not signed or decorated by it); `send()` goes through the policy, `prepare()?.send()` does not."]
+                }
+            } else {
+                TokenStream::new()
+            };
             let shapes = shapes_static(k, model, index);
+            let limit = limit_const(model, index, output.as_ref());
             quote! {
                 #shapes
 
@@ -1641,6 +1666,7 @@ fn emit_owner(
 
                 impl #ty {
                     #controls
+                    #limit
 
                     /// Builds the native request without sending it.
                     ///
@@ -1649,6 +1675,7 @@ fn emit_owner(
                     /// `ErrorKind::Build` when a value cannot be written (a path segment, host
                     /// label, header value or body) or two native header names collide; nothing
                     /// is sent.
+                    #prepare_note
                     #[inline] pub fn prepare(self) -> ::core::result::Result<#k::Prepared<#out>, #k::Error> {
                         #prepare
                     }
@@ -1676,6 +1703,18 @@ fn emit_owner(
                 }
             }
         }
+    }
+}
+
+/// The declared finite-body bound of an endpoint with a finite typed output, as a private
+/// associated constant: its initializer resolves names in the caller's module only (no local
+/// statics in scope) and its type is the primitive `usize` whatever the caller calls `usize`.
+fn limit_const(model: &Model, index: usize, output: Option<&Output>) -> TokenStream {
+    match (output, model.nearest_limit(index)) {
+        (Some(o), Some(limit)) if !o.stream => {
+            quote!(const __CONCORD_LIMIT: ::core::primitive::usize = #limit;)
+        }
+        _ => TokenStream::new(),
     }
 }
 
@@ -1737,7 +1776,14 @@ fn endpoint_clone(ty: &Ident, values: &[Value], body: Option<&Body>) -> TokenStr
     }
     let mut fields: Vec<&Ident> = values.iter().map(|v| &v.name).collect();
     fields.extend(body.map(|b| &b.name));
+    // Shown by rustdoc beside the bounds, which otherwise read as an artifact (SDK23 consumer).
+    let note = if bounds.is_empty() {
+        quote!()
+    } else {
+        quote!(#[doc = " `Clone` exactly when every value of the request (and its body) is `Clone`. Each `for<'__concord> T: Clone` bound states that for one value type; the unused lifetime only lets the bound be written on a non-generic type."])
+    };
     quote! {
+        #note
         impl ::core::clone::Clone for #ty where #(#bounds,)* {
             #[inline]
             fn clone(&self) -> Self {
@@ -1760,7 +1806,30 @@ fn owner_docs(model: &Model, index: usize) -> TokenStream {
     let defaults = match &owner.kind {
         Kind::Endpoint { method, .. } => {
             let summary = request_summary(model, index, method);
-            quote!(#defaults #summary)
+            // The parameter groups it includes, and the bound of its finite body read.
+            let mut notes = Vec::new();
+            if !owner.groups.is_empty() {
+                let names: Vec<String> = owner
+                    .groups
+                    .iter()
+                    .map(|g| format!("`{}`", plain(g)))
+                    .collect();
+                notes.push(format!(
+                    " Includes the parameter group{} {} (each also a trait of its setters).",
+                    if names.len() > 1 { "s" } else { "" },
+                    names.join(", ")
+                ));
+            }
+            let has_finite =
+                matches!(&owner.kind, Kind::Endpoint { output: Some(o), .. } if !o.stream);
+            if has_finite && let Some(limit) = model.nearest_limit(index) {
+                let text = quote!(#limit).to_string();
+                notes.push(format!(
+                    " Its finite body read is bounded by `limit {text};` (`ErrorKind::Limit` beyond)."
+                ));
+            }
+            let notes = notes.iter().map(|n| lit(n));
+            quote!(#defaults #summary #(#[doc = ""] #[doc = #notes])*)
         }
         _ => quote!(#defaults),
     };
@@ -1778,6 +1847,15 @@ fn owner_docs(model: &Model, index: usize) -> TokenStream {
     };
     let line = lit(&line);
     quote!(#[doc = #line] #defaults)
+}
+
+/// The type named by the client's `send` statement: the policy type, or the type of the client
+/// value named by `send value;`.
+fn policy_ty_for_docs(model: &Model, policy: &syn::Type) -> syn::Type {
+    match model.send_value() {
+        Some(vi) => model.owners[0].values[vi].ty.clone(),
+        None => policy.clone(),
+    }
 }
 
 /// Navigation methods on `index` for each of its children.
@@ -2391,8 +2469,39 @@ fn prepare_body(
     if composed.trailing_slash {
         code.extend(quote!(__p.trailing_slash();));
     }
+    // `query(..)` values of the endpoint, in parameter order: each is written where it is
+    // declared among the endpoint's own query keys (inherited keys first, block keys last).
+    let mut pairs = owner
+        .values
+        .iter()
+        .enumerate()
+        .filter_map(|(param, value)| value.pairs.map(|at| (param, value, at)))
+        .peekable();
+    let mut pairs_code = |code: &mut TokenStream, before: usize| {
+        while let Some((_, value, at)) = pairs.next_if(|&(param, _, _)| param < before) {
+            let name = &value.name;
+            let what = lit(&format!("query value `{}`", plain(name)));
+            let call = if value.optional {
+                quote!(if let ::core::option::Option::Some(__v) = &self.#name { __p.query_pairs(__v, #what)?; })
+            } else {
+                quote!(__p.query_pairs(&self.#name, #what)?;)
+            };
+            // Located at the placement (an unimplemented `QueryPairs` points there), macro
+            // hygiene kept.
+            code.extend(located(call, at));
+        }
+    };
     let mut sensitive_query = Vec::new();
     for slot in &composed.query {
+        // Where the slot's key first appears: an ancestor's key comes first; one introduced by
+        // this endpoint's direct placement sits at that parameter; a block entry comes last.
+        let rank = match slot.history.first() {
+            Some(first) if first.owner == index => model.owners[index].query[first.index]
+                .param
+                .unwrap_or(usize::MAX),
+            _ => 0,
+        };
+        pairs_code(&mut code, rank);
         if slot.sensitive {
             sensitive_query.push(lit(&model.key_text(&slot.key)));
         }
@@ -2406,6 +2515,7 @@ fn prepare_body(
             Family::Query,
         ));
     }
+    pairs_code(&mut code, usize::MAX);
     match &composed.headers {
         HeaderComposition::Static(slots) => {
             for slot in slots {
@@ -2533,6 +2643,16 @@ fn prepare_body(
             // A static: the format's `Accept` suggestion is a compile-time-checked value. The
             // output type is named first, so an unsupported pair is reported as `Decode<T>`.
             let init = located(quote!(#k::__private::DecodeFormat::<#t>::new::<#r>()), at);
+            // `limit N;` (endpoint or nearest owner): evaluated in the endpoint type's private
+            // associated constant (`limit_const`), where only the caller's names are in scope —
+            // not this block's generated statics.
+            let init = match model.nearest_limit(index) {
+                Some(_) => {
+                    let ty = &model.owners[index].type_name;
+                    quote!(#init.with_limit(#ty::__CONCORD_LIMIT))
+                }
+                None => init,
+            };
             quote!({
                 static __DECODE: #k::__private::DecodeFormat<#t> = #init;
                 (__DECODE.decoder(&__META), __DECODE.accept())

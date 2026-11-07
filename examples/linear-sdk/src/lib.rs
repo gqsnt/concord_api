@@ -51,6 +51,7 @@ concord::api! {
         path "graphql";
         request Graphql;
         response Json;
+        limit BODY_LIMIT;
         /// A page of issues.
         POST issues(body request: GraphqlRequest<ListVariables>) -> Envelope<IssuesData>;
         /// One issue.
@@ -236,7 +237,7 @@ async fn send<T: serde::de::DeserializeOwned>(
             errors,
         });
     }
-    let (envelope, meta) = received.decode_limited_with_meta(BODY_LIMIT).await?;
+    let (envelope, meta) = received.decode_with_meta().await?;
     Ok(Response { envelope, meta })
 }
 
@@ -377,4 +378,39 @@ pub struct PageMeta {
     pub errors: Vec<GraphqlError>,
     /// Provider extensions.
     pub extensions: Option<Value>,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use concord_example_testserver::{Reply, TestServer};
+
+    #[tokio::test]
+    async fn native_send_keeps_the_declared_success_body_limit() {
+        let server = TestServer::start(|_| Reply::json(200, vec![b' '; BODY_LIMIT + 1])).await;
+        let api = LinearApi::new(
+            reqwest::Client::builder().no_proxy().build().unwrap(),
+            LinearApiConfig {
+                authorization: HeaderValue::from_static("synthetic-token"),
+            },
+        )
+        .with_base_url(server.url())
+        .unwrap();
+        let error = api
+            .issue(GraphqlRequest {
+                query: ISSUE,
+                operation_name: "Issue",
+                variables: IssueVariables {
+                    id: "issue-id".into(),
+                },
+            })
+            .prepare()
+            .unwrap()
+            .send()
+            .await
+            .unwrap_err();
+        assert_eq!(error.kind(), concord::ErrorKind::Limit);
+        assert_eq!(error.head().unwrap().status().as_u16(), 200);
+        server.shutdown().await;
+    }
 }

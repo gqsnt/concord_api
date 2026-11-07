@@ -193,9 +193,11 @@ cursor. Use page/tree budgets for resource limits. Concurrent edits can change r
 between cursor requests: the SDK supplies no snapshot or deduplication guarantee.
 
 `client.api()` exposes the public generated operations for request preparation and
-Concord's native boundary. Direct generated `.send()` uses Concord errors and its
-ordinary decoding; the SDK's body limits, provider-error mapping and envelope checks
-apply to the `NotionClient` domain methods above.
+Concord's native boundary. The 8 MiB success-body bound is declared on the client, so
+direct generated `.send()` and `prepare()?.send()` refuse a larger body too
+(`ErrorKind::Limit`); they return Concord errors. The 64 KiB provider-error bound,
+provider-error mapping and envelope checks apply to the `NotionClient` domain methods
+above.
 
 ## Evidence and dependencies
 

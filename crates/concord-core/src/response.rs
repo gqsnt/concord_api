@@ -320,7 +320,10 @@ impl<T> Received<T> {
     ///
     /// As [`decode`](Self::decode).
     pub async fn decode_with_meta(self) -> Result<(T, ResponseMeta), Error> {
-        self.decoder.decode_keeping(self.response, None, true).await
+        let limit = self.decoder.limit();
+        self.decoder
+            .decode_keeping(self.response, limit, true)
+            .await
     }
 
     /// [`decode_limited`](Self::decode_limited), also returning the response head owned, as

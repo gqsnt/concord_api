@@ -90,6 +90,7 @@ fn main() -> Result<(), concord::Error> {
 | `params Name(x?: T, ..);` (client), `GET op(..Name)` | a parameter group: optional/initialized values written once, spliced where `..Name` is written; trait `Name` holds their setters for every including endpoint | [§2.1](AUTHOR_GUIDE.md#21-parameter-groups-one-fact-many-endpoints) |
 | `path "a/{x}"`, `subdomain "{x}"` | templates; `{client.x}` or `{scope.x}` reads an enclosing owner's value | [§3](AUTHOR_GUIDE.md#3-base-paths-and-subdomains) |
 | `query x`, `query("k") x`, `header("k") x`, `header(KEY) x`, `body x` | placements in the parameter list; `each` sends one occurrence per item | [§4.1](AUTHOR_GUIDE.md#41-placing-a-value) |
+| `query(..) x?: T` (endpoints) | `T: QueryPairs` writes its own key(s): exclusive cursors, run-time names; never `#[sensitive]` | [§4.1a](AUTHOR_GUIDE.md#41a-values-that-choose-their-own-keys-query) |
 | `query { "k" = v; }`, `headers { "k" = "t {x}"; KEY = v; }` | blocks. **Left of `=` is a key**: a literal, or for headers a Rust path to a `HeaderName`. **Right of `=` is a value**: a template, or a value's name | [§4.2](AUTHOR_GUIDE.md#42-blocks-templates-and-references), [§4.8](AUTHOR_GUIDE.md#48-header-names-and-values) |
 | `append`, `override`, `override .. else inherit`, `remove` | change a key set further up; anything else on an inherited key is an error | [§4.3](AUTHOR_GUIDE.md#43-what-an-owner-may-do-with-an-inherited-key) |
 | `format F;`, `request F;`, `request F "type/subtype";`, `response F;` | formats on a client, scope or endpoint; the nearest wins per direction; a media type comes with its format | [§5.2](AUTHOR_GUIDE.md#52-where-formats-come-from) |
@@ -97,6 +98,7 @@ fn main() -> Result<(), concord::Error> {
 | `body form: MultipartBody` + `request Multipart;` (feature `multipart`) | `MultipartBody::form_data().text(..).file(..)` or `::related().part(Part::new(b).header(..))`; boundary chosen per body, sent with `Content-Length`; a contradicting declared media type or `content-type` is a `Build` error | [§5.10](AUTHOR_GUIDE.md#510-bodies-whose-media-type-is-known-at-run-time) |
 | `ACCEPT = ".."`, `remove ACCEPT` | an authored `Accept` always wins over the format's suggestion; a chain ending in `remove` sends none from Concord | [§5.8](AUTHOR_GUIDE.md#58-what-goes-on-the-wire-accept-and-content-type) |
 | `#[sensitive]` | never printed by Concord; also every key, segment and label it feeds | [§7](AUTHOR_GUIDE.md#7-sensitive-values) |
+| `limit N;` | bounds every finite typed output's body at and below this owner (nearest wins): `ErrorKind::Limit` beyond, on `send()`, `decode()` and `prepare()?.send()` | [§5.10a](AUTHOR_GUIDE.md#510a-bounding-finite-bodies-limit) |
 | `#[cfg(..)]`, `#[deprecated]`, `///` on scopes and endpoints | applied to the subtree or the navigation method; names are checked as if every `cfg` were on, so cfg-exclusive siblings need distinct names | [§8](AUTHOR_GUIDE.md#8-attributes) |
 
 Usual order inside an owner: `base` (client), `path`, `subdomain`, `query { }`, `headers { }`,

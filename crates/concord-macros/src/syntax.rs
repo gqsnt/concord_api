@@ -28,6 +28,7 @@ mod kw {
     syn::custom_keyword!(stream);
     syn::custom_keyword!(send);
     syn::custom_keyword!(params);
+    syn::custom_keyword!(limit);
 }
 
 /// HTTP methods accepted as endpoint keywords.
@@ -585,6 +586,8 @@ pub struct Stmts {
     pub response: Option<FormatDefault>,
     /// `send POLICY;` on the client: the type whose `SendWith<T>` every generated `send()` uses.
     pub send: Option<(Type, Span)>,
+    /// `limit EXPR;` on any owner: the bound, in bytes, of a finite typed output's body.
+    pub limit: Option<(Expr, Span)>,
 }
 
 #[derive(Clone)]
@@ -637,6 +640,8 @@ pub struct Placement {
     pub key: Option<Key>,
     pub each: bool,
     pub span: Span,
+    /// `query(..) x: T`: the value writes its own pairs (`T: concord::QueryPairs`).
+    pub pairs: bool,
 }
 
 pub struct BodyParam {
@@ -1016,6 +1021,36 @@ fn parse_owner_body(
                 ));
             }
             stmts.send = Some((ty, kw.span));
+            continue;
+        }
+        if input.peek(kw::limit) && !input.peek2(Token![::]) {
+            let kw: kw::limit = input.parse()?;
+            if let Some(first) = children.first() {
+                let first: &Owner = first;
+                return Err(syn::Error::new(
+                    kw.span,
+                    format!(
+                        "owner statements (`limit`, `path`, `query`, ...) must precede child declarations (first child: `{}`)",
+                        first.name
+                    ),
+                ));
+            }
+            if input.peek(Token![;]) {
+                return Err(input.error(
+                    "expected the bound in bytes, a `usize` constant expression (`limit 4 * 1024 * 1024;`)",
+                ));
+            }
+            // Parsed like an initializer: a fragment forwarded by `macro_rules!` keeps its
+            // grouping (`16 / $d` with `$d = 1 + 3` is `16 / (1 + 3)`).
+            let expr = parse_initializer(input)?;
+            input.parse::<Token![;]>()?;
+            if stmts.limit.is_some() {
+                return Err(syn::Error::new(
+                    kw.span,
+                    "duplicate `limit` statement; each owner declares it at most once",
+                ));
+            }
+            stmts.limit = Some((expr, kw.span));
             continue;
         }
         if input.peek(kw::path)
@@ -1779,17 +1814,37 @@ fn parse_placement(input: ParseStream<'_>) -> syn::Result<Option<Placement>> {
         }
         return Ok(None);
     };
+    let mut pairs = false;
     let key = if input.peek(syn::token::Paren) {
         let content;
         parenthesized!(content in input);
-        let key = parse_key(
-            &content,
-            "expected a quoted name (`header(\"x-request-id\")`) or a native `HeaderName` constant (`header(AUTHORIZATION)`)",
-        )?;
-        if !content.is_empty() {
-            return Err(content.error("expected a single key"));
+        if content.peek(Token![..]) {
+            let dots: Token![..] = content.parse()?;
+            if !content.is_empty() {
+                return Err(
+                    content.error("`query(..)` takes no key: the value writes its own pairs")
+                );
+            }
+            if family.0 == Family::Header {
+                return Err(syn::Error::new(
+                    dots.spans[0],
+                    "`header(..)` is not supported: a header placement names its field",
+                ));
+            }
+            pairs = true;
         }
-        Some(key)
+        if pairs {
+            None
+        } else {
+            let key = parse_key(
+                &content,
+                "expected a quoted name (`header(\"x-request-id\")`) or a native `HeaderName` constant (`header(AUTHORIZATION)`)",
+            )?;
+            if !content.is_empty() {
+                return Err(content.error("expected a single key"));
+            }
+            Some(key)
+        }
     } else {
         None
     };
@@ -1805,11 +1860,18 @@ fn parse_placement(input: ParseStream<'_>) -> syn::Result<Option<Placement>> {
     } else {
         false
     };
+    if pairs && each {
+        return Err(syn::Error::new(
+            family.1,
+            "`query(..)` writes its own pairs, so it takes no `each`: write every pair in the value's `QueryPairs` implementation",
+        ));
+    }
     Ok(Some(Placement {
         family: family.0,
         key,
         each,
         span: family.1,
+        pairs,
     }))
 }
 

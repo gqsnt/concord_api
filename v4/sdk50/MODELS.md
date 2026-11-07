@@ -25,4 +25,34 @@ The coordinator is this Claude Code session (`claude-opus-5-5`; session `cb65e1e
 | p1-f2-adoption-astra | gpt-6-astra xhigh | gpt-6-astra xhigh | workspace-write | 01a1b309-94e6-7b60-8a69-a7418a712f54 | b0896b87 | 2026-11-06 23:45 – 23:50 |
 | p1-retry-sol | gpt-6.1-sol xhigh | gpt-6.1-sol xhigh | workspace-write | 01a1b30c-b677-70e3-a932-bd57a752978e | 9b4fd287 | 2026-11-06 23:48 – 00:03 |
 | p1-firstuse-desk-opus (first-use probe, docs only) | Claude subagent, xhigh | `claude-opus-5-5` sent ×34 with effort `xhigh`; answered `claude-opus-5-5` ×63 | Claude Code (same permissions) | agent `afb26b83…` | `b0896b87` (frozen worktree) | 2026-11-06 23:45 – 23:52 |
-| p1-pagination-terra | gpt-6.1-terra xhigh | (in progress) | workspace-write + network | — | `54d3e494` | 2026-11-07 00:12 – |
+| p1-pagination-terra | gpt-6.1-terra xhigh | gpt-6.1-terra xhigh | workspace-write + network | 01a1b321-1531-7430-9cdf-c3b2319f66f6 | `54d3e494` | 2026-11-07 00:10 – 00:13 |
+| p1-edit-k8s-sol | gpt-6.1-sol xhigh | gpt-6.1-sol xhigh | workspace-write | 01a1b327-e45a-7031-8544-8e8003f49ef5 | `56a16ee3` | 2026-11-07 00:18 – 00:21 |
+| p2-auth-astra | gpt-6-astra xhigh | gpt-6-astra xhigh | workspace-write | 01a1b326-9759-7aa0-8b17-bbe247f8f119 | `56a16ee3` | 2026-11-07 00:16 – 00:27 |
+| w1-sdk21-author-sol | gpt-6.1-sol xhigh | gpt-6.1-sol xhigh | workspace-write | 01a1b32b-8448-7653-8ec4-72e9a23a075c | `56a16ee3` | 2026-11-07 00:22 – 00:31 |
+| w1-sdk22-author-terra | gpt-6.1-terra xhigh | gpt-6.1-terra xhigh | workspace-write | 01a1b32b-8448-7c53-9452-a1641e9f36b2 | `56a16ee3` | 2026-11-07 00:22 – 00:24 |
+| w1-sdk23-author-astra | gpt-6-astra xhigh | gpt-6-astra xhigh | workspace-write | 01a1b32b-8447-7773-ad95-d1e74102409d | `56a16ee3` | 2026-11-07 00:22 – 00:36 |
+| w1-sdk25-author-sol | gpt-6.1-sol xhigh | gpt-6.1-sol xhigh | workspace-write | 01a1b32b-e78e-7a90-b747-b07573d33ae7 | `56a16ee3` | 2026-11-07 00:22 – 00:34 |
+| w1-sdk22-consumer-astra | gpt-6-astra xhigh | gpt-6-astra xhigh | workspace-write | 01a1b32e-1b21-7d40-994c-f86dc3bc7b5c | `0c8444d6` | 2026-11-07 00:25 – 00:31 |
+| w1-sdk21-consumer-terra | gpt-6.1-terra xhigh | gpt-6.1-terra xhigh | workspace-write | 01a1b334-4b37-7311-a4dc-0e19fc88b4b7 | `df9ba9e4` | 2026-11-07 00:31 – 00:32 |
+| w1-sdk21-maintainer-astra | gpt-6-astra xhigh | gpt-6-astra xhigh | workspace-write | 01a1b335-e7bc-7f70-8453-ce74141bdda7 | `ba6ac11b` | 2026-11-07 00:33 – 00:37 |
+| w1-sdk25-consumer-terra | gpt-6.1-terra xhigh | gpt-6.1-terra xhigh | workspace-write | 01a1b337-895f-7813-afb0-4244ea72c40c | `4f3cc65f` | 2026-11-07 00:35 – 00:37 |
+| w1-sdk25-maintainer-astra | gpt-6-astra xhigh | gpt-6-astra xhigh | workspace-write | 01a1b339-8df6-78e0-aed0-6350956f5d55 | `e1995ff7` | 2026-11-07 00:37 – 00:42 |
+| w1-sdk23-maintainer-sol | gpt-6.1-sol xhigh | gpt-6.1-sol xhigh | workspace-write | 01a1b344-c628-78d1-ba5e-b0927d07cd82 | `9f59f9a6` | 2026-11-07 00:49 – 00:55 |
+| w1-sdk24-consumer-sol | gpt-6.1-sol xhigh | gpt-6.1-sol xhigh | workspace-write | 01a1b344-c626-7453-a1f6-b335e89747ed | `d188ef77` | 2026-11-07 00:49 – 00:55 |
+| p2-ratelimit-terra | gpt-6.1-terra xhigh | gpt-6.1-terra xhigh | workspace-write | 01a1b345-66b1-7d23-99f3-7bbe3647523f | `f4b4129f` | 2026-11-07 00:50 – 00:56 |
+| w1-sdk24-maintainer-terra | gpt-6.1-terra xhigh | gpt-6.1-terra xhigh | workspace-write | 01a1b34b-afee-7dc0-afaa-89612097ac99 | `9fbd2aca` | 2026-11-07 00:57 – 00:59 |
+| b12-x-astra | gpt-6-astra xhigh | gpt-6-astra xhigh | workspace-write | 01a1b358-9659-7192-a1fb-aa8291f4d1cf | `8683ef33` | 2026-11-07 01:11 – 01:18 |
+| b12-y-sol | gpt-6.1-sol xhigh | gpt-6.1-sol xhigh | workspace-write | 01a1b358-9659-7681-82d3-01e65443f54d | `8683ef33` | 2026-11-07 01:11 – 01:22 |
+| w1-sdk24-author-opus (Discord) | Claude subagent, xhigh | `claude-opus-5-5` sent ×88 with effort `xhigh`; answered `claude-opus-5-5` ×166 | Claude Code (same permissions) | agent `ae8cac72…` | W1 frozen `56a16ee3` lineage | 2026-11-07 00:22 – 00:48 |
+| w1-sdk22-maintainer-opus (NASA) | Claude subagent, xhigh | `claude-opus-5-5` sent ×81 with effort `xhigh`; answered `claude-opus-5-5` ×150 | Claude Code (same permissions) | agent `ac6c0c60…` | W1 frozen `56a16ee3` lineage | 2026-11-07 00:31 – 00:48 |
+| w1-sdk23-consumer-opus (USGS, docs only) | Claude subagent, xhigh | `claude-opus-5-5` sent ×48 with effort `xhigh`; answered `claude-opus-5-5` ×89 | Claude Code (same permissions) | agent `a59ab30f…` | W1 frozen `56a16ee3` lineage | 2026-11-07 00:36 – 00:49 |
+| b12-review-sol (review of `8dc53558..d3808b29`) | gpt-6.1-sol xhigh | gpt-6.1-sol xhigh | read-only | 01a1b367-e8e9-7410-b51e-fb04b3a82af2 | `d3808b29` | 2026-11-07 01:28 – 01:32 |
+| b12-pairs-adopt-terra (`query(..)` adoption) | gpt-6.1-terra xhigh | gpt-6.1-terra xhigh | workspace-write + network | 01a1b368-e6a5-7b01-8237-4a22a37ce4fd | `d3808b29` | 2026-11-07 01:29 – 01:31 |
+| b12-ratefix-astra (ratelimit review fixes) | gpt-6-astra xhigh | gpt-6-astra xhigh | workspace-write + network | 01a1b36e-7d18-77a0-b826-53877344ebd5 | `e169ad41` | 2026-11-07 01:35 – 01:42 |
+| b12-review2-sol (review of `d3808b29..78b1ff77`) | gpt-6.1-sol xhigh | gpt-6.1-sol xhigh | read-only | 01a1b376-476d-7992-a4c9-a82b761f416e | `78b1ff77` | 2026-11-07 01:43 – 01:47 |
+
+Opus subagent times are converted from the transcripts' UTC timestamps. Loopback access, read from
+each rollout's first `turn_context.sandbox_policy.network_access`: true for every Wave-1 Codex
+role and every `p1-edit`, `p1-retry`, `p1-pagination`, `p2-*` and `b12-*` lane; false for
+`p0-docs`, `p1-codecs`, `p1-f2-adoption`, `p1-link` (their socket tests were re-run by the
+coordinator); read-only roles have no network policy.
