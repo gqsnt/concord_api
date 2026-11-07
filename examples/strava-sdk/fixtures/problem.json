@@ -1,0 +1,1 @@
+{"message":"BODY_SECRET synthetic provider rejection","errors":[{"resource":"UPLOAD_SECRET","field":"file","code":"invalid"}]}
