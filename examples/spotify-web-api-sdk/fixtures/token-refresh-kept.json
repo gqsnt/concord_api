@@ -1,0 +1,6 @@
+{
+  "access_token": "synthetic-access-kept",
+  "token_type": "Bearer",
+  "expires_in": 3600,
+  "scope": "playlist-read-private playlist-read-collaborative"
+}

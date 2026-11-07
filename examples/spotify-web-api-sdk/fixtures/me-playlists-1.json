@@ -1,0 +1,40 @@
+{
+  "href": "https://api.spotify.com/v1/me/playlists?offset=0&limit=2",
+  "limit": 2,
+  "next": "https://api.spotify.com/v1/me/playlists?offset=2&limit=2",
+  "offset": 0,
+  "previous": null,
+  "total": 3,
+  "items": [
+    {
+      "collaborative": false,
+      "description": "Synthetic morning list",
+      "external_urls": { "spotify": "https://open.spotify.com/playlist/0SyntheticPlaylist0001" },
+      "href": "https://api.spotify.com/v1/playlists/0SyntheticPlaylist0001",
+      "id": "0SyntheticPlaylist0001",
+      "images": [{ "url": "https://i.scdn.co/image/synthetic-p1", "height": null, "width": null }],
+      "name": "Morning",
+      "owner": { "display_name": "Synthetic User", "external_urls": { "spotify": "https://open.spotify.com/user/synthetic.user" }, "href": "https://api.spotify.com/v1/users/synthetic.user", "id": "synthetic.user", "type": "user", "uri": "spotify:user:synthetic.user" },
+      "public": true,
+      "snapshot_id": "c3ludGhldGljLXNuYXBzaG90LTE=",
+      "tracks": { "href": "https://api.spotify.com/v1/playlists/0SyntheticPlaylist0001/tracks", "total": 12 },
+      "type": "playlist",
+      "uri": "spotify:playlist:0SyntheticPlaylist0001"
+    },
+    {
+      "collaborative": true,
+      "description": "",
+      "external_urls": { "spotify": "https://open.spotify.com/playlist/0SyntheticPlaylist0002" },
+      "href": "https://api.spotify.com/v1/playlists/0SyntheticPlaylist0002",
+      "id": "0SyntheticPlaylist0002",
+      "images": null,
+      "name": "Shared",
+      "owner": { "display_name": null, "external_urls": { "spotify": "https://open.spotify.com/user/friend_99" }, "href": "https://api.spotify.com/v1/users/friend_99", "id": "friend_99", "type": "user", "uri": "spotify:user:friend_99" },
+      "public": false,
+      "snapshot_id": "c3ludGhldGljLXNuYXBzaG90LTI=",
+      "tracks": { "href": "https://api.spotify.com/v1/playlists/0SyntheticPlaylist0002/tracks", "total": 0 },
+      "type": "playlist",
+      "uri": "spotify:playlist:0SyntheticPlaylist0002"
+    }
+  ]
+}
