@@ -78,7 +78,7 @@ concord::api! {
     /// [`Error`]. `prepare()` builds the native request with Concord's own error.
     pub client PokeApi() {
         base "https://pokeapi.co/api/v2";
-        send KeepHead;
+        send KeepHead -> Result<Response<_>, Error>;
         format Json;
         /// Retrieve one Pokémon by name or numeric ID.
         GET pokemon(id: String) -> Pokemon { path "pokemon/{id}/"; }
@@ -185,7 +185,7 @@ impl From<concord::Error> for Error {
 /// authentication.
 pub type Client = PokeApi;
 
-/// The send policy of [`PokeApi`] (`send KeepHead;`): every operation's `send()`
+/// The send policy of [`PokeApi`] (`send KeepHead -> Result<Response<_>, Error>;`): every operation's `send()`
 /// (`api.pokemon("clefairy").send()`, `api.list().set_limit(20).set_offset(0).send()`) executes
 /// once, decodes the entire JSON body, keeps status, headers and final URL, and returns
 /// `Result<Response<T>, Error>`.

@@ -1,6 +1,8 @@
-//! Between waves 2 and 3, candidate R: whether a failed request reached the server. Baseline:
+//! Between waves 2 and 3, candidate R: what a failed request proves about delivery. Baseline:
 //! Discord and Zendesk classify `transport().is_connect()` as "not sent", Postmark, HubSpot and
-//! Mailgun treat every failed write as uncertain (connect refusals included), each by hand.
+//! Mailgun treat every failed write as uncertain (HubSpot also its build errors), each by hand.
+//! A connect error is not proof of non-delivery (redirects, nested sources), so `delivery()`
+//! claims `NotSent` only for requests Concord refused before sending.
 
 use std::time::Duration;
 
@@ -40,7 +42,7 @@ async fn delivery(store: &Store) -> (Delivery, ErrorKind) {
 }
 
 #[tokio::test]
-async fn a_request_that_was_not_built_or_never_connected_was_not_sent() {
+async fn only_a_request_concord_refused_is_proven_not_sent() {
     // Not built: a header value Concord refuses before any I/O.
     let error = store("http://127.0.0.1:9", Duration::from_secs(5))
         .create("a\nb", Item { id: 1 })
@@ -52,14 +54,28 @@ async fn a_request_that_was_not_built_or_never_connected_was_not_sent() {
         (Delivery::NotSent, ErrorKind::Build)
     );
 
-    // Never connected: a port that is bound (so no other test can take it) but not listening.
+    // A refused connection is not proof: below, the same final error follows a performed write.
     let socket = tokio::net::TcpSocket::new_v4().unwrap();
     socket.bind("127.0.0.1:0".parse().unwrap()).unwrap();
-    let base = format!("http://{}", socket.local_addr().unwrap());
+    let closed = format!("http://{}", socket.local_addr().unwrap());
     assert_eq!(
-        delivery(&store(&base, Duration::from_secs(5))).await,
-        (Delivery::NotSent, ErrorKind::Transport)
+        delivery(&store(&closed, Duration::from_secs(5))).await,
+        (Delivery::Unknown, ErrorKind::Transport)
     );
+
+    // Review b23-review-sol, finding 1: the server performs the POST and answers 303 to a closed
+    // port; reqwest follows it and returns the connect error. Claiming `NotSent` would be wrong.
+    let target = format!("{closed}/elsewhere");
+    let server =
+        TestServer::start(move |_| Reply::new(303).header("location", target.clone())).await;
+    let error = store(&server.url(), Duration::from_secs(5))
+        .create("n", Item { id: 1 })
+        .send()
+        .await
+        .unwrap_err();
+    assert!(error.transport().is_some_and(|e| e.is_connect()));
+    assert_eq!(error.delivery(), Delivery::Unknown);
+    assert_eq!(server.requests().len(), 1, "the write reached the server");
     drop(socket);
 }
 

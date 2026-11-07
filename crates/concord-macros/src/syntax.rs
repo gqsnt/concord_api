@@ -1017,7 +1017,8 @@ fn parse_owner_body(
             // `send P -> Result<_, Error>;`: the result type every generated `send()` declares.
             let output = if input.peek(Token![->]) {
                 input.parse::<Token![->]>()?;
-                Some(input.parse::<Type>()?)
+                // Like other types: a fragment forwarded by `macro_rules!` keeps its grouping.
+                Some(parse_type(input)?)
             } else {
                 None
             };

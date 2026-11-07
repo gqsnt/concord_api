@@ -1,9 +1,14 @@
-error[E0308]: mismatched types
+error[E0271]: type mismatch resolving `<Policy as SendWith<String>>::Output == Option<String>`
   --> tests/ui/send_declared_result_mismatch.rs:14:24
    |
 14 |         send Policy -> Option<_>;
-   |                        ^^^^^^ expected `Option<String>`, found `Result<String, Error>`
+   |                        ^^^^^^ type mismatch resolving `<Policy as SendWith<String>>::Output == Option<String>`
    |
+note: expected this to be `Option<String>`
+  --> tests/ui/send_declared_result_mismatch.rs:5:19
+   |
+ 5 |     type Output = Result<T, concord::Error>;
+   |                   ^^^^^^^^^^^^^^^^^^^^^^^^^
    = note: expected enum `Option<String>`
               found enum `Result<String, concord::Error>`
    = note: this error originates in the macro `$crate::__macro::api` which comes from the expansion of the macro `concord::api` (in Nightly builds, run with -Z macro-backtrace for more info)

@@ -35,10 +35,9 @@ impl ApiError {
         let status = received.status();
         let retry_after = received
             .head()
-            .headers()
-            .get(RETRY_AFTER)
-            .and_then(|value| value.to_str().ok())
-            .and_then(|text| text.trim().parse::<u64>().ok())
+            .unsigned(RETRY_AFTER)
+            .ok()
+            .flatten()
             .map(Duration::from_secs);
         let (_, document) = received
             .document::<IgnoreContentType<Json>, ErrorDocument>(ERROR_BODY_LIMIT)
@@ -73,8 +72,8 @@ impl ApiError {
         self.document.as_ref().and_then(|d| d.code)
     }
 
-    /// `Retry-After` in seconds, when the server sent one (a `429`, typically). An HTTP-date form
-    /// is not parsed.
+    /// One unsigned decimal `Retry-After` field, with surrounding OWS allowed. Repeated,
+    /// signed, overflowing and HTTP-date values are not parsed.
     pub fn retry_after(&self) -> Option<Duration> {
         self.retry_after
     }
@@ -161,7 +160,7 @@ impl fmt::Display for NtfyError {
 
 impl std::error::Error for NtfyError {}
 
-/// The send policy of [`Ntfy`](crate::Ntfy) (`send NtfyPolicy;`): one execution with
+/// The send policy of [`Ntfy`](crate::Ntfy) (`send NtfyPolicy -> Result<_, NtfyError>;`): one execution with
 /// `Prepared::receive`; a non-2xx answer becomes [`NtfyError::Api`] with its error document read
 /// (bounded); anything else is decoded as declared — a stream endpoint returns its open
 /// [`Events`](crate::Events) without reading the body. No retry.

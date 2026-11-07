@@ -15,7 +15,7 @@ provider asks applications to cache requested resources; this SDK does not cache
 
 `Client` is the generated `PokeApi` client (the name diagnostics and operation
 names use: `PokeApi.pokemon`, `PokeApi.list`). A declared operation is sent with
-its `.send()`, which goes through the SDK's send policy `KeepHead` (`send KeepHead;`
+its `.send()`, which goes through the SDK's send policy `KeepHead` (`send KeepHead -> Result<Response<_>, Error>;`
 in the declaration) and returns the value with the response head
 (`Response { value, meta }`) or an `Error` that keeps the head. Nothing to import
 besides `Client`. `.prepare()` builds the native request with Concord's own error.

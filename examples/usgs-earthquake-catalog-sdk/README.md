@@ -55,7 +55,7 @@ assert_eq!(export.completion(), Completion::EndOfInput);
 ```
 
 For one page, use `catalog.query(&filter).geojson().send().await?` or
-`catalog.query(&filter).csv().send().await?`. Both return `Response { data, meta }`.
+`catalog.query(&filter).csv().send().await?`. Both name `Result<Response<T>, Error>` in their signatures (`Response { data, meta }` on success).
 The CSV `data` is an unread `CsvRows`: call `next().await`, handle every
 `Some(Result<CsvRow, Error>)`, and check `completion()`. A single full page does
 not establish that the window is exhausted; use `pages`/`export` for that.

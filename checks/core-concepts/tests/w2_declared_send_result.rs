@@ -94,3 +94,25 @@ async fn the_declared_result_is_the_policy_output() {
     ));
     assert_eq!(through_sends(store.items()).await, 2);
 }
+
+// Review b23-review-sol, finding 3: a template forwarded through `macro_rules!`.
+macro_rules! forwarded_store {
+    ($error:ty) => {
+        concord::api! {
+            /// A client whose send result is written by a wrapper.
+            pub client Forwarded() {
+                base "http://forwarded.invalid";
+                format Json;
+                send Policy -> Result<_, $error>;
+                /// One item.
+                GET item(id: u32) -> Item { path "items/{id}"; }
+            }
+        }
+    };
+}
+forwarded_store!(Error);
+
+fn _forwarded_names_the_result(store: &Forwarded) {
+    let _: std::pin::Pin<Box<dyn std::future::Future<Output = Result<Item, Error>> + Send>> =
+        Box::pin(store.item(1).send());
+}
