@@ -270,6 +270,32 @@ whose redirect policy refuses a cross-origin hop — `reqwest::redirect::Policy:
 `attempt.url().origin()` with `attempt.previous()[0].origin()` — or disables redirects. The
 application owns its `reqwest::Client`; Concord never changes it.
 
+**A credential in the query** (`#[sensitive] query("api_key") key: String`) is redacted in
+Concord's output but is part of the URL on the wire, so the transport must not copy that URL
+elsewhere: reqwest sends the previous URL, query included, as `Referer` on a redirect, and its
+own retries replay it. An SDK whose provider takes a query key documents or offers a client like
+FRED's (`examples/fred-sdk/src/lib.rs`, `http_client()`):
+
+```rust
+use concord::reqwest;
+
+/// A transport for a provider that takes its key in the query.
+pub fn query_key_transport() -> reqwest::Result<reqwest::Client> {
+    reqwest::Client::builder()
+        .redirect(reqwest::redirect::Policy::none()) // no hop carries the URL anywhere
+        .referer(false) // and no `Referer` repeats it
+        .retry(reqwest::retry::never()) // replays belong to the SDK's policy
+        .build()
+}
+
+fn main() {
+    query_key_transport().unwrap();
+}
+```
+
+and tests that a redirect is not followed. Prefer a header credential where the provider offers
+one.
+
 **Paths.** Each owner's `path` template is relative (no leading `/`) and is appended after the base
 path, root first. Literal text is sent verbatim; each `{value}` is formatted with `Display` and
 percent-encoded so that it is always exactly **one** segment (`a/b` becomes `a%2Fb`). A segment
