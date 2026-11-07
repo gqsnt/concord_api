@@ -5,7 +5,7 @@ edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 publish = false
-description = "A bounded QuickBooks Online Accounting API slice: realm-bound OAuth connections, customer query and read, invoice create (sent once) and read, tested offline"
+description = "A bounded QuickBooks Online Accounting API slice: realm-bound OAuth connections, customer query and read, invoice create/read and single-invoice payments, tested offline"
 
 [dependencies]
 concord = { path = "../../crates/concord", features = ["form"] }

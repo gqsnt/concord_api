@@ -2,7 +2,7 @@
 
 A bounded QuickBooks Online Accounting API SDK built on Concord: realm-bound OAuth 2.0
 connections (authorization code and refresh token), customer query and read, invoice create and
-read. Every test runs against local fixtures; **no request was ever sent to Intuit**
+read, and recording a payment against one invoice. Every test runs against local fixtures; **no provider API request was sent to Intuit**
 (live provider calls: NOT_RUN).
 
 ## What the slice covers
@@ -17,9 +17,10 @@ read. Every test runs against local fixtures; **no request was ever sent to Intu
 | Read a customer | `qbo.customer(id).read()` | `GET /customer/{id}` |
 | Create an invoice | `qbo.invoices().create(NewInvoice)` | `POST /invoice?requestid=..`, JSON `{"Line": [..], "CustomerRef": {"value": ..}}` |
 | Read an invoice | `qbo.invoice(id).read()` | `GET /invoice/{id}` |
+| Record an invoice payment | `qbo.payments().create(NewPayment)` | `POST /payment?requestid=..`, JSON `CustomerRef`, `TotalAmt`, one `Line` with `Amount` and `LinkedTxn` naming the invoice |
 
 The client hierarchy is Concord's: client (`QuickBooks`, one company) → scope (`customers`,
-`customer(id)`, `invoices`, `invoice(id)`) → endpoint. Every call is the generated `send()`; the
+`customer(id)`, `invoices`, `invoice(id)`, `payments`) → endpoint. Every call is the generated `send()`; the
 client's send policy is the `Connection`, which supplies both the realm of the path and its
 access token.
 
@@ -30,7 +31,7 @@ Both connected workflows, after an authorization (the code is compiled, not run)
 ```rust,no_run
 use concord_sdk_quickbooks_online::{
     Activity, AuthorizationCallback, CustomerQuery, Decimal, EntityId, Environment, Error,
-    NewInvoice, OAuthApp, QuickBooks, SalesItemLine, http_client,
+    NewInvoice, NewPayment, OAuthApp, QuickBooks, RequestId, SalesItemLine, http_client,
 };
 
 async fn connect_and_bill(callback_query: &str, state: &str) -> Result<(), Error> {
@@ -65,6 +66,16 @@ async fn connect_and_bill(callback_query: &str, state: &str) -> Result<(), Error
     let fetched = qbo.invoice(created.id.clone()).read().send().await?.invoice;
     assert_eq!(fetched.customer_ref.value, customer.id.as_str());
 
+    // Record a partial payment, then ask QuickBooks for the remaining invoice balance.
+    let payment = NewPayment::new(customer.id.clone(), created.id.clone(),
+        Decimal::parse("25.1300")?)?;
+    let receipt_id = RequestId::new("receipt-2026-0042")?; // persist before sending
+    let recorded = qbo.payments().create(payment)
+        .set_request_id(receipt_id).send().await?.payment;
+    assert_eq!(recorded.customer_ref.value, customer.id.as_str());
+    let after_payment = qbo.invoice(created.id).read().send().await?.invoice;
+    let _remaining_balance = after_payment.balance; // exact server decimal text
+
     // Persist the latest refresh token: QuickBooks may return a new one on any refresh.
     let _store = (connection.realm().clone(), connection.refresh_token());
     Ok(())
@@ -77,6 +88,18 @@ only after a page shorter than `MAXRESULTS`; `max_pages(n)` caps it.
 Use `http_client()` or a `reqwest::Client` with the same restrictions: **no transport retries**
 (a create must be sent exactly once) and **no redirects** (no credential follows a hop). The SDK
 never builds its own client.
+
+`NewPayment::new(customer_id, invoice_id, amount)` records a strictly positive amount against
+one invoice. Partial payments are allowed; `TotalAmt` and `Line[0].Amount` use the same exact
+decimal text, and `LinkedTxn[0]` fixes `TxnType` to `Invoice`. The connection supplies the realm;
+the SDK does not accept a separate realm for the payment or its invoice read. QuickBooks
+validates the customer's invoice, currency and outstanding balance. The SDK reads the resulting
+balance only when the caller invokes `invoice(id).read()`; a failed read never resends the payment.
+
+The wire shape follows the [Payment entity reference](https://developer.intuit.com/app/developer/qbo/docs/api/accounting/all-entities/payment)
+(indexed text read 2026-11-07). The ticket's [REST API features / requestid guidance](https://developer.intuit.com/app/developer/qbo/docs/develop/rest-api-features)
+URL was attempted on 2026-11-07 but returned an application shell; see the maintenance research
+record in `PROVENANCE.md`. The mandatory request ID and no-replay rule are the ticket's SDK contract.
 
 ## Failure semantics
 
@@ -91,7 +114,7 @@ a provider message or a body.
 | The token endpoint refused otherwise (429, 403, ...) | `TokenServiceUnavailable`; the next call tries again. |
 | A 401 from the Accounting API on a read | the token is discarded, one new token is acquired and the read is sent **once** more; a second 401 is `AccessTokenRejected`. |
 | A 401 on a create | `AccessTokenRejected` at once; the create is **not** resent (QuickBooks refused it before processing; sending it again with the same request ID is safe). |
-| A create with no response, a 5xx, or an unreadable 2xx | `Error::Uncertain` with the `requestid` it carried. The SDK never resends it. Replay deliberately with the same ID: `qbo.invoices().create(invoice).set_request_id(id)`; QuickBooks answers a repeated request ID with the original response instead of creating a second invoice. |
+| An invoice or payment create with no response, a 5xx, or an unreadable 2xx | `Error::Uncertain` with the connection's realm, operation and the `requestid` it carried. The SDK never resends it. Retain the ID for reconciliation. Any deliberate resubmission uses the same ID and body, through `.set_request_id(id)`; never generate a new ID to resolve an uncertain create. |
 | Any other non-2xx | `Error::Provider`: status, the `Fault` (type, error codes, elements; messages only through `*_unredacted`), `intuit_tid`. An unreadable fault document keeps the status. |
 | A 2xx whose body is a `Fault` (documented) | `Error::Provider` with status 200, for reads and creates (a fault: the create did not happen). |
 | A 2xx read that is malformed, truncated, too large (`QUERY_BODY_LIMIT`, `ENTITY_BODY_LIMIT`) or not `application/json` | `Error::Concord` of kind `Decode`, `Transport`, `Limit` or `Metadata`. |
@@ -102,14 +125,15 @@ its rejection state and its cached access token belong to one realm; the SDK cac
 
 ## Not covered
 
-- Payroll, tax workflows, payments, every other entity and operation (update, delete, void,
+- Payroll, tax workflows, every other entity and operation (update, delete, void,
   send, PDF, batch, change data capture, reports, webhooks).
 - The full query dialect: `CustomerQuery` builds only `SELECT * FROM Customer` with `Active`,
   `Id` and `DisplayName` (equals or prefix) filters, `ORDERBY DisplayName`, `STARTPOSITION` and
   `MAXRESULTS`. Values with `%`, `\` or control characters are refused (no documented escape).
-- Automatic replay of invoice creation, retries of anything but one read after a 401, rate
+- Automatic replay of invoice or payment creation, retries of anything but one read after a 401, rate
   limiting (QuickBooks' throttling answers are returned as `Error::Provider`).
-- Multicurrency (`CurrencyRef` on a new invoice), line types other than sales item lines.
+- Multicurrency (`CurrencyRef` on a new invoice or payment), invoice line types other than sales
+  item lines, multi-invoice allocations, credits, refunds, unapplied payments and payment read/update.
 - OpenID Connect (ID tokens, user info), token revocation, and persistence: the application
   stores `connection.refresh_token()` itself, after calls.
 - Live verification: every expectation comes from the documentation cited in `PROVENANCE.md`

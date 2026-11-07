@@ -99,3 +99,37 @@ No new crate: every dependency (`concord` with its `form` feature, `concord-auth
 `concord-pagination`, `serde`, `serde_json` with `raw_value`, and for tests
 `concord-example-testserver` and `tokio`) is a workspace member or was already in `Cargo.lock`.
 The only `Cargo.lock` change is this package's own entry; no other package changed version.
+
+## Maintenance research — 2026-11-07
+
+This section records this maintainer's research separately from the original D1–D10 record.
+Only the five documentation URLs supplied by the maintenance ticket were targeted; the
+original record's other sources were read here as local provenance, not fetched again.
+
+| # | Exact page | Access and evidence on 2026-11-07 |
+|---|---|---|
+| M1 | [Payment](https://developer.intuit.com/app/developer/qbo/docs/api/accounting/all-entities/payment) | Direct open returned an application shell; indexed official-page text was readable. Create is `POST /v3/company/<realmID>/payment`, JSON, with required `TotalAmt` and `CustomerRef`. `Line.Amount` allocations link invoices through `LinkedTxn` with `TxnId` and `TxnType: Invoice`. Response envelope is `Payment`; fields include `Id`, `SyncToken`, `TotalAmt`, `UnappliedAmt`, `CustomerRef`, `Line` and `MetaData`. `CurrencyRef` is conditional on multicurrency, which this slice excludes. |
+| M2 | [REST API features / requested requestid guidance](https://developer.intuit.com/app/developer/qbo/docs/develop/rest-api-features) | Attempted with both research tools and a direct HTTP fetch; only the application shell was available, including after a query-string variant. Browser access was unavailable. The guidance at this exact URL could not be independently read. Mandatory `requestid`, single send and uncertain timeout behavior are the ticket's explicit contract; existing request-ID semantics and validation remain as originally recorded under D6. No new provider guarantee about replay duration is asserted. |
+| M3 | [OAuth 2.0](https://static.developer.intuit.com/output_html/qbo/docs/develop/authentication-and-authorization/oauth-2.0.html) | Readable official text: authorization-code flow, callback realm, token exchange. Existing refresh-token implementation and failure fixtures retained. |
+| M4 | [Customer](https://developer.intuit.com/app/developer/qbo/docs/api/accounting/all-entities/customer) | Open attempted; application shell only. Existing customer contract retained, exercised through fixtures. |
+| M5 | [Invoice](https://developer.intuit.com/app/developer/qbo/docs/api/accounting/all-entities/invoice) | Open attempted; application shell only. Existing invoice model/read retained; balance reduction is the ticket's stated behavior and a synthetic fixture expectation. |
+
+New fixtures are synthetic, not captured provider traffic:
+
+- `payment-created.json`: M1 field shape, customer 58, invoice 145, payment 146, a partial
+  amount `25.1300` with zero unapplied amount. The trailing decimal zeros deliberately test
+  lossless text decoding.
+- `invoice-after-payment.json`: existing Invoice envelope, synthetic balance `224.8700`
+  after paying `25.1300` against `250.00`. It is served only after the consumer fixture accepts
+  the payment. It does not prove live provider arithmetic or timing.
+- New inline failure fixtures reuse the existing token/Fault shapes. Timeout, 503 and malformed
+  success classification are SDK policy, not new claims about Intuit processing guarantees.
+
+`NewPayment` further restricts this maintenance slice to a positive amount fully allocated to
+one invoice. This is an SDK boundary; the Payment reference also permits other arrangements.
+Amounts use the existing `Decimal`/`serde_json::RawValue` implementation without new arithmetic.
+
+No crate was added or upgraded for maintenance. The package and workspace membership were
+already present at starting HEAD `c89f1000939ae264da88eac2379b7ca9ee394be8`; the first build
+was offline without `--locked`, then checks used `--locked`. Neither root `Cargo.toml` nor
+`Cargo.lock` changed. Live provider calls remain **NOT_RUN**.

@@ -668,6 +668,96 @@ async fn rejected_refresh_recovers_without_crossing_realms() {
     assert_eq!(server.shutdown().await.open_after, 0);
 }
 
+/// Maintenance consumer: create an invoice, record a partial payment, then read its balance.
+#[tokio::test]
+async fn record_a_partial_payment_then_read_the_invoice_balance() {
+    use concord_sdk_quickbooks_online::NewPayment;
+    use std::sync::atomic::{AtomicBool, Ordering};
+
+    let paid = AtomicBool::new(false);
+    let server = TestServer::start(move |request: &Recorded| {
+        if request.path() == format!("/v3/company/{REALM}/payment") {
+            assert_eq!(request.method, "POST");
+            assert_eq!(request.query_all("requestid"), ["receipt-2026-0042"]);
+            assert_eq!(request.body_text(),
+                r#"{"CustomerRef":{"value":"58"},"TotalAmt":25.1300,"Line":[{"Amount":25.1300,"LinkedTxn":[{"TxnId":"145","TxnType":"Invoice"}]}]}"#);
+            assert!(!paid.swap(true, Ordering::SeqCst), "payment sent once");
+            Reply::json(200, include_str!("../fixtures/payment-created.json"))
+        } else if request.path() == format!("/v3/company/{REALM}/invoice/145")
+            && paid.load(Ordering::SeqCst)
+        {
+            Reply::json(200, include_str!("../fixtures/invoice-after-payment.json"))
+        } else {
+            successful_fixture(request)
+        }
+    }).await;
+    let (qbo, connection) = authorized(&server).await;
+    let selected = qbo
+        .customer(EntityId::new(CUSTOMER).unwrap())
+        .read()
+        .send()
+        .await
+        .unwrap()
+        .customer;
+    let created = qbo
+        .invoices()
+        .create(new_invoice(selected.id.clone()))
+        .send()
+        .await
+        .unwrap()
+        .invoice;
+    assert_eq!(created.balance.as_ref().unwrap().as_str(), "250.0");
+
+    let payment = NewPayment::new(
+        selected.id.clone(),
+        created.id.clone(),
+        Decimal::parse("25.1300").unwrap(),
+    )
+    .unwrap();
+    let recorded = qbo
+        .payments()
+        .create(payment)
+        .set_request_id(RequestId::new("receipt-2026-0042").unwrap())
+        .send()
+        .await
+        .unwrap()
+        .payment;
+    assert_eq!(recorded.id.as_str(), "146");
+    assert_eq!(recorded.customer_ref.value, selected.id.as_str());
+    assert_eq!(recorded.total_amt.as_str(), "25.1300");
+    assert_eq!(recorded.unapplied_amt.as_ref().unwrap().as_str(), "0.00");
+    assert_eq!(recorded.line.len(), 1);
+    assert_eq!(recorded.line[0].amount.as_str(), "25.1300");
+    assert_eq!(recorded.line[0].linked_txn.len(), 1);
+    assert_eq!(recorded.line[0].linked_txn[0].txn_id, created.id);
+    assert_eq!(recorded.line[0].linked_txn[0].txn_type, "Invoice");
+
+    let fetched = qbo
+        .invoice(created.id.clone())
+        .read()
+        .send()
+        .await
+        .unwrap()
+        .invoice;
+    assert_eq!(fetched.id, created.id);
+    assert_eq!(fetched.customer_ref.value, selected.id.as_str());
+    assert_eq!(fetched.total_amt.as_ref().unwrap().as_str(), "250.00");
+    assert_eq!(fetched.balance.as_ref().unwrap().as_str(), "224.8700");
+    assert_eq!(connection.realm().as_str(), REALM);
+    let requests = server.requests();
+    assert_eq!(requests.len(), 5);
+    accounting_wire(&requests[3], "POST", "payment", "Bearer fixture-access-a");
+    assert_eq!(requests[3].header("content-type"), Some("application/json"));
+    assert_eq!(requests[3].query_all("minorversion"), ["75"]);
+    accounting_wire(
+        &requests[4],
+        "GET",
+        "invoice/145",
+        "Bearer fixture-access-a",
+    );
+    assert_eq!(server.shutdown().await.open_after, 0);
+}
+
 async fn read_failures_keep_status_metadata_and_secrets() {
     for mode in 0..5 {
         let server = TestServer::start(move |request: &Recorded| {

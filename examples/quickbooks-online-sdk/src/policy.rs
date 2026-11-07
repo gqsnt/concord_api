@@ -6,8 +6,8 @@
 //!   token, acquires one fresh token and sends the read once more. A second 401 is
 //!   [`AuthorizationKind::AccessTokenRejected`](crate::AuthorizationKind::AccessTokenRejected).
 //!   Nothing else is repeated.
-//! - **Writes** (`POST`, invoice create): sent exactly once. A 401 discards the token and is
-//!   returned (the caller may send the same request ID again); no response, a 5xx or an
+//! - **Writes** (`POST`, invoice or payment create): sent exactly once. A 401 discards the token
+//!   and is returned (the caller may send the same request ID again); no response, a 5xx or an
 //!   unreadable 2xx is [`Error::Uncertain`] with the request ID; any other non-2xx is
 //!   [`Error::Provider`].
 //! - A 2xx carrying a `Fault` is [`Error::Provider`] with status 200, for reads and writes.

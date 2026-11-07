@@ -1,11 +1,12 @@
 //! A bounded QuickBooks Online Accounting API slice: realm-bound OAuth 2.0 connections
 //! (authorization code and refresh token), customer query and read, invoice create (sent once,
-//! with a request ID) and read. Tests run against local fixtures only.
+//! with a request ID) and read, and recording a payment against one invoice. Tests run against
+//! local fixtures only.
 //!
 //! The declared client is [`QuickBooks`], one per connected company (realm):
 //! `qbo.customers().query(..)`, `qbo.customer(id).read()`, `qbo.invoices().create(..)`,
-//! `qbo.invoice(id).read()`, each sent with the generated `send()` through the client's
-//! [`Connection`], which supplies the realm of every path and its access token.
+//! `qbo.invoice(id).read()`, `qbo.payments().create(..)`, each sent with the generated `send()`
+//! through the client's [`Connection`], which supplies the realm of every path and its access token.
 //! [`customer_pages`] walks a query. See the package README for failure semantics and
 //! exclusions.
 
@@ -14,6 +15,7 @@ mod error;
 mod format;
 mod models;
 mod pages;
+mod payment;
 mod policy;
 mod query;
 
@@ -35,6 +37,7 @@ pub use models::{
     SalesItemLine, SalesItemLineDetail,
 };
 pub use pages::customer_pages;
+pub use payment::{LinkedTxn, NewPayment, Payment, PaymentLine, PaymentResponse};
 pub use query::{Activity, CustomerQuery};
 
 use concord::Json;
@@ -42,7 +45,7 @@ use concord::reqwest;
 
 /// The largest successful query body read: 8 MiB (up to 1000 customers per page).
 pub const QUERY_BODY_LIMIT: usize = 8 * 1024 * 1024;
-/// The largest successful single-entity body read (customer, invoice): 1 MiB.
+/// The largest successful single-entity body read (customer, invoice, payment): 1 MiB.
 pub const ENTITY_BODY_LIMIT: usize = 1024 * 1024;
 /// The largest error body read (a `Fault`, an OAuth error): 64 KiB.
 pub const ERROR_BODY_LIMIT: usize = 64 * 1024;
@@ -110,6 +113,19 @@ concord::api! {
 
             /// Read an invoice.
             GET read() -> InvoiceResponse;
+        }
+
+        /// The company's payments against invoices.
+        scope payments {
+            path "payment";
+
+            /// Record a payment against one invoice, sent once. A possibly-applied payment is
+            /// [`Error::Uncertain`] with its request ID. Read the invoice again for its balance.
+            POST create(
+                body payment: NewPayment,
+                /// Fresh for each create; retain it to reconcile an uncertain result.
+                query("requestid") request_id: RequestId = RequestId::generate(),
+            ) -> PaymentResponse;
         }
     }
 }
