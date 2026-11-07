@@ -58,12 +58,13 @@ enum Repr {
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 #[non_exhaustive]
 pub enum Delivery {
-    /// Nothing was sent: the request was not built ([`ErrorKind::Build`]), or the connection was
-    /// never established (a connect failure, before any request byte was written).
+    /// Nothing was sent: Concord refused the request before handing it to the client (not built,
+    /// a header set twice, a body that could not be encoded — [`ErrorKind::Build`]).
     NotSent,
-    /// The request may or may not have reached the server, and no response head arrived: a
-    /// timeout, a reset or a failed body upload after the connection was established. A write may
-    /// have been performed.
+    /// The client failed and no response head reached Concord: a refused or failed connection, a
+    /// timeout, a reset, a failed upload. A write may have been performed — even a refused
+    /// connection is no proof, because the client may have followed a redirect from a server that
+    /// performed it, and a connection error can come from a nested source (a streamed body).
     Unknown,
     /// The server answered: a response head arrived (any status), even if its body then failed,
     /// was refused or was too long.
@@ -327,8 +328,8 @@ impl Error {
         }
     }
 
-    /// Whether the request reached the server ([`Delivery`]): `NotSent` for a request that was
-    /// not built or whose connection failed, `Answered` once a response head arrived, `Unknown`
+    /// What this failure proves about delivery ([`Delivery`]): `NotSent` when Concord refused the
+    /// request before sending it, `Answered` once a response head reached Concord, `Unknown`
     /// otherwise. A send policy uses it to tell a failed write that certainly did not happen from
     /// one that may have:
     ///
@@ -347,8 +348,9 @@ impl Error {
         match &self.inner.repr {
             Repr::Build { .. } | Repr::HeaderConflict { .. } | Repr::Encode(_) => Delivery::NotSent,
             Repr::Transport(_) if self.inner.head.is_some() => Delivery::Answered,
-            // hyper reports a connect failure before writing any request byte.
-            Repr::Transport(error) if error.is_connect() => Delivery::NotSent,
+            // Not even a connect failure proves non-delivery: reqwest may have followed a redirect
+            // from a server that performed the request, and `is_connect()` searches the whole
+            // source chain (a streamed body's own request). Review b23-review-sol, finding 1.
             Repr::Transport(_) => Delivery::Unknown,
             Repr::Status(_) | Repr::Metadata(..) | Repr::Decode(_) | Repr::Limit(_) => {
                 Delivery::Answered

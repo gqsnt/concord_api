@@ -1626,22 +1626,26 @@ fn emit_owner(
                         Some((_, declared)) => declared.clone(),
                         None => quote_spanned!(at=> <#policy_ty as #k::SendWith<#out>>::Output),
                     };
-                    // A declared result that is not the policy's output is reported at the
-                    // template (`expected Result<..>, found <P as SendWith<T>>::Output`).
-                    let call = match &declared {
+                    // The declared result must be the policy's output exactly (an equality bound,
+                    // not a coercion), reported at the template.
+                    let equal = match &declared {
                         Some((tat, declared)) => located(
-                            quote! {
-                                let __out: #declared = <#policy_ty as #k::SendWith<#out>>::send(&__policy, self).await;
-                                __out
-                            },
+                            quote!(where #policy_ty: #k::SendWith<#out, Output = #declared>),
                             *tat,
                         ),
-                        None => {
-                            quote!(<#policy_ty as #k::SendWith<#out>>::send(&__policy, self).await)
-                        }
+                        None => TokenStream::new(),
                     };
+                    let sends_bound = match &declared {
+                        Some((tat, declared)) => located(
+                            quote!(#policy_ty: #k::SendWith<#out, Output = #declared>),
+                            *tat,
+                        ),
+                        None => quote_spanned!(at=> #policy_ty: #k::SendWith<#out>),
+                    };
+                    let call =
+                        quote!(<#policy_ty as #k::SendWith<#out>>::send(&__policy, self).await);
                     sends_impl = quote_spanned! {at=>
-                        impl #k::Sends<#send_output> for #ty where #policy_ty: #k::SendWith<#out> {
+                        impl #k::Sends<#send_output> for #ty where #sends_bound {
                             #[inline] fn send(self) -> impl ::core::future::Future<Output = #send_output> + ::core::marker::Send {
                                 #ty::send(self)
                             }
@@ -1649,7 +1653,7 @@ fn emit_owner(
                     };
                     quote! {
                         #[doc = #policy_text]
-                        #[inline] pub fn send(self) -> impl ::core::future::Future<Output = #send_output> + ::core::marker::Send {
+                        #[inline] pub fn send(self) -> impl ::core::future::Future<Output = #send_output> + ::core::marker::Send #equal {
                             let __policy: #policy_ty = #policy_init;
                             async move { #call }
                         }
@@ -1743,22 +1747,49 @@ fn limit_const(model: &Model, index: usize, output: Option<&Output>) -> TokenStr
     }
 }
 
-/// A `send P -> Template;` result for one endpoint: every `_` of the template becomes `out`.
+/// A `send P -> Template;` result for one endpoint: every type placeholder `_` of the template
+/// becomes `out`. Not a lifetime's `'_`, nothing inside a const expression (`{ .. }`, where `_` is
+/// a pattern), and a group without a placeholder is kept as written (a fragment forwarded by
+/// `macro_rules!` keeps its grouping).
 fn with_output(template: &syn::Type, out: &TokenStream) -> TokenStream {
+    use proc_macro2::{Delimiter, Group, TokenTree};
+    fn apostrophe(tt: &TokenTree) -> bool {
+        matches!(tt, TokenTree::Punct(p) if p.as_char() == '\'')
+    }
+    fn has_placeholder(tokens: &TokenStream) -> bool {
+        let mut lifetime = false;
+        tokens.clone().into_iter().any(|tt| {
+            let found = match &tt {
+                TokenTree::Ident(i) => i == "_" && !lifetime,
+                TokenTree::Group(g) => {
+                    g.delimiter() != Delimiter::Brace && has_placeholder(&g.stream())
+                }
+                _ => false,
+            };
+            lifetime = apostrophe(&tt);
+            found
+        })
+    }
     fn replace(tokens: TokenStream, out: &TokenStream) -> TokenStream {
+        let mut lifetime = false;
         tokens
             .into_iter()
-            .map(|tt| match tt {
-                proc_macro2::TokenTree::Ident(i) if i == "_" => proc_macro2::TokenTree::Group(
-                    proc_macro2::Group::new(proc_macro2::Delimiter::None, out.clone()),
-                ),
-                proc_macro2::TokenTree::Group(g) => {
-                    let mut group =
-                        proc_macro2::Group::new(g.delimiter(), replace(g.stream(), out));
-                    group.set_span(g.span());
-                    proc_macro2::TokenTree::Group(group)
+            .map(|tt| {
+                let after_apostrophe = lifetime;
+                lifetime = apostrophe(&tt);
+                match tt {
+                    TokenTree::Ident(i) if i == "_" && !after_apostrophe => {
+                        TokenTree::Group(Group::new(Delimiter::None, out.clone()))
+                    }
+                    TokenTree::Group(g)
+                        if g.delimiter() != Delimiter::Brace && has_placeholder(&g.stream()) =>
+                    {
+                        let mut group = Group::new(g.delimiter(), replace(g.stream(), out));
+                        group.set_span(g.span());
+                        TokenTree::Group(group)
+                    }
+                    tt => tt,
                 }
-                tt => tt,
             })
             .collect()
     }
@@ -1873,7 +1904,7 @@ fn owner_docs(model: &Model, index: usize) -> TokenStream {
                 notes.push(format!(
                     " `{}` writes its own query keys: see `{}` for which.",
                     plain(&value.name),
-                    quote!(#ty).to_string().replace(' ', "")
+                    type_text(ty)
                 ));
             }
             let has_finite =
@@ -2744,6 +2775,23 @@ fn prepare_body(
 #[cfg(test)]
 mod tests {
     use quote::quote;
+
+    // Review b23-review-sol, finding 2: only type placeholders are the endpoint's output.
+    #[test]
+    fn a_send_template_replaces_type_placeholders_only() {
+        let text = |template: proc_macro2::TokenStream| {
+            let ty: syn::Type = syn::parse2(template).unwrap();
+            super::with_output(&ty, &quote!(Item))
+                .to_string()
+                .replace(' ', "")
+        };
+        assert_eq!(text(quote!(Result<_, Error>)), "Result<Item,Error>");
+        assert_eq!(text(quote!(fn(&'_ _) -> Vec<_>)), "fn(&'_Item)->Vec<Item>");
+        assert_eq!(
+            text(quote!(Wrap<_, [u8; { match 1 { _ => 2 } }]>)),
+            "Wrap<Item,[u8;{match1{_=>2}}]>"
+        );
+    }
 
     use super::{emit, key_owner};
     use crate::model::{KeyName, Model};
