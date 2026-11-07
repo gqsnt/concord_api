@@ -2,7 +2,9 @@
 
 use concord::ErrorKind;
 use concord_example_testserver::{Body, Recorded, Reply, TestServer};
-use concord_sdk_postmark::{Email, Error, Message, Postmark, PostmarkConfig, http_client_builder};
+use concord_sdk_postmark::{
+    BatchResult, Email, Error, Message, Postmark, PostmarkConfig, http_client_builder,
+};
 use serde_json::{Value, json};
 use std::time::Duration;
 
@@ -566,4 +568,158 @@ async fn list_outbound_by_count_and_offset_then_retrieve_an_item() {
         assert_read_wire(&server.single(), "/messages/outbound");
         assert_eq!(server.shutdown().await.open_after, 0);
     }
+}
+
+// Maintenance (batch sending): the application keeps one outcome per receipt, in its own order.
+#[derive(Debug, PartialEq)]
+enum ReceiptOutcome {
+    Accepted(String),
+    Rejected(u32),
+    // Any receipt of the batch may have been accepted: never resend it automatically.
+    Unknown,
+}
+
+fn order_receipt(order: &str, to: &str) -> Email {
+    Email {
+        to: to.into(),
+        subject: format!("Receipt for order {order}"),
+        text_body: Some(format!("Thank you. Your order {order} is confirmed.")),
+        ..receipt()
+    }
+}
+
+async fn send_receipts(api: &Postmark, receipts: Vec<Email>) -> Result<Vec<ReceiptOutcome>, Error> {
+    let submitted = receipts.len();
+    match api.outbound().send_batch(receipts).send().await {
+        Ok(results) => {
+            assert_redacted(&format!("{results:?}"));
+            Ok(results
+                .into_iter()
+                .map(|result| match result {
+                    BatchResult::Accepted(acceptance) => {
+                        ReceiptOutcome::Accepted(acceptance.message_id)
+                    }
+                    BatchResult::Rejected(rejection) => {
+                        ReceiptOutcome::Rejected(rejection.error_code)
+                    }
+                })
+                .collect())
+        }
+        Err(error) if error.is_unknown_outcome() => {
+            assert_redacted(&format!("{error:?} {error}"));
+            Ok((0..submitted).map(|_| ReceiptOutcome::Unknown).collect())
+        }
+        // The batch as a whole was refused (or never sent): the application may try again later.
+        Err(error) => Err(error),
+    }
+}
+
+#[tokio::test]
+async fn send_receipts_in_one_batch_then_inspect_each_accepted_id() {
+    let server = TestServer::start(|request: &Recorded| -> Reply {
+        match (request.method.as_str(), request.path()) {
+            ("POST", "/email/batch") => json_reply(json!([
+                acceptance(),
+                {"ErrorCode": 406, "Message": format!("{PRIVATE_DETAIL} {TOKEN}")},
+                {"To": "sam@example.net", "SubmittedAt": SUBMITTED,
+                    "MessageID": SECOND_ID, "ErrorCode": 0, "Message": "OK"},
+            ])),
+            ("GET", path) if path == format!("/messages/outbound/{ID}/details") => {
+                json_reply(message(ID, "Queued"))
+            }
+            ("GET", path) if path == format!("/messages/outbound/{SECOND_ID}/details") => {
+                json_reply(message(SECOND_ID, "Sent"))
+            }
+            _ => Reply::new(500),
+        }
+    })
+    .await;
+    let api = client(&server, Duration::from_secs(2));
+    let receipts = vec![
+        receipt(),
+        order_receipt("NW-1043", "inactive@example.net"),
+        order_receipt("NW-1044", "sam@example.net"),
+    ];
+    let outcomes = send_receipts(&api, receipts).await.unwrap();
+    assert_eq!(
+        outcomes,
+        [
+            ReceiptOutcome::Accepted(ID.into()),
+            ReceiptOutcome::Rejected(406),
+            ReceiptOutcome::Accepted(SECOND_ID.into()),
+        ]
+    );
+    for (outcome, status) in [(&outcomes[0], "Queued"), (&outcomes[2], "Sent")] {
+        let ReceiptOutcome::Accepted(id) = outcome else {
+            unreachable!()
+        };
+        let details = api.outbound().details(id).send().await.unwrap();
+        assert_eq!(&details.message_id, id);
+        assert_eq!(details.status, status);
+    }
+    let requests = server.requests();
+    assert_eq!(requests.len(), 3);
+    assert_common_wire(&requests[0]);
+    assert_eq!(requests[0].method, "POST");
+    assert_eq!(requests[0].target, "/email/batch");
+    assert_eq!(requests[0].header("Content-Type"), Some("application/json"));
+    let body: Vec<Value> = serde_json::from_slice(&requests[0].body).unwrap();
+    assert_eq!(body.len(), 3);
+    assert_eq!(
+        body[0],
+        json!({
+            "From": "Northwind Receipts <receipts@example.com>", "To": "alex@example.net",
+            "Subject": "Receipt for order NW-1042",
+            "TextBody": "Thank you. Your order NW-1042 totals EUR 42.50.",
+            "MessageStream": "outbound"
+        })
+    );
+    assert_eq!(body[1]["To"], "inactive@example.net");
+    assert_eq!(body[2]["Subject"], "Receipt for order NW-1044");
+    assert_read_wire(&requests[1], &format!("/messages/outbound/{ID}/details"));
+    assert_read_wire(
+        &requests[2],
+        &format!("/messages/outbound/{SECOND_ID}/details"),
+    );
+    assert_eq!(server.shutdown().await.open_after, 0);
+
+    // Required failure, batch form: the batch was read and headers sent, then the body stalled.
+    // Also a 2xx answer that cannot be attributed: one result for two receipts.
+    for stall in [true, false] {
+        let server = TestServer::start(move |_: &Recorded| -> Reply {
+            let reply = json_reply(json!([acceptance()]));
+            if stall {
+                reply.with_body(Body::Stall)
+            } else {
+                reply
+            }
+        })
+        .await;
+        let api = client(&server, Duration::from_millis(150));
+        let receipts = vec![receipt(), order_receipt("NW-1043", "sam@example.net")];
+        let outcomes = send_receipts(&api, receipts).await.unwrap();
+        assert_eq!(outcomes, [ReceiptOutcome::Unknown, ReceiptOutcome::Unknown]);
+        assert!(
+            !server
+                .wait_until(Duration::from_millis(200), |s| s.requests().len() > 1)
+                .await,
+            "batch never resent"
+        );
+        let request = server.single();
+        assert_common_wire(&request);
+        assert_eq!(request.target, "/email/batch");
+        assert_eq!(server.shutdown().await.open_after, 0);
+    }
+
+    // A refused batch is a provider error for the whole request, not a per-receipt outcome.
+    let server = TestServer::start(|_: &Recorded| -> Reply {
+        provider_error(429, 429).header("Retry-After", "7")
+    })
+    .await;
+    let error = send_receipts(&client(&server, Duration::from_secs(2)), vec![receipt()])
+        .await
+        .unwrap_err();
+    assert_api_error(&error, 429, Some(429), Some(7));
+    assert_eq!(server.single().target, "/email/batch");
+    assert_eq!(server.shutdown().await.open_after, 0);
 }

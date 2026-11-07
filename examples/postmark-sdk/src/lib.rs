@@ -3,6 +3,8 @@
 //! The generated `send()` performs one Concord execution. Configure the supplied HTTP client
 //! with a timeout and without application-level retries. Acceptance is not delivery; a send
 //! whose response cannot be read has an unknown outcome and must not be blindly repeated.
+//! A batch send returns one [`BatchResult`] per submitted message, in submission order; a batch
+//! whose results cannot be read or attributed has an unknown outcome as a whole.
 
 use concord::{Endpoint, Json, SendWith};
 use serde::{Deserialize, Serialize};
@@ -78,7 +80,8 @@ pub struct MessagePage {
     pub messages: Vec<Message>,
 }
 
-/// A Postmark error document. Message text may contain user data; it is omitted from Debug.
+/// A Postmark error document, or a rejected batch entry ([`BatchResult::Rejected`]). Message text
+/// may contain user data, such as recipient addresses; it is omitted from Debug.
 #[derive(Deserialize)]
 #[serde(rename_all = "PascalCase")]
 pub struct ErrorDocument {
@@ -93,6 +96,55 @@ impl fmt::Debug for ErrorDocument {
             .field("error_code", &self.error_code)
             .field("message", &"<redacted>")
             .finish()
+    }
+}
+
+/// Postmark's verdict on one message of a batch send. A successful batch response holds one per
+/// submitted message, in submission order: the `n`th result belongs to the `n`th email.
+#[derive(Debug, Deserialize)]
+#[serde(try_from = "BatchEntry")]
+pub enum BatchResult {
+    /// `ErrorCode` 0: accepted for sending (not delivered), with the ID for `details`.
+    Accepted(Acceptance),
+    /// Any other `ErrorCode`: Postmark rejected this message, for example an inactive recipient
+    /// (406). Its provider text is omitted from Debug.
+    Rejected(ErrorDocument),
+}
+
+/// One documented batch response element. Postmark omits `MessageID`, `SubmittedAt` and `To`
+/// from a rejected entry; an entry claiming acceptance without them cannot be attributed, so the
+/// batch response fails to decode and its outcome is unknown.
+#[derive(Deserialize)]
+#[serde(rename_all = "PascalCase")]
+struct BatchEntry {
+    error_code: u32,
+    message: String,
+    #[serde(rename = "MessageID")]
+    message_id: Option<String>,
+    to: Option<String>,
+    submitted_at: Option<String>,
+}
+
+impl TryFrom<BatchEntry> for BatchResult {
+    type Error = &'static str;
+
+    fn try_from(entry: BatchEntry) -> Result<Self, Self::Error> {
+        if entry.error_code != 0 {
+            return Ok(Self::Rejected(ErrorDocument {
+                error_code: entry.error_code,
+                message: entry.message,
+            }));
+        }
+        match (entry.message_id, entry.to, entry.submitted_at) {
+            (Some(message_id), Some(to), Some(submitted_at)) => Ok(Self::Accepted(Acceptance {
+                to,
+                submitted_at,
+                message_id,
+                error_code: 0,
+                message: entry.message,
+            })),
+            _ => Err("accepted batch entry lacks MessageID, To or SubmittedAt"),
+        }
     }
 }
 
@@ -118,6 +170,24 @@ pub enum Error {
         /// Retry-After value when it is an integer number of seconds.
         retry_after_seconds: Option<u64>,
     },
+    /// A batch was answered with HTTP 2xx, but the number of results differs from the number of
+    /// emails submitted, so no result can be attributed to an email. As with
+    /// [`UnknownOutcome`](Self::UnknownOutcome), any email may have been accepted: do not resend
+    /// the batch; the accepted entries' IDs are kept for investigation.
+    UnmatchedBatch {
+        /// Emails in the request.
+        submitted: usize,
+        /// Results as returned, in response order.
+        results: Vec<BatchResult>,
+    },
+}
+impl Error {
+    /// A send was executed without a result that can be attributed to each submitted email
+    /// ([`UnknownOutcome`](Self::UnknownOutcome) or [`UnmatchedBatch`](Self::UnmatchedBatch)).
+    /// Investigate before resubmitting any of its emails.
+    pub fn is_unknown_outcome(&self) -> bool {
+        matches!(self, Self::UnknownOutcome(_) | Self::UnmatchedBatch { .. })
+    }
 }
 impl fmt::Display for Error {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -133,19 +203,62 @@ impl fmt::Display for Error {
                 }
                 Ok(())
             }
+            Self::UnmatchedBatch { submitted, results } => write!(
+                f,
+                "Postmark batch outcome unknown: {submitted} emails submitted, {} results returned",
+                results.len()
+            ),
         }
     }
 }
 impl std::error::Error for Error {}
 
-/// Policy for generated calls: one execution, no retry, bounded provider error decoding.
+mod reply {
+    /// A rule the policy applies to a decoded 2xx output of one operation.
+    pub trait Reply: Sized {
+        /// Results a 2xx response to `request` must hold, for an output with one result per
+        /// submitted item; `None` for every other output.
+        fn expected(_request: &concord::reqwest::Request) -> Option<usize> {
+            None
+        }
+        /// Accepts the decoded output, given what [`expected`](Self::expected) returned.
+        fn check(self, _expected: Option<usize>) -> Result<Self, super::Error> {
+            Ok(self)
+        }
+    }
+}
+use reply::Reply;
+impl Reply for Acceptance {}
+impl Reply for MessagePage {}
+impl Reply for Message {}
+impl Reply for Vec<BatchResult> {
+    fn expected(request: &concord::reqwest::Request) -> Option<usize> {
+        // The body is this SDK's own JSON array of emails, buffered by Concord: count it again.
+        let body = request.body()?.as_bytes()?;
+        let emails = serde_json::from_slice::<Vec<serde::de::IgnoredAny>>(body).ok()?;
+        Some(emails.len())
+    }
+    fn check(self, expected: Option<usize>) -> Result<Self, Error> {
+        match expected {
+            Some(submitted) if self.len() != submitted => Err(Error::UnmatchedBatch {
+                submitted,
+                results: self,
+            }),
+            _ => Ok(self),
+        }
+    }
+}
+
+/// Policy for generated calls: one execution, no retry, bounded provider error decoding, and a
+/// batch's results attributed to its emails only when there is exactly one result per email.
 #[derive(Clone, Copy, Debug, Default)]
 pub struct PostmarkPolicy;
-impl<T: Send> SendWith<T> for PostmarkPolicy {
+impl<T: Send + Reply> SendWith<T> for PostmarkPolicy {
     type Output = Result<T, Error>;
     async fn send<E: Endpoint<T> + Send>(&self, endpoint: E) -> Self::Output {
         let prepared = endpoint.prepare().map_err(Error::Request)?;
         let sending = prepared.request().method() == concord::reqwest::Method::POST;
+        let expected = T::expected(prepared.request());
         let received = prepared.receive().await.map_err(|e| {
             if sending {
                 Error::UnknownOutcome(e)
@@ -168,13 +281,14 @@ impl<T: Send> SendWith<T> for PostmarkPolicy {
                 retry_after_seconds,
             });
         }
-        received.decode().await.map_err(|e| {
+        let output = received.decode().await.map_err(|e| {
             if sending {
                 Error::UnknownOutcome(e)
             } else {
                 Error::Request(e)
             }
-        })
+        })?;
+        output.check(expected)
     }
 }
 
@@ -191,6 +305,9 @@ concord::api! {
         scope outbound() {
             /// Submit one transactional email.
             POST send_email(body email: Email) -> Acceptance { path "email"; }
+            /// Submit several transactional emails in one request: one result per email, in
+            /// order. Postmark accepts up to 500 messages and 50 MB per call and rejects more.
+            POST send_batch(body emails: Vec<Email>) -> Vec<BatchResult> { path "email/batch"; }
             /// Search one page. Postmark validates count and offset.
             GET list(query count: u32, query offset: u32) -> MessagePage { path "messages/outbound"; }
             /// Inspect a single outbound message by its ID.
