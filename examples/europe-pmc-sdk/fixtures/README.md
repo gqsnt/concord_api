@@ -27,3 +27,26 @@ returning its XML default is refused before JSON parsing. If it lies with a JSON
 label, XML bytes are a decode error. A malformed or truncated body is not an empty result.
 Oversized success/error bodies, failed chunks and stalled bodies are synthetic transport
 faults constructed in protocol.rs; they do not require separate large fixture files.
+
+## Reference list (maintenance addendum, 2026-11-07)
+
+`references-{1,2,3}.{json,xml}` are authored synthetic pages of the reference list of
+MED/20485428, requested at pageSize 2 with page = 1, 2, 3 on
+`/MED/20485428/references`. Every page reports hitCount 5. JSON and XML carry the same
+records; the envelope (`referenceList/reference`) mirrors the documented citations envelope
+(`citationList/citation`), see [MAINTENANCE](../MAINTENANCE.md) for what was and was not
+observed. The ordered list is:
+
+| Page | Records |
+| --- | --- |
+| 1 | MED/31000001 (`pubYear` is the JSON number 2001); an unmatched reference without id or source (`pubYear` "2002") |
+| 2 | PMC/PMC9000003; MED/31000004 (JSON number 2004) |
+| 3 | MED/31000005 |
+
+Page 3 reaches the hit count, so a traversal ends there without a fourth request. A cap of
+two pages keeps four records and resumes at page 3. A later page that fails keeps the
+records of the pages before it and resumes at the failed page. A short page before the hit
+count, an empty page before it, a changed hit count, or a page beyond it is a failure, not
+a partial success. A zero hit count with or without an empty `referenceList` is a complete,
+empty list. The contradiction and malformed bodies are inline literals in
+`tests/references.rs`; `tests/references_use.rs` builds its own bodies.

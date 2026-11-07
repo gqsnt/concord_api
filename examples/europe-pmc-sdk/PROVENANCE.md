@@ -142,3 +142,12 @@ Final line counts (physical lines, including blanks/comments):
 The three package docs are README.md, PROVENANCE.md and FRICTION.md; Cargo.toml defines
 the package. The root changes are just the workspace member addition and the new lock
 entry. No shared crate, check, script or other example was edited. Work remains uncommitted.
+
+## Maintenance addendum (2026-11-07)
+
+The references traversal was added by a later, independent maintainer; its documentation
+reads, design decisions, files touched, commands and results are in
+[MAINTENANCE.md](MAINTENANCE.md). New fixtures `references-{1,2,3}.{json,xml}` are authored
+synthetic (no live capture); their contract is in [fixtures/README.md](fixtures/README.md).
+No dependency was added and Cargo.lock is unchanged. The line counts above describe the
+original authored result, not the maintained one.

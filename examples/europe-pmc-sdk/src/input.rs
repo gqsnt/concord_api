@@ -1,6 +1,6 @@
 use crate::Error;
 use serde::Deserialize;
-use std::fmt;
+use std::{fmt, num::NonZeroU32};
 
 macro_rules! text_value {
     ($name:ident, $doc:literal, $validate:expr, $message:literal) => {
@@ -140,6 +140,43 @@ impl Default for PageSize {
 }
 
 impl fmt::Display for PageSize {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.0.fmt(f)
+    }
+}
+
+/// A one-based reference-list page number; the resume key of a references traversal.
+/// It addresses `(n - 1) * page size` records, so it belongs to one publication and page size.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct PageNumber(NonZeroU32);
+
+impl PageNumber {
+    /// The first page.
+    pub const FIRST: Self = Self(NonZeroU32::MIN);
+
+    /// Refuses page zero; page numbers are one-based.
+    pub fn new(value: u32) -> Result<Self, Error> {
+        NonZeroU32::new(value)
+            .map(Self)
+            .ok_or(Error::InvalidInput("page number must be at least 1"))
+    }
+
+    /// The one-based page number sent as `page`.
+    pub fn get(self) -> u32 {
+        self.0.get()
+    }
+
+    /// Records before this page at `size`: the zero-based offset of its first record.
+    pub(crate) fn offset(self, size: PageSize) -> u64 {
+        u64::from(self.get() - 1) * size.get() as u64
+    }
+
+    pub(crate) fn next(self) -> Option<Self> {
+        self.0.checked_add(1).map(Self)
+    }
+}
+
+impl fmt::Display for PageNumber {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         self.0.fmt(f)
     }

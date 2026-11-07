@@ -1,7 +1,8 @@
 //! A bounded, public-data Europe PMC SDK built on Concord's generated send path.
 //!
 //! Local fixtures exercise JSON search → selected publication → citations → core citation,
-//! and the same search in XML with opaque cursor continuation. No live calls are made in tests.
+//! the same search in XML with opaque cursor continuation, and a selected publication's
+//! reference list paged by page number in either format. No live calls are made in tests.
 //! See the package README and PROVENANCE for provider sources and limits.
 
 mod error;
@@ -17,10 +18,13 @@ pub use concord_pagination;
 /// Shared Retry-After error type and parser used by HTTP failures.
 pub use concord_retry;
 pub use error::{Error, HttpError};
-pub use input::{Cursor, PageSize, PublicationId, Query, RecordKey, Source};
-pub use model::{CitationList, CitationsPage, Document, Publication, ResultList, SearchPage};
-pub use pagination::{SearchFormat, SearchPages};
-pub use xml::SearchXml;
+pub use input::{Cursor, PageNumber, PageSize, PublicationId, Query, RecordKey, Source};
+pub use model::{
+    CitationList, CitationsPage, Document, Publication, Reference, ReferenceList, ReferencesPage,
+    ResultList, SearchPage,
+};
+pub use pagination::{ReferencePages, SearchFormat, SearchPages};
+pub use xml::{ReferencesXml, SearchXml};
 
 use concord::{Endpoint, Json, SendWith, reqwest};
 use std::time::Duration;
@@ -41,13 +45,7 @@ impl<T: Document + Send> SendWith<T> for SendPolicy {
 
     async fn send<E: Endpoint<T> + Send>(&self, endpoint: E) -> Self::Output {
         let prepared = endpoint.prepare()?;
-        let requested = prepared
-            .request()
-            .url()
-            .query_pairs()
-            .find(|(key, _)| key == "pageSize")
-            .and_then(|(_, value)| value.parse::<usize>().ok())
-            .unwrap_or(100);
+        let requested = requested_page_size(prepared.request()).unwrap_or(100);
         let received = prepared.receive().await?;
         if !received.status().is_success() {
             let meta = received.meta();
@@ -58,6 +56,16 @@ impl<T: Document + Send> SendWith<T> for SendPolicy {
         value.validate(requested)?;
         Ok(value)
     }
+}
+
+/// The `pageSize` a prepared request carries. Generated handles expose no value getters, so
+/// the send policy and the references traversal read the declared value back from the URL.
+pub(crate) fn requested_page_size(request: &reqwest::Request) -> Option<usize> {
+    request
+        .url()
+        .query_pairs()
+        .find(|(key, _)| key == "pageSize")
+        .and_then(|(_, value)| value.parse::<usize>().ok())
 }
 
 concord::api! {
@@ -97,6 +105,23 @@ concord::api! {
                 path "citations";
                 query { "format" = "json"; "page" = "1"; }
                 response Json;
+            }
+
+            /// This publication's reference list (`references`) at one page size, shared by every
+            /// page. Read it whole with `pages`; a matched [`Reference`] has a `key()`.
+            scope references(query("pageSize") page_size: PageSize) {
+                path "references";
+
+                /// One page with `format=json` pinned, never the provider's XML default.
+                GET json(query("page") page: PageNumber = PageNumber::FIRST) -> ReferencesPage {
+                    query { "format" = "json"; }
+                    response Json;
+                }
+                /// The same page with `format=xml` pinned, decoded by the SDK XML format.
+                GET xml(query("page") page: PageNumber = PageNumber::FIRST) -> ReferencesPage {
+                    query { "format" = "xml"; }
+                    response ReferencesXml;
+                }
             }
         }
     }
