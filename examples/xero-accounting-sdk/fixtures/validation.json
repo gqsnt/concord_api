@@ -1,0 +1,6 @@
+{
+  "ErrorNumber": 10,
+  "Type": "ValidationException",
+  "Message": "Synthetic invoice validation error with synthetic-secret-in-body",
+  "Elements": [{"ValidationErrors": [{"Message": "Synthetic missing contact"}]}]
+}

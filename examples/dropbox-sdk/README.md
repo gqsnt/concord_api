@@ -74,6 +74,8 @@ Changing just the member or just the root works the same way. A selection error 
 B stays typed and does not alter A. Use a new listing for a changed selection;
 continuing an existing cursor always uses that cursor's original member and root.
 
+The private declaration names `Result<Response<T>, Error>` for each `send()`.
+`Retry-After` accepts one unsigned decimal field with surrounding spaces/tabs; signs, duplicates and overflow are invalid.
 For one page use `client.list_folder(context, options).await?`, then
 `client.list_folder_continue(&response.value.cursor).await?` while `has_more` is
 true. Cursors retain their original context and cannot be constructed from raw

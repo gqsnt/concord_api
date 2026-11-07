@@ -1,0 +1,18 @@
+{
+  "actions": [
+    {
+      "id": 7516,
+      "status": "in-progress",
+      "type": "power_on",
+      "started_at": "2020-07-21T18:38:00Z",
+      "completed_at": null,
+      "resource_id": 3164444,
+      "resource_type": "droplet",
+      "region": null,
+      "region_slug": "nyc3"
+    }
+  ],
+  "meta": {
+    "total": 2
+  }
+}

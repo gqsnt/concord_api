@@ -206,6 +206,7 @@ println!("published {}", pushed.digest);
   before the body is read — and a `mediaType` field must agree with it. At most 4 MiB is read.
 - A blob is verified against the digest it was fetched by and, with `blob_for`, the descriptor's
   size; a contradicting `Content-Length` or `Docker-Content-Digest` fails before the body is read.
+  `Content-Length` must be one unsigned decimal field (surrounding OWS allowed; no sign).
 - `sha256` and `sha512` can be verified. Another algorithm parses (it is valid by the grammar) but
   fetching by it is refused before sending (`UnsupportedAlgorithm`): content is never accepted
   unverified.
@@ -230,8 +231,10 @@ on `ErrorKind`.
 
 ## Limitations
 
-- Every response is checked against the documented status (`200`, `201`, `202`, `204`); a
-  registry that answers another 2xx gets `ProtocolProblem::UnexpectedStatus`.
+- `ping()`, blob HEAD/GET and manifest GET require `200`, manifest PUT and upload completion require
+  `201`, upload start/chunk require `202`, and upload status requires `204`; another 2xx is
+  `ProtocolProblem::UnexpectedStatus` on those paths. Catalog, tag-list and token responses
+  accept any 2xx before their body and metadata checks.
 - A realm whose URL carries a query is refused (`InvalidRealm`): Concord's base URLs take none.
 - Tags are validated with the Distribution reference grammar's tag rule
   (`[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}`), which the API page itself does not state.

@@ -243,7 +243,99 @@ impl<T> Received<T> {
     /// Both name the operation.
     pub async fn bytes_limited(self, limit: usize) -> Result<bytes::Bytes, Error> {
         let operation = self.decoder.operation();
-        crate::prepared::read_limited(self.response, limit, operation).await
+        let mut response = self.response;
+        let head = ResponseMeta::take(&mut response, operation);
+        crate::prepared::read_limited(response, limit, operation)
+            .await
+            .map_err(|e| e.with_head(head))
+    }
+
+    /// Reads the body **whatever the status**, keeping at most `limit` bytes, and decodes it
+    /// with the format `F` as a declared output's body is decoded: `F`'s
+    /// [`check_content_type`](crate::Decode::check_content_type) and
+    /// [`context`](crate::Decode::context) run on the head first, then the bounded read, then
+    /// [`decode_body`](crate::Decode::decode_body) with that context. For a provider's error
+    /// document on a non-2xx response, or a document on a status the SDK accepts itself (a
+    /// `202` job, a `304`); the declared handling and its 2xx rule are not applied.
+    ///
+    /// Returns the response head (moved out of the response, not cloned) beside the outcome, so
+    /// the status stays authoritative whatever happened to the document:
+    ///
+    /// ```no_run
+    /// # use concord_core::{bytes::Bytes, CodecError, Decode, ResponseHead};
+    /// # struct Json; struct Problem;
+    /// # impl Decode<Problem> for Json {
+    /// #     type Context = ();
+    /// #     fn context(_: &ResponseHead<'_>) -> Result<(), CodecError> { Ok(()) }
+    /// #     fn decode_body((): (), _: Bytes) -> Result<Problem, CodecError> { Ok(Problem) }
+    /// # }
+    /// # async fn run(received: concord_core::Received<()>) {
+    /// if !received.status().is_success() {
+    ///     let (meta, problem) = received.document::<Json, Problem>(16 * 1024).await;
+    ///     // `meta.status()` is the failure; `problem` is the typed document or why it is not one
+    ///     # let _ = (meta, problem);
+    /// }
+    /// # }
+    /// ```
+    ///
+    /// # Errors
+    ///
+    /// The second element is [`Metadata`](crate::ErrorKind::Metadata) when the format refuses the
+    /// head (the response is kept unread in the error), [`Limit`](crate::ErrorKind::Limit) when
+    /// the body is longer than `limit`, [`Transport`](crate::ErrorKind::Transport) when reading
+    /// fails, [`Decode`](crate::ErrorKind::Decode) when it does not decode (the body is kept:
+    /// [`Error::body_unredacted`]) — each naming the operation, with the head ([`Error::head`]).
+    pub async fn document<F, D>(self, limit: usize) -> (ResponseMeta, Result<D, Error>)
+    where
+        F: crate::Decode<D>,
+    {
+        let operation = self.decoder.operation();
+        let mut response = self.response;
+        let checked = F::check_content_type(&ResponseHead::of(&response))
+            .and_then(|()| F::context(&ResponseHead::of(&response)));
+        let context = match checked {
+            Ok(context) => context,
+            Err(e) => {
+                let head = ResponseMeta::new(ResponseHead::of(&response), operation);
+                return (head, Err(Error::from_metadata(operation, e, response)));
+            }
+        };
+        let head = ResponseMeta::take(&mut response, operation);
+        let outcome = match crate::prepared::read_limited(response, limit, operation).await {
+            Ok(body) => F::decode_body(context, body.clone())
+                .map_err(|e| Error::from_decode(operation, e).with_body(body)),
+            Err(e) => Err(e),
+        };
+        let outcome = outcome.map_err(|e| e.with_head(head.clone()));
+        (head, outcome)
+    }
+
+    /// [`decode`](Self::decode), also returning the response head owned, for an SDK that keeps
+    /// metadata beside the value. For a finite output (`-> T`) or no output the head is moved out
+    /// of the response once the format accepted it (nothing is cloned); a stream reader or an
+    /// `Incoming` keeps its response, so its head is a copy. A failure after the head arrived
+    /// carries the head too ([`Error::head`]).
+    ///
+    /// # Errors
+    ///
+    /// As [`decode`](Self::decode).
+    pub async fn decode_with_meta(self) -> Result<(T, ResponseMeta), Error> {
+        let limit = self.decoder.limit();
+        self.decoder
+            .decode_keeping(self.response, limit, true)
+            .await
+    }
+
+    /// [`decode_limited`](Self::decode_limited), also returning the response head owned, as
+    /// [`decode_with_meta`](Self::decode_with_meta).
+    ///
+    /// # Errors
+    ///
+    /// As [`decode_limited`](Self::decode_limited).
+    pub async fn decode_limited_with_meta(self, limit: usize) -> Result<(T, ResponseMeta), Error> {
+        self.decoder
+            .decode_keeping(self.response, Some(limit), true)
+            .await
     }
 
     /// [`decode`](Self::decode) with the finite body read bounded: a `-> T` output whose body is
@@ -368,10 +460,12 @@ impl Incoming {
     ///
     /// `Transport` if reading fails.
     pub async fn chunk(&mut self) -> Result<Option<bytes::Bytes>, Error> {
-        self.response
-            .chunk()
-            .await
-            .map_err(|e| Error::from_transport(self.operation, e))
+        match self.response.chunk().await {
+            Ok(chunk) => Ok(chunk),
+            // The response stays with this `Incoming`, so its error carries a copy of the head.
+            Err(e) => Err(Error::from_transport(self.operation, e)
+                .with_head(ResponseMeta::new(self.head(), self.operation))),
+        }
     }
 
     /// Reads the body to its end and discards it (an explicit discard; dropping the value
@@ -386,15 +480,15 @@ impl Incoming {
             mut response,
             operation,
         } = self;
+        let head = ResponseMeta::take(&mut response, operation);
         let mut read = 0u64;
-        while let Some(chunk) = response
-            .chunk()
-            .await
-            .map_err(|e| Error::from_transport(operation, e))?
-        {
-            read += chunk.len() as u64;
+        loop {
+            match response.chunk().await {
+                Ok(Some(chunk)) => read += chunk.len() as u64,
+                Ok(None) => return Ok(read),
+                Err(e) => return Err(Error::from_transport(operation, e).with_head(head)),
+            }
         }
-        Ok(read)
     }
 }
 
@@ -429,6 +523,37 @@ impl ResponseMeta {
             status: head.status(),
             version: head.version(),
             headers: head.headers().clone(),
+            operation,
+        }
+    }
+
+    /// A copy of the head of a response that a reader keeps (`keep`), or, when nothing keeps it,
+    /// only its status and version: an empty header map allocates nothing.
+    pub(crate) fn kept(
+        response: &reqwest::Response,
+        operation: Option<Operation>,
+        keep: bool,
+    ) -> Self {
+        if keep {
+            return Self::new(ResponseHead::of(response), operation);
+        }
+        Self {
+            status: response.status(),
+            version: response.version(),
+            headers: HeaderMap::new(),
+            operation,
+        }
+    }
+
+    /// The head of `response`, **moved** out of it (its header map is left empty): for a
+    /// response whose body is about to be read and whose headers nothing reads any more. Reading
+    /// the body does not consult the header map (reqwest set up any decompression when the
+    /// response arrived).
+    pub(crate) fn take(response: &mut reqwest::Response, operation: Option<Operation>) -> Self {
+        Self {
+            status: response.status(),
+            version: response.version(),
+            headers: std::mem::take(response.headers_mut()),
             operation,
         }
     }

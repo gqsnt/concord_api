@@ -39,34 +39,48 @@ use crate::{
     KubeBatchV1NamespacedJobs, KubeCoreV1ConfigMaps, KubeCoreV1NamespacedConfigMaps,
     KubeCoreV1NamespacedPods, KubeCoreV1NamespacedServices, KubeCoreV1Namespaces, KubeCoreV1Pods,
     KubeCoreV1Services, KubeNetworkingV1Ingresses, KubeNetworkingV1NamespacedIngresses,
-    ResourceVersionMatch,
+    ListOptions, ResourceVersionMatch,
 };
 
 pub use concord_pagination::Page;
 
 /// A generated list operation (one of the thirteen `GET .../{plural}` endpoints), seen through the
-/// parameters every Kubernetes list shares. Each method forwards to the generated `maybe_*`
-/// setter of the same parameter, so the request stays an ordinary generated operation.
-pub trait ListOperation: Clone + Send + Sync + 'static {
+/// parameters every Kubernetes list shares: the declaration's parameter group [`ListOptions`],
+/// whose generated setters each list endpoint implements. The `with_*` methods are written once
+/// here over those setters, so the request stays an ordinary generated operation.
+pub trait ListOperation: ListOptions + Clone + Send + Sync + 'static {
     /// The object type of the collection.
     type Item: Resource;
 
     /// `labelSelector` (`None`: absent).
-    fn with_label_selector(self, selector: Option<LabelSelector>) -> Self;
+    fn with_label_selector(self, selector: Option<LabelSelector>) -> Self {
+        self.maybe_label_selector(selector)
+    }
     /// `fieldSelector` (`None`: absent).
-    fn with_field_selector(self, selector: Option<FieldSelector>) -> Self;
+    fn with_field_selector(self, selector: Option<FieldSelector>) -> Self {
+        self.maybe_field_selector(selector)
+    }
     /// `limit` (`None`: absent, the whole collection in one response).
-    fn with_limit(self, limit: Option<u32>) -> Self;
+    fn with_limit(self, limit: Option<u32>) -> Self {
+        self.maybe_limit(limit)
+    }
     /// `continue` (`None`: absent, the first chunk).
-    fn with_continue(self, token: Option<ContinueToken>) -> Self;
+    fn with_continue(self, token: Option<ContinueToken>) -> Self {
+        self.maybe_continue_token(token)
+    }
     /// `resourceVersion` and `resourceVersionMatch`.
     fn with_resource_version(
         self,
         version: Option<ResourceVersion>,
         matching: Option<ResourceVersionMatch>,
-    ) -> Self;
+    ) -> Self {
+        self.maybe_resource_version(version)
+            .maybe_resource_version_match(matching)
+    }
     /// `timeoutSeconds`.
-    fn with_timeout_seconds(self, seconds: Option<u32>) -> Self;
+    fn with_timeout_seconds(self, seconds: Option<u32>) -> Self {
+        self.maybe_timeout_seconds(seconds)
+    }
     /// The generated `send()`: one request, the decoded list envelope.
     fn send_list(
         self,
@@ -77,29 +91,6 @@ macro_rules! list_operation {
     ($($op:ty => $item:ty),* $(,)?) => {$(
         impl ListOperation for $op {
             type Item = $item;
-            fn with_label_selector(self, selector: Option<LabelSelector>) -> Self {
-                self.maybe_label_selector(selector)
-            }
-            fn with_field_selector(self, selector: Option<FieldSelector>) -> Self {
-                self.maybe_field_selector(selector)
-            }
-            fn with_limit(self, limit: Option<u32>) -> Self {
-                self.maybe_limit(limit)
-            }
-            fn with_continue(self, token: Option<ContinueToken>) -> Self {
-                self.maybe_continue_token(token)
-            }
-            fn with_resource_version(
-                self,
-                version: Option<ResourceVersion>,
-                matching: Option<ResourceVersionMatch>,
-            ) -> Self {
-                self.maybe_resource_version(version)
-                    .maybe_resource_version_match(matching)
-            }
-            fn with_timeout_seconds(self, seconds: Option<u32>) -> Self {
-                self.maybe_timeout_seconds(seconds)
-            }
             fn send_list(
                 self,
             ) -> impl Future<Output = Result<ObjectList<Self::Item>, concord::Error>> + Send {

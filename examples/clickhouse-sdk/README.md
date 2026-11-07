@@ -155,7 +155,7 @@ messages can quote the query and its parameters: read them with `message()`).
 | Variant | When | Kept |
 |---|---|---|
 | `Request(RequestError)` | refused before sending: unbound placeholder, unknown or duplicate parameter, invalid identifier, query ID, quota key or credential | — |
-| `Concord(concord::Error)` | Concord could not build the request, or the transport failed before a head (also an insert body that failed while sending) | Concord's error |
+| `Concord(concord::Error)` | Concord could not build the request, or the transport failed before a head, while sending an insert body, or while `Insert::send` read the receipt body after the head | Concord's error; `meta()` is `None`, including for that post-head transport failure |
 | `Server(ServerException)` | non-2xx: `status()`, `code()`, `name()`, `message()` (≤ 64 KiB) | `ResponseMeta` |
 | `LateException(LateException)` | 2xx, then an exception: the tagged block in the body, or `X-ClickHouse-Exception-Code` on the head; `rows_before()`, `source()` | `ResponseMeta` |
 | `Response(ResponseError)` | 2xx head refused before the body: another format (`FormatMismatch`), a `Content-Type` the reader refuses | `ResponseMeta` |

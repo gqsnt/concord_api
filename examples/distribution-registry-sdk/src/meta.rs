@@ -27,7 +27,6 @@ impl ResponseMeta {
         Self(received.meta())
     }
 
-    #[cfg(test)]
     pub(crate) fn from_concord(meta: concord::ResponseMeta) -> Self {
         Self(meta)
     }
@@ -69,13 +68,11 @@ impl ResponseMeta {
 
     /// `Docker-Content-Digest`, parsed (`Ok(None)` when absent).
     pub(crate) fn digest_header(&self) -> Result<Option<Digest>, ProtocolProblem> {
-        let mut values = self.0.headers().get_all(CONTENT_DIGEST_HEADER).iter();
-        let Some(value) = values.next() else {
+        let Some(value) = concord::field::single(self.0.headers(), CONTENT_DIGEST_HEADER)
+            .map_err(|_| ProtocolProblem::MalformedDigestHeader)?
+        else {
             return Ok(None);
         };
-        if values.next().is_some() {
-            return Err(ProtocolProblem::MalformedDigestHeader);
-        }
         let text = value
             .to_str()
             .map_err(|_| ProtocolProblem::MalformedDigestHeader)?;
@@ -84,21 +81,10 @@ impl ResponseMeta {
             .map_err(|_| ProtocolProblem::MalformedDigestHeader)
     }
 
-    /// `Content-Length`, parsed (`Ok(None)` when absent).
+    /// One unsigned decimal `Content-Length`, with OWS allowed (`Ok(None)` when absent).
     pub(crate) fn content_length(&self) -> Result<Option<u64>, ProtocolProblem> {
-        let mut values = self.0.headers().get_all(CONTENT_LENGTH).iter();
-        let Some(value) = values.next() else {
-            return Ok(None);
-        };
-        if values.next().is_some() {
-            return Err(ProtocolProblem::MalformedLength);
-        }
-        value
-            .to_str()
-            .ok()
-            .and_then(|text| text.trim().parse().ok())
-            .map(Some)
-            .ok_or(ProtocolProblem::MalformedLength)
+        concord::field::unsigned(self.0.headers(), CONTENT_LENGTH)
+            .map_err(|_| ProtocolProblem::MalformedLength)
     }
 }
 

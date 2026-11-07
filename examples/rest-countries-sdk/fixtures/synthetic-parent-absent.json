@@ -1,0 +1,9 @@
+{
+  "data": {
+    "objects": [
+      { "names": { "common": "Germany" } },
+      { "names": { "common": "Gibraltar" }, "parent": { "alpha_2": "GB" } }
+    ],
+    "meta": { "total": 2, "count": 2, "limit": 25, "offset": 0, "more": false }
+  }
+}

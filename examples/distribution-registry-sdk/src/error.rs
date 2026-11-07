@@ -10,10 +10,11 @@
 //! a URL.
 
 use std::fmt;
+use std::sync::Arc;
 
 use concord::bytes::Bytes;
 use concord::reqwest::StatusCode;
-use concord::{Decode, ErrorKind, Json, Operation, Received};
+use concord::{ErrorKind, IgnoreContentType, Json, Operation, Received};
 use serde::Deserialize;
 
 use crate::auth::Challenge;
@@ -134,7 +135,11 @@ impl RegistryError {
 
 impl From<concord::Error> for RegistryError {
     fn from(error: concord::Error) -> Self {
-        Self::Request { error, meta: None }
+        let meta = error
+            .head_meta()
+            .map(ResponseMeta::from_concord)
+            .map(Box::new);
+        Self::Request { error, meta }
     }
 }
 
@@ -170,7 +175,7 @@ impl std::error::Error for RegistryError {
             Self::Request { error, .. } => Some(error),
             Self::Auth(error) => error
                 .source
-                .as_ref()
+                .as_deref()
                 .map(|e| e as &(dyn std::error::Error + 'static)),
             _ => None,
         }
@@ -474,6 +479,7 @@ impl From<String> for ErrorCode {
 }
 
 /// A failure of the Bearer token flow.
+#[derive(Clone)]
 #[non_exhaustive]
 pub struct AuthError {
     /// What failed.
@@ -482,7 +488,7 @@ pub struct AuthError {
     pub status: Option<StatusCode>,
     /// The metadata of the registry's `401`, or of the token service's answer.
     pub meta: Option<ResponseMeta>,
-    pub(crate) source: Option<concord::Error>,
+    pub(crate) source: Option<Arc<concord::Error>>,
 }
 
 impl AuthError {
@@ -501,14 +507,17 @@ impl AuthError {
     }
 
     pub(crate) fn with_source(mut self, source: concord::Error) -> Self {
-        self.source = Some(source);
+        if self.meta.is_none() {
+            self.meta = source.head_meta().map(ResponseMeta::from_concord);
+        }
+        self.source = Some(Arc::new(source));
         self
     }
 
     /// Concord's error behind a [`TokenTransport`](AuthProblem::TokenTransport) or
     /// [`TokenResponse`](AuthProblem::TokenResponse) problem.
     pub fn source_error(&self) -> Option<&concord::Error> {
-        self.source.as_ref()
+        self.source.as_deref()
     }
 }
 
@@ -528,7 +537,7 @@ impl fmt::Debug for AuthError {
             .field("problem", &self.problem)
             .field("status", &self.status.map(|s| s.as_u16()))
             .field("meta", &self.meta)
-            .field("source", &self.source.as_ref().map(concord::Error::kind))
+            .field("source", &self.source.as_deref().map(concord::Error::kind))
             .finish()
     }
 }
@@ -737,7 +746,6 @@ impl fmt::Display for IntegrityProblem {
 
 /// A non-2xx response as [`RegistryError::Api`], its body read up to the limit.
 pub(crate) async fn api_error<T>(received: Received<T>) -> RegistryError {
-    let meta = ResponseMeta::capture(&received);
     let operation = received.operation();
     let status = received.status();
     let challenge = if status == StatusCode::UNAUTHORIZED {
@@ -745,12 +753,22 @@ pub(crate) async fn api_error<T>(received: Received<T>) -> RegistryError {
     } else {
         None
     };
-    let body = match received.bytes_limited(ERROR_BODY_LIMIT).await {
-        Ok(bytes) if bytes.is_empty() => ErrorBody::Empty,
-        Ok(bytes) => match <Json as Decode<ErrorDocument>>::decode_body((), bytes.clone()) {
-            Ok(document) => ErrorBody::Document(document),
-            Err(_) => ErrorBody::Unrecognized(bytes),
-        },
+    // Registries and proxies are decoded regardless of their media label; malformed bytes
+    // remain available as Unrecognized, including the distinct empty-body case.
+    let (meta, document) = received
+        .document::<IgnoreContentType<Json>, ErrorDocument>(ERROR_BODY_LIMIT)
+        .await;
+    let meta = ResponseMeta::from_concord(meta);
+    let body = match document {
+        Ok(document) => ErrorBody::Document(document),
+        Err(error) if error.kind() == ErrorKind::Decode => {
+            let bytes = error.body_unredacted().cloned().unwrap_or_default();
+            if bytes.is_empty() {
+                ErrorBody::Empty
+            } else {
+                ErrorBody::Unrecognized(bytes)
+            }
+        }
         Err(error) if error.kind() == ErrorKind::Limit => ErrorBody::TooLarge {
             limit: ERROR_BODY_LIMIT,
         },

@@ -351,3 +351,43 @@ async fn workflow_b_failed_changes_page_keeps_prior_changes_and_failed_token() {
     assert_eq!(server.requests().len(), 2);
     server.shutdown().await;
 }
+
+#[tokio::test]
+async fn changes_items_finish_with_the_next_poll_token() {
+    use concord_sdk_google_drive::pagination::PageItemEvent;
+
+    let server = TestServer::start(|request| match request.query_all("pageToken")[0].as_str() {
+        "start" => Reply::json(
+            200,
+            br#"{"changes":[{"fileId":"first","removed":false}],"nextPageToken":"more"}"#,
+        ),
+        "more" => Reply::json(
+            200,
+            br#"{"changes":[{"fileId":"last","removed":true}],"newStartPageToken":"poll"}"#,
+        ),
+        _ => panic!("unexpected token"),
+    })
+    .await;
+    let mut events = client(&server)
+        .changes(
+            PageToken::new("start").unwrap(),
+            ChangesOptions::default(),
+            cap(2),
+        )
+        .item_events();
+    let mut ids = Vec::new();
+    let token = loop {
+        match events.next().await.unwrap().expect("final metadata") {
+            PageItemEvent::Item(change) => ids.push(change.file_id),
+            PageItemEvent::Page(meta) => assert!(meta.new_start_page_token.is_none()),
+            PageItemEvent::Complete(meta) => break meta.new_start_page_token.unwrap(),
+        }
+    };
+    assert_eq!(ids, ["first", "last"]);
+    assert_eq!(token.as_str(), "poll");
+    assert_eq!(
+        events.finish().outcome,
+        concord_sdk_google_drive::pagination::Outcome::Exhausted
+    );
+    server.shutdown().await;
+}

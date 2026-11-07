@@ -49,7 +49,7 @@ concord::api! {
         #[sensitive] header(PRIVATE_TOKEN) token: HeaderValue,
     ) {
         base "https://gitlab.com/api/v4";
-        send SendPolicy;
+        send SendPolicy -> Result<crate::Response<_>, crate::GitLabError>;
         format Json;
 
         /// One project: `projects/:id`, the ID or the full path sent as one URL-encoded segment.

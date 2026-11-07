@@ -4,15 +4,14 @@
 //! Kubernetes answers failures with a `Status` document (`reason`, `code`, `message`). A non-2xx
 //! response reaches the SDK as a Concord `Status` error that keeps the **unread** response;
 //! [`ApiError::read`] takes it, reads at most [`STATUS_BODY_LIMIT`] bytes and decodes the
-//! document with `Json`'s body-only decoder (the error document's head is not judged). Display and
-//! Debug name the endpoint, the HTTP status and the reason — never the message (it can quote object
+//! document with `Received::document` and `IgnoreContentType<Json>` (the media type is ignored).
+//! Display and Debug name the endpoint, the HTTP status and the reason — never the message (it can quote object
 //! names), a token or a URL.
 
 use std::fmt;
 
-use concord::bytes::{Bytes, BytesMut};
 use concord::reqwest::{self, StatusCode};
-use concord::{Decode, Json};
+use concord::{Decoder, IgnoreContentType, Json};
 
 use crate::model::Status;
 
@@ -50,11 +49,12 @@ impl ApiError {
         endpoint: Option<&'static str>,
         response: reqwest::Response,
     ) -> Self {
-        let http_status = response.status();
-        let status = read_bounded(response)
-            .await
-            .and_then(|body| <Json as Decode<Status>>::decode_body((), body).ok())
-            .map(Box::new);
+        let (meta, document) = Decoder::drain()
+            .receive(response)
+            .document::<IgnoreContentType<Json>, Status>(STATUS_BODY_LIMIT)
+            .await;
+        let http_status = meta.status();
+        let status = document.ok().map(Box::new);
         Self {
             endpoint,
             http_status,
@@ -95,22 +95,6 @@ impl ApiError {
         self.status
             .as_ref()
             .is_some_and(|s| s.metadata.next_token().is_some())
-    }
-}
-
-async fn read_bounded(mut response: reqwest::Response) -> Option<Bytes> {
-    let mut body = BytesMut::new();
-    loop {
-        match response.chunk().await {
-            Ok(Some(chunk)) => {
-                if body.len() + chunk.len() > STATUS_BODY_LIMIT {
-                    return None;
-                }
-                body.extend_from_slice(&chunk);
-            }
-            Ok(None) => return Some(body.freeze()),
-            Err(_) => return None,
-        }
     }
 }
 

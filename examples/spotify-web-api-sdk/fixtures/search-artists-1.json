@@ -1,0 +1,36 @@
+{
+  "artists": {
+    "href": "https://api.spotify.com/v1/search?offset=0&limit=2&query=Nina&type=artist",
+    "limit": 2,
+    "next": "https://api.spotify.com/v1/search?offset=2&limit=2&query=Nina&type=artist",
+    "offset": 0,
+    "previous": null,
+    "total": 3,
+    "items": [
+      {
+        "external_urls": { "spotify": "https://open.spotify.com/artist/0SyntheticArtist000001" },
+        "followers": { "href": null, "total": 1200 },
+        "genres": ["synthetic pop"],
+        "href": "https://api.spotify.com/v1/artists/0SyntheticArtist000001",
+        "id": "0SyntheticArtist000001",
+        "images": [{ "url": "https://i.scdn.co/image/synthetic-1", "height": 640, "width": 640 }],
+        "name": "Nina Synthetic",
+        "popularity": 41,
+        "type": "artist",
+        "uri": "spotify:artist:0SyntheticArtist000001"
+      },
+      {
+        "external_urls": { "spotify": "https://open.spotify.com/artist/0SyntheticArtist000002" },
+        "followers": { "href": null, "total": 15 },
+        "genres": [],
+        "href": "https://api.spotify.com/v1/artists/0SyntheticArtist000002",
+        "id": "0SyntheticArtist000002",
+        "images": [],
+        "name": "The Ninas",
+        "popularity": 3,
+        "type": "artist",
+        "uri": "spotify:artist:0SyntheticArtist000002"
+      }
+    ]
+  }
+}

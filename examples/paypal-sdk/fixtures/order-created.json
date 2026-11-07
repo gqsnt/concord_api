@@ -1,0 +1,20 @@
+{
+  "id": "SYNTH0RDER1A2B3C",
+  "intent": "CAPTURE",
+  "status": "CREATED",
+  "purchase_units": [
+    {
+      "reference_id": "synthetic-unit-1",
+      "amount": { "currency_code": "USD", "value": "100.00" },
+      "payee": { "email_address": "merchant@example.com", "merchant_id": "SYNTHMERCHANT01" },
+      "invoice_id": "SYNTH-INV-0001"
+    }
+  ],
+  "create_time": "2026-11-07T10:00:00Z",
+  "links": [
+    { "href": "https://api-m.sandbox.paypal.com/v2/checkout/orders/SYNTH0RDER1A2B3C", "rel": "self", "method": "GET" },
+    { "href": "https://www.sandbox.paypal.com/checkoutnow?token=SYNTH0RDER1A2B3C", "rel": "approve", "method": "GET" },
+    { "href": "https://api-m.sandbox.paypal.com/v2/checkout/orders/SYNTH0RDER1A2B3C", "rel": "update", "method": "PATCH" },
+    { "href": "https://api-m.sandbox.paypal.com/v2/checkout/orders/SYNTH0RDER1A2B3C/capture", "rel": "capture", "method": "POST" }
+  ]
+}

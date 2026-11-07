@@ -1,0 +1,16 @@
+{
+  "action": {
+    "id": 7515,
+    "status": "completed",
+    "type": "reboot",
+    "started_at": "2020-07-21T18:38:00Z",
+    "completed_at": "2020-07-21T18:38:10Z",
+    "resource_id": 3164444,
+    "resource_type": "droplet",
+    "region": {
+      "slug": "nyc3",
+      "name": "New York 3"
+    },
+    "region_slug": "nyc3"
+  }
+}

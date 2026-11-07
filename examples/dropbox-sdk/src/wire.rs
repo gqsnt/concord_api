@@ -20,7 +20,8 @@ pub struct ContinueBody {
 }
 
 concord::api! {
-    /// Declared Dropbox RPC transport. Public domain methods bind cursors to their context.
+    /// Declared Dropbox RPC transport: `send()` returns `Result<Response<T>, Error>`.
+    /// Public domain methods bind cursors to their context.
     pub client DropboxApi(
         /// Bearer token without the prefix. Never printed by Concord's Debug.
         #[sensitive] token: String,
@@ -28,7 +29,8 @@ concord::api! {
         base "https://api.dropboxapi.com/2";
         headers { AUTHORIZATION = "Bearer {token}"; }
         format Json;
-        send DropboxPolicy;
+        limit crate::SUCCESS_BODY_LIMIT;
+        send DropboxPolicy -> Result<Response<_>, Error>;
 
         scope selected(
             #[sensitive] header("Dropbox-API-Select-User") member: String,
@@ -52,18 +54,52 @@ impl<T: Send> SendWith<T> for DropboxPolicy {
 
     async fn send<E: Endpoint<T> + Send>(&self, endpoint: E) -> Self::Output {
         let received = endpoint.prepare()?.receive().await?;
-        let meta = ResponseMeta(received.meta());
-        if !meta.status().is_success() {
+        if !received.status().is_success() {
+            let meta = ResponseMeta(received.meta());
             let body = ErrorBody::new(received.bytes_limited(crate::ERROR_BODY_LIMIT).await);
             return Err(Error::Http(Box::new(HttpError { meta, body })));
         }
-        let value = received
-            .decode_limited(crate::SUCCESS_BODY_LIMIT)
+        // A failure after the head arrived keeps it in the Concord error (`From` reads it).
+        let (value, meta) = received.decode_with_meta().await?;
+        Ok(Response {
+            value,
+            meta: ResponseMeta(meta),
+        })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use concord_example_testserver::{Reply, TestServer};
+
+    #[tokio::test]
+    async fn native_send_keeps_the_declared_success_body_limit() {
+        let server =
+            TestServer::start(|_| Reply::json(200, vec![b' '; crate::SUCCESS_BODY_LIMIT + 1]))
+                .await;
+        let api = DropboxApi::new(
+            concord::reqwest::Client::builder()
+                .no_proxy()
+                .build()
+                .unwrap(),
+            DropboxApiConfig {
+                token: "synthetic-token".into(),
+            },
+        )
+        .with_base_url(server.url())
+        .unwrap();
+        let error = api
+            .selected("member-id", HeaderValue::from_static("{\".tag\":\"home\"}"))
+            .list_folder(ListFolderOptions::default())
+            .prepare()
+            .unwrap()
+            .send()
             .await
-            .map_err(|error| Error::Concord {
-                error,
-                meta: Some(Box::new(meta.clone())),
-            })?;
-        Ok(Response { value, meta })
+            .err()
+            .expect("native send must reject an oversized body");
+        assert_eq!(error.kind(), concord::ErrorKind::Limit);
+        assert_eq!(error.head().unwrap().status().as_u16(), 200);
+        server.shutdown().await;
     }
 }

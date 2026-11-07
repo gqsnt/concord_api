@@ -6,14 +6,15 @@ For people changing Concord itself. Users start at the [README](../README.md).
 
 | Path | Contents |
 |---|---|
-| `crates/concord` | the public facade: re-exports `concord-core` and, by feature, `concord-extras`, and defines `api!` (a `macro_rules!` that hands `$crate::__macro::concord_core` to the compiler) |
-| `crates/concord-core` | the runtime: request composition, native headers, snapshots, the open `Encode`/`Decode`/`CodecError`/`ResponseHead` contracts, `Error`, `Prepared`/`Decoder`; knows no format |
-| `crates/concord-extras` | the standard formats (`Json`, `Text`, `Binary`, `Form`, `IgnoreContentType<F>`), written against the public traits only |
+| `crates/concord` | the public facade: re-exports `concord-core` and, by feature, `concord-codecs`, and defines `api!` (a `macro_rules!` that hands `$crate::__macro::concord_core` to the compiler) |
+| `crates/concord-core` | the runtime: request composition, native headers, snapshots, `Encode`/`EncodedBody`/`Decode`/`Incremental`/`CodecError`/`ResponseHead`, `Error`, `Prepared`/`Decoder`/`Endpoint`/`SendWith`, `Received`/`Incoming`/`Operation`/`ResponseMeta`; knows no format |
+| `crates/concord-codecs` | standard formats (`Json`, `Text`, `Binary`, `Form`, CSV, JSON Lines, SSE and multipart), `Encoded`, `IgnoreContentType<F>` and shared streaming infrastructure, written against the public traits |
+| `crates/concord-extras` | compatibility facade re-exporting `concord-codecs` |
 | `crates/concord-macros` | the `api!` compiler (proc macro) |
 | `examples/quickstart` | the quick start; its tests also run the caller guide, doctest the author guide and the migration guide, and check every quoted excerpt in the documentation |
 | `examples/shapes` | three realistic API shapes with wire tests |
 | `examples/native` | application-owned native recipes (errors, timeouts, streaming, formats, policies) |
-| `examples/multipart` | multipart upload via reqwest's `multipart` feature (enabled only there) |
+| `examples/multipart` | native upload via reqwest's `multipart` feature and a local multipart format; declared uploads can also use the shared `multipart::Multipart` format (`request Multipart;`, feature `multipart`) |
 | `examples/renamed` | Concord depended on under another name (`$crate` paths) |
 | `checks/clone-hygiene` | types written with the same tokens by two crates' macros (`$crate::Payload`): conditional `Clone` bounds per occurrence, type-macro outputs from another crate |
 | `checks/heap` | peak-heap check that `()` outputs drain without buffering (own crate: global allocator) |
@@ -34,17 +35,18 @@ concord::api! { .. }                                  crates/concord/src/lib.rs
        model.rs     resolve, validate, compose         every rule decided at compile time
        emit.rs      generate Rust                      types, controls, navigation, prepare, Debug, docs
   └─ generated code calls <runtime path>::__private::* crates/concord-core/src/__private.rs (support)
-       prepared.rs  Prepared<T>, Decoder<T>            send, send_raw, into_parts, decode, finish
+       prepared.rs  Prepared<T>, Decoder<T>, Endpoint<T>, SendWith<T>   build/execution boundary, declared handling, send policy
+       response.rs  Received<T>, Incoming, Operation, ResponseMeta     response state, head metadata and call identity
        error.rs     Error, ErrorKind                   static Display, explicit raw accessors
-       codec.rs     Encode<T>, Decode<T>, ResponseHead, CodecError   the open format contracts
+       codec.rs     Encode<T>, EncodedBody, Decode<T>, Incremental<T>, ResponseHead, CodecError   body/media and finite/incremental format contracts
        value.rs     IntoValue<T>                       the sealed set of accepted conversions
        header.rs    ToHeaderValue (sealed)             how a value placed as a header becomes one
   └─ a statement's format is a type path               resolved by rustc where it is written
-       crates/concord-extras/src/                      Json, Text, Binary, Form, IgnoreContentType
+       crates/concord-codecs/src/                      standard formats, including multipart::Multipart
 ```
 
 The macro knows no format: it emits the path you wrote, and rustc resolves it. The runtime files
-named in the table below (`__private.rs`, `prepared.rs`, `error.rs`, `codec.rs`) are in
+named in the table below (`__private.rs`, `prepared.rs`, `response.rs`, `error.rs`, `codec.rs`) are in
 `crates/concord-core/src/`.
 
 The generated code decides at runtime whether optional values are present (`if let`). Which
@@ -189,10 +191,10 @@ Generated code calls `<runtime path>::__private::*`, where the runtime path is
 proc macro): items that are public only so that expansions in other crates can reach them. They are
 `#[doc(hidden)]`, not part of the user API, and may change in any release. Consequences:
 
-- `concord`, `concord-core` and `concord-macros` change together. `concord` depends on all three
-  and on `concord-extras`, and `concord-extras` on `concord-core`, with exact version
-  requirements (`version = "=4.2.0"`); every crate takes the workspace version, so a
-  published set can never mix. `concord-extras` uses only the public traits of `concord-core`.
+- `concord`, `concord-core` and `concord-macros` change together. `concord` depends on the
+  core, macros and `concord-codecs`; `concord-extras` forwards to `concord-codecs`, which depends
+  on `concord-core`. These dependencies have exact version requirements (`version = "=4.2.0"`); every crate takes the workspace version, so a
+  published set can never mix. `concord-codecs` uses only the public traits of `concord-core`.
 - Any change to a `__private` signature that `emit.rs` relies on is made in the same commit as the
   `emit.rs` change, and the crates' versions move together.
 - Users never name `__private` items; a UI or doctest that needs one is a sign that a public API

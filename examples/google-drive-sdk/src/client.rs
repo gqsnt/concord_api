@@ -133,11 +133,9 @@ impl DriveClient {
                 Error::provider_response(received, self.config.max_error_bytes, false).await,
             );
         }
-        let meta = received.meta();
-        let value = received
-            .decode_limited(self.config.max_response_bytes)
-            .await
-            .map_err(|error| Error::from(error).with_meta(meta.clone()))?;
+        let (value, meta) = received
+            .decode_limited_with_meta(self.config.max_response_bytes)
+            .await?;
         Ok(Response { value, meta })
     }
 
@@ -261,7 +259,8 @@ impl DriveClient {
     }
 
     /// Traverse a finite changes batch. Process pages and save final-page `new_start_page_token`
-    /// after committing those changes. `items()` intentionally drops page metadata.
+    /// after committing those changes. `item_events()` yields final metadata on completion;
+    /// `items()` intentionally drops page metadata.
     pub fn changes(
         &self,
         start: PageToken,

@@ -9,9 +9,9 @@
 //! It uses Concord's response boundary ([`concord::Prepared::receive`]): exactly one execution,
 //! which returns the response for any status with its body unread. A transport failure is
 //! Concord's `Transport` error (URL removed) without metadata: no response arrived. Otherwise the
-//! head is copied into [`ResponseMeta`] by borrowing ([`concord::Received::head`]); a non-2xx
-//! status then reads Stripe's error document from the unread body with
-//! [`concord::Received::bytes_limited`], bounded by [`MAX_ERROR_BODY`]; a 2xx goes to the endpoint's own handling (`Received::decode`: the `Json`
+//! head is projected into [`ResponseMeta`]; a non-2xx status reads Stripe's error document with
+//! [`concord::Received::document`], bounded by [`MAX_ERROR_BODY`] and ignoring the media type.
+//! A 2xx goes to the endpoint's own handling ([`concord::Received::decode_with_meta`]: the `Json`
 //! head check, then decoding), and a failure there keeps the metadata. Nothing is retried.
 //!
 //! # Diagnostics
@@ -26,7 +26,9 @@ use std::fmt;
 
 use concord::bytes::Bytes;
 use concord::reqwest::{self, StatusCode};
-use concord::{Decode, ErrorKind, Json, Operation, Prepared, Received, ResponseHead};
+use concord::{
+    Decode, ErrorKind, IgnoreContentType, Json, Operation, Prepared, Received, ResponseHead,
+};
 use serde::Deserialize;
 
 /// The largest error document [`send`] reads (Stripe's are a few hundred bytes).
@@ -385,7 +387,8 @@ impl Error {
 
 impl From<concord::Error> for Error {
     fn from(error: concord::Error) -> Self {
-        Self::Concord { error, meta: None }
+        let meta = error.head().map(|head| ResponseMeta::from_head(&head));
+        Self::Concord { error, meta }
     }
 }
 
@@ -460,42 +463,38 @@ impl std::error::Error for Error {}
 pub async fn send<T>(prepared: Prepared<T>) -> Result<Response<T>, Error> {
     // A transport failure: `Error::Concord` with `meta: None` (no response arrived).
     let received = prepared.receive().await?;
-    let meta = ResponseMeta::from_head(&received.head());
     if !received.status().is_success() {
         let endpoint = received
             .operation()
             .filter(Operation::is_endpoint)
             .map(|operation| operation.name());
-        return Err(api_failure(endpoint, meta, received).await);
+        return Err(api_failure(endpoint, received).await);
     }
-    match received.decode().await {
-        Ok(value) => Ok(Response { value, meta }),
-        Err(error) => Err(Error::Concord {
-            error,
-            meta: Some(meta),
-        }),
-    }
+    let (value, meta) = received.decode_with_meta().await?;
+    Ok(Response {
+        value,
+        meta: ResponseMeta::from_head(&meta.head()),
+    })
 }
 
 /// A non-2xx answer: Stripe's error document, read explicitly from the unread body.
-async fn api_failure<T>(
-    endpoint: Option<&'static str>,
-    meta: ResponseMeta,
-    received: Received<T>,
-) -> Error {
+async fn api_failure<T>(endpoint: Option<&'static str>, received: Received<T>) -> Error {
+    // Stripe error documents are interpreted even when a proxy labels them as text.
+    let (meta, document) = received
+        .document::<IgnoreContentType<Json>, ErrorDocument>(MAX_ERROR_BODY)
+        .await;
+    let error = document
+        .map(|document| document.error)
+        .map_err(|error| match error.kind() {
+            ErrorKind::Decode => DocumentProblem::NotADocument,
+            ErrorKind::Limit => DocumentProblem::TooLarge,
+            _ => DocumentProblem::Read,
+        });
     Error::Api(Box::new(ApiFailure {
         endpoint,
-        meta,
-        error: read_document(received).await,
+        meta: ResponseMeta::from_head(&meta.head()),
+        error,
     }))
-}
-
-async fn read_document<T>(received: Received<T>) -> Result<ApiError, DocumentProblem> {
-    match received.bytes_limited(MAX_ERROR_BODY).await {
-        Ok(body) => parse_document(body),
-        Err(error) if error.kind() == ErrorKind::Limit => Err(DocumentProblem::TooLarge),
-        Err(_) => Err(DocumentProblem::Read),
-    }
 }
 
 /// Decodes a Stripe error document (`{"error": {..}}`) from bytes, with no head check.

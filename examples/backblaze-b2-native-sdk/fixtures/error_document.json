@@ -1,0 +1,5 @@
+{
+  "status": 400,
+  "code": "invalid_bucket_name",
+  "message": "bucket name is too long"
+}

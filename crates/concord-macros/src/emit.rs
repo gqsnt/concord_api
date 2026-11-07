@@ -37,6 +37,104 @@ pub fn emit(model: &Model, krate: TokenStream) -> TokenStream {
             ));
         }
     }
+    out.extend(group_traits(k, model, &vis));
+    out
+}
+
+/// One trait per parameter group (`params Name(..);`): the group's setters, implemented by every
+/// endpoint that includes it (`..Name`) by forwarding to the endpoint's own generated setters.
+/// Code written once over `E: Name` configures any of those endpoints; the endpoints' inherent
+/// setters stay what ordinary callers use.
+fn group_traits(k: &TokenStream, model: &Model, vis: &syn::Visibility) -> TokenStream {
+    let mut out = TokenStream::new();
+    for group in &model.groups {
+        let name = &group.name;
+        let docs = &group.docs;
+        let user_indices: Vec<usize> = model
+            .owners
+            .iter()
+            .enumerate()
+            .filter(|(_, o)| o.groups.iter().any(|g| plain(g) == plain(name)))
+            .map(|(i, _)| i)
+            .collect();
+        let users: Vec<&Owner> = user_indices.iter().map(|&i| &model.owners[i]).collect();
+        // Names, not links: an including endpoint may be compiled out by its `cfg`.
+        let listed = users
+            .iter()
+            .map(|o| format!("`{}`", plain(&o.type_name)))
+            .collect::<Vec<_>>()
+            .join(", ");
+        // The trait exists where one of its endpoints does: its signatures may name types that
+        // only those endpoints' configurations define.
+        let cfg = owners_cfg(model, &user_indices);
+        let about = lit(&format!(
+            " The setters of the parameter group `{}`, implemented by every endpoint that includes it (`..{0}`): {listed}. Each method is the endpoint's own setter of the same name.",
+            plain(name)
+        ));
+        let mut methods = TokenStream::new();
+        let mut forwards = TokenStream::new();
+        for param in &group.params {
+            let shown = plain(&param.name);
+            let ty = &param.ty;
+            let pdocs = &param.docs;
+            let set = format_ident!("set_{}", shown);
+            let set_doc = lit(&if param.optional {
+                format!(" Sets `{shown}` (present).")
+            } else {
+                format!(" Replaces `{shown}`.")
+            });
+            methods.extend(quote! {
+                #(#pdocs)*
+                #[doc = ""]
+                #[doc = #set_doc]
+                #[must_use = "a setter returns the updated handle; discarding it discards the change"]
+                fn #set(self, value: impl #k::IntoValue<#ty>) -> Self;
+            });
+            forwards.extend(quote! {
+                #[inline] fn #set(self, value: impl #k::IntoValue<#ty>) -> Self {
+                    Self::#set(self, value)
+                }
+            });
+            if param.optional {
+                let maybe = format_ident!("maybe_{}", shown);
+                let maybe_doc = lit(&format!(
+                    " Sets whether `{shown}` is present: `Some(v)` is `set_{shown}(v)`; `None` makes it absent."
+                ));
+                methods.extend(quote! {
+                    #(#pdocs)*
+                    #[doc = ""]
+                    #[doc = #maybe_doc]
+                    #[must_use = "a setter returns the updated handle; discarding it discards the change"]
+                    fn #maybe(self, value: ::core::option::Option<#ty>) -> Self;
+                });
+                forwards.extend(quote! {
+                    #[inline] fn #maybe(self, value: ::core::option::Option<#ty>) -> Self {
+                        Self::#maybe(self, value)
+                    }
+                });
+            }
+        }
+        out.extend(quote! {
+            #cfg
+            #(#docs)*
+            #[doc = ""]
+            #[doc = #about]
+            #vis trait #name: ::core::marker::Sized {
+                #methods
+            }
+        });
+        for owner in users {
+            let ty = &owner.type_name;
+            let cfgs = &owner.cfgs;
+            out.extend(quote! {
+                #(#cfgs)*
+                #[allow(deprecated)]
+                impl #name for #ty {
+                    #forwards
+                }
+            });
+        }
+    }
     out
 }
 
@@ -839,7 +937,53 @@ fn request_summary(model: &Model, endpoint: usize, method: &Ident) -> TokenStrea
         shown.join(", ")
     };
     let content_type = KeyName::Lit("content-type".to_owned());
-    let mut lines = vec![lit(""), lit(&format!(" Request: `{method} {url}`."))];
+    // The wire shape first (method, URL, query, headers), then body, output and policy mechanics.
+    let mut lines = vec![
+        lit(""),
+        lit(&format!(
+            " Request: `{method} {url}` (the declared base URL; the client's `with_base_url` replaces it)."
+        )),
+    ];
+    let query = keys(&composed.query);
+    if !query.is_empty() {
+        lines.push(lit(&format!(" Query (when present): {query}.")));
+    }
+    match &composed.headers {
+        HeaderComposition::Static(slots) => {
+            let headers = keys(slots);
+            if !headers.is_empty() {
+                lines.push(lit(&format!(" Headers (when present): {headers}.")));
+            }
+        }
+        HeaderComposition::Dynamic(seq) => {
+            // The macro cannot tell which contributions name the same header, so the operations
+            // are listed in chain order (`remove X_RIOT_TOKEN` under a client that sets it).
+            let mut shown: Vec<String> = Vec::new();
+            for &id in seq {
+                let c = model.contrib(id);
+                let op = match (c.op, c.else_inherit) {
+                    (crate::syntax::Op::Introduce, _) => "",
+                    (crate::syntax::Op::Append, _) => "append ",
+                    (crate::syntax::Op::Override, false) => "override ",
+                    (crate::syntax::Op::Override, true) => "override else inherit ",
+                    (crate::syntax::Op::Remove, _) => "remove ",
+                };
+                let text = format!(
+                    "`{op}{}`{}",
+                    model.key_text(&c.key),
+                    if c.sensitive { " (sensitive)" } else { "" }
+                );
+                // Every operation, repeats included: `KEY`, `remove KEY`, `KEY` sends the second.
+                shown.push(text);
+            }
+            if !shown.is_empty() {
+                lines.push(lit(&format!(
+                    " Headers, in chain order (sent when present; native names are compared when the request is built): {}.",
+                    shown.join(", ")
+                )));
+            }
+        }
+    }
     if let Kind::Endpoint {
         output,
         incoming,
@@ -949,59 +1093,26 @@ fn request_summary(model: &Model, endpoint: usize, method: &Ident) -> TokenStrea
         }));
         // With a send policy, `send()` returns the policy's output, not the declared handling's.
         if let Kind::Client {
-            send: Some(policy), ..
+            send: Some(policy),
+            send_output,
+            ..
         } = &model.owners[0].kind
         {
             let shown = match model.send_value() {
                 Some(vi) => format!(
-                    "the client value `{}`",
+                    "(the client value `{}`)",
                     plain(&model.owners[0].values[vi].name)
                 ),
                 None => format!("`{}`", type_text(policy)),
             };
+            let result = if send_output.is_some() {
+                "the result the client declares on its `send` statement"
+            } else {
+                "its `SendWith<T>::Output` for this output `T`"
+            };
             lines.push(lit(&format!(
-                " With the client's send policy {shown}, `send()` returns its `SendWith<T>::Output` for this output `T`; `prepare()` (then `send()` or `receive()` on the `Prepared`) applies the declared handling above."
+                " `send()` goes through the client's send policy {shown} and returns {result}; `prepare()` (then `send()` or `receive()` on the `Prepared`) applies the declared handling above."
             )));
-        }
-    }
-    let query = keys(&composed.query);
-    if !query.is_empty() {
-        lines.push(lit(&format!(" Query (when present): {query}.")));
-    }
-    match &composed.headers {
-        HeaderComposition::Static(slots) => {
-            let headers = keys(slots);
-            if !headers.is_empty() {
-                lines.push(lit(&format!(" Headers (when present): {headers}.")));
-            }
-        }
-        HeaderComposition::Dynamic(seq) => {
-            // The macro cannot tell which contributions name the same header, so the operations
-            // are listed in chain order (`remove X_RIOT_TOKEN` under a client that sets it).
-            let mut shown: Vec<String> = Vec::new();
-            for &id in seq {
-                let c = model.contrib(id);
-                let op = match (c.op, c.else_inherit) {
-                    (crate::syntax::Op::Introduce, _) => "",
-                    (crate::syntax::Op::Append, _) => "append ",
-                    (crate::syntax::Op::Override, false) => "override ",
-                    (crate::syntax::Op::Override, true) => "override else inherit ",
-                    (crate::syntax::Op::Remove, _) => "remove ",
-                };
-                let text = format!(
-                    "`{op}{}`{}",
-                    model.key_text(&c.key),
-                    if c.sensitive { " (sensitive)" } else { "" }
-                );
-                // Every operation, repeats included: `KEY`, `remove KEY`, `KEY` sends the second.
-                shown.push(text);
-            }
-            if !shown.is_empty() {
-                lines.push(lit(&format!(
-                    " Headers, in chain order (sent when present; native names are compared when the request is built): {}.",
-                    shown.join(", ")
-                )));
-            }
         }
     }
     quote!(#(#[doc = #lines])*)
@@ -1134,7 +1245,12 @@ fn debug_fields<'a>(
         } else {
             (quote!(DebugHeader), quote!(DebugHeaderEach))
         };
-        let shown = match (value.debug_sensitive, value.optional, value.usage) {
+        // A `query(..)` value has no `Display`: withheld like a sensitive one.
+        let shown = match (
+            value.debug_sensitive || value.pairs.is_some(),
+            value.optional,
+            value.usage,
+        ) {
             // Never used: the declaration is rejected (`Model::build`); its value is not shown
             // and adds no trait obligation to the error.
             (_, _, None) => quote_spanned!(span=> &#k::__private::Redacted),
@@ -1455,10 +1571,15 @@ fn emit_owner(
                     /// `Decode` (see `ErrorKind`).
                 }
             };
-            let policy = match &model.owners[0].kind {
-                Kind::Client { send, .. } => send.as_ref(),
-                _ => None,
+            let (policy, declared_output) = match &model.owners[0].kind {
+                Kind::Client {
+                    send, send_output, ..
+                } => (send.as_ref(), send_output.as_ref()),
+                _ => (None, None),
             };
+            // `Sends<O>` for an endpoint whose client names a send policy (its `send()` future is
+            // already `Send`); none otherwise.
+            let mut sends_impl = TokenStream::new();
             let send_fn = match policy {
                 None => quote! {
                     #send_docs
@@ -1481,7 +1602,7 @@ fn emit_owner(
                             (
                                 quote!(#vty),
                                 quote!(::core::clone::Clone::clone(&#root.#name)),
-                                format!("the client value `{}`", plain(name)),
+                                format!("(the client value `{}`)", plain(name)),
                             )
                         }
                         None => (
@@ -1490,14 +1611,64 @@ fn emit_owner(
                             format!("`{}`", type_text(policy)),
                         ),
                     };
-                    let policy_text = lit(&format!(
-                        " Sends the request with the client's send policy {shown}: returns its `SendWith<T>::Output`. The policy decides execution (signing), errors and metadata; `prepare` gives the native request."
-                    ));
+                    // Name the policy as a link when it is a plain path, so a reader reaches the
+                    // `SendWith` implementation that defines this method's result.
+                    let policy_ty_text = type_text(&policy_ty_for_docs(model, policy));
+                    let linked = if policy_ty_text
+                        .chars()
+                        .all(|c| c.is_alphanumeric() || c == '_' || c == ':')
+                    {
+                        format!("[`{policy_ty_text}`]")
+                    } else {
+                        format!("`{policy_ty_text}`")
+                    };
+                    // `send P -> Template;`: the declared result, `_` replaced by this output.
+                    let declared = declared_output.map(|t| (t.span(), with_output(t, &out)));
+                    let policy_text = lit(&match &declared {
+                        Some(_) => format!(
+                            " Sends the request with the client's send policy {shown}, whose result the client declares; its errors, metadata and signing are defined by the `SendWith` implementation of {linked}. `prepare()` builds the declared request without the policy, and `prepare()?.send()` uses Concord's own handling and error instead."
+                        ),
+                        None => format!(
+                            " Sends the request with the client's send policy {shown}: the result is `<{policy_ty_text} as SendWith<T>>::Output`, defined by the `SendWith` implementation of {linked} (its errors, metadata, signing). `prepare()` builds the declared request without the policy, and `prepare()?.send()` uses Concord's own handling and error instead."
+                        ),
+                    });
+                    // Spanned at the `send` statement: a type that is no policy is reported there
+                    // (with the generated `send()`'s own error), not inside Concord's trait.
+                    let at = policy.span();
+                    let send_output = match &declared {
+                        Some((_, declared)) => declared.clone(),
+                        None => quote_spanned!(at=> <#policy_ty as #k::SendWith<#out>>::Output),
+                    };
+                    // The declared result must be the policy's output exactly (an equality bound,
+                    // not a coercion), reported at the template.
+                    let equal = match &declared {
+                        Some((tat, declared)) => located(
+                            quote!(where #policy_ty: #k::SendWith<#out, Output = #declared>),
+                            *tat,
+                        ),
+                        None => TokenStream::new(),
+                    };
+                    let sends_bound = match &declared {
+                        Some((tat, declared)) => located(
+                            quote!(#policy_ty: #k::SendWith<#out, Output = #declared>),
+                            *tat,
+                        ),
+                        None => quote_spanned!(at=> #policy_ty: #k::SendWith<#out>),
+                    };
+                    let call =
+                        quote!(<#policy_ty as #k::SendWith<#out>>::send(&__policy, self).await);
+                    sends_impl = quote_spanned! {at=>
+                        impl #k::Sends<#send_output> for #ty where #sends_bound {
+                            #[inline] fn send(self) -> impl ::core::future::Future<Output = #send_output> + ::core::marker::Send {
+                                #ty::send(self)
+                            }
+                        }
+                    };
                     quote! {
                         #[doc = #policy_text]
-                        #[inline] pub fn send(self) -> impl ::core::future::Future<Output = <#policy_ty as #k::SendWith<#out>>::Output> + ::core::marker::Send {
+                        #[inline] pub fn send(self) -> impl ::core::future::Future<Output = #send_output> + ::core::marker::Send #equal {
                             let __policy: #policy_ty = #policy_init;
-                            async move { <#policy_ty as #k::SendWith<#out>>::send(&__policy, self).await }
+                            async move { #call }
                         }
                     }
                 }
@@ -1511,7 +1682,16 @@ fn emit_owner(
                 output.as_ref(),
                 body.as_ref(),
             );
+            let prepare_note = if policy.is_some() {
+                quote! {
+                    #[doc = ""]
+                    #[doc = " With the client's send policy this is the declared request **before** the policy (not signed or decorated by it); `send()` goes through the policy, `prepare()?.send()` does not."]
+                }
+            } else {
+                TokenStream::new()
+            };
             let shapes = shapes_static(k, model, index);
+            let limit = limit_const(model, index, output.as_ref());
             quote! {
                 #shapes
 
@@ -1528,6 +1708,12 @@ fn emit_owner(
 
                 impl #ty {
                     #controls
+                    #limit
+
+                    /// The declared identity, without building a request or naming its output.
+                    #[inline] pub fn operation() -> #k::Operation {
+                        #k::__private::declared(#op_name, #op_method)
+                    }
 
                     /// Builds the native request without sending it.
                     ///
@@ -1536,6 +1722,7 @@ fn emit_owner(
                     /// `ErrorKind::Build` when a value cannot be written (a path segment, host
                     /// label, header value or body) or two native header names collide; nothing
                     /// is sent.
+                    #prepare_note
                     #[inline] pub fn prepare(self) -> ::core::result::Result<#k::Prepared<#out>, #k::Error> {
                         #prepare
                     }
@@ -1543,12 +1730,14 @@ fn emit_owner(
                     #send_fn
                 }
 
+                #sends_impl
+
                 impl #k::Endpoint<#out> for #ty {
                     #[inline] fn prepare(self) -> ::core::result::Result<#k::Prepared<#out>, #k::Error> {
                         #ty::prepare(self)
                     }
                     #[inline] fn operation() -> #k::Operation {
-                        #k::__private::declared(#op_name, #op_method)
+                        #ty::operation()
                     }
                 }
 
@@ -1562,6 +1751,45 @@ fn emit_owner(
             }
         }
     }
+}
+
+/// The declared finite-body bound of an endpoint with a finite typed output, as a private
+/// associated constant: its initializer resolves names in the caller's module only (no local
+/// statics in scope) and its type is the primitive `usize` whatever the caller calls `usize`.
+fn limit_const(model: &Model, index: usize, output: Option<&Output>) -> TokenStream {
+    match (output, model.nearest_limit(index)) {
+        (Some(o), Some(limit)) if !o.stream => {
+            quote!(const __CONCORD_LIMIT: ::core::primitive::usize = #limit;)
+        }
+        _ => TokenStream::new(),
+    }
+}
+
+/// A `send P -> Template;` result for one endpoint: every type placeholder `_` of the template
+/// (a `syn::Type::Infer`) becomes `out`. Not a lifetime's `'_`, a fn parameter named `_`, anything
+/// in an expression (a const argument, an array length), and nothing inside a macro invocation:
+/// a macro's input is its own grammar, so `result!(_)` keeps its `_` (rustc rejects it in the
+/// signature). The rest is re-emitted from the parsed type: a fragment forwarded by
+/// `macro_rules!` keeps its invisible group.
+fn with_output(template: &syn::Type, out: &TokenStream) -> TokenStream {
+    use proc_macro2::{Delimiter, Group, TokenTree};
+    use syn::visit_mut::{self, VisitMut};
+    struct Fill<'a>(&'a TokenStream);
+    impl VisitMut for Fill<'_> {
+        fn visit_type_mut(&mut self, ty: &mut syn::Type) {
+            if let syn::Type::Infer(_) = ty {
+                let group = Group::new(Delimiter::None, self.0.clone());
+                *ty = syn::Type::Verbatim(TokenTree::Group(group).into());
+            } else {
+                visit_mut::visit_type_mut(self, ty);
+            }
+        }
+        fn visit_expr_mut(&mut self, _: &mut syn::Expr) {}
+        fn visit_macro_mut(&mut self, _: &mut syn::Macro) {}
+    }
+    let mut filled = template.clone();
+    Fill(out).visit_type_mut(&mut filled);
+    quote!(#filled)
 }
 
 /// The unused binder of a `Clone` bound: `'__concord`, unless the type itself already names that
@@ -1622,7 +1850,14 @@ fn endpoint_clone(ty: &Ident, values: &[Value], body: Option<&Body>) -> TokenStr
     }
     let mut fields: Vec<&Ident> = values.iter().map(|v| &v.name).collect();
     fields.extend(body.map(|b| &b.name));
+    // Shown by rustdoc beside the bounds, which otherwise read as an artifact (SDK23 consumer).
+    let note = if bounds.is_empty() {
+        quote!()
+    } else {
+        quote!(#[doc = " `Clone` exactly when every value of the request (and its body) is `Clone`. Each `for<'__concord> T: Clone` bound states that for one value type; the unused lifetime only lets the bound be written on a non-generic type."])
+    };
     quote! {
+        #note
         impl ::core::clone::Clone for #ty where #(#bounds,)* {
             #[inline]
             fn clone(&self) -> Self {
@@ -1645,7 +1880,39 @@ fn owner_docs(model: &Model, index: usize) -> TokenStream {
     let defaults = match &owner.kind {
         Kind::Endpoint { method, .. } => {
             let summary = request_summary(model, index, method);
-            quote!(#defaults #summary)
+            // The parameter groups it includes, and the bound of its finite body read.
+            let mut notes = Vec::new();
+            if !owner.groups.is_empty() {
+                let names: Vec<String> = owner
+                    .groups
+                    .iter()
+                    .map(|g| format!("`{}`", plain(g)))
+                    .collect();
+                notes.push(format!(
+                    " Includes the parameter group{} {} (each also a trait of its setters).",
+                    if names.len() > 1 { "s" } else { "" },
+                    names.join(", ")
+                ));
+            }
+            // `query(..)` values choose their keys at run time: name the type that documents them.
+            for value in owner.values.iter().filter(|v| v.pairs.is_some()) {
+                let ty = &value.ty;
+                notes.push(format!(
+                    " `{}` writes its own query keys: see `{}` for which.",
+                    plain(&value.name),
+                    type_text(ty)
+                ));
+            }
+            let has_finite =
+                matches!(&owner.kind, Kind::Endpoint { output: Some(o), .. } if !o.stream);
+            if has_finite && let Some(limit) = model.nearest_limit(index) {
+                let text = quote!(#limit).to_string();
+                notes.push(format!(
+                    " Its finite body read is bounded by `limit {text};` (`ErrorKind::Limit` beyond)."
+                ));
+            }
+            let notes = notes.iter().map(|n| lit(n));
+            quote!(#defaults #summary #(#[doc = ""] #[doc = #notes])*)
         }
         _ => quote!(#defaults),
     };
@@ -1663,6 +1930,15 @@ fn owner_docs(model: &Model, index: usize) -> TokenStream {
     };
     let line = lit(&line);
     quote!(#[doc = #line] #defaults)
+}
+
+/// The type named by the client's `send` statement: the policy type, or the type of the client
+/// value named by `send value;`.
+fn policy_ty_for_docs(model: &Model, policy: &syn::Type) -> syn::Type {
+    match model.send_value() {
+        Some(vi) => model.owners[0].values[vi].ty.clone(),
+        None => policy.clone(),
+    }
 }
 
 /// Navigation methods on `index` for each of its children.
@@ -2276,8 +2552,39 @@ fn prepare_body(
     if composed.trailing_slash {
         code.extend(quote!(__p.trailing_slash();));
     }
+    // `query(..)` values of the endpoint, in parameter order: each is written where it is
+    // declared among the endpoint's own query keys (inherited keys first, block keys last).
+    let mut pairs = owner
+        .values
+        .iter()
+        .enumerate()
+        .filter_map(|(param, value)| value.pairs.map(|at| (param, value, at)))
+        .peekable();
+    let mut pairs_code = |code: &mut TokenStream, before: usize| {
+        while let Some((_, value, at)) = pairs.next_if(|&(param, _, _)| param < before) {
+            let name = &value.name;
+            let what = lit(&format!("query value `{}`", plain(name)));
+            let call = if value.optional {
+                quote!(if let ::core::option::Option::Some(__v) = &self.#name { __p.query_pairs(__v, #what)?; })
+            } else {
+                quote!(__p.query_pairs(&self.#name, #what)?;)
+            };
+            // Located at the placement (an unimplemented `QueryPairs` points there), macro
+            // hygiene kept.
+            code.extend(located(call, at));
+        }
+    };
     let mut sensitive_query = Vec::new();
     for slot in &composed.query {
+        // Where the slot's key first appears: an ancestor's key comes first; one introduced by
+        // this endpoint's direct placement sits at that parameter; a block entry comes last.
+        let rank = match slot.history.first() {
+            Some(first) if first.owner == index => model.owners[index].query[first.index]
+                .param
+                .unwrap_or(usize::MAX),
+            _ => 0,
+        };
+        pairs_code(&mut code, rank);
         if slot.sensitive {
             sensitive_query.push(lit(&model.key_text(&slot.key)));
         }
@@ -2291,6 +2598,7 @@ fn prepare_body(
             Family::Query,
         ));
     }
+    pairs_code(&mut code, usize::MAX);
     match &composed.headers {
         HeaderComposition::Static(slots) => {
             for slot in slots {
@@ -2418,6 +2726,16 @@ fn prepare_body(
             // A static: the format's `Accept` suggestion is a compile-time-checked value. The
             // output type is named first, so an unsupported pair is reported as `Decode<T>`.
             let init = located(quote!(#k::__private::DecodeFormat::<#t>::new::<#r>()), at);
+            // `limit N;` (endpoint or nearest owner): evaluated in the endpoint type's private
+            // associated constant (`limit_const`), where only the caller's names are in scope —
+            // not this block's generated statics.
+            let init = match model.nearest_limit(index) {
+                Some(_) => {
+                    let ty = &model.owners[index].type_name;
+                    quote!(#init.with_limit(#ty::__CONCORD_LIMIT))
+                }
+                None => init,
+            };
             quote!({
                 static __DECODE: #k::__private::DecodeFormat<#t> = #init;
                 (__DECODE.decoder(&__META), __DECODE.accept())
@@ -2453,6 +2771,46 @@ fn prepare_body(
 #[cfg(test)]
 mod tests {
     use quote::quote;
+
+    // Review b23-review-sol, finding 2: only type placeholders are the endpoint's output.
+    #[test]
+    fn a_send_template_replaces_type_placeholders_only() {
+        let text = |template: proc_macro2::TokenStream| {
+            let ty: syn::Type = syn::parse2(template).unwrap();
+            super::with_output(&ty, &quote!(Item))
+                .to_string()
+                .replace(' ', "")
+        };
+        assert_eq!(text(quote!(Result<_, Error>)), "Result<Item,Error>");
+        assert_eq!(text(quote!(fn(&'_ _) -> Vec<_>)), "fn(&'_Item)->Vec<Item>");
+        assert_eq!(
+            text(quote!(Wrap<_, [u8; { match 1 { _ => 2 } }]>)),
+            "Wrap<Item,[u8;{match1{_=>2}}]>"
+        );
+        // A parameter named `_` is not a type; an array length `_` is an expression.
+        assert_eq!(text(quote!(fn(_: u8) -> _)), "fn(_:u8)->Item");
+        assert_eq!(text(quote!([_; _])), "[Item;_]");
+        // A macro's input is its own grammar: never entered (reviews b23-review2..5 found that no
+        // token rule and no parse of an opaque input tells its type placeholders apart).
+        for kept in [
+            quote!(result! {_}),
+            quote!(result!(_)),
+            quote!(id!(fn(_: u8) -> _)),
+            quote!(result!(_::Tag, _)),
+            quote!(result!(__concord_placeholder_0, [u8; _])),
+        ] {
+            let ty: syn::Type = syn::parse2(kept.clone()).unwrap();
+            assert_eq!(
+                super::with_output(&ty, &quote!(Item)).to_string(),
+                kept.to_string()
+            );
+        }
+        assert_eq!(text(quote!(Vec<_, id!(_)>)), "Vec<Item,id!(_)>");
+        // Its tokens reach the macro as written (`&&` stays one joint pair).
+        let ty: syn::Type = syn::parse2(quote!(result!(&&u8, Item))).unwrap();
+        let exact = super::with_output(&ty, &quote!(Item)).to_string();
+        assert!(exact.contains("&&"), "{exact}");
+    }
 
     use super::{emit, key_owner};
     use crate::model::{KeyName, Model};
@@ -2538,6 +2896,42 @@ mod tests {
         });
         let ops = "`X_KEY`, `remove X_KEY`, `X_KEY`, `append X_KEY`";
         assert_eq!(repeated.matches(&line(ops)).count(), 2);
+    }
+
+    /// Wave 3 consumers: the wire shape comes first (request, query, headers, then body and
+    /// mechanics), the shown URL is labelled as the declared base, a value policy reads as such
+    /// ("the client's send policy (the client value `policy`)"), and a declared send result is
+    /// not described as `SendWith<T>::Output`.
+    #[test]
+    fn request_summary_puts_the_wire_shape_first_and_names_the_policy() {
+        let docs = docs(quote! {
+            pub client Api(policy: Policy) {
+                base "http://x.test";
+                format Json;
+                send policy -> Result<_, Error>;
+                POST create(query("k") key: String, header("x-trace") trace: String, body item: Item) -> Item {
+                    path "items";
+                }
+            }
+        });
+        let at = |needle: &str| {
+            docs.find(needle)
+                .unwrap_or_else(|| panic!("{needle} missing in {docs}"))
+        };
+        let request = at(
+            "Request: `POST http://x.test/items` (the declared base URL; the client's `with_base_url` replaces it).",
+        );
+        let query = at("Query (when present): `k`.");
+        let headers = at("Headers (when present): `x-trace`.");
+        let body = at("Body (`item`)");
+        assert!(
+            request < query && query < headers && headers < body,
+            "{docs}"
+        );
+        assert!(docs.contains("`send()` goes through the client's send policy (the client value `policy`) and returns the result the client declares on its `send` statement"), "{docs}");
+        assert!(docs.contains("Sends the request with the client's send policy (the client value `policy`), whose result the client declares"), "{docs}");
+        assert!(!docs.contains("SendWith<T>::Output"), "{docs}");
+        assert!(!docs.contains("policy the client value"), "{docs}");
     }
 
     /// Placement notes are deduplicated (a label seen twice is listed once) and keep first-seen

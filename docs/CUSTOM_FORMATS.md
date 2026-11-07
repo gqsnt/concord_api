@@ -245,11 +245,13 @@ The same test sends a missing, unsupported and non-numeric version through `vers
 through `versioned_any_type()`, and every one is `ErrorKind::Metadata`: the adapter skips the
 `Content-Type` check only (section 7).
 
-`Decode<T>` returns only `T`. When the caller needs what the head said (the version itself),
+`Decode<T>` returns only `T`. To include head-derived data (the version itself) in that value,
 decode into an output type of yours that carries it, such as `WithVersion<T> { version, value }`,
 and declare that as the endpoint's output (`-> WithVersion<Item>`, with
 `impl Decode<WithVersion<Item>> for Versioned`); the context carries the version from `context`
 to `decode_body`.
+
+To keep head metadata without changing the declared output, read `Received::head` or call `Received::meta` to keep an owned `concord::ResponseMeta` before decoding.
 
 ### Narrowing to one exact vendor media type
 
@@ -257,7 +259,7 @@ to `decode_body`.
 `Json`'s checks first, then compares the essence (type and subtype, case-insensitive, parameters
 ignored) with its own. `Json` has already refused a missing, repeated, non-ASCII or malformed
 field, so the text before the first `;` is the essence; no media-type parser is needed. Excerpt of
-[`crates/concord-extras/tests/media.rs`](../crates/concord-extras/tests/media.rs):
+[`crates/concord-codecs/tests/media.rs`](../crates/concord-codecs/tests/media.rs):
 
 ```rust
 impl<T: serde::de::DeserializeOwned> Decode<T> for AcmeV2 {
@@ -409,7 +411,7 @@ body.
 ## 7. Strict `Json`, and the explicit adapter
 
 `Json` checks the response head before it reads the body. The rules are tested in
-[`crates/concord-extras/tests/media.rs`](../crates/concord-extras/tests/media.rs).
+[`crates/concord-codecs/tests/media.rs`](../crates/concord-codecs/tests/media.rs).
 
 | `Content-Type` of the 2xx response | `Json` |
 |---|---|
@@ -451,7 +453,7 @@ GET legacy(id: u64) -> Item {
 It works with any format that keeps its `Content-Type` checks in `check_content_type`, yours
 included: in section 5, `response IgnoreContentType<Versioned>;` still refuses a missing version
 header. The adapter's own test on `Json` shows each guarantee. Excerpt of
-[`crates/concord-extras/tests/media.rs`](../crates/concord-extras/tests/media.rs):
+[`crates/concord-codecs/tests/media.rs`](../crates/concord-codecs/tests/media.rs):
 
 ```rust
 /// The adapter skips exactly the `Content-Type` check; the body is still `Json`'s.
@@ -516,6 +518,44 @@ impl<T: serde::de::DeserializeOwned> Decode<Option<T>> for JsonOrEmpty {
 }
 ```
 
+### Reusing the strict media check in a custom format
+
+`concord_codecs::check_content_type(head, accepted, charset)` exposes the standard
+formats' strict singleton parser without exposing parsed headers or adding a dependency
+on `mime` to your SDK. It is available without features. Keep the provider's allowlist
+in the format; call the helper from `Decode::check_content_type` or
+`Incremental::check_content_type` so rejection precedes reading the body. FRED's problem
+document accepts XML or JSON, refusing anything else before the body is read (Excerpt of
+[`examples/fred-sdk/src/codecs.rs`](../examples/fred-sdk/src/codecs.rs)):
+
+```rust,ignore
+impl Decode<Problem> for ProblemDocument {
+    type Context = ();
+    fn check_content_type(head: &ResponseHead<'_>) -> Result<(), CodecError> {
+        check_content_type(
+            head,
+            &["text/xml", "application/xml", "application/json"],
+            Charset::Utf8,
+        )
+    }
+```
+
+Entries match case-insensitively, with no parameters. An exact entry includes the
+entire subtype; `application/xml` does not accept `application/xml+json`.
+`type/*+suffix` matches the final suffix under that top-level type; no other wildcard
+rules are supported. An empty list accepts nothing. A missing, repeated, malformed,
+non-ASCII or media-range response is refused with the standard static labels.
+A type outside the allowlist returns `the response Content-Type is not an accepted media type`.
+
+`Charset::Utf8` allows no charset or exactly one `utf-8`/`us-ascii`, including quoted
+values followed by more parameters. Duplicate charsets use the standard
+`the response Content-Type declares charset more than once` label; other charsets
+use `the response declares a charset other than utf-8`. `Charset::Ignore` skips
+charset interpretation while still validating the field and parameter syntax; it
+does not transcode bytes. Body parsing and other header checks remain the format's
+responsibility. FRED's XML, ZIP and problem formats use this helper with exact allowlists.
+The tolerant `Text` format retains its separate acceptance policy.
+
 ## 8. The `Accept` suggestion
 
 `const ACCEPT: Option<&'static str>` is a request preference a format may suggest. Concord sends
@@ -572,7 +612,7 @@ through the trait with the payload named, `<AcmeV2 as Decode<Item>>::check_conte
 `AcmeV2::check_content_type(&head)` alone cannot choose `T` (rustc's E0283). The standard formats'
 tests use one helper for every case. In an application crate, import
 `ResponseHead` from `concord`, `StatusCode` and `Version` from `concord::reqwest`. Excerpt of
-[`crates/concord-extras/tests/media.rs`](../crates/concord-extras/tests/media.rs):
+[`crates/concord-codecs/tests/media.rs`](../crates/concord-codecs/tests/media.rs):
 
 ```rust
 fn headers(content_types: &[&[u8]]) -> HeaderMap {

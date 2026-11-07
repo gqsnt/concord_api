@@ -31,7 +31,7 @@ use std::fmt;
 use std::num::NonZeroUsize;
 
 use concord::bytes::Bytes;
-use concord::reqwest::header::RANGE;
+use concord::reqwest::header::{HeaderMap, RANGE};
 use concord::reqwest::{StatusCode, Url};
 
 use crate::client::{Repository, drain, missing_location};
@@ -100,7 +100,7 @@ impl Repository {
             .registry
             .location(&url, &meta)?
             .ok_or_else(|| missing_location(&meta))?;
-        let offset = acknowledged(&meta)
+        let offset = acknowledged(meta.headers())
             .map_err(|problem| RegistryError::protocol(problem, Some(meta.clone())))?
             .unwrap_or(0);
         if offset != 0 {
@@ -113,7 +113,7 @@ impl Repository {
             ));
         }
         let uuid = meta.upload_uuid().map(str::to_owned);
-        drain(received, &meta).await?;
+        drain(received).await?;
         Ok(BlobUpload {
             repository: self.clone(),
             location,
@@ -247,7 +247,7 @@ impl BlobUpload {
                 Some(meta),
             ));
         }
-        drain(received, &meta).await?;
+        drain(received).await?;
         self.location = location;
         self.offset = offset;
         self.needs_status = false;
@@ -282,7 +282,7 @@ impl BlobUpload {
         let url = received.url().clone();
         let (received, meta) = expect_status(received, StatusCode::NO_CONTENT).await?;
         let new_location = self.repository.registry.location(&url, &meta)?;
-        let offset = acknowledged(&meta)
+        let offset = acknowledged(meta.headers())
             .map_err(|problem| RegistryError::protocol(problem, Some(meta.clone())))?
             .ok_or_else(|| {
                 RegistryError::protocol(ProtocolProblem::MissingRange, Some(meta.clone()))
@@ -296,7 +296,7 @@ impl BlobUpload {
                 Some(meta),
             ));
         }
-        drain(received, &meta).await?;
+        drain(received).await?;
         if let Some(location) = new_location {
             self.location = location;
         }
@@ -341,7 +341,7 @@ impl BlobUpload {
         let header = meta
             .digest_header()
             .map_err(|problem| RegistryError::protocol(problem, Some(meta.clone())))?;
-        drain(received, &meta).await?;
+        drain(received).await?;
         self.finished = true;
         self.needs_status = false;
         self.offset += body.len() as u64;
@@ -379,7 +379,7 @@ impl BlobUpload {
         let Some(location) = self.repository.registry.location(url, meta)? else {
             return Ok(None);
         };
-        let offset = acknowledged(meta)
+        let offset = acknowledged(meta.headers())
             .map_err(|problem| RegistryError::protocol(problem, Some(meta.clone())))?
             .ok_or_else(|| {
                 RegistryError::protocol(ProtocolProblem::MissingRange, Some(meta.clone()))
@@ -403,14 +403,12 @@ impl fmt::Debug for BlobUpload {
 
 /// The bytes a `Range: [bytes=]0-<end>` acknowledges (`end + 1`; `0-0` is 0, see the module
 /// documentation), `Ok(None)` without the header.
-pub(crate) fn acknowledged(meta: &ResponseMeta) -> Result<Option<u64>, ProtocolProblem> {
-    let mut values = meta.headers().get_all(RANGE).iter();
-    let Some(value) = values.next() else {
+fn acknowledged(headers: &HeaderMap) -> Result<Option<u64>, ProtocolProblem> {
+    let Some(value) =
+        concord::field::single(headers, RANGE).map_err(|_| ProtocolProblem::MalformedRange)?
+    else {
         return Ok(None);
     };
-    if values.next().is_some() {
-        return Err(ProtocolProblem::MalformedRange);
-    }
     let text = value
         .to_str()
         .map_err(|_| ProtocolProblem::MalformedRange)?
@@ -437,9 +435,7 @@ pub(crate) fn acknowledged(meta: &ResponseMeta) -> Result<Option<u64>, ProtocolP
 
 #[cfg(test)]
 mod tests {
-    use concord::ResponseHead;
-    use concord::reqwest::header::{HeaderMap, HeaderValue};
-    use concord::reqwest::{StatusCode, Version};
+    use concord::reqwest::header::HeaderValue;
 
     use super::*;
 
@@ -448,10 +444,7 @@ mod tests {
         for value in values {
             headers.append(RANGE, HeaderValue::from_str(value).unwrap());
         }
-        let head = ResponseHead::new(StatusCode::ACCEPTED, Version::HTTP_11, &headers);
-        acknowledged(&ResponseMeta::from_concord(concord::ResponseMeta::new(
-            head, None,
-        )))
+        acknowledged(&headers)
     }
 
     #[test]

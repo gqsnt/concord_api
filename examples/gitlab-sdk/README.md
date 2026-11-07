@@ -171,7 +171,7 @@ different ID is refused (`ContextError::Mismatch`).
 ## Single calls and errors
 
 Every generated operation's `send()` returns this SDK's error and the response metadata,
-`Result<Response<T>, GitLabError>` (the client declares `send SendPolicy;`; nothing to import).
+`Result<Response<T>, GitLabError>` (the client declares `send SendPolicy -> Result<crate::Response<_>, crate::GitLabError>;`; nothing to import).
 `prepare()` gives Concord's native request (`concord::Error`; its own `prepare()?.send()` has no
 GitLab error document):
 

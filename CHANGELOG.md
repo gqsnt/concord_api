@@ -3,7 +3,8 @@
 ## Unreleased — interface consolidation (candidate)
 
 Not released: the version is unchanged (4.2.0) and no release has been decided. Records:
-`v4/sdk20/`. Source-compatible for callers of the existing API except where noted.
+`v4/sdk20/` and `v4/sdk50/` (decisions in `v4/sdk50/DECISIONS.md`). Source-compatible for callers
+of the existing API except where noted.
 
 ### Added
 
@@ -82,7 +83,90 @@ Not released: the version is unchanged (4.2.0) and no release has been decided. 
 
   From wave 4 (`examples/ntfy-sdk`, `examples/openai-sdk`, `examples/clickhouse-sdk` each wrote a
   byte source over `Incoming::chunk` to keep Concord's error, and could not name the operation of
-  `read`); tested per reader in `crates/concord-extras/tests/reader_wrapping.rs`.
+  `read`); tested per reader in `crates/concord-codecs/tests/reader_wrapping.rs` (moved from
+  `concord-extras` with the formats).
+- **The response head survives a failed body.** Every error raised after a response head arrived
+  keeps that head: `Error::head()` (a borrowed `ResponseHead`) and `Error::head_meta()` (an owned
+  `ResponseMeta` with the error's operation; clones the header map) return it for a `Status` or
+  `Metadata` error and for a `Decode`, `Limit` or `Transport` error raised while the body was read,
+  failures of `Incoming::chunk` and `Incoming::drain` included. Concord moves the head out of the
+  native response before reading the body instead of cloning it (an `Incoming`, which keeps its
+  response, attaches a copy). Both are `None` when no head arrived (`Build`, a transport failure
+  before a response). `Error::meta()` keeps its contract — `Some` exactly when `into_response()`
+  returns the response (`Status`, `Metadata`) — and `Error::status()` stays the status of a
+  `Status` error; the status of any failed call that received a response is
+  `error.head().map(|h| h.status())`.
+- **A decoded value with its head.** `Received::decode_with_meta()` and
+  `Received::decode_limited_with_meta(limit)` return `Result<(T, ResponseMeta), Error>`: `decode()`
+  and `decode_limited()` plus the owned head, for an SDK that keeps metadata beside the value. For a
+  finite output or no output the head is moved out once the format accepted it; a stream reader or
+  an `Incoming` keeps its response, so its head is a copy.
+- **Typed documents of any status.** `Received::document::<F, D>(limit)` returns
+  `(ResponseMeta, Result<D, Error>)` whatever the status: `F::check_content_type` and `F::context`
+  run on the head before the body is read, the body is read up to `limit` bytes, and
+  `F::decode_body` decodes it with that context. The declared handling and its 2xx rule are not
+  applied. A refused head is `Metadata` (the response kept unread in the error), a longer body
+  `Limit`, a failed read `Transport`, a body that does not decode `Decode`; each names the operation
+  and carries a copy of the head, and a `Decode` error keeps the bytes (`Error::body_unredacted()`,
+  unredacted, never printed by Concord). For provider error documents and for statuses an SDK
+  accepts itself (a `202`, a `304`), where `bytes_limited` followed by `decode_body((), ..)` skipped
+  the format's head checks and `Context`.
+- **Declared body bound: `limit N;`.** A statement on the client, a scope or an endpoint (the
+  nearest wins) whose `usize` constant expression bounds the read of a finite typed output
+  (`-> T`): a longer body is `ErrorKind::Limit` and is not decoded. The bound is carried by the
+  endpoint's `Decoder` (`Decoder::with_limit(n)`, `Decoder::limit()`), so the generated `send()`,
+  `Received::decode()`, `Received::decode_with_meta()`, `Decoder::decode` and `prepare()?.send()`
+  all honour it; `Received::decode_limited(n)` replaces it for one call. On an endpoint without
+  `->` or with `-> stream` it is a compile error; a client or scope bound does not apply to such
+  endpoints.
+- **Parameter groups: `params Name(..);` and `..Name`.** A client statement declares optional
+  (`x?: T`) or initialized (`x: T = v`) values once; an endpoint includes them with `..Name` in its
+  values, spliced at that position (wire order as written), with the same `set_x`/`maybe_x`
+  setters as if they were written there. Each group also generates a trait `Name` (with the
+  client's visibility) of those setters, implemented by every endpoint that includes the group,
+  for SDK code written once over them. Compile errors: a required value in a group, `..Name` on a
+  scope or the client, a group declared below the client, a group that includes a group, an
+  unknown group (with a near-name suggestion), an unused or duplicate group, a group named like a
+  generated type, a value on both the endpoint and an included group, a value in two included
+  groups.
+- **Values that write their own query pairs: `query(..) x?: T`.** An endpoint value whose type
+  implements the new `concord::QueryPairs` (`query_pairs(&self, &mut QueryPairsWriter<'_>)`, which
+  calls `QueryPairsWriter::pair(key, value)`) chooses its own keys: one of several exclusive
+  cursors, or keys named at run time. Its pairs are written where it is declared among the
+  endpoint's own parameters (after the keys the chain already has, before keys first introduced by
+  the endpoint's `query { }` block); an empty key is a `Build` error. It takes no key and no
+  `each`, may not sit on a scope or the client (a parameter group may hold it) and may not be
+  `#[sensitive]`; the endpoint's `Debug` withholds it, and `Prepared`'s `Debug` redacts a run-time
+  key on the well-known secret list. `QueryPairs` is implemented for `Vec<(K, V)>`, `[(K, V)]`,
+  `BTreeMap<K, V>` and references.
+- **Generic code sends through the client's policy: `concord::Sends<O>`.** Every endpoint of a
+  client with a send policy (`send P;` or `send value;`) implements `Sends<O>` for `O`, the policy's
+  output for that endpoint; `Sends::send(self)` is the generated `send()` (its future is `Send`,
+  the policy value cloned from the client). A helper bounded on it (every page of a listing) sends
+  exactly as callers do without being handed the policy. A client without a policy generates no
+  `Sends`; its `send()` is `prepare()?.send()`, reachable through `Endpoint<T>`.
+- **Declared send results: `send P -> Template;`.** `send Policy -> Result<_, Error>;` (or
+  `send value -> ..;`) makes every generated `send()` return `impl Future<Output = Template> + Send`
+  with each type placeholder `_` replaced by the endpoint's output, where plain `send P;` returns
+  `<P as SendWith<T>>::Output`; rustdoc shows the concrete type. The template must equal the
+  policy's `Output` exactly (an equality bound reported at the template, not a coercion). A
+  lifetime `'_`, a `_` inside an expression and anything inside a macro invocation are not
+  placeholders (rustc rejects `result!(_)` there). Plain `send P;` is unchanged.
+- **What a failure proves about delivery: `Error::delivery()`.** Returns `concord::Delivery`
+  (`#[non_exhaustive]`): `NotSent` when Concord refused the request before handing it to the client
+  (`ErrorKind::Build`: not built, a header set twice, a body that could not be encoded), `Answered`
+  once a response head reached Concord (any status, even if the body then failed, was refused or
+  was too long), `Unknown` otherwise — a refused connection included, because the client may have
+  followed a redirect from a server that performed the request. Which failures make a write
+  ambiguous stays the SDK's rule.
+- **Strict header-field readers: `concord::field`.** `field::single(&HeaderMap, name)` returns the
+  one field line (`Result<Option<&HeaderValue>, FieldError>`, `Repeated` for several lines) and
+  `field::unsigned(&HeaderMap, name)` a non-negative decimal (`Result<Option<u64>, FieldError>`:
+  ASCII digits, surrounding spaces and tabs ignored; a sign, fraction or exponent is `Invalid`, so
+  `+5` is refused where `str::parse::<u64>` accepts it; `Overflow` beyond `u64::MAX`), on any header
+  map: a `ResponseMeta`'s, an error's head, a native response's. `ResponseHead::single` and
+  `ResponseHead::unsigned` delegate to them. `concord::FieldError` (`Repeated`, `Invalid`,
+  `Overflow`; `#[non_exhaustive]`) never contains the value.
 
 ### Changed
 
@@ -115,6 +199,88 @@ Not released: the version is unchanged (4.2.0) and no release has been decided. 
   (Standard or Byte(b'\n')): a comment line ends only at a line feed". With the standard
   terminators nothing changes; the `comment` option now documents that a lone `\r` does not end
   a comment line (it runs to the next `\n`).
+- **A generated name: `operation()`.** Every generated endpoint type has an inherent
+  `operation() -> concord::Operation` (its declared identity, without naming the output);
+  `Endpoint::operation` forwards to it. An SDK's own inherent `operation` on a generated type now
+  conflicts (`E0592`) and is deleted
+  ([migration notes](docs/MIGRATION.md#to-the-consolidated-interface)).
+- **Generated endpoint documentation.** An endpoint type's rustdoc states the wire shape first —
+  `Request: METHOD URL`, labelled as the declared base URL that the client's `with_base_url`
+  replaces, then the query keys and headers it may send — and then the body, the output and, with
+  a send policy, the policy (its type, or "the client value `name`" for `send value;`) and whether
+  `send()` returns the declared result or `SendWith<T>::Output`; `prepare()` notes that it builds
+  the request before the policy. It also names the parameter groups the endpoint includes, the
+  declared `limit` of its finite body read and, for each `query(..)` value, the type that documents
+  its keys.
+- **The standard formats live in `concord-codecs`; `concord-extras` is a compatibility facade.**
+  The formats, their tests and their features (`json`, `form`, `stream`, `csv`, `jsonl`,
+  `multipart`, `sse`; none on by default) moved to the new workspace crate `concord-codecs` (not
+  published). The `concord` facade depends on it (its `extras` and format features enable the
+  codecs features) instead of `concord-extras`. `concord-extras` re-exports `concord_codecs::*` —
+  every item is the same item, not a copy — and forwards the same feature names, so existing paths
+  and features keep working; the features this section attributes to `concord-extras` are those
+  forwarded features.
+
+### Capability crates
+
+- **`concord_codecs::check_content_type` and `Charset`.**
+  `check_content_type(&ResponseHead, accepted: &[&str], Charset) -> Result<(), CodecError>`
+  requires exactly one well-formed `Content-Type` matching an accepted `type/subtype` or
+  `type/*+suffix` entry (case-insensitive; a response media range is refused; an empty list accepts
+  nothing), with the standard formats' parser and static labels: for a custom format's
+  `Decode::check_content_type`. `Charset::Utf8` allows no charset or one naming UTF-8 or US-ASCII;
+  `Charset::Ignore` checks the parameter syntax only. Not re-exported by `concord`.
+- **`concord-pagination`: strict `Link` parsing** (feature `link`; its only dependency is `url`).
+  `link::parse(values, &base) -> Result<Vec<Link>, LinkError>` parses every `Link` field value
+  (RFC 8288), resolving targets against the response URL; `link::relation(&links, "next")` returns
+  `Relation::Absent`, `One(&Link)` or `Several`. The first `rel` wins; a bare `rel`, a trailing `;`,
+  an empty unquoted value, non-ASCII or control bytes are errors; `Debug` and `LinkError` show no
+  input text. The GitHub, GitLab, Snowflake and distribution-registry SDK examples use it in place
+  of their own tokenizers.
+- **`concord-pagination`: checked offsets.** `next_offset(offset, limit, len, total)` returns the
+  next offset of an offset page, `Ok(None)` at clean exhaustion, or an `OffsetError` (`ZeroLimit`,
+  `TooManyItems`, `Overflow`, `BeyondCount`, `DidNotAdvance`) that retains no provider data. With a
+  total count offsets are zero-based and a short page may continue; without one a short page ends
+  the traversal.
+- **`concord-pagination`: provider errors and item events.** `PagesError::provider_error()`
+  (`Option<&E>`) and `PagesError::into_provider_error()` (`Result<(E, Resume<K>, Progress), Self>`;
+  a cap or an earlier end is returned unchanged) reach the factory's own error without matching
+  `PagesError::Provider`. Opt-in `Pages::item_events()` returns `PageItemEvents`, whose `next()`
+  yields `PageItemEvent::Item(T)`, `Page(M)` after each fully consumed page that has a successor,
+  and `Complete(M)` with the final page's metadata only after a clean end; a cap or a provider
+  failure is a `PagesError`.
+- **`concord-retry` (pilot).** A new workspace crate (not published), recorded as a pilot.
+  `Retry::new(Policy, Replay).run(factory, classify, now, sleep, jitter)` bounds application
+  attempts (`Policy::max_attempts`, an optional total `timeout` covering attempts and waits, capped
+  exponential backoff) with the caller's `Replay::Permitted`/`Never` separate from the SDK's
+  `Decision::Done`/`RetryAfter(Option<Duration>)`/`Stop`; a server delay is a minimum, never
+  shortened. `http::retry_after` reads `Retry-After` strictly (decimal seconds or IMF-fixdate; a
+  repeated field is an error). Feature `concord`: `Retry::receive(prepared, ReplayMode, ..)` replays
+  a `Prepared` through `into_parts()` and `Request::try_clone()` (a body that cannot be cloned is
+  refused before I/O with `ReplayMode::Required`, or sent once with `BestEffort`), and
+  `Retry::receive_with` — accepted — adds an async, fallible before-attempt hook that returns the
+  request with per-attempt state, and `ReceiveRun`/`ReceiveReport` accounting for dispatches, hook
+  refusals and attempts without a response head. Feature `tokio`: `Retry::run_tokio`. No runtime or
+  HTTP dependency by default.
+- **`concord-auth` (pilot).** A new workspace crate (not published), recorded as a pilot with no
+  acceptance decision. `basic(user, password)`, `bearer(token)` and `authorization(scheme, token)`
+  build sensitive `Authorization` values (`CredentialError` holds no input); `TokenCache<K, E>` is a
+  bounded, keyed cache with one shared acquisition per key (`get_or_refresh`), checked lifetimes
+  with a refresh margin, and `invalidate(key, &Generation)`, which removes only the generation a
+  failed request used, so a late 401 cannot drop a newer token. No runtime or HTTP client
+  dependency; `Debug` shows no credential. Stateful refresh-token rotation was not accepted.
+- **`concord-ratelimit` (pilot, not accepted).** A new workspace crate (not published), merged as a
+  pilot that was not accepted, with no further investment recorded: process-local keyed admission
+  (`Limiter<K>`: fixed-window `Budget`s, SDK-interpreted `Observation::Window`/`Cooldown`, a global
+  gate, concurrency `Lease`s, `Mode::Wait`/`Refuse`) over an injected `Clock` (`TokioClock` with
+  feature `tokio`). Provider headers and bucket rules stay in the SDK.
+
+### Maintenance
+
+- **SDK fixtures keep their bytes on checkout.** The root `.gitattributes` marks
+  `examples/*/fixtures/**` and `examples/*/tests/fixtures/**` as `-text`, so CRLF row endings and
+  quoted line breaks in wire fixtures are not converted on a Windows checkout; two SDKs without a
+  rule of their own had failed their fixture tests on native Windows.
 
 ## Unreleased — 4.4 extensions (candidate)
 

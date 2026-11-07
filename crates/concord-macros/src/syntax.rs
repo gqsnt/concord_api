@@ -27,6 +27,8 @@ mod kw {
     syn::custom_keyword!(format);
     syn::custom_keyword!(stream);
     syn::custom_keyword!(send);
+    syn::custom_keyword!(params);
+    syn::custom_keyword!(limit);
 }
 
 /// HTTP methods accepted as endpoint keywords.
@@ -34,6 +36,26 @@ pub const METHODS: &[&str] = &["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", 
 
 pub struct Api {
     pub client: Owner,
+    /// `params Name(..);` on the client: parameter groups, spliced into the endpoints that
+    /// declare `..Name` ([`expand_groups`]).
+    pub groups: Vec<Group>,
+}
+
+/// `/// docs` `params Name(optional or initialized values);` declared on the client: values that
+/// several endpoints share, written once. An endpoint includes them with `..Name` in its value
+/// list; every including endpoint also implements the generated trait `Name` (the group's
+/// setters), so code written once can configure any of them.
+pub struct Group {
+    pub docs: Vec<Attribute>,
+    pub name: Ident,
+    pub params: Vec<Param>,
+}
+
+/// `..Name` in an endpoint's value list.
+pub struct Spread {
+    /// The number of values declared before it: where the group's values are spliced.
+    pub at: usize,
+    pub name: Ident,
 }
 
 #[allow(clippy::large_enum_variant)]
@@ -546,6 +568,10 @@ pub struct Owner {
     pub params: Vec<Param>,
     pub stmts: Stmts,
     pub children: Vec<Owner>,
+    /// `..Name` entries (endpoints only), replaced by [`expand_groups`].
+    pub spreads: Vec<Spread>,
+    /// The groups spliced into this endpoint, in declaration order (after expansion).
+    pub groups: Vec<Ident>,
 }
 
 #[derive(Default)]
@@ -559,9 +585,13 @@ pub struct Stmts {
     /// `response FORMAT;` on any owner.
     pub response: Option<FormatDefault>,
     /// `send POLICY;` on the client: the type whose `SendWith<T>` every generated `send()` uses.
-    pub send: Option<(Type, Span)>,
+    /// `send P;` or `send P -> Template;` (`_` in the template stands for each endpoint's output).
+    pub send: Option<(Type, Span, Option<Type>)>,
+    /// `limit EXPR;` on any owner: the bound, in bytes, of a finite typed output's body.
+    pub limit: Option<(Expr, Span)>,
 }
 
+#[derive(Clone)]
 pub struct Param {
     pub docs: Vec<Attribute>,
     pub sensitive: bool,
@@ -605,11 +635,14 @@ fn parse_key(input: ParseStream<'_>, expected: &str) -> syn::Result<Key> {
     Err(input.error(expected))
 }
 
+#[derive(Clone)]
 pub struct Placement {
     pub family: Family,
     pub key: Option<Key>,
     pub each: bool,
     pub span: Span,
+    /// `query(..) x: T`: the value writes its own pairs (`T: concord::QueryPairs`).
+    pub pairs: bool,
 }
 
 pub struct BodyParam {
@@ -675,14 +708,17 @@ impl Parse for Api {
         })?;
         let name: Ident = input.parse()?;
         let params = if input.peek(syn::token::Paren) {
-            parse_params(input, false)?.0
+            let (params, _, spreads) = parse_params(input, false)?;
+            reject_spreads(&spreads)?;
+            params
         } else {
             Vec::new()
         };
         let content;
         braced!(content in input);
         let mut base = None;
-        let (stmts, children) = parse_owner_body(&content, Some(&mut base))?;
+        let mut groups = Vec::new();
+        let (stmts, children) = parse_owner_body(&content, Some(&mut base), Some(&mut groups))?;
         if !input.is_empty() {
             return Err(input.error("unexpected tokens after the client declaration; `api!` declares exactly one client"));
         }
@@ -696,9 +732,208 @@ impl Parse for Api {
                 params,
                 stmts,
                 children,
+                spreads: Vec::new(),
+                groups: Vec::new(),
             },
+            groups,
         })
     }
+}
+
+fn reject_spreads(spreads: &[Spread]) -> syn::Result<()> {
+    match spreads.first() {
+        Some(spread) => Err(syn::Error::new(
+            spread.name.span(),
+            "a parameter group (`..Group`) is included by endpoints only: a scope's or the client's value reaches every endpoint below it",
+        )),
+        None => Ok(()),
+    }
+}
+
+/// `params Name(..);`
+fn parse_group(input: ParseStream<'_>) -> syn::Result<Group> {
+    let attrs = input.call(Attribute::parse_outer)?;
+    let docs = docs_only(attrs)?;
+    input.parse::<kw::params>()?;
+    let name: Ident = input.parse()?;
+    if !input.peek(syn::token::Paren) {
+        return Err(
+            input.error("expected the group's values: `params Name(query limit?: u32, ..);`")
+        );
+    }
+    let (params, _, spreads) = parse_params(input, false)?;
+    if let Some(spread) = spreads.first() {
+        return Err(syn::Error::new(
+            spread.name.span(),
+            "a parameter group cannot include another group; list its values",
+        ));
+    }
+    input.parse::<Token![;]>()?;
+    if params.is_empty() {
+        return Err(syn::Error::new(
+            name.span(),
+            "a parameter group declares at least one value",
+        ));
+    }
+    for param in &params {
+        if !param.optional && param.default.is_none() {
+            return Err(syn::Error::new(
+                param.name.span(),
+                format!(
+                    "a parameter group holds optional (`{0}?: T`) or initialized (`{0}: T = v`) values: a required value is a positional argument, declared on each endpoint",
+                    param.name
+                ),
+            ));
+        }
+    }
+    Ok(Group { docs, name, params })
+}
+
+/// Splices every `..Name` with the values of the client's group `Name`, at the position written.
+/// The spliced values keep the spans of the group's declaration, so a conflict (a value of the
+/// same name on the endpoint) points at both.
+pub fn expand_groups(api: &mut Api) -> syn::Result<()> {
+    let mut seen: Vec<&Ident> = Vec::new();
+    for group in &api.groups {
+        if let Some(first) = seen.iter().find(|n| same(n, &group.name)) {
+            let mut e = syn::Error::new(
+                group.name.span(),
+                format!("duplicate parameter group `{}`", group.name),
+            );
+            e.combine(syn::Error::new(first.span(), "first declared here"));
+            return Err(e);
+        }
+        seen.push(&group.name);
+    }
+    let mut used = vec![false; api.groups.len()];
+    expand_owner(&mut api.client, &api.groups, &mut used)?;
+    if let Some((group, _)) = api.groups.iter().zip(&used).find(|(_, used)| !**used) {
+        return Err(syn::Error::new(
+            group.name.span(),
+            format!(
+                "parameter group `{}` is not included by any endpoint; include it with `..{0}` in an endpoint's values",
+                group.name
+            ),
+        ));
+    }
+    Ok(())
+}
+
+/// The same identifier, whatever its spelling (`Paging` and `r#Paging` name one group).
+fn same(a: &Ident, b: &Ident) -> bool {
+    a.unraw() == b.unraw()
+}
+
+/// Levenshtein distance, for a "did you mean" suggestion between short identifiers.
+fn edit_distance(a: &str, b: &str) -> usize {
+    let b: Vec<char> = b.chars().collect();
+    let mut row: Vec<usize> = (0..=b.len()).collect();
+    for (i, ca) in a.chars().enumerate() {
+        let mut previous = row[0];
+        row[0] = i + 1;
+        for (j, cb) in b.iter().enumerate() {
+            let substitution = previous + usize::from(ca != *cb);
+            previous = row[j + 1];
+            row[j + 1] = substitution.min(row[j] + 1).min(row[j + 1] + 1);
+        }
+    }
+    row[b.len()]
+}
+
+fn expand_owner(owner: &mut Owner, groups: &[Group], used: &mut [bool]) -> syn::Result<()> {
+    let spreads = std::mem::take(&mut owner.spreads);
+    if !spreads.is_empty() && !matches!(owner.kind, OwnerKind::Endpoint { .. }) {
+        reject_spreads(&spreads)?;
+    }
+    // A value in two included groups, reported as such (not as an endpoint value).
+    for (i, a) in spreads.iter().enumerate() {
+        for b in &spreads[i + 1..] {
+            let (Some(ga), Some(gb)) = (
+                groups.iter().find(|g| same(&g.name, &a.name)),
+                groups.iter().find(|g| same(&g.name, &b.name)),
+            ) else {
+                continue;
+            };
+            if same(&ga.name, &gb.name) {
+                continue;
+            }
+            if let Some(value) = ga
+                .params
+                .iter()
+                .find(|v| gb.params.iter().any(|w| same(&w.name, &v.name)))
+            {
+                return Err(syn::Error::new(
+                    b.name.span(),
+                    format!(
+                        "value `{}` is in both parameter groups `{}` and `{}` included here; keep it in one",
+                        value.name, a.name, b.name
+                    ),
+                ));
+            }
+        }
+    }
+    let declared: Vec<Ident> = owner.params.iter().map(|p| p.name.clone()).collect();
+    // From the last spread to the first, so earlier insertion points stay valid.
+    for spread in spreads.iter().rev() {
+        let Some(index) = groups.iter().position(|g| same(&g.name, &spread.name)) else {
+            let written = spread.name.to_string();
+            let near = groups
+                .iter()
+                .map(|g| g.name.to_string())
+                .find(|name| edit_distance(name, &written) <= 2);
+            return Err(syn::Error::new(
+                spread.name.span(),
+                match near {
+                    Some(near) => format!("no parameter group `{written}`; did you mean `{near}`?"),
+                    None => format!(
+                        "no parameter group `{written}`; declare it on the client: `params {written}(query x?: T, ..);`"
+                    ),
+                },
+            ));
+        };
+        for value in &groups[index].params {
+            if let Some(own) = owner
+                .params
+                .iter()
+                .find(|p| same(&p.name, &value.name) && declared.iter().any(|d| same(d, &p.name)))
+            {
+                let mut e = syn::Error::new(
+                    own.name.span(),
+                    format!(
+                        "value `{}` is declared on this endpoint and in its parameter group `{}`; keep one",
+                        value.name, spread.name
+                    ),
+                );
+                e.combine(syn::Error::new(
+                    value.name.span(),
+                    "declared in the group here",
+                ));
+                return Err(e);
+            }
+        }
+        if owner.groups.iter().any(|g| same(g, &spread.name)) {
+            return Err(syn::Error::new(
+                spread.name.span(),
+                format!("parameter group `{}` is included twice", spread.name),
+            ));
+        }
+        used[index] = true;
+        let values = groups[index].params.clone();
+        let count = values.len();
+        owner.params.splice(spread.at..spread.at, values);
+        if let OwnerKind::Endpoint {
+            body: Some(body), ..
+        } = &mut owner.kind
+            && spread.at <= body.position
+        {
+            body.position += count;
+        }
+        owner.groups.insert(0, spread.name.clone());
+    }
+    for child in &mut owner.children {
+        expand_owner(child, groups, used)?;
+    }
+    Ok(())
 }
 
 /// Keeps `///` documentation; rejects every other attribute at owner level.
@@ -720,10 +955,28 @@ fn docs_only(attrs: Vec<Attribute>) -> syn::Result<Vec<Attribute>> {
 fn parse_owner_body(
     input: ParseStream<'_>,
     mut base: Option<&mut Option<LitStr>>,
+    mut groups: Option<&mut Vec<Group>>,
 ) -> syn::Result<(Stmts, Vec<Owner>)> {
     let mut stmts = Stmts::default();
     let mut children = Vec::new();
     while !input.is_empty() {
+        // `/// docs` `params Name(..);`: a parameter group (the client's only).
+        let ahead = input.fork();
+        let _ = ahead.call(Attribute::parse_outer);
+        if ahead.peek(kw::params) && !ahead.peek2(Token![::]) {
+            let at = ahead.span();
+            let group = parse_group(input)?;
+            match groups.as_deref_mut() {
+                Some(groups) => groups.push(group),
+                None => {
+                    return Err(syn::Error::new(
+                        at,
+                        "parameter groups (`params Name(..);`) are declared on the client",
+                    ));
+                }
+            }
+            continue;
+        }
         if input.peek(kw::base) {
             let kw: kw::base = input.parse()?;
             let Some(slot) = base.as_deref_mut() else {
@@ -761,6 +1014,14 @@ fn parse_owner_body(
                 ));
             }
             let ty: Type = input.parse()?;
+            // `send P -> Result<_, Error>;`: the result type every generated `send()` declares.
+            let output = if input.peek(Token![->]) {
+                input.parse::<Token![->]>()?;
+                // Like other types: a fragment forwarded by `macro_rules!` keeps its grouping.
+                Some(parse_type(input)?)
+            } else {
+                None
+            };
             input.parse::<Token![;]>()?;
             if stmts.send.is_some() {
                 return Err(syn::Error::new(
@@ -768,7 +1029,37 @@ fn parse_owner_body(
                     "`send` is set twice on the client",
                 ));
             }
-            stmts.send = Some((ty, kw.span));
+            stmts.send = Some((ty, kw.span, output));
+            continue;
+        }
+        if input.peek(kw::limit) && !input.peek2(Token![::]) {
+            let kw: kw::limit = input.parse()?;
+            if let Some(first) = children.first() {
+                let first: &Owner = first;
+                return Err(syn::Error::new(
+                    kw.span,
+                    format!(
+                        "owner statements (`limit`, `path`, `query`, ...) must precede child declarations (first child: `{}`)",
+                        first.name
+                    ),
+                ));
+            }
+            if input.peek(Token![;]) {
+                return Err(input.error(
+                    "expected the bound in bytes, a `usize` constant expression (`limit 4 * 1024 * 1024;`)",
+                ));
+            }
+            // Parsed like an initializer: a fragment forwarded by `macro_rules!` keeps its
+            // grouping (`16 / $d` with `$d = 1 + 3` is `16 / (1 + 3)`).
+            let expr = parse_initializer(input)?;
+            input.parse::<Token![;]>()?;
+            if stmts.limit.is_some() {
+                return Err(syn::Error::new(
+                    kw.span,
+                    "duplicate `limit` statement; each owner declares it at most once",
+                ));
+            }
+            stmts.limit = Some((expr, kw.span));
             continue;
         }
         if input.peek(kw::path)
@@ -1050,13 +1341,15 @@ fn parse_child(input: ParseStream<'_>) -> syn::Result<Owner> {
         input.parse::<kw::scope>()?;
         let name: Ident = input.parse()?;
         let params = if input.peek(syn::token::Paren) {
-            parse_params(input, false)?.0
+            let (params, _, spreads) = parse_params(input, false)?;
+            reject_spreads(&spreads)?;
+            params
         } else {
             Vec::new()
         };
         let content;
         braced!(content in input);
-        let (stmts, children) = parse_owner_body(&content, None)?;
+        let (stmts, children) = parse_owner_body(&content, None, None)?;
         return Ok(Owner {
             kind: OwnerKind::Scope,
             docs,
@@ -1066,6 +1359,8 @@ fn parse_child(input: ParseStream<'_>) -> syn::Result<Owner> {
             params,
             stmts,
             children,
+            spreads: Vec::new(),
+            groups: Vec::new(),
         });
     }
     let method: Ident = input.parse().map_err(|e| {
@@ -1084,7 +1379,7 @@ fn parse_child(input: ParseStream<'_>) -> syn::Result<Owner> {
         ));
     }
     let name: Ident = input.parse()?;
-    let (params, body) = parse_params(input, true)?;
+    let (params, body, spreads) = parse_params(input, true)?;
     let output = if input.peek(Token![->]) {
         input.parse::<Token![->]>()?;
         Some(parse_output(input)?)
@@ -1113,7 +1408,7 @@ fn parse_child(input: ParseStream<'_>) -> syn::Result<Owner> {
         }
         let content;
         braced!(content in input);
-        let (stmts, children) = parse_owner_body(&content, None)?;
+        let (stmts, children) = parse_owner_body(&content, None, None)?;
         if let Some(child) = children.first() {
             return Err(syn::Error::new(
                 child.name.span(),
@@ -1135,18 +1430,37 @@ fn parse_child(input: ParseStream<'_>) -> syn::Result<Owner> {
         params,
         stmts,
         children: Vec::new(),
+        spreads,
+        groups: Vec::new(),
     })
 }
 
 fn parse_params(
     input: ParseStream<'_>,
     allow_body: bool,
-) -> syn::Result<(Vec<Param>, Option<BodyParam>)> {
+) -> syn::Result<(Vec<Param>, Option<BodyParam>, Vec<Spread>)> {
     let content;
     parenthesized!(content in input);
     let mut params = Vec::new();
     let mut body: Option<BodyParam> = None;
+    let mut spreads = Vec::new();
     while !content.is_empty() {
+        // `..Group`: the values of a parameter group, spliced here.
+        if content.peek(Token![..]) {
+            content.parse::<Token![..]>()?;
+            let name: Ident = content.parse().map_err(|e| {
+                syn::Error::new(e.span(), "expected a parameter group's name after `..`")
+            })?;
+            spreads.push(Spread {
+                at: params.len(),
+                name,
+            });
+            if content.is_empty() {
+                break;
+            }
+            content.parse::<Token![,]>()?;
+            continue;
+        }
         let attrs = content.call(Attribute::parse_outer)?;
         let mut docs = Vec::new();
         let mut sensitive = false;
@@ -1313,7 +1627,7 @@ fn parse_params(
         }
         content.parse::<Token![,]>()?;
     }
-    Ok((params, body))
+    Ok((params, body, spreads))
 }
 
 /// What `parse` reads from `input`, and the tokens it consumed as written (`None` if it ended
@@ -1509,17 +1823,37 @@ fn parse_placement(input: ParseStream<'_>) -> syn::Result<Option<Placement>> {
         }
         return Ok(None);
     };
+    let mut pairs = false;
     let key = if input.peek(syn::token::Paren) {
         let content;
         parenthesized!(content in input);
-        let key = parse_key(
-            &content,
-            "expected a quoted name (`header(\"x-request-id\")`) or a native `HeaderName` constant (`header(AUTHORIZATION)`)",
-        )?;
-        if !content.is_empty() {
-            return Err(content.error("expected a single key"));
+        if content.peek(Token![..]) {
+            let dots: Token![..] = content.parse()?;
+            if !content.is_empty() {
+                return Err(
+                    content.error("`query(..)` takes no key: the value writes its own pairs")
+                );
+            }
+            if family.0 == Family::Header {
+                return Err(syn::Error::new(
+                    dots.spans[0],
+                    "`header(..)` is not supported: a header placement names its field",
+                ));
+            }
+            pairs = true;
         }
-        Some(key)
+        if pairs {
+            None
+        } else {
+            let key = parse_key(
+                &content,
+                "expected a quoted name (`header(\"x-request-id\")`) or a native `HeaderName` constant (`header(AUTHORIZATION)`)",
+            )?;
+            if !content.is_empty() {
+                return Err(content.error("expected a single key"));
+            }
+            Some(key)
+        }
     } else {
         None
     };
@@ -1535,11 +1869,18 @@ fn parse_placement(input: ParseStream<'_>) -> syn::Result<Option<Placement>> {
     } else {
         false
     };
+    if pairs && each {
+        return Err(syn::Error::new(
+            family.1,
+            "`query(..)` writes its own pairs, so it takes no `each`: write every pair in the value's `QueryPairs` implementation",
+        ));
+    }
     Ok(Some(Placement {
         family: family.0,
         key,
         each,
         span: family.1,
+        pairs,
     }))
 }
 

@@ -1,0 +1,5 @@
+error: no parameter group `Pagnig`; did you mean `Paging`?
+ --> tests/ui/param_group_unknown.rs:6:21
+  |
+6 |         GET other(..Pagnig) { path "other"; }
+  |                     ^^^^^^

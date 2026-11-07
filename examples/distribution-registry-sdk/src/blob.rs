@@ -57,15 +57,14 @@ impl Repository {
             })
             .await?;
         if received.status() == StatusCode::NOT_FOUND {
-            let meta = ResponseMeta::capture(&received);
-            drain(received, &meta).await?;
+            drain(received).await?;
             return Ok(None);
         }
         let (received, meta) = expect_status(received, StatusCode::OK).await?;
         let protocol = |problem| RegistryError::protocol(problem, Some(meta.clone()));
         let size = meta.content_length().map_err(protocol)?;
         let header = meta.digest_header().map_err(protocol)?;
-        drain(received, &meta).await?;
+        drain(received).await?;
         if let Some(header) = &header
             && header.algorithm() == digest.algorithm()
             && header != digest
@@ -145,10 +144,7 @@ impl Repository {
                 header,
             }));
         }
-        let incoming = received
-            .decode()
-            .await
-            .map_err(|error| RegistryError::request(error, meta.clone()))?;
+        let incoming = received.decode().await?;
         Ok(BlobReader {
             incoming: Some(incoming),
             hasher: Some(Hasher::new(algorithm)),

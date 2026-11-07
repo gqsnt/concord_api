@@ -1,0 +1,31 @@
+{
+  "pit_id" : "SYNTHETIC-PIT-ID-2",
+  "took" : 17,
+  "timed_out" : false,
+  "_shards" : { "total" : 1, "successful" : 1, "skipped" : 0, "failed" : 0 },
+  "hits" : {
+    "max_score" : null,
+    "hits" : [
+      {
+        "_index" : "my-index-000001",
+        "_id" : "SYNTHETIC-HIT-1",
+        "_score" : null,
+        "_source" : { "user" : { "id" : "elkbee" }, "message" : "first" },
+        "sort" : [
+          "2021-05-20T05:30:04.831Z",
+          4294967297
+        ]
+      },
+      {
+        "_index" : "my-index-000001",
+        "_id" : "FaslK3QBySSL_rrj9zM5",
+        "_score" : null,
+        "_source" : { "user" : { "id" : "elkbee" }, "message" : "second" },
+        "sort" : [
+          "2021-05-20T05:30:04.832Z",
+          4294967298
+        ]
+      }
+    ]
+  }
+}

@@ -43,7 +43,7 @@ Plain serde types. Excerpt of
 
 ```rust
 use concord::reqwest::{self, header::AUTHORIZATION};
-use concord::{Decode, Json};
+use concord::{IgnoreContentType, Json};
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Deserialize)]
@@ -186,16 +186,21 @@ pub async fn run(base_url: &str, token: String) -> Result<(), Box<dyn std::error
     let open = project.tasks().set_done(false).send().await?; // GET ...?done=false&limit=20
     println!("{} open task(s)", open.len());
 
-    // This API rejects an empty title: a non-2xx status is an error that keeps the response.
-    match project.create(NewTask::default()).send().await {
-        Ok(task) => println!("unexpectedly created task #{}", task.id),
-        Err(error) if error.status().is_some() => {
-            let response = error.into_response()?; // a status error keeps its response
-            let status = response.status();
-            let problem = <Json as Decode<Problem>>::decode_body((), response.bytes().await?)?;
-            println!("rejected with {status}: {}", problem.title);
-        }
-        Err(error) => return Err(error.into()), // any other kind of error propagates
+    // This API rejects an empty title: read its error document with a 64 KiB bound.
+    let received = project
+        .create(NewTask::default())
+        .prepare()?
+        .receive()
+        .await?;
+    if received.status().is_success() {
+        let task = received.decode().await?;
+        println!("unexpectedly created task #{}", task.id);
+    } else {
+        // Preserve this API's policy of accepting JSON regardless of the media label.
+        let (meta, problem) = received
+            .document::<IgnoreContentType<Json>, Problem>(64 * 1024)
+            .await;
+        println!("rejected with {}: {}", meta.status(), problem?.title);
     }
     Ok(())
 }
@@ -206,16 +211,16 @@ pub async fn run(base_url: &str, token: String) -> Result<(), Box<dyn std::error
 - **A call** is navigation plus an endpoint: `api.project("demo").tasks()` returns a request value;
   setters such as `set_done(false)` return the changed request; `send()` executes it once and
   decodes a 2xx response.
-- **Errors.** Every call returns `Result<_, concord::Error>`. `error.kind()` tells the stage
-  (`Build`, `Transport`, `Status`, `Metadata`, `Decode`). A non-2xx status keeps the **unread**
-  response: `into_response()` returns it (a `Build`, `Transport` or `Decode` error has no response
-  and comes back unchanged as `Err`, so `?` propagates it), and
-  `<Json as Decode<Problem>>::decode_body((), bytes)` reads the API's error document: it decodes
-  bytes and checks no response head. A 2xx response whose head the format
-  refuses (`Metadata`) keeps its response unread too, and `into_response()` returns that one as
-  well; look at `error.kind()` first if a 2xx must not be taken for an error document
-  (`status()` is `Some` only for a `Status` error, so the match above never takes a `Metadata`
-  error for one). The [caller guide](CALLER_GUIDE.md#6-errors) covers the rest.
+- **Errors.** Every ordinary call of a client without a send policy returns
+  `Result<_, concord::Error>` (a client with `send Policy;` returns its SDK's result instead). `error.kind()` tells the
+  stage (`Build`, `Transport`, `Status`, `Metadata`, `Decode`, `Limit`). To interpret a provider's
+  error document, `prepare()?.receive().await?` returns the response before checking its status.
+  The example decodes a success normally and uses `document` for a non-2xx body, bounded to
+  64 KiB. `IgnoreContentType<Json>` preserves this example's policy of accepting JSON regardless
+  of its media label; use `Json` when the provider requires a JSON `Content-Type`. The returned
+  metadata keeps the HTTP status even if reading or decoding the document fails. Errors after
+  a response head arrives also expose it through `error.head()` and `error.meta()`.
+  The [caller guide](CALLER_GUIDE.md#6-errors) covers native response access.
 
 ## 5. Run it locally
 

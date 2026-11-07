@@ -1,0 +1,11 @@
+{
+  "type": "contact",
+  "id": "111111111111111111111111",
+  "role": "user",
+  "email": "first@example.test",
+  "name": "First Fixture",
+  "external_id": "external-first",
+  "custom_attributes": {
+    "ignored": true
+  }
+}

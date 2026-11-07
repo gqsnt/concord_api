@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SYNTHETIC: metadata invented for SDK tests; manual sections 3.3 and 4.1 define shape. -->
+<feed xmlns="http://www.w3.org/2005/Atom" xmlns:o="http://a9.com/-/spec/opensearch/1.1/" xmlns:a="http://arxiv.org/schemas/atom" xmlns:f="urn:synthetic:future">
+  <id>urn:synthetic:search</id><title>Synthetic electron search</title><updated>2026-01-02T00:00:00Z</updated>
+  <o:totalResults>2</o:totalResults><o:startIndex>0</o:startIndex><o:itemsPerPage>1</o:itemsPerPage>
+  <f:entry><f:title>Ignore foreign entry</f:title></f:entry>
+  <f:totalResults>999999</f:totalResults>
+  <entry>
+    <id>http://arxiv.org/abs/2601.00001v2</id>
+    <title>Synthetic electron &amp; photon study</title>
+    <summary>Invented abstract about electron scattering.</summary>
+    <published>2026-01-01T12:00:00Z</published><updated>2026-01-02T12:00:00Z</updated>
+    <author><name>Ada Example</name><a:affiliation>Fixture Institute</a:affiliation><a:affiliation>Sample Lab</a:affiliation><f:name>Ignore</f:name></author>
+    <author><name>René Example</name></author>
+    <category term="quant-ph" scheme="http://arxiv.org/schemas/atom"/>
+    <category term="I.2.6"/>
+    <a:primary_category term="quant-ph" scheme="http://arxiv.org/schemas/atom"/>
+    <a:comment>Invented: 3 pages</a:comment><a:journal_ref>Fixture Journal 1</a:journal_ref><a:doi>10.0000/synthetic</a:doi>
+    <link href="http://arxiv.org/abs/2601.00001v2" rel="alternate" type="text/html"/>
+    <link href="http://arxiv.org/pdf/2601.00001v2" title="pdf" rel="related" type="application/pdf"/>
+    <f:title>Ignore foreign title</f:title><f:future><f:unknown>ignored</f:unknown></f:future>
+  </entry>
+</feed>

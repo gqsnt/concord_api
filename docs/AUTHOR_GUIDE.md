@@ -190,6 +190,67 @@ fn main() -> Result<(), concord::Error> {
 }
 ```
 
+### 2.1 Parameter groups: one fact, many endpoints
+
+Some optional values belong to a family of endpoints rather than to one — the selectors and
+page parameters every list accepts, an "act as this account" header every write accepts. A scope
+value cannot carry them (it would reach the single-object endpoints of the scope too), and
+repeating them on every endpoint repeats each fact. Declare them once on the client as a
+**parameter group**, and include the group in an endpoint's values with `..Name`:
+
+```rust
+use concord::Json;
+use serde::Deserialize;
+
+#[derive(Deserialize)]
+pub struct Page { pub items: Vec<String> }
+
+concord::api! {
+    pub client Store() {
+        base "https://store.example";
+        format Json;
+
+        /// The parameters every list accepts.
+        params ListOptions(
+            query limit?: u32,
+            #[sensitive] query("cursor") cursor?: String,
+        );
+
+        GET products(..ListOptions) -> Page { path "products"; }
+        GET orders(query("status") status?: String, ..ListOptions) -> Page { path "orders"; }
+        GET product(id: u64) -> Page { path "products/{id}"; } // no list options here
+    }
+}
+
+/// Written once, for every endpoint that includes the group.
+fn first_page<E: ListOptions>(list: E) -> E {
+    list.set_limit(50u32).maybe_cursor(None)
+}
+
+fn main() -> Result<(), concord::Error> {
+    let store = Store::new(concord::reqwest::Client::new());
+    let orders = first_page(store.orders()).set_status("open").prepare()?;
+    assert_eq!(
+        orders.request().url().query(),
+        Some("status=open&limit=50"), // the written order: `status`, then the group
+    );
+    assert_eq!(first_page(store.products()).prepare()?.request().url().query(), Some("limit=50"));
+    Ok(())
+}
+```
+
+- A group holds **optional** (`x?: T`) or **initialized** (`x: T = v`) values; a required value
+  is a positional argument and is declared on each endpoint. Placements, `#[sensitive]` and docs
+  are written in the group and apply wherever it is included.
+- `..Name` splices the group's values at the place it is written: the endpoint gets the same
+  `set_x`/`maybe_x` setters as if the values were written there, and the same wire order.
+- Each group also generates a trait `Name` of those setters, implemented by every endpoint that
+  includes the group, for SDK code written once over them (`fn first_page<E: ListOptions>`).
+  Ordinary callers use the endpoints' own setters and need not import it.
+- Endpoints include groups; scopes and the client do not (their values reach every endpoint
+  below). A group is declared on the client, may not include another group, and must be included
+  somewhere. A value declared both on an endpoint and in one of its groups is an error.
+
 ## 3. Base, paths and subdomains
 
 **Base.** `base "https://api.example.com/v2";` is checked at compile time: `http` or `https`, an
@@ -208,6 +269,32 @@ hosts and a percent-escaped path, whose escapes are kept as written (`https://ex
 whose redirect policy refuses a cross-origin hop — `reqwest::redirect::Policy::custom` comparing
 `attempt.url().origin()` with `attempt.previous()[0].origin()` — or disables redirects. The
 application owns its `reqwest::Client`; Concord never changes it.
+
+**A credential in the query** (`#[sensitive] query("api_key") key: String`) is redacted in
+Concord's output but is part of the URL on the wire, so the transport must not copy that URL
+elsewhere: reqwest sends the previous URL, query included, as `Referer` on a redirect, and its
+own retries replay it. An SDK whose provider takes a query key documents or offers a client like
+FRED's (`examples/fred-sdk/src/lib.rs`, `http_client()`):
+
+```rust
+use concord::reqwest;
+
+/// A transport for a provider that takes its key in the query.
+pub fn query_key_transport() -> reqwest::Result<reqwest::Client> {
+    reqwest::Client::builder()
+        .redirect(reqwest::redirect::Policy::none()) // no hop carries the URL anywhere
+        .referer(false) // and no `Referer` repeats it
+        .retry(reqwest::retry::never()) // replays belong to the SDK's policy
+        .build()
+}
+
+fn main() {
+    query_key_transport().unwrap();
+}
+```
+
+and tests that a redirect is not followed. Prefer a header credential where the provider offers
+one.
 
 **Paths.** Each owner's `path` template is relative (no leading `/`) and is appended after the base
 path, root first. Literal text is sent verbatim; each `{value}` is formatted with `Display` and
@@ -303,6 +390,69 @@ The shortest form places a value directly in its parameter list:
 | `header(ACCEPT) accept: HeaderValue` | `accept: <the native value, byte for byte>` |
 | `query("tag") each tags: Vec<String>` | one `tag=<item>` per item (any `IntoIterator` whose items are `Display`) |
 | `header("x-tag") each tags: Vec<HeaderValue>` | one `x-tag` line per item, in order |
+| `query(..) anchor?: Anchor` | the pairs the value writes (`T: QueryPairs`), after the declared query (§4.1a) |
+
+### 4.1a Values that choose their own keys: `query(..)`
+
+Every other placement names its key in the declaration. When the key itself is part of the
+value — exactly one of several mutually exclusive cursors, or parameters named at run time
+(`param_<name>`) — declare the value with `query(..)` and implement
+[`QueryPairs`](https://docs.rs/concord/latest/concord/trait.QueryPairs.html) for its type. The
+caller then cannot send two cursors together, and the SDK writes no wrapper endpoints to enforce it.
+
+```rust
+use concord::{QueryPairs, QueryPairsWriter, reqwest};
+
+/// Exactly one anchor for a page of messages.
+pub enum Anchor { Before(u64), After(u64), Around(u64) }
+
+impl QueryPairs for Anchor {
+    fn query_pairs(&self, out: &mut QueryPairsWriter<'_>) {
+        match self {
+            Anchor::Before(id) => out.pair("before", id),
+            Anchor::After(id) => out.pair("after", id),
+            Anchor::Around(id) => out.pair("around", id),
+        }
+    }
+}
+
+concord::api! {
+    pub client Chat() {
+        base "https://chat.example.com";
+        GET messages(channel: u64, query limit?: u8, query(..) anchor?: Anchor) {
+            path "channels/{channel}/messages";
+        }
+    }
+}
+
+fn main() -> Result<(), concord::Error> {
+    let chat = Chat::new(reqwest::Client::new());
+    let prepared = chat.messages(7).set_limit(50).set_anchor(Anchor::Before(99)).prepare()?;
+    assert_eq!(prepared.request().url().query(), Some("limit=50&before=99"));
+    Ok(())
+}
+```
+
+Rules, each checked when the declaration compiles:
+
+- **Endpoints only.** A scope's or client's requests cannot know the pairs of a value they do not
+  own; `query(..)` on a scope or client is an error. It can sit in a parameter group (§2.1) that
+  only endpoints include.
+- **No key, no `each`, no `header(..)`.** The value writes every pair, repeated keys included.
+- **Never `#[sensitive]`.** Concord redacts by key, and these keys are only known at run time;
+  give a secret its own keyed placement (`#[sensitive] query("token") token: String`). The
+  endpoint's `Debug` withholds a `query(..)` value; `Prepared`'s `Debug` shows its pairs, except
+  that a key on the well-known secret list (`token`, `api_key`, ... §7) is still shown as
+  `<redacted>`, as a declared key would be.
+- **Order:** a `query(..)` value is written where it is declared among the endpoint's own
+  parameters: after every key the chain already has — an inherited key keeps its first position
+  with all its occurrences, so an endpoint's `append "v" = ..` to an inherited `v` still comes
+  first (§4.7) — and before keys first introduced by the endpoint's `query { }` block. Its pairs
+  follow in the order it writes them; absent, it writes nothing. An empty key is a build error
+  (`ErrorKind::Build`) before anything is sent.
+
+`QueryPairs` is implemented for `Vec<(K, V)>`, `[(K, V)]` and `BTreeMap<K, V>` (`K: AsRef<str>`,
+`V: Display`) for ad-hoc pairs; prefer your own type when the set of keys is a provider rule.
 
 ### 4.2 Blocks, templates and references
 
@@ -438,7 +588,8 @@ fn main() -> Result<(), concord::Error> {
 ### 4.7 Order on the wire
 
 - **Query:** each key keeps the position of its first appearance on the chain (root first), and
-  its occurrences are in contribution order. The query string is exactly that sequence.
+  its occurrences are in contribution order. The query string is exactly that sequence; an
+  endpoint's `query(..)` value contributes its pairs at its own position (§4.1a).
 - **Headers:** the values of one name are sent in contribution order. The order *between*
   different header names is not specified (the native `HeaderMap` groups by name, and reqwest and
   hyper add their own headers).
@@ -1035,8 +1186,10 @@ For a multipart body, use the standard `concord::multipart::Multipart` (feature 
 through `into_parts` and reqwest's own `multipart` support remains for large or streamed parts,
 which `MultipartBody` (in memory) does not hold.
 
-For a response consumed incrementally, use `send_raw` and native reads; typed `Decode` receives
-the collected body bytes. `examples/native` has NDJSON and pair-encoded form formats and a
+For a response consumed incrementally, declare `-> stream T` with an `Incremental<T>` format,
+or `-> stream` to obtain an unread `Incoming` for a reader chosen at run time (5.9).
+Finite `-> T` uses `Decode<T>`, which receives the collected body bytes; `send_raw` and native
+reads remain an escape. `examples/native` has NDJSON and pair-encoded form formats and a
 one-shot request stream, and `examples/multipart` a multipart upload through reqwest and a local
 multipart format of its own ([recipes](RECIPES.md)).
 
@@ -1298,46 +1451,205 @@ a form-data name or file name, and an empty `related` body are refused when the 
 prepared (`Build`, before I/O; the error shows no part bytes). The complete rules are on
 `concord::multipart::Multipart`.
 
+### 5.10a Bounding finite bodies: `limit`
+
+A finite typed output (`-> T`) is read into memory before it is decoded. `limit N;` on the
+client, a scope or the endpoint (the nearest wins) bounds that read to `N` bytes, a `usize`
+constant expression: a longer body is `ErrorKind::Limit` and is not decoded (nothing more is
+read). The bound travels with the endpoint's response handling, so every path that applies it
+honours it — the generated `send()`, a send policy's `received.decode()`, and the native
+`prepare()?.send()`. `received.decode_limited(n)` still replaces it for one call. A drained body
+(no `->`) is never buffered and a stream reader (`-> stream`) has its own limits, so `limit` on such
+an endpoint is a declaration error.
+
+```rust
+use concord::Json;
+use serde::Deserialize;
+
+#[derive(Deserialize)]
+pub struct Doc { pub text: String }
+
+concord::api! {
+    pub client Archive() {
+        base "https://archive.example";
+        format Json;
+        limit 4 * 1024 * 1024; // every finite output below: at most 4 MiB
+
+        GET doc(id: u64) -> Doc { path "docs/{id}"; }
+        scope thumbnails {
+            limit 64 * 1024; // nearer: these documents are small
+            GET meta(id: u64) -> Doc { path "thumbs/{id}"; }
+        }
+    }
+}
+
+fn main() -> Result<(), concord::Error> {
+    let archive = Archive::new(concord::reqwest::Client::new());
+    let (_, _, decoder) = archive.doc(1).prepare()?.into_parts();
+    assert_eq!(decoder.limit(), Some(4 * 1024 * 1024));
+    let (_, _, decoder) = archive.thumbnails().meta(1).prepare()?.into_parts();
+    assert_eq!(decoder.limit(), Some(64 * 1024));
+    Ok(())
+}
+```
+
 ### 5.11 Reading response metadata in an SDK
 
 A provider's rate-limit counter, request id or served version is read from the response head,
 between sending and consuming the body: `Prepared::receive()` returns a `Received<T>` for any
-status, and `decode()` then applies the declared handling. Capture what must survive a body
-failure before decoding, into a value the SDK owns.
+status, and the SDK then consumes the body once. Three facts make the ordinary policy short:
 
-Excerpt of `checks/phase-a/tests/received.rs`:
+- **A failure after the head arrived keeps the head.** `concord::Error::head()` borrows it for
+  every `Status`, `Metadata`, `Decode`, `Limit` and mid-body `Transport` error (Concord moves the
+  head out of the native response before reading the body; nothing is cloned), and
+  `Error::head_meta()` is the owned copy. Before a head (`Build`, a connection failure) both
+  are `None`. (`Error::meta()` keeps its narrower meaning: the head of the response a `Status` or
+  `Metadata` error keeps, `Some` exactly when `into_response()` returns it.) So an SDK error built `From<concord::Error>` keeps the status of a decode failure
+  without capturing anything by hand.
+- **`received.decode_with_meta()`** (and `decode_limited_with_meta(limit)`) applies the declared
+  handling and returns the head beside the value, moved rather than cloned for a finite output
+  (a stream reader keeps its response, so its head is a copy).
+- **`received.document::<F, D>(limit)`** reads the body of **any** status, bounded, and decodes it
+  with the format `F` exactly as a declared output: `F`'s `check_content_type` and `context` run
+  on the head first (a refusal is `Metadata`, the body unread), then the bounded read, then
+  `decode_body`. It returns the head beside the outcome, so a provider error stays an HTTP failure
+  whether its document is typed, absent, malformed, oversized, interrupted or of another media
+  type. A `Decode` failure keeps the body (`Error::body_unredacted()`) for an SDK that shows a
+  proxy's page raw. Use `IgnoreContentType<F>` to decode whatever the `Content-Type` says. The
+  returned head is moved out of the response when the document is read; a failure's error also
+  carries a copy of it (`Error::head`), so a failed document costs one header-map clone.
+
+A policy that returns a value with its metadata, or the provider's typed error document
+(Excerpt of `examples/frankfurter-sdk/src/lib.rs`):
 
 ```rust,ignore
-async fn summary_with_meta(
-    api: &Reports,
-    id: &str,
-) -> Result<(Row, Meta), (concord::Error, Option<Meta>)> {
-    let received = api
-        .summary(id)
-        .prepare()
-        .map_err(|e| (e, None))?
-        .receive()
-        .await
-        .map_err(|e| (e, None))?;
-    let meta = Meta::capture(&received.head());
-    match received.decode().await {
-        Ok(row) => Ok((row, meta)),
-        Err(e) => Err((e, Some(meta))),
+async fn send<E: Endpoint<Rate> + Send>(&self, endpoint: E) -> Self::Output {
+    let received = endpoint.prepare()?.receive().await?;
+    if !received.status().is_success() {
+        // Status is authoritative even when the document is absent, invalid or inconsistent.
+        let (meta, document) = received.document::<Json, Problem>(ERROR_BODY_LIMIT).await;
+        let document = document.map_err(ErrorBodyError::from);
+        return Err(Error::Provider(Box::new(ProviderError { meta, document })));
     }
+    // A success-body failure keeps the head in the Concord error (`Error::head_meta`).
+    let (rate, meta) = received.decode_with_meta().await?;
+    Ok(RateResponse { rate, meta })
 }
 ```
 
-When the SDK keeps the whole head rather than a few typed fields, `received.meta()` is that
-owned value: a `concord::ResponseMeta` (status, version, header map, operation) whose `Debug`
-prints header names only, unlike a derived `Debug` over a `HeaderMap`. `Incoming::meta()` gives
-the same before a reader consumes the body, and `concord::Error::meta()` from a `Status` or
-`Metadata` error that kept its response. To add provider accessors (`request_id()`), wrap it in
-the SDK's own type (`pub struct ResponseMeta(concord::ResponseMeta)`; the Dropbox SDK derefs to
-it): methods cannot be added to another crate's type.
+Do not decode an error document with `<Json as Decode<D>>::decode_body((), bytes)`: that skips
+the format's head checks and its `Context` (a format whose context is not `()` cannot be used
+that way at all); `document` runs them.
+
+An SDK error that holds a `ResponseMeta` and a `concord::Error` inline is large (a few hundred
+bytes): box the variant payloads that carry them (`Provider(Box<ProviderError>)` above), or
+Clippy's `result_large_err` flags every function returning it.
+
+When the SDK keeps a few typed fields rather than the whole head, read them from
+`received.head()` before consuming the body, into a value the SDK owns (GitLab's
+`ResponseMeta::capture` keeps the request id, pagination headers and `Link` relations). When it
+keeps the whole head, `concord::ResponseMeta` (status, version, header map, operation) prints
+header names only in `Debug`, unlike a derived `Debug` over a `HeaderMap`; `Incoming::meta()`
+gives the same before a reader consumes the body. To add provider accessors (`request_id()`),
+wrap it in the SDK's own type (`pub struct ResponseMeta(concord::ResponseMeta)`; the Dropbox SDK
+derefs to it): methods cannot be added to another crate's type.
+
+**One header field, strictly.** A rate-limit counter or a request id must appear at most once,
+and `str::parse::<u64>` accepts `+5`. `concord::field::single(headers, name)` and
+`concord::field::unsigned(headers, name)` read any `HeaderMap` — `received.head().headers()`,
+`meta.headers()`, a natively obtained response's, and an error's when it kept a head
+(`error.head().map(|head| field::unsigned(head.headers(), name))`) — and
+tell absent (`Ok(None)`) from
+repeated, invalid and overflowing (`FieldError`, which never contains the value);
+`ResponseHead::single`/`unsigned` are the same on a head:
+
+```rust
+use concord::field::{self, FieldError};
+use concord::reqwest::header::HeaderMap;
+
+/// A provider quota: absent and unreadable are different facts.
+#[derive(Debug, PartialEq)]
+pub enum Remaining { Absent, Unreadable(FieldError), Value(u64) }
+
+pub fn remaining(headers: &HeaderMap) -> Remaining {
+    match field::unsigned(headers, "x-ratelimit-remaining") {
+        Ok(None) => Remaining::Absent,
+        Ok(Some(n)) => Remaining::Value(n),
+        Err(e) => Remaining::Unreadable(e),
+    }
+}
+
+fn main() {
+    let mut headers = HeaderMap::new();
+    assert_eq!(remaining(&headers), Remaining::Absent);
+    headers.insert("x-ratelimit-remaining", "+5".parse().unwrap());
+    assert_eq!(remaining(&headers), Remaining::Unreadable(FieldError::Invalid));
+}
+```
 
 A provider rule on the head (a served API version) refuses by returning the SDK's error with
 `received.into_response()`, unread. A request edited natively after `into_parts()` (a `Link` URL)
 is executed with `Decoder::execute(&client, request)`, which returns the same `Received<T>`.
+
+### 5.11b A write that may have happened: `Error::delivery()`
+
+A timed-out create may have created the item. Before deciding that a failed write is *uncertain*
+(reported, never resent automatically), an SDK needs to know what the failure proves about
+delivery. `concord::Error::delivery()` states it:
+
+| `Delivery` | When |
+|---|---|
+| `NotSent` | Concord refused the request before handing it to the client (`ErrorKind::Build`: a value that cannot be written, a header set twice, a body that cannot be encoded) |
+| `Unknown` | the client failed and no response head reached Concord: a timeout, a reset, a failed upload — and a refused connection too |
+| `Answered` | a response head reached Concord (any status), even if its body then failed, was refused or was too long |
+
+A refused connection is `Unknown` on purpose: the client may have followed a redirect from a
+server that performed the write (a `303` to a host that is down ends in a connect error), and
+reqwest's `is_connect()` also reports a connection error of a nested source, such as a streamed
+body's own request. An SDK that builds its own client without redirects or retries
+(`redirect(Policy::none())`, `retry(retry::never())`: a retried `503` can end in a refused
+connection after the first attempt performed the write), and whose bodies are fixed bytes, may
+decide that `transport().is_some_and(|e| e.is_connect())` means "not sent" — its rule, stated in
+its docs. Accepting the caller's client voids that rule. A followed redirect also makes a status
+answer a later request: a performed POST answered `303`, whose target answers `429`, reaches the
+policy as a 429 (`received.url()` is the target's). An SDK that reads a write's status as
+"refused" requires redirects off.
+
+Which operations are writes, and whether an `Answered` 5xx or an unreadable 2xx is uncertain too,
+stay the SDK's rules:
+
+```rust
+use concord::{Delivery, Error};
+
+/// One SDK's rule: a write is uncertain when no answer arrived, or when the server failed (a 5xx
+/// on a create may have committed). An unreadable 2xx is classified separately by this SDK.
+pub fn uncertain(error: &Error) -> bool {
+    let write = error
+        .operation()
+        .and_then(|op| op.method())
+        .is_some_and(|method| method != "GET" && method != "HEAD");
+    let server_error = error.head().is_some_and(|head| head.status().is_server_error());
+    write && (error.delivery() == Delivery::Unknown || server_error)
+}
+
+concord::api! {
+    pub client Notes() {
+        base "https://notes.example.com";
+        POST create(header("x-note") note: String) { path "notes"; }
+    }
+}
+
+fn main() {
+    let notes = Notes::new(concord::reqwest::Client::new());
+    // A header value with a line break is refused before anything is sent.
+    let error = notes.create("a\nb").prepare().unwrap_err();
+    assert_eq!(error.delivery(), Delivery::NotSent);
+    assert!(!uncertain(&error));
+}
+```
+
+`Unknown` is a fact about this attempt only: whether the provider performed the write is learned
+from the provider (an idempotency key, a lookup by a client-chosen id), never from Concord.
 
 ### 5.12 One adapter for every operation: `concord::Endpoint`
 
@@ -1376,9 +1688,13 @@ the trait cannot host a per-operation rule. A generated operation is not a futur
 `api.op(..)` where a future is expected (`tokio::time::timeout(d, api.op(..))`) needs the adapter's
 call (`api.op(..).call()`), and rustc's E0277 does not suggest it.
 
-A provider error document on a non-2xx response is read with `received.bytes_limited(n)`: the body
-up to `n` bytes, `ErrorKind::Limit` beyond (nothing more is read); parse it with the format's
-`decode_body`. `<E as Endpoint<T>>::operation()` names the endpoint without building a request.
+A provider error document on a non-2xx response is read with `received.document::<F, D>(n)`
+(§5.11): the format's head checks and context, then the body up to `n` bytes (`ErrorKind::Limit`
+beyond; nothing more is read), then its `decode_body`. `received.bytes_limited(n)` is the raw
+read for an SDK that keeps or parses the bytes itself. `<E as Endpoint<T>>::operation()` names
+the endpoint without building a request; a concrete endpoint type also has an inherent
+`operation()` that does not need its output (`ShopOrdersCreate::operation()`), for comparing
+with `error.operation()` or `received.operation()`.
 
 ### 5.13 The SDK's own `send()`: `send policy;`
 
@@ -1404,6 +1720,57 @@ concord::api! {
     }
 }
 ```
+
+**Name the result.** Without more, the generated `send()` is documented as returning
+`<Policy as SendWith<T>>::Output`, and a caller has to open the policy's implementation to learn
+that it is `Result<T, Error>`. Declare the shape on the statement — `_` stands for each endpoint's
+output — and every generated `send()` (and its rustdoc) names the concrete type; a template that
+is not the policy's output is a compile error at the template. A `_` inside a macro invocation
+(`result!(_)`) is the macro's, not a placeholder: its input is the macro's own grammar.
+
+```rust
+use concord::{Endpoint, Json, SendWith};
+
+#[derive(Debug)]
+pub enum Error { Concord(concord::Error), Status(u16) }
+impl From<concord::Error> for Error {
+    fn from(e: concord::Error) -> Self { Self::Concord(e) }
+}
+
+#[derive(Default)]
+pub struct Policy;
+impl<T: Send> SendWith<T> for Policy {
+    type Output = Result<T, Error>;
+    async fn send<E: Endpoint<T> + Send>(&self, endpoint: E) -> Self::Output {
+        let received = endpoint.prepare()?.receive().await?;
+        if !received.status().is_success() {
+            return Err(Error::Status(received.status().as_u16()));
+        }
+        Ok(received.decode().await?)
+    }
+}
+
+concord::api! {
+    pub client Store() {
+        base "https://store.example.com";
+        format Json;
+        send Policy -> Result<_, Error>;
+        GET count() -> u64 { path "count"; }
+    }
+}
+
+// `send()` is declared as returning `impl Future<Output = Result<u64, Error>>`.
+async fn count(store: &Store) -> Result<u64, Error> {
+    store.count().send().await
+}
+
+fn main() {
+    let _ = count;
+}
+```
+
+A policy whose output does not follow one shape for every endpoint (a policy implemented for a
+few concrete types) keeps the plain `send Policy;`.
 
 A policy with state — credentials, a region, a clock — is a client value: `send signer;` names it.
 The value is required (no `?`, no default: it is the one given to the constructor), the

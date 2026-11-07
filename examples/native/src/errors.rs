@@ -71,7 +71,11 @@ impl From<concord::Error> for RenameError {
 /// Renames an item; on a non-2xx status, returns the status together with the API's problem
 /// document.
 ///
-/// Use this shape whenever an API documents an error body. Concord leaves a non-2xx response
+/// This native recipe preserves its public `reqwest::Error` and `CodecError` payloads. For a
+/// bounded error document with head checks, use `Received::document` as shown in the quickstart;
+/// its failures are `concord::Error`, which borrows rather than yields those inner errors.
+///
+/// Concord leaves a non-2xx response
 /// **unread** inside [`concord::ErrorKind::Status`]: [`concord::Error::into_response`] hands it back,
 /// and the public [`Decode::decode_body`] decodes the bytes with any format, regardless of status
 /// and without a head check. Only status errors are error documents here: `into_response` also

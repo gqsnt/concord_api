@@ -1,0 +1,55 @@
+{
+  "tickets": [
+    {
+      "id": 101,
+      "url": "https://acme.zendesk.com/api/v2/tickets/101.json",
+      "external_id": null,
+      "type": "incident",
+      "subject": "Synthetic: checkout page returns an error",
+      "raw_subject": "Synthetic: checkout page returns an error",
+      "description": "Synthetic first comment for ticket 101.",
+      "priority": "urgent",
+      "status": "open",
+      "requester_id": 2001,
+      "submitter_id": 2001,
+      "assignee_id": 3001,
+      "organization_id": 4001,
+      "group_id": 5001,
+      "tags": ["synthetic", "checkout"],
+      "custom_fields": [],
+      "via": {"channel": "api"},
+      "created_at": "2026-10-01T09:00:00Z",
+      "updated_at": "2026-10-02T10:30:00Z"
+    },
+    {
+      "id": 102,
+      "url": "https://acme.zendesk.com/api/v2/tickets/102.json",
+      "external_id": "synthetic-ext-102",
+      "type": null,
+      "subject": "Synthetic: invoice copy requested",
+      "raw_subject": "Synthetic: invoice copy requested",
+      "description": "Synthetic first comment for ticket 102.",
+      "priority": null,
+      "status": "pending",
+      "requester_id": 2002,
+      "submitter_id": 2002,
+      "assignee_id": null,
+      "organization_id": null,
+      "group_id": 5001,
+      "tags": [],
+      "custom_fields": [],
+      "via": {"channel": "email"},
+      "created_at": "2026-10-03T08:15:00Z",
+      "updated_at": "2026-10-03T08:15:00Z"
+    }
+  ],
+  "meta": {
+    "has_more": true,
+    "after_cursor": "xSynthAfter1",
+    "before_cursor": "xSynthBefore1"
+  },
+  "links": {
+    "next": "https://acme.zendesk.com/api/v2/tickets.json?page%5Bafter%5D=xSynthAfter1&page%5Bsize%5D=2",
+    "prev": "https://acme.zendesk.com/api/v2/tickets.json?page%5Bbefore%5D=xSynthBefore1&page%5Bsize%5D=2"
+  }
+}

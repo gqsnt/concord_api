@@ -1,0 +1,50 @@
+{
+  "took": 486,
+  "errors": true,
+  "items": [
+    {
+      "update": {
+        "_index": "index1",
+        "_id": "5",
+        "status": 404,
+        "error": {
+          "type": "document_missing_exception",
+          "reason": "[5]: document missing",
+          "index_uuid": "aAsFqTI0Tc2W0LCWgPNrOA",
+          "shard": "0",
+          "index": "index1"
+        }
+      }
+    },
+    {
+      "update": {
+        "_index": "index1",
+        "_id": "6",
+        "status": 404,
+        "error": {
+          "type": "document_missing_exception",
+          "reason": "[6]: document missing",
+          "index_uuid": "aAsFqTI0Tc2W0LCWgPNrOA",
+          "shard": "0",
+          "index": "index1"
+        }
+      }
+    },
+    {
+      "create": {
+        "_index": "index1",
+        "_id": "7",
+        "_version": 1,
+        "result": "created",
+        "_shards": {
+          "total": 2,
+          "successful": 1,
+          "failed": 0
+        },
+        "_seq_no": 0,
+        "_primary_term": 1,
+        "status": 201
+      }
+    }
+  ]
+}

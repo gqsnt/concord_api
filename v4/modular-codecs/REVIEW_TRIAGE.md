@@ -7,7 +7,7 @@
 | R1 | Riot's live client must not follow redirects | Done | `93f9b0e`: `http_policy` (`redirect::Policy::none()`, timeout) and `live_http_client` (HTTPS only), used by `main` | `examples/riot/tests/redirects.rs`: `send()` → `Status` 302 with the unread response; `send_raw()` → 302; the second origin receives nothing. Control: reqwest's default policy forwards `X-Riot-Token` to the second origin |
 | R2 | Validate all native header names without calling endpoints | Done | `25a52f7`: `Client::validate_header_names()`; `HeaderPlan` split into a presence-free structural pass shared with `prepare()` | `crates/concord-core/tests/header_plan.rs::the_validator_and_prepare_share_one_verdict`; `crates/concord/tests/validate_names.rs` (counters: no default, `Display` or encoder runs; uninhabited body type; each problem equals `prepare()`'s header-composition error; an earlier build step can fail first: `earlier_build_steps_fail_first`); Riot; a 480-endpoint generated SDK |
 | R3 | Seal `NativeKey` | Done | `3a836e7`: private supertrait, `HeaderName` only | `ui/native_key_sealed.rs` (the same downstream impl compiles against `dfdeed8`; its snapshot degenerated to an import error at the crate split `7ec1f4b` and was repaired after the final semantic review, S1), `ui/native_key_deref.rs` |
-| R4 | Static codec-error labels, numeric context, explicit source | Done | `ca545f0`: `CodecError::new(&'static str)`, `.at(name, u64)` (3 positions), `.with_source`, `source_unredacted()`; every creation site migrated (a dynamic label no longer compiles) | `concord-core` `compile_fail,E0308` doctest; `crates/concord-extras/tests/media.rs::decode_errors_show_positions_not_content`; `examples/native/tests/bodies.rs` (NDJSON record/line/column); `d15_surfaces.rs` S09 shows a deliberate `leak` is still possible (trust boundary) |
+| R4 | Static codec-error labels, numeric context, explicit source | Done | `ca545f0`: `CodecError::new(&'static str)`, `.at(name, u64)` (3 positions), `.with_source`, `source_unredacted()`; every creation site migrated (a dynamic label no longer compiles) | `concord-core` `compile_fail,E0308` doctest; `crates/concord-codecs/tests/media.rs::decode_errors_show_positions_not_content`; `examples/native/tests/bodies.rs` (NDJSON record/line/column); `d15_surfaces.rs` S09 shows a deliberate `leak` is still possible (trust boundary) |
 | R5 | Index native-key occurrence provenance | Done | `a4b465a`: each `KeyPath` records its owner when its contribution is recorded | `emit::tests::key_occurrence_owner_matches_a_scan_of_every_owner`; expansion timings in PERF |
 | R6 | Typed hierarchical path segments | **Deferred** (optional gate) | `1f26e91`: maintained native recipe `write_resource_segments` | Terra 6.1 XHigh test-only prototype: a static-index mutant mis-redacts; frozen report and model in the work directory |
 | R7 | Local/CI MSRV selections drifted | Done | `013de15`: one inventory (`scripts/verify.sh`) called by CI; minimum = pin = 1.99.1 | `scripts/check-ci.py` (fails on a cargo command in `ci.yml` or a stale toolchain selector; checked by adding a `cargo +1.85 test` line) |
@@ -21,7 +21,7 @@ collision negatives, isolated consumers, package contents and Riot redirect test
 
 | ID | Severity | Finding | Disposition | Evidence |
 |---|---|---|---|---|
-| X-F1 | should fix | A quoted `charset="utf-8"` followed by another parameter was refused by `Json`, `Text`, `Form`: the pinned `mime` 0.3.17 reads the value as `"utf-` | Fixed: extras read `charset` parameters with an RFC 9110 parameter scanner (tokens, quoted strings, quoted pairs); `mime` still parses type and subtype | `crates/concord-extras/tests/media.rs` (charset module), `metadata.rs::charset_parameters_are_read_exactly`; the auditor's `audit/probe` suite passes against the fix (5/5, previously 3/5) |
+| X-F1 | should fix | A quoted `charset="utf-8"` followed by another parameter was refused by `Json`, `Text`, `Form`: the pinned `mime` 0.3.17 reads the value as `"utf-` | Fixed: extras read `charset` parameters with an RFC 9110 parameter scanner (tokens, quoted strings, quoted pairs); `mime` still parses type and subtype | `crates/concord-codecs/tests/media.rs` (charset module), `metadata.rs::charset_parameters_are_read_exactly`; the auditor's `audit/probe` suite passes against the fix (5/5, previously 3/5) |
 | X-F2 | should fix | `charset=utf-8; charset=iso-8859-1` was accepted (only the first parameter read) | Fixed: a repeated `charset` is refused as ambiguous by every format that checks it | same tests |
 
 ## Fresh-use trials (R07)
@@ -33,7 +33,7 @@ unprovoked compiler error. Reports: [`fresh-terra-REPORT.md`](reports/fresh-terr
 
 | Source | Note | Disposition |
 |---|---|---|
-| Terra | no example narrows to one exact vendor media type | Added: `crates/concord-extras/tests/media.rs` (`vendor` module) quoted in `docs/CUSTOM_FORMATS.md` §5 |
+| Terra | no example narrows to one exact vendor media type | Added: `crates/concord-codecs/tests/media.rs` (`vendor` module) quoted in `docs/CUSTOM_FORMATS.md` §5 |
 | Sonnet | a payload-generic format's methods need `<F as Decode<T>>::` (E0283) | Documented (`docs/CUSTOM_FORMATS.md` §9) |
 | Sonnet | `validate_header_names().unwrap()` printed a struct dump | Fixed: `HeaderNameErrors`'s `Debug` lists the problems as lines; author guide shows the text and `reason()` |
 | Sonnet | `with_base_url` replaces the base path too | Documented (QUICKSTART) |
@@ -56,7 +56,7 @@ finding.
 | M1 | minor | error docs said output is purely static; numeric positions are format-chosen numbers | Fixed: `Error` rustdoc, CALLER_GUIDE §6 | — |
 | M2 | minor | `IgnoreContentType` is only as narrow as documented if `context` does not refuse on `Content-Type` | Fixed: `Decode::context` docs say it may read it for state, not refuse on it | — |
 | M3 | minor | RECIPES error-document text was stale (the example already guards with `status()`) | Fixed | `examples/native/src/errors.rs` |
-| M4 | minor | strict `Json` refused RFC 9110 forms (`application/json ; charset=utf-8`, `;;`) because `mime` does | Fixed (MC17): `mime` parses type and subtype only; the scanner reads parameters | `crates/concord-extras/tests/media.rs` (`charset::the_parameter_grammar_is_rfc_9110`) |
+| M4 | minor | strict `Json` refused RFC 9110 forms (`application/json ; charset=utf-8`, `;;`) because `mime` does | Fixed (MC17): `mime` parses type and subtype only; the scanner reads parameters | `crates/concord-codecs/tests/media.rs` (`charset::the_parameter_grammar_is_rfc_9110`) |
 | M5 | minor | after `into_parts`, `.header(ACCEPT, v)` appends to the suggestion | Documented (MIGRATION, AUTHOR_GUIDE §5.8): `headers_mut().insert` replaces | — |
 | M6 | minor | stale small docs (macro first token, MAINTAINERS current campaign, core dependencies, `extras` feature list); `CODEC_ERROR_CONTEXT` not re-exported | Fixed; the facade re-exports `CODEC_ERROR_CONTEXT` | — |
 | M7 | minor | a stray empty file `A` tracked at the root since `df37383` | Removed | — |
@@ -95,7 +95,7 @@ parameter scanner with `mime` found the scanner right wherever they differ). No 
 | MC19 | note | outcome accepted; the rationale understated the cost (values decide which error an unbuildable endpoint reports; an encoder runs first) | MC19 rewritten to state the trade-off and the disagreement | — |
 | MC17 | note | the scanner is a second, hand-written parser; say so | MC17 says so | — |
 | N1 | minor | AUTHOR_GUIDE §5.1, MIGRATION, SEMANTICS §7 and the extras crate table did not mention the repeated-charset rule | Fixed (`Json`, `Form`: charset absent or once and UTF-8) | — |
-| N2 | minor | `Text` refused a repeated equal UTF-8 charset while accepting more ambiguous fields it cannot read | Fixed: `Text` refuses a readable non-UTF-8 charset, repeated or not, and nothing else (MC17) | `crates/concord-extras/tests/media.rs` (`charset::a_repeated_charset_is_refused`) |
+| N2 | minor | `Text` refused a repeated equal UTF-8 charset while accepting more ambiguous fields it cannot read | Fixed: `Text` refuses a readable non-UTF-8 charset, repeated or not, and nothing else (MC17) | `crates/concord-codecs/tests/media.rs` (`charset::a_repeated_charset_is_refused`) |
 | N3 | minor | CUSTOM_FORMATS §5 suggested a wrapper named like the format (`Versioned<T>`) and split an excerpt from its follow-up | Fixed: `WithVersion<T>`, paragraph moved after the follow-up | — |
 
 ## Second targeted re-review of all corrections (fresh Sol 6.1 XHigh, `3fa14b7`)

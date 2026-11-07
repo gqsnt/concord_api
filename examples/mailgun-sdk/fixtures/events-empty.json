@@ -1,0 +1,7 @@
+{
+  "items": [],
+  "paging": {
+    "next": "__ORIGIN__/v3/mg.example.test/events/still-has-a-next-link",
+    "previous": "__ORIGIN__/v3/mg.example.test/events/page-two"
+  }
+}

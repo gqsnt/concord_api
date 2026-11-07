@@ -29,7 +29,7 @@ echo "consumer logs: $scratch"
 # The metadata (about 50 KB) goes to Python as a file, never as an argument: Windows limits a
 # whole command line to 32,767 characters.
 printf '%s' "$metadata" >"$scratch/metadata.json"
-crates=(concord-core concord-macros concord-extras concord concord-pagination)
+crates=(concord-core concord-codecs concord-extras concord-macros concord concord-pagination concord-retry concord-auth concord-ratelimit)
 source_dir="$root/crates"
 if [[ -n $packaged ]]; then
   packaged=$(cd "$packaged" && pwd)
@@ -56,7 +56,7 @@ fi
 # directory, while separate cargo invocations still isolate each feature selection.
 export CARGO_TARGET_DIR="$scratch/target"
 status=0
-for consumer in core-only facade-no-extras extras-core facade-full facade-json-only facade-gzip streaming phase-a-dx; do
+for consumer in core-only facade-no-extras extras-core codecs-json codecs-csv codecs-sse extras-legacy facade-full facade-json-only facade-gzip streaming phase-a-dx retry-only auth-only ratelimit-only; do
   destination="$scratch/$consumer"
   cp -R "$root/checks/consumers/$consumer" "$destination"
   # Rewrite only Concord dependency paths; retain the fixture's authored feature selection.
@@ -65,15 +65,15 @@ import json, pathlib, re, sys
 manifest, source, metadata, packaged = sys.argv[1:]
 versions = {p['name']: p['version'] for p in json.loads(pathlib.Path(metadata).read_text())['packages']}
 paths = {name: str(pathlib.Path(source) / (name + '-' + versions[name] if packaged else name))
-         for name in ('concord-core', 'concord-macros', 'concord-extras', 'concord', 'concord-pagination')}
+         for name in ('concord-core', 'concord-codecs', 'concord-extras', 'concord-macros', 'concord', 'concord-pagination', 'concord-retry', 'concord-auth', 'concord-ratelimit')}
 p = pathlib.Path(manifest)
 text = re.sub(r'path = "../../../crates/([^"]+)"',
               lambda m: 'path = ' + json.dumps(paths[m[1]]), p.read_text())
 text += '\n[patch.crates-io]\n'
-# concord-pagination is patched only where a consumer uses it: an unused patch would make cargo
+# Optional crates are patched only where a consumer uses them: an unused patch would make cargo
 # rewrite the lockfile of a consumer that keeps its own (facade-gzip, fetched with --locked).
 text += ''.join(name + ' = { path = ' + json.dumps(path) + ' }\n' for name, path in paths.items()
-                if name != 'concord-pagination' or 'concord-pagination' in text)
+                if name not in ('concord-pagination', 'concord-retry', 'concord-extras', 'concord-auth', 'concord-ratelimit') or name in text)
 p.write_text(text)
 PY
   # A fixture with dependencies outside the workspace graph (facade-gzip: reqwest's gzip support)
@@ -87,6 +87,7 @@ PY
   # Unit/integration and doc counts are checked separately: a doctest cannot mask a missing test.
   expected=3
   docs=0
+  if [[ $consumer == codecs-json || $consumer == codecs-csv || $consumer == codecs-sse || $consumer == extras-legacy ]]; then expected=1; fi
   if [[ $consumer == facade-json-only ]]; then expected=2; docs=1; fi
   if [[ $consumer == facade-gzip ]]; then expected=4; fi
   # The independent first-use consumer of the consolidated interface (Gate A): its own tests.
@@ -99,9 +100,16 @@ PY
   if ! (cd "$destination" && cargo tree --offline -e normal --prefix none) >"$destination/tree.log" 2>&1; then failed=1; fi
   forbidden=''
   case "$consumer" in
-    core-only) forbidden='concord-macros|concord-extras|concord|serde_json' ;;
-    facade-no-extras) forbidden='concord-extras|serde_json|serde_urlencoded' ;;
+    ratelimit-only) forbidden='concord|concord-core|concord-macros|concord-codecs|concord-extras|concord-retry|concord-auth|reqwest|tokio|serde' ;;
+    auth-only) forbidden='concord|concord-core|concord-macros|concord-codecs|concord-extras|concord-retry|reqwest|tokio|serde' ;;
+    retry-only) forbidden='concord|concord-core|concord-macros|concord-codecs|concord-extras|reqwest|tokio' ;;
+    core-only) forbidden='concord-macros|concord-codecs|concord-extras|concord|serde_json' ;;
+    facade-no-extras) forbidden='concord-codecs|concord-extras|serde_json|serde_urlencoded' ;;
     extras-core) forbidden='concord-macros|concord' ;;
+    codecs-json) forbidden='concord-macros|concord-extras|concord|serde_urlencoded|csv|csv-core' ;;
+    codecs-csv) forbidden='concord-macros|concord-extras|concord|serde_json|serde_urlencoded' ;;
+    codecs-sse) forbidden='concord-macros|concord-extras|concord|serde|serde_json|serde_urlencoded' ;;
+    extras-legacy) forbidden='concord-macros|concord' ;;
     facade-json-only) forbidden='serde_urlencoded' ;;
     # csv + jsonl only: the form encoder must not arrive with the streaming formats.
     streaming) forbidden='serde_urlencoded' ;;
@@ -117,8 +125,8 @@ PY
   if [[ $consumer == facade-no-extras || $consumer == facade-full ]]; then
     if ! (cd "$destination" && cargo tree --offline -e features -i concord) >"$destination/features.log" 2>&1; then failed=1; fi
     if [[ $consumer == facade-no-extras ]]; then
-      features='; no concord extras, json, form or concord-extras feature'
-      if grep -Eq 'concord feature "(extras|json|form|concord-extras)"' "$destination/features.log"; then failed=1; fi
+      features='; no concord extras, json, form or concord-codecs feature'
+      if grep -Eq 'concord feature "(extras|json|form|concord-codecs)"' "$destination/features.log"; then failed=1; fi
     elif ! grep -q 'concord feature "extras"' "$destination/features.log"; then
       failed=1
     else

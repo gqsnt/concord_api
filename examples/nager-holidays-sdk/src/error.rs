@@ -32,13 +32,6 @@ pub struct Error {
 }
 
 impl Error {
-    pub(crate) fn with_meta(source: concord::Error, meta: ResponseMeta) -> Self {
-        Self {
-            source,
-            meta: Some(Box::new(meta)),
-        }
-    }
-
     /// Classifies HTTP 400 separately from other statuses and Concord failures.
     pub fn kind(&self) -> ErrorKind {
         match self.source.kind() {
@@ -75,7 +68,7 @@ impl Error {
 
 impl From<concord::Error> for Error {
     fn from(source: concord::Error) -> Self {
-        let meta = source.meta().map(Box::new);
+        let meta = source.head_meta().map(Box::new);
         Self { source, meta }
     }
 }

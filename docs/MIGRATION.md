@@ -5,7 +5,9 @@ maintenance release; summary in the [changelog](../CHANGELOG.md)), then the two 
 (the modular V4), then older ones:
 
 - [To the consolidated interface](#to-the-consolidated-interface) — additive: existing code
-  compiles; the new response, body, stream and pagination boundaries replace SDK plumbing.
+  compiles (one rare exception: a generated name, below); the new response, body, stream and
+  pagination boundaries, declared limits and send results, parameter groups and `query(..)` values
+  replace SDK plumbing, and the standard formats moved to `concord-codecs`.
 - [From 4.1 to 4.2](#from-41-to-42) — same DSL, crates, codec contracts and toolchain; some
   declarations that 4.1 rejected compile, advice is exact, and one rare `macro_rules!` case changes
   meaning.
@@ -31,9 +33,19 @@ concord-example-quickstart`).
 
 ## To the consolidated interface
 
-Nothing is removed: `send`, `send_raw`, `into_parts`, `Decoder::{decode, finish}`, the reader
-`open`/`open_for` methods and the pagination engine work as before. Four kinds of SDK code can
-shrink.
+Nothing is removed: `send`, `send_raw`, `into_parts`, `Decoder::{decode, finish}`,
+`decode_limited`, `bytes_limited`, `Error::meta()`, the reader `open`/`open_for` methods, the
+pagination engine and the `concord-extras` crate work as before. The paragraphs below say which SDK
+code can shrink and, where adopting a new form changes what an SDK's own callers observe, what
+changes for them.
+
+**One new generated name.** Every generated endpoint type now has an inherent
+`operation() -> concord::Operation` (its declared identity, without naming the output). Like
+`prepare` and the `set_*` controls, the name is the generated type's: an SDK that added its own
+inherent `operation` (or an item of that name) to a generated endpoint type gets `E0592` and
+deletes it — the generated one returns the same identity as `<E as Endpoint<T>>::operation()`.
+A `use concord::Endpoint;` that only served `GeneratedType::operation()` becomes unused (a
+warning; an error under `-D warnings`) and can be removed.
 
 **Reading response metadata.** Code that took the request apart only to look at the head before
 decoding (a fragment of the old form; it does not compile on its own):
@@ -75,6 +87,93 @@ A request you edit natively (a `Link` URL) goes through `Decoder::execute(&clien
 which returns the same `Received`; a native transport failure converts with
 `decoder.transport_error(e)`.
 
+**Metadata beside a value or an error.** A policy that cloned the head before decoding, to pair it
+with the value or with the error (a fragment of the old form; it does not compile on its own):
+
+```rust,ignore
+// Before (still compiles; does not need to be written any more).
+let meta = received.meta();
+match received.decode().await {
+    Ok(value) => Ok((value, meta)),
+    Err(error) => Err(SdkError { error, meta: Some(meta) }),
+}
+```
+
+takes the value with its head from `Received::decode_with_meta()` (or
+`decode_limited_with_meta(n)`), and the head of a failure from the error:
+
+```rust
+# use concord::Json;
+# #[derive(serde::Deserialize)] pub struct Summary { pub total: u64 }
+# concord::api! { pub client Ledger { base "https://ledger.example.test"; format Json;
+#     GET summary(id: u64) -> Summary { path "summary/{id}"; } } }
+use concord::ResponseMeta;
+
+/// The SDK's error keeps the response head of any failure after one arrived.
+pub struct SdkError {
+    pub error: concord::Error,
+    pub meta: Option<ResponseMeta>,
+}
+
+impl From<concord::Error> for SdkError {
+    fn from(error: concord::Error) -> Self {
+        let meta = error.head_meta(); // `None` only when no response head arrived
+        Self { error, meta }
+    }
+}
+
+async fn summary(api: &Ledger, id: u64) -> Result<(Summary, ResponseMeta), SdkError> {
+    let received = api.summary(id).prepare()?.receive().await?;
+    Ok(received.decode_with_meta().await?)
+}
+```
+
+`Error::head()` (borrowed) and `Error::head_meta()` (owned) are `Some` for every error raised after
+a response head arrived: `Status`, `Metadata`, and a `Decode`, `Limit` or `Transport` error while
+the body was read. `Error::meta()` keeps its contract — `Some` only for a `Status` or `Metadata`
+error, exactly when `into_response()` returns the response — so code that reads `meta()` or
+`status()` keeps its meaning; the status of a decode failure is `error.head().map(|h| h.status())`.
+
+**Provider error documents.** A policy that read an error document with
+`received.bytes_limited(n)` and then `<Json as Decode<D>>::decode_body((), bytes)` skipped the
+format's head check and `Context`. `received.document::<Json, D>(n).await` runs both before
+reading, reads at most `n` bytes and returns `(ResponseMeta, Result<D, Error>)` for any status: the
+head is kept whatever happened to the document, and a body that does not decode stays readable
+through `error.body_unredacted()`. What the SDK's callers can notice: a document whose
+`Content-Type` the format refuses is now a `Metadata` error instead of being parsed. For a provider
+that labels its errors loosely, read it with `document::<IgnoreContentType<Json>, D>`, as the
+[quick start](QUICKSTART.md#4-configure-the-client-call-handle-the-result) does.
+
+**Bounds declared once.** A policy that called `received.decode_limited(n)` with a fixed `n`
+declares `limit N;` on the client, a scope or the endpoint (the nearest wins) and calls
+`received.decode()` (or `decode_with_meta()`). The bound travels with the endpoint's handling, so
+the generated `send()` and a caller's own `prepare()?.send()` apply it too: a caller that read an
+unbounded body through `prepare()` now gets `ErrorKind::Limit` beyond `N`. A bound chosen at run
+time stays `decode_limited(n)`, which replaces the declared one for that call. `limit` on an
+endpoint without `->` or with `-> stream` does not compile
+([author guide](AUTHOR_GUIDE.md#510a-bounding-finite-bodies-limit)).
+
+**Header fields.** A counter parsed with `to_str()` and `parse::<u64>()` (which accepts `+5`), or a
+request id read with `headers().get(name)` (the first of several lines), becomes
+`concord::field::unsigned(headers, name)` or `field::single(headers, name)` on any `HeaderMap`
+(`ResponseMeta::headers()`, a native response's), or the same methods of a `ResponseHead`
+(`received.head().unsigned(name)`, `ResponseHead::single`, also on `error.head()`). Both return
+`Ok(None)` for an absent field and a `concord::FieldError` (`Repeated`, `Invalid`, `Overflow`) that
+never quotes the value. An SDK that switches stops accepting a signed or repeated value its own
+parser took, which its callers can notice.
+
+**Failed writes.** An SDK that classified ambiguous writes by hand reads `Error::delivery()`
+(`concord::Delivery`): `NotSent` when Concord refused the request while building it
+(`ErrorKind::Build`), `Answered` once a response head arrived (whatever then happened to the body),
+`Unknown` otherwise. A rule "`kind() == ErrorKind::Build` means not sent" is
+`delivery() == Delivery::NotSent`. A rule that also took a connect error
+(`transport().is_some_and(|e| e.is_connect())`) as "not sent" is not what `delivery()` says: a
+refused connection is `Unknown`, because the client may have followed a redirect from a server that
+performed the write. An SDK that accepts its caller's `reqwest::Client` and moves to `delivery()`
+therefore reports such a write as uncertain where it reported it as not sent, which its callers
+observe; only an SDK that builds its own client with redirects and retries off may keep the connect
+rule ([author guide](AUTHOR_GUIDE.md#511b-a-write-that-may-have-happened-errordelivery)).
+
 **Streaming endpoints.** An endpoint declared without `->` drains its body; a watch or an export
 declared that way and opened with `send_raw()` + `reader.open_for(response, "Name")` should
 declare its stream instead: `-> stream T` with an incremental `response` format returns the reader
@@ -93,7 +192,58 @@ wrapper format must forward `encode_body` too.
 `while let Some(page) = pages.next().await` loop that ignored the finish report becomes
 `while let Some(page) = pages.next_page().await?`, which fails on a cap or a provider error instead
 of ending silently. `JobsReport::into_resume` replaces cloning `discovery.resume` before
-`into_rerun`.
+`into_rerun`. A hand-written `Link` tokenizer becomes `concord_pagination::link::parse` and
+`link::relation` (feature `link`); the parser is strict (the first `rel` wins; a bare `rel`, a
+trailing `;` or an empty unquoted value is an error), so an SDK that adopts it may refuse a header
+its tokenizer accepted. Offset arithmetic becomes `next_offset(offset, limit, len, total)`, and a
+`match` on `PagesError::Provider` that only extracted the provider's error becomes
+`provider_error()` or `into_provider_error()`. Item-oriented code that needs each page's metadata
+can opt into `Pages::item_events()`.
+
+**The result of `send()`.** A client with `send Policy;` can declare the shape of the result:
+`send Policy -> Result<_, Error>;`, where `_` stands for each endpoint's output. The generated
+`send()` then returns `impl Future<Output = Result<Item, Error>> + Send` and its rustdoc names that
+type, where `send Policy;` shows `<Policy as SendWith<Item>>::Output`. The template must be the
+policy's `Output` exactly (otherwise the declaration fails at the template), so callers' code
+compiles and behaves as before: only the signature and documentation they read change. A policy
+implemented for a few concrete outputs keeps `send Policy;`; a `_` inside a macro invocation
+(`result!(_)`) is not a placeholder
+([author guide](AUTHOR_GUIDE.md#513-the-sdks-own-send-send-policy)).
+
+**Helpers that send through the policy.** SDK code written once over several endpoints (every page
+of a listing) that had to be handed the policy value, or that called `prepare()?.send()` and so
+bypassed the policy, bounds on `concord::Sends<O>` and calls `send()`: every endpoint of a client
+with a send policy implements it, `O` being the policy's output for that endpoint. A client
+without a policy has no `Sends`: its `send()` is `prepare()?.send()`, which generic code reaches
+through `Endpoint<T>`.
+
+**Parameter groups.** Optional or initialized values repeated on many endpoints (list selectors, an
+"act as this account" header), or a hand-written trait that forwarded each endpoint's setters,
+become one `params Name(..);` on the client and `..Name` in each endpoint's values. The endpoints
+keep the same `set_x`/`maybe_x` setters and the values go on the wire where `..Name` is written, so
+callers need no change when the group is included where the values were. The group also generates
+a trait `Name` in the declaring module, implemented by every endpoint that includes it, for SDK
+code over those endpoints: a forwarding trait can shrink to default methods bounded on it, or go.
+Required values stay on each endpoint
+([author guide](AUTHOR_GUIDE.md#21-parameter-groups-one-fact-many-endpoints)).
+
+**Values that choose their keys.** An SDK that wrote one wrapper endpoint per exclusive cursor
+(`before`, `after`, `around`), or edited the URL after `into_parts()` to add keys named at run time
+(`param_<name>`), declares one value `query(..) x?: T` whose type implements `concord::QueryPairs`.
+Its pairs are written where the value is declared among the endpoint's own parameters; it is an
+endpoint value (a parameter group may hold it) and cannot be `#[sensitive]`, so a secret keeps its
+own keyed placement. The SDK's callers then set one value instead of choosing among wrapper
+methods, an API change the SDK makes deliberately
+([author guide](AUTHOR_GUIDE.md#41a-values-that-choose-their-own-keys-query)).
+
+**The codecs package.** The standard formats are in `concord-codecs` (features `json`, `form`,
+`stream`, `csv`, `jsonl`, `multipart`, `sse`; none on by default). A crate that depends on
+`concord` and its features changes nothing. A crate that depends on `concord-extras` keeps
+compiling: it is now a compatibility facade that re-exports `concord_codecs::*` (the same items, so
+values pass between both paths) and forwards the same feature names; new code depends on
+`concord-codecs`. A custom format that parsed `Content-Type` itself can call
+`concord_codecs::check_content_type(head, &["application/json"], Charset::Utf8)` from its
+`check_content_type` (`concord` does not re-export it).
 
 ## From 4.1 to 4.2
 

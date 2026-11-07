@@ -6,9 +6,9 @@
 
 use std::fmt;
 
-use concord::Received;
 use concord::reqwest::header::{HeaderMap, LINK, RETRY_AFTER};
 use concord::reqwest::{StatusCode, Url};
+use concord::{Received, field};
 
 use crate::link::{self, LinkError, Links};
 
@@ -29,7 +29,8 @@ impl<T> Response<T> {
     }
 }
 
-/// GitLab's offset-pagination headers, each `None` when absent, empty or not a number.
+/// GitLab's offset-pagination headers, each `None` when absent, repeated, empty or not unsigned
+/// ASCII decimal digits (surrounding spaces and tabs are allowed).
 ///
 /// GitLab documents that `x-total` and `x-total-pages` (and `rel="last"`) are not sent when a
 /// query returns more than 10,000 records, so a missing total is not "zero" and not "last page".
@@ -77,7 +78,7 @@ impl ResponseMeta {
                 .and_then(|value| value.to_str().ok())
                 .map(str::trim)
         };
-        let number = |name: &str| text(name).and_then(|value| value.parse::<u64>().ok());
+        let number = |name: &str| field::unsigned(headers, name).ok().flatten();
         Self {
             status,
             request_id: text("x-request-id")
@@ -95,10 +96,7 @@ impl ResponseMeta {
             next_page_announced: headers
                 .get("x-next-page")
                 .is_some_and(|value| !value.as_bytes().trim_ascii().is_empty()),
-            retry_after: headers
-                .get(RETRY_AFTER)
-                .and_then(|value| value.to_str().ok())
-                .and_then(|value| value.trim().parse().ok()),
+            retry_after: number(RETRY_AFTER.as_str()),
             links: link::parse(headers.get_all(LINK), url),
         }
     }
@@ -148,5 +146,53 @@ impl fmt::Debug for ResponseMeta {
             .field("retry_after", &self.retry_after)
             .field("links", &self.links)
             .finish()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn numeric_headers_require_one_unsigned_field() {
+        for (values, expected) in [
+            (&["+42"][..], None),
+            (&["42", "43"][..], None),
+            (&[" \t42\t "][..], Some(42)),
+        ] {
+            let mut headers = HeaderMap::new();
+            for name in [
+                "x-page",
+                "x-per-page",
+                "x-prev-page",
+                "x-next-page",
+                "x-total",
+                "x-total-pages",
+                "retry-after",
+            ] {
+                for value in values {
+                    headers.append(name, value.parse().unwrap());
+                }
+            }
+            let meta = ResponseMeta::from_head(
+                StatusCode::OK,
+                &headers,
+                &Url::parse("https://gitlab.example.com/api/v4/projects/8/issues").unwrap(),
+            );
+            let pagination = meta.pagination();
+            assert_eq!(
+                [
+                    pagination.page,
+                    pagination.per_page,
+                    pagination.prev_page,
+                    pagination.next_page,
+                    pagination.total,
+                    pagination.total_pages,
+                    meta.retry_after(),
+                ],
+                [expected; 7],
+                "{values:?}",
+            );
+        }
     }
 }

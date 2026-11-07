@@ -94,18 +94,12 @@ impl OpenMeteo {
             operation = operation.set_forecast_days(days);
         }
         let received = operation.prepare()?.receive().await?;
-        let meta = received.meta();
         if !received.status().is_success() {
-            let document = match <Json as Decode<Problem>>::check_content_type(&received.head()) {
-                Err(error) => Err(ErrorBodyError::Metadata(error)),
-                Ok(()) => match received.bytes_limited(ERROR_BODY_LIMIT).await {
-                    Err(error) => Err(ErrorBodyError::Read(error)),
-                    Ok(bytes) => <Json as Decode<Problem>>::decode_body((), bytes)
-                        .map_err(ErrorBodyError::Decode),
-                },
-            };
+            let (meta, document) = received.document::<Json, Problem>(ERROR_BODY_LIMIT).await;
+            let document = document.map_err(ErrorBodyError::from);
             return Err(Error::Provider(Box::new(ProviderError { meta, document })));
         }
+        let meta = received.meta();
         let media = match format {
             ResponseFormat::Json => {
                 <Json as Decode<Forecast>>::check_content_type(&received.head())
@@ -113,13 +107,7 @@ impl OpenMeteo {
             ResponseFormat::Csv => csv::check_head(&received.head()),
         };
         media.map_err(|source| Error::response(ResponseErrorKind::Media, source, &meta))?;
-        let bytes = received
-            .bytes_limited(FORECAST_BODY_LIMIT)
-            .await
-            .map_err(|source| Error::Concord {
-                source,
-                meta: Some(Box::new(meta.clone())),
-            })?;
+        let bytes = received.bytes_limited(FORECAST_BODY_LIMIT).await?;
         let data = match format {
             ResponseFormat::Json => {
                 let forecast = <Json as Decode<Forecast>>::decode_body((), bytes)

@@ -25,7 +25,16 @@ credentials), retries, rate limiting, pagination or transport configuration (tim
 TLS, redirects, connection pools). Those stay in your code and in the `reqwest::Client` you pass
 in; [`examples/native`](examples/native) shows how to compose them, and
 [`examples/riot`](examples/riot) is a complete, sourced client for part of the Riot Games API,
-tested offline (its README says how to copy it out of this workspace).
+tested offline (its README says how to copy it out of this workspace). Separate, optional crates
+offer building blocks for some of these jobs — credentials and a token cache, bounded application
+attempts, keyed admission, page traversal (see the table under [Documentation](#documentation)).
+Neither `concord` nor its default features depend on them, and none of them acts unless your code
+calls it.
+
+The workspace also holds 55 SDKs written with Concord ([`examples/*-sdk`](examples)), from small
+public-data APIs to Stripe, Kubernetes and S3. They are pinned reference slices of real APIs,
+tested offline against synthetic fixtures, and serve as Concord's measurement corpus — not
+complete or published SDKs.
 
 ## Example
 
@@ -34,7 +43,7 @@ against a local stand-in server by `cargo test -p concord-example-quickstart`:
 
 ```rust
 use concord::reqwest::{self, header::AUTHORIZATION};
-use concord::{Decode, Json};
+use concord::{IgnoreContentType, Json};
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Deserialize)]
@@ -92,16 +101,21 @@ pub async fn run(base_url: &str, token: String) -> Result<(), Box<dyn std::error
     let open = project.tasks().set_done(false).send().await?; // GET ...?done=false&limit=20
     println!("{} open task(s)", open.len());
 
-    // This API rejects an empty title: a non-2xx status is an error that keeps the response.
-    match project.create(NewTask::default()).send().await {
-        Ok(task) => println!("unexpectedly created task #{}", task.id),
-        Err(error) if error.status().is_some() => {
-            let response = error.into_response()?; // a status error keeps its response
-            let status = response.status();
-            let problem = <Json as Decode<Problem>>::decode_body((), response.bytes().await?)?;
-            println!("rejected with {status}: {}", problem.title);
-        }
-        Err(error) => return Err(error.into()), // any other kind of error propagates
+    // This API rejects an empty title: read its error document with a 64 KiB bound.
+    let received = project
+        .create(NewTask::default())
+        .prepare()?
+        .receive()
+        .await?;
+    if received.status().is_success() {
+        let task = received.decode().await?;
+        println!("unexpectedly created task #{}", task.id);
+    } else {
+        // Preserve this API's policy of accepting JSON regardless of the media label.
+        let (meta, problem) = received
+            .document::<IgnoreContentType<Json>, Problem>(64 * 1024)
+            .await;
+        println!("rejected with {}: {}", meta.status(), problem?.title);
     }
     Ok(())
 }
@@ -130,9 +144,11 @@ over a format of yours.
 
 ## The transport boundary
 
-You build the `reqwest::Client` and pass it to `new`; Concord uses it for every request of that
-client and never configures it. One `send()` is one `reqwest::Client::execute` — no retry, no
-extra request. For anything the declaration does not cover there is a native exit:
+You build the `reqwest::Client` and pass it to `new`; Concord's default execution path uses it
+without configuring it. `Prepared::send` and generated `send()` without a client send policy each
+perform one `reqwest::Client::execute`, with no Concord retry or extra request. A client
+`send policy;` delegates generated `send()` to `SendWith<T>::send`; that policy may sign, make
+sub-requests or repeat requests. For anything the declaration does not cover there is a native exit:
 
 - `prepare()` builds the native `reqwest::Request` without any I/O;
 - `prepare()?.into_parts()` returns your client, that request and the endpoint's decoder, so you
@@ -169,8 +185,9 @@ tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
 | `form` | no | the `Form` format (`request Form;`, `application/x-www-form-urlencoded`), using serde and serde_urlencoded; implies `extras` |
 | `reqwest-defaults` | yes | reqwest's own default features (TLS, HTTP/2, system proxy) |
 
-The runtime lives in `concord-core` and the standard formats in `concord-extras`; `concord`
-re-exports both with the `api!` macro, so an application depends on `concord` only. With
+The runtime lives in `concord-core` and the standard formats in `concord-codecs` (`concord-extras`
+remains as a compatibility facade over it); `concord` re-exports both with the `api!` macro, so an
+application depends on `concord` only. With
 `default-features = false` there is no standard format at all (a format of your own works the
 same: implement `concord::Encode`/`concord::Decode`); enable `extras`, `json` or `form` for them.
 A crate that only offers formats can depend on `concord-core` instead.
@@ -194,6 +211,10 @@ breaking Concord release.
 | What goes on the wire: `Accept` and `Content-Type` | [Author guide, 5.8](docs/AUTHOR_GUIDE.md#58-what-goes-on-the-wire-accept-and-content-type) |
 | Error documents, timeouts, streaming, retries, pagination; patterns from other APIs | [Recipes](docs/RECIPES.md), [`examples/compat`](examples/compat) |
 | Bounded page and job traversal for an SDK: dependent cursors, known page plans, result manifests, budgets, checkpoints, reports (core Concord still does not paginate; this is a separate crate that does not depend on it) | [`concord-pagination`](crates/concord-pagination/README.md) |
+| The standard formats (`Json`, `Text`, `Binary`, `Form`, CSV, JSON Lines, server-sent events, multipart), each an ordinary implementation of the public `Encode`/`Decode`/`Incremental` traits (server-sent events are incremental only); the facade re-exports them through its features | [`concord-codecs`](crates/concord-codecs/README.md) |
+| Sensitive Basic/Bearer credentials and a scoped, cancellation-safe token cache over your own acquisition closure (pilot: persistence, signing and retries stay in the SDK) | [`concord-auth`](crates/concord-auth/README.md) |
+| Bounded application attempts with explicit replay permission, `Retry-After` parsing and a prepared-request adapter (pilot) | [`concord-retry`](crates/concord-retry/README.md) |
+| Process-local keyed admission and concurrency leases for SDK-supplied keys (pilot, not accepted as a default; no provider quotas are built in) | [`concord-ratelimit`](crates/concord-ratelimit/README.md) |
 | Build an SDK around a declaration: domain values to operations, named workflows, bounded traversal, response metadata, operations the SDK does not declare | [Recipes: SDK and application patterns](docs/RECIPES.md#sdk-and-application-patterns), [`examples/app`](examples/app), [`examples/extension`](examples/extension) |
 | Read a compile error | [Diagnostics](docs/DIAGNOSTICS.md) |
 | Upgrade from format words and the body-only codec traits, from in-place formats, from `via`, from the V4 alpha or from V3 | [Migration](docs/MIGRATION.md) |

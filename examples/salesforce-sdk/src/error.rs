@@ -6,10 +6,11 @@ use std::fmt;
 
 use concord::reqwest::StatusCode;
 use concord::stream::{OpenError, OpenErrorKind, ReadError};
-use concord::{Decode, ErrorKind, Json};
+use concord::{Decoder, ErrorKind, IgnoreContentType, Json};
 
 use crate::bulk::JobState;
 use crate::model::{ApiErrorBody, ApiErrorDoc};
+use crate::transport::ApiUsage;
 
 /// The most bytes of an error document read into memory; a longer one is not decoded.
 pub const MAX_ERROR_BODY: usize = 64 * 1024;
@@ -71,6 +72,17 @@ impl SfError {
     pub fn api(&self) -> Option<&ApiFailure> {
         match self {
             SfError::Api(failure) => Some(failure),
+            _ => None,
+        }
+    }
+
+    /// The response's `Sforce-Limit-Info` API usage, when present on a Concord or API failure.
+    pub fn api_usage(&self) -> Option<ApiUsage> {
+        match self {
+            Self::Concord(error) => error
+                .head()
+                .and_then(|head| ApiUsage::from_headers(head.headers())),
+            Self::Api(failure) => failure.api_usage(),
             _ => None,
         }
     }
@@ -171,6 +183,7 @@ impl std::error::Error for SfError {}
 pub struct ApiFailure {
     operation: Option<&'static str>,
     status: StatusCode,
+    api_usage: Option<ApiUsage>,
     errors: Vec<ApiErrorDoc>,
     body: ErrorBodyState,
 }
@@ -192,36 +205,31 @@ pub enum ErrorBodyState {
 }
 
 impl ApiFailure {
-    async fn read(
-        operation: Option<&'static str>,
-        mut response: concord::reqwest::Response,
-    ) -> Self {
-        let status = response.status();
-        let mut bytes = Vec::new();
-        let body = loop {
-            match response.chunk().await {
-                Ok(Some(chunk)) => {
-                    if bytes.len() + chunk.len() > MAX_ERROR_BODY {
-                        break ErrorBodyState::TooLarge;
+    async fn read(operation: Option<&'static str>, response: concord::reqwest::Response) -> Self {
+        let (meta, document) = Decoder::drain()
+            .receive(response)
+            .document::<IgnoreContentType<Json>, ApiErrorBody>(MAX_ERROR_BODY)
+            .await;
+        let (errors, body) = match document {
+            Ok(doc) => (doc.into_vec(), ErrorBodyState::Decoded),
+            Err(error) => {
+                let body = match error.kind() {
+                    ErrorKind::Decode
+                        if error.body_unredacted().is_some_and(|body| body.is_empty()) =>
+                    {
+                        ErrorBodyState::Empty
                     }
-                    bytes.extend_from_slice(&chunk);
-                }
-                Ok(None) if bytes.is_empty() => break ErrorBodyState::Empty,
-                Ok(None) => break ErrorBodyState::Decoded,
-                Err(_) => break ErrorBodyState::Unreadable,
+                    ErrorKind::Decode => ErrorBodyState::NotAnErrorDocument,
+                    ErrorKind::Limit => ErrorBodyState::TooLarge,
+                    _ => ErrorBodyState::Unreadable,
+                };
+                (Vec::new(), body)
             }
-        };
-        let (errors, body) = if body == ErrorBodyState::Decoded {
-            match <Json as Decode<ApiErrorBody>>::decode_body((), bytes.into()) {
-                Ok(doc) => (doc.into_vec(), ErrorBodyState::Decoded),
-                Err(_) => (Vec::new(), ErrorBodyState::NotAnErrorDocument),
-            }
-        } else {
-            (Vec::new(), body)
         };
         Self {
             operation,
-            status,
+            status: meta.status(),
+            api_usage: ApiUsage::from_headers(meta.headers()),
             errors,
             body,
         }
@@ -235,6 +243,11 @@ impl ApiFailure {
     /// The HTTP status.
     pub fn status(&self) -> StatusCode {
         self.status
+    }
+
+    /// The `Sforce-Limit-Info` API usage returned with this failed response.
+    pub fn api_usage(&self) -> Option<ApiUsage> {
+        self.api_usage
     }
 
     /// The decoded error entries.

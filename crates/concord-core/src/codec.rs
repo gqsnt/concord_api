@@ -384,6 +384,32 @@ impl<'a> ResponseHead<'a> {
         self.headers
     }
 
+    /// The one field line of `name`, if present ([`field::single`](crate::field::single) on this
+    /// head's headers).
+    ///
+    /// # Errors
+    ///
+    /// [`FieldError::Repeated`].
+    pub fn single(
+        &self,
+        name: impl reqwest::header::AsHeaderName,
+    ) -> Result<Option<&'a HeaderValue>, FieldError> {
+        crate::field::single(self.headers, name)
+    }
+
+    /// The field `name` as a non-negative decimal integer
+    /// ([`field::unsigned`](crate::field::unsigned) on this head's headers).
+    ///
+    /// # Errors
+    ///
+    /// [`FieldError::Repeated`], [`FieldError::Invalid`] or [`FieldError::Overflow`].
+    pub fn unsigned(
+        &self,
+        name: impl reqwest::header::AsHeaderName,
+    ) -> Result<Option<u64>, FieldError> {
+        crate::field::unsigned(self.headers, name)
+    }
+
     /// The `Content-Type` field lines, without interpretation: which forms are acceptable is the
     /// format's policy, and media types are parsed by the format (this crate has no media-type
     /// parser).
@@ -409,6 +435,32 @@ impl fmt::Debug for ResponseHead<'_> {
             .finish()
     }
 }
+
+/// Why [`field::single`](crate::field::single) or [`field::unsigned`](crate::field::unsigned) (and
+/// the same methods of [`ResponseHead`]) could not read a field. The field's value is never part
+/// of it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum FieldError {
+    /// The field has more than one line.
+    Repeated,
+    /// The value is empty, not text, or not of the expected form.
+    Invalid,
+    /// The number is larger than the type holds.
+    Overflow,
+}
+
+impl fmt::Display for FieldError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(match self {
+            Self::Repeated => "the header field is repeated",
+            Self::Invalid => "the header field value is not of the expected form",
+            Self::Overflow => "the header field's number is too large",
+        })
+    }
+}
+
+impl StdError for FieldError {}
 
 /// The `Content-Type` field lines of a [`ResponseHead`].
 #[derive(Clone, Copy, Debug)]

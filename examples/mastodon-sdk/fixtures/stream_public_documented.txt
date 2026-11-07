@@ -1,0 +1,13 @@
+:thump
+
+event: update
+data: {"id":"108914354907984653","created_at":"2022-08-30T23:12:47.000Z","in_reply_to_id":null,"in_reply_to_account_id":null,"sensitive":false,"spoiler_text":"","visibility":"public","language":"en","uri":"https://mstdn.jp/users/aiueohisama/statuses/108914354891945610","url":"https://mstdn.jp/@aiueohisama/108914354891945610","replies_count":0,"reblogs_count":0,"favourites_count":0,"edited_at":null,"content":"<p>これは合成テキストです 🐘</p>","reblog":null,"account":{"id":"272619","username":"aiueohisama","acct":"aiueohisama@mstdn.jp","display_name":"SYNTHETIC","url":"https://mstdn.jp/@aiueohisama"},"media_attachments":[],"mentions":[],"tags":[],"emojis":[],"card":null,"poll":null}
+
+:thump
+
+event: delete
+data: 107214471804101576
+
+event: status.update
+data: {"id":"109348684737626801","created_at":"2022-11-15T16:08:30.000Z","in_reply_to_id":null,"in_reply_to_account_id":null,"sensitive":false,"spoiler_text":"","visibility":"public","language":"en","uri":"https://ruby.social/users/chrismo/statuses/109348684454557541","url":"https://ruby.social/@chrismo/109348684454557541","replies_count":0,"reblogs_count":0,"favourites_count":0,"edited_at":"2022-11-15T16:10:43.000Z","content":"<p>SYNTHETIC edited text</p>","reblog":null,"account":{"id":"795442","username":"chrismo","acct":"chrismo@ruby.social","display_name":"SYNTHETIC","url":"https://ruby.social/@chrismo"},"media_attachments":[],"mentions":[],"tags":[],"emojis":[],"card":null,"poll":null}
+
