@@ -1013,6 +1013,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "concord-sdk-cloudflare-zones"
+version = "0.0.0"
+dependencies = [
+ "concord",
+ "concord-auth",
+ "concord-example-testserver",
+ "concord-pagination",
+ "concord-retry",
+ "percent-encoding",
+ "serde",
+ "serde_json",
+ "tokio",
+]
+
+[[package]]
 name = "concord-sdk-discord-rest"
 version = "0.0.0"
 dependencies = [

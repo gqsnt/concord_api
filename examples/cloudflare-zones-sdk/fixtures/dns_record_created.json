@@ -1,0 +1,14 @@
+{
+  "success": true,
+  "errors": [],
+  "messages": [],
+  "result": {
+    "id": "2b00000000000000000000000000000c",
+    "type": "A",
+    "name": "new.example.com",
+    "content": "192.0.2.42",
+    "ttl": 1,
+    "proxied": true,
+    "proxiable": true
+  }
+}

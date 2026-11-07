@@ -1,0 +1,13 @@
+{
+  "errors": [],
+  "messages": [],
+  "success": true,
+  "result": {
+    "id": "1a00000000000000000000000000000f",
+    "account": {},
+    "name": "zeta.example.com",
+    "status": "synthetic-status",
+    "type": "synthetic-type",
+    "unknown_field": { "ignored": true }
+  }
+}
