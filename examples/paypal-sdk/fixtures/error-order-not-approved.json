@@ -1,0 +1,8 @@
+{
+  "name": "UNPROCESSABLE_ENTITY",
+  "message": "The requested action could not be performed, semantically incorrect, or failed business validation.",
+  "debug_id": "synthdebug422",
+  "details": [
+    { "issue": "ORDER_NOT_APPROVED", "description": "Payer has not yet approved the Order for payment." }
+  ]
+}
