@@ -1,13 +1,15 @@
 # concord-sdk-paypal
 
 A bounded PayPal REST client for the **sandbox**, built on [Concord](../../README.md): an access
-token from client credentials, then two connected workflows.
+token from client credentials, then the connected payment workflows below.
 
 1. **Create an order and obtain its current state** — Create order
    (`POST /v2/checkout/orders`), Show order details (`GET /v2/checkout/orders/{id}`).
 2. **Capture an approved order and retrieve the resulting capture** — Capture payment for order
    (`POST /v2/checkout/orders/{id}/capture`), Show captured payment details
    (`GET /v2/payments/captures/{id}`).
+3. **Authorize now, capture later or release** — create with `OrderRequest::authorize`,
+   authorize an approved order, then capture or void its authorization.
 
 Live provider calls: **NOT_RUN**. Every test runs against local fixtures
 (`cargo test -p concord-sdk-paypal`); nothing here was checked against a PayPal host. Sources
@@ -66,6 +68,49 @@ async fn checkout(client_id: &str, secret: &str) -> Result<(), Error> {
   and `send()`, which returns `Result<_, concord_sdk_paypal::Error>`. `prepare()` returns the
   declared request **without** `Authorization` (the token is applied by `send()`).
 
+## Authorize, then capture or release
+
+`OrderRequest::authorize(vec![unit])` requires exactly one purchase unit. After buyer approval,
+authorize the order and retain each returned authorization ID and status. Order completion here
+means the authorization step completed; check the later capture's status before fulfillment.
+Authorize returns `AuthorizedOrder`; `order(id).get_authorized()` reads the same order with
+authorization details. The existing `get()` and CAPTURE response types keep their original shape.
+
+```rust,no_run
+use concord_sdk_paypal::{
+    AuthorizationCaptureRequest, AuthorizationId, AuthorizationStatus, AuthorizeRequest,
+    Capture, Error, OrderId, PayPal, RequestId,
+};
+
+// Invoke after creating an AUTHORIZE order and completing buyer approval externally.
+async fn authorize(paypal: &PayPal, order: OrderId) -> Result<Vec<AuthorizationId>, Error> {
+    let result = paypal.order(order).authorize(AuthorizeRequest::new())
+        .set_request_id(RequestId::new("authorize-cart-18")?).send().await?;
+    Ok(result.authorizations()
+        .filter(|authorization| authorization.status == AuthorizationStatus::Created)
+        .map(|authorization| authorization.id.clone()).collect())
+}
+
+async fn capture_later(paypal: &PayPal, id: AuthorizationId) -> Result<Capture, Error> {
+    let captured = paypal.authorization(id)
+        .capture(AuthorizationCaptureRequest::new().final_capture(true))
+        .set_request_id(RequestId::new("capture-authorization-cart-18")?).send().await?;
+    paypal.capture(captured.id).get().send().await
+}
+
+// Alternative to capture: release an authorization that has not been fully captured.
+async fn release(paypal: &PayPal, id: AuthorizationId) -> Result<(), Error> {
+    paypal.authorization(id).void()
+        .set_request_id(RequestId::new("void-cart-18")?).send().await
+}
+```
+
+Authorization capture accepts an optional positive `amount(Money)` and `final_capture(bool)`.
+The flag defaults to PayPal's `false` when omitted. Void sends no body and returns `()` on a
+successful acknowledgement (`200` or `204`); it does not decode a returned representation.
+Choose a fresh, persistent request ID for each logical operation; the example IDs are illustrative.
+Current endpoint references and their read date are in [MAINTENANCE.md](MAINTENANCE.md).
+
 ## Tokens
 
 Tokens come from `POST /v1/oauth2/token` with HTTP Basic client ID and secret and the form
@@ -84,7 +129,7 @@ Tokens come from `POST /v1/oauth2/token` with HTTP Basic client ID and secret an
 
 ## Failure semantics
 
-| Outcome | Reads (show order, show capture) | Create / capture **with** `RequestId` | Create / capture **without** `RequestId` |
+| Outcome | Reads (show order, show capture) | Supported writes **with** `RequestId` | Supported writes **without** `RequestId` |
 |---|---|---|---|
 | Invalid input (IDs, money, units) | `Error::Invalid`, nothing sent | same | same |
 | Token not obtainable | `Error::Token`, API request not sent | same | same |
@@ -95,16 +140,21 @@ Tokens come from `POST /v1/oauth2/token` with HTTP Basic client ID and secret an
 | `2xx` whose body cannot be read (wrong media type, malformed, truncated, over 1 MiB) | `Error::Concord` (`Metadata`, `Decode`, `Transport`, `Limit`) | `Error::Uncertain` (`UnreadableSuccess`) | same |
 | Overall deadline cancels an attempt in flight (only if you set one) | `Error::Deadline` (or the last answer) | `Error::Uncertain` (`Interrupted`) | same |
 
-- **Only Create order and Capture payment for order document `PayPal-Request-Id`**, and only a
-  call that carries one may be repeated. PayPal keeps the ID for 6 hours by default: within
-  that window the same call with the same ID is not performed twice, and a repeated capture
-  answers `200` with the stored result. Default write bounds: 2 attempts (PayPal's responses
-  page recommends repeating a timed-out or `5xx` capture at least once with the same ID).
-- **A timed-out capture is uncertain.** `Error::Uncertain` says which operation, how many
+The unreadable-body row applies to typed responses. Void consumes only the successful status;
+any returned representation is ignored.
+
+- **Request-ID support is per endpoint.** This SDK permits repeats for create order, order
+  authorize/capture, and authorization capture/void, only when the caller supplied an ID.
+  The create/order-capture references describe 6-hour default retention. Do not assume that
+  retention for Payments v2 or that every PayPal endpoint supports request IDs. Default write
+  bounds remain 2 attempts with identical method, target, ID and body; check operation-specific
+  retention before a caller-initiated replay outside these short automatic retries.
+- **A timed-out authorize, capture or void is uncertain until resolved.** `Error::Uncertain` says which operation, how many
   attempts, the last observation, and the `RequestId` if there was one. With an ID, send the same
   call again with it (`uncertain.request_id()`) within the retention window to learn the stored
-  outcome. Without one, read the order (`paypal.order(id).get()`): `COMPLETED` with a capture
-  means it happened. Never send a capture without an ID twice blindly.
+  outcome. Without one, read `paypal.order(id).get_authorized()` for authorizations and captures
+  (`get()` keeps the existing CAPTURE response view); use provider reconciliation for later authorization actions that this slice
+  cannot retrieve. Never blindly repeat a write without an ID.
 - **`429` is never repeated.** PayPal publishes no rate-limit quota and documents no
   `Retry-After`; it limits traffic it considers abusive until it is satisfied. `HttpError` reports
   `is_rate_limited()` and any `Retry-After` that does arrive (`retry_after()`), and the caller
@@ -125,8 +175,8 @@ accessors). Payer and payment-source details in orders are not decoded.
 
 ## Excluded
 
-Buyer approval UI (the SDK only returns `approval_url()`), refunds, payouts, authorize intent
-and authorization captures, order updates (`PATCH`), payment sources and vaulting, webhooks,
+Buyer approval UI (the SDK only returns `approval_url()`), refunds, payouts, reauthorization,
+authorization detail retrieval, order updates (`PATCH`), payment sources and vaulting, webhooks,
 partner headers (`PayPal-Partner-Attribution-Id`, `PayPal-Auth-Assertion`), `Prefer:
-return=minimal` (every write asks for the full representation), and blanket idempotency: no
+return=minimal` on typed writes (void consumes only the acknowledgement), and blanket idempotency: no
 other endpoint is treated as accepting `PayPal-Request-Id`.

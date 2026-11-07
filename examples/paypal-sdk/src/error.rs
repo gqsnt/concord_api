@@ -248,8 +248,8 @@ pub enum UncertainCause {
     Interrupted,
 }
 
-/// A create or a capture that may have been applied. Never repeated automatically beyond the
-/// session's bounds.
+/// A write (create, authorize, capture or void) that may have been applied. Never repeated
+/// automatically beyond the session's bounds.
 #[derive(Debug)]
 pub struct Uncertain {
     pub(crate) operation: &'static str,
@@ -259,7 +259,8 @@ pub struct Uncertain {
 }
 
 impl Uncertain {
-    /// The endpoint (`PayPal.orders.create`, `PayPal.order.capture`).
+    /// The endpoint (`PayPal.orders.create`, `PayPal.order.authorize`,
+    /// `PayPal.order.capture`, `PayPal.authorization.capture` or `PayPal.authorization.void`).
     pub fn operation(&self) -> &'static str {
         self.operation
     }
@@ -296,7 +297,7 @@ pub enum Error {
     Token(TokenError),
     /// PayPal answered with a non-2xx status: a read failed, or a write was refused (`4xx`).
     Http(Box<HttpError>),
-    /// A create or a capture may have been applied.
+    /// A create, authorize, capture or void may have been applied.
     Uncertain(Box<Uncertain>),
     /// The request's origin is not the one the session's credentials are bound to (the client
     /// was moved with `with_base_url`); nothing was sent and no token was requested.

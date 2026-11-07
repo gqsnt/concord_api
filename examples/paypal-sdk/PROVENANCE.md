@@ -36,8 +36,8 @@ what those pages leave to the API reference.
 
 | Rule | Status |
 |---|---|
-| Only Create order and Capture payment for order may be repeated, and only when the call carries a `PayPal-Request-Id` | from D2 ("check the API reference"), D8, D9, D10; Show captured payment details has no such header (D17) |
-| A timed-out or 5xx create/capture may have been applied: `Error::Uncertain` | D7 (capture); applied to create by the same reasoning (**inferred**) |
+| Only Create order, order authorize/capture, and authorization capture/void may be repeated, and only with a caller-supplied `PayPal-Request-Id` | D2, D8–D10 and maintenance references M2–M4 below; endpoint-specific permission, never a blanket POST rule |
+| A timed-out or 5xx create/authorize/capture/void may have been applied: `Error::Uncertain` | D7 (order capture); conservative uncertainty for other writes is SDK policy, also required by the maintenance ticket |
 | With a request ID, a write is attempted twice by default | D7 ("at least once"); the count is SDK policy |
 | In-process repetition lasts seconds, far inside the 6-hour retention | D10; SDK policy |
 | Reads (`GET`) are repeated after a transport failure or a 5xx | SDK policy (safe method); PayPal does not state it |
@@ -48,7 +48,7 @@ what those pages leave to the API reference.
 | A token is replaced 60 s before `expires_in` runs out; one whose lifetime is not longer than that margin is refused | SDK policy over D1 |
 | `token_type` must be `Bearer` | D1 |
 | No refresh token is requested or used; expiry means a new client-credentials grant | D1 |
-| Every write sends `Prefer: return=representation` | SDK choice among D8's values, so the create returns its links and the capture its captures |
+| Every typed write sends `Prefer: return=representation`; void consumes only the acknowledgement | SDK choice among D8/M2–M4's values; void accepts documented 200/204 without decoding a representation |
 | The capture body is `{}` with `Content-Type: application/json` | D10's request examples, D9 |
 | Currency codes must be three ASCII capital letters | SDK rule (ISO 4217) beyond D12's length |
 | `RequestId`: 1–10000 visible ASCII characters (no spaces) | D8/D9 length; the character rule is the SDK's |
@@ -99,3 +99,35 @@ approval (D4) is simulated by the test (`FakePayPal::approve`).
 ## Concord examples consulted
 
 Recorded in [FRICTION.md](FRICTION.md#examples-consulted). The result is example-assisted.
+
+## Maintenance research and dependencies (read 2026-11-07)
+
+The maintenance pass re-read D1–D4, the exact requested
+[Orders v2 index](https://developer.paypal.com/docs/api/orders/v2/) and
+[Payments v2 index](https://developer.paypal.com/docs/api/payments/v2/), then followed their
+endpoint links below. The index URLs redirect to `/api/orders/v2` and `/api/payments/v2`.
+Earlier D5–D17 entries remain the original author's research record, not new fetches in this pass.
+
+| # | Exact endpoint page read | Facts used for the change |
+|---|---|---|
+| M1 | [Create order](https://developer.paypal.com/api/orders/v2/orders-create) | `AUTHORIZE` is a creation intent and cannot have multiple purchase units. |
+| M2 | [Authorize payment for order](https://developer.paypal.com/api/orders/v2/orders-authorize) | Approved order, POST suffix `/authorize`, optional `PayPal-Request-Id` (1–10000) and representation preference; `{}` example; returned `purchase_units[].payments.authorizations[]` includes authorization `id`, `status`, amount, expiration and links. |
+| M3 | [Capture authorized payment](https://developer.paypal.com/api/payments/v2/authorizations-capture) | POST `/v2/payments/authorizations/{authorization_id}/capture`; optional request ID and representation preference; optional amount and `final_capture` (default false); returns a capture. |
+| M4 | [Void authorized payment](https://developer.paypal.com/api/payments/v2/authorizations-void) | POST suffix `/void`, no request body; current reference explicitly includes optional request ID and Prefer; success 200 or 204. A fully captured authorization cannot be voided. |
+
+No Payments v2 key-retention duration is asserted from M3/M4. Short automatic retries use
+identical bytes and the operation's supplied key; later manual replay needs a retention check.
+The new authorization ID's 1–64 visible-ASCII bound and positive capture amount validation are
+SDK rules. Unknown response statuses remain available as `Other(String)`.
+
+New inline bodies in `tests/authorizations.rs` are synthetic, using M1–M4's response nesting
+with fresh test IDs. Token/capture/error bodies reuse the existing fixtures above. Delays,
+exhausted attempts, malformed successes and later refusals are fixture failure scenarios,
+not observations of PayPal behavior. Approval is represented by a local approved-order reply.
+`get_authorized()` is an alternate typed view of the existing Show order details endpoint,
+for reconciling authorization IDs/statuses; the existing CAPTURE response structs stay intact.
+
+No new crates: existing dependencies and their versions/licenses are unchanged. Workspace
+membership and the package lock entry were already present; the required first unlocked offline
+test run left `Cargo.lock` unchanged. Subsequent cargo commands use `--offline --locked`.
+Live provider calls: **NOT_RUN**.

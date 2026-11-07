@@ -1,6 +1,6 @@
 //! Request and response models of the slice: identifiers, money, the order request, the order
-//! and the capture. Constructors validate what the SDK sends; decoded responses keep what PayPal
-//! sent (unknown enumeration values as `Other`, unknown fields ignored).
+//! and its authorizations and captures. Constructors validate what the SDK sends; decoded
+//! responses keep what PayPal sent (unknown enum values as `Other`, unknown fields ignored).
 
 use std::collections::HashSet;
 use std::fmt;
@@ -104,12 +104,52 @@ impl fmt::Debug for CaptureId {
     }
 }
 
-/// A `PayPal-Request-Id`: the caller's unique ID for one logical create or capture.
+/// A Payments v2 authorization ID. Like [`CaptureId`], the SDK requires 1 to 64 visible
+/// ASCII characters; Concord percent-encodes it as one path segment.
+#[derive(Clone, PartialEq, Eq, Hash, Deserialize)]
+#[serde(transparent)]
+pub struct AuthorizationId(String);
+
+impl AuthorizationId {
+    /// # Errors
+    ///
+    /// [`Error::Invalid`] unless `id` is 1 to 64 visible ASCII characters (an SDK bound).
+    pub fn new(id: impl Into<String>) -> Result<Self, Error> {
+        let id = id.into();
+        if (1..=64).contains(&id.len()) && visible_ascii(&id) {
+            Ok(Self(id))
+        } else {
+            Err(Error::Invalid(
+                "authorization ID must be 1 to 64 visible ASCII characters",
+            ))
+        }
+    }
+
+    /// The ID as sent in paths.
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+impl fmt::Display for AuthorizationId {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(&self.0)
+    }
+}
+
+impl fmt::Debug for AuthorizationId {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "AuthorizationId({})", self.0)
+    }
+}
+
+/// A `PayPal-Request-Id`: the caller's unique ID for one logical supported write.
 ///
-/// PayPal stores it for 6 hours by default (up to 72 by arrangement); within that window the same
-/// call with the same ID is not performed twice, and a repeated capture answers `200` with the
-/// stored result. The SDK repeats a create or a capture only when it carries one. PayPal allows 1
-/// to 10000 characters; the SDK also requires visible ASCII (no spaces) so the header is sent
+/// The create/order-capture references describe 6-hour default retention (up to 72 by
+/// arrangement); other operations' retention must be checked separately. Use the same ID only
+/// for the same endpoint and identical body, within that operation's retention window. This SDK
+/// repeats a supported write only when it carries one. PayPal allows 1 to 10000 characters;
+/// the SDK also requires visible ASCII (no spaces) so the header is sent
 /// byte for byte. Choose a fresh ID per logical operation and keep it until its outcome is known.
 #[derive(Clone, PartialEq, Eq, Hash)]
 pub struct RequestId(String);
@@ -299,8 +339,8 @@ impl PurchaseUnitRequest {
     }
 }
 
-/// The body of Create order: intent `CAPTURE` and 1 to 10 purchase units. Payment sources,
-/// `AUTHORIZE` intent and experience context are outside this slice.
+/// The body of Create order: `CAPTURE` (1 to 10 purchase units) or `AUTHORIZE` (one unit).
+/// Payment sources and experience context are outside this slice.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
 pub struct OrderRequest {
     intent: &'static str,
@@ -308,6 +348,24 @@ pub struct OrderRequest {
 }
 
 impl OrderRequest {
+    /// An order to authorize after buyer approval, then capture later.
+    ///
+    /// # Errors
+    ///
+    /// [`Error::Invalid`] unless there is exactly one purchase unit: Orders v2 does not
+    /// support `AUTHORIZE` with several units.
+    pub fn authorize(units: Vec<PurchaseUnitRequest>) -> Result<Self, Error> {
+        if units.len() != 1 {
+            return Err(Error::Invalid(
+                "an AUTHORIZE order has exactly one purchase unit",
+            ));
+        }
+        Ok(Self {
+            intent: "AUTHORIZE",
+            purchase_units: units,
+        })
+    }
+
     /// An order to capture immediately after the buyer approves it.
     ///
     /// # Errors
@@ -347,6 +405,56 @@ impl CaptureRequest {
     /// `{}`: capture with the payment source the buyer approved.
     pub fn new() -> Self {
         Self {}
+    }
+}
+
+/// Authorize using the payment source the buyer already approved: `{}`.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize)]
+#[non_exhaustive]
+pub struct AuthorizeRequest {}
+
+impl AuthorizeRequest {
+    /// An empty request; buyer approval happens outside this SDK.
+    pub fn new() -> Self {
+        Self {}
+    }
+}
+
+/// Capture an authorization, optionally specifying the amount and whether more captures follow.
+/// Invoice notes, descriptors and platform instructions are outside this slice.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize)]
+pub struct AuthorizationCaptureRequest {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    amount: Option<Money>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    final_capture: Option<bool>,
+}
+
+impl AuthorizationCaptureRequest {
+    /// `{}`: leave the optional amount and final-capture flag to PayPal's defaults.
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Choose an amount (positive, like a purchase unit amount).
+    ///
+    /// # Errors
+    ///
+    /// [`Error::Invalid`] for zero or a negative amount (an SDK rule).
+    pub fn amount(mut self, amount: Money) -> Result<Self, Error> {
+        if !amount.is_positive() {
+            return Err(Error::Invalid("capture amount must be positive"));
+        }
+        self.amount = Some(amount);
+        Ok(self)
+    }
+
+    /// `true` releases the remaining authorization; `false` allows further captures.
+    /// PayPal's default is `false` when omitted.
+    #[must_use]
+    pub fn final_capture(mut self, final_capture: bool) -> Self {
+        self.final_capture = Some(final_capture);
+        self
     }
 }
 
@@ -405,8 +513,28 @@ provider_enum! {
     Intent {
         /// Capture immediately after approval.
         Capture = "CAPTURE",
-        /// Authorize now, capture later (outside this slice).
+        /// Authorize now, capture later.
         Authorize = "AUTHORIZE",
+    }
+}
+
+provider_enum! {
+    /// Payments v2 authorization status; new values are retained as `Other`.
+    AuthorizationStatus {
+        /// The authorization was created; this is not a completed capture.
+        Created = "CREATED",
+        /// Captured in full.
+        Captured = "CAPTURED",
+        /// Denied.
+        Denied = "DENIED",
+        /// Expired.
+        Expired = "EXPIRED",
+        /// Partially captured.
+        PartiallyCaptured = "PARTIALLY_CAPTURED",
+        /// Pending; see status details.
+        Pending = "PENDING",
+        /// Voided.
+        Voided = "VOIDED",
     }
 }
 
@@ -444,7 +572,7 @@ fn link<'a>(links: &'a [Link], rel: &str) -> Option<&'a str> {
     links.iter().find(|l| l.rel == rel).map(|l| l.href.as_str())
 }
 
-/// An order (Orders v2), as Create order, Show order details and Capture payment for order
+/// An order (Orders v2), as Create, Show and Capture payment for order
 /// return it with `Prefer: return=representation`. Payer and payment-source details are not
 /// decoded (they are personal data outside this slice).
 #[derive(Clone, Debug, PartialEq, Eq, Deserialize)]
@@ -456,7 +584,8 @@ pub struct Order {
     /// The intent, when returned.
     #[serde(default)]
     pub intent: Option<Intent>,
-    /// The purchase units, with their payments once captured.
+    /// The purchase units, with their captures when available. For authorizations use
+    /// [`AuthorizedOrder`], returned by `order(id).authorize(..)` or `get_authorized()`.
     #[serde(default)]
     pub purchase_units: Vec<PurchaseUnit>,
     /// HATEOAS links.
@@ -486,6 +615,75 @@ impl Order {
     }
 }
 
+/// The authorization view of an order. Returned by Authorize payment for order or
+/// `order(id).get_authorized()`. Kept separate so the existing [`Order`], [`PurchaseUnit`]
+/// and [`Payments`] response shapes remain source-compatible with CAPTURE callers.
+#[derive(Clone, Debug, PartialEq, Eq, Deserialize)]
+pub struct AuthorizedOrder {
+    /// The order ID, distinct from each authorization ID.
+    pub id: OrderId,
+    /// Order status; `COMPLETED` here does not mean funds have been captured.
+    pub status: OrderStatus,
+    /// The creation intent, when returned.
+    #[serde(default)]
+    pub intent: Option<Intent>,
+    /// Purchase units with their authorizations and any later captures.
+    #[serde(default)]
+    pub purchase_units: Vec<AuthorizedPurchaseUnit>,
+    /// Provider links, never followed automatically.
+    #[serde(default)]
+    pub links: Vec<Link>,
+    /// Creation time, as sent.
+    #[serde(default)]
+    pub create_time: Option<String>,
+    /// Update time, as sent.
+    #[serde(default)]
+    pub update_time: Option<String>,
+}
+
+impl AuthorizedOrder {
+    /// Every authorization of every purchase unit, in order. Check its status before capture.
+    pub fn authorizations(&self) -> impl Iterator<Item = &Authorization> {
+        self.purchase_units
+            .iter()
+            .filter_map(|unit| unit.payments.as_ref())
+            .flat_map(|payments| payments.authorizations.iter())
+    }
+
+    /// Every capture of every purchase unit, in order, when reconciling a later order state.
+    pub fn captures(&self) -> impl Iterator<Item = &Capture> {
+        self.purchase_units
+            .iter()
+            .filter_map(|unit| unit.payments.as_ref())
+            .flat_map(|payments| payments.captures.iter())
+    }
+}
+
+/// One purchase unit in the authorization view of an order.
+#[derive(Clone, Debug, PartialEq, Eq, Deserialize)]
+pub struct AuthorizedPurchaseUnit {
+    /// The unit's reference ID, when supplied.
+    #[serde(default)]
+    pub reference_id: Option<String>,
+    /// The unit's amount, when supplied.
+    #[serde(default)]
+    pub amount: Option<Money>,
+    /// The unit's authorizations and any captures, when supplied.
+    #[serde(default)]
+    pub payments: Option<AuthorizedPayments>,
+}
+
+/// The payments in an authorization order view; refunds are outside this slice.
+#[derive(Clone, Debug, PartialEq, Eq, Deserialize)]
+pub struct AuthorizedPayments {
+    /// The authorizations.
+    #[serde(default)]
+    pub authorizations: Vec<Authorization>,
+    /// Later captures, when included by Show order details.
+    #[serde(default)]
+    pub captures: Vec<Capture>,
+}
+
 /// A purchase unit of a returned order.
 #[derive(Clone, Debug, PartialEq, Eq, Deserialize)]
 pub struct PurchaseUnit {
@@ -495,17 +693,46 @@ pub struct PurchaseUnit {
     /// The unit's amount.
     #[serde(default)]
     pub amount: Option<Money>,
-    /// Payments made for this unit (present once captured).
+    /// Captures for this unit. Authorizations use [`AuthorizedPurchaseUnit`].
     #[serde(default)]
     pub payments: Option<Payments>,
 }
 
-/// The payments of a purchase unit. Authorizations and refunds are outside this slice.
+/// The captures of a purchase unit. Authorizations use [`AuthorizedPayments`]; refunds are
+/// outside this slice.
 #[derive(Clone, Debug, PartialEq, Eq, Deserialize)]
 pub struct Payments {
     /// The captures.
     #[serde(default)]
     pub captures: Vec<Capture>,
+}
+
+/// An authorized payment embedded in an order. An authorization reserves funds; it is not
+/// proof of settlement. Seller protection and processor details are not decoded.
+#[derive(Clone, Debug, PartialEq, Eq, Deserialize)]
+pub struct Authorization {
+    /// The authorization ID for capture or void.
+    pub id: AuthorizationId,
+    /// Current authorization status.
+    pub status: AuthorizationStatus,
+    /// Provider status reason, when present.
+    #[serde(default)]
+    pub status_details: Option<StatusDetails>,
+    /// Authorized amount.
+    #[serde(default)]
+    pub amount: Option<Money>,
+    /// Expiration time, as sent.
+    #[serde(default)]
+    pub expiration_time: Option<String>,
+    /// Creation time, as sent.
+    #[serde(default)]
+    pub create_time: Option<String>,
+    /// Update time, as sent.
+    #[serde(default)]
+    pub update_time: Option<String>,
+    /// Provider links, never followed automatically.
+    #[serde(default)]
+    pub links: Vec<Link>,
 }
 
 /// A captured payment (Payments v2), as embedded in an order or returned by Show captured
@@ -555,7 +782,7 @@ impl Capture {
     }
 }
 
-/// `status_details` of a capture.
+/// `status_details` of a capture or authorization.
 #[derive(Clone, Debug, PartialEq, Eq, Deserialize)]
 pub struct StatusDetails {
     /// The reason code (`PENDING_REVIEW`, `ECHECK`, ...), as sent.

@@ -1,6 +1,6 @@
 //! A bounded PayPal REST slice for the sandbox: client-credentials access tokens, Orders v2
 //! (create an order, show it, capture it once the buyer approved it) and Payments v2 (show a
-//! capture). Tests run against local fixtures only; no PayPal host was called.
+//! capture), plus authorize-then-capture or void. Tests use local fixtures only.
 //!
 //! The declared client is [`PayPal`]:
 //!
@@ -10,11 +10,16 @@
 //!   (`POST /v2/checkout/orders/{id}/capture`);
 //! - `paypal.capture(id).get()` — Show captured payment details
 //!   (`GET /v2/payments/captures/{id}`).
+//! - `paypal.order(id).authorize(AuthorizeRequest::new())` — authorize an approved order;
+//!   inspect `order.authorizations()` for authorization IDs and statuses.
+//! - `paypal.order(id).get_authorized()` — show the order with authorization details;
+//! - `paypal.authorization(id).capture(AuthorizationCaptureRequest::new())` — capture funds;
+//! - `paypal.authorization(id).void()` — release an authorization (returns `()`).
 //!
 //! Each generated `send()` goes through the client's [`Session`]: it obtains (or reuses) an
 //! access token with the client-credentials grant, applies it, and decides whether an outcome may
-//! be repeated. Reads are repeated after a transport failure or a `5xx`; a create or a capture
-//! only when it carries a [`RequestId`]; a write that may have been applied is
+//! be repeated. Reads are repeated after a transport failure or a `5xx`; documented writes
+//! only when they carry a [`RequestId`]; a write that may have been applied is
 //! [`Error::Uncertain`]. See the package README for the full failure semantics and exclusions.
 
 mod auth;
@@ -28,9 +33,11 @@ pub use concord_retry;
 pub use auth::{Credentials, IdentityError, TokenError};
 pub use error::{ApiError, Error, ErrorDetail, HttpError, Uncertain, UncertainCause};
 pub use models::{
-    Capture, CaptureId, CaptureRequest, CaptureStatus, Intent, Link, MAX_PURCHASE_UNITS, Money,
-    Order, OrderId, OrderRequest, OrderStatus, Payments, PurchaseUnit, PurchaseUnitRequest,
-    RequestId, StatusDetails,
+    Authorization, AuthorizationCaptureRequest, AuthorizationId, AuthorizationStatus,
+    AuthorizeRequest, AuthorizedOrder, AuthorizedPayments, AuthorizedPurchaseUnit, Capture,
+    CaptureId, CaptureRequest, CaptureStatus, Intent, Link, MAX_PURCHASE_UNITS, Money, Order,
+    OrderId, OrderRequest, OrderStatus, Payments, PurchaseUnit, PurchaseUnitRequest, RequestId,
+    StatusDetails,
 };
 pub use policy::Session;
 
@@ -51,8 +58,8 @@ pub const TOKEN_BODY_LIMIT: usize = 64 * 1024;
 
 concord::api! {
     /// PayPal REST, sandbox (`https://api-m.sandbox.paypal.com`): Orders v2 and Payments v2
-    /// captures. Build it with [`PayPal::sandbox`] or [`PayPal::builder`]; every `send()` is
-    /// authenticated and classified by its [`Session`].
+    /// captures and authorizations. Build it with [`PayPal::sandbox`] or [`PayPal::builder`];
+    /// every `send()` is authenticated and classified by its [`Session`].
     pub client PayPal(
         /// Credentials, token cache and repetition rules; [`PayPal::builder`] creates it.
         session: Session,
@@ -89,6 +96,24 @@ concord::api! {
             /// Show order details (its current state).
             GET get() -> Order;
 
+            /// Show the same order details as `get()`, decoding the authorization view so a
+            /// caller can reconcile an uncertain authorization without repeating the write.
+            GET get_authorized() -> AuthorizedOrder;
+
+            /// Authorize an `AUTHORIZE` order after buyer approval. A lost response is
+            /// uncertain; repeated only with a caller-supplied [`RequestId`].
+            POST authorize(
+                body request: AuthorizeRequest,
+                /// The ID of this logical authorization, distinct from the create ID.
+                request_id?: RequestId,
+            ) -> AuthorizedOrder {
+                path "authorize";
+                headers {
+                    "paypal-request-id" = "{request_id}";
+                    "prefer" = "return=representation";
+                }
+            }
+
             /// Capture payment for an order the buyer approved. Sent once unless it carries a
             /// [`RequestId`]; a capture that may have happened is [`Error::Uncertain`].
             POST capture(
@@ -102,6 +127,36 @@ concord::api! {
                     "paypal-request-id" = "{request_id}";
                     "prefer" = "return=representation";
                 }
+            }
+        }
+
+        /// One authorized payment (Payments v2); distinct from an order or capture ID.
+        scope authorization(id: AuthorizationId) {
+            path "v2/payments/authorizations/{id}";
+
+            /// Capture an authorization. Repeated only with a caller-supplied [`RequestId`]
+            /// and identical bytes; a lost answer remains uncertain if not resolved.
+            POST capture(
+                body request: AuthorizationCaptureRequest,
+                /// Unique ID for this logical capture, distinct from authorize/create IDs.
+                request_id?: RequestId,
+            ) -> Capture {
+                path "capture";
+                headers {
+                    "paypal-request-id" = "{request_id}";
+                    "prefer" = "return=representation";
+                }
+            }
+
+            /// Release an authorization that has not been fully captured. Returns an
+            /// acknowledgement (`()`), accepting either documented `200` or `204` success.
+            /// PayPal's current reference documents request IDs for void, too.
+            POST void(
+                /// Unique ID for this logical void. Without it, sent exactly once.
+                request_id?: RequestId,
+            ) {
+                path "void";
+                headers { "paypal-request-id" = "{request_id}"; }
             }
         }
 
@@ -179,7 +234,7 @@ impl Builder {
         self
     }
 
-    /// Bounds for a create or a capture that carries a [`RequestId`] (without one, a write is
+    /// Bounds for a documented write that carries a [`RequestId`] (without one, a write is
     /// always sent once). Default: 2 attempts (PayPal recommends repeating a timed-out or `5xx`
     /// capture at least once with the same ID), backoff from 1 s to 4 s, no overall deadline.
     /// A deadline that cancels an attempt in flight makes the write [`Error::Uncertain`].

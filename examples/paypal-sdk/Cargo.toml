@@ -5,7 +5,7 @@ edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 publish = false
-description = "A bounded PayPal REST slice (sandbox): client-credentials tokens, Orders v2 create/show/capture and Payments v2 show capture, tested offline"
+description = "A bounded PayPal REST slice (sandbox): client credentials, order create/show/authorize/capture, authorization capture/void and capture retrieval, tested offline"
 
 [dependencies]
 concord = { path = "../../crates/concord", features = ["form"] }

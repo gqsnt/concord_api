@@ -13,8 +13,9 @@ use concord_retry::{Decision, Replay, Retry};
 
 use crate::auth::{OAuth, fetch_token};
 use crate::{
-    Credentials, Error, HttpError, Order, PayPalOrderCapture, PayPalOrdersCreate, RequestId,
-    TokenError, Uncertain, UncertainCause,
+    AuthorizedOrder, Capture, Credentials, Error, HttpError, Order, PayPalAuthorizationCapture,
+    PayPalAuthorizationVoid, PayPalOrderAuthorize, PayPalOrderCapture, PayPalOrdersCreate,
+    RequestId, TokenError, Uncertain, UncertainCause,
 };
 
 pub(crate) fn default_reads() -> concord_retry::Policy {
@@ -45,8 +46,8 @@ pub(crate) fn default_writes() -> concord_retry::Policy {
 /// - **Reads** (`GET`) are repeated after a transport failure or a `5xx`, and once after a
 ///   `401` with a new token, within the read bounds. Other statuses (a `429` included: PayPal
 ///   publishes no quota) are returned at once.
-/// - **Writes** (Create order, Capture payment for order) are repeated, with the same body and
-///   `PayPal-Request-Id`, only when they carry a [`RequestId`]: after a transport failure, a
+/// - **Writes** (create, order authorize/capture, authorization capture/void) are repeated with
+///   the same body and `PayPal-Request-Id`, only when they carry a [`RequestId`]: after a transport failure, a
 ///   `5xx`, or once after a `401`. Without one, a write is sent exactly once. A write that may
 ///   have been applied — no response, a `5xx`, an unreadable `2xx`, or any refusal after such an
 ///   attempt — is [`Error::Uncertain`]; a `4xx` on a first attempt is [`Error::Http`].
@@ -128,6 +129,9 @@ impl Session {
 fn accepts_request_id(operation: &Operation) -> bool {
     *operation == <PayPalOrdersCreate as Endpoint<Order>>::operation()
         || *operation == <PayPalOrderCapture as Endpoint<Order>>::operation()
+        || *operation == <PayPalOrderAuthorize as Endpoint<AuthorizedOrder>>::operation()
+        || *operation == <PayPalAuthorizationCapture as Endpoint<Capture>>::operation()
+        || *operation == <PayPalAuthorizationVoid as Endpoint<()>>::operation()
 }
 
 /// One attempt: a token failure (nothing sent) or one execution with the token it used.
