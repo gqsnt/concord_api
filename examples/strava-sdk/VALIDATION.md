@@ -50,3 +50,11 @@ package (`concord-sdk-strava` 0.1.0), no removed package, and no changed pre-exi
 entry. Tracked diffs are only root `Cargo.toml` and `Cargo.lock`; the new package is
 untracked worktree content ready for review. The root manifest change adds only
 `examples/strava-sdk` to members.
+
+## Maintenance — activity update (2026-11-07)
+
+The independent maintainer's change (`PUT /activities/{id}`) and its validation are recorded
+in `MAINTENANCE.md`; the results above are the author's and were not re-labelled. After the
+change: 25 first-use, 17 protocol, 4 update-consumer, 10 workflow tests and 4 compile-only
+rustdoc examples pass; Clippy and rustdoc with warnings denied pass. Live provider calls:
+**NOT_RUN**.

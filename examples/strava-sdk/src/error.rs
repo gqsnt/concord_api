@@ -1,5 +1,5 @@
 //! Value-free diagnostics with explicit access to provider payloads.
-use crate::{RateLimits, UploadStatus};
+use crate::{RateLimits, StravaActivitiesUpdate, UploadStatus};
 use serde::Deserialize;
 use std::fmt;
 
@@ -52,7 +52,7 @@ pub struct HttpFailure {
     pub document: Result<ErrorDocument, concord::Error>,
     /// All available usage windows, including on 429.
     pub rates: RateLimits,
-    /// An upload server error can follow a committed write.
+    /// An upload or activity-update server error can follow a committed write.
     pub ambiguous: bool,
 }
 
@@ -63,7 +63,8 @@ pub enum Error {
     Invalid(&'static str),
     /// Preparation, transport, media, decode or body-bound failure.
     Concord(concord::Error),
-    /// An upload may have been accepted; never replay it automatically.
+    /// An upload or activity update may have been applied; never replay it automatically.
+    /// After an uncertain update, re-read the activity (`ActivityUpdate::is_reflected_in`).
     Ambiguous(concord::Error),
     /// Provider HTTP rejection, with an independently fallible error document.
     Http(Box<HttpFailure>),
@@ -75,16 +76,19 @@ pub enum Error {
     Processing(Box<UploadStatus>),
     /// Poll budget ended; the last upload identifier and status are retained for resumption.
     PollBounded(Box<UploadStatus>),
+    /// The stored granted scopes lack this permission. Nothing was sent and no token was
+    /// refreshed; re-authorize the athlete requesting it.
+    MissingScope(&'static str),
 }
 impl Error {
-    pub(crate) fn from_call(error: concord::Error, upload: bool) -> Self {
-        if upload && error.delivery() != concord::Delivery::NotSent {
+    pub(crate) fn from_call(error: concord::Error, uncertain: bool) -> Self {
+        if uncertain && error.delivery() != concord::Delivery::NotSent {
             Self::Ambiguous(error)
         } else {
             Self::Concord(error)
         }
     }
-    /// Whether an upload may have been accepted but cannot be confirmed.
+    /// Whether an upload or activity update may have been applied but cannot be confirmed.
     pub fn is_ambiguous(&self) -> bool {
         matches!(self, Self::Ambiguous(_)) || matches!(self, Self::Http(e) if e.ambiguous)
     }
@@ -108,12 +112,16 @@ impl fmt::Display for Error {
         f.write_str(match self {
             Self::Invalid(reason) => reason,
             Self::Concord(_) => "Strava request failed",
+            Self::Ambiguous(e) if e.operation() == Some(StravaActivitiesUpdate::operation()) => {
+                "activity update outcome is uncertain; re-read the activity, it is never resent"
+            }
             Self::Ambiguous(_) => "upload outcome is ambiguous; automatic replay is forbidden",
             Self::Http(_) => "Strava HTTP rejection",
             Self::Auth(_) => "Strava token acquisition failed",
             Self::Admission(_) => "Strava quota admission refused",
             Self::Processing(_) => "Strava upload processing failed",
             Self::PollBounded(_) => "Strava upload poll budget exhausted",
+            Self::MissingScope(_) => "Strava token lacks a required scope",
         })
     }
 }

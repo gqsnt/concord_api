@@ -32,9 +32,10 @@ pub struct Quota {
 /// Observations preserve missing and malformed pairs independently.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct RateLimits {
-    /// Overall quota, charged by uploads and reads.
+    /// Overall quota, charged by every request.
     pub overall: Result<Option<Quota>, concord::FieldError>,
-    /// Additional non-upload quota, charged by activity reads and status polls.
+    /// Additional non-upload quota (`X-ReadRateLimit-*`), charged by every request except
+    /// uploads: activity reads, status polls and activity updates.
     pub read: Result<Option<Quota>, concord::FieldError>,
 }
 impl RateLimits {
@@ -49,7 +50,7 @@ impl RateLimits {
         &self,
         limiter: &Limiter<u8>,
         status: u16,
-        read: bool,
+        non_upload: bool,
         headers: &HeaderMap,
     ) -> Result<(), crate::Error> {
         let now = SystemTime::now();
@@ -58,7 +59,7 @@ impl RateLimits {
             .map_err(|_| crate::Error::Invalid("clock before Unix epoch"))?;
         let mut identified = false;
         for (base, quota) in [(0, &self.overall), (2, &self.read)] {
-            if base == 2 && !read {
+            if base == 2 && !non_upload {
                 continue;
             }
             if let Ok(Some(quota)) = quota {

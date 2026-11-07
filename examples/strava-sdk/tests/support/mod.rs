@@ -2,6 +2,7 @@
 use concord_sdk_strava::{Credentials, Session, Strava, Tokens};
 use std::time::Duration;
 pub const ACTIVITY: &str = include_str!("../../fixtures/activity.json");
+pub const UPDATED: &str = include_str!("../../fixtures/activity-updated.json");
 pub const FIRST: &str = include_str!("../../fixtures/activities-1.json");
 pub const SECOND: &str = include_str!("../../fixtures/activities-2.json");
 pub const EMPTY: &str = include_str!("../../fixtures/activities-empty.json");

@@ -123,3 +123,33 @@ Every later build/test/lint/doc command uses `--locked`. Cargo commands run one 
 a time. Changes are limited to this package, the root member addition and Cargo's
 new lockfile package entry. Shared crates, checks, scripts and other examples
 were not edited. No commit was attempted.
+
+## Maintenance — activity update (2026-11-07)
+
+Added by the independent maintainer; the sections above are the author's record and
+were not rewritten. Live provider calls: **NOT_RUN**. Pages were read with a
+read-only page fetcher (no file downloaded, no Strava API or OAuth call):
+
+| Exact page | Read date | Facts applied |
+|---|---|---|
+| https://developers.strava.com/docs/reference/ (`updateActivityById`, `UpdatableActivity`, `UpdatableActivity_tags`, `SummaryActivity`, `DetailedActivity`, `Fault`) | 2026-11-07 | `PUT /activities/{id}` updates an activity the authenticated athlete owns; body `UpdatableActivity`; 200 returns `DetailedActivity`; 4xx/5xx return a `Fault`; "Requires activity:write", plus `activity:read_all` for Only Me activities. `gear_id` value `none` clears gear. `type` is deprecated in favour of `sport_type` and ignored when both are sent. Commute is set through the `Commute` tag rather than the legacy `commute` field, and the two cannot be combined. `description` is a detail-only field; `gear_id`, `commute`, `trainer` appear in both summary and detail |
+| https://developers.strava.com/docs/authentication/ (scopes) | 2026-11-07 | `activity:write` permits editing activities visible to the app; the athlete may opt out of requested scopes; the token exchange returns the granted space-delimited scope list; the refresh response does not return scopes; the page documents no status for a request lacking a scope |
+| https://developers.strava.com/docs/rate-limits/ | 2026-11-07 | The non-upload limit covers every endpoint except activity creation, uploads and activity media uploads, so an update is charged to both overall and non-upload windows |
+
+Not stated by those pages, hence SDK choices: the request media type (the reference
+lists a body parameter but names no media type; the SDK sends JSON), and the HTTP
+status of a missing-scope rejection (the SDK refuses locally only when the stored
+granted scopes are known; otherwise the provider's status is returned unmapped).
+
+Fixture added: `activity-updated.json`, an authored synthetic detail/update projection
+with edited name, sport, description, gear, commute and trainer plus an unknown field;
+not a provider capture. `tests/update_consumer.rs` authors a small in-test provider
+that applies sent fields the way the reference describes (`tags.Commute`, `gear_id`
+`none`); its documents are synthetic too.
+
+Project files read for the maintenance: this package's `src/`, `tests/`, `fixtures/`,
+`README.md`, `PROVENANCE.md`, `VALIDATION.md`; `docs/CHEATSHEET.md`; `docs/AUTHOR_GUIDE.md`
+§5.4 and §5.11b–§5.13; `crates/concord-core/src/response.rs` (`Operation`) and
+`src/error.rs` (`operation()`); the `examples/testserver` public function list. No other
+example or campaign file was read. `FRICTION.md` and `FIRST_USE.md` were read only after
+the change was implemented and tested. No dependency or lockfile change.

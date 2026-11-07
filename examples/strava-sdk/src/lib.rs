@@ -6,11 +6,13 @@ pub use concord_retry as retry;
 mod auth;
 mod error;
 mod rate;
+mod update;
 mod upload;
 
 pub use auth::{Credentials, Session, TokenRequest, Tokens};
 pub use error::{Error, ErrorDocument, HttpFailure, Problem, ProblemField};
 pub use rate::{Quota, RateLimits, Window};
+pub use update::ActivityUpdate;
 pub use upload::{DataType, PollPolicy, StreamMultipart, UploadFile, UploadStatus};
 
 use concord::{Endpoint, Form, Json, Received, SendWith, reqwest};
@@ -22,7 +24,8 @@ pub const BODY_LIMIT: usize = 1024 * 1024;
 /// Maximum provider error document (16 KiB).
 pub const ERROR_LIMIT: usize = 16 * 1024;
 
-/// A deliberately small projection shared by summary and detail activity responses.
+/// A deliberately small projection shared by summary, detail and update responses.
+/// Optional fields are `None` when the provider omits them or sends `null`.
 #[derive(Clone, Debug, Deserialize, PartialEq)]
 pub struct Activity {
     /// Strava's 64-bit activity identifier.
@@ -35,6 +38,15 @@ pub struct Activity {
     pub moving_time: u64,
     /// Case-sensitive sport name; unknown future sports remain readable.
     pub sport_type: String,
+    /// Athlete-supplied description. Detail and update responses only: summaries omit it, so a
+    /// listed activity and its detail differ here when a description exists.
+    pub description: Option<String>,
+    /// Identifier of the associated gear; `None` when there is none.
+    pub gear_id: Option<String>,
+    /// Whether the activity is a commute.
+    pub commute: Option<bool>,
+    /// Whether the activity was recorded on a training machine.
+    pub trainer: Option<bool>,
 }
 
 /// A typed value and safe response metadata. Debug withholds the value.
@@ -83,6 +95,13 @@ concord::api! {
             GET get(id: u64, query include_all_efforts: bool = false) -> Activity {
                 path "{id}";
             }
+            /// Change only the fields set on `changes` of an activity the athlete owns; returns
+            /// the updated activity. Requires `activity:write`. A timeout is uncertain: re-read
+            /// the activity. Never resent automatically.
+            PUT update(id: u64, body changes: ActivityUpdate) -> Activity {
+                path "{id}";
+                request Json;
+            }
         }
         /// Asynchronously processed activity files.
         scope uploads {
@@ -123,12 +142,12 @@ impl<T: Send> SendWith<T> for TokenPolicy {
 
 pub(crate) async fn finish<T>(
     received: Received<T>,
-    upload: bool,
+    uncertain: bool,
     attempts: usize,
 ) -> Result<Response<T>, Error> {
     let rates = RateLimits::parse(received.head().headers());
     if !received.status().is_success() {
-        let ambiguous = upload && received.status().is_server_error();
+        let ambiguous = uncertain && received.status().is_server_error();
         let (meta, document) = received.document::<Json, ErrorDocument>(ERROR_LIMIT).await;
         return Err(Error::Http(Box::new(HttpFailure {
             meta,
@@ -140,7 +159,7 @@ pub(crate) async fn finish<T>(
     let (value, meta) = received
         .decode_with_meta()
         .await
-        .map_err(|e| Error::from_call(e, upload))?;
+        .map_err(|e| Error::from_call(e, uncertain))?;
     Ok(Response {
         value,
         meta,

@@ -1,7 +1,7 @@
 //! OAuth rotation and the single owner of application retries.
 use crate::{
-    Error, OAuth, RateLimits, Response, Strava, StravaConfig, StravaUploadsCreate,
-    StravaUploadsStatus, finish,
+    Error, OAuth, RateLimits, Response, Strava, StravaActivitiesUpdate, StravaConfig,
+    StravaUploadsCreate, StravaUploadsStatus, finish,
 };
 use concord::{
     Endpoint, SendWith,
@@ -245,14 +245,68 @@ fn unix_now() -> Result<u64, Error> {
         .map(|d| d.as_secs())
         .map_err(|_| Error::Invalid("clock before Unix epoch"))
 }
+/// Every Strava rule the send policy keys on the operation, in one place.
+struct Class {
+    /// Replayable once after a transient failure: reads only.
+    read: bool,
+    /// Delay before that replay; a status poll keeps the one-second poll spacing.
+    retry_delay: Duration,
+    /// Charged to the non-upload windows too. The rate-limits page exempts only activity
+    /// creation, uploads and media uploads; of this SDK's operations, only `uploads.create`.
+    non_upload: bool,
+    /// A write whose failure after dispatch cannot prove it was not applied.
+    uncertain: bool,
+    /// Permission that granted scopes, when known, must include before anything is sent.
+    scope: Option<&'static str>,
+}
+impl Class {
+    fn of(operation: concord::Operation) -> Self {
+        let upload = operation == StravaUploadsCreate::operation();
+        let update = operation == StravaActivitiesUpdate::operation();
+        Self {
+            read: operation.method() == Some("GET"),
+            retry_delay: if operation == StravaUploadsStatus::operation() {
+                Duration::from_secs(1)
+            } else {
+                Duration::from_millis(25)
+            },
+            non_upload: !upload,
+            uncertain: upload || update,
+            // Uploads also need `activity:write`; they keep their pre-update behavior (sent).
+            scope: update.then_some("activity:write"),
+        }
+    }
+}
+/// Granted scopes as stored: space-delimited from the token exchange; commas are also accepted.
+fn granted(scopes: &str, required: &str) -> bool {
+    scopes
+        .split(|c: char| c == ',' || c.is_ascii_whitespace())
+        .any(|scope| scope == required)
+}
+
 impl<T: Send> SendWith<T> for Session {
     type Output = Result<Response<T>, Error>;
     async fn send<E: Endpoint<T> + Send>(&self, endpoint: E) -> Self::Output {
-        let upload = E::operation() == StravaUploadsCreate::operation();
-        let read = E::operation().method() == Some("GET");
+        let Class {
+            read,
+            retry_delay,
+            non_upload,
+            uncertain,
+            scope,
+        } = Class::of(E::operation());
+        if let Some(required) = scope {
+            let stored = self.0.tokens.lock().await;
+            if stored
+                .scope
+                .as_deref()
+                .is_some_and(|s| !granted(s, required))
+            {
+                return Err(Error::MissingScope(required));
+            }
+        }
         let (client, request, decoder) = endpoint
             .prepare()
-            .map_err(|e| Error::from_call(e, upload))?
+            .map_err(|e| Error::from_call(e, uncertain))?
             .into_parts();
         if request.url().origin() != self.0.origin.origin() {
             return Err(Error::Invalid("credential destination changed"));
@@ -260,12 +314,8 @@ impl<T: Send> SendWith<T> for Session {
         let template = if read { request.try_clone() } else { None };
         let mut first = Some(request);
         let mut policy = Policy::new(NonZeroUsize::new(if read { 2 } else { 1 }).unwrap());
-        policy.initial_delay = if E::operation() == StravaUploadsStatus::operation() {
-            Duration::from_secs(1)
-        } else {
-            Duration::from_millis(25)
-        };
-        policy.max_delay = policy.initial_delay;
+        policy.initial_delay = retry_delay;
+        policy.max_delay = retry_delay;
         let run = Retry::new(
             policy,
             if read {
@@ -286,7 +336,7 @@ impl<T: Send> SendWith<T> for Session {
                     request
                         .headers_mut()
                         .insert(AUTHORIZATION, used.header().clone());
-                    let keys: &[u8] = if read { &[0, 1, 2, 3] } else { &[0, 1] };
+                    let keys: &[u8] = if non_upload { &[0, 1, 2, 3] } else { &[0, 1] };
                     self.0
                         .limiter
                         .acquire(keys, Mode::Refuse)
@@ -295,7 +345,7 @@ impl<T: Send> SendWith<T> for Session {
                     let received = decoder
                         .execute(&client, request)
                         .await
-                        .map_err(|e| Error::from_call(e, upload))?;
+                        .map_err(|e| Error::from_call(e, uncertain))?;
                     if received.status() == reqwest::StatusCode::UNAUTHORIZED {
                         let mut stored = self.0.tokens.lock().await;
                         if self.0.cache.invalidate(&(), &used.generation()) {
@@ -305,7 +355,7 @@ impl<T: Send> SendWith<T> for Session {
                     RateLimits::parse(received.head().headers()).observe(
                         &self.0.limiter,
                         received.status().as_u16(),
-                        read,
+                        non_upload,
                         received.head().headers(),
                     )?;
                     Ok(received)
@@ -328,6 +378,6 @@ impl<T: Send> SendWith<T> for Session {
         let received = run
             .outcome
             .ok_or(Error::Invalid("no application attempt completed"))??;
-        finish(received, upload, run.report.attempts).await
+        finish(received, uncertain, run.report.attempts).await
     }
 }

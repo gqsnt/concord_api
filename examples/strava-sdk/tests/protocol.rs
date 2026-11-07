@@ -523,3 +523,333 @@ async fn retry_after_or_unexplained_429_gates_locally_without_repeating() {
         server.shutdown().await;
     }
 }
+
+// ---- Activity update (PUT /activities/{id}); maintenance ticket regressions.
+
+fn rename() -> ActivityUpdate {
+    ActivityUpdate::new().name("Synthetic evening gravel".into())
+}
+
+#[tokio::test]
+async fn activity_update_sends_only_the_set_fields_as_json() {
+    let server = TestServer::start(|r: &Recorded| {
+        assert_eq!(
+            (r.method.as_str(), r.target.as_str()),
+            ("PUT", "/api/v3/activities/9007199254740999")
+        );
+        assert_eq!(r.header("authorization"), Some("Bearer ACCESS_SECRET_A"));
+        assert_eq!(r.header("content-type"), Some("application/json"));
+        assert_eq!(r.header("accept"), Some("application/json"));
+        Reply::json(200, UPDATED)
+    })
+    .await;
+    let api = api(&server.url());
+    let full = ActivityUpdate::new()
+        .name("Synthetic evening gravel".into())
+        .sport_type("GravelRide".into())
+        .description("BODY_SECRET synthetic note".into())
+        .gear_id("b9007199".into())
+        .commute(true)
+        .trainer(false);
+    assert_eq!(
+        format!("{full:?}"),
+        r#"ActivityUpdate["name", "sport_type", "description", "gear_id", "trainer", "commute"]"#
+    );
+    let op = api.activities().update(9007199254740999, full.clone());
+    safe(&op);
+    safe(op.prepare().unwrap());
+    let updated = api
+        .activities()
+        .update(9007199254740999, full)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(updated.attempts, 1);
+    assert_eq!(updated.value.sport_type, "GravelRide");
+    assert_eq!(updated.value.gear_id.as_deref(), Some("b9007199"));
+    assert_eq!(
+        (updated.value.commute, updated.value.trainer),
+        (Some(true), Some(false))
+    );
+    api.activities()
+        .update(9007199254740999, rename())
+        .send()
+        .await
+        .unwrap();
+    api.activities()
+        .update(9007199254740999, ActivityUpdate::new().clear_gear())
+        .send()
+        .await
+        .unwrap();
+    let bodies: Vec<serde_json::Value> = server
+        .requests()
+        .iter()
+        .map(|r| serde_json::from_slice(&r.body).unwrap())
+        .collect();
+    assert_eq!(
+        bodies,
+        [
+            serde_json::json!({
+                "name": "Synthetic evening gravel",
+                "sport_type": "GravelRide",
+                "description": "BODY_SECRET synthetic note",
+                "gear_id": "b9007199",
+                "trainer": false,
+                "tags": {"Commute": true}
+            }),
+            serde_json::json!({"name": "Synthetic evening gravel"}),
+            serde_json::json!({"gear_id": "none"}),
+        ]
+    );
+    assert!(
+        server
+            .requests()
+            .iter()
+            .all(|r| !r.body_text().contains("\"commute\"") && !r.body_text().contains("\"type\"")),
+        "legacy commute and deprecated type are never sent"
+    );
+    server.shutdown().await;
+}
+
+#[tokio::test]
+async fn activity_update_is_charged_to_the_non_upload_windows() {
+    // A read reporting an exhausted non-upload short window gates a later update, not an upload.
+    let server = TestServer::start(|r: &Recorded| match r.method.as_str() {
+        "GET" => Reply::json(200, ACTIVITY)
+            .header("x-ratelimit-limit", "200,2000")
+            .header("x-ratelimit-usage", "30,300")
+            .header("x-readratelimit-limit", "100,1000")
+            .header("x-readratelimit-usage", "100,300"),
+        "POST" => Reply::json(201, RECEIPT),
+        _ => Reply::json(200, UPDATED),
+    })
+    .await;
+    let api = api(&server.url());
+    api.activities().get(7).send().await.unwrap();
+    let refused = api.activities().update(7, rename()).send().await;
+    assert!(matches!(refused, Err(Error::Admission(_))), "{refused:?}");
+    api.uploads().create(file()).send().await.unwrap();
+    assert_eq!(
+        server
+            .requests()
+            .iter()
+            .map(|r| r.method.as_str().to_owned())
+            .collect::<Vec<_>>(),
+        ["GET", "POST"]
+    );
+    server.shutdown().await;
+
+    // An update answered 429 that exhausts only the non-upload short window: reads are gated,
+    // uploads are not, and the 429 is explained (no conservative day-long gate).
+    let server = TestServer::start(|r: &Recorded| match r.method.as_str() {
+        "PUT" => Reply::json(429, PROBLEM)
+            .header("x-ratelimit-limit", "200,2000")
+            .header("x-ratelimit-usage", "30,300")
+            .header("x-readratelimit-limit", "100,1000")
+            .header("x-readratelimit-usage", "100,300"),
+        "POST" => Reply::json(201, RECEIPT),
+        _ => Reply::json(200, ACTIVITY),
+    })
+    .await;
+    let api = api_for_url(&server.url());
+    let limited = api
+        .activities()
+        .update(7, rename())
+        .send()
+        .await
+        .unwrap_err();
+    assert_eq!(limited.status(), Some(429));
+    assert!(!limited.is_ambiguous(), "a 429 refused the update");
+    let Error::Http(failure) = &limited else {
+        panic!("429");
+    };
+    assert!(failure.rates.read.unwrap().unwrap().short.exhausted());
+    let read = api.activities().get(7).send().await.unwrap_err();
+    assert!(matches!(read, Error::Admission(_)), "{read:?}");
+    api.uploads().create(file()).send().await.unwrap();
+    assert_eq!(server.requests().len(), 2);
+    server.shutdown().await;
+}
+fn api_for_url(url: &str) -> Strava {
+    support::api(url)
+}
+
+#[tokio::test]
+async fn activity_update_failures_after_dispatch_are_uncertain_and_never_resent() {
+    for case in 0..4 {
+        let server = TestServer::start(move |r: &Recorded| {
+            assert_eq!(r.method, "PUT");
+            match case {
+                0 => Reply::json(200, UPDATED).delay(Duration::from_secs(1)),
+                1 => Reply::hang_up(),
+                2 => Reply::json(503, PROBLEM),
+                _ => Reply::json(200, INVALID),
+            }
+        })
+        .await;
+        let api = session(&server.url(), TOKENS, Duration::from_millis(200)).client();
+        let error = api
+            .activities()
+            .update(7, rename())
+            .send()
+            .await
+            .unwrap_err();
+        assert!(error.is_ambiguous(), "case {case}: {error:?}");
+        safe_error(&error);
+        match (&error, case) {
+            (Error::Ambiguous(inner), 0) => {
+                assert_eq!(inner.delivery(), concord::Delivery::Unknown);
+                assert!(inner.transport().unwrap().is_timeout());
+                assert!(format!("{error}").contains("re-read the activity"));
+            }
+            (Error::Ambiguous(inner), 1) => {
+                assert_eq!(inner.delivery(), concord::Delivery::Unknown);
+            }
+            (Error::Http(failure), 2) => assert_eq!(failure.meta.status().as_u16(), 503),
+            // Applied (2xx) but unreadable: the caller still re-reads to learn the result.
+            (Error::Ambiguous(inner), 3) => {
+                assert_eq!(inner.kind(), concord::ErrorKind::Decode);
+                assert_eq!(error.status(), Some(200));
+            }
+            other => panic!("case {case}: {other:?}"),
+        }
+        assert_eq!(server.requests().len(), 1, "an update is never resent");
+        server.shutdown().await;
+    }
+}
+
+#[tokio::test]
+async fn activity_update_without_granted_activity_write_is_refused_before_any_request() {
+    let server = TestServer::start(|r: &Recorded| match (r.method.as_str(), r.path()) {
+        ("POST", "/oauth/token") => panic!("no refresh for a locally refused update"),
+        ("PUT", _) => Reply::json(401, PROBLEM),
+        ("POST", _) => Reply::json(201, RECEIPT),
+        _ => Reply::json(200, ACTIVITY),
+    })
+    .await;
+    for granted in [
+        "read activity:read_all",
+        "read,activity:read_all,profile:write",
+    ] {
+        let mut stored = tokens(EXPIRED);
+        stored.scope = Some(granted.into());
+        let api = Session::connect(
+            &server.url(),
+            &server.url(),
+            credentials(),
+            stored,
+            Duration::from_secs(2),
+        )
+        .unwrap()
+        .client();
+        let error = api
+            .activities()
+            .update(7, rename())
+            .send()
+            .await
+            .unwrap_err();
+        assert!(
+            matches!(error, Error::MissingScope("activity:write")),
+            "{error:?}"
+        );
+        assert_eq!(error.status(), None);
+        assert!(!error.is_ambiguous());
+        safe_error(&error);
+    }
+    assert!(server.requests().is_empty(), "no refresh and no dispatch");
+
+    // Reads and uploads keep their behavior with the same granted scopes: they are sent.
+    let mut stored = tokens(TOKENS);
+    stored.scope = Some("activity:read_all".into());
+    let api = Session::connect(
+        &server.url(),
+        &server.url(),
+        credentials(),
+        stored,
+        Duration::from_secs(2),
+    )
+    .unwrap()
+    .client();
+    api.activities().get(7).send().await.unwrap();
+    api.uploads().create(file()).send().await.unwrap();
+    assert_eq!(server.requests().len(), 2);
+
+    // Unknown, or granted in either delimiter style: the update is sent once and the provider's
+    // rejection keeps its status.
+    for (n, granted) in [
+        None,
+        Some("read,activity:write"),
+        Some("activity:write read"),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let mut stored = tokens(TOKENS);
+        stored.scope = granted.map(String::from);
+        let api = Session::connect(
+            &server.url(),
+            &server.url(),
+            credentials(),
+            stored,
+            Duration::from_secs(2),
+        )
+        .unwrap()
+        .client();
+        let error = api
+            .activities()
+            .update(7, rename())
+            .send()
+            .await
+            .unwrap_err();
+        assert_eq!(error.status(), Some(401), "{granted:?}");
+        assert!(!error.is_ambiguous());
+        assert_eq!(
+            server.requests().len(),
+            3 + n,
+            "a rejected update is not replayed"
+        );
+    }
+    server.shutdown().await;
+}
+
+#[test]
+fn update_reflection_checks_every_set_field_and_the_gear_sentinel() {
+    let current: Activity = serde_json::from_str(UPDATED).unwrap();
+    assert!(ActivityUpdate::new().is_reflected_in(&current));
+    let same = ActivityUpdate::new()
+        .name("Synthetic evening gravel".into())
+        .sport_type("GravelRide".into())
+        .description("Synthetic edited description".into())
+        .gear_id("b9007199".into())
+        .commute(true)
+        .trainer(false);
+    assert!(same.is_reflected_in(&current));
+    // Each field alone, differing from the stored activity, is detected.
+    for differs in [
+        ActivityUpdate::new().name("Other".into()),
+        ActivityUpdate::new().sport_type("Ride".into()),
+        ActivityUpdate::new().description("Other".into()),
+        ActivityUpdate::new().gear_id("b1".into()),
+        ActivityUpdate::new().clear_gear(),
+        ActivityUpdate::new().commute(false),
+        ActivityUpdate::new().trainer(true),
+    ] {
+        assert!(!differs.is_reflected_in(&current), "{differs:?}");
+    }
+    let cleared = Activity {
+        gear_id: None,
+        description: None,
+        ..current.clone()
+    };
+    assert!(ActivityUpdate::new().clear_gear().is_reflected_in(&cleared));
+    assert!(
+        !ActivityUpdate::new()
+            .gear_id("none".into())
+            .is_reflected_in(&current)
+    );
+    assert!(
+        !ActivityUpdate::new()
+            .description("Synthetic edited description".into())
+            .is_reflected_in(&cleared)
+    );
+}
