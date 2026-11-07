@@ -1317,6 +1317,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "concord-sdk-square-payments"
+version = "0.0.0"
+dependencies = [
+ "concord",
+ "concord-auth",
+ "concord-example-testserver",
+ "concord-pagination",
+ "serde",
+ "serde_json",
+ "tokio",
+]
+
+[[package]]
 name = "concord-sdk-twilio"
 version = "0.0.0"
 dependencies = [
