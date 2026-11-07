@@ -21,8 +21,9 @@ Concord owns exactly these responsibilities:
 3. **Request composition.** Base URL, path segments, subdomain labels, query parameters
    and headers contributed along the tree, composed in a documented, deterministic order,
    with explicit conflict rules decided at compile time.
-4. **Representations.** Request and response formats are ordinary implementations of the
-   public `Encode`/`Decode` (finite) and `Incremental` (streamed) traits; the standard ones
+4. **Representations.** Formats are ordinary implementations of the public traits: `Encode`
+   for request bodies (buffered or streamed), `Decode` for finite responses and `Incremental`
+   for streamed responses; the standard ones
    live in `concord-codecs` (JSON, text, bytes, form, CSV, JSON Lines, server-sent events,
    multipart). `Json` refuses a response without a JSON `Content-Type` unless an endpoint opts
    out explicitly. A typed error separates preparation, transport, status, metadata, decoding
