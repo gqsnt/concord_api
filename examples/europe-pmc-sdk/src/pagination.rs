@@ -31,6 +31,16 @@ fn check_cap(max: NonZeroUsize) -> Result<(), Error> {
     Ok(())
 }
 
+/// Counts one more request of a traversal. `max_pages` on the returned traversal replaces its
+/// cap, so the 1..=20 ceiling is also enforced here: a request past it is refused unsent.
+fn past_ceiling(issued: &mut usize) -> Result<(), Error> {
+    *issued += 1;
+    if *issued > MAX_PAGES {
+        return Err(Error::InvalidInput("traversal page cap must be in 1..=20"));
+    }
+    Ok(())
+}
+
 impl EuropePmcSearch {
     /// Builds a lazy traversal with a mandatory 1..=20 page cap. Calls generated send per page.
     /// The exact same query, page size and format must be used when resuming a checkpoint.
@@ -45,12 +55,15 @@ impl EuropePmcSearch {
         check_cap(max)?;
         let scope = self.clone();
         let mut requested = BTreeSet::new();
+        let mut issued = 0;
         Ok(Pages::new(from, move |cursor: Option<Cursor>| {
+            let over = past_ceiling(&mut issued);
             let scope = scope.clone();
             let cursor = cursor.unwrap_or_else(Cursor::start);
             requested.insert(cursor.clone());
             let requested = requested.clone();
             async move {
+                over?;
                 let response = match format {
                     SearchFormat::Json => scope.json().set_cursor(cursor).send().await?,
                     SearchFormat::Xml => scope.xml().set_cursor(cursor).send().await?,
@@ -101,11 +114,14 @@ impl EuropePmcPublicationReferences {
             .and_then(PageSize::new)?;
         let scope = self.clone();
         let first_hits = Arc::new(OnceLock::new());
+        let mut issued = 0;
         Ok(Pages::new(from, move |page: Option<PageNumber>| {
+            let over = past_ceiling(&mut issued);
             let scope = scope.clone();
             let first_hits = Arc::clone(&first_hits);
             let page = page.unwrap_or(PageNumber::FIRST);
             async move {
+                over?;
                 let response = match format {
                     SearchFormat::Json => scope.json().set_page(page).send().await?,
                     SearchFormat::Xml => scope.xml().set_page(page).send().await?,
