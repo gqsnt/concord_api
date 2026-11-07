@@ -1,6 +1,6 @@
 //! A bounded HubSpot CRM contacts client. See the package README for safety and persistence limits.
 use concord::{
-    Form, Json,
+    Delivery, Form, Json,
     reqwest::{
         self,
         header::{AUTHORIZATION, HeaderValue},
@@ -571,12 +571,12 @@ impl HubSpot {
         let response = api.contacts().batch_read(request).send().await?;
         attribute(&ids, response)
     }
-    /// Create exactly one request. A transport, invalid success body, or server error is uncertain.
+    /// Create once. Anything but a build failure or a definite client error is uncertain.
     pub async fn create(&self, contact: CreateContact) -> Result<Contact, Error> {
         let result = self.api().await?.contacts().create(contact).send().await;
         match result {
             Ok(contact) => Ok(contact),
-            Err(e) if e.kind() == concord::ErrorKind::Build => Err(e.into()),
+            Err(e) if e.delivery() == Delivery::NotSent => Err(e.into()),
             Err(e)
                 if e.status()
                     .is_some_and(|s| s.is_client_error() && s.as_u16() != 408) =>

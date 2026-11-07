@@ -16,7 +16,7 @@ service has been made** (live provider calls: NOT_RUN).
 ## Calling it
 
 The declared client is `Zendesk`; endpoints are reached by navigation and sent with the
-generated `send()`:
+generated `send()`, returning `Result<T, Error>`:
 
 | Call | Request | Output |
 |---|---|---|

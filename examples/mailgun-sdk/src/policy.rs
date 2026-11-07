@@ -54,22 +54,11 @@ impl Metadata {
     }
 
     fn number(&self, name: &str) -> HeaderNumber {
-        let mut values = self.0.headers().get_all(name).iter();
-        let Some(value) = values.next() else {
-            return HeaderNumber::Missing;
-        };
-        if values.next().is_some() {
-            return HeaderNumber::Invalid;
+        match concord::field::unsigned(self.0.headers(), name) {
+            Ok(None) => HeaderNumber::Missing,
+            Ok(Some(value)) => HeaderNumber::Value(value),
+            Err(_) => HeaderNumber::Invalid,
         }
-        let Ok(text) = value.to_str() else {
-            return HeaderNumber::Invalid;
-        };
-        let text = text.trim_matches([' ', '\t']);
-        if text.is_empty() || !text.bytes().all(|b| b.is_ascii_digit()) {
-            return HeaderNumber::Invalid;
-        }
-        text.parse()
-            .map_or(HeaderNumber::Invalid, HeaderNumber::Value)
     }
 }
 
@@ -104,7 +93,7 @@ impl<T: Send> SendWith<T> for SendPolicy {
 impl SendPolicy {
     pub(crate) async fn execute<T>(prepared: Prepared<T>) -> Result<Response<T>, Error> {
         let write = prepared.request().method() == concord::reqwest::Method::POST;
-        let failure = |e| {
+        let failure = |e: concord::Error| {
             if write {
                 Error::AmbiguousSend(Box::new(e))
             } else {

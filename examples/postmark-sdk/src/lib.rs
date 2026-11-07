@@ -159,7 +159,7 @@ pub const ERROR_LIMIT: usize = 64 * 1024;
 pub enum Error {
     /// Request building or a read operation failed.
     Request(concord::Error),
-    /// A send was executed but its response could not be received or decoded.
+    /// A send may have taken effect but its response could not be received or decoded.
     UnknownOutcome(concord::Error),
     /// A non-success status, with a document if the bounded JSON read succeeded.
     Api {
@@ -167,7 +167,7 @@ pub enum Error {
         status: concord::reqwest::StatusCode,
         /// Parsed provider error, if available.
         document: Option<ErrorDocument>,
-        /// Retry-After value when it is an integer number of seconds.
+        /// Retry-After seconds from exactly one unsigned decimal field; otherwise absent.
         retry_after_seconds: Option<u64>,
     },
     /// A batch was answered with HTTP 2xx, but the number of results differs from the number of
@@ -259,21 +259,20 @@ impl<T: Send + Reply> SendWith<T> for PostmarkPolicy {
         let prepared = endpoint.prepare().map_err(Error::Request)?;
         let sending = prepared.request().method() == concord::reqwest::Method::POST;
         let expected = T::expected(prepared.request());
-        let received = prepared.receive().await.map_err(|e| {
+        let failure = |e: concord::Error| {
             if sending {
                 Error::UnknownOutcome(e)
             } else {
                 Error::Request(e)
             }
-        })?;
+        };
+        let received = prepared.receive().await.map_err(failure)?;
         if !received.status().is_success() {
             let status = received.status();
-            let retry_after_seconds = received
-                .head()
-                .headers()
-                .get(concord::reqwest::header::RETRY_AFTER)
-                .and_then(|v| v.to_str().ok())
-                .and_then(|v| v.trim().parse().ok());
+            let retry_after_seconds =
+                concord::field::unsigned(received.head().headers(), "retry-after")
+                    .ok()
+                    .flatten();
             let (_, document) = received.document::<Json, ErrorDocument>(ERROR_LIMIT).await;
             return Err(Error::Api {
                 status,
@@ -281,13 +280,7 @@ impl<T: Send + Reply> SendWith<T> for PostmarkPolicy {
                 retry_after_seconds,
             });
         }
-        let output = received.decode().await.map_err(|e| {
-            if sending {
-                Error::UnknownOutcome(e)
-            } else {
-                Error::Request(e)
-            }
-        })?;
+        let output = received.decode().await.map_err(failure)?;
         output.check(expected)
     }
 }
@@ -299,7 +292,7 @@ concord::api! {
         headers { "X-Postmark-Server-Token" = "{token}"; }
         format Json;
         limit 16777216;
-        send PostmarkPolicy;
+        send PostmarkPolicy -> Result<_, Error>;
 
         /// Sending and inspecting outbound messages.
         scope outbound() {

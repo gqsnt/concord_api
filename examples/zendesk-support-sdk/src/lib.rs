@@ -54,7 +54,7 @@ concord::api! {
         subdomain "{subdomain}";
         format Json;
         limit PAGE_BODY_LIMIT;
-        send policy;
+        send policy -> Result<_, Error>;
 
         /// The ticket collection.
         scope tickets {
