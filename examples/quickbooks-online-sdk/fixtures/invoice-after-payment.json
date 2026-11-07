@@ -1,0 +1,10 @@
+{
+  "Invoice": {
+    "Id": "145",
+    "SyncToken": "1",
+    "CustomerRef": {"value": "58"},
+    "TotalAmt": 250.00,
+    "Balance": 224.8700
+  },
+  "time": "2026-11-07T09:30:00-08:00"
+}

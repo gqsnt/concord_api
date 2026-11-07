@@ -1,0 +1,22 @@
+{
+  "Customer": {
+    "domain": "QBO",
+    "Id": "29",
+    "SyncToken": "0",
+    "DisplayName": "Synthetic Consulting",
+    "CompanyName": "Synthetic Consulting",
+    "GivenName": "Nia",
+    "FamilyName": "Example",
+    "Active": true,
+    "Job": false,
+    "BillWithParent": false,
+    "Balance": 390.0,
+    "BalanceWithJobs": 390.0,
+    "PrimaryEmailAddr": { "Address": "consulting@example.test" },
+    "PrimaryPhone": { "FreeFormNumber": "(555) 010-0029" },
+    "PreferredDeliveryMethod": "Print",
+    "MetaData": { "CreateTime": "2026-01-05T09:29:04-08:00", "LastUpdatedTime": "2026-02-24T15:54:02-08:00" },
+    "sparse": false
+  },
+  "time": "2026-11-07T11:04:15.496-08:00"
+}
