@@ -109,8 +109,8 @@ impl SendPolicy {
         let uncertain =
             |cause| Error::Uncertain(Box::new(UncertainWrite::new(operation, key.clone(), cause)));
         match prepared.receive().await {
-            // No connection was established: the request never left this process.
-            Err(e) if e.transport().is_some_and(|t| t.is_connect()) => Err(Error::Concord(e)),
+            // Any transport failure, a refused connection included: a caller-supplied client may
+            // follow a redirect after the write was performed (`Error::delivery()` is `Unknown`).
             Err(e) => Err(uncertain(UncertainCause::NoResponse(e))),
             Ok(received) if received.status().is_server_error() => {
                 let http = HttpError::read(received, 1).await;

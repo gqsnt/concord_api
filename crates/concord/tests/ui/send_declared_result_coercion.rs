@@ -13,7 +13,7 @@ concord::api! {
     pub client C() {
         base "https://x.test";
         send Policy -> Box<[_]>;
-        GET item() -> String { path "i"; response concord::Text; }
+        GET item() { path "i"; }
     }
 }
 

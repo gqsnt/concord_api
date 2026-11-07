@@ -87,15 +87,11 @@ impl Route {
         !matches!(self.operation.method(), Some("GET" | "HEAD"))
     }
 
-    /// A transport failure before a response head. For a write it is ambiguous unless the
-    /// connection was never established.
+    /// A transport failure before a response head. For a write it is ambiguous, a refused
+    /// connection included: the client is the caller's, and a redirect may follow a performed
+    /// write to a target that refuses (`Error::delivery()` is `Unknown` for the same reason).
     fn failed_before_head(self, error: concord::Error) -> Error {
-        // Discord's rule (its client is the caller's): a connect failure means not sent.
-        // `Error::delivery()` does not claim that (a redirect may follow a performed write).
-        let never_sent = error
-            .transport()
-            .is_some_and(concord::reqwest::Error::is_connect);
-        if self.is_write() && !never_sent {
+        if self.is_write() {
             Error::AmbiguousWrite(Box::new(AmbiguousWrite {
                 route: self,
                 accepted: None,

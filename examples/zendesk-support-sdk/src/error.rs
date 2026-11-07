@@ -164,7 +164,7 @@ impl HttpError {
 #[non_exhaustive]
 pub enum UncertainCause {
     /// The request may have been sent, and no response arrived (a timeout, a connection closed
-    /// before the response head).
+    /// before the response head, a refused connection).
     NoResponse(concord::Error),
     /// A 5xx response: the server may have committed the write before failing.
     ServerError(Box<HttpError>),

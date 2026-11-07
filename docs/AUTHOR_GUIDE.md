@@ -1557,7 +1557,8 @@ derefs to it): methods cannot be added to another crate's type.
 **One header field, strictly.** A rate-limit counter or a request id must appear at most once,
 and `str::parse::<u64>` accepts `+5`. `concord::field::single(headers, name)` and
 `concord::field::unsigned(headers, name)` read any `HeaderMap` — `received.head().headers()`,
-`meta.headers()`, `error.head().map(|head| head.headers())`, a natively obtained response — and
+`meta.headers()`, a natively obtained response's, and an error's when it kept a head
+(`error.head().map(|head| field::unsigned(head.headers(), name))`) — and
 tell absent (`Ok(None)`) from
 repeated, invalid and overflowing (`FieldError`, which never contains the value);
 `ResponseHead::single`/`unsigned` are the same on a head:
@@ -1605,9 +1606,9 @@ delivery. `concord::Error::delivery()` states it:
 A refused connection is `Unknown` on purpose: the client may have followed a redirect from a
 server that performed the write (a `303` to a host that is down ends in a connect error), and
 reqwest's `is_connect()` also reports a connection error of a nested source, such as a streamed
-body's own request. An SDK whose client follows no redirects and whose bodies are fixed bytes may
-decide that `transport().is_some_and(|e| e.is_connect())` means "not sent" — its rule, stated in
-its docs.
+body's own request. An SDK that builds its own client without redirects, and whose bodies are
+fixed bytes, may decide that `transport().is_some_and(|e| e.is_connect())` means "not sent" — its
+rule, stated in its docs. Accepting the caller's client voids that rule.
 
 Which operations are writes, and whether an `Answered` 5xx or an unreadable 2xx is uncertain too,
 stay the SDK's rules:

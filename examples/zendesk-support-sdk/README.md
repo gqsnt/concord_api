@@ -113,12 +113,14 @@ Generated `send()` goes through `SendPolicy` (`prepare()` bypasses it):
   - An update `409`: `Error::Collision`, retaining the `HttpError`; re-read the ticket and
     decide whether to submit a fresh change. Other `4xx` (including `429`) are `Error::Http`.
     A 429's `retry_after()` says when a request may be sent again; for creates retain the key.
-  - No response after the request may have been sent (timeout, connection lost), any `5xx`, or a
+  - No response (timeout, connection lost or refused), any `5xx`, or a
     `2xx` whose head or body cannot be read: `Error::Uncertain(UncertainWrite)` with the
     request's `idempotency_key()` when present and the observed `cause()`. Reconcile creates as
     above; for an update, re-read and investigate before deciding, because a repeated comment
     can be duplicated.
-  - A connection that was never established: `Error::Concord` (nothing was sent).
+  - A refused connection is uncertain too: with a caller-supplied client that follows
+    redirects, a performed create can end in a redirect target that refuses. Replaying with
+    the same `IdempotencyKey` is safe.
 - `Error::Http(HttpError)` keeps the authoritative status, `attempts()`, `retry_after()`,
   `request_id()` (`X-Zendesk-Request-Id`) and the body read with a 64 KiB bound as
   `document()`: a JSON error document (`error`, `description`, `details`), JSON `null`, or

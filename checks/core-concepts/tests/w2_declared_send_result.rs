@@ -116,3 +116,63 @@ fn _forwarded_names_the_result(store: &Forwarded) {
     let _: std::pin::Pin<Box<dyn std::future::Future<Output = Result<Item, Error>> + Send>> =
         Box::pin(store.item(1).send());
 }
+
+// Review b23-review2-sol, finding 3: a type macro's `_` is the output under every delimiter.
+macro_rules! result {
+    ($t:ty) => {
+        Result<$t, Error>
+    };
+}
+concord::api! {
+    /// A client whose send result is a brace-delimited type macro.
+    pub client Braced() {
+        base "http://braced.invalid";
+        format Json;
+        send Policy -> result!{_};
+        /// One item.
+        GET item(id: u32) -> Item { path "items/{id}"; }
+    }
+}
+
+fn _braced_names_the_result(store: &Braced) {
+    let _: std::pin::Pin<Box<dyn std::future::Future<Output = Result<Item, Error>> + Send>> =
+        Box::pin(store.item(1).send());
+}
+
+// Review b23-review-sol, finding 3 (precedence): a forwarded expression keeps its grouping inside
+// a const argument of the template, so `{ $e * 2 }` with `$e = 1 + 2` is 6, not 5.
+/// A result carrying a size.
+pub struct Envelope<T, const N: usize>(pub T);
+
+/// A policy whose output is an `Envelope` of size 6.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct Sized6;
+
+impl<T: Send> SendWith<T> for Sized6 {
+    type Output = Envelope<Result<T, Error>, 6>;
+    async fn send<E: Endpoint<T> + Send>(&self, endpoint: E) -> Self::Output {
+        Envelope(Policy.send(endpoint).await)
+    }
+}
+
+macro_rules! scaled_store {
+    ($e:expr) => {
+        concord::api! {
+            /// A client whose template has a forwarded const expression.
+            pub client Scaled() {
+                base "http://scaled.invalid";
+                format Json;
+                send Sized6 -> Envelope<Result<_, Error>, { $e * 2 }>;
+                /// One item.
+                GET item(id: u32) -> Item { path "items/{id}"; }
+            }
+        }
+    };
+}
+scaled_store!(1 + 2);
+
+fn _scaled_names_the_result(store: &Scaled) {
+    let _: std::pin::Pin<
+        Box<dyn std::future::Future<Output = Envelope<Result<Item, Error>, 6>> + Send>,
+    > = Box::pin(store.item(1).send());
+}

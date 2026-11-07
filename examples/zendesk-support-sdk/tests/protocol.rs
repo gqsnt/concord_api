@@ -588,7 +588,9 @@ async fn a_write_without_a_response_is_uncertain() {
 }
 
 #[tokio::test]
-async fn a_write_that_never_connected_is_not_uncertain() {
+async fn a_refused_connection_on_a_create_is_uncertain() {
+    // Review b23-review2-sol finding 1: this caller-built client follows redirects, so a connect
+    // error does not prove that a create was not performed.
     // Bound but never listening: connections are refused, and while it lives no other test's
     // server can take the port (a dropped listener's port could be reused concurrently).
     let reserved = tokio::net::TcpSocket::new_v4().unwrap();
@@ -608,8 +610,12 @@ async fn a_write_that_never_connected_is_not_uncertain() {
         .send()
         .await
         .unwrap_err();
-    let Error::Concord(error) = error else {
+    let Error::Uncertain(write) = error else {
         panic!("{error:?}")
+    };
+    assert_eq!(write.idempotency_key(), Some(&key("k")));
+    let UncertainCause::NoResponse(error) = write.cause() else {
+        panic!("{write:?}")
     };
     assert!(error.transport().is_some_and(|t| t.is_connect()));
     drop(reserved);

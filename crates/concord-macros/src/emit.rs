@@ -1748,52 +1748,67 @@ fn limit_const(model: &Model, index: usize, output: Option<&Output>) -> TokenStr
 }
 
 /// A `send P -> Template;` result for one endpoint: every type placeholder `_` of the template
-/// becomes `out`. Not a lifetime's `'_`, nothing inside a const expression (`{ .. }`, where `_` is
-/// a pattern), and a group without a placeholder is kept as written (a fragment forwarded by
-/// `macro_rules!` keeps its grouping).
+/// (a `syn::Type::Infer`) becomes `out`. Not a lifetime's `'_`, a fn parameter named `_`, or
+/// anything in an expression (a const argument, an array length). Inside a type macro's input
+/// every `_` that is not a lifetime's is the output, under any delimiter. The rest is re-emitted
+/// from the parsed type: a fragment forwarded by `macro_rules!` keeps its invisible group.
 fn with_output(template: &syn::Type, out: &TokenStream) -> TokenStream {
     use proc_macro2::{Delimiter, Group, TokenTree};
-    fn apostrophe(tt: &TokenTree) -> bool {
-        matches!(tt, TokenTree::Punct(p) if p.as_char() == '\'')
-    }
-    fn has_placeholder(tokens: &TokenStream) -> bool {
-        let mut lifetime = false;
-        tokens.clone().into_iter().any(|tt| {
-            let found = match &tt {
-                TokenTree::Ident(i) => i == "_" && !lifetime,
-                TokenTree::Group(g) => {
-                    g.delimiter() != Delimiter::Brace && has_placeholder(&g.stream())
-                }
-                _ => false,
-            };
-            lifetime = apostrophe(&tt);
-            found
-        })
-    }
-    fn replace(tokens: TokenStream, out: &TokenStream) -> TokenStream {
-        let mut lifetime = false;
-        tokens
+    use syn::visit_mut::{self, VisitMut};
+    /// Inside a type macro's input (opaque tokens, any delimiter) every `_` that is not a
+    /// lifetime's is the output; groups without one are kept as they are.
+    fn macro_tokens(tokens: TokenStream, out: &TokenStream) -> (TokenStream, bool) {
+        let mut found = false;
+        let mut after_apostrophe = false;
+        let tokens = tokens
             .into_iter()
             .map(|tt| {
-                let after_apostrophe = lifetime;
-                lifetime = apostrophe(&tt);
+                let lifetime = after_apostrophe;
+                after_apostrophe = matches!(&tt, TokenTree::Punct(p) if p.as_char() == '\'');
                 match tt {
-                    TokenTree::Ident(i) if i == "_" && !after_apostrophe => {
+                    TokenTree::Ident(i) if i == "_" && !lifetime => {
+                        found = true;
                         TokenTree::Group(Group::new(Delimiter::None, out.clone()))
                     }
-                    TokenTree::Group(g)
-                        if g.delimiter() != Delimiter::Brace && has_placeholder(&g.stream()) =>
-                    {
-                        let mut group = Group::new(g.delimiter(), replace(g.stream(), out));
-                        group.set_span(g.span());
-                        TokenTree::Group(group)
-                    }
+                    TokenTree::Group(g) => match macro_tokens(g.stream(), out) {
+                        (inner, true) => {
+                            found = true;
+                            let mut group = Group::new(g.delimiter(), inner);
+                            group.set_span(g.span());
+                            TokenTree::Group(group)
+                        }
+                        (_, false) => TokenTree::Group(g),
+                    },
                     tt => tt,
                 }
             })
-            .collect()
+            .collect();
+        (tokens, found)
     }
-    replace(quote!(#template), out)
+    /// Replaces type placeholders only: a fn parameter named `_`, a lifetime `'_` and every
+    /// expression (const arguments, array lengths, patterns in blocks) are not types.
+    struct Fill<'a>(&'a TokenStream);
+    impl VisitMut for Fill<'_> {
+        fn visit_type_mut(&mut self, ty: &mut syn::Type) {
+            match ty {
+                syn::Type::Infer(_) => {
+                    let group = Group::new(Delimiter::None, self.0.clone());
+                    *ty = syn::Type::Verbatim(TokenTree::Group(group).into());
+                }
+                syn::Type::Macro(m) => {
+                    let (tokens, found) = macro_tokens(m.mac.tokens.clone(), self.0);
+                    if found {
+                        m.mac.tokens = tokens;
+                    }
+                }
+                _ => visit_mut::visit_type_mut(self, ty),
+            }
+        }
+        fn visit_expr_mut(&mut self, _: &mut syn::Expr) {}
+    }
+    let mut filled = template.clone();
+    Fill(out).visit_type_mut(&mut filled);
+    quote!(#filled)
 }
 
 /// The unused binder of a `Clone` bound: `'__concord`, unless the type itself already names that
@@ -2791,6 +2806,14 @@ mod tests {
             text(quote!(Wrap<_, [u8; { match 1 { _ => 2 } }]>)),
             "Wrap<Item,[u8;{match1{_=>2}}]>"
         );
+        // A parameter named `_` is not a type; an array length `_` is an expression.
+        assert_eq!(text(quote!(fn(_: u8) -> _)), "fn(_:u8)->Item");
+        assert_eq!(text(quote!([_; _])), "[Item;_]");
+        // A type macro's input: the same under every delimiter, lifetimes kept.
+        assert_eq!(text(quote!(result! {_})), "result!{Item}");
+        assert_eq!(text(quote!(result!(_))), "result!(Item)");
+        assert_eq!(text(quote!(result![&'_ _])), "result![&'_Item]");
+        assert_eq!(text(quote!(Vec<result! {u8}>)), "Vec<result!{u8}>");
     }
 
     use super::{emit, key_owner};

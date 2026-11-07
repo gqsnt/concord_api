@@ -37,8 +37,10 @@ or whether a connection error came from a nested source. So Concord states only 
 and the SDK keeps the rest as a documented rule. The adoption showed what that leaves: `NotSent`
 arises only while building, so a policy that prepares first and then receives (Postmark, Mailgun)
 gains nothing from it; HubSpot's `send()`-based create uses it as the readable form of its build
-rule; Zendesk and Discord keep `is_connect()` because their clients disable redirects — a fact
-about their client that Concord cannot see.
+rule. Zendesk and Discord first kept their `is_connect()` rule; the follow-up review showed that
+both accept the caller's client (Zendesk's own test client follows redirects), so a refused
+connection on a write is now uncertain in both — the safe rule, and less code. "Not sent" from a
+connect error is provable only by an SDK that builds its client itself.
 
 **5. Followed provider URLs, correlated inputs and read-modify-write of request values are real,
 repeated costs** — but each needs a design that is not obvious (below, experiments).
