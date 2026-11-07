@@ -179,3 +179,26 @@ fn _scaled_names_the_result(store: &Scaled) {
 
     let _: ScaledSend = Box::pin(store.item(1).send());
 }
+
+// Review b23-review4-sol, finding 1: a macro matching its input token by token still matches once
+// the placeholder is filled (`&&` must not reach it as `& &`).
+macro_rules! anded {
+    (&& u8, $t:ty) => {
+        Result<$t, Error>
+    };
+}
+concord::api! {
+    /// A client whose send result is a token-sensitive type macro.
+    pub client Anded() {
+        base "http://anded.invalid";
+        format Json;
+        send Policy -> anded!(&& u8, _);
+        /// One item.
+        GET item(id: u32) -> Item { path "items/{id}"; }
+    }
+}
+
+fn _anded_names_the_result(store: &Anded) {
+    let _: std::pin::Pin<Box<dyn std::future::Future<Output = Result<Item, Error>> + Send>> =
+        Box::pin(store.item(1).send());
+}

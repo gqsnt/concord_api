@@ -1750,39 +1750,112 @@ fn limit_const(model: &Model, index: usize, output: Option<&Output>) -> TokenStr
 /// A `send P -> Template;` result for one endpoint: every type placeholder `_` of the template
 /// (a `syn::Type::Infer`) becomes `out`. Not a lifetime's `'_`, a fn parameter named `_`, or
 /// anything in an expression (a const argument, an array length). A type macro's input is filled
-/// by the same rule when it parses as types separated by commas, under any delimiter; another
-/// grammar is kept as written. The rest is re-emitted from the parsed type: a fragment forwarded
-/// by `macro_rules!` keeps its invisible group.
+/// by the same rule when it parses as types separated by commas, under any delimiter (another
+/// grammar is kept as written), and only its placeholders change: every other token reaches the
+/// macro as written, spacing included. The rest is re-emitted from the parsed type: a fragment
+/// forwarded by `macro_rules!` keeps its invisible group.
 fn with_output(template: &syn::Type, out: &TokenStream) -> TokenStream {
-    use proc_macro2::{Delimiter, Group, TokenTree};
+    use proc_macro2::{Delimiter, Group, Ident, TokenTree};
+    use std::collections::BTreeSet;
     use syn::parse::Parser;
     use syn::punctuated::Punctuated;
     use syn::visit_mut::{self, VisitMut};
+    const MARK: &str = "__concord_placeholder_";
+    /// Every `_` that is not a lifetime's, in order: renamed to a numbered marker (`mark`), or
+    /// replaced by the output when its number is in `fill`. Other tokens are kept as written,
+    /// spacing included; a group is rebuilt only when it changed.
+    fn walk(
+        tokens: TokenStream,
+        n: &mut usize,
+        act: &mut dyn FnMut(usize, &Ident) -> Option<TokenTree>,
+    ) -> TokenStream {
+        let mut after_apostrophe = false;
+        tokens
+            .into_iter()
+            .map(|tt| {
+                let lifetime = after_apostrophe;
+                after_apostrophe = matches!(&tt, TokenTree::Punct(p) if p.as_char() == '\'');
+                match tt {
+                    TokenTree::Ident(i) if i == "_" && !lifetime => {
+                        *n += 1;
+                        act(*n - 1, &i).unwrap_or(TokenTree::Ident(i))
+                    }
+                    TokenTree::Group(g) => {
+                        let before = g.stream().to_string();
+                        let inner = walk(g.stream(), n, act);
+                        if inner.to_string() == before {
+                            TokenTree::Group(g)
+                        } else {
+                            let mut group = Group::new(g.delimiter(), inner);
+                            group.set_span(g.span());
+                            TokenTree::Group(group)
+                        }
+                    }
+                    tt => tt,
+                }
+            })
+            .collect()
+    }
+    /// The markers in type positions of a macro input that parses as comma-separated types
+    /// (nested macro inputs by the same rule); none for any other grammar.
+    fn placeholders(tokens: TokenStream, found: &mut BTreeSet<usize>) {
+        struct Find<'a>(&'a mut BTreeSet<usize>);
+        impl VisitMut for Find<'_> {
+            fn visit_type_mut(&mut self, ty: &mut syn::Type) {
+                match ty {
+                    syn::Type::Path(p) if p.qself.is_none() => {
+                        if let Some(n) = p.path.get_ident().and_then(|i| {
+                            i.to_string()
+                                .strip_prefix(MARK)
+                                .and_then(|n| n.parse().ok())
+                        }) {
+                            self.0.insert(n);
+                        } else {
+                            visit_mut::visit_type_mut(self, ty);
+                        }
+                    }
+                    syn::Type::Macro(m) => placeholders(m.mac.tokens.clone(), self.0),
+                    _ => visit_mut::visit_type_mut(self, ty),
+                }
+            }
+            fn visit_expr_mut(&mut self, _: &mut syn::Expr) {}
+        }
+        let parse = Punctuated::<syn::Type, syn::Token![,]>::parse_terminated;
+        if let Ok(mut types) = parse.parse2(tokens) {
+            types.iter_mut().for_each(|t| Find(found).visit_type_mut(t));
+        }
+    }
+    /// A type macro's input with its type placeholders filled and every other token as written:
+    /// the input is parsed (with each `_` renamed to a marker) only to find which `_` are types.
+    fn macro_input(tokens: &TokenStream, out: &TokenStream) -> Option<TokenStream> {
+        let marked = walk(tokens.clone(), &mut 0, &mut |n, i| {
+            Some(TokenTree::Ident(Ident::new(
+                &format!("{MARK}{n}"),
+                i.span(),
+            )))
+        });
+        let mut fill = BTreeSet::new();
+        placeholders(marked, &mut fill);
+        (!fill.is_empty()).then(|| {
+            walk(tokens.clone(), &mut 0, &mut |n, _| {
+                fill.contains(&n)
+                    .then(|| TokenTree::Group(Group::new(Delimiter::None, out.clone())))
+            })
+        })
+    }
     /// Replaces type placeholders only: a fn parameter named `_`, a lifetime `'_` and every
     /// expression (const arguments, array lengths, patterns in blocks) are not types.
-    struct Fill<'a> {
-        out: &'a TokenStream,
-        filled: usize,
-    }
+    struct Fill<'a>(&'a TokenStream);
     impl VisitMut for Fill<'_> {
         fn visit_type_mut(&mut self, ty: &mut syn::Type) {
             match ty {
                 syn::Type::Infer(_) => {
-                    let group = Group::new(Delimiter::None, self.out.clone());
+                    let group = Group::new(Delimiter::None, self.0.clone());
                     *ty = syn::Type::Verbatim(TokenTree::Group(group).into());
-                    self.filled += 1;
                 }
                 syn::Type::Macro(m) => {
-                    // An input that is types separated by commas (`result!{_}`, `id!(fn(_: u8) -> _)`)
-                    // is filled by the same rule; any other grammar, and an input without a
-                    // placeholder, is kept as written.
-                    let parse = Punctuated::<syn::Type, syn::Token![,]>::parse_terminated;
-                    if let Ok(mut types) = parse.parse2(m.mac.tokens.clone()) {
-                        let before = self.filled;
-                        types.iter_mut().for_each(|t| self.visit_type_mut(t));
-                        if self.filled > before {
-                            m.mac.tokens = quote!(#types);
-                        }
+                    if let Some(tokens) = macro_input(&m.mac.tokens, self.0) {
+                        m.mac.tokens = tokens;
                     }
                 }
                 _ => visit_mut::visit_type_mut(self, ty),
@@ -1791,7 +1864,7 @@ fn with_output(template: &syn::Type, out: &TokenStream) -> TokenStream {
         fn visit_expr_mut(&mut self, _: &mut syn::Expr) {}
     }
     let mut filled = template.clone();
-    Fill { out, filled: 0 }.visit_type_mut(&mut filled);
+    Fill(out).visit_type_mut(&mut filled);
     quote!(#filled)
 }
 
@@ -2810,6 +2883,11 @@ mod tests {
         assert_eq!(text(quote!(pair!(_, id! {_}))), "pair!(Item,id!{Item})");
         // Not types: kept as written (rustc then rejects the `_` in a signature).
         assert_eq!(text(quote!(m!(x => _))), "m!(x=>_)");
+        // Review b23-review4 finding 1: the macro receives its other tokens as written (`&&` is one
+        // joint pair, not `& &`).
+        let ty: syn::Type = syn::parse2(quote!(result!(&&u8, _))).unwrap();
+        let exact = super::with_output(&ty, &quote!(Item)).to_string();
+        assert!(exact.contains("&&"), "{exact}");
     }
 
     use super::{emit, key_owner};
