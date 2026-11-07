@@ -1,0 +1,106 @@
+//! Between waves 2 and 3, candidate R: whether a failed request reached the server. Baseline:
+//! Discord and Zendesk classify `transport().is_connect()` as "not sent", Postmark, HubSpot and
+//! Mailgun treat every failed write as uncertain (connect refusals included), each by hand.
+
+use std::time::Duration;
+
+use concord::{Delivery, ErrorKind, Json};
+use concord_example_testserver::{Body, Reply, TestServer};
+use serde::{Deserialize, Serialize};
+
+/// A created item.
+#[derive(Debug, Deserialize, Serialize)]
+pub struct Item {
+    /// Its id.
+    pub id: u32,
+}
+
+concord::api! {
+    /// A store accepting writes.
+    pub client Store() {
+        base "http://store.invalid";
+        format Json;
+        /// Creates an item.
+        POST create(header("x-note") note: String, body item: Item) -> Item { path "items"; }
+    }
+}
+
+fn store(base: &str, timeout: Duration) -> Store {
+    let http = concord::reqwest::Client::builder()
+        .timeout(timeout)
+        .retry(concord::reqwest::retry::never())
+        .build()
+        .unwrap();
+    Store::new(http).with_base_url(base).unwrap()
+}
+
+async fn delivery(store: &Store) -> (Delivery, ErrorKind) {
+    let error = store.create("n", Item { id: 1 }).send().await.unwrap_err();
+    (error.delivery(), error.kind())
+}
+
+#[tokio::test]
+async fn a_request_that_was_not_built_or_never_connected_was_not_sent() {
+    // Not built: a header value Concord refuses before any I/O.
+    let error = store("http://127.0.0.1:9", Duration::from_secs(5))
+        .create("a\nb", Item { id: 1 })
+        .send()
+        .await
+        .unwrap_err();
+    assert_eq!(
+        (error.delivery(), error.kind()),
+        (Delivery::NotSent, ErrorKind::Build)
+    );
+
+    // Never connected: a port that is bound (so no other test can take it) but not listening.
+    let socket = tokio::net::TcpSocket::new_v4().unwrap();
+    socket.bind("127.0.0.1:0".parse().unwrap()).unwrap();
+    let base = format!("http://{}", socket.local_addr().unwrap());
+    assert_eq!(
+        delivery(&store(&base, Duration::from_secs(5))).await,
+        (Delivery::NotSent, ErrorKind::Transport)
+    );
+    drop(socket);
+}
+
+#[tokio::test]
+async fn a_request_without_an_answer_may_have_been_performed() {
+    // The server reads the whole request, then answers too late.
+    let server =
+        TestServer::start(|_| Reply::json(201, r#"{"id":1}"#).delay(Duration::from_secs(5))).await;
+    assert_eq!(
+        delivery(&store(&server.url(), Duration::from_millis(300))).await,
+        (Delivery::Unknown, ErrorKind::Transport)
+    );
+    assert_eq!(server.requests().len(), 1, "the write reached the server");
+
+    // The server reads the request and closes the connection without a response.
+    let server = TestServer::start(|_| Reply::hang_up()).await;
+    assert_eq!(
+        delivery(&store(&server.url(), Duration::from_secs(5))).await,
+        (Delivery::Unknown, ErrorKind::Transport)
+    );
+}
+
+#[tokio::test]
+async fn any_response_head_is_an_answer_even_when_its_body_fails() {
+    // `Reply` is not `Clone`: each case is a constructor.
+    let cases: [(fn() -> Reply, ErrorKind); 4] = [
+        (|| Reply::json(500, r#"{"error":"x"}"#), ErrorKind::Status),
+        (|| Reply::text(201, "text/html", "<p>"), ErrorKind::Metadata),
+        (|| Reply::json(201, "{"), ErrorKind::Decode),
+        (
+            || {
+                Reply::new(201)
+                    .header("content-type", "application/json")
+                    .with_body(Body::FailAfter(vec![r#"{"id""#.into()]))
+            },
+            ErrorKind::Transport,
+        ),
+    ];
+    for (reply, kind) in cases {
+        let server = TestServer::start(move |_| reply()).await;
+        let (delivery, observed) = delivery(&store(&server.url(), Duration::from_secs(5))).await;
+        assert_eq!((delivery, observed), (Delivery::Answered, kind));
+    }
+}

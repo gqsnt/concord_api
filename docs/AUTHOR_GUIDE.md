@@ -1554,9 +1554,88 @@ gives the same before a reader consumes the body. To add provider accessors (`re
 wrap it in the SDK's own type (`pub struct ResponseMeta(concord::ResponseMeta)`; the Dropbox SDK
 derefs to it): methods cannot be added to another crate's type.
 
+**One header field, strictly.** A rate-limit counter or a request id must appear at most once,
+and `str::parse::<u64>` accepts `+5`. `concord::field::single(headers, name)` and
+`concord::field::unsigned(headers, name)` read any `HeaderMap` — `received.head().headers()`,
+`meta.headers()`, `error.head()`, a natively obtained response — and tell absent (`Ok(None)`) from
+repeated, invalid and overflowing (`FieldError`, which never contains the value);
+`ResponseHead::single`/`unsigned` are the same on a head:
+
+```rust
+use concord::field::{self, FieldError};
+use concord::reqwest::header::HeaderMap;
+
+/// A provider quota: absent and unreadable are different facts.
+#[derive(Debug, PartialEq)]
+pub enum Remaining { Absent, Unreadable(FieldError), Value(u64) }
+
+pub fn remaining(headers: &HeaderMap) -> Remaining {
+    match field::unsigned(headers, "x-ratelimit-remaining") {
+        Ok(None) => Remaining::Absent,
+        Ok(Some(n)) => Remaining::Value(n),
+        Err(e) => Remaining::Unreadable(e),
+    }
+}
+
+fn main() {
+    let mut headers = HeaderMap::new();
+    assert_eq!(remaining(&headers), Remaining::Absent);
+    headers.insert("x-ratelimit-remaining", "+5".parse().unwrap());
+    assert_eq!(remaining(&headers), Remaining::Unreadable(FieldError::Invalid));
+}
+```
+
 A provider rule on the head (a served API version) refuses by returning the SDK's error with
 `received.into_response()`, unread. A request edited natively after `into_parts()` (a `Link` URL)
 is executed with `Decoder::execute(&client, request)`, which returns the same `Received<T>`.
+
+### 5.11b A write that may have happened: `Error::delivery()`
+
+A timed-out create may have created the item; a refused connection did not. Before deciding that
+a failed write is *uncertain* (reported, never resent automatically), an SDK needs to know whether
+the request reached the server. `concord::Error::delivery()` states it:
+
+| `Delivery` | When |
+|---|---|
+| `NotSent` | the request was not built (`ErrorKind::Build`), or the connection was never established |
+| `Unknown` | no response head arrived after the connection was made: a timeout, a reset, a failed upload |
+| `Answered` | a response head arrived (any status), even if its body then failed, was refused or was too long |
+
+Which operations are writes, and whether an `Answered` 5xx or an unreadable 2xx is uncertain too,
+stay the SDK's rules:
+
+```rust
+use concord::{Delivery, Error};
+
+/// One SDK's rule: a write is uncertain when it may have reached the server without a readable
+/// answer; a 5xx on a create may also have committed.
+pub fn uncertain(error: &Error) -> bool {
+    let write = error
+        .operation()
+        .and_then(|op| op.method())
+        .is_some_and(|method| method != "GET" && method != "HEAD");
+    let server_error = error.head().is_some_and(|head| head.status().is_server_error());
+    write && (error.delivery() == Delivery::Unknown || server_error)
+}
+
+concord::api! {
+    pub client Notes() {
+        base "https://notes.example.com";
+        POST create(header("x-note") note: String) { path "notes"; }
+    }
+}
+
+fn main() {
+    let notes = Notes::new(concord::reqwest::Client::new());
+    // A header value with a line break is refused before anything is sent.
+    let error = notes.create("a\nb").prepare().unwrap_err();
+    assert_eq!(error.delivery(), Delivery::NotSent);
+    assert!(!uncertain(&error));
+}
+```
+
+`Unknown` is a fact about this attempt only: whether the provider performed the write is learned
+from the provider (an idempotency key, a lookup by a client-chosen id), never from Concord.
 
 ### 5.12 One adapter for every operation: `concord::Endpoint`
 

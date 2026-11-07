@@ -52,6 +52,24 @@ enum Repr {
     Limit(u64),
 }
 
+/// What a failed call says about whether the request reached the server: the fact an SDK needs
+/// before deciding that a write is uncertain ([`Error::delivery`]). Concord states the fact; which
+/// failures of which operations are *ambiguous writes* stays the SDK's rule.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[non_exhaustive]
+pub enum Delivery {
+    /// Nothing was sent: the request was not built ([`ErrorKind::Build`]), or the connection was
+    /// never established (a connect failure, before any request byte was written).
+    NotSent,
+    /// The request may or may not have reached the server, and no response head arrived: a
+    /// timeout, a reset or a failed body upload after the connection was established. A write may
+    /// have been performed.
+    Unknown,
+    /// The server answered: a response head arrived (any status), even if its body then failed,
+    /// was refused or was too long.
+    Answered,
+}
+
 /// The stage at which a call failed.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 #[non_exhaustive]
@@ -306,6 +324,35 @@ impl Error {
         match &self.inner.repr {
             Repr::Transport(error) => Some(error),
             _ => None,
+        }
+    }
+
+    /// Whether the request reached the server ([`Delivery`]): `NotSent` for a request that was
+    /// not built or whose connection failed, `Answered` once a response head arrived, `Unknown`
+    /// otherwise. A send policy uses it to tell a failed write that certainly did not happen from
+    /// one that may have:
+    ///
+    /// ```
+    /// use concord_core::{Delivery, Error};
+    ///
+    /// /// An SDK rule: a write is uncertain when it may have reached the server without an answer.
+    /// fn uncertain_write(error: &Error) -> bool {
+    ///     error.delivery() == Delivery::Unknown
+    /// }
+    /// ```
+    ///
+    /// A response that arrived but could not be read (`Answered` with a failed body) is the
+    /// SDK's to classify: its status is in [`head`](Self::head).
+    pub fn delivery(&self) -> Delivery {
+        match &self.inner.repr {
+            Repr::Build { .. } | Repr::HeaderConflict { .. } | Repr::Encode(_) => Delivery::NotSent,
+            Repr::Transport(_) if self.inner.head.is_some() => Delivery::Answered,
+            // hyper reports a connect failure before writing any request byte.
+            Repr::Transport(error) if error.is_connect() => Delivery::NotSent,
+            Repr::Transport(_) => Delivery::Unknown,
+            Repr::Status(_) | Repr::Metadata(..) | Repr::Decode(_) | Repr::Limit(_) => {
+                Delivery::Answered
+            }
         }
     }
 

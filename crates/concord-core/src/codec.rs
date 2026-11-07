@@ -384,9 +384,8 @@ impl<'a> ResponseHead<'a> {
         self.headers
     }
 
-    /// The one field line of `name`, if present: `Ok(None)` when absent,
-    /// [`FieldError::Repeated`] when the field has several lines (equal or not). For a provider
-    /// header that must appear at most once (a request id, a rate-limit counter).
+    /// The one field line of `name`, if present ([`field::single`](crate::field::single) on this
+    /// head's headers).
     ///
     /// # Errors
     ///
@@ -395,41 +394,20 @@ impl<'a> ResponseHead<'a> {
         &self,
         name: impl reqwest::header::AsHeaderName,
     ) -> Result<Option<&'a HeaderValue>, FieldError> {
-        let mut values = self.headers.get_all(name).iter();
-        match (values.next(), values.next()) {
-            (None, _) => Ok(None),
-            (Some(one), None) => Ok(Some(one)),
-            (Some(_), Some(_)) => Err(FieldError::Repeated),
-        }
+        crate::field::single(self.headers, name)
     }
 
-    /// The field `name` as a non-negative decimal integer (`X-RateLimit-Remaining: 42`): one
-    /// field line of ASCII digits, surrounding spaces and tabs ignored; no sign, no fraction, no
-    /// exponent. `Ok(None)` when absent. Rust's `str::parse::<u64>` would accept `+5`; this does
-    /// not.
+    /// The field `name` as a non-negative decimal integer
+    /// ([`field::unsigned`](crate::field::unsigned) on this head's headers).
     ///
     /// # Errors
     ///
-    /// [`FieldError::Repeated`], [`FieldError::Invalid`] (empty, not text, or not only digits) or
-    /// [`FieldError::Overflow`] (more than `u64::MAX`). The value is never part of the error.
+    /// [`FieldError::Repeated`], [`FieldError::Invalid`] or [`FieldError::Overflow`].
     pub fn unsigned(
         &self,
         name: impl reqwest::header::AsHeaderName,
     ) -> Result<Option<u64>, FieldError> {
-        let Some(value) = self.single(name)? else {
-            return Ok(None);
-        };
-        let digits = value.as_bytes().trim_ascii();
-        if digits.is_empty() || !digits.iter().all(u8::is_ascii_digit) {
-            return Err(FieldError::Invalid);
-        }
-        digits
-            .iter()
-            .try_fold(0u64, |n, d| {
-                n.checked_mul(10)?.checked_add(u64::from(d - b'0'))
-            })
-            .map(Some)
-            .ok_or(FieldError::Overflow)
+        crate::field::unsigned(self.headers, name)
     }
 
     /// The `Content-Type` field lines, without interpretation: which forms are acceptable is the
@@ -458,8 +436,9 @@ impl fmt::Debug for ResponseHead<'_> {
     }
 }
 
-/// Why [`ResponseHead::single`] or [`ResponseHead::unsigned`] could not read a field. The field's
-/// value is never part of it.
+/// Why [`field::single`](crate::field::single) or [`field::unsigned`](crate::field::unsigned) (and
+/// the same methods of [`ResponseHead`]) could not read a field. The field's value is never part
+/// of it.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum FieldError {

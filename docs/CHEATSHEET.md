@@ -123,6 +123,8 @@ format statements, `send` (client), parameter groups `params Name(..);` (client)
 | `into_parts()` → `(Client, Request, Decoder)` | execute it yourself, then `decoder.finish(result)` or `decoder.decode(response)` |
 | `error.kind()`, `status()`, `endpoint()` | `Build`, `Transport`, `Status`, `Metadata`, `Decode`, `Limit`; `status()` is `Some` for `Status` only |
 | `error.head()`, `error.head_meta()` | the head of the response any failure after it arrived concerns (`Status`, `Metadata`, `Decode`, `Limit`, a mid-body `Transport`): borrowed, or an owned copy; `None` before a head |
+| `error.delivery()` → `Delivery::{NotSent, Unknown, Answered}` | whether the request reached the server: not built or never connected / no answer after connecting / a head arrived. The SDK decides which writes are uncertain ([§5.11b](AUTHOR_GUIDE.md#511b-a-write-that-may-have-happened-errordelivery)) |
+| `concord::field::unsigned(headers, name)`, `field::single(..)`; `head.unsigned(name)` | one header field, strictly: absent `Ok(None)`; repeated, invalid (`+5`), overflow → `FieldError` (no value) ([§5.11](AUTHOR_GUIDE.md#511-reading-response-metadata-in-an-sdk)) |
 | `error.response()`, `error.into_response()`, `error.meta()` | the unread response of a `Status` or a `Metadata` error: borrowed (headers), taken (body), or its head owned |
 | `error.codec_error()` | the format's `CodecError` (a `Metadata`, `Decode` or encoding `Build` error): static `label()`, `get("line")`, and `source_unredacted()` |
 | `error.transport()` | the reqwest error, which may contain URLs |
