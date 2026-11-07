@@ -25,7 +25,16 @@ credentials), retries, rate limiting, pagination or transport configuration (tim
 TLS, redirects, connection pools). Those stay in your code and in the `reqwest::Client` you pass
 in; [`examples/native`](examples/native) shows how to compose them, and
 [`examples/riot`](examples/riot) is a complete, sourced client for part of the Riot Games API,
-tested offline (its README says how to copy it out of this workspace).
+tested offline (its README says how to copy it out of this workspace). Separate, optional crates
+offer building blocks for some of these jobs — credentials and a token cache, bounded application
+attempts, keyed admission, page traversal (see the table under [Documentation](#documentation)).
+Neither `concord` nor its default features depend on them, and none of them acts unless your code
+calls it.
+
+The workspace also holds 55 SDKs written with Concord ([`examples/*-sdk`](examples)), from small
+public-data APIs to Stripe, Kubernetes and S3. They are pinned reference slices of real APIs,
+tested offline against synthetic fixtures, and serve as Concord's measurement corpus — not
+complete or published SDKs.
 
 ## Example
 
@@ -201,6 +210,10 @@ breaking Concord release.
 | What goes on the wire: `Accept` and `Content-Type` | [Author guide, 5.8](docs/AUTHOR_GUIDE.md#58-what-goes-on-the-wire-accept-and-content-type) |
 | Error documents, timeouts, streaming, retries, pagination; patterns from other APIs | [Recipes](docs/RECIPES.md), [`examples/compat`](examples/compat) |
 | Bounded page and job traversal for an SDK: dependent cursors, known page plans, result manifests, budgets, checkpoints, reports (core Concord still does not paginate; this is a separate crate that does not depend on it) | [`concord-pagination`](crates/concord-pagination/README.md) |
+| The standard formats (`Json`, `Text`, `Binary`, `Form`, CSV, JSON Lines, server-sent events, multipart), each an ordinary `Encode`/`Decode` implementation; the facade re-exports them through its features | [`concord-codecs`](crates/concord-codecs/README.md) |
+| Sensitive Basic/Bearer credentials and a scoped, cancellation-safe token cache over your own acquisition closure (pilot: persistence, signing and retries stay in the SDK) | [`concord-auth`](crates/concord-auth/README.md) |
+| Bounded application attempts with explicit replay permission, `Retry-After` parsing and a prepared-request adapter (pilot) | [`concord-retry`](crates/concord-retry/README.md) |
+| Process-local keyed admission and concurrency leases for SDK-supplied keys (pilot, not accepted as a default; no provider quotas are built in) | [`concord-ratelimit`](crates/concord-ratelimit/README.md) |
 | Build an SDK around a declaration: domain values to operations, named workflows, bounded traversal, response metadata, operations the SDK does not declare | [Recipes: SDK and application patterns](docs/RECIPES.md#sdk-and-application-patterns), [`examples/app`](examples/app), [`examples/extension`](examples/extension) |
 | Read a compile error | [Diagnostics](docs/DIAGNOSTICS.md) |
 | Upgrade from format words and the body-only codec traits, from in-place formats, from `via`, from the V4 alpha or from V3 | [Migration](docs/MIGRATION.md) |
