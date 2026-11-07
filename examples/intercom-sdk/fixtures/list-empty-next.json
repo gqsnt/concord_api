@@ -1,0 +1,10 @@
+{
+  "type": "list",
+  "data": [],
+  "total_count": 1,
+  "pages": {
+    "next": {
+      "starting_after": "after-empty"
+    }
+  }
+}

@@ -1,0 +1,13 @@
+{
+  "type": "error.list",
+  "request_id": "SYNTHETIC_SECRET",
+  "errors": [
+    {
+      "code": "SYNTHETIC_SECRET",
+      "message": "Echo SYNTHETIC_SECRET",
+      "data": {
+        "echo": "SYNTHETIC_SECRET"
+      }
+    }
+  ]
+}
