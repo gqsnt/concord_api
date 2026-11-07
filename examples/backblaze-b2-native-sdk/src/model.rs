@@ -243,7 +243,7 @@ impl AccountInfo {
         &self.account_id
     }
 
-    /// `apiInfo.storageApi.apiUrl`: where `b2_get_upload_url` goes.
+    /// `apiInfo.storageApi.apiUrl`: where upload-URL, file-name list and version-delete calls go.
     pub fn api_url(&self) -> &Url {
         &self.api_url
     }

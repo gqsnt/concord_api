@@ -34,6 +34,8 @@ pub enum InputError {
     EmptyStream,
     /// A one-shot source was already handed to the transport; it cannot be sent again.
     SourceConsumed,
+    /// `maxFileCount` exceeds B2's maximum of 10,000 (zero selects B2's default).
+    MaxFileCount,
 }
 
 impl fmt::Display for InputError {
@@ -48,6 +50,7 @@ impl fmt::Display for InputError {
             Self::BaseUrl => "base URL",
             Self::EmptyStream => "one-shot stream of zero bytes",
             Self::SourceConsumed => "one-shot source already consumed",
+            Self::MaxFileCount => "maximum file count (over 10000)",
         };
         write!(f, "invalid B2 input: {what}")
     }
@@ -55,7 +58,7 @@ impl fmt::Display for InputError {
 
 impl std::error::Error for InputError {}
 
-/// The `code` of a B2 error document: every code the four implemented operations document, and
+/// The `code` of a B2 error document: every code the implemented operations document, and
 /// [`Other`](Self::Other) for any other identifier (kept as sent).
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 #[non_exhaustive]
@@ -64,6 +67,14 @@ pub enum ErrorCode {
     BadRequest,
     /// `bad_bucket_id` (400): the bucket ID matches no bucket.
     BadBucketId,
+    /// `invalid_bucket_id` (400, list).
+    InvalidBucketId,
+    /// `out_of_range` (400, list): `maxFileCount` out of range.
+    OutOfRange,
+    /// `file_not_present` (400, delete): the file name and ID do not identify a version.
+    FileNotPresent,
+    /// `too_many_requests` (429, list).
+    TooManyRequests,
     /// `auth_token_limit` (400, upload): the upload token is already in use.
     AuthTokenLimit,
     /// `custom_timestamp_invalid` (400, upload).
@@ -86,7 +97,7 @@ pub enum ErrorCode {
     CapExceeded,
     /// `download_cap_exceeded` (403, download).
     DownloadCapExceeded,
-    /// `access_denied` (403, download): wrong customer-managed encryption key.
+    /// `access_denied` (403, download; 401, delete): encryption key or Object Lock refusal.
     AccessDenied,
     /// `not_found` (404, download).
     NotFound,
@@ -111,6 +122,10 @@ impl ErrorCode {
         match code {
             "bad_request" => Self::BadRequest,
             "bad_bucket_id" => Self::BadBucketId,
+            "invalid_bucket_id" => Self::InvalidBucketId,
+            "out_of_range" => Self::OutOfRange,
+            "file_not_present" => Self::FileNotPresent,
+            "too_many_requests" => Self::TooManyRequests,
             "auth_token_limit" => Self::AuthTokenLimit,
             "custom_timestamp_invalid" => Self::CustomTimestampInvalid,
             "custom_timestamp_not_allowed" => Self::CustomTimestampNotAllowed,
@@ -139,6 +154,10 @@ impl ErrorCode {
         match self {
             Self::BadRequest => "bad_request",
             Self::BadBucketId => "bad_bucket_id",
+            Self::InvalidBucketId => "invalid_bucket_id",
+            Self::OutOfRange => "out_of_range",
+            Self::FileNotPresent => "file_not_present",
+            Self::TooManyRequests => "too_many_requests",
             Self::AuthTokenLimit => "auth_token_limit",
             Self::CustomTimestampInvalid => "custom_timestamp_invalid",
             Self::CustomTimestampNotAllowed => "custom_timestamp_not_allowed",
@@ -169,7 +188,7 @@ impl fmt::Display for ErrorCode {
     }
 }
 
-/// B2's error document (`status`, `code`, `message`), as the four pages document it.
+/// B2's error document (`status`, `code`, `message`), as the endpoint pages document it.
 #[derive(Clone)]
 pub struct ErrorDocument {
     status: u16,
@@ -337,6 +356,10 @@ pub enum Violation {
     DownloadStatus,
     /// A download's `X-Bz-File-Id` is missing, repeated or another file's.
     DownloadFileId,
+    /// A listed entry has an invalid ID/length or names another bucket.
+    ListedFile,
+    /// A delete's success document does not name the requested file version.
+    DeletedFileVersion,
 }
 
 /// A documented response rule that was broken, with the response head.

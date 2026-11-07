@@ -1,6 +1,6 @@
 [package]
 name = "concord-sdk-backblaze-b2-native"
-description = "A bounded Backblaze B2 Native API v4 SDK slice (b2_authorize_account, b2_get_upload_url, a single-request b2_upload_file with exact length and SHA-1, b2_download_file_by_id with checksum verification) declared with concord::api!, with explicit upload-uncertainty reporting."
+description = "A bounded Backblaze B2 Native API v4 SDK slice: authorize, upload with length and SHA-1, verified download, resumable file-name traversal and single-attempt version deletion with explicit uncertainty."
 version = "0.0.0"
 edition = "2024"
 rust-version.workspace = true

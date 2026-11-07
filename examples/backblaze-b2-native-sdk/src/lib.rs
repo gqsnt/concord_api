@@ -3,6 +3,7 @@
 mod download;
 mod error;
 mod model;
+mod storage;
 mod upload;
 mod wire;
 
@@ -16,6 +17,10 @@ pub use error::{
 pub use model::{
     AccountInfo, Allowed, AllowedBucket, ApplicationKey, BucketId, ContentType, FileId, FileName,
     FileVersion, Sha1Hex, UploadTarget,
+};
+pub use storage::{
+    DeleteError, DeletedFileVersion, FileNamePage, FileNameQuery, FileNameTraversal, ListedFile,
+    Storage,
 };
 pub use upload::{
     AttemptRecord, Evidence, UploadError, UploadFile, UploadPolicy, UploadReport, Uploaded,
@@ -147,6 +152,11 @@ pub struct Session {
 }
 
 impl Session {
+    /// Account-authorized operations at the issued API URL.
+    pub fn storage(&self) -> Storage<'_> {
+        Storage::new(self)
+    }
+
     /// What `b2_authorize_account` returned (without the token).
     pub fn account(&self) -> &AccountInfo {
         &self.account

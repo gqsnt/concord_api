@@ -9,6 +9,9 @@
 2. **Download and verify**: `b2_download_file_by_id` returns the bytes; the SDK checks them
    against the returned `X-Bz-Content-Sha1` and hands them out only when they match.
 
+The account's `session.storage()` scope also supports bounded, resumable `b2_list_file_names`
+traversal and single-attempt `b2_delete_file_version` with explicit uncertainty.
+
 Every request is declared with `concord::api!` (`src/wire.rs`). The slice was built and tested
 only against local stand-ins: **no live B2 call was made** (see `PROVENANCE.md`).
 
@@ -57,6 +60,7 @@ A file can also be a one-shot source whose length and SHA-1 the caller knows
 |---|---|---|
 | `b2_authorize_account` | `https://api.backblazeb2.com` (declared base) | `Basic base64(keyId:applicationKey)` (via `concord-auth`) |
 | `b2_get_upload_url` | the issued `apiUrl` | the account token |
+| `b2_list_file_names`, `b2_delete_file_version` | the issued `apiUrl` | the account token |
 | `b2_upload_file` | the issued `uploadUrl`, path and query as issued | the upload token of that URL |
 | `b2_download_file_by_id` | the issued `downloadUrl` | the account token |
 
@@ -131,6 +135,78 @@ SHA-1, e.g. a large file) is `ChecksumFailure::Unavailable`; a missing, repeated
 header is refused too. No `Range` is sent, so the whole file is verified. The decoded name,
 content type, upload timestamp and `X-Bz-Info-*` values are returned beside the bytes.
 
+## File-name traversal and version deletion
+
+The storage scope follows client → scope → endpoint: authorize with `Client`, then call
+`session.storage().list_file_names(...)` or `.delete_file_version(...)`. Both use the API URL
+and account token from that authorization; they never fetch an upload URL. The application
+key needs `listFiles` / `deleteFiles` respectively.
+
+```rust,no_run
+# use concord_sdk_backblaze_b2_native::*;
+use std::num::NonZeroUsize;
+# async fn run(session: Session, bucket: BucketId) -> Result<(), Box<dyn std::error::Error>> {
+let storage = session.storage();
+let query = FileNameQuery {
+    prefix: Some("reports/".into()),
+    delimiter: Some("/".into()),
+    max_file_count: Some(100),
+    ..FileNameQuery::new(bucket)
+};
+let mut names = storage.list_file_names(query, NonZeroUsize::new(3).unwrap());
+while let Some(page) = names.next_page().await? {
+    for entry in page.files {
+        // Virtual folders have no version ID. Check the exact name before deleting.
+        if entry.file_name == "reports/obsolete.txt" {
+            if let Some(id) = entry.file_id {
+                let name = FileName::new(entry.file_name)?;
+                match storage.delete_file_version(&name, &id).await {
+                    Ok(deleted) => assert_eq!(deleted.file_id, id),
+                    Err(failure) if failure.may_have_deleted() => {
+                        // Stop and list again before deciding what to do; do not blindly resend.
+                        return Err(failure.into());
+                    }
+                    Err(failure) => return Err(failure.into()),
+                }
+            }
+        }
+    }
+}
+if let Some(resume) = names.resume_point() {
+    // The cap stopped the traversal. This query keeps bucket, prefix, delimiter and count.
+    let mut next_batch = storage.list_file_names(resume, NonZeroUsize::new(3).unwrap());
+    let _page = next_batch.next_page().await?;
+} else {
+    assert!(names.is_complete());
+}
+# Ok(()) }
+```
+
+`max_file_count` controls each page (maximum 10,000; zero or omitted selects B2's default of
+100). The page cap bounds requests, including failed or cancelled attempts. `next_page()`
+returns `None` at the cap or completion; only `is_complete()` confirms B2 returned
+`nextFileName: null`. Empty or short pages with a continuation do not complete the scan.
+Errors preserve the prior resume query; a missing continuation field is a decode error.
+Each successful page is bounded by `JSON_BODY_LIMIT` (1 MiB), even for a large requested count.
+All pages preserve the original prefix and delimiter; cursors are sent as opaque strings.
+
+Delete sends one JSON POST with the unencoded file name and version ID. A mismatched pair is
+`DeleteError::error().code() == Some(&ErrorCode::FileNotPresent)`. Transport timeouts, lost
+answers, server errors and unreadable/mismatched success documents remain possibly deleted.
+No delete is automatically resent. Timeouts come from the caller's HTTP client; cancelling
+the delete future also leaves the outcome unknown. Use `http_client_builder()` so transport
+retries and redirects stay disabled.
+
+After an uncertain delete, the caller starts another listing to inspect current state. This
+endpoint lists current visible names, so an older version can reappear after deletion and
+hidden/older versions are not all observable. Absence from this scan cannot prove the fate of
+every version; a cap or delimiter can also hide relevant entries. Complete the relevant scan
+before drawing conclusions. Listing is not a snapshot or an exactly-once guarantee.
+
+References read **2026-11-07**:
+[b2_list_file_names](https://www.backblaze.com/apidocs/b2-list-file-names),
+[b2_delete_file_version](https://www.backblaze.com/apidocs/b2-delete-file-version).
+
 ## Failures
 
 `Error` is one of:
@@ -141,7 +217,7 @@ content type, upload timestamp and `X-Bz-Info-*` values are returned beside the 
   (`concord::Error` names the operation and keeps the head; `delivery()` says whether the request
   may have reached B2);
 - `Provider`: a non-2xx answer. The HTTP status is authoritative; `code()` is the typed B2
-  `code` (every code the four pages document, `ErrorCode::Other` for any other) when the body was
+  `code` (every code the six endpoint pages document, `ErrorCode::Other` for any other) when the body was
   a B2 error document whose `status` matches; a proxy page, an oversized, interrupted or
   contradictory document keeps the status and says why (`unreadable()`,
   `inconsistent_document()`);
@@ -188,3 +264,7 @@ truncated / oversized / wrong-media bodies, documented-rule violations and redac
 `tests/workflows.rs` runs both workflows end to end and the required failure. Both run against
 `tests/common`, four loopback servers (account, API, upload, download hosts) built on
 `examples/testserver`.
+`tests/storage.rs` covers traversal, resume, typed errors and uncertain deletes;
+`tests/storage_consumer.rs` exercises discovery → resume → delete → list again using the public
+scope. Their synthetic fixtures are in `tests/storage_support/mod.rs`. The unchanged
+`tests/first_use.rs` remains the first consumer's compatibility test.

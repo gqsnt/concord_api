@@ -11,12 +11,12 @@ use std::collections::BTreeMap;
 use concord::bytes::Bytes;
 use concord::reqwest::header::{AUTHORIZATION, HeaderValue};
 use concord::{Binary, Encoded, EncodedBody, Endpoint, Json, Received, ResponseMeta, SendWith};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 use crate::error::{Error, ProviderError, WireErrorDocument};
 
 concord::api! {
-    /// Backblaze B2 Native API v4: the four operations of this slice.
+    /// Backblaze B2 Native API v4: the operations of this slice.
     pub client B2Wire {
         base "https://api.backblazeb2.com";
         path "b2api/v4";
@@ -33,6 +33,18 @@ concord::api! {
         scope storage(#[sensitive] header(AUTHORIZATION) token: String) {
             GET get_upload_url(query("bucketId") bucket_id: String) -> UploadUrlWire {
                 path "b2_get_upload_url";
+            }
+            GET list_file_names(
+                query("bucketId") bucket_id: String,
+                query("startFileName") start_file_name?: String,
+                query("prefix") prefix?: String,
+                query("delimiter") delimiter?: String,
+                query("maxFileCount") max_file_count?: u16,
+            ) -> ListFileNamesWire {
+                path "b2_list_file_names";
+            }
+            POST delete_file_version(body version: DeleteFileVersionRequest) -> DeletedFileVersionWire {
+                path "b2_delete_file_version";
             }
         }
 
@@ -173,6 +185,29 @@ pub struct FileVersionWire {
     pub file_info: BTreeMap<String, String>,
     pub file_name: String,
     pub upload_timestamp: u64,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ListFileNamesWire {
+    pub files: Vec<FileVersionWire>,
+    // A missing cursor is malformed, not evidence that traversal finished.
+    #[serde(deserialize_with = "Deserialize::deserialize")]
+    pub next_file_name: Option<String>,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DeleteFileVersionRequest {
+    pub file_name: String,
+    pub file_id: String,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DeletedFileVersionWire {
+    pub file_name: String,
+    pub file_id: String,
 }
 
 #[cfg(test)]

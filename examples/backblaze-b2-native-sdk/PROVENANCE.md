@@ -8,7 +8,7 @@ conformance.
 
 ## Official pages
 
-Each page was downloaded once with `curl` (HTML), and its visible text extracted for reading.
+The original four pages below were downloaded once with `curl` (HTML), and their visible text extracted for reading.
 Each page states "Updated on 11 Sep 2026". The SHA-256 of the downloaded HTML and of the
 extracted text pin what was read (the HTML may embed per-request markup; the text is the stable
 pin).
@@ -28,7 +28,7 @@ U    06c4186b19918c59e3684436c9c7b2afa9ba1104c1b7824fe8ef818acd27e6e6  e7107ee9a
 D    38a724b9f70de4d1fc1e1b9a9fd099e9add035e5fd5c65b24f2ecd767a08e03d  a239a43253e00814fd2a562fa8991bf783c0b72e9a107fc7e9a3d543cff34cf5
 ```
 
-No other page was read (in particular not B2's "Files", "String Encoding", "Uploading" or
+No other page was read during the original implementation (in particular not B2's "Files", "String Encoding", "Uploading" or
 integration-checklist pages that the four pages link to); rules that live only there are not
 implemented, and the gaps are listed below.
 
@@ -101,3 +101,39 @@ wrote the lock ran with `--offline`; the lock diff adds only this package and
 ## Examples and crate sources consulted
 
 Recorded in `FRICTION.md` ("Examples consulted").
+
+## Maintenance sources and fixtures — 2026-11-07
+
+Read the following exact references through the read-only web tool on **2026-11-07**:
+
+- [b2_list_file_names](https://www.backblaze.com/apidocs/b2-list-file-names): GET v4,
+  account authorization (`listFiles`), `bucketId`, `startFileName`, `prefix`, `delimiter`,
+  `maxFileCount`, response `files` and nullable `nextFileName`, and error codes. The prose
+  specifies `nextFileName` as the continuation/completion field; the example loop's
+  `response.startFileName` completion check contradicts the response schema. This SDK follows
+  the schema and prose. Null folder IDs/checksums are accepted.
+- [b2_delete_file_version](https://www.backblaze.com/apidocs/b2-delete-file-version): POST v4,
+  account authorization (`deleteFiles`), JSON `fileName`/`fileId`, response matching those
+  fields, and `400 file_not_present` for an absent name/ID pair. The latest older version may
+  become current when the latest is removed. Timeout uncertainty and never automatically
+  resending are SDK contract decisions required by the ticket, not a provider exactly-once claim.
+
+Also re-read the four original references on **2026-11-07**:
+[b2_authorize_account](https://www.backblaze.com/apidocs/b2-authorize-account),
+[b2_get_upload_url](https://www.backblaze.com/apidocs/b2-get-upload-url),
+[b2_upload_file](https://www.backblaze.com/apidocs/b2-upload-file),
+[b2_download_file_by_id](https://www.backblaze.com/apidocs/b2-download-file-by-id).
+Their existing auth/upload/download behavior is unchanged. These reads did not create new
+HTML/text captures; the hashes above describe only the original author's captures.
+
+`tests/storage_support/mod.rs` assembles synthetic v4 responses from these schemas. Bucket,
+account, token, file ID/name, timestamp and continuations are invented; `hello\n` has the fixed
+known SHA-1 `f572d396fae9206628714fb2ce00f72e94f2258f` already used in `tests/first_use.rs`.
+No provider recordings or live calls were made. The delete timeout fixture independently
+chooses whether the version was removed before delaying its answer. The same visible failure
+must remain uncertain in both cases. A separate fixture supports consumer traversal/resume,
+version deletion, then another name listing.
+
+**Dependencies added for maintenance: none.** The workspace membership and package lock entry
+already existed at the start. The initial maintenance build ran offline without `--locked`;
+subsequent Cargo commands used `--offline --locked`. No lock change was needed.
