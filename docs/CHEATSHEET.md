@@ -121,6 +121,7 @@ format statements, `send` (client), parameter groups `params Name(..);` (client)
 | `send policy;` (client value or stateless type) | generated `send()` calls `SendWith<T>::send` and returns the SDK's `Output`; the policy may sign, make sub-requests or repeat requests |
 | `send policy -> Result<_, Error>;` | the same, and every generated `send()` declares that result (`_` = the endpoint's output) instead of `<P as SendWith<T>>::Output`; a mismatch is a compile error at the template ([§5.13](AUTHOR_GUIDE.md#513-the-sdks-own-send-send-policy)) |
 | `concord::Endpoint<T>` | implemented by every generated endpoint for its output `T` (`prepare`, `operation()`): write one SDK adapter for all operations |
+| `GeneratedEndpoint::operation()` | the endpoint's declared identity without naming its output: compare with `error.operation()` |
 | `into_parts()` → `(Client, Request, Decoder)` | execute it yourself, then `decoder.finish(result)` or `decoder.decode(response)` |
 | `error.kind()`, `status()`, `endpoint()` | `Build`, `Transport`, `Status`, `Metadata`, `Decode`, `Limit`; `status()` is `Some` for `Status` only |
 | `error.head()`, `error.head_meta()` | the head of the response any failure after it arrived concerns (`Status`, `Metadata`, `Decode`, `Limit`, a mid-body `Transport`): borrowed, or an owned copy; `None` before a head |

@@ -1692,7 +1692,9 @@ A provider error document on a non-2xx response is read with `received.document:
 (§5.11): the format's head checks and context, then the body up to `n` bytes (`ErrorKind::Limit`
 beyond; nothing more is read), then its `decode_body`. `received.bytes_limited(n)` is the raw
 read for an SDK that keeps or parses the bytes itself. `<E as Endpoint<T>>::operation()` names
-the endpoint without building a request.
+the endpoint without building a request; a concrete endpoint type also has an inherent
+`operation()` that does not need its output (`ShopOrdersCreate::operation()`), for comparing
+with `error.operation()` or `received.operation()`.
 
 ### 5.13 The SDK's own `send()`: `send policy;`
 

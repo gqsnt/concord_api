@@ -5,7 +5,8 @@ maintenance release; summary in the [changelog](../CHANGELOG.md)), then the two 
 (the modular V4), then older ones:
 
 - [To the consolidated interface](#to-the-consolidated-interface) — additive: existing code
-  compiles; the new response, body, stream and pagination boundaries replace SDK plumbing.
+  compiles (one rare exception: a generated name, below); the new response, body, stream and
+  pagination boundaries replace SDK plumbing.
 - [From 4.1 to 4.2](#from-41-to-42) — same DSL, crates, codec contracts and toolchain; some
   declarations that 4.1 rejected compile, advice is exact, and one rare `macro_rules!` case changes
   meaning.
@@ -34,6 +35,12 @@ concord-example-quickstart`).
 Nothing is removed: `send`, `send_raw`, `into_parts`, `Decoder::{decode, finish}`, the reader
 `open`/`open_for` methods and the pagination engine work as before. Four kinds of SDK code can
 shrink.
+
+**One new generated name.** Every generated endpoint type now has an inherent
+`operation() -> concord::Operation` (its declared identity, without naming the output). Like
+`prepare` and the `set_*` controls, the name is the generated type's: an SDK that added its own
+inherent `operation` (or an item of that name) to a generated endpoint type gets `E0592` and
+deletes it — the generated one returns the same identity as `<E as Endpoint<T>>::operation()`.
 
 **Reading response metadata.** Code that took the request apart only to look at the head before
 decoding (a fragment of the old form; it does not compile on its own):

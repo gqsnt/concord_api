@@ -40,8 +40,7 @@ impl Error {
     /// for `payments().create(..)` only, false for complete and cancel.
     /// This does not grant permission to change a replay's key/body.
     pub fn create_outcome_unknown(&self) -> bool {
-        self.operation() == Some(<SquarePaymentsCreate as Endpoint<PaymentResponse>>::operation())
-            && self.outcome_unknown()
+        self.operation() == Some(SquarePaymentsCreate::operation()) && self.outcome_unknown()
     }
 
     /// The declared operation that failed, when known.

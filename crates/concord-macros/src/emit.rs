@@ -1710,6 +1710,11 @@ fn emit_owner(
                     #controls
                     #limit
 
+                    /// The declared identity, without building a request or naming its output.
+                    #[inline] pub fn operation() -> #k::Operation {
+                        #k::__private::declared(#op_name, #op_method)
+                    }
+
                     /// Builds the native request without sending it.
                     ///
                     /// # Errors
@@ -1732,7 +1737,7 @@ fn emit_owner(
                         #ty::prepare(self)
                     }
                     #[inline] fn operation() -> #k::Operation {
-                        #k::__private::declared(#op_name, #op_method)
+                        #ty::operation()
                     }
                 }
 
