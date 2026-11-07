@@ -1,0 +1,22 @@
+[package]
+name = "concord-sdk-digitalocean"
+version = "0.0.0"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish = false
+description = "Bounded DigitalOcean droplet and action-history reads using Concord"
+
+[dependencies]
+concord = { path = "../../crates/concord" }
+concord-auth = { path = "../../crates/concord-auth" }
+concord-pagination = { path = "../../crates/concord-pagination" }
+serde = { workspace = true, features = ["derive"] }
+
+[dev-dependencies]
+concord-testserver = { package = "concord-example-testserver", path = "../testserver" }
+tokio = { workspace = true, features = ["macros", "rt", "time"] }
+serde_json.workspace = true
+
+[lints]
+workspace = true
