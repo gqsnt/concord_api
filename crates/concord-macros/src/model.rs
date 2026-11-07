@@ -207,6 +207,8 @@ pub struct Owner {
     pub response: Option<OwnerDefault>,
     /// The parameter groups this endpoint includes (`..Name`).
     pub groups: Vec<Ident>,
+    /// `limit EXPR;` declared here: the finite body bound for typed outputs at and below.
+    pub limit: Option<syn::Expr>,
 }
 
 impl Owner {
@@ -1736,6 +1738,18 @@ impl Model {
 
     /// The nearest owner from `owner` (inclusive) up to the client that declares a `request`
     /// (`request == true`) or `response` default.
+    /// The `limit` declared on `owner` or its nearest ancestor.
+    pub fn nearest_limit(&self, owner: usize) -> Option<&syn::Expr> {
+        let mut cur = Some(owner);
+        while let Some(o) = cur {
+            if let Some(limit) = &self.owners[o].limit {
+                return Some(limit);
+            }
+            cur = self.owners[o].parent;
+        }
+        None
+    }
+
     pub fn nearest_default(&self, owner: usize, request: bool) -> Option<usize> {
         nearest(&self.owners, Some(owner), request)
     }
@@ -2131,6 +2145,19 @@ fn flatten(
     } else {
         default(owner.stmts.response.take(), "Response")
     };
+    let limit = owner.stmts.limit.take().and_then(|(expr, span)| {
+        if let OwnerKind::Endpoint { output, .. } = &owner.kind {
+            let finite = output.as_ref().is_some_and(|o| o.ty.is_some() && o.stream.is_none());
+            if !finite {
+                errors.push(syn::Error::new(
+                    span,
+                    "`limit` bounds a finite typed output (`-> T`): a drained body is not buffered, and a stream reader (`-> stream`) has its own limits",
+                ));
+                return None;
+            }
+        }
+        Some(expr)
+    });
     let kind = match owner.kind {
         OwnerKind::Client { vis, base } => match base {
             Some(base) => {
@@ -2273,6 +2300,7 @@ fn flatten(
         request,
         response,
         groups: owner.groups,
+        limit,
     });
     stmts.push(owner.stmts);
 

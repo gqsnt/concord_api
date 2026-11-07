@@ -260,6 +260,8 @@ pub fn encode_body<T>(
 pub struct DecodeFormat<T> {
     head: HeadStep<T>,
     accept: Option<HeaderValue>,
+    /// `limit N;` on the endpoint or the nearest owner.
+    limit: Option<usize>,
 }
 
 impl<T: 'static> DecodeFormat<T> {
@@ -271,14 +273,25 @@ impl<T: 'static> DecodeFormat<T> {
                 Some(text) => Some(HeaderValue::from_static(text)),
                 None => None,
             },
+            limit: None,
         }
+    }
+
+    /// The format with the declared finite body bound (`limit N;`).
+    pub const fn with_limit(mut self, limit: usize) -> Self {
+        self.limit = Some(limit);
+        self
     }
 }
 
 impl<T> DecodeFormat<T> {
     /// The endpoint's response handling.
     pub fn decoder(&self, meta: &'static EndpointMeta) -> Decoder<T> {
-        Decoder::typed(meta, self.head)
+        let decoder = Decoder::typed(meta, self.head);
+        match self.limit {
+            Some(limit) => decoder.with_limit(limit),
+            None => decoder,
+        }
     }
 
     /// The format's `Accept` suggestion.
