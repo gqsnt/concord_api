@@ -1,0 +1,52 @@
+{
+  "took": 12,
+  "errors": true,
+  "items": [
+    {
+      "index": {
+        "_index": "articles",
+        "_id": "a-1",
+        "_version": 1,
+        "result": "created",
+        "_shards": { "total": 2, "successful": 1, "failed": 0 },
+        "status": 201,
+        "_seq_no": 0,
+        "_primary_term": 1
+      }
+    },
+    {
+      "index": {
+        "_index": "articles",
+        "_id": "a-2",
+        "status": 429,
+        "error": {
+          "type": "es_rejected_execution_exception",
+          "reason": "rejected execution of synthetic write task"
+        }
+      }
+    },
+    {
+      "create": {
+        "_index": "articles",
+        "_id": "a-3",
+        "status": 409,
+        "error": {
+          "type": "version_conflict_engine_exception",
+          "reason": "[a-3]: version conflict, document already exists (synthetic)"
+        }
+      }
+    },
+    {
+      "index": {
+        "_index": "articles",
+        "_id": "a-4",
+        "_version": 1,
+        "result": "created",
+        "_shards": { "total": 2, "successful": 1, "failed": 0 },
+        "status": 201,
+        "_seq_no": 1,
+        "_primary_term": 1
+      }
+    }
+  ]
+}
