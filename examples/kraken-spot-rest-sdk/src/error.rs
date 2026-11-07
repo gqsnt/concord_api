@@ -139,6 +139,28 @@ impl fmt::Debug for ApiFailure {
     }
 }
 
+/// Why a trade-history page cannot continue the offset traversal.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum PageProblem {
+    /// The page has no `count`, so the end of the walk is unknown.
+    MissingCount,
+    /// Page length, offset and `count` contradict each other (more than the page
+    /// size, beyond `count`, or an empty page before `count`).
+    Offset(concord_pagination::OffsetError),
+}
+
+/// A decoded trade-history page that the traversal refuses to continue from.
+#[derive(Debug)]
+pub struct PageFailure {
+    /// The page's HTTP head and endpoint identity.
+    pub meta: ResponseMeta,
+    /// Offset at which the page was requested.
+    pub offset: u64,
+    /// The inconsistency; no provider value is retained.
+    pub problem: PageProblem,
+}
+
 /// All SDK failure stages. Nothing is automatically retried.
 #[derive(Debug)]
 #[non_exhaustive]
@@ -153,6 +175,8 @@ pub enum Error {
     Api(Box<ApiFailure>),
     /// An empty error list without a result is not successful.
     MissingResult(Box<ResponseMeta>),
+    /// A trade-history page contradicts the offset walk (see [`PageProblem`]).
+    Page(Box<PageFailure>),
 }
 impl Error {
     /// Response status when a head arrived (including malformed 2xx responses).
@@ -163,6 +187,7 @@ impl Error {
             Self::Http(e) => Some(e.meta.status()),
             Self::Api(e) => Some(e.meta.status()),
             Self::MissingResult(meta) => Some(meta.status()),
+            Self::Page(e) => Some(e.meta.status()),
         }
     }
 }
@@ -186,6 +211,7 @@ impl fmt::Display for Error {
             Self::MissingResult(_) => {
                 f.write_str("Kraken successful envelope is missing its result")
             }
+            Self::Page(e) => write!(f, "Kraken trade-history page refused: {:?}", e.problem),
         }
     }
 }

@@ -9,6 +9,7 @@ description = "Bounded Kraken Spot REST reads with exact-payload signing and off
 
 [dependencies]
 concord = { path = "../../crates/concord", default-features = false, features = ["json", "form"] }
+concord-pagination = { path = "../../crates/concord-pagination" }
 concord-retry = { path = "../../crates/concord-retry" }
 serde = { workspace = true, features = ["derive"] }
 base64 = "=0.23.1"

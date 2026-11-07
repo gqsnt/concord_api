@@ -153,3 +153,59 @@ manifest are additional files, excluded from those categories.
 
 No commit is created; changes remain in the working tree. No shared crate, check,
 script or other example is edited. Live provider calls remain **NOT_RUN**.
+
+Maintenance: trade history (2026-11-07)
+
+Independent maintainer, after the first consumer. Edits are confined to this
+package; `Cargo.lock` gained one dependency line in this package's own entry.
+**Live provider calls: NOT_RUN.** `MAINTENANCE.md` has the change record.
+
+| Requested exact page, read 2026-11-07 | Resolved page (HTTP redirect observed) | Used for |
+|---|---|---|
+| https://docs.kraken.com/api/docs/rest-api/get-trade-history | https://docs.kraken.com/api-reference/account-data/get-trades-history | Route, permission, `account_id` query, every body option and default, `start` exclusive / `end` inclusive (timestamp or trade id), `ofs` (marked deprecated in favour of `with_cursor`/`cursor`), `limit` default 50 (1–100), `count` (0 with `without_count` or `with_cursor`), trade fields, response example |
+| https://docs.kraken.com/api/docs/guides/spot-rest-auth | https://docs.kraken.com/exchange/guides/rest/authentication | Same page as the author's authentication source: signature over URI path and SHA256(nonce + POST data), increasing per-key nonce, arrival-order caveat, OTP |
+
+Both pages were fetched read-only once with `curl -L` into
+`target/tmp/maint/` (not committed) and read from extracted text and the
+page's embedded OpenAPI JSON. The reference request examples are JSON bodies;
+this SDK keeps the form encoding the authentication guide signs (as before).
+
+| File | Derivation / expected facts |
+|---|---|
+| `fixtures/trades-history.json` | Verbatim response example of the trade-history reference (two trades of order `OQCLML-BW3P3-BUCMWZ`); it has **no** `count` |
+| `fixtures/trades-signatures.json` | Synthetic key/secret (same as `wire-vectors.json`); a default first page (nonce 6001) and a three-page filtered walk (nonces 7001–7003, `ofs` absent/50/100) with OTP special characters, `type=no position`, timestamp `start`, trade-id `end`; independent Python URL encoding and HMAC, checked by `fixtures/signatures.py` |
+| inline in `tests/trades.rs`, `tests/trades_consumer.rs` | Synthetic multi-page ledgers (shape of the reference example, generated ids `TS…`/`TC…`), failure pages, inconsistent pages (missing count, 51 trades, empty page before count, shrinking count), a strict-arrival provider and a throttle-once provider |
+
+The vectors were generated once by a stdlib-only script kept in
+`target/tmp/maint/gen/` (never reading SDK code); the checked-in oracle
+re-verifies them. Field order in the walk vectors is the SDK's declared field
+order: an SDK choice, signed as sent.
+
+Local reading for this change: the package's own files (source, tests, fixtures,
+README, PROVENANCE; FRICTION.md and FIRST_USE.md only after the change was
+implemented and tested), `docs/{CHEATSHEET,RECIPES,CALLER_GUIDE}.md` pagination
+sections, `docs/AUTHOR_GUIDE.md` §2, §2.1, §5, §5.6 and §9,
+`crates/concord-pagination/{README.md,Cargo.toml,src/lib.rs,src/offset.rs}`, the
+public parts of `src/pages.rs` and `src/types.rs`, `crates/concord-codecs/src/form.rs`,
+`crates/concord-core/src/response.rs` (Operation) and `examples/testserver/src/lib.rs`.
+No other example, no campaign file and no other worktree was opened.
+
+Dependency added: `concord-pagination` (workspace path crate, version 4.2.0,
+MIT OR Apache-2.0, already a locked workspace member). Why: the shared
+dependent-page facade (`Pages`: opt-in cap, `Bounded`/`Provider` errors with a
+resume point, `collect_complete` keeping the completed prefix) and the checked
+offset continuation `next_offset`. Its only dependency, `futures-util`, was
+already locked. No registry package, version, source or checksum changed.
+
+Maintenance validation (2026-11-07, sequential, `CARGO_TARGET_DIR` = the
+worktree's absolute `target`, `CARGO_BUILD_JOBS=4`):
+
+| Command | Result |
+|---|---|
+| `cargo build --offline -p concord-sdk-kraken-spot-rest` (once, without `--locked`) | Built; lock diff is one dependency line in this package's entry |
+| `cargo test --locked -p concord-sdk-kraken-spot-rest` | first_use 11, protocol 16, workflows 7, trades 11, trades_consumer 1, doctests 2: all passed |
+| `cargo clippy --locked -p concord-sdk-kraken-spot-rest --all-targets -- -D warnings` | Passed after replacing `% 2 == 0` with `is_multiple_of` and naming one fn-pointer type in tests |
+| `RUSTDOCFLAGS="-D warnings" cargo doc --locked -p concord-sdk-kraken-spot-rest --no-deps` | Passed |
+| `python3 -I examples/kraken-spot-rest-sdk/fixtures/signatures.py` | Nine independent signature vectors matched |
+| `rustfmt --edition 2024 --check` on the package's `src/*.rs` and `tests/*.rs` | Clean; pre-existing test files were not reformatted |
+| `git diff --check`; Python `tomllib` comparison of `Cargo.lock` with `HEAD` | Clean; only this package's entry changed (`+concord-pagination`) |

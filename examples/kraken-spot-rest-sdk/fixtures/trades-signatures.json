@@ -1,0 +1,35 @@
+{
+  "origin": "Synthetic; independently computed with Python stdlib urllib.parse, hashlib, hmac, base64",
+  "key": "fixture-key",
+  "secret": "Zml4dHVyZS1zaWduaW5nLXNlY3JldA==",
+  "vectors": [
+    {
+      "name": "first-page-default",
+      "path": "/0/private/TradesHistory",
+      "nonce": 6001,
+      "payload": "nonce=6001",
+      "signature": "Ei58DGaWqRc6jbuIk8iFDhuBlD7oPrCf9hcKYZ4ZypYb0b4aEaPG9H7RSbF8LG+busmR2ABXr5ZgFvp1xmh63A=="
+    },
+    {
+      "name": "walk-page-1",
+      "path": "/0/private/TradesHistory",
+      "nonce": 7001,
+      "payload": "nonce=7001&otp=a%2Bb+%26%3D%2F%E2%98%83&type=no+position&start=1688600000&end=THVRQM-33VKH-UCI7BS&consolidate_taker=false&ledgers=true&aclass=forex&pair=XXBTZUSD",
+      "signature": "usvMNvqX7FvAGOlXyh90LouEi7ZCJYULjf28NAO/L5L3kOyy5kx+ZhpJkPABZMJQu4PyHWrk6gR9A/DXg/JYQw=="
+    },
+    {
+      "name": "walk-page-2",
+      "path": "/0/private/TradesHistory",
+      "nonce": 7002,
+      "payload": "nonce=7002&otp=a%2Bb+%26%3D%2F%E2%98%83&type=no+position&start=1688600000&end=THVRQM-33VKH-UCI7BS&ofs=50&consolidate_taker=false&ledgers=true&aclass=forex&pair=XXBTZUSD",
+      "signature": "Hk+/UezfqPt64M7zEFoyRXynjHj8LoBaD84pmQKIQcEiOYzOrob4QWxx4Lot98k8BNgUpD3YAyIbAglcoDqCYA=="
+    },
+    {
+      "name": "walk-page-3",
+      "path": "/0/private/TradesHistory",
+      "nonce": 7003,
+      "payload": "nonce=7003&otp=a%2Bb+%26%3D%2F%E2%98%83&type=no+position&start=1688600000&end=THVRQM-33VKH-UCI7BS&ofs=100&consolidate_taker=false&ledgers=true&aclass=forex&pair=XXBTZUSD",
+      "signature": "0Eav2wkBvT3HlZirB/QNXYI3UTcdWsDjKEFcYSIPSZWDESlo8Zn+Ug7yT563q/z83/3gvWwgsDz6D/s1ALOKVg=="
+    }
+  ]
+}

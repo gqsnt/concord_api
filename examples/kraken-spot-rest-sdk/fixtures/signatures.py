@@ -47,6 +47,22 @@ def main():
     check(account[1], "/0/private/OpenOrders", 5002, [])
     assert len(account) == 2
 
+    # Maintenance (trade history, pages read 2026-11-07): one default first page,
+    # then a filtered three-page walk whose only changing fields are nonce and ofs.
+    trades = json.loads((FIXTURES / "trades-signatures.json").read_text())
+    assert trades["key"] == "fixture-key"
+    assert base64.b64decode(trades["secret"], validate=True) == SECRET
+    first, *walk = trades["vectors"]
+    check(first, "/0/private/TradesHistory", 6001, [])
+    head = [("otp", "a+b &=/☃"), ("type", "no position"), ("start", "1688600000"),
+            ("end", "THVRQM-33VKH-UCI7BS")]
+    tail = [("consolidate_taker", "false"), ("ledgers", "true"), ("aclass", "forex"),
+            ("pair", "XXBTZUSD")]
+    assert len(walk) == 3
+    for page, (nonce, ofs) in zip(walk, [(7001, None), (7002, 50), (7003, 100)]):
+        check(page, "/0/private/TradesHistory", nonce,
+              head + ([] if ofs is None else [("ofs", str(ofs))]) + tail)
+
     official = json.loads((FIXTURES / "official-signature.json").read_text())
     expected = (
         "4/dpxb3iT4tp/ZCVEwSnEsLxx0bqyhLpdfOpc6fn7OR8+UClSV5n9E6aSS8M"
@@ -55,7 +71,7 @@ def main():
     assert official["signature"] == expected
     assert sign(base64.b64decode(official["secret"], validate=True),
                 official["path"], official["nonce"], official["payload"]) == expected
-    print("Signature fixtures match independent Python oracle: 5 vectors.")
+    print("Signature fixtures match independent Python oracle: 9 vectors.")
 
 
 if __name__ == "__main__":

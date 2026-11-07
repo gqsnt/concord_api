@@ -59,7 +59,10 @@ impl Policy {
         let path = request.url().path();
         match (request.method().as_str(), path) {
             ("GET", "/0/public/AssetPairs" | "/0/public/Ticker") => {}
-            ("POST", "/0/private/Balance" | "/0/private/OpenOrders") => {
+            (
+                "POST",
+                "/0/private/Balance" | "/0/private/OpenOrders" | "/0/private/TradesHistory",
+            ) => {
                 let credentials = self
                     .credentials
                     .as_ref()

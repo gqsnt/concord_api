@@ -1,23 +1,31 @@
 //! Bounded Kraken Spot REST reads, with fixture-only validation.
 //!
 //! Use [`Kraken::public`] for market discovery and [`Kraken::account`] for signed
-//! balances and open orders. Generated `send()` uses [`Policy`]; generated
+//! balances, open orders and one trade-history page; [`Kraken::trade_history`]
+//! walks every page. Generated `send()` uses [`Policy`]; generated
 //! `prepare()` remains unsigned. See the package README for offline usage,
 //! exclusions, nonce persistence and arrival-order limitations.
 
 #![doc = include_str!("../README.md")]
 
 pub use concord;
+pub use concord_pagination;
+pub use concord_pagination::{Incomplete, Page, PagesError, Resume};
 pub use concord_retry::http::RetryAfterError;
 mod auth;
 mod error;
 mod models;
 mod policy;
+mod trades;
 pub use auth::{Credentials, Nonces};
 use concord::{Form, Json, reqwest};
-pub use error::{ApiClass, ApiFailure, Error, ErrorDocument, HttpFailure, LocalError, classify};
+pub use error::{
+    ApiClass, ApiFailure, Error, ErrorDocument, HttpFailure, LocalError, PageFailure, PageProblem,
+    classify,
+};
 pub use models::*;
 pub use policy::{ERROR_LIMIT, Policy, RESPONSE_LIMIT, Response, Signed};
+pub use trades::{TRADES_PAGE_CAP, TRADES_PAGE_SIZE, TradePages, TradesPageMeta};
 
 concord::api! {
     /// Read-only Kraken Spot REST slice. Use [`transport`] to disable redirects and replays.
@@ -48,6 +56,11 @@ concord::api! {
             /// Fetch all open orders in one bounded response, without a server-side limit.
             POST open_orders(body options: OpenOrdersOptions, #[sensitive] query account_id?: String) -> Envelope<OpenOrders> {
                 path "OpenOrders";
+            }
+            /// Fetch the first trade-history page (at most 50 trades) with these filters.
+            /// Use [`Kraken::trade_history`] for later pages.
+            POST trades_history(body options: TradesHistoryOptions, #[sensitive] query account_id?: String) -> Envelope<TradesHistory> {
+                path "TradesHistory";
             }
         }
     }

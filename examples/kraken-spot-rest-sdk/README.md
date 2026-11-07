@@ -14,6 +14,8 @@ The generated hierarchy is client → scope → endpoint:
 | `api.public().ticker(pair)` | GET `/0/public/Ticker?pair=…` | `Response<Tickers>` |
 | `api.account().balances(options)` | POST `/0/private/Balance` | `Response<Balances>` |
 | `api.account().open_orders(options)` | POST `/0/private/OpenOrders` | `Response<OpenOrders>` |
+| `api.account().trades_history(options)` | POST `/0/private/TradesHistory`, first page | `Response<TradesHistory>` |
+| `api.trade_history(options, account_id, from)` | the same POST per page, `ofs` set by the SDK | `TradePages` (a `concord_pagination::Pages`) |
 
 Every `send()` returns `Result<…, Error>` through the ordinary generated send
 policy. Results keep response metadata and endpoint identity. Balance and order
@@ -61,6 +63,78 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 }
 ```
 
+Trade history
+
+`trade_history(options, account_id, from)` walks `TradesHistory` by `ofs` until
+the provider's `count` is reached. It is a `concord_pagination::Pages` of
+`(trade id, Trade)` items, keyed by the next offset; nothing is sent until it is
+read. Every page sends the same filters and wallet query, and each page is
+signed by the shared `Policy` with a fresh nonce after the previous page
+arrived. Pages of other walks or calls using the key can interleave with any
+arrival order; serialize them where a strict provider requires it (see below).
+A page must report `count`, hold at most 50 trades (the documented
+default page size; no `limit` is sent), end within `count` and advance;
+otherwise the walk stops with `Error::Page`. The cap defaults to
+`TRADES_PAGE_CAP` (20 signed requests) and `max_pages` replaces it.
+
+`collect_complete()` returns every page, or an `Incomplete` that keeps the
+completed pages: `PagesError::Bounded` when the cap was reached (resume from the
+first unread offset) or `PagesError::Provider` with the SDK `Error` and the
+failed page (resume there, deliberately; nothing is retried). A resume point
+belongs to the filters it came from. Kraken returns newest trades first, so
+without a fixed `end` a trade arriving during the walk shifts later offsets and
+an older trade can appear twice: merge by trade id, as below.
+
+```rust
+use concord_sdk_kraken_spot_rest::{
+    Credentials, Kraken, KrakenConfig, Nonces, Policy, Resume, TradeBound, TradesHistoryOptions,
+    transport,
+};
+use concord_testserver::{Recorded, Reply, TestServer};
+use std::collections::BTreeMap;
+
+#[tokio::main]
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    // Synthetic provider: 60 matching trades, sliced 50 per page by the signed `ofs`.
+    let server = TestServer::start(|request: &Recorded| {
+        let pairs = request.form_pairs();
+        let ofs = pairs.iter().find(|(k, _)| k == "ofs").map_or(0, |(_, v)| v.parse().unwrap());
+        let trades: serde_json::Map<_, _> = (ofs..60.min(ofs + 50))
+            .map(|i: usize| (format!("T{i:04}-SYNTH"), serde_json::json!({
+                "ordertxid": "OQCLML-BW3P3-BUCMWZ", "pair": "XXBTZUSD", "time": 1688667796.0,
+                "type": "buy", "ordertype": "limit", "price": "30010.00000",
+                "cost": "300.10000", "fee": "0.00000", "vol": "0.01000000",
+            })))
+            .collect();
+        let page = serde_json::json!({"error": [], "result": {"count": 60, "trades": trades}});
+        Reply::json(200, page.to_string())
+    }).await;
+    let credentials = Credentials::new("fixture-key", "Zml4dHVyZS1zaWduaW5nLXNlY3JldA==")?;
+    let policy = Policy::private(credentials, Nonces::new(5000));
+    let api = Kraken::new(transport()?, KrakenConfig { policy }).with_base_url(server.url())?;
+    let mut options = TradesHistoryOptions::default();
+    options.pair = Some("XXBTZUSD".into());
+    options.end = Some(TradeBound::Time(1_688_667_796)); // a fixed window keeps offsets stable
+    let pages = api.trade_history(options, None, Resume::Start);
+    let trades: BTreeMap<_, _> = match pages.collect_complete().await {
+        Ok(pages) => pages.into_iter().flat_map(|page| page.items).collect(),
+        // Cap or failed page: keep `incomplete.collected`, resume at `incomplete.error.resume()`.
+        Err(incomplete) => return Err(incomplete.into()),
+    };
+    assert_eq!(trades.len(), 60);
+    assert_eq!(server.requests().len(), 2); // two signed pages, two nonces
+    server.shutdown().await;
+    Ok(())
+}
+```
+
+`TradesHistoryOptions` carries `otp`, `trade_type`, `start`/`end`
+(`TradeBound::Time` seconds or `TradeBound::Trade` transaction identifier),
+`consolidate_taker`, `ledgers`, `rebase_multiplier`, `aclass` and `pair`. The
+offset is SDK-owned; the generated `trades_history` call reads the first page.
+`count` is optional on that single page because the reference's own response
+example omits it; the walk requires it.
+
 Use `Policy::public()` for public-only access. Private methods then refuse locally.
 For OTP, trade IDs, user reference, client order ID, consolidation or xStocks
 representation, construct the options using `Default` and assign their public
@@ -75,7 +149,7 @@ decimal nonce to those exact bytes, hashes `decimal nonce || encoded body`, then
 HMAC-SHA512 signs `URI path || hash` with the decoded secret and Base64 encodes the
 result. It sets sensitive `API-Key` and `API-Sign` headers. The query and origin
 are not included in the signature. The exact path comes from the prepared URL;
-only the four declared paths are accepted, so base URLs with path prefixes refuse
+only the five declared paths are accepted, so base URLs with path prefixes refuse
 at the policy boundary. The form choice follows the authentication guide's
 encoded-payload example; the endpoint pages currently demonstrate JSON instead.
 
@@ -115,6 +189,7 @@ Failure and transport semantics
 | Non-2xx | `Error::Http`, authoritative status plus bounded error-document outcome |
 | Valid envelope with nonempty `error` | `Error::Api`, ordered raw strings available explicitly |
 | Empty errors with missing/null result | `Error::MissingResult` |
+| Trade-history page without `count`, over 50 trades, beyond `count` or not advancing | `Error::Page` with the page head and offset; the walk stops, completed pages kept |
 
 Envelope schema validation precedes SDK interpretation. A wrong-shaped result is
 a decode error even if a provider also supplies an error list. Any nonempty valid
@@ -149,7 +224,10 @@ Scope and evidence limits
 Order placement, modification/cancellation, withdrawals, futures, WebSocket,
 real-money trading and all other endpoints are excluded. OpenOrders cursor mode
 and server-side `limit` are excluded: the request uses the documented default of
-returning all open orders, or fails the byte bound. Pair listing and ticker
+returning all open orders, or fails the byte bound. TradesHistory uses the `ofs`
+offset walk, which the reference now marks deprecated in favour of
+`with_cursor`/`cursor`; cursor mode, `limit` and `without_count` (which makes
+`count` zero) are not offered. Position-closure trade fields are not modelled. Pair listing and ticker
 fixtures are authored synthetic contract cases; the three authorized research
 pages do not independently verify those public schemas. Fixtures establish local
 request/response behavior, not live provider compatibility or provider quotas.

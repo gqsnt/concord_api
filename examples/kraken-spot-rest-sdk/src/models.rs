@@ -177,6 +177,154 @@ pub struct OpenOrder {
     pub trades: Option<Vec<String>>,
 }
 
+/// Trade-history filters, sent unchanged on every page of a traversal.
+/// Construct with `Default`, then assign the public option fields. The offset
+/// (`ofs`) is owned by [`Kraken::trade_history`](crate::Kraken::trade_history):
+/// a generated `trades_history(options)` call reads the first page.
+/// `without_count`, `limit`, `with_cursor` and `cursor` are excluded: the
+/// traversal needs the provider's `count` and its default page size.
+#[derive(Clone, Default, Serialize)]
+#[non_exhaustive]
+pub struct TradesHistoryOptions {
+    /// One-time password if required; sent on every page, never refreshed.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub otp: Option<String>,
+    /// Position-related trade selection (provider default `all`).
+    #[serde(rename = "type", skip_serializing_if = "Option::is_none")]
+    pub trade_type: Option<TradeType>,
+    /// Exclusive lower bound: a UNIX timestamp or a trade transaction identifier.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub start: Option<TradeBound>,
+    /// Inclusive upper bound; a fixed value keeps later trades out of a running walk.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub end: Option<TradeBound>,
+    /// Result offset; set per page by the traversal only.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) ofs: Option<u64>,
+    /// Whether to consolidate trades by individual taker trades.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub consolidate_taker: Option<bool>,
+    /// Include related ledger identifiers.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub ledgers: Option<bool>,
+    /// Optional xStocks display convention.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub rebase_multiplier: Option<Rebase>,
+    /// Asset class of the `pair` filter.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub aclass: Option<AssetClass>,
+    /// Restrict to one trading pair.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub pair: Option<String>,
+}
+impl fmt::Debug for TradesHistoryOptions {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str("TradesHistoryOptions(<withheld>)")
+    }
+}
+
+/// A `start`/`end` bound: Kraken accepts either form in the same field.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[serde(untagged)]
+pub enum TradeBound {
+    /// UNIX timestamp in whole seconds.
+    Time(u64),
+    /// Trade transaction identifier, e.g. `THVRQM-33VKH-UCI7BS`.
+    Trade(String),
+}
+
+/// Position-related trade selection.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+pub enum TradeType {
+    /// Every trade.
+    #[serde(rename = "all")]
+    All,
+    /// Trades related to any position.
+    #[serde(rename = "any position")]
+    AnyPosition,
+    /// Trades of closed positions.
+    #[serde(rename = "closed position")]
+    ClosedPosition,
+    /// Trades closing a position.
+    #[serde(rename = "closing position")]
+    ClosingPosition,
+    /// Trades without a position.
+    #[serde(rename = "no position")]
+    NoPosition,
+}
+
+/// Asset class of a `pair` filter.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum AssetClass {
+    /// Currency pairs (provider default).
+    Forex,
+    /// Equity pairs.
+    EquityPair,
+    /// Futures contracts.
+    FuturesContract,
+    /// Synthetic pairs.
+    SyntheticPair,
+    /// External pairs.
+    ExternalPair,
+}
+
+/// One trade-history page as Kraken returns it.
+#[derive(Debug, Deserialize)]
+pub struct TradesHistory {
+    /// Trades keyed by trade transaction identifier (provider order is not kept).
+    pub trades: BTreeMap<String, Trade>,
+    /// Matching trades in total. The reference's response example omits it;
+    /// the traversal requires it on every page.
+    pub count: Option<u64>,
+}
+
+/// A read-only trade (fill). Quantities stay exact decimal strings. Position
+/// closure fields (`posstatus`, `cprice`, `ccost`, `cfee`, `cvol`, `cmargin`,
+/// `net`, `trades`) are not modelled and are ignored when present.
+#[derive(Clone, Debug, Deserialize)]
+pub struct Trade {
+    /// Order responsible for the trade.
+    pub ordertxid: String,
+    /// Position responsible for the trade, if any.
+    pub postxid: Option<String>,
+    /// Canonical pair identifier.
+    pub pair: String,
+    /// Trade time in fractional UNIX seconds.
+    pub time: f64,
+    /// Buy or sell; retained as a string for forward compatibility.
+    #[serde(rename = "type")]
+    pub side: String,
+    /// Order type.
+    pub ordertype: String,
+    /// Order type at execution, when the provider reports it.
+    pub tradeordertype: Option<String>,
+    /// Average execution price (quote currency).
+    pub price: String,
+    /// Total cost (quote currency).
+    pub cost: String,
+    /// Total fee (quote currency).
+    pub fee: String,
+    /// Volume (base currency).
+    pub vol: String,
+    /// Initial margin (quote currency).
+    pub margin: Option<String>,
+    /// Leverage used.
+    pub leverage: Option<String>,
+    /// Comma-delimited provider flags, e.g. `closing`.
+    pub misc: Option<String>,
+    /// Ledger identifiers, when requested.
+    pub ledgers: Option<Vec<String>>,
+    /// Provider's numeric trade identifier.
+    pub trade_id: Option<u64>,
+    /// Whether the account was the maker.
+    pub maker: Option<bool>,
+    /// Asset class of the traded pair.
+    pub aclass: Option<String>,
+    /// External execution identifier.
+    pub ext_exec_id: Option<String>,
+}
+
 /// Provider description of an existing order.
 #[derive(Debug, Deserialize)]
 pub struct OrderDescription {
