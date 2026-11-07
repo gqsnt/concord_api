@@ -1,7 +1,7 @@
 //! A bounded Discord REST (v10) slice built with Concord: list a guild's channels, page a
 //! channel's messages, fetch one message, create a text message.
 //!
-//! The declared client [`Discord`] is the public client: navigate `discord.guild(id)` /
+//! The public client [`Discord`] wraps the declared client: navigate `discord.guild(id)` /
 //! `discord.channel(id)`, call an operation, and `send()` it. Every `send()` goes through the
 //! client's send policy, the [`RateLimiter`] (Discord's per-route buckets keyed with the channel
 //! or guild, and the global limit), and returns `Result<T, `[`Error`]`>`.

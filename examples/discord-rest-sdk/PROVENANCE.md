@@ -19,6 +19,16 @@ S and C are **not** in the capsule's list; they are official Discord pages read 
 codes and the channel object that G and M reference. No other source (no library, no forum, no
 live API) was used. The real Discord API was never called.
 
+## Maintenance research (2026-11-07)
+
+The maintainer independently re-read the four capsule pages on 2026-11-07:
+[Rate Limits](https://docs.discord.com/developers/topics/rate-limits),
+[Guild Resource](https://docs.discord.com/developers/resources/guild),
+[Message Resource — Get Channel Messages](https://docs.discord.com/developers/resources/message#get-channel-messages),
+and [API Reference](https://docs.discord.com/developers/reference). The message page explicitly
+says `around`, `before`, and `after` are mutually exclusive; `around` selects messages around
+the supplied snowflake. The new consumer fixture and IDs are synthetic. No live provider calls.
+
 ## Facts and where they come from
 
 | Fact used by the SDK | Source | Status |

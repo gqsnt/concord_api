@@ -2,7 +2,7 @@
 
 A bounded Discord REST (API v10) slice built with Concord, for a bot token:
 
-| Operation | Route | Generated call |
+| Operation | Route | SDK call |
 |---|---|---|
 | List a guild's channels (threads excluded) | `GET /guilds/{guild.id}/channels` | `discord.guild(id).channels()` |
 | List a channel's messages | `GET /channels/{channel.id}/messages` | `discord.channel(id).messages()` |
@@ -10,7 +10,7 @@ A bounded Discord REST (API v10) slice built with Concord, for a bot token:
 | Create a text message | `POST /channels/{channel.id}/messages` | `discord.channel(id).create_message(body)` |
 
 plus `channel.history(limit)`, a bounded walk of a channel's history, and rate admission for
-Discord's per-route buckets and global limit. Every call ends with the generated `send()`, which
+Discord's per-route buckets and global limit. Every call ends with `send()`, which
 returns `Result<T, concord_sdk_discord_rest::Error>`.
 
 Live provider calls: **not run**. Everything is tested against a local fake
@@ -44,10 +44,18 @@ fn client(token: String) -> Result<Discord, reqwest::Error> {
 
 ## Workflow 1: channels, then messages, then one message
 
+Discord permits only one of `around`, `before`, and `after` in a request
+([Get Channel Messages](https://docs.discord.com/developers/resources/message#get-channel-messages),
+read 2026-11-07). Use `anchor(Anchor::Around(id))`, `Anchor::Before(id)`, or
+`Anchor::After(id)`; a later `anchor` replaces the earlier one. Use
+`maybe_anchor(None)` to clear it. The former generated `set_before`, `set_after`,
+and `set_around` (and their `maybe_` forms) are no longer exposed; migrate them
+to `anchor` or `maybe_anchor`.
+
 ```rust,no_run
 use std::num::NonZeroUsize;
 
-use concord_sdk_discord_rest::{Discord, Error, GuildId, MessageLimit};
+use concord_sdk_discord_rest::{Anchor, Discord, Error, GuildId, MessageLimit};
 
 async fn browse(discord: &Discord, guild: GuildId) -> Result<(), Error> {
     let channels = discord.guild(guild).channels().send().await?;
@@ -62,6 +70,12 @@ async fn browse(discord: &Discord, guild: GuildId) -> Result<(), Error> {
         .set_limit(MessageLimit::new(10).expect("1..=100"))
         .send()
         .await?;
+
+    // One page around a known message; choosing another anchor replaces this one.
+    if let Some(center) = newest.first() {
+        let around = channel.messages().anchor(Anchor::Around(center.id)).send().await?;
+        println!("{} messages around the selected ID", around.len());
+    }
 
     // The whole history, newest first, at most 10 requests of 100 messages.
     let walked = channel
