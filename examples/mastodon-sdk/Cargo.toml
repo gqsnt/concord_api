@@ -1,6 +1,6 @@
 [package]
 name = "concord-sdk-mastodon"
-description = "A bounded Mastodon SDK slice declared with concord::api!: read the public timeline, retrieve one status, discover the instance's streaming host and read the public timeline stream as Server-Sent Events."
+description = "A bounded Mastodon SDK slice declared with concord::api!: public and hashtag timelines, individual statuses, streaming-host discovery and public/hashtag Server-Sent Events."
 version = "0.0.0"
 edition = "2024"
 rust-version.workspace = true
@@ -9,7 +9,7 @@ publish = false
 
 [dependencies]
 # `json`: the timeline, status, instance and error documents; `sse`: Concord's server-sent events
-# reader behind the public timeline stream.
+# reader behind the public and hashtag streams.
 concord = { path = "../../crates/concord", features = ["json", "sse"] }
 # `bearer()`: the access token as a validated, sensitive `Authorization: Bearer` value.
 concord-auth = { path = "../../crates/concord-auth" }

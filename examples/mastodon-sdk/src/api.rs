@@ -7,7 +7,7 @@ use concord::Json;
 use concord::reqwest::header::{AUTHORIZATION, HeaderValue};
 
 use crate::error::{Error, MastodonPolicy};
-use crate::model::{InstanceInfo, Status, StatusId, TimelineLimit};
+use crate::model::{Hashtag, InstanceInfo, Status, StatusId, TimelineLimit};
 use crate::streaming::{PublicStreamFormat, StreamEvent};
 
 concord::api! {
@@ -27,11 +27,9 @@ concord::api! {
         // instance document) is read into memory: at most 8 MiB.
         limit 8 * 1024 * 1024;
 
-        /// The public (federated) timeline: `GET /api/v1/timelines/public`, newest first. The
-        /// flags and the id bounds are sent only when set; the server's defaults apply otherwise
-        /// (`false` for the flags, 20 statuses). An empty page can also mean that the instance
-        /// disabled this feed.
-        GET public_timeline(
+        /// Selectors and paging shared by public and hashtag timelines. Unset values are not
+        /// sent: server defaults apply (false flags, 20 statuses).
+        params TimelineOptions(
             /// `local`: only statuses of this instance.
             query local?: bool,
             /// `remote`: only statuses of other instances.
@@ -46,8 +44,27 @@ concord::api! {
             query min_id?: StatusId,
             /// `limit`: at most this many statuses (1 to 40; the server's default is 20).
             query limit?: TimelineLimit,
-        ) -> Vec<Status> {
+        );
+
+        /// The public (federated) timeline: `GET /api/v1/timelines/public`, newest first.
+        /// An empty page can also mean that the instance disabled this feed.
+        GET public_timeline(..TimelineOptions) -> Vec<Status> {
             path "api/v1/timelines/public";
+        }
+
+        /// Public statuses containing `hashtag`, encoded as one path segment. The instance
+        /// controls access and the number of additional tags applied (default total: four).
+        GET hashtag_timeline(
+            hashtag: Hashtag,
+            /// `any[]`: match any of these additional tags (one query pair per tag).
+            query("any[]") each any?: Vec<Hashtag>,
+            /// `all[]`: match all of these additional tags.
+            query("all[]") each all?: Vec<Hashtag>,
+            /// `none[]`: exclude these additional tags.
+            query("none[]") each none?: Vec<Hashtag>,
+            ..TimelineOptions
+        ) -> Vec<Status> {
+            path "api/v1/timelines/tag/{hashtag}";
         }
 
         /// One status: `GET /api/v1/statuses/{id}`.
@@ -68,6 +85,18 @@ concord::api! {
             query only_media?: bool,
         ) -> stream StreamEvent {
             path "api/v1/streaming/public";
+            response PublicStreamFormat;
+        }
+
+        /// The `hashtag` category as HTTP SSE (user token + `read:statuses` required).
+        GET hashtag_stream(query tag: Hashtag) -> stream StreamEvent {
+            path "api/v1/streaming/hashtag";
+            response PublicStreamFormat;
+        }
+
+        /// The `hashtag:local` category as HTTP SSE: only statuses originating here.
+        GET local_hashtag_stream(query tag: Hashtag) -> stream StreamEvent {
+            path "api/v1/streaming/hashtag/local";
             response PublicStreamFormat;
         }
     }

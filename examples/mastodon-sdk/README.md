@@ -9,12 +9,15 @@ It covers two connected workflows against the caller's instance:
    (`GET /api/v2/instance` → `configuration.urls.streaming`, then
    `GET /api/v1/streaming/public` on that host).
 
+Hashtag timelines and both federated and local hashtag SSE streams are also supported (see
+"Hashtags" below). They use the same status model, instance binding and stream reader.
+
 Every test runs against local fixtures (`examples/testserver`). **Live provider calls: NOT_RUN** —
 no request was ever made to a real Mastodon instance; the sources and every fixture are listed in
 [`PROVENANCE.md`](PROVENANCE.md).
 
 **Excluded:** posting and every other write, WebSocket streaming, other timelines and streams
-(home, local, hashtag, list, user), federation semantics, OAuth flows (obtaining a token),
+(home, standalone local, list, user), federation semantics, OAuth flows (obtaining a token),
 rate-limit headers, `Link` header pagination, and any exactly-once, replay or resumption
 guarantee for streamed events.
 
@@ -57,10 +60,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 | Method | Request | `send()` returns |
 |---|---|---|
 | `public_timeline()` + `set_local`, `set_remote`, `set_only_media`, `set_max_id`, `set_since_id`, `set_min_id`, `set_limit` | `GET /api/v1/timelines/public` | `Vec<Status>` |
+| `hashtag_timeline(tag)` + `set_any`, `set_all`, `set_none` and all public timeline setters | `GET /api/v1/timelines/tag/{hashtag}` | `Vec<Status>` |
 | `status(id)` | `GET /api/v1/statuses/{id}` | `Status` |
 | `instance()` | `GET /api/v2/instance` | `InstanceInfo` |
 | `discover_streaming()` (async) | `GET /api/v2/instance` | `StreamingHost` |
 | `public_stream(&host)?` + `set_only_media` | `GET /api/v1/streaming/public` on the streaming host | an open `PublicStream` |
+| `hashtag_stream(&host, tag)?` | `GET /api/v1/streaming/hashtag?tag=…` on the streaming host | an open `PublicStream` |
+| `local_hashtag_stream(&host, tag)?` | `GET /api/v1/streaming/hashtag/local?tag=…` on the streaming host | an open `PublicStream` |
 
 - **Values.** `InstanceUrl::parse` accepts an `http`/`https` origin only (no path, query,
   fragment or user information; the input is never echoed in its error). `AccessToken::new` uses
@@ -72,6 +78,51 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
   `.set_max_id(last.id.clone())`. The `Link` header is not read.
 - **An empty page** is a page: the documentation notes that an instance that disabled this feed
   answers an empty array.
+
+### Hashtags
+
+```rust,no_run
+use concord_sdk_mastodon::{Hashtag, Mastodon, TimelineLimit};
+
+async fn follow_tag(mastodon: Mastodon) -> Result<(), Box<dyn std::error::Error>> {
+    let tag = Hashtag::new("café")?; // name only, without #
+    let page = mastodon.hashtag_timeline(tag.clone())
+        .set_any(vec![Hashtag::new("rust")?, Hashtag::new("sdk")?])
+        .set_all(vec![Hashtag::new("code")?])
+        .set_none(vec![Hashtag::new("spoiler")?])
+        .set_local(true)
+        .set_limit(TimelineLimit::new(20)?)
+        .send().await?;
+    if let Some(first) = page.first() {
+        let status = mastodon.status(first.id.clone()).send().await?;
+        println!("{}", status.content);
+    }
+    let host = mastodon.discover_streaming().await?;
+    let mut stream = mastodon.hashtag_stream(&host, tag.clone())?.send().await?;
+    while let Some(event) = stream.next().await {
+        println!("{event:?}"); // a terminal error is returned once, then None
+    }
+    // An explicit, separate subscription limited to statuses originating on this instance.
+    let mut local = mastodon.local_hashtag_stream(&host, tag)?.send().await?;
+    let _first_local_event = local.next().await;
+    Ok(())
+}
+```
+
+`Hashtag::new` rejects empty names, `#`, whitespace, controls and `.` / `..` before a request can
+be built. Case and Unicode are preserved; other punctuation is safely encoded rather than
+treated as a path or query delimiter. The instance still decides whether a name is acceptable.
+Extra tags use `Vec<Hashtag>` and repeated `any[]`, `all[]`, `none[]` query keys. Unset or empty
+lists send no pairs. The instance controls how many extra tags it applies (documented default:
+four total); the SDK does not truncate lists.
+
+The timelines page specifies the hashtag path, filters, paging and instance-dependent access.
+The streaming page names the categories `hashtag` and `hashtag:local`; their HTTP SSE routes are
+the two paths above. The `stream=hashtag&tag=…` selector is described under WebSocket connections
+on that page; this SDK uses its documented HTTP SSE endpoints. Sources read **2026-11-07**:
+[timelines API methods](https://docs.joinmastodon.org/methods/timelines/#view-hashtag-timeline),
+[streaming API methods](https://docs.joinmastodon.org/methods/streaming/#watch-the-public-timeline-for-a-hashtag).
+Both hashtag streams share `PublicStream`'s framing, terminal errors and no-replay contract.
 
 ### The streaming host
 
@@ -102,9 +153,9 @@ async fn follow(mastodon: Mastodon) -> Result<(), Box<dyn std::error::Error>> {
   travel in clear. An instance that advertises nothing is `DiscoveryError::NotAdvertised`;
   nothing is guessed. `StreamingHost::instance_host(&instance)` is the explicit choice for an
   instance known to stream on its own host.
-- A `StreamingHost` remembers the instance that advertised it. `public_stream(&host)` on a client
+- A `StreamingHost` remembers the instance that advertised it. Every stream method on a client
   of another instance is `DiscoveryError::OtherInstance`, and nothing is sent.
-- The stream requires a user token (documented since Mastodon 4.2.0): without one, the server's
+- These streams require a user token (documented since Mastodon 4.2.0): without one, the server's
   `401` is `Error::Api`.
 
 ## Failure semantics
@@ -127,7 +178,7 @@ chunks is reassembled; comments (the documented `:thump` heartbeats) are not eve
 decodes `data` by event type (`update`, `status.update`: a status; `delete`: a status id; any
 other type is `StreamEvent::Other`, undecoded).
 
-The public stream has no end of its own, so **every way it stops is an error**, returned once;
+Public and hashtag streams have no end of their own, so **every way they stop is an error**, returned once;
 `next()` then returns `None`:
 
 | `StreamErrorKind` | Meaning | Terminal |
@@ -163,9 +214,9 @@ heartbeat interval is not documented.
 ## Running the tests
 
 ```sh
-cargo test --locked -p concord-sdk-mastodon
-cargo clippy --locked -p concord-sdk-mastodon --all-targets -- -D warnings
-RUSTDOCFLAGS="-D warnings" cargo doc --locked -p concord-sdk-mastodon --no-deps
+CARGO_BUILD_JOBS=4 cargo test --offline --locked -p concord-sdk-mastodon
+CARGO_BUILD_JOBS=4 cargo clippy --offline --locked -p concord-sdk-mastodon --all-targets -- -D warnings
+CARGO_BUILD_JOBS=4 RUSTDOCFLAGS="-D warnings" cargo doc --offline --locked -p concord-sdk-mastodon --no-deps
 ```
 
 `tests/protocol.rs` covers the wire shapes, every documented error class, malformed, truncated,
@@ -173,3 +224,7 @@ oversized and wrong-media bodies, the stream's framing and payload rules, the to
 destinations and redaction; `tests/workflows.rs` runs both workflows end to end, including the
 required failure (a UTF-8 character and a `data:` field split across chunks, then a dropped
 connection, surfaced, with one request and no reconnect).
+`tests/hashtags.rs` adds hashtag validation, encoding, bracketed extra-tag filters, stream host
+binding, access errors and split UTF-8/fields followed by disconnect for both hashtag categories.
+`tests/hashtag_use.rs` is a consumer of the new timeline → status → discovery → hashtag SSE flow;
+the original `tests/first_use.rs` remains unchanged.

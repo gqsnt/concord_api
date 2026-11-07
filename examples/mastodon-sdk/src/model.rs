@@ -200,6 +200,68 @@ impl fmt::Display for InvalidStatusId {
 
 impl std::error::Error for InvalidStatusId {}
 
+/// A hashtag name without `#`, shared by timeline paths, additional tags and streams.
+///
+/// The SDK rejects empty names, `#`, whitespace, controls and the dot segments `.` / `..`.
+/// It preserves case and Unicode, without imposing an undocumented server-side tag grammar.
+/// Concord encodes a timeline's name as one path segment and stream names as query values.
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub struct Hashtag(String);
+
+impl Hashtag {
+    /// Validates a name before any request can be constructed.
+    ///
+    /// # Errors
+    ///
+    /// [`InvalidHashtag`] when the name breaks one of the type's rules. The input is not echoed.
+    pub fn new(name: impl Into<String>) -> Result<Self, InvalidHashtag> {
+        let name = name.into();
+        if name.is_empty()
+            || name == "."
+            || name == ".."
+            || name
+                .chars()
+                .any(|c| c == '#' || c.is_whitespace() || c.is_control())
+        {
+            return Err(InvalidHashtag);
+        }
+        Ok(Self(name))
+    }
+
+    /// The original name, without normalization or a leading `#`.
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+impl TryFrom<String> for Hashtag {
+    type Error = InvalidHashtag;
+
+    fn try_from(name: String) -> Result<Self, Self::Error> {
+        Self::new(name)
+    }
+}
+
+impl fmt::Display for Hashtag {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(&self.0)
+    }
+}
+
+/// [`Hashtag::new`] refused its input (which is not shown).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct InvalidHashtag;
+
+impl fmt::Display for InvalidHashtag {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(
+            "a hashtag must be non-empty, without #, whitespace or controls, and not . or ..",
+        )
+    }
+}
+
+impl std::error::Error for InvalidHashtag {}
+
 /// The `limit` of a timeline page: 1 to [`MAX`](Self::MAX) statuses (the documented maximum;
 /// the server's default is 20).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]

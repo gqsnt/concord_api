@@ -1,6 +1,6 @@
 //! A bounded [Mastodon](https://docs.joinmastodon.org) SDK slice declared with `concord::api!`:
-//! read the public timeline, retrieve one status, discover the instance's streaming host and
-//! read the public timeline stream as server-sent events.
+//! read public and hashtag timelines, retrieve one status, discover the instance's streaming
+//! host and read public and hashtag streams as server-sent events.
 //!
 //! Checked against the Mastodon documentation pages listed in `PROVENANCE.md` (read
 //! 2026-11-07). Not covered: posting or any other write, WebSocket streaming, other timelines and
@@ -42,10 +42,12 @@
 //! | Method | Request | `send()` returns |
 //! |---|---|---|
 //! | [`public_timeline`](Mastodon::public_timeline) + `set_local`, `set_remote`, `set_only_media`, `set_max_id`, `set_since_id`, `set_min_id`, `set_limit` | `GET /api/v1/timelines/public` | `Vec<`[`Status`]`>` |
+//! | [`hashtag_timeline`](Mastodon::hashtag_timeline) + `set_any`, `set_all`, `set_none` and the public timeline setters | `GET /api/v1/timelines/tag/{hashtag}` | `Vec<`[`Status`]`>` |
 //! | [`status`](Mastodon::status) | `GET /api/v1/statuses/{id}` | [`Status`] |
 //! | [`instance`](Mastodon::instance) | `GET /api/v2/instance` | [`InstanceInfo`] |
 //! | [`discover_streaming`](Mastodon::discover_streaming) | `GET /api/v2/instance` | [`StreamingHost`] |
 //! | [`public_stream`](Mastodon::public_stream) + `set_only_media` | `GET /api/v1/streaming/public` on the streaming host | an open [`PublicStream`] |
+//! | [`hashtag_stream`](Mastodon::hashtag_stream) / [`local_hashtag_stream`](Mastodon::local_hashtag_stream) | `GET /api/v1/streaming/hashtag` / `hashtag/local` with `tag` on the streaming host | an open [`PublicStream`] |
 //!
 //! Every `send()` returns `Result<_, Error>`: a non-2xx answer is [`Error::Api`] with
 //! Mastodon's error document; every other failure is Concord's error, kept whole
@@ -93,13 +95,16 @@ use concord::reqwest;
 pub use concord;
 
 pub use api::{
-    ApiInstance as InstanceRequest, ApiPublicStream as PublicStreamRequest,
-    ApiPublicTimeline as PublicTimelineRequest, ApiStatus as StatusRequest,
+    ApiHashtagStream as HashtagStreamRequest, ApiHashtagTimeline as HashtagTimelineRequest,
+    ApiInstance as InstanceRequest, ApiLocalHashtagStream as LocalHashtagStreamRequest,
+    ApiPublicStream as PublicStreamRequest, ApiPublicTimeline as PublicTimelineRequest,
+    ApiStatus as StatusRequest,
 };
 pub use error::{ApiError, ERROR_BODY_LIMIT, Error, MastodonPolicy};
 pub use model::{
-    AccessToken, Account, ErrorDocument, InstanceInfo, InstanceUrl, InvalidInstanceUrl,
-    InvalidLimit, InvalidStatusId, InvalidToken, Status, StatusId, TimelineLimit, Visibility,
+    AccessToken, Account, ErrorDocument, Hashtag, InstanceInfo, InstanceUrl, InvalidHashtag,
+    InvalidInstanceUrl, InvalidLimit, InvalidStatusId, InvalidToken, Status, StatusId,
+    TimelineLimit, Visibility,
 };
 pub use streaming::{
     DiscoveryError, MAX_EVENT_BYTES, PublicStream, PublicStreamFormat, StreamError,
@@ -152,6 +157,12 @@ impl Mastodon {
         self.api.public_timeline()
     }
 
+    /// A page of public statuses containing `hashtag` (`GET /api/v1/timelines/tag/{hashtag}`).
+    /// The validated name is encoded as one path segment. The instance controls access.
+    pub fn hashtag_timeline(&self, hashtag: Hashtag) -> HashtagTimelineRequest {
+        self.api.hashtag_timeline(hashtag)
+    }
+
     /// One status (`GET /api/v1/statuses/{id}`).
     pub fn status(&self, id: StatusId) -> StatusRequest {
         self.api.status(id)
@@ -184,11 +195,45 @@ impl Mastodon {
     /// [`Error::Discovery`] ([`DiscoveryError::OtherInstance`]) when `host` was advertised by
     /// another instance: nothing is sent.
     pub fn public_stream(&self, host: &StreamingHost) -> Result<PublicStreamRequest, Error> {
+        Ok(self.streaming_api(host)?.public_stream())
+    }
+
+    /// The `hashtag` stream on the advertised host (`GET /api/v1/streaming/hashtag?tag=…`).
+    /// `send()` returns [`PublicStream`], sharing its framing and terminal-disconnect rules.
+    /// Requires a user token with `read:statuses`; nothing is reconnected or replayed.
+    ///
+    /// # Errors
+    ///
+    /// [`Error::Discovery`] ([`DiscoveryError::OtherInstance`]) if the host belongs to another
+    /// instance, before any request is sent.
+    pub fn hashtag_stream(
+        &self,
+        host: &StreamingHost,
+        tag: Hashtag,
+    ) -> Result<HashtagStreamRequest, Error> {
+        Ok(self.streaming_api(host)?.hashtag_stream(tag))
+    }
+
+    /// The `hashtag:local` stream (`GET /api/v1/streaming/hashtag/local?tag=…`).
+    /// Uses the same token, instance binding and [`PublicStream`] reader as [`Self::hashtag_stream`].
+    ///
+    /// # Errors
+    ///
+    /// [`Error::Discovery`] ([`DiscoveryError::OtherInstance`]) if the host belongs to another
+    /// instance, before any request is sent.
+    pub fn local_hashtag_stream(
+        &self,
+        host: &StreamingHost,
+        tag: Hashtag,
+    ) -> Result<LocalHashtagStreamRequest, Error> {
+        Ok(self.streaming_api(host)?.local_hashtag_stream(tag))
+    }
+
+    fn streaming_api(&self, host: &StreamingHost) -> Result<api::Api, Error> {
         if host.instance() != &self.instance {
             return Err(DiscoveryError::OtherInstance.into());
         }
-        let api = self.api.clone().with_base_url(host.url())?;
-        Ok(api.public_stream())
+        Ok(self.api.clone().with_base_url(host.url())?)
     }
 }
 

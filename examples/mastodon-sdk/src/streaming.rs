@@ -1,4 +1,4 @@
-//! The streaming API: where it is served ([`StreamingHost`]) and the public timeline stream
+//! The streaming API: where it is served ([`StreamingHost`]) and public and hashtag streams
 //! ([`PublicStream`], [`StreamEvent`], [`StreamError`]).
 //!
 //! # The streaming host
@@ -166,7 +166,7 @@ impl fmt::Display for DiscoveryError {
 
 impl std::error::Error for DiscoveryError {}
 
-/// One event of the public timeline stream (see the [module](self) for the mapping).
+/// One event of a public or hashtag stream (see the [module](self) for the mapping).
 #[derive(Clone, Debug)]
 #[non_exhaustive]
 pub enum StreamEvent {
@@ -185,7 +185,7 @@ pub enum StreamEvent {
     },
 }
 
-/// The format of `GET /api/v1/streaming/public`: Concord's `text/event-stream` head check
+/// The shared format of public and hashtag streams: Concord's `text/event-stream` head check
 /// (exactly one `Content-Type`, charset absent or `utf-8`) before the body is read, then
 /// [`PublicStream`] over Concord's SSE reader. It suggests `Accept: text/event-stream`.
 pub struct PublicStreamFormat(());
@@ -208,8 +208,10 @@ impl Incremental<StreamEvent> for PublicStreamFormat {
     }
 }
 
-/// The public timeline stream, read as the body arrives: what the generated `send()` of
-/// [`PublicStreamRequest`](crate::PublicStreamRequest) returns once the response head was
+/// A public or hashtag stream, read as the body arrives: what the generated `send()` of
+/// [`PublicStreamRequest`](crate::PublicStreamRequest),
+/// [`HashtagStreamRequest`](crate::HashtagStreamRequest) or
+/// [`LocalHashtagStreamRequest`](crate::LocalHashtagStreamRequest) returns once the response head was
 /// accepted (nothing of the body is read before the first [`next`](Self::next)).
 ///
 /// - [`next`](Self::next) returns the events in order; heartbeats and comments are skipped. Every

@@ -7,6 +7,38 @@ the tests prove nothing about the real service beyond agreement with the documen
 
 ## Sources read (2026-11-07)
 
+### Maintenance research (2026-11-07)
+
+Read the same two exact pages with the `web.run` tool before implementing hashtags:
+
+- [timelines API methods](https://docs.joinmastodon.org/methods/timelines/), "View hashtag
+  timeline": `GET /api/v1/timelines/tag/:hashtag`, a name without `#`; bracketed extra-tag
+  arrays, shared flags/id bounds/limit and instance-controlled access. The number of extra tags
+  applied is instance-controlled (default four total), so the SDK passes lists without a cap.
+- [streaming API methods](https://docs.joinmastodon.org/methods/streaming/), "Hostname
+  discovery", "Streaming timelines/categories", "About HTTP server-sent events", "Watch the
+  public timeline for a hashtag", "Watch the local timeline for a hashtag" and "Establishing a
+  WebSocket connection": use the HTTP hashtag routes with required `tag` for SSE. The
+  `stream=hashtag` / `stream=hashtag:local` selectors occur in the WebSocket section. No new
+  WebSocket transport or query-selector SSE route is inferred.
+
+SDK decisions: `Hashtag` also rejects empty names, whitespace, controls and dot segments before
+construction; other punctuation is encoded safely and subject to server acceptance. No Unicode
+normalization, tag-count truncation, reconnect, replay, deduplication or exactly-once promise.
+
+`tests/hashtags.rs` reuses the existing synthetic status/timeline and error fixtures and adds
+inline local responses for encoded names, extra tags, comments, multiline data and a broken body
+after split UTF-8 / `data:`. `tests/hashtag_use.rs` uses synthetic statuses (`id=7`), advertises a
+distinct loopback `ws://` origin, splits an SSE field with a 5 ms fixture delay, and returns
+update/edit/delete events followed by EOF. Timings, access refusals and all content are fixture
+choices, not claims about a live instance. **Live provider calls: NOT_RUN.**
+
+No dependencies were added; no crate version or lockfile entry changed. The workspace member
+and package lock entry were already present. The first maintenance build was offline without
+`--locked`; subsequent resolving cargo commands use `--offline --locked`.
+
+### Original implementation research (retained)
+
 Both pages were read on **2026-11-07** with the session's `WebFetch` tool, which returns a model's
 summary of the page with short literal quotes, not the raw page. Facts below marked *quoted* come
 from those literal quotes; the others from the summary. No other page was read: the brief limits
