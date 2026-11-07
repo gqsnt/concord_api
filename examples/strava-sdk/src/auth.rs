@@ -110,7 +110,8 @@ struct Inner {
     origin: reqwest::Url,
     oauth: OAuth,
     credentials: Credentials,
-    tokens: Mutex<Tokens>,
+    // Shared with the acquisition future the cache stores, which must not own `Inner`.
+    tokens: Arc<Mutex<Tokens>>,
     cache: TokenCache<(), Error>,
     limiter: Limiter<u8>,
 }
@@ -168,7 +169,7 @@ impl Session {
             origin,
             oauth: OAuth::new(http).with_base_url(oauth_origin)?,
             credentials,
-            tokens: Mutex::new(tokens),
+            tokens: Arc::new(Mutex::new(tokens)),
             cache: TokenCache::new(NonZeroUsize::new(1).unwrap(), Duration::from_secs(30)),
             limiter: Limiter::new(NonZeroUsize::new(4).unwrap(), TokioClock::default()),
         })))
@@ -180,17 +181,21 @@ impl Session {
     }
 
     async fn token(&self) -> Result<concord_auth::Snapshot, Error> {
-        let inner = self.0.clone();
+        // The cache keeps this future while it is in flight: capture its inputs, not `Inner`.
+        let (tokens, oauth, credentials) = (
+            self.0.tokens.clone(),
+            self.0.oauth.clone(),
+            self.0.credentials.clone(),
+        );
         self.0
             .cache
             .get_or_refresh((), move || async move {
-                let mut stored = inner.tokens.lock().await;
+                let mut stored = tokens.lock().await;
                 if stored.expires_at.saturating_sub(unix_now()?) <= 30 {
-                    let next = inner
-                        .oauth
+                    let next = oauth
                         .oauth()
                         .token(TokenRequest::refresh(
-                            &inner.credentials,
+                            &credentials,
                             stored.refresh_token.clone(),
                         ))
                         .send()
@@ -379,5 +384,51 @@ impl<T: Send> SendWith<T> for Session {
             .outcome
             .ok_or(Error::Invalid("no application attempt completed"))??;
         finish(received, uncertain, run.report.attempts).await
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Abandoning every caller while a refresh is in flight must not keep the session (its
+    /// tokens, credentials, HTTP client and cache) alive: the cache keeps the paused acquisition.
+    #[tokio::test]
+    async fn abandoned_refresh_does_not_keep_the_session_alive() {
+        // Accepts the connection and never answers, so the refresh stays in flight.
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let url = format!("http://{}/", listener.local_addr().unwrap());
+        let http = reqwest::Client::builder()
+            .redirect(reqwest::redirect::Policy::none())
+            .retry(reqwest::retry::never())
+            .timeout(Duration::from_secs(30))
+            .build()
+            .unwrap();
+        let tokens = Tokens {
+            token_type: "Bearer".into(),
+            access_token: "access".into(),
+            refresh_token: "refresh".into(),
+            expires_at: 0, // expired: the first call refreshes
+            expires_in: 0,
+            scope: None,
+        };
+        let credentials = Credentials::new(1, "secret".into()).unwrap();
+        let session = Session::new(http, &url, &url, credentials, tokens).unwrap();
+        let state = Arc::downgrade(&session.0);
+        let caller = tokio::spawn({
+            let session = session.clone();
+            async move { session.token().await.map(drop) }
+        });
+        let (_connection, _) = tokio::task::spawn_blocking(move || listener.accept())
+            .await
+            .unwrap()
+            .unwrap();
+        caller.abort();
+        assert!(caller.await.unwrap_err().is_cancelled());
+        drop(session);
+        assert!(
+            state.upgrade().is_none(),
+            "the abandoned refresh keeps the session alive"
+        );
     }
 }
