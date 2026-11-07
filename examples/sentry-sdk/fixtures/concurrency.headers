@@ -1,0 +1,6 @@
+X-Sentry-Rate-Limit-Limit: 100
+X-Sentry-Rate-Limit-Remaining: 99
+X-Sentry-Rate-Limit-Reset: 1
+X-Sentry-Rate-Limit-ConcurrentLimit: 1
+X-Sentry-Rate-Limit-ConcurrentRemaining: 0
+Retry-After: 0
