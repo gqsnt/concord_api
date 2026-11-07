@@ -102,3 +102,29 @@ used without optional features, only for its strict HTTP header parser.
 No sub-agents were used for this bounded author task. No model-settings or
 independent-review claim is made. The records contain observable actions and
 decisions, not private reasoning transcripts.
+
+## Maintenance: exact-email search (2026-11-07)
+
+Maintainer baseline: `8a8befa6ebed33904bde7d28bbfbcc9acbcc4919`. Live provider
+calls: **NOT_RUN**. The initial implementation and fixture run preceded reading
+`FRICTION.md` and `FIRST_USE.md`; the maintenance exposure and file ledger is in
+[MAINTENANCE.md](MAINTENANCE.md).
+
+Official pages read on **2026-11-07**:
+
+| Exact page | Maintenance use |
+| --- | --- |
+| https://developers.intercom.com/docs/references/rest-api/api.intercom.io/contacts/searchcontacts | POST search; email equality query; search default 50, range 1..=150; contact-list response; indexing delay |
+| https://developers.intercom.com/docs/build-an-integration/learn-more/rest-apis/pagination | Search pagination section: body pagination object, opaque next cursor, same query on subsequent pages, no snapshot guarantee |
+| https://developers.intercom.com/docs/references/rest-api/api.intercom.io/contacts/listcontacts | Rechecked listing's distinct query parameters and default 10; kept existing wire contract |
+| https://developers.intercom.com/docs/references/rest-api/errors/rate-limiting | Rechecked that 429 may lack rate headers; unknown reset must stay unknown |
+
+`tests/search.rs` reuses the existing synthetic list/error fixtures because
+search has the same response envelope. Its request oracle is independently
+specified from these pages. `tests/search_consumer.rs` supplies synthetic
+same-email matches, an opaque cursor, an intentionally unhelpful total count
+and get-by-ID replies. Neither test captures a live response.
+
+No dependency was added or upgraded. The package and workspace member already
+existed at the maintenance baseline; the initial unlocked offline build left
+`Cargo.lock` unchanged. No crate/license justification is therefore needed.

@@ -1,4 +1,4 @@
-//! Intercom 2.17 contacts: list, retrieve and create by email.
+//! Intercom 2.17 contacts: list, search by exact email, retrieve and create by email.
 //!
 //! Calls use the generated `send()` and execute once. See the package README for
 //! bounded pagination, explicit metadata access and ambiguous-create semantics.
@@ -20,7 +20,9 @@ mod pages;
 pub use error::{
     Error, ErrorCode, ErrorDocument, ErrorItem, HeaderNumber, ProviderError, RateLimits,
 };
-pub use models::{Contact, ContactList, CursorNext, CursorPages, NewContact, PageSize, Role};
+pub use models::{
+    Contact, ContactList, CursorNext, CursorPages, EmailSearch, NewContact, PageSize, Role,
+};
 pub use pages::{ContactPages, PageMeta};
 
 /// Maximum decoded success body size (2 MiB), including a whole contact page.
@@ -86,6 +88,9 @@ concord::api! {
                 query per_page: PageSize = PageSize::default(),
                 #[sensitive] query starting_after?: String,
             ) -> ContactList;
+
+            /// Search by exact email with JSON-body pagination. Default size 50.
+            POST search(body search: EmailSearch) -> ContactList { path "search"; }
 
             /// Retrieve one contact using its Intercom ID (one encoded path segment).
             GET get(#[sensitive] id: String) -> Contact { path "{id}"; }

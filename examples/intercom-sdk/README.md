@@ -2,7 +2,7 @@
 
 `concord-sdk-intercom` is a bounded Intercom **2.17** contacts SDK using Concord's
 client → contacts scope → endpoint hierarchy. It lists contacts with provider
-cursor pagination, retrieves by Intercom ID, and creates by email with optional
+cursor pagination, searches by exact email, retrieves by Intercom ID, and creates by email with optional
 name and role. Contact models intentionally expose only ID, role, external ID,
 email and name; additional response fields are ignored.
 
@@ -49,7 +49,7 @@ async fn workflows(base_url: &str, token: &str) -> Result<(), Box<dyn std::error
 
 `list().send()` returns one `Response<ContactList>`; `get` and `create` return
 `Response<Contact>`. Each response holds `.value` and `.meta`. The generated
-setters and `prepare()` remain available. Page sizes default to 10 and are
+setters and `prepare()` remain available. List page sizes default to 10 and are
 validated locally as 1..=150. The SDK preserves the provider's default identity
 escaping; it does not HTML-unescape returned names or email addresses.
 
@@ -70,11 +70,59 @@ size; changing those invalidates that context. A listing that changes during
 pagination is not a stable snapshot. Streaming pages/items avoids retaining an
 entire listing; collecting uses memory proportional to all yielded contacts.
 
+## Exact-email search
+
+`contacts().search(EmailSearch::new(email)).send()` returns one
+`Response<ContactList>`. The typed input fixes the query to `field: "email"`,
+`operator: "="`, and the supplied email as `value`. It sends the email verbatim;
+equality and email validation belong to Intercom. Search defaults to **50** per
+page; `with_per_page(PageSize::new(n)?)` accepts 1..=150. The request is
+`POST /contacts/search` with `query` and `pagination` JSON objects. Both
+`per_page` and optional `starting_after` live inside `pagination`, with no URL
+query parameters. See [Search contacts](https://developers.intercom.com/docs/references/rest-api/api.intercom.io/contacts/searchcontacts)
+and [Pagination for Search APIs](https://developers.intercom.com/docs/build-an-integration/learn-more/rest-apis/pagination#pagination-for-search-apis),
+read **2026-11-07**.
+
+```no_run
+use concord_sdk_intercom::{EmailSearch, Intercom, PageSize, pagination::Resume};
+use std::num::NonZeroUsize;
+
+async fn find_matches(api: &Intercom) -> Result<(), Box<dyn std::error::Error>> {
+    let search = api.contacts().search(
+        EmailSearch::new("person@example.test").with_per_page(PageSize::new(50)?)
+    );
+    let cap = NonZeroUsize::new(20).unwrap();
+    match search.clone().pages(Resume::Start, cap).items().collect_complete().await {
+        Ok(contacts) => { /* all matches in this traversal */ }
+        Err(incomplete) => {
+            let prefix = incomplete.collected;
+            let resume = incomplete.error.resume().cloned();
+            if let Some(error) = incomplete.error.provider_error() {
+                // Inspect a 429 here; a missing reset remains unknown. Do not auto-retry.
+                let status = error.status();
+            }
+            // Keep prefix and resume. After an explicit caller decision, a new
+            // search.pages(resume.unwrap(), cap) continues the same query.
+        }
+    }
+    Ok(())
+}
+```
+
+Search shares listing's bounded traversal, metadata and failure contract.
+`pages(from, cap)` replaces any cursor set with `with_starting_after`; it keeps
+the email and page size on every page. Reuse a resume key only with the **same
+email**, credentials, base, version and page size. A headerless 429 preserves
+the collected prefix and failed cursor, reports `HeaderNumber::Missing` reset
+and no Retry-After, and stops without retrying. Search is not a snapshot, and
+recently created contacts may take time to appear in results. Retrieve a newly
+created contact by its returned ID as shown above.
+
 ## Failure semantics
 
 `send()` performs one application execution. `http_client()` disables reqwest
 retries and redirects and sets a 15-second timeout. A caller-supplied transport
-can change those guarantees. Both GETs and creates stop on failures; the SDK
+can change those guarantees. GETs, searches and creates stop on failures; the SDK
 never refreshes credentials or retries automatically. A lost create response
 may mean the contact was created: callers must reconcile before deciding to
 issue another create. A 410 merged-contact response remains an error; its raw
@@ -113,7 +161,7 @@ headers, raw Concord error bodies/sources and native requests is unredacted.
 The base URL is public configuration and must not contain a secret.
 
 Conversations, webhooks, merges, canonical-link following, external-ID lookup,
-updates/deletes/search, OAuth acquisition/refresh, distributed admission, and
+updates/deletes, search filters other than exact email, OAuth acquisition/refresh, distributed admission, and
 automatic replay of ambiguous creates are excluded.
 
 ## Verification
@@ -128,3 +176,5 @@ RUSTDOCFLAGS="-D warnings" cargo doc --locked -p concord-sdk-intercom --no-deps
 
 The initial build and first checks used offline mode; see [VALIDATION.md](VALIDATION.md) for the
 actual command results, scope checks and resource observations.
+The search maintenance changes and their validation are recorded in
+[MAINTENANCE.md](MAINTENANCE.md).

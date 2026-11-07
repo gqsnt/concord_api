@@ -4,8 +4,9 @@ use serde::{Deserialize, Serialize};
 
 use crate::Error;
 
-/// Valid Intercom list page size. The SDK refuses values outside 1..=150.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+/// Valid Intercom contact page size. The SDK refuses values outside 1..=150.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+#[serde(transparent)]
 pub struct PageSize(u8);
 
 impl PageSize {
@@ -28,6 +29,58 @@ impl Default for PageSize {
 impl fmt::Display for PageSize {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         self.0.fmt(f)
+    }
+}
+
+/// Exact-email search input, including pagination in the JSON body.
+/// Intercom validates the email; it is sent verbatim with the `=` operator.
+#[derive(Clone, Serialize)]
+pub struct EmailSearch {
+    query: EmailQuery,
+    pagination: SearchPagination,
+}
+
+#[derive(Clone, Serialize)]
+struct EmailQuery {
+    field: &'static str,
+    operator: &'static str,
+    value: String,
+}
+
+#[derive(Clone, Serialize)]
+struct SearchPagination {
+    per_page: PageSize,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    starting_after: Option<String>,
+}
+
+impl EmailSearch {
+    /// Match an email using provider equality. Search defaults to 50 results per page.
+    pub fn new(email: impl Into<String>) -> Self {
+        Self {
+            query: EmailQuery {
+                field: "email",
+                operator: "=",
+                value: email.into(),
+            },
+            pagination: SearchPagination {
+                per_page: PageSize(50),
+                starting_after: None,
+            },
+        }
+    }
+
+    /// Select a validated page size without changing the email or cursor.
+    pub fn with_per_page(mut self, size: PageSize) -> Self {
+        self.pagination.per_page = size;
+        self
+    }
+
+    /// Set or clear the opaque cursor for one `send()` call.
+    /// A traversal's `pages(from, max_pages)` replaces this cursor with `from`.
+    pub fn with_starting_after(mut self, cursor: Option<String>) -> Self {
+        self.pagination.starting_after = cursor;
+        self
     }
 }
 
@@ -114,7 +167,7 @@ pub struct CursorPages {
     pub next: Option<CursorNext>,
 }
 
-/// The next cursor, used verbatim as an encoded query value, never as a URL.
+/// The next cursor, used verbatim in a list query or search JSON body, never as a URL.
 #[derive(Deserialize)]
 pub struct CursorNext {
     /// Opaque provider cursor. The traversal refuses an empty or immediately repeated cursor.
@@ -130,4 +183,11 @@ macro_rules! redacted_debug {
         }
     )+};
 }
-redacted_debug!(Contact, ContactList, CursorPages, CursorNext, NewContact);
+redacted_debug!(
+    Contact,
+    ContactList,
+    CursorPages,
+    CursorNext,
+    NewContact,
+    EmailSearch
+);
