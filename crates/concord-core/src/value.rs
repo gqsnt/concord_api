@@ -111,7 +111,9 @@ impl IntoValue<HeaderValue> for &HeaderValue {
 ///
 /// The pairs follow the endpoint's declared query keys, in the order written. An empty key is a
 /// build error. Concord cannot redact a key it only learns at run time, so such a parameter
-/// cannot be `#[sensitive]`, and its values appear in the request's `Debug` URL.
+/// cannot be `#[sensitive]`, and its values appear in the request's `Debug` URL — except under a
+/// key on the well-known secret list (`token`, `api_key`, ...), which is withheld as a declared
+/// key would be.
 #[diagnostic::on_unimplemented(
     message = "`{Self}` cannot be a `query(..)` value: it does not implement `QueryPairs`",
     label = "a `query(..)` value writes its own query pairs",

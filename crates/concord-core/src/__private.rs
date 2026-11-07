@@ -708,7 +708,12 @@ pub(crate) fn redacted_url(url: &Url, meta: &EndpointMeta) -> String {
             let key = url::form_urlencoded::parse(raw_key.as_bytes())
                 .next()
                 .map(|(k, _)| k);
-            let sensitive = key.is_some_and(|k| meta.sensitive_query.contains(&k.as_ref()));
+            // Declared sensitive keys, and any key on the well-known list: a `query(..)` value's
+            // keys are only known now (literal keys on the list are already in
+            // `sensitive_query`, so this adds no redaction to them).
+            let sensitive = key.is_some_and(|k| {
+                meta.sensitive_query.contains(&k.as_ref()) || sensitive_text_name(&k)
+            });
             if sensitive {
                 out.push_str(raw_key);
                 out.push('=');
@@ -892,6 +897,20 @@ impl NativeKey for HeaderName {
     fn native_key(&self) -> &HeaderName {
         self
     }
+}
+
+/// Whether a query key is on [`SENSITIVE_NAMES`], with the macro's normalization (ASCII
+/// lowercase, `_` as `-`).
+fn sensitive_text_name(key: &str) -> bool {
+    SENSITIVE_NAMES.iter().any(|listed| {
+        listed.len() == key.len()
+            && listed.bytes().zip(key.bytes()).all(|(l, k)| {
+                l == match k.to_ascii_lowercase() {
+                    b'_' => b'-',
+                    other => other,
+                }
+            })
+    })
 }
 
 /// Whether a native header name is on [`SENSITIVE_NAMES`]. Native names are lowercase.

@@ -441,8 +441,9 @@ Rules, each checked when the declaration compiles:
 - **No key, no `each`, no `header(..)`.** The value writes every pair, repeated keys included.
 - **Never `#[sensitive]`.** Concord redacts by key, and these keys are only known at run time;
   give a secret its own keyed placement (`#[sensitive] query("token") token: String`). The
-  endpoint's `Debug` withholds a `query(..)` value; the prepared URL shows its pairs like any
-  other query.
+  endpoint's `Debug` withholds a `query(..)` value; `Prepared`'s `Debug` shows its pairs, except
+  that a key on the well-known secret list (`token`, `api_key`, ... §7) is still shown as
+  `<redacted>`, as a declared key would be.
 - **Order:** the pairs follow every declared query key of the chain (§4.7), in the order the value
   writes them. An empty key is a build error (`ErrorKind::Build`) before anything is sent.
 

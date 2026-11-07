@@ -179,3 +179,20 @@ fn debug_withholds_a_pairs_value() {
     );
     assert!(!shown.contains("42"), "{shown}");
 }
+
+#[test]
+fn a_well_known_secret_key_is_redacted_in_prepared_debug() {
+    let chat = Chat::new(concord::reqwest::Client::new());
+    let mut pairs = Bindings::default().bind("x", 1);
+    pairs.0.push(("API_Key".into(), "s3cr3t".into()));
+    pairs.0.push(("Token".into(), "t0k3n".into()));
+    let prepared = chat.run("SELECT 1", pairs).prepare().unwrap();
+    let shown = format!("{prepared:?}");
+    assert!(!shown.contains("s3cr3t"), "{shown}");
+    assert!(!shown.contains("t0k3n"), "{shown}");
+    assert!(shown.contains("API_Key=<redacted>"), "{shown}");
+    assert!(shown.contains("param_x=1"), "{shown}");
+    // The wire is unchanged.
+    let query = prepared.request().url().query().unwrap().to_owned();
+    assert!(query.ends_with("API_Key=s3cr3t&Token=t0k3n"), "{query}");
+}
