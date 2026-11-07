@@ -77,11 +77,17 @@ fn instants_outside_the_four_digit_utc_range_are_refused_before_io() {
     let store = FileStore::create(temp.path(), grant(A, false)).unwrap();
     let api = Xero::new(store, "synthetic-client-secret").unwrap();
     let tenant = api.tenant(&id(A)).unwrap();
-    for at in [
-        UNIX_EPOCH - Duration::from_nanos(1),
+    // The instant just before the epoch: 100 ns is the finest step `SystemTime` represents on
+    // every supported platform (Windows counts 100 ns intervals, so `UNIX_EPOCH - 1 ns` *is* the
+    // epoch there); where nanoseconds exist the 1 ns case is checked too.
+    let instants = vec![
+        UNIX_EPOCH - Duration::from_nanos(100),
         UNIX_EPOCH - Duration::from_secs(86_400),
         UNIX_EPOCH + Duration::from_secs(253_402_300_800),
-    ] {
+    ];
+    #[cfg(not(windows))]
+    let instants = [instants, vec![UNIX_EPOCH - Duration::from_nanos(1)]].concat();
+    for at in instants {
         let e = tenant.modified_since(at).unwrap_err();
         assert!(matches!(e.kind(), ErrorKind::Input(_)), "{e:?}");
     }
