@@ -41,6 +41,8 @@ shrink.
 `prepare` and the `set_*` controls, the name is the generated type's: an SDK that added its own
 inherent `operation` (or an item of that name) to a generated endpoint type gets `E0592` and
 deletes it — the generated one returns the same identity as `<E as Endpoint<T>>::operation()`.
+A `use concord::Endpoint;` that only served `GeneratedType::operation()` becomes unused (a
+warning; an error under `-D warnings`) and can be removed.
 
 **Reading response metadata.** Code that took the request apart only to look at the head before
 decoding (a fragment of the old form; it does not compile on its own):

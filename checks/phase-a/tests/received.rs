@@ -302,7 +302,6 @@ mod adapter {
 #[tokio::test]
 async fn one_generic_adapter_serves_every_endpoint() {
     use adapter::{Call, SdkError};
-    use concord::Endpoint;
     let server = TestServer::start(|r| {
         if r.target.contains("summary") {
             Reply::json(200, "{\"id\":1,\"amount\":2}").header("x-request-id", "s")
