@@ -1,0 +1,10 @@
+{
+  "errors": [
+    {
+      "category": "INVALID_REQUEST_ERROR",
+      "code": "IDEMPOTENCY_KEY_REUSED",
+      "detail": "Synthetic fixture: this key belongs to a different payment body.",
+      "field": "idempotency_key"
+    }
+  ]
+}

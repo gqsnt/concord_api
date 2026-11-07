@@ -1,0 +1,8 @@
+{
+  "scope": "https://uri.paypal.com/services/payments/payment https://uri.paypal.com/services/payments/refund openid",
+  "access_token": "A21AASyntheticAccessTokenTwo-1111111111",
+  "token_type": "Bearer",
+  "app_id": "APP-SYNTHETIC00000000",
+  "expires_in": 32400,
+  "nonce": "2026-11-07T19:00:00ZSyntheticNonceTwo"
+}

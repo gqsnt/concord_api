@@ -1,0 +1,38 @@
+{
+  "Invoice": {
+    "domain": "QBO",
+    "Id": "238",
+    "SyncToken": "0",
+    "DocNumber": "1069",
+    "TxnDate": "2026-11-07",
+    "DueDate": "2026-12-07",
+    "PrintStatus": "NeedToPrint",
+    "EmailStatus": "NotSet",
+    "TotalAmt": 100.0,
+    "Balance": 100.0,
+    "Deposit": 0,
+    "CustomerRef": { "name": "Synthetic Consulting", "value": "29" },
+    "Line": [
+      {
+        "Id": "1",
+        "LineNum": 1,
+        "Amount": 100.0,
+        "DetailType": "SalesItemLineDetail",
+        "SalesItemLineDetail": {
+          "ItemRef": { "name": "Services", "value": "1" },
+          "TaxCodeRef": { "value": "NON" }
+        }
+      },
+      {
+        "DetailType": "SubTotalLineDetail",
+        "Amount": 100.0,
+        "SubTotalLineDetail": {}
+      }
+    ],
+    "TxnTaxDetail": { "TotalTax": 0 },
+    "LinkedTxn": [],
+    "MetaData": { "CreateTime": "2026-11-07T10:33:39-08:00", "LastUpdatedTime": "2026-11-07T10:33:39-08:00" },
+    "sparse": false
+  },
+  "time": "2026-11-07T10:33:39.11-08:00"
+}

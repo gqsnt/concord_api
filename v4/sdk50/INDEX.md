@@ -23,7 +23,8 @@ fixtures only).
 | P1 F1–F3 and first integrations | **complete**: F1 retained with compiled comparison; F2 head retention, `decode_with_meta`, `document` adopted in 24 SDKs/examples; F3 parameter groups and `Sends<O>`; codecs package, Link parser, retry and auth pilots, pagination provider error / item events | `DECISIONS.md`, `checks/core-concepts/` |
 | P2 waves SDK21–50 | **Wave 1 (SDK21–25) complete**; between-waves changes A–E, H, `query(..)` accepted and adopted, ratelimit pilot not accepted (its review defects fixed); Wave 2 next | `waves/W1/{PLAN,STATUS,FINDINGS,CANDIDATES,SYNTHESIS}.md` |
 | | **Wave 2 (SDK26–30) complete**; between-waves changes B23-A2 (`send P -> Result<_, Error>`), B23-R (`Error::delivery()`), B23-C (`concord::field`), B23-Q, B23-G accepted and adopted; repeated-key guard not accepted (0 adopters); routing R-1 (Codex = Sol only) from Wave 3 | `waves/W2/{PLAN,STATUS,FINDINGS,SYNTHESIS}.md` |
-| | **Wave 3 (SDK31–35, payments and accounting) started**: baseline `14b9e1e0` (gate 66/66, nightly PASS) after six review rounds | `waves/W3/{PLAN,STATUS}.md` |
+| | **Wave 3 (SDK31–35, payments and accounting) complete**: 15 roles; between-waves B34-D (generated docs), B34-R (`Retry::receive_with`), B34-O (inherent `operation()`) accepted; B34-A (auth rotation) not accepted; B34-V (declared values) experiment continues | `waves/W3/{PLAN,STATUS,FINDINGS,SYNTHESIS}.md` |
+| | **Wave 4 (SDK36–40) started**: baseline `c3fd4f1e` (gate 66/66, nightly PASS) | `waves/W4/{PLAN,STATUS}.md` |
 | P3 final adoption and retrospective | not started | — |
 
 ## Lanes (branches; each merged into `sdk50/integration` after coordinator verification)
@@ -50,6 +51,11 @@ fixtures only).
 | Declared send result, `delivery()`, `field`, query docs, `.gitattributes`, review fixes | `sdk50/b23-core` | coordinator (review: Codex `gpt-6.1-sol` xhigh) | merged |
 | Earlier SDKs adopt `send -> ..` and `field` | `sdk50/b23-oldadopt` | Codex `gpt-6-astra` xhigh | merged |
 | Wave-2 SDKs adopt; repeated-key guard prototype | `sdk50/b23-w2adopt` | Codex `gpt-6.1-sol` xhigh; reconciled by the coordinator (`a46f490a`) | SDK adoption merged; guard not merged |
+| Wave 3 SDK31–35 | `sdk50/w3-sdk3N-<slug>` | 15 roles (Sol, Opus), see `MODELS.md` | merged |
+| Generated docs; inherent `operation()` | `sdk50/b34-core` | coordinator (reviews: Codex `gpt-6.1-sol` xhigh) | merged |
+| `Retry::receive_with`, PayPal adoption | `sdk50/b34-retry` | Codex `gpt-6.1-sol` xhigh | merged |
+| Auth rotation prototype | `sdk50/b34-auth` | Codex `gpt-6.1-sol` xhigh | not merged (grows 2 of 3 SDKs) |
+| Declared-value experiment | `sdk50/b34-values` | Codex `gpt-6.1-sol` xhigh | not merged (experiment) |
 
 Independent evidence on P1: docs-only prediction probe (Terra, `roles/p1-predict.md`), independent
 review (Sol, `roles/p1-review.md`), first-use probe building a Desk SDK from the docs (Opus

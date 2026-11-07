@@ -937,7 +937,53 @@ fn request_summary(model: &Model, endpoint: usize, method: &Ident) -> TokenStrea
         shown.join(", ")
     };
     let content_type = KeyName::Lit("content-type".to_owned());
-    let mut lines = vec![lit(""), lit(&format!(" Request: `{method} {url}`."))];
+    // The wire shape first (method, URL, query, headers), then body, output and policy mechanics.
+    let mut lines = vec![
+        lit(""),
+        lit(&format!(
+            " Request: `{method} {url}` (the declared base URL; the client's `with_base_url` replaces it)."
+        )),
+    ];
+    let query = keys(&composed.query);
+    if !query.is_empty() {
+        lines.push(lit(&format!(" Query (when present): {query}.")));
+    }
+    match &composed.headers {
+        HeaderComposition::Static(slots) => {
+            let headers = keys(slots);
+            if !headers.is_empty() {
+                lines.push(lit(&format!(" Headers (when present): {headers}.")));
+            }
+        }
+        HeaderComposition::Dynamic(seq) => {
+            // The macro cannot tell which contributions name the same header, so the operations
+            // are listed in chain order (`remove X_RIOT_TOKEN` under a client that sets it).
+            let mut shown: Vec<String> = Vec::new();
+            for &id in seq {
+                let c = model.contrib(id);
+                let op = match (c.op, c.else_inherit) {
+                    (crate::syntax::Op::Introduce, _) => "",
+                    (crate::syntax::Op::Append, _) => "append ",
+                    (crate::syntax::Op::Override, false) => "override ",
+                    (crate::syntax::Op::Override, true) => "override else inherit ",
+                    (crate::syntax::Op::Remove, _) => "remove ",
+                };
+                let text = format!(
+                    "`{op}{}`{}",
+                    model.key_text(&c.key),
+                    if c.sensitive { " (sensitive)" } else { "" }
+                );
+                // Every operation, repeats included: `KEY`, `remove KEY`, `KEY` sends the second.
+                shown.push(text);
+            }
+            if !shown.is_empty() {
+                lines.push(lit(&format!(
+                    " Headers, in chain order (sent when present; native names are compared when the request is built): {}.",
+                    shown.join(", ")
+                )));
+            }
+        }
+    }
     if let Kind::Endpoint {
         output,
         incoming,
@@ -1047,59 +1093,26 @@ fn request_summary(model: &Model, endpoint: usize, method: &Ident) -> TokenStrea
         }));
         // With a send policy, `send()` returns the policy's output, not the declared handling's.
         if let Kind::Client {
-            send: Some(policy), ..
+            send: Some(policy),
+            send_output,
+            ..
         } = &model.owners[0].kind
         {
             let shown = match model.send_value() {
                 Some(vi) => format!(
-                    "the client value `{}`",
+                    "(the client value `{}`)",
                     plain(&model.owners[0].values[vi].name)
                 ),
                 None => format!("`{}`", type_text(policy)),
             };
+            let result = if send_output.is_some() {
+                "the result the client declares on its `send` statement"
+            } else {
+                "its `SendWith<T>::Output` for this output `T`"
+            };
             lines.push(lit(&format!(
-                " With the client's send policy {shown}, `send()` returns its `SendWith<T>::Output` for this output `T`; `prepare()` (then `send()` or `receive()` on the `Prepared`) applies the declared handling above."
+                " `send()` goes through the client's send policy {shown} and returns {result}; `prepare()` (then `send()` or `receive()` on the `Prepared`) applies the declared handling above."
             )));
-        }
-    }
-    let query = keys(&composed.query);
-    if !query.is_empty() {
-        lines.push(lit(&format!(" Query (when present): {query}.")));
-    }
-    match &composed.headers {
-        HeaderComposition::Static(slots) => {
-            let headers = keys(slots);
-            if !headers.is_empty() {
-                lines.push(lit(&format!(" Headers (when present): {headers}.")));
-            }
-        }
-        HeaderComposition::Dynamic(seq) => {
-            // The macro cannot tell which contributions name the same header, so the operations
-            // are listed in chain order (`remove X_RIOT_TOKEN` under a client that sets it).
-            let mut shown: Vec<String> = Vec::new();
-            for &id in seq {
-                let c = model.contrib(id);
-                let op = match (c.op, c.else_inherit) {
-                    (crate::syntax::Op::Introduce, _) => "",
-                    (crate::syntax::Op::Append, _) => "append ",
-                    (crate::syntax::Op::Override, false) => "override ",
-                    (crate::syntax::Op::Override, true) => "override else inherit ",
-                    (crate::syntax::Op::Remove, _) => "remove ",
-                };
-                let text = format!(
-                    "`{op}{}`{}",
-                    model.key_text(&c.key),
-                    if c.sensitive { " (sensitive)" } else { "" }
-                );
-                // Every operation, repeats included: `KEY`, `remove KEY`, `KEY` sends the second.
-                shown.push(text);
-            }
-            if !shown.is_empty() {
-                lines.push(lit(&format!(
-                    " Headers, in chain order (sent when present; native names are compared when the request is built): {}.",
-                    shown.join(", ")
-                )));
-            }
         }
     }
     quote!(#(#[doc = #lines])*)
@@ -1589,7 +1602,7 @@ fn emit_owner(
                             (
                                 quote!(#vty),
                                 quote!(::core::clone::Clone::clone(&#root.#name)),
-                                format!("the client value `{}`", plain(name)),
+                                format!("(the client value `{}`)", plain(name)),
                             )
                         }
                         None => (
@@ -1697,6 +1710,11 @@ fn emit_owner(
                     #controls
                     #limit
 
+                    /// The declared identity, without building a request or naming its output.
+                    #[inline] pub fn operation() -> #k::Operation {
+                        #k::__private::declared(#op_name, #op_method)
+                    }
+
                     /// Builds the native request without sending it.
                     ///
                     /// # Errors
@@ -1719,7 +1737,7 @@ fn emit_owner(
                         #ty::prepare(self)
                     }
                     #[inline] fn operation() -> #k::Operation {
-                        #k::__private::declared(#op_name, #op_method)
+                        #ty::operation()
                     }
                 }
 
@@ -2878,6 +2896,42 @@ mod tests {
         });
         let ops = "`X_KEY`, `remove X_KEY`, `X_KEY`, `append X_KEY`";
         assert_eq!(repeated.matches(&line(ops)).count(), 2);
+    }
+
+    /// Wave 3 consumers: the wire shape comes first (request, query, headers, then body and
+    /// mechanics), the shown URL is labelled as the declared base, a value policy reads as such
+    /// ("the client's send policy (the client value `policy`)"), and a declared send result is
+    /// not described as `SendWith<T>::Output`.
+    #[test]
+    fn request_summary_puts_the_wire_shape_first_and_names_the_policy() {
+        let docs = docs(quote! {
+            pub client Api(policy: Policy) {
+                base "http://x.test";
+                format Json;
+                send policy -> Result<_, Error>;
+                POST create(query("k") key: String, header("x-trace") trace: String, body item: Item) -> Item {
+                    path "items";
+                }
+            }
+        });
+        let at = |needle: &str| {
+            docs.find(needle)
+                .unwrap_or_else(|| panic!("{needle} missing in {docs}"))
+        };
+        let request = at(
+            "Request: `POST http://x.test/items` (the declared base URL; the client's `with_base_url` replaces it).",
+        );
+        let query = at("Query (when present): `k`.");
+        let headers = at("Headers (when present): `x-trace`.");
+        let body = at("Body (`item`)");
+        assert!(
+            request < query && query < headers && headers < body,
+            "{docs}"
+        );
+        assert!(docs.contains("`send()` goes through the client's send policy (the client value `policy`) and returns the result the client declares on its `send` statement"), "{docs}");
+        assert!(docs.contains("Sends the request with the client's send policy (the client value `policy`), whose result the client declares"), "{docs}");
+        assert!(!docs.contains("SendWith<T>::Output"), "{docs}");
+        assert!(!docs.contains("policy the client value"), "{docs}");
     }
 
     /// Placement notes are deduplicated (a label seen twice is listed once) and keep first-seen

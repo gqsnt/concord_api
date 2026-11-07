@@ -1,0 +1,22 @@
+[package]
+name = "concord-sdk-quickbooks-online"
+version = "0.0.0"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish = false
+description = "A bounded QuickBooks Online Accounting API slice: realm-bound OAuth connections, customer query and read, invoice create/read and single-invoice payments, tested offline"
+
+[dependencies]
+concord = { path = "../../crates/concord", features = ["form"] }
+concord-auth = { path = "../../crates/concord-auth" }
+concord-pagination = { path = "../../crates/concord-pagination" }
+serde = { workspace = true, features = ["derive"] }
+serde_json = { workspace = true, features = ["raw_value"] }
+
+[dev-dependencies]
+concord-example-testserver = { path = "../testserver" }
+tokio = { workspace = true, features = ["macros", "rt-multi-thread", "time"] }
+
+[lints]
+workspace = true
