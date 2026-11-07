@@ -10,12 +10,16 @@
 //!   [`concord_pagination::Pages`] chain) and [`Elasticsearch::close_point_in_time`], or the
 //!   whole workflow with [`Elasticsearch::scan`], which closes the PIT whether the traversal
 //!   succeeded or not.
+//! - [`Elasticsearch::get_document`] returns a document and its [`DocumentVersion`], or typed
+//!   absence. [`Elasticsearch::conditional_index`] requires that version and reports a stale
+//!   write as [`Error::VersionConflict`]. An uncertain write is never retried by this SDK.
 //!
 //! The wire declaration is [`ElasticsearchApi`]; its generated `send()` returns this crate's
 //! [`Error`] through [`SendPolicy`]. See the crate README for the contract, failure semantics
 //! and what is excluded.
 
 pub mod bulk;
+pub mod document;
 pub mod error;
 pub mod model;
 pub mod pit;
@@ -32,6 +36,9 @@ pub use bulk::{
 };
 pub use concord;
 pub use concord_pagination;
+pub use document::{
+    Document, DocumentSource, DocumentVersion, GetDocument, IndexResponse, IndexResult,
+};
 pub use error::{Error, ErrorCause, ErrorDocument, ErrorField, Invalid, Protocol, ProviderError};
 pub use model::{ApiKey, DocumentId, IndexName, KeepAlive, Refresh};
 pub use pit::{
@@ -39,7 +46,7 @@ pub use pit::{
     SearchBody, SearchResponse, Sort, SortValues,
 };
 
-/// The bound on every successful response body (bulk results, search pages, PIT answers).
+/// The bound on every successful response body (bulk, search, PIT and document answers).
 pub const RESPONSE_LIMIT: usize = 16 * 1024 * 1024;
 
 /// The bound on an error document read from a non-2xx answer.
@@ -47,7 +54,7 @@ pub const ERROR_DOCUMENT_LIMIT: usize = 64 * 1024;
 
 concord::api! {
     /// The Elasticsearch REST operations of this slice. Every generated `send()` returns
-    /// `Result<T, Error>` through [`SendPolicy`]; [`Elasticsearch`] adds the bulk correlation and
+    /// `Result<T, Error>` through [`SendPolicy`]; [`Elasticsearch`] adds response correlation and
     /// the point-in-time workflow.
     ///
     /// The declared base is the bulk reference's `localhost:9200`; a deployment's URL is given
@@ -69,6 +76,13 @@ concord::api! {
         scope index(name: IndexName) {
             path "{name}";
 
+            /// `GET /<index>/_doc/<id>`: a document and its concurrency token, or typed absence.
+            GET get_document(id: DocumentId) -> GetDocument { path "_doc/{id}"; }
+
+            /// `PUT /<index>/_doc/<id>` with both required optimistic concurrency parameters.
+            PUT conditional_index(id: DocumentId, body document: DocumentSource,
+                query(..) version: DocumentVersion) -> IndexResponse { path "_doc/{id}"; }
+
             /// `POST /<index>/_pit?keep_alive=<n>m`: open a point in time.
             POST open_point_in_time(query keep_alive: KeepAlive) -> OpenPitResponse {
                 path "_pit";
@@ -85,35 +99,61 @@ concord::api! {
     }
 }
 
-/// The send policy of [`ElasticsearchApi`]: a non-2xx answer is [`Error::Provider`] with its
+/// The send policy of [`ElasticsearchApi`]: ordinarily a non-2xx answer is [`Error::Provider`] with its
 /// error document read with a [`ERROR_DOCUMENT_LIMIT`] bound (the status stays authoritative when
 /// the document is absent, not JSON, oversized or malformed); a 2xx is decoded as declared.
+/// Document reads also accept a `404` with `found: false`, and conditional indexing maps
+/// `409` to [`Error::VersionConflict`]. These exceptions never apply to bulk or PIT endpoints.
 #[derive(Debug, Default)]
 pub struct SendPolicy;
 
-impl<T: Send> SendWith<T> for SendPolicy {
+impl<T: ResponsePolicy> SendWith<T> for SendPolicy {
     type Output = Result<T, Error>;
 
     async fn send<E: Endpoint<T> + Send>(&self, endpoint: E) -> Self::Output {
         let received = endpoint.prepare()?.receive().await?;
-        if !received.status().is_success() {
-            let (meta, document) = received
-                .document::<Json, ErrorDocument>(ERROR_DOCUMENT_LIMIT)
-                .await;
-            return Err(Error::Provider(Box::new(ProviderError::new(
-                meta, document,
-            ))));
-        }
-        Ok(received.decode().await?)
+        T::read(received).await
     }
 }
 
-/// The SDK client: the generated [`ElasticsearchApi`] plus the bulk and point-in-time
+// Concord's send policy is client-wide. Dispatch by the declared output type so provider
+// exceptions are local to the two document endpoints, without matching endpoint-name strings.
+/// Internal response dispatch for the client-wide [`SendPolicy`].
+#[doc(hidden)]
+pub trait ResponsePolicy: Sized + Send {
+    /// Consumes one response without replaying its request.
+    fn read(
+        received: concord::Received<Self>,
+    ) -> impl std::future::Future<Output = Result<Self, Error>> + Send {
+        standard_response(received)
+    }
+}
+
+impl ResponsePolicy for BulkResponse {}
+impl ResponsePolicy for OpenPitResponse {}
+impl ResponsePolicy for SearchResponse {}
+impl ResponsePolicy for ClosePitResponse {}
+
+pub(crate) async fn provider_error<T>(received: concord::Received<T>) -> Box<ProviderError> {
+    let (meta, document) = received
+        .document::<Json, ErrorDocument>(ERROR_DOCUMENT_LIMIT)
+        .await;
+    Box::new(ProviderError::new(meta, document))
+}
+
+pub(crate) async fn standard_response<T>(received: concord::Received<T>) -> Result<T, Error> {
+    if !received.status().is_success() {
+        return Err(Error::Provider(provider_error(received).await));
+    }
+    Ok(received.decode().await?)
+}
+
+/// The SDK client: the generated [`ElasticsearchApi`] plus document, bulk and point-in-time
 /// workflows. Cheap to clone. `Debug` never prints the API key.
 ///
-/// Transport settings belong to the `reqwest::Client` you pass in. For bulk writes, build it
+/// Transport settings belong to the `reqwest::Client` you pass in. For all writes, build it
 /// without automatic retries (`reqwest::retry::never()`) and without following redirects: a
-/// transport that replays a bulk body on its own re-applies operations this SDK reported once.
+/// transport that replays a write on its own can hide an uncertain outcome behind a conflict.
 #[derive(Clone, Debug)]
 pub struct Elasticsearch {
     api: ElasticsearchApi,
@@ -135,6 +175,49 @@ impl Elasticsearch {
     /// The generated client, for direct use of the declared operations.
     pub fn api(&self) -> &ElasticsearchApi {
         &self.api
+    }
+
+    /// Reads one document, including its sequence number and primary term.
+    /// A missing document is [`GetDocument::NotFound`]; a missing index remains a provider error.
+    pub async fn get_document(&self, index: &str, id: &str) -> Result<GetDocument, Error> {
+        let response = self
+            .api
+            .index(IndexName::new(index)?)
+            .get_document(DocumentId::new(id)?)
+            .send()
+            .await?;
+        let returned_id = match &response {
+            GetDocument::Found(document) => document.id(),
+            GetDocument::NotFound { id, .. } => id,
+        };
+        if returned_id != id {
+            return Err(Error::Protocol(Protocol::DocumentId));
+        }
+        Ok(response)
+    }
+
+    /// Replaces a document only if `version` still identifies its last modification.
+    /// Pass the version returned by [`get_document`](Self::get_document). `source` is the
+    /// complete replacement, not a partial update. A stale version is [`Error::VersionConflict`].
+    /// No error is automatically retried; if [`Error::is_uncertain`] is true (including a
+    /// timeout), reconcile with a fresh read before deciding what to do.
+    pub async fn conditional_index<T: serde::Serialize + ?Sized>(
+        &self,
+        index: &str,
+        id: &str,
+        version: DocumentVersion,
+        source: &T,
+    ) -> Result<IndexResponse, Error> {
+        let response = self
+            .api
+            .index(IndexName::new(index)?)
+            .conditional_index(DocumentId::new(id)?, DocumentSource::new(source)?, version)
+            .send()
+            .await?;
+        if response.id != id {
+            return Err(Error::Protocol(Protocol::DocumentId));
+        }
+        Ok(response)
     }
 
     /// Sends a bulk request and checks every item against its operation.

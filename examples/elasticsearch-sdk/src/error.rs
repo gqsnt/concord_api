@@ -24,6 +24,9 @@ pub enum Error {
     /// Elasticsearch answered with a non-2xx status. The status is authoritative whether its
     /// error document is typed, absent, malformed or oversized.
     Provider(Box<ProviderError>),
+    /// Conditional indexing was rejected with HTTP 409. Read the current document and let the
+    /// caller resolve the conflict; do not automatically repeat the write with a newer token.
+    VersionConflict(Box<ProviderError>),
     /// A 2xx response that contradicts the request or the documented contract (a bulk item
     /// that cannot be matched with its operation, a PIT page without its PIT id or sort values).
     Protocol(Protocol),
@@ -47,13 +50,14 @@ pub enum Error {
 }
 
 impl Error {
-    /// Whether a **bulk** request may have been applied, wholly or in part, without this SDK
+    /// Whether a **write** request may have been applied, wholly or in part, without this SDK
     /// being able to tell which operations: no response head arrived (Concord's
     /// [`Delivery::Unknown`]), Elasticsearch answered 5xx, or it answered 2xx with a body that
     /// was refused, too long, cut off, malformed or contradicts the request ([`Error::Protocol`]).
     ///
     /// Such a request must not be resubmitted blindly. A [`PartialBulk`](Error::PartialBulk)
-    /// is **not** uncertain: every operation's outcome is known.
+    /// is **not** uncertain: every operation's outcome is known. A conditional write's timeout
+    /// is uncertain too, even if a 2xx head arrived; no write is automatically resent.
     pub fn is_uncertain(&self) -> bool {
         match self {
             Error::Concord(error) => match error.delivery() {
@@ -69,10 +73,12 @@ impl Error {
         }
     }
 
-    /// The HTTP status of an Elasticsearch error answer ([`Error::Provider`]).
+    /// The HTTP status of an Elasticsearch error answer (provider error or version conflict).
     pub fn status(&self) -> Option<u16> {
         match self {
-            Error::Provider(provider) => Some(provider.status().as_u16()),
+            Error::Provider(provider) | Error::VersionConflict(provider) => {
+                Some(provider.status().as_u16())
+            }
             _ => None,
         }
     }
@@ -109,6 +115,9 @@ impl fmt::Display for Error {
             // Concord's `Display` is redacted (endpoint, static label, numbers).
             Error::Concord(error) => error.fmt(f),
             Error::Provider(provider) => provider.fmt(f),
+            Error::VersionConflict(provider) => {
+                write!(f, "conditional indexing conflict: {provider}")
+            }
             Error::Protocol(protocol) => write!(f, "unexpected Elasticsearch response: {protocol}"),
             Error::PartialBulk(report) => write!(
                 f,
@@ -154,6 +163,10 @@ pub enum Invalid {
     DocumentNotObject,
     /// A document that could not be serialized.
     DocumentEncoding,
+    /// A sequence number / primary term pair with a zero primary term.
+    DocumentVersion,
+    /// A single document source exceeds the bounded JSON body size.
+    DocumentTooLarge,
     /// A document whose JSON text contains a line break (a raw JSON value): it would split its
     /// NDJSON line.
     DocumentLineBreak,
@@ -182,6 +195,8 @@ impl fmt::Display for Invalid {
             Invalid::DocumentId => "empty document id",
             Invalid::DocumentNotObject => "a document must serialize to a JSON object",
             Invalid::DocumentEncoding => "a document could not be serialized",
+            Invalid::DocumentVersion => "a document primary term must be positive",
+            Invalid::DocumentTooLarge => "a document exceeds the source byte limit",
             Invalid::DocumentLineBreak => "a document's JSON text contains a line break",
             Invalid::TooManyOperations => "the bulk request would exceed its operation limit",
             Invalid::TooManyBytes => "the bulk request would exceed its byte limit",
@@ -199,6 +214,10 @@ impl fmt::Display for Invalid {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum Protocol {
+    /// A document read or write response names a different id than requested.
+    DocumentId,
+    /// A document read's HTTP status contradicts its `found` field.
+    DocumentStatus,
     /// The bulk response has a different number of items than operations were submitted, so
     /// items cannot be matched with operations by position.
     ItemCount {
@@ -243,6 +262,8 @@ pub enum Protocol {
 impl fmt::Display for Protocol {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
+            Protocol::DocumentId => f.write_str("the document response names another id"),
+            Protocol::DocumentStatus => f.write_str("the document status contradicts found"),
             Protocol::ItemCount {
                 submitted,
                 returned,

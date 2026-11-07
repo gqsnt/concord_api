@@ -1,14 +1,16 @@
 # concord-sdk-elasticsearch
 
-A bounded Elasticsearch SDK slice built on Concord. It covers two connected workflows:
+A bounded Elasticsearch SDK slice built on Concord. It covers these workflows:
 
 1. **Bulk**: send a bounded set of `index` / `create` / `update` / `delete` operations as one
    NDJSON `POST /_bulk`, then check **every** per-item result against the operation it answers.
 2. **Point in time + `search_after`**: open a PIT on an index, page through a sorted search with
    the last hit's sort values, and close the PIT — also when a page fails.
+3. **Read and conditionally replace**: get a document and its sequence number/primary term,
+   then replace its source only if that revision is still current.
 
 It is offline-tested only: no request in this crate's tests reaches a real Elasticsearch
-(live provider calls: **NOT_RUN**). The contract comes from two official pages, cited in
+(live provider calls: **NOT_RUN**). The contract comes from official pages, cited with read dates in
 [`PROVENANCE.md`](PROVENANCE.md).
 
 ## Constructing the client
@@ -16,8 +18,8 @@ It is offline-tested only: no request in this crate's tests reaches a real Elast
 ```rust,ignore
 use concord_sdk_elasticsearch::{ApiKey, Elasticsearch, concord::reqwest};
 
-// Transport settings are yours. For bulk writes, turn off transport retries and redirects:
-// a transport that replays a bulk body re-applies operations this SDK already reported.
+// Transport settings are yours. For all writes, turn off transport retries and redirects:
+// replaying an uncertain conditional write can hide its outcome behind a conflict.
 let http = reqwest::Client::builder()
     .retry(reqwest::retry::never())
     .redirect(reqwest::redirect::Policy::none())
@@ -31,8 +33,11 @@ example), built with `concord_auth::authorization` and flagged sensitive: `Debug
 of prepared requests and of every error shows `<redacted>`.
 
 `es.api()` is the generated `ElasticsearchApi` (`bulk`, `index(..).open_point_in_time`,
-`search`, `close_point_in_time`): every generated `send()` returns `Result<T, Error>` through the
+`index(..).get_document`, `index(..).conditional_index`, `search`, `close_point_in_time`):
+every generated `send()` returns `Result<T, Error>` through the
 crate's `SendPolicy`, so the wire types (`BulkResponse`, `SearchResponse`, ...) are public too.
+`prepare()?.send()` uses Concord's default response handling and bypasses the SDK policy;
+use the generated endpoint's `send()` for typed absence and version conflicts.
 
 ## Workflow 1: bulk
 
@@ -133,11 +138,57 @@ es.close_point_in_time(pit).await?;
   when its keep-alive expires. `scan` always closes the PIT it opened, except when its future
   is cancelled.
 
+## Workflow 3: read and conditionally replace
+
+```rust,ignore
+use concord_sdk_elasticsearch::{Error, GetDocument};
+use serde_json::{Value, json};
+
+let document = match es.get_document("products", "1567").await? {
+    GetDocument::Found(document) => document,
+    GetDocument::NotFound { .. } => return Ok(()),
+};
+let Some(source) = document.source::<Value>() else { return Ok(()) }; // source storage disabled
+let mut replacement = source?;
+replacement["tags"] = json!(["droid"]);
+match es.conditional_index("products", "1567", document.version(), &replacement).await {
+    Ok(saved) => { /* saved.version identifies the new revision */ }
+    Err(Error::VersionConflict(conflict)) => {
+        // Another change intervened. The caller may explicitly read again and merge;
+        // never overwrite it by automatically substituting a newer token.
+        assert_eq!(conflict.status().as_u16(), 409);
+    }
+    Err(error) if error.is_uncertain() => {
+        // The write may have applied. Reconcile with a fresh read; do not resend it.
+    }
+    Err(error) => return Err(error.into()),
+}
+```
+
+- `GET /<index>/_doc/<id>` returns `GetDocument::Found(Document)` with raw/typed source access
+  and a required `DocumentVersion` containing `_seq_no` and `_primary_term`. A `404` with a
+  valid `found: false` get-result is `GetDocument::NotFound`; a missing-index error, malformed
+  or unreadable `404` remains `Error::Provider` with its original status and diagnostics.
+- `PUT /<index>/_doc/<id>?if_seq_no=…&if_primary_term=…` sends the **complete replacement**
+  JSON source. `DocumentVersion` supplies both required query pairs, with no unconditional
+  write path. Its sequence number may be zero; its primary term must be positive. It is
+  distinct from the provider's `_version` counter. `409` becomes `Error::VersionConflict`,
+  retaining the provider status, metadata and bounded error body even when that body is unreadable.
+- The convenience methods validate the index/id and check the returned id. The generated
+  endpoints take `IndexName`, `DocumentId`, `DocumentSource` and `DocumentVersion`; path values
+  are encoded by Concord. The source is a JSON object, serialized with an 8 MiB bound
+  (`document::DOCUMENT_LIMIT`). JSON line breaks are allowed here; this is not an NDJSON body.
+- Neither a conflict nor an uncertain write triggers a retry, a reread, or a new token. Configure
+  the supplied HTTP client with retries and redirects disabled as above. Timeouts before response
+  headers and timeouts while reading a successful body are both uncertain. The SDK cannot
+  override transport policies on a caller-supplied client.
+
 ## Failure semantics
 
 | Failure | Error | `is_uncertain()` |
 |---|---|---|
 | input refused (index name, empty id, non-object document, limits, page size, sort, query, API key) | `Invalid` — nothing sent | no |
+| conditional index rejected with 409 | `VersionConflict`: provider status/head and error document or its read failure | no |
 | non-2xx answer | `Provider`: status, head, error document (`type`, `reason`, `root_cause`), or why the document could not be read (absent, not JSON, over 64 KiB, malformed) | 5xx: yes; 4xx: no (the SDK reads a 4xx bulk answer as a rejection of the whole request) |
 | no response head (connect failure, timeout, reset) | `Concord`, `delivery() == Unknown` | yes |
 | 2xx head, then a body that is cut off, over 16 MiB, mislabelled (not `application/json` / `application/*+json`), malformed, or a filtered response | `Concord` (`Transport`, `Limit`, `Metadata`, `Decode`) | yes |
@@ -145,6 +196,7 @@ es.close_point_in_time(pit).await?;
 | at least one failed bulk item | `PartialBulk(report)` | **no**: every outcome is known |
 | PIT page without `pit_id`, a hit without `sort`, more hits than requested, a cursor that does not advance, an empty PIT id | `Protocol` | (reads) |
 | PIT page with `timed_out: true` or `_shards.failed > 0` | `PartialSearch` — the traversal stops instead of skipping hits | (reads) |
+| single-document response id mismatch, or get status contradicts `found` | `Protocol` | yes for writes |
 
 **Uncertain bulk requests** may have been applied wholly or in part, and the SDK cannot tell
 which operations. Never resubmit one blindly. Because every operation has an explicit id, a
@@ -160,7 +212,7 @@ return them on request.
 
 Cluster and index administration, every index option, mappings and settings; scroll; bulk
 actions without an explicit `_id`, `filter_path` (a filtered bulk answer cannot be matched with
-its operations; it is refused as malformed), `if_seq_no`/`if_primary_term`, `version`,
+its operations; it is refused as malformed), bulk `if_seq_no`/`if_primary_term`, external `version`,
 `routing`, pipelines, scripted updates and upserts; multi-index and wildcard PITs; `from`/`size`
 paging; aggregations, `total` hits and typed query DSL (the query is caller-written JSON);
 streamed (lazily produced) bulk bodies and any unbounded buffering; automatic retries of any kind;
@@ -172,7 +224,10 @@ Basic and bearer authentication.
 cargo test --locked -p concord-sdk-elasticsearch
 ```
 
-`tests/protocol.rs` checks request shapes on the wire, every error class, unreadable bodies,
+`tests/documents.rs` checks document wire shapes, typed absence/conflicts, invalid tokens,
+bounded sources, encoded ids and uncertain writes without replay. `tests/maintenance_use.rs`
+reads, replaces, explicitly resolves a conflict, and handles absence using the public API.
+The original `tests/first_use.rs` consumer is preserved. `tests/protocol.rs` checks request shapes on the wire, every error class, unreadable bodies,
 contract violations, input validation and redaction; `tests/workflows.rs` runs both workflows
 end to end, including the required partial-failure case, against `examples/testserver` and the
 fixtures listed in [`PROVENANCE.md`](PROVENANCE.md).

@@ -2,16 +2,43 @@
 
 ## Documentation read
 
-Both pages were read on **2026-11-07** (UTC), with an HTTP GET of the public page (HTTP 200,
+For the initial bulk/PIT slice, both pages were read on **2026-11-07** (UTC), with an HTTP GET of the public page (HTTP 200,
 `text/html`) whose text was extracted locally for reading; the bulk page was also read once
 through a summarising web fetch. The local copies stayed in the worktree's `target/tmp/docs`
-(not part of the crate). No other provider page was read. Neither page named an Elasticsearch
+(not part of the crate). No other provider page was read at that stage. Neither page named an Elasticsearch
 version; this records the documentation as observed on that date, not a versioned schema.
 
 | Page | Retrieved (UTC) | Used for |
 |---|---|---|
 | [Bulk API reference](https://www.elastic.co/docs/api/doc/elasticsearch/operation/operation-bulk) | 2026-11-07 06:53 | `POST /_bulk`; NDJSON framing ("The final line of data must end with a newline character", "not pretty printed", `Content-Type` `application/json` or `application/x-ndjson`); `index`/`create` need a source line, `delete` none, `update` a line with `doc`; "A create action fails if a document with the same ID already exists"; the 100mb default request limit; `refresh` (`true`, `false`, `wait_for`); `include_source_on_error` (default `true`); response `took`, `errors` ("If true, one or more of the operations ... did not complete successfully"), `items` ("in the order they were submitted"), item `_index`, `_id`, `status`, `error` ("returned only for failed operations": `type`, `reason`, `root_cause`), `result` (`created`, `updated`, `deleted`, `noop`, `not_found`), `_version`, `_seq_no`, `_primary_term`, `_shards`; the curl example's `Authorization: ApiKey $ELASTIC_API_KEY` and `localhost:9200` |
 | [Paginate search results](https://www.elastic.co/docs/reference/elasticsearch/rest-apis/paginate-search-results) | 2026-11-07 06:54 | `POST /<index>/_pit?keep_alive=1m` and its `id`; the PIT search (`pit.id`, `keep_alive`, `sort`, no index in the path, `size` 10000 in the examples, the 10,000-hit `index.max_result_window` default); "use the latest PIT ID", the implicit `_shard_doc` tiebreaker, the last hit's `sort` values as `search_after`, "query and sort arguments must remain unchanged", `track_total_hits: false`; `DELETE /_pit` with `{"id": ..}`; scroll is no longer recommended |
+
+### Maintenance research: document reads and conditional indexing
+
+Read on **2026-11-07**, using read-only web fetches of these exact pages and focused extracts.
+The bulk and pagination pages above were also reread on this date. No live Elasticsearch
+service was contacted; live provider calls: **NOT_RUN**. These are unversioned documentation
+pages, observed on the stated date.
+
+| Page | Facts used |
+|---|---|
+| [Get a document by its ID](https://www.elastic.co/docs/api/doc/elasticsearch/operation/operation-get) | `GET /{index}/_doc/{id}`; `found`, `_index`, `_id`, `_source`, `_seq_no`, `_primary_term`; a 404 can contain either a get-result or an error response. Source data may be absent. |
+| [Create or update a document in an index](https://www.elastic.co/docs/api/doc/elasticsearch/operation/operation-index) | JSON object source; `PUT /{index}/_doc/{id}` with `if_seq_no` and `if_primary_term`; mismatches produce a version conflict and HTTP 409; response id/index, result, revision fields and shard counts. |
+| [Optimistic concurrency control](https://www.elastic.co/docs/reference/elasticsearch/rest-apis/optimistic-concurrency-control) | The GET-returned sequence number and primary term identify a change and must both be supplied to guard a later replacement. The example uses products/1567, sequence number 362 and primary term 2. Indices with sequence numbers disabled reject concurrency parameters. |
+
+The 8 MiB source bound, unsigned sequence numbers, positive primary terms, mandatory tokens
+even when the provider schema lists them as optional, response-id/status consistency checks,
+and conservative treatment of write delivery failures are SDK decisions. The documents do not
+promise that a client timeout cancels a write. This SDK never retries it; the caller must disable
+transport retries/redirects and reconcile uncertain outcomes explicitly.
+
+`tests/documents.rs` and `tests/maintenance_use.rs` contain **synthetic inline fixtures**.
+Their product/id/source and initial concurrency values follow the OCC example; GET's
+`found: false` shape and error envelope follow the GET schemas. Later revision numbers,
+replacement tags, competing edits, shard counts, missing-index errors, the literal error type
+`version_conflict_engine_exception`, malformed/oversized bodies and timing faults are synthetic.
+Request expectations are written from the documented route/query/body contract, not captured
+from SDK output. Existing fixture files and tests are unchanged.
 
 ## Fixtures
 
@@ -66,3 +93,9 @@ None: `concord`, `concord-auth`, `concord-pagination`, `serde`, `serde_json`, `t
 `concord-example-testserver` are workspace crates or already in `Cargo.lock`. `serde_json`'s
 `raw_value` feature (already enabled by other workspace members) is used for exact JSON text.
 The lock gained only this package's entry.
+
+Maintenance adds **no dependencies or features**. Workspace membership and the package's lock
+entry were already present. The first build was `CARGO_BUILD_JOBS=4 cargo test --offline -p
+concord-sdk-elasticsearch --no-run` without `--locked`; both root manifests and the lock stayed
+unchanged. Subsequent cargo commands use `--locked --offline`, four jobs and the default
+worktree `target/`. No lockfile package version changed.
