@@ -11,3 +11,9 @@
 *.stderr text eol=lf
 Cargo.lock text eol=lf
 LICENSE-* text eol=lf
+
+# SDK fixtures are wire bytes (CSV row endings, quoted line breaks, CRLF on purpose): never convert
+# them on checkout. Each SDK20 SDK carried its own `fixtures/** -text`; wave-1 SDKs without one
+# (FRED, USGS) failed on native Windows (CI run 42321694320), so the rule now covers every SDK.
+examples/*/fixtures/** -text
+examples/*/tests/fixtures/** -text
