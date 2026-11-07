@@ -1,6 +1,6 @@
 # Xero Accounting invoice SDK (SDK35)
 
-`concord-sdk-xero-accounting` implements two connected workflows: page an authorized tenant's invoices and retrieve a chosen invoice; create one draft sales invoice and retrieve its current state in that same tenant. This is an **example-assisted**, bounded SDK over frozen Concord commit `14b9e1e0a89775dbe5cbb9f7837bde677ea5878e`. Live provider calls: **NOT_RUN**. All execution evidence uses local `concord-example-testserver` fixtures.
+`concord-sdk-xero-accounting` implements two connected workflows: page an authorized tenant's invoices and retrieve a chosen invoice; create one draft sales invoice and retrieve its current state in that same tenant. Maintenance added an incremental listing of invoices modified since a sync point (see [MAINTENANCE.md](MAINTENANCE.md)). This is an **example-assisted**, bounded SDK over frozen Concord commit `14b9e1e0a89775dbe5cbb9f7837bde677ea5878e`. Live provider calls: **NOT_RUN**. All execution evidence uses local `concord-example-testserver` fixtures.
 
 The declaration in `src/lib.rs` retains client → tenant scope → list/get/create endpoint. Every request, including OAuth refresh, uses a generated Concord `send()`. The private declaration protects credentials and tenant context from arbitrary generated setters. Public operations retain the familiar `.send().await` terminal method.
 
@@ -53,6 +53,41 @@ async fn workflows(
 For restart, use `FileStore::open(directory, tenant, client_id)` rather than initializing another grant. For fixtures, `Xero::with_origins(store, secret, accounting_origin, oauth_origin)` accepts HTTPS or loopback HTTP origins. The transport disables redirects, reqwest retries and Referer forwarding, with a ten-second request timeout. No constructor sends a request.
 
 `Tenant::list(page, size)` retrieves one page. `Tenant::pages(from, size, cap)` returns `concord_pagination::Pages`; `next_page()` returns `Ok(None)` only on provider exhaustion. `items().collect_complete()` returns either a complete vector or an `Incomplete { collected, error }` preserving the prefix. A cap, failed page and completion are distinct. `InvoicePage::next` can resume with the same tenant and size. With modern metadata, page, size, count and total must agree. Without metadata, even a short nonempty page continues until an empty page. Mutations during traversal can cause duplicates or gaps; there is no provider snapshot guarantee.
+
+## Incremental sync: invoices modified since a sync point
+
+`Tenant::modified_since(at)` binds a `SystemTime` to the tenant as a `ModifiedSince` sync point, truncated to the whole UTC second (Xero filters to the second) and limited to years 1970–9999. `Tenant::list_modified_since(&since, page, size)` and `Tenant::pages_modified_since(&since, from, size, cap)` are the listing and traversal above plus Xero's `If-Modified-Since` request header, written as Xero documents it: `yyyy-mm-ddThh:mm:ss` in UTC (for example `2009-11-12T00:00:00`), computed from the instant and never from a local time zone. Every page of a traversal sends the same value. A continuation remembers its sync point: it resumes only with the same `since`, page size and tenant, so an unfiltered and a filtered traversal never continue each other. A failed first page (`Resume::Start`) restarts with `from = None` and the same `since`. A sync point or continuation from another tenant fails with `TenantMismatch` before I/O. `list` and `pages` send no such header and are otherwise unchanged.
+
+```no_run
+use concord_sdk_xero_accounting::Tenant;
+use std::{
+    num::NonZeroUsize,
+    time::{Duration, SystemTime, UNIX_EPOCH},
+};
+
+/// `saved` is the application's persisted sync point (Unix seconds), or None for a first sync.
+async fn sync(tenant: &Tenant, saved: Option<u64>) -> Result<u64, Box<dyn std::error::Error>> {
+    let started = SystemTime::now(); // before the first request of this sync
+    let cap = NonZeroUsize::new(50).unwrap();
+    let pages = match saved {
+        None => tenant.pages(None, 100, cap)?,
+        Some(s) => {
+            let since = tenant.modified_since(UNIX_EPOCH + Duration::from_secs(s))?;
+            tenant.pages_modified_since(&since, None, 100, cap)?
+        }
+    };
+    // An Incomplete result keeps the old sync point; resume it with `error.resume()`.
+    let changed = pages.items().collect_complete().await.map_err(|i| i.error)?;
+    for invoice in changed {
+        let _ = invoice.reference; // upsert by ID: overlap with the previous sync is expected
+    }
+    // Completed: the next sync starts from when this one started.
+    let next = tenant.modified_since(started)?;
+    Ok(next.at().duration_since(UNIX_EPOCH)?.as_secs())
+}
+```
+
+Caller responsibilities that remain provider facts, not SDK guarantees: Xero does not say whether the bound is inclusive, and truncation repeats changes within the starting second, so upsert by invoice ID. Advance the sync point only after completion, to the time taken **before** that sync's first request (not the resume time); a local clock ahead of Xero's can skip changes, so subtract a margin if the host clock is not disciplined. Xero notes that some changes (for example `DueDate`/`SentToContact` on partially paid transactions) do not update `UpdatedDateUTC` and are not returned by this filter. Invoices are ordered `UpdatedDateUTC ASC, InvoiceId ASC` by default, so an invoice modified during a traversal moves to the end and can shift an unread invoice onto an already-read page; that invoice is missed by this sync and, being older than the new sync point, by the next one. Run periodic full syncs if those gaps matter. A `304 Not Modified` is not documented for this collection and is returned as a provider error (`Class::Other`), never as an empty completed sync.
 
 ## Credentials and atomic rotation
 

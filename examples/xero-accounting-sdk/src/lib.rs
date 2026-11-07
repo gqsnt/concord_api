@@ -15,15 +15,20 @@ pub use concord;
 pub use concord_pagination;
 pub use error::{Class, Error, ErrorKind, Problem, ProviderFailure};
 pub use models::{
-    Amount, ContactRef, DraftInvoice, Invoice, InvoiceRef, LineItem, Pagination, TenantId,
+    Amount, ContactRef, DraftInvoice, Invoice, InvoiceRef, LineItem, ModifiedSince, Pagination,
+    TenantId,
 };
 pub use policy::{BODY_LIMIT, ERROR_BODY_LIMIT};
 pub use store::{FileStore, Grant};
 
 use concord::reqwest;
 use concord_pagination::{Page, Pages, Resume};
-use models::{CreateBody, InvoicesDocument};
-use std::{fmt, num::NonZeroUsize, time::Duration};
+use models::{CreateBody, InvoicesDocument, Utc};
+use std::{
+    fmt,
+    num::NonZeroUsize,
+    time::{Duration, SystemTime},
+};
 
 mod wire {
     use super::*;
@@ -36,7 +41,11 @@ mod wire {
             limit BODY_LIMIT;
             send policy -> Result<_,Error>;
             scope tenant(#[sensitive] header("xero-tenant-id") tenant:String) {
-                GET list(query page:u32,query("pageSize") page_size:u32) -> InvoicesDocument {path "Invoices";}
+                GET list(query page:u32,query("pageSize") page_size:u32,modified_since?:Utc) -> InvoicesDocument {
+                    path "Invoices";
+                    // Absent value: no header. Utc's Display is Xero's documented UTC spelling.
+                    headers {"if-modified-since"="{modified_since}";}
+                }
                 GET get(#[sensitive] id:String) -> InvoicesDocument {path "Invoices/{id}";}
                 POST create(body invoice:CreateBody) -> InvoicesDocument {
                     path "Invoices";
@@ -177,6 +186,31 @@ impl Tenant {
     }
     /// Build a page operation with page >= 1 and page size in 1..=1000, rejecting clamping.
     pub fn list(&self, page: u32, page_size: u32) -> Result<ListInvoices, Error> {
+        self.list_filtered(page, page_size, None)
+    }
+    /// Bind an incremental-sync point to this tenant. The instant is truncated to the whole
+    /// UTC second and must lie in 1970..=9999. To sync incrementally, take `SystemTime::now()`
+    /// **before** a sync's first request and, once that sync completes, bind it here for the next.
+    pub fn modified_since(&self, at: SystemTime) -> Result<ModifiedSince, Error> {
+        ModifiedSince::new(self.id.clone(), at)
+    }
+    /// [`Tenant::list`] restricted by Xero's `If-Modified-Since` header (`yyyy-mm-ddThh:mm:ss`,
+    /// UTC). A sync point from another tenant fails before I/O.
+    pub fn list_modified_since(
+        &self,
+        since: &ModifiedSince,
+        page: u32,
+        page_size: u32,
+    ) -> Result<ListInvoices, Error> {
+        self.check(&since.tenant)?;
+        self.list_filtered(page, page_size, Some(since.at))
+    }
+    fn list_filtered(
+        &self,
+        page: u32,
+        page_size: u32,
+        since: Option<Utc>,
+    ) -> Result<ListInvoices, Error> {
         if page == 0 || !(1..=1000).contains(&page_size) {
             return Err(Error::input("invalid invoice paging parameters"));
         }
@@ -184,6 +218,7 @@ impl Tenant {
             tenant: self.clone(),
             page,
             page_size,
+            since,
         })
     }
     /// Retrieve a chosen invoice; a reference from another tenant fails before I/O.
@@ -210,11 +245,37 @@ impl Tenant {
         page_size: u32,
         max_pages: NonZeroUsize,
     ) -> Result<InvoicePages, Error> {
-        self.list(1, page_size)?;
+        self.traverse(from, page_size, max_pages, None)
+    }
+    /// [`Tenant::pages`] restricted by `since`, which every page of the traversal sends
+    /// unchanged. A continuation resumes only with the same sync point, page size and tenant; a
+    /// failed first page resumes from `None` with the same `since`. Completion (`Ok(None)` from
+    /// `next_page`, or `collect_complete`) is the only point at which to advance the sync point.
+    pub fn pages_modified_since(
+        &self,
+        since: &ModifiedSince,
+        from: Option<PageCursor>,
+        page_size: u32,
+        max_pages: NonZeroUsize,
+    ) -> Result<InvoicePages, Error> {
+        self.check(&since.tenant)?;
+        self.traverse(from, page_size, max_pages, Some(since.at))
+    }
+    fn traverse(
+        &self,
+        from: Option<PageCursor>,
+        page_size: u32,
+        max_pages: NonZeroUsize,
+        since: Option<Utc>,
+    ) -> Result<InvoicePages, Error> {
+        self.list_filtered(1, page_size, since)?;
         if let Some(key) = &from {
             self.check(&key.tenant)?;
             if key.page_size != page_size {
                 return Err(Error::input("continuation page size mismatch"));
+            }
+            if key.since != since {
+                return Err(Error::input("continuation modified-since mismatch"));
             }
         }
         let tenant = self.clone();
@@ -224,7 +285,7 @@ impl Tenant {
                 let tenant = tenant.clone();
                 async move {
                     let page = key.map_or(1, |key| key.page);
-                    let fetched = tenant.list(page, page_size)?.send().await?;
+                    let fetched = tenant.list_filtered(page, page_size, since)?.send().await?;
                     Ok(Page {
                         items: fetched.invoices,
                         next: fetched.next,
@@ -239,12 +300,14 @@ impl Tenant {
 
 /// Owned traversal with safe diagnostics and typed incomplete/error reports.
 pub type InvoicePages = Pages<Invoice, PageCursor, Option<Pagination>, Error>;
-/// Tenant and page-size bound continuation; its fields cannot be reassigned by callers.
+/// Tenant, page-size and modified-since bound continuation; its fields cannot be reassigned by
+/// callers.
 #[derive(Clone, PartialEq, Eq)]
 pub struct PageCursor {
     tenant: TenantId,
     page: u32,
     page_size: u32,
+    since: Option<Utc>,
 }
 impl PageCursor {
     /// The next one-based page number.
@@ -273,6 +336,7 @@ pub struct ListInvoices {
     tenant: Tenant,
     page: u32,
     page_size: u32,
+    since: Option<Utc>,
 }
 impl ListInvoices {
     /// Execute the generated Concord list endpoint, then validate provider continuation semantics.
@@ -281,6 +345,7 @@ impl ListInvoices {
             .tenant
             .api
             .list(self.page, self.page_size)
+            .maybe_modified_since(self.since)
             .send()
             .await?;
         check_envelope(&doc)?;
@@ -316,6 +381,7 @@ impl ListInvoices {
                     .checked_add(1)
                     .ok_or_else(|| contract("invoice page overflow"))?,
                 page_size: self.page_size,
+                since: self.since,
             })
         } else {
             None

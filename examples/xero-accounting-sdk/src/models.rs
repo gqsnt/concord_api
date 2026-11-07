@@ -1,7 +1,10 @@
 //! Tenant-bound resources and the deliberately small invoice representation.
 use crate::{Error, ErrorKind};
 use serde::{Deserialize, Serialize, Serializer};
-use std::fmt;
+use std::{
+    fmt,
+    time::{Duration, SystemTime, UNIX_EPOCH},
+};
 
 pub(crate) fn uuid(value: &str) -> bool {
     value.len() == 36
@@ -57,6 +60,91 @@ impl InvoiceRef {
 impl fmt::Debug for InvoiceRef {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str("InvoiceRef(<withheld>)")
+    }
+}
+
+/// Whole UTC seconds since the Unix epoch, inside the four-digit-year range of Xero's
+/// documented `If-Modified-Since` spelling `yyyy-mm-ddThh:mm:ss`.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(crate) struct Utc(u64);
+/// 9999-12-31T23:59:59 UTC.
+const LAST_UTC_SECOND: u64 = 253_402_300_799;
+impl Utc {
+    /// Truncate to the second: Xero filters "accurate to the second", and rounding down can
+    /// only repeat an invoice in the next sync, never skip one.
+    fn new(at: SystemTime) -> Result<Self, Error> {
+        let seconds = at
+            .duration_since(UNIX_EPOCH)
+            .map_err(|_| Error::input("modified-since precedes 1970-01-01T00:00:00 UTC"))?
+            .as_secs();
+        if seconds > LAST_UTC_SECOND {
+            return Err(Error::input(
+                "modified-since is after 9999-12-31T23:59:59 UTC",
+            ));
+        }
+        Ok(Self(seconds))
+    }
+}
+/// The wire text, computed from the instant (never from a local clock reading or zone).
+impl fmt::Display for Utc {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        // Proleptic Gregorian civil date from days since 1970-01-01 (Hinnant's
+        // `civil_from_days`, restricted to nonnegative days so unsigned arithmetic is exact).
+        let (days, second) = (self.0 / 86_400, self.0 % 86_400);
+        let z = days + 719_468;
+        let (era, doe) = (z / 146_097, z % 146_097);
+        let yoe = (doe - doe / 1460 + doe / 36_524 - doe / 146_096) / 365;
+        let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+        let mp = (5 * doy + 2) / 153;
+        let day = doy - (153 * mp + 2) / 5 + 1;
+        let month = if mp < 10 { mp + 3 } else { mp - 9 };
+        let year = era * 400 + yoe + u64::from(month <= 2);
+        write!(
+            f,
+            "{year:04}-{month:02}-{day:02}T{:02}:{:02}:{:02}",
+            second / 3600,
+            second / 60 % 60,
+            second % 60
+        )
+    }
+}
+impl fmt::Debug for Utc {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        fmt::Display::fmt(self, f)
+    }
+}
+
+/// A tenant's incremental-sync point: list invoices created or modified since this UTC second.
+/// Xero does not document whether the bound is inclusive; expect overlap and upsert by ID.
+///
+/// Like every tenant-bound value it is refused by another tenant before I/O, so one tenant's
+/// sync progress can never filter (and silently truncate) another tenant's listing.
+#[derive(Clone, PartialEq, Eq)]
+pub struct ModifiedSince {
+    pub(crate) tenant: TenantId,
+    pub(crate) at: Utc,
+}
+impl ModifiedSince {
+    pub(crate) fn new(tenant: TenantId, at: SystemTime) -> Result<Self, Error> {
+        Ok(Self {
+            tenant,
+            at: Utc::new(at)?,
+        })
+    }
+    /// The instant sent, already truncated to the whole second. Persist it (for example as
+    /// seconds since the Unix epoch) and rebind it with `Tenant::modified_since` after restart.
+    pub fn at(&self) -> SystemTime {
+        UNIX_EPOCH + Duration::from_secs(self.at.0)
+    }
+    /// The owning tenant.
+    pub fn tenant(&self) -> &TenantId {
+        &self.tenant
+    }
+}
+/// Shows the UTC wire text; the tenant is withheld.
+impl fmt::Debug for ModifiedSince {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_tuple("ModifiedSince").field(&self.at).finish()
     }
 }
 
