@@ -149,22 +149,71 @@ pub struct CategoryResults {
     pub categorymembers: Vec<PageIdentity>,
 }
 
-/// The content-query wire data. Prefer `MediaWikiQuery::fetch_page` for a checked projection.
+/// The content-query wire data. Prefer `MediaWikiQuery::fetch_page` or
+/// `MediaWikiQuery::fetch_pages` for a checked projection.
 #[derive(Deserialize)]
 pub struct ContentResults {
     pub(crate) pages: Vec<ContentPage>,
 }
 
+// A page row. API:Query: missing and invalid pages are listed with a `missing`/`invalid` flag;
+// a page ID the wiki does not know is answered without `ns`/`title`, so `title` is optional.
 #[derive(Deserialize)]
 pub(crate) struct ContentPage {
     pub pageid: Option<u64>,
-    pub title: String,
+    pub title: Option<String>,
     #[serde(default)]
     pub missing: bool,
     #[serde(default)]
     pub invalid: bool,
     #[serde(default)]
     pub revisions: Vec<Revision>,
+}
+
+/// What one page row says about the page it is attributed to.
+pub(crate) enum Row {
+    Content(PageContent),
+    Unavailable(crate::Unavailable),
+    /// No revision in this row: final only in a response without continuation (API:Continue).
+    NoRevision,
+    /// More than one latest revision, or content without a title.
+    Inconsistent,
+}
+
+impl ContentPage {
+    /// The single projection rule shared by `fetch_page` and `fetch_pages`.
+    pub(crate) fn project(self, pageid: u64) -> Row {
+        use crate::Unavailable::{Invalid, Missing, NoContent};
+        if self.invalid {
+            return Row::Unavailable(Invalid);
+        }
+        if self.missing {
+            return Row::Unavailable(Missing);
+        }
+        if self.revisions.len() > 1 {
+            return Row::Inconsistent;
+        }
+        let Some(revision) = self.revisions.into_iter().next() else {
+            return Row::NoRevision;
+        };
+        // API:Revisions: revision-deleted content is reported as `texthidden` without content.
+        let content = revision
+            .slots
+            .and_then(|slots| slots.main)
+            .and_then(|slot| slot.content);
+        let (Some(revision), Some(content)) = (revision.revid, content) else {
+            return Row::Unavailable(NoContent);
+        };
+        match self.title {
+            Some(title) => Row::Content(PageContent {
+                pageid,
+                title,
+                revision,
+                content,
+            }),
+            None => Row::Inconsistent,
+        }
+    }
 }
 
 #[derive(Deserialize)]
@@ -184,7 +233,7 @@ pub(crate) struct Slot {
 }
 
 /// The selected page's raw content; no wikitext parsing or HTML rendering is performed.
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct PageContent {
     /// The requested wiki-local page ID.
     pub pageid: u64,

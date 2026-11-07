@@ -50,7 +50,7 @@ pub enum Error {
     },
     /// Any warnings envelope is refused to avoid accepting a possibly partial query.
     Warnings(Box<ResponseMeta>),
-    /// A missing query object, or an inconsistent single-page content response.
+    /// A missing query object, or an inconsistent single-page or batch content response.
     InvalidResponse(Box<ResponseMeta>),
     /// Missing/invalid page, absent revision, or unavailable/suppressed main-slot content.
     ContentUnavailable,

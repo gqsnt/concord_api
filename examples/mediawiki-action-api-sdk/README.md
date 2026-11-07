@@ -4,10 +4,11 @@ Package: `concord-sdk-mediawiki-action-api`. A small, example-assisted public-da
 at Concord baseline `c3fd4f1ee30c1727e26b285270f2cc8d8b694e77`.
 Live provider calls: **NOT_RUN**. Every executed workflow uses `examples/testserver` on loopback.
 
-The declaration follows `MediaWiki` → `query()` → `search`, `content`, `category_members`.
-It supports modern `formatversion=2` JSON on one configured wiki: search for page identities,
-choose a hit and fetch its latest revision's raw main-slot content; or traverse category
-members with a required page-request bound. A search page can also be continued explicitly.
+The declaration follows `MediaWiki` → `query()` → `search`, `content`, `contents`,
+`category_members`. It supports modern `formatversion=2` JSON on one configured wiki: search for
+page identities, choose a hit and fetch its latest revision's raw main-slot content; fetch the
+content of several page IDs in one batch; or traverse category members with a required
+page-request bound. A search page can also be continued explicitly.
 Authenticated edits, Wikibase, wikitext parsing/rendering, legacy `query-continue`, generators,
 and global cross-wiki discovery are excluded.
 
@@ -67,6 +68,43 @@ token is present. `batchcomplete` does not establish traversal completion. These
 [API:Continue/en](https://www.mediawiki.org/wiki/API:Continue/en) and
 [API:Query](https://www.mediawiki.org/wiki/API:Query), read 2026-11-07.
 
+## Fetching several pages at once
+
+`fetch_pages` answers every requested page ID, in the caller's order, with either its
+`PageContent` or a typed `Unavailable` reason: `Missing`, `Invalid` or `NoContent` (no revision,
+or hidden/absent main-slot content). Build the IDs with `PageIds::new(ids, limit)`: API:Query
+allows 50 page IDs per query, 500 for clients the wiki grants higher limits
+(`PageIdLimit::HighLimits`; this SDK sends no credentials). More IDs are refused with
+`TooManyPageIds` before anything is sent; chunk longer lists by `PageIdLimit::max()`. A repeated
+ID is sent once and answered at each position. An empty list answers nothing without a request.
+
+```no_run
+# use concord_sdk_mediawiki_action_api::{MediaWikiQuery, PageIdLimit, PageIds, Unavailable};
+# async fn read(query: &MediaWikiQuery) -> Result<(), Box<dyn std::error::Error>> {
+let ids = PageIds::new([12, 404, 7], PageIdLimit::Standard)?;
+for answer in query.fetch_pages(&ids).await? {
+    match answer.content {
+        Ok(page) => println!("{}: {} bytes", page.title, page.content.len()),
+        Err(Unavailable::Missing) => println!("#{} no longer exists", answer.pageid),
+        Err(reason) => println!("#{}: {reason}", answer.pageid),
+    }
+}
+# Ok(()) }
+```
+
+The batch omits `rvlimit`, which API:Revisions allows only for a single page. A large result is
+continued: the next request carries the whole `continue` object, and the next response lists
+the same pages with the next properties (API:Continue). A page listed without a revision is
+therefore answered only by a later response, or as `NoContent` by the final one. Every continued
+response must answer at least one new ID, so a batch takes at most one request per distinct ID.
+Any failure of one response fails the whole batch; there are no partial batch results. Like every
+query, a response carrying warnings is refused (`Warnings`), also in the middle of a batch. Batch bodies are bounded
+by `BATCH_BODY_LIMIT` (16 MiB) instead of the 1 MiB used elsewhere, because one response carries
+up to 500 pages' content until the wiki's own result-size limit continues it. Sources:
+[API:Query](https://www.mediawiki.org/wiki/API:Query),
+[API:Revisions](https://www.mediawiki.org/wiki/API:Revisions) and
+[API:Continue/en](https://www.mediawiki.org/wiki/API:Continue/en), read 2026-11-07.
+
 ## Failure semantics
 
 Generated `send()` uses `QueryPolicy`, returning `Result<QueryResponse<T>, Error>`:
@@ -77,12 +115,12 @@ Generated `send()` uses `QueryPolicy`, returning `Result<QueryResponse<T>, Error
 | `Http` | Every non-2xx, including 429 and 5xx. The status/head stay authoritative beside the typed error document or its metadata/decode/limit/transport failure. |
 | `Api` | MediaWiki error envelope inside a 2xx; explicit `problem.code` and `problem.info` are available. |
 | `Warnings` | A non-null warnings envelope is refused because results might be partial. |
-| `InvalidResponse` | Missing query, unexpected content page/revision count or content continuation. |
-| `ContentUnavailable` | Missing/invalid/unexpected page ID, no revision ID, or absent/suppressed main-slot content. Empty content is valid. |
+| `InvalidResponse` | Missing query, unexpected content page/revision count or content continuation, content without a title. Batch: a row without a requested page ID, a repeated row or second revision for one ID, a continued response that answers no new ID, or an ID never answered. |
+| `ContentUnavailable` | `fetch_page` only: missing/invalid/unexpected page ID (also one listed without a title), no revision ID, or absent/suppressed main-slot content. Empty content is valid. `fetch_pages` reports these per ID as `Unavailable`. |
 
-Success bodies are bounded at 1 MiB and non-2xx document attempts at 64 KiB. Missing, null,
-empty, non-scalar, non-integer numeric or fixed-input-colliding continuation data is rejected
-when a continuation object is present. An absent token is valid exhaustion. Unknown fields in
+Success bodies are bounded at 1 MiB (batch content: 16 MiB) and non-2xx document attempts at
+64 KiB. Missing, null, empty, non-scalar, non-integer numeric or fixed-input-colliding
+continuation data is rejected when a continuation object is present. An absent token is valid exhaustion. Unknown fields in
 ordinary response models are ignored to allow additive provider changes. Errors have no source
 chain; explicit variants expose the unredacted detail when needed.
 
@@ -109,6 +147,11 @@ category traversal through an empty page, bounded resume, page failure, and the 
 consumer control. In the synthetic control, dropping only generic `continue` repeats page 1;
 the correct adapter returns IDs `[1, 2, 3]` in three calls. This fixture does not claim identical
 failure behavior for every deployed MediaWiki version.
+
+`tests/batch.rs` checks the batch wire shape (distinct IDs, no `rvlimit`, the whole
+continuation), the continued merge in caller order, every fail-closed row/response case, the
+page-ID limits and the batch body bound; `tests/batch_consumer.rs` is a consumer application of
+the batch. `MAINTENANCE.md` records that change.
 
 `tests/protocol.rs` checks the exact query/header shapes, every SDK error variant, malformed,
 truncated, empty, oversized and wrong-media bodies, interrupted HTTP framing, invalid tokens,

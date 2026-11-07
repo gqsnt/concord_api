@@ -40,6 +40,24 @@ pub fn param(request: &Recorded, name: &str) -> Option<String> {
         .map(|(_, value)| value)
 }
 
+pub const BATCH_FIRST: &str = include_str!("../../fixtures/batch-first.json");
+pub const BATCH_LAST: &str = include_str!("../../fixtures/batch-last.json");
+/// The distinct wire value for the batch fixtures' requested IDs `[12, 404, 7, 12, 31, 5, 8]`.
+pub const BATCH_WIRE_IDS: &str = "12|404|7|31|5|8";
+
+// Synthetic batch oracle (API:Continue: a continued prop query lists the same pages again with
+// the next properties). Only the whole continuation reaches the last response; anything else
+// replays the first response, as a server restarting the batch would.
+pub fn batch_service(request: &Recorded) -> Reply {
+    assert_eq!(param(request, "pageids").as_deref(), Some(BATCH_WIRE_IDS));
+    match (param(request, "rvcontinue"), param(request, "continue")) {
+        (Some(rv), Some(generic)) if rv == "7|9001" && generic == "||" => {
+            Reply::json(200, BATCH_LAST)
+        }
+        _ => Reply::json(200, BATCH_FIRST),
+    }
+}
+
 // Synthetic oracle authored from the capsule and the official continuation examples.
 // Missing *any* field replays the first page. This is a controlled failure scenario,
 // not an assertion that all deployed MediaWiki versions behave identically.

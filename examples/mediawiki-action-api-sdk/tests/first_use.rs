@@ -950,9 +950,8 @@ async fn dropping_the_generic_continue_repeats_or_truncates() {
 /// `{"pageid": N, "missing": true}` (no `ns`/`title`; consumer's knowledge of MediaWiki
 /// output, not shown on the two cited pages). The README promises `ContentUnavailable` for a
 /// missing page ID; observed on 2026-11-07: `Error::Concord` with `ErrorKind::Decode`.
-/// Run with `--ignored` to reproduce.
+/// Fixed by the batch-content maintenance (MAINTENANCE.md), so it now runs by default.
 #[tokio::test]
-#[ignore = "FIRST_USE F1: pageid-only missing page decodes as Concord(Decode), not ContentUnavailable"]
 async fn missing_page_id_without_title_is_content_unavailable() {
     let server = TestServer::start(|_req: &Recorded| {
         Reply::json(

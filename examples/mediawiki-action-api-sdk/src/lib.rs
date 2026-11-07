@@ -6,11 +6,13 @@
 
 #![doc = include_str!("../README.md")]
 
+mod batch;
 mod error;
 mod models;
 mod pagination;
 mod policy;
 
+pub use batch::{PageAnswer, PageIdLimit, PageIds, TooManyPageIds, Unavailable};
 pub use concord;
 pub use concord_pagination as pagination_engine;
 pub use error::{ApiProblem, Error, ErrorDocument, HttpFailure};
@@ -19,11 +21,15 @@ pub use pagination::CategoryPages;
 pub use policy::QueryPolicy;
 
 use concord::{Json, reqwest::header::USER_AGENT};
+use models::Row;
 
 /// Maximum bytes in each successful query body (1 MiB).
 pub const BODY_LIMIT: usize = 1024 * 1024;
 /// Maximum bytes inspected in a non-success HTTP body (64 KiB).
 pub const ERROR_BODY_LIMIT: usize = 64 * 1024;
+/// Maximum bytes in each successful batch-content body (16 MiB): up to 500 pages of content
+/// arrive in one response until the wiki's own result-size limit makes it continue.
+pub const BATCH_BODY_LIMIT: usize = 16 * 1024 * 1024;
 
 concord::api! {
     /// A single wiki's public Action API. The caller supplies its identifying User-Agent.
@@ -54,6 +60,17 @@ concord::api! {
                 }
             }
 
+            /// One response of the latest revisions' main-slot content for several page IDs.
+            /// Prefer `fetch_pages`, which follows continuation and answers every ID.
+            /// `rvlimit` is single-page only (API:Revisions), so it is not sent here.
+            GET contents(
+                query pageids: PageIds,
+                query(..) continuation?: Continuation,
+            ) -> Envelope<ContentResults> {
+                query { "prop" = "revisions"; "rvprop" = "ids|content"; "rvslots" = "main"; }
+                limit BATCH_BODY_LIMIT;
+            }
+
             /// Read one category page. Carry the entire returned continuation forward.
             GET category_members(
                 query cmtitle: String,
@@ -79,26 +96,13 @@ impl MediaWikiQuery {
             .into_iter()
             .next()
             .expect("one page checked");
-        if page.missing || page.invalid || page.pageid != Some(pageid) {
+        if page.pageid != Some(pageid) {
             return Err(Error::ContentUnavailable);
         }
-        if page.revisions.len() > 1 {
-            return Err(Error::InvalidResponse(Box::new(response.meta)));
+        match page.project(pageid) {
+            Row::Content(content) => Ok(content),
+            Row::Unavailable(_) | Row::NoRevision => Err(Error::ContentUnavailable),
+            Row::Inconsistent => Err(Error::InvalidResponse(Box::new(response.meta))),
         }
-        let revision = page
-            .revisions
-            .into_iter()
-            .next()
-            .ok_or(Error::ContentUnavailable)?;
-        let slot = revision
-            .slots
-            .and_then(|slots| slots.main)
-            .ok_or(Error::ContentUnavailable)?;
-        Ok(PageContent {
-            pageid,
-            title: page.title,
-            revision: revision.revid.ok_or(Error::ContentUnavailable)?,
-            content: slot.content.ok_or(Error::ContentUnavailable)?,
-        })
     }
 }

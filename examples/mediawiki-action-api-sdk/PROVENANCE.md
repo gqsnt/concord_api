@@ -102,3 +102,31 @@ a present null continuation as exhaustion; an explicit field deserializer now di
 absence from invalid null, and the regression passes. No shared change was needed.
 
 The final validation commands and outcomes are recorded in `VALIDATION.md`.
+
+## Maintenance addition: batch content fetch (2026-11-07)
+
+Added by the independent maintainer; details, file list and findings are in `MAINTENANCE.md`.
+Live provider calls: **NOT_RUN**. The three pages below were fetched once each with `curl` on
+2026-11-07 (06:36 UTC) and kept under the worktree's `target/tmp/docs/`; no API endpoint or
+sandbox link was opened.
+
+| Exact page read | Revision seen | What informed the change |
+|---|---|---|
+| https://www.mediawiki.org/wiki/API:Query | `oldid=7933095` (last edited 12 October 2025) | `pageids` is a list of integers, at most 50 values (500 for clients allowed higher limits); missing/invalid pages are listed with `missing`/`invalid` flags (Example 3); continued queries. |
+| https://www.mediawiki.org/wiki/API:Revisions | `oldid=8361673` (last edited 1 May 2026) | Mode 1 "latest revision of a set of pages, by setting titles or pageids"; `rvlimit` "may only be used with a single page" (errors `rvmultpages`/`invalidparammix`); `rvprop=content` reports revision-deleted content as `texthidden`; `rvslots=main`; `rvcontinue`. |
+| https://www.mediawiki.org/wiki/API:Continue/en | `oldid=8588859` (last edited 3 September 2026) | A continued property query returns the same set of pages with the next set of properties; the whole `continue` object is carried forward; absence of `continue` ends; `batchcomplete` concerns property data for the batch. |
+
+Not on these pages, therefore labelled *inferred* (maintainer knowledge of MediaWiki output, not
+verified live): a page ID unknown to the wiki is listed as `{"pageid": N, "missing": true}`
+without `ns`/`title`; a result is continued when the wiki's own result-size limit is reached;
+MediaWiki may attach a result-truncation warning to such a response (see `MAINTENANCE.md`).
+The `invalid` row carrying a `pageid` and the `rvcontinue` value spelling are synthetic.
+
+| Fixture | Derivation and purpose |
+|---|---|
+| `fixtures/batch-first.json` | Synthetic continued batch response: content for ID 12, a title-less missing ID 404, ID 7 listed without revisions (not answered yet), `texthidden` ID 31, an `invalid` ID 5, ID 8 without revisions; `continue` with `rvcontinue` and generic `||`. No `batchcomplete`, as property data is incomplete. |
+| `fixtures/batch-last.json` | Synthetic final response: the same pages re-listed, only ID 7 with a revision (non-ASCII and `|` in its text); ID 8 still without a revision, so it becomes `NoContent`. |
+| `tests/support/mod.rs::batch_service` | Authored oracle: only the complete continuation reaches the final response; anything else replays the first, as a restarting server would. |
+| Inline bodies in `tests/batch.rs` / `tests/batch_consumer.rs` | All synthetic: unrequested, unattributable and duplicate rows, never-answered IDs, two revisions, untitled content, stalled and replayed continuations, warnings/API error/missing query mid-batch, colliding continuation keys, a 2 MiB content body, and an application's search hits plus bookmarks. |
+
+No dependency was added; `Cargo.toml` and `Cargo.lock` are unchanged by this maintenance.

@@ -1,0 +1,13 @@
+{
+  "batchcomplete": true,
+  "query": {"pages": [
+    {"pageid": 404, "missing": true},
+    {"pageid": 12, "ns": 0, "title": "Batch alpha"},
+    {"pageid": 7, "ns": 0, "title": "Batch beta", "revisions": [{"revid": 70, "parentid": 69, "slots": {
+      "main": {"contentmodel": "wikitext", "contentformat": "text/x-wiki", "content": "Beta synthetic text, café & |pipes|.\n"}
+    }}]},
+    {"pageid": 31, "ns": 0, "title": "Batch hidden"},
+    {"pageid": 5, "invalid": true, "invalidreason": "synthetic invalid reason"},
+    {"pageid": 8, "ns": 0, "title": "Batch no revision"}
+  ]}
+}
