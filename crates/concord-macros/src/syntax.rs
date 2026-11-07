@@ -585,7 +585,8 @@ pub struct Stmts {
     /// `response FORMAT;` on any owner.
     pub response: Option<FormatDefault>,
     /// `send POLICY;` on the client: the type whose `SendWith<T>` every generated `send()` uses.
-    pub send: Option<(Type, Span)>,
+    /// `send P;` or `send P -> Template;` (`_` in the template stands for each endpoint's output).
+    pub send: Option<(Type, Span, Option<Type>)>,
     /// `limit EXPR;` on any owner: the bound, in bytes, of a finite typed output's body.
     pub limit: Option<(Expr, Span)>,
 }
@@ -1013,6 +1014,13 @@ fn parse_owner_body(
                 ));
             }
             let ty: Type = input.parse()?;
+            // `send P -> Result<_, Error>;`: the result type every generated `send()` declares.
+            let output = if input.peek(Token![->]) {
+                input.parse::<Token![->]>()?;
+                Some(input.parse::<Type>()?)
+            } else {
+                None
+            };
             input.parse::<Token![;]>()?;
             if stmts.send.is_some() {
                 return Err(syn::Error::new(
@@ -1020,7 +1028,7 @@ fn parse_owner_body(
                     "`send` is set twice on the client",
                 ));
             }
-            stmts.send = Some((ty, kw.span));
+            stmts.send = Some((ty, kw.span, output));
             continue;
         }
         if input.peek(kw::limit) && !input.peek2(Token![::]) {

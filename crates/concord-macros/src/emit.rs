@@ -1558,9 +1558,11 @@ fn emit_owner(
                     /// `Decode` (see `ErrorKind`).
                 }
             };
-            let policy = match &model.owners[0].kind {
-                Kind::Client { send, .. } => send.as_ref(),
-                _ => None,
+            let (policy, declared_output) = match &model.owners[0].kind {
+                Kind::Client {
+                    send, send_output, ..
+                } => (send.as_ref(), send_output.as_ref()),
+                _ => (None, None),
             };
             // `Sends<O>` for an endpoint whose client names a send policy (its `send()` future is
             // already `Send`); none otherwise.
@@ -1607,14 +1609,37 @@ fn emit_owner(
                     } else {
                         format!("`{policy_ty_text}`")
                     };
-                    let policy_text = lit(&format!(
-                        " Sends the request with the client's send policy {shown}: the result is `<{policy_ty_text} as SendWith<T>>::Output`, defined by the `SendWith` implementation of {linked} (its errors, metadata, signing). `prepare()` builds the declared request without the policy, and `prepare()?.send()` uses Concord's own handling and error instead."
-                    ));
+                    // `send P -> Template;`: the declared result, `_` replaced by this output.
+                    let declared = declared_output.map(|t| (t.span(), with_output(t, &out)));
+                    let policy_text = lit(&match &declared {
+                        Some(_) => format!(
+                            " Sends the request with the client's send policy {shown}, whose result the client declares; its errors, metadata and signing are defined by the `SendWith` implementation of {linked}. `prepare()` builds the declared request without the policy, and `prepare()?.send()` uses Concord's own handling and error instead."
+                        ),
+                        None => format!(
+                            " Sends the request with the client's send policy {shown}: the result is `<{policy_ty_text} as SendWith<T>>::Output`, defined by the `SendWith` implementation of {linked} (its errors, metadata, signing). `prepare()` builds the declared request without the policy, and `prepare()?.send()` uses Concord's own handling and error instead."
+                        ),
+                    });
                     // Spanned at the `send` statement: a type that is no policy is reported there
                     // (with the generated `send()`'s own error), not inside Concord's trait.
                     let at = policy.span();
-                    let send_output =
-                        quote_spanned!(at=> <#policy_ty as #k::SendWith<#out>>::Output);
+                    let send_output = match &declared {
+                        Some((_, declared)) => declared.clone(),
+                        None => quote_spanned!(at=> <#policy_ty as #k::SendWith<#out>>::Output),
+                    };
+                    // A declared result that is not the policy's output is reported at the
+                    // template (`expected Result<..>, found <P as SendWith<T>>::Output`).
+                    let call = match &declared {
+                        Some((tat, declared)) => located(
+                            quote! {
+                                let __out: #declared = <#policy_ty as #k::SendWith<#out>>::send(&__policy, self).await;
+                                __out
+                            },
+                            *tat,
+                        ),
+                        None => {
+                            quote!(<#policy_ty as #k::SendWith<#out>>::send(&__policy, self).await)
+                        }
+                    };
                     sends_impl = quote_spanned! {at=>
                         impl #k::Sends<#send_output> for #ty where #policy_ty: #k::SendWith<#out> {
                             #[inline] fn send(self) -> impl ::core::future::Future<Output = #send_output> + ::core::marker::Send {
@@ -1624,9 +1649,9 @@ fn emit_owner(
                     };
                     quote! {
                         #[doc = #policy_text]
-                        #[inline] pub fn send(self) -> impl ::core::future::Future<Output = <#policy_ty as #k::SendWith<#out>>::Output> + ::core::marker::Send {
+                        #[inline] pub fn send(self) -> impl ::core::future::Future<Output = #send_output> + ::core::marker::Send {
                             let __policy: #policy_ty = #policy_init;
-                            async move { <#policy_ty as #k::SendWith<#out>>::send(&__policy, self).await }
+                            async move { #call }
                         }
                     }
                 }
@@ -1716,6 +1741,28 @@ fn limit_const(model: &Model, index: usize, output: Option<&Output>) -> TokenStr
         }
         _ => TokenStream::new(),
     }
+}
+
+/// A `send P -> Template;` result for one endpoint: every `_` of the template becomes `out`.
+fn with_output(template: &syn::Type, out: &TokenStream) -> TokenStream {
+    fn replace(tokens: TokenStream, out: &TokenStream) -> TokenStream {
+        tokens
+            .into_iter()
+            .map(|tt| match tt {
+                proc_macro2::TokenTree::Ident(i) if i == "_" => proc_macro2::TokenTree::Group(
+                    proc_macro2::Group::new(proc_macro2::Delimiter::None, out.clone()),
+                ),
+                proc_macro2::TokenTree::Group(g) => {
+                    let mut group =
+                        proc_macro2::Group::new(g.delimiter(), replace(g.stream(), out));
+                    group.set_span(g.span());
+                    proc_macro2::TokenTree::Group(group)
+                }
+                tt => tt,
+            })
+            .collect()
+    }
+    replace(quote!(#template), out)
 }
 
 /// The unused binder of a `Clone` bound: `'__concord`, unless the type itself already names that
@@ -1818,6 +1865,15 @@ fn owner_docs(model: &Model, index: usize) -> TokenStream {
                     " Includes the parameter group{} {} (each also a trait of its setters).",
                     if names.len() > 1 { "s" } else { "" },
                     names.join(", ")
+                ));
+            }
+            // `query(..)` values choose their keys at run time: name the type that documents them.
+            for value in owner.values.iter().filter(|v| v.pairs.is_some()) {
+                let ty = &value.ty;
+                notes.push(format!(
+                    " `{}` writes its own query keys: see `{}` for which.",
+                    plain(&value.name),
+                    quote!(#ty).to_string().replace(' ', "")
                 ));
             }
             let has_finite =

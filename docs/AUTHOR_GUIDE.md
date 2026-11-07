@@ -1705,6 +1705,56 @@ concord::api! {
 }
 ```
 
+**Name the result.** Without more, the generated `send()` is documented as returning
+`<Policy as SendWith<T>>::Output`, and a caller has to open the policy's implementation to learn
+that it is `Result<T, Error>`. Declare the shape on the statement — `_` stands for each endpoint's
+output — and every generated `send()` (and its rustdoc) names the concrete type; a template that
+is not the policy's output is a compile error at the template:
+
+```rust
+use concord::{Endpoint, Json, SendWith};
+
+#[derive(Debug)]
+pub enum Error { Concord(concord::Error), Status(u16) }
+impl From<concord::Error> for Error {
+    fn from(e: concord::Error) -> Self { Self::Concord(e) }
+}
+
+#[derive(Default)]
+pub struct Policy;
+impl<T: Send> SendWith<T> for Policy {
+    type Output = Result<T, Error>;
+    async fn send<E: Endpoint<T> + Send>(&self, endpoint: E) -> Self::Output {
+        let received = endpoint.prepare()?.receive().await?;
+        if !received.status().is_success() {
+            return Err(Error::Status(received.status().as_u16()));
+        }
+        Ok(received.decode().await?)
+    }
+}
+
+concord::api! {
+    pub client Store() {
+        base "https://store.example.com";
+        format Json;
+        send Policy -> Result<_, Error>;
+        GET count() -> u64 { path "count"; }
+    }
+}
+
+// `send()` is declared as returning `impl Future<Output = Result<u64, Error>>`.
+async fn count(store: &Store) -> Result<u64, Error> {
+    store.count().send().await
+}
+
+fn main() {
+    let _ = count;
+}
+```
+
+A policy whose output does not follow one shape for every endpoint (a policy implemented for a
+few concrete types) keeps the plain `send Policy;`.
+
 A policy with state — credentials, a region, a clock — is a client value: `send signer;` names it.
 The value is required (no `?`, no default: it is the one given to the constructor), the
 statement itself does not place it on the wire, and each `send()` clones it, so keep it cheap to

@@ -119,6 +119,7 @@ format statements, `send` (client), parameter groups `params Name(..);` (client)
 | `-> stream sse::Event` + `response Sse;` (feature `sse`) | server-sent events: `next()` → `Event` (`event()`, `data()` as text, `id()`), `last_event_id()`, `retry()`; a body ending inside an event is an error; no reconnect |
 | `prepared.follow(url)?` | the same request at a server-returned URL (same origin only; `Debug` withholds it) |
 | `send policy;` (client value or stateless type) | generated `send()` calls `SendWith<T>::send` and returns the SDK's `Output`; the policy may sign, make sub-requests or repeat requests |
+| `send policy -> Result<_, Error>;` | the same, and every generated `send()` declares that result (`_` = the endpoint's output) instead of `<P as SendWith<T>>::Output`; a mismatch is a compile error at the template ([§5.13](AUTHOR_GUIDE.md#513-the-sdks-own-send-send-policy)) |
 | `concord::Endpoint<T>` | implemented by every generated endpoint for its output `T` (`prepare`, `operation()`): write one SDK adapter for all operations |
 | `into_parts()` → `(Client, Request, Decoder)` | execute it yourself, then `decoder.finish(result)` or `decoder.decode(response)` |
 | `error.kind()`, `status()`, `endpoint()` | `Build`, `Transport`, `Status`, `Metadata`, `Decode`, `Limit`; `status()` is `Some` for `Status` only |
