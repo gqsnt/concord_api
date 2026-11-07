@@ -1,5 +1,15 @@
-use crate::Error;
+use crate::{Error, Field};
 use std::fmt;
+
+/// The one rule for text sent inside a double-quoted phrase (manual §5.1): 1–512 UTF-8
+/// bytes, not blank, and no quote, backslash or control character that could end it.
+pub(crate) fn valid_phrase(phrase: &str) -> bool {
+    !phrase.trim().is_empty()
+        && phrase.len() <= 512
+        && !phrase
+            .chars()
+            .any(|c| c.is_control() || matches!(c, '"' | '\\'))
+}
 
 /// A literal term; `Display` supplies the provider's `all:` phrase syntax.
 #[derive(Clone)]
@@ -8,12 +18,7 @@ impl SearchTerm {
     /// Accept 1–512 UTF-8 bytes, without quotes, backslashes or controls.
     pub fn new(term: impl Into<String>) -> Result<Self, Error> {
         let term = term.into();
-        if term.trim().is_empty()
-            || term.len() > 512
-            || term
-                .chars()
-                .any(|c| c.is_control() || matches!(c, '"' | '\\'))
-        {
+        if !valid_phrase(&term) {
             return Err(Error::Input("invalid search term"));
         }
         Ok(Self(term))
@@ -21,7 +26,7 @@ impl SearchTerm {
 }
 impl fmt::Display for SearchTerm {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "all:\"{}\"", self.0)
+        write!(f, "{}:\"{}\"", Field::All.prefix(), self.0)
     }
 }
 impl fmt::Debug for SearchTerm {
