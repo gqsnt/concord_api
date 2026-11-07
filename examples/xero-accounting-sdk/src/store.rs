@@ -121,6 +121,7 @@ fn recovery() -> Error {
 /// either a complete record or a recoverable pending pair. A stale lock or interrupted remote
 /// exchange fails closed. See the README for the unavoidable remote/local crash boundary.
 /// The directory must be application-private, on a local filesystem honoring rename/fsync.
+/// On Windows the directory itself is not synced (see `sync_directory`).
 #[derive(Clone)]
 pub struct FileStore {
     directory: PathBuf,
@@ -214,10 +215,18 @@ impl FileStore {
         file.sync_all().map_err(|_| storage())?;
         self.sync_directory()
     }
+    /// Makes a completed create or rename durable by syncing the directory entry (Unix).
+    ///
+    /// Windows has no portable equivalent: `File::open` refuses a directory there, which made
+    /// every journal operation fail with `Storage` on native Windows. There the call does
+    /// nothing, and the durability of a create or rename rests on the filesystem's own metadata
+    /// journal (NTFS), a weaker guarantee than a directory fsync.
     fn sync_directory(&self) -> Result<(), Error> {
+        #[cfg(unix)]
         File::open(&self.directory)
             .and_then(|f| f.sync_all())
-            .map_err(|_| storage())
+            .map_err(|_| storage())?;
+        Ok(())
     }
     fn publish(&self) -> Result<(), Error> {
         fs::rename(
