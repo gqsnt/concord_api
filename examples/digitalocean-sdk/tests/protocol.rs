@@ -3,7 +3,7 @@ mod support;
 
 use concord_sdk_digitalocean::{
     DigitalOcean, DigitalOceanConfig, ERROR_BODY_LIMIT, Error, HttpClass, PageNumber, PageSize,
-    SUCCESS_BODY_LIMIT,
+    SUCCESS_BODY_LIMIT, TagName,
     concord::{self, ErrorKind, reqwest},
 };
 use concord_testserver::{Body, Recorded, Reply, TestServer};
@@ -462,4 +462,158 @@ fn assert_redacted(error: &Error) {
     assert!(!format!("{error}").contains(TOKEN));
     assert!(!format!("{error:?}").contains(TOKEN));
     assert!(std::error::Error::source(error).is_none());
+}
+
+// Maintenance: tag-filtered droplet listing and droplet snapshots (see MAINTENANCE.md).
+
+#[tokio::test]
+async fn tag_filter_and_snapshot_request_shapes() {
+    let server = TestServer::start(|r: &Recorded| {
+        Reply::json(
+            200,
+            if r.path().ends_with("snapshots") {
+                "{\"snapshots\":[]}"
+            } else {
+                "{\"droplets\":[]}"
+            },
+        )
+    })
+    .await;
+    let api = client(&server);
+    let tagged = api
+        .droplets()
+        .list()
+        .set_tag_name(prod())
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(
+        tagged.meta.operation().unwrap().name(),
+        "DigitalOcean.droplets.list"
+    );
+    // Reserved query characters in a tag stay inside its one value.
+    let odd = TagName::new("team+ops&tag_name=x#y").unwrap();
+    api.droplets()
+        .list()
+        .set_page(PageNumber::new(2).unwrap())
+        .set_per_page(size())
+        .set_tag_name(odd)
+        .send()
+        .await
+        .unwrap();
+    let snapshots = api.droplet(42).snapshots().send().await.unwrap();
+    assert_eq!(
+        snapshots.meta.operation().unwrap().name(),
+        "DigitalOcean.droplet.snapshots"
+    );
+    api.droplet(42)
+        .snapshots()
+        .set_per_page(PageSize::new(200).unwrap())
+        .send()
+        .await
+        .unwrap();
+    let requests = server.requests();
+    assert_eq!(
+        requests
+            .iter()
+            .map(|r| r.target.as_str())
+            .collect::<Vec<_>>(),
+        [
+            "/v2/droplets?tag_name=env%3Aprod",
+            "/v2/droplets?page=2&per_page=1&tag_name=team%2Bops%26tag_name%3Dx%23y",
+            "/v2/droplets/42/snapshots",
+            "/v2/droplets/42/snapshots?per_page=200",
+        ]
+    );
+    assert_eq!(requests[1].query_all("tag_name"), ["team+ops&tag_name=x#y"]);
+    assert_wire(&requests);
+    let prepared = DigitalOcean::connect(TOKEN)
+        .unwrap()
+        .droplets()
+        .list()
+        .set_tag_name(prod())
+        .prepare()
+        .unwrap();
+    assert_eq!(
+        prepared.request().url().as_str(),
+        "https://api.digitalocean.com/v2/droplets?tag_name=env%3Aprod"
+    );
+    // Preparation only: this test does not execute the production URL.
+    server.shutdown().await;
+}
+
+#[tokio::test]
+async fn every_documented_http_class_on_the_new_endpoints_without_retries() {
+    let rows: Vec<serde_json::Value> =
+        serde_json::from_str(include_str!("../fixtures/errors.json")).unwrap();
+    for row in rows {
+        let status = row["status"].as_u64().unwrap() as u16;
+        let body = row.to_string();
+        let server = TestServer::start(move |_: &Recorded| {
+            Reply::json(status, &body).header("retry-after", "29")
+        })
+        .await;
+        let api = client(&server);
+        let outcomes = [
+            api.droplets()
+                .list()
+                .set_tag_name(prod())
+                .send()
+                .await
+                .map(|_| ()),
+            api.droplet(3164444).snapshots().send().await.map(|_| ()),
+        ];
+        for outcome in outcomes {
+            let error = outcome.unwrap_err();
+            assert_redacted(&error);
+            let Error::Provider(error) = error else {
+                panic!("HTTP status lost")
+            };
+            assert_eq!(error.meta.status().as_u16(), status);
+            assert_eq!(error.meta.retry_after_seconds().unwrap(), Some(29));
+            assert!(error.document.is_ok());
+        }
+        let first = client(&server)
+            .tagged_droplet_pages(&prod(), size(), cap(2))
+            .next_page()
+            .await
+            .unwrap_err();
+        assert!(matches!(first.provider_error(), Some(Error::Provider(_))));
+        assert_eq!(server.requests().len(), 3);
+        assert_wire(&server.requests());
+        server.shutdown().await;
+    }
+}
+
+#[tokio::test]
+async fn snapshot_body_failures_keep_status_and_operation() {
+    for (case, kind) in [
+        ("malformed", ErrorKind::Decode),
+        ("wrong-shape", ErrorKind::Decode),
+        ("wrong-media", ErrorKind::Metadata),
+        ("oversized", ErrorKind::Limit),
+    ] {
+        let server = TestServer::start(move |_: &Recorded| match case {
+            "wrong-shape" => Reply::json(200, "{\"snapshots\":[{\"id\":1,\"name\":\"x\"}]}"),
+            _ => bad_reply(case, 200),
+        })
+        .await;
+        let error = client(&server)
+            .droplet(3164444)
+            .snapshots()
+            .send()
+            .await
+            .unwrap_err();
+        assert_redacted(&error);
+        let Error::Concord(error) = error else {
+            panic!("wrong stage for {case}")
+        };
+        assert_eq!(error.kind(), kind, "{case}");
+        assert_eq!(
+            error.operation().unwrap().name(),
+            "DigitalOcean.droplet.snapshots"
+        );
+        server.shutdown().await;
+    }
+    assert_redacted(&Error::TagName);
 }

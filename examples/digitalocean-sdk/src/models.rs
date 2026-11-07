@@ -166,3 +166,34 @@ pub struct Actions {
     /// Optional provider collection totals.
     pub meta: Option<CollectionMeta>,
 }
+
+/// A snapshot or backup image created from a droplet. `kind` stays open to future values.
+#[derive(Debug, Deserialize)]
+pub struct Snapshot {
+    /// Snapshot or backup identifier.
+    pub id: u64,
+    /// Human-readable name.
+    pub name: String,
+    /// Provider timestamp, retained without lossy conversion.
+    pub created_at: String,
+    /// Region slugs where the image is available.
+    pub regions: Vec<String>,
+    /// Minimum disk size in GB for a droplet or volume using this image.
+    pub min_disk_size: u64,
+    /// Billable size in gigabytes.
+    pub size_gigabytes: f64,
+    /// `snapshot` (user-generated) or `backup` (automatic).
+    #[serde(rename = "type")]
+    pub kind: String,
+}
+
+/// A page of the selected droplet's snapshots.
+#[derive(Debug, Deserialize)]
+pub struct Snapshots {
+    /// Snapshot and backup records.
+    pub snapshots: Vec<Snapshot>,
+    /// Omitted when there is no pagination.
+    pub links: Option<Links>,
+    /// Optional provider collection totals.
+    pub meta: Option<CollectionMeta>,
+}

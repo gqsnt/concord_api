@@ -1,0 +1,26 @@
+{
+  "snapshots": [
+    {
+      "id": 6372321,
+      "name": "fixture-web-01-1595954862243",
+      "created_at": "2020-07-28T16:47:44Z",
+      "regions": [
+        "nyc3",
+        "sfo3"
+      ],
+      "min_disk_size": 25,
+      "size_gigabytes": 2.34,
+      "type": "snapshot",
+      "unmodeled_future_field": true
+    }
+  ],
+  "links": {
+    "pages": {
+      "next": "__ORIGIN__/v2/droplets/3164444/snapshots?page=2&per_page=1",
+      "last": "__ORIGIN__/v2/droplets/3164444/snapshots?page=2&per_page=1"
+    }
+  },
+  "meta": {
+    "total": 2
+  }
+}

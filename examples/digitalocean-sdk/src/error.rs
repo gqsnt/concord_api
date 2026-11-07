@@ -74,7 +74,9 @@ pub enum Error {
     PageNumber,
     /// Page size must be in 1..=200.
     PageSize,
-    /// Present next URL is invalid or leaves the trusted origin/collection.
+    /// Tag names are non-empty, without whitespace or control characters.
+    TagName,
+    /// Present next URL is invalid or leaves the trusted origin, collection or tag filter.
     UnsafeNext,
     /// Concord build, transport, metadata, decode or size-limit failure.
     Concord(concord::Error),
@@ -94,6 +96,7 @@ impl fmt::Display for Error {
             Self::TransportSetup => f.write_str("could not configure transport"),
             Self::PageNumber => f.write_str("page number must be positive"),
             Self::PageSize => f.write_str("page size must be between 1 and 200"),
+            Self::TagName => f.write_str("tag name must be non-empty, without spaces or controls"),
             Self::UnsafeNext => f.write_str("unsafe pagination target"),
             Self::Concord(error) => error.fmt(f),
             Self::Provider(error) => write!(

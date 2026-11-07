@@ -135,3 +135,62 @@ Source inventory: 4 Rust source files / 600 logical lines; 3 test/support files 
 logical lines; 14 fixture files / 272 logical lines. A final unterminated fixture line
 counts as one logical line. Fixtures also include runtime synthetic variants described
 above. No live-service capability was exercised by these checks.
+
+## Maintenance addendum (independent maintainer, 2026-11-07)
+
+The original record above is the author's and is left unchanged. This addendum covers the
+tag-filtered droplet traversal, the droplet snapshot traversal and the resume entry points;
+see [MAINTENANCE.md](MAINTENANCE.md) for the change itself.
+
+### Official pages read for the change
+
+Both pages were downloaded with `curl` on **2026-11-07 (06:48–06:50 UTC)**, saved under the
+worktree's `target/tmp/docs/`, and read as stripped text. No API host was contacted.
+
+| Exact page | Read date | Facts used |
+| --- | --- | --- |
+| https://docs.digitalocean.com/products/droplets/reference/api/droplets/ | 2026-11-07 | "Filtering Results by Tag": `GET /v2/droplets?tag_name=$TAG_NAME`; `tag_name` is an optional string (example `env:prod`), cannot be combined with `name` or `type`, and requires the `tag:read` scope. "List Snapshots for a Droplet": `GET /v2/droplets/{droplet_id}/snapshots`, scope `droplet:read`, `page`/`per_page` as for the other lists, response `snapshots`/`links`/`meta`, and the snapshot fields `id`, `created_at`, `min_disk_size`, `name`, `regions`, `size_gigabytes` (float), `type` (`snapshot` or `backup`), all marked required. The kernels example shows a next link that repeats `per_page`. |
+| https://docs.digitalocean.com/reference/api/reference/public-apis/ | 2026-11-07 | "Links & Pagination": `next` is "the URI of the next sequential page of results"; the sample link carries only `page`. The page does not say whether filter parameters such as `tag_name` are repeated in links. |
+
+The tag-name character set and length limit live on the Tags reference, which is not a
+permitted page. It was **not** read, and the SDK does not enforce such rules (see
+MAINTENANCE.md). Whether the provider's next links for a tag-filtered listing repeat
+`tag_name` is **undocumented on the permitted pages and unverified (live calls NOT_RUN)**.
+
+### Fixtures added (all authored synthetic)
+
+| Fixture | Derivation and intentional differences | Tested contract |
+| --- | --- | --- |
+| `tagged-first.json` | Copy of `droplets-first.json`'s droplet with an `env:prod` tag; next/last links carry `tag_name=env%3Aprod`. | Tag sent on the first page, kept by the followed link. |
+| `tagged-last.json` | Second synthetic droplet (id 3164446) carrying `env:prod`; only first/prev links. | Missing next completes the tagged walk. |
+| `snapshots-first.json` | Snapshot field set of the reference. The values (id 6372321, timestamp, `nyc3`/`sfo3`, 25, 2.34) are **adapted from the reference's example response**, with a fixture name and an extra future field. Two-page links. | Snapshot decoding, unknown fields, continuation. |
+| `snapshots-last.json` | Synthetic `backup`-type image; `"links": {}` as in the reference example. | Empty links object completes the walk. |
+
+Runtime fixtures authored in the new tests are also synthetic: tag-link variants (encoded,
+unencoded, reordered, dropped, changed, case-changed, repeated, empty, renamed key), a link
+adding a tag to an unfiltered listing, snapshot links to an untrusted host, another droplet,
+the actions collection and `/v2/snapshots`, a one-time 503/429 page, and the consumer's
+`web-0N` droplets and images.
+
+### Workspace reading by the maintainer
+
+Read before or during the change: this package's `README.md`, `PROVENANCE.md`, `Cargo.toml`,
+every file in `src/`, `tests/` and `fixtures/`; `crates/concord-pagination/README.md` and
+`src/pages.rs` (`Pages::new`, `PagesError`, `Resume`), `src/types.rs` (`Resume`);
+`crates/concord-core/src/__private.rs` (query assembly via `append_pair`),
+`src/prepared.rs` (`follow`), `src/value.rs` (`IntoValue`); `docs/CHEATSHEET.md`
+(start), `docs/AUTHOR_GUIDE.md` §2.1, §4.1, §4.7, §6 and §11; `examples/testserver/src/lib.rs`
+(public signatures only); root `Cargo.toml` (members, lints). `FRICTION.md` and `FIRST_USE.md`
+were read only **after** the change and its tests were written. No other example, check,
+campaign, role or record file was opened.
+
+### Dependencies and lock
+
+No new crate and no dependency change: `Cargo.toml`, the root `Cargo.toml` and `Cargo.lock`
+are byte-identical to `HEAD` (`git diff --quiet HEAD -- Cargo.lock Cargo.toml`). The package
+was already a workspace member, so every build used `--locked --offline`.
+
+### Inventory after maintenance
+
+4 Rust source files / 750 lines; 5 test/support files / 2952 lines (`first_use.rs`
+unchanged at 1194); 18 fixture files / 402 lines.

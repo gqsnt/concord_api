@@ -1,4 +1,4 @@
-use concord_sdk_digitalocean::{DigitalOcean, PageSize};
+use concord_sdk_digitalocean::{DigitalOcean, PageSize, TagName};
 use concord_testserver::{Recorded, Reply, TestServer};
 use std::num::NonZeroUsize;
 
@@ -10,6 +10,9 @@ pub fn client(server: &TestServer) -> DigitalOcean {
 
 pub fn size() -> PageSize {
     PageSize::new(1).unwrap()
+}
+pub fn prod() -> TagName {
+    TagName::new("env:prod").unwrap()
 }
 pub fn cap(n: usize) -> NonZeroUsize {
     NonZeroUsize::new(n).unwrap()
@@ -31,6 +34,18 @@ pub fn workflow_reply(request: &Recorded) -> Reply {
             include_str!("../../fixtures/actions-last.json")
         }
         "/v2/droplets/3164444/actions/7515" => include_str!("../../fixtures/action.json"),
+        "/v2/droplets?per_page=1&tag_name=env%3Aprod" => {
+            include_str!("../../fixtures/tagged-first.json")
+        }
+        "/v2/droplets?page=2&per_page=1&tag_name=env%3Aprod" => {
+            include_str!("../../fixtures/tagged-last.json")
+        }
+        "/v2/droplets/3164444/snapshots?per_page=1" => {
+            include_str!("../../fixtures/snapshots-first.json")
+        }
+        "/v2/droplets/3164444/snapshots?page=2&per_page=1" => {
+            include_str!("../../fixtures/snapshots-last.json")
+        }
         _ => panic!("unexpected fixture request target"),
     };
     Reply::json(200, fixture(body, request))

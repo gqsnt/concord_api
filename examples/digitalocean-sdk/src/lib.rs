@@ -35,9 +35,10 @@ concord::api! {
         scope droplets {
             path "droplets";
             /// List one page; absent pagination links mean completion.
-            GET list(..Paging) -> Droplets;
+            /// `set_tag_name` lists only the droplets carrying that tag.
+            GET list(..Paging, query tag_name?: TagName) -> Droplets;
         }
-        /// One selected droplet and its action history.
+        /// One selected droplet, its action history and its snapshots.
         scope droplet(id: u64) {
             path "droplets/{id}";
             /// Retrieve this droplet.
@@ -46,6 +47,8 @@ concord::api! {
             GET actions(..Paging) -> Actions { path "actions"; }
             /// Retrieve one action belonging to this droplet.
             GET action(action_id: u64) -> ActionDocument { path "actions/{action_id}"; }
+            /// List one page of this droplet's snapshots and backups.
+            GET snapshots(..Paging) -> Snapshots { path "snapshots"; }
         }
     }
 }
@@ -211,5 +214,31 @@ impl PageSize {
 impl fmt::Display for PageSize {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         self.0.fmt(f)
+    }
+}
+
+/// The name of a droplet tag, the `tag_name` filter of the droplet listing.
+///
+/// An empty value names no tag (how the provider treats it is undocumented; it could list every
+/// droplet), so it is refused, as are whitespace and control characters. Other text is sent
+/// percent-encoded; the provider decides whether a droplet carries that exact tag.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct TagName(String);
+impl TagName {
+    /// Refuse an empty name, whitespace and control characters before any request.
+    pub fn new(value: &str) -> Result<Self, Error> {
+        if value.is_empty() || value.chars().any(|c| c.is_whitespace() || c.is_control()) {
+            return Err(Error::TagName);
+        }
+        Ok(Self(value.to_owned()))
+    }
+    /// The tag as the provider spells it.
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+impl fmt::Display for TagName {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(&self.0)
     }
 }
