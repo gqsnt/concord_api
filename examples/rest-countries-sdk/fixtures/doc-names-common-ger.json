@@ -1,0 +1,11 @@
+{
+  "data": {
+    "objects": [
+      { "names": { "common": "Germany" }, "flag": { "emoji": "🇩🇪" } },
+      { "names": { "common": "Niger" }, "flag": { "emoji": "🇳🇪" } },
+      { "names": { "common": "Nigeria" }, "flag": { "emoji": "🇳🇬" } },
+      { "names": { "common": "Algeria" }, "flag": { "emoji": "🇩🇿" } }
+    ],
+    "meta": { "total": 4, "count": 4, "limit": 25, "offset": 0, "more": false }
+  }
+}
