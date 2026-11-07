@@ -129,23 +129,30 @@ async fn dynamic_keys_are_encoded_with_the_rest_of_the_query() {
     let chat = chat(&server);
     chat.run(
         "SELECT {x:UInt8}",
-        Bindings::default().bind("x", 3).bind("name", "a&b=c"),
+        Bindings::default()
+            .bind("x", 3)
+            .bind("name", "a&b=c")
+            .bind("k&y=z", "v"),
     )
     .send()
     .await
     .unwrap();
     let request = server.single();
     assert_eq!(request.path(), "/query");
+    // Each key and value decodes back to exactly what the value wrote: four pairs, no more.
     assert_eq!(
         request.query_pairs(),
         vec![
             ("sql".to_string(), "SELECT {x:UInt8}".to_string()),
             ("param_x".to_string(), "3".to_string()),
             ("param_name".to_string(), "a&b=c".to_string()),
+            ("param_k&y=z".to_string(), "v".to_string()),
         ]
     );
     // Reserved characters in keys and values are percent-encoded, never split the query.
-    assert!(request.query().unwrap().contains("param_name=a%26b%3Dc"));
+    let raw = request.query().unwrap();
+    assert!(raw.contains("param_name=a%26b%3Dc"), "{raw}");
+    assert!(raw.ends_with("&param_k%26y%3Dz=v"), "{raw}");
 }
 
 #[tokio::test]

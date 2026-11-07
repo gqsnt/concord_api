@@ -101,3 +101,65 @@ async fn the_nearest_owner_wins_and_drains_are_not_bounded() {
         .await
         .expect("a drain reads any length");
 }
+
+// Review b12 (gpt-6.1-sol), findings 3 and 5: a forwarded expression keeps its grouping, and the
+// bound resolves names only in the caller's context.
+macro_rules! forwarded_bound {
+    ($divisor:expr) => {
+        concord::api! {
+            /// A bound written by a wrapper macro.
+            pub client Forwarded() {
+                base "http://forwarded.invalid";
+                format Json;
+                limit 16 / $divisor;
+                GET get() -> Doc { path "d"; }
+            }
+        }
+    };
+}
+forwarded_bound!(1 + 3);
+
+/// A caller constant with the name the generated code once used.
+const __LIMIT: usize = 32;
+
+concord::api! {
+    /// A bound named like a former generated constant.
+    pub client Named() {
+        base "http://named.invalid";
+        format Json;
+        limit __LIMIT;
+        GET get() -> Doc { path "d"; }
+    }
+}
+
+mod aliased {
+    use super::{Doc, Json};
+    /// A caller alias that shadows the primitive name.
+    #[allow(non_camel_case_types, dead_code)]
+    type usize = u8;
+
+    concord::api! {
+        /// A bound declared where `usize` names another type.
+        pub client Aliased() {
+            base "http://aliased.invalid";
+            format Json;
+            limit 7;
+            GET get() -> Doc { path "d"; }
+        }
+    }
+}
+
+#[test]
+fn a_declared_bound_is_evaluated_as_written_in_the_callers_context() {
+    let http = || concord::reqwest::Client::new();
+    let limit = |p: concord::Prepared<Doc>| p.into_parts().2.limit();
+    assert_eq!(
+        limit(Forwarded::new(http()).get().prepare().unwrap()),
+        Some(4)
+    );
+    assert_eq!(limit(Named::new(http()).get().prepare().unwrap()), Some(32));
+    assert_eq!(
+        limit(aliased::Aliased::new(http()).get().prepare().unwrap()),
+        Some(7)
+    );
+}

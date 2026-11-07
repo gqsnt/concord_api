@@ -356,9 +356,10 @@ but forwards GitLab's `PRIVATE-TOKEN`, so GitHub and GitLab build a redirect pol
 
 `Prepared::into_parts()` gives client, native request and decoder; `Decoder::execute` sends an
 edited request into the same `Received<T>` boundary as `receive()`. ClickHouse appends per-query
-`param_<name>` pairs, outside Concord's redaction (W4-7) (Excerpt of
-`examples/clickhouse-sdk/src/client.rs`):
-```rust,ignore
+`param_<name>` pairs, outside Concord's redaction (W4-7). As written at SDK20 (`5c3ef5f6`,
+`examples/clickhouse-sdk/src/client.rs`; *note 2026-11-07: since SDK50 between waves 1–2 the
+pairs are a `query(..)` value of the select/command endpoints and this helper is gone*):
+```text
 let (client, mut request, decoder) = endpoint.prepare()?.into_parts();
 if !params.is_empty() {
     let mut pairs = request.url_mut().query_pairs_mut();

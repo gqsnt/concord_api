@@ -2622,13 +2622,10 @@ fn prepare_body(
             // A static: the format's `Accept` suggestion is a compile-time-checked value. The
             // output type is named first, so an unsupported pair is reported as `Decode<T>`.
             let init = located(quote!(#k::__private::DecodeFormat::<#t>::new::<#r>()), at);
-            // `limit N;` (endpoint or nearest owner): a `usize` constant, checked where written.
+            // `limit N;` (endpoint or nearest owner): passed as written, so it resolves names
+            // only in the caller's context; the static initializer makes it a `usize` constant.
             let init = match model.nearest_limit(index) {
-                Some(limit) => {
-                    let checked =
-                        quote_spanned!(limit.span()=> { const __LIMIT: usize = #limit; __LIMIT });
-                    quote!(#init.with_limit(#checked))
-                }
+                Some(limit) => quote!(#init.with_limit(#limit)),
                 None => init,
             };
             quote!({

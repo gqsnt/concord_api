@@ -524,19 +524,20 @@ impl<T: serde::de::DeserializeOwned> Decode<Option<T>> for JsonOrEmpty {
 formats' strict singleton parser without exposing parsed headers or adding a dependency
 on `mime` to your SDK. It is available without features. Keep the provider's allowlist
 in the format; call the helper from `Decode::check_content_type` or
-`Incremental::check_content_type` so rejection precedes reading the body:
+`Incremental::check_content_type` so rejection precedes reading the body. FRED's problem
+document accepts XML or JSON, refusing anything else before the body is read (Excerpt of
+[`examples/fred-sdk/src/codecs.rs`](../examples/fred-sdk/src/codecs.rs)):
 
-```rust
-use concord_codecs::{Charset, check_content_type};
-use concord_core::{CodecError, ResponseHead};
-
-fn check_xml(head: &ResponseHead<'_>) -> Result<(), CodecError> {
-    check_content_type(
-        head,
-        &["text/xml", "application/xml", "application/*+xml"],
-        Charset::Utf8,
-    )
-}
+```rust,ignore
+impl Decode<Problem> for ProblemDocument {
+    type Context = ();
+    fn check_content_type(head: &ResponseHead<'_>) -> Result<(), CodecError> {
+        check_content_type(
+            head,
+            &["text/xml", "application/xml", "application/json"],
+            Charset::Utf8,
+        )
+    }
 ```
 
 Entries match case-insensitively, with no parameters. An exact entry includes the

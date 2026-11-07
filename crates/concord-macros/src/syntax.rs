@@ -1040,7 +1040,9 @@ fn parse_owner_body(
                     "expected the bound in bytes, a `usize` constant expression (`limit 4 * 1024 * 1024;`)",
                 ));
             }
-            let expr: Expr = input.parse()?;
+            // Parsed like an initializer: a fragment forwarded by `macro_rules!` keeps its
+            // grouping (`16 / $d` with `$d = 1 + 3` is `16 / (1 + 3)`).
+            let expr = parse_initializer(input)?;
             input.parse::<Token![;]>()?;
             if stmts.limit.is_some() {
                 return Err(syn::Error::new(
