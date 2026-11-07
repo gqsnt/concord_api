@@ -73,6 +73,25 @@ The coordinator is this Claude Code session (`claude-opus-5-5`; session `cb65e1e
 | b23-review4-sol (review of `c3517aaf`) | gpt-6.1-sol xhigh | gpt-6.1-sol xhigh | read-only | 01a1b430-42d1-79a0-971d-341b195fc2f5 | `c3517aaf` | 2026-11-07 05:07 – 05:10 |
 | b23-review5-sol (review of `435ad897`) | gpt-6.1-sol xhigh | gpt-6.1-sol xhigh | read-only | 01a1b437-d735-7a42-9912-aa2b36756a65 | `435ad897` | 2026-11-07 05:15 – 05:20 |
 | b23-review6-sol (review of `14b9e1e0`) | gpt-6.1-sol xhigh | gpt-6.1-sol xhigh | read-only | 01a1b43f-3a6e-7902-bfde-687f400fb024 | `14b9e1e0` | 2026-11-07 05:23 – 05:26 |
+| w3-sdk31-author-sol | gpt-6.1-sol xhigh | gpt-6.1-sol xhigh | workspace-write + network | 01a1b446-c8a8-7a10-9085-4ec6c697c6f0 | `14b9e1e0` | 2026-11-07 05:31 – 05:44 |
+| w3-sdk31-consumer-opus | Opus xhigh (Agent subagent) | claude-opus-5-5, effort xhigh (91 responses) | Agent tool | agent a4fcd6e4ad2ef497a | `677bfd7f` | 2026-11-07 05:45 – 05:56 |
+| w3-sdk31-maintainer-opus | Opus xhigh (Agent subagent) | claude-opus-5-5, effort xhigh (133 responses) | Agent tool | agent acc6493341ac5aaf7 | `5dc0247c` | 2026-11-07 05:57 – 06:13 |
+| w3-sdk32-author-opus | Opus xhigh (Agent subagent) | claude-opus-5-5, effort xhigh (187 responses) | Agent tool | agent a4b19a06f00fb3b8d | `14b9e1e0` | 2026-11-07 05:32 – 06:02 |
+| w3-sdk32-consumer-sol | gpt-6.1-sol xhigh | gpt-6.1-sol xhigh | workspace-write + network | 01a1b463-8665-70d1-964f-bc30c5eadec8 | `95a245e6` | 2026-11-07 06:03 – 06:09 |
+| w3-sdk32-maintainer-sol | gpt-6.1-sol xhigh | gpt-6.1-sol xhigh | workspace-write + network | 01a1b46b-75cb-7c20-9192-ba8af6a9f9fe | `2c8d87a1` | 2026-11-07 06:11 – 06:21 |
+| w3-sdk33-author-sol | gpt-6.1-sol xhigh | gpt-6.1-sol xhigh | workspace-write + network | 01a1b446-c8a8-7b30-8bd6-5645bcea51fb | `14b9e1e0` | 2026-11-07 05:31 – 05:40 |
+| w3-sdk33-consumer-opus | Opus xhigh (Agent subagent) | claude-opus-5-5, effort xhigh (72 responses) | Agent tool | agent a1ca5efc8bc85894c | `a8e4a003` | 2026-11-07 05:41 – 05:51 |
+| w3-sdk33-maintainer-opus | Opus xhigh (Agent subagent) | claude-opus-5-5, effort xhigh (124 responses) | Agent tool | agent aaf45e711452932a6 | `808a40f6` | 2026-11-07 05:53 – 06:07 |
+| w3-sdk34-author-opus | Opus xhigh (Agent subagent) | claude-opus-5-5, effort xhigh (227 responses) | Agent tool | agent ac32504aa2660447c | `14b9e1e0` | 2026-11-07 05:32 – 06:07 |
+| w3-sdk34-consumer-sol | gpt-6.1-sol xhigh | gpt-6.1-sol xhigh | workspace-write + network | 01a1b468-7fd0-7ff0-becf-c8ac98e6984b | `4cefd333` | 2026-11-07 06:08 – 06:15 |
+| w3-sdk34-maintainer-sol | gpt-6.1-sol xhigh | gpt-6.1-sol xhigh | workspace-write + network | 01a1b46f-c36e-7452-a19b-a6874bf62acb | `c89f1000` | 2026-11-07 06:16 – 06:22 |
+| w3-sdk35-author-sol | gpt-6.1-sol xhigh | gpt-6.1-sol xhigh | workspace-write + network | 01a1b446-c9fe-7220-a857-b04076512a9b | `14b9e1e0` | 2026-11-07 05:31 – 05:47 |
+| w3-sdk35-consumer-opus | Opus xhigh (Agent subagent) | claude-opus-5-5, effort xhigh (142 responses) | Agent tool | agent a0066d2a983dfce86 | `39d878b5` | 2026-11-07 05:49 – 06:07 |
+| w3-sdk35-maintainer-opus | Opus xhigh (Agent subagent) | claude-opus-5-5, effort xhigh (163 responses) | Agent tool | agent a3a5e2fe4f5d9847d | `ab78bdf1` | 2026-11-07 06:08 – 06:25 |
+| b34-retry (retry hook) | gpt-6.1-sol xhigh | gpt-6.1-sol xhigh | workspace-write + network | 01a1b479-4025-72b2-b948-9e593ebfbb83 | `17fd6e44` | 2026-11-07 06:26 – 06:36 |
+| b34-auth (rotation prototype) | gpt-6.1-sol xhigh | gpt-6.1-sol xhigh | workspace-write + network | 01a1b479-4026-7433-813e-6f1f80458d80 | `17fd6e44` | 2026-11-07 06:26 – 06:38 |
+| b34-values (declared-value experiment) | gpt-6.1-sol xhigh | gpt-6.1-sol xhigh | workspace-write + network | 01a1b482-a85f-79c0-ab0b-137367d61e64 | `17fd6e44` | 2026-11-07 06:37 – 06:51 |
+| b34-review (retry + docs) | gpt-6.1-sol xhigh | gpt-6.1-sol xhigh | read-only | 01a1b484-bee9-79b1-bfd5-850caca474d9 | `254a5381` | 2026-11-07 06:39 – 06:42 |
 
 Opus subagent times are converted from the transcripts' UTC timestamps. Loopback access, read from
 each rollout's first `turn_context.sandbox_policy.network_access`: true for every Wave-1 Codex
