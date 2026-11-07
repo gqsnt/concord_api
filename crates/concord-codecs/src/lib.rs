@@ -49,4 +49,5 @@ pub use form::Form;
 pub use ignore::IgnoreContentType;
 #[cfg(feature = "json")]
 pub use json::Json;
+pub use media::{Charset, check_content_type};
 pub use text::Text;

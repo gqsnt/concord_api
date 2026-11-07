@@ -82,9 +82,7 @@ impl<T: Send> SendWith<T> for Policy {
                 document,
             })));
         }
-        let (data, meta) = received
-            .decode_limited_with_meta(SUCCESS_BODY_LIMIT)
-            .await?;
+        let (data, meta) = received.decode_with_meta().await?;
         Ok(Response { data, meta })
     }
 }

@@ -2,14 +2,79 @@
 
 use concord_core::{CodecError, ContentTypeField, ResponseHead};
 
+/// Charset handling for [`check_content_type`]. No transcoding is performed.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Charset {
+    /// Allow no charset, or exactly one naming UTF-8 or US-ASCII (case-insensitive).
+    Utf8,
+    /// Ignore charset declarations after validating the media type's parameter syntax.
+    Ignore,
+}
+
+/// Require exactly one well-formed `Content-Type` matching an accepted media type.
+///
+/// Entries are case-insensitive `type/subtype` strings without parameters, or
+/// `type/*+suffix` rules (for example `application/*+json`). Exact entries include
+/// the entire subtype: `application/json` does not match `application/json+xml`.
+/// Suffix rules match only the final structured suffix and the named top-level type.
+/// Other wildcards are unsupported; response media ranges are always refused.
+/// Invalid entries never match; an empty list accepts nothing.
+///
+/// Uses the standard formats' private parser and static diagnostic labels for missing,
+/// repeated, malformed or non-ASCII fields and charset failures. A nonmatching type has
+/// the static label `the response Content-Type is not an accepted media type`.
+/// Call this from [`Decode::check_content_type`](concord_core::Decode::check_content_type)
+/// (or its incremental counterpart) to reject the head before reading the body.
+pub fn check_content_type(
+    head: &ResponseHead<'_>,
+    accepted: &[&str],
+    charset: Charset,
+) -> Result<(), CodecError> {
+    let Some(found) = single(head)? else {
+        return Err(CodecError::new("the response has no Content-Type"));
+    };
+    if found.essence.type_() == mime::STAR || found.essence.subtype() == mime::STAR {
+        return Err(CodecError::new(
+            "the response Content-Type is a media range, not a media type",
+        ));
+    }
+    let matches = accepted.iter().any(|entry| {
+        let Some((kind, sub)) = entry.split_once('/') else {
+            return false;
+        };
+        if !is_token(kind) || kind.contains('*') || !is_token(sub) {
+            return false;
+        }
+        if let Some(suffix) = sub.strip_prefix("*+") {
+            !suffix.is_empty()
+                && !suffix.contains(['*', '+'])
+                && found.essence.type_().as_str().eq_ignore_ascii_case(kind)
+                && found
+                    .essence
+                    .suffix()
+                    .is_some_and(|s| s.as_str().eq_ignore_ascii_case(suffix))
+        } else {
+            !sub.contains('*') && found.essence.essence_str().eq_ignore_ascii_case(entry)
+        }
+    });
+    if !matches {
+        return Err(CodecError::new(
+            "the response Content-Type is not an accepted media type",
+        ));
+    }
+    match charset {
+        Charset::Utf8 => check_charset(
+            &found.charsets,
+            "the response declares a charset other than utf-8",
+        ),
+        Charset::Ignore => Ok(()),
+    }
+}
+
 /// A response `Content-Type`: its media type and the values of its `charset` parameters.
 pub(crate) struct Media {
     /// Type and subtype (and a structured-syntax suffix), parsed by `mime`, without parameters.
     /// Read by `Json`, `Form`, the JSON Lines and the SSE readers; `Text` needs only the charsets.
-    #[cfg_attr(
-        not(any(feature = "json", feature = "form", feature = "jsonl", feature = "sse")),
-        allow(dead_code)
-    )]
     pub(crate) essence: mime::Mime,
     /// Every `charset` parameter's value, unquoted, in order.
     pub(crate) charsets: Vec<String>,
@@ -85,7 +150,6 @@ pub(crate) fn is_utf8(charset: &str) -> bool {
 /// is accepted too); charset names are case-insensitive. A repeated `charset` is refused as
 /// ambiguous, whatever its values. Used by `Json`, `Form`, the JSON Lines and the SSE readers;
 /// `Text` applies its own rule with [`is_utf8`].
-#[cfg(any(feature = "json", feature = "form", feature = "jsonl", feature = "sse"))]
 pub(crate) fn check_charset(charsets: &[String], foreign: &'static str) -> Result<(), CodecError> {
     match charsets {
         [] => Ok(()),

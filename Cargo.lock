@@ -1058,11 +1058,11 @@ name = "concord-sdk-fred"
 version = "0.0.0"
 dependencies = [
  "concord",
+ "concord-codecs",
  "concord-example-testserver",
  "concord-pagination",
  "concord-retry",
  "flate2",
- "mime",
  "roxmltree",
  "serde",
  "serde_json",

@@ -155,8 +155,9 @@ The API key is marked `#[sensitive]`. Generated config/handle/prepared-request
 Debug and SDK error Debug/Display withhold it. Provider messages can echo a key:
 `Problem` never formats its message; only `message_unredacted()` reveals it.
 Native request/URL/response accessors and provider data are deliberate raw access.
-`prepare()?.send()` bypasses the SDK policy and its HTTP body limit; use the
-generated operation's `send()` for the documented bounded behavior.
+The client declares `limit BODY_LIMIT;`, so finite success bodies remain bounded
+even through `prepare()?.send()`. That native path bypasses the SDK's provider-error
+interpretation; generated `send()` also decodes error documents with the explicit 16 KiB cap.
 
 Excluded: FRED v2 bulk release archives, XLSX parsing, CSV cell/schema parsing,
 authentication registration/rotation, advanced search,

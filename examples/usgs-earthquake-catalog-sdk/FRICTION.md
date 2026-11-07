@@ -90,3 +90,18 @@ tests 1,033, fixtures 256**. Fixture logical-line count is 262 because six fixtu
 intentionally lack final newlines (including truncated JSON). Counts exclude
 expanded macro output, generated target artifacts and documentation. The final
 source changes preserve all shared crates/checks/scripts/other examples.
+
+## Between-wave capsule X adoption (2026-11-07)
+
+This is a supplied-shape migration, not new first-use evidence. The original ledger
+above records the frozen baseline. GeoJSON pages and CSV exports now use
+`concord_pagination::next_offset` without a total count: a short page ends, a full
+page advances with checked arithmetic. USGS's reported count remains a page-length
+check in the SDK; one-based offsets, no-data status handling, streaming completion
+and page budgets retain their provider projection.
+
+Both finite GeoJSON endpoints declare `limit SUCCESS_BODY_LIMIT;`, and `Policy`
+uses `decode_with_meta()`. Prepared sends retain this finite bound. Error text
+still uses `document(ERROR_BODY_LIMIT)`, and CSV keeps its independent reader
+limits. Existing assertions are preserved; a new prepared-send regression covers
+both finite endpoints and verifies that CSV has no finite decoder cap.

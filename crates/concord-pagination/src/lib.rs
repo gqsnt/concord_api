@@ -15,6 +15,9 @@
 //! | [`ItemStream`] ([`PageItems::into_stream`]) | a `futures_core::Stream` of `Result<item, PagesError>` |
 //! | [`PageItemEvents`] ([`Pages::item_events`]) | items and page metadata, including final completion metadata |
 //!
+//! Offset-based adapters can use [`next_offset`] to validate page size, progress and checked
+//! continuation, with an optional total count. Provider fields and offset bases stay in the SDK.
+//!
 //! The end is explicit: a cap (opt-in, [`Pages::max_pages`]; there is none by default) reached
 //! while the provider has a next page, and a failed page, are [`PagesError`]s carrying the page
 //! to continue from, and no call after them returns `Ok(None)`. `collect_complete` returns the
@@ -107,6 +110,7 @@ mod independent;
 mod jobs;
 #[cfg(feature = "link")]
 pub mod link;
+mod offset;
 mod pages;
 mod sequential;
 mod types;
@@ -119,6 +123,7 @@ pub use jobs::{
     DiscoveryReport, JobOptions, Jobs, JobsCheckpoint, JobsError, JobsProgress, JobsReport,
     JobsResume, manifest_jobs,
 };
+pub use offset::{OffsetError, next_offset};
 pub use pages::{
     Incomplete, ItemStream, PageItemEvent, PageItemEvents, PageItems, Pages, PagesError,
 };

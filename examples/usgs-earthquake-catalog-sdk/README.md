@@ -142,7 +142,9 @@ SDK and Concord diagnostics withhold provider bodies, response header values and
 the lookup request's event ID. `document_unredacted()`, native accessors, explicit
 model formatting, and raw header access intentionally expose data. `prepare()`
 is Concord's lower-level boundary: executing a prepared request directly bypasses
-the SDK send policy's time/magnitude bound checks, status mapping and finite-body limit.
+the SDK send policy's time/magnitude bound checks and status mapping. Both finite
+GeoJSON endpoints declare `limit SUCCESS_BODY_LIMIT;`, which also bounds prepared
+sends. Error-document limits stay explicit in the policy; CSV retains its reader limits.
 
 Excluded: full QuakeML, scientific validation, product downloading, realtime feeds,
 unbounded harvesting, snapshot consistency, credential flows and automatic retry.
