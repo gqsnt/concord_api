@@ -95,8 +95,9 @@ authorization, policy })` takes all three explicitly, and `set_policy` replaces 
 Obtaining and refreshing the OAuth token is the application's.
 
 `http_client()` builds a transport without reqwest-level retries or redirects and with a 30 s
-timeout per request. A caller-supplied client should also disable reqwest's retries, so that a
-write is sent exactly once.
+timeout per request. A caller-supplied client must also disable reqwest's retries and redirects:
+with either, a write may be sent again, or a status may answer a later request than the write (a
+performed create redirected to a target answering `429` would look refused).
 
 ## Failure semantics
 

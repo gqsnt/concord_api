@@ -25,7 +25,8 @@ concord::api! {
     /// Discord's REST API (v10) for one bot: guild channels, channel messages, message creation.
     ///
     /// Construct with `Discord::new(http, DiscordConfig { token, limiter })`. Transport settings
-    /// (timeouts, proxies, TLS, redirects) belong to the `reqwest::Client` you pass in.
+    /// (timeouts, proxies, TLS, redirects) belong to the `reqwest::Client` you pass in; turn redirects
+    /// and retries off, or a write's status can describe a later request.
     ///
     /// Every operation's `send()` returns `Result<T, `[`Error`]`>` through the client's send
     /// policy, the [`RateLimiter`]: it refuses a request locally while its rate-limit scope is

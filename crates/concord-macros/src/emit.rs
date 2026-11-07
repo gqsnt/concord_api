@@ -1749,56 +1749,40 @@ fn limit_const(model: &Model, index: usize, output: Option<&Output>) -> TokenStr
 
 /// A `send P -> Template;` result for one endpoint: every type placeholder `_` of the template
 /// (a `syn::Type::Infer`) becomes `out`. Not a lifetime's `'_`, a fn parameter named `_`, or
-/// anything in an expression (a const argument, an array length). Inside a type macro's input
-/// every `_` that is not a lifetime's is the output, under any delimiter. The rest is re-emitted
-/// from the parsed type: a fragment forwarded by `macro_rules!` keeps its invisible group.
+/// anything in an expression (a const argument, an array length). A type macro's input is filled
+/// by the same rule when it parses as types separated by commas, under any delimiter; another
+/// grammar is kept as written. The rest is re-emitted from the parsed type: a fragment forwarded
+/// by `macro_rules!` keeps its invisible group.
 fn with_output(template: &syn::Type, out: &TokenStream) -> TokenStream {
     use proc_macro2::{Delimiter, Group, TokenTree};
+    use syn::parse::Parser;
+    use syn::punctuated::Punctuated;
     use syn::visit_mut::{self, VisitMut};
-    /// Inside a type macro's input (opaque tokens, any delimiter) every `_` that is not a
-    /// lifetime's is the output; groups without one are kept as they are.
-    fn macro_tokens(tokens: TokenStream, out: &TokenStream) -> (TokenStream, bool) {
-        let mut found = false;
-        let mut after_apostrophe = false;
-        let tokens = tokens
-            .into_iter()
-            .map(|tt| {
-                let lifetime = after_apostrophe;
-                after_apostrophe = matches!(&tt, TokenTree::Punct(p) if p.as_char() == '\'');
-                match tt {
-                    TokenTree::Ident(i) if i == "_" && !lifetime => {
-                        found = true;
-                        TokenTree::Group(Group::new(Delimiter::None, out.clone()))
-                    }
-                    TokenTree::Group(g) => match macro_tokens(g.stream(), out) {
-                        (inner, true) => {
-                            found = true;
-                            let mut group = Group::new(g.delimiter(), inner);
-                            group.set_span(g.span());
-                            TokenTree::Group(group)
-                        }
-                        (_, false) => TokenTree::Group(g),
-                    },
-                    tt => tt,
-                }
-            })
-            .collect();
-        (tokens, found)
-    }
     /// Replaces type placeholders only: a fn parameter named `_`, a lifetime `'_` and every
     /// expression (const arguments, array lengths, patterns in blocks) are not types.
-    struct Fill<'a>(&'a TokenStream);
+    struct Fill<'a> {
+        out: &'a TokenStream,
+        filled: usize,
+    }
     impl VisitMut for Fill<'_> {
         fn visit_type_mut(&mut self, ty: &mut syn::Type) {
             match ty {
                 syn::Type::Infer(_) => {
-                    let group = Group::new(Delimiter::None, self.0.clone());
+                    let group = Group::new(Delimiter::None, self.out.clone());
                     *ty = syn::Type::Verbatim(TokenTree::Group(group).into());
+                    self.filled += 1;
                 }
                 syn::Type::Macro(m) => {
-                    let (tokens, found) = macro_tokens(m.mac.tokens.clone(), self.0);
-                    if found {
-                        m.mac.tokens = tokens;
+                    // An input that is types separated by commas (`result!{_}`, `id!(fn(_: u8) -> _)`)
+                    // is filled by the same rule; any other grammar, and an input without a
+                    // placeholder, is kept as written.
+                    let parse = Punctuated::<syn::Type, syn::Token![,]>::parse_terminated;
+                    if let Ok(mut types) = parse.parse2(m.mac.tokens.clone()) {
+                        let before = self.filled;
+                        types.iter_mut().for_each(|t| self.visit_type_mut(t));
+                        if self.filled > before {
+                            m.mac.tokens = quote!(#types);
+                        }
                     }
                 }
                 _ => visit_mut::visit_type_mut(self, ty),
@@ -1807,7 +1791,7 @@ fn with_output(template: &syn::Type, out: &TokenStream) -> TokenStream {
         fn visit_expr_mut(&mut self, _: &mut syn::Expr) {}
     }
     let mut filled = template.clone();
-    Fill(out).visit_type_mut(&mut filled);
+    Fill { out, filled: 0 }.visit_type_mut(&mut filled);
     quote!(#filled)
 }
 
@@ -2814,6 +2798,18 @@ mod tests {
         assert_eq!(text(quote!(result!(_))), "result!(Item)");
         assert_eq!(text(quote!(result![&'_ _])), "result![&'_Item]");
         assert_eq!(text(quote!(Vec<result! {u8}>)), "Vec<result!{u8}>");
+        // Review b23-review3 finding 3: inside a type macro, the same structural rule.
+        assert_eq!(text(quote!(id!(fn(_: u8) -> _))), "id!(fn(_:u8)->Item)");
+        assert_eq!(
+            text(quote!(id!([_; {
+                let _ = 1;
+                2
+            }]))),
+            "id!([Item;{let_=1;2}])"
+        );
+        assert_eq!(text(quote!(pair!(_, id! {_}))), "pair!(Item,id!{Item})");
+        // Not types: kept as written (rustc then rejects the `_` in a signature).
+        assert_eq!(text(quote!(m!(x => _))), "m!(x=>_)");
     }
 
     use super::{emit, key_owner};

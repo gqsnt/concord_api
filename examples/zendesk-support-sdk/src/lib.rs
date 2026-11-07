@@ -127,8 +127,8 @@ impl Zendesk {
 }
 
 /// A transport for this SDK: no transport-level retries (writes are sent exactly once), no
-/// redirects, a 30-second timeout per request. Applications may pass their own client with the
-/// same restrictions.
+/// redirects, a 30-second timeout per request. An application's own client must have the same
+/// restrictions (no retries, no redirects) for the failure semantics to hold.
 ///
 /// # Errors
 ///

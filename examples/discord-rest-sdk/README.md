@@ -25,9 +25,13 @@ use concord_sdk_discord_rest::concord::reqwest;
 use concord_sdk_discord_rest::{Discord, DiscordConfig, RateLimiter};
 
 fn client(token: String) -> Result<Discord, reqwest::Error> {
-    // Transport settings are yours: the SDK builds no client and sets no timeout.
+    // Transport settings are yours: the SDK builds no client and sets no timeout. Turn off
+    // redirects and retries: with either, a status or error can describe a later request than
+    // your write (a performed POST redirected to a target answering 429 would look refused).
     let http = reqwest::Client::builder()
         .timeout(Duration::from_secs(15))
+        .redirect(reqwest::redirect::Policy::none())
+        .retry(reqwest::retry::never())
         .build()?;
     // One RateLimiter per bot token: Discord's limits are per bot.
     Ok(Discord::new(http, DiscordConfig { token, limiter: RateLimiter::new() }))

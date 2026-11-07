@@ -68,6 +68,8 @@ The coordinator is this Claude Code session (`claude-opus-5-5`; session `cb65e1e
 | b23-oldadopt-astra (earlier SDKs adopt `send -> ..` and `field`) | gpt-6-astra xhigh | gpt-6-astra xhigh | workspace-write + network | 01a1b3b0-a780-7892-84cd-6c3ca6a969e1 | `162fc869` | 2026-11-07 02:47 – 02:54 |
 | b23-review-sol (review of `c06cef7b..53096208`) | gpt-6.1-sol xhigh | gpt-6.1-sol xhigh | read-only | 01a1b3b0-ef24-75a1-989e-0c980a1f3820 | `162fc869` | 2026-11-07 02:47 – 02:54 |
 | b23-w2adopt-sol (wave-2 SDK adoption, repeated-key guard) | gpt-6.1-sol xhigh | gpt-6.1-sol xhigh | workspace-write + network | 01a1b3b0-a780-7500-a40d-9bf22b659a7f | `162fc869` | 2026-11-07 02:47 – 02:56 |
+| b23-review2-sol (review of `95ac36de`, `0e4a245e`, `3ff63633..4870f864`) | gpt-6.1-sol xhigh | gpt-6.1-sol xhigh | read-only | 01a1b412-c896-7b03-8a48-04b5f83dc07a | `4870f864` | 2026-11-07 04:34 – 04:38 |
+| b23-review3-sol (review of `20517134`) | gpt-6.1-sol xhigh | gpt-6.1-sol xhigh | read-only | 01a1b424-7cb1-7d71-87b8-42c8ebbee37a | `20517134` | 2026-11-07 04:54 – 04:58 |
 
 Opus subagent times are converted from the transcripts' UTC timestamps. Loopback access, read from
 each rollout's first `turn_context.sandbox_policy.network_access`: true for every Wave-1 Codex

@@ -172,7 +172,10 @@ macro_rules! scaled_store {
 scaled_store!(1 + 2);
 
 fn _scaled_names_the_result(store: &Scaled) {
-    let _: std::pin::Pin<
+    /// The future a `Scaled` endpoint's `send()` must return.
+    type ScaledSend = std::pin::Pin<
         Box<dyn std::future::Future<Output = Envelope<Result<Item, Error>, 6>> + Send>,
-    > = Box::pin(store.item(1).send());
+    >;
+
+    let _: ScaledSend = Box::pin(store.item(1).send());
 }

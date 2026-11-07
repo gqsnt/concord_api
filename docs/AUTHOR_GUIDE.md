@@ -1606,9 +1606,14 @@ delivery. `concord::Error::delivery()` states it:
 A refused connection is `Unknown` on purpose: the client may have followed a redirect from a
 server that performed the write (a `303` to a host that is down ends in a connect error), and
 reqwest's `is_connect()` also reports a connection error of a nested source, such as a streamed
-body's own request. An SDK that builds its own client without redirects, and whose bodies are
-fixed bytes, may decide that `transport().is_some_and(|e| e.is_connect())` means "not sent" — its
-rule, stated in its docs. Accepting the caller's client voids that rule.
+body's own request. An SDK that builds its own client without redirects or retries
+(`redirect(Policy::none())`, `retry(retry::never())`: a retried `503` can end in a refused
+connection after the first attempt performed the write), and whose bodies are fixed bytes, may
+decide that `transport().is_some_and(|e| e.is_connect())` means "not sent" — its rule, stated in
+its docs. Accepting the caller's client voids that rule. A followed redirect also makes a status
+answer a later request: a performed POST answered `303`, whose target answers `429`, reaches the
+policy as a 429 (`received.url()` is the target's). An SDK that reads a write's status as
+"refused" requires redirects off.
 
 Which operations are writes, and whether an `Answered` 5xx or an unreadable 2xx is uncertain too,
 stay the SDK's rules:

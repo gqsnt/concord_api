@@ -120,3 +120,44 @@ async fn any_response_head_is_an_answer_even_when_its_body_fails() {
         assert_eq!((delivery, observed), (Delivery::Answered, kind));
     }
 }
+
+// Review b23-review3-sol, finding 1: with a client that follows redirects, a status answers a later
+// request. The POST is performed and answered 303; the target answers 429. The policy sees 429 for
+// the target's URL: "refused" would be wrong. With redirects off it sees the 303 itself.
+#[tokio::test]
+async fn a_followed_redirect_answers_for_a_later_request() {
+    let server = TestServer::start(|r| {
+        if r.method == "POST" {
+            Reply::new(303).header("location", "/later")
+        } else {
+            Reply::json(429, "{}")
+        }
+    })
+    .await;
+    let prepared = store(&server.url(), Duration::from_secs(5))
+        .create("n", Item { id: 1 })
+        .prepare()
+        .unwrap();
+    let sent = prepared.request().url().clone();
+    let received = prepared.receive().await.unwrap();
+    assert_eq!(received.status(), 429);
+    assert_ne!(received.url(), &sent, "the answer is the redirect target's");
+    let methods: Vec<String> = server.requests().iter().map(|r| r.method.clone()).collect();
+    assert_eq!(methods, ["POST", "GET"], "the write was performed first");
+
+    let http = concord::reqwest::Client::builder()
+        .redirect(concord::reqwest::redirect::Policy::none())
+        .retry(concord::reqwest::retry::never())
+        .build()
+        .unwrap();
+    let store = Store::new(http).with_base_url(server.url()).unwrap();
+    let received = store
+        .create("n", Item { id: 1 })
+        .prepare()
+        .unwrap()
+        .receive()
+        .await
+        .unwrap();
+    assert_eq!(received.status(), 303);
+    server.shutdown().await;
+}
