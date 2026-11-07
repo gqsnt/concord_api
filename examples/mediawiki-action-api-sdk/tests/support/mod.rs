@@ -1,0 +1,65 @@
+// Shared test binaries use different subsets of this fixture catalog.
+#![allow(dead_code)]
+
+use std::time::Duration;
+
+use concord_sdk_mediawiki_action_api::{MediaWiki, MediaWikiConfig, concord::reqwest};
+use concord_testserver::{Recorded, Reply};
+
+pub const SEARCH: &str = include_str!("../../fixtures/search-first.json");
+pub const SEARCH_LAST: &str = include_str!("../../fixtures/search-last.json");
+pub const CONTENT: &str = include_str!("../../fixtures/content.json");
+pub const CATEGORY_FIRST: &str = include_str!("../../fixtures/category-first.json");
+pub const CATEGORY_EMPTY: &str = include_str!("../../fixtures/category-empty.json");
+pub const CATEGORY_LAST: &str = include_str!("../../fixtures/category-last.json");
+pub const API_ERROR: &str = include_str!("../../fixtures/api-error.json");
+pub const UA: &str = "SDK39-Fixture/1.0 (contact: fixture@example.invalid)";
+
+pub fn api(url: &str) -> MediaWiki {
+    MediaWiki::new(
+        reqwest::Client::builder()
+            .no_proxy()
+            .redirect(reqwest::redirect::Policy::none())
+            .retry(reqwest::retry::never())
+            .timeout(Duration::from_secs(5))
+            .build()
+            .unwrap(),
+        MediaWikiConfig {
+            user_agent: UA.into(),
+        },
+    )
+    .with_base_url(format!("{url}/w/api.php"))
+    .unwrap()
+}
+
+pub fn param(request: &Recorded, name: &str) -> Option<String> {
+    request
+        .query_pairs()
+        .into_iter()
+        .find(|(key, _)| key == name)
+        .map(|(_, value)| value)
+}
+
+// Synthetic oracle authored from the capsule and the official continuation examples.
+// Missing *any* field replays the first page. This is a controlled failure scenario,
+// not an assertion that all deployed MediaWiki versions behave identically.
+pub fn category_service(request: &Recorded) -> Reply {
+    let body = match (
+        param(request, "cmcontinue"),
+        param(request, "continue"),
+        param(request, "futureoffset"),
+    ) {
+        (Some(cm), Some(generic), Some(extra))
+            if cm == "page|café & /+|2" && generic == "-||" && extra == "7" =>
+        {
+            CATEGORY_EMPTY
+        }
+        (Some(cm), Some(generic), Some(extra))
+            if cm == "page|z|3" && generic == "||" && extra == "8" =>
+        {
+            CATEGORY_LAST
+        }
+        _ => CATEGORY_FIRST,
+    };
+    Reply::json(200, body)
+}
