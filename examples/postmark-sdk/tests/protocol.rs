@@ -161,9 +161,11 @@ async fn a_refused_connection_on_a_send_stays_an_unknown_outcome() {
     let reserved = tokio::net::TcpSocket::new_v4().unwrap();
     reserved.bind(([127, 0, 0, 1], 0).into()).unwrap();
     let origin = format!("http://{}", reserved.local_addr().unwrap());
+    // Windows retries a refused connection for about two seconds before reporting it; a shorter
+    // client timeout would turn the refusal into a timeout (native Windows CI, run 42338837366).
     let http = concord_sdk_postmark::http_client_builder()
         .no_proxy()
-        .timeout(std::time::Duration::from_secs(2))
+        .timeout(std::time::Duration::from_secs(30))
         .build()
         .unwrap();
     let api = Postmark::new(
