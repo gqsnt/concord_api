@@ -1,0 +1,73 @@
+{
+  "type": "FeatureCollection",
+  "metadata": {
+    "generated": 1388620800000,
+    "count": 3,
+    "status": 200
+  },
+  "features": [
+    {
+      "type": "Feature",
+      "id": "synthetic-a",
+      "properties": {
+        "mag": 4.5,
+        "place": "10 km west of Example, California",
+        "time": 1388538000000,
+        "updated": 1388538600000,
+        "status": "reviewed",
+        "type": "earthquake",
+        "detail": "https://fixture.invalid/detail/synthetic-a.geojson"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -122.5,
+          37.5,
+          8.25
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "id": "synthetic-b",
+      "properties": {
+        "mag": 5.1,
+        "place": "Ridge, \"North\"\nnear café",
+        "time": 1388541600000,
+        "updated": 1388542200000,
+        "status": "reviewed",
+        "type": "earthquake",
+        "detail": "https://fixture.invalid/detail/synthetic-b.geojson"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -122.5,
+          37.5,
+          8.25
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "id": "synthetic-c",
+      "properties": {
+        "mag": 4.8,
+        "place": "Example Island",
+        "time": 1388545200000,
+        "updated": 1388545800000,
+        "status": "reviewed",
+        "type": "earthquake",
+        "detail": "https://fixture.invalid/detail/synthetic-c.geojson"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -122.5,
+          37.5,
+          8.25
+        ]
+      }
+    }
+  ]
+}
