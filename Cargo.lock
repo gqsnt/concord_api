@@ -1012,6 +1012,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "concord-sdk-arxiv"
+version = "0.1.0"
+dependencies = [
+ "concord",
+ "concord-codecs",
+ "concord-example-testserver",
+ "concord-pagination",
+ "concord-ratelimit",
+ "roxmltree",
+ "tokio",
+]
+
+[[package]]
 name = "concord-sdk-clickhouse"
 version = "0.0.0"
 dependencies = [
