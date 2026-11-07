@@ -1,4 +1,4 @@
-//! The SDK's client: site and keys checked once, the two workflows named.
+//! The SDK's client: site and keys checked once, reads and posting named.
 
 use std::collections::HashSet;
 
@@ -6,11 +6,13 @@ use concord::reqwest;
 use concord_pagination::{Page, Pages, Resume};
 
 use crate::api::{
-    DatadogApi, DatadogApiConfig, DatadogApiEvents, DatadogApiEventsList, DatadogApiEventsSearch,
+    DatadogApi, DatadogApiConfig, DatadogApiEvents, DatadogApiEventsList, DatadogApiEventsPost,
+    DatadogApiEventsSearch,
 };
 use crate::credentials::Credentials;
 use crate::error::{Error, ProtocolError};
 use crate::model::{Event, EventsPage, Warning};
+use crate::post::NewEvent;
 use crate::query::{Cursor, SearchRequest, TimeRange};
 use crate::site::Site;
 
@@ -90,8 +92,9 @@ impl DatadogEvents {
     }
 
     /// The same client sending to `base` instead of the site's API host: for a proxy or a local
-    /// stand-in. `/api/v2/...` is appended to `base`'s path. Authentication errors name the
-    /// host that answered; [`site`](Self::site) keeps the configured site.
+    /// stand-in. `/api/v2/...` (reads) or `/api/v1/events` (post) is appended to `base`'s path.
+    /// Authentication errors name the host that answered; [`site`](Self::site) keeps the
+    /// configured site.
     ///
     /// # Errors
     ///
@@ -112,7 +115,7 @@ impl DatadogEvents {
         &self.api
     }
 
-    /// The generated `events` scope: `list()` and `search(..)` with every setter.
+    /// The generated `events` scope: `list()`, `search(..)` and `post(..)` with every setter.
     pub fn events(&self) -> DatadogApiEvents {
         self.api.events()
     }
@@ -128,6 +131,15 @@ impl DatadogEvents {
     /// One search page (`POST /api/v2/events/search`).
     pub fn search(&self, request: SearchRequest) -> DatadogApiEventsSearch {
         self.events().search(request)
+    }
+
+    /// Post an event to this site's v1 API with both keys. Available only to organizations
+    /// that previously used v1. Returns HTTP 202 acceptance, never search visibility.
+    /// The validated payload cannot exceed documented limits. A timeout is
+    /// [`Error::PostUncertain`]: the event may exist. Never automatically replayed, even with
+    /// a retrying HTTP client. An aggregation key groups events; it is not an idempotency key.
+    pub fn post(&self, event: NewEvent) -> DatadogApiEventsPost {
+        self.events().post(event)
     }
 
     /// Workflow 2: every page of a search, following `meta.page.after` with the same body.

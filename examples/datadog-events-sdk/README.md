@@ -1,14 +1,16 @@
 # concord-sdk-datadog-events
 
-A bounded SDK for the read side of the Datadog Events API (v2), built on
+A bounded SDK for Datadog Events reads (v2) and posting (v1), built on
 [Concord](../../README.md): list the events of a time range and inspect one, and search events
-with a filter following the documented cursor pagination, on any Datadog site.
+with a filter following the documented cursor pagination, on any Datadog site. Post a validated
+event on the same site's API host and receive the provider's acceptance.
 
 **Status.** Every request shape, response and failure is tested against a local stand-in
 server (`cargo test -p concord-sdk-datadog-events`). The real Datadog API has **never** been
 called by this crate or its tests (live calls: NOT_RUN). Sources and the derivation of every
 fixture are in [`PROVENANCE.md`](PROVENANCE.md); the costs met while building it, in
-[`FRICTION.md`](FRICTION.md).
+[`FRICTION.md`](FRICTION.md), and the independent posting change in
+[`MAINTENANCE.md`](MAINTENANCE.md).
 
 ## What the slice covers
 
@@ -16,6 +18,12 @@ fixture are in [`PROVENANCE.md`](PROVENANCE.md); the costs met while building it
 |---|---|---|
 | Get a list of events | `GET /api/v2/events` with `filter[query]`, `filter[from]`, `filter[to]`, `sort`, `page[cursor]`, `page[limit]` | workflow 1 ([`DatadogEvents::list`]) |
 | Search events | `POST /api/v2/events/search` with a JSON body (`filter`, `options`, `page`, `sort`) | workflow 2 ([`DatadogEvents::search_pages`]) |
+| Post an event | `POST /api/v1/events` with title, text, tags, alert type, aggregation key and source | [`DatadogEvents::post`] |
+
+The [posting reference](https://docs.datadoghq.com/api/latest/events/post-an-event/) (read
+**2026-11-07**) marks v1 posting as deprecated and available only to organizations that have
+previously used it. Its fields and `api.<site>` host match this SDK's contract. The current v2
+post uses a different intake host and category-specific schemas; this SDK does not implement it.
 
 - **Sites.** The host is chosen at run time from the caller's [`Site`] (`US1`, `US3`, `US5`,
   `EU`, `AP1`, `AP2`, `UK1`, `US1-FED`, `US2-FED`): `https://api.<DD_SITE>`, e.g.
@@ -23,7 +31,8 @@ fixture are in [`PROVENANCE.md`](PROVENANCE.md); the costs met while building it
   (`datadoghq.eu`).
 - **Keys.** Every request carries the API key (`DD-API-KEY`) and the application key
   (`DD-APPLICATION-KEY`): Datadog requires an application key for every read. Both are checked
-  when [`Credentials`] are built, flagged sensitive on the wire and never printed.
+  when [`Credentials`] are built, flagged sensitive on the wire and never printed. Posting uses
+  the same two-key contract, although the authentication page requires only an API key for writes.
 - **Pages.** One page is a [`EventsPage`]: its events (`data`), `links`, and `meta` (the next
   cursor `meta.page.after`, warnings, request id). Each [`Event`] exposes its id, message, tags
   and timestamp; its event-specific attributes (title, status, `evt`, monitor, ...) are raw
@@ -89,6 +98,48 @@ async fn deploys(events: &DatadogEvents) -> Result<(), Box<dyn std::error::Error
 `list` returns one page. To continue it yourself, pass `page.next_cursor()` to `set_cursor`
 with the same inputs.
 
+### Post an event: acceptance only
+
+```rust,no_run
+use concord_sdk_datadog_events::{AlertType, DatadogEvents, Error, NewEvent};
+
+async fn deployed(events: &DatadogEvents) -> Result<(), Box<dyn std::error::Error>> {
+    let event = NewEvent::new("Checkout deployed", "Version 42 is serving traffic.")?
+        .tags(["service:checkout", "env:prod"])
+        .alert_type(AlertType::Success)
+        .aggregation_key("checkout-deployments")?
+        .source("jenkins");
+    match events.post(event).send().await {
+        Ok(accepted) => {
+            // HTTP 202: accepted by Datadog. No promise that a search can see it yet.
+            if let Some(event) = accepted.event.as_ref() {
+                println!("accepted id: {:?}", event.get("id_str"));
+            }
+        }
+        Err(Error::PostUncertain { .. }) => {
+            // A timeout may follow successful ingestion. Do not blindly submit again.
+            eprintln!("The event may exist; posting was not retried.");
+        }
+        Err(error) => return Err(error.into()),
+    }
+    Ok(())
+}
+# fn main() {}
+```
+
+[`NewEvent`] requires title and text; its private fields and checked builders refuse text over
+4,000 characters and aggregation keys over 100 before a request exists. Character counts use
+Unicode scalar values, not UTF-8 bytes. [`AlertType`] admits exactly the seven documented values.
+No title/tag/source limit is documented for v1; the reference explicitly accepts a title longer
+than 100 characters. `source(..)` writes `source_type_name`; the SDK leaves source vocabulary
+to the provider. Dates, priority and other optional fields are outside this posting contract.
+
+The result is [`EventAcceptance`]: the optional provider status and raw event object, including
+`id_str` when supplied. HTTP **202** is required. No lookup, indexing poll or search follows a
+post; a v1 ID is not promised to identify a v2 search result. An aggregation key groups events
+and is **not an idempotency key**. A post is never automatically replayed: its JSON body is
+non-replayable even with a caller-supplied reqwest retry policy.
+
 ### Workflow 2: a search, every page
 
 ```rust,no_run
@@ -134,12 +185,14 @@ return `concord::Error` (re-exported as [`concord`]).
 | What happened | Error | Was anything sent? |
 |---|---|---|
 | API key or application key empty, or not sendable as a header | [`AuthError::MissingApiKey`], [`AuthError::MissingApplicationKey`], [`AuthError::MalformedKey`] (from [`Credentials::new`]; `Error::Authentication` after `?`) | no |
+| Post text over 4,000 characters or aggregation key over 100 | [`InputError::EventTextTooLong`] / [`InputError::AggregationKeyTooLong`] from [`NewEvent`] | no |
 | 401 or 403: wrong or revoked keys, keys of **another site** (wrong region), missing `events_read` permission | `Error::Authentication(AuthError::Rejected)`, naming the API host that answered and its site | yes |
 | 400 Bad Request | `Error::BadRequest` | yes |
 | 429 Too many requests | `Error::RateLimited` (the head is kept for its rate headers; nothing is retried) | yes |
 | any other non-2xx, including a 3xx when the transport does not follow redirects (as [`DatadogEvents::http_client`]) | `Error::Provider` | yes |
-| 2xx not labelled JSON, malformed or truncated JSON, a body over 8 MiB, a connection dropped mid-body | `Error::Concord` with kind `Metadata`, `Decode`, `Limit` or `Transport`, and the response head | yes |
-| no answer at all | `Error::Concord`, kind `Transport`, no head | unknown |
+| Read: 2xx not labelled JSON, malformed or truncated JSON, a body over 8 MiB, a connection dropped mid-body | `Error::Concord` with kind `Metadata`, `Decode`, `Limit` or `Transport`, and the response head | yes |
+| Read: no answer at all | `Error::Concord`, kind `Transport`, no head | unknown |
+| Post: timeout, connection loss, unusable 202 body or unexpected 2xx | `Error::PostUncertain`; event may exist, never retried; head and safe Concord source kept when available | unknown without a head; a 202 head records HTTP acceptance |
 | a search page whose `meta.page.after` is empty, or a cursor this traversal already requested | `Error::Protocol` (the traversal ends instead of restarting or looping) | yes |
 
 For every non-2xx status the status decides the class, even when the error document
@@ -147,6 +200,12 @@ For every non-2xx status the status decides the class, even when the error docum
 [`ProviderError::document`] says which. Datadog cannot tell a wrong region from a wrong key:
 both are a 403, so the authentication error names the host (and site) that refused and asks
 to check the site and both keys.
+
+The generated `.send()` applies these rules. `prepare()` exposes Concord's lower-level
+request: sending it directly bypasses the SDK's status/error policy, though the post body still
+cannot be automatically replayed. Local preparation failures stay `Error::Concord`, never
+`PostUncertain`. Every provider error, including a 429 or 5xx on a post, is returned without
+automatic retry; a 5xx is not proof that no write happened.
 
 **Secrets.** No `Display` or `Debug` of this crate (client, credentials, prepared request,
 errors) contains either key. Provider error messages are untrusted text and are not printed
@@ -166,7 +225,7 @@ documented boundary: header values Concord flagged sensitive show as `Sensitive`
   keys.
 - **Excluded from the slice:** metric submission, monitor lifecycle and all event schemas (the
   event-specific attributes stay raw JSON).
-- **Not covered either:** posting events, the v1 events API, and any other Datadog API.
+- **Not covered either:** v2 event intake, other v1 operations, and any other Datadog API.
 
 ## Testing
 
@@ -177,6 +236,9 @@ cargo test --locked -p concord-sdk-datadog-events
 `tests/protocol.rs` checks wire shapes (hosts per site, query keys, both key headers, the
 documented search bodies), every documented status and its error body, unusable bodies and
 redaction; `tests/workflows.rs` runs both workflows end to end and the required failure
-(wrong-region keys, missing application key). The stand-in is
+(wrong-region keys, missing application key). `tests/first_use.rs` is the unchanged original
+consumer. `tests/post.rs` checks posting limits, the documented examples, site hosts, both keys,
+redacted failures, HTTP 202, timeout uncertainty and no replay even with a retrying transport;
+`tests/post_consumer.rs` exercises the new caller contract. The stand-in is
 [`concord-example-testserver`](../testserver), a loopback HTTP/1.1 server; no TLS, HTTP/2 or
 real Datadog behaviour is exercised.

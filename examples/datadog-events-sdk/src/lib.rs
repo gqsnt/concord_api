@@ -5,12 +5,13 @@ mod client;
 mod credentials;
 mod error;
 mod model;
+mod post;
 mod query;
 mod site;
 
 pub use api::{
     DD_API_KEY, DD_APPLICATION_KEY, DatadogApi, DatadogApiConfig, DatadogApiEvents,
-    DatadogApiEventsList, DatadogApiEventsSearch, SendPolicy,
+    DatadogApiEventsList, DatadogApiEventsPost, DatadogApiEventsSearch, SendPolicy,
 };
 pub use client::{DatadogEvents, PageInfo, SearchPages};
 pub use credentials::Credentials;
@@ -18,6 +19,7 @@ pub use error::{
     AuthError, Error, ErrorBodyError, ErrorDocument, Key, ProtocolError, ProviderError, Rejected,
 };
 pub use model::{Event, EventAttributes, EventsMeta, EventsPage, Links, PageMeta, Warning};
+pub use post::{AlertType, EventAcceptance, NewEvent};
 pub use query::{Cursor, InputError, PageLimit, SearchRequest, Sort, TimeRange};
 pub use site::{Site, UnknownSite};
 

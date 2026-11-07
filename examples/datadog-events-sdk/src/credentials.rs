@@ -1,4 +1,4 @@
-//! The two Datadog keys a read request carries.
+//! The two Datadog keys every SDK request carries.
 
 use std::fmt;
 
@@ -8,8 +8,8 @@ use crate::error::{AuthError, Key};
 
 /// An API key and an application key, checked before any request exists.
 ///
-/// Datadog requires an API key for every request and, for requests that read data (every
-/// operation of this SDK), an application key as well. Both are site-specific. They are sent
+/// Datadog requires an API key for every request and an application key for reads. This SDK
+/// deliberately uses the same pair for posting as for reads. Both are site-specific. They are sent
 /// in their own headers (`DD-API-KEY`, `DD-APPLICATION-KEY`), flagged sensitive, and never
 /// printed: `Debug` shows `<redacted>` for each, and no error of this crate contains either.
 ///

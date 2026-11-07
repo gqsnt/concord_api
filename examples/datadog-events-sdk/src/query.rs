@@ -276,6 +276,10 @@ pub enum InputError {
     InvertedRange,
     /// A page size of 0 or above `i32::MAX`.
     PageLimit,
+    /// Event text exceeds the v1 limit of 4,000 characters.
+    EventTextTooLong,
+    /// Event aggregation key exceeds the v1 limit of 100 characters.
+    AggregationKeyTooLong,
 }
 
 impl fmt::Display for InputError {
@@ -283,6 +287,10 @@ impl fmt::Display for InputError {
         f.write_str(match self {
             InputError::InvertedRange => "the time range's lower bound is after its upper bound",
             InputError::PageLimit => "the page limit must be between 1 and 2147483647",
+            InputError::EventTextTooLong => "event text must not exceed 4000 characters",
+            InputError::AggregationKeyTooLong => {
+                "event aggregation key must not exceed 100 characters"
+            }
         })
     }
 }

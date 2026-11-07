@@ -6,11 +6,45 @@ documentation's claim or an authored assumption, tested only against a local sta
 
 ## Documentation read
 
-All three pages were read on **2026-11-07** (downloaded 06:29–06:30 UTC with `curl`, then read
+For the original read-only implementation, all three pages were read on **2026-11-07** (downloaded 06:29–06:30 UTC with `curl`, then read
 as text; each page also offers a Markdown rendering at the same URL with `.md`, which was read
 too: its tables, parameters and examples are the ones the HTML shows). Nothing else of Datadog's documentation was read: links from
 these pages (key management, the logs pagination guide, the "Validate API key" page, scopes)
 were not followed.
+
+### Independent posting maintenance (2026-11-07)
+
+The maintainer re-read the authentication, list and search pages above on **2026-11-07**
+and read the [Events reference](https://docs.datadoghq.com/api/latest/events/) and its
+[Post an event page](https://docs.datadoghq.com/api/latest/events/post-an-event/) on the same
+date. The Events reference now links to a separate posting page; its HTML and same-page
+`.md` rendering were downloaded with `curl` and the v1 model, examples and response were read.
+The web reader rejected the four supplied URLs as unsupported content; no API was called.
+
+| Provider fact | Implementation / decision |
+|---|---|
+| v1 `POST https://api.<site>/api/v1/events` accepts `title`, `text`, `tags`, `alert_type`, `aggregation_key`, `source_type_name` | `src/api.rs` keeps the same site host and scope; `NewEvent::source` writes `source_type_name`. Other optional request fields are omitted. |
+| v1 text is limited to 4,000 characters; aggregation key to 100 | `NewEvent` validates both before any request exists. The docs do not specify how Unicode characters are counted; Unicode scalar values are the SDK's explicit interpretation, exercised at and above each limit with multibyte strings. |
+| v1 alert types: `error`, `warning`, `info`, `success`, `user_update`, `recommendation`, `snapshot` | Closed `AlertType` enum. No arbitrary string setter or unchecked request deserializer. |
+| v1 title has no stated limit and the second request example has 100+ characters; v1 tags/source have no stated limits | No invented length cap or v2 limits. Source vocabulary remains a provider responsibility; its linked vocabulary page was not read. |
+| v1 returns HTTP 202 with optional `status` and `event`; its schema describes numeric IDs and `id_str` to avoid precision loss | `EventAcceptance` preserves status and the opaque event object. Only 202 is acceptance; the SDK makes no claim about indexing or search visibility and sends no follow-up. The reference's `"integer"` placeholders decode unchanged because event schemas remain raw JSON. |
+| v1 aggregation keys group events in the Event Stream | This is not a documented idempotency guarantee; an uncertain submission cannot safely be retried merely because it has the same aggregation key. |
+| v1 is deprecated and only available to organizations that previously used it; v2 uses `event-management-intake.<site>` and category-specific attributes | The ticket's fields and same-host rule select v1. README and public API docs disclose this limitation. v2 intake is excluded; no claim of availability for new organizations. |
+| Authentication reference requires an API key for writes and an application key for reads | Posting deliberately retains both keys, as required by this maintenance ticket. This is an SDK contract, not a claim that the provider requires both for writes. |
+
+Timeout uncertainty is an SDK rule requested by the ticket: a transport timeout does not prove
+that ingestion failed. `Error::PostUncertain` preserves the safe error and any response head;
+missing heads, unusable 202 bodies and unexpected 2xx are conservatively uncertain. Non-2xx
+classification remains shared with the reads. No automatic retry is performed. A provider
+5xx is returned as a provider error and is not proof that a write did not happen.
+
+No new crate or feature was added. `PostJson` delegates encoding to Concord's `Json` and wraps
+the resulting body using reqwest's existing `Body::wrap` to prevent replay. This choice was
+checked against the installed **reqwest 0.13.4** source (`async_impl/body.rs`, `retry.rs`) and
+**http-body 1.0.1** source (`src/lib.rs`): wrapped bodies are not cloneable for retries.
+Regression tests also supply an always-retry policy, including timeout and 429/503 cases,
+and assert exactly one recorded request. The tests exercise loopback HTTP/1.1; TLS, HTTP/2,
+provider ingestion, regional enforcement and real search consistency remain **NOT_RUN**.
 
 | Page | Used for |
 |---|---|
@@ -62,10 +96,20 @@ schema; their values (ids, cursors, messages, hosts) are invented.
 | `search-page-3.synthetic.json` | synthetic: one event, `meta` without `page` (the last page) | workflow 2 |
 | `search-page-empty-cursor.synthetic.json` | synthetic: no events, `after = ""` | `an_empty_cursor_ends_the_traversal_as_a_protocol_error` |
 | `error-403-forbidden.synthetic.json` | synthetic: `{"errors": ["Forbidden"]}` (see the table above) | the wrong-region and unknown-application-key stand-in |
+| `post-request.doc.json` | first v1 request example from *Post an event*, verbatim | `post.rs`: documented wire request |
+| `post-long-title.doc.json` | v1 long-title request example from *Post an event*, verbatim | `post.rs`: title longer than 100 characters stays supported |
+| `post-202.doc.json` | v1 HTTP 202 example from *Post an event*, verbatim, including `"integer"` placeholders | `post.rs`: acceptance envelope and unusable-response fixtures |
 
 Bodies built inside the tests (truncated, oversized, mislabelled, a document echoing both keys)
 are synthetic and described where they are built. The keys in the tests are synthetic strings
 (`synthetic-...`), never real credentials.
+
+Posting fixtures authored in `tests/post.rs` and `tests/post_consumer.rs` are synthetic:
+the latter returns `status: ok`, an ID above JavaScript's exact-integer range and an EU web URL;
+these are test values, not captured responses or a guarantee of provider status text. Local
+401/403 errors deliberately reflect synthetic keys. Gates and stalled bodies simulate timeouts
+after receipt, before or after HTTP 202; unexpected statuses, oversized/malformed bodies and
+connection loss test uncertainty. No returned web URL is followed.
 
 ## Dependencies
 

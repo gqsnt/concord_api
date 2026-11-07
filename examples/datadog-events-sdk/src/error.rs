@@ -176,7 +176,7 @@ impl Rejected {
 pub enum AuthError {
     /// The API key is empty. Nothing was sent.
     MissingApiKey,
-    /// The application key is empty: reads require it. Nothing was sent.
+    /// The application key is empty: every SDK operation requires it. Nothing was sent.
     MissingApplicationKey,
     /// A key holds bytes an HTTP header cannot carry. Nothing was sent.
     MalformedKey(Key),
@@ -287,6 +287,15 @@ pub enum Error {
     Provider(Box<ProviderError>),
     /// A 2xx page broke the pagination contract.
     Protocol(ProtocolError),
+    /// A post may have reached Datadog, but its documented acceptance could not be read.
+    /// The event may exist. No automatic retry was made; an aggregation key cannot deduplicate
+    /// a retry. A 202 head, when present, records HTTP acceptance despite a body failure.
+    PostUncertain {
+        /// Transport or acceptance-body failure, if any. `None` for an unexpected 2xx status.
+        source: Option<concord::Error>,
+        /// The response head, if one arrived (including an unexpected 2xx).
+        meta: Option<Box<ResponseMeta>>,
+    },
     /// Build, transport, response media type, size limit or success-body decoding: Concord's
     /// error, with the response head when one arrived.
     Concord {
@@ -298,6 +307,19 @@ pub enum Error {
 }
 
 impl Error {
+    pub(crate) fn post_uncertain(source: concord::Error) -> Self {
+        let meta = source.head_meta().map(Box::new);
+        Self::PostUncertain {
+            source: Some(source),
+            meta,
+        }
+    }
+
+    /// Whether a post's outcome is uncertain: it may exist and must not be blindly resent.
+    pub fn is_post_uncertain(&self) -> bool {
+        matches!(self, Self::PostUncertain { .. })
+    }
+
     /// Whether this is an authentication failure (local or a 401/403).
     pub fn is_authentication(&self) -> bool {
         matches!(self, Error::Authentication(_))
@@ -315,7 +337,7 @@ impl Error {
             Error::BadRequest(provider)
             | Error::RateLimited(provider)
             | Error::Provider(provider) => Some(&provider.meta),
-            Error::Concord { meta, .. } => meta.as_deref(),
+            Error::Concord { meta, .. } | Error::PostUncertain { meta, .. } => meta.as_deref(),
             _ => None,
         }
     }
@@ -335,6 +357,10 @@ impl Error {
     pub fn operation(&self) -> Option<Operation> {
         match self {
             Error::Concord { source, .. } => source.operation(),
+            Error::PostUncertain { source, meta } => source
+                .as_ref()
+                .and_then(concord::Error::operation)
+                .or_else(|| meta.as_deref().and_then(ResponseMeta::operation)),
             other => other.meta().and_then(ResponseMeta::operation),
         }
     }
@@ -362,6 +388,17 @@ impl fmt::Display for Error {
             Error::Provider(provider) => write!(f, "Datadog answered {provider}"),
             Error::Protocol(error) => write!(f, "Datadog pagination contract broken: {error}"),
             Error::Concord { source, .. } => fmt::Display::fmt(source, f),
+            Error::PostUncertain { source, meta } => {
+                f.write_str(
+                    "Datadog event post outcome uncertain: the event may exist; it was not retried",
+                )?;
+                if let Some(source) = source {
+                    write!(f, ": {source}")?;
+                } else if let Some(meta) = meta {
+                    write!(f, ": unexpected HTTP {} (expected 202)", meta.status())?;
+                }
+                Ok(())
+            }
         }
     }
 }
@@ -375,6 +412,7 @@ impl std::error::Error for Error {
             | Error::Provider(provider) => Some(provider.as_ref()),
             Error::Protocol(error) => Some(error),
             Error::Concord { source, .. } => Some(source),
+            Error::PostUncertain { source, .. } => source.as_ref().map(|source| source as _),
         }
     }
 }
