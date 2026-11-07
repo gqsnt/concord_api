@@ -1,0 +1,850 @@
+{
+ "sdk": "stripe-sdk",
+ "short": "stripe",
+ "pkg": "concord-example-stripe-sdk",
+ "repo_head": "984bd2f6a981dd85e8b104c21daae06421a7a48a",
+ "truth_format": 3,
+ "aliases": [
+  "type Metadata = BTreeMap<String, String>",
+  "type StripeItems<T> = PageItems<T, Cursor<<T as Object>::Id>, Error>",
+  "type StripePage<T> = Page<T, Cursor<<T as Object>::Id>, ResponseMeta>",
+  "type StripePages<T> = Pages<T, Cursor<<T as Object>::Id>, ResponseMeta, Error>",
+  "AccountId = sdk::AccountId (imported: crate::ids::AccountId)",
+  "Arc = std::sync::Arc (imported: std::sync::Arc)",
+  "BTreeMap = std::collections::BTreeMap (imported: std::collections::BTreeMap)",
+  "BalanceTransactionId = sdk::BalanceTransactionId (imported: ids::BalanceTransactionId)",
+  "Bytes = bytes::Bytes (imported: concord::bytes::Bytes)",
+  "CodecError = concord::CodecError (imported: concord::CodecError)",
+  "CustomerId = sdk::CustomerId (imported: ids::CustomerId)",
+  "Decode = concord::Decode (imported: concord::Decode)",
+  "DefaultHasher = std::hash::DefaultHasher (imported: std::hash::DefaultHasher)",
+  "Deserialize = serde::Deserialize (imported: serde::Deserialize)",
+  "Deserializer = serde::Deserializer (imported: serde::Deserializer)",
+  "Encode = concord::Encode (imported: concord::Encode)",
+  "ErrorKind = concord::ErrorKind (imported: concord::ErrorKind)",
+  "FromStr = std::str::FromStr (imported: std::str::FromStr)",
+  "Future = std::future::Future (imported: std::future::Future)",
+  "Hash = std::hash::Hash (imported: std::hash::Hash)",
+  "Hasher = std::hash::Hasher (imported: std::hash::Hasher)",
+  "HeaderValue = reqwest::header::HeaderValue (imported: concord::reqwest::header::HeaderValue)",
+  "IgnoreContentType = concord::IgnoreContentType (imported: concord::IgnoreContentType)",
+  "Impossible = serde::ser::Impossible (imported: serde::ser::Impossible)",
+  "InvoiceId = sdk::InvoiceId (imported: ids::InvoiceId)",
+  "InvoiceLineItemId = sdk::InvoiceLineItemId (imported: ids::InvoiceLineItemId)",
+  "Json = concord::Json (imported: concord::Json)",
+  "MapAccess = serde::de::MapAccess (imported: serde::de::MapAccess)",
+  "Operation = concord::Operation (imported: concord::Operation)",
+  "Page = concord_pagination::Page (imported: concord_pagination::Page)",
+  "PageItems = concord_pagination::PageItems (imported: concord_pagination::PageItems)",
+  "Pages = concord_pagination::Pages (imported: concord_pagination::Pages)",
+  "PaymentMethodId = sdk::PaymentMethodId (imported: ids::PaymentMethodId)",
+  "PhantomData = std::marker::PhantomData (imported: std::marker::PhantomData)",
+  "Prepared = concord::Prepared (imported: concord::Prepared)",
+  "PriceId = sdk::PriceId (imported: ids::PriceId)",
+  "ProductId = sdk::ProductId (imported: ids::ProductId)",
+  "Received = concord::Received (imported: concord::Received)",
+  "ResponseHead = concord::ResponseHead (imported: concord::ResponseHead)",
+  "Resume = concord_pagination::Resume (imported: concord_pagination::Resume)",
+  "Serialize = serde::ser::Serialize (imported: serde::ser::Serialize)",
+  "Serializer = serde::ser::Serializer (imported: serde::ser::Serializer)",
+  "StatusCode = reqwest::StatusCode (imported: concord::reqwest::StatusCode)",
+  "Stripe = sdk::Stripe (imported: crate::Stripe)",
+  "StripeBalanceTransactionsList = sdk::StripeBalanceTransactionsList (imported: crate::StripeBalanceTransactionsList)",
+  "StripeBalanceTransactionsRetrieve = sdk::StripeBalanceTransactionsRetrieve (imported: crate::StripeBalanceTransactionsRetrieve)",
+  "StripeConfig = sdk::StripeConfig (imported: crate::StripeConfig)",
+  "StripeCustomersCreate = sdk::StripeCustomersCreate (imported: crate::StripeCustomersCreate)",
+  "StripeCustomersList = sdk::StripeCustomersList (imported: crate::StripeCustomersList)",
+  "StripeCustomersRetrieve = sdk::StripeCustomersRetrieve (imported: crate::StripeCustomersRetrieve)",
+  "StripeCustomersUpdate = sdk::StripeCustomersUpdate (imported: crate::StripeCustomersUpdate)",
+  "StripeInvoicesLines = sdk::StripeInvoicesLines (imported: crate::StripeInvoicesLines)",
+  "StripeInvoicesList = sdk::StripeInvoicesList (imported: crate::StripeInvoicesList)",
+  "StripeInvoicesRetrieve = sdk::StripeInvoicesRetrieve (imported: crate::StripeInvoicesRetrieve)",
+  "StripePricesCreate = sdk::StripePricesCreate (imported: crate::StripePricesCreate)",
+  "StripePricesList = sdk::StripePricesList (imported: crate::StripePricesList)",
+  "StripePricesRetrieve = sdk::StripePricesRetrieve (imported: crate::StripePricesRetrieve)",
+  "StripeProductsCreate = sdk::StripeProductsCreate (imported: crate::StripeProductsCreate)",
+  "StripeProductsList = sdk::StripeProductsList (imported: crate::StripeProductsList)",
+  "StripeProductsRetrieve = sdk::StripeProductsRetrieve (imported: crate::StripeProductsRetrieve)",
+  "StripeSubscriptionsCreate = sdk::StripeSubscriptionsCreate (imported: crate::StripeSubscriptionsCreate)",
+  "StripeSubscriptionsList = sdk::StripeSubscriptionsList (imported: crate::StripeSubscriptionsList)",
+  "StripeSubscriptionsRetrieve = sdk::StripeSubscriptionsRetrieve (imported: crate::StripeSubscriptionsRetrieve)",
+  "StripeSubscriptionsUpdate = sdk::StripeSubscriptionsUpdate (imported: crate::StripeSubscriptionsUpdate)",
+  "SubscriptionId = sdk::SubscriptionId (imported: ids::SubscriptionId)",
+  "SubscriptionItemId = sdk::SubscriptionItemId (imported: ids::SubscriptionItemId)",
+  "TaxRateId = sdk::TaxRateId (imported: ids::TaxRateId)",
+  "Url = reqwest::Url (imported: concord::reqwest::Url)",
+  "Visitor = serde::de::Visitor (imported: serde::de::Visitor)"
+ ],
+ "items": {
+  "stripe/w1": {
+   "method": "GET",
+   "url": "https://api.stripe.com/v1/balance_transactions?type=juniper",
+   "headers": [
+    [
+     "authorization",
+     "<secret>"
+    ],
+    [
+     "stripe-version",
+     "2026-10-28.endive"
+    ],
+    [
+     "stripe-account",
+     "<secret>"
+    ],
+    [
+     "accept",
+     "application/json"
+    ]
+   ],
+   "secret_headers": [
+    "authorization",
+    "stripe-account"
+   ],
+   "body": null,
+   "body_kind": null,
+   "content_type": null,
+   "accept": "application/json",
+   "boundary": "prepared",
+   "kind": "wire"
+  },
+  "stripe/r1": {
+   "r2": {
+    "resolvable": true,
+    "send_returns": "Result<List<BalanceTransaction>, concord::Error>",
+    "error_type": "concord::Error",
+    "how": "no send policy",
+    "verified": true,
+    "decl_module": "crate",
+    "send_returns_canon": "Result<sdk::expandable::List<sdk::models::BalanceTransaction>, concord::Error>",
+    "error_type_canon": "concord::Error"
+   },
+   "base_url": {
+    "keep": "/v1",
+    "expected_url": "https://staging.example.test/v1/balance_transactions?type=juniper",
+    "results": {
+     "https://staging.example.test": "https://staging.example.test/balance_transactions?type=juniper",
+     "https://staging.example.test/": "https://staging.example.test/balance_transactions?type=juniper",
+     "https://staging.example.test/v1": "https://staging.example.test/v1/balance_transactions?type=juniper",
+     "https://staging.example.test/v1/": "https://staging.example.test/v1/balance_transactions?type=juniper"
+    },
+    "keeps": [
+     "https://staging.example.test/v1",
+     "https://staging.example.test/v1/"
+    ]
+   },
+   "boundary": "prepared",
+   "kind": "result"
+  },
+  "stripe/c1": {
+   "reference": "api.set_account(reqwest::header::HeaderValue::from_static(\"CANARYSTRIPE271Z\")).balance_transactions().list().set_kind(\"juniper\").send().await",
+   "reference_compiles": true,
+   "client": "Stripe",
+   "binding": {
+    "type": "Result<List<BalanceTransaction>, concord::Error>",
+    "result": "is_ok"
+   },
+   "boundary": "prepared",
+   "base_path": "/v1",
+   "recorded": [
+    {
+     "method": "GET",
+     "target": "/v1/balance_transactions?type=juniper",
+     "headers": [
+      [
+       "authorization",
+       "<secret>"
+      ],
+      [
+       "stripe-version",
+       "2026-10-28.endive"
+      ],
+      [
+       "stripe-account",
+       "<secret>"
+      ],
+      [
+       "accept",
+       "application/json"
+      ]
+     ],
+     "body": ""
+    }
+   ],
+   "recorded_again": [
+    {
+     "method": "GET",
+     "target": "/v1/balance_transactions?type=juniper",
+     "headers": [
+      [
+       "authorization",
+       "<secret>"
+      ],
+      [
+       "stripe-version",
+       "2026-10-28.endive"
+      ],
+      [
+       "stripe-account",
+       "<secret>"
+      ],
+      [
+       "accept",
+       "application/json"
+      ]
+     ],
+     "body": ""
+    }
+   ],
+   "volatile": {
+    "sequence_differs": false,
+    "headers": [],
+    "bodies": []
+   },
+   "fixture": {
+    "name": "constructed:List<BalanceTransaction>#false",
+    "content_type": "application/json",
+    "path": null,
+    "body": "{\"object\":\"list\",\"data\":[],\"has_more\":false,\"url\":\"x\",\"total_count\":null}"
+   },
+   "fixture_tries_failed": 0,
+   "reference_outcome": null,
+   "result_checked": true,
+   "check_available": true,
+   "kind": "call"
+  },
+  "stripe/w2": {
+   "method": "POST",
+   "url": "https://api.stripe.com/v1/customers",
+   "headers": [
+    [
+     "authorization",
+     "<secret>"
+    ],
+    [
+     "stripe-version",
+     "2026-10-28.endive"
+    ],
+    [
+     "stripe-account",
+     "<secret>"
+    ],
+    [
+     "content-type",
+     "application/x-www-form-urlencoded"
+    ],
+    [
+     "accept",
+     "application/json"
+    ]
+   ],
+   "secret_headers": [
+    "authorization",
+    "stripe-account"
+   ],
+   "body": "",
+   "body_kind": "text",
+   "content_type": "application/x-www-form-urlencoded",
+   "accept": "application/json",
+   "boundary": "prepared",
+   "kind": "wire"
+  },
+  "stripe/r2": {
+   "r2": {
+    "resolvable": true,
+    "send_returns": "Result<Customer, concord::Error>",
+    "error_type": "concord::Error",
+    "how": "no send policy",
+    "verified": true,
+    "decl_module": "crate",
+    "send_returns_canon": "Result<sdk::models::Customer, concord::Error>",
+    "error_type_canon": "concord::Error"
+   },
+   "base_url": null,
+   "boundary": "prepared",
+   "kind": "result"
+  },
+  "stripe/c2": {
+   "reference": "api.set_account(reqwest::header::HeaderValue::from_static(\"CANARYSTRIPE121Z\")).customers().create(CustomerCreate::default()).send().await",
+   "reference_compiles": true,
+   "client": "Stripe",
+   "binding": {
+    "type": "Result<Customer, concord::Error>",
+    "result": "is_ok"
+   },
+   "boundary": "prepared",
+   "base_path": "/v1",
+   "recorded": [
+    {
+     "method": "POST",
+     "target": "/v1/customers",
+     "headers": [
+      [
+       "authorization",
+       "<secret>"
+      ],
+      [
+       "stripe-version",
+       "2026-10-28.endive"
+      ],
+      [
+       "stripe-account",
+       "<secret>"
+      ],
+      [
+       "content-type",
+       "application/x-www-form-urlencoded"
+      ],
+      [
+       "accept",
+       "application/json"
+      ]
+     ],
+     "body": ""
+    }
+   ],
+   "recorded_again": [
+    {
+     "method": "POST",
+     "target": "/v1/customers",
+     "headers": [
+      [
+       "authorization",
+       "<secret>"
+      ],
+      [
+       "stripe-version",
+       "2026-10-28.endive"
+      ],
+      [
+       "stripe-account",
+       "<secret>"
+      ],
+      [
+       "content-type",
+       "application/x-www-form-urlencoded"
+      ],
+      [
+       "accept",
+       "application/json"
+      ]
+     ],
+     "body": ""
+    }
+   ],
+   "volatile": {
+    "sequence_differs": false,
+    "headers": [],
+    "bodies": []
+   },
+   "fixture": {
+    "name": "constructed:Customer#false",
+    "content_type": "application/json",
+    "path": null,
+    "body": "{\"id\":\"x\",\"email\":null,\"name\":null,\"description\":null,\"phone\":null,\"address\":null,\"balance\":1,\"currency\":null,\"created\":1,\"preferred_locales\":[],\"invoice_settings\":{\"default_payment_method\":null},\"metadata\":{},\"livemode\":false}"
+   },
+   "fixture_tries_failed": 0,
+   "reference_outcome": null,
+   "result_checked": true,
+   "check_available": true,
+   "kind": "call"
+  },
+  "stripe/w3": {
+   "method": "GET",
+   "url": "https://api.stripe.com/v1/subscriptions",
+   "headers": [
+    [
+     "authorization",
+     "<secret>"
+    ],
+    [
+     "stripe-version",
+     "2026-10-28.endive"
+    ],
+    [
+     "stripe-account",
+     "<secret>"
+    ],
+    [
+     "accept",
+     "application/json"
+    ]
+   ],
+   "secret_headers": [
+    "authorization",
+    "stripe-account"
+   ],
+   "body": null,
+   "body_kind": null,
+   "content_type": null,
+   "accept": "application/json",
+   "boundary": "prepared",
+   "kind": "wire"
+  },
+  "stripe/r3": {
+   "r2": {
+    "resolvable": true,
+    "send_returns": "Result<List<Subscription>, concord::Error>",
+    "error_type": "concord::Error",
+    "how": "no send policy",
+    "verified": true,
+    "decl_module": "crate",
+    "send_returns_canon": "Result<sdk::expandable::List<sdk::models::Subscription>, concord::Error>",
+    "error_type_canon": "concord::Error"
+   },
+   "base_url": null,
+   "boundary": "prepared",
+   "kind": "result"
+  },
+  "stripe/c3": {
+   "reference": "api.set_account(reqwest::header::HeaderValue::from_static(\"CANARYSTRIPE141Z\")).subscriptions().list().send().await",
+   "reference_compiles": true,
+   "client": "Stripe",
+   "binding": {
+    "type": "Result<List<Subscription>, concord::Error>",
+    "result": "is_ok"
+   },
+   "boundary": "prepared",
+   "base_path": "/v1",
+   "recorded": [
+    {
+     "method": "GET",
+     "target": "/v1/subscriptions",
+     "headers": [
+      [
+       "authorization",
+       "<secret>"
+      ],
+      [
+       "stripe-version",
+       "2026-10-28.endive"
+      ],
+      [
+       "stripe-account",
+       "<secret>"
+      ],
+      [
+       "accept",
+       "application/json"
+      ]
+     ],
+     "body": ""
+    }
+   ],
+   "recorded_again": [
+    {
+     "method": "GET",
+     "target": "/v1/subscriptions",
+     "headers": [
+      [
+       "authorization",
+       "<secret>"
+      ],
+      [
+       "stripe-version",
+       "2026-10-28.endive"
+      ],
+      [
+       "stripe-account",
+       "<secret>"
+      ],
+      [
+       "accept",
+       "application/json"
+      ]
+     ],
+     "body": ""
+    }
+   ],
+   "volatile": {
+    "sequence_differs": false,
+    "headers": [],
+    "bodies": []
+   },
+   "fixture": {
+    "name": "constructed:List<Subscription>#false",
+    "content_type": "application/json",
+    "path": null,
+    "body": "{\"object\":\"list\",\"data\":[],\"has_more\":false,\"url\":\"x\",\"total_count\":null}"
+   },
+   "fixture_tries_failed": 0,
+   "reference_outcome": null,
+   "result_checked": true,
+   "check_available": true,
+   "kind": "call"
+  },
+  "stripe/w4": {
+   "method": "GET",
+   "url": "https://api.stripe.com/v1/products",
+   "headers": [
+    [
+     "authorization",
+     "<secret>"
+    ],
+    [
+     "stripe-version",
+     "2026-10-28.endive"
+    ],
+    [
+     "stripe-account",
+     "<secret>"
+    ],
+    [
+     "accept",
+     "application/json"
+    ]
+   ],
+   "secret_headers": [
+    "authorization",
+    "stripe-account"
+   ],
+   "body": null,
+   "body_kind": null,
+   "content_type": null,
+   "accept": "application/json",
+   "boundary": "prepared",
+   "kind": "wire"
+  },
+  "stripe/r4": {
+   "r2": {
+    "resolvable": true,
+    "send_returns": "Result<List<Product>, concord::Error>",
+    "error_type": "concord::Error",
+    "how": "no send policy",
+    "verified": true,
+    "decl_module": "crate",
+    "send_returns_canon": "Result<sdk::expandable::List<sdk::models::Product>, concord::Error>",
+    "error_type_canon": "concord::Error"
+   },
+   "base_url": null,
+   "boundary": "prepared",
+   "kind": "result"
+  },
+  "stripe/c4": {
+   "reference": "api.set_account(reqwest::header::HeaderValue::from_static(\"CANARYSTRIPE211Z\")).products().list().send().await",
+   "reference_compiles": true,
+   "client": "Stripe",
+   "binding": {
+    "type": "Result<List<Product>, concord::Error>",
+    "result": "is_ok"
+   },
+   "boundary": "prepared",
+   "base_path": "/v1",
+   "recorded": [
+    {
+     "method": "GET",
+     "target": "/v1/products",
+     "headers": [
+      [
+       "authorization",
+       "<secret>"
+      ],
+      [
+       "stripe-version",
+       "2026-10-28.endive"
+      ],
+      [
+       "stripe-account",
+       "<secret>"
+      ],
+      [
+       "accept",
+       "application/json"
+      ]
+     ],
+     "body": ""
+    }
+   ],
+   "recorded_again": [
+    {
+     "method": "GET",
+     "target": "/v1/products",
+     "headers": [
+      [
+       "authorization",
+       "<secret>"
+      ],
+      [
+       "stripe-version",
+       "2026-10-28.endive"
+      ],
+      [
+       "stripe-account",
+       "<secret>"
+      ],
+      [
+       "accept",
+       "application/json"
+      ]
+     ],
+     "body": ""
+    }
+   ],
+   "volatile": {
+    "sequence_differs": false,
+    "headers": [],
+    "bodies": []
+   },
+   "fixture": {
+    "name": "constructed:List<Product>#false",
+    "content_type": "application/json",
+    "path": null,
+    "body": "{\"object\":\"list\",\"data\":[],\"has_more\":false,\"url\":\"x\",\"total_count\":null}"
+   },
+   "fixture_tries_failed": 0,
+   "reference_outcome": null,
+   "result_checked": true,
+   "check_available": true,
+   "kind": "call"
+  },
+  "stripe/w5": {
+   "method": "GET",
+   "url": "https://api.stripe.com/v1/invoices",
+   "headers": [
+    [
+     "authorization",
+     "<secret>"
+    ],
+    [
+     "stripe-version",
+     "2026-10-28.endive"
+    ],
+    [
+     "stripe-account",
+     "<secret>"
+    ],
+    [
+     "accept",
+     "application/json"
+    ]
+   ],
+   "secret_headers": [
+    "authorization",
+    "stripe-account"
+   ],
+   "body": null,
+   "body_kind": null,
+   "content_type": null,
+   "accept": "application/json",
+   "boundary": "prepared",
+   "kind": "wire"
+  },
+  "stripe/r5": {
+   "r2": {
+    "resolvable": true,
+    "send_returns": "Result<List<Invoice>, concord::Error>",
+    "error_type": "concord::Error",
+    "how": "no send policy",
+    "verified": true,
+    "decl_module": "crate",
+    "send_returns_canon": "Result<sdk::expandable::List<sdk::models::Invoice>, concord::Error>",
+    "error_type_canon": "concord::Error"
+   },
+   "base_url": null,
+   "boundary": "prepared",
+   "kind": "result"
+  },
+  "stripe/c5": {
+   "reference": "api.set_account(reqwest::header::HeaderValue::from_static(\"CANARYSTRIPE181Z\")).invoices().list().send().await",
+   "reference_compiles": true,
+   "client": "Stripe",
+   "binding": {
+    "type": "Result<List<Invoice>, concord::Error>",
+    "result": "is_ok"
+   },
+   "boundary": "prepared",
+   "base_path": "/v1",
+   "recorded": [
+    {
+     "method": "GET",
+     "target": "/v1/invoices",
+     "headers": [
+      [
+       "authorization",
+       "<secret>"
+      ],
+      [
+       "stripe-version",
+       "2026-10-28.endive"
+      ],
+      [
+       "stripe-account",
+       "<secret>"
+      ],
+      [
+       "accept",
+       "application/json"
+      ]
+     ],
+     "body": ""
+    }
+   ],
+   "recorded_again": [
+    {
+     "method": "GET",
+     "target": "/v1/invoices",
+     "headers": [
+      [
+       "authorization",
+       "<secret>"
+      ],
+      [
+       "stripe-version",
+       "2026-10-28.endive"
+      ],
+      [
+       "stripe-account",
+       "<secret>"
+      ],
+      [
+       "accept",
+       "application/json"
+      ]
+     ],
+     "body": ""
+    }
+   ],
+   "volatile": {
+    "sequence_differs": false,
+    "headers": [],
+    "bodies": []
+   },
+   "fixture": {
+    "name": "constructed:List<Invoice>#false",
+    "content_type": "application/json",
+    "path": null,
+    "body": "{\"object\":\"list\",\"data\":[],\"has_more\":false,\"url\":\"x\",\"total_count\":null}"
+   },
+   "fixture_tries_failed": 0,
+   "reference_outcome": null,
+   "result_checked": true,
+   "check_available": true,
+   "kind": "call"
+  },
+  "stripe/w6": {
+   "method": "GET",
+   "url": "https://api.stripe.com/v1/prices",
+   "headers": [
+    [
+     "authorization",
+     "<secret>"
+    ],
+    [
+     "stripe-version",
+     "2026-10-28.endive"
+    ],
+    [
+     "stripe-account",
+     "<secret>"
+    ],
+    [
+     "accept",
+     "application/json"
+    ]
+   ],
+   "secret_headers": [
+    "authorization",
+    "stripe-account"
+   ],
+   "body": null,
+   "body_kind": null,
+   "content_type": null,
+   "accept": "application/json",
+   "boundary": "prepared",
+   "kind": "wire"
+  },
+  "stripe/r6": {
+   "r2": {
+    "resolvable": true,
+    "send_returns": "Result<List<Price>, concord::Error>",
+    "error_type": "concord::Error",
+    "how": "no send policy",
+    "verified": true,
+    "decl_module": "crate",
+    "send_returns_canon": "Result<sdk::expandable::List<sdk::models::Price>, concord::Error>",
+    "error_type_canon": "concord::Error"
+   },
+   "base_url": null,
+   "boundary": "prepared",
+   "kind": "result"
+  },
+  "stripe/c6": {
+   "reference": "api.set_account(reqwest::header::HeaderValue::from_static(\"CANARYSTRIPE241Z\")).prices().list().send().await",
+   "reference_compiles": true,
+   "client": "Stripe",
+   "binding": {
+    "type": "Result<List<Price>, concord::Error>",
+    "result": "is_ok"
+   },
+   "boundary": "prepared",
+   "base_path": "/v1",
+   "recorded": [
+    {
+     "method": "GET",
+     "target": "/v1/prices",
+     "headers": [
+      [
+       "authorization",
+       "<secret>"
+      ],
+      [
+       "stripe-version",
+       "2026-10-28.endive"
+      ],
+      [
+       "stripe-account",
+       "<secret>"
+      ],
+      [
+       "accept",
+       "application/json"
+      ]
+     ],
+     "body": ""
+    }
+   ],
+   "recorded_again": [
+    {
+     "method": "GET",
+     "target": "/v1/prices",
+     "headers": [
+      [
+       "authorization",
+       "<secret>"
+      ],
+      [
+       "stripe-version",
+       "2026-10-28.endive"
+      ],
+      [
+       "stripe-account",
+       "<secret>"
+      ],
+      [
+       "accept",
+       "application/json"
+      ]
+     ],
+     "body": ""
+    }
+   ],
+   "volatile": {
+    "sequence_differs": false,
+    "headers": [],
+    "bodies": []
+   },
+   "fixture": {
+    "name": "constructed:List<Price>#false",
+    "content_type": "application/json",
+    "path": null,
+    "body": "{\"object\":\"list\",\"data\":[],\"has_more\":false,\"url\":\"x\",\"total_count\":null}"
+   },
+   "fixture_tries_failed": 0,
+   "reference_outcome": null,
+   "result_checked": true,
+   "check_available": true,
+   "kind": "call"
+  }
+ },
+ "drops": []
+}

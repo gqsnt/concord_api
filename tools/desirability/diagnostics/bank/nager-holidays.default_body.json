@@ -1,0 +1,15 @@
+{
+ "corrected": "let _req = api.holidays(\"AT\", 2026);",
+ "expected": "String",
+ "generated_names": [
+  "NagerHolidaysConfig",
+  "NagerHolidaysHolidays"
+ ],
+ "kind": "default_body",
+ "package": "concord-sdk-nager-holidays",
+ "sdk": "nager-holidays",
+ "seeded": "let _req = api.holidays(Default::default(), 2026);",
+ "seeded_line": 8,
+ "user_file": "examples/nager-holidays-sdk/tests/cb_default_body.rs",
+ "variant": "no body exists: the positional country code"
+}

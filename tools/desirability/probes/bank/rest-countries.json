@@ -1,0 +1,489 @@
+{
+ "sdk": "rest-countries-sdk",
+ "short": "rest-countries",
+ "pkg": "concord-sdk-rest-countries",
+ "crate": "concord_sdk_rest_countries",
+ "seed": 1,
+ "role": "main",
+ "holdout_of": [],
+ "generator_version": 1,
+ "clients": {
+  "RestCountries": {
+   "constructible": true,
+   "file": "examples/rest-countries-sdk/src/lib.rs",
+   "ctor": "RestCountries::new(reqwest::Client::new(), RestCountriesConfig {\n    authorization: reqwest::header::HeaderValue::from_static(\"CANARYRESTCOUNTRIES1Z\"),\n})",
+   "canaries": [
+    "CANARYRESTCOUNTRIES1Z"
+   ],
+   "config_fields": [
+    "authorization"
+   ],
+   "endpoints": 5,
+   "notes": []
+  }
+ },
+ "picks": [
+  {
+   "key": "RestCountries/search_codes",
+   "client": "RestCountries",
+   "client_file": "examples/rest-countries-sdk/src/lib.rs",
+   "scopes": [],
+   "method": "GET",
+   "endpoint": "search_codes",
+   "output": "CountryPage",
+   "docs": [
+    "`GET /countries/v5/code?q=`: substring search over every `codes.*` variant."
+   ],
+   "values": [
+    {
+     "level": 1,
+     "owner": "search_codes",
+     "owner_kind": "endpoint",
+     "name": "q",
+     "type": "String",
+     "placement": "query",
+     "key": null,
+     "each": false,
+     "sensitive": false,
+     "optional": false,
+     "default": null,
+     "kind": "string",
+     "state": "required",
+     "literal": "\"x&y=z\"",
+     "value": "x&y=z"
+    },
+    {
+     "level": 1,
+     "owner": "ListOptions",
+     "owner_kind": "group",
+     "name": "response_fields",
+     "type": "Fields",
+     "placement": "query",
+     "key": null,
+     "each": false,
+     "sensitive": false,
+     "optional": true,
+     "default": null,
+     "kind": null,
+     "state": "unset",
+     "literal": null,
+     "value": null
+    },
+    {
+     "level": 1,
+     "owner": "ListOptions",
+     "owner_kind": "group",
+     "name": "response_fields_omit",
+     "type": "Fields",
+     "placement": "query",
+     "key": null,
+     "each": false,
+     "sensitive": false,
+     "optional": true,
+     "default": null,
+     "kind": null,
+     "state": "unset",
+     "literal": null,
+     "value": null
+    },
+    {
+     "level": 1,
+     "owner": "ListOptions",
+     "owner_kind": "group",
+     "name": "limit",
+     "type": "NonZeroU32",
+     "placement": "query",
+     "key": null,
+     "each": false,
+     "sensitive": false,
+     "optional": true,
+     "default": null,
+     "kind": "nonzero:NonZeroU32",
+     "state": "set",
+     "literal": "std::num::NonZeroU32::new(7).unwrap()",
+     "value": 7
+    },
+    {
+     "level": 1,
+     "owner": "ListOptions",
+     "owner_kind": "group",
+     "name": "offset",
+     "type": "u64",
+     "placement": "query",
+     "key": null,
+     "each": false,
+     "sensitive": false,
+     "optional": true,
+     "default": null,
+     "kind": "int:u64",
+     "state": "unset",
+     "literal": null,
+     "value": null
+    }
+   ],
+   "canaries": [
+    "CANARYRESTCOUNTRIES1Z"
+   ],
+   "pct": true,
+   "rust": {
+    "client": "RestCountries::new(reqwest::Client::new(), RestCountriesConfig {\n    authorization: reqwest::header::HeaderValue::from_static(\"CANARYRESTCOUNTRIES1Z\"),\n})",
+    "call": "api.search_codes(\"x&y=z\").set_limit(std::num::NonZeroU32::new(7).unwrap())"
+   },
+   "strata": [
+    "base_path",
+    "optional_set",
+    "optional_unset",
+    "query"
+   ],
+   "index": 0,
+   "boundary": "operation"
+  },
+  {
+   "key": "RestCountries/countries",
+   "client": "RestCountries",
+   "client_file": "examples/rest-countries-sdk/src/lib.rs",
+   "scopes": [],
+   "method": "GET",
+   "endpoint": "countries",
+   "output": "CountryPage",
+   "docs": [
+    "`GET /countries/v5`: every country, narrowed by a free-text `q` (substring of any",
+    "searchable property) and by property filters, all combined with AND."
+   ],
+   "values": [
+    {
+     "level": 1,
+     "owner": "countries",
+     "owner_kind": "endpoint",
+     "name": "q",
+     "type": "String",
+     "placement": "query",
+     "key": null,
+     "each": false,
+     "sensitive": false,
+     "optional": true,
+     "default": null,
+     "kind": "string",
+     "state": "unset",
+     "literal": null,
+     "value": null
+    },
+    {
+     "level": 1,
+     "owner": "countries",
+     "owner_kind": "endpoint",
+     "name": "filters",
+     "type": "Filters",
+     "placement": "query",
+     "key": "..",
+     "each": false,
+     "sensitive": false,
+     "optional": true,
+     "default": null,
+     "kind": null,
+     "state": "unset",
+     "literal": null,
+     "value": null
+    },
+    {
+     "level": 1,
+     "owner": "ListOptions",
+     "owner_kind": "group",
+     "name": "response_fields",
+     "type": "Fields",
+     "placement": "query",
+     "key": null,
+     "each": false,
+     "sensitive": false,
+     "optional": true,
+     "default": null,
+     "kind": null,
+     "state": "unset",
+     "literal": null,
+     "value": null
+    },
+    {
+     "level": 1,
+     "owner": "ListOptions",
+     "owner_kind": "group",
+     "name": "response_fields_omit",
+     "type": "Fields",
+     "placement": "query",
+     "key": null,
+     "each": false,
+     "sensitive": false,
+     "optional": true,
+     "default": null,
+     "kind": null,
+     "state": "unset",
+     "literal": null,
+     "value": null
+    },
+    {
+     "level": 1,
+     "owner": "ListOptions",
+     "owner_kind": "group",
+     "name": "limit",
+     "type": "NonZeroU32",
+     "placement": "query",
+     "key": null,
+     "each": false,
+     "sensitive": false,
+     "optional": true,
+     "default": null,
+     "kind": "nonzero:NonZeroU32",
+     "state": "unset",
+     "literal": null,
+     "value": null
+    },
+    {
+     "level": 1,
+     "owner": "ListOptions",
+     "owner_kind": "group",
+     "name": "offset",
+     "type": "u64",
+     "placement": "query",
+     "key": null,
+     "each": false,
+     "sensitive": false,
+     "optional": true,
+     "default": null,
+     "kind": "int:u64",
+     "state": "set",
+     "literal": "16",
+     "value": 16
+    }
+   ],
+   "canaries": [
+    "CANARYRESTCOUNTRIES1Z"
+   ],
+   "pct": false,
+   "rust": {
+    "client": "RestCountries::new(reqwest::Client::new(), RestCountriesConfig {\n    authorization: reqwest::header::HeaderValue::from_static(\"CANARYRESTCOUNTRIES1Z\"),\n})",
+    "call": "api.countries().set_offset(16)"
+   },
+   "strata": [
+    "base_path",
+    "optional_set",
+    "optional_unset",
+    "query"
+   ],
+   "index": 1,
+   "boundary": "operation"
+  },
+  {
+   "key": "RestCountries/search_names",
+   "client": "RestCountries",
+   "client_file": "examples/rest-countries-sdk/src/lib.rs",
+   "scopes": [],
+   "method": "GET",
+   "endpoint": "search_names",
+   "output": "CountryPage",
+   "docs": [
+    "`GET /countries/v5/name?q=`: substring search over `names.common`, `names.official`,",
+    "`names.alternates` and `names.native` (not translations). An empty `q` is a `400`."
+   ],
+   "values": [
+    {
+     "level": 1,
+     "owner": "search_names",
+     "owner_kind": "endpoint",
+     "name": "q",
+     "type": "String",
+     "placement": "query",
+     "key": null,
+     "each": false,
+     "sensitive": false,
+     "optional": false,
+     "default": null,
+     "kind": "string",
+     "state": "required",
+     "literal": "\"a b/c\"",
+     "value": "a b/c"
+    },
+    {
+     "level": 1,
+     "owner": "ListOptions",
+     "owner_kind": "group",
+     "name": "response_fields",
+     "type": "Fields",
+     "placement": "query",
+     "key": null,
+     "each": false,
+     "sensitive": false,
+     "optional": true,
+     "default": null,
+     "kind": null,
+     "state": "unset",
+     "literal": null,
+     "value": null
+    },
+    {
+     "level": 1,
+     "owner": "ListOptions",
+     "owner_kind": "group",
+     "name": "response_fields_omit",
+     "type": "Fields",
+     "placement": "query",
+     "key": null,
+     "each": false,
+     "sensitive": false,
+     "optional": true,
+     "default": null,
+     "kind": null,
+     "state": "unset",
+     "literal": null,
+     "value": null
+    },
+    {
+     "level": 1,
+     "owner": "ListOptions",
+     "owner_kind": "group",
+     "name": "limit",
+     "type": "NonZeroU32",
+     "placement": "query",
+     "key": null,
+     "each": false,
+     "sensitive": false,
+     "optional": true,
+     "default": null,
+     "kind": "nonzero:NonZeroU32",
+     "state": "set",
+     "literal": "std::num::NonZeroU32::new(7).unwrap()",
+     "value": 7
+    },
+    {
+     "level": 1,
+     "owner": "ListOptions",
+     "owner_kind": "group",
+     "name": "offset",
+     "type": "u64",
+     "placement": "query",
+     "key": null,
+     "each": false,
+     "sensitive": false,
+     "optional": true,
+     "default": null,
+     "kind": "int:u64",
+     "state": "unset",
+     "literal": null,
+     "value": null
+    }
+   ],
+   "canaries": [
+    "CANARYRESTCOUNTRIES1Z"
+   ],
+   "pct": true,
+   "rust": {
+    "client": "RestCountries::new(reqwest::Client::new(), RestCountriesConfig {\n    authorization: reqwest::header::HeaderValue::from_static(\"CANARYRESTCOUNTRIES1Z\"),\n})",
+    "call": "api.search_names(\"a b/c\").set_limit(std::num::NonZeroU32::new(7).unwrap())"
+   },
+   "strata": [
+    "base_path",
+    "optional_set",
+    "optional_unset",
+    "query"
+   ],
+   "index": 2,
+   "boundary": "operation"
+  }
+ ],
+ "items": [
+  {
+   "id": "rest-countries/w1",
+   "kind": "wire",
+   "session": "wire",
+   "q": 1,
+   "pick": 0,
+   "boundary": "operation",
+   "question": "What request does `call.send().await` put on the wire (the request the server receives)? Give `method`, `url`, `headers` (only the ones the SDK and Concord set, not the HTTP client's own; secret values as `<secret>`), `body`, `content_type` and `accept`.\n\n```rust\nlet api = RestCountries::new(reqwest::Client::new(), RestCountriesConfig {\n    authorization: reqwest::header::HeaderValue::from_static(\"CANARYRESTCOUNTRIES1Z\"),\n});\nlet call = api.search_codes(\"x&y=z\").set_limit(std::num::NonZeroU32::new(7).unwrap());\n```"
+  },
+  {
+   "id": "rest-countries/r1",
+   "kind": "result",
+   "session": "rc",
+   "q": 1,
+   "pick": 0,
+   "boundary": "operation",
+   "base_url": {
+    "staging": "https://staging.example.test",
+    "keep": "/countries/v5",
+    "candidates": [
+     "https://staging.example.test",
+     "https://staging.example.test/",
+     "https://staging.example.test/countries/v5",
+     "https://staging.example.test/countries/v5/"
+    ]
+   },
+   "question": "For the endpoint `GET search_codes` directly on the client: (a) what type does `.send().await` return (`send_returns`)? (b) what is the error type in that result (`error_type`)? (c) The same API also runs at `https://staging.example.test`. Which exact string do you pass to `api.with_base_url(..)` so that requests keep the `/countries/v5` prefix, i.e. go to `https://staging.example.test/countries/v5/...` (`base_url`)?"
+  },
+  {
+   "id": "rest-countries/c1",
+   "kind": "call",
+   "session": "rc",
+   "q": 2,
+   "pick": 0,
+   "boundary": "operation",
+   "intent": "`GET /countries/v5/code?q=`: substring search over every `codes.*` variant: call `GET search_codes` directly on the client with `q` = `\"x&y=z\"`, `limit` = `std::num::NonZeroU32::new(7).unwrap()`. Leave every other optional value as it is",
+   "question": "Write the body of `async fn call(api: RestCountries) -> Result<(), Box<dyn std::error::Error>>` that does this and sends it with `.send().await`: `GET /countries/v5/code?q=`: substring search over every `codes.*` variant: call `GET search_codes` directly on the client with `q` = `\"x&y=z\"`, `limit` = `std::num::NonZeroU32::new(7).unwrap()`. Leave every other optional value as it is. Your code runs before the function's final `Ok(())`; it may start with `use` lines (`code`)."
+  },
+  {
+   "id": "rest-countries/w2",
+   "kind": "wire",
+   "session": "wire",
+   "q": 2,
+   "pick": 1,
+   "boundary": "operation",
+   "question": "What request does `call.send().await` put on the wire (the request the server receives)? Give `method`, `url`, `headers` (only the ones the SDK and Concord set, not the HTTP client's own; secret values as `<secret>`), `body`, `content_type` and `accept`.\n\n```rust\nlet api = RestCountries::new(reqwest::Client::new(), RestCountriesConfig {\n    authorization: reqwest::header::HeaderValue::from_static(\"CANARYRESTCOUNTRIES1Z\"),\n});\nlet call = api.countries().set_offset(16);\n```"
+  },
+  {
+   "id": "rest-countries/r2",
+   "kind": "result",
+   "session": "rc",
+   "q": 3,
+   "pick": 1,
+   "boundary": "operation",
+   "base_url": null,
+   "question": "For the endpoint `GET countries` directly on the client: (a) what type does `.send().await` return (`send_returns`)? (b) what is the error type in that result (`error_type`)?"
+  },
+  {
+   "id": "rest-countries/c2",
+   "kind": "call",
+   "session": "rc",
+   "q": 4,
+   "pick": 1,
+   "boundary": "operation",
+   "intent": "`GET /countries/v5`: every country, narrowed by a free-text `q` (substring of any searchable property) and by property filters, all combi...: call `GET countries` directly on the client with `offset` = `16`. Leave every other optional value as it is",
+   "question": "Write the body of `async fn call(api: RestCountries) -> Result<(), Box<dyn std::error::Error>>` that does this and sends it with `.send().await`: `GET /countries/v5`: every country, narrowed by a free-text `q` (substring of any searchable property) and by property filters, all combi...: call `GET countries` directly on the client with `offset` = `16`. Leave every other optional value as it is. Your code runs before the function's final `Ok(())`; it may start with `use` lines (`code`)."
+  },
+  {
+   "id": "rest-countries/w3",
+   "kind": "wire",
+   "session": "wire",
+   "q": 3,
+   "pick": 2,
+   "boundary": "operation",
+   "question": "What request does `call.send().await` put on the wire (the request the server receives)? Give `method`, `url`, `headers` (only the ones the SDK and Concord set, not the HTTP client's own; secret values as `<secret>`), `body`, `content_type` and `accept`.\n\n```rust\nlet api = RestCountries::new(reqwest::Client::new(), RestCountriesConfig {\n    authorization: reqwest::header::HeaderValue::from_static(\"CANARYRESTCOUNTRIES1Z\"),\n});\nlet call = api.search_names(\"a b/c\").set_limit(std::num::NonZeroU32::new(7).unwrap());\n```"
+  },
+  {
+   "id": "rest-countries/r3",
+   "kind": "result",
+   "session": "rc",
+   "q": 5,
+   "pick": 2,
+   "boundary": "operation",
+   "base_url": null,
+   "question": "For the endpoint `GET search_names` directly on the client: (a) what type does `.send().await` return (`send_returns`)? (b) what is the error type in that result (`error_type`)?"
+  },
+  {
+   "id": "rest-countries/c3",
+   "kind": "call",
+   "session": "rc",
+   "q": 6,
+   "pick": 2,
+   "boundary": "operation",
+   "intent": "`GET /countries/v5/name?q=`: substring search over `names.common`, `names.official`, `names.alternates` and `names.native` (not translati...: call `GET search_names` directly on the client with `q` = `\"a b/c\"`, `limit` = `std::num::NonZeroU32::new(7).unwrap()`. Leave every other optional value as it is",
+   "question": "Write the body of `async fn call(api: RestCountries) -> Result<(), Box<dyn std::error::Error>>` that does this and sends it with `.send().await`: `GET /countries/v5/name?q=`: substring search over `names.common`, `names.official`, `names.alternates` and `names.native` (not translati...: call `GET search_names` directly on the client with `q` = `\"a b/c\"`, `limit` = `std::num::NonZeroU32::new(7).unwrap()`. Leave every other optional value as it is. Your code runs before the function's final `Ok(())`; it may start with `use` lines (`code`)."
+  }
+ ]
+}

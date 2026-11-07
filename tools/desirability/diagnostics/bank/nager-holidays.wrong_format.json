@@ -1,0 +1,15 @@
+{
+ "corrected": "let (_m, _d) = api.holidays(\"AT\", 2026).prepare()?.receive().await?.document::<concord::Json, Vec<Holiday>>(1024).await;",
+ "expected": "Decode<",
+ "generated_names": [
+  "NagerHolidaysConfig",
+  "NagerHolidaysHolidays"
+ ],
+ "kind": "wrong_format",
+ "package": "concord-sdk-nager-holidays",
+ "sdk": "nager-holidays",
+ "seeded": "let (_m, _d) = api.holidays(\"AT\", 2026).prepare()?.receive().await?.document::<concord::Text, Vec<Holiday>>(1024).await;",
+ "seeded_line": 8,
+ "user_file": "examples/nager-holidays-sdk/tests/cb_wrong_format.rs",
+ "variant": null
+}

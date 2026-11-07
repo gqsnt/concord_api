@@ -79,11 +79,11 @@ concord::api! {
             headers { "sforce-query-options" = "batchSize={batch_size}"; }
 
             /// Runs a SOQL statement returning Accounts.
-            GET accounts(query q: Soql) -> QueryResponse<Account>;
+            GET accounts(#[sensitive] query q: Soql) -> QueryResponse<Account>;
             /// Runs a SOQL statement returning Contacts.
-            GET contacts(query q: Soql) -> QueryResponse<Contact>;
+            GET contacts(#[sensitive] query q: Soql) -> QueryResponse<Contact>;
             /// Runs a SOQL statement returning dynamic records.
-            GET dynamic(query q: Soql) -> QueryResponse<DynamicRecord>;
+            GET dynamic(#[sensitive] query q: Soql) -> QueryResponse<DynamicRecord>;
             /// The next batch of an Account query (`nextRecordsUrl`'s locator).
             GET more_accounts(#[sensitive] locator: QueryLocator) -> QueryResponse<Account> {
                 path "{locator}";

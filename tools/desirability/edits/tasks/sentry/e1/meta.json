@@ -1,0 +1,12 @@
+{
+ "sdk": "sentry",
+ "kind": "e1",
+ "package": "concord-sdk-sentry",
+ "sdk_dir": "examples/sentry-sdk",
+ "title": "API moved from /api/0/ to /api/1/",
+ "public_names": [
+  "Sentry::organization",
+  "SentryOrganization::issues",
+  "SentryOrganizationIssue::get"
+ ]
+}

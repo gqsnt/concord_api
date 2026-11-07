@@ -1,0 +1,20 @@
+{
+ "corrected": "let _b: Response<Balances> = kraken.account().balances(BalanceOptions::default()).send().await?;",
+ "expected": "Response<",
+ "generated_names": [
+  "KrakenAccount",
+  "KrakenAccountBalances",
+  "KrakenAccountOpenOrders",
+  "KrakenAccountTradesHistory",
+  "KrakenPublic",
+  "KrakenPublicPairs",
+  "KrakenPublicTicker"
+ ],
+ "kind": "send_mismatch",
+ "package": "concord-sdk-kraken-spot-rest",
+ "sdk": "kraken-spot-rest",
+ "seeded": "let _b: Balances = kraken.account().balances(BalanceOptions::default()).send().await?;",
+ "seeded_line": 10,
+ "user_file": "examples/kraken-spot-rest-sdk/tests/cb_send_mismatch.rs",
+ "variant": null
+}

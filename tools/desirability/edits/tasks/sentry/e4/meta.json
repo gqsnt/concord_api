@@ -1,0 +1,12 @@
+{
+ "sdk": "sentry",
+ "kind": "e4",
+ "package": "concord-sdk-sentry",
+ "sdk_dir": "examples/sentry-sdk",
+ "title": "Add GET .../issues/{id}/hashes/ as a paged read (bucket, cursor, pages)",
+ "public_names": [
+  "SentryOrganizationIssue::hashes",
+  "IssueHash",
+  "SentryOrganizationIssueHashes::pages"
+ ]
+}

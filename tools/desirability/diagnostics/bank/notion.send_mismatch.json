@@ -1,0 +1,17 @@
+{
+ "corrected": "let _p: List<Block> = api.children(\"b\", 10).send().await?;",
+ "expected": "List<Block>",
+ "generated_names": [
+  "NotionChildren",
+  "NotionConfig",
+  "NotionPage",
+  "NotionQuery"
+ ],
+ "kind": "send_mismatch",
+ "package": "concord-sdk-notion",
+ "sdk": "notion",
+ "seeded": "let _p: Page = api.children(\"b\", 10).send().await?;",
+ "seeded_line": 11,
+ "user_file": "examples/notion-sdk/tests/cb_send_mismatch.rs",
+ "variant": null
+}

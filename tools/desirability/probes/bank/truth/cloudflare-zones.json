@@ -1,0 +1,191 @@
+{
+ "sdk": "cloudflare-zones-sdk",
+ "short": "cloudflare-zones",
+ "pkg": "concord-sdk-cloudflare-zones",
+ "repo_head": "984bd2f6a981dd85e8b104c21daae06421a7a48a",
+ "truth_format": 3,
+ "aliases": [
+  "type RecordPages = Pages<DnsRecord, NonZeroU32, PageMeta, Error>",
+  "type ZonePages = Pages<Zone, NonZeroU32, PageMeta, Error>",
+  "AccountId = sdk::AccountId (imported: models::AccountId)",
+  "CloudflareZoneDnsRecordsList = sdk::CloudflareZoneDnsRecordsList (imported: crate::CloudflareZoneDnsRecordsList)",
+  "CloudflareZonesList = sdk::CloudflareZonesList (imported: crate::CloudflareZonesList)",
+  "Decision = concord_retry::Decision (imported: concord_retry::Decision)",
+  "Deserialize = serde::Deserialize (imported: serde::Deserialize)",
+  "DeserializeOwned = serde::de::DeserializeOwned (imported: serde::de::DeserializeOwned)",
+  "Deserializer = serde::Deserializer (imported: serde::Deserializer)",
+  "Direction = sdk::Direction (imported: models::Direction)",
+  "Duration = std::time::Duration (imported: std::time::Duration)",
+  "Endpoint = concord::Endpoint (imported: concord::Endpoint)",
+  "ErrorKind = concord::ErrorKind (imported: concord::ErrorKind)",
+  "HeaderMap = reqwest::header::HeaderMap (imported: concord::reqwest::header::HeaderMap)",
+  "HeaderValue = reqwest::header::HeaderValue (imported: concord::reqwest::header::HeaderValue)",
+  "Instant = std::time::Instant (imported: std::time::Instant)",
+  "Ipv4Addr = std::net::Ipv4Addr (imported: std::net::Ipv4Addr)",
+  "Ipv6Addr = std::net::Ipv6Addr (imported: std::net::Ipv6Addr)",
+  "Json = concord::Json (imported: concord::Json)",
+  "NonZeroU32 = std::num::NonZeroU32 (imported: std::num::NonZeroU32)",
+  "NonZeroUsize = std::num::NonZeroUsize (imported: std::num::NonZeroUsize)",
+  "Operation = concord::Operation (imported: concord::Operation)",
+  "Page = concord_pagination::Page (imported: concord_pagination::Page)",
+  "Pages = concord_pagination::Pages (imported: concord_pagination::Pages)",
+  "Paging = sdk::Paging (imported: crate::Paging)",
+  "Prepared = concord::Prepared (imported: concord::Prepared)",
+  "RawValue = serde_json::value::RawValue (imported: serde_json::value::RawValue)",
+  "Received = concord::Received (imported: concord::Received)",
+  "RecordId = sdk::RecordId (imported: models::RecordId)",
+  "RecordOrder = sdk::RecordOrder (imported: models::RecordOrder)",
+  "RecordType = sdk::RecordType (imported: crate::RecordType)",
+  "Replay = concord_retry::Replay (imported: concord_retry::Replay)",
+  "ReplayMode = concord_retry::concord::ReplayMode (imported: concord_retry::concord::ReplayMode)",
+  "Resume = concord_pagination::Resume (imported: concord_pagination::Resume)",
+  "Retry = concord_retry::Retry (imported: concord_retry::Retry)",
+  "SendWith = concord::SendWith (imported: concord::SendWith)",
+  "Sends = concord::Sends (imported: concord::Sends)",
+  "Serialize = serde::Serialize (imported: serde::Serialize)",
+  "StatusCode = reqwest::StatusCode (imported: concord::reqwest::StatusCode)",
+  "SystemTime = std::time::SystemTime (imported: std::time::SystemTime)",
+  "ZoneId = sdk::ZoneId (imported: models::ZoneId)",
+  "ZoneOrder = sdk::ZoneOrder (imported: models::ZoneOrder)",
+  "ZoneStatus = sdk::ZoneStatus (imported: models::ZoneStatus)",
+  "ZoneType = sdk::ZoneType (imported: models::ZoneType)"
+ ],
+ "items": {
+  "cloudflare-zones/w1": {
+   "method": "GET",
+   "url": "https://api.cloudflare.com/client/v4/zones?page=5",
+   "headers": [
+    [
+     "authorization",
+     "<secret>"
+    ],
+    [
+     "accept",
+     "application/json"
+    ]
+   ],
+   "secret_headers": [
+    "authorization"
+   ],
+   "body": null,
+   "body_kind": null,
+   "content_type": null,
+   "accept": "application/json",
+   "prepared": {
+    "method": "GET",
+    "url": "https://api.cloudflare.com/client/v4/zones?page=5",
+    "headers": [
+     [
+      "authorization",
+      "<secret>"
+     ],
+     [
+      "accept",
+      "application/json"
+     ]
+    ],
+    "secret_headers": [
+     "authorization"
+    ],
+    "body": null,
+    "body_kind": null,
+    "content_type": null,
+    "accept": "application/json"
+   },
+   "policy_changes_request": false,
+   "operation_completed_within_10s": true,
+   "boundary": "operation",
+   "kind": "wire"
+  },
+  "cloudflare-zones/r1": {
+   "r2": {
+    "resolvable": true,
+    "send_returns": "Result<PageResponse<Zone>, Error>",
+    "error_type": "Error",
+    "how": "impl SendWith for SendPolicy",
+    "verified": true,
+    "decl_module": "crate",
+    "send_returns_canon": "Result<sdk::policy::PageResponse<sdk::models::Zone>, sdk::error::Error>",
+    "error_type_canon": "sdk::error::Error"
+   },
+   "base_url": {
+    "keep": "/client/v4",
+    "expected_url": "https://staging.example.test/client/v4/zones?page=5",
+    "results": {
+     "https://staging.example.test": "https://staging.example.test/client/v4/zones?page=5",
+     "https://staging.example.test/": "https://staging.example.test/client/v4/zones?page=5",
+     "https://staging.example.test/client/v4": "https://staging.example.test/client/v4/client/v4/zones?page=5",
+     "https://staging.example.test/client/v4/": "https://staging.example.test/client/v4/client/v4/zones?page=5"
+    },
+    "keeps": [
+     "https://staging.example.test",
+     "https://staging.example.test/"
+    ]
+   },
+   "boundary": "operation",
+   "kind": "result"
+  },
+  "cloudflare-zones/c1": {
+   "reference": "api.zones().list().set_page(std::num::NonZeroU32::new(5).unwrap()).send().await",
+   "reference_compiles": true,
+   "client": "Cloudflare",
+   "binding": {
+    "type": "Result<PageResponse<Zone>, Error>",
+    "result": "is_ok"
+   },
+   "boundary": "operation",
+   "base_path": "",
+   "recorded": [
+    {
+     "method": "GET",
+     "target": "/client/v4/zones?page=5",
+     "headers": [
+      [
+       "authorization",
+       "<secret>"
+      ],
+      [
+       "accept",
+       "application/json"
+      ]
+     ],
+     "body": ""
+    }
+   ],
+   "recorded_again": [
+    {
+     "method": "GET",
+     "target": "/client/v4/zones?page=5",
+     "headers": [
+      [
+       "authorization",
+       "<secret>"
+      ],
+      [
+       "accept",
+       "application/json"
+      ]
+     ],
+     "body": ""
+    }
+   ],
+   "volatile": {
+    "sequence_differs": false,
+    "headers": [],
+    "bodies": []
+   },
+   "fixture": {
+    "name": "examples/cloudflare-zones-sdk/fixtures/zones_page1.json",
+    "content_type": "application/json",
+    "path": "examples/cloudflare-zones-sdk/fixtures/zones_page1.json",
+    "body": null
+   },
+   "fixture_tries_failed": 0,
+   "reference_outcome": null,
+   "result_checked": true,
+   "check_available": true,
+   "kind": "call"
+  }
+ },
+ "drops": []
+}

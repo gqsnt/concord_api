@@ -43,7 +43,9 @@ fn present_offset<'de, D: serde::Deserializer<'de>>(
 }
 
 /// List options applied unchanged to every page. Formula evaluation is Airtable's responsibility.
-#[derive(Clone, Debug, Default)]
+///
+/// `Debug` withholds the formula, which the declaration sends as a `#[sensitive]` query value.
+#[derive(Clone, Default)]
 pub struct ListOptions {
     /// Optional filter expression passed verbatim as `filterByFormula`.
     pub filter_by_formula: Option<String>,
@@ -56,6 +58,21 @@ pub struct ListOptions {
     pub max_records: Option<u32>,
     /// Optional view name or ID.
     pub view: Option<String>,
+}
+
+impl fmt::Debug for ListOptions {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("ListOptions")
+            .field(
+                "filter_by_formula",
+                &self.filter_by_formula.as_ref().map(|_| "<redacted>"),
+            )
+            .field("fields", &self.fields)
+            .field("page_size", &self.page_size)
+            .field("max_records", &self.max_records)
+            .field("view", &self.view)
+            .finish()
+    }
 }
 
 /// Successful value and the response head, including status, headers and operation identity.

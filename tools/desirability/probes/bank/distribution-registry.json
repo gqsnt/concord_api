@@ -1,0 +1,558 @@
+{
+ "sdk": "distribution-registry-sdk",
+ "short": "distribution-registry",
+ "pkg": "concord-sdk-distribution-registry",
+ "crate": "concord_sdk_distribution_registry",
+ "seed": 1,
+ "role": "main",
+ "holdout_of": [],
+ "generator_version": 1,
+ "clients": {
+  "Registry": {
+   "constructible": true,
+   "file": "examples/distribution-registry-sdk/src/api.rs",
+   "ctor": "Registry::new(reqwest::Client::new())",
+   "canaries": [],
+   "config_fields": [],
+   "endpoints": 2,
+   "notes": []
+  },
+  "Repository": {
+   "constructible": true,
+   "file": "examples/distribution-registry-sdk/src/api.rs",
+   "ctor": "Repository::new(reqwest::Client::new())",
+   "canaries": [],
+   "config_fields": [],
+   "endpoints": 9,
+   "notes": []
+  },
+  "TokenService": {
+   "constructible": true,
+   "file": "examples/distribution-registry-sdk/src/api.rs",
+   "ctor": "TokenService::new(reqwest::Client::new())",
+   "canaries": [],
+   "config_fields": [],
+   "endpoints": 1,
+   "notes": []
+  }
+ },
+ "picks": [
+  {
+   "key": "TokenService/token",
+   "client": "TokenService",
+   "client_file": "examples/distribution-registry-sdk/src/api.rs",
+   "scopes": [],
+   "method": "GET",
+   "endpoint": "token",
+   "output": "TokenBody",
+   "docs": [
+    "`GET <realm>?service=..&scope=..`: a Bearer token."
+   ],
+   "values": [
+    {
+     "level": 0,
+     "owner": "TokenService",
+     "owner_kind": "client",
+     "name": "credentials",
+     "type": "HeaderValue",
+     "placement": "header",
+     "key": "AUTHORIZATION",
+     "each": false,
+     "sensitive": true,
+     "optional": true,
+     "default": null,
+     "kind": "header_value",
+     "state": "set",
+     "literal": "reqwest::header::HeaderValue::from_static(\"CANARYDISTRIBUTIONREGISTRY211Z\")",
+     "value": "<secret>"
+    },
+    {
+     "level": 1,
+     "owner": "token",
+     "owner_kind": "endpoint",
+     "name": "service",
+     "type": "String",
+     "placement": "query",
+     "key": null,
+     "each": false,
+     "sensitive": false,
+     "optional": true,
+     "default": null,
+     "kind": "string",
+     "state": "unset",
+     "literal": null,
+     "value": null
+    },
+    {
+     "level": 1,
+     "owner": "token",
+     "owner_kind": "endpoint",
+     "name": "scopes",
+     "type": "Vec<String>",
+     "placement": "query",
+     "key": "\"scope\"",
+     "each": true,
+     "sensitive": false,
+     "optional": false,
+     "default": null,
+     "kind": "vec_string",
+     "state": "required",
+     "literal": "vec![\"fjord\".to_string(), \"lumen\".to_string()]",
+     "value": [
+      "fjord",
+      "lumen"
+     ]
+    },
+    {
+     "level": 1,
+     "owner": "token",
+     "owner_kind": "endpoint",
+     "name": "client_id",
+     "type": "String",
+     "placement": "query",
+     "key": null,
+     "each": false,
+     "sensitive": false,
+     "optional": true,
+     "default": null,
+     "kind": "string",
+     "state": "set",
+     "literal": "\"nectar\"",
+     "value": "nectar"
+    }
+   ],
+   "canaries": [
+    "CANARYDISTRIBUTIONREGISTRY211Z"
+   ],
+   "pct": false,
+   "rust": {
+    "client": "TokenService::new(reqwest::Client::new()).set_credentials(reqwest::header::HeaderValue::from_static(\"CANARYDISTRIBUTIONREGISTRY211Z\"))",
+    "call": "api.token(vec![\"fjord\".to_string(), \"lumen\".to_string()]).set_client_id(\"nectar\")"
+   },
+   "strata": [
+    "base_path",
+    "format_exception",
+    "header",
+    "optional_set",
+    "optional_unset",
+    "query"
+   ],
+   "index": 0,
+   "boundary": "prepared"
+  },
+  {
+   "key": "Repository/upload_status",
+   "client": "Repository",
+   "client_file": "examples/distribution-registry-sdk/src/api.rs",
+   "scopes": [],
+   "method": "GET",
+   "endpoint": "upload_status",
+   "output": null,
+   "docs": [
+    "`GET <Location>`: the upload's progress."
+   ],
+   "values": [
+    {
+     "level": 0,
+     "owner": "Repository",
+     "owner_kind": "client",
+     "name": "authorization",
+     "type": "HeaderValue",
+     "placement": "header",
+     "key": "AUTHORIZATION",
+     "each": false,
+     "sensitive": true,
+     "optional": true,
+     "default": null,
+     "kind": "header_value",
+     "state": "unset",
+     "literal": null,
+     "value": null
+    }
+   ],
+   "canaries": [],
+   "pct": false,
+   "rust": {
+    "client": "Repository::new(reqwest::Client::new())",
+    "call": "api.upload_status()"
+   },
+   "strata": [
+    "base_path",
+    "optional_unset"
+   ],
+   "index": 1,
+   "boundary": "prepared"
+  },
+  {
+   "key": "Registry/ping",
+   "client": "Registry",
+   "client_file": "examples/distribution-registry-sdk/src/api.rs",
+   "scopes": [],
+   "method": "GET",
+   "endpoint": "ping",
+   "output": null,
+   "docs": [
+    "`GET /v2/`: API version check."
+   ],
+   "values": [
+    {
+     "level": 0,
+     "owner": "Registry",
+     "owner_kind": "client",
+     "name": "authorization",
+     "type": "HeaderValue",
+     "placement": "header",
+     "key": "AUTHORIZATION",
+     "each": false,
+     "sensitive": true,
+     "optional": true,
+     "default": null,
+     "kind": "header_value",
+     "state": "set",
+     "literal": "reqwest::header::HeaderValue::from_static(\"CANARYDISTRIBUTIONREGISTRY101Z\")",
+     "value": "<secret>"
+    }
+   ],
+   "canaries": [
+    "CANARYDISTRIBUTIONREGISTRY101Z"
+   ],
+   "pct": false,
+   "rust": {
+    "client": "Registry::new(reqwest::Client::new()).set_authorization(reqwest::header::HeaderValue::from_static(\"CANARYDISTRIBUTIONREGISTRY101Z\"))",
+    "call": "api.ping()"
+   },
+   "strata": [
+    "header",
+    "optional_set"
+   ],
+   "index": 2,
+   "boundary": "prepared"
+  },
+  {
+   "key": "Repository/tags",
+   "client": "Repository",
+   "client_file": "examples/distribution-registry-sdk/src/api.rs",
+   "scopes": [],
+   "method": "GET",
+   "endpoint": "tags",
+   "output": "TagsBody",
+   "docs": [
+    "`GET /v2/<name>/tags/list`: one page of tags."
+   ],
+   "values": [
+    {
+     "level": 0,
+     "owner": "Repository",
+     "owner_kind": "client",
+     "name": "authorization",
+     "type": "HeaderValue",
+     "placement": "header",
+     "key": "AUTHORIZATION",
+     "each": false,
+     "sensitive": true,
+     "optional": true,
+     "default": null,
+     "kind": "header_value",
+     "state": "unset",
+     "literal": null,
+     "value": null
+    },
+    {
+     "level": 1,
+     "owner": "tags",
+     "owner_kind": "endpoint",
+     "name": "n",
+     "type": "PageSize",
+     "placement": "query",
+     "key": null,
+     "each": false,
+     "sensitive": false,
+     "optional": true,
+     "default": null,
+     "kind": null,
+     "state": "unset",
+     "literal": null,
+     "value": null
+    },
+    {
+     "level": 1,
+     "owner": "tags",
+     "owner_kind": "endpoint",
+     "name": "last",
+     "type": "String",
+     "placement": "query",
+     "key": null,
+     "each": false,
+     "sensitive": false,
+     "optional": true,
+     "default": null,
+     "kind": "string",
+     "state": "set",
+     "literal": "\"fjord\"",
+     "value": "fjord"
+    }
+   ],
+   "canaries": [],
+   "pct": false,
+   "rust": {
+    "client": "Repository::new(reqwest::Client::new())",
+    "call": "api.tags().set_last(\"fjord\")"
+   },
+   "strata": [
+    "base_path",
+    "format_exception",
+    "optional_set",
+    "optional_unset",
+    "query"
+   ],
+   "index": 3,
+   "boundary": "prepared"
+  },
+  {
+   "key": "Registry/catalog",
+   "client": "Registry",
+   "client_file": "examples/distribution-registry-sdk/src/api.rs",
+   "scopes": [],
+   "method": "GET",
+   "endpoint": "catalog",
+   "output": "CatalogBody",
+   "docs": [
+    "`GET /v2/_catalog`: one page of repository names."
+   ],
+   "values": [
+    {
+     "level": 0,
+     "owner": "Registry",
+     "owner_kind": "client",
+     "name": "authorization",
+     "type": "HeaderValue",
+     "placement": "header",
+     "key": "AUTHORIZATION",
+     "each": false,
+     "sensitive": true,
+     "optional": true,
+     "default": null,
+     "kind": "header_value",
+     "state": "set",
+     "literal": "reqwest::header::HeaderValue::from_static(\"CANARYDISTRIBUTIONREGISTRY111Z\")",
+     "value": "<secret>"
+    },
+    {
+     "level": 1,
+     "owner": "catalog",
+     "owner_kind": "endpoint",
+     "name": "n",
+     "type": "PageSize",
+     "placement": "query",
+     "key": null,
+     "each": false,
+     "sensitive": false,
+     "optional": true,
+     "default": null,
+     "kind": null,
+     "state": "unset",
+     "literal": null,
+     "value": null
+    },
+    {
+     "level": 1,
+     "owner": "catalog",
+     "owner_kind": "endpoint",
+     "name": "last",
+     "type": "String",
+     "placement": "query",
+     "key": null,
+     "each": false,
+     "sensitive": false,
+     "optional": true,
+     "default": null,
+     "kind": "string",
+     "state": "unset",
+     "literal": null,
+     "value": null
+    }
+   ],
+   "canaries": [
+    "CANARYDISTRIBUTIONREGISTRY111Z"
+   ],
+   "pct": false,
+   "rust": {
+    "client": "Registry::new(reqwest::Client::new()).set_authorization(reqwest::header::HeaderValue::from_static(\"CANARYDISTRIBUTIONREGISTRY111Z\"))",
+    "call": "api.catalog()"
+   },
+   "strata": [
+    "format_exception",
+    "header",
+    "optional_set",
+    "optional_unset"
+   ],
+   "index": 4,
+   "boundary": "prepared"
+  }
+ ],
+ "items": [
+  {
+   "id": "distribution-registry/w1",
+   "kind": "wire",
+   "session": "wire",
+   "q": 1,
+   "pick": 0,
+   "boundary": "prepared",
+   "question": "What request does `call.prepare()` build? Give `method`, `url`, `headers` (only the ones Concord sets; secret values as `<secret>`), `body`, `content_type` and `accept`.\n\n```rust\nlet api = TokenService::new(reqwest::Client::new()).set_credentials(reqwest::header::HeaderValue::from_static(\"CANARYDISTRIBUTIONREGISTRY211Z\"));\nlet call = api.token(vec![\"fjord\".to_string(), \"lumen\".to_string()]).set_client_id(\"nectar\");\n```"
+  },
+  {
+   "id": "distribution-registry/r1",
+   "kind": "result",
+   "session": "rc",
+   "q": 1,
+   "pick": 0,
+   "boundary": "prepared",
+   "base_url": {
+    "staging": "https://staging.example.test",
+    "keep": "/token",
+    "candidates": [
+     "https://staging.example.test",
+     "https://staging.example.test/",
+     "https://staging.example.test/token",
+     "https://staging.example.test/token/"
+    ]
+   },
+   "question": "For the endpoint `GET token` directly on the client of client `TokenService`: (a) what type does `.send().await` return (`send_returns`)? (b) what is the error type in that result (`error_type`)? (c) The same API also runs at `https://staging.example.test`. Which exact string do you pass to `api.with_base_url(..)` so that requests keep the `/token` prefix, i.e. go to `https://staging.example.test/token/...` (`base_url`)?"
+  },
+  {
+   "id": "distribution-registry/c1",
+   "kind": "call",
+   "session": "rc",
+   "q": 2,
+   "pick": 0,
+   "boundary": "prepared",
+   "intent": "`GET <realm>?service=..&scope=..`: a Bearer token: call `GET token` directly on the client of client `TokenService` with `credentials` (client `TokenService`) = `reqwest::header::HeaderValue::from_static(\"CANARYDISTRIBUTIONREGISTRY211Z\")`, `scopes` = `vec![\"fjord\".to_string(), \"lumen\".to_string()]`, `client_id` = `\"nectar\"`. Leave every other optional value as it is",
+   "question": "Write the body of `async fn call(api: TokenService) -> Result<(), Box<dyn std::error::Error>>` that does this and sends it with `.send().await`: `GET <realm>?service=..&scope=..`: a Bearer token: call `GET token` directly on the client of client `TokenService` with `credentials` (client `TokenService`) = `reqwest::header::HeaderValue::from_static(\"CANARYDISTRIBUTIONREGISTRY211Z\")`, `scopes` = `vec![\"fjord\".to_string(), \"lumen\".to_string()]`, `client_id` = `\"nectar\"`. Leave every other optional value as it is. Your code runs before the function's final `Ok(())`; it may start with `use` lines (`code`)."
+  },
+  {
+   "id": "distribution-registry/w2",
+   "kind": "wire",
+   "session": "wire",
+   "q": 2,
+   "pick": 1,
+   "boundary": "prepared",
+   "question": "What request does `call.prepare()` build? Give `method`, `url`, `headers` (only the ones Concord sets; secret values as `<secret>`), `body`, `content_type` and `accept`.\n\n```rust\nlet api = Repository::new(reqwest::Client::new());\nlet call = api.upload_status();\n```"
+  },
+  {
+   "id": "distribution-registry/r2",
+   "kind": "result",
+   "session": "rc",
+   "q": 3,
+   "pick": 1,
+   "boundary": "prepared",
+   "base_url": {
+    "staging": "https://staging.example.test",
+    "keep": "/v2/repository",
+    "candidates": [
+     "https://staging.example.test",
+     "https://staging.example.test/",
+     "https://staging.example.test/v2/repository",
+     "https://staging.example.test/v2/repository/"
+    ]
+   },
+   "question": "For the endpoint `GET upload_status` directly on the client of client `Repository`: (a) what type does `.send().await` return (`send_returns`)? (b) what is the error type in that result (`error_type`)? (c) The same API also runs at `https://staging.example.test`. Which exact string do you pass to `api.with_base_url(..)` so that requests keep the `/v2/repository` prefix, i.e. go to `https://staging.example.test/v2/repository/...` (`base_url`)?"
+  },
+  {
+   "id": "distribution-registry/c2",
+   "kind": "call",
+   "session": "rc",
+   "q": 4,
+   "pick": 1,
+   "boundary": "prepared",
+   "intent": "`GET <Location>`: the upload's progress: call `GET upload_status` directly on the client of client `Repository`. Leave every other optional value as it is",
+   "question": "Write the body of `async fn call(api: Repository) -> Result<(), Box<dyn std::error::Error>>` that does this and sends it with `.send().await`: `GET <Location>`: the upload's progress: call `GET upload_status` directly on the client of client `Repository`. Leave every other optional value as it is. Your code runs before the function's final `Ok(())`; it may start with `use` lines (`code`)."
+  },
+  {
+   "id": "distribution-registry/w3",
+   "kind": "wire",
+   "session": "wire",
+   "q": 3,
+   "pick": 2,
+   "boundary": "prepared",
+   "question": "What request does `call.prepare()` build? Give `method`, `url`, `headers` (only the ones Concord sets; secret values as `<secret>`), `body`, `content_type` and `accept`.\n\n```rust\nlet api = Registry::new(reqwest::Client::new()).set_authorization(reqwest::header::HeaderValue::from_static(\"CANARYDISTRIBUTIONREGISTRY101Z\"));\nlet call = api.ping();\n```"
+  },
+  {
+   "id": "distribution-registry/r3",
+   "kind": "result",
+   "session": "rc",
+   "q": 5,
+   "pick": 2,
+   "boundary": "prepared",
+   "base_url": null,
+   "question": "For the endpoint `GET ping` directly on the client of client `Registry`: (a) what type does `.send().await` return (`send_returns`)? (b) what is the error type in that result (`error_type`)?"
+  },
+  {
+   "id": "distribution-registry/c3",
+   "kind": "call",
+   "session": "rc",
+   "q": 6,
+   "pick": 2,
+   "boundary": "prepared",
+   "intent": "`GET /v2/`: API version check: call `GET ping` directly on the client of client `Registry` with `authorization` (client `Registry`) = `reqwest::header::HeaderValue::from_static(\"CANARYDISTRIBUTIONREGISTRY101Z\")`. Leave every other optional value as it is",
+   "question": "Write the body of `async fn call(api: Registry) -> Result<(), Box<dyn std::error::Error>>` that does this and sends it with `.send().await`: `GET /v2/`: API version check: call `GET ping` directly on the client of client `Registry` with `authorization` (client `Registry`) = `reqwest::header::HeaderValue::from_static(\"CANARYDISTRIBUTIONREGISTRY101Z\")`. Leave every other optional value as it is. Your code runs before the function's final `Ok(())`; it may start with `use` lines (`code`)."
+  },
+  {
+   "id": "distribution-registry/w4",
+   "kind": "wire",
+   "session": "wire",
+   "q": 4,
+   "pick": 3,
+   "boundary": "prepared",
+   "question": "What request does `call.prepare()` build? Give `method`, `url`, `headers` (only the ones Concord sets; secret values as `<secret>`), `body`, `content_type` and `accept`.\n\n```rust\nlet api = Repository::new(reqwest::Client::new());\nlet call = api.tags().set_last(\"fjord\");\n```"
+  },
+  {
+   "id": "distribution-registry/r4",
+   "kind": "result",
+   "session": "rc",
+   "q": 7,
+   "pick": 3,
+   "boundary": "prepared",
+   "base_url": null,
+   "question": "For the endpoint `GET tags` directly on the client of client `Repository`: (a) what type does `.send().await` return (`send_returns`)? (b) what is the error type in that result (`error_type`)?"
+  },
+  {
+   "id": "distribution-registry/c4",
+   "kind": "call",
+   "session": "rc",
+   "q": 8,
+   "pick": 3,
+   "boundary": "prepared",
+   "intent": "`GET /v2/<name>/tags/list`: one page of tags: call `GET tags` directly on the client of client `Repository` with `last` = `\"fjord\"`. Leave every other optional value as it is",
+   "question": "Write the body of `async fn call(api: Repository) -> Result<(), Box<dyn std::error::Error>>` that does this and sends it with `.send().await`: `GET /v2/<name>/tags/list`: one page of tags: call `GET tags` directly on the client of client `Repository` with `last` = `\"fjord\"`. Leave every other optional value as it is. Your code runs before the function's final `Ok(())`; it may start with `use` lines (`code`)."
+  },
+  {
+   "id": "distribution-registry/w5",
+   "kind": "wire",
+   "session": "wire",
+   "q": 5,
+   "pick": 4,
+   "boundary": "prepared",
+   "question": "What request does `call.prepare()` build? Give `method`, `url`, `headers` (only the ones Concord sets; secret values as `<secret>`), `body`, `content_type` and `accept`.\n\n```rust\nlet api = Registry::new(reqwest::Client::new()).set_authorization(reqwest::header::HeaderValue::from_static(\"CANARYDISTRIBUTIONREGISTRY111Z\"));\nlet call = api.catalog();\n```"
+  },
+  {
+   "id": "distribution-registry/r5",
+   "kind": "result",
+   "session": "rc",
+   "q": 9,
+   "pick": 4,
+   "boundary": "prepared",
+   "base_url": null,
+   "question": "For the endpoint `GET catalog` directly on the client of client `Registry`: (a) what type does `.send().await` return (`send_returns`)? (b) what is the error type in that result (`error_type`)?"
+  },
+  {
+   "id": "distribution-registry/c5",
+   "kind": "call",
+   "session": "rc",
+   "q": 10,
+   "pick": 4,
+   "boundary": "prepared",
+   "intent": "`GET /v2/_catalog`: one page of repository names: call `GET catalog` directly on the client of client `Registry` with `authorization` (client `Registry`) = `reqwest::header::HeaderValue::from_static(\"CANARYDISTRIBUTIONREGISTRY111Z\")`. Leave every other optional value as it is",
+   "question": "Write the body of `async fn call(api: Registry) -> Result<(), Box<dyn std::error::Error>>` that does this and sends it with `.send().await`: `GET /v2/_catalog`: one page of repository names: call `GET catalog` directly on the client of client `Registry` with `authorization` (client `Registry`) = `reqwest::header::HeaderValue::from_static(\"CANARYDISTRIBUTIONREGISTRY111Z\")`. Leave every other optional value as it is. Your code runs before the function's final `Ok(())`; it may start with `use` lines (`code`)."
+  }
+ ]
+}

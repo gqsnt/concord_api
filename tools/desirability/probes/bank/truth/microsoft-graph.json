@@ -1,0 +1,349 @@
+{
+ "sdk": "microsoft-graph-sdk",
+ "short": "microsoft-graph",
+ "pkg": "concord-sdk-microsoft-graph",
+ "repo_head": "984bd2f6a981dd85e8b104c21daae06421a7a48a",
+ "truth_format": 3,
+ "aliases": [
+  "type Factory<T> = Arc<dyn Fn() -> Result<Prepared<Envelope<T>>, concord::Error> + Send + Sync>",
+  "type GraphPage<T> = Page<T, NextLink, PageMeta>",
+  "type GraphPages<T> = Pages<T, NextLink, PageMeta, GraphError>",
+  "Arc = std::sync::Arc (imported: std::sync::Arc)",
+  "BTreeMap = std::collections::BTreeMap (imported: std::collections::BTreeMap)",
+  "Deserialize = serde::Deserialize (imported: serde::Deserialize)",
+  "Deserializer = serde::Deserializer (imported: serde::Deserializer)",
+  "Duration = std::time::Duration (imported: std::time::Duration)",
+  "ErrorKind = concord::ErrorKind (imported: concord::ErrorKind)",
+  "GraphApi = sdk::GraphApi (imported: crate::api::GraphApi)",
+  "GraphApiConfig = sdk::GraphApiConfig (imported: crate::api::GraphApiConfig)",
+  "GroupField = sdk::GroupField (imported: crate::GroupField)",
+  "HeaderValue = reqwest::header::HeaderValue (imported: concord::reqwest::header::HeaderValue)",
+  "IgnoreContentType = concord::IgnoreContentType (imported: concord::IgnoreContentType)",
+  "IpAddr = std::net::IpAddr (imported: std::net::IpAddr)",
+  "Json = concord::Json (imported: concord::Json)",
+  "MemberField = sdk::MemberField (imported: crate::MemberField)",
+  "NonZeroUsize = std::num::NonZeroUsize (imported: std::num::NonZeroUsize)",
+  "Page = concord_pagination::Page (imported: concord_pagination::Page)",
+  "Pages = concord_pagination::Pages (imported: concord_pagination::Pages)",
+  "Prepared = concord::Prepared (imported: concord::Prepared)",
+  "ResponseMeta = concord::ResponseMeta (imported: concord::ResponseMeta)",
+  "Resume = concord_pagination::Resume (imported: concord_pagination::Resume)",
+  "Serialize = serde::Serialize (imported: serde::Serialize)",
+  "Url = reqwest::Url (imported: concord::reqwest::Url)",
+  "UserField = sdk::UserField (imported: crate::UserField)",
+  "Value = serde_json::Value (imported: serde_json::Value)"
+ ],
+ "items": {
+  "microsoft-graph/w1": {
+   "method": "GET",
+   "url": "https://graph.microsoft.com/v1.0/groups/cedar/members?%24select=harbor&%24count=false",
+   "headers": [
+    [
+     "authorization",
+     "<secret>"
+    ],
+    [
+     "accept",
+     "application/json"
+    ]
+   ],
+   "secret_headers": [
+    "authorization"
+   ],
+   "body": null,
+   "body_kind": null,
+   "content_type": null,
+   "accept": "application/json",
+   "boundary": "prepared",
+   "kind": "wire"
+  },
+  "microsoft-graph/r1": {
+   "r2": {
+    "resolvable": true,
+    "send_returns": "Result<Envelope<DirectoryObject>, concord::Error>",
+    "error_type": "concord::Error",
+    "how": "no send policy",
+    "verified": true,
+    "decl_module": "crate::api",
+    "send_returns_canon": "Result<sdk::model::Envelope<sdk::model::DirectoryObject>, concord::Error>",
+    "error_type_canon": "concord::Error"
+   },
+   "base_url": {
+    "keep": "/v1.0",
+    "expected_url": "https://staging.example.test/v1.0/groups/cedar/members?%24select=harbor&%24count=false",
+    "results": {
+     "https://staging.example.test": "https://staging.example.test/groups/cedar/members?%24select=harbor&%24count=false",
+     "https://staging.example.test/": "https://staging.example.test/groups/cedar/members?%24select=harbor&%24count=false",
+     "https://staging.example.test/v1.0": "https://staging.example.test/v1.0/groups/cedar/members?%24select=harbor&%24count=false",
+     "https://staging.example.test/v1.0/": "https://staging.example.test/v1.0/groups/cedar/members?%24select=harbor&%24count=false"
+    },
+    "keeps": [
+     "https://staging.example.test/v1.0",
+     "https://staging.example.test/v1.0/"
+    ]
+   },
+   "boundary": "prepared",
+   "kind": "result"
+  },
+  "microsoft-graph/c1": {
+   "reference": "api.direct_members(\"cedar\").set_select(\"harbor\").set_count(false).send().await",
+   "reference_compiles": true,
+   "client": "GraphApi",
+   "binding": {
+    "type": "Result<Envelope<DirectoryObject>, concord::Error>",
+    "result": "is_ok"
+   },
+   "boundary": "prepared",
+   "base_path": "/v1.0",
+   "recorded": [
+    {
+     "method": "GET",
+     "target": "/v1.0/groups/cedar/members?%24select=harbor&%24count=false",
+     "headers": [
+      [
+       "authorization",
+       "<secret>"
+      ],
+      [
+       "accept",
+       "application/json"
+      ]
+     ],
+     "body": ""
+    }
+   ],
+   "recorded_again": [
+    {
+     "method": "GET",
+     "target": "/v1.0/groups/cedar/members?%24select=harbor&%24count=false",
+     "headers": [
+      [
+       "authorization",
+       "<secret>"
+      ],
+      [
+       "accept",
+       "application/json"
+      ]
+     ],
+     "body": ""
+    }
+   ],
+   "volatile": {
+    "sequence_differs": false,
+    "headers": [],
+    "bodies": []
+   },
+   "fixture": {
+    "name": "examples/microsoft-graph-sdk/fixtures/members-final.json",
+    "content_type": "application/json",
+    "path": "examples/microsoft-graph-sdk/fixtures/members-final.json",
+    "body": null
+   },
+   "fixture_tries_failed": 0,
+   "reference_outcome": null,
+   "result_checked": true,
+   "check_available": true,
+   "kind": "call"
+  },
+  "microsoft-graph/w2": {
+   "method": "GET",
+   "url": "https://graph.microsoft.com/v1.0/users/delta",
+   "headers": [
+    [
+     "authorization",
+     "<secret>"
+    ],
+    [
+     "accept",
+     "application/json"
+    ]
+   ],
+   "secret_headers": [
+    "authorization"
+   ],
+   "body": null,
+   "body_kind": null,
+   "content_type": null,
+   "accept": "application/json",
+   "boundary": "prepared",
+   "kind": "wire"
+  },
+  "microsoft-graph/r2": {
+   "r2": {
+    "resolvable": true,
+    "send_returns": "Result<Envelope<UserDelta>, concord::Error>",
+    "error_type": "concord::Error",
+    "how": "no send policy",
+    "verified": true,
+    "decl_module": "crate::api",
+    "send_returns_canon": "Result<sdk::model::Envelope<sdk::model::UserDelta>, concord::Error>",
+    "error_type_canon": "concord::Error"
+   },
+   "base_url": null,
+   "boundary": "prepared",
+   "kind": "result"
+  },
+  "microsoft-graph/c2": {
+   "reference": "api.users_delta().send().await",
+   "reference_compiles": true,
+   "client": "GraphApi",
+   "binding": {
+    "type": "Result<Envelope<UserDelta>, concord::Error>",
+    "result": "is_ok"
+   },
+   "boundary": "prepared",
+   "base_path": "/v1.0",
+   "recorded": [
+    {
+     "method": "GET",
+     "target": "/v1.0/users/delta",
+     "headers": [
+      [
+       "authorization",
+       "<secret>"
+      ],
+      [
+       "accept",
+       "application/json"
+      ]
+     ],
+     "body": ""
+    }
+   ],
+   "recorded_again": [
+    {
+     "method": "GET",
+     "target": "/v1.0/users/delta",
+     "headers": [
+      [
+       "authorization",
+       "<secret>"
+      ],
+      [
+       "accept",
+       "application/json"
+      ]
+     ],
+     "body": ""
+    }
+   ],
+   "volatile": {
+    "sequence_differs": false,
+    "headers": [],
+    "bodies": []
+   },
+   "fixture": {
+    "name": "examples/microsoft-graph-sdk/fixtures/users-empty-intermediate.json",
+    "content_type": "application/json",
+    "path": "examples/microsoft-graph-sdk/fixtures/users-empty-intermediate.json",
+    "body": null
+   },
+   "fixture_tries_failed": 0,
+   "reference_outcome": null,
+   "result_checked": true,
+   "check_available": true,
+   "kind": "call"
+  },
+  "microsoft-graph/w3": {
+   "method": "GET",
+   "url": "https://graph.microsoft.com/v1.0/groups?%24select=50%25+off",
+   "headers": [
+    [
+     "authorization",
+     "<secret>"
+    ],
+    [
+     "accept",
+     "application/json"
+    ]
+   ],
+   "secret_headers": [
+    "authorization"
+   ],
+   "body": null,
+   "body_kind": null,
+   "content_type": null,
+   "accept": "application/json",
+   "boundary": "prepared",
+   "kind": "wire"
+  },
+  "microsoft-graph/r3": {
+   "r2": {
+    "resolvable": true,
+    "send_returns": "Result<Envelope<Group>, concord::Error>",
+    "error_type": "concord::Error",
+    "how": "no send policy",
+    "verified": true,
+    "decl_module": "crate::api",
+    "send_returns_canon": "Result<sdk::model::Envelope<sdk::model::Group>, concord::Error>",
+    "error_type_canon": "concord::Error"
+   },
+   "base_url": null,
+   "boundary": "prepared",
+   "kind": "result"
+  },
+  "microsoft-graph/c3": {
+   "reference": "api.groups().set_select(\"50% off\").send().await",
+   "reference_compiles": true,
+   "client": "GraphApi",
+   "binding": {
+    "type": "Result<Envelope<Group>, concord::Error>",
+    "result": "is_ok"
+   },
+   "boundary": "prepared",
+   "base_path": "/v1.0",
+   "recorded": [
+    {
+     "method": "GET",
+     "target": "/v1.0/groups?%24select=50%25+off",
+     "headers": [
+      [
+       "authorization",
+       "<secret>"
+      ],
+      [
+       "accept",
+       "application/json"
+      ]
+     ],
+     "body": ""
+    }
+   ],
+   "recorded_again": [
+    {
+     "method": "GET",
+     "target": "/v1.0/groups?%24select=50%25+off",
+     "headers": [
+      [
+       "authorization",
+       "<secret>"
+      ],
+      [
+       "accept",
+       "application/json"
+      ]
+     ],
+     "body": ""
+    }
+   ],
+   "volatile": {
+    "sequence_differs": false,
+    "headers": [],
+    "bodies": []
+   },
+   "fixture": {
+    "name": "examples/microsoft-graph-sdk/fixtures/groups-final.json",
+    "content_type": "application/json",
+    "path": "examples/microsoft-graph-sdk/fixtures/groups-final.json",
+    "body": null
+   },
+   "fixture_tries_failed": 0,
+   "reference_outcome": null,
+   "result_checked": true,
+   "check_available": true,
+   "kind": "call"
+  }
+ },
+ "drops": []
+}

@@ -3,6 +3,7 @@
 //! member pages.
 
 use serde::{Deserialize, Serialize};
+use std::fmt;
 
 use super::{PageSize, open_enum};
 use crate::connection::Connection;
@@ -93,7 +94,10 @@ pub struct VariantInventoryItem {
 /// page), `query` (search syntax; absent: every product), `variantsFirst`, and
 /// `withOnlineStoreUrl` (absent: `false`, the document's default) which includes each product's
 /// `onlineStoreUrl` ([`with_online_store_url`](Self::with_online_store_url)).
-#[derive(Clone, Debug, Serialize)]
+///
+/// `Debug` withholds `query`, which [`filter`](Self::filter) fills from a [`SearchQuery`] whose own
+/// `Debug` withholds its terms.
+#[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ProductsQuery {
     /// Products per page.
@@ -110,6 +114,23 @@ pub struct ProductsQuery {
     /// the document's default, `false`.
     #[serde(skip_serializing_if = "Var::is_absent")]
     pub with_online_store_url: Var<bool>,
+}
+
+impl fmt::Debug for ProductsQuery {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let query = match &self.query {
+            Var::Absent => "Absent",
+            Var::Null => "Null",
+            Var::Value(_) => "Value(<redacted>)",
+        };
+        f.debug_struct("ProductsQuery")
+            .field("first", &self.first)
+            .field("after", &self.after)
+            .field("query", &format_args!("{query}"))
+            .field("variants_first", &self.variants_first)
+            .field("with_online_store_url", &self.with_online_store_url)
+            .finish()
+    }
 }
 
 impl ProductsQuery {

@@ -1,0 +1,13 @@
+{
+ "sdk": "github",
+ "kind": "e3",
+ "package": "concord-example-github-sdk",
+ "sdk_dir": "examples/github-sdk",
+ "title": "Optional triggering_actor on both workflow-run lists and RunFilter",
+ "public_names": [
+  "GitHubRepoActionsRuns::set_triggering_actor",
+  "GitHubRepoActionsWorkflowRuns::set_triggering_actor",
+  "RunFilter::triggering_actor",
+  "RepoContext::runs"
+ ]
+}

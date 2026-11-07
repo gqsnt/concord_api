@@ -1,0 +1,10 @@
+{
+ "sdk": "mastodon",
+ "kind": "e5",
+ "package": "concord-sdk-mastodon",
+ "sdk_dir": "examples/mastodon-sdk",
+ "title": "Error document gains optional error_description",
+ "public_names": [
+  "ErrorDocument::error_description"
+ ]
+}

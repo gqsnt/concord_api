@@ -1,0 +1,402 @@
+{
+ "sdk": "openai-sdk",
+ "short": "openai",
+ "pkg": "concord-sdk-openai",
+ "repo_head": "984bd2f6a981dd85e8b104c21daae06421a7a48a",
+ "truth_format": 3,
+ "aliases": [
+  "BTreeMap = std::collections::BTreeMap (imported: std::collections::BTreeMap)",
+  "Binary = concord::Binary (imported: concord::Binary)",
+  "Deserialize = serde::Deserialize (imported: serde::Deserialize)",
+  "Duration = std::time::Duration (imported: std::time::Duration)",
+  "Endpoint = concord::Endpoint (imported: concord::Endpoint)",
+  "HashSet = std::collections::HashSet (imported: std::collections::HashSet)",
+  "HeaderValue = reqwest::header::HeaderValue (imported: concord::reqwest::header::HeaderValue)",
+  "IgnoreContentType = concord::IgnoreContentType (imported: concord::IgnoreContentType)",
+  "Json = concord::Json (imported: concord::Json)",
+  "Multipart = concord::multipart::Multipart (imported: concord::multipart::Multipart)",
+  "MultipartBody = concord::multipart::MultipartBody (imported: concord::multipart::MultipartBody)",
+  "Received = concord::Received (imported: concord::Received)",
+  "ResponseMeta = concord::ResponseMeta (imported: concord::ResponseMeta)",
+  "SendWith = concord::SendWith (imported: concord::SendWith)",
+  "Serialize = serde::Serialize (imported: serde::Serialize)",
+  "SseEvents = concord::sse::SseEvents (imported: concord::sse::SseEvents)",
+  "SseOptions = concord::sse::SseOptions (imported: concord::sse::SseOptions)",
+  "SseReader = concord::sse::SseReader (imported: concord::sse::SseReader)",
+  "Value = serde_json::Value (imported: serde_json::Value)"
+ ],
+ "items": {
+  "openai/w1": {
+   "method": "GET",
+   "url": "https://api.openai.com/v1/files/tundra/content",
+   "headers": [
+    [
+     "authorization",
+     "<secret>"
+    ]
+   ],
+   "secret_headers": [
+    "authorization"
+   ],
+   "body": null,
+   "body_kind": null,
+   "content_type": null,
+   "accept": null,
+   "prepared": {
+    "method": "GET",
+    "url": "https://api.openai.com/v1/files/tundra/content",
+    "headers": [
+     [
+      "authorization",
+      "<secret>"
+     ]
+    ],
+    "secret_headers": [
+     "authorization"
+    ],
+    "body": null,
+    "body_kind": null,
+    "content_type": null,
+    "accept": null
+   },
+   "policy_changes_request": false,
+   "operation_completed_within_10s": true,
+   "boundary": "operation",
+   "kind": "wire"
+  },
+  "openai/r1": {
+   "r2": {
+    "resolvable": true,
+    "send_returns": "Result<Response<Vec<u8>>, Error>",
+    "error_type": "Error",
+    "how": "send template",
+    "verified": true,
+    "decl_module": "crate",
+    "send_returns_canon": "Result<sdk::Response<Vec<u8>>, sdk::Error>",
+    "error_type_canon": "sdk::Error"
+   },
+   "base_url": {
+    "keep": "/v1",
+    "expected_url": "https://staging.example.test/v1/files/tundra/content",
+    "results": {
+     "https://staging.example.test": "https://staging.example.test/v1/files/tundra/content",
+     "https://staging.example.test/": "https://staging.example.test/v1/files/tundra/content",
+     "https://staging.example.test/v1": "https://staging.example.test/v1/v1/files/tundra/content",
+     "https://staging.example.test/v1/": "https://staging.example.test/v1/v1/files/tundra/content"
+    },
+    "keeps": [
+     "https://staging.example.test",
+     "https://staging.example.test/"
+    ]
+   },
+   "boundary": "operation",
+   "kind": "result"
+  },
+  "openai/c1": {
+   "reference": "api.content(\"tundra\").send().await",
+   "reference_compiles": true,
+   "client": "OpenAiApi",
+   "binding": {
+    "type": "Result<Response<Vec<u8>>, Error>",
+    "result": "is_ok"
+   },
+   "boundary": "operation",
+   "base_path": "",
+   "recorded": [
+    {
+     "method": "GET",
+     "target": "/v1/files/tundra/content",
+     "headers": [
+      [
+       "authorization",
+       "<secret>"
+      ],
+      [
+       "accept",
+       "*/*"
+      ]
+     ],
+     "body": ""
+    }
+   ],
+   "recorded_again": [
+    {
+     "method": "GET",
+     "target": "/v1/files/tundra/content",
+     "headers": [
+      [
+       "authorization",
+       "<secret>"
+      ],
+      [
+       "accept",
+       "*/*"
+      ]
+     ],
+     "body": ""
+    }
+   ],
+   "volatile": {
+    "sequence_differs": false,
+    "headers": [],
+    "bodies": []
+   },
+   "fixture": {
+    "name": "examples/openai-sdk/fixtures/batch-completed.json",
+    "content_type": "application/json",
+    "path": "examples/openai-sdk/fixtures/batch-completed.json",
+    "body": null
+   },
+   "fixture_tries_failed": 0,
+   "reference_outcome": null,
+   "result_checked": true,
+   "check_available": true,
+   "kind": "call"
+  },
+  "openai/w2": {
+   "method": "GET",
+   "url": "https://api.openai.com/v1/batches/delta",
+   "headers": [
+    [
+     "authorization",
+     "<secret>"
+    ],
+    [
+     "accept",
+     "application/json"
+    ]
+   ],
+   "secret_headers": [
+    "authorization"
+   ],
+   "body": null,
+   "body_kind": null,
+   "content_type": null,
+   "accept": "application/json",
+   "prepared": {
+    "method": "GET",
+    "url": "https://api.openai.com/v1/batches/delta",
+    "headers": [
+     [
+      "authorization",
+      "<secret>"
+     ],
+     [
+      "accept",
+      "application/json"
+     ]
+    ],
+    "secret_headers": [
+     "authorization"
+    ],
+    "body": null,
+    "body_kind": null,
+    "content_type": null,
+    "accept": "application/json"
+   },
+   "policy_changes_request": false,
+   "operation_completed_within_10s": true,
+   "boundary": "operation",
+   "kind": "wire"
+  },
+  "openai/r2": {
+   "r2": {
+    "resolvable": true,
+    "send_returns": "Result<Response<Batch>, Error>",
+    "error_type": "Error",
+    "how": "send template",
+    "verified": true,
+    "decl_module": "crate",
+    "send_returns_canon": "Result<sdk::Response<sdk::Batch>, sdk::Error>",
+    "error_type_canon": "sdk::Error"
+   },
+   "base_url": null,
+   "boundary": "operation",
+   "kind": "result"
+  },
+  "openai/c2": {
+   "reference": "api.batch_status(\"delta\").send().await",
+   "reference_compiles": true,
+   "client": "OpenAiApi",
+   "binding": {
+    "type": "Result<Response<Batch>, Error>",
+    "result": "is_ok"
+   },
+   "boundary": "operation",
+   "base_path": "",
+   "recorded": [
+    {
+     "method": "GET",
+     "target": "/v1/batches/delta",
+     "headers": [
+      [
+       "authorization",
+       "<secret>"
+      ],
+      [
+       "accept",
+       "application/json"
+      ]
+     ],
+     "body": ""
+    }
+   ],
+   "recorded_again": [
+    {
+     "method": "GET",
+     "target": "/v1/batches/delta",
+     "headers": [
+      [
+       "authorization",
+       "<secret>"
+      ],
+      [
+       "accept",
+       "application/json"
+      ]
+     ],
+     "body": ""
+    }
+   ],
+   "volatile": {
+    "sequence_differs": false,
+    "headers": [],
+    "bodies": []
+   },
+   "fixture": {
+    "name": "examples/openai-sdk/fixtures/batch-completed.json",
+    "content_type": "application/json",
+    "path": "examples/openai-sdk/fixtures/batch-completed.json",
+    "body": null
+   },
+   "fixture_tries_failed": 0,
+   "reference_outcome": null,
+   "result_checked": true,
+   "check_available": true,
+   "kind": "call"
+  },
+  "openai/w3": {
+   "method": "GET",
+   "url": "https://api.openai.com/v1/files/delta",
+   "headers": [
+    [
+     "authorization",
+     "<secret>"
+    ],
+    [
+     "accept",
+     "application/json"
+    ]
+   ],
+   "secret_headers": [
+    "authorization"
+   ],
+   "body": null,
+   "body_kind": null,
+   "content_type": null,
+   "accept": "application/json",
+   "prepared": {
+    "method": "GET",
+    "url": "https://api.openai.com/v1/files/delta",
+    "headers": [
+     [
+      "authorization",
+      "<secret>"
+     ],
+     [
+      "accept",
+      "application/json"
+     ]
+    ],
+    "secret_headers": [
+     "authorization"
+    ],
+    "body": null,
+    "body_kind": null,
+    "content_type": null,
+    "accept": "application/json"
+   },
+   "policy_changes_request": false,
+   "operation_completed_within_10s": true,
+   "boundary": "operation",
+   "kind": "wire"
+  },
+  "openai/r3": {
+   "r2": {
+    "resolvable": true,
+    "send_returns": "Result<Response<FileObject>, Error>",
+    "error_type": "Error",
+    "how": "send template",
+    "verified": true,
+    "decl_module": "crate",
+    "send_returns_canon": "Result<sdk::Response<sdk::FileObject>, sdk::Error>",
+    "error_type_canon": "sdk::Error"
+   },
+   "base_url": null,
+   "boundary": "operation",
+   "kind": "result"
+  },
+  "openai/c3": {
+   "reference": "api.file(\"delta\").send().await",
+   "reference_compiles": true,
+   "client": "OpenAiApi",
+   "binding": {
+    "type": "Result<Response<FileObject>, Error>",
+    "result": "is_ok"
+   },
+   "boundary": "operation",
+   "base_path": "",
+   "recorded": [
+    {
+     "method": "GET",
+     "target": "/v1/files/delta",
+     "headers": [
+      [
+       "authorization",
+       "<secret>"
+      ],
+      [
+       "accept",
+       "application/json"
+      ]
+     ],
+     "body": ""
+    }
+   ],
+   "recorded_again": [
+    {
+     "method": "GET",
+     "target": "/v1/files/delta",
+     "headers": [
+      [
+       "authorization",
+       "<secret>"
+      ],
+      [
+       "accept",
+       "application/json"
+      ]
+     ],
+     "body": ""
+    }
+   ],
+   "volatile": {
+    "sequence_differs": false,
+    "headers": [],
+    "bodies": []
+   },
+   "fixture": {
+    "name": "examples/openai-sdk/fixtures/file.json",
+    "content_type": "application/json",
+    "path": "examples/openai-sdk/fixtures/file.json",
+    "body": null
+   },
+   "fixture_tries_failed": 0,
+   "reference_outcome": null,
+   "result_checked": true,
+   "check_available": true,
+   "kind": "call"
+  }
+ },
+ "drops": []
+}

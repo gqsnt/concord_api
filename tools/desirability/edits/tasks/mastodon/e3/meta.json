@@ -1,0 +1,11 @@
+{
+ "sdk": "mastodon",
+ "kind": "e3",
+ "package": "concord-sdk-mastodon",
+ "sdk_dir": "examples/mastodon-sdk",
+ "title": "Optional exclude_replies on both timelines",
+ "public_names": [
+  "PublicTimelineRequest::set_exclude_replies",
+  "HashtagTimelineRequest::set_exclude_replies"
+ ]
+}

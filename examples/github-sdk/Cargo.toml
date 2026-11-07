@@ -13,6 +13,7 @@ concord-pagination = { path = "../../crates/concord-pagination", features = ["li
 serde = { workspace = true, features = ["derive"] }
 
 [dev-dependencies]
+concord-check-canary = { path = "../../checks/canary" }
 concord-example-testserver = { path = "../testserver" }
 serde_json.workspace = true
 tokio = { workspace = true, features = ["macros", "rt", "rt-multi-thread", "time", "sync"] }

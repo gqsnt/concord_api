@@ -1,0 +1,24 @@
+{
+ "corrected": "let _r = cf.zone(ZoneId::from(\"z\")).dns_records().create(record.clone());",
+ "expected": "NewDnsRecord",
+ "generated_names": [
+  "CloudflareConfig",
+  "CloudflareZone",
+  "CloudflareZoneDnsRecord",
+  "CloudflareZoneDnsRecordGet",
+  "CloudflareZoneDnsRecords",
+  "CloudflareZoneDnsRecordsCreate",
+  "CloudflareZoneDnsRecordsList",
+  "CloudflareZoneGet",
+  "CloudflareZones",
+  "CloudflareZonesList",
+  "Paging"
+ ],
+ "kind": "default_body",
+ "package": "concord-sdk-cloudflare-zones",
+ "sdk": "cloudflare-zones",
+ "seeded": "let _r = cf.zone(ZoneId::from(\"z\")).dns_records().create(Default::default());",
+ "seeded_line": 12,
+ "user_file": "examples/cloudflare-zones-sdk/tests/cb_default_body.rs",
+ "variant": null
+}

@@ -1,0 +1,122 @@
+{
+ "sdk": "twilio-sdk",
+ "short": "twilio",
+ "pkg": "concord-sdk-twilio",
+ "repo_head": "984bd2f6a981dd85e8b104c21daae06421a7a48a",
+ "truth_format": 3,
+ "aliases": [
+  "type Error = TwilioError",
+  "Deserialize = serde::Deserialize (imported: serde::Deserialize)",
+  "Endpoint = concord::Endpoint (imported: concord::Endpoint)",
+  "ErrorKind = concord::ErrorKind (imported: concord::ErrorKind)",
+  "Form = concord::Form (imported: concord::Form)",
+  "HeaderValue = reqwest::header::HeaderValue (imported: concord::reqwest::header::HeaderValue)",
+  "Json = concord::Json (imported: concord::Json)",
+  "Operation = concord::Operation (imported: concord::Operation)",
+  "Prepared = concord::Prepared (imported: concord::Prepared)",
+  "ResponseMeta = concord::ResponseMeta (imported: concord::ResponseMeta)",
+  "Serialize = serde::Serialize (imported: serde::Serialize)"
+ ],
+ "items": {
+  "twilio/w1": {
+   "method": "GET",
+   "url": "https://api.twilio.com/2010-04-01/Accounts/<secret>/Messages/indigo.json",
+   "headers": [
+    [
+     "authorization",
+     "<secret>"
+    ],
+    [
+     "accept",
+     "application/json"
+    ]
+   ],
+   "secret_headers": [
+    "authorization"
+   ],
+   "body": null,
+   "body_kind": null,
+   "content_type": null,
+   "accept": "application/json",
+   "boundary": "prepared",
+   "kind": "wire"
+  },
+  "twilio/r1": {
+   "r2": {
+    "resolvable": true,
+    "send_returns": "Result<Message, concord::Error>",
+    "error_type": "concord::Error",
+    "how": "no send policy",
+    "verified": true,
+    "decl_module": "crate::wire",
+    "send_returns_canon": "Result<sdk::models::Message, concord::Error>",
+    "error_type_canon": "concord::Error"
+   },
+   "base_url": null,
+   "boundary": "prepared",
+   "kind": "result"
+  },
+  "twilio/c1": {
+   "reference": "api.get_message(\"indigo\").send().await",
+   "reference_compiles": true,
+   "client": "TwilioApi",
+   "binding": {
+    "type": "Result<Message, concord::Error>",
+    "result": "is_ok"
+   },
+   "boundary": "prepared",
+   "base_path": "",
+   "recorded": [
+    {
+     "method": "GET",
+     "target": "/2010-04-01/Accounts/<secret>/Messages/indigo.json",
+     "headers": [
+      [
+       "authorization",
+       "<secret>"
+      ],
+      [
+       "accept",
+       "application/json"
+      ]
+     ],
+     "body": ""
+    }
+   ],
+   "recorded_again": [
+    {
+     "method": "GET",
+     "target": "/2010-04-01/Accounts/<secret>/Messages/indigo.json",
+     "headers": [
+      [
+       "authorization",
+       "<secret>"
+      ],
+      [
+       "accept",
+       "application/json"
+      ]
+     ],
+     "body": ""
+    }
+   ],
+   "volatile": {
+    "sequence_differs": false,
+    "headers": [],
+    "bodies": []
+   },
+   "fixture": {
+    "name": "examples/twilio-sdk/fixtures/created.json",
+    "content_type": "application/json",
+    "path": "examples/twilio-sdk/fixtures/created.json",
+    "body": null
+   },
+   "fixture_tries_failed": 6,
+   "reference_outcome": null,
+   "result_checked": true,
+   "check_available": true,
+   "kind": "call"
+  }
+ },
+ "drops": []
+}

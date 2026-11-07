@@ -1,0 +1,11 @@
+{
+ "sdk": "notion",
+ "kind": "e2",
+ "package": "concord-sdk-notion",
+ "sdk_dir": "examples/notion-sdk",
+ "title": "Rename request header Notion-Version to Notion-API-Version",
+ "public_names": [
+  "NotionClient::new",
+  "NotionClient::with_version"
+ ]
+}

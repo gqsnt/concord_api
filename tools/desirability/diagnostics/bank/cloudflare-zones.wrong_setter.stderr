@@ -1,0 +1,41 @@
+   Compiling concord-sdk-cloudflare-zones v0.0.0 (/home/canarit/projects/Concord_Desirability_Loop/work/wt/scratch-i4-a/examples/cloudflare-zones-sdk)
+error[E0277]: `{integer}` is not accepted for a value of type `ZonesPerPage`
+   --> examples/cloudflare-zones-sdk/tests/cb_wrong_setter.rs:12:45
+    |
+ 12 |     let _r = cf.zones().list().set_per_page(50); // SEEDED
+    |                                ------------ ^^ expected `ZonesPerPage`
+    |                                |
+    |                                required by a bound introduced by this call
+    |
+    = help: the trait `IntoValue<ZonesPerPage>` is not implemented for `{integer}`
+    = note: Concord accepts the exact declared type, `&str`/`&String` for `String`, or `&HeaderValue` for `HeaderValue`; construct newtypes and `Option`s explicitly
+help: the following other types implement trait `IntoValue<T>`
+   --> crates/concord-core/src/value.rs:69:1
+    |
+ 69 | impl IntoValue<String> for &str {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `&str` implements `IntoValue<String>`
+...
+ 76 | impl IntoValue<String> for &String {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `&String` implements `IntoValue<String>`
+...
+ 83 | impl IntoValue<HeaderValue> for &HeaderValue {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `&HeaderValue` implements `IntoValue<HeaderValue>`
+note: required by a bound in `CloudflareZonesList::set_per_page`
+   --> crates/concord/src/lib.rs:262:33
+    |
+262 |           $crate::__macro::api! { $crate::__macro::concord_core; $($tokens)* }
+    |                                   ^^^^^^ required by this bound in `CloudflareZonesList::set_per_page`
+    |
+   ::: examples/cloudflare-zones-sdk/src/lib.rs:59:1
+    |
+ 59 | / concord::api! {
+ 60 | |     /// Cloudflare API v4, `https://api.cloudflare.com/client/v4`, with an API token.
+ 61 | |     pub client Cloudflare(
+ 62 | |         /// `Bearer {api_token}`; build it with [`Cloudflare::connect`] or
+...   |
+140 | | }
+    | |_- in this macro invocation
+    = note: this error originates in the macro `concord::api` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+For more information about this error, try `rustc --explain E0277`.
+error: could not compile `concord-sdk-cloudflare-zones` (test "cb_wrong_setter") due to 1 previous error

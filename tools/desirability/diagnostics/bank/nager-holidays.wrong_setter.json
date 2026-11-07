@@ -1,0 +1,15 @@
+{
+ "corrected": "let _req = api.holidays(\"AT\", 2026);",
+ "expected": "u16",
+ "generated_names": [
+  "NagerHolidaysConfig",
+  "NagerHolidaysHolidays"
+ ],
+ "kind": "wrong_setter",
+ "package": "concord-sdk-nager-holidays",
+ "sdk": "nager-holidays",
+ "seeded": "let _req = api.holidays(\"AT\", \"2026\");",
+ "seeded_line": 8,
+ "user_file": "examples/nager-holidays-sdk/tests/cb_wrong_setter.rs",
+ "variant": "no setter exists: a positional value of the wrong type"
+}

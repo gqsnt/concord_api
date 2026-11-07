@@ -1,0 +1,650 @@
+{
+ "sdk": "digitalocean-sdk",
+ "short": "digitalocean",
+ "pkg": "concord-sdk-digitalocean",
+ "repo_head": "984bd2f6a981dd85e8b104c21daae06421a7a48a",
+ "truth_format": 3,
+ "aliases": [
+  "type Traversal<T> = Pages<T, NextLink, ResponseMeta, Error>",
+  "Cow = std::borrow::Cow (imported: std::borrow::Cow)",
+  "Deserialize = serde::Deserialize (imported: serde::Deserialize)",
+  "DigitalOcean = sdk::DigitalOcean (imported: crate::DigitalOcean)",
+  "Duration = std::time::Duration (imported: std::time::Duration)",
+  "Endpoint = concord::Endpoint (imported: concord::Endpoint)",
+  "Json = concord::Json (imported: concord::Json)",
+  "NonZeroUsize = std::num::NonZeroUsize (imported: std::num::NonZeroUsize)",
+  "Page = concord_pagination::Page (imported: concord_pagination::Page)",
+  "Pages = concord_pagination::Pages (imported: concord_pagination::Pages)",
+  "Received = concord::Received (imported: concord::Received)",
+  "Resume = concord_pagination::Resume (imported: concord_pagination::Resume)",
+  "SendWith = concord::SendWith (imported: concord::SendWith)",
+  "Sends = concord::Sends (imported: concord::Sends)",
+  "Url = reqwest::Url (imported: concord::reqwest::Url)"
+ ],
+ "items": {
+  "digitalocean/w1": {
+   "method": "GET",
+   "url": "https://api.digitalocean.com/v2/droplets/28/actions",
+   "headers": [
+    [
+     "authorization",
+     "<secret>"
+    ],
+    [
+     "accept",
+     "application/json"
+    ]
+   ],
+   "secret_headers": [
+    "authorization"
+   ],
+   "body": null,
+   "body_kind": null,
+   "content_type": null,
+   "accept": "application/json",
+   "prepared": {
+    "method": "GET",
+    "url": "https://api.digitalocean.com/v2/droplets/28/actions",
+    "headers": [
+     [
+      "authorization",
+      "<secret>"
+     ],
+     [
+      "accept",
+      "application/json"
+     ]
+    ],
+    "secret_headers": [
+     "authorization"
+    ],
+    "body": null,
+    "body_kind": null,
+    "content_type": null,
+    "accept": "application/json"
+   },
+   "policy_changes_request": false,
+   "operation_completed_within_10s": true,
+   "boundary": "operation",
+   "kind": "wire"
+  },
+  "digitalocean/r1": {
+   "r2": {
+    "resolvable": true,
+    "send_returns": "Result<Response<Actions>, Error>",
+    "error_type": "Error",
+    "how": "send template",
+    "verified": true,
+    "decl_module": "crate",
+    "send_returns_canon": "Result<sdk::Response<sdk::models::Actions>, sdk::error::Error>",
+    "error_type_canon": "sdk::error::Error"
+   },
+   "base_url": {
+    "keep": "/v2",
+    "expected_url": "https://staging.example.test/v2/droplets/28/actions",
+    "results": {
+     "https://staging.example.test": "https://staging.example.test/v2/droplets/28/actions",
+     "https://staging.example.test/": "https://staging.example.test/v2/droplets/28/actions",
+     "https://staging.example.test/v2": "https://staging.example.test/v2/v2/droplets/28/actions",
+     "https://staging.example.test/v2/": "https://staging.example.test/v2/v2/droplets/28/actions"
+    },
+    "keeps": [
+     "https://staging.example.test",
+     "https://staging.example.test/"
+    ]
+   },
+   "boundary": "operation",
+   "kind": "result"
+  },
+  "digitalocean/c1": {
+   "reference": "api.droplet(28).actions().send().await",
+   "reference_compiles": true,
+   "client": "DigitalOcean",
+   "binding": {
+    "type": "Result<Response<Actions>, Error>",
+    "result": "is_ok"
+   },
+   "boundary": "operation",
+   "base_path": "",
+   "recorded": [
+    {
+     "method": "GET",
+     "target": "/v2/droplets/28/actions",
+     "headers": [
+      [
+       "authorization",
+       "<secret>"
+      ],
+      [
+       "accept",
+       "application/json"
+      ]
+     ],
+     "body": ""
+    }
+   ],
+   "recorded_again": [
+    {
+     "method": "GET",
+     "target": "/v2/droplets/28/actions",
+     "headers": [
+      [
+       "authorization",
+       "<secret>"
+      ],
+      [
+       "accept",
+       "application/json"
+      ]
+     ],
+     "body": ""
+    }
+   ],
+   "volatile": {
+    "sequence_differs": false,
+    "headers": [],
+    "bodies": []
+   },
+   "fixture": {
+    "name": "examples/digitalocean-sdk/fixtures/actions-first.json",
+    "content_type": "application/json",
+    "path": "examples/digitalocean-sdk/fixtures/actions-first.json",
+    "body": null
+   },
+   "fixture_tries_failed": 0,
+   "reference_outcome": null,
+   "result_checked": true,
+   "check_available": true,
+   "kind": "call"
+  },
+  "digitalocean/w2": {
+   "method": "GET",
+   "url": "https://api.digitalocean.com/v2/droplets",
+   "headers": [
+    [
+     "authorization",
+     "<secret>"
+    ],
+    [
+     "accept",
+     "application/json"
+    ]
+   ],
+   "secret_headers": [
+    "authorization"
+   ],
+   "body": null,
+   "body_kind": null,
+   "content_type": null,
+   "accept": "application/json",
+   "prepared": {
+    "method": "GET",
+    "url": "https://api.digitalocean.com/v2/droplets",
+    "headers": [
+     [
+      "authorization",
+      "<secret>"
+     ],
+     [
+      "accept",
+      "application/json"
+     ]
+    ],
+    "secret_headers": [
+     "authorization"
+    ],
+    "body": null,
+    "body_kind": null,
+    "content_type": null,
+    "accept": "application/json"
+   },
+   "policy_changes_request": false,
+   "operation_completed_within_10s": true,
+   "boundary": "operation",
+   "kind": "wire"
+  },
+  "digitalocean/r2": {
+   "r2": {
+    "resolvable": true,
+    "send_returns": "Result<Response<Droplets>, Error>",
+    "error_type": "Error",
+    "how": "send template",
+    "verified": true,
+    "decl_module": "crate",
+    "send_returns_canon": "Result<sdk::Response<sdk::models::Droplets>, sdk::error::Error>",
+    "error_type_canon": "sdk::error::Error"
+   },
+   "base_url": null,
+   "boundary": "operation",
+   "kind": "result"
+  },
+  "digitalocean/c2": {
+   "reference": "api.droplets().list().send().await",
+   "reference_compiles": true,
+   "client": "DigitalOcean",
+   "binding": {
+    "type": "Result<Response<Droplets>, Error>",
+    "result": "is_ok"
+   },
+   "boundary": "operation",
+   "base_path": "",
+   "recorded": [
+    {
+     "method": "GET",
+     "target": "/v2/droplets",
+     "headers": [
+      [
+       "authorization",
+       "<secret>"
+      ],
+      [
+       "accept",
+       "application/json"
+      ]
+     ],
+     "body": ""
+    }
+   ],
+   "recorded_again": [
+    {
+     "method": "GET",
+     "target": "/v2/droplets",
+     "headers": [
+      [
+       "authorization",
+       "<secret>"
+      ],
+      [
+       "accept",
+       "application/json"
+      ]
+     ],
+     "body": ""
+    }
+   ],
+   "volatile": {
+    "sequence_differs": false,
+    "headers": [],
+    "bodies": []
+   },
+   "fixture": {
+    "name": "examples/digitalocean-sdk/fixtures/droplets-first.json",
+    "content_type": "application/json",
+    "path": "examples/digitalocean-sdk/fixtures/droplets-first.json",
+    "body": null
+   },
+   "fixture_tries_failed": 0,
+   "reference_outcome": null,
+   "result_checked": true,
+   "check_available": true,
+   "kind": "call"
+  },
+  "digitalocean/w3": {
+   "method": "GET",
+   "url": "https://api.digitalocean.com/v2/droplets/17",
+   "headers": [
+    [
+     "authorization",
+     "<secret>"
+    ],
+    [
+     "accept",
+     "application/json"
+    ]
+   ],
+   "secret_headers": [
+    "authorization"
+   ],
+   "body": null,
+   "body_kind": null,
+   "content_type": null,
+   "accept": "application/json",
+   "prepared": {
+    "method": "GET",
+    "url": "https://api.digitalocean.com/v2/droplets/17",
+    "headers": [
+     [
+      "authorization",
+      "<secret>"
+     ],
+     [
+      "accept",
+      "application/json"
+     ]
+    ],
+    "secret_headers": [
+     "authorization"
+    ],
+    "body": null,
+    "body_kind": null,
+    "content_type": null,
+    "accept": "application/json"
+   },
+   "policy_changes_request": false,
+   "operation_completed_within_10s": true,
+   "boundary": "operation",
+   "kind": "wire"
+  },
+  "digitalocean/r3": {
+   "r2": {
+    "resolvable": true,
+    "send_returns": "Result<Response<DropletDocument>, Error>",
+    "error_type": "Error",
+    "how": "send template",
+    "verified": true,
+    "decl_module": "crate",
+    "send_returns_canon": "Result<sdk::Response<sdk::models::DropletDocument>, sdk::error::Error>",
+    "error_type_canon": "sdk::error::Error"
+   },
+   "base_url": null,
+   "boundary": "operation",
+   "kind": "result"
+  },
+  "digitalocean/c3": {
+   "reference": "api.droplet(17).get().send().await",
+   "reference_compiles": true,
+   "client": "DigitalOcean",
+   "binding": {
+    "type": "Result<Response<DropletDocument>, Error>",
+    "result": "is_ok"
+   },
+   "boundary": "operation",
+   "base_path": "",
+   "recorded": [
+    {
+     "method": "GET",
+     "target": "/v2/droplets/17",
+     "headers": [
+      [
+       "authorization",
+       "<secret>"
+      ],
+      [
+       "accept",
+       "application/json"
+      ]
+     ],
+     "body": ""
+    }
+   ],
+   "recorded_again": [
+    {
+     "method": "GET",
+     "target": "/v2/droplets/17",
+     "headers": [
+      [
+       "authorization",
+       "<secret>"
+      ],
+      [
+       "accept",
+       "application/json"
+      ]
+     ],
+     "body": ""
+    }
+   ],
+   "volatile": {
+    "sequence_differs": false,
+    "headers": [],
+    "bodies": []
+   },
+   "fixture": {
+    "name": "examples/digitalocean-sdk/fixtures/droplet.json",
+    "content_type": "application/json",
+    "path": "examples/digitalocean-sdk/fixtures/droplet.json",
+    "body": null
+   },
+   "fixture_tries_failed": 0,
+   "reference_outcome": null,
+   "result_checked": true,
+   "check_available": true,
+   "kind": "call"
+  },
+  "digitalocean/w4": {
+   "method": "GET",
+   "url": "https://api.digitalocean.com/v2/droplets/8/actions/12",
+   "headers": [
+    [
+     "authorization",
+     "<secret>"
+    ],
+    [
+     "accept",
+     "application/json"
+    ]
+   ],
+   "secret_headers": [
+    "authorization"
+   ],
+   "body": null,
+   "body_kind": null,
+   "content_type": null,
+   "accept": "application/json",
+   "prepared": {
+    "method": "GET",
+    "url": "https://api.digitalocean.com/v2/droplets/8/actions/12",
+    "headers": [
+     [
+      "authorization",
+      "<secret>"
+     ],
+     [
+      "accept",
+      "application/json"
+     ]
+    ],
+    "secret_headers": [
+     "authorization"
+    ],
+    "body": null,
+    "body_kind": null,
+    "content_type": null,
+    "accept": "application/json"
+   },
+   "policy_changes_request": false,
+   "operation_completed_within_10s": true,
+   "boundary": "operation",
+   "kind": "wire"
+  },
+  "digitalocean/r4": {
+   "r2": {
+    "resolvable": true,
+    "send_returns": "Result<Response<ActionDocument>, Error>",
+    "error_type": "Error",
+    "how": "send template",
+    "verified": true,
+    "decl_module": "crate",
+    "send_returns_canon": "Result<sdk::Response<sdk::models::ActionDocument>, sdk::error::Error>",
+    "error_type_canon": "sdk::error::Error"
+   },
+   "base_url": null,
+   "boundary": "operation",
+   "kind": "result"
+  },
+  "digitalocean/c4": {
+   "reference": "api.droplet(8).action(12).send().await",
+   "reference_compiles": true,
+   "client": "DigitalOcean",
+   "binding": {
+    "type": "Result<Response<ActionDocument>, Error>",
+    "result": "is_ok"
+   },
+   "boundary": "operation",
+   "base_path": "",
+   "recorded": [
+    {
+     "method": "GET",
+     "target": "/v2/droplets/8/actions/12",
+     "headers": [
+      [
+       "authorization",
+       "<secret>"
+      ],
+      [
+       "accept",
+       "application/json"
+      ]
+     ],
+     "body": ""
+    }
+   ],
+   "recorded_again": [
+    {
+     "method": "GET",
+     "target": "/v2/droplets/8/actions/12",
+     "headers": [
+      [
+       "authorization",
+       "<secret>"
+      ],
+      [
+       "accept",
+       "application/json"
+      ]
+     ],
+     "body": ""
+    }
+   ],
+   "volatile": {
+    "sequence_differs": false,
+    "headers": [],
+    "bodies": []
+   },
+   "fixture": {
+    "name": "examples/digitalocean-sdk/fixtures/action.json",
+    "content_type": "application/json",
+    "path": "examples/digitalocean-sdk/fixtures/action.json",
+    "body": null
+   },
+   "fixture_tries_failed": 0,
+   "reference_outcome": null,
+   "result_checked": true,
+   "check_available": true,
+   "kind": "call"
+  },
+  "digitalocean/w5": {
+   "method": "GET",
+   "url": "https://api.digitalocean.com/v2/droplets/22/snapshots",
+   "headers": [
+    [
+     "authorization",
+     "<secret>"
+    ],
+    [
+     "accept",
+     "application/json"
+    ]
+   ],
+   "secret_headers": [
+    "authorization"
+   ],
+   "body": null,
+   "body_kind": null,
+   "content_type": null,
+   "accept": "application/json",
+   "prepared": {
+    "method": "GET",
+    "url": "https://api.digitalocean.com/v2/droplets/22/snapshots",
+    "headers": [
+     [
+      "authorization",
+      "<secret>"
+     ],
+     [
+      "accept",
+      "application/json"
+     ]
+    ],
+    "secret_headers": [
+     "authorization"
+    ],
+    "body": null,
+    "body_kind": null,
+    "content_type": null,
+    "accept": "application/json"
+   },
+   "policy_changes_request": false,
+   "operation_completed_within_10s": true,
+   "boundary": "operation",
+   "kind": "wire"
+  },
+  "digitalocean/r5": {
+   "r2": {
+    "resolvable": true,
+    "send_returns": "Result<Response<Snapshots>, Error>",
+    "error_type": "Error",
+    "how": "send template",
+    "verified": true,
+    "decl_module": "crate",
+    "send_returns_canon": "Result<sdk::Response<sdk::models::Snapshots>, sdk::error::Error>",
+    "error_type_canon": "sdk::error::Error"
+   },
+   "base_url": null,
+   "boundary": "operation",
+   "kind": "result"
+  },
+  "digitalocean/c5": {
+   "reference": "api.droplet(22).snapshots().send().await",
+   "reference_compiles": true,
+   "client": "DigitalOcean",
+   "binding": {
+    "type": "Result<Response<Snapshots>, Error>",
+    "result": "is_ok"
+   },
+   "boundary": "operation",
+   "base_path": "",
+   "recorded": [
+    {
+     "method": "GET",
+     "target": "/v2/droplets/22/snapshots",
+     "headers": [
+      [
+       "authorization",
+       "<secret>"
+      ],
+      [
+       "accept",
+       "application/json"
+      ]
+     ],
+     "body": ""
+    }
+   ],
+   "recorded_again": [
+    {
+     "method": "GET",
+     "target": "/v2/droplets/22/snapshots",
+     "headers": [
+      [
+       "authorization",
+       "<secret>"
+      ],
+      [
+       "accept",
+       "application/json"
+      ]
+     ],
+     "body": ""
+    }
+   ],
+   "volatile": {
+    "sequence_differs": false,
+    "headers": [],
+    "bodies": []
+   },
+   "fixture": {
+    "name": "examples/digitalocean-sdk/fixtures/snapshots-first.json",
+    "content_type": "application/json",
+    "path": "examples/digitalocean-sdk/fixtures/snapshots-first.json",
+    "body": null
+   },
+   "fixture_tries_failed": 4,
+   "reference_outcome": null,
+   "result_checked": true,
+   "check_available": true,
+   "kind": "call"
+  }
+ },
+ "drops": []
+}

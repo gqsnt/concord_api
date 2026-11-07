@@ -1,0 +1,13 @@
+   Compiling concord-sdk-notion v0.0.0 (/home/canarit/projects/Concord_Desirability_Loop/work/wt/scratch-i4-a/examples/notion-sdk)
+error[E0308]: `?` operator has incompatible types
+  --> examples/notion-sdk/tests/cb_send_mismatch.rs:11:20
+   |
+11 |     let _p: Page = api.children("b", 10).send().await?; // SEEDED
+   |                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ expected `Page`, found `List<Block>`
+   |
+   = note: `?` operator cannot convert from `List<Block>` to `concord_sdk_notion::models::Page`
+   = note: expected struct `concord_sdk_notion::models::Page`
+              found struct `List<Block>`
+
+For more information about this error, try `rustc --explain E0308`.
+error: could not compile `concord-sdk-notion` (test "cb_send_mismatch") due to 1 previous error

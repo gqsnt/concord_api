@@ -1,0 +1,536 @@
+{
+ "sdk": "distribution-registry-sdk",
+ "short": "distribution-registry",
+ "pkg": "concord-sdk-distribution-registry",
+ "repo_head": "984bd2f6a981dd85e8b104c21daae06421a7a48a",
+ "truth_format": 3,
+ "aliases": [
+  "type CatalogPage = Page<String, NextLink, ResponseMeta>",
+  "type CatalogPages = Pages<String, NextLink, ResponseMeta, RegistryError>",
+  "type Params = Vec<(String, String)>",
+  "type TagPage = Page<String, NextLink, ResponseMeta>",
+  "type TagPages = Pages<String, NextLink, ResponseMeta, RegistryError>",
+  "Arc = std::sync::Arc (imported: std::sync::Arc)",
+  "BTreeMap = std::collections::BTreeMap (imported: std::collections::BTreeMap)",
+  "Binary = concord::Binary (imported: concord::Binary)",
+  "Bytes = bytes::Bytes (imported: concord::bytes::Bytes)",
+  "BytesMut = bytes::BytesMut (imported: concord::bytes::BytesMut)",
+  "Deserialize = serde::Deserialize (imported: serde::Deserialize)",
+  "Deserializer = serde::Deserializer (imported: serde::Deserializer)",
+  "Duration = std::time::Duration (imported: std::time::Duration)",
+  "Encoded = concord::Encoded (imported: concord::Encoded)",
+  "EncodedBody = concord::EncodedBody (imported: concord::EncodedBody)",
+  "ErrorKind = concord::ErrorKind (imported: concord::ErrorKind)",
+  "FromStr = std::str::FromStr (imported: std::str::FromStr)",
+  "HeaderMap = reqwest::header::HeaderMap (imported: concord::reqwest::header::HeaderMap)",
+  "HeaderValue = reqwest::header::HeaderValue (imported: concord::reqwest::header::HeaderValue)",
+  "IgnoreContentType = concord::IgnoreContentType (imported: concord::IgnoreContentType)",
+  "Incoming = concord::Incoming (imported: concord::Incoming)",
+  "Instant = std::time::Instant (imported: std::time::Instant)",
+  "Json = concord::Json (imported: concord::Json)",
+  "NonZeroU32 = std::num::NonZeroU32 (imported: std::num::NonZeroU32)",
+  "NonZeroUsize = std::num::NonZeroUsize (imported: std::num::NonZeroUsize)",
+  "Operation = concord::Operation (imported: concord::Operation)",
+  "Page = concord_pagination::Page (imported: concord_pagination::Page)",
+  "Pages = concord_pagination::Pages (imported: concord_pagination::Pages)",
+  "Prepared = concord::Prepared (imported: concord::Prepared)",
+  "Received = concord::Received (imported: concord::Received)",
+  "RefreshError = concord_auth::RefreshError (imported: concord_auth::RefreshError)",
+  "RepoApi = sdk::client::Repository (imported: crate::api::Repository)",
+  "Resume = concord_pagination::Resume (imported: concord_pagination::Resume)",
+  "RootApi = sdk::client::Registry (imported: crate::api::Registry)",
+  "Serialize = serde::Serialize (imported: serde::Serialize)",
+  "Serializer = serde::Serializer (imported: serde::Serializer)",
+  "StatusCode = reqwest::StatusCode (imported: concord::reqwest::StatusCode)",
+  "Token = concord_auth::Token (imported: concord_auth::Token)",
+  "TokenApi = TokenService (imported: crate::api::TokenService)",
+  "TokenCache = concord_auth::TokenCache (imported: concord_auth::TokenCache)",
+  "Url = reqwest::Url (imported: concord::reqwest::Url)"
+ ],
+ "items": {
+  "distribution-registry/w1": {
+   "method": "GET",
+   "url": "https://auth.invalid/token?scope=fjord&scope=lumen&client_id=nectar",
+   "headers": [
+    [
+     "authorization",
+     "<secret>"
+    ],
+    [
+     "accept",
+     "application/json"
+    ]
+   ],
+   "secret_headers": [
+    "authorization"
+   ],
+   "body": null,
+   "body_kind": null,
+   "content_type": null,
+   "accept": "application/json",
+   "boundary": "prepared",
+   "kind": "wire"
+  },
+  "distribution-registry/r1": {
+   "r2": {
+    "resolvable": true,
+    "send_returns": "Result<TokenBody, concord::Error>",
+    "error_type": "concord::Error",
+    "how": "no send policy",
+    "verified": true,
+    "decl_module": "crate::api",
+    "send_returns_canon": "Result<sdk::model::TokenBody, concord::Error>",
+    "error_type_canon": "concord::Error"
+   },
+   "base_url": {
+    "keep": "/token",
+    "expected_url": "https://staging.example.test/token?scope=fjord&scope=lumen&client_id=nectar",
+    "results": {
+     "https://staging.example.test": "https://staging.example.test/?scope=fjord&scope=lumen&client_id=nectar",
+     "https://staging.example.test/": "https://staging.example.test/?scope=fjord&scope=lumen&client_id=nectar",
+     "https://staging.example.test/token": "https://staging.example.test/token?scope=fjord&scope=lumen&client_id=nectar",
+     "https://staging.example.test/token/": "https://staging.example.test/token/?scope=fjord&scope=lumen&client_id=nectar"
+    },
+    "keeps": [
+     "https://staging.example.test/token"
+    ]
+   },
+   "boundary": "prepared",
+   "kind": "result"
+  },
+  "distribution-registry/c1": {
+   "reference": "api.set_credentials(reqwest::header::HeaderValue::from_static(\"CANARYDISTRIBUTIONREGISTRY211Z\")).token(vec![\"fjord\".to_string(), \"lumen\".to_string()]).set_client_id(\"nectar\").send().await",
+   "reference_compiles": true,
+   "client": "TokenService",
+   "binding": {
+    "type": "Result<TokenBody, concord::Error>",
+    "result": "is_ok"
+   },
+   "boundary": "prepared",
+   "base_path": "/token",
+   "recorded": [
+    {
+     "method": "GET",
+     "target": "/token?scope=fjord&scope=lumen&client_id=nectar",
+     "headers": [
+      [
+       "authorization",
+       "<secret>"
+      ],
+      [
+       "accept",
+       "application/json"
+      ]
+     ],
+     "body": ""
+    }
+   ],
+   "recorded_again": [
+    {
+     "method": "GET",
+     "target": "/token?scope=fjord&scope=lumen&client_id=nectar",
+     "headers": [
+      [
+       "authorization",
+       "<secret>"
+      ],
+      [
+       "accept",
+       "application/json"
+      ]
+     ],
+     "body": ""
+    }
+   ],
+   "volatile": {
+    "sequence_differs": false,
+    "headers": [],
+    "bodies": []
+   },
+   "fixture": {
+    "name": "examples/distribution-registry-sdk/fixtures/token-access-token.json",
+    "content_type": "application/json",
+    "path": "examples/distribution-registry-sdk/fixtures/token-access-token.json",
+    "body": null
+   },
+   "fixture_tries_failed": 0,
+   "reference_outcome": null,
+   "result_checked": true,
+   "check_available": true,
+   "kind": "call"
+  },
+  "distribution-registry/w2": {
+   "method": "GET",
+   "url": "https://registry.invalid/v2/repository/blobs/uploads/",
+   "headers": [],
+   "secret_headers": [],
+   "body": null,
+   "body_kind": null,
+   "content_type": null,
+   "accept": null,
+   "boundary": "prepared",
+   "kind": "wire"
+  },
+  "distribution-registry/r2": {
+   "r2": {
+    "resolvable": true,
+    "send_returns": "Result<(), concord::Error>",
+    "error_type": "concord::Error",
+    "how": "no send policy",
+    "verified": true,
+    "decl_module": "crate::api",
+    "send_returns_canon": "Result<(), concord::Error>",
+    "error_type_canon": "concord::Error"
+   },
+   "base_url": {
+    "keep": "/v2/repository",
+    "expected_url": "https://staging.example.test/v2/repository/blobs/uploads/",
+    "results": {
+     "https://staging.example.test": "https://staging.example.test/blobs/uploads/",
+     "https://staging.example.test/": "https://staging.example.test/blobs/uploads/",
+     "https://staging.example.test/v2/repository": "https://staging.example.test/v2/repository/blobs/uploads/",
+     "https://staging.example.test/v2/repository/": "https://staging.example.test/v2/repository/blobs/uploads/"
+    },
+    "keeps": [
+     "https://staging.example.test/v2/repository",
+     "https://staging.example.test/v2/repository/"
+    ]
+   },
+   "boundary": "prepared",
+   "kind": "result"
+  },
+  "distribution-registry/c2": {
+   "reference": "api.upload_status().send().await",
+   "reference_compiles": true,
+   "client": "Repository",
+   "binding": {
+    "type": "Result<(), concord::Error>",
+    "result": "is_ok"
+   },
+   "boundary": "prepared",
+   "base_path": "/v2/repository",
+   "recorded": [
+    {
+     "method": "GET",
+     "target": "/v2/repository/blobs/uploads/",
+     "headers": [
+      [
+       "accept",
+       "*/*"
+      ]
+     ],
+     "body": ""
+    }
+   ],
+   "recorded_again": [
+    {
+     "method": "GET",
+     "target": "/v2/repository/blobs/uploads/",
+     "headers": [
+      [
+       "accept",
+       "*/*"
+      ]
+     ],
+     "body": ""
+    }
+   ],
+   "volatile": {
+    "sequence_differs": false,
+    "headers": [],
+    "bodies": []
+   },
+   "fixture": {
+    "name": "examples/distribution-registry-sdk/fixtures/catalog-page-1.json",
+    "content_type": "application/json",
+    "path": "examples/distribution-registry-sdk/fixtures/catalog-page-1.json",
+    "body": null
+   },
+   "fixture_tries_failed": 0,
+   "reference_outcome": null,
+   "result_checked": true,
+   "check_available": true,
+   "kind": "call"
+  },
+  "distribution-registry/w3": {
+   "method": "GET",
+   "url": "https://registry.invalid/v2/",
+   "headers": [
+    [
+     "authorization",
+     "<secret>"
+    ]
+   ],
+   "secret_headers": [
+    "authorization"
+   ],
+   "body": null,
+   "body_kind": null,
+   "content_type": null,
+   "accept": null,
+   "boundary": "prepared",
+   "kind": "wire"
+  },
+  "distribution-registry/r3": {
+   "r2": {
+    "resolvable": true,
+    "send_returns": "Result<(), concord::Error>",
+    "error_type": "concord::Error",
+    "how": "no send policy",
+    "verified": true,
+    "decl_module": "crate::api",
+    "send_returns_canon": "Result<(), concord::Error>",
+    "error_type_canon": "concord::Error"
+   },
+   "base_url": null,
+   "boundary": "prepared",
+   "kind": "result"
+  },
+  "distribution-registry/c3": {
+   "reference": "api.set_authorization(reqwest::header::HeaderValue::from_static(\"CANARYDISTRIBUTIONREGISTRY101Z\")).ping().send().await",
+   "reference_compiles": true,
+   "client": "Registry",
+   "binding": {
+    "type": "Result<(), concord::Error>",
+    "result": "is_ok"
+   },
+   "boundary": "prepared",
+   "base_path": "",
+   "recorded": [
+    {
+     "method": "GET",
+     "target": "/v2/",
+     "headers": [
+      [
+       "authorization",
+       "<secret>"
+      ],
+      [
+       "accept",
+       "*/*"
+      ]
+     ],
+     "body": ""
+    }
+   ],
+   "recorded_again": [
+    {
+     "method": "GET",
+     "target": "/v2/",
+     "headers": [
+      [
+       "authorization",
+       "<secret>"
+      ],
+      [
+       "accept",
+       "*/*"
+      ]
+     ],
+     "body": ""
+    }
+   ],
+   "volatile": {
+    "sequence_differs": false,
+    "headers": [],
+    "bodies": []
+   },
+   "fixture": {
+    "name": "examples/distribution-registry-sdk/fixtures/catalog-page-1.json",
+    "content_type": "application/json",
+    "path": "examples/distribution-registry-sdk/fixtures/catalog-page-1.json",
+    "body": null
+   },
+   "fixture_tries_failed": 0,
+   "reference_outcome": null,
+   "result_checked": true,
+   "check_available": true,
+   "kind": "call"
+  },
+  "distribution-registry/w4": {
+   "method": "GET",
+   "url": "https://registry.invalid/v2/repository/tags/list?last=fjord",
+   "headers": [
+    [
+     "accept",
+     "application/json"
+    ]
+   ],
+   "secret_headers": [],
+   "body": null,
+   "body_kind": null,
+   "content_type": null,
+   "accept": "application/json",
+   "boundary": "prepared",
+   "kind": "wire"
+  },
+  "distribution-registry/r4": {
+   "r2": {
+    "resolvable": true,
+    "send_returns": "Result<TagsBody, concord::Error>",
+    "error_type": "concord::Error",
+    "how": "no send policy",
+    "verified": true,
+    "decl_module": "crate::api",
+    "send_returns_canon": "Result<sdk::model::TagsBody, concord::Error>",
+    "error_type_canon": "concord::Error"
+   },
+   "base_url": null,
+   "boundary": "prepared",
+   "kind": "result"
+  },
+  "distribution-registry/c4": {
+   "reference": "api.tags().set_last(\"fjord\").send().await",
+   "reference_compiles": true,
+   "client": "Repository",
+   "binding": {
+    "type": "Result<TagsBody, concord::Error>",
+    "result": "is_ok"
+   },
+   "boundary": "prepared",
+   "base_path": "/v2/repository",
+   "recorded": [
+    {
+     "method": "GET",
+     "target": "/v2/repository/tags/list?last=fjord",
+     "headers": [
+      [
+       "accept",
+       "application/json"
+      ]
+     ],
+     "body": ""
+    }
+   ],
+   "recorded_again": [
+    {
+     "method": "GET",
+     "target": "/v2/repository/tags/list?last=fjord",
+     "headers": [
+      [
+       "accept",
+       "application/json"
+      ]
+     ],
+     "body": ""
+    }
+   ],
+   "volatile": {
+    "sequence_differs": false,
+    "headers": [],
+    "bodies": []
+   },
+   "fixture": {
+    "name": "examples/distribution-registry-sdk/fixtures/tags-null.json",
+    "content_type": "application/json",
+    "path": "examples/distribution-registry-sdk/fixtures/tags-null.json",
+    "body": null
+   },
+   "fixture_tries_failed": 0,
+   "reference_outcome": null,
+   "result_checked": true,
+   "check_available": true,
+   "kind": "call"
+  },
+  "distribution-registry/w5": {
+   "method": "GET",
+   "url": "https://registry.invalid/v2/_catalog",
+   "headers": [
+    [
+     "authorization",
+     "<secret>"
+    ],
+    [
+     "accept",
+     "application/json"
+    ]
+   ],
+   "secret_headers": [
+    "authorization"
+   ],
+   "body": null,
+   "body_kind": null,
+   "content_type": null,
+   "accept": "application/json",
+   "boundary": "prepared",
+   "kind": "wire"
+  },
+  "distribution-registry/r5": {
+   "r2": {
+    "resolvable": true,
+    "send_returns": "Result<CatalogBody, concord::Error>",
+    "error_type": "concord::Error",
+    "how": "no send policy",
+    "verified": true,
+    "decl_module": "crate::api",
+    "send_returns_canon": "Result<sdk::model::CatalogBody, concord::Error>",
+    "error_type_canon": "concord::Error"
+   },
+   "base_url": null,
+   "boundary": "prepared",
+   "kind": "result"
+  },
+  "distribution-registry/c5": {
+   "reference": "api.set_authorization(reqwest::header::HeaderValue::from_static(\"CANARYDISTRIBUTIONREGISTRY111Z\")).catalog().send().await",
+   "reference_compiles": true,
+   "client": "Registry",
+   "binding": {
+    "type": "Result<CatalogBody, concord::Error>",
+    "result": "is_ok"
+   },
+   "boundary": "prepared",
+   "base_path": "",
+   "recorded": [
+    {
+     "method": "GET",
+     "target": "/v2/_catalog",
+     "headers": [
+      [
+       "authorization",
+       "<secret>"
+      ],
+      [
+       "accept",
+       "application/json"
+      ]
+     ],
+     "body": ""
+    }
+   ],
+   "recorded_again": [
+    {
+     "method": "GET",
+     "target": "/v2/_catalog",
+     "headers": [
+      [
+       "authorization",
+       "<secret>"
+      ],
+      [
+       "accept",
+       "application/json"
+      ]
+     ],
+     "body": ""
+    }
+   ],
+   "volatile": {
+    "sequence_differs": false,
+    "headers": [],
+    "bodies": []
+   },
+   "fixture": {
+    "name": "examples/distribution-registry-sdk/fixtures/catalog-page-1.json",
+    "content_type": "application/json",
+    "path": "examples/distribution-registry-sdk/fixtures/catalog-page-1.json",
+    "body": null
+   },
+   "fixture_tries_failed": 0,
+   "reference_outcome": null,
+   "result_checked": true,
+   "check_available": true,
+   "kind": "call"
+  }
+ },
+ "drops": []
+}

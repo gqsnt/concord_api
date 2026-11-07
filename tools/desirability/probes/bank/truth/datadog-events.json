@@ -1,0 +1,352 @@
+{
+ "sdk": "datadog-events-sdk",
+ "short": "datadog-events",
+ "pkg": "concord-sdk-datadog-events",
+ "repo_head": "984bd2f6a981dd85e8b104c21daae06421a7a48a",
+ "truth_format": 3,
+ "aliases": [
+  "type SearchPages = Pages<Event, Cursor, PageInfo, Error>",
+  "CodecError = concord::CodecError (imported: concord::CodecError)",
+  "DatadogApi = sdk::DatadogApi (imported: crate::api::DatadogApi)",
+  "DatadogApiConfig = sdk::DatadogApiConfig (imported: crate::api::DatadogApiConfig)",
+  "DatadogApiEvents = sdk::DatadogApiEvents (imported: crate::api::DatadogApiEvents)",
+  "DatadogApiEventsList = sdk::DatadogApiEventsList (imported: crate::api::DatadogApiEventsList)",
+  "DatadogApiEventsPost = sdk::DatadogApiEventsPost (imported: crate::api::DatadogApiEventsPost)",
+  "DatadogApiEventsSearch = sdk::DatadogApiEventsSearch (imported: crate::api::DatadogApiEventsSearch)",
+  "Deserialize = serde::Deserialize (imported: serde::Deserialize)",
+  "Encode = concord::Encode (imported: concord::Encode)",
+  "Endpoint = concord::Endpoint (imported: concord::Endpoint)",
+  "ErrorKind = concord::ErrorKind (imported: concord::ErrorKind)",
+  "FromStr = std::str::FromStr (imported: std::str::FromStr)",
+  "HashSet = std::collections::HashSet (imported: std::collections::HashSet)",
+  "HeaderName = reqwest::header::HeaderName (imported: concord::reqwest::header::HeaderName)",
+  "HeaderValue = reqwest::header::HeaderValue (imported: concord::reqwest::header::HeaderValue)",
+  "Json = concord::Json (imported: concord::Json)",
+  "Map = serde_json::Map (imported: serde_json::Map)",
+  "NonZeroU32 = std::num::NonZeroU32 (imported: std::num::NonZeroU32)",
+  "Operation = concord::Operation (imported: concord::Operation)",
+  "Page = concord_pagination::Page (imported: concord_pagination::Page)",
+  "Pages = concord_pagination::Pages (imported: concord_pagination::Pages)",
+  "QueryPairs = concord::QueryPairs (imported: concord::QueryPairs)",
+  "QueryPairsWriter = concord::QueryPairsWriter (imported: concord::QueryPairsWriter)",
+  "ResponseMeta = concord::ResponseMeta (imported: concord::ResponseMeta)",
+  "Resume = concord_pagination::Resume (imported: concord_pagination::Resume)",
+  "SendWith = concord::SendWith (imported: concord::SendWith)",
+  "Serialize = serde::Serialize (imported: serde::Serialize)",
+  "Serializer = serde::Serializer (imported: serde::Serializer)",
+  "StatusCode = reqwest::StatusCode (imported: concord::reqwest::StatusCode)",
+  "Value = serde_json::Value (imported: serde_json::Value)"
+ ],
+ "items": {
+  "datadog-events/w1": {
+   "method": "GET",
+   "url": "https://api.datadoghq.com/api/v2/events?filter%5Bquery%5D=nectar",
+   "headers": [
+    [
+     "dd-api-key",
+     "<secret>"
+    ],
+    [
+     "dd-application-key",
+     "<secret>"
+    ],
+    [
+     "accept",
+     "application/json"
+    ]
+   ],
+   "secret_headers": [
+    "dd-api-key",
+    "dd-application-key"
+   ],
+   "body": null,
+   "body_kind": null,
+   "content_type": null,
+   "accept": "application/json",
+   "prepared": {
+    "method": "GET",
+    "url": "https://api.datadoghq.com/api/v2/events?filter%5Bquery%5D=nectar",
+    "headers": [
+     [
+      "dd-api-key",
+      "<secret>"
+     ],
+     [
+      "dd-application-key",
+      "<secret>"
+     ],
+     [
+      "accept",
+      "application/json"
+     ]
+    ],
+    "secret_headers": [
+     "dd-api-key",
+     "dd-application-key"
+    ],
+    "body": null,
+    "body_kind": null,
+    "content_type": null,
+    "accept": "application/json"
+   },
+   "policy_changes_request": false,
+   "operation_completed_within_10s": true,
+   "boundary": "operation",
+   "kind": "wire"
+  },
+  "datadog-events/r1": {
+   "r2": {
+    "resolvable": true,
+    "send_returns": "Result<EventsPage, Error>",
+    "error_type": "Error",
+    "how": "send template",
+    "verified": true,
+    "decl_module": "crate::api",
+    "send_returns_canon": "Result<sdk::model::EventsPage, sdk::error::Error>",
+    "error_type_canon": "sdk::error::Error"
+   },
+   "base_url": {
+    "keep": "/api",
+    "expected_url": "https://staging.example.test/api/v2/events?filter%5Bquery%5D=nectar",
+    "results": {
+     "https://staging.example.test": "https://staging.example.test/api/v2/events?filter%5Bquery%5D=nectar",
+     "https://staging.example.test/": "https://staging.example.test/api/v2/events?filter%5Bquery%5D=nectar",
+     "https://staging.example.test/api": "https://staging.example.test/api/api/v2/events?filter%5Bquery%5D=nectar",
+     "https://staging.example.test/api/": "https://staging.example.test/api/api/v2/events?filter%5Bquery%5D=nectar"
+    },
+    "keeps": [
+     "https://staging.example.test",
+     "https://staging.example.test/"
+    ]
+   },
+   "boundary": "operation",
+   "kind": "result"
+  },
+  "datadog-events/c1": {
+   "reference": "api.events().list().set_query(\"nectar\").send().await",
+   "reference_compiles": true,
+   "client": "DatadogApi",
+   "binding": {
+    "type": "Result<EventsPage, Error>",
+    "result": "is_ok"
+   },
+   "boundary": "operation",
+   "base_path": "",
+   "recorded": [
+    {
+     "method": "GET",
+     "target": "/api/v2/events?filter%5Bquery%5D=nectar",
+     "headers": [
+      [
+       "dd-api-key",
+       "<secret>"
+      ],
+      [
+       "dd-application-key",
+       "<secret>"
+      ],
+      [
+       "accept",
+       "application/json"
+      ]
+     ],
+     "body": ""
+    }
+   ],
+   "recorded_again": [
+    {
+     "method": "GET",
+     "target": "/api/v2/events?filter%5Bquery%5D=nectar",
+     "headers": [
+      [
+       "dd-api-key",
+       "<secret>"
+      ],
+      [
+       "dd-application-key",
+       "<secret>"
+      ],
+      [
+       "accept",
+       "application/json"
+      ]
+     ],
+     "body": ""
+    }
+   ],
+   "volatile": {
+    "sequence_differs": false,
+    "headers": [],
+    "bodies": []
+   },
+   "fixture": {
+    "name": "examples/datadog-events-sdk/fixtures/events-200.doc.json",
+    "content_type": "application/json",
+    "path": "examples/datadog-events-sdk/fixtures/events-200.doc.json",
+    "body": null
+   },
+   "fixture_tries_failed": 0,
+   "reference_outcome": null,
+   "result_checked": true,
+   "check_available": true,
+   "kind": "call"
+  },
+  "datadog-events/w2": {
+   "method": "POST",
+   "url": "https://api.datadoghq.com/api/v2/events/search",
+   "headers": [
+    [
+     "dd-api-key",
+     "<secret>"
+    ],
+    [
+     "dd-application-key",
+     "<secret>"
+    ],
+    [
+     "content-type",
+     "application/json"
+    ],
+    [
+     "accept",
+     "application/json"
+    ]
+   ],
+   "secret_headers": [
+    "dd-api-key",
+    "dd-application-key"
+   ],
+   "body": {},
+   "body_kind": "json",
+   "content_type": "application/json",
+   "accept": "application/json",
+   "prepared": {
+    "method": "POST",
+    "url": "https://api.datadoghq.com/api/v2/events/search",
+    "headers": [
+     [
+      "dd-api-key",
+      "<secret>"
+     ],
+     [
+      "dd-application-key",
+      "<secret>"
+     ],
+     [
+      "content-type",
+      "application/json"
+     ],
+     [
+      "accept",
+      "application/json"
+     ]
+    ],
+    "secret_headers": [
+     "dd-api-key",
+     "dd-application-key"
+    ],
+    "body": {},
+    "body_kind": "json",
+    "content_type": "application/json",
+    "accept": "application/json"
+   },
+   "policy_changes_request": false,
+   "operation_completed_within_10s": true,
+   "boundary": "operation",
+   "kind": "wire"
+  },
+  "datadog-events/r2": {
+   "r2": {
+    "resolvable": true,
+    "send_returns": "Result<EventsPage, Error>",
+    "error_type": "Error",
+    "how": "send template",
+    "verified": true,
+    "decl_module": "crate::api",
+    "send_returns_canon": "Result<sdk::model::EventsPage, sdk::error::Error>",
+    "error_type_canon": "sdk::error::Error"
+   },
+   "base_url": null,
+   "boundary": "operation",
+   "kind": "result"
+  },
+  "datadog-events/c2": {
+   "reference": "api.events().search(SearchRequest::default()).send().await",
+   "reference_compiles": true,
+   "client": "DatadogApi",
+   "binding": {
+    "type": "Result<EventsPage, Error>",
+    "result": "is_ok"
+   },
+   "boundary": "operation",
+   "base_path": "",
+   "recorded": [
+    {
+     "method": "POST",
+     "target": "/api/v2/events/search",
+     "headers": [
+      [
+       "dd-api-key",
+       "<secret>"
+      ],
+      [
+       "dd-application-key",
+       "<secret>"
+      ],
+      [
+       "content-type",
+       "application/json"
+      ],
+      [
+       "accept",
+       "application/json"
+      ]
+     ],
+     "body": "{}"
+    }
+   ],
+   "recorded_again": [
+    {
+     "method": "POST",
+     "target": "/api/v2/events/search",
+     "headers": [
+      [
+       "dd-api-key",
+       "<secret>"
+      ],
+      [
+       "dd-application-key",
+       "<secret>"
+      ],
+      [
+       "content-type",
+       "application/json"
+      ],
+      [
+       "accept",
+       "application/json"
+      ]
+     ],
+     "body": "{}"
+    }
+   ],
+   "volatile": {
+    "sequence_differs": false,
+    "headers": [],
+    "bodies": []
+   },
+   "fixture": {
+    "name": "examples/datadog-events-sdk/fixtures/search-page-1.synthetic.json",
+    "content_type": "application/json",
+    "path": "examples/datadog-events-sdk/fixtures/search-page-1.synthetic.json",
+    "body": null
+   },
+   "fixture_tries_failed": 0,
+   "reference_outcome": null,
+   "result_checked": true,
+   "check_available": true,
+   "kind": "call"
+  }
+ },
+ "drops": []
+}

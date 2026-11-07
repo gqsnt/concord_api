@@ -1,0 +1,10 @@
+{
+ "sdk": "nager-holidays",
+ "kind": "e4",
+ "package": "concord-sdk-nager-holidays",
+ "sdk_dir": "examples/nager-holidays-sdk",
+ "title": "Add GET /api/v4/NextPublicHolidays/{CountryCode}",
+ "public_names": [
+  "NagerHolidays::next_public_holidays"
+ ]
+}

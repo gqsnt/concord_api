@@ -1,0 +1,196 @@
+{
+ "sdk": "pokeapi-sdk",
+ "short": "pokeapi",
+ "pkg": "concord-sdk-pokeapi",
+ "crate": "concord_sdk_pokeapi",
+ "seed": 1,
+ "role": "main",
+ "holdout_of": [],
+ "generator_version": 1,
+ "clients": {
+  "PokeApi": {
+   "constructible": true,
+   "file": "examples/pokeapi-sdk/src/lib.rs",
+   "ctor": "PokeApi::new(reqwest::Client::new())",
+   "canaries": [],
+   "config_fields": [],
+   "endpoints": 2,
+   "notes": []
+  }
+ },
+ "picks": [
+  {
+   "key": "PokeApi/list",
+   "client": "PokeApi",
+   "client_file": "examples/pokeapi-sdk/src/lib.rs",
+   "scopes": [],
+   "method": "GET",
+   "endpoint": "list",
+   "output": "PokemonPage",
+   "docs": [
+    "Request one list page."
+   ],
+   "values": [
+    {
+     "level": 1,
+     "owner": "list",
+     "owner_kind": "endpoint",
+     "name": "limit",
+     "type": "u64",
+     "placement": "query",
+     "key": null,
+     "each": false,
+     "sensitive": false,
+     "optional": true,
+     "default": null,
+     "kind": "int:u64",
+     "state": "unset",
+     "literal": null,
+     "value": null
+    },
+    {
+     "level": 1,
+     "owner": "list",
+     "owner_kind": "endpoint",
+     "name": "offset",
+     "type": "u64",
+     "placement": "query",
+     "key": null,
+     "each": false,
+     "sensitive": false,
+     "optional": true,
+     "default": null,
+     "kind": "int:u64",
+     "state": "set",
+     "literal": "7",
+     "value": 7
+    }
+   ],
+   "canaries": [],
+   "pct": false,
+   "rust": {
+    "client": "PokeApi::new(reqwest::Client::new())",
+    "call": "api.list().set_offset(7)"
+   },
+   "strata": [
+    "base_path",
+    "optional_set",
+    "optional_unset",
+    "query"
+   ],
+   "index": 0,
+   "boundary": "operation"
+  },
+  {
+   "key": "PokeApi/pokemon",
+   "client": "PokeApi",
+   "client_file": "examples/pokeapi-sdk/src/lib.rs",
+   "scopes": [],
+   "method": "GET",
+   "endpoint": "pokemon",
+   "output": "Pokemon",
+   "docs": [
+    "Retrieve one Pokémon by name or numeric ID."
+   ],
+   "values": [
+    {
+     "level": 1,
+     "owner": "pokemon",
+     "owner_kind": "endpoint",
+     "name": "id",
+     "type": "String",
+     "placement": "path",
+     "key": null,
+     "each": false,
+     "sensitive": false,
+     "optional": false,
+     "default": null,
+     "kind": "string",
+     "state": "required",
+     "literal": "\"cedar\"",
+     "value": "cedar"
+    }
+   ],
+   "canaries": [],
+   "pct": false,
+   "rust": {
+    "client": "PokeApi::new(reqwest::Client::new())",
+    "call": "api.pokemon(\"cedar\")"
+   },
+   "strata": [
+    "base_path"
+   ],
+   "index": 1,
+   "boundary": "operation"
+  }
+ ],
+ "items": [
+  {
+   "id": "pokeapi/w1",
+   "kind": "wire",
+   "session": "wire",
+   "q": 1,
+   "pick": 0,
+   "boundary": "operation",
+   "question": "What request does `call.send().await` put on the wire (the request the server receives)? Give `method`, `url`, `headers` (only the ones the SDK and Concord set, not the HTTP client's own; secret values as `<secret>`), `body`, `content_type` and `accept`.\n\n```rust\nlet api = PokeApi::new(reqwest::Client::new());\nlet call = api.list().set_offset(7);\n```"
+  },
+  {
+   "id": "pokeapi/r1",
+   "kind": "result",
+   "session": "rc",
+   "q": 1,
+   "pick": 0,
+   "boundary": "operation",
+   "base_url": {
+    "staging": "https://staging.example.test",
+    "keep": "/api/v2",
+    "candidates": [
+     "https://staging.example.test",
+     "https://staging.example.test/",
+     "https://staging.example.test/api/v2",
+     "https://staging.example.test/api/v2/"
+    ]
+   },
+   "question": "For the endpoint `GET list` directly on the client: (a) what type does `.send().await` return (`send_returns`)? (b) what is the error type in that result (`error_type`)? (c) The same API also runs at `https://staging.example.test`. Which exact string do you pass to `api.with_base_url(..)` so that requests keep the `/api/v2` prefix, i.e. go to `https://staging.example.test/api/v2/...` (`base_url`)?"
+  },
+  {
+   "id": "pokeapi/c1",
+   "kind": "call",
+   "session": "rc",
+   "q": 2,
+   "pick": 0,
+   "boundary": "operation",
+   "intent": "Request one list page: call `GET list` directly on the client with `offset` = `7`. Leave every other optional value as it is",
+   "question": "Write the body of `async fn call(api: PokeApi) -> Result<(), Box<dyn std::error::Error>>` that does this and sends it with `.send().await`: Request one list page: call `GET list` directly on the client with `offset` = `7`. Leave every other optional value as it is. Your code runs before the function's final `Ok(())`; it may start with `use` lines (`code`)."
+  },
+  {
+   "id": "pokeapi/w2",
+   "kind": "wire",
+   "session": "wire",
+   "q": 2,
+   "pick": 1,
+   "boundary": "operation",
+   "question": "What request does `call.send().await` put on the wire (the request the server receives)? Give `method`, `url`, `headers` (only the ones the SDK and Concord set, not the HTTP client's own; secret values as `<secret>`), `body`, `content_type` and `accept`.\n\n```rust\nlet api = PokeApi::new(reqwest::Client::new());\nlet call = api.pokemon(\"cedar\");\n```"
+  },
+  {
+   "id": "pokeapi/r2",
+   "kind": "result",
+   "session": "rc",
+   "q": 3,
+   "pick": 1,
+   "boundary": "operation",
+   "base_url": null,
+   "question": "For the endpoint `GET pokemon` directly on the client: (a) what type does `.send().await` return (`send_returns`)? (b) what is the error type in that result (`error_type`)?"
+  },
+  {
+   "id": "pokeapi/c2",
+   "kind": "call",
+   "session": "rc",
+   "q": 4,
+   "pick": 1,
+   "boundary": "operation",
+   "intent": "Retrieve one Pokémon by name or numeric ID: call `GET pokemon` directly on the client with `id` = `\"cedar\"`. Leave every other optional value as it is",
+   "question": "Write the body of `async fn call(api: PokeApi) -> Result<(), Box<dyn std::error::Error>>` that does this and sends it with `.send().await`: Retrieve one Pokémon by name or numeric ID: call `GET pokemon` directly on the client with `id` = `\"cedar\"`. Leave every other optional value as it is. Your code runs before the function's final `Ok(())`; it may start with `use` lines (`code`)."
+  }
+ ]
+}

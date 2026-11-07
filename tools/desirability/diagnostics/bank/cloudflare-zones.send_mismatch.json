@@ -1,0 +1,24 @@
+{
+ "corrected": "let _z: Response<Zone> = cf.zone(ZoneId::from(\"z\")).get().send().await?;",
+ "expected": "Response<Zone>",
+ "generated_names": [
+  "CloudflareConfig",
+  "CloudflareZone",
+  "CloudflareZoneDnsRecord",
+  "CloudflareZoneDnsRecordGet",
+  "CloudflareZoneDnsRecords",
+  "CloudflareZoneDnsRecordsCreate",
+  "CloudflareZoneDnsRecordsList",
+  "CloudflareZoneGet",
+  "CloudflareZones",
+  "CloudflareZonesList",
+  "Paging"
+ ],
+ "kind": "send_mismatch",
+ "package": "concord-sdk-cloudflare-zones",
+ "sdk": "cloudflare-zones",
+ "seeded": "let _z: Zone = cf.zone(ZoneId::from(\"z\")).get().send().await?;",
+ "seeded_line": 12,
+ "user_file": "examples/cloudflare-zones-sdk/tests/cb_send_mismatch.rs",
+ "variant": null
+}

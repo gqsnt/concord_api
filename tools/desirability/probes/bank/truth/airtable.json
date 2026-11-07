@@ -1,0 +1,145 @@
+{
+ "sdk": "airtable-sdk",
+ "short": "airtable",
+ "pkg": "concord-sdk-airtable",
+ "repo_head": "984bd2f6a981dd85e8b104c21daae06421a7a48a",
+ "truth_format": 3,
+ "aliases": [
+  "type RecordPages = Pages<Record, String, ResponseMeta, Error>",
+  "BTreeMap = std::collections::BTreeMap (imported: std::collections::BTreeMap)",
+  "Deserialize = serde::Deserialize (imported: serde::Deserialize)",
+  "Endpoint = concord::Endpoint (imported: concord::Endpoint)",
+  "Json = concord::Json (imported: concord::Json)",
+  "NonZeroUsize = std::num::NonZeroUsize (imported: std::num::NonZeroUsize)",
+  "Page = concord_pagination::Page (imported: concord_pagination::Page)",
+  "Pages = concord_pagination::Pages (imported: concord_pagination::Pages)",
+  "ResponseMeta = concord::ResponseMeta (imported: concord::ResponseMeta)",
+  "Resume = concord_pagination::Resume (imported: concord_pagination::Resume)",
+  "SendWith = concord::SendWith (imported: concord::SendWith)"
+ ],
+ "items": {
+  "airtable/w1": {
+   "method": "GET",
+   "url": "https://api.airtable.com/v0/indigo/a%20b%2Fc?pageSize=4&maxRecords=28&view=bravo",
+   "headers": [
+    [
+     "authorization",
+     "<secret>"
+    ],
+    [
+     "accept",
+     "application/json"
+    ]
+   ],
+   "secret_headers": [
+    "authorization"
+   ],
+   "body": null,
+   "body_kind": null,
+   "content_type": null,
+   "accept": "application/json",
+   "prepared": {
+    "method": "GET",
+    "url": "https://api.airtable.com/v0/indigo/a%20b%2Fc?pageSize=4&maxRecords=28&view=bravo",
+    "headers": [
+     [
+      "authorization",
+      "<secret>"
+     ],
+     [
+      "accept",
+      "application/json"
+     ]
+    ],
+    "secret_headers": [
+     "authorization"
+    ],
+    "body": null,
+    "body_kind": null,
+    "content_type": null,
+    "accept": "application/json"
+   },
+   "policy_changes_request": false,
+   "operation_completed_within_10s": true,
+   "boundary": "operation",
+   "kind": "wire"
+  },
+  "airtable/r1": {
+   "r2": {
+    "resolvable": true,
+    "send_returns": "Result<Response<RecordPage>, Error>",
+    "error_type": "Error",
+    "how": "impl SendWith for Policy",
+    "verified": true,
+    "decl_module": "crate",
+    "send_returns_canon": "Result<sdk::Response<sdk::RecordPage>, sdk::Error>",
+    "error_type_canon": "sdk::Error"
+   },
+   "base_url": null,
+   "boundary": "operation",
+   "kind": "result"
+  },
+  "airtable/c1": {
+   "reference": "api.list(\"indigo\", \"a b/c\").set_page_size(4).set_max_records(28).set_view(\"bravo\").send().await",
+   "reference_compiles": true,
+   "client": "AirtableApi",
+   "binding": {
+    "type": "Result<Response<RecordPage>, Error>",
+    "result": "is_ok"
+   },
+   "boundary": "operation",
+   "base_path": "",
+   "recorded": [
+    {
+     "method": "GET",
+     "target": "/v0/indigo/a%20b%2Fc?pageSize=4&maxRecords=28&view=bravo",
+     "headers": [
+      [
+       "authorization",
+       "Bearer <secret>"
+      ],
+      [
+       "accept",
+       "application/json"
+      ]
+     ],
+     "body": ""
+    }
+   ],
+   "recorded_again": [
+    {
+     "method": "GET",
+     "target": "/v0/indigo/a%20b%2Fc?pageSize=4&maxRecords=28&view=bravo",
+     "headers": [
+      [
+       "authorization",
+       "Bearer <secret>"
+      ],
+      [
+       "accept",
+       "application/json"
+      ]
+     ],
+     "body": ""
+    }
+   ],
+   "volatile": {
+    "sequence_differs": false,
+    "headers": [],
+    "bodies": []
+   },
+   "fixture": {
+    "name": "examples/airtable-sdk/fixtures/page-first.json",
+    "content_type": "application/json",
+    "path": "examples/airtable-sdk/fixtures/page-first.json",
+    "body": null
+   },
+   "fixture_tries_failed": 0,
+   "reference_outcome": null,
+   "result_checked": true,
+   "check_available": true,
+   "kind": "call"
+  }
+ },
+ "drops": []
+}

@@ -1,0 +1,308 @@
+{
+ "sdk": "microsoft-graph-sdk",
+ "short": "microsoft-graph",
+ "pkg": "concord-sdk-microsoft-graph",
+ "crate": "concord_sdk_microsoft_graph",
+ "seed": 1,
+ "role": "main",
+ "holdout_of": [],
+ "generator_version": 1,
+ "clients": {
+  "GraphApi": {
+   "constructible": true,
+   "file": "examples/microsoft-graph-sdk/src/api.rs",
+   "ctor": "GraphApi::new(reqwest::Client::new(), GraphApiConfig {\n    authorization: reqwest::header::HeaderValue::from_static(\"CANARYMICROSOFTGRAPH1Z\"),\n})",
+   "canaries": [
+    "CANARYMICROSOFTGRAPH1Z"
+   ],
+   "config_fields": [
+    "authorization"
+   ],
+   "endpoints": 3,
+   "notes": []
+  }
+ },
+ "picks": [
+  {
+   "key": "GraphApi/direct_members",
+   "client": "GraphApi",
+   "client_file": "examples/microsoft-graph-sdk/src/api.rs",
+   "scopes": [],
+   "method": "GET",
+   "endpoint": "direct_members",
+   "output": "Envelope<DirectoryObject>",
+   "docs": [],
+   "values": [
+    {
+     "level": 1,
+     "owner": "direct_members",
+     "owner_kind": "endpoint",
+     "name": "group",
+     "type": "String",
+     "placement": "path",
+     "key": null,
+     "each": false,
+     "sensitive": false,
+     "optional": false,
+     "default": null,
+     "kind": "string",
+     "state": "required",
+     "literal": "\"cedar\"",
+     "value": "cedar"
+    },
+    {
+     "level": 1,
+     "owner": "direct_members",
+     "owner_kind": "endpoint",
+     "name": "select",
+     "type": "String",
+     "placement": "query",
+     "key": "\"$select\"",
+     "each": false,
+     "sensitive": false,
+     "optional": true,
+     "default": null,
+     "kind": "string",
+     "state": "set",
+     "literal": "\"harbor\"",
+     "value": "harbor"
+    },
+    {
+     "level": 1,
+     "owner": "direct_members",
+     "owner_kind": "endpoint",
+     "name": "count",
+     "type": "bool",
+     "placement": "query",
+     "key": "\"$count\"",
+     "each": false,
+     "sensitive": false,
+     "optional": true,
+     "default": null,
+     "kind": "bool",
+     "state": "set",
+     "literal": "false",
+     "value": false
+    },
+    {
+     "level": 1,
+     "owner": "direct_members",
+     "owner_kind": "endpoint",
+     "name": "consistency",
+     "type": "String",
+     "placement": "header",
+     "key": "\"consistencylevel\"",
+     "each": false,
+     "sensitive": false,
+     "optional": true,
+     "default": null,
+     "kind": "string",
+     "state": "unset",
+     "literal": null,
+     "value": null
+    }
+   ],
+   "canaries": [
+    "CANARYMICROSOFTGRAPH1Z"
+   ],
+   "pct": false,
+   "rust": {
+    "client": "GraphApi::new(reqwest::Client::new(), GraphApiConfig {\n    authorization: reqwest::header::HeaderValue::from_static(\"CANARYMICROSOFTGRAPH1Z\"),\n})",
+    "call": "api.direct_members(\"cedar\").set_select(\"harbor\").set_count(false)"
+   },
+   "strata": [
+    "base_path",
+    "optional_set",
+    "optional_unset",
+    "query"
+   ],
+   "index": 0,
+   "boundary": "prepared"
+  },
+  {
+   "key": "GraphApi/users_delta",
+   "client": "GraphApi",
+   "client_file": "examples/microsoft-graph-sdk/src/api.rs",
+   "scopes": [],
+   "method": "GET",
+   "endpoint": "users_delta",
+   "output": "Envelope<UserDelta>",
+   "docs": [],
+   "values": [
+    {
+     "level": 1,
+     "owner": "users_delta",
+     "owner_kind": "endpoint",
+     "name": "select",
+     "type": "String",
+     "placement": "query",
+     "key": "\"$select\"",
+     "each": false,
+     "sensitive": false,
+     "optional": true,
+     "default": null,
+     "kind": "string",
+     "state": "unset",
+     "literal": null,
+     "value": null
+    }
+   ],
+   "canaries": [
+    "CANARYMICROSOFTGRAPH1Z"
+   ],
+   "pct": false,
+   "rust": {
+    "client": "GraphApi::new(reqwest::Client::new(), GraphApiConfig {\n    authorization: reqwest::header::HeaderValue::from_static(\"CANARYMICROSOFTGRAPH1Z\"),\n})",
+    "call": "api.users_delta()"
+   },
+   "strata": [
+    "base_path",
+    "optional_unset"
+   ],
+   "index": 1,
+   "boundary": "prepared"
+  },
+  {
+   "key": "GraphApi/groups",
+   "client": "GraphApi",
+   "client_file": "examples/microsoft-graph-sdk/src/api.rs",
+   "scopes": [],
+   "method": "GET",
+   "endpoint": "groups",
+   "output": "Envelope<Group>",
+   "docs": [],
+   "values": [
+    {
+     "level": 1,
+     "owner": "groups",
+     "owner_kind": "endpoint",
+     "name": "select",
+     "type": "String",
+     "placement": "query",
+     "key": "\"$select\"",
+     "each": false,
+     "sensitive": false,
+     "optional": true,
+     "default": null,
+     "kind": "string",
+     "state": "set",
+     "literal": "\"50% off\"",
+     "value": "50% off"
+    }
+   ],
+   "canaries": [
+    "CANARYMICROSOFTGRAPH1Z"
+   ],
+   "pct": true,
+   "rust": {
+    "client": "GraphApi::new(reqwest::Client::new(), GraphApiConfig {\n    authorization: reqwest::header::HeaderValue::from_static(\"CANARYMICROSOFTGRAPH1Z\"),\n})",
+    "call": "api.groups().set_select(\"50% off\")"
+   },
+   "strata": [
+    "base_path",
+    "optional_set",
+    "query"
+   ],
+   "index": 2,
+   "boundary": "prepared"
+  }
+ ],
+ "items": [
+  {
+   "id": "microsoft-graph/w1",
+   "kind": "wire",
+   "session": "wire",
+   "q": 1,
+   "pick": 0,
+   "boundary": "prepared",
+   "question": "What request does `call.prepare()` build? Give `method`, `url`, `headers` (only the ones Concord sets; secret values as `<secret>`), `body`, `content_type` and `accept`.\n\n```rust\nlet api = GraphApi::new(reqwest::Client::new(), GraphApiConfig {\n    authorization: reqwest::header::HeaderValue::from_static(\"CANARYMICROSOFTGRAPH1Z\"),\n});\nlet call = api.direct_members(\"cedar\").set_select(\"harbor\").set_count(false);\n```"
+  },
+  {
+   "id": "microsoft-graph/r1",
+   "kind": "result",
+   "session": "rc",
+   "q": 1,
+   "pick": 0,
+   "boundary": "prepared",
+   "base_url": {
+    "staging": "https://staging.example.test",
+    "keep": "/v1.0",
+    "candidates": [
+     "https://staging.example.test",
+     "https://staging.example.test/",
+     "https://staging.example.test/v1.0",
+     "https://staging.example.test/v1.0/"
+    ]
+   },
+   "question": "For the endpoint `GET direct_members` directly on the client: (a) what type does `.send().await` return (`send_returns`)? (b) what is the error type in that result (`error_type`)? (c) The same API also runs at `https://staging.example.test`. Which exact string do you pass to `api.with_base_url(..)` so that requests keep the `/v1.0` prefix, i.e. go to `https://staging.example.test/v1.0/...` (`base_url`)?"
+  },
+  {
+   "id": "microsoft-graph/c1",
+   "kind": "call",
+   "session": "rc",
+   "q": 2,
+   "pick": 0,
+   "boundary": "prepared",
+   "intent": "Direct members: call `GET direct_members` directly on the client with `group` = `\"cedar\"`, `select` = `\"harbor\"`, `count` = `false`. Leave every other optional value as it is",
+   "question": "Write the body of `async fn call(api: GraphApi) -> Result<(), Box<dyn std::error::Error>>` that does this and sends it with `.send().await`: Direct members: call `GET direct_members` directly on the client with `group` = `\"cedar\"`, `select` = `\"harbor\"`, `count` = `false`. Leave every other optional value as it is. Your code runs before the function's final `Ok(())`; it may start with `use` lines (`code`)."
+  },
+  {
+   "id": "microsoft-graph/w2",
+   "kind": "wire",
+   "session": "wire",
+   "q": 2,
+   "pick": 1,
+   "boundary": "prepared",
+   "question": "What request does `call.prepare()` build? Give `method`, `url`, `headers` (only the ones Concord sets; secret values as `<secret>`), `body`, `content_type` and `accept`.\n\n```rust\nlet api = GraphApi::new(reqwest::Client::new(), GraphApiConfig {\n    authorization: reqwest::header::HeaderValue::from_static(\"CANARYMICROSOFTGRAPH1Z\"),\n});\nlet call = api.users_delta();\n```"
+  },
+  {
+   "id": "microsoft-graph/r2",
+   "kind": "result",
+   "session": "rc",
+   "q": 3,
+   "pick": 1,
+   "boundary": "prepared",
+   "base_url": null,
+   "question": "For the endpoint `GET users_delta` directly on the client: (a) what type does `.send().await` return (`send_returns`)? (b) what is the error type in that result (`error_type`)?"
+  },
+  {
+   "id": "microsoft-graph/c2",
+   "kind": "call",
+   "session": "rc",
+   "q": 4,
+   "pick": 1,
+   "boundary": "prepared",
+   "intent": "Users delta: call `GET users_delta` directly on the client. Leave every other optional value as it is",
+   "question": "Write the body of `async fn call(api: GraphApi) -> Result<(), Box<dyn std::error::Error>>` that does this and sends it with `.send().await`: Users delta: call `GET users_delta` directly on the client. Leave every other optional value as it is. Your code runs before the function's final `Ok(())`; it may start with `use` lines (`code`)."
+  },
+  {
+   "id": "microsoft-graph/w3",
+   "kind": "wire",
+   "session": "wire",
+   "q": 3,
+   "pick": 2,
+   "boundary": "prepared",
+   "question": "What request does `call.prepare()` build? Give `method`, `url`, `headers` (only the ones Concord sets; secret values as `<secret>`), `body`, `content_type` and `accept`.\n\n```rust\nlet api = GraphApi::new(reqwest::Client::new(), GraphApiConfig {\n    authorization: reqwest::header::HeaderValue::from_static(\"CANARYMICROSOFTGRAPH1Z\"),\n});\nlet call = api.groups().set_select(\"50% off\");\n```"
+  },
+  {
+   "id": "microsoft-graph/r3",
+   "kind": "result",
+   "session": "rc",
+   "q": 5,
+   "pick": 2,
+   "boundary": "prepared",
+   "base_url": null,
+   "question": "For the endpoint `GET groups` directly on the client: (a) what type does `.send().await` return (`send_returns`)? (b) what is the error type in that result (`error_type`)?"
+  },
+  {
+   "id": "microsoft-graph/c3",
+   "kind": "call",
+   "session": "rc",
+   "q": 6,
+   "pick": 2,
+   "boundary": "prepared",
+   "intent": "Groups: call `GET groups` directly on the client with `select` = `\"50% off\"`. Leave every other optional value as it is",
+   "question": "Write the body of `async fn call(api: GraphApi) -> Result<(), Box<dyn std::error::Error>>` that does this and sends it with `.send().await`: Groups: call `GET groups` directly on the client with `select` = `\"50% off\"`. Leave every other optional value as it is. Your code runs before the function's final `Ok(())`; it may start with `use` lines (`code`)."
+  }
+ ]
+}

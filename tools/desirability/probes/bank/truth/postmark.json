@@ -1,0 +1,261 @@
+{
+ "sdk": "postmark-sdk",
+ "short": "postmark",
+ "pkg": "concord-sdk-postmark",
+ "repo_head": "984bd2f6a981dd85e8b104c21daae06421a7a48a",
+ "truth_format": 3,
+ "aliases": [
+  "Deserialize = serde::Deserialize (imported: serde::Deserialize)",
+  "Endpoint = concord::Endpoint (imported: concord::Endpoint)",
+  "Json = concord::Json (imported: concord::Json)",
+  "SendWith = concord::SendWith (imported: concord::SendWith)",
+  "Serialize = serde::Serialize (imported: serde::Serialize)"
+ ],
+ "items": {
+  "postmark/w1": {
+   "method": "GET",
+   "url": "https://api.postmarkapp.com/messages/outbound?count=24&offset=7",
+   "headers": [
+    [
+     "x-postmark-server-token",
+     "<secret>"
+    ],
+    [
+     "accept",
+     "application/json"
+    ]
+   ],
+   "secret_headers": [
+    "x-postmark-server-token"
+   ],
+   "body": null,
+   "body_kind": null,
+   "content_type": null,
+   "accept": "application/json",
+   "prepared": {
+    "method": "GET",
+    "url": "https://api.postmarkapp.com/messages/outbound?count=24&offset=7",
+    "headers": [
+     [
+      "x-postmark-server-token",
+      "<secret>"
+     ],
+     [
+      "accept",
+      "application/json"
+     ]
+    ],
+    "secret_headers": [
+     "x-postmark-server-token"
+    ],
+    "body": null,
+    "body_kind": null,
+    "content_type": null,
+    "accept": "application/json"
+   },
+   "policy_changes_request": false,
+   "operation_completed_within_10s": true,
+   "boundary": "operation",
+   "kind": "wire"
+  },
+  "postmark/r1": {
+   "r2": {
+    "resolvable": true,
+    "send_returns": "Result<MessagePage, Error>",
+    "error_type": "Error",
+    "how": "send template",
+    "verified": true,
+    "decl_module": "crate",
+    "send_returns_canon": "Result<sdk::MessagePage, sdk::Error>",
+    "error_type_canon": "sdk::Error"
+   },
+   "base_url": null,
+   "boundary": "operation",
+   "kind": "result"
+  },
+  "postmark/c1": {
+   "reference": "api.outbound().list(24, 7).send().await",
+   "reference_compiles": true,
+   "client": "Postmark",
+   "binding": {
+    "type": "Result<MessagePage, Error>",
+    "result": "is_ok"
+   },
+   "boundary": "operation",
+   "base_path": "",
+   "recorded": [
+    {
+     "method": "GET",
+     "target": "/messages/outbound?count=24&offset=7",
+     "headers": [
+      [
+       "x-postmark-server-token",
+       "<secret>"
+      ],
+      [
+       "accept",
+       "application/json"
+      ]
+     ],
+     "body": ""
+    }
+   ],
+   "recorded_again": [
+    {
+     "method": "GET",
+     "target": "/messages/outbound?count=24&offset=7",
+     "headers": [
+      [
+       "x-postmark-server-token",
+       "<secret>"
+      ],
+      [
+       "accept",
+       "application/json"
+      ]
+     ],
+     "body": ""
+    }
+   ],
+   "volatile": {
+    "sequence_differs": false,
+    "headers": [],
+    "bodies": []
+   },
+   "fixture": {
+    "name": "examples/postmark-sdk/fixtures/list.json",
+    "content_type": "application/json",
+    "path": "examples/postmark-sdk/fixtures/list.json",
+    "body": null
+   },
+   "fixture_tries_failed": 0,
+   "reference_outcome": null,
+   "result_checked": true,
+   "check_available": true,
+   "kind": "call"
+  },
+  "postmark/w2": {
+   "method": "GET",
+   "url": "https://api.postmarkapp.com/messages/outbound/tundra/details",
+   "headers": [
+    [
+     "x-postmark-server-token",
+     "<secret>"
+    ],
+    [
+     "accept",
+     "application/json"
+    ]
+   ],
+   "secret_headers": [
+    "x-postmark-server-token"
+   ],
+   "body": null,
+   "body_kind": null,
+   "content_type": null,
+   "accept": "application/json",
+   "prepared": {
+    "method": "GET",
+    "url": "https://api.postmarkapp.com/messages/outbound/tundra/details",
+    "headers": [
+     [
+      "x-postmark-server-token",
+      "<secret>"
+     ],
+     [
+      "accept",
+      "application/json"
+     ]
+    ],
+    "secret_headers": [
+     "x-postmark-server-token"
+    ],
+    "body": null,
+    "body_kind": null,
+    "content_type": null,
+    "accept": "application/json"
+   },
+   "policy_changes_request": false,
+   "operation_completed_within_10s": true,
+   "boundary": "operation",
+   "kind": "wire"
+  },
+  "postmark/r2": {
+   "r2": {
+    "resolvable": true,
+    "send_returns": "Result<Message, Error>",
+    "error_type": "Error",
+    "how": "send template",
+    "verified": true,
+    "decl_module": "crate",
+    "send_returns_canon": "Result<sdk::Message, sdk::Error>",
+    "error_type_canon": "sdk::Error"
+   },
+   "base_url": null,
+   "boundary": "operation",
+   "kind": "result"
+  },
+  "postmark/c2": {
+   "reference": "api.outbound().details(\"tundra\").send().await",
+   "reference_compiles": true,
+   "client": "Postmark",
+   "binding": {
+    "type": "Result<Message, Error>",
+    "result": "is_ok"
+   },
+   "boundary": "operation",
+   "base_path": "",
+   "recorded": [
+    {
+     "method": "GET",
+     "target": "/messages/outbound/tundra/details",
+     "headers": [
+      [
+       "x-postmark-server-token",
+       "<secret>"
+      ],
+      [
+       "accept",
+       "application/json"
+      ]
+     ],
+     "body": ""
+    }
+   ],
+   "recorded_again": [
+    {
+     "method": "GET",
+     "target": "/messages/outbound/tundra/details",
+     "headers": [
+      [
+       "x-postmark-server-token",
+       "<secret>"
+      ],
+      [
+       "accept",
+       "application/json"
+      ]
+     ],
+     "body": ""
+    }
+   ],
+   "volatile": {
+    "sequence_differs": false,
+    "headers": [],
+    "bodies": []
+   },
+   "fixture": {
+    "name": "examples/postmark-sdk/fixtures/details.json",
+    "content_type": "application/json",
+    "path": "examples/postmark-sdk/fixtures/details.json",
+    "body": null
+   },
+   "fixture_tries_failed": 0,
+   "reference_outcome": null,
+   "result_checked": true,
+   "check_available": true,
+   "kind": "call"
+  }
+ },
+ "drops": []
+}

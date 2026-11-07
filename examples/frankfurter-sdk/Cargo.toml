@@ -15,6 +15,7 @@ bigdecimal = "0.4.11"
 chrono = { version = "0.4.45", default-features = false, features = ["std", "serde"] }
 
 [dev-dependencies]
+concord-check-canary = { path = "../../checks/canary" }
 concord-example-testserver = { path = "../testserver" }
 tokio = { workspace = true, features = ["macros", "rt", "time"] }
 

@@ -1,0 +1,139 @@
+{
+ "sdk": "world-bank-sdk",
+ "short": "world-bank",
+ "pkg": "concord-sdk-world-bank",
+ "repo_head": "984bd2f6a981dd85e8b104c21daae06421a7a48a",
+ "truth_format": 3,
+ "aliases": [
+  "type Client = WorldBank",
+  "type IndicatorPages = Pages<Observation, u32, TraversalMeta, Error>",
+  "Deserialize = serde::Deserialize (imported: serde::Deserialize)",
+  "Deserializer = serde::Deserializer (imported: serde::Deserializer)",
+  "Endpoint = concord::Endpoint (imported: concord::Endpoint)",
+  "Json = concord::Json (imported: concord::Json)",
+  "NonZeroU32 = std::num::NonZeroU32 (imported: std::num::NonZeroU32)",
+  "Page = concord_pagination::Page (imported: concord_pagination::Page)",
+  "Pages = concord_pagination::Pages (imported: concord_pagination::Pages)",
+  "ResponseMeta = concord::ResponseMeta (imported: concord::ResponseMeta)",
+  "Resume = concord_pagination::Resume (imported: concord_pagination::Resume)",
+  "SendWith = concord::SendWith (imported: concord::SendWith)"
+ ],
+ "items": {
+  "world-bank/w1": {
+   "method": "GET",
+   "url": "https://api.worldbank.org/v2/country/maple/indicator/tundra?date=lumen&page=1&per_page=50&format=json",
+   "headers": [
+    [
+     "accept",
+     "application/json"
+    ]
+   ],
+   "secret_headers": [],
+   "body": null,
+   "body_kind": null,
+   "content_type": null,
+   "accept": "application/json",
+   "prepared": {
+    "method": "GET",
+    "url": "https://api.worldbank.org/v2/country/maple/indicator/tundra?date=lumen&page=1&per_page=50&format=json",
+    "headers": [
+     [
+      "accept",
+      "application/json"
+     ]
+    ],
+    "secret_headers": [],
+    "body": null,
+    "body_kind": null,
+    "content_type": null,
+    "accept": "application/json"
+   },
+   "policy_changes_request": false,
+   "operation_completed_within_10s": true,
+   "boundary": "operation",
+   "kind": "wire"
+  },
+  "world-bank/r1": {
+   "r2": {
+    "resolvable": true,
+    "send_returns": "Result<IndicatorPage, Error>",
+    "error_type": "Error",
+    "how": "impl SendWith for SendPolicy",
+    "verified": true,
+    "decl_module": "crate",
+    "send_returns_canon": "Result<sdk::IndicatorPage, sdk::Error>",
+    "error_type_canon": "sdk::Error"
+   },
+   "base_url": {
+    "keep": "/v2",
+    "expected_url": "https://staging.example.test/v2/country/maple/indicator/tundra?date=lumen&page=1&per_page=50&format=json",
+    "results": {
+     "https://staging.example.test": "https://staging.example.test/country/maple/indicator/tundra?date=lumen&page=1&per_page=50&format=json",
+     "https://staging.example.test/": "https://staging.example.test/country/maple/indicator/tundra?date=lumen&page=1&per_page=50&format=json",
+     "https://staging.example.test/v2": "https://staging.example.test/v2/country/maple/indicator/tundra?date=lumen&page=1&per_page=50&format=json",
+     "https://staging.example.test/v2/": "https://staging.example.test/v2/country/maple/indicator/tundra?date=lumen&page=1&per_page=50&format=json"
+    },
+    "keeps": [
+     "https://staging.example.test/v2",
+     "https://staging.example.test/v2/"
+    ]
+   },
+   "boundary": "operation",
+   "kind": "result"
+  },
+  "world-bank/c1": {
+   "reference": "api.indicator(\"maple\", \"tundra\", \"lumen\").send().await",
+   "reference_compiles": true,
+   "client": "WorldBank",
+   "binding": {
+    "type": "Result<IndicatorPage, Error>",
+    "result": "is_ok"
+   },
+   "boundary": "operation",
+   "base_path": "/v2",
+   "recorded": [
+    {
+     "method": "GET",
+     "target": "/v2/country/maple/indicator/tundra?date=lumen&page=1&per_page=50&format=json",
+     "headers": [
+      [
+       "accept",
+       "application/json"
+      ]
+     ],
+     "body": ""
+    }
+   ],
+   "recorded_again": [
+    {
+     "method": "GET",
+     "target": "/v2/country/maple/indicator/tundra?date=lumen&page=1&per_page=50&format=json",
+     "headers": [
+      [
+       "accept",
+       "application/json"
+      ]
+     ],
+     "body": ""
+    }
+   ],
+   "volatile": {
+    "sequence_differs": false,
+    "headers": [],
+    "bodies": []
+   },
+   "fixture": {
+    "name": "examples/world-bank-sdk/fixtures/empty.json",
+    "content_type": "application/json",
+    "path": "examples/world-bank-sdk/fixtures/empty.json",
+    "body": null
+   },
+   "fixture_tries_failed": 0,
+   "reference_outcome": null,
+   "result_checked": true,
+   "check_available": true,
+   "kind": "call"
+  }
+ },
+ "drops": []
+}

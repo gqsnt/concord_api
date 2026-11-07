@@ -1,0 +1,169 @@
+{
+ "sdk": "spotify-web-api-sdk",
+ "short": "spotify-web-api",
+ "pkg": "concord-sdk-spotify-web-api",
+ "crate": "concord_sdk_spotify_web_api",
+ "seed": 1,
+ "role": "main",
+ "holdout_of": [],
+ "generator_version": 1,
+ "clients": {
+  "Accounts": {
+   "constructible": true,
+   "file": "examples/spotify-web-api-sdk/src/auth.rs",
+   "ctor": "Accounts::new(reqwest::Client::new())",
+   "canaries": [],
+   "config_fields": [],
+   "endpoints": 2,
+   "notes": []
+  }
+ },
+ "picks": [
+  {
+   "key": "Accounts/authorize",
+   "client": "Accounts",
+   "client_file": "examples/spotify-web-api-sdk/src/auth.rs",
+   "scopes": [],
+   "method": "GET",
+   "endpoint": "authorize",
+   "output": null,
+   "docs": [
+    "The authorization page. Never sent by the SDK: its prepared URL is what the user's",
+    "browser opens."
+   ],
+   "values": [
+    {
+     "level": 1,
+     "owner": "authorize",
+     "owner_kind": "endpoint",
+     "name": "client_id",
+     "type": "String",
+     "placement": "query",
+     "key": null,
+     "each": false,
+     "sensitive": false,
+     "optional": false,
+     "default": null,
+     "kind": "string",
+     "state": "required",
+     "literal": "\"a b/c\"",
+     "value": "a b/c"
+    },
+    {
+     "level": 1,
+     "owner": "authorize",
+     "owner_kind": "endpoint",
+     "name": "redirect_uri",
+     "type": "String",
+     "placement": "query",
+     "key": null,
+     "each": false,
+     "sensitive": false,
+     "optional": false,
+     "default": null,
+     "kind": "string",
+     "state": "required",
+     "literal": "\"delta\"",
+     "value": "delta"
+    },
+    {
+     "level": 1,
+     "owner": "authorize",
+     "owner_kind": "endpoint",
+     "name": "scope",
+     "type": "Scopes",
+     "placement": "query",
+     "key": null,
+     "each": false,
+     "sensitive": false,
+     "optional": true,
+     "default": null,
+     "kind": null,
+     "state": "unset",
+     "literal": null,
+     "value": null
+    },
+    {
+     "level": 1,
+     "owner": "authorize",
+     "owner_kind": "endpoint",
+     "name": "state",
+     "type": "String",
+     "placement": "query",
+     "key": "\"state\"",
+     "each": false,
+     "sensitive": true,
+     "optional": false,
+     "default": null,
+     "kind": "string",
+     "state": "required",
+     "literal": "\"CANARYSPOTIFYWEBAPI101Z\"",
+     "value": "<secret>"
+    },
+    {
+     "level": 1,
+     "owner": "authorize",
+     "owner_kind": "endpoint",
+     "name": "show_dialog",
+     "type": "bool",
+     "placement": "query",
+     "key": null,
+     "each": false,
+     "sensitive": false,
+     "optional": true,
+     "default": null,
+     "kind": "bool",
+     "state": "set",
+     "literal": "true",
+     "value": true
+    }
+   ],
+   "canaries": [
+    "CANARYSPOTIFYWEBAPI101Z"
+   ],
+   "pct": true,
+   "rust": {
+    "client": "Accounts::new(reqwest::Client::new())",
+    "call": "api.authorize(\"a b/c\", \"delta\", \"CANARYSPOTIFYWEBAPI101Z\").set_show_dialog(true)"
+   },
+   "strata": [
+    "optional_set",
+    "optional_unset",
+    "query"
+   ],
+   "index": 0,
+   "boundary": "prepared"
+  }
+ ],
+ "items": [
+  {
+   "id": "spotify-web-api/w1",
+   "kind": "wire",
+   "session": "wire",
+   "q": 1,
+   "pick": 0,
+   "boundary": "prepared",
+   "question": "What request does `call.prepare()` build? Give `method`, `url`, `headers` (only the ones Concord sets; secret values as `<secret>`), `body`, `content_type` and `accept`.\n\n```rust\nlet api = Accounts::new(reqwest::Client::new());\nlet call = api.authorize(\"a b/c\", \"delta\", \"CANARYSPOTIFYWEBAPI101Z\").set_show_dialog(true);\n```"
+  },
+  {
+   "id": "spotify-web-api/r1",
+   "kind": "result",
+   "session": "rc",
+   "q": 1,
+   "pick": 0,
+   "boundary": "prepared",
+   "base_url": null,
+   "question": "For the endpoint `GET authorize` directly on the client of client `Accounts`: (a) what type does `.send().await` return (`send_returns`)? (b) what is the error type in that result (`error_type`)?"
+  },
+  {
+   "id": "spotify-web-api/c1",
+   "kind": "call",
+   "session": "rc",
+   "q": 2,
+   "pick": 0,
+   "boundary": "prepared",
+   "intent": "The authorization page: call `GET authorize` directly on the client of client `Accounts` with `client_id` = `\"a b/c\"`, `redirect_uri` = `\"delta\"`, `state` = `\"CANARYSPOTIFYWEBAPI101Z\"`, `show_dialog` = `true`. Leave every other optional value as it is",
+   "question": "Write the body of `async fn call(api: Accounts) -> Result<(), Box<dyn std::error::Error>>` that does this and sends it with `.send().await`: The authorization page: call `GET authorize` directly on the client of client `Accounts` with `client_id` = `\"a b/c\"`, `redirect_uri` = `\"delta\"`, `state` = `\"CANARYSPOTIFYWEBAPI101Z\"`, `show_dialog` = `true`. Leave every other optional value as it is. Your code runs before the function's final `Ok(())`; it may start with `use` lines (`code`)."
+  }
+ ]
+}

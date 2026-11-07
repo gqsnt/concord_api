@@ -1,0 +1,20 @@
+{
+ "corrected": "let _r = kraken.public().pairs().set_pair(\"XBTUSD\");",
+ "expected": "String",
+ "generated_names": [
+  "KrakenAccount",
+  "KrakenAccountBalances",
+  "KrakenAccountOpenOrders",
+  "KrakenAccountTradesHistory",
+  "KrakenPublic",
+  "KrakenPublicPairs",
+  "KrakenPublicTicker"
+ ],
+ "kind": "wrong_setter",
+ "package": "concord-sdk-kraken-spot-rest",
+ "sdk": "kraken-spot-rest",
+ "seeded": "let _r = kraken.public().pairs().set_pair(42);",
+ "seeded_line": 10,
+ "user_file": "examples/kraken-spot-rest-sdk/tests/cb_wrong_setter.rs",
+ "variant": null
+}

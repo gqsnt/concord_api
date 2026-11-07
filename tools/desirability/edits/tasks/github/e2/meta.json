@@ -1,0 +1,12 @@
+{
+ "sdk": "github",
+ "kind": "e2",
+ "package": "concord-example-github-sdk",
+ "sdk_dir": "examples/github-sdk",
+ "title": "X-GitHub-Client on every request (generated and native)",
+ "public_names": [
+  "GitHubRepo::labels",
+  "RepoContext::request",
+  "GitHubContext::request"
+ ]
+}

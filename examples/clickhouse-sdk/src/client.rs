@@ -79,9 +79,9 @@ impl fmt::Debug for Credentials {
         match &self.0 {
             Auth::None => f.write_str("Credentials::None"),
             Auth::Basic(_) => f.write_str("Credentials::Basic(<redacted>)"),
-            Auth::Headers { user, .. } => f
+            Auth::Headers { .. } => f
                 .debug_struct("Credentials::Headers")
-                .field("user", user)
+                .field("user", &"<redacted>")
                 .field("key", &"<redacted>")
                 .finish(),
         }

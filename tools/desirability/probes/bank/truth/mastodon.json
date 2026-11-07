@@ -1,0 +1,380 @@
+{
+ "sdk": "mastodon-sdk",
+ "short": "mastodon",
+ "pkg": "concord-sdk-mastodon",
+ "repo_head": "984bd2f6a981dd85e8b104c21daae06421a7a48a",
+ "truth_format": 3,
+ "aliases": [
+  "ByteSource = concord::stream::ByteSource (imported: concord::stream::ByteSource)",
+  "Bytes = bytes::Bytes (imported: concord::bytes::Bytes)",
+  "CodecError = concord::CodecError (imported: concord::CodecError)",
+  "Deserialize = serde::Deserialize (imported: serde::Deserialize)",
+  "Endpoint = concord::Endpoint (imported: concord::Endpoint)",
+  "HashtagStreamRequest = ApiHashtagStream (imported: api::ApiHashtagStream)",
+  "HashtagTimelineRequest = ApiHashtagTimeline (imported: api::ApiHashtagTimeline)",
+  "HeaderValue = reqwest::header::HeaderValue (imported: concord::reqwest::header::HeaderValue)",
+  "Incoming = concord::Incoming (imported: concord::Incoming)",
+  "Incremental = concord::Incremental (imported: concord::Incremental)",
+  "InstanceRequest = ApiInstance (imported: api::ApiInstance)",
+  "Json = concord::Json (imported: concord::Json)",
+  "LocalHashtagStreamRequest = ApiLocalHashtagStream (imported: api::ApiLocalHashtagStream)",
+  "Operation = concord::Operation (imported: concord::Operation)",
+  "Position = concord::stream::Position (imported: concord::stream::Position)",
+  "PublicStreamRequest = ApiPublicStream (imported: api::ApiPublicStream)",
+  "PublicTimelineRequest = ApiPublicTimeline (imported: api::ApiPublicTimeline)",
+  "ReadError = concord::stream::ReadError (imported: concord::stream::ReadError)",
+  "ReadErrorKind = concord::stream::ReadErrorKind (imported: concord::stream::ReadErrorKind)",
+  "Received = concord::Received (imported: concord::Received)",
+  "ResponseHead = concord::ResponseHead (imported: concord::ResponseHead)",
+  "SendWith = concord::SendWith (imported: concord::SendWith)",
+  "SourceError = concord::stream::SourceError (imported: concord::stream::SourceError)",
+  "Sse = concord::sse::Sse (imported: concord::sse::Sse)",
+  "SseEvents = concord::sse::SseEvents (imported: concord::sse::SseEvents)",
+  "SseOptions = concord::sse::SseOptions (imported: concord::sse::SseOptions)",
+  "SseReader = concord::sse::SseReader (imported: concord::sse::SseReader)",
+  "StatusCode = reqwest::StatusCode (imported: concord::reqwest::StatusCode)",
+  "StatusRequest = ApiStatus (imported: api::ApiStatus)",
+  "Url = reqwest::Url (imported: concord::reqwest::Url)"
+ ],
+ "items": {
+  "mastodon/w1": {
+   "method": "GET",
+   "url": "https://mastodon.invalid/api/v1/streaming/public",
+   "headers": [
+    [
+     "authorization",
+     "<secret>"
+    ],
+    [
+     "accept",
+     "text/event-stream"
+    ]
+   ],
+   "secret_headers": [
+    "authorization"
+   ],
+   "body": null,
+   "body_kind": null,
+   "content_type": null,
+   "accept": "text/event-stream",
+   "prepared": {
+    "method": "GET",
+    "url": "https://mastodon.invalid/api/v1/streaming/public",
+    "headers": [
+     [
+      "authorization",
+      "<secret>"
+     ],
+     [
+      "accept",
+      "text/event-stream"
+     ]
+    ],
+    "secret_headers": [
+     "authorization"
+    ],
+    "body": null,
+    "body_kind": null,
+    "content_type": null,
+    "accept": "text/event-stream"
+   },
+   "policy_changes_request": false,
+   "operation_completed_within_10s": true,
+   "boundary": "operation",
+   "kind": "wire"
+  },
+  "mastodon/c1": {
+   "reference": "api.set_authorization(reqwest::header::HeaderValue::from_static(\"CANARYMASTODON141Z\")).public_stream().send().await",
+   "reference_compiles": true,
+   "client": "Api",
+   "binding": {
+    "type": "Result<_, Error>",
+    "result": "is_ok",
+    "same_as": "reference",
+    "note": "`-> stream T`: the reader type is the format's; the value is bound to the declared `Result<_, Error>` and to the reference call's own send() result type, and must be `Ok` (the stream opened with the item's reply)"
+   },
+   "boundary": "operation",
+   "base_path": "",
+   "recorded": [
+    {
+     "method": "GET",
+     "target": "/api/v1/streaming/public",
+     "headers": [
+      [
+       "authorization",
+       "<secret>"
+      ],
+      [
+       "accept",
+       "text/event-stream"
+      ]
+     ],
+     "body": ""
+    }
+   ],
+   "recorded_again": [
+    {
+     "method": "GET",
+     "target": "/api/v1/streaming/public",
+     "headers": [
+      [
+       "authorization",
+       "<secret>"
+      ],
+      [
+       "accept",
+       "text/event-stream"
+      ]
+     ],
+     "body": ""
+    }
+   ],
+   "volatile": {
+    "sequence_differs": false,
+    "headers": [],
+    "bodies": []
+   },
+   "fixture": {
+    "name": "stream:examples/mastodon-sdk/fixtures/stream_public_documented.txt#text/event-stream",
+    "content_type": "text/event-stream",
+    "path": "examples/mastodon-sdk/fixtures/stream_public_documented.txt",
+    "body": null
+   },
+   "fixture_tries_failed": 7,
+   "reference_outcome": null,
+   "result_checked": true,
+   "check_available": true,
+   "kind": "call"
+  },
+  "mastodon/w2": {
+   "method": "GET",
+   "url": "https://mastodon.invalid/api/v1/timelines/public",
+   "headers": [
+    [
+     "authorization",
+     "<secret>"
+    ],
+    [
+     "accept",
+     "application/json"
+    ]
+   ],
+   "secret_headers": [
+    "authorization"
+   ],
+   "body": null,
+   "body_kind": null,
+   "content_type": null,
+   "accept": "application/json",
+   "prepared": {
+    "method": "GET",
+    "url": "https://mastodon.invalid/api/v1/timelines/public",
+    "headers": [
+     [
+      "authorization",
+      "<secret>"
+     ],
+     [
+      "accept",
+      "application/json"
+     ]
+    ],
+    "secret_headers": [
+     "authorization"
+    ],
+    "body": null,
+    "body_kind": null,
+    "content_type": null,
+    "accept": "application/json"
+   },
+   "policy_changes_request": false,
+   "operation_completed_within_10s": true,
+   "boundary": "operation",
+   "kind": "wire"
+  },
+  "mastodon/r2": {
+   "r2": {
+    "resolvable": true,
+    "send_returns": "Result<Vec<Status>, Error>",
+    "error_type": "Error",
+    "how": "send template",
+    "verified": true,
+    "decl_module": "crate::api",
+    "send_returns_canon": "Result<Vec<sdk::model::Status>, sdk::error::Error>",
+    "error_type_canon": "sdk::error::Error"
+   },
+   "base_url": null,
+   "boundary": "operation",
+   "kind": "result"
+  },
+  "mastodon/c2": {
+   "reference": "api.set_authorization(reqwest::header::HeaderValue::from_static(\"CANARYMASTODON101Z\")).public_timeline().send().await",
+   "reference_compiles": true,
+   "client": "Api",
+   "binding": {
+    "type": "Result<Vec<Status>, Error>",
+    "result": "is_ok"
+   },
+   "boundary": "operation",
+   "base_path": "",
+   "recorded": [
+    {
+     "method": "GET",
+     "target": "/api/v1/timelines/public",
+     "headers": [
+      [
+       "authorization",
+       "<secret>"
+      ],
+      [
+       "accept",
+       "application/json"
+      ]
+     ],
+     "body": ""
+    }
+   ],
+   "recorded_again": [
+    {
+     "method": "GET",
+     "target": "/api/v1/timelines/public",
+     "headers": [
+      [
+       "authorization",
+       "<secret>"
+      ],
+      [
+       "accept",
+       "application/json"
+      ]
+     ],
+     "body": ""
+    }
+   ],
+   "volatile": {
+    "sequence_differs": false,
+    "headers": [],
+    "bodies": []
+   },
+   "fixture": {
+    "name": "examples/mastodon-sdk/fixtures/public_timeline.json",
+    "content_type": "application/json",
+    "path": "examples/mastodon-sdk/fixtures/public_timeline.json",
+    "body": null
+   },
+   "fixture_tries_failed": 0,
+   "reference_outcome": null,
+   "result_checked": true,
+   "check_available": true,
+   "kind": "call"
+  },
+  "mastodon/w3": {
+   "method": "GET",
+   "url": "https://mastodon.invalid/api/v2/instance",
+   "headers": [
+    [
+     "accept",
+     "application/json"
+    ]
+   ],
+   "secret_headers": [],
+   "body": null,
+   "body_kind": null,
+   "content_type": null,
+   "accept": "application/json",
+   "prepared": {
+    "method": "GET",
+    "url": "https://mastodon.invalid/api/v2/instance",
+    "headers": [
+     [
+      "accept",
+      "application/json"
+     ]
+    ],
+    "secret_headers": [],
+    "body": null,
+    "body_kind": null,
+    "content_type": null,
+    "accept": "application/json"
+   },
+   "policy_changes_request": false,
+   "operation_completed_within_10s": true,
+   "boundary": "operation",
+   "kind": "wire"
+  },
+  "mastodon/r3": {
+   "r2": {
+    "resolvable": true,
+    "send_returns": "Result<InstanceInfo, Error>",
+    "error_type": "Error",
+    "how": "send template",
+    "verified": true,
+    "decl_module": "crate::api",
+    "send_returns_canon": "Result<sdk::model::InstanceInfo, sdk::error::Error>",
+    "error_type_canon": "sdk::error::Error"
+   },
+   "base_url": null,
+   "boundary": "operation",
+   "kind": "result"
+  },
+  "mastodon/c3": {
+   "reference": "api.instance().send().await",
+   "reference_compiles": true,
+   "client": "Api",
+   "binding": {
+    "type": "Result<InstanceInfo, Error>",
+    "result": "is_ok"
+   },
+   "boundary": "operation",
+   "base_path": "",
+   "recorded": [
+    {
+     "method": "GET",
+     "target": "/api/v2/instance",
+     "headers": [
+      [
+       "accept",
+       "application/json"
+      ]
+     ],
+     "body": ""
+    }
+   ],
+   "recorded_again": [
+    {
+     "method": "GET",
+     "target": "/api/v2/instance",
+     "headers": [
+      [
+       "accept",
+       "application/json"
+      ]
+     ],
+     "body": ""
+    }
+   ],
+   "volatile": {
+    "sequence_differs": false,
+    "headers": [],
+    "bodies": []
+   },
+   "fixture": {
+    "name": "examples/mastodon-sdk/fixtures/instance.json",
+    "content_type": "application/json",
+    "path": "examples/mastodon-sdk/fixtures/instance.json",
+    "body": null
+   },
+   "fixture_tries_failed": 0,
+   "reference_outcome": null,
+   "result_checked": true,
+   "check_available": true,
+   "kind": "call"
+  }
+ },
+ "drops": [
+  {
+   "id": "mastodon/r1",
+   "reason": "`-> stream T`: the reader type is the format's, not in the declaration"
+  }
+ ]
+}

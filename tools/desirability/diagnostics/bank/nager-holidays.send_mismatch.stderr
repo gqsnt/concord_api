@@ -1,0 +1,13 @@
+   Compiling concord-sdk-nager-holidays v0.0.0 (/home/canarit/projects/Concord_Desirability_Loop/work/wt/scratch-i4-a/examples/nager-holidays-sdk)
+error[E0308]: `?` operator has incompatible types
+ --> examples/nager-holidays-sdk/tests/cb_send_mismatch.rs:8:28
+  |
+8 |     let _x: Vec<Holiday> = api.holidays("AT", 2026).send().await?; // SEEDED
+  |                            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ expected `Vec<Holiday>`, found `HolidayResponse`
+  |
+  = note: `?` operator cannot convert from `HolidayResponse` to `Vec<Holiday>`
+  = note: expected struct `Vec<Holiday>`
+             found struct `HolidayResponse`
+
+For more information about this error, try `rustc --explain E0308`.
+error: could not compile `concord-sdk-nager-holidays` (test "cb_send_mismatch") due to 1 previous error

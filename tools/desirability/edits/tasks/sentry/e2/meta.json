@@ -1,0 +1,10 @@
+{
+ "sdk": "sentry",
+ "kind": "e2",
+ "package": "concord-sdk-sentry",
+ "sdk_dir": "examples/sentry-sdk",
+ "title": "X-Sentry-Organization on every organization-scoped request",
+ "public_names": [
+  "Sentry::organization"
+ ]
+}

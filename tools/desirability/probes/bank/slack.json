@@ -1,0 +1,271 @@
+{
+ "sdk": "slack-sdk",
+ "short": "slack",
+ "pkg": "concord-sdk-slack",
+ "crate": "concord_sdk_slack",
+ "seed": 1,
+ "role": "main",
+ "holdout_of": [],
+ "generator_version": 1,
+ "clients": {
+  "SlackApi": {
+   "constructible": true,
+   "file": "examples/slack-sdk/src/wire.rs",
+   "ctor": "SlackApi::new(reqwest::Client::new(), SlackApiConfig {\n    token: \"CANARYSLACK1Z\".into(),\n})",
+   "canaries": [
+    "CANARYSLACK1Z"
+   ],
+   "config_fields": [
+    "token"
+   ],
+   "endpoints": 2,
+   "notes": []
+  }
+ },
+ "picks": [
+  {
+   "key": "SlackApi/users_list",
+   "client": "SlackApi",
+   "client_file": "examples/slack-sdk/src/wire.rs",
+   "scopes": [],
+   "method": "GET",
+   "endpoint": "users_list",
+   "output": "Envelope<UsersPayload>",
+   "docs": [],
+   "values": [
+    {
+     "level": 1,
+     "owner": "users_list",
+     "owner_kind": "endpoint",
+     "name": "limit",
+     "type": "u16",
+     "placement": "query",
+     "key": null,
+     "each": false,
+     "sensitive": false,
+     "optional": false,
+     "default": null,
+     "kind": "int:u16",
+     "state": "required",
+     "literal": "29",
+     "value": 29
+    },
+    {
+     "level": 1,
+     "owner": "users_list",
+     "owner_kind": "endpoint",
+     "name": "cursor",
+     "type": "String",
+     "placement": "query",
+     "key": null,
+     "each": false,
+     "sensitive": true,
+     "optional": true,
+     "default": null,
+     "kind": "string",
+     "state": "unset",
+     "literal": null,
+     "value": null
+    },
+    {
+     "level": 1,
+     "owner": "users_list",
+     "owner_kind": "endpoint",
+     "name": "include_locale",
+     "type": "bool",
+     "placement": "query",
+     "key": null,
+     "each": false,
+     "sensitive": false,
+     "optional": true,
+     "default": null,
+     "kind": "bool",
+     "state": "set",
+     "literal": "false",
+     "value": false
+    },
+    {
+     "level": 1,
+     "owner": "users_list",
+     "owner_kind": "endpoint",
+     "name": "team_id",
+     "type": "String",
+     "placement": "query",
+     "key": null,
+     "each": false,
+     "sensitive": false,
+     "optional": true,
+     "default": null,
+     "kind": "string",
+     "state": "set",
+     "literal": "\"x&y=z\"",
+     "value": "x&y=z"
+    }
+   ],
+   "canaries": [
+    "CANARYSLACK1Z"
+   ],
+   "pct": true,
+   "rust": {
+    "client": "SlackApi::new(reqwest::Client::new(), SlackApiConfig {\n    token: \"CANARYSLACK1Z\".into(),\n})",
+    "call": "api.users_list(29).set_include_locale(false).set_team_id(\"x&y=z\")"
+   },
+   "strata": [
+    "base_path",
+    "optional_set",
+    "optional_unset",
+    "query"
+   ],
+   "index": 0,
+   "boundary": "prepared"
+  },
+  {
+   "key": "SlackApi/conversations_info",
+   "client": "SlackApi",
+   "client_file": "examples/slack-sdk/src/wire.rs",
+   "scopes": [],
+   "method": "GET",
+   "endpoint": "conversations_info",
+   "output": "Envelope<ConversationPayload>",
+   "docs": [],
+   "values": [
+    {
+     "level": 1,
+     "owner": "conversations_info",
+     "owner_kind": "endpoint",
+     "name": "channel",
+     "type": "String",
+     "placement": "query",
+     "key": null,
+     "each": false,
+     "sensitive": false,
+     "optional": false,
+     "default": null,
+     "kind": "string",
+     "state": "required",
+     "literal": "\"50% off\"",
+     "value": "50% off"
+    },
+    {
+     "level": 1,
+     "owner": "conversations_info",
+     "owner_kind": "endpoint",
+     "name": "include_locale",
+     "type": "bool",
+     "placement": "query",
+     "key": null,
+     "each": false,
+     "sensitive": false,
+     "optional": true,
+     "default": null,
+     "kind": "bool",
+     "state": "set",
+     "literal": "false",
+     "value": false
+    },
+    {
+     "level": 1,
+     "owner": "conversations_info",
+     "owner_kind": "endpoint",
+     "name": "include_num_members",
+     "type": "bool",
+     "placement": "query",
+     "key": null,
+     "each": false,
+     "sensitive": false,
+     "optional": true,
+     "default": null,
+     "kind": "bool",
+     "state": "unset",
+     "literal": null,
+     "value": null
+    }
+   ],
+   "canaries": [
+    "CANARYSLACK1Z"
+   ],
+   "pct": true,
+   "rust": {
+    "client": "SlackApi::new(reqwest::Client::new(), SlackApiConfig {\n    token: \"CANARYSLACK1Z\".into(),\n})",
+    "call": "api.conversations_info(\"50% off\").set_include_locale(false)"
+   },
+   "strata": [
+    "base_path",
+    "optional_set",
+    "optional_unset",
+    "query"
+   ],
+   "index": 1,
+   "boundary": "prepared"
+  }
+ ],
+ "items": [
+  {
+   "id": "slack/w1",
+   "kind": "wire",
+   "session": "wire",
+   "q": 1,
+   "pick": 0,
+   "boundary": "prepared",
+   "question": "What request does `call.prepare()` build? Give `method`, `url`, `headers` (only the ones Concord sets; secret values as `<secret>`), `body`, `content_type` and `accept`.\n\n```rust\nlet api = SlackApi::new(reqwest::Client::new(), SlackApiConfig {\n    token: \"CANARYSLACK1Z\".into(),\n});\nlet call = api.users_list(29).set_include_locale(false).set_team_id(\"x&y=z\");\n```"
+  },
+  {
+   "id": "slack/r1",
+   "kind": "result",
+   "session": "rc",
+   "q": 1,
+   "pick": 0,
+   "boundary": "prepared",
+   "base_url": {
+    "staging": "https://staging.example.test",
+    "keep": "/api",
+    "candidates": [
+     "https://staging.example.test",
+     "https://staging.example.test/",
+     "https://staging.example.test/api",
+     "https://staging.example.test/api/"
+    ]
+   },
+   "question": "For the endpoint `GET users_list` directly on the client: (a) what type does `.send().await` return (`send_returns`)? (b) what is the error type in that result (`error_type`)? (c) The same API also runs at `https://staging.example.test`. Which exact string do you pass to `api.with_base_url(..)` so that requests keep the `/api` prefix, i.e. go to `https://staging.example.test/api/...` (`base_url`)?"
+  },
+  {
+   "id": "slack/c1",
+   "kind": "call",
+   "session": "rc",
+   "q": 2,
+   "pick": 0,
+   "boundary": "prepared",
+   "intent": "Users list: call `GET users_list` directly on the client with `limit` = `29`, `include_locale` = `false`, `team_id` = `\"x&y=z\"`. Leave every other optional value as it is",
+   "question": "Write the body of `async fn call(api: SlackApi) -> Result<(), Box<dyn std::error::Error>>` that does this and sends it with `.send().await`: Users list: call `GET users_list` directly on the client with `limit` = `29`, `include_locale` = `false`, `team_id` = `\"x&y=z\"`. Leave every other optional value as it is. Your code runs before the function's final `Ok(())`; it may start with `use` lines (`code`)."
+  },
+  {
+   "id": "slack/w2",
+   "kind": "wire",
+   "session": "wire",
+   "q": 2,
+   "pick": 1,
+   "boundary": "prepared",
+   "question": "What request does `call.prepare()` build? Give `method`, `url`, `headers` (only the ones Concord sets; secret values as `<secret>`), `body`, `content_type` and `accept`.\n\n```rust\nlet api = SlackApi::new(reqwest::Client::new(), SlackApiConfig {\n    token: \"CANARYSLACK1Z\".into(),\n});\nlet call = api.conversations_info(\"50% off\").set_include_locale(false);\n```"
+  },
+  {
+   "id": "slack/r2",
+   "kind": "result",
+   "session": "rc",
+   "q": 3,
+   "pick": 1,
+   "boundary": "prepared",
+   "base_url": null,
+   "question": "For the endpoint `GET conversations_info` directly on the client: (a) what type does `.send().await` return (`send_returns`)? (b) what is the error type in that result (`error_type`)?"
+  },
+  {
+   "id": "slack/c2",
+   "kind": "call",
+   "session": "rc",
+   "q": 4,
+   "pick": 1,
+   "boundary": "prepared",
+   "intent": "Conversations info: call `GET conversations_info` directly on the client with `channel` = `\"50% off\"`, `include_locale` = `false`. Leave every other optional value as it is",
+   "question": "Write the body of `async fn call(api: SlackApi) -> Result<(), Box<dyn std::error::Error>>` that does this and sends it with `.send().await`: Conversations info: call `GET conversations_info` directly on the client with `channel` = `\"50% off\"`, `include_locale` = `false`. Leave every other optional value as it is. Your code runs before the function's final `Ok(())`; it may start with `use` lines (`code`)."
+  }
+ ]
+}

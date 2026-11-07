@@ -1,0 +1,10 @@
+{
+ "sdk": "nager-holidays",
+ "kind": "e2",
+ "package": "concord-sdk-nager-holidays",
+ "sdk_dir": "examples/nager-holidays-sdk",
+ "title": "Optional X-API-Key header on every request",
+ "public_names": [
+  "NagerHolidays::set_api_key"
+ ]
+}

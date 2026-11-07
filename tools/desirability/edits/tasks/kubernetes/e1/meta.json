@@ -1,0 +1,12 @@
+{
+ "sdk": "kubernetes",
+ "kind": "e1",
+ "package": "concord-example-kubernetes-sdk",
+ "sdk_dir": "examples/kubernetes-sdk",
+ "title": "Ingress moved from networking.k8s.io/v1 to networking.k8s.io/v2",
+ "public_names": [
+  "KubeContext::networking",
+  "NamespaceContext::networking",
+  "Resource::API_VERSION"
+ ]
+}

@@ -1,0 +1,256 @@
+{
+ "sdk": "notion-sdk",
+ "short": "notion",
+ "pkg": "concord-sdk-notion",
+ "crate": "concord_sdk_notion",
+ "seed": 1,
+ "role": "main",
+ "holdout_of": [],
+ "generator_version": 1,
+ "clients": {
+  "Notion": {
+   "constructible": true,
+   "file": "examples/notion-sdk/src/api.rs",
+   "ctor": "Notion::new(reqwest::Client::new(), NotionConfig {\n    token: \"CANARYNOTION1Z\".into(),\n})",
+   "canaries": [
+    "CANARYNOTION1Z"
+   ],
+   "config_fields": [
+    "token"
+   ],
+   "endpoints": 3,
+   "notes": []
+  }
+ },
+ "picks": [
+  {
+   "key": "Notion/children",
+   "client": "Notion",
+   "client_file": "examples/notion-sdk/src/api.rs",
+   "scopes": [],
+   "method": "GET",
+   "endpoint": "children",
+   "output": "List<Block>",
+   "docs": [
+    "One level of children, with the cursor in the query string."
+   ],
+   "values": [
+    {
+     "level": 0,
+     "owner": "Notion",
+     "owner_kind": "client",
+     "name": "version",
+     "type": "String",
+     "placement": "header",
+     "key": "\"Notion-Version\"",
+     "each": false,
+     "sensitive": false,
+     "optional": false,
+     "default": "crate::NOTION_VERSION.to_owned()",
+     "kind": "string",
+     "state": "initialized",
+     "literal": null,
+     "value": null
+    },
+    {
+     "level": 1,
+     "owner": "children",
+     "owner_kind": "endpoint",
+     "name": "block_id",
+     "type": "String",
+     "placement": "path",
+     "key": null,
+     "each": false,
+     "sensitive": false,
+     "optional": false,
+     "default": null,
+     "kind": "string",
+     "state": "required",
+     "literal": "\"harbor\"",
+     "value": "harbor"
+    },
+    {
+     "level": 1,
+     "owner": "children",
+     "owner_kind": "endpoint",
+     "name": "page_size",
+     "type": "u8",
+     "placement": "query",
+     "key": null,
+     "each": false,
+     "sensitive": false,
+     "optional": false,
+     "default": null,
+     "kind": "int:u8",
+     "state": "required",
+     "literal": "4",
+     "value": 4
+    },
+    {
+     "level": 1,
+     "owner": "children",
+     "owner_kind": "endpoint",
+     "name": "start_cursor",
+     "type": "String",
+     "placement": "query",
+     "key": null,
+     "each": false,
+     "sensitive": false,
+     "optional": true,
+     "default": null,
+     "kind": "string",
+     "state": "unset",
+     "literal": null,
+     "value": null
+    }
+   ],
+   "canaries": [
+    "CANARYNOTION1Z"
+   ],
+   "pct": false,
+   "rust": {
+    "client": "Notion::new(reqwest::Client::new(), NotionConfig {\n    token: \"CANARYNOTION1Z\".into(),\n})",
+    "call": "api.children(\"harbor\", 4)"
+   },
+   "strata": [
+    "base_path",
+    "initialized",
+    "optional_unset",
+    "query"
+   ],
+   "index": 0,
+   "boundary": "prepared"
+  },
+  {
+   "key": "Notion/page",
+   "client": "Notion",
+   "client_file": "examples/notion-sdk/src/api.rs",
+   "scopes": [],
+   "method": "GET",
+   "endpoint": "page",
+   "output": "Page",
+   "docs": [
+    "Retrieve properties and metadata; this does not retrieve page content."
+   ],
+   "values": [
+    {
+     "level": 0,
+     "owner": "Notion",
+     "owner_kind": "client",
+     "name": "version",
+     "type": "String",
+     "placement": "header",
+     "key": "\"Notion-Version\"",
+     "each": false,
+     "sensitive": false,
+     "optional": false,
+     "default": "crate::NOTION_VERSION.to_owned()",
+     "kind": "string",
+     "state": "initialized",
+     "literal": null,
+     "value": null
+    },
+    {
+     "level": 1,
+     "owner": "page",
+     "owner_kind": "endpoint",
+     "name": "page_id",
+     "type": "String",
+     "placement": "path",
+     "key": null,
+     "each": false,
+     "sensitive": false,
+     "optional": false,
+     "default": null,
+     "kind": "string",
+     "state": "required",
+     "literal": "\"a b/c\"",
+     "value": "a b/c"
+    }
+   ],
+   "canaries": [
+    "CANARYNOTION1Z"
+   ],
+   "pct": true,
+   "rust": {
+    "client": "Notion::new(reqwest::Client::new(), NotionConfig {\n    token: \"CANARYNOTION1Z\".into(),\n})",
+    "call": "api.page(\"a b/c\")"
+   },
+   "strata": [
+    "base_path",
+    "initialized"
+   ],
+   "index": 1,
+   "boundary": "prepared"
+  }
+ ],
+ "items": [
+  {
+   "id": "notion/w1",
+   "kind": "wire",
+   "session": "wire",
+   "q": 1,
+   "pick": 0,
+   "boundary": "prepared",
+   "question": "What request does `call.prepare()` build? Give `method`, `url`, `headers` (only the ones Concord sets; secret values as `<secret>`), `body`, `content_type` and `accept`.\n\n```rust\nlet api = Notion::new(reqwest::Client::new(), NotionConfig {\n    token: \"CANARYNOTION1Z\".into(),\n});\nlet call = api.children(\"harbor\", 4);\n```"
+  },
+  {
+   "id": "notion/r1",
+   "kind": "result",
+   "session": "rc",
+   "q": 1,
+   "pick": 0,
+   "boundary": "prepared",
+   "base_url": {
+    "staging": "https://staging.example.test",
+    "keep": "/v1",
+    "candidates": [
+     "https://staging.example.test",
+     "https://staging.example.test/",
+     "https://staging.example.test/v1",
+     "https://staging.example.test/v1/"
+    ]
+   },
+   "question": "For the endpoint `GET children` directly on the client: (a) what type does `.send().await` return (`send_returns`)? (b) what is the error type in that result (`error_type`)? (c) The same API also runs at `https://staging.example.test`. Which exact string do you pass to `api.with_base_url(..)` so that requests keep the `/v1` prefix, i.e. go to `https://staging.example.test/v1/...` (`base_url`)?"
+  },
+  {
+   "id": "notion/c1",
+   "kind": "call",
+   "session": "rc",
+   "q": 2,
+   "pick": 0,
+   "boundary": "prepared",
+   "intent": "One level of children, with the cursor in the query string: call `GET children` directly on the client with `block_id` = `\"harbor\"`, `page_size` = `4`. Leave every other optional value as it is",
+   "question": "Write the body of `async fn call(api: Notion) -> Result<(), Box<dyn std::error::Error>>` that does this and sends it with `.send().await`: One level of children, with the cursor in the query string: call `GET children` directly on the client with `block_id` = `\"harbor\"`, `page_size` = `4`. Leave every other optional value as it is. Your code runs before the function's final `Ok(())`; it may start with `use` lines (`code`)."
+  },
+  {
+   "id": "notion/w2",
+   "kind": "wire",
+   "session": "wire",
+   "q": 2,
+   "pick": 1,
+   "boundary": "prepared",
+   "question": "What request does `call.prepare()` build? Give `method`, `url`, `headers` (only the ones Concord sets; secret values as `<secret>`), `body`, `content_type` and `accept`.\n\n```rust\nlet api = Notion::new(reqwest::Client::new(), NotionConfig {\n    token: \"CANARYNOTION1Z\".into(),\n});\nlet call = api.page(\"a b/c\");\n```"
+  },
+  {
+   "id": "notion/r2",
+   "kind": "result",
+   "session": "rc",
+   "q": 3,
+   "pick": 1,
+   "boundary": "prepared",
+   "base_url": null,
+   "question": "For the endpoint `GET page` directly on the client: (a) what type does `.send().await` return (`send_returns`)? (b) what is the error type in that result (`error_type`)?"
+  },
+  {
+   "id": "notion/c2",
+   "kind": "call",
+   "session": "rc",
+   "q": 4,
+   "pick": 1,
+   "boundary": "prepared",
+   "intent": "Retrieve properties and metadata; this does not retrieve page content: call `GET page` directly on the client with `page_id` = `\"a b/c\"`. Leave every other optional value as it is",
+   "question": "Write the body of `async fn call(api: Notion) -> Result<(), Box<dyn std::error::Error>>` that does this and sends it with `.send().await`: Retrieve properties and metadata; this does not retrieve page content: call `GET page` directly on the client with `page_id` = `\"a b/c\"`. Leave every other optional value as it is. Your code runs before the function's final `Ok(())`; it may start with `use` lines (`code`)."
+  }
+ ]
+}

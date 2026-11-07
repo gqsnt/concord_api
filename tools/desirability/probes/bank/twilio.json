@@ -1,0 +1,108 @@
+{
+ "sdk": "twilio-sdk",
+ "short": "twilio",
+ "pkg": "concord-sdk-twilio",
+ "crate": "concord_sdk_twilio",
+ "seed": 1,
+ "role": "main",
+ "holdout_of": [],
+ "generator_version": 1,
+ "clients": {
+  "TwilioApi": {
+   "constructible": true,
+   "file": "examples/twilio-sdk/src/lib.rs",
+   "ctor": "TwilioApi::new(reqwest::Client::new(), TwilioApiConfig {\n    authorization: reqwest::header::HeaderValue::from_static(\"CANARYTWILIO1Z\"),\n    account_sid: \"CANARYTWILIO2Z\".into(),\n})",
+   "canaries": [
+    "CANARYTWILIO1Z",
+    "CANARYTWILIO2Z"
+   ],
+   "config_fields": [
+    "authorization",
+    "account_sid"
+   ],
+   "endpoints": 2,
+   "notes": []
+  }
+ },
+ "picks": [
+  {
+   "key": "TwilioApi/get_message",
+   "client": "TwilioApi",
+   "client_file": "examples/twilio-sdk/src/lib.rs",
+   "scopes": [],
+   "method": "GET",
+   "endpoint": "get_message",
+   "output": "Message",
+   "docs": [
+    "Fetches a message's current status and error fields.",
+    "",
+    "The message SID is an identifier, not a secret: unlike the account SID it is not",
+    "marked sensitive, so request `Debug` shows it, as `Message`'s `Debug` does."
+   ],
+   "values": [
+    {
+     "level": 1,
+     "owner": "get_message",
+     "owner_kind": "endpoint",
+     "name": "sid",
+     "type": "String",
+     "placement": "path",
+     "key": null,
+     "each": false,
+     "sensitive": false,
+     "optional": false,
+     "default": null,
+     "kind": "string",
+     "state": "required",
+     "literal": "\"indigo\"",
+     "value": "indigo"
+    }
+   ],
+   "canaries": [
+    "CANARYTWILIO1Z",
+    "CANARYTWILIO2Z"
+   ],
+   "pct": false,
+   "rust": {
+    "client": "TwilioApi::new(reqwest::Client::new(), TwilioApiConfig {\n    authorization: reqwest::header::HeaderValue::from_static(\"CANARYTWILIO1Z\"),\n    account_sid: \"CANARYTWILIO2Z\".into(),\n})",
+    "call": "api.get_message(\"indigo\")"
+   },
+   "strata": [
+    "base_path"
+   ],
+   "index": 0,
+   "boundary": "prepared"
+  }
+ ],
+ "items": [
+  {
+   "id": "twilio/w1",
+   "kind": "wire",
+   "session": "wire",
+   "q": 1,
+   "pick": 0,
+   "boundary": "prepared",
+   "question": "What request does `call.prepare()` build? Give `method`, `url`, `headers` (only the ones Concord sets; secret values as `<secret>`), `body`, `content_type` and `accept`.\n\n```rust\nlet api = TwilioApi::new(reqwest::Client::new(), TwilioApiConfig {\n    authorization: reqwest::header::HeaderValue::from_static(\"CANARYTWILIO1Z\"),\n    account_sid: \"CANARYTWILIO2Z\".into(),\n});\nlet call = api.get_message(\"indigo\");\n```"
+  },
+  {
+   "id": "twilio/r1",
+   "kind": "result",
+   "session": "rc",
+   "q": 1,
+   "pick": 0,
+   "boundary": "prepared",
+   "base_url": null,
+   "question": "For the endpoint `GET get_message` directly on the client: (a) what type does `.send().await` return (`send_returns`)? (b) what is the error type in that result (`error_type`)?"
+  },
+  {
+   "id": "twilio/c1",
+   "kind": "call",
+   "session": "rc",
+   "q": 2,
+   "pick": 0,
+   "boundary": "prepared",
+   "intent": "Fetches a message's current status and error fields: call `GET get_message` directly on the client with `sid` = `\"indigo\"`. Leave every other optional value as it is",
+   "question": "Write the body of `async fn call(api: TwilioApi) -> Result<(), Box<dyn std::error::Error>>` that does this and sends it with `.send().await`: Fetches a message's current status and error fields: call `GET get_message` directly on the client with `sid` = `\"indigo\"`. Leave every other optional value as it is. Your code runs before the function's final `Ok(())`; it may start with `use` lines (`code`)."
+  }
+ ]
+}

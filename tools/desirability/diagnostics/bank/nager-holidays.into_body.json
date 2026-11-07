@@ -1,0 +1,15 @@
+{
+ "corrected": "let _req = api.holidays(\"AT\", 2026);",
+ "expected": "String",
+ "generated_names": [
+  "NagerHolidaysConfig",
+  "NagerHolidaysHolidays"
+ ],
+ "kind": "into_body",
+ "package": "concord-sdk-nager-holidays",
+ "sdk": "nager-holidays",
+ "seeded": "let _req = api.holidays(\"AT\".into(), 2026);",
+ "seeded_line": 8,
+ "user_file": "examples/nager-holidays-sdk/tests/cb_into_body.rs",
+ "variant": "no body exists: the positional country code"
+}

@@ -1,0 +1,1143 @@
+{
+ "generator_version": 1,
+ "seed": 1,
+ "role": "main",
+ "holdout_of": [],
+ "picks_per_sdk": 6,
+ "measures": "docs-assisted prediction (see README)",
+ "sdks": {
+  "adyen-checkout": {
+   "pkg": "concord-sdk-adyen-checkout",
+   "endpoints": 4,
+   "eligible_endpoints": 0,
+   "picks": 0,
+   "reused_endpoint_picks": 0,
+   "clients": {
+    "Checkout": {
+     "constructible": true,
+     "endpoints": 4
+    }
+   },
+   "ineligible_endpoint_reasons": {
+    "required endpoint body of type `MethodsRequest` not readable": 1,
+    "required endpoint body of type `PaymentRequest` not readable": 1,
+    "required endpoint body of type `DetailsRequest` not readable": 1,
+    "required endpoint body of type `CaptureRequest` not readable": 1
+   }
+  },
+  "airtable": {
+   "pkg": "concord-sdk-airtable",
+   "endpoints": 1,
+   "eligible_endpoints": 1,
+   "picks": 1,
+   "reused_endpoint_picks": 0,
+   "clients": {
+    "AirtableApi": {
+     "constructible": true,
+     "endpoints": 1
+    }
+   },
+   "ineligible_endpoint_reasons": {}
+  },
+  "amazon-s3": {
+   "pkg": "concord-sdk-amazon-s3",
+   "endpoints": 4,
+   "eligible_endpoints": 0,
+   "picks": 0,
+   "reused_endpoint_picks": 0,
+   "clients": {
+    "S3Api": {
+     "constructible": false,
+     "reason": "required client value of type `Signer` has no literal form and no Default",
+     "endpoints": 4
+    }
+   },
+   "ineligible_endpoint_reasons": {
+    "client not constructible: required client value of type `Signer` has no literal form and no Default": 4
+   }
+  },
+  "anthropic-messages": {
+   "pkg": "concord-sdk-anthropic-messages",
+   "endpoints": 3,
+   "eligible_endpoints": 0,
+   "picks": 0,
+   "reused_endpoint_picks": 0,
+   "clients": {
+    "Anthropic": {
+     "constructible": true,
+     "endpoints": 3
+    }
+   },
+   "ineligible_endpoint_reasons": {
+    "required endpoint body of type `MessageRequest` not readable": 1,
+    "required endpoint body of type `CountTokensRequest` not readable": 1,
+    "required endpoint body of type `StreamRequest` not readable": 1
+   }
+  },
+  "arxiv": {
+   "pkg": "concord-sdk-arxiv",
+   "endpoints": 3,
+   "eligible_endpoints": 0,
+   "picks": 0,
+   "reused_endpoint_picks": 0,
+   "clients": {
+    "Arxiv": {
+     "constructible": true,
+     "endpoints": 3
+    }
+   },
+   "ineligible_endpoint_reasons": {
+    "required endpoint value of type `SearchTerm` not readable": 1,
+    "required endpoint value of type `Query` not readable": 1,
+    "required endpoint value of type `IdList` not readable": 1
+   }
+  },
+  "backblaze-b2-native": {
+   "pkg": "concord-sdk-backblaze-b2-native",
+   "endpoints": 6,
+   "eligible_endpoints": 3,
+   "picks": 3,
+   "reused_endpoint_picks": 0,
+   "clients": {
+    "B2Wire": {
+     "constructible": true,
+     "endpoints": 6
+    }
+   },
+   "ineligible_endpoint_reasons": {
+    "required scope value of type `HeaderValue` not readable": 1,
+    "required endpoint body of type `DeleteFileVersionRequest` not readable": 1,
+    "required endpoint body of type `EncodedBody` not readable": 1
+   }
+  },
+  "clickhouse": {
+   "pkg": "concord-sdk-clickhouse",
+   "endpoints": 4,
+   "eligible_endpoints": 1,
+   "picks": 1,
+   "reused_endpoint_picks": 0,
+   "clients": {
+    "ClickHouseHttp": {
+     "constructible": true,
+     "endpoints": 4
+    }
+   },
+   "ineligible_endpoint_reasons": {
+    "required endpoint value of type `OutputFormat` not readable": 2,
+    "required endpoint body of type `Upload` not readable": 1
+   }
+  },
+  "cloudflare-zones": {
+   "pkg": "concord-sdk-cloudflare-zones",
+   "endpoints": 5,
+   "eligible_endpoints": 1,
+   "picks": 1,
+   "reused_endpoint_picks": 0,
+   "clients": {
+    "Cloudflare": {
+     "constructible": true,
+     "endpoints": 5
+    }
+   },
+   "ineligible_endpoint_reasons": {
+    "required scope value of type `ZoneId` not readable": 4
+   }
+  },
+  "datadog-events": {
+   "pkg": "concord-sdk-datadog-events",
+   "endpoints": 3,
+   "eligible_endpoints": 2,
+   "picks": 2,
+   "reused_endpoint_picks": 0,
+   "clients": {
+    "DatadogApi": {
+     "constructible": true,
+     "endpoints": 3
+    }
+   },
+   "ineligible_endpoint_reasons": {
+    "required endpoint body of type `NewEvent` not readable": 1
+   }
+  },
+  "digitalocean": {
+   "pkg": "concord-sdk-digitalocean",
+   "endpoints": 5,
+   "eligible_endpoints": 5,
+   "picks": 5,
+   "reused_endpoint_picks": 0,
+   "clients": {
+    "DigitalOcean": {
+     "constructible": true,
+     "endpoints": 5
+    }
+   },
+   "ineligible_endpoint_reasons": {}
+  },
+  "discord-rest": {
+   "pkg": "concord-sdk-discord-rest",
+   "endpoints": 4,
+   "eligible_endpoints": 0,
+   "picks": 0,
+   "reused_endpoint_picks": 0,
+   "clients": {
+    "Discord": {
+     "constructible": true,
+     "endpoints": 4
+    }
+   },
+   "ineligible_endpoint_reasons": {
+    "required scope value of type `ChannelId` not readable": 3,
+    "required scope value of type `GuildId` not readable": 1
+   }
+  },
+  "distribution-registry": {
+   "pkg": "concord-sdk-distribution-registry",
+   "endpoints": 12,
+   "eligible_endpoints": 5,
+   "picks": 5,
+   "reused_endpoint_picks": 0,
+   "clients": {
+    "Registry": {
+     "constructible": true,
+     "endpoints": 2
+    },
+    "Repository": {
+     "constructible": true,
+     "endpoints": 9
+    },
+    "TokenService": {
+     "constructible": true,
+     "endpoints": 1
+    }
+   },
+   "ineligible_endpoint_reasons": {
+    "required endpoint body of type `Bytes` not readable": 3,
+    "required endpoint value of type `Reference` not readable": 2,
+    "required endpoint value of type `Digest` not readable": 2
+   }
+  },
+  "dropbox": {
+   "pkg": "concord-sdk-dropbox",
+   "endpoints": 2,
+   "eligible_endpoints": 0,
+   "picks": 0,
+   "reused_endpoint_picks": 0,
+   "clients": {
+    "DropboxApi": {
+     "constructible": true,
+     "endpoints": 2
+    }
+   },
+   "ineligible_endpoint_reasons": {
+    "required scope value of type `HeaderValue` not readable": 2
+   }
+  },
+  "elasticsearch": {
+   "pkg": "concord-sdk-elasticsearch",
+   "endpoints": 6,
+   "eligible_endpoints": 0,
+   "picks": 0,
+   "reused_endpoint_picks": 0,
+   "clients": {
+    "ElasticsearchApi": {
+     "constructible": true,
+     "endpoints": 6
+    }
+   },
+   "ineligible_endpoint_reasons": {
+    "required scope value of type `IndexName` not readable": 3,
+    "required endpoint body of type `Vec<BulkLine>` not readable": 1,
+    "required endpoint body of type `SearchBody` not readable": 1,
+    "required endpoint body of type `ClosePitBody` not readable": 1
+   }
+  },
+  "europe-pmc": {
+   "pkg": "concord-sdk-europe-pmc",
+   "endpoints": 6,
+   "eligible_endpoints": 0,
+   "picks": 0,
+   "reused_endpoint_picks": 0,
+   "clients": {
+    "EuropePmc": {
+     "constructible": true,
+     "endpoints": 6
+    }
+   },
+   "ineligible_endpoint_reasons": {
+    "required scope value of type `Query` not readable": 3,
+    "required scope value of type `Source` not readable": 3
+   }
+  },
+  "frankfurter": {
+   "pkg": "concord-sdk-frankfurter",
+   "endpoints": 2,
+   "eligible_endpoints": 1,
+   "picks": 1,
+   "reused_endpoint_picks": 0,
+   "clients": {
+    "Frankfurter": {
+     "constructible": true,
+     "endpoints": 2
+    }
+   },
+   "ineligible_endpoint_reasons": {
+    "required endpoint value of type `Date` not readable": 1
+   }
+  },
+  "fred": {
+   "pkg": "concord-sdk-fred",
+   "endpoints": 7,
+   "eligible_endpoints": 7,
+   "picks": 6,
+   "reused_endpoint_picks": 0,
+   "clients": {
+    "Fred": {
+     "constructible": true,
+     "endpoints": 7
+    }
+   },
+   "ineligible_endpoint_reasons": {}
+  },
+  "github": {
+   "pkg": "concord-example-github-sdk",
+   "endpoints": 22,
+   "eligible_endpoints": 0,
+   "picks": 0,
+   "reused_endpoint_picks": 0,
+   "clients": {
+    "GitHub": {
+     "constructible": true,
+     "endpoints": 22
+    }
+   },
+   "ineligible_endpoint_reasons": {
+    "required scope value of type `Owner` not readable": 22
+   }
+  },
+  "gitlab": {
+   "pkg": "concord-sdk-gitlab",
+   "endpoints": 3,
+   "eligible_endpoints": 0,
+   "picks": 0,
+   "reused_endpoint_picks": 0,
+   "clients": {
+    "GitLab": {
+     "constructible": true,
+     "endpoints": 3
+    }
+   },
+   "ineligible_endpoint_reasons": {
+    "required scope value of type `ProjectRef` not readable": 3
+   }
+  },
+  "google-drive": {
+   "pkg": "concord-sdk-google-drive",
+   "endpoints": 8,
+   "eligible_endpoints": 6,
+   "picks": 6,
+   "reused_endpoint_picks": 0,
+   "clients": {
+    "DriveApi": {
+     "constructible": true,
+     "endpoints": 8
+    }
+   },
+   "ineligible_endpoint_reasons": {
+    "required endpoint body of type `MultipartBody` not readable": 1,
+    "required endpoint body of type `EncodedBody` not readable": 1
+   }
+  },
+  "hubspot-crm": {
+   "pkg": "concord-sdk-hubspot-crm",
+   "endpoints": 5,
+   "eligible_endpoints": 4,
+   "picks": 4,
+   "reused_endpoint_picks": 0,
+   "clients": {
+    "CrmApi": {
+     "constructible": true,
+     "endpoints": 4
+    },
+    "OAuthApi": {
+     "constructible": true,
+     "endpoints": 1
+    }
+   },
+   "ineligible_endpoint_reasons": {
+    "required endpoint body of type `RefreshRequest` not readable": 1
+   }
+  },
+  "intercom": {
+   "pkg": "concord-sdk-intercom",
+   "endpoints": 4,
+   "eligible_endpoints": 2,
+   "picks": 2,
+   "reused_endpoint_picks": 0,
+   "clients": {
+    "Intercom": {
+     "constructible": true,
+     "endpoints": 4
+    }
+   },
+   "ineligible_endpoint_reasons": {
+    "required endpoint body of type `EmailSearch` not readable": 1,
+    "required endpoint body of type `NewContact` not readable": 1
+   }
+  },
+  "kraken-spot-rest": {
+   "pkg": "concord-sdk-kraken-spot-rest",
+   "endpoints": 5,
+   "eligible_endpoints": 0,
+   "picks": 0,
+   "reused_endpoint_picks": 0,
+   "clients": {
+    "Kraken": {
+     "constructible": false,
+     "reason": "required client value of type `Policy` has no literal form and no Default",
+     "endpoints": 5
+    }
+   },
+   "ineligible_endpoint_reasons": {
+    "client not constructible: required client value of type `Policy` has no literal form and no Default": 5
+   }
+  },
+  "kubernetes": {
+   "pkg": "concord-example-kubernetes-sdk",
+   "endpoints": 27,
+   "eligible_endpoints": 11,
+   "picks": 6,
+   "reused_endpoint_picks": 0,
+   "clients": {
+    "Kube": {
+     "constructible": true,
+     "endpoints": 27
+    }
+   },
+   "ineligible_endpoint_reasons": {
+    "required scope value of type `NamespaceName` not readable": 15,
+    "required endpoint value of type `NamespaceName` not readable": 1
+   }
+  },
+  "linear": {
+   "pkg": "concord-sdk-linear",
+   "endpoints": 2,
+   "eligible_endpoints": 0,
+   "picks": 0,
+   "reused_endpoint_picks": 0,
+   "clients": {
+    "LinearApi": {
+     "constructible": true,
+     "endpoints": 2
+    }
+   },
+   "ineligible_endpoint_reasons": {
+    "required endpoint body of type `GraphqlRequest<ListVariables>` not readable": 1,
+    "required endpoint body of type `GraphqlRequest<IssueVariables>` not readable": 1
+   }
+  },
+  "mailgun": {
+   "pkg": "concord-sdk-mailgun",
+   "endpoints": 2,
+   "eligible_endpoints": 0,
+   "picks": 0,
+   "reused_endpoint_picks": 0,
+   "clients": {
+    "Mailgun": {
+     "constructible": true,
+     "endpoints": 2
+    }
+   },
+   "ineligible_endpoint_reasons": {
+    "required scope value of type `Domain` not readable": 2
+   }
+  },
+  "mastodon": {
+   "pkg": "concord-sdk-mastodon",
+   "endpoints": 7,
+   "eligible_endpoints": 3,
+   "picks": 3,
+   "reused_endpoint_picks": 0,
+   "clients": {
+    "Api": {
+     "constructible": true,
+     "endpoints": 7
+    }
+   },
+   "ineligible_endpoint_reasons": {
+    "required endpoint value of type `Hashtag` not readable": 3,
+    "required endpoint value of type `StatusId` not readable": 1
+   }
+  },
+  "mediawiki-action-api": {
+   "pkg": "concord-sdk-mediawiki-action-api",
+   "endpoints": 4,
+   "eligible_endpoints": 3,
+   "picks": 3,
+   "reused_endpoint_picks": 0,
+   "clients": {
+    "MediaWiki": {
+     "constructible": true,
+     "endpoints": 4
+    }
+   },
+   "ineligible_endpoint_reasons": {
+    "required endpoint value of type `PageIds` not readable": 1
+   }
+  },
+  "microsoft-graph": {
+   "pkg": "concord-sdk-microsoft-graph",
+   "endpoints": 3,
+   "eligible_endpoints": 3,
+   "picks": 3,
+   "reused_endpoint_picks": 0,
+   "clients": {
+    "GraphApi": {
+     "constructible": true,
+     "endpoints": 3
+    }
+   },
+   "ineligible_endpoint_reasons": {}
+  },
+  "nager-holidays": {
+   "pkg": "concord-sdk-nager-holidays",
+   "endpoints": 1,
+   "eligible_endpoints": 1,
+   "picks": 1,
+   "reused_endpoint_picks": 0,
+   "clients": {
+    "NagerHolidays": {
+     "constructible": true,
+     "endpoints": 1
+    }
+   },
+   "ineligible_endpoint_reasons": {}
+  },
+  "nasa-neows": {
+   "pkg": "concord-sdk-nasa-neows",
+   "endpoints": 3,
+   "eligible_endpoints": 3,
+   "picks": 3,
+   "reused_endpoint_picks": 0,
+   "clients": {
+    "NeoWs": {
+     "constructible": true,
+     "endpoints": 3
+    }
+   },
+   "ineligible_endpoint_reasons": {}
+  },
+  "notion": {
+   "pkg": "concord-sdk-notion",
+   "endpoints": 3,
+   "eligible_endpoints": 2,
+   "picks": 2,
+   "reused_endpoint_picks": 0,
+   "clients": {
+    "Notion": {
+     "constructible": true,
+     "endpoints": 3
+    }
+   },
+   "ineligible_endpoint_reasons": {
+    "required endpoint body of type `QueryBody` not readable": 1
+   }
+  },
+  "ntfy": {
+   "pkg": "concord-sdk-ntfy",
+   "endpoints": 4,
+   "eligible_endpoints": 0,
+   "picks": 0,
+   "reused_endpoint_picks": 0,
+   "clients": {
+    "Ntfy": {
+     "constructible": true,
+     "endpoints": 4
+    }
+   },
+   "ineligible_endpoint_reasons": {
+    "required scope value of type `Topic` not readable": 4
+   }
+  },
+  "open-library": {
+   "pkg": "concord-sdk-open-library",
+   "endpoints": 4,
+   "eligible_endpoints": 2,
+   "picks": 2,
+   "reused_endpoint_picks": 0,
+   "clients": {
+    "OpenLibrary": {
+     "constructible": true,
+     "endpoints": 4
+    }
+   },
+   "ineligible_endpoint_reasons": {
+    "required endpoint value of type `WorkId` not readable": 1,
+    "required scope value of type `AuthorId` not readable": 1
+   }
+  },
+  "open-meteo": {
+   "pkg": "concord-sdk-open-meteo",
+   "endpoints": 1,
+   "eligible_endpoints": 0,
+   "picks": 0,
+   "reused_endpoint_picks": 0,
+   "clients": {
+    "ForecastApi": {
+     "constructible": true,
+     "endpoints": 1
+    }
+   },
+   "ineligible_endpoint_reasons": {
+    "required endpoint value of type `ResponseFormat` not readable": 1
+   }
+  },
+  "openai": {
+   "pkg": "concord-sdk-openai",
+   "endpoints": 7,
+   "eligible_endpoints": 3,
+   "picks": 3,
+   "reused_endpoint_picks": 0,
+   "clients": {
+    "OpenAiApi": {
+     "constructible": true,
+     "endpoints": 7
+    }
+   },
+   "ineligible_endpoint_reasons": {
+    "required endpoint body of type `ResponseRequest` not readable": 2,
+    "required endpoint body of type `MultipartBody` not readable": 1,
+    "required endpoint body of type `BatchRequest` not readable": 1
+   }
+  },
+  "paypal": {
+   "pkg": "concord-sdk-paypal",
+   "endpoints": 9,
+   "eligible_endpoints": 0,
+   "picks": 0,
+   "reused_endpoint_picks": 0,
+   "clients": {
+    "OAuth": {
+     "constructible": true,
+     "endpoints": 1
+    },
+    "PayPal": {
+     "constructible": false,
+     "reason": "required client value of type `Session` has no literal form and no Default",
+     "endpoints": 8
+    }
+   },
+   "ineligible_endpoint_reasons": {
+    "client not constructible: required client value of type `Session` has no literal form and no Default": 8,
+    "required endpoint body of type `ClientCredentials` not readable": 1
+   }
+  },
+  "pokeapi": {
+   "pkg": "concord-sdk-pokeapi",
+   "endpoints": 2,
+   "eligible_endpoints": 2,
+   "picks": 2,
+   "reused_endpoint_picks": 0,
+   "clients": {
+    "PokeApi": {
+     "constructible": true,
+     "endpoints": 2
+    }
+   },
+   "ineligible_endpoint_reasons": {}
+  },
+  "postmark": {
+   "pkg": "concord-sdk-postmark",
+   "endpoints": 4,
+   "eligible_endpoints": 2,
+   "picks": 2,
+   "reused_endpoint_picks": 0,
+   "clients": {
+    "Postmark": {
+     "constructible": true,
+     "endpoints": 4
+    }
+   },
+   "ineligible_endpoint_reasons": {
+    "required endpoint body of type `Email` not readable": 1,
+    "required endpoint body of type `Vec<Email>` not readable": 1
+   }
+  },
+  "quickbooks-online": {
+   "pkg": "concord-sdk-quickbooks-online",
+   "endpoints": 6,
+   "eligible_endpoints": 0,
+   "picks": 0,
+   "reused_endpoint_picks": 0,
+   "clients": {
+    "QuickBooks": {
+     "constructible": false,
+     "reason": "required client value of type `Connection` has no literal form and no Default",
+     "endpoints": 5
+    },
+    "TokenEndpoint": {
+     "constructible": true,
+     "endpoints": 1
+    }
+   },
+   "ineligible_endpoint_reasons": {
+    "client not constructible: required client value of type `Connection` has no literal form and no Default": 5,
+    "required endpoint body of type `auth::Grant` not readable": 1
+   }
+  },
+  "rest-countries": {
+   "pkg": "concord-sdk-rest-countries",
+   "endpoints": 5,
+   "eligible_endpoints": 3,
+   "picks": 3,
+   "reused_endpoint_picks": 0,
+   "clients": {
+    "RestCountries": {
+     "constructible": true,
+     "endpoints": 5
+    }
+   },
+   "ineligible_endpoint_reasons": {
+    "required scope value of type `Property` not readable": 2
+   }
+  },
+  "salesforce": {
+   "pkg": "concord-example-salesforce-sdk",
+   "endpoints": 24,
+   "eligible_endpoints": 0,
+   "picks": 0,
+   "reused_endpoint_picks": 0,
+   "clients": {
+    "SalesforceApi": {
+     "constructible": false,
+     "reason": "required client value of type `ApiVersion` has no literal form and no Default",
+     "endpoints": 24
+    }
+   },
+   "ineligible_endpoint_reasons": {
+    "client not constructible: required client value of type `ApiVersion` has no literal form and no Default": 24
+   }
+  },
+  "sentry": {
+   "pkg": "concord-sdk-sentry",
+   "endpoints": 5,
+   "eligible_endpoints": 4,
+   "picks": 4,
+   "reused_endpoint_picks": 0,
+   "clients": {
+    "Sentry": {
+     "constructible": true,
+     "endpoints": 5
+    }
+   },
+   "ineligible_endpoint_reasons": {
+    "required endpoint body of type `StatusUpdate` not readable": 1
+   }
+  },
+  "shopify": {
+   "pkg": "concord-example-shopify-sdk",
+   "endpoints": 11,
+   "eligible_endpoints": 0,
+   "picks": 0,
+   "reused_endpoint_picks": 0,
+   "clients": {
+    "ShopifyAdmin": {
+     "constructible": true,
+     "endpoints": 11
+    }
+   },
+   "ineligible_endpoint_reasons": {
+    "required scope value of type `ShopDomain` not readable": 11
+   }
+  },
+  "slack": {
+   "pkg": "concord-sdk-slack",
+   "endpoints": 2,
+   "eligible_endpoints": 2,
+   "picks": 2,
+   "reused_endpoint_picks": 0,
+   "clients": {
+    "SlackApi": {
+     "constructible": true,
+     "endpoints": 2
+    }
+   },
+   "ineligible_endpoint_reasons": {}
+  },
+  "snowflake": {
+   "pkg": "concord-sdk-snowflake",
+   "endpoints": 4,
+   "eligible_endpoints": 0,
+   "picks": 0,
+   "reused_endpoint_picks": 0,
+   "clients": {
+    "SqlApi": {
+     "constructible": true,
+     "endpoints": 4
+    }
+   },
+   "ineligible_endpoint_reasons": {
+    "required scope value of type `StatementHandle` not readable": 3,
+    "required endpoint value of type `RequestId` not readable": 1
+   }
+  },
+  "spotify-web-api": {
+   "pkg": "concord-sdk-spotify-web-api",
+   "endpoints": 8,
+   "eligible_endpoints": 1,
+   "picks": 1,
+   "reused_endpoint_picks": 0,
+   "clients": {
+    "Accounts": {
+     "constructible": true,
+     "endpoints": 2
+    },
+    "WebApi": {
+     "constructible": false,
+     "reason": "required client value of type `Session` has no literal form and no Default",
+     "endpoints": 6
+    }
+   },
+   "ineligible_endpoint_reasons": {
+    "client not constructible: required client value of type `Session` has no literal form and no Default": 6,
+    "required endpoint value of type `HeaderValue` not readable": 1
+   }
+  },
+  "square-payments": {
+   "pkg": "concord-sdk-square-payments",
+   "endpoints": 5,
+   "eligible_endpoints": 3,
+   "picks": 3,
+   "reused_endpoint_picks": 0,
+   "clients": {
+    "Square": {
+     "constructible": true,
+     "endpoints": 5
+    }
+   },
+   "ineligible_endpoint_reasons": {
+    "required endpoint body of type `CreatePayment` not readable": 1,
+    "required endpoint body of type `CompletePayment` not readable": 1
+   }
+  },
+  "strava": {
+   "pkg": "concord-sdk-strava",
+   "endpoints": 6,
+   "eligible_endpoints": 0,
+   "picks": 0,
+   "reused_endpoint_picks": 0,
+   "clients": {
+    "Strava": {
+     "constructible": false,
+     "reason": "required client value of type `Session` has no literal form and no Default",
+     "endpoints": 5
+    },
+    "OAuth": {
+     "constructible": true,
+     "endpoints": 1
+    }
+   },
+   "ineligible_endpoint_reasons": {
+    "client not constructible: required client value of type `Session` has no literal form and no Default": 5,
+    "required endpoint body of type `TokenRequest` not readable": 1
+   }
+  },
+  "stripe": {
+   "pkg": "concord-example-stripe-sdk",
+   "endpoints": 19,
+   "eligible_endpoints": 7,
+   "picks": 6,
+   "reused_endpoint_picks": 0,
+   "clients": {
+    "Stripe": {
+     "constructible": true,
+     "endpoints": 19
+    }
+   },
+   "ineligible_endpoint_reasons": {
+    "required endpoint value of type `CustomerId` not readable": 2,
+    "required endpoint value of type `SubscriptionId` not readable": 2,
+    "required endpoint value of type `InvoiceId` not readable": 2,
+    "required endpoint body of type `SubscriptionCreate` not readable": 1,
+    "required endpoint value of type `ProductId` not readable": 1,
+    "required endpoint body of type `ProductCreate` not readable": 1,
+    "required endpoint value of type `PriceId` not readable": 1,
+    "required endpoint body of type `PriceCreate` not readable": 1,
+    "required endpoint value of type `BalanceTransactionId` not readable": 1
+   }
+  },
+  "twilio": {
+   "pkg": "concord-sdk-twilio",
+   "endpoints": 2,
+   "eligible_endpoints": 1,
+   "picks": 1,
+   "reused_endpoint_picks": 0,
+   "clients": {
+    "TwilioApi": {
+     "constructible": true,
+     "endpoints": 2
+    }
+   },
+   "ineligible_endpoint_reasons": {
+    "required endpoint body of type `CreateMessage` not readable": 1
+   }
+  },
+  "usgs-earthquake-catalog": {
+   "pkg": "concord-sdk-usgs-earthquake-catalog",
+   "endpoints": 3,
+   "eligible_endpoints": 0,
+   "picks": 0,
+   "reused_endpoint_picks": 0,
+   "clients": {
+    "Usgs": {
+     "constructible": true,
+     "endpoints": 3
+    }
+   },
+   "ineligible_endpoint_reasons": {
+    "required scope value of type `Timestamp` not readable": 2,
+    "required endpoint value of type `EventId` not readable": 1
+   }
+  },
+  "world-bank": {
+   "pkg": "concord-sdk-world-bank",
+   "endpoints": 1,
+   "eligible_endpoints": 1,
+   "picks": 1,
+   "reused_endpoint_picks": 0,
+   "clients": {
+    "WorldBank": {
+     "constructible": true,
+     "endpoints": 1
+    }
+   },
+   "ineligible_endpoint_reasons": {}
+  },
+  "xero-accounting": {
+   "pkg": "concord-sdk-xero-accounting",
+   "endpoints": 4,
+   "eligible_endpoints": 0,
+   "picks": 0,
+   "reused_endpoint_picks": 0,
+   "clients": {
+    "OAuth": {
+     "constructible": true,
+     "endpoints": 1
+    },
+    "Accounting": {
+     "constructible": false,
+     "reason": "required client value of type `Policy` has no literal form and no Default",
+     "endpoints": 3
+    }
+   },
+   "ineligible_endpoint_reasons": {
+    "client not constructible: required client value of type `Policy` has no literal form and no Default": 3,
+    "required endpoint body of type `Vec<(String,String)>` not readable": 1
+   }
+  },
+  "zendesk-support": {
+   "pkg": "concord-sdk-zendesk-support",
+   "endpoints": 4,
+   "eligible_endpoints": 2,
+   "picks": 2,
+   "reused_endpoint_picks": 0,
+   "clients": {
+    "Zendesk": {
+     "constructible": true,
+     "endpoints": 4
+    }
+   },
+   "ineligible_endpoint_reasons": {
+    "required endpoint body of type `NewTicket` not readable": 1,
+    "required endpoint body of type `TicketUpdate` not readable": 1
+   }
+  }
+ },
+ "ineligible": {
+  "adyen-checkout": {
+   "why": "no eligible endpoint",
+   "reasons": {
+    "required endpoint body of type `MethodsRequest` not readable": 1,
+    "required endpoint body of type `PaymentRequest` not readable": 1,
+    "required endpoint body of type `DetailsRequest` not readable": 1,
+    "required endpoint body of type `CaptureRequest` not readable": 1
+   }
+  },
+  "amazon-s3": {
+   "why": "no eligible endpoint",
+   "reasons": {
+    "client not constructible: required client value of type `Signer` has no literal form and no Default": 4
+   }
+  },
+  "anthropic-messages": {
+   "why": "no eligible endpoint",
+   "reasons": {
+    "required endpoint body of type `MessageRequest` not readable": 1,
+    "required endpoint body of type `CountTokensRequest` not readable": 1,
+    "required endpoint body of type `StreamRequest` not readable": 1
+   }
+  },
+  "arxiv": {
+   "why": "no eligible endpoint",
+   "reasons": {
+    "required endpoint value of type `SearchTerm` not readable": 1,
+    "required endpoint value of type `Query` not readable": 1,
+    "required endpoint value of type `IdList` not readable": 1
+   }
+  },
+  "discord-rest": {
+   "why": "no eligible endpoint",
+   "reasons": {
+    "required scope value of type `ChannelId` not readable": 3,
+    "required scope value of type `GuildId` not readable": 1
+   }
+  },
+  "dropbox": {
+   "why": "no eligible endpoint",
+   "reasons": {
+    "required scope value of type `HeaderValue` not readable": 2
+   }
+  },
+  "elasticsearch": {
+   "why": "no eligible endpoint",
+   "reasons": {
+    "required scope value of type `IndexName` not readable": 3,
+    "required endpoint body of type `Vec<BulkLine>` not readable": 1,
+    "required endpoint body of type `SearchBody` not readable": 1,
+    "required endpoint body of type `ClosePitBody` not readable": 1
+   }
+  },
+  "europe-pmc": {
+   "why": "no eligible endpoint",
+   "reasons": {
+    "required scope value of type `Query` not readable": 3,
+    "required scope value of type `Source` not readable": 3
+   }
+  },
+  "github": {
+   "why": "no eligible endpoint",
+   "reasons": {
+    "required scope value of type `Owner` not readable": 22
+   }
+  },
+  "gitlab": {
+   "why": "no eligible endpoint",
+   "reasons": {
+    "required scope value of type `ProjectRef` not readable": 3
+   }
+  },
+  "kraken-spot-rest": {
+   "why": "no eligible endpoint",
+   "reasons": {
+    "client not constructible: required client value of type `Policy` has no literal form and no Default": 5
+   }
+  },
+  "linear": {
+   "why": "no eligible endpoint",
+   "reasons": {
+    "required endpoint body of type `GraphqlRequest<ListVariables>` not readable": 1,
+    "required endpoint body of type `GraphqlRequest<IssueVariables>` not readable": 1
+   }
+  },
+  "mailgun": {
+   "why": "no eligible endpoint",
+   "reasons": {
+    "required scope value of type `Domain` not readable": 2
+   }
+  },
+  "ntfy": {
+   "why": "no eligible endpoint",
+   "reasons": {
+    "required scope value of type `Topic` not readable": 4
+   }
+  },
+  "open-meteo": {
+   "why": "no eligible endpoint",
+   "reasons": {
+    "required endpoint value of type `ResponseFormat` not readable": 1
+   }
+  },
+  "paypal": {
+   "why": "no eligible endpoint",
+   "reasons": {
+    "client not constructible: required client value of type `Session` has no literal form and no Default": 8,
+    "required endpoint body of type `ClientCredentials` not readable": 1
+   }
+  },
+  "quickbooks-online": {
+   "why": "no eligible endpoint",
+   "reasons": {
+    "client not constructible: required client value of type `Connection` has no literal form and no Default": 5,
+    "required endpoint body of type `auth::Grant` not readable": 1
+   }
+  },
+  "salesforce": {
+   "why": "no eligible endpoint",
+   "reasons": {
+    "client not constructible: required client value of type `ApiVersion` has no literal form and no Default": 24
+   }
+  },
+  "shopify": {
+   "why": "no eligible endpoint",
+   "reasons": {
+    "required scope value of type `ShopDomain` not readable": 11
+   }
+  },
+  "snowflake": {
+   "why": "no eligible endpoint",
+   "reasons": {
+    "required scope value of type `StatementHandle` not readable": 3,
+    "required endpoint value of type `RequestId` not readable": 1
+   }
+  },
+  "strava": {
+   "why": "no eligible endpoint",
+   "reasons": {
+    "client not constructible: required client value of type `Session` has no literal form and no Default": 5,
+    "required endpoint body of type `TokenRequest` not readable": 1
+   }
+  },
+  "usgs-earthquake-catalog": {
+   "why": "no eligible endpoint",
+   "reasons": {
+    "required scope value of type `Timestamp` not readable": 2,
+    "required endpoint value of type `EventId` not readable": 1
+   }
+  },
+  "xero-accounting": {
+   "why": "no eligible endpoint",
+   "reasons": {
+    "client not constructible: required client value of type `Policy` has no literal form and no Default": 3,
+    "required endpoint body of type `Vec<(String,String)>` not readable": 1
+   }
+  }
+ },
+ "totals": {
+  "sdks": 55,
+  "eligible_sdks": 32,
+  "items": {
+   "boundary_operation": 53,
+   "reused_endpoint_picks": 0,
+   "wire": 90,
+   "result": 90,
+   "call": 90,
+   "result_with_base_url": 19,
+   "boundary_prepared": 37
+  },
+  "strata_coverage": {
+   "scope_depth2": 3,
+   "query": 56,
+   "header": 20,
+   "body": 7,
+   "override_remove": 6,
+   "optional_set": 38,
+   "optional_unset": 49,
+   "initialized": 22,
+   "base_path": 58,
+   "scope_path": 42,
+   "format_exception": 14
+  },
+  "picks": 90,
+  "eligible_endpoints": 97,
+  "endpoints": 316
+ }
+}

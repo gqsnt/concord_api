@@ -1,0 +1,24 @@
+{
+ "corrected": "let _r = cf.zone(ZoneId::from(\"z\")).get();",
+ "expected": "ZoneId",
+ "generated_names": [
+  "CloudflareConfig",
+  "CloudflareZone",
+  "CloudflareZoneDnsRecord",
+  "CloudflareZoneDnsRecordGet",
+  "CloudflareZoneDnsRecords",
+  "CloudflareZoneDnsRecordsCreate",
+  "CloudflareZoneDnsRecordsList",
+  "CloudflareZoneGet",
+  "CloudflareZones",
+  "CloudflareZonesList",
+  "Paging"
+ ],
+ "kind": "missing_scope_value",
+ "package": "concord-sdk-cloudflare-zones",
+ "sdk": "cloudflare-zones",
+ "seeded": "let _r = cf.zone().get();",
+ "seeded_line": 12,
+ "user_file": "examples/cloudflare-zones-sdk/tests/cb_missing_scope_value.rs",
+ "variant": null
+}

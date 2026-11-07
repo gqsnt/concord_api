@@ -1,0 +1,10 @@
+{
+ "sdk": "strava",
+ "kind": "e5",
+ "package": "concord-sdk-strava",
+ "sdk_dir": "examples/strava-sdk",
+ "title": "Error document field failures gain optional detail",
+ "public_names": [
+  "ProblemField::detail"
+ ]
+}

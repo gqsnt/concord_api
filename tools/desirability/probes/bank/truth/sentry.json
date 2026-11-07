@@ -1,0 +1,550 @@
+{
+ "sdk": "sentry-sdk",
+ "short": "sentry",
+ "pkg": "concord-sdk-sentry",
+ "repo_head": "984bd2f6a981dd85e8b104c21daae06421a7a48a",
+ "truth_format": 3,
+ "aliases": [
+  "type Listing<T> = Pages<T, String, concord::ResponseMeta, Error>",
+  "Budget = concord_ratelimit::Budget (imported: concord_ratelimit::Budget)",
+  "Decision = concord_retry::Decision (imported: concord_retry::Decision)",
+  "Deserialize = serde::Deserialize (imported: serde::Deserialize)",
+  "Duration = std::time::Duration (imported: std::time::Duration)",
+  "Endpoint = concord::Endpoint (imported: concord::Endpoint)",
+  "HeaderMap = reqwest::header::HeaderMap (imported: concord::reqwest::header::HeaderMap)",
+  "HeaderValue = reqwest::header::HeaderValue (imported: concord::reqwest::header::HeaderValue)",
+  "Instant = std::time::Instant (imported: std::time::Instant)",
+  "Json = concord::Json (imported: concord::Json)",
+  "Lease = concord_ratelimit::Lease (imported: concord_ratelimit::Lease)",
+  "Limiter = concord_ratelimit::Limiter (imported: concord_ratelimit::Limiter)",
+  "Mode = concord_ratelimit::Mode (imported: concord_ratelimit::Mode)",
+  "NonZeroU32 = std::num::NonZeroU32 (imported: std::num::NonZeroU32)",
+  "NonZeroUsize = std::num::NonZeroUsize (imported: std::num::NonZeroUsize)",
+  "Observation = concord_ratelimit::Observation (imported: concord_ratelimit::Observation)",
+  "Page = concord_pagination::Page (imported: concord_pagination::Page)",
+  "Pages = concord_pagination::Pages (imported: concord_pagination::Pages)",
+  "PagesError = concord_pagination::PagesError (imported: concord_pagination::PagesError)",
+  "Policy = concord_retry::Policy (imported: concord_retry::Policy)",
+  "ReceiveReport = concord_retry::concord::ReceiveReport (imported: concord_retry::concord::ReceiveReport)",
+  "Relation = concord_pagination::link::Relation (imported: concord_pagination::link::Relation)",
+  "Replay = concord_retry::Replay (imported: concord_retry::Replay)",
+  "ReplayMode = concord_retry::concord::ReplayMode (imported: concord_retry::concord::ReplayMode)",
+  "ResponseMeta = concord::ResponseMeta (imported: concord::ResponseMeta)",
+  "Resume = concord_pagination::Resume (imported: concord_pagination::Resume)",
+  "Retry = concord_retry::Retry (imported: concord_retry::Retry)",
+  "SendWith = concord::SendWith (imported: concord::SendWith)",
+  "SentryOrganizationIssueEvents = sdk::SentryOrganizationIssueEvents (imported: crate::SentryOrganizationIssueEvents)",
+  "SentryOrganizationIssues = sdk::SentryOrganizationIssues (imported: crate::SentryOrganizationIssues)",
+  "Serialize = serde::Serialize (imported: serde::Serialize)",
+  "Serializer = serde::Serializer (imported: serde::Serializer)",
+  "StatusCode = reqwest::StatusCode (imported: concord::reqwest::StatusCode)",
+  "StopReason = concord_retry::StopReason (imported: concord_retry::StopReason)",
+  "SystemTime = std::time::SystemTime (imported: std::time::SystemTime)",
+  "TokioClock = concord_ratelimit::TokioClock (imported: concord_ratelimit::TokioClock)",
+  "Url = reqwest::Url (imported: concord::reqwest::Url)"
+ ],
+ "items": {
+  "sentry/w1": {
+   "method": "GET",
+   "url": "https://sentry.io/api/0/organizations/kelp/issues/tundra/events/?per_page=100&query=<secret>",
+   "headers": [
+    [
+     "authorization",
+     "<secret>"
+    ],
+    [
+     "accept",
+     "application/json"
+    ]
+   ],
+   "secret_headers": [
+    "authorization"
+   ],
+   "body": null,
+   "body_kind": null,
+   "content_type": null,
+   "accept": "application/json",
+   "prepared": {
+    "method": "GET",
+    "url": "https://sentry.io/api/0/organizations/kelp/issues/tundra/events/?per_page=100&query=<secret>",
+    "headers": [
+     [
+      "authorization",
+      "<secret>"
+     ],
+     [
+      "accept",
+      "application/json"
+     ]
+    ],
+    "secret_headers": [
+     "authorization"
+    ],
+    "body": null,
+    "body_kind": null,
+    "content_type": null,
+    "accept": "application/json"
+   },
+   "policy_changes_request": false,
+   "operation_completed_within_10s": true,
+   "boundary": "operation",
+   "kind": "wire"
+  },
+  "sentry/r1": {
+   "r2": {
+    "resolvable": true,
+    "send_returns": "Result<Response<Vec<Event>>, Error>",
+    "error_type": "Error",
+    "how": "send template",
+    "verified": true,
+    "decl_module": "crate",
+    "send_returns_canon": "Result<sdk::model::Response<Vec<sdk::model::Event>>, sdk::error::Error>",
+    "error_type_canon": "sdk::error::Error"
+   },
+   "base_url": {
+    "keep": "/api/0",
+    "expected_url": "https://staging.example.test/api/0/organizations/kelp/issues/tundra/events/?per_page=100&query=<secret>",
+    "results": {
+     "https://staging.example.test": "https://staging.example.test/api/0/organizations/kelp/issues/tundra/events/?per_page=100&query=<secret>",
+     "https://staging.example.test/": "https://staging.example.test/api/0/organizations/kelp/issues/tundra/events/?per_page=100&query=<secret>",
+     "https://staging.example.test/api/0": "https://staging.example.test/api/0/api/0/organizations/kelp/issues/tundra/events/?per_page=100&query=<secret>",
+     "https://staging.example.test/api/0/": "https://staging.example.test/api/0/api/0/organizations/kelp/issues/tundra/events/?per_page=100&query=<secret>"
+    },
+    "keeps": [
+     "https://staging.example.test",
+     "https://staging.example.test/"
+    ]
+   },
+   "boundary": "operation",
+   "kind": "result"
+  },
+  "sentry/c1": {
+   "reference": "api.organization(\"kelp\").issue(\"tundra\").events().set_query(\"CANARYSENTRY121Z\").send().await",
+   "reference_compiles": true,
+   "client": "Sentry",
+   "binding": {
+    "type": "Result<Response<Vec<Event>>, Error>",
+    "result": "is_ok"
+   },
+   "boundary": "operation",
+   "base_path": "",
+   "recorded": [
+    {
+     "method": "GET",
+     "target": "/api/0/organizations/kelp/issues/tundra/events/?per_page=100&query=<secret>",
+     "headers": [
+      [
+       "authorization",
+       "<secret>"
+      ],
+      [
+       "accept",
+       "application/json"
+      ]
+     ],
+     "body": ""
+    }
+   ],
+   "recorded_again": [
+    {
+     "method": "GET",
+     "target": "/api/0/organizations/kelp/issues/tundra/events/?per_page=100&query=<secret>",
+     "headers": [
+      [
+       "authorization",
+       "<secret>"
+      ],
+      [
+       "accept",
+       "application/json"
+      ]
+     ],
+     "body": ""
+    }
+   ],
+   "volatile": {
+    "sequence_differs": false,
+    "headers": [],
+    "bodies": []
+   },
+   "fixture": {
+    "name": "examples/sentry-sdk/fixtures/events-1.json",
+    "content_type": "application/json",
+    "path": "examples/sentry-sdk/fixtures/events-1.json",
+    "body": null
+   },
+   "fixture_tries_failed": 0,
+   "reference_outcome": null,
+   "result_checked": true,
+   "check_available": true,
+   "kind": "call"
+  },
+  "sentry/w2": {
+   "method": "GET",
+   "url": "https://sentry.io/api/0/organizations/harbor/issues/fjord/",
+   "headers": [
+    [
+     "authorization",
+     "<secret>"
+    ],
+    [
+     "accept",
+     "application/json"
+    ]
+   ],
+   "secret_headers": [
+    "authorization"
+   ],
+   "body": null,
+   "body_kind": null,
+   "content_type": null,
+   "accept": "application/json",
+   "prepared": {
+    "method": "GET",
+    "url": "https://sentry.io/api/0/organizations/harbor/issues/fjord/",
+    "headers": [
+     [
+      "authorization",
+      "<secret>"
+     ],
+     [
+      "accept",
+      "application/json"
+     ]
+    ],
+    "secret_headers": [
+     "authorization"
+    ],
+    "body": null,
+    "body_kind": null,
+    "content_type": null,
+    "accept": "application/json"
+   },
+   "policy_changes_request": false,
+   "operation_completed_within_10s": true,
+   "boundary": "operation",
+   "kind": "wire"
+  },
+  "sentry/r2": {
+   "r2": {
+    "resolvable": true,
+    "send_returns": "Result<Response<Issue>, Error>",
+    "error_type": "Error",
+    "how": "send template",
+    "verified": true,
+    "decl_module": "crate",
+    "send_returns_canon": "Result<sdk::model::Response<sdk::model::Issue>, sdk::error::Error>",
+    "error_type_canon": "sdk::error::Error"
+   },
+   "base_url": null,
+   "boundary": "operation",
+   "kind": "result"
+  },
+  "sentry/c2": {
+   "reference": "api.organization(\"harbor\").issue(\"fjord\").get().send().await",
+   "reference_compiles": true,
+   "client": "Sentry",
+   "binding": {
+    "type": "Result<Response<Issue>, Error>",
+    "result": "is_ok"
+   },
+   "boundary": "operation",
+   "base_path": "",
+   "recorded": [
+    {
+     "method": "GET",
+     "target": "/api/0/organizations/harbor/issues/fjord/",
+     "headers": [
+      [
+       "authorization",
+       "<secret>"
+      ],
+      [
+       "accept",
+       "application/json"
+      ]
+     ],
+     "body": ""
+    }
+   ],
+   "recorded_again": [
+    {
+     "method": "GET",
+     "target": "/api/0/organizations/harbor/issues/fjord/",
+     "headers": [
+      [
+       "authorization",
+       "<secret>"
+      ],
+      [
+       "accept",
+       "application/json"
+      ]
+     ],
+     "body": ""
+    }
+   ],
+   "volatile": {
+    "sequence_differs": false,
+    "headers": [],
+    "bodies": []
+   },
+   "fixture": {
+    "name": "examples/sentry-sdk/fixtures/issue.json",
+    "content_type": "application/json",
+    "path": "examples/sentry-sdk/fixtures/issue.json",
+    "body": null
+   },
+   "fixture_tries_failed": 0,
+   "reference_outcome": null,
+   "result_checked": true,
+   "check_available": true,
+   "kind": "call"
+  },
+  "sentry/w3": {
+   "method": "GET",
+   "url": "https://sentry.io/api/0/organizations/a%20b%2Fc/issues/?limit=100&query=<secret>",
+   "headers": [
+    [
+     "authorization",
+     "<secret>"
+    ],
+    [
+     "accept",
+     "application/json"
+    ]
+   ],
+   "secret_headers": [
+    "authorization"
+   ],
+   "body": null,
+   "body_kind": null,
+   "content_type": null,
+   "accept": "application/json",
+   "prepared": {
+    "method": "GET",
+    "url": "https://sentry.io/api/0/organizations/a%20b%2Fc/issues/?limit=100&query=<secret>",
+    "headers": [
+     [
+      "authorization",
+      "<secret>"
+     ],
+     [
+      "accept",
+      "application/json"
+     ]
+    ],
+    "secret_headers": [
+     "authorization"
+    ],
+    "body": null,
+    "body_kind": null,
+    "content_type": null,
+    "accept": "application/json"
+   },
+   "policy_changes_request": false,
+   "operation_completed_within_10s": true,
+   "boundary": "operation",
+   "kind": "wire"
+  },
+  "sentry/r3": {
+   "r2": {
+    "resolvable": true,
+    "send_returns": "Result<Response<Vec<Issue>>, Error>",
+    "error_type": "Error",
+    "how": "send template",
+    "verified": true,
+    "decl_module": "crate",
+    "send_returns_canon": "Result<sdk::model::Response<Vec<sdk::model::Issue>>, sdk::error::Error>",
+    "error_type_canon": "sdk::error::Error"
+   },
+   "base_url": null,
+   "boundary": "operation",
+   "kind": "result"
+  },
+  "sentry/c3": {
+   "reference": "api.organization(\"a b/c\").issues().set_query(\"CANARYSENTRY101Z\").send().await",
+   "reference_compiles": true,
+   "client": "Sentry",
+   "binding": {
+    "type": "Result<Response<Vec<Issue>>, Error>",
+    "result": "is_ok"
+   },
+   "boundary": "operation",
+   "base_path": "",
+   "recorded": [
+    {
+     "method": "GET",
+     "target": "/api/0/organizations/a%20b%2Fc/issues/?limit=100&query=<secret>",
+     "headers": [
+      [
+       "authorization",
+       "<secret>"
+      ],
+      [
+       "accept",
+       "application/json"
+      ]
+     ],
+     "body": ""
+    }
+   ],
+   "recorded_again": [
+    {
+     "method": "GET",
+     "target": "/api/0/organizations/a%20b%2Fc/issues/?limit=100&query=<secret>",
+     "headers": [
+      [
+       "authorization",
+       "<secret>"
+      ],
+      [
+       "accept",
+       "application/json"
+      ]
+     ],
+     "body": ""
+    }
+   ],
+   "volatile": {
+    "sequence_differs": false,
+    "headers": [],
+    "bodies": []
+   },
+   "fixture": {
+    "name": "examples/sentry-sdk/fixtures/issues-1.json",
+    "content_type": "application/json",
+    "path": "examples/sentry-sdk/fixtures/issues-1.json",
+    "body": null
+   },
+   "fixture_tries_failed": 0,
+   "reference_outcome": null,
+   "result_checked": true,
+   "check_available": true,
+   "kind": "call"
+  },
+  "sentry/w4": {
+   "method": "GET",
+   "url": "https://sentry.io/api/0/organizations/tundra/issues/maple/events/cedar/",
+   "headers": [
+    [
+     "authorization",
+     "<secret>"
+    ],
+    [
+     "accept",
+     "application/json"
+    ]
+   ],
+   "secret_headers": [
+    "authorization"
+   ],
+   "body": null,
+   "body_kind": null,
+   "content_type": null,
+   "accept": "application/json",
+   "prepared": {
+    "method": "GET",
+    "url": "https://sentry.io/api/0/organizations/tundra/issues/maple/events/cedar/",
+    "headers": [
+     [
+      "authorization",
+      "<secret>"
+     ],
+     [
+      "accept",
+      "application/json"
+     ]
+    ],
+    "secret_headers": [
+     "authorization"
+    ],
+    "body": null,
+    "body_kind": null,
+    "content_type": null,
+    "accept": "application/json"
+   },
+   "policy_changes_request": false,
+   "operation_completed_within_10s": true,
+   "boundary": "operation",
+   "kind": "wire"
+  },
+  "sentry/r4": {
+   "r2": {
+    "resolvable": true,
+    "send_returns": "Result<Response<Event>, Error>",
+    "error_type": "Error",
+    "how": "send template",
+    "verified": true,
+    "decl_module": "crate",
+    "send_returns_canon": "Result<sdk::model::Response<sdk::model::Event>, sdk::error::Error>",
+    "error_type_canon": "sdk::error::Error"
+   },
+   "base_url": null,
+   "boundary": "operation",
+   "kind": "result"
+  },
+  "sentry/c4": {
+   "reference": "api.organization(\"tundra\").issue(\"maple\").event(\"cedar\").send().await",
+   "reference_compiles": true,
+   "client": "Sentry",
+   "binding": {
+    "type": "Result<Response<Event>, Error>",
+    "result": "is_ok"
+   },
+   "boundary": "operation",
+   "base_path": "",
+   "recorded": [
+    {
+     "method": "GET",
+     "target": "/api/0/organizations/tundra/issues/maple/events/cedar/",
+     "headers": [
+      [
+       "authorization",
+       "<secret>"
+      ],
+      [
+       "accept",
+       "application/json"
+      ]
+     ],
+     "body": ""
+    }
+   ],
+   "recorded_again": [
+    {
+     "method": "GET",
+     "target": "/api/0/organizations/tundra/issues/maple/events/cedar/",
+     "headers": [
+      [
+       "authorization",
+       "<secret>"
+      ],
+      [
+       "accept",
+       "application/json"
+      ]
+     ],
+     "body": ""
+    }
+   ],
+   "volatile": {
+    "sequence_differs": false,
+    "headers": [],
+    "bodies": []
+   },
+   "fixture": {
+    "name": "examples/sentry-sdk/fixtures/event.json",
+    "content_type": "application/json",
+    "path": "examples/sentry-sdk/fixtures/event.json",
+    "body": null
+   },
+   "fixture_tries_failed": 0,
+   "reference_outcome": null,
+   "result_checked": true,
+   "check_available": true,
+   "kind": "call"
+  }
+ },
+ "drops": []
+}

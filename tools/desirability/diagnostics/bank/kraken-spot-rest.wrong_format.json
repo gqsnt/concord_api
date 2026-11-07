@@ -1,0 +1,20 @@
+{
+ "corrected": "let (_m, _d) = kraken.public().pairs().prepare()?.receive().await?.document::<concord::Json, ErrorDocument>(1024).await;",
+ "expected": "Decode<",
+ "generated_names": [
+  "KrakenAccount",
+  "KrakenAccountBalances",
+  "KrakenAccountOpenOrders",
+  "KrakenAccountTradesHistory",
+  "KrakenPublic",
+  "KrakenPublicPairs",
+  "KrakenPublicTicker"
+ ],
+ "kind": "wrong_format",
+ "package": "concord-sdk-kraken-spot-rest",
+ "sdk": "kraken-spot-rest",
+ "seeded": "let (_m, _d) = kraken.public().pairs().prepare()?.receive().await?.document::<concord::Text, ErrorDocument>(1024).await;",
+ "seeded_line": 10,
+ "user_file": "examples/kraken-spot-rest-sdk/tests/cb_wrong_format.rs",
+ "variant": null
+}

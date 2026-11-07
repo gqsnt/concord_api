@@ -1,0 +1,22 @@
+{
+ "cloudflare-zones": {
+  "compiles": true,
+  "first_error": ""
+ },
+ "github": {
+  "compiles": true,
+  "first_error": ""
+ },
+ "kraken-spot-rest": {
+  "compiles": true,
+  "first_error": ""
+ },
+ "nager-holidays": {
+  "compiles": true,
+  "first_error": ""
+ },
+ "notion": {
+  "compiles": true,
+  "first_error": ""
+ }
+}

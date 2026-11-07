@@ -1,0 +1,228 @@
+{
+ "sdk": "open-library-sdk",
+ "short": "open-library",
+ "pkg": "concord-sdk-open-library",
+ "repo_head": "984bd2f6a981dd85e8b104c21daae06421a7a48a",
+ "truth_format": 3,
+ "aliases": [
+  "AuthorId = sdk::AuthorId (imported: models::AuthorId)",
+  "Deserialize = serde::Deserialize (imported: serde::Deserialize)",
+  "Endpoint = concord::Endpoint (imported: concord::Endpoint)",
+  "FromStr = std::str::FromStr (imported: std::str::FromStr)",
+  "Json = concord::Json (imported: concord::Json)",
+  "NonZeroU32 = std::num::NonZeroU32 (imported: std::num::NonZeroU32)",
+  "ResponseMeta = concord::ResponseMeta (imported: concord::ResponseMeta)",
+  "SendWith = concord::SendWith (imported: concord::SendWith)",
+  "StatusCode = reqwest::StatusCode (imported: concord::reqwest::StatusCode)",
+  "StdError = std::error::Error (imported: std::error::Error)",
+  "Value = serde_json::Value (imported: serde_json::Value)",
+  "WorkId = sdk::WorkId (imported: models::WorkId)"
+ ],
+ "items": {
+  "open-library/w1": {
+   "method": "GET",
+   "url": "https://openlibrary.org/search.json?q=<secret>&page=1&limit=20",
+   "headers": [
+    [
+     "accept",
+     "application/json"
+    ]
+   ],
+   "secret_headers": [],
+   "body": null,
+   "body_kind": null,
+   "content_type": null,
+   "accept": "application/json",
+   "prepared": {
+    "method": "GET",
+    "url": "https://openlibrary.org/search.json?q=<secret>&page=1&limit=20",
+    "headers": [
+     [
+      "accept",
+      "application/json"
+     ]
+    ],
+    "secret_headers": [],
+    "body": null,
+    "body_kind": null,
+    "content_type": null,
+    "accept": "application/json"
+   },
+   "policy_changes_request": false,
+   "operation_completed_within_10s": true,
+   "boundary": "operation",
+   "kind": "wire"
+  },
+  "open-library/r1": {
+   "r2": {
+    "resolvable": true,
+    "send_returns": "Result<WorkSearch, Error>",
+    "error_type": "Error",
+    "how": "send template",
+    "verified": true,
+    "decl_module": "crate",
+    "send_returns_canon": "Result<sdk::models::WorkSearch, sdk::error::Error>",
+    "error_type_canon": "sdk::error::Error"
+   },
+   "base_url": null,
+   "boundary": "operation",
+   "kind": "result"
+  },
+  "open-library/c1": {
+   "reference": "api.search().works(\"CANARYOPENLIBRARY101Z\").send().await",
+   "reference_compiles": true,
+   "client": "OpenLibrary",
+   "binding": {
+    "type": "Result<WorkSearch, Error>",
+    "result": "is_ok"
+   },
+   "boundary": "operation",
+   "base_path": "",
+   "recorded": [
+    {
+     "method": "GET",
+     "target": "/search.json?q=<secret>&page=1&limit=20",
+     "headers": [
+      [
+       "accept",
+       "application/json"
+      ]
+     ],
+     "body": ""
+    }
+   ],
+   "recorded_again": [
+    {
+     "method": "GET",
+     "target": "/search.json?q=<secret>&page=1&limit=20",
+     "headers": [
+      [
+       "accept",
+       "application/json"
+      ]
+     ],
+     "body": ""
+    }
+   ],
+   "volatile": {
+    "sequence_differs": false,
+    "headers": [],
+    "bodies": []
+   },
+   "fixture": {
+    "name": "examples/open-library-sdk/fixtures/empty-work-search.json",
+    "content_type": "application/json",
+    "path": "examples/open-library-sdk/fixtures/empty-work-search.json",
+    "body": null
+   },
+   "fixture_tries_failed": 1,
+   "reference_outcome": null,
+   "result_checked": true,
+   "check_available": true,
+   "kind": "call"
+  },
+  "open-library/w2": {
+   "method": "GET",
+   "url": "https://openlibrary.org/search/authors.json?q=<secret>",
+   "headers": [
+    [
+     "accept",
+     "application/json"
+    ]
+   ],
+   "secret_headers": [],
+   "body": null,
+   "body_kind": null,
+   "content_type": null,
+   "accept": "application/json",
+   "prepared": {
+    "method": "GET",
+    "url": "https://openlibrary.org/search/authors.json?q=<secret>",
+    "headers": [
+     [
+      "accept",
+      "application/json"
+     ]
+    ],
+    "secret_headers": [],
+    "body": null,
+    "body_kind": null,
+    "content_type": null,
+    "accept": "application/json"
+   },
+   "policy_changes_request": false,
+   "operation_completed_within_10s": true,
+   "boundary": "operation",
+   "kind": "wire"
+  },
+  "open-library/r2": {
+   "r2": {
+    "resolvable": true,
+    "send_returns": "Result<AuthorSearch, Error>",
+    "error_type": "Error",
+    "how": "send template",
+    "verified": true,
+    "decl_module": "crate",
+    "send_returns_canon": "Result<sdk::models::AuthorSearch, sdk::error::Error>",
+    "error_type_canon": "sdk::error::Error"
+   },
+   "base_url": null,
+   "boundary": "operation",
+   "kind": "result"
+  },
+  "open-library/c2": {
+   "reference": "api.search().authors(\"CANARYOPENLIBRARY111Z\").send().await",
+   "reference_compiles": true,
+   "client": "OpenLibrary",
+   "binding": {
+    "type": "Result<AuthorSearch, Error>",
+    "result": "is_ok"
+   },
+   "boundary": "operation",
+   "base_path": "",
+   "recorded": [
+    {
+     "method": "GET",
+     "target": "/search/authors.json?q=<secret>",
+     "headers": [
+      [
+       "accept",
+       "application/json"
+      ]
+     ],
+     "body": ""
+    }
+   ],
+   "recorded_again": [
+    {
+     "method": "GET",
+     "target": "/search/authors.json?q=<secret>",
+     "headers": [
+      [
+       "accept",
+       "application/json"
+      ]
+     ],
+     "body": ""
+    }
+   ],
+   "volatile": {
+    "sequence_differs": false,
+    "headers": [],
+    "bodies": []
+   },
+   "fixture": {
+    "name": "examples/open-library-sdk/fixtures/author-search.json",
+    "content_type": "application/json",
+    "path": "examples/open-library-sdk/fixtures/author-search.json",
+    "body": null
+   },
+   "fixture_tries_failed": 0,
+   "reference_outcome": null,
+   "result_checked": true,
+   "check_available": true,
+   "kind": "call"
+  }
+ },
+ "drops": []
+}

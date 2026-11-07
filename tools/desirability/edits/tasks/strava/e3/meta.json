@@ -1,0 +1,10 @@
+{
+ "sdk": "strava",
+ "kind": "e3",
+ "package": "concord-sdk-strava",
+ "sdk_dir": "examples/strava-sdk",
+ "title": "Optional sport_type on the athlete activity list",
+ "public_names": [
+  "StravaAthleteActivities::set_sport_type"
+ ]
+}

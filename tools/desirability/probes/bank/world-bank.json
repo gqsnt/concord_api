@@ -1,0 +1,176 @@
+{
+ "sdk": "world-bank-sdk",
+ "short": "world-bank",
+ "pkg": "concord-sdk-world-bank",
+ "crate": "concord_sdk_world_bank",
+ "seed": 1,
+ "role": "main",
+ "holdout_of": [],
+ "generator_version": 1,
+ "clients": {
+  "WorldBank": {
+   "constructible": true,
+   "file": "examples/world-bank-sdk/src/lib.rs",
+   "ctor": "WorldBank::new(reqwest::Client::new())",
+   "canaries": [],
+   "config_fields": [],
+   "endpoints": 1,
+   "notes": []
+  }
+ },
+ "picks": [
+  {
+   "key": "WorldBank/indicator",
+   "client": "WorldBank",
+   "client_file": "examples/world-bank-sdk/src/lib.rs",
+   "scopes": [],
+   "method": "GET",
+   "endpoint": "indicator",
+   "output": "WireResponse",
+   "docs": [
+    "Request an indicator page; use [`WorldBank::year`] or [`WorldBank::range`] for",
+    "year-specific workflows. IDs are encoded as individual path segments."
+   ],
+   "values": [
+    {
+     "level": 1,
+     "owner": "indicator",
+     "owner_kind": "endpoint",
+     "name": "country",
+     "type": "String",
+     "placement": "path",
+     "key": null,
+     "each": false,
+     "sensitive": false,
+     "optional": false,
+     "default": null,
+     "kind": "string",
+     "state": "required",
+     "literal": "\"maple\"",
+     "value": "maple"
+    },
+    {
+     "level": 1,
+     "owner": "indicator",
+     "owner_kind": "endpoint",
+     "name": "indicator",
+     "type": "String",
+     "placement": "path",
+     "key": null,
+     "each": false,
+     "sensitive": false,
+     "optional": false,
+     "default": null,
+     "kind": "string",
+     "state": "required",
+     "literal": "\"tundra\"",
+     "value": "tundra"
+    },
+    {
+     "level": 1,
+     "owner": "indicator",
+     "owner_kind": "endpoint",
+     "name": "date",
+     "type": "String",
+     "placement": "query",
+     "key": null,
+     "each": false,
+     "sensitive": false,
+     "optional": false,
+     "default": null,
+     "kind": "string",
+     "state": "required",
+     "literal": "\"lumen\"",
+     "value": "lumen"
+    },
+    {
+     "level": 1,
+     "owner": "indicator",
+     "owner_kind": "endpoint",
+     "name": "page",
+     "type": "u32",
+     "placement": "query",
+     "key": null,
+     "each": false,
+     "sensitive": false,
+     "optional": false,
+     "default": "1",
+     "kind": "int:u32",
+     "state": "initialized",
+     "literal": null,
+     "value": null
+    },
+    {
+     "level": 1,
+     "owner": "indicator",
+     "owner_kind": "endpoint",
+     "name": "per_page",
+     "type": "u32",
+     "placement": "query",
+     "key": null,
+     "each": false,
+     "sensitive": false,
+     "optional": false,
+     "default": "50",
+     "kind": "int:u32",
+     "state": "initialized",
+     "literal": null,
+     "value": null
+    }
+   ],
+   "canaries": [],
+   "pct": false,
+   "rust": {
+    "client": "WorldBank::new(reqwest::Client::new())",
+    "call": "api.indicator(\"maple\", \"tundra\", \"lumen\")"
+   },
+   "strata": [
+    "base_path",
+    "initialized",
+    "query"
+   ],
+   "index": 0,
+   "boundary": "operation"
+  }
+ ],
+ "items": [
+  {
+   "id": "world-bank/w1",
+   "kind": "wire",
+   "session": "wire",
+   "q": 1,
+   "pick": 0,
+   "boundary": "operation",
+   "question": "What request does `call.send().await` put on the wire (the request the server receives)? Give `method`, `url`, `headers` (only the ones the SDK and Concord set, not the HTTP client's own; secret values as `<secret>`), `body`, `content_type` and `accept`.\n\n```rust\nlet api = WorldBank::new(reqwest::Client::new());\nlet call = api.indicator(\"maple\", \"tundra\", \"lumen\");\n```"
+  },
+  {
+   "id": "world-bank/r1",
+   "kind": "result",
+   "session": "rc",
+   "q": 1,
+   "pick": 0,
+   "boundary": "operation",
+   "base_url": {
+    "staging": "https://staging.example.test",
+    "keep": "/v2",
+    "candidates": [
+     "https://staging.example.test",
+     "https://staging.example.test/",
+     "https://staging.example.test/v2",
+     "https://staging.example.test/v2/"
+    ]
+   },
+   "question": "For the endpoint `GET indicator` directly on the client: (a) what type does `.send().await` return (`send_returns`)? (b) what is the error type in that result (`error_type`)? (c) The same API also runs at `https://staging.example.test`. Which exact string do you pass to `api.with_base_url(..)` so that requests keep the `/v2` prefix, i.e. go to `https://staging.example.test/v2/...` (`base_url`)?"
+  },
+  {
+   "id": "world-bank/c1",
+   "kind": "call",
+   "session": "rc",
+   "q": 2,
+   "pick": 0,
+   "boundary": "operation",
+   "intent": "Request an indicator page; use `WorldBank::year` or `WorldBank::range` for year-specific workflows: call `GET indicator` directly on the client with `country` = `\"maple\"`, `indicator` = `\"tundra\"`, `date` = `\"lumen\"`. Leave every other optional value as it is",
+   "question": "Write the body of `async fn call(api: WorldBank) -> Result<(), Box<dyn std::error::Error>>` that does this and sends it with `.send().await`: Request an indicator page; use `WorldBank::year` or `WorldBank::range` for year-specific workflows: call `GET indicator` directly on the client with `country` = `\"maple\"`, `indicator` = `\"tundra\"`, `date` = `\"lumen\"`. Leave every other optional value as it is. Your code runs before the function's final `Ok(())`; it may start with `use` lines (`code`)."
+  }
+ ]
+}

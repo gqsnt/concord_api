@@ -1,0 +1,229 @@
+{
+ "sdk": "open-library-sdk",
+ "short": "open-library",
+ "pkg": "concord-sdk-open-library",
+ "crate": "concord_sdk_open_library",
+ "seed": 1,
+ "role": "main",
+ "holdout_of": [],
+ "generator_version": 1,
+ "clients": {
+  "OpenLibrary": {
+   "constructible": true,
+   "file": "examples/open-library-sdk/src/lib.rs",
+   "ctor": "OpenLibrary::new(reqwest::Client::new())",
+   "canaries": [],
+   "config_fields": [],
+   "endpoints": 4,
+   "notes": []
+  }
+ },
+ "picks": [
+  {
+   "key": "OpenLibrary/search/works",
+   "client": "OpenLibrary",
+   "client_file": "examples/open-library-sdk/src/lib.rs",
+   "scopes": [
+    "search"
+   ],
+   "method": "GET",
+   "endpoint": "works",
+   "output": "WorkSearch",
+   "docs": [
+    "Searches works, with a one-based page and explicit page size (SDK default: 20).",
+    "Optional sort uses the documented values; omission keeps relevance order."
+   ],
+   "values": [
+    {
+     "level": 2,
+     "owner": "works",
+     "owner_kind": "endpoint",
+     "name": "q",
+     "type": "String",
+     "placement": "query",
+     "key": null,
+     "each": false,
+     "sensitive": true,
+     "optional": false,
+     "default": null,
+     "kind": "string",
+     "state": "required",
+     "literal": "\"CANARYOPENLIBRARY101Z\"",
+     "value": "<secret>"
+    },
+    {
+     "level": 2,
+     "owner": "works",
+     "owner_kind": "endpoint",
+     "name": "page",
+     "type": "NonZeroU32",
+     "placement": "query",
+     "key": null,
+     "each": false,
+     "sensitive": false,
+     "optional": false,
+     "default": "NonZeroU32::MIN",
+     "kind": "nonzero:NonZeroU32",
+     "state": "initialized",
+     "literal": null,
+     "value": null
+    },
+    {
+     "level": 2,
+     "owner": "works",
+     "owner_kind": "endpoint",
+     "name": "limit",
+     "type": "NonZeroU32",
+     "placement": "query",
+     "key": null,
+     "each": false,
+     "sensitive": false,
+     "optional": false,
+     "default": "search_limit()",
+     "kind": "nonzero:NonZeroU32",
+     "state": "initialized",
+     "literal": null,
+     "value": null
+    },
+    {
+     "level": 2,
+     "owner": "works",
+     "owner_kind": "endpoint",
+     "name": "sort",
+     "type": "WorkSort",
+     "placement": "query",
+     "key": null,
+     "each": false,
+     "sensitive": false,
+     "optional": true,
+     "default": null,
+     "kind": null,
+     "state": "unset",
+     "literal": null,
+     "value": null
+    }
+   ],
+   "canaries": [
+    "CANARYOPENLIBRARY101Z"
+   ],
+   "pct": false,
+   "rust": {
+    "client": "OpenLibrary::new(reqwest::Client::new())",
+    "call": "api.search().works(\"CANARYOPENLIBRARY101Z\")"
+   },
+   "strata": [
+    "initialized",
+    "optional_unset",
+    "query"
+   ],
+   "index": 0,
+   "boundary": "operation"
+  },
+  {
+   "key": "OpenLibrary/search/authors",
+   "client": "OpenLibrary",
+   "client_file": "examples/open-library-sdk/src/lib.rs",
+   "scopes": [
+    "search"
+   ],
+   "method": "GET",
+   "endpoint": "authors",
+   "output": "AuthorSearch",
+   "docs": [
+    "Searches authors by text. This slice declares only the documented `q` input."
+   ],
+   "values": [
+    {
+     "level": 2,
+     "owner": "authors",
+     "owner_kind": "endpoint",
+     "name": "q",
+     "type": "String",
+     "placement": "query",
+     "key": null,
+     "each": false,
+     "sensitive": true,
+     "optional": false,
+     "default": null,
+     "kind": "string",
+     "state": "required",
+     "literal": "\"CANARYOPENLIBRARY111Z\"",
+     "value": "<secret>"
+    }
+   ],
+   "canaries": [
+    "CANARYOPENLIBRARY111Z"
+   ],
+   "pct": false,
+   "rust": {
+    "client": "OpenLibrary::new(reqwest::Client::new())",
+    "call": "api.search().authors(\"CANARYOPENLIBRARY111Z\")"
+   },
+   "strata": [
+    "query"
+   ],
+   "index": 1,
+   "boundary": "operation"
+  }
+ ],
+ "items": [
+  {
+   "id": "open-library/w1",
+   "kind": "wire",
+   "session": "wire",
+   "q": 1,
+   "pick": 0,
+   "boundary": "operation",
+   "question": "What request does `call.send().await` put on the wire (the request the server receives)? Give `method`, `url`, `headers` (only the ones the SDK and Concord set, not the HTTP client's own; secret values as `<secret>`), `body`, `content_type` and `accept`.\n\n```rust\nlet api = OpenLibrary::new(reqwest::Client::new());\nlet call = api.search().works(\"CANARYOPENLIBRARY101Z\");\n```"
+  },
+  {
+   "id": "open-library/r1",
+   "kind": "result",
+   "session": "rc",
+   "q": 1,
+   "pick": 0,
+   "boundary": "operation",
+   "base_url": null,
+   "question": "For the endpoint `GET works` in `scope search`: (a) what type does `.send().await` return (`send_returns`)? (b) what is the error type in that result (`error_type`)?"
+  },
+  {
+   "id": "open-library/c1",
+   "kind": "call",
+   "session": "rc",
+   "q": 2,
+   "pick": 0,
+   "boundary": "operation",
+   "intent": "Searches works, with a one-based page and explicit page size (SDK default: 20): call `GET works` in `scope search` with `q` = `\"CANARYOPENLIBRARY101Z\"`. Leave every other optional value as it is",
+   "question": "Write the body of `async fn call(api: OpenLibrary) -> Result<(), Box<dyn std::error::Error>>` that does this and sends it with `.send().await`: Searches works, with a one-based page and explicit page size (SDK default: 20): call `GET works` in `scope search` with `q` = `\"CANARYOPENLIBRARY101Z\"`. Leave every other optional value as it is. Your code runs before the function's final `Ok(())`; it may start with `use` lines (`code`)."
+  },
+  {
+   "id": "open-library/w2",
+   "kind": "wire",
+   "session": "wire",
+   "q": 2,
+   "pick": 1,
+   "boundary": "operation",
+   "question": "What request does `call.send().await` put on the wire (the request the server receives)? Give `method`, `url`, `headers` (only the ones the SDK and Concord set, not the HTTP client's own; secret values as `<secret>`), `body`, `content_type` and `accept`.\n\n```rust\nlet api = OpenLibrary::new(reqwest::Client::new());\nlet call = api.search().authors(\"CANARYOPENLIBRARY111Z\");\n```"
+  },
+  {
+   "id": "open-library/r2",
+   "kind": "result",
+   "session": "rc",
+   "q": 3,
+   "pick": 1,
+   "boundary": "operation",
+   "base_url": null,
+   "question": "For the endpoint `GET authors` in `scope search`: (a) what type does `.send().await` return (`send_returns`)? (b) what is the error type in that result (`error_type`)?"
+  },
+  {
+   "id": "open-library/c2",
+   "kind": "call",
+   "session": "rc",
+   "q": 4,
+   "pick": 1,
+   "boundary": "operation",
+   "intent": "Searches authors by text: call `GET authors` in `scope search` with `q` = `\"CANARYOPENLIBRARY111Z\"`. Leave every other optional value as it is",
+   "question": "Write the body of `async fn call(api: OpenLibrary) -> Result<(), Box<dyn std::error::Error>>` that does this and sends it with `.send().await`: Searches authors by text: call `GET authors` in `scope search` with `q` = `\"CANARYOPENLIBRARY111Z\"`. Leave every other optional value as it is. Your code runs before the function's final `Ok(())`; it may start with `use` lines (`code`)."
+  }
+ ]
+}

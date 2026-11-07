@@ -1,0 +1,341 @@
+{
+ "sdk": "nasa-neows-sdk",
+ "short": "nasa-neows",
+ "pkg": "concord-sdk-nasa-neows",
+ "repo_head": "984bd2f6a981dd85e8b104c21daae06421a7a48a",
+ "truth_format": 3,
+ "aliases": [
+  "BTreeMap = std::collections::BTreeMap (imported: std::collections::BTreeMap)",
+  "Deserialize = serde::Deserialize (imported: serde::Deserialize)",
+  "Endpoint = concord::Endpoint (imported: concord::Endpoint)",
+  "FieldError = concord::FieldError (imported: concord::FieldError)",
+  "Future = std::future::Future (imported: std::future::Future)",
+  "HeaderMap = reqwest::header::HeaderMap (imported: concord::reqwest::header::HeaderMap)",
+  "HeaderName = reqwest::header::HeaderName (imported: concord::reqwest::header::HeaderName)",
+  "Json = concord::Json (imported: concord::Json)",
+  "SendWith = concord::SendWith (imported: concord::SendWith)",
+  "Sends = concord::Sends (imported: concord::Sends)"
+ ],
+ "items": {
+  "nasa-neows/w1": {
+   "method": "GET",
+   "url": "https://api.nasa.gov/neo/rest/v1/neo/browse?api_key=<secret>&page=30",
+   "headers": [
+    [
+     "accept",
+     "application/json"
+    ]
+   ],
+   "secret_headers": [],
+   "body": null,
+   "body_kind": null,
+   "content_type": null,
+   "accept": "application/json",
+   "prepared": {
+    "method": "GET",
+    "url": "https://api.nasa.gov/neo/rest/v1/neo/browse?api_key=<secret>&page=30",
+    "headers": [
+     [
+      "accept",
+      "application/json"
+     ]
+    ],
+    "secret_headers": [],
+    "body": null,
+    "body_kind": null,
+    "content_type": null,
+    "accept": "application/json"
+   },
+   "policy_changes_request": false,
+   "operation_completed_within_10s": true,
+   "boundary": "operation",
+   "kind": "wire"
+  },
+  "nasa-neows/r1": {
+   "r2": {
+    "resolvable": true,
+    "send_returns": "Result<BrowsePage, Error>",
+    "error_type": "Error",
+    "how": "send template",
+    "verified": true,
+    "decl_module": "crate",
+    "send_returns_canon": "Result<sdk::BrowsePage, sdk::Error>",
+    "error_type_canon": "sdk::Error"
+   },
+   "base_url": {
+    "keep": "/neo/rest/v1",
+    "expected_url": "https://staging.example.test/neo/rest/v1/neo/browse?api_key=<secret>&page=30",
+    "results": {
+     "https://staging.example.test": "https://staging.example.test/neo/browse?api_key=<secret>&page=30",
+     "https://staging.example.test/": "https://staging.example.test/neo/browse?api_key=<secret>&page=30",
+     "https://staging.example.test/neo/rest/v1": "https://staging.example.test/neo/rest/v1/neo/browse?api_key=<secret>&page=30",
+     "https://staging.example.test/neo/rest/v1/": "https://staging.example.test/neo/rest/v1/neo/browse?api_key=<secret>&page=30"
+    },
+    "keeps": [
+     "https://staging.example.test/neo/rest/v1",
+     "https://staging.example.test/neo/rest/v1/"
+    ]
+   },
+   "boundary": "operation",
+   "kind": "result"
+  },
+  "nasa-neows/c1": {
+   "reference": "api.neows().browse().set_page(30).send().await",
+   "reference_compiles": true,
+   "client": "NeoWs",
+   "binding": {
+    "type": "Result<BrowsePage, Error>",
+    "result": "is_ok"
+   },
+   "boundary": "operation",
+   "base_path": "/neo/rest/v1",
+   "recorded": [
+    {
+     "method": "GET",
+     "target": "/neo/rest/v1/neo/browse?api_key=<secret>&page=30",
+     "headers": [
+      [
+       "accept",
+       "application/json"
+      ]
+     ],
+     "body": ""
+    }
+   ],
+   "recorded_again": [
+    {
+     "method": "GET",
+     "target": "/neo/rest/v1/neo/browse?api_key=<secret>&page=30",
+     "headers": [
+      [
+       "accept",
+       "application/json"
+      ]
+     ],
+     "body": ""
+    }
+   ],
+   "volatile": {
+    "sequence_differs": false,
+    "headers": [],
+    "bodies": []
+   },
+   "fixture": {
+    "name": "examples/nasa-neows-sdk/fixtures/browse.json",
+    "content_type": "application/json",
+    "path": "examples/nasa-neows-sdk/fixtures/browse.json",
+    "body": null
+   },
+   "fixture_tries_failed": 0,
+   "reference_outcome": null,
+   "result_checked": true,
+   "check_available": true,
+   "kind": "call"
+  },
+  "nasa-neows/w2": {
+   "method": "GET",
+   "url": "https://api.nasa.gov/neo/rest/v1/neo/a%20b%2Fc?api_key=<secret>",
+   "headers": [
+    [
+     "accept",
+     "application/json"
+    ]
+   ],
+   "secret_headers": [],
+   "body": null,
+   "body_kind": null,
+   "content_type": null,
+   "accept": "application/json",
+   "prepared": {
+    "method": "GET",
+    "url": "https://api.nasa.gov/neo/rest/v1/neo/a%20b%2Fc?api_key=<secret>",
+    "headers": [
+     [
+      "accept",
+      "application/json"
+     ]
+    ],
+    "secret_headers": [],
+    "body": null,
+    "body_kind": null,
+    "content_type": null,
+    "accept": "application/json"
+   },
+   "policy_changes_request": false,
+   "operation_completed_within_10s": true,
+   "boundary": "operation",
+   "kind": "wire"
+  },
+  "nasa-neows/r2": {
+   "r2": {
+    "resolvable": true,
+    "send_returns": "Result<Asteroid, Error>",
+    "error_type": "Error",
+    "how": "send template",
+    "verified": true,
+    "decl_module": "crate",
+    "send_returns_canon": "Result<sdk::Asteroid, sdk::Error>",
+    "error_type_canon": "sdk::Error"
+   },
+   "base_url": null,
+   "boundary": "operation",
+   "kind": "result"
+  },
+  "nasa-neows/c2": {
+   "reference": "api.neows().lookup(\"a b/c\").send().await",
+   "reference_compiles": true,
+   "client": "NeoWs",
+   "binding": {
+    "type": "Result<Asteroid, Error>",
+    "result": "is_ok"
+   },
+   "boundary": "operation",
+   "base_path": "/neo/rest/v1",
+   "recorded": [
+    {
+     "method": "GET",
+     "target": "/neo/rest/v1/neo/a%20b%2Fc?api_key=<secret>",
+     "headers": [
+      [
+       "accept",
+       "application/json"
+      ]
+     ],
+     "body": ""
+    }
+   ],
+   "recorded_again": [
+    {
+     "method": "GET",
+     "target": "/neo/rest/v1/neo/a%20b%2Fc?api_key=<secret>",
+     "headers": [
+      [
+       "accept",
+       "application/json"
+      ]
+     ],
+     "body": ""
+    }
+   ],
+   "volatile": {
+    "sequence_differs": false,
+    "headers": [],
+    "bodies": []
+   },
+   "fixture": {
+    "name": "examples/nasa-neows-sdk/fixtures/lookup-browse.json",
+    "content_type": "application/json",
+    "path": "examples/nasa-neows-sdk/fixtures/lookup-browse.json",
+    "body": null
+   },
+   "fixture_tries_failed": 0,
+   "reference_outcome": null,
+   "result_checked": true,
+   "check_available": true,
+   "kind": "call"
+  },
+  "nasa-neows/w3": {
+   "method": "GET",
+   "url": "https://api.nasa.gov/neo/rest/v1/feed?api_key=<secret>&start_date=nectar&end_date=indigo",
+   "headers": [
+    [
+     "accept",
+     "application/json"
+    ]
+   ],
+   "secret_headers": [],
+   "body": null,
+   "body_kind": null,
+   "content_type": null,
+   "accept": "application/json",
+   "prepared": {
+    "method": "GET",
+    "url": "https://api.nasa.gov/neo/rest/v1/feed?api_key=<secret>&start_date=nectar&end_date=indigo",
+    "headers": [
+     [
+      "accept",
+      "application/json"
+     ]
+    ],
+    "secret_headers": [],
+    "body": null,
+    "body_kind": null,
+    "content_type": null,
+    "accept": "application/json"
+   },
+   "policy_changes_request": false,
+   "operation_completed_within_10s": true,
+   "boundary": "operation",
+   "kind": "wire"
+  },
+  "nasa-neows/r3": {
+   "r2": {
+    "resolvable": true,
+    "send_returns": "Result<Feed, Error>",
+    "error_type": "Error",
+    "how": "send template",
+    "verified": true,
+    "decl_module": "crate",
+    "send_returns_canon": "Result<sdk::Feed, sdk::Error>",
+    "error_type_canon": "sdk::Error"
+   },
+   "base_url": null,
+   "boundary": "operation",
+   "kind": "result"
+  },
+  "nasa-neows/c3": {
+   "reference": "api.neows().feed(\"nectar\", \"indigo\").send().await",
+   "reference_compiles": true,
+   "client": "NeoWs",
+   "binding": {
+    "type": "Result<Feed, Error>",
+    "result": "is_ok"
+   },
+   "boundary": "operation",
+   "base_path": "/neo/rest/v1",
+   "recorded": [
+    {
+     "method": "GET",
+     "target": "/neo/rest/v1/feed?api_key=<secret>&start_date=nectar&end_date=indigo",
+     "headers": [
+      [
+       "accept",
+       "application/json"
+      ]
+     ],
+     "body": ""
+    }
+   ],
+   "recorded_again": [
+    {
+     "method": "GET",
+     "target": "/neo/rest/v1/feed?api_key=<secret>&start_date=nectar&end_date=indigo",
+     "headers": [
+      [
+       "accept",
+       "application/json"
+      ]
+     ],
+     "body": ""
+    }
+   ],
+   "volatile": {
+    "sequence_differs": false,
+    "headers": [],
+    "bodies": []
+   },
+   "fixture": {
+    "name": "examples/nasa-neows-sdk/fixtures/feed.json",
+    "content_type": "application/json",
+    "path": "examples/nasa-neows-sdk/fixtures/feed.json",
+    "body": null
+   },
+   "fixture_tries_failed": 0,
+   "reference_outcome": null,
+   "result_checked": true,
+   "check_available": true,
+   "kind": "call"
+  }
+ },
+ "drops": []
+}

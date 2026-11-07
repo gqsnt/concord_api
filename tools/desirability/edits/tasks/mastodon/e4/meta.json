@@ -1,0 +1,11 @@
+{
+ "sdk": "mastodon",
+ "kind": "e4",
+ "package": "concord-sdk-mastodon",
+ "sdk_dir": "examples/mastodon-sdk",
+ "title": "Add GET /api/v1/statuses/{id}/context",
+ "public_names": [
+  "Mastodon::status_context",
+  "StatusContext"
+ ]
+}

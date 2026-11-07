@@ -1,0 +1,123 @@
+{
+ "sdk": "nager-holidays-sdk",
+ "short": "nager-holidays",
+ "pkg": "concord-sdk-nager-holidays",
+ "repo_head": "984bd2f6a981dd85e8b104c21daae06421a7a48a",
+ "truth_format": 3,
+ "aliases": [
+  "ConcordErrorKind = concord::ErrorKind (imported: concord::ErrorKind)",
+  "Date = chrono::NaiveDate (imported: chrono::NaiveDate)",
+  "Deserialize = serde::Deserialize (imported: serde::Deserialize)",
+  "Deserializer = serde::Deserializer (imported: serde::Deserializer)",
+  "Endpoint = concord::Endpoint (imported: concord::Endpoint)",
+  "Json = concord::Json (imported: concord::Json)",
+  "ResponseMeta = concord::ResponseMeta (imported: concord::ResponseMeta)",
+  "SendWith = concord::SendWith (imported: concord::SendWith)",
+  "StatusCode = reqwest::StatusCode (imported: concord::reqwest::StatusCode)"
+ ],
+ "items": {
+  "nager-holidays/w1": {
+   "method": "GET",
+   "url": "https://nagerholidays.com/api/v4/Holidays/x%26y%3Dz/24",
+   "headers": [
+    [
+     "accept",
+     "application/json"
+    ]
+   ],
+   "secret_headers": [],
+   "body": null,
+   "body_kind": null,
+   "content_type": null,
+   "accept": "application/json",
+   "prepared": {
+    "method": "GET",
+    "url": "https://nagerholidays.com/api/v4/Holidays/x%26y%3Dz/24",
+    "headers": [
+     [
+      "accept",
+      "application/json"
+     ]
+    ],
+    "secret_headers": [],
+    "body": null,
+    "body_kind": null,
+    "content_type": null,
+    "accept": "application/json"
+   },
+   "policy_changes_request": false,
+   "operation_completed_within_10s": true,
+   "boundary": "operation",
+   "kind": "wire"
+  },
+  "nager-holidays/r1": {
+   "r2": {
+    "resolvable": true,
+    "send_returns": "Result<HolidayResponse, Error>",
+    "error_type": "Error",
+    "how": "impl SendWith for KeepHead",
+    "verified": true,
+    "decl_module": "crate",
+    "send_returns_canon": "Result<sdk::HolidayResponse, sdk::error::Error>",
+    "error_type_canon": "sdk::error::Error"
+   },
+   "base_url": null,
+   "boundary": "operation",
+   "kind": "result"
+  },
+  "nager-holidays/c1": {
+   "reference": "api.holidays(\"x&y=z\", 24).send().await",
+   "reference_compiles": true,
+   "client": "NagerHolidays",
+   "binding": {
+    "type": "Result<HolidayResponse, Error>",
+    "result": "is_ok"
+   },
+   "boundary": "operation",
+   "base_path": "",
+   "recorded": [
+    {
+     "method": "GET",
+     "target": "/api/v4/Holidays/x%26y%3Dz/24",
+     "headers": [
+      [
+       "accept",
+       "application/json"
+      ]
+     ],
+     "body": ""
+    }
+   ],
+   "recorded_again": [
+    {
+     "method": "GET",
+     "target": "/api/v4/Holidays/x%26y%3Dz/24",
+     "headers": [
+      [
+       "accept",
+       "application/json"
+      ]
+     ],
+     "body": ""
+    }
+   ],
+   "volatile": {
+    "sequence_differs": false,
+    "headers": [],
+    "bodies": []
+   },
+   "fixture": {
+    "name": "examples/nager-holidays-sdk/fixtures/holidays-at-2026-perturbed.json",
+    "content_type": "application/json",
+    "path": "examples/nager-holidays-sdk/fixtures/holidays-at-2026-perturbed.json",
+    "body": null
+   },
+   "fixture_tries_failed": 0,
+   "reference_outcome": null,
+   "result_checked": true,
+   "check_available": true,
+   "kind": "call"
+  }
+ },
+ "drops": []
+}

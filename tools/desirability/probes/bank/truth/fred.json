@@ -1,0 +1,659 @@
+{
+ "sdk": "fred-sdk",
+ "short": "fred",
+ "pkg": "concord-sdk-fred",
+ "repo_head": "984bd2f6a981dd85e8b104c21daae06421a7a48a",
+ "truth_format": 3,
+ "aliases": [
+  "AggregationMethod = sdk::AggregationMethod (imported: options::AggregationMethod)",
+  "Bytes = bytes::Bytes (imported: concord::bytes::Bytes)",
+  "Charset = concord_codecs::Charset (imported: concord_codecs::Charset)",
+  "CodecError = concord::CodecError (imported: concord::CodecError)",
+  "Cursor = std::io::Cursor (imported: std::io::Cursor)",
+  "Decode = concord::Decode (imported: concord::Decode)",
+  "Deserialize = serde::Deserialize (imported: serde::Deserialize)",
+  "DeserializeOwned = serde::de::DeserializeOwned (imported: serde::de::DeserializeOwned)",
+  "Document = roxmltree::Document (imported: roxmltree::Document)",
+  "Endpoint = concord::Endpoint (imported: concord::Endpoint)",
+  "Frequency = sdk::Frequency (imported: options::Frequency)",
+  "Node = roxmltree::Node (imported: roxmltree::Node)",
+  "NonZeroUsize = std::num::NonZeroUsize (imported: std::num::NonZeroUsize)",
+  "OffsetOptions = sdk::OffsetOptions (imported: crate::OffsetOptions)",
+  "Page = concord_pagination::Page (imported: concord_pagination::Page)",
+  "Pages = concord_pagination::Pages (imported: concord_pagination::Pages)",
+  "Read = std::io::Read (imported: std::io::Read)",
+  "ResponseHead = concord::ResponseHead (imported: concord::ResponseHead)",
+  "Resume = concord_pagination::Resume (imported: concord_pagination::Resume)",
+  "SendWith = concord::SendWith (imported: concord::SendWith)",
+  "Sends = concord::Sends (imported: concord::Sends)",
+  "Units = sdk::Units (imported: options::Units)"
+ ],
+ "items": {
+  "fred/w1": {
+   "method": "GET",
+   "url": "https://api.stlouisfed.org/fred/series/observations?api_key=<secret>&series_id=cedar&limit=100000&offset=0&file_type=csv",
+   "headers": [
+    [
+     "accept",
+     "application/zip"
+    ]
+   ],
+   "secret_headers": [],
+   "body": null,
+   "body_kind": null,
+   "content_type": null,
+   "accept": "application/zip",
+   "prepared": {
+    "method": "GET",
+    "url": "https://api.stlouisfed.org/fred/series/observations?api_key=<secret>&series_id=cedar&limit=100000&offset=0&file_type=csv",
+    "headers": [
+     [
+      "accept",
+      "application/zip"
+     ]
+    ],
+    "secret_headers": [],
+    "body": null,
+    "body_kind": null,
+    "content_type": null,
+    "accept": "application/zip"
+   },
+   "policy_changes_request": false,
+   "operation_completed_within_10s": true,
+   "boundary": "operation",
+   "kind": "wire"
+  },
+  "fred/r1": {
+   "r2": {
+    "resolvable": true,
+    "send_returns": "Result<CsvExport, Error>",
+    "error_type": "Error",
+    "how": "send template",
+    "verified": true,
+    "decl_module": "crate",
+    "send_returns_canon": "Result<sdk::models::CsvExport, sdk::error::Error>",
+    "error_type_canon": "sdk::error::Error"
+   },
+   "base_url": {
+    "keep": "/fred",
+    "expected_url": "https://staging.example.test/fred/series/observations?api_key=<secret>&series_id=cedar&limit=100000&offset=0&file_type=csv",
+    "results": {
+     "https://staging.example.test": "https://staging.example.test/fred/series/observations?api_key=<secret>&series_id=cedar&limit=100000&offset=0&file_type=csv",
+     "https://staging.example.test/": "https://staging.example.test/fred/series/observations?api_key=<secret>&series_id=cedar&limit=100000&offset=0&file_type=csv",
+     "https://staging.example.test/fred": "https://staging.example.test/fred/fred/series/observations?api_key=<secret>&series_id=cedar&limit=100000&offset=0&file_type=csv",
+     "https://staging.example.test/fred/": "https://staging.example.test/fred/fred/series/observations?api_key=<secret>&series_id=cedar&limit=100000&offset=0&file_type=csv"
+    },
+    "keeps": [
+     "https://staging.example.test",
+     "https://staging.example.test/"
+    ]
+   },
+   "boundary": "operation",
+   "kind": "result"
+  },
+  "fred/c1": {
+   "reference": "api.series(\"cedar\").export_csv().send().await",
+   "reference_compiles": true,
+   "client": "Fred",
+   "binding": {
+    "type": "Result<CsvExport, Error>",
+    "result": "is_ok"
+   },
+   "boundary": "operation",
+   "base_path": "",
+   "recorded": [
+    {
+     "method": "GET",
+     "target": "/fred/series/observations?api_key=<secret>&series_id=cedar&limit=100000&offset=0&file_type=csv",
+     "headers": [
+      [
+       "accept",
+       "application/zip"
+      ]
+     ],
+     "body": ""
+    }
+   ],
+   "recorded_again": [
+    {
+     "method": "GET",
+     "target": "/fred/series/observations?api_key=<secret>&series_id=cedar&limit=100000&offset=0&file_type=csv",
+     "headers": [
+      [
+       "accept",
+       "application/zip"
+      ]
+     ],
+     "body": ""
+    }
+   ],
+   "volatile": {
+    "sequence_differs": false,
+    "headers": [],
+    "bodies": []
+   },
+   "fixture": {
+    "name": "examples/fred-sdk/fixtures/observations.zip",
+    "content_type": "application/octet-stream",
+    "path": "examples/fred-sdk/fixtures/observations.zip",
+    "body": null
+   },
+   "fixture_tries_failed": 14,
+   "reference_outcome": null,
+   "result_checked": true,
+   "check_available": true,
+   "kind": "call"
+  },
+  "fred/w2": {
+   "method": "GET",
+   "url": "https://api.stlouisfed.org/fred/series/search?api_key=<secret>&search_text=ember&limit=1000&offset=0&file_type=json",
+   "headers": [
+    [
+     "accept",
+     "application/json"
+    ]
+   ],
+   "secret_headers": [],
+   "body": null,
+   "body_kind": null,
+   "content_type": null,
+   "accept": "application/json",
+   "prepared": {
+    "method": "GET",
+    "url": "https://api.stlouisfed.org/fred/series/search?api_key=<secret>&search_text=ember&limit=1000&offset=0&file_type=json",
+    "headers": [
+     [
+      "accept",
+      "application/json"
+     ]
+    ],
+    "secret_headers": [],
+    "body": null,
+    "body_kind": null,
+    "content_type": null,
+    "accept": "application/json"
+   },
+   "policy_changes_request": false,
+   "operation_completed_within_10s": true,
+   "boundary": "operation",
+   "kind": "wire"
+  },
+  "fred/r2": {
+   "r2": {
+    "resolvable": true,
+    "send_returns": "Result<SearchPage, Error>",
+    "error_type": "Error",
+    "how": "send template",
+    "verified": true,
+    "decl_module": "crate",
+    "send_returns_canon": "Result<sdk::models::SearchPage, sdk::error::Error>",
+    "error_type_canon": "sdk::error::Error"
+   },
+   "base_url": null,
+   "boundary": "operation",
+   "kind": "result"
+  },
+  "fred/c2": {
+   "reference": "api.search_json(\"ember\").send().await",
+   "reference_compiles": true,
+   "client": "Fred",
+   "binding": {
+    "type": "Result<SearchPage, Error>",
+    "result": "is_ok"
+   },
+   "boundary": "operation",
+   "base_path": "",
+   "recorded": [
+    {
+     "method": "GET",
+     "target": "/fred/series/search?api_key=<secret>&search_text=ember&limit=1000&offset=0&file_type=json",
+     "headers": [
+      [
+       "accept",
+       "application/json"
+      ]
+     ],
+     "body": ""
+    }
+   ],
+   "recorded_again": [
+    {
+     "method": "GET",
+     "target": "/fred/series/search?api_key=<secret>&search_text=ember&limit=1000&offset=0&file_type=json",
+     "headers": [
+      [
+       "accept",
+       "application/json"
+      ]
+     ],
+     "body": ""
+    }
+   ],
+   "volatile": {
+    "sequence_differs": false,
+    "headers": [],
+    "bodies": []
+   },
+   "fixture": {
+    "name": "examples/fred-sdk/fixtures/search-0.json",
+    "content_type": "application/json",
+    "path": "examples/fred-sdk/fixtures/search-0.json",
+    "body": null
+   },
+   "fixture_tries_failed": 0,
+   "reference_outcome": null,
+   "result_checked": true,
+   "check_available": true,
+   "kind": "call"
+  },
+  "fred/w3": {
+   "method": "GET",
+   "url": "https://api.stlouisfed.org/fred/series/observations?api_key=<secret>&series_id=x%26y%3Dz&limit=100000&offset=0&file_type=json",
+   "headers": [
+    [
+     "accept",
+     "application/json"
+    ]
+   ],
+   "secret_headers": [],
+   "body": null,
+   "body_kind": null,
+   "content_type": null,
+   "accept": "application/json",
+   "prepared": {
+    "method": "GET",
+    "url": "https://api.stlouisfed.org/fred/series/observations?api_key=<secret>&series_id=x%26y%3Dz&limit=100000&offset=0&file_type=json",
+    "headers": [
+     [
+      "accept",
+      "application/json"
+     ]
+    ],
+    "secret_headers": [],
+    "body": null,
+    "body_kind": null,
+    "content_type": null,
+    "accept": "application/json"
+   },
+   "policy_changes_request": false,
+   "operation_completed_within_10s": true,
+   "boundary": "operation",
+   "kind": "wire"
+  },
+  "fred/r3": {
+   "r2": {
+    "resolvable": true,
+    "send_returns": "Result<Observations, Error>",
+    "error_type": "Error",
+    "how": "send template",
+    "verified": true,
+    "decl_module": "crate",
+    "send_returns_canon": "Result<sdk::models::Observations, sdk::error::Error>",
+    "error_type_canon": "sdk::error::Error"
+   },
+   "base_url": null,
+   "boundary": "operation",
+   "kind": "result"
+  },
+  "fred/c3": {
+   "reference": "api.series(\"x&y=z\").observations_json().send().await",
+   "reference_compiles": true,
+   "client": "Fred",
+   "binding": {
+    "type": "Result<Observations, Error>",
+    "result": "is_ok"
+   },
+   "boundary": "operation",
+   "base_path": "",
+   "recorded": [
+    {
+     "method": "GET",
+     "target": "/fred/series/observations?api_key=<secret>&series_id=x%26y%3Dz&limit=100000&offset=0&file_type=json",
+     "headers": [
+      [
+       "accept",
+       "application/json"
+      ]
+     ],
+     "body": ""
+    }
+   ],
+   "recorded_again": [
+    {
+     "method": "GET",
+     "target": "/fred/series/observations?api_key=<secret>&series_id=x%26y%3Dz&limit=100000&offset=0&file_type=json",
+     "headers": [
+      [
+       "accept",
+       "application/json"
+      ]
+     ],
+     "body": ""
+    }
+   ],
+   "volatile": {
+    "sequence_differs": false,
+    "headers": [],
+    "bodies": []
+   },
+   "fixture": {
+    "name": "examples/fred-sdk/fixtures/observations-0.json",
+    "content_type": "application/json",
+    "path": "examples/fred-sdk/fixtures/observations-0.json",
+    "body": null
+   },
+   "fixture_tries_failed": 0,
+   "reference_outcome": null,
+   "result_checked": true,
+   "check_available": true,
+   "kind": "call"
+  },
+  "fred/w4": {
+   "method": "GET",
+   "url": "https://api.stlouisfed.org/fred/series/search?api_key=<secret>&search_text=indigo&limit=1000&offset=0",
+   "headers": [
+    [
+     "accept",
+     "text/xml"
+    ]
+   ],
+   "secret_headers": [],
+   "body": null,
+   "body_kind": null,
+   "content_type": null,
+   "accept": "text/xml",
+   "prepared": {
+    "method": "GET",
+    "url": "https://api.stlouisfed.org/fred/series/search?api_key=<secret>&search_text=indigo&limit=1000&offset=0",
+    "headers": [
+     [
+      "accept",
+      "text/xml"
+     ]
+    ],
+    "secret_headers": [],
+    "body": null,
+    "body_kind": null,
+    "content_type": null,
+    "accept": "text/xml"
+   },
+   "policy_changes_request": false,
+   "operation_completed_within_10s": true,
+   "boundary": "operation",
+   "kind": "wire"
+  },
+  "fred/r4": {
+   "r2": {
+    "resolvable": true,
+    "send_returns": "Result<SearchPage, Error>",
+    "error_type": "Error",
+    "how": "send template",
+    "verified": true,
+    "decl_module": "crate",
+    "send_returns_canon": "Result<sdk::models::SearchPage, sdk::error::Error>",
+    "error_type_canon": "sdk::error::Error"
+   },
+   "base_url": null,
+   "boundary": "operation",
+   "kind": "result"
+  },
+  "fred/c4": {
+   "reference": "api.search(\"indigo\").send().await",
+   "reference_compiles": true,
+   "client": "Fred",
+   "binding": {
+    "type": "Result<SearchPage, Error>",
+    "result": "is_ok"
+   },
+   "boundary": "operation",
+   "base_path": "",
+   "recorded": [
+    {
+     "method": "GET",
+     "target": "/fred/series/search?api_key=<secret>&search_text=indigo&limit=1000&offset=0",
+     "headers": [
+      [
+       "accept",
+       "text/xml"
+      ]
+     ],
+     "body": ""
+    }
+   ],
+   "recorded_again": [
+    {
+     "method": "GET",
+     "target": "/fred/series/search?api_key=<secret>&search_text=indigo&limit=1000&offset=0",
+     "headers": [
+      [
+       "accept",
+       "text/xml"
+      ]
+     ],
+     "body": ""
+    }
+   ],
+   "volatile": {
+    "sequence_differs": false,
+    "headers": [],
+    "bodies": []
+   },
+   "fixture": {
+    "name": "examples/fred-sdk/fixtures/search-0.xml",
+    "content_type": "application/xml",
+    "path": "examples/fred-sdk/fixtures/search-0.xml",
+    "body": null
+   },
+   "fixture_tries_failed": 1,
+   "reference_outcome": null,
+   "result_checked": true,
+   "check_available": true,
+   "kind": "call"
+  },
+  "fred/w5": {
+   "method": "GET",
+   "url": "https://api.stlouisfed.org/fred/series?api_key=<secret>&series_id=alpha&file_type=json",
+   "headers": [
+    [
+     "accept",
+     "application/json"
+    ]
+   ],
+   "secret_headers": [],
+   "body": null,
+   "body_kind": null,
+   "content_type": null,
+   "accept": "application/json",
+   "prepared": {
+    "method": "GET",
+    "url": "https://api.stlouisfed.org/fred/series?api_key=<secret>&series_id=alpha&file_type=json",
+    "headers": [
+     [
+      "accept",
+      "application/json"
+     ]
+    ],
+    "secret_headers": [],
+    "body": null,
+    "body_kind": null,
+    "content_type": null,
+    "accept": "application/json"
+   },
+   "policy_changes_request": false,
+   "operation_completed_within_10s": true,
+   "boundary": "operation",
+   "kind": "wire"
+  },
+  "fred/r5": {
+   "r2": {
+    "resolvable": true,
+    "send_returns": "Result<Metadata, Error>",
+    "error_type": "Error",
+    "how": "send template",
+    "verified": true,
+    "decl_module": "crate",
+    "send_returns_canon": "Result<sdk::models::Metadata, sdk::error::Error>",
+    "error_type_canon": "sdk::error::Error"
+   },
+   "base_url": null,
+   "boundary": "operation",
+   "kind": "result"
+  },
+  "fred/c5": {
+   "reference": "api.series(\"alpha\").metadata_json().send().await",
+   "reference_compiles": true,
+   "client": "Fred",
+   "binding": {
+    "type": "Result<Metadata, Error>",
+    "result": "is_ok"
+   },
+   "boundary": "operation",
+   "base_path": "",
+   "recorded": [
+    {
+     "method": "GET",
+     "target": "/fred/series?api_key=<secret>&series_id=alpha&file_type=json",
+     "headers": [
+      [
+       "accept",
+       "application/json"
+      ]
+     ],
+     "body": ""
+    }
+   ],
+   "recorded_again": [
+    {
+     "method": "GET",
+     "target": "/fred/series?api_key=<secret>&series_id=alpha&file_type=json",
+     "headers": [
+      [
+       "accept",
+       "application/json"
+      ]
+     ],
+     "body": ""
+    }
+   ],
+   "volatile": {
+    "sequence_differs": false,
+    "headers": [],
+    "bodies": []
+   },
+   "fixture": {
+    "name": "examples/fred-sdk/fixtures/metadata.json",
+    "content_type": "application/json",
+    "path": "examples/fred-sdk/fixtures/metadata.json",
+    "body": null
+   },
+   "fixture_tries_failed": 0,
+   "reference_outcome": null,
+   "result_checked": true,
+   "check_available": true,
+   "kind": "call"
+  },
+  "fred/w6": {
+   "method": "GET",
+   "url": "https://api.stlouisfed.org/fred/series?api_key=<secret>&series_id=alpha",
+   "headers": [
+    [
+     "accept",
+     "text/xml"
+    ]
+   ],
+   "secret_headers": [],
+   "body": null,
+   "body_kind": null,
+   "content_type": null,
+   "accept": "text/xml",
+   "prepared": {
+    "method": "GET",
+    "url": "https://api.stlouisfed.org/fred/series?api_key=<secret>&series_id=alpha",
+    "headers": [
+     [
+      "accept",
+      "text/xml"
+     ]
+    ],
+    "secret_headers": [],
+    "body": null,
+    "body_kind": null,
+    "content_type": null,
+    "accept": "text/xml"
+   },
+   "policy_changes_request": false,
+   "operation_completed_within_10s": true,
+   "boundary": "operation",
+   "kind": "wire"
+  },
+  "fred/r6": {
+   "r2": {
+    "resolvable": true,
+    "send_returns": "Result<Metadata, Error>",
+    "error_type": "Error",
+    "how": "send template",
+    "verified": true,
+    "decl_module": "crate",
+    "send_returns_canon": "Result<sdk::models::Metadata, sdk::error::Error>",
+    "error_type_canon": "sdk::error::Error"
+   },
+   "base_url": null,
+   "boundary": "operation",
+   "kind": "result"
+  },
+  "fred/c6": {
+   "reference": "api.series(\"alpha\").metadata().send().await",
+   "reference_compiles": true,
+   "client": "Fred",
+   "binding": {
+    "type": "Result<Metadata, Error>",
+    "result": "is_ok"
+   },
+   "boundary": "operation",
+   "base_path": "",
+   "recorded": [
+    {
+     "method": "GET",
+     "target": "/fred/series?api_key=<secret>&series_id=alpha",
+     "headers": [
+      [
+       "accept",
+       "text/xml"
+      ]
+     ],
+     "body": ""
+    }
+   ],
+   "recorded_again": [
+    {
+     "method": "GET",
+     "target": "/fred/series?api_key=<secret>&series_id=alpha",
+     "headers": [
+      [
+       "accept",
+       "text/xml"
+      ]
+     ],
+     "body": ""
+    }
+   ],
+   "volatile": {
+    "sequence_differs": false,
+    "headers": [],
+    "bodies": []
+   },
+   "fixture": {
+    "name": "examples/fred-sdk/fixtures/metadata.xml",
+    "content_type": "application/xml",
+    "path": "examples/fred-sdk/fixtures/metadata.xml",
+    "body": null
+   },
+   "fixture_tries_failed": 1,
+   "reference_outcome": null,
+   "result_checked": true,
+   "check_available": true,
+   "kind": "call"
+  }
+ },
+ "drops": []
+}

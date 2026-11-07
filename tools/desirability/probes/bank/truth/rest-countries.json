@@ -1,0 +1,418 @@
+{
+ "sdk": "rest-countries-sdk",
+ "short": "rest-countries",
+ "pkg": "concord-sdk-rest-countries",
+ "repo_head": "984bd2f6a981dd85e8b104c21daae06421a7a48a",
+ "truth_format": 3,
+ "aliases": [
+  "BTreeMap = std::collections::BTreeMap (imported: std::collections::BTreeMap)",
+  "Cow = std::borrow::Cow (imported: std::borrow::Cow)",
+  "CredentialError = concord_auth::CredentialError (imported: concord_auth::CredentialError)",
+  "Deserialize = serde::Deserialize (imported: serde::Deserialize)",
+  "Deserializer = serde::Deserializer (imported: serde::Deserializer)",
+  "Endpoint = concord::Endpoint (imported: concord::Endpoint)",
+  "ErrorKind = concord::ErrorKind (imported: concord::ErrorKind)",
+  "HeaderValue = reqwest::header::HeaderValue (imported: concord::reqwest::header::HeaderValue)",
+  "Json = concord::Json (imported: concord::Json)",
+  "Language = sdk::Language (imported: input::Language)",
+  "Map = serde_json::Map (imported: serde_json::Map)",
+  "NonZeroU32 = std::num::NonZeroU32 (imported: std::num::NonZeroU32)",
+  "Number = serde_json::Number (imported: serde_json::Number)",
+  "OffsetError = concord_pagination::OffsetError (imported: concord_pagination::OffsetError)",
+  "Operation = concord::Operation (imported: concord::Operation)",
+  "Page = concord_pagination::Page (imported: concord_pagination::Page)",
+  "Pages = concord_pagination::Pages (imported: concord_pagination::Pages)",
+  "QueryPairs = concord::QueryPairs (imported: concord::QueryPairs)",
+  "QueryPairsWriter = concord::QueryPairsWriter (imported: concord::QueryPairsWriter)",
+  "Region = sdk::Region (imported: input::Region)",
+  "ResponseMeta = concord::ResponseMeta (imported: concord::ResponseMeta)",
+  "Resume = concord_pagination::Resume (imported: concord_pagination::Resume)",
+  "SendWith = concord::SendWith (imported: concord::SendWith)",
+  "Sends = concord::Sends (imported: concord::Sends)",
+  "StatusCode = reqwest::StatusCode (imported: concord::reqwest::StatusCode)",
+  "Subregion = sdk::Subregion (imported: input::Subregion)",
+  "Value = serde_json::Value (imported: serde_json::Value)"
+ ],
+ "items": {
+  "rest-countries/w1": {
+   "method": "GET",
+   "url": "https://api.restcountries.com/countries/v5/code?q=x%26y%3Dz&limit=7",
+   "headers": [
+    [
+     "authorization",
+     "<secret>"
+    ],
+    [
+     "accept",
+     "application/json"
+    ]
+   ],
+   "secret_headers": [
+    "authorization"
+   ],
+   "body": null,
+   "body_kind": null,
+   "content_type": null,
+   "accept": "application/json",
+   "prepared": {
+    "method": "GET",
+    "url": "https://api.restcountries.com/countries/v5/code?q=x%26y%3Dz&limit=7",
+    "headers": [
+     [
+      "authorization",
+      "<secret>"
+     ],
+     [
+      "accept",
+      "application/json"
+     ]
+    ],
+    "secret_headers": [
+     "authorization"
+    ],
+    "body": null,
+    "body_kind": null,
+    "content_type": null,
+    "accept": "application/json"
+   },
+   "policy_changes_request": false,
+   "operation_completed_within_10s": true,
+   "boundary": "operation",
+   "kind": "wire"
+  },
+  "rest-countries/r1": {
+   "r2": {
+    "resolvable": true,
+    "send_returns": "Result<CountryPage, Error>",
+    "error_type": "Error",
+    "how": "send template",
+    "verified": true,
+    "decl_module": "crate",
+    "send_returns_canon": "Result<sdk::model::CountryPage, sdk::error::Error>",
+    "error_type_canon": "sdk::error::Error"
+   },
+   "base_url": {
+    "keep": "/countries/v5",
+    "expected_url": "https://staging.example.test/countries/v5/code?q=x%26y%3Dz&limit=7",
+    "results": {
+     "https://staging.example.test": "https://staging.example.test/countries/v5/code?q=x%26y%3Dz&limit=7",
+     "https://staging.example.test/": "https://staging.example.test/countries/v5/code?q=x%26y%3Dz&limit=7",
+     "https://staging.example.test/countries/v5": "https://staging.example.test/countries/v5/countries/v5/code?q=x%26y%3Dz&limit=7",
+     "https://staging.example.test/countries/v5/": "https://staging.example.test/countries/v5/countries/v5/code?q=x%26y%3Dz&limit=7"
+    },
+    "keeps": [
+     "https://staging.example.test",
+     "https://staging.example.test/"
+    ]
+   },
+   "boundary": "operation",
+   "kind": "result"
+  },
+  "rest-countries/c1": {
+   "reference": "api.search_codes(\"x&y=z\").set_limit(std::num::NonZeroU32::new(7).unwrap()).send().await",
+   "reference_compiles": true,
+   "client": "RestCountries",
+   "binding": {
+    "type": "Result<CountryPage, Error>",
+    "result": "is_ok"
+   },
+   "boundary": "operation",
+   "base_path": "",
+   "recorded": [
+    {
+     "method": "GET",
+     "target": "/countries/v5/code?q=x%26y%3Dz&limit=7",
+     "headers": [
+      [
+       "authorization",
+       "<secret>"
+      ],
+      [
+       "accept",
+       "application/json"
+      ]
+     ],
+     "body": ""
+    }
+   ],
+   "recorded_again": [
+    {
+     "method": "GET",
+     "target": "/countries/v5/code?q=x%26y%3Dz&limit=7",
+     "headers": [
+      [
+       "authorization",
+       "<secret>"
+      ],
+      [
+       "accept",
+       "application/json"
+      ]
+     ],
+     "body": ""
+    }
+   ],
+   "volatile": {
+    "sequence_differs": false,
+    "headers": [],
+    "bodies": []
+   },
+   "fixture": {
+    "name": "examples/rest-countries-sdk/fixtures/doc-search-germ-europe.json",
+    "content_type": "application/json",
+    "path": "examples/rest-countries-sdk/fixtures/doc-search-germ-europe.json",
+    "body": null
+   },
+   "fixture_tries_failed": 0,
+   "reference_outcome": null,
+   "result_checked": true,
+   "check_available": true,
+   "kind": "call"
+  },
+  "rest-countries/w2": {
+   "method": "GET",
+   "url": "https://api.restcountries.com/countries/v5?offset=16",
+   "headers": [
+    [
+     "authorization",
+     "<secret>"
+    ],
+    [
+     "accept",
+     "application/json"
+    ]
+   ],
+   "secret_headers": [
+    "authorization"
+   ],
+   "body": null,
+   "body_kind": null,
+   "content_type": null,
+   "accept": "application/json",
+   "prepared": {
+    "method": "GET",
+    "url": "https://api.restcountries.com/countries/v5?offset=16",
+    "headers": [
+     [
+      "authorization",
+      "<secret>"
+     ],
+     [
+      "accept",
+      "application/json"
+     ]
+    ],
+    "secret_headers": [
+     "authorization"
+    ],
+    "body": null,
+    "body_kind": null,
+    "content_type": null,
+    "accept": "application/json"
+   },
+   "policy_changes_request": false,
+   "operation_completed_within_10s": true,
+   "boundary": "operation",
+   "kind": "wire"
+  },
+  "rest-countries/r2": {
+   "r2": {
+    "resolvable": true,
+    "send_returns": "Result<CountryPage, Error>",
+    "error_type": "Error",
+    "how": "send template",
+    "verified": true,
+    "decl_module": "crate",
+    "send_returns_canon": "Result<sdk::model::CountryPage, sdk::error::Error>",
+    "error_type_canon": "sdk::error::Error"
+   },
+   "base_url": null,
+   "boundary": "operation",
+   "kind": "result"
+  },
+  "rest-countries/c2": {
+   "reference": "api.countries().set_offset(16).send().await",
+   "reference_compiles": true,
+   "client": "RestCountries",
+   "binding": {
+    "type": "Result<CountryPage, Error>",
+    "result": "is_ok"
+   },
+   "boundary": "operation",
+   "base_path": "",
+   "recorded": [
+    {
+     "method": "GET",
+     "target": "/countries/v5?offset=16",
+     "headers": [
+      [
+       "authorization",
+       "<secret>"
+      ],
+      [
+       "accept",
+       "application/json"
+      ]
+     ],
+     "body": ""
+    }
+   ],
+   "recorded_again": [
+    {
+     "method": "GET",
+     "target": "/countries/v5?offset=16",
+     "headers": [
+      [
+       "authorization",
+       "<secret>"
+      ],
+      [
+       "accept",
+       "application/json"
+      ]
+     ],
+     "body": ""
+    }
+   ],
+   "volatile": {
+    "sequence_differs": false,
+    "headers": [],
+    "bodies": []
+   },
+   "fixture": {
+    "name": "examples/rest-countries-sdk/fixtures/synthetic-europe-eu-page1.json",
+    "content_type": "application/json",
+    "path": "examples/rest-countries-sdk/fixtures/synthetic-europe-eu-page1.json",
+    "body": null
+   },
+   "fixture_tries_failed": 0,
+   "reference_outcome": null,
+   "result_checked": true,
+   "check_available": true,
+   "kind": "call"
+  },
+  "rest-countries/w3": {
+   "method": "GET",
+   "url": "https://api.restcountries.com/countries/v5/name?q=a+b%2Fc&limit=7",
+   "headers": [
+    [
+     "authorization",
+     "<secret>"
+    ],
+    [
+     "accept",
+     "application/json"
+    ]
+   ],
+   "secret_headers": [
+    "authorization"
+   ],
+   "body": null,
+   "body_kind": null,
+   "content_type": null,
+   "accept": "application/json",
+   "prepared": {
+    "method": "GET",
+    "url": "https://api.restcountries.com/countries/v5/name?q=a+b%2Fc&limit=7",
+    "headers": [
+     [
+      "authorization",
+      "<secret>"
+     ],
+     [
+      "accept",
+      "application/json"
+     ]
+    ],
+    "secret_headers": [
+     "authorization"
+    ],
+    "body": null,
+    "body_kind": null,
+    "content_type": null,
+    "accept": "application/json"
+   },
+   "policy_changes_request": false,
+   "operation_completed_within_10s": true,
+   "boundary": "operation",
+   "kind": "wire"
+  },
+  "rest-countries/r3": {
+   "r2": {
+    "resolvable": true,
+    "send_returns": "Result<CountryPage, Error>",
+    "error_type": "Error",
+    "how": "send template",
+    "verified": true,
+    "decl_module": "crate",
+    "send_returns_canon": "Result<sdk::model::CountryPage, sdk::error::Error>",
+    "error_type_canon": "sdk::error::Error"
+   },
+   "base_url": null,
+   "boundary": "operation",
+   "kind": "result"
+  },
+  "rest-countries/c3": {
+   "reference": "api.search_names(\"a b/c\").set_limit(std::num::NonZeroU32::new(7).unwrap()).send().await",
+   "reference_compiles": true,
+   "client": "RestCountries",
+   "binding": {
+    "type": "Result<CountryPage, Error>",
+    "result": "is_ok"
+   },
+   "boundary": "operation",
+   "base_path": "",
+   "recorded": [
+    {
+     "method": "GET",
+     "target": "/countries/v5/name?q=a+b%2Fc&limit=7",
+     "headers": [
+      [
+       "authorization",
+       "<secret>"
+      ],
+      [
+       "accept",
+       "application/json"
+      ]
+     ],
+     "body": ""
+    }
+   ],
+   "recorded_again": [
+    {
+     "method": "GET",
+     "target": "/countries/v5/name?q=a+b%2Fc&limit=7",
+     "headers": [
+      [
+       "authorization",
+       "<secret>"
+      ],
+      [
+       "accept",
+       "application/json"
+      ]
+     ],
+     "body": ""
+    }
+   ],
+   "volatile": {
+    "sequence_differs": false,
+    "headers": [],
+    "bodies": []
+   },
+   "fixture": {
+    "name": "examples/rest-countries-sdk/fixtures/doc-names-common-ger.json",
+    "content_type": "application/json",
+    "path": "examples/rest-countries-sdk/fixtures/doc-names-common-ger.json",
+    "body": null
+   },
+   "fixture_tries_failed": 0,
+   "reference_outcome": null,
+   "result_checked": true,
+   "check_available": true,
+   "kind": "call"
+  }
+ },
+ "drops": []
+}

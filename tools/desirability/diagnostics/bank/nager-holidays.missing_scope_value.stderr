@@ -1,0 +1,19 @@
+   Compiling concord-sdk-nager-holidays v0.0.0 (/home/canarit/projects/Concord_Desirability_Loop/work/wt/scratch-i4-a/examples/nager-holidays-sdk)
+error[E0061]: this method takes 2 arguments but 1 argument was supplied
+  --> examples/nager-holidays-sdk/tests/cb_missing_scope_value.rs:8:20
+   |
+ 8 |     let _req = api.holidays("AT"); // SEEDED
+   |                    ^^^^^^^^------ argument #2 is missing
+   |
+note: method defined here
+  --> examples/nager-holidays-sdk/src/lib.rs:35:13
+   |
+35 |         GET holidays(country_code: String, year: u16) -> Vec<Holiday> {
+   |             ^^^^^^^^
+help: provide the argument
+   |
+ 8 |     let _req = api.holidays("AT", /* year */); // SEEDED
+   |                                 ++++++++++++
+
+For more information about this error, try `rustc --explain E0061`.
+error: could not compile `concord-sdk-nager-holidays` (test "cb_missing_scope_value") due to 1 previous error

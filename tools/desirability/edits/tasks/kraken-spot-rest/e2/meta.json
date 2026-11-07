@@ -1,0 +1,12 @@
+{
+ "sdk": "kraken-spot-rest",
+ "kind": "e2",
+ "package": "concord-sdk-kraken-spot-rest",
+ "sdk_dir": "examples/kraken-spot-rest-sdk",
+ "title": "Rename private signature header API-Sign to API-Signature",
+ "public_names": [
+  "Kraken::account",
+  "Policy::prepare_signed",
+  "Signed::request_unredacted"
+ ]
+}

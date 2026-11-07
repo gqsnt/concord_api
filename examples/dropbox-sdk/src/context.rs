@@ -25,9 +25,18 @@ impl fmt::Display for InputError {
 impl std::error::Error for InputError {}
 
 /// An opaque namespace identifier, kept as text without integer conversion.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+///
+/// It is sent in the `Dropbox-API-Path-Root` header, which the declaration marks sensitive, so
+/// `Debug` withholds it (as Concord withholds the header); [`as_str`](Self::as_str) returns it.
+#[derive(Clone, PartialEq, Eq, Serialize)]
 #[serde(transparent)]
 pub struct NamespaceId(String);
+
+impl fmt::Debug for NamespaceId {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str("NamespaceId(<redacted>)")
+    }
+}
 
 impl NamespaceId {
     /// Validate Dropbox's `[-_0-9a-zA-Z:]+` schema without normalizing the value.

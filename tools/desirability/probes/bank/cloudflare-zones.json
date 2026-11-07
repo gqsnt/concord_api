@@ -1,0 +1,221 @@
+{
+ "sdk": "cloudflare-zones-sdk",
+ "short": "cloudflare-zones",
+ "pkg": "concord-sdk-cloudflare-zones",
+ "crate": "concord_sdk_cloudflare_zones",
+ "seed": 1,
+ "role": "main",
+ "holdout_of": [],
+ "generator_version": 1,
+ "clients": {
+  "Cloudflare": {
+   "constructible": true,
+   "file": "examples/cloudflare-zones-sdk/src/lib.rs",
+   "ctor": "Cloudflare::new(reqwest::Client::new(), CloudflareConfig {\n    authorization: reqwest::header::HeaderValue::from_static(\"CANARYCLOUDFLAREZONES1Z\"),\n    policy: Default::default(),\n})",
+   "canaries": [
+    "CANARYCLOUDFLAREZONES1Z"
+   ],
+   "config_fields": [
+    "authorization",
+    "policy"
+   ],
+   "endpoints": 5,
+   "notes": []
+  }
+ },
+ "picks": [
+  {
+   "key": "Cloudflare/zones/list",
+   "client": "Cloudflare",
+   "client_file": "examples/cloudflare-zones-sdk/src/lib.rs",
+   "scopes": [
+    "zones"
+   ],
+   "method": "GET",
+   "endpoint": "list",
+   "output": "Paged<Zone>",
+   "docs": [
+    "List Zones. Filter by account with `set_account_id`; walk every page with",
+    "`.pages()`."
+   ],
+   "values": [
+    {
+     "level": 2,
+     "owner": "list",
+     "owner_kind": "endpoint",
+     "name": "account_id",
+     "type": "AccountId",
+     "placement": "query",
+     "key": "\"account.id\"",
+     "each": false,
+     "sensitive": false,
+     "optional": true,
+     "default": null,
+     "kind": null,
+     "state": "unset",
+     "literal": null,
+     "value": null
+    },
+    {
+     "level": 2,
+     "owner": "list",
+     "owner_kind": "endpoint",
+     "name": "name",
+     "type": "String",
+     "placement": "query",
+     "key": null,
+     "each": false,
+     "sensitive": false,
+     "optional": true,
+     "default": null,
+     "kind": "string",
+     "state": "unset",
+     "literal": null,
+     "value": null
+    },
+    {
+     "level": 2,
+     "owner": "list",
+     "owner_kind": "endpoint",
+     "name": "status",
+     "type": "ZoneStatus",
+     "placement": "query",
+     "key": null,
+     "each": false,
+     "sensitive": false,
+     "optional": true,
+     "default": null,
+     "kind": null,
+     "state": "unset",
+     "literal": null,
+     "value": null
+    },
+    {
+     "level": 2,
+     "owner": "list",
+     "owner_kind": "endpoint",
+     "name": "order",
+     "type": "ZoneOrder",
+     "placement": "query",
+     "key": null,
+     "each": false,
+     "sensitive": false,
+     "optional": true,
+     "default": null,
+     "kind": null,
+     "state": "unset",
+     "literal": null,
+     "value": null
+    },
+    {
+     "level": 2,
+     "owner": "list",
+     "owner_kind": "endpoint",
+     "name": "direction",
+     "type": "Direction",
+     "placement": "query",
+     "key": null,
+     "each": false,
+     "sensitive": false,
+     "optional": true,
+     "default": null,
+     "kind": null,
+     "state": "unset",
+     "literal": null,
+     "value": null
+    },
+    {
+     "level": 2,
+     "owner": "Paging",
+     "owner_kind": "group",
+     "name": "page",
+     "type": "NonZeroU32",
+     "placement": "query",
+     "key": null,
+     "each": false,
+     "sensitive": false,
+     "optional": true,
+     "default": null,
+     "kind": "nonzero:NonZeroU32",
+     "state": "set",
+     "literal": "std::num::NonZeroU32::new(5).unwrap()",
+     "value": 5
+    },
+    {
+     "level": 2,
+     "owner": "list",
+     "owner_kind": "endpoint",
+     "name": "per_page",
+     "type": "ZonesPerPage",
+     "placement": "query",
+     "key": null,
+     "each": false,
+     "sensitive": false,
+     "optional": true,
+     "default": null,
+     "kind": null,
+     "state": "unset",
+     "literal": null,
+     "value": null
+    }
+   ],
+   "canaries": [
+    "CANARYCLOUDFLAREZONES1Z"
+   ],
+   "pct": false,
+   "rust": {
+    "client": "Cloudflare::new(reqwest::Client::new(), CloudflareConfig {\n    authorization: reqwest::header::HeaderValue::from_static(\"CANARYCLOUDFLAREZONES1Z\"),\n    policy: Default::default(),\n})",
+    "call": "api.zones().list().set_page(std::num::NonZeroU32::new(5).unwrap())"
+   },
+   "strata": [
+    "base_path",
+    "optional_set",
+    "optional_unset",
+    "query",
+    "scope_path"
+   ],
+   "index": 0,
+   "boundary": "operation"
+  }
+ ],
+ "items": [
+  {
+   "id": "cloudflare-zones/w1",
+   "kind": "wire",
+   "session": "wire",
+   "q": 1,
+   "pick": 0,
+   "boundary": "operation",
+   "question": "What request does `call.send().await` put on the wire (the request the server receives)? Give `method`, `url`, `headers` (only the ones the SDK and Concord set, not the HTTP client's own; secret values as `<secret>`), `body`, `content_type` and `accept`.\n\n```rust\nlet api = Cloudflare::new(reqwest::Client::new(), CloudflareConfig {\n    authorization: reqwest::header::HeaderValue::from_static(\"CANARYCLOUDFLAREZONES1Z\"),\n    policy: Default::default(),\n});\nlet call = api.zones().list().set_page(std::num::NonZeroU32::new(5).unwrap());\n```"
+  },
+  {
+   "id": "cloudflare-zones/r1",
+   "kind": "result",
+   "session": "rc",
+   "q": 1,
+   "pick": 0,
+   "boundary": "operation",
+   "base_url": {
+    "staging": "https://staging.example.test",
+    "keep": "/client/v4",
+    "candidates": [
+     "https://staging.example.test",
+     "https://staging.example.test/",
+     "https://staging.example.test/client/v4",
+     "https://staging.example.test/client/v4/"
+    ]
+   },
+   "question": "For the endpoint `GET list` in `scope zones`: (a) what type does `.send().await` return (`send_returns`)? (b) what is the error type in that result (`error_type`)? (c) The same API also runs at `https://staging.example.test`. Which exact string do you pass to `api.with_base_url(..)` so that requests keep the `/client/v4` prefix, i.e. go to `https://staging.example.test/client/v4/...` (`base_url`)?"
+  },
+  {
+   "id": "cloudflare-zones/c1",
+   "kind": "call",
+   "session": "rc",
+   "q": 2,
+   "pick": 0,
+   "boundary": "operation",
+   "intent": "List Zones: call `GET list` in `scope zones` with `page` = `std::num::NonZeroU32::new(5).unwrap()`. Leave every other optional value as it is",
+   "question": "Write the body of `async fn call(api: Cloudflare) -> Result<(), Box<dyn std::error::Error>>` that does this and sends it with `.send().await`: List Zones: call `GET list` in `scope zones` with `page` = `std::num::NonZeroU32::new(5).unwrap()`. Leave every other optional value as it is. Your code runs before the function's final `Ok(())`; it may start with `use` lines (`code`)."
+  }
+ ]
+}

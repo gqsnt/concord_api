@@ -1,0 +1,14 @@
+{
+ "sdk": "kubernetes",
+ "kind": "e4",
+ "package": "concord-example-kubernetes-sdk",
+ "sdk_dir": "examples/kubernetes-sdk",
+ "title": "Add namespaced StatefulSet list/read with Resource and ListOperation classification",
+ "public_names": [
+  "KubeAppsV1Namespaced::stateful_sets",
+  "KubeAppsV1Namespaced::stateful_set",
+  "model::StatefulSet",
+  "model::StatefulSetList",
+  "list::ListPager"
+ ]
+}

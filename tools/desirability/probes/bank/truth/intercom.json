@@ -1,0 +1,307 @@
+{
+ "sdk": "intercom-sdk",
+ "short": "intercom",
+ "pkg": "concord-sdk-intercom",
+ "repo_head": "984bd2f6a981dd85e8b104c21daae06421a7a48a",
+ "truth_format": 3,
+ "aliases": [
+  "type ContactPages = Pages<Contact, String, PageMeta, Error>",
+  "CredentialError = concord_auth::CredentialError (imported: concord_auth::CredentialError)",
+  "Deserialize = serde::Deserialize (imported: serde::Deserialize)",
+  "Duration = std::time::Duration (imported: std::time::Duration)",
+  "Endpoint = concord::Endpoint (imported: concord::Endpoint)",
+  "Future = std::future::Future (imported: std::future::Future)",
+  "HeaderMap = reqwest::header::HeaderMap (imported: concord::reqwest::header::HeaderMap)",
+  "IntercomContactsList = sdk::IntercomContactsList (imported: crate::IntercomContactsList)",
+  "IntercomContactsSearch = sdk::IntercomContactsSearch (imported: crate::IntercomContactsSearch)",
+  "Json = concord::Json (imported: concord::Json)",
+  "NonZeroUsize = std::num::NonZeroUsize (imported: std::num::NonZeroUsize)",
+  "Page = concord_pagination::Page (imported: concord_pagination::Page)",
+  "Pages = concord_pagination::Pages (imported: concord_pagination::Pages)",
+  "Resume = concord_pagination::Resume (imported: concord_pagination::Resume)",
+  "RetryAfterError = concord_retry::http::RetryAfterError (imported: crate::RetryAfterError)",
+  "SendWith = concord::SendWith (imported: concord::SendWith)",
+  "Serialize = serde::Serialize (imported: serde::Serialize)",
+  "StatusCode = reqwest::StatusCode (imported: concord::reqwest::StatusCode)",
+  "SystemTime = std::time::SystemTime (imported: std::time::SystemTime)"
+ ],
+ "items": {
+  "intercom/w1": {
+   "method": "GET",
+   "url": "https://api.intercom.io/contacts?per_page=10",
+   "headers": [
+    [
+     "authorization",
+     "<secret>"
+    ],
+    [
+     "intercom-version",
+     "2.17"
+    ],
+    [
+     "accept",
+     "application/json"
+    ]
+   ],
+   "secret_headers": [
+    "authorization"
+   ],
+   "body": null,
+   "body_kind": null,
+   "content_type": null,
+   "accept": "application/json",
+   "prepared": {
+    "method": "GET",
+    "url": "https://api.intercom.io/contacts?per_page=10",
+    "headers": [
+     [
+      "authorization",
+      "<secret>"
+     ],
+     [
+      "intercom-version",
+      "2.17"
+     ],
+     [
+      "accept",
+      "application/json"
+     ]
+    ],
+    "secret_headers": [
+     "authorization"
+    ],
+    "body": null,
+    "body_kind": null,
+    "content_type": null,
+    "accept": "application/json"
+   },
+   "policy_changes_request": false,
+   "operation_completed_within_10s": true,
+   "boundary": "operation",
+   "kind": "wire"
+  },
+  "intercom/r1": {
+   "r2": {
+    "resolvable": true,
+    "send_returns": "Result<Response<ContactList>, Error>",
+    "error_type": "Error",
+    "how": "send template",
+    "verified": true,
+    "decl_module": "crate",
+    "send_returns_canon": "Result<sdk::Response<sdk::models::ContactList>, sdk::error::Error>",
+    "error_type_canon": "sdk::error::Error"
+   },
+   "base_url": null,
+   "boundary": "operation",
+   "kind": "result"
+  },
+  "intercom/c1": {
+   "reference": "api.contacts().list().send().await",
+   "reference_compiles": true,
+   "client": "Intercom",
+   "binding": {
+    "type": "Result<Response<ContactList>, Error>",
+    "result": "is_ok"
+   },
+   "boundary": "operation",
+   "base_path": "",
+   "recorded": [
+    {
+     "method": "GET",
+     "target": "/contacts?per_page=10",
+     "headers": [
+      [
+       "authorization",
+       "<secret>"
+      ],
+      [
+       "intercom-version",
+       "2.17"
+      ],
+      [
+       "accept",
+       "application/json"
+      ]
+     ],
+     "body": ""
+    }
+   ],
+   "recorded_again": [
+    {
+     "method": "GET",
+     "target": "/contacts?per_page=10",
+     "headers": [
+      [
+       "authorization",
+       "<secret>"
+      ],
+      [
+       "intercom-version",
+       "2.17"
+      ],
+      [
+       "accept",
+       "application/json"
+      ]
+     ],
+     "body": ""
+    }
+   ],
+   "volatile": {
+    "sequence_differs": false,
+    "headers": [],
+    "bodies": []
+   },
+   "fixture": {
+    "name": "examples/intercom-sdk/fixtures/list-empty-cursor.json",
+    "content_type": "application/json",
+    "path": "examples/intercom-sdk/fixtures/list-empty-cursor.json",
+    "body": null
+   },
+   "fixture_tries_failed": 2,
+   "reference_outcome": null,
+   "result_checked": true,
+   "check_available": true,
+   "kind": "call"
+  },
+  "intercom/w2": {
+   "method": "GET",
+   "url": "https://api.intercom.io/contacts/<secret>",
+   "headers": [
+    [
+     "authorization",
+     "<secret>"
+    ],
+    [
+     "intercom-version",
+     "2.17"
+    ],
+    [
+     "accept",
+     "application/json"
+    ]
+   ],
+   "secret_headers": [
+    "authorization"
+   ],
+   "body": null,
+   "body_kind": null,
+   "content_type": null,
+   "accept": "application/json",
+   "prepared": {
+    "method": "GET",
+    "url": "https://api.intercom.io/contacts/<secret>",
+    "headers": [
+     [
+      "authorization",
+      "<secret>"
+     ],
+     [
+      "intercom-version",
+      "2.17"
+     ],
+     [
+      "accept",
+      "application/json"
+     ]
+    ],
+    "secret_headers": [
+     "authorization"
+    ],
+    "body": null,
+    "body_kind": null,
+    "content_type": null,
+    "accept": "application/json"
+   },
+   "policy_changes_request": false,
+   "operation_completed_within_10s": true,
+   "boundary": "operation",
+   "kind": "wire"
+  },
+  "intercom/r2": {
+   "r2": {
+    "resolvable": true,
+    "send_returns": "Result<Response<Contact>, Error>",
+    "error_type": "Error",
+    "how": "send template",
+    "verified": true,
+    "decl_module": "crate",
+    "send_returns_canon": "Result<sdk::Response<sdk::models::Contact>, sdk::error::Error>",
+    "error_type_canon": "sdk::error::Error"
+   },
+   "base_url": null,
+   "boundary": "operation",
+   "kind": "result"
+  },
+  "intercom/c2": {
+   "reference": "api.contacts().get(\"CANARYINTERCOM121Z\").send().await",
+   "reference_compiles": true,
+   "client": "Intercom",
+   "binding": {
+    "type": "Result<Response<Contact>, Error>",
+    "result": "is_ok"
+   },
+   "boundary": "operation",
+   "base_path": "",
+   "recorded": [
+    {
+     "method": "GET",
+     "target": "/contacts/<secret>",
+     "headers": [
+      [
+       "authorization",
+       "<secret>"
+      ],
+      [
+       "intercom-version",
+       "2.17"
+      ],
+      [
+       "accept",
+       "application/json"
+      ]
+     ],
+     "body": ""
+    }
+   ],
+   "recorded_again": [
+    {
+     "method": "GET",
+     "target": "/contacts/<secret>",
+     "headers": [
+      [
+       "authorization",
+       "<secret>"
+      ],
+      [
+       "intercom-version",
+       "2.17"
+      ],
+      [
+       "accept",
+       "application/json"
+      ]
+     ],
+     "body": ""
+    }
+   ],
+   "volatile": {
+    "sequence_differs": false,
+    "headers": [],
+    "bodies": []
+   },
+   "fixture": {
+    "name": "examples/intercom-sdk/fixtures/contact-created.json",
+    "content_type": "application/json",
+    "path": "examples/intercom-sdk/fixtures/contact-created.json",
+    "body": null
+   },
+   "fixture_tries_failed": 0,
+   "reference_outcome": null,
+   "result_checked": true,
+   "check_available": true,
+   "kind": "call"
+  }
+ },
+ "drops": []
+}

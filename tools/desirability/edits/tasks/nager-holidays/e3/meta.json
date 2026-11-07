@@ -1,0 +1,10 @@
+{
+ "sdk": "nager-holidays",
+ "kind": "e3",
+ "package": "concord-sdk-nager-holidays",
+ "sdk_dir": "examples/nager-holidays-sdk",
+ "title": "Optional subdivisionCode query on the holiday list",
+ "public_names": [
+  "NagerHolidays::holidays(..).set_subdivision_code"
+ ]
+}

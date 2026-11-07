@@ -1,0 +1,148 @@
+{
+ "sdk": "zendesk-support-sdk",
+ "short": "zendesk-support",
+ "pkg": "concord-sdk-zendesk-support",
+ "repo_head": "984bd2f6a981dd85e8b104c21daae06421a7a48a",
+ "truth_format": 3,
+ "aliases": [
+  "Bytes = bytes::Bytes (imported: concord::bytes::Bytes)",
+  "Charset = concord_codecs::Charset (imported: concord_codecs::Charset)",
+  "CodecError = concord::CodecError (imported: concord::CodecError)",
+  "ContentTypeField = concord::ContentTypeField (imported: concord::ContentTypeField)",
+  "Decision = concord_retry::Decision (imported: concord_retry::Decision)",
+  "Decode = concord::Decode (imported: concord::Decode)",
+  "Deserialize = serde::Deserialize (imported: serde::Deserialize)",
+  "Duration = std::time::Duration (imported: std::time::Duration)",
+  "Endpoint = concord::Endpoint (imported: concord::Endpoint)",
+  "HeaderValue = reqwest::header::HeaderValue (imported: concord::reqwest::header::HeaderValue)",
+  "Instant = std::time::Instant (imported: std::time::Instant)",
+  "Json = concord::Json (imported: concord::Json)",
+  "NonZeroUsize = std::num::NonZeroUsize (imported: std::num::NonZeroUsize)",
+  "Page = concord_pagination::Page (imported: concord_pagination::Page)",
+  "Pages = concord_pagination::Pages (imported: concord_pagination::Pages)",
+  "Prepared = concord::Prepared (imported: concord::Prepared)",
+  "Priority = sdk::Priority (imported: models::Priority)",
+  "Received = concord::Received (imported: concord::Received)",
+  "Replay = concord_retry::Replay (imported: concord_retry::Replay)",
+  "ReplayMode = concord_retry::concord::ReplayMode (imported: concord_retry::concord::ReplayMode)",
+  "ResponseHead = concord::ResponseHead (imported: concord::ResponseHead)",
+  "ResponseMeta = concord::ResponseMeta (imported: concord::ResponseMeta)",
+  "Resume = concord_pagination::Resume (imported: concord_pagination::Resume)",
+  "Retry = concord_retry::Retry (imported: concord_retry::Retry)",
+  "RetryAfterError = concord_retry::http::RetryAfterError (imported: concord_retry::http::RetryAfterError)",
+  "SendWith = concord::SendWith (imported: concord::SendWith)",
+  "Serialize = serde::Serialize (imported: serde::Serialize)",
+  "SerializeMap = serde::ser::SerializeMap (imported: serde::ser::SerializeMap)",
+  "Serializer = serde::Serializer (imported: serde::Serializer)",
+  "Status = sdk::Status (imported: models::Status)",
+  "StatusCode = reqwest::StatusCode (imported: concord::reqwest::StatusCode)",
+  "SystemTime = std::time::SystemTime (imported: std::time::SystemTime)",
+  "TicketType = sdk::TicketType (imported: models::TicketType)",
+  "Url = reqwest::Url (imported: concord::reqwest::Url)",
+  "ZendeskTicketsList = sdk::ZendeskTicketsList (imported: crate::ZendeskTicketsList)"
+ ],
+ "items": {
+  "zendesk-support/r1": {
+   "r2": {
+    "resolvable": true,
+    "send_returns": "Result<TicketPage, Error>",
+    "error_type": "Error",
+    "how": "send template",
+    "verified": true,
+    "decl_module": "crate",
+    "send_returns_canon": "Result<sdk::models::TicketPage, sdk::error::Error>",
+    "error_type_canon": "sdk::error::Error"
+   },
+   "base_url": null,
+   "boundary": "operation",
+   "kind": "result"
+  },
+  "zendesk-support/c1": {
+   "reference": "api.tickets().list().set_after(\"fjord\").send().await",
+   "reference_compiles": true,
+   "client": "Zendesk",
+   "binding": {
+    "type": "Result<TicketPage, Error>",
+    "result": "is_ok"
+   },
+   "boundary": "operation",
+   "base_path": "",
+   "recorded": [],
+   "recorded_again": [],
+   "volatile": {
+    "sequence_differs": false,
+    "headers": [],
+    "bodies": []
+   },
+   "fixture": {
+    "name": "generic:{}",
+    "content_type": "application/json; charset=utf-8",
+    "path": null,
+    "body": "{}"
+   },
+   "fixture_tries_failed": 20,
+   "reference_outcome": "GET Zendesk.tickets.list: request not built: subdomain requires a base URL with a domain name, not an IP address",
+   "result_checked": false,
+   "check_available": false,
+   "result_unchecked_reason": "no reply among 20 fixtures decodes into the declared output: GET Zendesk.tickets.list: request not built: subdomain requires a base URL with a domain name, not an IP address",
+   "check_unavailable_reason": "the reference call reached no local receiver (GET Zendesk.tickets.list: request not built: subdomain requires a base URL with a domain name, not an IP address)",
+   "kind": "call"
+  },
+  "zendesk-support/r2": {
+   "r2": {
+    "resolvable": true,
+    "send_returns": "Result<TicketResponse, Error>",
+    "error_type": "Error",
+    "how": "send template",
+    "verified": true,
+    "decl_module": "crate",
+    "send_returns_canon": "Result<sdk::models::TicketResponse, sdk::error::Error>",
+    "error_type_canon": "sdk::error::Error"
+   },
+   "base_url": null,
+   "boundary": "operation",
+   "kind": "result"
+  },
+  "zendesk-support/c2": {
+   "reference": "api.ticket(14).show().send().await",
+   "reference_compiles": true,
+   "client": "Zendesk",
+   "binding": {
+    "type": "Result<TicketResponse, Error>",
+    "result": "is_ok"
+   },
+   "boundary": "operation",
+   "base_path": "",
+   "recorded": [],
+   "recorded_again": [],
+   "volatile": {
+    "sequence_differs": false,
+    "headers": [],
+    "bodies": []
+   },
+   "fixture": {
+    "name": "generic:{}",
+    "content_type": "application/json; charset=utf-8",
+    "path": null,
+    "body": "{}"
+   },
+   "fixture_tries_failed": 19,
+   "reference_outcome": "GET Zendesk.ticket.show: request not built: subdomain requires a base URL with a domain name, not an IP address",
+   "result_checked": false,
+   "check_available": false,
+   "result_unchecked_reason": "no reply among 19 fixtures decodes into the declared output: GET Zendesk.ticket.show: request not built: subdomain requires a base URL with a domain name, not an IP address",
+   "check_unavailable_reason": "the reference call reached no local receiver (GET Zendesk.ticket.show: request not built: subdomain requires a base URL with a domain name, not an IP address)",
+   "kind": "call"
+  }
+ },
+ "drops": [
+  {
+   "id": "zendesk-support/w1",
+   "reason": "operation truth not available: no request reached the local receiver"
+  },
+  {
+   "id": "zendesk-support/w2",
+   "reason": "operation truth not available: no request reached the local receiver"
+  }
+ ]
+}

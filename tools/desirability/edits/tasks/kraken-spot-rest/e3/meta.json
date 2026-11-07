@@ -1,0 +1,10 @@
+{
+ "sdk": "kraken-spot-rest",
+ "kind": "e3",
+ "package": "concord-sdk-kraken-spot-rest",
+ "sdk_dir": "examples/kraken-spot-rest-sdk",
+ "title": "Optional country_code on the asset-pair list",
+ "public_names": [
+  "KrakenPublicPairs::set_country_code"
+ ]
+}

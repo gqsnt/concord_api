@@ -1,0 +1,133 @@
+{
+ "sdk": "spotify-web-api-sdk",
+ "short": "spotify-web-api",
+ "pkg": "concord-sdk-spotify-web-api",
+ "repo_head": "984bd2f6a981dd85e8b104c21daae06421a7a48a",
+ "truth_format": 3,
+ "aliases": [
+  "type Clock = Arc<dyn Fn() -> Instant + Send + Sync>",
+  "type Listed<T> = Pages<T, u32, (), Error>",
+  "Arc = std::sync::Arc (imported: std::sync::Arc)",
+  "AuthorizationCode = sdk::AuthorizationCode (imported: auth::AuthorizationCode)",
+  "ClientSecret = sdk::ClientSecret (imported: auth::ClientSecret)",
+  "Decision = concord_retry::Decision (imported: concord_retry::Decision)",
+  "Deserialize = serde::Deserialize (imported: serde::Deserialize)",
+  "Deserializer = serde::Deserializer (imported: serde::Deserializer)",
+  "Duration = std::time::Duration (imported: std::time::Duration)",
+  "Endpoint = concord::Endpoint (imported: concord::Endpoint)",
+  "Form = concord::Form (imported: concord::Form)",
+  "HeaderValue = reqwest::header::HeaderValue (imported: concord::reqwest::header::HeaderValue)",
+  "Instant = std::time::Instant (imported: std::time::Instant)",
+  "Json = concord::Json (imported: concord::Json)",
+  "Method = reqwest::Method (imported: concord::reqwest::Method)",
+  "Mutex = std::sync::Mutex (imported: std::sync::Mutex)",
+  "MutexGuard = std::sync::MutexGuard (imported: std::sync::MutexGuard)",
+  "NonZeroUsize = std::num::NonZeroUsize (imported: std::num::NonZeroUsize)",
+  "Page = concord_pagination::Page (imported: concord_pagination::Page)",
+  "PageParams = sdk::PageParams (imported: crate::PageParams)",
+  "Pages = concord_pagination::Pages (imported: concord_pagination::Pages)",
+  "PoisonError = std::sync::PoisonError (imported: std::sync::PoisonError)",
+  "Policy = concord_retry::Policy (imported: concord_retry::Policy)",
+  "Received = concord::Received (imported: concord::Received)",
+  "RefreshError = concord_auth::RefreshError (imported: concord_auth::RefreshError)",
+  "RefreshToken = sdk::RefreshToken (imported: auth::RefreshToken)",
+  "Replay = concord_retry::Replay (imported: concord_retry::Replay)",
+  "ResponseMeta = concord::ResponseMeta (imported: concord::ResponseMeta)",
+  "Resume = concord_pagination::Resume (imported: concord_pagination::Resume)",
+  "Retry = concord_retry::Retry (imported: concord_retry::Retry)",
+  "RetryAfterError = concord_retry::http::RetryAfterError (imported: concord_retry::http::RetryAfterError)",
+  "SendWith = concord::SendWith (imported: concord::SendWith)",
+  "Sends = concord::Sends (imported: concord::Sends)",
+  "Serialize = serde::Serialize (imported: serde::Serialize)",
+  "Snapshot = concord_auth::Snapshot (imported: concord_auth::Snapshot)",
+  "State = sdk::State (imported: auth::State)",
+  "StatusCode = reqwest::StatusCode (imported: concord::reqwest::StatusCode)",
+  "SystemTime = std::time::SystemTime (imported: std::time::SystemTime)",
+  "Token = concord_auth::Token (imported: concord_auth::Token)",
+  "TokenCache = concord_auth::TokenCache (imported: concord_auth::TokenCache)",
+  "Url = reqwest::Url (imported: concord::reqwest::Url)"
+ ],
+ "items": {
+  "spotify-web-api/w1": {
+   "method": "GET",
+   "url": "https://accounts.spotify.com/authorize?client_id=a+b%2Fc&redirect_uri=delta&state=<secret>&show_dialog=true&response_type=code",
+   "headers": [],
+   "secret_headers": [],
+   "body": null,
+   "body_kind": null,
+   "content_type": null,
+   "accept": null,
+   "boundary": "prepared",
+   "kind": "wire"
+  },
+  "spotify-web-api/r1": {
+   "r2": {
+    "resolvable": true,
+    "send_returns": "Result<(), concord::Error>",
+    "error_type": "concord::Error",
+    "how": "no send policy",
+    "verified": true,
+    "decl_module": "crate::auth",
+    "send_returns_canon": "Result<(), concord::Error>",
+    "error_type_canon": "concord::Error"
+   },
+   "base_url": null,
+   "boundary": "prepared",
+   "kind": "result"
+  },
+  "spotify-web-api/c1": {
+   "reference": "api.authorize(\"a b/c\", \"delta\", \"CANARYSPOTIFYWEBAPI101Z\").set_show_dialog(true).send().await",
+   "reference_compiles": true,
+   "client": "Accounts",
+   "binding": {
+    "type": "Result<(), concord::Error>",
+    "result": "is_ok"
+   },
+   "boundary": "prepared",
+   "base_path": "",
+   "recorded": [
+    {
+     "method": "GET",
+     "target": "/authorize?client_id=a+b%2Fc&redirect_uri=delta&state=<secret>&show_dialog=true&response_type=code",
+     "headers": [
+      [
+       "accept",
+       "*/*"
+      ]
+     ],
+     "body": ""
+    }
+   ],
+   "recorded_again": [
+    {
+     "method": "GET",
+     "target": "/authorize?client_id=a+b%2Fc&redirect_uri=delta&state=<secret>&show_dialog=true&response_type=code",
+     "headers": [
+      [
+       "accept",
+       "*/*"
+      ]
+     ],
+     "body": ""
+    }
+   ],
+   "volatile": {
+    "sequence_differs": false,
+    "headers": [],
+    "bodies": []
+   },
+   "fixture": {
+    "name": "examples/spotify-web-api-sdk/fixtures/artist.json",
+    "content_type": "application/json",
+    "path": "examples/spotify-web-api-sdk/fixtures/artist.json",
+    "body": null
+   },
+   "fixture_tries_failed": 0,
+   "reference_outcome": null,
+   "result_checked": true,
+   "check_available": true,
+   "kind": "call"
+  }
+ },
+ "drops": []
+}

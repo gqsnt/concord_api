@@ -1,0 +1,529 @@
+{
+ "sdk": "sentry-sdk",
+ "short": "sentry",
+ "pkg": "concord-sdk-sentry",
+ "crate": "concord_sdk_sentry",
+ "seed": 1,
+ "role": "main",
+ "holdout_of": [],
+ "generator_version": 1,
+ "clients": {
+  "Sentry": {
+   "constructible": true,
+   "file": "examples/sentry-sdk/src/lib.rs",
+   "ctor": "Sentry::new(reqwest::Client::new(), SentryConfig {\n    authorization: reqwest::header::HeaderValue::from_static(\"CANARYSENTRY1Z\"),\n    policy: Default::default(),\n})",
+   "canaries": [
+    "CANARYSENTRY1Z"
+   ],
+   "config_fields": [
+    "authorization",
+    "policy"
+   ],
+   "endpoints": 5,
+   "notes": []
+  }
+ },
+ "picks": [
+  {
+   "key": "Sentry/organization/issue/events",
+   "client": "Sentry",
+   "client_file": "examples/sentry-sdk/src/lib.rs",
+   "scopes": [
+    "organization",
+    "issue"
+   ],
+   "method": "GET",
+   "endpoint": "events",
+   "output": "Vec<Event>",
+   "docs": [
+    "Page event summaries. `full` remains the provider default (false)."
+   ],
+   "values": [
+    {
+     "level": 1,
+     "owner": "organization",
+     "owner_kind": "scope",
+     "name": "organization",
+     "type": "String",
+     "placement": "path",
+     "key": null,
+     "each": false,
+     "sensitive": false,
+     "optional": false,
+     "default": null,
+     "kind": "string",
+     "state": "required",
+     "literal": "\"kelp\"",
+     "value": "kelp"
+    },
+    {
+     "level": 2,
+     "owner": "issue",
+     "owner_kind": "scope",
+     "name": "issue",
+     "type": "String",
+     "placement": "path",
+     "key": null,
+     "each": false,
+     "sensitive": false,
+     "optional": false,
+     "default": null,
+     "kind": "string",
+     "state": "required",
+     "literal": "\"tundra\"",
+     "value": "tundra"
+    },
+    {
+     "level": 3,
+     "owner": "events",
+     "owner_kind": "endpoint",
+     "name": "per_page",
+     "type": "u32",
+     "placement": "query",
+     "key": null,
+     "each": false,
+     "sensitive": false,
+     "optional": false,
+     "default": "100",
+     "kind": "int:u32",
+     "state": "initialized",
+     "literal": null,
+     "value": null
+    },
+    {
+     "level": 3,
+     "owner": "events",
+     "owner_kind": "endpoint",
+     "name": "cursor",
+     "type": "String",
+     "placement": "query",
+     "key": null,
+     "each": false,
+     "sensitive": true,
+     "optional": true,
+     "default": null,
+     "kind": "string",
+     "state": "unset",
+     "literal": null,
+     "value": null
+    },
+    {
+     "level": 3,
+     "owner": "events",
+     "owner_kind": "endpoint",
+     "name": "query",
+     "type": "String",
+     "placement": "query",
+     "key": null,
+     "each": false,
+     "sensitive": true,
+     "optional": true,
+     "default": null,
+     "kind": "string",
+     "state": "set",
+     "literal": "\"CANARYSENTRY121Z\"",
+     "value": "<secret>"
+    }
+   ],
+   "canaries": [
+    "CANARYSENTRY1Z",
+    "CANARYSENTRY121Z"
+   ],
+   "pct": false,
+   "rust": {
+    "client": "Sentry::new(reqwest::Client::new(), SentryConfig {\n    authorization: reqwest::header::HeaderValue::from_static(\"CANARYSENTRY1Z\"),\n    policy: Default::default(),\n})",
+    "call": "api.organization(\"kelp\").issue(\"tundra\").events().set_query(\"CANARYSENTRY121Z\")"
+   },
+   "strata": [
+    "base_path",
+    "initialized",
+    "optional_set",
+    "optional_unset",
+    "query",
+    "scope_depth2",
+    "scope_path"
+   ],
+   "index": 0,
+   "boundary": "operation"
+  },
+  {
+   "key": "Sentry/organization/issue/get",
+   "client": "Sentry",
+   "client_file": "examples/sentry-sdk/src/lib.rs",
+   "scopes": [
+    "organization",
+    "issue"
+   ],
+   "method": "GET",
+   "endpoint": "get",
+   "output": "Issue",
+   "docs": [
+    "Retrieve issue details."
+   ],
+   "values": [
+    {
+     "level": 1,
+     "owner": "organization",
+     "owner_kind": "scope",
+     "name": "organization",
+     "type": "String",
+     "placement": "path",
+     "key": null,
+     "each": false,
+     "sensitive": false,
+     "optional": false,
+     "default": null,
+     "kind": "string",
+     "state": "required",
+     "literal": "\"harbor\"",
+     "value": "harbor"
+    },
+    {
+     "level": 2,
+     "owner": "issue",
+     "owner_kind": "scope",
+     "name": "issue",
+     "type": "String",
+     "placement": "path",
+     "key": null,
+     "each": false,
+     "sensitive": false,
+     "optional": false,
+     "default": null,
+     "kind": "string",
+     "state": "required",
+     "literal": "\"fjord\"",
+     "value": "fjord"
+    }
+   ],
+   "canaries": [
+    "CANARYSENTRY1Z"
+   ],
+   "pct": false,
+   "rust": {
+    "client": "Sentry::new(reqwest::Client::new(), SentryConfig {\n    authorization: reqwest::header::HeaderValue::from_static(\"CANARYSENTRY1Z\"),\n    policy: Default::default(),\n})",
+    "call": "api.organization(\"harbor\").issue(\"fjord\").get()"
+   },
+   "strata": [
+    "base_path",
+    "scope_depth2",
+    "scope_path"
+   ],
+   "index": 1,
+   "boundary": "operation"
+  },
+  {
+   "key": "Sentry/organization/issues",
+   "client": "Sentry",
+   "client_file": "examples/sentry-sdk/src/lib.rs",
+   "scopes": [
+    "organization"
+   ],
+   "method": "GET",
+   "endpoint": "issues",
+   "output": "Vec<Issue>",
+   "docs": [
+    "Organization issues; omission of `query` keeps Sentry's unresolved default."
+   ],
+   "values": [
+    {
+     "level": 1,
+     "owner": "organization",
+     "owner_kind": "scope",
+     "name": "organization",
+     "type": "String",
+     "placement": "path",
+     "key": null,
+     "each": false,
+     "sensitive": false,
+     "optional": false,
+     "default": null,
+     "kind": "string",
+     "state": "required",
+     "literal": "\"a b/c\"",
+     "value": "a b/c"
+    },
+    {
+     "level": 2,
+     "owner": "issues",
+     "owner_kind": "endpoint",
+     "name": "limit",
+     "type": "u32",
+     "placement": "query",
+     "key": null,
+     "each": false,
+     "sensitive": false,
+     "optional": false,
+     "default": "100",
+     "kind": "int:u32",
+     "state": "initialized",
+     "literal": null,
+     "value": null
+    },
+    {
+     "level": 2,
+     "owner": "issues",
+     "owner_kind": "endpoint",
+     "name": "cursor",
+     "type": "String",
+     "placement": "query",
+     "key": null,
+     "each": false,
+     "sensitive": true,
+     "optional": true,
+     "default": null,
+     "kind": "string",
+     "state": "unset",
+     "literal": null,
+     "value": null
+    },
+    {
+     "level": 2,
+     "owner": "issues",
+     "owner_kind": "endpoint",
+     "name": "query",
+     "type": "String",
+     "placement": "query",
+     "key": null,
+     "each": false,
+     "sensitive": true,
+     "optional": true,
+     "default": null,
+     "kind": "string",
+     "state": "set",
+     "literal": "\"CANARYSENTRY101Z\"",
+     "value": "<secret>"
+    }
+   ],
+   "canaries": [
+    "CANARYSENTRY1Z",
+    "CANARYSENTRY101Z"
+   ],
+   "pct": true,
+   "rust": {
+    "client": "Sentry::new(reqwest::Client::new(), SentryConfig {\n    authorization: reqwest::header::HeaderValue::from_static(\"CANARYSENTRY1Z\"),\n    policy: Default::default(),\n})",
+    "call": "api.organization(\"a b/c\").issues().set_query(\"CANARYSENTRY101Z\")"
+   },
+   "strata": [
+    "base_path",
+    "initialized",
+    "optional_set",
+    "optional_unset",
+    "query",
+    "scope_path"
+   ],
+   "index": 2,
+   "boundary": "operation"
+  },
+  {
+   "key": "Sentry/organization/issue/event",
+   "client": "Sentry",
+   "client_file": "examples/sentry-sdk/src/lib.rs",
+   "scopes": [
+    "organization",
+    "issue"
+   ],
+   "method": "GET",
+   "endpoint": "event",
+   "output": "Event",
+   "docs": [
+    "Retrieve an event by eventID (also accepts latest/oldest/recommended)."
+   ],
+   "values": [
+    {
+     "level": 1,
+     "owner": "organization",
+     "owner_kind": "scope",
+     "name": "organization",
+     "type": "String",
+     "placement": "path",
+     "key": null,
+     "each": false,
+     "sensitive": false,
+     "optional": false,
+     "default": null,
+     "kind": "string",
+     "state": "required",
+     "literal": "\"tundra\"",
+     "value": "tundra"
+    },
+    {
+     "level": 2,
+     "owner": "issue",
+     "owner_kind": "scope",
+     "name": "issue",
+     "type": "String",
+     "placement": "path",
+     "key": null,
+     "each": false,
+     "sensitive": false,
+     "optional": false,
+     "default": null,
+     "kind": "string",
+     "state": "required",
+     "literal": "\"maple\"",
+     "value": "maple"
+    },
+    {
+     "level": 3,
+     "owner": "event",
+     "owner_kind": "endpoint",
+     "name": "event",
+     "type": "String",
+     "placement": "path",
+     "key": null,
+     "each": false,
+     "sensitive": false,
+     "optional": false,
+     "default": null,
+     "kind": "string",
+     "state": "required",
+     "literal": "\"cedar\"",
+     "value": "cedar"
+    }
+   ],
+   "canaries": [
+    "CANARYSENTRY1Z"
+   ],
+   "pct": false,
+   "rust": {
+    "client": "Sentry::new(reqwest::Client::new(), SentryConfig {\n    authorization: reqwest::header::HeaderValue::from_static(\"CANARYSENTRY1Z\"),\n    policy: Default::default(),\n})",
+    "call": "api.organization(\"tundra\").issue(\"maple\").event(\"cedar\")"
+   },
+   "strata": [
+    "base_path",
+    "scope_depth2",
+    "scope_path"
+   ],
+   "index": 3,
+   "boundary": "operation"
+  }
+ ],
+ "items": [
+  {
+   "id": "sentry/w1",
+   "kind": "wire",
+   "session": "wire",
+   "q": 1,
+   "pick": 0,
+   "boundary": "operation",
+   "question": "What request does `call.send().await` put on the wire (the request the server receives)? Give `method`, `url`, `headers` (only the ones the SDK and Concord set, not the HTTP client's own; secret values as `<secret>`), `body`, `content_type` and `accept`.\n\n```rust\nlet api = Sentry::new(reqwest::Client::new(), SentryConfig {\n    authorization: reqwest::header::HeaderValue::from_static(\"CANARYSENTRY1Z\"),\n    policy: Default::default(),\n});\nlet call = api.organization(\"kelp\").issue(\"tundra\").events().set_query(\"CANARYSENTRY121Z\");\n```"
+  },
+  {
+   "id": "sentry/r1",
+   "kind": "result",
+   "session": "rc",
+   "q": 1,
+   "pick": 0,
+   "boundary": "operation",
+   "base_url": {
+    "staging": "https://staging.example.test",
+    "keep": "/api/0",
+    "candidates": [
+     "https://staging.example.test",
+     "https://staging.example.test/",
+     "https://staging.example.test/api/0",
+     "https://staging.example.test/api/0/"
+    ]
+   },
+   "question": "For the endpoint `GET events` in `scope organization` › `scope issue`: (a) what type does `.send().await` return (`send_returns`)? (b) what is the error type in that result (`error_type`)? (c) The same API also runs at `https://staging.example.test`. Which exact string do you pass to `api.with_base_url(..)` so that requests keep the `/api/0` prefix, i.e. go to `https://staging.example.test/api/0/...` (`base_url`)?"
+  },
+  {
+   "id": "sentry/c1",
+   "kind": "call",
+   "session": "rc",
+   "q": 2,
+   "pick": 0,
+   "boundary": "operation",
+   "intent": "Page event summaries: call `GET events` in `scope organization` › `scope issue` with `organization` (scope `organization`) = `\"kelp\"`, `issue` (scope `issue`) = `\"tundra\"`, `query` = `\"CANARYSENTRY121Z\"`. Leave every other optional value as it is",
+   "question": "Write the body of `async fn call(api: Sentry) -> Result<(), Box<dyn std::error::Error>>` that does this and sends it with `.send().await`: Page event summaries: call `GET events` in `scope organization` › `scope issue` with `organization` (scope `organization`) = `\"kelp\"`, `issue` (scope `issue`) = `\"tundra\"`, `query` = `\"CANARYSENTRY121Z\"`. Leave every other optional value as it is. Your code runs before the function's final `Ok(())`; it may start with `use` lines (`code`)."
+  },
+  {
+   "id": "sentry/w2",
+   "kind": "wire",
+   "session": "wire",
+   "q": 2,
+   "pick": 1,
+   "boundary": "operation",
+   "question": "What request does `call.send().await` put on the wire (the request the server receives)? Give `method`, `url`, `headers` (only the ones the SDK and Concord set, not the HTTP client's own; secret values as `<secret>`), `body`, `content_type` and `accept`.\n\n```rust\nlet api = Sentry::new(reqwest::Client::new(), SentryConfig {\n    authorization: reqwest::header::HeaderValue::from_static(\"CANARYSENTRY1Z\"),\n    policy: Default::default(),\n});\nlet call = api.organization(\"harbor\").issue(\"fjord\").get();\n```"
+  },
+  {
+   "id": "sentry/r2",
+   "kind": "result",
+   "session": "rc",
+   "q": 3,
+   "pick": 1,
+   "boundary": "operation",
+   "base_url": null,
+   "question": "For the endpoint `GET get` in `scope organization` › `scope issue`: (a) what type does `.send().await` return (`send_returns`)? (b) what is the error type in that result (`error_type`)?"
+  },
+  {
+   "id": "sentry/c2",
+   "kind": "call",
+   "session": "rc",
+   "q": 4,
+   "pick": 1,
+   "boundary": "operation",
+   "intent": "Retrieve issue details: call `GET get` in `scope organization` › `scope issue` with `organization` (scope `organization`) = `\"harbor\"`, `issue` (scope `issue`) = `\"fjord\"`. Leave every other optional value as it is",
+   "question": "Write the body of `async fn call(api: Sentry) -> Result<(), Box<dyn std::error::Error>>` that does this and sends it with `.send().await`: Retrieve issue details: call `GET get` in `scope organization` › `scope issue` with `organization` (scope `organization`) = `\"harbor\"`, `issue` (scope `issue`) = `\"fjord\"`. Leave every other optional value as it is. Your code runs before the function's final `Ok(())`; it may start with `use` lines (`code`)."
+  },
+  {
+   "id": "sentry/w3",
+   "kind": "wire",
+   "session": "wire",
+   "q": 3,
+   "pick": 2,
+   "boundary": "operation",
+   "question": "What request does `call.send().await` put on the wire (the request the server receives)? Give `method`, `url`, `headers` (only the ones the SDK and Concord set, not the HTTP client's own; secret values as `<secret>`), `body`, `content_type` and `accept`.\n\n```rust\nlet api = Sentry::new(reqwest::Client::new(), SentryConfig {\n    authorization: reqwest::header::HeaderValue::from_static(\"CANARYSENTRY1Z\"),\n    policy: Default::default(),\n});\nlet call = api.organization(\"a b/c\").issues().set_query(\"CANARYSENTRY101Z\");\n```"
+  },
+  {
+   "id": "sentry/r3",
+   "kind": "result",
+   "session": "rc",
+   "q": 5,
+   "pick": 2,
+   "boundary": "operation",
+   "base_url": null,
+   "question": "For the endpoint `GET issues` in `scope organization`: (a) what type does `.send().await` return (`send_returns`)? (b) what is the error type in that result (`error_type`)?"
+  },
+  {
+   "id": "sentry/c3",
+   "kind": "call",
+   "session": "rc",
+   "q": 6,
+   "pick": 2,
+   "boundary": "operation",
+   "intent": "Organization issues; omission of `query` keeps Sentry's unresolved default: call `GET issues` in `scope organization` with `organization` (scope `organization`) = `\"a b/c\"`, `query` = `\"CANARYSENTRY101Z\"`. Leave every other optional value as it is",
+   "question": "Write the body of `async fn call(api: Sentry) -> Result<(), Box<dyn std::error::Error>>` that does this and sends it with `.send().await`: Organization issues; omission of `query` keeps Sentry's unresolved default: call `GET issues` in `scope organization` with `organization` (scope `organization`) = `\"a b/c\"`, `query` = `\"CANARYSENTRY101Z\"`. Leave every other optional value as it is. Your code runs before the function's final `Ok(())`; it may start with `use` lines (`code`)."
+  },
+  {
+   "id": "sentry/w4",
+   "kind": "wire",
+   "session": "wire",
+   "q": 4,
+   "pick": 3,
+   "boundary": "operation",
+   "question": "What request does `call.send().await` put on the wire (the request the server receives)? Give `method`, `url`, `headers` (only the ones the SDK and Concord set, not the HTTP client's own; secret values as `<secret>`), `body`, `content_type` and `accept`.\n\n```rust\nlet api = Sentry::new(reqwest::Client::new(), SentryConfig {\n    authorization: reqwest::header::HeaderValue::from_static(\"CANARYSENTRY1Z\"),\n    policy: Default::default(),\n});\nlet call = api.organization(\"tundra\").issue(\"maple\").event(\"cedar\");\n```"
+  },
+  {
+   "id": "sentry/r4",
+   "kind": "result",
+   "session": "rc",
+   "q": 7,
+   "pick": 3,
+   "boundary": "operation",
+   "base_url": null,
+   "question": "For the endpoint `GET event` in `scope organization` › `scope issue`: (a) what type does `.send().await` return (`send_returns`)? (b) what is the error type in that result (`error_type`)?"
+  },
+  {
+   "id": "sentry/c4",
+   "kind": "call",
+   "session": "rc",
+   "q": 8,
+   "pick": 3,
+   "boundary": "operation",
+   "intent": "Retrieve an event by eventID (also accepts latest/oldest/recommended): call `GET event` in `scope organization` › `scope issue` with `organization` (scope `organization`) = `\"tundra\"`, `issue` (scope `issue`) = `\"maple\"`, `event` = `\"cedar\"`. Leave every other optional value as it is",
+   "question": "Write the body of `async fn call(api: Sentry) -> Result<(), Box<dyn std::error::Error>>` that does this and sends it with `.send().await`: Retrieve an event by eventID (also accepts latest/oldest/recommended): call `GET event` in `scope organization` › `scope issue` with `organization` (scope `organization`) = `\"tundra\"`, `issue` (scope `issue`) = `\"maple\"`, `event` = `\"cedar\"`. Leave every other optional value as it is. Your code runs before the function's final `Ok(())`; it may start with `use` lines (`code`)."
+  }
+ ]
+}

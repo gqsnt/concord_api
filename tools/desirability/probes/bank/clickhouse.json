@@ -1,0 +1,169 @@
+{
+ "sdk": "clickhouse-sdk",
+ "short": "clickhouse",
+ "pkg": "concord-sdk-clickhouse",
+ "crate": "concord_sdk_clickhouse",
+ "seed": 1,
+ "role": "main",
+ "holdout_of": [],
+ "generator_version": 1,
+ "clients": {
+  "ClickHouseHttp": {
+   "constructible": true,
+   "file": "examples/clickhouse-sdk/src/wire.rs",
+   "ctor": "ClickHouseHttp::new(reqwest::Client::new())",
+   "canaries": [],
+   "config_fields": [],
+   "endpoints": 4,
+   "notes": []
+  }
+ },
+ "picks": [
+  {
+   "key": "ClickHouseHttp/ping",
+   "client": "ClickHouseHttp",
+   "client_file": "examples/clickhouse-sdk/src/wire.rs",
+   "scopes": [],
+   "method": "GET",
+   "endpoint": "ping",
+   "output": "String",
+   "docs": [
+    "The health check: `Ok.` and a line feed."
+   ],
+   "values": [
+    {
+     "level": 0,
+     "owner": "ClickHouseHttp",
+     "owner_kind": "client",
+     "name": "authorization",
+     "type": "HeaderValue",
+     "placement": "header",
+     "key": "\"authorization\"",
+     "each": false,
+     "sensitive": true,
+     "optional": true,
+     "default": null,
+     "kind": "header_value",
+     "state": "set",
+     "literal": "reqwest::header::HeaderValue::from_static(\"CANARYCLICKHOUSE131Z\")",
+     "value": "<secret>"
+    },
+    {
+     "level": 0,
+     "owner": "ClickHouseHttp",
+     "owner_kind": "client",
+     "name": "user",
+     "type": "String",
+     "placement": "header",
+     "key": "\"x-clickhouse-user\"",
+     "each": false,
+     "sensitive": false,
+     "optional": true,
+     "default": null,
+     "kind": "string",
+     "state": "unset",
+     "literal": null,
+     "value": null
+    },
+    {
+     "level": 0,
+     "owner": "ClickHouseHttp",
+     "owner_kind": "client",
+     "name": "key",
+     "type": "String",
+     "placement": "header",
+     "key": "\"x-clickhouse-key\"",
+     "each": false,
+     "sensitive": true,
+     "optional": true,
+     "default": null,
+     "kind": "string",
+     "state": "unset",
+     "literal": null,
+     "value": null
+    },
+    {
+     "level": 0,
+     "owner": "ClickHouseHttp",
+     "owner_kind": "client",
+     "name": "database",
+     "type": "Identifier",
+     "placement": "path",
+     "key": null,
+     "each": false,
+     "sensitive": false,
+     "optional": true,
+     "default": null,
+     "kind": null,
+     "state": "unset",
+     "literal": null,
+     "value": null
+    },
+    {
+     "level": 0,
+     "owner": "ClickHouseHttp",
+     "owner_kind": "client",
+     "name": "quota_key",
+     "type": "String",
+     "placement": "query",
+     "key": "\"quota_key\"",
+     "each": false,
+     "sensitive": false,
+     "optional": true,
+     "default": null,
+     "kind": "string",
+     "state": "unset",
+     "literal": null,
+     "value": null
+    }
+   ],
+   "canaries": [
+    "CANARYCLICKHOUSE131Z"
+   ],
+   "pct": false,
+   "rust": {
+    "client": "ClickHouseHttp::new(reqwest::Client::new()).set_authorization(reqwest::header::HeaderValue::from_static(\"CANARYCLICKHOUSE131Z\"))",
+    "call": "api.ping()"
+   },
+   "strata": [
+    "format_exception",
+    "header",
+    "optional_set",
+    "optional_unset"
+   ],
+   "index": 0,
+   "boundary": "prepared"
+  }
+ ],
+ "items": [
+  {
+   "id": "clickhouse/w1",
+   "kind": "wire",
+   "session": "wire",
+   "q": 1,
+   "pick": 0,
+   "boundary": "prepared",
+   "question": "What request does `call.prepare()` build? Give `method`, `url`, `headers` (only the ones Concord sets; secret values as `<secret>`), `body`, `content_type` and `accept`.\n\n```rust\nlet api = ClickHouseHttp::new(reqwest::Client::new()).set_authorization(reqwest::header::HeaderValue::from_static(\"CANARYCLICKHOUSE131Z\"));\nlet call = api.ping();\n```"
+  },
+  {
+   "id": "clickhouse/r1",
+   "kind": "result",
+   "session": "rc",
+   "q": 1,
+   "pick": 0,
+   "boundary": "prepared",
+   "base_url": null,
+   "question": "For the endpoint `GET ping` directly on the client: (a) what type does `.send().await` return (`send_returns`)? (b) what is the error type in that result (`error_type`)?"
+  },
+  {
+   "id": "clickhouse/c1",
+   "kind": "call",
+   "session": "rc",
+   "q": 2,
+   "pick": 0,
+   "boundary": "prepared",
+   "intent": "The health check: `Ok.` and a line feed: call `GET ping` directly on the client with `authorization` (client `ClickHouseHttp`) = `reqwest::header::HeaderValue::from_static(\"CANARYCLICKHOUSE131Z\")`. Leave every other optional value as it is",
+   "question": "Write the body of `async fn call(api: ClickHouseHttp) -> Result<(), Box<dyn std::error::Error>>` that does this and sends it with `.send().await`: The health check: `Ok.` and a line feed: call `GET ping` directly on the client with `authorization` (client `ClickHouseHttp`) = `reqwest::header::HeaderValue::from_static(\"CANARYCLICKHOUSE131Z\")`. Leave every other optional value as it is. Your code runs before the function's final `Ok(())`; it may start with `use` lines (`code`)."
+  }
+ ]
+}

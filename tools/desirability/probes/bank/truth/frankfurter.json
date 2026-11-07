@@ -1,0 +1,126 @@
+{
+ "sdk": "frankfurter-sdk",
+ "short": "frankfurter",
+ "pkg": "concord-sdk-frankfurter",
+ "repo_head": "984bd2f6a981dd85e8b104c21daae06421a7a48a",
+ "truth_format": 3,
+ "aliases": [
+  "Date = chrono::NaiveDate (imported: chrono::NaiveDate)",
+  "Decimal = bigdecimal::BigDecimal (imported: bigdecimal::BigDecimal)",
+  "Deserialize = serde::Deserialize (imported: serde::Deserialize)",
+  "Deserializer = serde::Deserializer (imported: serde::Deserializer)",
+  "Endpoint = concord::Endpoint (imported: concord::Endpoint)",
+  "ErrorKind = concord::ErrorKind (imported: concord::ErrorKind)",
+  "Json = concord::Json (imported: concord::Json)",
+  "Operation = concord::Operation (imported: concord::Operation)",
+  "RawValue = serde_json::value::RawValue (imported: serde_json::value::RawValue)",
+  "ResponseMeta = concord::ResponseMeta (imported: concord::ResponseMeta)",
+  "SendWith = concord::SendWith (imported: concord::SendWith)",
+  "StatusCode = reqwest::StatusCode (imported: concord::reqwest::StatusCode)"
+ ],
+ "items": {
+  "frankfurter/w1": {
+   "method": "GET",
+   "url": "https://api.frankfurter.dev/v2/rate/pixel/bravo?providers=tundra",
+   "headers": [
+    [
+     "accept",
+     "application/json"
+    ]
+   ],
+   "secret_headers": [],
+   "body": null,
+   "body_kind": null,
+   "content_type": null,
+   "accept": "application/json",
+   "prepared": {
+    "method": "GET",
+    "url": "https://api.frankfurter.dev/v2/rate/pixel/bravo?providers=tundra",
+    "headers": [
+     [
+      "accept",
+      "application/json"
+     ]
+    ],
+    "secret_headers": [],
+    "body": null,
+    "body_kind": null,
+    "content_type": null,
+    "accept": "application/json"
+   },
+   "policy_changes_request": false,
+   "operation_completed_within_10s": true,
+   "boundary": "operation",
+   "kind": "wire"
+  },
+  "frankfurter/r1": {
+   "r2": {
+    "resolvable": true,
+    "send_returns": "Result<RateResponse, Error>",
+    "error_type": "Error",
+    "how": "impl SendWith for SendPolicy",
+    "verified": true,
+    "decl_module": "crate",
+    "send_returns_canon": "Result<sdk::RateResponse, sdk::error::Error>",
+    "error_type_canon": "sdk::error::Error"
+   },
+   "base_url": null,
+   "boundary": "operation",
+   "kind": "result"
+  },
+  "frankfurter/c1": {
+   "reference": "api.latest_pair(\"pixel\", \"bravo\").set_providers(\"tundra\").send().await",
+   "reference_compiles": true,
+   "client": "Frankfurter",
+   "binding": {
+    "type": "Result<RateResponse, Error>",
+    "result": "is_ok"
+   },
+   "boundary": "operation",
+   "base_path": "",
+   "recorded": [
+    {
+     "method": "GET",
+     "target": "/v2/rate/pixel/bravo?providers=tundra",
+     "headers": [
+      [
+       "accept",
+       "application/json"
+      ]
+     ],
+     "body": ""
+    }
+   ],
+   "recorded_again": [
+    {
+     "method": "GET",
+     "target": "/v2/rate/pixel/bravo?providers=tundra",
+     "headers": [
+      [
+       "accept",
+       "application/json"
+      ]
+     ],
+     "body": ""
+    }
+   ],
+   "volatile": {
+    "sequence_differs": false,
+    "headers": [],
+    "bodies": []
+   },
+   "fixture": {
+    "name": "examples/frankfurter-sdk/fixtures/latest.json",
+    "content_type": "application/json",
+    "path": "examples/frankfurter-sdk/fixtures/latest.json",
+    "body": null
+   },
+   "fixture_tries_failed": 0,
+   "reference_outcome": null,
+   "result_checked": true,
+   "check_available": true,
+   "kind": "call"
+  }
+ },
+ "drops": []
+}

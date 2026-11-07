@@ -1,0 +1,17 @@
+{
+ "corrected": "let _r = api.children(\"b\", 10).set_start_cursor(\"c\");",
+ "expected": "String",
+ "generated_names": [
+  "NotionChildren",
+  "NotionConfig",
+  "NotionPage",
+  "NotionQuery"
+ ],
+ "kind": "wrong_setter",
+ "package": "concord-sdk-notion",
+ "sdk": "notion",
+ "seeded": "let _r = api.children(\"b\", 10).set_start_cursor(7u32);",
+ "seeded_line": 11,
+ "user_file": "examples/notion-sdk/tests/cb_wrong_setter.rs",
+ "variant": null
+}

@@ -1,0 +1,19 @@
+   Compiling concord-sdk-notion v0.0.0 (/home/canarit/projects/Concord_Desirability_Loop/work/wt/scratch-i4-a/examples/notion-sdk)
+error[E0061]: this method takes 2 arguments but 1 argument was supplied
+  --> examples/notion-sdk/tests/cb_missing_scope_value.rs:11:18
+   |
+11 |     let _r = api.children("b"); // SEEDED
+   |                  ^^^^^^^^----- argument #2 is missing
+   |
+note: method defined here
+  --> examples/notion-sdk/src/api.rs:29:13
+   |
+29 |         GET children(block_id: String, query page_size: u8, query start_cursor?: String) -> List<Block> {
+   |             ^^^^^^^^
+help: provide the argument
+   |
+11 |     let _r = api.children("b", /* page_size */); // SEEDED
+   |                              +++++++++++++++++
+
+For more information about this error, try `rustc --explain E0061`.
+error: could not compile `concord-sdk-notion` (test "cb_missing_scope_value") due to 1 previous error

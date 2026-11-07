@@ -11,6 +11,7 @@ concord = { path = "../../crates/concord", features = ["json"] }
 serde = { workspace = true, features = ["derive"] }
 
 [dev-dependencies]
+concord-check-canary = { path = "../../checks/canary" }
 concord-example-testserver = { path = "../testserver" }
 tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
 

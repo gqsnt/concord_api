@@ -1,0 +1,146 @@
+{
+ "sdk": "clickhouse-sdk",
+ "short": "clickhouse",
+ "pkg": "concord-sdk-clickhouse",
+ "repo_head": "984bd2f6a981dd85e8b104c21daae06421a7a48a",
+ "truth_format": 3,
+ "aliases": [
+  "type Body = Guarded<Incoming>",
+  "BTreeMap = std::collections::BTreeMap (imported: std::collections::BTreeMap)",
+  "ByteSource = concord::stream::ByteSource (imported: concord::stream::ByteSource)",
+  "Bytes = bytes::Bytes (imported: concord::bytes::Bytes)",
+  "ClickHouseHttp = sdk::ClickHouseHttp (imported: crate::wire::ClickHouseHttp)",
+  "Completion = concord::stream::Completion (imported: concord::stream::Completion)",
+  "CsvOptions = concord::csv::CsvOptions (imported: concord::csv::CsvOptions)",
+  "CsvReader = concord::csv::CsvReader (imported: concord::csv::CsvReader)",
+  "CsvRecords = concord::csv::CsvRecords (imported: concord::csv::CsvRecords)",
+  "CsvWriter = concord::csv::CsvWriter (imported: concord::csv::CsvWriter)",
+  "Deserialize = serde::Deserialize (imported: serde::Deserialize)",
+  "DeserializeOwned = serde::de::DeserializeOwned (imported: serde::de::DeserializeOwned)",
+  "Encoded = concord::Encoded (imported: concord::Encoded)",
+  "Endpoint = concord::Endpoint (imported: concord::Endpoint)",
+  "HeaderMap = reqwest::header::HeaderMap (imported: concord::reqwest::header::HeaderMap)",
+  "HeaderMode = concord::csv::HeaderMode (imported: concord::csv::HeaderMode)",
+  "HeaderValue = reqwest::header::HeaderValue (imported: concord::reqwest::header::HeaderValue)",
+  "IgnoreContentType = concord::IgnoreContentType (imported: concord::IgnoreContentType)",
+  "Incoming = concord::Incoming (imported: concord::Incoming)",
+  "JsonLinesOptions = concord::jsonl::JsonLinesOptions (imported: concord::jsonl::JsonLinesOptions)",
+  "JsonLinesReader = concord::jsonl::JsonLinesReader (imported: concord::jsonl::JsonLinesReader)",
+  "JsonLinesRecords = concord::jsonl::JsonLinesRecords (imported: concord::jsonl::JsonLinesRecords)",
+  "JsonLinesWriter = concord::jsonl::JsonLinesWriter (imported: concord::jsonl::JsonLinesWriter)",
+  "LineEnding = concord::csv::LineEnding (imported: concord::csv::LineEnding)",
+  "Position = concord::stream::Position (imported: concord::stream::Position)",
+  "QuoteStyle = concord::csv::QuoteStyle (imported: concord::csv::QuoteStyle)",
+  "ReadError = concord::stream::ReadError (imported: concord::stream::ReadError)",
+  "ReadErrorKind = concord::stream::ReadErrorKind (imported: concord::stream::ReadErrorKind)",
+  "Received = concord::Received (imported: concord::Received)",
+  "Serialize = serde::Serialize (imported: serde::Serialize)",
+  "SourceError = concord::stream::SourceError (imported: concord::stream::SourceError)",
+  "StatusCode = reqwest::StatusCode (imported: concord::reqwest::StatusCode)",
+  "StdError = std::error::Error (imported: std::error::Error)",
+  "Stream = futures_core::Stream (imported: futures_core::Stream)",
+  "StreamRecords = concord::jsonl::StreamRecords (imported: concord::jsonl::StreamRecords)",
+  "StreamRows = concord::csv::StreamRows (imported: concord::csv::StreamRows)",
+  "Text = concord::Text (imported: concord::Text)",
+  "Upload = concord::stream::Upload (imported: concord::stream::Upload)",
+  "Value = serde_json::Value (imported: serde_json::Value)"
+ ],
+ "items": {
+  "clickhouse/w1": {
+   "method": "GET",
+   "url": "http://localhost:8123/ping",
+   "headers": [
+    [
+     "authorization",
+     "<secret>"
+    ]
+   ],
+   "secret_headers": [
+    "authorization"
+   ],
+   "body": null,
+   "body_kind": null,
+   "content_type": null,
+   "accept": null,
+   "boundary": "prepared",
+   "kind": "wire"
+  },
+  "clickhouse/r1": {
+   "r2": {
+    "resolvable": true,
+    "send_returns": "Result<String, concord::Error>",
+    "error_type": "concord::Error",
+    "how": "no send policy",
+    "verified": true,
+    "decl_module": "crate::wire",
+    "send_returns_canon": "Result<String, concord::Error>",
+    "error_type_canon": "concord::Error"
+   },
+   "base_url": null,
+   "boundary": "prepared",
+   "kind": "result"
+  },
+  "clickhouse/c1": {
+   "reference": "api.set_authorization(reqwest::header::HeaderValue::from_static(\"CANARYCLICKHOUSE131Z\")).ping().send().await",
+   "reference_compiles": true,
+   "client": "ClickHouseHttp",
+   "binding": {
+    "type": "Result<String, concord::Error>",
+    "result": "is_ok"
+   },
+   "boundary": "prepared",
+   "base_path": "",
+   "recorded": [
+    {
+     "method": "GET",
+     "target": "/ping",
+     "headers": [
+      [
+       "authorization",
+       "<secret>"
+      ],
+      [
+       "accept",
+       "*/*"
+      ]
+     ],
+     "body": ""
+    }
+   ],
+   "recorded_again": [
+    {
+     "method": "GET",
+     "target": "/ping",
+     "headers": [
+      [
+       "authorization",
+       "<secret>"
+      ],
+      [
+       "accept",
+       "*/*"
+      ]
+     ],
+     "body": ""
+    }
+   ],
+   "volatile": {
+    "sequence_differs": false,
+    "headers": [],
+    "bodies": []
+   },
+   "fixture": {
+    "name": "examples/clickhouse-sdk/fixtures/football.csvwithnames",
+    "content_type": "application/octet-stream",
+    "path": "examples/clickhouse-sdk/fixtures/football.csvwithnames",
+    "body": null
+   },
+   "fixture_tries_failed": 0,
+   "reference_outcome": null,
+   "result_checked": true,
+   "check_available": true,
+   "kind": "call"
+  }
+ },
+ "drops": []
+}

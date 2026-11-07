@@ -1,0 +1,12 @@
+{
+ "sdk": "kraken-spot-rest",
+ "kind": "e5",
+ "package": "concord-sdk-kraken-spot-rest",
+ "sdk_dir": "examples/kraken-spot-rest-sdk",
+ "title": "Non-2xx error document: error renamed to errors (2xx envelope unchanged)",
+ "public_names": [
+  "HttpFailure::document",
+  "ErrorDocument::errors_unredacted",
+  "ApiFailure::errors_unredacted"
+ ]
+}

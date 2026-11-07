@@ -1,0 +1,12 @@
+{
+ "sdk": "strava",
+ "kind": "e1",
+ "package": "concord-sdk-strava",
+ "sdk_dir": "examples/strava-sdk",
+ "title": "API moved from /api/v3/ to /api/v4/ (OAuth unchanged)",
+ "public_names": [
+  "Strava::athlete",
+  "Strava::activities",
+  "Session::connect"
+ ]
+}

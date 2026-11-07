@@ -1,0 +1,11 @@
+{
+ "sdk": "strava",
+ "kind": "e2",
+ "package": "concord-sdk-strava",
+ "sdk_dir": "examples/strava-sdk",
+ "title": "X-Strava-Client-Id on every API request",
+ "public_names": [
+  "Session::connect",
+  "Credentials::new"
+ ]
+}

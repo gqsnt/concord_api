@@ -1,0 +1,303 @@
+{
+ "cases": {
+  "cloudflare-zones.default_body": {
+   "error": true,
+   "headline": "error[E0283]: type annotations needed",
+   "internal_names": [
+    "IntoValue",
+    "__macro",
+    "concord_core::"
+   ],
+   "names_expected_type": true,
+   "pass": false,
+   "primary": "examples/cloudflare-zones-sdk/tests/cb_default_body.rs",
+   "span_in_user_code": true
+  },
+  "cloudflare-zones.into_body": {
+   "error": true,
+   "headline": "error[E0283]: type annotations needed",
+   "internal_names": [],
+   "names_expected_type": false,
+   "pass": true,
+   "primary": "examples/cloudflare-zones-sdk/tests/cb_into_body.rs",
+   "span_in_user_code": true
+  },
+  "cloudflare-zones.missing_scope_value": {
+   "error": true,
+   "headline": "error[E0061]: this method takes 1 argument but 0 arguments were supplied",
+   "internal_names": [],
+   "names_expected_type": false,
+   "pass": true,
+   "primary": "examples/cloudflare-zones-sdk/tests/cb_missing_scope_value.rs",
+   "span_in_user_code": true
+  },
+  "cloudflare-zones.send_mismatch": {
+   "error": true,
+   "headline": "error[E0308]: `?` operator has incompatible types",
+   "internal_names": [],
+   "names_expected_type": true,
+   "pass": true,
+   "primary": "examples/cloudflare-zones-sdk/tests/cb_send_mismatch.rs",
+   "span_in_user_code": true
+  },
+  "cloudflare-zones.wrong_format": {
+   "error": true,
+   "headline": "error[E0277]: the format `Text` cannot decode a `ErrorEnvelope` response",
+   "internal_names": [],
+   "names_expected_type": true,
+   "pass": true,
+   "primary": "examples/cloudflare-zones-sdk/tests/cb_wrong_format.rs",
+   "span_in_user_code": true
+  },
+  "cloudflare-zones.wrong_setter": {
+   "error": true,
+   "headline": "error[E0277]: `{integer}` is not accepted for a value of type `ZonesPerPage`",
+   "internal_names": [],
+   "names_expected_type": true,
+   "pass": true,
+   "primary": "examples/cloudflare-zones-sdk/tests/cb_wrong_setter.rs",
+   "span_in_user_code": true
+  },
+  "github.default_body": {
+   "error": true,
+   "headline": "error[E0283]: type annotations needed",
+   "internal_names": [
+    "IntoValue",
+    "__macro",
+    "concord_core::"
+   ],
+   "names_expected_type": true,
+   "pass": false,
+   "primary": "examples/github-sdk/tests/cb_default_body.rs",
+   "span_in_user_code": true
+  },
+  "github.into_body": {
+   "error": true,
+   "headline": "error[E0283]: type annotations needed",
+   "internal_names": [],
+   "names_expected_type": false,
+   "pass": true,
+   "primary": "examples/github-sdk/tests/cb_into_body.rs",
+   "span_in_user_code": true
+  },
+  "github.missing_scope_value": {
+   "error": true,
+   "headline": "error[E0061]: this method takes 2 arguments but 1 argument was supplied",
+   "internal_names": [],
+   "names_expected_type": false,
+   "pass": true,
+   "primary": "examples/github-sdk/tests/cb_missing_scope_value.rs",
+   "span_in_user_code": true
+  },
+  "github.send_mismatch": {
+   "error": true,
+   "headline": "error[E0308]: `?` operator has incompatible types",
+   "internal_names": [],
+   "names_expected_type": true,
+   "pass": true,
+   "primary": "examples/github-sdk/tests/cb_send_mismatch.rs",
+   "span_in_user_code": true
+  },
+  "github.wrong_format": {
+   "error": true,
+   "headline": "error[E0277]: the format `Text` cannot decode a `Vec<Label>` response",
+   "internal_names": [],
+   "names_expected_type": true,
+   "pass": true,
+   "primary": "examples/github-sdk/tests/cb_wrong_format.rs",
+   "span_in_user_code": true
+  },
+  "github.wrong_setter": {
+   "error": true,
+   "headline": "error[E0277]: `{integer}` is not accepted for a value of type `concord_example_github_sdk::params::PerPage`",
+   "internal_names": [],
+   "names_expected_type": true,
+   "pass": true,
+   "primary": "examples/github-sdk/tests/cb_wrong_setter.rs",
+   "span_in_user_code": true
+  },
+  "kraken-spot-rest.default_body": {
+   "error": true,
+   "headline": "error[E0283]: type annotations needed",
+   "internal_names": [
+    "IntoValue",
+    "__macro",
+    "concord_core::"
+   ],
+   "names_expected_type": true,
+   "pass": false,
+   "primary": "examples/kraken-spot-rest-sdk/tests/cb_default_body.rs",
+   "span_in_user_code": true
+  },
+  "kraken-spot-rest.into_body": {
+   "error": true,
+   "headline": "error[E0283]: type annotations needed",
+   "internal_names": [],
+   "names_expected_type": true,
+   "pass": true,
+   "primary": "examples/kraken-spot-rest-sdk/tests/cb_into_body.rs",
+   "span_in_user_code": true
+  },
+  "kraken-spot-rest.missing_scope_value": {
+   "error": true,
+   "headline": "error[E0061]: this method takes 1 argument but 0 arguments were supplied",
+   "internal_names": [],
+   "names_expected_type": false,
+   "pass": true,
+   "primary": "examples/kraken-spot-rest-sdk/tests/cb_missing_scope_value.rs",
+   "span_in_user_code": true
+  },
+  "kraken-spot-rest.send_mismatch": {
+   "error": true,
+   "headline": "error[E0308]: `?` operator has incompatible types",
+   "internal_names": [],
+   "names_expected_type": true,
+   "pass": true,
+   "primary": "examples/kraken-spot-rest-sdk/tests/cb_send_mismatch.rs",
+   "span_in_user_code": true
+  },
+  "kraken-spot-rest.wrong_format": {
+   "error": true,
+   "headline": "error[E0277]: the format `Text` cannot decode a `ErrorDocument` response",
+   "internal_names": [],
+   "names_expected_type": true,
+   "pass": true,
+   "primary": "examples/kraken-spot-rest-sdk/tests/cb_wrong_format.rs",
+   "span_in_user_code": true
+  },
+  "kraken-spot-rest.wrong_setter": {
+   "error": true,
+   "headline": "error[E0277]: `{integer}` is not accepted for a value of type `String`",
+   "internal_names": [],
+   "names_expected_type": true,
+   "pass": true,
+   "primary": "examples/kraken-spot-rest-sdk/tests/cb_wrong_setter.rs",
+   "span_in_user_code": true
+  },
+  "nager-holidays.default_body": {
+   "error": true,
+   "headline": "error[E0283]: type annotations needed",
+   "internal_names": [
+    "IntoValue",
+    "__macro",
+    "concord_core::"
+   ],
+   "names_expected_type": true,
+   "pass": false,
+   "primary": "examples/nager-holidays-sdk/tests/cb_default_body.rs",
+   "span_in_user_code": true
+  },
+  "nager-holidays.into_body": {
+   "error": true,
+   "headline": "error[E0283]: type annotations needed",
+   "internal_names": [],
+   "names_expected_type": false,
+   "pass": true,
+   "primary": "examples/nager-holidays-sdk/tests/cb_into_body.rs",
+   "span_in_user_code": true
+  },
+  "nager-holidays.missing_scope_value": {
+   "error": true,
+   "headline": "error[E0061]: this method takes 2 arguments but 1 argument was supplied",
+   "internal_names": [],
+   "names_expected_type": false,
+   "pass": true,
+   "primary": "examples/nager-holidays-sdk/tests/cb_missing_scope_value.rs",
+   "span_in_user_code": true
+  },
+  "nager-holidays.send_mismatch": {
+   "error": true,
+   "headline": "error[E0308]: `?` operator has incompatible types",
+   "internal_names": [],
+   "names_expected_type": true,
+   "pass": true,
+   "primary": "examples/nager-holidays-sdk/tests/cb_send_mismatch.rs",
+   "span_in_user_code": true
+  },
+  "nager-holidays.wrong_format": {
+   "error": true,
+   "headline": "error[E0277]: the format `Text` cannot decode a `Vec<Holiday>` response",
+   "internal_names": [],
+   "names_expected_type": true,
+   "pass": true,
+   "primary": "examples/nager-holidays-sdk/tests/cb_wrong_format.rs",
+   "span_in_user_code": true
+  },
+  "nager-holidays.wrong_setter": {
+   "error": true,
+   "headline": "error[E0277]: `&str` is not accepted for a value of type `u16`",
+   "internal_names": [],
+   "names_expected_type": true,
+   "pass": true,
+   "primary": "examples/nager-holidays-sdk/tests/cb_wrong_setter.rs",
+   "span_in_user_code": true
+  },
+  "notion.default_body": {
+   "error": true,
+   "headline": "error[E0283]: type annotations needed",
+   "internal_names": [
+    "IntoValue",
+    "__macro",
+    "concord_core::"
+   ],
+   "names_expected_type": true,
+   "pass": false,
+   "primary": "examples/notion-sdk/tests/cb_default_body.rs",
+   "span_in_user_code": true
+  },
+  "notion.into_body": {
+   "error": true,
+   "headline": "error[E0283]: type annotations needed",
+   "internal_names": [],
+   "names_expected_type": false,
+   "pass": true,
+   "primary": "examples/notion-sdk/tests/cb_into_body.rs",
+   "span_in_user_code": true
+  },
+  "notion.missing_scope_value": {
+   "error": true,
+   "headline": "error[E0061]: this method takes 2 arguments but 1 argument was supplied",
+   "internal_names": [],
+   "names_expected_type": false,
+   "pass": true,
+   "primary": "examples/notion-sdk/tests/cb_missing_scope_value.rs",
+   "span_in_user_code": true
+  },
+  "notion.send_mismatch": {
+   "error": true,
+   "headline": "error[E0308]: `?` operator has incompatible types",
+   "internal_names": [],
+   "names_expected_type": true,
+   "pass": true,
+   "primary": "examples/notion-sdk/tests/cb_send_mismatch.rs",
+   "span_in_user_code": true
+  },
+  "notion.wrong_format": {
+   "error": true,
+   "headline": "error[E0277]: the format `concord::Text` cannot decode a `ProviderError` response",
+   "internal_names": [],
+   "names_expected_type": true,
+   "pass": true,
+   "primary": "examples/notion-sdk/tests/cb_wrong_format.rs",
+   "span_in_user_code": true
+  },
+  "notion.wrong_setter": {
+   "error": true,
+   "headline": "error[E0277]: `u32` is not accepted for a value of type `String`",
+   "internal_names": [],
+   "names_expected_type": true,
+   "pass": true,
+   "primary": "examples/notion-sdk/tests/cb_wrong_setter.rs",
+   "span_in_user_code": true
+  }
+ },
+ "summary": {
+  "R5": 0.8333,
+  "cases": 30,
+  "internal_free": 25,
+  "names_expected_type": "21/30",
+  "pass": 25,
+  "span_in_user_code": 30,
+  "with_error": 30
+ }
+}

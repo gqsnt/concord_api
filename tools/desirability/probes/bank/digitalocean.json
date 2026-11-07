@@ -1,0 +1,541 @@
+{
+ "sdk": "digitalocean-sdk",
+ "short": "digitalocean",
+ "pkg": "concord-sdk-digitalocean",
+ "crate": "concord_sdk_digitalocean",
+ "seed": 1,
+ "role": "main",
+ "holdout_of": [],
+ "generator_version": 1,
+ "clients": {
+  "DigitalOcean": {
+   "constructible": true,
+   "file": "examples/digitalocean-sdk/src/lib.rs",
+   "ctor": "DigitalOcean::new(reqwest::Client::new(), DigitalOceanConfig {\n    authorization: reqwest::header::HeaderValue::from_static(\"CANARYDIGITALOCEAN1Z\"),\n})",
+   "canaries": [
+    "CANARYDIGITALOCEAN1Z"
+   ],
+   "config_fields": [
+    "authorization"
+   ],
+   "endpoints": 5,
+   "notes": []
+  }
+ },
+ "picks": [
+  {
+   "key": "DigitalOcean/droplet/actions",
+   "client": "DigitalOcean",
+   "client_file": "examples/digitalocean-sdk/src/lib.rs",
+   "scopes": [
+    "droplet"
+   ],
+   "method": "GET",
+   "endpoint": "actions",
+   "output": "Actions",
+   "docs": [
+    "List one page of this droplet's actions."
+   ],
+   "values": [
+    {
+     "level": 1,
+     "owner": "droplet",
+     "owner_kind": "scope",
+     "name": "id",
+     "type": "u64",
+     "placement": "path",
+     "key": null,
+     "each": false,
+     "sensitive": false,
+     "optional": false,
+     "default": null,
+     "kind": "int:u64",
+     "state": "required",
+     "literal": "28",
+     "value": 28
+    },
+    {
+     "level": 2,
+     "owner": "Paging",
+     "owner_kind": "group",
+     "name": "page",
+     "type": "PageNumber",
+     "placement": "query",
+     "key": null,
+     "each": false,
+     "sensitive": false,
+     "optional": true,
+     "default": null,
+     "kind": null,
+     "state": "unset",
+     "literal": null,
+     "value": null
+    },
+    {
+     "level": 2,
+     "owner": "Paging",
+     "owner_kind": "group",
+     "name": "per_page",
+     "type": "PageSize",
+     "placement": "query",
+     "key": null,
+     "each": false,
+     "sensitive": false,
+     "optional": true,
+     "default": null,
+     "kind": null,
+     "state": "unset",
+     "literal": null,
+     "value": null
+    }
+   ],
+   "canaries": [
+    "CANARYDIGITALOCEAN1Z"
+   ],
+   "pct": false,
+   "rust": {
+    "client": "DigitalOcean::new(reqwest::Client::new(), DigitalOceanConfig {\n    authorization: reqwest::header::HeaderValue::from_static(\"CANARYDIGITALOCEAN1Z\"),\n})",
+    "call": "api.droplet(28).actions()"
+   },
+   "strata": [
+    "base_path",
+    "optional_unset",
+    "scope_path"
+   ],
+   "index": 0,
+   "boundary": "operation"
+  },
+  {
+   "key": "DigitalOcean/droplets/list",
+   "client": "DigitalOcean",
+   "client_file": "examples/digitalocean-sdk/src/lib.rs",
+   "scopes": [
+    "droplets"
+   ],
+   "method": "GET",
+   "endpoint": "list",
+   "output": "Droplets",
+   "docs": [
+    "List one page; absent pagination links mean completion.",
+    "`set_tag_name` lists only the droplets carrying that tag."
+   ],
+   "values": [
+    {
+     "level": 2,
+     "owner": "Paging",
+     "owner_kind": "group",
+     "name": "page",
+     "type": "PageNumber",
+     "placement": "query",
+     "key": null,
+     "each": false,
+     "sensitive": false,
+     "optional": true,
+     "default": null,
+     "kind": null,
+     "state": "unset",
+     "literal": null,
+     "value": null
+    },
+    {
+     "level": 2,
+     "owner": "Paging",
+     "owner_kind": "group",
+     "name": "per_page",
+     "type": "PageSize",
+     "placement": "query",
+     "key": null,
+     "each": false,
+     "sensitive": false,
+     "optional": true,
+     "default": null,
+     "kind": null,
+     "state": "unset",
+     "literal": null,
+     "value": null
+    },
+    {
+     "level": 2,
+     "owner": "list",
+     "owner_kind": "endpoint",
+     "name": "tag_name",
+     "type": "TagName",
+     "placement": "query",
+     "key": null,
+     "each": false,
+     "sensitive": false,
+     "optional": true,
+     "default": null,
+     "kind": null,
+     "state": "unset",
+     "literal": null,
+     "value": null
+    }
+   ],
+   "canaries": [
+    "CANARYDIGITALOCEAN1Z"
+   ],
+   "pct": false,
+   "rust": {
+    "client": "DigitalOcean::new(reqwest::Client::new(), DigitalOceanConfig {\n    authorization: reqwest::header::HeaderValue::from_static(\"CANARYDIGITALOCEAN1Z\"),\n})",
+    "call": "api.droplets().list()"
+   },
+   "strata": [
+    "base_path",
+    "optional_unset",
+    "scope_path"
+   ],
+   "index": 1,
+   "boundary": "operation"
+  },
+  {
+   "key": "DigitalOcean/droplet/get",
+   "client": "DigitalOcean",
+   "client_file": "examples/digitalocean-sdk/src/lib.rs",
+   "scopes": [
+    "droplet"
+   ],
+   "method": "GET",
+   "endpoint": "get",
+   "output": "DropletDocument",
+   "docs": [
+    "Retrieve this droplet."
+   ],
+   "values": [
+    {
+     "level": 1,
+     "owner": "droplet",
+     "owner_kind": "scope",
+     "name": "id",
+     "type": "u64",
+     "placement": "path",
+     "key": null,
+     "each": false,
+     "sensitive": false,
+     "optional": false,
+     "default": null,
+     "kind": "int:u64",
+     "state": "required",
+     "literal": "17",
+     "value": 17
+    }
+   ],
+   "canaries": [
+    "CANARYDIGITALOCEAN1Z"
+   ],
+   "pct": false,
+   "rust": {
+    "client": "DigitalOcean::new(reqwest::Client::new(), DigitalOceanConfig {\n    authorization: reqwest::header::HeaderValue::from_static(\"CANARYDIGITALOCEAN1Z\"),\n})",
+    "call": "api.droplet(17).get()"
+   },
+   "strata": [
+    "base_path",
+    "scope_path"
+   ],
+   "index": 2,
+   "boundary": "operation"
+  },
+  {
+   "key": "DigitalOcean/droplet/action",
+   "client": "DigitalOcean",
+   "client_file": "examples/digitalocean-sdk/src/lib.rs",
+   "scopes": [
+    "droplet"
+   ],
+   "method": "GET",
+   "endpoint": "action",
+   "output": "ActionDocument",
+   "docs": [
+    "Retrieve one action belonging to this droplet."
+   ],
+   "values": [
+    {
+     "level": 1,
+     "owner": "droplet",
+     "owner_kind": "scope",
+     "name": "id",
+     "type": "u64",
+     "placement": "path",
+     "key": null,
+     "each": false,
+     "sensitive": false,
+     "optional": false,
+     "default": null,
+     "kind": "int:u64",
+     "state": "required",
+     "literal": "8",
+     "value": 8
+    },
+    {
+     "level": 2,
+     "owner": "action",
+     "owner_kind": "endpoint",
+     "name": "action_id",
+     "type": "u64",
+     "placement": "path",
+     "key": null,
+     "each": false,
+     "sensitive": false,
+     "optional": false,
+     "default": null,
+     "kind": "int:u64",
+     "state": "required",
+     "literal": "12",
+     "value": 12
+    }
+   ],
+   "canaries": [
+    "CANARYDIGITALOCEAN1Z"
+   ],
+   "pct": false,
+   "rust": {
+    "client": "DigitalOcean::new(reqwest::Client::new(), DigitalOceanConfig {\n    authorization: reqwest::header::HeaderValue::from_static(\"CANARYDIGITALOCEAN1Z\"),\n})",
+    "call": "api.droplet(8).action(12)"
+   },
+   "strata": [
+    "base_path",
+    "scope_path"
+   ],
+   "index": 3,
+   "boundary": "operation"
+  },
+  {
+   "key": "DigitalOcean/droplet/snapshots",
+   "client": "DigitalOcean",
+   "client_file": "examples/digitalocean-sdk/src/lib.rs",
+   "scopes": [
+    "droplet"
+   ],
+   "method": "GET",
+   "endpoint": "snapshots",
+   "output": "Snapshots",
+   "docs": [
+    "List one page of this droplet's snapshots and backups."
+   ],
+   "values": [
+    {
+     "level": 1,
+     "owner": "droplet",
+     "owner_kind": "scope",
+     "name": "id",
+     "type": "u64",
+     "placement": "path",
+     "key": null,
+     "each": false,
+     "sensitive": false,
+     "optional": false,
+     "default": null,
+     "kind": "int:u64",
+     "state": "required",
+     "literal": "22",
+     "value": 22
+    },
+    {
+     "level": 2,
+     "owner": "Paging",
+     "owner_kind": "group",
+     "name": "page",
+     "type": "PageNumber",
+     "placement": "query",
+     "key": null,
+     "each": false,
+     "sensitive": false,
+     "optional": true,
+     "default": null,
+     "kind": null,
+     "state": "unset",
+     "literal": null,
+     "value": null
+    },
+    {
+     "level": 2,
+     "owner": "Paging",
+     "owner_kind": "group",
+     "name": "per_page",
+     "type": "PageSize",
+     "placement": "query",
+     "key": null,
+     "each": false,
+     "sensitive": false,
+     "optional": true,
+     "default": null,
+     "kind": null,
+     "state": "unset",
+     "literal": null,
+     "value": null
+    }
+   ],
+   "canaries": [
+    "CANARYDIGITALOCEAN1Z"
+   ],
+   "pct": false,
+   "rust": {
+    "client": "DigitalOcean::new(reqwest::Client::new(), DigitalOceanConfig {\n    authorization: reqwest::header::HeaderValue::from_static(\"CANARYDIGITALOCEAN1Z\"),\n})",
+    "call": "api.droplet(22).snapshots()"
+   },
+   "strata": [
+    "base_path",
+    "optional_unset",
+    "scope_path"
+   ],
+   "index": 4,
+   "boundary": "operation"
+  }
+ ],
+ "items": [
+  {
+   "id": "digitalocean/w1",
+   "kind": "wire",
+   "session": "wire",
+   "q": 1,
+   "pick": 0,
+   "boundary": "operation",
+   "question": "What request does `call.send().await` put on the wire (the request the server receives)? Give `method`, `url`, `headers` (only the ones the SDK and Concord set, not the HTTP client's own; secret values as `<secret>`), `body`, `content_type` and `accept`.\n\n```rust\nlet api = DigitalOcean::new(reqwest::Client::new(), DigitalOceanConfig {\n    authorization: reqwest::header::HeaderValue::from_static(\"CANARYDIGITALOCEAN1Z\"),\n});\nlet call = api.droplet(28).actions();\n```"
+  },
+  {
+   "id": "digitalocean/r1",
+   "kind": "result",
+   "session": "rc",
+   "q": 1,
+   "pick": 0,
+   "boundary": "operation",
+   "base_url": {
+    "staging": "https://staging.example.test",
+    "keep": "/v2",
+    "candidates": [
+     "https://staging.example.test",
+     "https://staging.example.test/",
+     "https://staging.example.test/v2",
+     "https://staging.example.test/v2/"
+    ]
+   },
+   "question": "For the endpoint `GET actions` in `scope droplet`: (a) what type does `.send().await` return (`send_returns`)? (b) what is the error type in that result (`error_type`)? (c) The same API also runs at `https://staging.example.test`. Which exact string do you pass to `api.with_base_url(..)` so that requests keep the `/v2` prefix, i.e. go to `https://staging.example.test/v2/...` (`base_url`)?"
+  },
+  {
+   "id": "digitalocean/c1",
+   "kind": "call",
+   "session": "rc",
+   "q": 2,
+   "pick": 0,
+   "boundary": "operation",
+   "intent": "List one page of this droplet's actions: call `GET actions` in `scope droplet` with `id` (scope `droplet`) = `28`. Leave every other optional value as it is",
+   "question": "Write the body of `async fn call(api: DigitalOcean) -> Result<(), Box<dyn std::error::Error>>` that does this and sends it with `.send().await`: List one page of this droplet's actions: call `GET actions` in `scope droplet` with `id` (scope `droplet`) = `28`. Leave every other optional value as it is. Your code runs before the function's final `Ok(())`; it may start with `use` lines (`code`)."
+  },
+  {
+   "id": "digitalocean/w2",
+   "kind": "wire",
+   "session": "wire",
+   "q": 2,
+   "pick": 1,
+   "boundary": "operation",
+   "question": "What request does `call.send().await` put on the wire (the request the server receives)? Give `method`, `url`, `headers` (only the ones the SDK and Concord set, not the HTTP client's own; secret values as `<secret>`), `body`, `content_type` and `accept`.\n\n```rust\nlet api = DigitalOcean::new(reqwest::Client::new(), DigitalOceanConfig {\n    authorization: reqwest::header::HeaderValue::from_static(\"CANARYDIGITALOCEAN1Z\"),\n});\nlet call = api.droplets().list();\n```"
+  },
+  {
+   "id": "digitalocean/r2",
+   "kind": "result",
+   "session": "rc",
+   "q": 3,
+   "pick": 1,
+   "boundary": "operation",
+   "base_url": null,
+   "question": "For the endpoint `GET list` in `scope droplets`: (a) what type does `.send().await` return (`send_returns`)? (b) what is the error type in that result (`error_type`)?"
+  },
+  {
+   "id": "digitalocean/c2",
+   "kind": "call",
+   "session": "rc",
+   "q": 4,
+   "pick": 1,
+   "boundary": "operation",
+   "intent": "List one page; absent pagination links mean completion: call `GET list` in `scope droplets`. Leave every other optional value as it is",
+   "question": "Write the body of `async fn call(api: DigitalOcean) -> Result<(), Box<dyn std::error::Error>>` that does this and sends it with `.send().await`: List one page; absent pagination links mean completion: call `GET list` in `scope droplets`. Leave every other optional value as it is. Your code runs before the function's final `Ok(())`; it may start with `use` lines (`code`)."
+  },
+  {
+   "id": "digitalocean/w3",
+   "kind": "wire",
+   "session": "wire",
+   "q": 3,
+   "pick": 2,
+   "boundary": "operation",
+   "question": "What request does `call.send().await` put on the wire (the request the server receives)? Give `method`, `url`, `headers` (only the ones the SDK and Concord set, not the HTTP client's own; secret values as `<secret>`), `body`, `content_type` and `accept`.\n\n```rust\nlet api = DigitalOcean::new(reqwest::Client::new(), DigitalOceanConfig {\n    authorization: reqwest::header::HeaderValue::from_static(\"CANARYDIGITALOCEAN1Z\"),\n});\nlet call = api.droplet(17).get();\n```"
+  },
+  {
+   "id": "digitalocean/r3",
+   "kind": "result",
+   "session": "rc",
+   "q": 5,
+   "pick": 2,
+   "boundary": "operation",
+   "base_url": null,
+   "question": "For the endpoint `GET get` in `scope droplet`: (a) what type does `.send().await` return (`send_returns`)? (b) what is the error type in that result (`error_type`)?"
+  },
+  {
+   "id": "digitalocean/c3",
+   "kind": "call",
+   "session": "rc",
+   "q": 6,
+   "pick": 2,
+   "boundary": "operation",
+   "intent": "Retrieve this droplet: call `GET get` in `scope droplet` with `id` (scope `droplet`) = `17`. Leave every other optional value as it is",
+   "question": "Write the body of `async fn call(api: DigitalOcean) -> Result<(), Box<dyn std::error::Error>>` that does this and sends it with `.send().await`: Retrieve this droplet: call `GET get` in `scope droplet` with `id` (scope `droplet`) = `17`. Leave every other optional value as it is. Your code runs before the function's final `Ok(())`; it may start with `use` lines (`code`)."
+  },
+  {
+   "id": "digitalocean/w4",
+   "kind": "wire",
+   "session": "wire",
+   "q": 4,
+   "pick": 3,
+   "boundary": "operation",
+   "question": "What request does `call.send().await` put on the wire (the request the server receives)? Give `method`, `url`, `headers` (only the ones the SDK and Concord set, not the HTTP client's own; secret values as `<secret>`), `body`, `content_type` and `accept`.\n\n```rust\nlet api = DigitalOcean::new(reqwest::Client::new(), DigitalOceanConfig {\n    authorization: reqwest::header::HeaderValue::from_static(\"CANARYDIGITALOCEAN1Z\"),\n});\nlet call = api.droplet(8).action(12);\n```"
+  },
+  {
+   "id": "digitalocean/r4",
+   "kind": "result",
+   "session": "rc",
+   "q": 7,
+   "pick": 3,
+   "boundary": "operation",
+   "base_url": null,
+   "question": "For the endpoint `GET action` in `scope droplet`: (a) what type does `.send().await` return (`send_returns`)? (b) what is the error type in that result (`error_type`)?"
+  },
+  {
+   "id": "digitalocean/c4",
+   "kind": "call",
+   "session": "rc",
+   "q": 8,
+   "pick": 3,
+   "boundary": "operation",
+   "intent": "Retrieve one action belonging to this droplet: call `GET action` in `scope droplet` with `id` (scope `droplet`) = `8`, `action_id` = `12`. Leave every other optional value as it is",
+   "question": "Write the body of `async fn call(api: DigitalOcean) -> Result<(), Box<dyn std::error::Error>>` that does this and sends it with `.send().await`: Retrieve one action belonging to this droplet: call `GET action` in `scope droplet` with `id` (scope `droplet`) = `8`, `action_id` = `12`. Leave every other optional value as it is. Your code runs before the function's final `Ok(())`; it may start with `use` lines (`code`)."
+  },
+  {
+   "id": "digitalocean/w5",
+   "kind": "wire",
+   "session": "wire",
+   "q": 5,
+   "pick": 4,
+   "boundary": "operation",
+   "question": "What request does `call.send().await` put on the wire (the request the server receives)? Give `method`, `url`, `headers` (only the ones the SDK and Concord set, not the HTTP client's own; secret values as `<secret>`), `body`, `content_type` and `accept`.\n\n```rust\nlet api = DigitalOcean::new(reqwest::Client::new(), DigitalOceanConfig {\n    authorization: reqwest::header::HeaderValue::from_static(\"CANARYDIGITALOCEAN1Z\"),\n});\nlet call = api.droplet(22).snapshots();\n```"
+  },
+  {
+   "id": "digitalocean/r5",
+   "kind": "result",
+   "session": "rc",
+   "q": 9,
+   "pick": 4,
+   "boundary": "operation",
+   "base_url": null,
+   "question": "For the endpoint `GET snapshots` in `scope droplet`: (a) what type does `.send().await` return (`send_returns`)? (b) what is the error type in that result (`error_type`)?"
+  },
+  {
+   "id": "digitalocean/c5",
+   "kind": "call",
+   "session": "rc",
+   "q": 10,
+   "pick": 4,
+   "boundary": "operation",
+   "intent": "List one page of this droplet's snapshots and backups: call `GET snapshots` in `scope droplet` with `id` (scope `droplet`) = `22`. Leave every other optional value as it is",
+   "question": "Write the body of `async fn call(api: DigitalOcean) -> Result<(), Box<dyn std::error::Error>>` that does this and sends it with `.send().await`: List one page of this droplet's snapshots and backups: call `GET snapshots` in `scope droplet` with `id` (scope `droplet`) = `22`. Leave every other optional value as it is. Your code runs before the function's final `Ok(())`; it may start with `use` lines (`code`)."
+  }
+ ]
+}

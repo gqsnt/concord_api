@@ -1,0 +1,20 @@
+{
+ "corrected": "let _r = kraken.account().balances(BalanceOptions::default());",
+ "expected": "BalanceOptions",
+ "generated_names": [
+  "KrakenAccount",
+  "KrakenAccountBalances",
+  "KrakenAccountOpenOrders",
+  "KrakenAccountTradesHistory",
+  "KrakenPublic",
+  "KrakenPublicPairs",
+  "KrakenPublicTicker"
+ ],
+ "kind": "into_body",
+ "package": "concord-sdk-kraken-spot-rest",
+ "sdk": "kraken-spot-rest",
+ "seeded": "let _r = kraken.account().balances(BalanceOptions::default().into());",
+ "seeded_line": 10,
+ "user_file": "examples/kraken-spot-rest-sdk/tests/cb_into_body.rs",
+ "variant": null
+}

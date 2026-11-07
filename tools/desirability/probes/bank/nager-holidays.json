@@ -1,0 +1,118 @@
+{
+ "sdk": "nager-holidays-sdk",
+ "short": "nager-holidays",
+ "pkg": "concord-sdk-nager-holidays",
+ "crate": "concord_sdk_nager_holidays",
+ "seed": 1,
+ "role": "main",
+ "holdout_of": [],
+ "generator_version": 1,
+ "clients": {
+  "NagerHolidays": {
+   "constructible": true,
+   "file": "examples/nager-holidays-sdk/src/lib.rs",
+   "ctor": "NagerHolidays::new(reqwest::Client::new())",
+   "canaries": [],
+   "config_fields": [],
+   "endpoints": 1,
+   "notes": []
+  }
+ },
+ "picks": [
+  {
+   "key": "NagerHolidays/holidays",
+   "client": "NagerHolidays",
+   "client_file": "examples/nager-holidays-sdk/src/lib.rs",
+   "scopes": [],
+   "method": "GET",
+   "endpoint": "holidays",
+   "output": "Vec<Holiday>",
+   "docs": [
+    "Retrieves one country/year array, in country-then-year path order.",
+    "",
+    "`country_code` is the provider's ISO 3166-1 alpha-2 spelling (for example `AT`).",
+    "Values are sent as supplied, encoded as one path segment; this SDK does not",
+    "claim to validate provider coverage or year availability. `send()` returns a",
+    "[`HolidayResponse`] with the response metadata, or this SDK's [`Error`], which",
+    "classifies HTTP 400 as an invalid request ([`KeepHead`]). `prepare()` builds the",
+    "native request; `prepare()?.send()` returns Concord's own error instead."
+   ],
+   "values": [
+    {
+     "level": 1,
+     "owner": "holidays",
+     "owner_kind": "endpoint",
+     "name": "country_code",
+     "type": "String",
+     "placement": "path",
+     "key": null,
+     "each": false,
+     "sensitive": false,
+     "optional": false,
+     "default": null,
+     "kind": "string",
+     "state": "required",
+     "literal": "\"x&y=z\"",
+     "value": "x&y=z"
+    },
+    {
+     "level": 1,
+     "owner": "holidays",
+     "owner_kind": "endpoint",
+     "name": "year",
+     "type": "u16",
+     "placement": "path",
+     "key": null,
+     "each": false,
+     "sensitive": false,
+     "optional": false,
+     "default": null,
+     "kind": "int:u16",
+     "state": "required",
+     "literal": "24",
+     "value": 24
+    }
+   ],
+   "canaries": [],
+   "pct": true,
+   "rust": {
+    "client": "NagerHolidays::new(reqwest::Client::new())",
+    "call": "api.holidays(\"x&y=z\", 24)"
+   },
+   "strata": [],
+   "index": 0,
+   "boundary": "operation"
+  }
+ ],
+ "items": [
+  {
+   "id": "nager-holidays/w1",
+   "kind": "wire",
+   "session": "wire",
+   "q": 1,
+   "pick": 0,
+   "boundary": "operation",
+   "question": "What request does `call.send().await` put on the wire (the request the server receives)? Give `method`, `url`, `headers` (only the ones the SDK and Concord set, not the HTTP client's own; secret values as `<secret>`), `body`, `content_type` and `accept`.\n\n```rust\nlet api = NagerHolidays::new(reqwest::Client::new());\nlet call = api.holidays(\"x&y=z\", 24);\n```"
+  },
+  {
+   "id": "nager-holidays/r1",
+   "kind": "result",
+   "session": "rc",
+   "q": 1,
+   "pick": 0,
+   "boundary": "operation",
+   "base_url": null,
+   "question": "For the endpoint `GET holidays` directly on the client: (a) what type does `.send().await` return (`send_returns`)? (b) what is the error type in that result (`error_type`)?"
+  },
+  {
+   "id": "nager-holidays/c1",
+   "kind": "call",
+   "session": "rc",
+   "q": 2,
+   "pick": 0,
+   "boundary": "operation",
+   "intent": "Retrieves one country/year array, in country-then-year path order: call `GET holidays` directly on the client with `country_code` = `\"x&y=z\"`, `year` = `24`. Leave every other optional value as it is",
+   "question": "Write the body of `async fn call(api: NagerHolidays) -> Result<(), Box<dyn std::error::Error>>` that does this and sends it with `.send().await`: Retrieves one country/year array, in country-then-year path order: call `GET holidays` directly on the client with `country_code` = `\"x&y=z\"`, `year` = `24`. Leave every other optional value as it is. Your code runs before the function's final `Ok(())`; it may start with `use` lines (`code`)."
+  }
+ ]
+}
