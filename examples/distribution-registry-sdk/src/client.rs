@@ -285,13 +285,11 @@ impl Registry {
         meta: &ResponseMeta,
     ) -> Result<Option<Url>, RegistryError> {
         let protocol = |problem| RegistryError::protocol(problem, Some(meta.clone()));
-        let mut values = meta.headers().get_all(LOCATION).iter();
-        let Some(value) = values.next() else {
+        let Some(value) = concord::field::single(meta.headers(), LOCATION)
+            .map_err(|_| protocol(ProtocolProblem::MalformedLocation))?
+        else {
             return Ok(None);
         };
-        if values.next().is_some() {
-            return Err(protocol(ProtocolProblem::MalformedLocation));
-        }
         let text = value
             .to_str()
             .map_err(|_| protocol(ProtocolProblem::MalformedLocation))?;

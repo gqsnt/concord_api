@@ -45,7 +45,7 @@ concord::api! {
         headers { AUTHORIZATION = "Bot {token}"; }
         format Json;
         limit crate::SUCCESS_BODY_LIMIT;
-        send limiter;
+        send limiter -> Result<_, Error>;
 
         /// One guild: `/guilds/{guild.id}` (the route's top-level resource).
         scope guild(guild_id: GuildId) {

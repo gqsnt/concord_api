@@ -6,7 +6,7 @@ use concord::{Endpoint, IgnoreContentType, Json, Received, SendWith};
 use crate::error::{ApiError, ERROR_BODY_LIMIT, ErrorBody, ErrorDocument, GitLabError};
 use crate::meta::{Response, ResponseMeta};
 
-/// The send policy of [`GitLab`](crate::GitLab) (`send SendPolicy;`): what every generated
+/// The send policy of [`GitLab`](crate::GitLab) (`send SendPolicy -> Result<crate::Response<_>, crate::GitLabError>;`): what every generated
 /// `send()` returns, `Result<`[`Response<T>`]`, `[`GitLabError`]`>`. Callers never name it.
 ///
 /// `send()` prepares, executes once and decodes as declared; it never retries.

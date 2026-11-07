@@ -32,7 +32,7 @@ concord::api! {
         path "fdsnws/event/1";
         query { "nodata" = "404"; }
         response Json;
-        send Policy;
+        send Policy -> Result<Response<_>, Error>;
 
         /// Catalog operations; lookup does not inherit window filters.
         scope catalog {

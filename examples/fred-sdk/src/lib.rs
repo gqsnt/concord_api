@@ -1,7 +1,7 @@
 //! A bounded FRED v1 slice. All examples and tests use local fixtures.
 //!
 //! Navigate [`Fred::series`] for metadata, XML/JSON observations and zipped CSV.
-//! Generated `send()` uses [`Policy`]; native `prepare()` exits bypass that policy.
+//! Generated `send()` returns `Result<T, Error>` through [`Policy`]; `prepare()` bypasses it.
 //! See the package README for the exact limits and exclusions.
 
 mod codecs;
@@ -80,7 +80,7 @@ concord::api! {
         path "fred";
         response Xml;
         limit BODY_LIMIT;
-        send Policy;
+        send Policy -> Result<_, Error>;
 
         /// Shared offset parameter for pageable operations.
         params OffsetOptions(query offset: u64 = 0);

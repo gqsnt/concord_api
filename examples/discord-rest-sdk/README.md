@@ -157,7 +157,7 @@ re-exported (`concord_sdk_discord_rest::concord`, `::pagination`).
 
 ### Rate limits
 
-The client's send policy is the `RateLimiter` (`send limiter;` in the declaration). Per request:
+The client's send policy is the `RateLimiter` (`send limiter -> Result<_, Error>;` in the declaration). Per request:
 admit (no I/O), execute once, record `X-RateLimit-Bucket` / `-Remaining` / `-Reset-After` for
 `(bucket hash, channel or guild)` — the hash excludes the top-level resource, so two channels
 that share it keep separate windows — and on a 429 gate the global scope or that window.

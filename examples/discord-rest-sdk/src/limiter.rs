@@ -90,6 +90,8 @@ impl Route {
     /// A transport failure before a response head. For a write it is ambiguous unless the
     /// connection was never established.
     fn failed_before_head(self, error: concord::Error) -> Error {
+        // Discord's rule (its client is the caller's): a connect failure means not sent.
+        // `Error::delivery()` does not claim that (a redirect may follow a performed write).
         let never_sent = error
             .transport()
             .is_some_and(concord::reqwest::Error::is_connect);
@@ -188,7 +190,7 @@ impl State {
 type Clock = Arc<dyn Fn() -> Instant + Send + Sync>;
 
 /// The rate state of **one bot token** and the send policy of [`Discord`](crate::Discord)
-/// (`send limiter;`): every generated `send()` is admitted, executed once and observed by it.
+/// (`send limiter -> Result<_, Error>;`): every generated `send()` is admitted, executed once and observed by it.
 ///
 /// Cheap to clone (an `Arc`); clones share state, so give one limiter to every handle of a bot
 /// and a separate one to each other token. `Debug` prints counts only.
@@ -408,12 +410,7 @@ impl<T: Send + 'static> SendWith<T> for RateLimiter {
 
 /// Exactly one field line, as text.
 fn single<'h>(headers: &'h HeaderMap, name: &str) -> Option<&'h str> {
-    let mut values = headers.get_all(name).iter();
-    let value = values.next()?;
-    if values.next().is_some() {
-        return None;
-    }
-    value.to_str().ok()
+    concord::field::single(headers, name).ok()??.to_str().ok()
 }
 
 fn bucket_of(headers: &HeaderMap) -> Option<BucketHash> {

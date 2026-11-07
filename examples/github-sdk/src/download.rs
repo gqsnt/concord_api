@@ -278,7 +278,7 @@ pub struct StreamReceipt {
     pub host: String,
     /// The download response's status.
     pub status: StatusCode,
-    /// Its `Content-Length`, if declared.
+    /// Its single unsigned decimal `Content-Length`, if valid (surrounding OWS allowed).
     pub content_length: Option<u64>,
     /// Its `Content-Type`, if declared.
     pub content_type: Option<String>,
@@ -426,15 +426,14 @@ pub async fn stream_to<S: ByteSink>(
         .map_err(StreamError::Request)?
         .into_response();
     let status = response.status();
-    let header = |name| {
-        response
-            .headers()
-            .get(name)
-            .and_then(|v: &reqwest::header::HeaderValue| v.to_str().ok())
-            .map(str::to_owned)
-    };
-    let content_length = header(CONTENT_LENGTH).and_then(|v| v.parse::<u64>().ok());
-    let content_type = header(CONTENT_TYPE);
+    let content_length = concord::field::unsigned(response.headers(), CONTENT_LENGTH)
+        .ok()
+        .flatten();
+    let content_type = response
+        .headers()
+        .get(CONTENT_TYPE)
+        .and_then(|value| value.to_str().ok())
+        .map(str::to_owned);
     if let Some(declared) = content_length
         && declared > limits.max_bytes
     {

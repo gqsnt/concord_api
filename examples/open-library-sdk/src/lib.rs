@@ -25,7 +25,7 @@ concord::api! {
         base "https://openlibrary.org";
         response Json;
         limit RESPONSE_BODY_LIMIT;
-        send ReadPolicy;
+        send ReadPolicy -> Result<_, Error>;
 
         /// Public search operations; pagination is specific to each endpoint.
         scope search {

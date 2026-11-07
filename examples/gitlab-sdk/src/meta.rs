@@ -8,7 +8,7 @@ use std::fmt;
 
 use concord::reqwest::header::{HeaderMap, LINK, RETRY_AFTER};
 use concord::reqwest::{StatusCode, Url};
-use concord::{Received, ResponseHead};
+use concord::{Received, field};
 
 use crate::link::{self, LinkError, Links};
 
@@ -78,8 +78,7 @@ impl ResponseMeta {
                 .and_then(|value| value.to_str().ok())
                 .map(str::trim)
         };
-        let head = ResponseHead::new(status, concord::reqwest::Version::HTTP_11, headers);
-        let number = |name: &str| head.unsigned(name).ok().flatten();
+        let number = |name: &str| field::unsigned(headers, name).ok().flatten();
         Self {
             status,
             request_id: text("x-request-id")

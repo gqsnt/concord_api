@@ -20,7 +20,8 @@ pub struct ContinueBody {
 }
 
 concord::api! {
-    /// Declared Dropbox RPC transport. Public domain methods bind cursors to their context.
+    /// Declared Dropbox RPC transport: `send()` returns `Result<Response<T>, Error>`.
+    /// Public domain methods bind cursors to their context.
     pub client DropboxApi(
         /// Bearer token without the prefix. Never printed by Concord's Debug.
         #[sensitive] token: String,
@@ -29,7 +30,7 @@ concord::api! {
         headers { AUTHORIZATION = "Bearer {token}"; }
         format Json;
         limit crate::SUCCESS_BODY_LIMIT;
-        send DropboxPolicy;
+        send DropboxPolicy -> Result<Response<_>, Error>;
 
         scope selected(
             #[sensitive] header("Dropbox-API-Select-User") member: String,
