@@ -1,0 +1,8 @@
+{
+  "droplets": [],
+  "links": {
+    "pages": {
+      "next": "__ORIGIN__/v2/droplets?page=2&per_page=1"
+    }
+  }
+}

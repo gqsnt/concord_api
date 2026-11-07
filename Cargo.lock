@@ -1028,6 +1028,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "concord-sdk-digitalocean"
+version = "0.0.0"
+dependencies = [
+ "concord",
+ "concord-auth",
+ "concord-example-testserver",
+ "concord-pagination",
+ "serde",
+ "serde_json",
+ "tokio",
+]
+
+[[package]]
 name = "concord-sdk-discord-rest"
 version = "0.0.0"
 dependencies = [
