@@ -1025,6 +1025,24 @@ dependencies = [
 ]
 
 [[package]]
+name = "concord-sdk-backblaze-b2-native"
+version = "0.0.0"
+dependencies = [
+ "concord",
+ "concord-auth",
+ "concord-example-testserver",
+ "concord-retry",
+ "futures-core",
+ "http-body",
+ "mime",
+ "percent-encoding",
+ "serde",
+ "serde_json",
+ "sha1_smol",
+ "tokio",
+]
+
+[[package]]
 name = "concord-sdk-clickhouse"
 version = "0.0.0"
 dependencies = [
@@ -2868,6 +2886,12 @@ dependencies = [
  "ryu",
  "serde",
 ]
+
+[[package]]
+name = "sha1_smol"
+version = "1.0.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "bbfa15b3dddfee50a0fff136974b3e1bde555604ba463834a7eb7deb6417705d"
 
 [[package]]
 name = "sha2"

@@ -1,0 +1,10 @@
+{
+  "file": "hello-b2.txt",
+  "length": 63,
+  "sha1": "4b254a83d8f72b5d581fbcf833625d424fff477e",
+  "tamperedBody": "tampered!",
+  "tamperedSha1": "d269bf2d52677a7692ec2ef5fa88ce5340f6a749",
+  "encodedNameInput": "photos/2026 trip/café+notes.txt",
+  "encodedNameHeader": "photos/2026%20trip/caf%C3%A9%2Bnotes.txt",
+  "emptySha1": "da39a3ee5e6b4b0d3255bfef95601890afd80709"
+}
