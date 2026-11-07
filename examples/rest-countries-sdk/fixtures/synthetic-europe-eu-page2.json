@@ -1,0 +1,8 @@
+{
+  "data": {
+    "objects": [
+      { "names": { "common": "Bulgaria" }, "codes": { "alpha_2": "BG" }, "memberships": { "eu": true } }
+    ],
+    "meta": { "total": 3, "count": 1, "limit": 2, "offset": 2, "more": false }
+  }
+}
