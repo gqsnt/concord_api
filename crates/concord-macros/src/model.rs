@@ -304,6 +304,9 @@ pub struct Contrib {
     pub total: bool,
     /// `override ... else inherit`: absence keeps the inherited occurrences.
     pub else_inherit: bool,
+    /// The parameter (owner value index) whose direct placement this is; `None` for a block
+    /// entry. Orders an endpoint's `query(..)` values among its own keys.
+    pub param: Option<usize>,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
@@ -996,6 +999,7 @@ impl Model {
                     total: !v.optional,
                     else_inherit: false,
                     source: Some(Source::Ref { value, each }),
+                    param: Some(index),
                 };
                 self.push_contrib(at, family, contrib);
             }
@@ -1100,6 +1104,7 @@ impl Model {
                     sensitive,
                     total,
                     else_inherit: entry.else_inherit,
+                    param: None,
                 };
                 self.push_contrib(at, family, contrib);
             }
