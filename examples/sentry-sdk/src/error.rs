@@ -14,9 +14,10 @@ pub enum HttpClass {
     Forbidden,
     /// 404: missing or inaccessible resource; no retry.
     NotFound,
-    /// 429: frequency or concurrency limit, retried within bounds.
+    /// 429: frequency or concurrency limit, retried within bounds (reads and updates).
     RateLimited,
-    /// Any 5xx; only 502, 503 and 504 are retried.
+    /// Any 5xx; only 502, 503 and 504 are retried, and only for reads. An update answered with
+    /// a 5xx is not retried and may have been applied: re-read the issue.
     Server,
     /// Any other non-2xx, including redirects.
     Other,
@@ -91,11 +92,24 @@ pub enum Error {
     /// Process-local admission failure.
     Admission(concord_ratelimit::Error),
     /// Total deadline or replay refusal; no stale response body is consumed without a lease.
+    /// For an update this is never a dispatch left without an answer (that is `Uncertain`).
     RetryStopped {
         /// Dispatch and stop information.
         report: Box<ReceiveReport>,
         /// Last completed response head, if one arrived.
         meta: Option<Box<ResponseMeta>>,
+    },
+    /// A status change outside the documented details; nothing was sent.
+    InvalidUpdate(&'static str),
+    /// A dispatched status update received no response head (a client timeout, reset or
+    /// refused connection, or the SDK deadline expiring in flight). It may have been applied.
+    /// It is never retried: re-read the issue to learn its status.
+    Uncertain {
+        /// The client's failure (`Delivery::Unknown`); `None` when the SDK deadline cancelled
+        /// the dispatch. Its source may contain the URL.
+        transport: Option<Box<concord::Error>>,
+        /// All application attempts and waits; `no_response` is set.
+        report: Box<ReceiveReport>,
     },
 }
 impl From<concord::Error> for Error {
@@ -125,6 +139,10 @@ impl fmt::Display for Error {
             Self::Admission(error) => write!(f, "Sentry {error}"),
             Self::RetryStopped { report, .. } => {
                 write!(f, "Sentry retry stopped: {:?}", report.retry.stop)
+            }
+            Self::InvalidUpdate(reason) => write!(f, "Sentry issue update: {reason}"),
+            Self::Uncertain { .. } => {
+                f.write_str("Sentry issue update outcome unknown: re-read the issue")
             }
         }
     }

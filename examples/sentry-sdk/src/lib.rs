@@ -5,6 +5,7 @@ mod model;
 mod pagination;
 mod policy;
 mod rate;
+mod update;
 
 pub use concord;
 pub use concord_pagination::{PagesError, Resume};
@@ -13,6 +14,7 @@ pub use model::{Event, Issue, Response};
 pub use pagination::Listing;
 pub use policy::{SendPolicy, Settings};
 pub use rate::RateLimits;
+pub use update::{Ignore, MAX_IGNORE_WINDOW_MINUTES, StatusUpdate};
 
 use concord::{
     Json,
@@ -28,7 +30,8 @@ pub const BODY_LIMIT: usize = 1024 * 1024;
 pub const ERROR_BODY_LIMIT: usize = 16 * 1024;
 
 concord::api! {
-    /// Sentry issue and event reads. Prefer [`Sentry::with_token`] for validated bearer auth.
+    /// Sentry issue and event reads and issue status updates. Prefer [`Sentry::with_token`]
+    /// for validated bearer auth.
     pub client Sentry(
         /// Sensitive, complete Authorization header; `with_token` constructs this safely.
         #[sensitive] header(AUTHORIZATION) authorization: HeaderValue,
@@ -65,6 +68,9 @@ concord::api! {
                 ) -> Vec<Event> { path "{issue.issue}/events/"; }
                 /// Retrieve an event by eventID (also accepts latest/oldest/recommended).
                 GET event(event: String) -> Event { path "{issue.issue}/events/{event}/"; }
+                /// Change this issue's status; returns the updated issue. Only 429 is retried:
+                /// an update without a response head is [`Error::Uncertain`] (re-read the issue).
+                PUT update_status(body change: StatusUpdate) -> Issue { path "{issue.issue}/"; }
             }
         }
     }

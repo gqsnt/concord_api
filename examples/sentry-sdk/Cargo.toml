@@ -5,7 +5,7 @@ edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 publish = false
-description = "Bounded, fixture-tested Sentry issue and event reads over Concord"
+description = "Bounded, fixture-tested Sentry issue and event reads and issue status updates over Concord"
 
 [dependencies]
 concord = { path = "../../crates/concord", default-features = false, features = ["json", "reqwest-defaults"] }

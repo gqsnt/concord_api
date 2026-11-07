@@ -40,7 +40,8 @@ impl Default for Settings {
     }
 }
 
-/// A cheap clone sharing four endpoint buckets for one provider caller identity.
+/// A cheap clone sharing five endpoint buckets (four reads, the status update) for one
+/// provider caller identity.
 /// Reuse across tokens for the same caller; construct separately for different callers.
 #[derive(Clone)]
 pub struct SendPolicy {
@@ -63,7 +64,10 @@ impl SendPolicy {
         if settings.timeout.is_zero() || settings.window.is_zero() {
             return Err(Error::Configuration("window and timeout must be positive"));
         }
-        let limiter = Limiter::new(NonZeroUsize::new(4).unwrap(), TokioClock::default());
+        let limiter = Limiter::new(
+            NonZeroUsize::new(keys().len()).unwrap(),
+            TokioClock::default(),
+        );
         for key in keys() {
             limiter.set_budget(
                 key,
@@ -78,12 +82,14 @@ impl SendPolicy {
     }
 }
 
-fn keys() -> [&'static str; 4] {
+/// One admission bucket per endpoint; the paged reads are keys 0 and 2.
+fn keys() -> [&'static str; 5] {
     [
         crate::SentryOrganizationIssues::operation().name(),
         crate::SentryOrganizationIssueGet::operation().name(),
         crate::SentryOrganizationIssueEvents::operation().name(),
         crate::SentryOrganizationIssueEvent::operation().name(),
+        crate::SentryOrganizationIssueUpdateStatus::operation().name(),
     ]
 }
 struct Attempt {
@@ -99,6 +105,9 @@ impl<T: Send> SendWith<T> for SendPolicy {
         if !keys().contains(&key) {
             return Err(Error::Configuration("unsupported operation"));
         }
+        // A write may have been applied when it got no answer or a 5xx: only its documented
+        // rate-limit rejection (429) is repeated.
+        let write = E::operation().method() != Some("GET");
         let prepared = endpoint.prepare()?;
         let current = prepared.request().url().clone();
         let settings = self.settings;
@@ -135,7 +144,8 @@ impl<T: Send> SendWith<T> for SendPolicy {
             |outcome, context| {
                 let received = match outcome {
                     Ok(received) => received,
-                    Err(_) => return Decision::RetryAfter(None), // all four operations are safe reads
+                    Err(_) if write => return Decision::Done, // uncertain, reported below
+                    Err(_) => return Decision::RetryAfter(None), // reads are safe to repeat
                 };
                 let scheduling = (|| {
                     let headers = received.head().headers();
@@ -151,7 +161,11 @@ impl<T: Send> SendWith<T> for SendPolicy {
                         SystemTime::now(),
                     )
                     .map_err(|_| "invalid or repeated Retry-After")?;
-                    let retryable = matches!(received.status().as_u16(), 429 | 502 | 503 | 504);
+                    let retryable = match received.status().as_u16() {
+                        429 => true,
+                        502..=504 => !write,
+                        _ => false,
+                    };
                     if retryable {
                         let delay = hint.unwrap_or_default().max(fallback);
                         let until = self
@@ -182,10 +196,28 @@ impl<T: Send> SendWith<T> for SendPolicy {
         if let Some(error) = run.refusal {
             return Err(error);
         }
-        if matches!(
-            run.report.retry.stop,
-            StopReason::Deadline | StopReason::NotReplayable
-        ) {
+        // Writes repeat only after a 429, so a headless dispatch is always the last one.
+        if write && run.report.no_response {
+            let completed = run.report.completed == run.report.retry.attempts;
+            return Err(Error::Uncertain {
+                transport: match run.outcome {
+                    Some(Err(error)) if completed => Some(Box::new(error)),
+                    _ => None,
+                },
+                report: Box::new(run.report),
+            });
+        }
+        // A write's final non-429 answer is its result even when the deadline expired just after
+        // it arrived (the run still reports `Deadline`): reporting a stop would hide an applied
+        // change. Reads keep the conservative stop.
+        let answered_write =
+            write && matches!(&run.outcome, Some(Ok(r)) if r.status().as_u16() != 429);
+        if !answered_write
+            && matches!(
+                run.report.retry.stop,
+                StopReason::Deadline | StopReason::NotReplayable
+            )
+        {
             return Err(Error::RetryStopped {
                 meta: run.outcome.as_ref().and_then(|o| match o {
                     Ok(r) => Some(Box::new(r.meta())),

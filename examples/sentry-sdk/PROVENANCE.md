@@ -129,3 +129,40 @@ The package also supplies Cargo.toml, README.md, this provenance and FRICTION.md
 No compiler or test failures occurred during the initial build and test runs. The queued
 admission test was strengthened from an at-most-one-dispatch check to a stalled-body fixture
 that proves exactly zero dispatches before the waiting hook's deadline.
+
+## Maintenance: issue status update (2026-11-07)
+
+Added by the independent maintainer (not the author or the first consumer); the full record
+is `MAINTENANCE.md`. Live provider calls remain **NOT_RUN**. Classification of the new code:
+**docs-assisted** (Concord guides, Concord source/rustdoc and the existing SDK); no other SDK
+example was opened.
+
+Official pages read on **2026-11-07** through a page-fetch tool that returns a converted,
+summarized page (it declined verbatim reproduction, so facts below are as it reported them):
+
+| Exact page | Facts used |
+| --- | --- |
+| https://docs.sentry.io/api/events/update-an-issue/ | `PUT /api/0/organizations/{organization_id_or_slug}/issues/{issue_id}/`; "only the attributes submitted are modified"; all body parameters optional; `status` one of `resolved`, `unresolved`, `ignored`, `resolvedInNextRelease`, `muted`; top-level integer `ignoreDuration` (minutes), `ignoreCount`, `ignoreWindow` (minutes over which `ignoreCount` is measured, maximum 7 days), `ignoreUserCount`, `ignoreUserWindow` (maximum 7 days); `statusDetails` described only as additional resolution details, with **no sub-fields listed**; bearer token with `event:write` or `event:admin`; response codes 200/400/401/403/404 with **no response body example**. |
+| https://docs.sentry.io/api/events/bulk-mutate-an-organizations-issues/ | Linked from the Events & Issues index; read only to look for `statusDetails` sub-fields. Same status/ignore parameters; `inRelease`, `inNextRelease`, `inCommit` appear only inside a **response** example, so they were not adopted as request fields. |
+| https://docs.sentry.io/api/ratelimits/ | Re-read: limits per caller and endpoint; frequency and concurrency are separate; the page does not distinguish reads from writes. |
+| https://docs.sentry.io/api/pagination/ | Re-read: unchanged; the update returns no Link continuation. |
+| https://docs.sentry.io/api/events/ | Re-read: index lists "Update an Issue" as its own endpoint page. |
+
+Not sourced (SDK policy or ticket statement): the 200 body being the full updated issue (the
+ticket says so; the page shows no body), refusing zero counts/durations/windows, offering
+one ignore condition per change, omitting `muted`/`substatus`/`snoozeDuration`, a separate
+local bucket for the update, retrying only 429 for the update, and treating a headless update
+as uncertain. A 429 being a rejection rests on the rate-limit page's statement that requests
+over the limits are rejected.
+
+| File under fixtures/ | Derivation and purpose |
+| --- | --- |
+| `ignored.json` | Synthetic issue 202 after an ignore; `status`/`substatus`/`statusDetails` field names from the pages above, values authored; extra fields test tolerant decoding. Not a captured response. |
+
+Runtime-authored variants: `tests/update.rs` (status echo from the existing `issue.json`, hang-up,
+held heads for client timeout and SDK deadline, 429 with Retry-After, 5xx with `problem.json`,
+invalid quota field on a 200, provider window exhaustion) and `tests/status_update_use.rs`
+(a stateful synthetic issue store that applies a PUT before answering and holds one answer).
+
+No dependency was added; `Cargo.lock` and the root `Cargo.toml` are unchanged (the package was
+already a workspace member). `serde_json` was already a normal dependency of this package.

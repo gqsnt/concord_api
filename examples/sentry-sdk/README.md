@@ -1,9 +1,10 @@
-# Sentry issue and event reads
+# Sentry issue and event reads and issue status updates
 
 `concord-sdk-sentry` is an **example-assisted**, bounded SDK over Concord's generated
 client → organization/issue scopes → endpoints. It lists organization issues by cursor,
 retrieves a chosen issue, pages that issue's events, and retrieves an event by `eventID`.
-Event `id` and `eventID` are distinct fields. Live provider calls: **NOT_RUN**.
+Event `id` and `eventID` are distinct fields. It also changes an issue's status (resolve,
+ignore, unresolve; see "Status updates"). Live provider calls: **NOT_RUN**.
 
 ```no_run
 use concord_sdk_sentry::{http_client, Resume, SendPolicy, Sentry};
@@ -49,13 +50,60 @@ value. `pages(from, cap)` requires a page bound. Hitting it with more data yield
 only with the same organization, issue, query and page size. Multi-page cycles end at the cap.
 An empty page with results=true continues. Page bounds count logical calls; retries count separately.
 
+## Status updates
+
+`issue.update_status(change).send()` sends `PUT .../organizations/{org}/issues/{issue}/` with a
+JSON body holding `status` and only that change's documented details, and returns the updated
+`Issue` (`next_cursor` is always `None`). No other issue attribute and no `null` is sent.
+
+| `StatusUpdate` | Body |
+| --- | --- |
+| `Unresolved` | `{"status":"unresolved"}` |
+| `Resolved` | `{"status":"resolved"}` |
+| `ResolvedInNextRelease` | `{"status":"resolvedInNextRelease"}` |
+| `Ignored(Ignore::FOREVER)` | `{"status":"ignored"}` |
+| `Ignored(Ignore::for_minutes(m)?)` | adds `"ignoreDuration": m` |
+| `Ignored(Ignore::until_seen(n, w)?)` | adds `"ignoreCount": n`, and `"ignoreWindow"` when `w` is `Some` |
+| `Ignored(Ignore::until_users(n, w)?)` | adds `"ignoreUserCount": n`, and `"ignoreUserWindow"` when `w` is `Some` |
+
+A status outside this closed set cannot be written. Durations and windows are whole minutes; a
+zero count, duration or window, or a window over 7 days (`MAX_IGNORE_WINDOW_MINUTES`), is
+`Error::InvalidUpdate` from the `Ignore` constructor, before any request exists.
+
+```no_run
+use concord_sdk_sentry::{http_client, Error, Ignore, SendPolicy, Sentry, StatusUpdate};
+
+# async fn example() -> Result<(), Box<dyn std::error::Error>> {
+let api = Sentry::with_token(http_client()?, "your-token", SendPolicy::default())?;
+let issue = api.organization("acme").issue("4567891230");
+let change = StatusUpdate::Ignored(Ignore::until_seen(100, Some(60))?);
+match issue.update_status(change).send().await {
+    Ok(updated) => assert_eq!(updated.value.status, "ignored"),
+    // It may have been applied: learn the outcome by reading, never by resending blindly.
+    Err(Error::Uncertain { .. }) => println!("now {}", issue.get().send().await?.value.status),
+    Err(other) => return Err(other.into()),
+}
+# Ok(()) }
+```
+
+The update has its own endpoint bucket under the same `Settings` and header observations as the
+reads: every attempt takes a concurrency lease, then frequency admission. Only a 429 (Sentry's
+rate-limit rejection) is retried, after its Retry-After and both admissions again. An update
+that received no response head (the transport's timeout, a reset or refused connection, or the
+scheduling deadline expiring in flight) is `Error::Uncertain` and is never resent: re-read the
+issue. A 5xx answer is `Error::Provider` and is not retried; it does not prove that the change
+was not applied either. A deadline during 429 backoff is `Error::RetryStopped` with the 429 head
+(not applied). A 2xx with invalid quota fields is `Error::RateMetadata` with that 2xx head: the
+change was applied.
+
 All calls use a sensitive bearer header. `with_token` validates token syntax; direct generated
 `Sentry::new`/setters are lower-level interfaces accepting a complete native header.
 For exact request accounting use `http_client()`: redirects and reqwest retries are disabled.
 A caller-supplied transport must do likewise; it owns TLS, proxies and timeouts. `prepare()`
 builds the declared request but bypasses the send policy if you execute it yourself.
 
-`SendPolicy` clones share four buckets for one **caller identity and service deployment**.
+`SendPolicy` clones share five buckets (four reads and the status update) for one **caller
+identity and service deployment**.
 Reuse the policy across tokens representing that caller: Sentry does not key limits by token.
 Separate callers/deployments should use separate policies. Endpoint keys deliberately combine
 all organizations and issue ids for that caller. Default local limits are 5 requests/second
@@ -72,7 +120,8 @@ Every attempt, including retries, waits for a concurrency lease **then** frequen
 The lease covers headers and the final body's consumption; it is released before retry backoff.
 Sentry frequency reset is an absolute UTC epoch timestamp, converted to the limiter's monotonic
 epoch. Window observations and cooldowns combine conservatively. Retry-After (seconds or
-IMF-fixdate) is a minimum. Safe reads retry headless transport failures and HTTP 429/502/503/504.
+IMF-fixdate) is a minimum. Safe reads retry headless transport failures and HTTP 429/502/503/504;
+status updates retry only 429 (see above).
 The backoff starts at 100ms and caps locally at 2s, without jitter. Malformed/repeated scheduling
 headers stop repetition; no response body failure is replayed. Retry deadlines include admission,
 dispatch and backoff. Final body reads use the transport's request timeout and a byte bound;
@@ -93,7 +142,10 @@ request/URL access, public fields and explicit Concord body/source accessors dis
 contents intentionally; do not log them as diagnostics.
 
 Excluded: ingestion, releases mutation, organization administration, OAuth/token refresh,
+issue attributes other than status (assignment, bookmarks, priority, merge, discard), the
+`muted` status alias, release/commit resolution details, `substatus`, bulk issue mutation,
 arbitrary event search/filter coverage, cross-process quota coordination and a complete Sentry
 schema. All protocol/workflow tests use `examples/testserver`, without provider API calls.
 Sources, synthetic fixture derivations and the consulted example are in `PROVENANCE.md`;
-Concord adaptation costs are in `FRICTION.md`.
+Concord adaptation costs are in `FRICTION.md`; the status-update maintenance record is in
+`MAINTENANCE.md`.
