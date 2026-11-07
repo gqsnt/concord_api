@@ -1,0 +1,23 @@
+{
+  "items": [
+    {
+      "id": "accepted-alice",
+      "event": "accepted",
+      "timestamp": 1700000001.25,
+      "recipient": "alice@example.test",
+      "message": {"headers": {"message-id": "fixture-27@mg.example.test"}}
+    },
+    {
+      "id": "temporary-bob",
+      "event": "failed",
+      "severity": "temporary",
+      "timestamp": 1700000002.5,
+      "recipient": "bob@example.test",
+      "message": {"headers": {"message-id": "fixture-27@mg.example.test"}}
+    }
+  ],
+  "paging": {
+    "next": "__ORIGIN__/v3/mg.example.test/events/page-two?opaque=a%2Bb%3D&limit=2",
+    "previous": "__ORIGIN__/v3/mg.example.test/events/before"
+  }
+}

@@ -1,0 +1,25 @@
+{
+  "items": [
+    {
+      "id": "delivered-alice",
+      "event": "delivered",
+      "timestamp": 1700000003.75,
+      "recipient": "alice@example.test",
+      "message": {"headers": {"message-id": "fixture-27@mg.example.test"}},
+      "delivery-status": {"code": 250, "message": "OK"},
+      "future-provider-field": {"ignored": true}
+    },
+    {
+      "id": "permanent-bob",
+      "event": "failed",
+      "severity": "permanent",
+      "timestamp": 1700000004,
+      "recipient": "bob@example.test",
+      "message": {"headers": {"message-id": "fixture-27@mg.example.test"}}
+    }
+  ],
+  "paging": {
+    "next": "__ORIGIN__/v3/mg.example.test/events/empty",
+    "previous": "__ORIGIN__/v3/mg.example.test/events/page-one"
+  }
+}

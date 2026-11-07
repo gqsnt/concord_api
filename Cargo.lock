@@ -1109,6 +1109,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "concord-sdk-mailgun"
+version = "0.0.0"
+dependencies = [
+ "concord",
+ "concord-auth",
+ "concord-example-testserver",
+ "concord-pagination",
+ "concord-retry",
+ "futures-util",
+ "mime",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "tokio",
+]
+
+[[package]]
 name = "concord-sdk-microsoft-graph"
 version = "0.0.0"
 dependencies = [
