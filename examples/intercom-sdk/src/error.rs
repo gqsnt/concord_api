@@ -42,24 +42,11 @@ impl RateLimits {
 }
 
 fn number(headers: &HeaderMap, name: &str) -> HeaderNumber {
-    let mut values = headers.get_all(name).iter();
-    let Some(value) = values.next() else {
-        return HeaderNumber::Missing;
-    };
-    if values.next().is_some() {
-        return HeaderNumber::Invalid;
+    match concord::field::unsigned(headers, name) {
+        Ok(None) => HeaderNumber::Missing,
+        Ok(Some(value)) => HeaderNumber::Value(value),
+        Err(_) => HeaderNumber::Invalid,
     }
-    let Ok(value) = value.to_str() else {
-        return HeaderNumber::Invalid;
-    };
-    let value = value.trim_matches([' ', '\t']);
-    if value.is_empty() || !value.bytes().all(|b| b.is_ascii_digit()) {
-        return HeaderNumber::Invalid;
-    }
-    value
-        .parse()
-        .map(HeaderNumber::Value)
-        .unwrap_or(HeaderNumber::Invalid)
 }
 
 /// Intercom normally sends a string code; some validation errors send an integer.

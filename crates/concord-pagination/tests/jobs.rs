@@ -450,6 +450,7 @@ fn jobs_support_keyed_completion_order_and_continue_mode() {
             Ok(done) => seen.push((done.index, done.key, true)),
             Err(JobsError::Job(failed)) => seen.push((failed.index, failed.key, false)),
             Err(JobsError::Discovery(_)) => unreachable!(),
+            Err(JobsError::RepeatedKey) => unreachable!(),
         }
     }
     assert_eq!(

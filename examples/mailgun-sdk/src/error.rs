@@ -106,7 +106,7 @@ impl ProviderError {
 pub enum Error {
     /// Invalid input before a request starts.
     Input(InputError),
-    /// Build failure or event-read failure, preserving Concord's stage and head.
+    /// Request not sent or event-read failure, preserving Concord's stage and head.
     Concord(Box<concord::Error>),
     /// A send may have taken effect but no usable acknowledgement was obtained.
     /// Never automatically replay, even with a buffered attachment.

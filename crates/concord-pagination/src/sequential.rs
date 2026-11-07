@@ -2,10 +2,12 @@
 
 use std::fmt;
 use std::future::{Future, poll_fn};
+use std::hash::Hash;
 use std::marker::PhantomData;
 use std::pin::Pin;
 use std::task::{Context, Poll};
 
+use crate::repeated::KeyHistory;
 use crate::types::{Budget, Outcome, Page, Progress, Resume};
 
 /// Marks the item, metadata and error types without owning them.
@@ -70,6 +72,7 @@ where
         in_flight: None,
         ended: None,
         failed: None,
+        history: None,
         _types: PhantomData,
     }
 }
@@ -90,6 +93,7 @@ pub struct Sequential<K, T, M, E, F, Fut> {
     in_flight: Option<Pin<Box<Fut>>>,
     ended: Option<Outcome>,
     failed: Option<Resume<K>>,
+    history: Option<Box<KeyHistory<K>>>,
     _types: PhantomData<Types<T, M, E>>,
 }
 
@@ -99,7 +103,32 @@ where
     F: FnMut(Option<K>) -> Fut,
     Fut: Future<Output = Result<Page<T, K, M>, E>>,
 {
-    /// The next page, or `None` when the chain ended (exhausted, bounded, failed or finished).
+    /// Refuse a continuation key already requested by this traversal, ending with
+    /// [`Outcome::RepeatedKey`] before invoking the factory again. Successful pages remain
+    /// emitted; the checkpoint names the refused key, and no provider failure is counted.
+    ///
+    /// Opt-in: requires `Eq + Hash` and retains one cloned key per distinct keyed page requested
+    /// (expected O(1) lookup). Without it there is no history allocation, hashing or extra clone.
+    /// Set before reading; only subsequent admissions are remembered. Calling it again keeps
+    /// the history. The budget takes precedence when both would stop admission. A new traversal
+    /// from a [`Resume`] starts a fresh history, including its starting key on first admission;
+    /// checkpoints do not carry earlier history. `Resume::Start` has no key to remember.
+    pub fn reject_repeated_keys(mut self) -> Self
+    where
+        K: Eq + Hash,
+    {
+        self.set_history(KeyHistory::new());
+        self
+    }
+
+    pub(crate) fn set_history(&mut self, history: KeyHistory<K>) {
+        if self.history.is_none() {
+            self.history = Some(Box::new(history));
+        }
+    }
+
+    /// The next page, or `None` when the chain ended (exhausted, bounded, failed, repeated key
+    /// refused or finished).
     ///
     /// An `Err` is the factory's own error for the page at [`checkpoint`](Self::checkpoint); the
     /// chain is then over.
@@ -118,6 +147,13 @@ where
             };
             if self.admitted >= self.budget {
                 self.ended = Some(Outcome::Bounded);
+                return Poll::Ready(None);
+            }
+            if let Some(history) = &mut self.history
+                && let Some(key) = position.key()
+                && !history.admit(key)
+            {
+                self.ended = Some(Outcome::RepeatedKey);
                 return Poll::Ready(None);
             }
             // Charged at admission: a failing page still counts.
@@ -147,9 +183,9 @@ where
         }
     }
 
-    /// Where to resume to continue after the last emitted page: the key of the first page not yet
-    /// emitted (the failed page after a failure, the page in flight while one is). `None` once
-    /// the provider's last page was emitted.
+    /// Where to resume after the last emitted page: the next key supplied by the provider
+    /// (the refused key after a repeated-key stop), the failed page after a failure, or the
+    /// page in flight while one is. `None` once the provider's last page was emitted.
     pub fn checkpoint(&self) -> Option<&Resume<K>> {
         self.position.as_ref()
     }
@@ -175,7 +211,7 @@ where
 
     /// The outcome the chain would report now without dropping anything, or `None` while it can
     /// still make progress.
-    fn natural_outcome(&self) -> Option<Outcome> {
+    pub(crate) fn natural_outcome(&self) -> Option<Outcome> {
         if let Some(outcome) = self.ended {
             return Some(outcome);
         }
@@ -254,15 +290,16 @@ impl<K, T, M, E, F, Fut> fmt::Debug for Sequential<K, T, M, E, F, Fut> {
 ///
 /// Outcomes: [`Outcome::Exhausted`] (the last page had no next key), [`Outcome::Bounded`] (the
 /// budget was used while a next key existed), [`Outcome::Failed`] (a page failed) or
-/// [`Outcome::Stopped`] (finished early).
+/// [`Outcome::Stopped`] (finished early), or [`Outcome::RepeatedKey`] (an opted-in refusal).
 #[non_exhaustive]
 pub struct SequentialReport<K> {
     /// How the chain ended.
     pub outcome: Outcome,
     /// Final counters.
     pub progress: Progress,
-    /// Pass as `from` to continue with the first page not emitted (the failed page after a
-    /// failure). `None` when the provider is exhausted.
+    /// Pass as `from` to continue with the next page (the failed page after a failure, or the
+    /// refused key after a repeated-key stop). `None` when the provider is exhausted. A new
+    /// traversal starts a fresh key history and may reread pages from the earlier prefix.
     pub resume: Option<Resume<K>>,
     /// The page whose request failed, kept apart from `resume` (they designate the same page in
     /// a chain, but have different meanings). The error itself was returned by `next`.
@@ -383,6 +420,19 @@ where
     F: FnMut(Option<K>) -> Fut,
     Fut: Future<Output = Result<Page<T, K, M>, E>>,
 {
+    /// See [`Sequential::reject_repeated_keys`]. The history belongs to the underlying chain.
+    pub fn reject_repeated_keys(mut self) -> Self
+    where
+        K: Eq + Hash,
+    {
+        self.pages = self.pages.reject_repeated_keys();
+        self
+    }
+
+    pub(crate) fn set_history(&mut self, history: KeyHistory<K>) {
+        self.pages.set_history(history);
+    }
+
     fn new(pages: Sequential<K, T, M, E, F, Fut>, skip: usize) -> Self {
         let checkpoint = pages
             .checkpoint()

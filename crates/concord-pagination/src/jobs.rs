@@ -3,11 +3,13 @@
 use std::collections::VecDeque;
 use std::fmt;
 use std::future::{Future, poll_fn};
+use std::hash::Hash;
 use std::marker::PhantomData;
 use std::num::NonZeroUsize;
 use std::pin::Pin;
 use std::task::{Context, Poll};
 
+use crate::repeated::KeyHistory;
 use crate::types::{Budget, Checkpoint, Keyed, Manifest, OnError, Options, Outcome, Progress};
 use crate::types::{Resume, Unfinished};
 use crate::window::{Halt, Step, Window};
@@ -141,6 +143,8 @@ where
         discovery: None,
         calls: 0,
         discovery_failed: None,
+        discovery_repeated: false,
+        history: None,
         ended: None,
         _types: PhantomData,
     }
@@ -155,6 +159,9 @@ pub enum JobsError<D, EJ, ED> {
     Job(Keyed<D, EJ>),
     /// A manifest call failed; discovery is over (see [`DiscoveryReport::failed`]).
     Discovery(ED),
+    /// A manifest continuation key was already requested in this traversal. The duplicate
+    /// request was refused; inspect the traversal's progress and discovery resume point.
+    RepeatedKey,
 }
 
 impl<D, EJ, ED> fmt::Debug for JobsError<D, EJ, ED> {
@@ -162,6 +169,7 @@ impl<D, EJ, ED> fmt::Debug for JobsError<D, EJ, ED> {
         match self {
             Self::Job(job) => f.debug_tuple("Job").field(job).finish(),
             Self::Discovery(_) => f.write_str("Discovery(..)"),
+            Self::RepeatedKey => f.write_str("RepeatedKey"),
         }
     }
 }
@@ -171,6 +179,7 @@ impl<D, EJ: fmt::Display, ED: fmt::Display> fmt::Display for JobsError<D, EJ, ED
         match self {
             Self::Job(job) => write!(f, "job {job}"),
             Self::Discovery(error) => write!(f, "discovery: {error}"),
+            Self::RepeatedKey => f.write_str("a manifest continuation key was already requested"),
         }
     }
 }
@@ -184,6 +193,7 @@ where
         match self {
             Self::Job(job) => Some(&job.value),
             Self::Discovery(error) => Some(error),
+            Self::RepeatedKey => None,
         }
     }
 }
@@ -207,6 +217,8 @@ pub struct Jobs<D, MK, R, EJ, ED, FD, FutD, FJ, FutJ> {
     discovery: Option<Pin<Box<FutD>>>,
     calls: u64,
     discovery_failed: Option<Resume<MK>>,
+    discovery_repeated: bool,
+    history: Option<Box<KeyHistory<MK>>>,
     ended: Option<Outcome>,
     _types: PhantomData<fn() -> ED>,
 }
@@ -220,6 +232,30 @@ where
     FJ: FnMut(D) -> FutJ,
     FutJ: Future<Output = Result<R, EJ>>,
 {
+    /// Refuse a manifest continuation key already requested in this traversal, returning
+    /// [`JobsError::RepeatedKey`] once before another discovery request. The refused key stays
+    /// in the discovery checkpoint/report, with no failed manifest or additional call counted.
+    ///
+    /// Requires `Eq + Hash` and stores one cloned key per distinct keyed manifest requested;
+    /// defaults have no history allocation, hashing or extra cloning. Enable before reading;
+    /// only later admissions are remembered, and enabling again preserves history. Discovery
+    /// and job budgets take precedence over refusal. A new traversal from [`Resume`] starts a
+    /// fresh history; `Resume::Start` has no key to remember.
+    ///
+    /// As with a discovery failure, [`OnError::Stop`] cancels admitted jobs, while
+    /// [`OnError::Continue`] finishes known admitted/queued work within its job budget. Once
+    /// settled, the report is [`Outcome::DiscoveryRepeatedKey`]; finishing earlier with work
+    /// outstanding is [`Outcome::Stopped`].
+    pub fn reject_repeated_keys(mut self) -> Self
+    where
+        MK: Eq + Hash,
+    {
+        if self.history.is_none() {
+            self.history = Some(Box::new(KeyHistory::new()));
+        }
+        self
+    }
+
     /// The next keyed job outcome (or discovery failure), or `None` when the traversal ended.
     pub async fn next(&mut self) -> Option<Result<Keyed<D, R>, JobsError<D, EJ, ED>>> {
         poll_fn(|cx| self.poll_outcome(cx)).await
@@ -234,7 +270,9 @@ where
                 return Poll::Ready(Some(outcome.map_err(JobsError::Job)));
             }
             self.admit_jobs();
-            self.admit_discovery();
+            if self.admit_discovery() {
+                return Poll::Ready(Some(Err(JobsError::RepeatedKey)));
+            }
             if let Some(future) = self.discovery.as_mut()
                 && let Poll::Ready(result) = future.as_mut().poll(cx)
             {
@@ -287,6 +325,7 @@ where
     fn may_discover(&self) -> bool {
         self.discovery.is_none()
             && self.discovery_failed.is_none()
+            && !self.discovery_repeated
             && self.window.halted().is_none()
             && self.position.is_some()
             && self.calls < self.discovery_budget
@@ -294,21 +333,36 @@ where
             && self.window.admitted() + (self.backlog.len() as u64) < self.job_budget
     }
 
-    fn admit_discovery(&mut self) {
+    /// Returns true only on the first refused repeated key.
+    fn admit_discovery(&mut self) -> bool {
         if !self.may_discover() {
-            return;
+            return false;
         }
         let Some(position) = &self.position else {
-            return;
+            return false;
         };
+        if let Some(history) = &mut self.history
+            && let Some(key) = position.key()
+            && !history.admit(key)
+        {
+            self.discovery_repeated = true;
+            if self.on_error == OnError::Stop {
+                self.window.halt(Halt::Stopped);
+            }
+            return true;
+        }
         self.calls += 1;
         let request = position.to_request();
         self.discovery = Some(Box::pin((self.discover)(request)));
+        false
     }
 
     fn natural_outcome(&self) -> Outcome {
         match self.window.halted() {
-            Some(Halt::Stopped) if self.discovery_failed.is_none() => return Outcome::Stopped,
+            Some(Halt::Stopped) if self.discovery_failed.is_none() && !self.discovery_repeated => {
+                return Outcome::Stopped;
+            }
+            _ if self.discovery_repeated => return Outcome::DiscoveryRepeatedKey,
             _ if self.discovery_failed.is_some() => return Outcome::DiscoveryFailed,
             Some(Halt::Failure) => return Outcome::Failed,
             Some(Halt::FailureLimit) => return Outcome::FailureLimit,
@@ -388,6 +442,7 @@ where
                 calls: self.calls,
                 resume: self.position,
                 failed: self.discovery_failed,
+                repeated_key: self.discovery_repeated,
             },
         }
     }
@@ -453,8 +508,12 @@ pub struct DiscoveryReport<MK> {
     /// discovered); otherwise work may remain undiscovered from here, in unknown amount. Resume
     /// with [`manifest_jobs`] from this point.
     pub resume: Option<Resume<MK>>,
-    /// The manifest whose call failed, kept apart from `resume`.
+    /// The manifest whose call failed, kept apart from `resume`. A locally refused repeated
+    /// key is not a failed manifest call.
     pub failed: Option<Resume<MK>>,
+    /// Whether a repeated continuation key stopped discovery, including when the caller
+    /// subsequently stopped before known jobs settled. The refused key is in `resume`.
+    pub repeated_key: bool,
 }
 
 impl<MK> fmt::Debug for DiscoveryReport<MK> {
@@ -463,6 +522,7 @@ impl<MK> fmt::Debug for DiscoveryReport<MK> {
             .field("calls", &self.calls)
             .field("resume", &self.resume)
             .field("failed", &self.failed)
+            .field("repeated_key", &self.repeated_key)
             .finish()
     }
 }
@@ -471,7 +531,8 @@ impl<MK> fmt::Debug for DiscoveryReport<MK> {
 ///
 /// Outcomes: [`Outcome::Exhausted`], [`Outcome::ExhaustedWithFailures`], [`Outcome::Bounded`] (job
 /// budget), [`Outcome::Failed`], [`Outcome::FailureLimit`], [`Outcome::Stopped`],
-/// [`Outcome::DiscoveryFailed`] and [`Outcome::DiscoveryBounded`].
+/// [`Outcome::DiscoveryFailed`], [`Outcome::DiscoveryBounded`] and
+/// [`Outcome::DiscoveryRepeatedKey`].
 ///
 /// Work is reported in three disjoint parts: attempted work (`unfinished`, `retained`, and the
 /// successes already emitted), known but unattempted work (`queued`), and undiscovered work

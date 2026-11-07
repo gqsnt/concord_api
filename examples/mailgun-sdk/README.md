@@ -6,7 +6,7 @@ Live provider calls: **NOT_RUN**. Tests use only loopback fixtures.
 
 This is an **example-assisted** SDK on Concord baseline
 `8c27cd1a509c4cac4edde44f60c3d3ca13e2b46f`. The public hierarchy is
-`Mailgun → domain → send_message/events`. Both endpoints use generated `.send()`.
+`Mailgun → domain → send_message/events`. Both endpoints use generated `.send()`, returning `Result<Response<T>, Error>`.
 
 The following complete caller compiles as a doctest; it accepts only a local
 fixture origin. The integration tests start the server and execute this workflow.
@@ -96,6 +96,7 @@ fn cannot_replay(email: TextEmail) {
 ```
 
 No send is retried automatically, including buffered sends, 401, 429 and 5xx.
+A refused connection is `Error::Concord` with `Delivery::NotSent`; nothing was sent.
 There is no generic Mailgun send idempotency guarantee in this slice. A transport
 failure after dispatch, timeout, or unusable success body is `Error::AmbiguousSend`:
 the message may have been accepted, and the SDK may not have obtained its ID.

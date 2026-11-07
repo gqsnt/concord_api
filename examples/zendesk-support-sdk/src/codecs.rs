@@ -1,7 +1,7 @@
 //! Two formats of this slice: the create response with its idempotency lookup, and error bodies.
 
 use concord::bytes::Bytes;
-use concord::{CodecError, ContentTypeField, Decode, Json, ResponseHead};
+use concord::{CodecError, ContentTypeField, Decode, Json, ResponseHead, field};
 use concord_codecs::{Charset, check_content_type};
 
 use crate::{CreatedTicket, IdempotencyLookup, Problem, TicketResponse};
@@ -22,15 +22,15 @@ impl Decode<CreatedTicket> for CreatedTicketFormat {
     }
 
     fn context(head: &ResponseHead<'_>) -> Result<IdempotencyLookup, CodecError> {
-        let mut values = head.headers().get_all("x-idempotency-lookup").iter();
-        Ok(match (values.next(), values.next()) {
-            (None, _) => IdempotencyLookup::Absent,
-            (Some(one), None) => match one.to_str().map(str::trim) {
+        let lookup = field::single(head.headers(), "x-idempotency-lookup");
+        Ok(match lookup {
+            Ok(None) => IdempotencyLookup::Absent,
+            Ok(Some(one)) => match one.to_str().map(str::trim) {
                 Ok(v) if v.eq_ignore_ascii_case("miss") => IdempotencyLookup::Miss,
                 Ok(v) if v.eq_ignore_ascii_case("hit") => IdempotencyLookup::Hit,
                 _ => IdempotencyLookup::Unrecognized,
             },
-            (Some(_), Some(_)) => IdempotencyLookup::Unrecognized,
+            Err(_) => IdempotencyLookup::Unrecognized,
         })
     }
 

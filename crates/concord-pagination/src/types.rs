@@ -117,9 +117,10 @@ pub enum OnError {
 /// failures cannot bypass the budget. It counts *logical* calls: a factory that retries, refreshes
 /// credentials or sends subrequests internally makes more HTTP attempts than its budget.
 ///
-/// The crate does not compare keys, so the budget is the only guard against a key chain that
-/// cycles through more than one page (A → B → A). An adapter should refuse a key that does not
-/// advance (a next key equal to the one just requested) with its own error.
+/// Keys are not compared by default. [`Pages::reject_repeated_keys`](crate::Pages::reject_repeated_keys)
+/// and [`Sequential::reject_repeated_keys`](crate::Sequential::reject_repeated_keys) optionally
+/// refuse page cycles; [`Jobs::reject_repeated_keys`](crate::Jobs::reject_repeated_keys) does
+/// the same for manifests. A budget also bounds chains of distinct keys.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct Budget(NonZeroUsize);
 
@@ -263,6 +264,8 @@ pub enum Outcome {
     ExhaustedWithFailures,
     /// The page or job [`Budget`] stopped admission while more work remained.
     Bounded,
+    /// A dependent chain refused to request a continuation key already used in this traversal.
+    RepeatedKey,
     /// An observed failure stopped the traversal ([`OnError::Stop`], or any failure of a
     /// sequential chain).
     Failed,
@@ -276,6 +279,9 @@ pub enum Outcome {
     /// The discovery budget stopped a manifest chain that had a next manifest: the remaining work
     /// is unknown.
     DiscoveryBounded,
+    /// Manifest discovery refused a continuation key already requested in this traversal.
+    /// Known jobs may have completed; more work remains undiscovered.
+    DiscoveryRepeatedKey,
 }
 
 impl Outcome {
@@ -286,9 +292,12 @@ impl Outcome {
     }
 
     /// `true` when work may remain undiscovered ([`Outcome::DiscoveryFailed`],
-    /// [`Outcome::DiscoveryBounded`]).
+    /// [`Outcome::DiscoveryBounded`], [`Outcome::DiscoveryRepeatedKey`]).
     pub fn is_discovery_incomplete(self) -> bool {
-        matches!(self, Self::DiscoveryFailed | Self::DiscoveryBounded)
+        matches!(
+            self,
+            Self::DiscoveryFailed | Self::DiscoveryBounded | Self::DiscoveryRepeatedKey
+        )
     }
 }
 
@@ -298,11 +307,13 @@ impl fmt::Display for Outcome {
             Self::Exhausted => "exhausted: every page succeeded",
             Self::ExhaustedWithFailures => "exhausted with failures",
             Self::Bounded => "bounded by the budget",
+            Self::RepeatedKey => "stopped by a repeated continuation key",
             Self::Failed => "stopped by a failure",
             Self::FailureLimit => "stopped by the failure limit",
             Self::Stopped => "stopped by the caller",
             Self::DiscoveryFailed => "discovery failed: remaining work unknown",
             Self::DiscoveryBounded => "discovery bounded: remaining work unknown",
+            Self::DiscoveryRepeatedKey => "discovery refused a repeated continuation key",
         })
     }
 }

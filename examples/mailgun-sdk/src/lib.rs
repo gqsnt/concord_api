@@ -66,7 +66,7 @@ concord::api! {
         path "v3";
         response Json;
         limit EVENT_BODY_LIMIT;
-        send SendPolicy;
+        send SendPolicy -> Result<Response<_>, Error>;
 
         /// One sending domain, in the client's region.
         scope domain(domain: Domain) {

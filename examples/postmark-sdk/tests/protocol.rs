@@ -123,3 +123,63 @@ async fn error_document_message_is_not_formatted() {
     assert!(!format!("{error:?} {error}").contains("synthetic-secret-token"));
     server.shutdown().await;
 }
+
+#[tokio::test]
+async fn retry_after_seconds_refuses_signed_repeated_and_overflowing_fields() {
+    for (values, expected) in [
+        (vec![" 7 "], Some(7)),
+        (vec!["+7"], None),
+        (vec!["7", "7"], None),
+        (vec!["18446744073709551616"], None),
+        (vec!["Sat, 07 Nov 2026 10:00:00 GMT"], None),
+        (vec![], None),
+    ] {
+        let server = TestServer::start(move |_: &Recorded| {
+            let mut reply = Reply::json(429, include_str!("../fixtures/error.json"));
+            for value in &values {
+                reply = reply.header("retry-after", *value);
+            }
+            reply
+        })
+        .await;
+        let error = client(&server)
+            .outbound()
+            .list(1, 0)
+            .send()
+            .await
+            .unwrap_err();
+        assert!(
+            matches!(error, Error::Api { retry_after_seconds, .. } if retry_after_seconds == expected)
+        );
+        assert_eq!(server.requests().len(), 1);
+        server.shutdown().await;
+    }
+}
+
+#[tokio::test]
+async fn send_that_never_connected_has_no_unknown_outcome() {
+    let reserved = tokio::net::TcpSocket::new_v4().unwrap();
+    reserved.bind(([127, 0, 0, 1], 0).into()).unwrap();
+    let origin = format!("http://{}", reserved.local_addr().unwrap());
+    let http = concord_sdk_postmark::http_client_builder()
+        .no_proxy()
+        .timeout(std::time::Duration::from_secs(2))
+        .build()
+        .unwrap();
+    let api = Postmark::new(
+        http,
+        PostmarkConfig {
+            token: "synthetic-secret-token".into(),
+        },
+    )
+    .with_base_url(origin)
+    .unwrap();
+    let error = api.outbound().send_batch(vec![]).send().await.unwrap_err();
+    assert!(!error.is_unknown_outcome());
+    let Error::Request(error) = error else {
+        panic!("{error:?}")
+    };
+    assert_eq!(error.delivery(), concord::Delivery::NotSent);
+    assert!(error.transport().is_some_and(|e| e.is_connect()));
+    drop(reserved);
+}

@@ -49,7 +49,8 @@ Cancellation while a shared refresh is in flight leaves the cache's future avail
 process loss may still lose a rotated token. These constraints mean this example alone does not
 provide crash-safe production token persistence.
 
-`create` performs one application request. A transport failure (including timeout), 408, server
+`create` performs one application request. A request-build failure or refused connection is a
+Concord error with `Delivery::NotSent`. A later transport failure (including timeout), 408, server
 error, or unusable successful response is `CreateUncertain`: it may have created a contact. Reconcile
 with HubSpot before deciding whether to create again. A caller that cancels the future after dispatch
 must likewise treat the result as uncertain. Explicit non-408 client errors are returned as Concord

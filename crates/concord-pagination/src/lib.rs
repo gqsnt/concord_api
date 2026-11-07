@@ -85,6 +85,12 @@
 //! window's futures and retained results, the key of each failed page (bounded by
 //! [`Options::failure_limit`] or the budget), and for jobs the backlog. Successful outcomes go to
 //! the caller and are not remembered; durable ledgers are the caller's.
+//! Opting into [`Pages::reject_repeated_keys`] (also on [`Sequential`], [`Items`] and
+//! [`PageItems`]) additionally retains one cloned key per keyed page requested, refusing a
+//! repeated continuation before another request. Its history carries through item and metadata
+//! event views, but not into a new traversal from a checkpoint.
+//! [`Jobs::reject_repeated_keys`] applies the same history to manifest discovery, ending with
+//! [`Outcome::DiscoveryRepeatedKey`] once known work settles.
 //!
 //! A checkpoint belongs to the plan it came from: the same tenant, query, filter, sort, page size
 //! and snapshot. Resuming it against another is the caller's error and is not detected (keys are
@@ -112,6 +118,7 @@ mod jobs;
 pub mod link;
 mod offset;
 mod pages;
+mod repeated;
 mod sequential;
 mod types;
 mod window;

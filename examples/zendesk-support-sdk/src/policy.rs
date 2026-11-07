@@ -5,7 +5,7 @@ use std::time::{Duration, Instant, SystemTime};
 
 use concord::reqwest::StatusCode;
 use concord::reqwest::header::RETRY_AFTER;
-use concord::{Endpoint, Prepared, Received, SendWith};
+use concord::{Delivery, Endpoint, Prepared, Received, SendWith};
 use concord_retry::concord::ReplayMode;
 use concord_retry::{Decision, Replay, Retry};
 
@@ -110,7 +110,7 @@ impl SendPolicy {
             |cause| Error::Uncertain(Box::new(UncertainWrite::new(operation, key.clone(), cause)));
         match prepared.receive().await {
             // No connection was established: the request never left this process.
-            Err(e) if e.transport().is_some_and(|t| t.is_connect()) => Err(Error::Concord(e)),
+            Err(e) if e.delivery() == Delivery::NotSent => Err(Error::Concord(e)),
             Err(e) => Err(uncertain(UncertainCause::NoResponse(e))),
             Ok(received) if received.status().is_server_error() => {
                 let http = HttpError::read(received, 1).await;

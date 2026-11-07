@@ -77,7 +77,7 @@ concord::api! {
         headers { "intercom-version" = "2.17"; }
         format Json;
         limit SUCCESS_BODY_LIMIT;
-        send ResponsePolicy;
+        send ResponsePolicy -> Result<Response<_>, Error>;
 
         /// Contacts in the authenticated workspace.
         scope contacts {

@@ -445,3 +445,33 @@ async fn batch_read_failures_are_sent_once() {
         server.shutdown().await;
     }
 }
+
+#[tokio::test]
+async fn create_that_never_connected_is_not_uncertain() {
+    let server = TestServer::start(|request| {
+        if request.path().contains("/oauth/") {
+            Reply::json(200, include_str!("../fixtures/oauth.json"))
+        } else {
+            Reply::json(200, include_str!("../fixtures/contact.json"))
+        }
+    })
+    .await;
+    let hub = HubSpot::new(http(), "a".into(), "b".into(), "c".into())
+        .unwrap()
+        .with_base_url(&server.url())
+        .unwrap();
+    hub.get("x").await.unwrap(); // Keep a valid access token while testing the create connection.
+    let reserved = tokio::net::TcpSocket::new_v4().unwrap();
+    reserved.bind(([127, 0, 0, 1], 0).into()).unwrap();
+    let origin = format!("http://{}", reserved.local_addr().unwrap());
+    let hub = hub.with_base_url(&origin).unwrap();
+    let error = hub.create(Default::default()).await.unwrap_err();
+    let Error::Concord(error) = error else {
+        panic!("{error:?}")
+    };
+    assert_eq!(error.delivery(), concord::Delivery::NotSent);
+    assert!(error.transport().is_some_and(|e| e.is_connect()));
+    assert_eq!(server.requests().len(), 2);
+    drop(reserved);
+    server.shutdown().await;
+}

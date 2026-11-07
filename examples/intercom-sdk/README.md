@@ -120,7 +120,7 @@ created contact by its returned ID as shown above.
 
 ## Failure semantics
 
-`send()` performs one application execution. `http_client()` disables reqwest
+`send()` returns `Result<Response<T>, Error>` and performs one application execution. `http_client()` disables reqwest
 retries and redirects and sets a 15-second timeout. A caller-supplied transport
 can change those guarantees. GETs, searches and creates stop on failures; the SDK
 never refreshes credentials or retries automatically. A lost create response
