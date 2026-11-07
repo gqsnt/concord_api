@@ -86,8 +86,8 @@ impl fmt::Display for InvalidRequest {
 
 impl std::error::Error for InvalidRequest {}
 
-/// The body of a non-streaming message request: `model`, `max_tokens` and the text `messages`
-/// (the request shape of the cited documentation). Its JSON has no `stream` field;
+/// The body of a non-streaming message request: `model`, `max_tokens`, text `messages` and
+/// optional `system` and `tools`. Its JSON has no `stream` field;
 /// [`streaming`](Self::streaming) turns it into the body of the streaming endpoint.
 ///
 /// ```
@@ -106,9 +106,9 @@ impl std::error::Error for InvalidRequest {}
 /// ```
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
 pub struct MessageRequest {
-    model: String,
+    #[serde(flatten)]
+    inputs: CountTokensRequest,
     max_tokens: u32,
-    messages: Vec<InputMessage>,
 }
 
 impl MessageRequest {
@@ -133,9 +133,13 @@ impl MessageRequest {
             return Err(InvalidRequest::NoMessages);
         }
         Ok(Self {
-            model,
+            inputs: CountTokensRequest {
+                model,
+                messages,
+                system: None,
+                tools: None,
+            },
             max_tokens,
-            messages,
         })
     }
 
@@ -157,9 +161,32 @@ impl MessageRequest {
         StreamRequest(self)
     }
 
+    /// Sets the system prompt: a string or a JSON array of text blocks, as accepted by the API.
+    /// The JSON is passed through without local schema validation.
+    pub fn with_system(mut self, system: impl Into<Value>) -> Self {
+        self.inputs.system = Some(system.into());
+        self
+    }
+
+    /// Sets tool definitions (JSON objects with `name`, `input_schema`, and optionally
+    /// `description`). They are passed through without interpretation or execution; the API
+    /// validates them. Some server tools accepted by creation are refused by token counting.
+    pub fn with_tools(mut self, tools: Vec<Value>) -> Self {
+        self.inputs.tools = Some(tools);
+        self
+    }
+
+    /// A snapshot of this request's model, messages, system and tools for
+    /// [`count_tokens`](crate::AnthropicMessages::count_tokens). Clones only those inputs;
+    /// the original request remains available for creation or streaming. No `max_tokens` or
+    /// `stream` can appear in this body's JSON.
+    pub fn count_tokens(&self) -> CountTokensRequest {
+        self.inputs.clone()
+    }
+
     /// The model name.
     pub fn model(&self) -> &str {
-        &self.model
+        &self.inputs.model
     }
 
     /// The `max_tokens` bound.
@@ -169,8 +196,48 @@ impl MessageRequest {
 
     /// The input turns, oldest first.
     pub fn messages(&self) -> &[InputMessage] {
-        &self.messages
+        &self.inputs.messages
     }
+
+    /// The system prompt, if set.
+    pub fn system(&self) -> Option<&Value> {
+        self.inputs.system.as_ref()
+    }
+
+    /// The tool definitions, if set.
+    pub fn tools(&self) -> Option<&[Value]> {
+        self.inputs.tools.as_deref()
+    }
+}
+
+/// The input-only body of `POST /v1/messages/count_tokens`, obtained with
+/// [`MessageRequest::count_tokens`]. This shares the input field definitions with creation;
+/// generation settings are kept exclusively in [`MessageRequest`] and [`StreamRequest`].
+///
+/// A counting body cannot be used to create a message:
+///
+/// ```compile_fail
+/// use concord_sdk_anthropic_messages::{Anthropic, MessageRequest};
+/// fn cannot_generate(api: &Anthropic, request: &MessageRequest) {
+///     api.messages().create(request.count_tokens());
+/// }
+/// ```
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+pub struct CountTokensRequest {
+    model: String,
+    messages: Vec<InputMessage>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    system: Option<Value>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    tools: Option<Vec<Value>>,
+}
+
+/// The token-counting response. A count is an estimate of input usage, not a generated message.
+#[derive(Clone, Debug, PartialEq, Eq, Deserialize)]
+#[non_exhaustive]
+pub struct TokenCount {
+    /// Total input tokens for the supplied model, messages, system and tools.
+    pub input_tokens: u64,
 }
 
 /// The body of the streaming endpoint: a [`MessageRequest`] whose JSON also carries

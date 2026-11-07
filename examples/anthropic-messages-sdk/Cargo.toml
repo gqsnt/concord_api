@@ -1,6 +1,6 @@
 [package]
 name = "concord-sdk-anthropic-messages"
-description = "A bounded Anthropic Messages SDK on Concord: non-streaming and streaming message creation, offline-tested."
+description = "A bounded Anthropic Messages SDK on Concord: token counting and non-streaming/streaming message creation, offline-tested."
 version = "0.0.0"
 edition = "2024"
 rust-version.workspace = true

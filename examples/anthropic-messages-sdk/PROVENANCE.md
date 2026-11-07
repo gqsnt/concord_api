@@ -4,6 +4,28 @@ Where every provider fact, fixture and dependency of this SDK comes from. Live p
 **NOT_RUN** — the real API was never called; every test runs against `examples/testserver` on
 127.0.0.1.
 
+## Token-counting maintenance, 2026-11-07
+
+Read the exact official pages below using the web reader on **2026-11-07**. This is a new
+maintenance reading; the retrieval method and hashes in the original section below describe the
+initial implementation, not this session.
+
+| Page | Sections used and implementation facts |
+|---|---|
+| [Token counting](https://platform.claude.com/docs/en/build-with-claude/token-counting) | "How to count message tokens", embedded endpoint reference, basic/tool examples and FAQ: `POST /v1/messages/count_tokens`, shared model/messages/system/tools inputs, optional string or text-block-array system and JSON tool definitions, required `input_tokens` response; estimates and provider input restrictions. Generation settings are excluded from this SDK's counting type. |
+| [Claude API errors](https://platform.claude.com/docs/en/api/errors) | "HTTP errors", "Error shapes", "Request ID": reuse the existing API error decoder, preserve status, header request ID with body fallback, and leave rejected counting requests as errors. |
+| [Streaming messages](https://platform.claude.com/docs/en/build-with-claude/streaming) | "Event types", "Error events": retain the existing completion sentinel and incomplete-stream behavior, tested without stream implementation changes. |
+
+No dependency was added or changed. The package was already in workspace `members` and
+`Cargo.lock` at session start. The initial offline Cargo test omitted `--locked`; the lock stayed
+unchanged, and subsequent build/test/lint/doc commands use `--locked`.
+
+New fixture data is inline in `tests/token_counting.rs` and `tests/count_tokens_consumer.rs`:
+synthetic counts (0 and 37), zero-count future field, malformed counts, system strings/text blocks,
+tool schemas, fictional keys and request IDs. Counts are scripted results, not measured provider
+usage. Error documents derive from the existing error fixture by substituting type/message/ID;
+existing message and SSE fixtures are reused unchanged. **Live provider calls: NOT_RUN**.
+
 ## Documentation pages
 
 Both pages were retrieved on **2026-11-07 (06:47 UTC)** with `curl`, as published HTML and as the

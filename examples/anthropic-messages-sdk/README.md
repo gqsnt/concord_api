@@ -1,7 +1,7 @@
 # concord-sdk-anthropic-messages
 
 A bounded SDK for the [Anthropic Messages API](https://platform.claude.com/docs/en/build-with-claude/streaming),
-built on Concord. It covers two connected workflows and nothing else:
+built on Concord. It counts an existing request's input tokens before either generation workflow:
 
 1. **Create a message** (non-streaming) with text input, and inspect the returned content blocks.
 2. **Stream a message** and consume its server-sent events incrementally through `message_stop`,
@@ -20,6 +20,9 @@ use concord_sdk_anthropic_messages::{Anthropic, AnthropicConfig, MessageRequest,
 async fn run() -> Result<(), Box<dyn std::error::Error>> {
     let api = Anthropic::new(http_client()?, AnthropicConfig { api_key: "sk-ant-...".into() });
     let request = MessageRequest::user("claude-opus-5-5", 256, "Hello")?;
+
+    let counted = api.messages().count_tokens(request.count_tokens()).send().await?;
+    println!("estimated input tokens: {}", counted.value.input_tokens);
 
     // Workflow 1: POST /v1/messages, the whole message.
     let created = api.messages().create(request.clone()).send().await?;
@@ -46,8 +49,8 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
 
 The crate documentation carries the same example as a compiled doctest.
 
-- **The client** is the generated `Anthropic` (client → scope `messages` → endpoints `create`
-  and `stream`). Its required value is the API key, sent as `x-api-key` and never printed by
+- **The client** is the generated `Anthropic` (client → scope `messages` → endpoints
+  `count_tokens`, `create` and `stream`). Its required value is the API key, sent as `x-api-key` and never printed by
   Concord. `anthropic-version` defaults to `2026-10-21`, the value on the cited pages
   (`API_VERSION`); `set_anthropic_version(..)` replaces it. `with_base_url(..)` points the
   client elsewhere (the `/v1` prefix is kept).
@@ -61,8 +64,28 @@ The crate documentation carries the same example as a compiled doctest.
   `max_tokens` or no message (`InvalidRequest`, nothing sent); everything else is the API's to
   judge. `request.streaming()` is the body of the streaming endpoint, a distinct type
   (`StreamRequest`), so a streaming body cannot be sent to `create` or the other way round.
+  Add a system string or JSON text-block array with `.with_system(..)`, and JSON tool definitions
+  with `.with_tools(vec![..])`. These optional inputs pass through to both generation modes and
+  counting; the provider validates their schemas. No tool is executed by this SDK.
 - **Every `send()`** returns `Result<Response<T>, Error>`: the value and the response head
   (`response.request_id()`, `response.meta`).
+
+## Counting before generation
+
+`request.count_tokens()` clones the request's model, messages, optional system and tools into a
+distinct `CountTokensRequest`, retaining the original request. Pass it to
+`api.messages().count_tokens(..).send().await?` and read `response.value.input_tokens` (`u64`).
+For an already built `StreamRequest`, use `stream_request.request().count_tokens()`.
+The counting JSON has no `max_tokens` or `stream`; its endpoint is exclusively
+`POST /v1/messages/count_tokens`. The same client key, version override, `Response` metadata and
+`Error::Api` handling apply. Unsupported counting, rejected inputs or unreadable responses return
+errors; no generation fallback or automatic resend occurs.
+
+The [token-counting page](https://platform.claude.com/docs/en/build-with-claude/token-counting)
+(read **2026-11-07**) describes counting as an estimate. Some inputs accepted by generation are
+rejected by counting; such failures stay API errors. There is no assertion that a preflight count
+equals a later message's usage. Error documents and IDs follow the
+[errors page](https://platform.claude.com/docs/en/api/errors) (read **2026-11-07**).
 
 ## What a message contains
 
@@ -83,9 +106,9 @@ from the latest event that carried it.
 | Invalid input (empty model, `max_tokens == 0`, no message) | `Error::InvalidRequest`, nothing sent |
 | A key that cannot be a header value | `Error::Concord`, kind `Build`, `delivery() == NotSent`; the key is not echoed |
 | No response (connection refused, timeout, reset) | `Error::Concord`, kind `Transport`, `delivery() == Unknown`: a create may have been generated and billed; the SDK does not resend |
-| A non-2xx status (400, 401, 402, 403, 404, 409, 413, 429, 500, 504, 529, also for the streaming endpoint before its stream starts) | `Error::Api(ApiError)`: `status()`, `error_type()` (`ApiErrorType`, unknown types kept verbatim), `message()`, `request_id()` (header, else the document's `request_id`), `retry_after(now)` |
+| A non-2xx status (400, 401, 402, 403, 404, 409, 413, 429, 500, 504, 529, including counting and the streaming endpoint before its stream starts) | `Error::Api(ApiError)`: `status()`, `error_type()` (`ApiErrorType`, unknown types kept verbatim), `message()`, `request_id()` (header, else the document's `request_id`), `retry_after(now)` |
 | A non-2xx whose document is HTML, unlabelled, not JSON, not the documented shape, longer than 64 KiB or cut off | `Error::Api` with the status kept and `document_error()` saying why (Concord `Metadata`, `Decode`, `Limit`, `Transport`) |
-| A 2xx `create` that is not `application/json`, not a message, longer than 8 MiB or cut off | `Error::Concord` (`Metadata`, `Decode`, `Limit`, `Transport`), with the head (`error.status()`, `error.request_id()`) |
+| A 2xx `create` / `count_tokens` that is not `application/json`, not the declared message / count, longer than 8 MiB or cut off | `Error::Concord` (`Metadata`, `Decode`, `Limit`, `Transport`), with the head (`error.status()`, `error.request_id()`) |
 | A 2xx `stream` response that is not `text/event-stream` (charset absent or UTF-8) | `Error::Concord`, kind `Metadata`, the response kept unread |
 | An `error` event after the 200 (`overloaded_error`, ...) | `Error::Incomplete`, cause `ErrorEvent` |
 | The body ends before `message_stop` (cleanly, inside an event, or by a lost connection) | `Error::Incomplete`, cause `EndOfStream`, `MalformedStream` or `Transport` |
@@ -115,17 +138,17 @@ or a `StreamEvent` is your data: its derived `Debug` shows its content.
 ## Excluded
 
 Tool execution, batches, extended-thinking interpretation and deterministic output equivalence
-are outside this slice. So are system prompts, sampling parameters, images and documents, beta
-headers, token counting, the Files API, platform variants (Bedrock, Vertex, Foundry, Claude
+are outside this slice. So are sampling parameters, images and documents, beta
+headers, the Files API, platform variants (Bedrock, Vertex, Foundry, Claude
 Platform on AWS), automatic retries and stream resumption. Their blocks and deltas pass through
 uninterpreted when they appear in a response.
 
 ## Running the tests
 
 ```sh
-cargo test --locked -p concord-sdk-anthropic-messages
-cargo clippy --locked -p concord-sdk-anthropic-messages --all-targets -- -D warnings
-RUSTDOCFLAGS="-D warnings" cargo doc --locked -p concord-sdk-anthropic-messages --no-deps
+CARGO_BUILD_JOBS=4 cargo test --offline --locked -p concord-sdk-anthropic-messages
+CARGO_BUILD_JOBS=4 cargo clippy --offline --locked -p concord-sdk-anthropic-messages --all-targets -- -D warnings
+CARGO_BUILD_JOBS=4 RUSTDOCFLAGS="-D warnings" cargo doc --offline --locked -p concord-sdk-anthropic-messages --no-deps
 ```
 
 `tests/workflows.rs` runs both workflows end to end (chunked deliveries cut inside lines and
@@ -133,3 +156,7 @@ multi-byte characters, a per-event timeout) and the required failure (a midstrea
 an end before `message_stop`, a lost connection, a body ending inside an event).
 `tests/protocol.rs` checks the request shapes, every documented error class on both endpoints,
 unreadable and oversized bodies, the event-flow rules, the redirect policy and redaction.
+`tests/token_counting.rs` checks counting wire fields, snapshots, error/ID parity, invalid counts
+and absence of generation fallback. `tests/count_tokens_consumer.rs` counts a request with
+multi-turn text, system blocks and tool definitions, then explicitly creates and streams it.
+[`MAINTENANCE.md`](MAINTENANCE.md) records this extension and the remaining Concord costs.

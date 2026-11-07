@@ -1,5 +1,6 @@
 //! A bounded SDK for the Anthropic Messages API, built on Concord: create a message, or stream
-//! one and consume its events through `message_stop`.
+//! one and consume its events through `message_stop`. Count the input tokens of an existing
+//! request before choosing whether to generate.
 //!
 //! ```no_run
 //! use concord_sdk_anthropic_messages::{Anthropic, AnthropicConfig, MessageRequest, http_client};
@@ -7,6 +8,9 @@
 //! async fn run() -> Result<(), Box<dyn std::error::Error>> {
 //!     let api = Anthropic::new(http_client()?, AnthropicConfig { api_key: "sk-ant-...".into() });
 //!     let request = MessageRequest::user("claude-opus-5-5", 256, "Hello")?;
+//!
+//!     let counted = api.messages().count_tokens(request.count_tokens()).send().await?;
+//!     println!("estimated input tokens: {}", counted.value.input_tokens);
 //!
 //!     // Workflow 1: POST /v1/messages, the whole message.
 //!     let created = api.messages().create(request.clone()).send().await?;
@@ -44,8 +48,8 @@ use concord::{Endpoint, Json, ResponseMeta, SendWith};
 pub use concord;
 pub use error::{ApiError, ApiErrorType, Error, Incomplete, IncompleteCause, ProviderError};
 pub use model::{
-    ContentBlock, InputMessage, InvalidRequest, Message, MessageRequest, OtherBlock, Role,
-    StopReason, StreamRequest, Usage,
+    ContentBlock, CountTokensRequest, InputMessage, InvalidRequest, Message, MessageRequest,
+    OtherBlock, Role, StopReason, StreamRequest, TokenCount, Usage,
 };
 pub use stream::{
     Delta, MAX_EVENT_BYTES, MessageEvents, MessageStream, PartialMessage, StreamEvent, StreamState,
@@ -55,17 +59,18 @@ pub use stream::{
 /// (retrieved 2026-11-07). Replace it with `Anthropic::set_anthropic_version`.
 pub const API_VERSION: &str = "2026-10-21";
 
-/// The largest non-streaming message body read (8 MiB): a longer one is a Concord `Limit` error
-/// and is not decoded.
+/// The largest successful JSON body read for creation or counting (8 MiB): a longer one is a
+/// Concord `Limit` error and is not decoded.
 pub const MAX_MESSAGE_BYTES: usize = 8 * 1024 * 1024;
 
 /// The largest error document read (64 KiB). The status is kept when the document is longer.
 pub const ERROR_BODY_LIMIT: usize = 64 * 1024;
 
 concord::api! {
-    /// The Anthropic Messages API: [`messages`](Anthropic::messages) creates a message, or streams
-    /// one. Every `send()` returns `Result<Response<T>, Error>`: this crate's error, with the
-    /// API's error document on a non-2xx status ([`SendPolicy`]). Nothing is retried.
+    /// The Anthropic Messages API: [`messages`](Anthropic::messages) counts input tokens, creates
+    /// a message, or streams one. Every `send()` returns `Result<Response<T>, Error>`: this
+    /// crate's error, with the API's error document on a non-2xx status ([`SendPolicy`]). Nothing
+    /// is retried.
     ///
     /// Use a transport without redirects ([`http_client`]): the key travels in `x-api-key`, a
     /// header reqwest does not drop when a redirect changes the host.
@@ -89,6 +94,14 @@ concord::api! {
                 limit MAX_MESSAGE_BYTES;
             }
 
+            /// Counts input tokens without generating (`POST /v1/messages/count_tokens`). Use
+            /// [`MessageRequest::count_tokens`] to reuse a request's inputs. The result has the
+            /// same response metadata and API errors as creation; no fallback or retry occurs.
+            POST count_tokens(body request: CountTokensRequest) -> TokenCount {
+                path "count_tokens";
+                limit MAX_MESSAGE_BYTES;
+            }
+
             /// Creates a message as a stream of server-sent events (`POST /v1/messages` with
             /// `"stream": true`). `send()` checks the status and the `text/event-stream` head and
             /// returns a [`MessageStream`] without reading the body; errors before the stream
@@ -100,8 +113,8 @@ concord::api! {
     }
 }
 
-/// A decoded value (a [`Message`], a [`MessageStream`]) and the head of the response it came
-/// from.
+/// A decoded value (a [`TokenCount`], a [`Message`], a [`MessageStream`]) and the head of the
+/// response it came from.
 #[derive(Debug)]
 pub struct Response<T> {
     /// The value.
@@ -126,8 +139,8 @@ impl<T> Response<T> {
 
 /// The send policy of [`Anthropic`] (`send SendPolicy -> Result<Response<_>, Error>;`): one
 /// request, then a non-2xx answer becomes [`Error::Api`] with its error document read bounded
-/// ([`ERROR_BODY_LIMIT`]), and a 2xx is decoded as declared (a message, or a stream whose body
-/// is not read yet).
+/// ([`ERROR_BODY_LIMIT`]), and a 2xx is decoded as declared (a count, a message, or a stream whose
+/// body is not read yet).
 ///
 /// It never repeats a request: a 429, 5xx or 529 is returned to the caller
 /// ([`ApiError::retry_after`] reads the server's delay), and a broken stream is never restarted.

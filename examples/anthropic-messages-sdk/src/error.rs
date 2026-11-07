@@ -32,8 +32,8 @@ pub enum Error {
     /// Concord failed: the request could not be built (`Build`, nothing sent), no response
     /// arrived (`Transport`), or a 2xx response was refused (`Metadata`: not
     /// `application/json`, or not `text/event-stream` for a stream), unreadable (`Transport`
-    /// mid-body), too long (`Limit`) or not a message (`Decode`). After a head arrived,
-    /// `error.head()` keeps it.
+    /// mid-body), too long (`Limit`) or not the declared count/message (`Decode`). After a head
+    /// arrived, `error.head()` keeps it.
     Concord(concord::Error),
     /// A stream ended before `message_stop`: an `error` event, the end of the body, a broken
     /// connection, malformed events or an event order the documentation does not allow. The
