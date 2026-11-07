@@ -1,0 +1,10 @@
+{
+  "payments": [
+    {
+      "id": "synthetic-payment-002",
+      "amount_money": { "amount": 250, "currency": "USD" },
+      "status": "FAILED"
+    }
+  ],
+  "cursor": ""
+}

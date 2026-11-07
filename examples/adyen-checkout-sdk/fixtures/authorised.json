@@ -1,0 +1,6 @@
+{
+  "resultCode": "Authorised",
+  "pspReference": "8812345678901234",
+  "merchantReference": "order-sdk31",
+  "amount": {"currency": "EUR", "value": 1000}
+}

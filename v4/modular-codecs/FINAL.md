@@ -149,7 +149,7 @@ problem per endpoint (`endpoint()`, `declaration()`, `earlier()`, `reason()`); `
 | `Json` | 200, `text/html`, JSON bytes (server withholds the body) | `Metadata`; zero body bytes read; `into_response()` returns it unread | `metadata.rs::the_head_is_refused_before_the_body_exists` |
 | `IgnoreContentType<Json>` | 200, `text/html`, JSON bytes | decoded | `bodies.rs::r03_content_type_is_checked_unless_deliberately_ignored` |
 | `IgnoreContentType<Json>` | 200, `text/html`, `<html>` | `Decode` (only the media check is skipped) | same |
-| `Json` | 200, `application/json; charset=iso-8859-1`, or `charset` twice | `Metadata` | `crates/concord-extras/tests/media.rs`, `metadata.rs::charset_parameters_are_read_exactly` |
+| `Json` | 200, `application/json; charset=iso-8859-1`, or `charset` twice | `Metadata` | `crates/concord-codecs/tests/media.rs`, `metadata.rs::charset_parameters_are_read_exactly` |
 | `Json` | 204 without `Content-Type` | `Metadata` ("the response has no Content-Type") | `error_inspection.rs::empty_responses_are_not_null` |
 | `JsonOrEmpty` | 204; 200 `application/json` `{"track":..}`; 200 `null` | `Ok(None)`; `Ok(Some(..))`; `Ok(None)` | `examples/compat/tests/json_or_empty.rs` |
 | `JsonOrEmpty` | 200 without `Content-Type`; 200 `application/json` empty or `{` | `Metadata`; `Decode` | same |

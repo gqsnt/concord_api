@@ -1,6 +1,6 @@
 use crate::api::{Notion, NotionConfig};
 use crate::models::{Block, List, Page, QueryResult};
-use crate::{ERROR_LIMIT, EnvelopeProblem, Error, PageSize, ProviderError, Query, RESPONSE_LIMIT};
+use crate::{ERROR_LIMIT, EnvelopeProblem, Error, PageSize, ProviderError, Query};
 use concord::{Prepared, ResponseMeta, reqwest};
 use concord_pagination::{Page as TraversalPage, Pages, Resume};
 use std::collections::HashSet;
@@ -220,18 +220,14 @@ fn validate<T>(response: &Response<List<T>>, cursor: Option<&str>) -> Result<(),
 
 async fn receive<T>(prepared: Prepared<T>) -> Result<Response<T>, Error> {
     let received = prepared.receive().await?;
-    let meta = received.meta();
-    if meta.status().is_success() {
-        let value = received
-            .decode_limited(RESPONSE_LIMIT)
-            .await
-            .map_err(|source| Error::api(source, Some(meta.clone())))?;
+    if received.status().is_success() {
+        let (value, meta) = received.decode_with_meta().await?;
         return Ok(Response { value, meta });
     }
-    let body = received
-        .bytes_limited(ERROR_LIMIT)
-        .await
-        .map_err(|source| Error::api(source, Some(meta.clone())))?;
+    // Keep the raw bytes even when JSON decoding succeeds but the provider envelope is
+    // inconsistent with the head; `document` retains bytes only after a decode failure.
+    let meta = received.meta();
+    let body = received.bytes_limited(ERROR_LIMIT).await?;
     match serde_json::from_slice::<ProviderError>(&body) {
         Ok(error) if error.object == "error" && error.status == meta.status().as_u16() => {
             Err(Error::Provider {

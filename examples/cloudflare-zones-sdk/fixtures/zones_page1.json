@@ -1,0 +1,135 @@
+{
+  "errors": [],
+  "messages": [],
+  "success": true,
+  "result": [
+    {
+      "id": "1a00000000000000000000000000000a",
+      "account": {
+        "id": "acc0000000000000000000000000000a",
+        "name": "Synthetic Account A"
+      },
+      "activated_on": "2026-01-02T00:01:00.12345Z",
+      "created_on": "2026-01-01T05:20:00.12345Z",
+      "development_mode": 7200,
+      "meta": {
+        "cdn_only": false,
+        "custom_certificate_quota": 0,
+        "dns_only": false,
+        "foundation_dns": false,
+        "page_rule_quota": 3,
+        "phishing_detected": false,
+        "step": 4
+      },
+      "modified_on": "2026-01-03T05:20:00.12345Z",
+      "name": "alpha.example.com",
+      "name_servers": [
+        "ns-a.synthetic.example.net",
+        "ns-b.synthetic.example.net"
+      ],
+      "original_dnshost": "SyntheticHost",
+      "original_name_servers": [
+        "ns1.previous.example.net",
+        "ns2.previous.example.net"
+      ],
+      "original_registrar": "SyntheticRegistrar",
+      "owner": {
+        "id": "own0000000000000000000000000000a",
+        "name": "Synthetic Owner",
+        "type": "organization"
+      },
+      "plan": {
+        "id": "pln0000000000000000000000000000a",
+        "can_subscribe": false,
+        "currency": "USD",
+        "externally_managed": false,
+        "frequency": "monthly",
+        "is_subscribed": true,
+        "legacy_discount": false,
+        "legacy_id": "free",
+        "name": "Synthetic Plan",
+        "price": 0
+      },
+      "cname_suffix": "cdn.synthetic.example.net",
+      "paused": false,
+      "permissions": [
+        "#zone:read"
+      ],
+      "status": "active",
+      "tenant": {
+        "id": "ten0000000000000000000000000000a",
+        "name": "Synthetic Tenant"
+      },
+      "tenant_unit": {
+        "id": "tun0000000000000000000000000000a"
+      },
+      "type": "full",
+      "vanity_name_servers": [],
+      "verification_key": "000000001-0000000001"
+    },
+    {
+      "id": "1a00000000000000000000000000000b",
+      "account": { "id": "acc0000000000000000000000000000a", "name": "Synthetic Account A" },
+      "activated_on": null,
+      "created_on": "2026-02-01T00:00:00Z",
+      "development_mode": 0,
+      "modified_on": "2026-02-01T00:00:00Z",
+      "name": "beta.example.com",
+      "name_servers": ["ns-a.synthetic.example.net", "ns-b.synthetic.example.net"],
+      "original_name_servers": null,
+      "paused": false,
+      "status": "pending",
+      "type": "full"
+    },
+    {
+      "id": "1a00000000000000000000000000000c",
+      "account": { "id": "acc0000000000000000000000000000a", "name": "Synthetic Account A" },
+      "activated_on": "2026-03-02T00:00:00Z",
+      "created_on": "2026-03-01T00:00:00Z",
+      "development_mode": -60,
+      "modified_on": "2026-03-02T00:00:00Z",
+      "name": "gamma.example.com",
+      "name_servers": [],
+      "original_name_servers": [],
+      "paused": true,
+      "status": "active",
+      "type": "partial",
+      "verification_key": "000000003-0000000003"
+    },
+    {
+      "id": "1a00000000000000000000000000000d",
+      "account": { "id": "acc0000000000000000000000000000a", "name": "Synthetic Account A" },
+      "activated_on": null,
+      "created_on": "2026-04-01T00:00:00Z",
+      "development_mode": 0,
+      "modified_on": "2026-04-01T00:00:00Z",
+      "name": "delta.example.com",
+      "name_servers": ["ns-a.synthetic.example.net"],
+      "original_name_servers": [],
+      "paused": false,
+      "status": "initializing",
+      "type": "secondary"
+    },
+    {
+      "id": "1a00000000000000000000000000000e",
+      "account": { "id": "acc0000000000000000000000000000a", "name": "Synthetic Account A" },
+      "activated_on": "2026-05-02T00:00:00Z",
+      "created_on": "2026-05-01T00:00:00Z",
+      "development_mode": 0,
+      "modified_on": "2026-05-02T00:00:00Z",
+      "name": "epsilon.example.com",
+      "name_servers": ["ns-a.synthetic.example.net", "ns-b.synthetic.example.net"],
+      "original_name_servers": [],
+      "paused": false,
+      "status": "moved",
+      "type": "full"
+    }
+  ],
+  "result_info": {
+    "count": 5,
+    "page": 1,
+    "per_page": 5,
+    "total_count": 6,
+    "total_pages": 2
+  }
+}

@@ -106,7 +106,7 @@ concord::api! {
         #[sensitive] header(AUTHORIZATION) authorization?: HeaderValue,
     ) {
         base "https://ntfy.sh";
-        send NtfyPolicy;
+        send NtfyPolicy -> Result<_, NtfyError>;
 
         /// One topic (`/<topic>`).
         scope topic(topic: Topic) {

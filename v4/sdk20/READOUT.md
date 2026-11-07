@@ -28,9 +28,10 @@ with one endpoint (Excerpt of `examples/nager-holidays-sdk/src/lib.rs`):
 }
 ```
 
-and the policy, written once (`send Type;` uses `Type::default()`; Excerpt of
-`examples/nager-holidays-sdk/src/lib.rs`):
-```rust,ignore
+and the policy, written once (`send Type;` uses `Type::default()`; `examples/nager-holidays-sdk/src/lib.rs`
+at `90b69011` — current status 2026-11-07: the SDK50 campaign shortened it to
+`received.decode_with_meta()`, see `v4/sdk50/INDEX.md`):
+```text
 #[derive(Default)]
 pub struct KeepHead;
 
@@ -80,9 +81,10 @@ domain method; Slack's `prepare()?.send()` would return an `ok: false` envelope 
 value) comes from `Received::meta()` or `Incoming::meta()`. `concord::Error::meta()` returns it
 for `Status` and `Metadata` errors only, the kinds that keep the response; Nager's
 `From<concord::Error>` uses it, so `?` keeps a head when one arrived. Reading a provider's error
-document is the SDK's job, deliberately and bounded. Frankfurter's policy (Excerpt of
-`examples/frankfurter-sdk/src/lib.rs`):
-```rust,ignore
+document is the SDK's job, deliberately and bounded. Frankfurter's policy
+(`examples/frankfurter-sdk/src/lib.rs` at `90b69011` — current status 2026-11-07: replaced by
+`Received::document` and `decode_with_meta`, see `v4/sdk50/INDEX.md`):
+```text
 let received = endpoint.prepare()?.receive().await?;
 let meta = received.meta();
 if !received.status().is_success() {
@@ -117,6 +119,10 @@ The consumer also saw `ErrorBodyError::Metadata` for an HTML 502, `Decode` for a
 provider's message. `decode_limited(n)` bounds a success body (eight SDKs). Error schemas,
 `Retry-After` and retries are the SDK's or the application's; Concord copies no header, never
 retries.
+
+**Current status (2026-11-06):** Ten SDKs use `Received::decode_limited`: Slack, Linear, Dropbox,
+Google Drive, Airtable, Snowflake, World Bank, Notion, Microsoft Graph and Distribution Registry
+(see their current `examples/*-sdk/src` implementations).
 
 ## 3. Pagination with lossless partial outcomes
 
@@ -350,9 +356,10 @@ but forwards GitLab's `PRIVATE-TOKEN`, so GitHub and GitLab build a redirect pol
 
 `Prepared::into_parts()` gives client, native request and decoder; `Decoder::execute` sends an
 edited request into the same `Received<T>` boundary as `receive()`. ClickHouse appends per-query
-`param_<name>` pairs, outside Concord's redaction (W4-7) (Excerpt of
-`examples/clickhouse-sdk/src/client.rs`):
-```rust,ignore
+`param_<name>` pairs, outside Concord's redaction (W4-7). As written at SDK20 (`5c3ef5f6`,
+`examples/clickhouse-sdk/src/client.rs`; *note 2026-11-07: since SDK50 between waves 1–2 the
+pairs are a `query(..)` value of the select/command endpoints and this helper is gone*):
+```text
 let (client, mut request, decoder) = endpoint.prepare()?.into_parts();
 if !params.is_empty() {
     let mut pairs = request.url_mut().query_pairs_mut();
@@ -456,6 +463,10 @@ native     \binto_parts\(|\bDecoder::|\.into_response\(|\btransport_error\(|\bOp
 | Shopify (Phase A) | — | — | `JsonLinesReader` on a native download | — | — | — | native request + `open_for` |
 | Kubernetes (Phase A) | — | — | `-> stream WatchEvent<T>` (`JsonStream`) | — | — | — | error document via `into_response` |
 | Salesforce (Phase A) | — | yes | `-> stream` + `CsvReader` | — | — | — | error document via `into_response` |
+
+**Current status (2026-11-06):** Open-Meteo's `-> stream` permits response selection at run time;
+[`OpenMeteo::forecast`](../../examples/open-meteo-sdk/src/lib.rs) buffers the bounded body before
+returning `ForecastResponse`, rather than returning an incremental reader.
 
 ResponseMeta: "Concord's" uses `concord::ResponseMeta`, "wraps" is a newtype adding provider
 accessors, "own" an SDK struct older than `concord::ResponseMeta` and of another shape. 19 of the

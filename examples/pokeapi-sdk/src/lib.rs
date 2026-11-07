@@ -78,7 +78,7 @@ concord::api! {
     /// [`Error`]. `prepare()` builds the native request with Concord's own error.
     pub client PokeApi() {
         base "https://pokeapi.co/api/v2";
-        send KeepHead;
+        send KeepHead -> Result<Response<_>, Error>;
         format Json;
         /// Retrieve one Pokémon by name or numeric ID.
         GET pokemon(id: String) -> Pokemon { path "pokemon/{id}/"; }
@@ -114,7 +114,7 @@ pub enum Error {
     Concord {
         /// Original error. For status and metadata errors its unread response can be recovered.
         error: concord::Error,
-        /// Response head, absent for build and transport errors.
+        /// Response head, absent when no response arrived.
         meta: Option<Box<ResponseMeta>>,
     },
     /// The supplied URL was refused before any request, for the given reason. Neither `Display`
@@ -166,7 +166,16 @@ impl fmt::Display for Error {
 impl std::error::Error for Error {}
 impl From<concord::Error> for Error {
     fn from(error: concord::Error) -> Self {
-        Self::Concord { error, meta: None }
+        // This SDK also promises the final URL, which core metadata does not retain.
+        // Consumed-body failures are wrapped by `finish`, while it still has that URL.
+        let meta = error.head().zip(error.response()).map(|(head, response)| {
+            Box::new(ResponseMeta {
+                status: head.status(),
+                headers: head.headers().clone(),
+                url: response.url().clone(),
+            })
+        });
+        Self::Concord { error, meta }
     }
 }
 
@@ -176,14 +185,14 @@ impl From<concord::Error> for Error {
 /// authentication.
 pub type Client = PokeApi;
 
-/// The send policy of [`PokeApi`] (`send KeepHead;`): every operation's `send()`
+/// The send policy of [`PokeApi`] (`send KeepHead -> Result<Response<_>, Error>;`): every operation's `send()`
 /// (`api.pokemon("clefairy").send()`, `api.list().set_limit(20).set_offset(0).send()`) executes
 /// once, decodes the entire JSON body, keeps status, headers and final URL, and returns
 /// `Result<Response<T>, Error>`.
 ///
 /// Errors: [`Error::Concord`] with the original Concord error; `meta` is present once the
-/// response head arrived (status, metadata and decode errors), absent for build and transport
-/// errors.
+/// response head arrived (including a failed body read), absent for build and connection
+/// errors before a head.
 #[derive(Default)]
 pub struct KeepHead;
 
@@ -263,14 +272,17 @@ struct ReadmeDoctests;
 
 /// Captures the head, then decodes; a decode failure keeps the head.
 async fn finish<T>(received: Received<T>) -> Result<Response<T>, Error> {
+    // Keep the final URL as well as the head; `decode_with_meta` does not carry the URL.
     let meta = ResponseMeta {
         status: received.status(),
         headers: received.head().headers().clone(),
         url: received.url().clone(),
     };
-    let value = received.decode().await.map_err(|error| Error::Concord {
-        error,
-        meta: Some(Box::new(meta.clone())),
-    })?;
-    Ok(Response { value, meta })
+    match received.decode().await {
+        Ok(value) => Ok(Response { value, meta }),
+        Err(error) => Err(Error::Concord {
+            error,
+            meta: Some(Box::new(meta)),
+        }),
+    }
 }

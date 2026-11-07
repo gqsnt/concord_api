@@ -1,0 +1,20 @@
+{
+  "event": {
+    "alert_type": "info",
+    "date_happened": "integer",
+    "device_name": "string",
+    "host": "string",
+    "id": "integer",
+    "id_str": "string",
+    "payload": "{}",
+    "priority": "normal",
+    "source_type_name": "string",
+    "tags": [
+      "environment:test"
+    ],
+    "text": "Oh boy!",
+    "title": "Did you hear the news today?",
+    "url": "string"
+  },
+  "status": "string"
+}

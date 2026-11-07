@@ -1,0 +1,31 @@
+{
+  "errors": [],
+  "messages": [],
+  "success": true,
+  "result": {
+    "name": "www.zeta.example.com",
+    "ttl": 1,
+    "type": "AAAA",
+    "comment": "synthetic www record",
+    "content": "2001:db8::10",
+    "private_routing": false,
+    "proxied": false,
+    "settings": {
+      "ipv4_only": false,
+      "ipv6_only": false
+    },
+    "tags": [
+      "owner:web-team",
+      "env:synthetic"
+    ],
+    "id": "2b00000000000000000000000000000b",
+    "created_on": "2026-06-02T00:00:00Z",
+    "meta": {
+      "is_glue": false
+    },
+    "modified_on": "2026-06-02T00:00:00Z",
+    "proxiable": true,
+    "comment_modified_on": "2026-06-02T00:00:00Z",
+    "tags_modified_on": "2026-06-02T00:00:00Z"
+  }
+}

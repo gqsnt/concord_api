@@ -1,0 +1,14 @@
+{
+  "numFound": 1,
+  "start": 0,
+  "numFoundExact": true,
+  "docs": [
+    {
+      "key": "OL23919A",
+      "name": "Fixture Author",
+      "top_work": "Synthetic field notes",
+      "work_count": 2,
+      "future_field": "ignored"
+    }
+  ]
+}

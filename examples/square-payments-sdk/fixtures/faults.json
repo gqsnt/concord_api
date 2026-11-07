@@ -1,0 +1,9 @@
+[
+  { "name": "malformed", "body": "{no-json", "kind": "Decode" },
+  { "name": "json-truncated", "body": "{\"payment\":", "kind": "Decode" },
+  { "name": "wrong-shape", "body": "{\"payment\":[]}", "kind": "Decode" },
+  { "name": "empty", "body": "", "kind": "Decode" },
+  { "name": "wrong-media", "body": "{}", "media": "text/html", "kind": "Metadata" },
+  { "name": "wrong-charset", "body": "{}", "media": "application/json; charset=iso-8859-1", "kind": "Metadata" },
+  { "name": "missing-media", "body": "{}", "media": "", "kind": "Metadata" }
+]

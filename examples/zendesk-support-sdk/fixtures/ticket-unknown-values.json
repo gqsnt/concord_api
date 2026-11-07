@@ -1,0 +1,12 @@
+{
+  "ticket": {
+    "id": 104,
+    "url": "https://acme.zendesk.com/api/v2/tickets/104.json",
+    "type": "synthetic_future_type",
+    "subject": null,
+    "priority": "synthetic_future_priority",
+    "status": "synthetic_future_status",
+    "created_at": "2026-10-06T00:00:00Z",
+    "updated_at": "2026-10-06T00:00:00Z"
+  }
+}

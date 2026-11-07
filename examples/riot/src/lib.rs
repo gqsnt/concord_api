@@ -108,12 +108,91 @@ impl From<concord::Error> for Stop {
             return Stop::Failed(error);
         }
         Stop::RateLimited {
-            retry_after: error
-                .response()
-                .and_then(|r| r.headers().get(RETRY_AFTER))
-                .and_then(|v| v.to_str().ok())
-                .and_then(|v| v.parse().ok()),
+            retry_after: error.response().and_then(|r| {
+                // Riot projects its documented numeric-seconds contract, not HTTP-dates.
+                let first = r.headers().get(RETRY_AFTER)?;
+                if !first.as_bytes().iter().all(u8::is_ascii_digit) {
+                    return None;
+                }
+                concord_retry::http::retry_after(
+                    r.headers()
+                        .get_all(RETRY_AFTER)
+                        .iter()
+                        .map(|v| v.as_bytes()),
+                    std::time::UNIX_EPOCH,
+                )
+                .ok()
+                .flatten()
+                .map(|delay| delay.as_secs())
+            }),
         }
+    }
+}
+
+/// Optional shared gate for starting player-summary workflows after a 429.
+///
+/// It records Riot's numeric `Retry-After` when present. Workflows already in flight are not
+/// cancelled, and the workflow itself still stops at its first 429 without retrying.
+#[derive(Clone)]
+pub struct RiotAdmission(concord_ratelimit::Limiter<()>);
+
+impl Default for RiotAdmission {
+    fn default() -> Self {
+        Self(concord_ratelimit::Limiter::new(
+            std::num::NonZeroUsize::new(1).unwrap(),
+            concord_ratelimit::TokioClock::default(),
+        ))
+    }
+}
+
+impl RiotAdmission {
+    /// Start a workflow unless the shared cooldown is active.
+    #[allow(clippy::too_many_arguments)]
+    pub async fn player_summary(
+        &self,
+        riot: &Riot,
+        game_name: &str,
+        tag_line: &str,
+        account_route: AccountRoute,
+        platform: Platform,
+        match_route: MatchRoute,
+        matches: u32,
+    ) -> Result<PlayerSummary, Stop> {
+        use concord_ratelimit::{Error, Mode, Observation};
+        match self.0.acquire(&[()], Mode::Refuse).await {
+            Ok(()) => {}
+            Err(Error::Gated(delay)) => {
+                return Err(Stop::RateLimited {
+                    retry_after: delay
+                        .map(|d| d.as_secs().saturating_add(u64::from(d.subsec_nanos() != 0))),
+                });
+            }
+            Err(_) => unreachable!("the single fixed key fits and has no local budget"),
+        }
+        let result = player_summary(
+            riot,
+            game_name,
+            tag_line,
+            account_route,
+            platform,
+            match_route,
+            matches,
+        )
+        .await;
+        if let Err(Stop::RateLimited {
+            retry_after: Some(seconds),
+        }) = &result
+        {
+            // An unrepresentable deadline cannot be safely shortened.
+            let until = self
+                .0
+                .after(Duration::from_secs(*seconds))
+                .unwrap_or(Duration::MAX);
+            self.0
+                .observe((), Observation::Cooldown(until))
+                .expect("the fixed key exists");
+        }
+        result
     }
 }
 

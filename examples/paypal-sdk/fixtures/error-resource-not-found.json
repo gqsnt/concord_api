@@ -1,0 +1,8 @@
+{
+  "name": "RESOURCE_NOT_FOUND",
+  "message": "The specified resource does not exist.",
+  "debug_id": "synthdebug404",
+  "details": [
+    { "field": "order_id", "value": "SYNTH0RDERMISSING", "location": "path", "issue": "INVALID_RESOURCE_ID", "description": "Specified resource ID does not exist. Please check the resource ID and try again." }
+  ]
+}

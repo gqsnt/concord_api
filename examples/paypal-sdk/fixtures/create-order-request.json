@@ -1,0 +1,10 @@
+{
+  "intent": "CAPTURE",
+  "purchase_units": [
+    {
+      "reference_id": "synthetic-unit-1",
+      "amount": { "currency_code": "USD", "value": "100.00" },
+      "invoice_id": "SYNTH-INV-0001"
+    }
+  ]
+}

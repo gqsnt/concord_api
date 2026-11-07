@@ -16,25 +16,32 @@ pub struct Problem {
 #[derive(Debug)]
 pub enum ErrorBodyError {
     /// The response was not labelled as JSON; body was not read.
-    Metadata(CodecError),
+    Metadata(concord::Error),
     /// The body was too large or transport failed while reading it.
     Read(concord::Error),
     /// JSON bytes did not match the documented error envelope.
-    Decode(CodecError),
+    Decode(concord::Error),
+}
+impl From<concord::Error> for ErrorBodyError {
+    fn from(error: concord::Error) -> Self {
+        match error.kind() {
+            concord::ErrorKind::Metadata => Self::Metadata(error),
+            concord::ErrorKind::Decode => Self::Decode(error),
+            _ => Self::Read(error),
+        }
+    }
 }
 impl fmt::Display for ErrorBodyError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::Metadata(e) | Self::Decode(e) => fmt::Display::fmt(e, f),
-            Self::Read(e) => fmt::Display::fmt(e, f),
+            Self::Metadata(e) | Self::Decode(e) | Self::Read(e) => fmt::Display::fmt(e, f),
         }
     }
 }
 impl std::error::Error for ErrorBodyError {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         match self {
-            Self::Metadata(e) | Self::Decode(e) => Some(e),
-            Self::Read(e) => Some(e),
+            Self::Metadata(e) | Self::Decode(e) | Self::Read(e) => Some(e),
         }
     }
 }
@@ -134,7 +141,7 @@ impl Error {
 }
 impl From<concord::Error> for Error {
     fn from(source: concord::Error) -> Self {
-        let meta = source.meta().map(Box::new);
+        let meta = source.head_meta().map(Box::new);
         Self::Concord { source, meta }
     }
 }

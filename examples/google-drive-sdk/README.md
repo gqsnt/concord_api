@@ -240,7 +240,8 @@ contract change was necessary.
 - A changes page must have exactly one boundary: `nextPageToken` for the current
   batch, or `newStartPageToken` for the next interval. The page traversal preserves
   the latter in `ChangesPageMeta`. `.items().into_stream()` is available, but
-  flattening discards page metadata; consume changes as pages to retain boundaries.
+  flattening discards page metadata; consume changes as pages to retain boundaries, or use
+  `item_events()`, whose `Complete` event carries the final page's metadata.
 - Debug/Display for clients, errors, tokens, sessions and checkpoints withhold
   credentials, session URLs and provider text. Metadata headers, error documents,
   model values, `session_url()`, and serialized checkpoints are explicitly
@@ -259,9 +260,9 @@ provided by reqwest automatically. Session expiration is provider-controlled
 Production dependencies are the Concord facade (including its JSON and encoded
 body formats), `concord-pagination`, `serde`/`serde_json` for Drive documents, and
 `mime` for mature MIME validation rather than handwritten media-type parsing.
-The small two-part related serializer is SDK code: reqwest's multipart support
-produces form-data, whereas Drive requires related. There is no vendor SDK,
-signer, OAuth implementation, or HTTP executor outside Concord.
+The SDK assembles its two related parts with the shared `MultipartBody::related`
+and `Part`; Concord's `Multipart` format serializes them as multipart/related.
+There is no vendor SDK, signer, OAuth implementation, or HTTP executor outside Concord.
 
 The GitHub SDK's response-head/error patterns, Stripe's bounded typed error
 adapter, the pagination README, and Concord's runtime-body examples supplied

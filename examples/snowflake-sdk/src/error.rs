@@ -131,7 +131,8 @@ impl Error {
 }
 impl From<concord::Error> for Error {
     fn from(source: concord::Error) -> Self {
-        Self::Concord { meta: None, source }
+        let meta = source.head_meta().map(Box::new);
+        Self::Concord { meta, source }
     }
 }
 impl std::fmt::Display for Error {

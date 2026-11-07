@@ -1,0 +1,10 @@
+{
+  "batchcomplete": true,
+  "query": {"pages": [{
+    "pageid": 2, "ns": 0, "title": "Rust language",
+    "revisions": [{"revid": 42, "parentid": 41, "slots": {
+      "main": {"contentmodel": "wikitext", "contentformat": "text/x-wiki",
+        "content": "== Rust ==\nA synthetic [[programming language]].\n"}
+    }}]
+  }]}
+}

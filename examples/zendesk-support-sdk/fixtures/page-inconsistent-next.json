@@ -1,0 +1,1 @@
+{"tickets": [], "meta": {"has_more": true, "after_cursor": "xSynthA", "before_cursor": null}, "links": {"next": "https://acme.zendesk.com/api/v2/tickets.json?page%5Bafter%5D=xSynthB&page%5Bsize%5D=100", "prev": null}}

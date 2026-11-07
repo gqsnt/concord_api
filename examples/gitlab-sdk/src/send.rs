@@ -1,12 +1,12 @@
 //! The client's send policy: every generated `send()` returns the typed value with its
 //! [`ResponseMeta`], or a [`GitLabError`] that keeps GitLab's error document.
 
-use concord::{Decode, Endpoint, Json, Received, SendWith};
+use concord::{Endpoint, IgnoreContentType, Json, Received, SendWith};
 
 use crate::error::{ApiError, ERROR_BODY_LIMIT, ErrorBody, ErrorDocument, GitLabError};
 use crate::meta::{Response, ResponseMeta};
 
-/// The send policy of [`GitLab`](crate::GitLab) (`send SendPolicy;`): what every generated
+/// The send policy of [`GitLab`](crate::GitLab) (`send SendPolicy -> Result<crate::Response<_>, crate::GitLabError>;`): what every generated
 /// `send()` returns, `Result<`[`Response<T>`]`, `[`GitLabError`]`>`. Callers never name it.
 ///
 /// `send()` prepares, executes once and decodes as declared; it never retries.
@@ -61,19 +61,25 @@ pub(crate) async fn decode<T: 'static>(
     }
 }
 
-/// A non-2xx response as [`GitLabError::Api`], its body read up to the limit.
+/// A non-2xx response as [`GitLabError::Api`], its body read up to the limit. GitLab's documents
+/// are read whatever their `Content-Type` (a proxy page is kept raw as `Unrecognized`).
 pub(crate) async fn api_error<T>(received: Received<T>, meta: ResponseMeta) -> GitLabError {
     let operation = received.operation();
     let status = received.status();
-    let body = match received.bytes_limited(ERROR_BODY_LIMIT).await {
-        Ok(bytes) => match <Json as Decode<ErrorDocument>>::decode_body((), bytes.clone()) {
-            Ok(document) => ErrorBody::Document(document),
-            Err(_) => ErrorBody::Unrecognized(bytes),
+    let (_, document) = received
+        .document::<IgnoreContentType<Json>, ErrorDocument>(ERROR_BODY_LIMIT)
+        .await;
+    let body = match document {
+        Ok(document) => ErrorBody::Document(document),
+        Err(error) => match error.kind() {
+            concord::ErrorKind::Decode => {
+                ErrorBody::Unrecognized(error.body_unredacted().cloned().unwrap_or_default())
+            }
+            concord::ErrorKind::Limit => ErrorBody::TooLarge {
+                limit: ERROR_BODY_LIMIT,
+            },
+            _ => ErrorBody::Unreadable(error),
         },
-        Err(error) if error.kind() == concord::ErrorKind::Limit => ErrorBody::TooLarge {
-            limit: ERROR_BODY_LIMIT,
-        },
-        Err(error) => ErrorBody::Unreadable(error),
     };
     GitLabError::Api(Box::new(ApiError {
         operation,

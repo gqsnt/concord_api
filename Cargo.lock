@@ -39,6 +39,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "940b3a0ca603d1eade50a4846a2afffd5ef57a9feac2c0e2ec2e14f9ead76000"
 
 [[package]]
+name = "arbitrary"
+version = "1.5.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3bc62ac97cc33321f50863d514c3bc38a453947a8f9e781137e47c7401020aed"
+dependencies = [
+ "derive_arbitrary",
+]
+
+[[package]]
 name = "atomic-waker"
 version = "1.1.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -383,8 +392,8 @@ dependencies = [
 name = "concord"
 version = "4.2.0"
 dependencies = [
+ "concord-codecs",
  "concord-core",
- "concord-extras",
  "concord-macros",
  "rustls-pki-types",
  "serde",
@@ -392,6 +401,20 @@ dependencies = [
  "tokio",
  "tokio-rustls",
  "trybuild",
+]
+
+[[package]]
+name = "concord-auth"
+version = "4.2.0"
+dependencies = [
+ "base64",
+ "concord",
+ "concord-example-testserver",
+ "concord-retry",
+ "futures-util",
+ "http",
+ "reqwest",
+ "tokio",
 ]
 
 [[package]]
@@ -419,6 +442,18 @@ dependencies = [
  "serde_json",
  "tokio",
  "url",
+]
+
+[[package]]
+name = "concord-check-core-concepts"
+version = "0.0.0"
+dependencies = [
+ "concord",
+ "concord-example-testserver",
+ "futures-core",
+ "reqwest",
+ "serde",
+ "tokio",
 ]
 
 [[package]]
@@ -564,6 +599,22 @@ name = "concord-clone-hygiene-d"
 version = "0.0.0"
 
 [[package]]
+name = "concord-codecs"
+version = "4.2.0"
+dependencies = [
+ "concord-core",
+ "csv",
+ "csv-core",
+ "futures-core",
+ "http-body",
+ "mime",
+ "serde",
+ "serde_json",
+ "serde_urlencoded",
+ "tokio",
+]
+
+[[package]]
 name = "concord-core"
 version = "4.2.0"
 dependencies = [
@@ -656,6 +707,7 @@ name = "concord-example-kubernetes-sdk"
 version = "0.0.0"
 dependencies = [
  "concord",
+ "concord-example-testserver",
  "concord-pagination",
  "serde",
  "serde_json",
@@ -677,6 +729,8 @@ name = "concord-example-native"
 version = "0.0.0"
 dependencies = [
  "concord",
+ "concord-ratelimit",
+ "concord-retry",
  "futures-core",
  "reqwest",
  "serde",
@@ -708,6 +762,8 @@ name = "concord-example-riot"
 version = "0.0.0"
 dependencies = [
  "concord",
+ "concord-ratelimit",
+ "concord-retry",
  "serde",
  "serde_json",
  "tokio",
@@ -821,16 +877,7 @@ dependencies = [
 name = "concord-extras"
 version = "4.2.0"
 dependencies = [
- "concord-core",
- "csv",
- "csv-core",
- "futures-core",
- "http-body",
- "mime",
- "serde",
- "serde_json",
- "serde_urlencoded",
- "tokio",
+ "concord-codecs",
 ]
 
 [[package]]
@@ -882,6 +929,43 @@ version = "4.2.0"
 dependencies = [
  "futures-util",
  "tokio",
+ "url",
+]
+
+[[package]]
+name = "concord-ratelimit"
+version = "4.2.0"
+dependencies = [
+ "concord",
+ "concord-auth",
+ "concord-example-testserver",
+ "concord-retry",
+ "serde",
+ "tokio",
+]
+
+[[package]]
+name = "concord-retry"
+version = "4.2.0"
+dependencies = [
+ "concord",
+ "concord-core",
+ "concord-example-testserver",
+ "futures-util",
+ "reqwest",
+ "tokio",
+]
+
+[[package]]
+name = "concord-sdk-adyen-checkout"
+version = "0.1.0"
+dependencies = [
+ "concord",
+ "concord-example-testserver",
+ "concord-retry",
+ "serde",
+ "serde_json",
+ "tokio",
 ]
 
 [[package]]
@@ -916,13 +1000,108 @@ dependencies = [
 ]
 
 [[package]]
+name = "concord-sdk-anthropic-messages"
+version = "0.0.0"
+dependencies = [
+ "concord",
+ "concord-example-testserver",
+ "concord-retry",
+ "serde",
+ "serde_json",
+ "tokio",
+]
+
+[[package]]
+name = "concord-sdk-arxiv"
+version = "0.1.0"
+dependencies = [
+ "concord",
+ "concord-codecs",
+ "concord-example-testserver",
+ "concord-pagination",
+ "concord-ratelimit",
+ "roxmltree",
+ "tokio",
+]
+
+[[package]]
+name = "concord-sdk-backblaze-b2-native"
+version = "0.0.0"
+dependencies = [
+ "concord",
+ "concord-auth",
+ "concord-example-testserver",
+ "concord-retry",
+ "futures-core",
+ "http-body",
+ "mime",
+ "percent-encoding",
+ "serde",
+ "serde_json",
+ "sha1_smol",
+ "tokio",
+]
+
+[[package]]
 name = "concord-sdk-clickhouse"
 version = "0.0.0"
 dependencies = [
- "base64",
  "concord",
+ "concord-auth",
  "concord-example-testserver",
  "futures-core",
+ "serde",
+ "serde_json",
+ "tokio",
+]
+
+[[package]]
+name = "concord-sdk-cloudflare-zones"
+version = "0.0.0"
+dependencies = [
+ "concord",
+ "concord-auth",
+ "concord-example-testserver",
+ "concord-pagination",
+ "concord-retry",
+ "percent-encoding",
+ "serde",
+ "serde_json",
+ "tokio",
+]
+
+[[package]]
+name = "concord-sdk-datadog-events"
+version = "0.0.0"
+dependencies = [
+ "concord",
+ "concord-example-testserver",
+ "concord-pagination",
+ "serde",
+ "serde_json",
+ "tokio",
+]
+
+[[package]]
+name = "concord-sdk-digitalocean"
+version = "0.0.0"
+dependencies = [
+ "concord",
+ "concord-auth",
+ "concord-example-testserver",
+ "concord-pagination",
+ "serde",
+ "serde_json",
+ "tokio",
+]
+
+[[package]]
+name = "concord-sdk-discord-rest"
+version = "0.0.0"
+dependencies = [
+ "concord",
+ "concord-example-testserver",
+ "concord-pagination",
  "serde",
  "serde_json",
  "tokio",
@@ -932,7 +1111,9 @@ dependencies = [
 name = "concord-sdk-distribution-registry"
 version = "0.0.0"
 dependencies = [
+ "base64",
  "concord",
+ "concord-auth",
  "concord-example-testserver",
  "concord-pagination",
  "serde",
@@ -955,6 +1136,33 @@ dependencies = [
 ]
 
 [[package]]
+name = "concord-sdk-elasticsearch"
+version = "0.0.0"
+dependencies = [
+ "concord",
+ "concord-auth",
+ "concord-example-testserver",
+ "concord-pagination",
+ "serde",
+ "serde_json",
+ "tokio",
+]
+
+[[package]]
+name = "concord-sdk-europe-pmc"
+version = "0.0.0"
+dependencies = [
+ "concord",
+ "concord-codecs",
+ "concord-example-testserver",
+ "concord-pagination",
+ "concord-retry",
+ "roxmltree",
+ "serde",
+ "tokio",
+]
+
+[[package]]
 name = "concord-sdk-frankfurter"
 version = "0.0.0"
 dependencies = [
@@ -965,6 +1173,23 @@ dependencies = [
  "serde",
  "serde_json",
  "tokio",
+]
+
+[[package]]
+name = "concord-sdk-fred"
+version = "0.0.0"
+dependencies = [
+ "concord",
+ "concord-codecs",
+ "concord-example-testserver",
+ "concord-pagination",
+ "concord-retry",
+ "flate2",
+ "roxmltree",
+ "serde",
+ "serde_json",
+ "tokio",
+ "zip",
 ]
 
 [[package]]
@@ -994,8 +1219,93 @@ dependencies = [
 ]
 
 [[package]]
+name = "concord-sdk-hubspot-crm"
+version = "0.0.0"
+dependencies = [
+ "bytes",
+ "concord",
+ "concord-auth",
+ "concord-example-testserver",
+ "concord-pagination",
+ "serde",
+ "serde_json",
+ "tokio",
+]
+
+[[package]]
+name = "concord-sdk-intercom"
+version = "0.0.0"
+dependencies = [
+ "concord",
+ "concord-auth",
+ "concord-example-testserver",
+ "concord-pagination",
+ "concord-retry",
+ "serde",
+ "serde_json",
+ "tokio",
+]
+
+[[package]]
+name = "concord-sdk-kraken-spot-rest"
+version = "0.0.0"
+dependencies = [
+ "base64",
+ "concord",
+ "concord-example-testserver",
+ "concord-pagination",
+ "concord-retry",
+ "hmac",
+ "serde",
+ "serde_json",
+ "sha2",
+ "tokio",
+]
+
+[[package]]
 name = "concord-sdk-linear"
 version = "0.0.0"
+dependencies = [
+ "concord",
+ "concord-example-testserver",
+ "concord-pagination",
+ "serde",
+ "serde_json",
+ "tokio",
+]
+
+[[package]]
+name = "concord-sdk-mailgun"
+version = "0.0.0"
+dependencies = [
+ "concord",
+ "concord-auth",
+ "concord-example-testserver",
+ "concord-pagination",
+ "concord-retry",
+ "futures-util",
+ "mime",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "tokio",
+]
+
+[[package]]
+name = "concord-sdk-mastodon"
+version = "0.0.0"
+dependencies = [
+ "concord",
+ "concord-auth",
+ "concord-example-testserver",
+ "serde",
+ "serde_json",
+ "tokio",
+]
+
+[[package]]
+name = "concord-sdk-mediawiki-action-api"
+version = "4.2.0"
 dependencies = [
  "concord",
  "concord-example-testserver",
@@ -1030,6 +1340,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "concord-sdk-nasa-neows"
+version = "0.0.0"
+dependencies = [
+ "concord",
+ "concord-example-testserver",
+ "serde",
+ "tokio",
+]
+
+[[package]]
 name = "concord-sdk-notion"
 version = "0.0.0"
 dependencies = [
@@ -1044,6 +1364,17 @@ dependencies = [
 
 [[package]]
 name = "concord-sdk-ntfy"
+version = "0.0.0"
+dependencies = [
+ "concord",
+ "concord-example-testserver",
+ "serde",
+ "serde_json",
+ "tokio",
+]
+
+[[package]]
+name = "concord-sdk-open-library"
 version = "0.0.0"
 dependencies = [
  "concord",
@@ -1075,11 +1406,76 @@ dependencies = [
 ]
 
 [[package]]
+name = "concord-sdk-paypal"
+version = "0.0.0"
+dependencies = [
+ "concord",
+ "concord-auth",
+ "concord-example-testserver",
+ "concord-retry",
+ "serde",
+ "serde_json",
+ "tokio",
+]
+
+[[package]]
 name = "concord-sdk-pokeapi"
 version = "0.0.0"
 dependencies = [
  "concord",
  "concord-example-testserver",
+ "serde",
+ "serde_json",
+ "tokio",
+]
+
+[[package]]
+name = "concord-sdk-postmark"
+version = "0.0.0"
+dependencies = [
+ "concord",
+ "concord-example-testserver",
+ "serde",
+ "serde_json",
+ "tokio",
+]
+
+[[package]]
+name = "concord-sdk-quickbooks-online"
+version = "0.0.0"
+dependencies = [
+ "concord",
+ "concord-auth",
+ "concord-example-testserver",
+ "concord-pagination",
+ "serde",
+ "serde_json",
+ "tokio",
+]
+
+[[package]]
+name = "concord-sdk-rest-countries"
+version = "0.0.0"
+dependencies = [
+ "concord",
+ "concord-auth",
+ "concord-example-testserver",
+ "concord-pagination",
+ "serde",
+ "serde_json",
+ "tokio",
+]
+
+[[package]]
+name = "concord-sdk-sentry"
+version = "0.1.0"
+dependencies = [
+ "concord",
+ "concord-auth",
+ "concord-example-testserver",
+ "concord-pagination",
+ "concord-ratelimit",
+ "concord-retry",
  "serde",
  "serde_json",
  "tokio",
@@ -1112,13 +1508,72 @@ dependencies = [
 ]
 
 [[package]]
+name = "concord-sdk-spotify-web-api"
+version = "0.0.0"
+dependencies = [
+ "concord",
+ "concord-auth",
+ "concord-example-testserver",
+ "concord-pagination",
+ "concord-retry",
+ "serde",
+ "serde_json",
+ "tokio",
+]
+
+[[package]]
+name = "concord-sdk-square-payments"
+version = "0.0.0"
+dependencies = [
+ "concord",
+ "concord-auth",
+ "concord-example-testserver",
+ "concord-pagination",
+ "serde",
+ "serde_json",
+ "tokio",
+]
+
+[[package]]
+name = "concord-sdk-strava"
+version = "0.1.0"
+dependencies = [
+ "concord",
+ "concord-auth",
+ "concord-example-testserver",
+ "concord-pagination",
+ "concord-ratelimit",
+ "concord-retry",
+ "futures-util",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "tokio",
+]
+
+[[package]]
 name = "concord-sdk-twilio"
 version = "0.0.0"
 dependencies = [
- "base64",
  "concord",
+ "concord-auth",
  "concord-example-testserver",
  "serde",
+ "tokio",
+]
+
+[[package]]
+name = "concord-sdk-usgs-earthquake-catalog"
+version = "0.0.0"
+dependencies = [
+ "chrono",
+ "concord",
+ "concord-codecs",
+ "concord-example-testserver",
+ "concord-pagination",
+ "concord-retry",
+ "serde",
+ "serde_json",
  "tokio",
 ]
 
@@ -1129,6 +1584,36 @@ dependencies = [
  "concord",
  "concord-example-testserver",
  "concord-pagination",
+ "serde",
+ "serde_json",
+ "tokio",
+]
+
+[[package]]
+name = "concord-sdk-xero-accounting"
+version = "0.0.0"
+dependencies = [
+ "concord",
+ "concord-auth",
+ "concord-example-testserver",
+ "concord-pagination",
+ "concord-ratelimit",
+ "concord-retry",
+ "serde",
+ "serde_json",
+ "tokio",
+]
+
+[[package]]
+name = "concord-sdk-zendesk-support"
+version = "0.0.0"
+dependencies = [
+ "concord",
+ "concord-auth",
+ "concord-codecs",
+ "concord-example-testserver",
+ "concord-pagination",
+ "concord-retry",
  "serde",
  "serde_json",
  "tokio",
@@ -1219,6 +1704,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "crossbeam-utils"
+version = "0.8.23"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a31eee39dddec8330830986fcd7625edb5a24ec90ea038215273bbc3adb08ac6"
+
+[[package]]
 name = "crunchy"
 version = "0.2.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1268,6 +1759,17 @@ name = "deranged"
 version = "0.5.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9e9de72ce2ad1f90dc62fa25f0f430ef85eb4b0d8fa0be4f30373bc40a21d28e"
+
+[[package]]
+name = "derive_arbitrary"
+version = "1.5.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1b034bd7d5f032402a2479444dcc6f74e36a03f31854d41680fb240ef682a1ac"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 3.0.9",
+]
 
 [[package]]
 name = "digest"
@@ -2412,6 +2914,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "sha1_smol"
+version = "1.0.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "bbfa15b3dddfee50a0fff136974b3e1bde555604ba463834a7eb7deb6417705d"
+
+[[package]]
 name = "sha2"
 version = "0.11.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3264,6 +3772,22 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 3.0.9",
+]
+
+[[package]]
+name = "zip"
+version = "2.4.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "fabe6324e908f85a1c52063ce7aa26b68dcb7eb6dbc83a2d148403c9bc3eba50"
+dependencies = [
+ "arbitrary",
+ "crc32fast",
+ "crossbeam-utils",
+ "displaydoc",
+ "flate2",
+ "indexmap",
+ "memchr",
+ "thiserror",
 ]
 
 [[package]]

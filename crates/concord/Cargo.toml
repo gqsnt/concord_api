@@ -18,25 +18,25 @@ all-features = true
 
 [features]
 default = ["json", "reqwest-defaults"]
-## The standard formats without serializer dependencies: `Text` and `Binary` (from `concord-extras`).
-extras = ["dep:concord-extras"]
+## The standard formats without serializer dependencies: `Text` and `Binary` (from `concord-codecs`).
+extras = ["dep:concord-codecs"]
 ## `Json`, via serde/serde_json (implies `extras`).
-json = ["extras", "concord-extras/json"]
+json = ["extras", "concord-codecs/json"]
 ## `Form` (`application/x-www-form-urlencoded`), via serde/serde_urlencoded (implies `extras`).
 ## Off by default, like reqwest's own `form` feature.
-form = ["extras", "concord-extras/form"]
+form = ["extras", "concord-codecs/form"]
 ## The incremental-body infrastructure (`concord::stream`): unread refusals, byte sources, safe
 ## read errors, lazy upload bodies (implies `extras`).
-stream = ["extras", "concord-extras/stream"]
+stream = ["extras", "concord-codecs/stream"]
 ## `concord::csv`: `Csv<HasHeader, Delimiter>`, finite and incremental (implies `stream`).
-csv = ["stream", "concord-extras/csv"]
+csv = ["stream", "concord-codecs/csv"]
 ## `concord::jsonl`: JSON Lines / NDJSON and consecutive JSON values (implies `stream`).
-jsonl = ["stream", "concord-extras/jsonl"]
+jsonl = ["stream", "concord-codecs/jsonl"]
 ## `concord::multipart`: `multipart/form-data` and `multipart/related` request bodies with a
 ## boundary chosen per body (implies `extras`; no dependency, not reqwest's `multipart`).
-multipart = ["extras", "concord-extras/multipart"]
+multipart = ["extras", "concord-codecs/multipart"]
 ## `concord::sse`: server-sent events (`text/event-stream`) read incrementally (implies `stream`).
-sse = ["stream", "concord-extras/sse"]
+sse = ["stream", "concord-codecs/sse"]
 ## Enables reqwest's own default features (TLS, HTTP/2, charset, system proxy).
 ## Disable it to choose reqwest features yourself in your own Cargo.toml.
 reqwest-defaults = ["concord-core/reqwest-defaults"]
@@ -45,7 +45,7 @@ reqwest-defaults = ["concord-core/reqwest-defaults"]
 # The facade, the runtime and the macro are released together: the macro's expansion uses the
 # runtime's hidden support API, so the versions are pinned exactly.
 concord-core = { path = "../concord-core", version = "=4.2.0" }
-concord-extras = { path = "../concord-extras", version = "=4.2.0", optional = true }
+concord-codecs = { path = "../concord-codecs", version = "=4.2.0", optional = true }
 concord-macros = { path = "../concord-macros", version = "=4.2.0" }
 
 [dev-dependencies]

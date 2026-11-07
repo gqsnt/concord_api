@@ -1,0 +1,10 @@
+{
+  "payments": [
+    {
+      "id": "synthetic-payment-001",
+      "amount_money": { "amount": 1000, "currency": "USD" },
+      "status": "COMPLETED"
+    }
+  ],
+  "cursor": "opaque+/= &?%cursor"
+}

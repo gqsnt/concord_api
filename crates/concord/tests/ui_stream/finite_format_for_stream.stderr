@@ -81,7 +81,7 @@ error[E0599]: the method `prepare` exists for struct `FiniteEvents`, but its tra
   | |_method cannot be called on `FiniteEvents` due to unsatisfied trait bounds
   |   method `prepare` not found for this struct
   |
- ::: $WORKSPACE/crates/concord-extras/src/json.rs
+ ::: $WORKSPACE/crates/concord-codecs/src/json.rs
   |
   |   pub struct Json(());
   |   --------------- doesn't satisfy `Json: Incremental<String>`

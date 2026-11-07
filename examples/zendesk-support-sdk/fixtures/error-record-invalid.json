@@ -1,0 +1,9 @@
+{
+  "details": {
+    "description": [
+      {"description": "Description: cannot be blank (synthetic)", "error": "BlankValue"}
+    ]
+  },
+  "description": "RecordValidation errors",
+  "error": "RecordInvalid"
+}

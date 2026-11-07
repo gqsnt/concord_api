@@ -1,0 +1,11 @@
+error: value `limit` is declared on this endpoint and in its parameter group `Paging`; keep one
+ --> tests/ui/param_group_value_collision.rs:5:24
+  |
+5 |         GET list(query limit?: u32, ..Paging) { path "items"; }
+  |                        ^^^^^
+
+error: declared in the group here
+ --> tests/ui/param_group_value_collision.rs:4:29
+  |
+4 |         params Paging(query limit?: u32, query cursor?: String);
+  |                             ^^^^^

@@ -8,8 +8,8 @@ rust-version.workspace = true
 license.workspace = true
 
 [dependencies]
+concord-auth = { path = "../../crates/concord-auth" }
 concord = { path = "../../crates/concord", features = ["form", "json"] }
-base64 = "0.23.1"
 serde = { workspace = true, features = ["derive"] }
 
 [dev-dependencies]

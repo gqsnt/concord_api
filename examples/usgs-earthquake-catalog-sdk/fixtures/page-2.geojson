@@ -1,0 +1,31 @@
+{
+  "type": "FeatureCollection",
+  "metadata": {
+    "generated": 1388620800000,
+    "count": 1,
+    "status": 200
+  },
+  "features": [
+    {
+      "type": "Feature",
+      "id": "synthetic-c",
+      "properties": {
+        "mag": 4.8,
+        "place": "Example Island",
+        "time": 1388545200000,
+        "updated": 1388545800000,
+        "status": "reviewed",
+        "type": "earthquake",
+        "detail": "https://fixture.invalid/detail/synthetic-c.geojson"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -122.5,
+          37.5,
+          8.25
+        ]
+      }
+    }
+  ]
+}

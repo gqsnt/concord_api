@@ -1,0 +1,18 @@
+{
+  "numFound": 2,
+  "start": 20,
+  "numFoundExact": false,
+  "docs": [
+    {
+      "key": "/works/OL27448W",
+      "title": "Synthetic field notes",
+      "author_name": [
+        "Fixture Author"
+      ],
+      "first_publish_year": 1954,
+      "future_field": {
+        "ignored": true
+      }
+    }
+  ]
+}

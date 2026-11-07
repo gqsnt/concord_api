@@ -1,7 +1,7 @@
 use std::fmt;
 
 use concord::reqwest::StatusCode;
-use concord::{Operation, Received};
+use concord::{IgnoreContentType, Json, Operation, Received};
 use serde::Deserialize;
 
 /// Status, version, response headers (Location, Range, Retry-After, request identifiers) and the
@@ -159,18 +159,21 @@ impl Error {
         struct Document {
             error: ProviderError,
         }
-        let meta = received.meta();
+        // Drive error documents are decoded regardless of the advertised media type.
+        let (meta, document) = received
+            .document::<IgnoreContentType<Json>, Document>(limit)
+            .await;
         let kind = if session && meta.status() == StatusCode::NOT_FOUND {
             ErrorKind::SessionExpired
         } else {
             ErrorKind::Provider
         };
         let mut error = Self::new(kind).with_meta(meta);
-        match received.bytes_limited(limit).await {
-            Ok(body) => match serde_json::from_slice::<Document>(&body) {
-                Ok(document) => error.provider = Some(Box::new(document.error)),
-                Err(_) => error.document_problem = Some(DocumentProblem::Malformed),
-            },
+        match document {
+            Ok(document) => error.provider = Some(Box::new(document.error)),
+            Err(source) if source.kind() == concord::ErrorKind::Decode => {
+                error.document_problem = Some(DocumentProblem::Malformed);
+            }
             Err(source) => {
                 error.document_problem = Some(if source.kind() == concord::ErrorKind::Limit {
                     DocumentProblem::TooLarge
@@ -188,6 +191,7 @@ impl From<concord::Error> for Error {
     fn from(source: concord::Error) -> Self {
         let mut error = Self::new(ErrorKind::Concord);
         error.operation = source.operation();
+        error.meta = source.head_meta().map(Box::new);
         error.source = Some(source);
         error
     }

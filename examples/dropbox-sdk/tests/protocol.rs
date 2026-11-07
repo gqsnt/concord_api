@@ -324,6 +324,8 @@ async fn retry_after_distinguishes_missing_invalid_and_zero_on_plaintext_429() {
     for (headers, expected) in [
         (vec![], RetryAfter::Missing),
         (vec!["0"], RetryAfter::Seconds(Duration::ZERO)),
+        (vec![" 0 \t"], RetryAfter::Seconds(Duration::ZERO)),
+        (vec!["+1"], RetryAfter::Invalid),
         (vec!["-1"], RetryAfter::Invalid),
         (vec!["not-a-number"], RetryAfter::Invalid),
         (vec!["18446744073709551616"], RetryAfter::Invalid),

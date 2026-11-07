@@ -17,6 +17,7 @@ concord::api! {
         base "https://api.notion.com/v1";
         headers { AUTHORIZATION = "Bearer {token}"; }
         format Json;
+        limit crate::RESPONSE_LIMIT;
 
         /// Query a data source. Its cursor belongs in the JSON body.
         POST query(data_source_id: String, body query: QueryBody) -> List<QueryResult> {

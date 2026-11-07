@@ -232,12 +232,8 @@ impl Client {
 
 async fn execute<T>(endpoint: impl Endpoint<Envelope<T>>) -> Result<Response<T>, Error> {
     let received = endpoint.prepare()?.receive().await?;
-    let meta = ResponseMeta {
-        status: received.status(),
-        headers: received.head().headers().clone(),
-        operation: received.operation(),
-    };
-    if !meta.status.is_success() {
+    if !received.status().is_success() {
+        let meta = ResponseMeta::capture(received.head(), received.operation());
         let body = Box::new(ErrorBody::new(received.bytes_limited(64 * 1024).await));
         return Err(if meta.status == reqwest::StatusCode::TOO_MANY_REQUESTS {
             Error::RateLimited {
@@ -252,13 +248,8 @@ async fn execute<T>(endpoint: impl Endpoint<Envelope<T>>) -> Result<Response<T>,
             }
         });
     }
-    let envelope = received
-        .decode_limited(SUCCESS_BODY_LIMIT)
-        .await
-        .map_err(|error| Error::Concord {
-            error,
-            meta: Some(Box::new(meta.clone())),
-        })?;
+    let (envelope, meta) = received.decode_with_meta().await?;
+    let meta = ResponseMeta::capture(meta.head(), meta.operation());
     if !envelope.ok {
         return Err(match envelope.into_provider() {
             Ok(error) => Error::Api {

@@ -61,13 +61,11 @@ pub struct ObjectHead {
 impl ObjectHead {
     pub(crate) fn parse(status: StatusCode, headers: &HeaderMap) -> Result<Self, CodecError> {
         let text = |name: &'static str| -> Result<Option<String>, CodecError> {
-            let mut values = headers.get_all(name).iter();
-            let Some(first) = values.next() else {
+            let Some(first) = concord::field::single(headers, name)
+                .map_err(|_| CodecError::new("an S3 object header occurs more than once"))?
+            else {
                 return Ok(None);
             };
-            if values.next().is_some() {
-                return Err(CodecError::new("an S3 object header occurs more than once"));
-            }
             std::str::from_utf8(first.as_bytes())
                 .map(|s| Some(s.to_owned()))
                 .map_err(|_| CodecError::new("an S3 object header is not UTF-8"))

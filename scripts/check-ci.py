@@ -80,8 +80,8 @@ import subprocess
 import sys
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-# The four production packages; everything else in the workspace is a test, example or benchmark.
-PRODUCTION = ("concord", "concord-core", "concord-macros", "concord-extras")
+# The production packages; everything else in the workspace is a test, example or benchmark.
+PRODUCTION = ("concord-core", "concord-codecs", "concord-extras", "concord-macros", "concord", "concord-pagination", "concord-retry", "concord-auth", "concord-ratelimit")
 
 
 def read(path):

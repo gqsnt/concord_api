@@ -25,23 +25,11 @@ impl ResponseMeta {
         self.headers().get("x-dropbox-request-id")?.to_str().ok()
     }
 
-    /// Parse a single Retry-After header as unsigned seconds. No retry is performed.
+    /// Parse one Retry-After field as unsigned seconds, ignoring surrounding OWS. No retry.
     pub fn retry_after(&self) -> RetryAfter {
-        let mut values = self.headers().get_all("retry-after").iter();
-        let Some(value) = values.next() else {
-            return RetryAfter::Missing;
-        };
-        if values.next().is_some() {
-            return RetryAfter::Invalid;
-        }
-        let Ok(value) = value.to_str() else {
-            return RetryAfter::Invalid;
-        };
-        if value.is_empty() || !value.bytes().all(|b| b.is_ascii_digit()) {
-            return RetryAfter::Invalid;
-        }
-        match value.parse::<u64>() {
-            Ok(n) => RetryAfter::Seconds(Duration::from_secs(n)),
+        match concord::field::unsigned(self.headers(), "retry-after") {
+            Ok(Some(n)) => RetryAfter::Seconds(Duration::from_secs(n)),
+            Ok(None) => RetryAfter::Missing,
             Err(_) => RetryAfter::Invalid,
         }
     }
@@ -303,7 +291,8 @@ impl Error {
 
 impl From<concord::Error> for Error {
     fn from(error: concord::Error) -> Self {
-        Self::Concord { error, meta: None }
+        let meta = error.head_meta().map(|meta| Box::new(ResponseMeta(meta)));
+        Self::Concord { error, meta }
     }
 }
 

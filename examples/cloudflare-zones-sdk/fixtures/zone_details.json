@@ -1,0 +1,86 @@
+{
+  "errors": [
+    {
+      "code": 1000,
+      "message": "synthetic non-fatal error beside success",
+      "documentation_url": "https://docs.synthetic.example.net/errors/1000",
+      "source": {
+        "pointer": "/synthetic"
+      }
+    }
+  ],
+  "messages": [
+    {
+      "code": 1000,
+      "message": "synthetic informational message",
+      "documentation_url": "https://docs.synthetic.example.net/messages/1000",
+      "source": {
+        "pointer": "/synthetic"
+      }
+    }
+  ],
+  "success": true,
+  "result": {
+    "id": "1a00000000000000000000000000000f",
+    "account": {
+      "id": "acc0000000000000000000000000000a",
+      "name": "Synthetic Account A"
+    },
+    "activated_on": "2026-06-02T00:00:00Z",
+    "created_on": "2026-06-01T00:00:00Z",
+    "development_mode": 0,
+    "meta": {
+      "cdn_only": false,
+      "custom_certificate_quota": 0,
+      "dns_only": false,
+      "foundation_dns": false,
+      "page_rule_quota": 3,
+      "phishing_detected": false,
+      "step": 4
+    },
+    "modified_on": "2026-06-02T00:00:00Z",
+    "name": "zeta.example.com",
+    "name_servers": [
+      "ns-a.synthetic.example.net",
+      "ns-b.synthetic.example.net"
+    ],
+    "original_dnshost": "SyntheticHost",
+    "original_name_servers": [
+      "ns1.previous.example.net"
+    ],
+    "original_registrar": "SyntheticRegistrar",
+    "owner": {
+      "id": "own0000000000000000000000000000a",
+      "name": "Synthetic Owner",
+      "type": "organization"
+    },
+    "plan": {
+      "id": "pln0000000000000000000000000000a",
+      "can_subscribe": false,
+      "currency": "USD",
+      "externally_managed": false,
+      "frequency": "monthly",
+      "is_subscribed": true,
+      "legacy_discount": false,
+      "legacy_id": "free",
+      "name": "Synthetic Plan",
+      "price": 0
+    },
+    "cname_suffix": "cdn.synthetic.example.net",
+    "paused": false,
+    "permissions": [
+      "#zone:read"
+    ],
+    "status": "active",
+    "tenant": {
+      "id": "ten0000000000000000000000000000a",
+      "name": "Synthetic Tenant"
+    },
+    "tenant_unit": {
+      "id": "tun0000000000000000000000000000a"
+    },
+    "type": "full",
+    "vanity_name_servers": [],
+    "verification_key": "000000006-0000000006"
+  }
+}

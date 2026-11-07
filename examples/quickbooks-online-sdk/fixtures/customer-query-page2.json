@@ -1,0 +1,18 @@
+{
+  "QueryResponse": {
+    "Customer": [
+      {
+        "domain": "QBO",
+        "Id": "58",
+        "SyncToken": "1",
+        "DisplayName": "Synthetic Windsurf Shop",
+        "Active": true,
+        "Balance": 85.0,
+        "sparse": false
+      }
+    ],
+    "startPosition": 3,
+    "maxResults": 1
+  },
+  "time": "2026-11-07T11:02:26.001-08:00"
+}

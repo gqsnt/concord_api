@@ -1,0 +1,12 @@
+{
+  "QueryResponse": {
+    "Fault": {
+      "Error": [
+        { "Message": "OBJECT name not available", "code": "100", "element": "query" },
+        { "Message": "Time value is incorrect", "code": "300", "element": "query" }
+      ],
+      "type": "Validation"
+    }
+  },
+  "time": "2026-11-07T10:22:55.766Z"
+}

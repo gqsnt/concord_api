@@ -3,7 +3,7 @@
 A small SDK for [ntfy](https://docs.ntfy.sh) declared with `concord::api!`. It publishes a message
 to a topic, subscribes to the topic as **Server-Sent Events** or **line-delimited JSON**, and
 replays the server's message cache with a `since` cursor. Checked against the documentation of
-ntfy **v2.37.2** (see [PROVENANCE.md](PROVENANCE.md)).
+ntfy **v2.37.2** (see [PROVENANCE.md](PROVENANCE.md)). Each generated `send()` names `Result<T, NtfyError>`.
 
 | Covered | Not covered |
 |---|---|
@@ -148,7 +148,7 @@ subscription. Both return the same `Events` type as SSE.
 | Where | Type | What it keeps |
 |---|---|---|
 | a domain value | `InvalidTopic`, `InvalidToken`, `MessageTooLong`, `InvalidTag`, `InvalidEventId` | the reason, never the refused value (except the body's length) |
-| any `send()` | `NtfyError::Api(ApiError)` | a non-2xx: the status, ntfy's error document (`code` such as `40101`, `40301`, `42901`; `http`; `error`; `link`) when the body was one (read up to 64 KiB, `ERROR_BODY_LIMIT`), `Retry-After` in seconds, the endpoint |
+| any `send()` | `NtfyError::Api(ApiError)` | a non-2xx: the status, ntfy's error document (`code` such as `40101`, `40301`, `42901`; `http`; `error`; `link`) when the body was one (read up to 64 KiB, `ERROR_BODY_LIMIT`), one unsigned decimal `Retry-After` field (OWS allowed; signs/repeats/overflow refused), the endpoint |
 | any `send()` | `NtfyError::Request(concord::Error)` | Concord's error, whole: not built, no response (`Transport`), a 2xx head refused before its body was read (`Metadata`, e.g. a `/sse` answered as `application/json`; the response kept unread), a publish answer that does not decode |
 | reading `Events` | `EventsError` | `kind()` (`Transport`, `Format`, `Decode`, `Limit`), the endpoint, events delivered and bytes read, a static label with `event`/`line`/`column` positions, and the unredacted parser or transport error on request (`source_unredacted`) |
 
@@ -164,8 +164,9 @@ URL, the token, a header value, the document's `error` text or event content. `A
 - **A poll ends.** `EndOfInput` after a poll means every message the server *chose to return* was
   read: what its cache still holds (12 hours by default), minus `Cache: no` messages, minus what
   the per-topic replay cap removed (`truncated()`). It is not complete history.
-- **Failures are terminal and never look like an end.** A broken connection (`Transport`), a
-  body that ends inside an event or a JSON line (`Format`), malformed SSE or JSON (`Format`), a
+- **Failures are terminal and never look like an end.** NDJSON accepts a complete final JSON
+  value without LF at EOF; an incomplete value fails. A broken connection (`Transport`), a
+  body that ends inside an SSE event or JSON value (`Format`), malformed SSE or JSON (`Format`), a
   well-formed value that is not an ntfy message (`Decode`) or an event over 16 MiB
   (`MAX_EVENT_BYTES`, `Limit`) end the reader with `Completion::Failed`. Events already returned
   stay returned; the cursor says where to resume.

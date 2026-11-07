@@ -1,0 +1,8 @@
+{
+  "name": "UNSUPPORTED_MEDIA_TYPE",
+  "message": "The request payload is not supported.",
+  "debug_id": "synthdebug415",
+  "details": [
+    { "location": "header", "issue": "UNSUPPORTED_MEDIA_TYPE", "description": "The API does not support this media type." }
+  ]
+}

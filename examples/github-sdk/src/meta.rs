@@ -22,7 +22,7 @@ use std::fmt;
 
 use concord::reqwest::header::{ETAG, HeaderMap, HeaderName, LAST_MODIFIED, LINK, RETRY_AFTER};
 use concord::reqwest::{self, StatusCode, Url};
-use concord::{Prepared, Received};
+use concord::{Prepared, Received, field};
 
 use crate::error::GitHubError;
 use crate::link::{self, LinkError, Links};
@@ -41,7 +41,8 @@ pub const X_RATELIMIT_RESET: HeaderName = HeaderName::from_static("x-ratelimit-r
 /// `x-ratelimit-resource`.
 pub const X_RATELIMIT_RESOURCE: HeaderName = HeaderName::from_static("x-ratelimit-resource");
 
-/// The `x-ratelimit-*` headers of one response. A missing or unparsable header is `None`.
+/// The `x-ratelimit-*` headers of one response. A missing, repeated or unparsable numeric
+/// header is `None`; numbers must be unsigned ASCII decimal digits, allowing surrounding OWS.
 /// GitHub notes the values may vary between responses because requests are served by several
 /// regions; these are the values of this response, not an account-wide state.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -86,7 +87,7 @@ impl ResponseMeta {
                 .and_then(|v| v.to_str().ok())
                 .map(str::to_owned)
         };
-        let number = |name: &HeaderName| text(name).and_then(|v| v.trim().parse::<u64>().ok());
+        let number = |name: &HeaderName| field::unsigned(headers, name).ok().flatten();
         Self {
             status,
             request_id: text(&X_GITHUB_REQUEST_ID),
@@ -287,5 +288,49 @@ async fn decode_with_meta<T>(
     match received.decode().await {
         Ok(value) => Ok(WithMeta { value, meta }),
         Err(error) => Err(GitHubError::api(error, Some(meta))),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn numeric_headers_require_one_unsigned_field() {
+        for (values, expected) in [
+            (&["+42"][..], None),
+            (&["42", "43"][..], None),
+            (&[" \t42\t "][..], Some(42)),
+        ] {
+            let mut headers = HeaderMap::new();
+            for name in [
+                &X_RATELIMIT_LIMIT,
+                &X_RATELIMIT_REMAINING,
+                &X_RATELIMIT_USED,
+                &X_RATELIMIT_RESET,
+                &RETRY_AFTER,
+            ] {
+                for value in values {
+                    headers.append(name, value.parse().unwrap());
+                }
+            }
+            let meta = ResponseMeta::from_head(
+                StatusCode::OK,
+                &headers,
+                &Url::parse("https://api.github.com/").unwrap(),
+            );
+            let rate = meta.rate_limit();
+            assert_eq!(
+                [
+                    rate.limit,
+                    rate.remaining,
+                    rate.used,
+                    rate.reset,
+                    meta.retry_after()
+                ],
+                [expected; 5],
+                "{values:?}",
+            );
+        }
     }
 }

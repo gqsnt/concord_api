@@ -11,12 +11,12 @@ note: found an item that was configured out
   |
   | #[cfg(feature = "form")]
   |       ---------------- the item is gated behind the `form` feature
-  | pub use concord_extras::Form;
+  | pub use concord_codecs::Form;
   |                         ^^^^
 note: found an item that was configured out
  --> src/lib.rs
   |
   | #[cfg(feature = "json")]
   |       ---------------- the item is gated behind the `json` feature
-  | pub use concord_extras::Json;
+  | pub use concord_codecs::Json;
   |                         ^^^^

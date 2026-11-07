@@ -1,0 +1,12 @@
+[
+  {
+    "path": "/0/private/Balance",
+    "payload": "nonce=5001",
+    "signature": "0OHScyk3AQGKITGjCeuDcIekxK0ajMBuCRLwxwhUdW963q2zcEKDi3cKodHk947vaLR6HMugwiPHys8M++wcuw=="
+  },
+  {
+    "path": "/0/private/OpenOrders",
+    "payload": "nonce=5002",
+    "signature": "1j6XF1wQ5f8C/qqMMaJWLgX2yv8GixXalWCuEI17l9lysB6+Hj+31I+6RVGkLKRuk9jDD1ioql6k3Tbmf3B4Mw=="
+  }
+]

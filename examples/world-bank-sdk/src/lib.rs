@@ -1,6 +1,6 @@
 //! A small, unauthenticated World Bank Indicators API v2 client.
 //! See the crate README for construction, examples and completion semantics.
-use concord::{Decode, Endpoint, Json, SendWith};
+use concord::{Endpoint, Json, SendWith};
 use concord_pagination::{Page, Pages, Resume};
 use serde::{Deserialize, Deserializer};
 use std::{fmt, num::NonZeroU32};
@@ -162,7 +162,7 @@ impl Error {
 }
 impl From<concord::Error> for Error {
     fn from(source: concord::Error) -> Self {
-        let meta = source.meta().map(Box::new);
+        let meta = source.head_meta().map(Box::new);
         Self::Concord { source, meta }
     }
 }
@@ -186,6 +186,7 @@ concord::api! {
         base "https://api.worldbank.org/v2";
         send SendPolicy;
         format Json;
+        limit BODY_LIMIT;
         /// Request an indicator page; use [`WorldBank::year`] or [`WorldBank::range`] for
         /// year-specific workflows. IDs are encoded as individual path segments.
         GET indicator(country: String, indicator: String, query date: String,
@@ -205,17 +206,8 @@ impl SendWith<WireResponse> for SendPolicy {
     type Output = Result<IndicatorPage, Error>;
     async fn send<E: Endpoint<WireResponse> + Send>(&self, endpoint: E) -> Self::Output {
         let received = endpoint.prepare()?.receive().await?;
-        let meta = received.meta();
         if !received.status().is_success() {
-            let body = match <Json as Decode<WireResponse>>::check_content_type(&received.head()) {
-                Err(e) => Err(e.to_string()),
-                Ok(()) => match received.bytes_limited(BODY_LIMIT).await {
-                    Ok(bytes) => {
-                        serde_json::from_slice::<WireResponse>(&bytes).map_err(|e| e.to_string())
-                    }
-                    Err(e) => Err(e.to_string()),
-                },
-            };
+            let (meta, body) = received.document::<Json, WireResponse>(BODY_LIMIT).await;
             return match body {
                 Ok(WireResponse::Failure((document,))) => Err(Error::Provider {
                     meta: Box::new(meta),
@@ -225,19 +217,13 @@ impl SendWith<WireResponse> for SendPolicy {
                     meta: Box::new(meta),
                     detail: "unexpected data document".into(),
                 }),
-                Err(detail) => Err(Error::Http {
+                Err(error) => Err(Error::Http {
                     meta: Box::new(meta),
-                    detail,
+                    detail: error.to_string(),
                 }),
             };
         }
-        let body = received
-            .decode_limited(BODY_LIMIT)
-            .await
-            .map_err(|source| Error::Concord {
-                source,
-                meta: Some(Box::new(meta.clone())),
-            })?;
+        let (body, meta) = received.decode_with_meta().await?;
         match body {
             WireResponse::Failure((document,)) => Err(Error::Provider {
                 meta: Box::new(meta),

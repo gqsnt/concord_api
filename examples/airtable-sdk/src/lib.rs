@@ -148,7 +148,8 @@ impl fmt::Debug for Error {
 }
 impl From<concord::Error> for Error {
     fn from(source: concord::Error) -> Self {
-        Self::Concord { source, meta: None }
+        let meta = source.head_meta().map(Box::new);
+        Self::Concord { source, meta }
     }
 }
 impl Error {
@@ -185,6 +186,7 @@ concord::api! {
         base "https://api.airtable.com";
         headers { AUTHORIZATION = "Bearer {token}"; }
         format Json;
+        limit SUCCESS_BODY_LIMIT;
         send Policy;
         GET list(base: String, table: String,
             query("fields[]") each fields: Vec<String> = Vec::new(),
@@ -203,8 +205,9 @@ impl SendWith<RecordPage> for Policy {
     type Output = Result<Response<RecordPage>, Error>;
     async fn send<E: Endpoint<RecordPage> + Send>(&self, endpoint: E) -> Self::Output {
         let received = endpoint.prepare()?.receive().await?;
-        let meta = received.meta();
-        if !meta.status().is_success() {
+        if !received.status().is_success() {
+            // Keep the complete raw body even when the provider document decodes.
+            let meta = received.meta();
             let (body, body_error) = match received.bytes_limited(ERROR_BODY_LIMIT).await {
                 Ok(bytes) => (Some(bytes), None),
                 Err(error) => (None, Some(error)),
@@ -220,20 +223,46 @@ impl SendWith<RecordPage> for Policy {
                 body_error,
             });
         }
-        let value: RecordPage =
-            received
-                .decode_limited(SUCCESS_BODY_LIMIT)
-                .await
-                .map_err(|source| Error::Concord {
-                    source,
-                    meta: Some(Box::new(meta.clone())),
-                })?;
+        let (value, meta) = received.decode_with_meta().await?;
         if value.offset.as_deref() == Some("") {
             return Err(Error::EmptyOffset {
                 meta: Box::new(meta),
             });
         }
         Ok(Response { value, meta })
+    }
+}
+
+#[cfg(test)]
+mod limit_tests {
+    use super::*;
+    use concord_example_testserver::{Reply, TestServer};
+
+    #[tokio::test]
+    async fn native_send_keeps_the_declared_success_body_limit() {
+        let server =
+            TestServer::start(|_| Reply::json(200, vec![b' '; SUCCESS_BODY_LIMIT + 1])).await;
+        let api = AirtableApi::new(
+            concord::reqwest::Client::builder()
+                .no_proxy()
+                .build()
+                .unwrap(),
+            AirtableApiConfig {
+                token: "synthetic-token".into(),
+            },
+        )
+        .with_base_url(server.url())
+        .unwrap();
+        let error = api
+            .list("app", "table")
+            .prepare()
+            .unwrap()
+            .send()
+            .await
+            .unwrap_err();
+        assert_eq!(error.kind(), concord::ErrorKind::Limit);
+        assert_eq!(error.head().unwrap().status().as_u16(), 200);
+        server.shutdown().await;
     }
 }
 

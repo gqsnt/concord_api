@@ -1,15 +1,18 @@
 //! U30 / U31 (R10–R12): application-owned policies composed around Concord.
 //!
-//! Concord performs no retries, pagination, admission or authentication: one `send()` is one
-//! `reqwest::Client::execute` (R11). Each policy below is ordinary application code with its
-//! assumptions stated; none is a recommended default for arbitrary APIs.
+//! `Prepared::send` and generated `send()` without a client send policy perform one
+//! `reqwest::Client::execute` (R11), with no Concord retry or extra request. A client
+//! `send policy;` instead delegates to `SendWith<T>::send`, which may sign, make sub-requests or
+//! repeat requests. Each recipe below is ordinary application code with its assumptions stated;
+//! none is a recommended default for arbitrary APIs.
 
 use std::future::Future;
 use std::sync::{Arc, RwLock};
 use std::time::Duration;
 
 use concord::ErrorKind;
-use tokio::sync::Semaphore;
+use concord_ratelimit::{Limiter, Mode, TokioClock};
+use std::num::NonZeroUsize;
 
 use crate::api::{Inventory, Item};
 
@@ -65,16 +68,27 @@ where
     F: FnMut() -> Fut,
     Fut: Future<Output = Result<T, concord::Error>>,
 {
-    let mut tried: u32 = 0;
-    loop {
-        tried += 1;
-        match attempt().await {
-            Err(error) if (tried as usize) < max_attempts && retryable(&error) => {
-                tokio::time::sleep(backoff * tried).await;
-            }
-            result => return result,
-        }
-    }
+    use concord_retry::{Decision, Policy, Replay, Retry};
+    use std::num::NonZeroUsize;
+
+    let policy = Policy {
+        initial_delay: backoff,
+        max_delay: Duration::MAX,
+        ..Policy::new(NonZeroUsize::new(max_attempts.max(1)).expect("at least once"))
+    };
+    Retry::new(policy, Replay::Permitted)
+        .run_tokio(
+            |_| attempt(),
+            |result| match result {
+                Err(error) if retryable(error) => Decision::RetryAfter(None),
+                _ => Decision::Done,
+            },
+            // Preserve this recipe's linear schedule within the engine's exponential ceiling.
+            |n, _| backoff.saturating_mul(u32::try_from(n).unwrap_or(u32::MAX)),
+        )
+        .await
+        .outcome
+        .expect("a nonzero attempt budget without a deadline always completes an attempt")
 }
 
 /// Fetches an item, retrying a bounded number of times when the connection failed (U30).
@@ -104,15 +118,27 @@ pub async fn item_with_retry(
     .await
 }
 
-/// Fetches many items with at most `admission.available_permits()` requests in flight (U31).
-///
-/// Admission is the application's: requests are **built** first (no I/O, R10), then each waits
-/// for a permit and holds it until its response is decoded. Results are in input order. The
-/// semaphore can be shared with any other code that talks to the same server.
+/// Application-owned shared concurrency admission for inventory requests.
+pub struct Admission(Limiter<()>);
+impl Admission {
+    /// Create admission with a nonzero concurrency limit.
+    pub fn new(limit: NonZeroUsize) -> Self {
+        let limiter = Limiter::new(NonZeroUsize::new(1).unwrap(), TokioClock::default());
+        limiter.set_concurrency((), limit).unwrap();
+        Self(limiter)
+    }
+    /// Number of currently unused permits.
+    pub fn available_permits(&self) -> usize {
+        self.0.available_leases(&()).unwrap()
+    }
+}
+
+/// Fetch items with bounded concurrency, holding a lease until each body is decoded.
+/// Requests are built before admission; results remain in input order.
 pub async fn items_admitted(
     api: &Inventory,
     ids: &[u64],
-    admission: Arc<Semaphore>,
+    admission: Arc<Admission>,
 ) -> Vec<Result<Item, concord::Error>> {
     let mut tasks = Vec::with_capacity(ids.len());
     for &id in ids {
@@ -121,9 +147,10 @@ pub async fn items_admitted(
         tasks.push(tokio::spawn(async move {
             let prepared = prepared?;
             let _permit = admission
-                .acquire_owned()
+                .0
+                .lease((), Mode::Wait)
                 .await
-                .expect("the application never closes this semaphore");
+                .expect("the configured key is retained");
             prepared.send().await
         }));
     }
