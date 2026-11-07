@@ -71,6 +71,7 @@ The coordinator is this Claude Code session (`claude-opus-5-5`; session `cb65e1e
 | b23-review2-sol (review of `95ac36de`, `0e4a245e`, `3ff63633..4870f864`) | gpt-6.1-sol xhigh | gpt-6.1-sol xhigh | read-only | 01a1b412-c896-7b03-8a48-04b5f83dc07a | `4870f864` | 2026-11-07 04:34 – 04:38 |
 | b23-review3-sol (review of `20517134`) | gpt-6.1-sol xhigh | gpt-6.1-sol xhigh | read-only | 01a1b424-7cb1-7d71-87b8-42c8ebbee37a | `20517134` | 2026-11-07 04:54 – 04:58 |
 | b23-review4-sol (review of `c3517aaf`) | gpt-6.1-sol xhigh | gpt-6.1-sol xhigh | read-only | 01a1b430-42d1-79a0-971d-341b195fc2f5 | `c3517aaf` | 2026-11-07 05:07 – 05:10 |
+| b23-review5-sol (review of `435ad897`) | gpt-6.1-sol xhigh | gpt-6.1-sol xhigh | read-only | 01a1b437-d735-7a42-9912-aa2b36756a65 | `435ad897` | 2026-11-07 05:15 – 05:20 |
 
 Opus subagent times are converted from the transcripts' UTC timestamps. Loopback access, read from
 each rollout's first `turn_context.sandbox_policy.network_access`: true for every Wave-1 Codex

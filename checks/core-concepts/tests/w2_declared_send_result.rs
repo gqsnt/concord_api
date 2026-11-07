@@ -117,24 +117,24 @@ fn _forwarded_names_the_result(store: &Forwarded) {
         Box::pin(store.item(1).send());
 }
 
-// Review b23-review2-sol, finding 3: a type macro's `_` is the output under every delimiter.
-macro_rules! result {
-    ($t:ty) => {
-        Result<$t, Error>
+// A `_` forwarded as a `ty` fragment is a placeholder too (an invisible group around `_`).
+macro_rules! forwarded_hole {
+    ($hole:ty) => {
+        concord::api! {
+            /// A client whose placeholder is written by a wrapper.
+            pub client Hole() {
+                base "http://hole.invalid";
+                format Json;
+                send Policy -> Result<$hole, Error>;
+                /// One item.
+                GET item(id: u32) -> Item { path "items/{id}"; }
+            }
+        }
     };
 }
-concord::api! {
-    /// A client whose send result is a brace-delimited type macro.
-    pub client Braced() {
-        base "http://braced.invalid";
-        format Json;
-        send Policy -> result!{_};
-        /// One item.
-        GET item(id: u32) -> Item { path "items/{id}"; }
-    }
-}
+forwarded_hole!(_);
 
-fn _braced_names_the_result(store: &Braced) {
+fn _forwarded_hole_names_the_result(store: &Hole) {
     let _: std::pin::Pin<Box<dyn std::future::Future<Output = Result<Item, Error>> + Send>> =
         Box::pin(store.item(1).send());
 }
@@ -178,27 +178,4 @@ fn _scaled_names_the_result(store: &Scaled) {
     >;
 
     let _: ScaledSend = Box::pin(store.item(1).send());
-}
-
-// Review b23-review4-sol, finding 1: a macro matching its input token by token still matches once
-// the placeholder is filled (`&&` must not reach it as `& &`).
-macro_rules! anded {
-    (&& u8, $t:ty) => {
-        Result<$t, Error>
-    };
-}
-concord::api! {
-    /// A client whose send result is a token-sensitive type macro.
-    pub client Anded() {
-        base "http://anded.invalid";
-        format Json;
-        send Policy -> anded!(&& u8, _);
-        /// One item.
-        GET item(id: u32) -> Item { path "items/{id}"; }
-    }
-}
-
-fn _anded_names_the_result(store: &Anded) {
-    let _: std::pin::Pin<Box<dyn std::future::Future<Output = Result<Item, Error>> + Send>> =
-        Box::pin(store.item(1).send());
 }

@@ -1723,7 +1723,8 @@ concord::api! {
 `<Policy as SendWith<T>>::Output`, and a caller has to open the policy's implementation to learn
 that it is `Result<T, Error>`. Declare the shape on the statement — `_` stands for each endpoint's
 output — and every generated `send()` (and its rustdoc) names the concrete type; a template that
-is not the policy's output is a compile error at the template:
+is not the policy's output is a compile error at the template. A `_` inside a macro invocation
+(`result!(_)`) is the macro's, not a placeholder: its input is the macro's own grammar.
 
 ```rust
 use concord::{Endpoint, Json, SendWith};
