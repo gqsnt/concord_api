@@ -10,7 +10,7 @@ description = "A bounded PayPal REST slice (sandbox): client credentials, order 
 [dependencies]
 concord = { path = "../../crates/concord", features = ["form"] }
 concord-auth = { path = "../../crates/concord-auth" }
-concord-retry = { path = "../../crates/concord-retry" }
+concord-retry = { path = "../../crates/concord-retry", features = ["concord"] }
 serde = { workspace = true, features = ["derive"] }
 tokio = { workspace = true, features = ["time"] }
 

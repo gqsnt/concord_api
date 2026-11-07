@@ -7,9 +7,9 @@ use std::time::{Duration, Instant};
 
 use concord::reqwest::header::AUTHORIZATION;
 use concord::reqwest::{self, StatusCode, Url};
-use concord::{Delivery, Endpoint, Operation, Received, SendWith};
+use concord::{Endpoint, Operation, Received, SendWith};
 use concord_auth::{Generation, RefreshError, Snapshot, TokenCache};
-use concord_retry::{Decision, Replay, Retry};
+use concord_retry::{Decision, Replay, Retry, concord::ReplayMode};
 
 use crate::auth::{OAuth, fetch_token};
 use crate::{
@@ -134,16 +134,8 @@ fn accepts_request_id(operation: &Operation) -> bool {
         || *operation == <PayPalAuthorizationVoid as Endpoint<()>>::operation()
 }
 
-/// One attempt: a token failure (nothing sent) or one execution with the token it used.
-enum Attempt<T> {
-    Token(TokenError),
-    Sent(Result<Received<T>, concord::Error>, Generation),
-}
-
 #[derive(Default)]
 struct Observed {
-    /// Completed attempts (the engine also counts one cancelled at the deadline).
-    completed: usize,
     /// An attempt that may have been performed without a usable answer.
     ambiguous: bool,
     /// A `401` already led to a new token.
@@ -151,19 +143,14 @@ struct Observed {
 }
 
 fn classify<T>(
-    attempt: &Attempt<T>,
+    outcome: &Result<Received<T>, concord::Error>,
+    generation: &Generation,
     seen: &mut Observed,
     cache: &TokenCache<(), TokenError>,
 ) -> Decision {
-    seen.completed += 1;
-    match attempt {
-        // The request was not sent; a token failure is final for this call.
-        Attempt::Token(_) => Decision::Stop,
-        Attempt::Sent(Err(e), _) => {
-            seen.ambiguous |= e.delivery() != Delivery::NotSent;
-            Decision::RetryAfter(None)
-        }
-        Attempt::Sent(Ok(received), generation) => {
+    match outcome {
+        Err(_) => Decision::RetryAfter(None),
+        Ok(received) => {
             let status = received.status();
             if status == StatusCode::UNAUTHORIZED {
                 cache.invalidate(&(), generation);
@@ -200,9 +187,7 @@ impl<T: Send + 'static> SendWith<T> for Session {
         let write = operation.method() != Some("GET");
         let permitted = !write || (request_id.is_some() && accepts_request_id(&operation));
 
-        let (client, template, decoder) = prepared.into_parts();
-        // Every body of this declaration is buffered JSON, so the template can be cloned.
-        let replay = if permitted && template.try_clone().is_some() {
+        let replay = if permitted {
             Replay::Permitted
         } else {
             Replay::Never
@@ -212,53 +197,41 @@ impl<T: Send + 'static> SendWith<T> for Session {
         } else {
             self.inner.reads
         };
-        let mut template = Some(template);
         let mut seen = Observed::default();
         let cache = &self.inner.cache;
-        let client = &client;
         let epoch = Instant::now();
         let run = Retry::new(bounds, replay)
-            .run(
-                |_| {
-                    let request = template
-                        .as_ref()
-                        .and_then(reqwest::Request::try_clone)
-                        .or_else(|| template.take());
-                    async move {
-                        let mut request =
-                            request.expect("a request is sent at most once unless cloneable");
-                        match self.token().await {
-                            Err(e) => Attempt::Token(e),
-                            Ok(token) => {
-                                request
-                                    .headers_mut()
-                                    .insert(AUTHORIZATION, token.header().clone());
-                                Attempt::Sent(
-                                    decoder.execute(client, request).await,
-                                    token.generation(),
-                                )
-                            }
-                        }
-                    }
+            .receive_with(
+                prepared,
+                ReplayMode::BestEffort,
+                |mut request, _| async move {
+                    let token = self.token().await?;
+                    request
+                        .headers_mut()
+                        .insert(AUTHORIZATION, token.header().clone());
+                    Ok::<_, TokenError>((request, token.generation()))
                 },
-                |attempt| classify(attempt, &mut seen, cache),
+                |outcome, generation| classify(outcome, generation, &mut seen, cache),
                 move || epoch.elapsed(),
                 tokio::time::sleep,
                 |_, ceiling| ceiling,
             )
             .await;
-        let attempts = run.report.attempts;
+        let attempts = run.report.retry.attempts;
+        seen.ambiguous |= run.report.no_response;
         let name = operation.name();
 
         if !write {
+            if let Some(e) = run.refusal {
+                return Err(Error::Token(e));
+            }
             return match run.outcome {
                 None => Err(Error::Deadline),
-                Some(Attempt::Token(e)) => Err(Error::Token(e)),
-                Some(Attempt::Sent(Err(e), _)) => Err(Error::Concord(e)),
-                Some(Attempt::Sent(Ok(received), _)) if received.status().is_success() => {
+                Some(Err(e)) => Err(Error::Concord(e)),
+                Some(Ok(received)) if received.status().is_success() => {
                     Ok(received.decode().await?)
                 }
-                Some(Attempt::Sent(Ok(received), _)) => Err(Error::Http(Box::new(
+                Some(Ok(received)) => Err(Error::Http(Box::new(
                     HttpError::read(received, name, attempts).await,
                 ))),
             };
@@ -272,22 +245,25 @@ impl<T: Send + 'static> SendWith<T> for Session {
                 cause,
             }))
         };
-        if attempts > seen.completed {
+        if attempts > run.report.completed {
             // An attempt was cancelled by the deadline after it may have been sent.
             return Err(uncertain(UncertainCause::Interrupted));
         }
+        if let Some(e) = run.refusal {
+            return Err(if seen.ambiguous {
+                uncertain(UncertainCause::LaterToken(e))
+            } else {
+                Error::Token(e)
+            });
+        }
         match run.outcome {
             None => Err(Error::Deadline),
-            Some(Attempt::Token(e)) if seen.ambiguous => {
-                Err(uncertain(UncertainCause::LaterToken(e)))
-            }
-            Some(Attempt::Token(e)) => Err(Error::Token(e)),
-            Some(Attempt::Sent(Err(e), _)) => Err(uncertain(UncertainCause::NoResponse(e))),
-            Some(Attempt::Sent(Ok(received), _)) if received.status().is_success() => received
+            Some(Err(e)) => Err(uncertain(UncertainCause::NoResponse(e))),
+            Some(Ok(received)) if received.status().is_success() => received
                 .decode()
                 .await
                 .map_err(|e| uncertain(UncertainCause::UnreadableSuccess(e))),
-            Some(Attempt::Sent(Ok(received), _)) => {
+            Some(Ok(received)) => {
                 let server_error = received.status().is_server_error();
                 let http = Box::new(HttpError::read(received, name, attempts).await);
                 if server_error {
