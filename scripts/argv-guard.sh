@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Installed by scripts/verify.sh as target/argv-guard/<tool> (python3, python, cargo, tar), ahead of
+# Installed by scripts/verify.sh as target/argv-guard/<tool> (python3, python, cargo, tar, rustfmt), ahead of
 # the real tool on PATH. Windows limits a whole command line to 32,767 UTF-16 code units; Linux
 # accepts far longer ones, so a script that passes bulk data as an argument fails only on Windows.
 # This wrapper refuses such a command line on every platform, then runs the tool recorded in

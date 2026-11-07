@@ -137,6 +137,7 @@ impl FileStore {
     /// Existing directories are refused; an existing grant is never overwritten.
     pub fn create(directory: impl AsRef<Path>, grant: Grant) -> Result<Self, Error> {
         let directory = directory.as_ref().to_path_buf();
+        #[cfg_attr(not(unix), allow(unused_mut))] // the private mode is set on Unix only
         let mut builder = fs::DirBuilder::new();
         #[cfg(unix)]
         {

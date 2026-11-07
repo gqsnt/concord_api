@@ -73,17 +73,24 @@ mkdir -p target
 rm -f target/verify-*.log  # the summary below reads only this run's logs
 rm -f target/socket-snapshot.disabled  # scripts/socket-snapshot.py: re-enabled for every run
 
-# Every step runs python, cargo and tar through scripts/argv-guard.sh, which refuses a command line
-# over the Windows limit on every platform (a consumers.sh argument once failed only on Windows).
+# Every step runs python, cargo, tar and rustfmt through scripts/argv-guard.sh, which refuses a
+# command line over the Windows limit on every platform (a consumers.sh argument once failed only on
+# Windows; so did `cargo fmt --all`, whose single rustfmt call names every root file).
 argv_guard() {
   local dir="$PWD/target/argv-guard" name real
   rm -rf "$dir" && mkdir -p "$dir" || return 1
   printf '%s' "$python" >"$dir/interpreter" && cp scripts/argv-length.py "$dir/" || return 1
-  for name in python3 python cargo tar; do
+  for name in python3 python cargo tar rustfmt; do
     real=$(command -v "$name") || continue
     printf '%s' "$real" >"$dir/$name.real"
     cp scripts/argv-guard.sh "$dir/$name" && chmod +x "$dir/$name" || return 1
   done
+  # cargo-fmt runs the toolchain's own rustfmt, not the one first on PATH, unless RUSTFMT names one.
+  # A native Windows cargo-fmt cannot start this bash wrapper, and there the real limit applies.
+  case "$(uname -s)" in
+    MINGW* | MSYS* | CYGWIN*) ;;
+    *) [[ -x "$dir/rustfmt" ]] && export RUSTFMT="$dir/rustfmt" ;;
+  esac
   PATH="$dir:$PATH"
 }
 argv_guard || { echo "argv-guard could not be installed" >&2; exit 2; }
@@ -106,7 +113,19 @@ step tool-tests "$python" -I -B -m unittest discover -s scripts/tests -p "test_*
 step output-dirs scripts/tests/output-dirs.sh
 # The production edges of the crates (manifests, then one resolved graph per package).
 step graph "$python" -I scripts/check-graph.py
-step fmt cargo fmt --all -- --check
+# `cargo fmt --all` hands every root file to one rustfmt command line, which outgrew the Windows
+# limit with the 55 SDKs (os error 206, CI run 42352913341). The same packages (every workspace
+# member: they are all the local packages), one rustfmt line each.
+fmt_check() {
+  local pkg failed=0
+  while read -r pkg; do
+    pkg=${pkg%$'\r'}  # Windows Python prints CRLF
+    cargo fmt -p "$pkg" -- --check || failed=1
+  done < <(cargo metadata --locked --no-deps --format-version 1 \
+    | "$python" -I -c 'import json, sys; print("\n".join(p["name"] for p in json.load(sys.stdin)["packages"]))')
+  return $failed
+}
+step fmt fmt_check
 step records "$python" -I scripts/check-records.py
 # Generated test files (oracles, the synthetic SDK) match their generators.
 generated() {
