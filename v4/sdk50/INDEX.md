@@ -24,6 +24,7 @@ fixtures only).
 | P2 waves SDK21–50 | **Wave 1 (SDK21–25) complete**; between-waves changes A–E, H, `query(..)` accepted and adopted, ratelimit pilot not accepted (its review defects fixed); Wave 2 next | `waves/W1/{PLAN,STATUS,FINDINGS,CANDIDATES,SYNTHESIS}.md` |
 | | **Wave 2 (SDK26–30) complete**; between-waves changes B23-A2 (`send P -> Result<_, Error>`), B23-R (`Error::delivery()`), B23-C (`concord::field`), B23-Q, B23-G accepted and adopted; repeated-key guard not accepted (0 adopters); routing R-1 (Codex = Sol only) from Wave 3 | `waves/W2/{PLAN,STATUS,FINDINGS,SYNTHESIS}.md` |
 | | **Wave 3 (SDK31–35, payments and accounting) complete**: 15 roles; between-waves B34-D (generated docs), B34-R (`Retry::receive_with`), B34-O (inherent `operation()`) accepted; B34-A (auth rotation) not accepted; B34-V (declared values) experiment continues | `waves/W3/{PLAN,STATUS,FINDINGS,SYNTHESIS}.md` |
+| | **Wave 4 (SDK36–40) started**: baseline `c3fd4f1e` (gate 66/66, nightly PASS) | `waves/W4/{PLAN,STATUS}.md` |
 | P3 final adoption and retrospective | not started | — |
 
 ## Lanes (branches; each merged into `sdk50/integration` after coordinator verification)
