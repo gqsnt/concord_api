@@ -18,6 +18,12 @@ pub enum InputError {
     Message,
     /// Empty or malformed message identifier.
     MessageId,
+    /// More than three tag fields on one message.
+    TagLimit,
+    /// Empty, non-ASCII, control-containing or over-128-byte tag.
+    Tag,
+    /// Variable name is not a nonempty ASCII alphanumeric, underscore or hyphen name.
+    VariableName,
     /// Unsafe filename or invalid media type.
     Attachment,
     /// The file could not be read.

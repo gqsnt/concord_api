@@ -131,9 +131,44 @@ Direct dependencies resolved from the existing lock:
 | futures-util | 0.3.34 | MIT OR Apache-2.0 | Lazy, byte-bounded attachment stream. |
 | mime | 0.3.17 | MIT OR Apache-2.0 | Validate attachment media values consistently across both encoders. |
 | serde | 1.0.229 | MIT OR Apache-2.0 | Provider response models. |
-| serde_json (tests) | 1.0.154 | MIT OR Apache-2.0 | Synthetic fixture mutations, independent of SDK encoders. |
+| serde_json (runtime and tests after maintenance) | 1.0.154 | MIT OR Apache-2.0 | Typed custom-variable JSON encoding/event values, plus synthetic fixture mutations. Already locked; promoted from dev-dependency. |
 | tokio (tests) | 1.54.1 | MIT | Fixture async runtime. |
 | concord-example-testserver (tests) | 0.0.0 | MIT OR Apache-2.0 | Required local fixture harness. |
 
 Workspace feature unification was not used as a substitute for declaring this
 package's features: `concord/multipart` and `reqwest/{multipart,stream}` are explicit.
+
+## Independent maintenance research — 2026-11-07
+
+Maintenance baseline: `497bf896cc63855095a1d2310ffdcb6ef697d85e`. The sources
+below were read again through the web reader on **2026-11-07**. Live provider
+calls remain **NOT_RUN**; documentation retrieval is read-only research.
+
+| Exact page | Maintenance contract |
+|---|---|
+| [Send via HTTP](https://documentation.mailgun.com/docs/mailgun/user-manual/sending-messages/send-http) | Regional origins, Basic `api:key`, repeated tag example, custom variables in events. |
+| [Send an email](https://documentation.mailgun.com/docs/mailgun/api-reference/send/mailgun/messages/post-v3--domain-name--messages) | Multipart `o:tag` array and `v:<name>` metadata fields, recipient-visible variables, 16 KiB aggregate send options and 4 KiB event/webhook truncation. |
+| [Tagging](https://documentation.mailgun.com/docs/mailgun/user-manual/tracking-messages/track-tagging) | Up to three tags, ASCII, maximum 128 characters, case-insensitive provider comparison; repeated `o:tag` parts. |
+| [Custom variables: Attaching Metadata to Messages](https://documentation.mailgun.com/docs/mailgun/user-manual/sending-messages/send-attachments#attaching-metadata-to-messages) | Single/multiple `v:` fields; event `user-variables` JSON map; variables also appear in the delivered message's `X-Mailgun-Variables`. |
+| [Introduction to Events](https://documentation.mailgun.com/docs/mailgun/user-manual/events/events) | Acceptance versus delivery and provider links through an empty terminal page. |
+| [Retrieve domain events](https://documentation.mailgun.com/docs/mailgun/api-reference/send/mailgun/events/get-v3-domain_name-events) | Exact filter wire name is `tags`; retain existing message-ID/range/recipient and paging behavior. |
+
+The ticket requests JSON-valued variables. The caller supplies a typed JSON value
+and each `v:<name>` body is its JSON serialization, including quoted strings.
+The sources do not specify a variable-name grammar. The bare-name
+`[A-Za-z0-9_-]+` restriction, nonempty/control-free tag checks, duplicate-variable
+replacement and empty defaults for absent event metadata are explicit SDK rules.
+
+`tests/metadata.rs` adds independently asserted literal multipart field names,
+repeats, JSON values, file bytes, invalid-input and ambiguous-timeout cases for
+both encoders. `tests/metadata_consumer.rs` authors provider-shaped synthetic
+accepted/delivered/empty pages with fixed tags, typed custom data and opaque links;
+it exercises the public caller contract with a local file and a one-shot source.
+Neither fixture generates expected fields from the SDK encoder.
+
+No new crate or version was added. `serde_json` **1.0.154**, **MIT OR Apache-2.0**,
+was already a direct test dependency and present in Cargo.lock; it is now also
+needed at runtime to serialize JSON values and retain event metadata. The root
+workspace member and package lock entry were already present in the frozen
+maintenance baseline; neither file needed editing. See `MAINTENANCE.md` for
+reading order and the first failed regression result.

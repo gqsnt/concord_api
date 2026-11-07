@@ -8,6 +8,7 @@ use concord::{
 use futures_util::{Stream, StreamExt};
 use serde::Deserialize;
 use std::{
+    collections::BTreeMap,
     fmt,
     io::{self, Read},
     path::Path,
@@ -186,6 +187,8 @@ pub struct TextEmail {
     subject: String,
     text: String,
     attachment: Attachment,
+    tags: Vec<String>,
+    variables: BTreeMap<String, serde_json::Value>,
 }
 
 impl TextEmail {
@@ -218,7 +221,48 @@ impl TextEmail {
             subject,
             text,
             attachment,
+            tags: Vec::new(),
+            variables: BTreeMap::new(),
         })
+    }
+
+    /// Add one repeated `o:tag` field, preserving its spelling. At most three are allowed.
+    /// Tags must be nonempty ASCII, at most 128 bytes, without control characters.
+    /// Validation performs no I/O and never polls an attachment source.
+    pub fn tag(mut self, tag: impl Into<String>) -> Result<Self, Error> {
+        if self.tags.len() == 3 {
+            return Err(Error::Input(InputError::TagLimit));
+        }
+        let tag = tag.into();
+        if tag.is_empty() || tag.len() > 128 || !tag.is_ascii() || tag.chars().any(char::is_control)
+        {
+            return Err(Error::Input(InputError::Tag));
+        }
+        self.tags.push(tag);
+        Ok(self)
+    }
+
+    /// Attach a JSON value as `v:<name>` for later event `user-variables`.
+    /// Supply the bare name; the SDK accepts nonempty `[A-Za-z0-9_-]+` names.
+    /// This is a local naming rule; the provider docs do not specify a name grammar.
+    /// Reusing a name replaces its value. Values are JSON encoded, including string quotes.
+    /// Recipients can see this data in the delivered email's X-Mailgun-Variables header.
+    /// Validation performs no I/O and never polls an attachment source.
+    pub fn variable(
+        mut self,
+        name: impl Into<String>,
+        value: impl Into<serde_json::Value>,
+    ) -> Result<Self, Error> {
+        let name = name.into();
+        if name.is_empty()
+            || !name
+                .bytes()
+                .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'_' | b'-'))
+        {
+            return Err(Error::Input(InputError::VariableName));
+        }
+        self.variables.insert(name, value.into());
+        Ok(self)
     }
 }
 impl fmt::Debug for TextEmail {
@@ -247,7 +291,19 @@ impl Encode<TextEmail> for MailgunMultipart {
             subject,
             text,
             attachment,
+            tags,
+            variables,
         } = value;
+        // Map all text fields once so buffered and one-shot attachments cannot diverge.
+        let mut fields = vec![("from".to_owned(), from)];
+        fields.extend(to.into_iter().map(|to| ("to".to_owned(), to)));
+        fields.extend([("subject".to_owned(), subject), ("text".to_owned(), text)]);
+        fields.extend(tags.into_iter().map(|tag| ("o:tag".to_owned(), tag)));
+        fields.extend(
+            variables
+                .into_iter()
+                .map(|(name, value)| (format!("v:{name}"), value.to_string())),
+        );
         let Attachment {
             filename,
             media,
@@ -255,33 +311,25 @@ impl Encode<TextEmail> for MailgunMultipart {
         } = attachment;
         match source {
             Source::Bytes(bytes) => {
-                let mut form = MultipartBody::form_data().text("from", from);
-                for to in to {
-                    form = form.text("to", to);
+                let mut form = MultipartBody::form_data();
+                for (name, value) in fields {
+                    form = form.text(name, value);
                 }
-                Multipart::encode_body(form.text("subject", subject).text("text", text).file(
-                    "attachment",
-                    filename,
-                    media,
-                    bytes,
-                ))
+                Multipart::encode_body(form.file("attachment", filename, media, bytes))
             }
             Source::Stream(body) => {
                 // Native codec escape only: Concord still owns the declaration and execution.
-                let mut form = reqwest::multipart::Form::new()
-                    .percent_encode_attr_chars()
-                    .text("from", from);
-                for to in to {
-                    form = form.text("to", to);
+                // Names are fixed ASCII or validated variable names. Preserve the literal
+                // colon: attr-char encoding would emit name*=utf-8''o%3Atag instead.
+                let mut form = reqwest::multipart::Form::new().percent_encode_noop();
+                for (name, value) in fields {
+                    form = form.text(name, value);
                 }
                 let part = reqwest::multipart::Part::stream(body)
                     .file_name(filename)
                     .mime_str(&media)
                     .map_err(|_| CodecError::new("invalid attachment media type"))?;
-                let form = form
-                    .text("subject", subject)
-                    .text("text", text)
-                    .part("attachment", part);
+                let form = form.part("attachment", part);
                 let media = HeaderValue::from_str(&format!(
                     "multipart/form-data; boundary={}",
                     form.boundary()

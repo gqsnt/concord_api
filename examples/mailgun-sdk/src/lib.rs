@@ -86,6 +86,8 @@ concord::api! {
                 #[sensitive] query("message-id") message_id?: MessageId,
                 #[sensitive] query recipient?: String,
                 query event?: String,
+                /// Provider tag filter expression, encoded as the `tags` query field.
+                #[sensitive] query tags?: String,
             ) -> EventPage {
                 path "events";
             }

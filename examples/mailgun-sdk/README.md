@@ -25,13 +25,16 @@ async fn workflow(loopback_origin: &str) -> Result<(), Box<dyn std::error::Error
         "Sender <sender@mg.example.test>",
         vec!["alice@example.test".into()],
         "Report", "The report is attached.", file,
-    )?;
+    )?
+        .tag("reports")?
+        .variable("customer-id", 42)?;
     let accepted = domain.send_message(email).send().await?;
     let message_id = accepted.value.id; // Persist as_str() in application storage.
 
     let search = domain.events(EventRange::new(1700000000, 1700000100)?)
         .set_message_id(message_id.clone())
         .set_recipient("alice@example.test")
+        .set_tags("reports")
         .set_limit(PageSize::new(100)?);
     let events = search.pages(NonZeroUsize::new(20).unwrap())?
         .items().collect_complete().await?;
@@ -57,6 +60,33 @@ task. `Attachment::stream` accepts a `Send + 'static` stream of
 `Encode<TextEmail>` adapter, with the boundary bound to `EncodedBody`. Neither
 construction nor preparation polls the source. The send endpoint remains the
 same generated operation. Streamed bodies are chunked and cannot be cloned.
+
+`TextEmail::tag` adds a repeated `o:tag` field; up to three are allowed. Tags are
+nonempty ASCII, at most 128 bytes, without control characters. Their spelling is
+preserved; Mailgun treats tags case insensitively. `TextEmail::variable(name,
+value)` adds `v:<name>` with a JSON-encoded value (`serde_json::Value` or a value
+convertible to it). Strings include JSON quotes; objects, arrays, numbers,
+booleans and null retain their JSON representation. Reusing a name replaces its
+value. Supply a bare name matching `[A-Za-z0-9_-]+`: this conservative naming
+rule belongs to this SDK because the provider docs do not specify a grammar.
+A fourth tag or invalid name returns a value-free `Error::Input` immediately,
+without network I/O or attachment polling. Both attachment encoders use the
+same field mapping. As before, `Attachment::from_file` performs its own explicit
+local read when called.
+
+Event searches accept `.set_tags(...)` using Mailgun's `tags` filter expression.
+The filter is query encoded and redacted in operation diagnostics. It is part
+of the original search context for resumption; provider continuation URLs still
+remain verbatim. `Event.tags` and `Event.user_variables` expose the returned
+metadata and default to empty collections when absent. Inspect those fields
+explicitly; event Debug remains redacted. Mailgun also exposes custom variables
+in the recipient's `X-Mailgun-Variables` header. The provider documents a 16 KiB
+aggregate send-options limit and truncation of variable data over 4 KiB in
+events/webhooks; this SDK does not promise complete metadata beyond those limits.
+Contract sources read **2026-11-07**: [send reference](https://documentation.mailgun.com/docs/mailgun/api-reference/send/mailgun/messages/post-v3--domain-name--messages),
+[tagging](https://documentation.mailgun.com/docs/mailgun/user-manual/tracking-messages/track-tagging),
+[custom variables](https://documentation.mailgun.com/docs/mailgun/user-manual/sending-messages/send-attachments#attaching-metadata-to-messages),
+and [event filters](https://documentation.mailgun.com/docs/mailgun/api-reference/send/mailgun/events/get-v3-domain_name-events).
 
 ```compile_fail
 use concord_sdk_mailgun::TextEmail;

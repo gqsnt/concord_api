@@ -5,7 +5,11 @@ use concord::{
 };
 use concord_pagination::{Page, Pages, Resume};
 use serde::Deserialize;
-use std::{collections::HashSet, fmt, num::NonZeroUsize};
+use std::{
+    collections::{BTreeMap, HashSet},
+    fmt,
+    num::NonZeroUsize,
+};
 
 /// Validated ASCII DNS sending domain, represented as one path segment.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -115,6 +119,12 @@ pub struct Event {
     pub severity: Option<String>,
     /// Includes the provider's test-mode flag, which prevents a real-delivery conclusion.
     pub flags: Option<EventFlags>,
+    /// User-defined tags; empty when absent. The provider compares tags case insensitively.
+    #[serde(default)]
+    pub tags: Vec<String>,
+    /// Custom JSON data sent with `v:<name>`; empty when absent.
+    #[serde(default, rename = "user-variables")]
+    pub user_variables: BTreeMap<String, serde_json::Value>,
 }
 /// Flags relevant to interpreting delivery evidence.
 #[derive(Deserialize)]

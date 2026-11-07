@@ -15,11 +15,11 @@ concord-retry = { path = "../../crates/concord-retry" }
 futures-util = { workspace = true, features = ["std"] }
 reqwest = { workspace = true, features = ["multipart", "stream"] }
 serde = { workspace = true, features = ["derive"] }
+serde_json.workspace = true
 mime.workspace = true
 
 [dev-dependencies]
 concord-example-testserver = { path = "../testserver" }
-serde_json.workspace = true
 tokio = { workspace = true, features = ["macros", "rt-multi-thread", "time"] }
 
 [lints]
