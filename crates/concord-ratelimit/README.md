@@ -9,10 +9,12 @@ resource rules and global-429 interpretation remain SDK responsibilities.
 Admission atomically charges all distinct keys when `acquire` completes. Call it immediately before
 dispatch; cancellation while queued has no charge, and a completed admission is not refunded. A
 lease limits concurrent work and is independent of rate charging; hold it through body or stream
-consumption when appropriate. Release it before retry backoff. Clones share a strict FIFO queue
-across all keys and leases: this avoids starvation but an unrelated key can wait behind a blocked
-head. Refusal never bypasses a queued waiter. Cooldowns never shorten; overlapping window
-observations conservatively retain the smaller remaining count and later reset. No background task
+consumption when appropriate. Release it before retry backoff. Clones share two independent FIFO
+queues: one for rate admissions and one for concurrency leases, each spanning all keys. Queue order
+is established on first poll, not future creation. An unrelated key can wait behind a blocked head
+in its own queue. Refusal never bypasses a queued waiter of the same kind. Neither queue blocks the
+other, and there is no ordering guarantee between admissions and leases. Cooldowns never shorten;
+overlapping window observations conservatively retain the smaller remaining count and later reset. No background task
 or mutex spans I/O. Capacity includes configured and observed keys; no active state is evicted.
 Remove expired, inactive keys explicitly. Empty key sets still respect the global gate.
 
@@ -20,8 +22,12 @@ With `tokio`, use `TokioClock::default()`; otherwise implement `Clock` with mono
 cancellable runtime sleep. `after` checks overflow. A sleep implementation must not return before
 the duration has elapsed. SDKs must use the same limiter clock epoch for absolute observations.
 
-For composition with `concord-retry`, use `Retry::run` and put both `acquire` and `lease` in the
-attempt factory, after retry's wait. Drop the lease before returning the attempt outcome to Retry,
+For composition with `concord-retry`, use `Retry::run` and put both `lease` and `acquire` in the
+attempt factory, after retry's wait. Obtain concurrency first, then acquire rate admission immediately
+before dispatch. A lease wait can outlive a rate window or a newly observed per-key cooldown;
+leasing alone does not check per-key rate state. This order checks the latest observations and
+charges the current rate window after the concurrency wait. The lease remains held during any
+rate wait. Drop the lease before returning the attempt outcome to Retry,
 so no permit spans backoff. For `concord-auth`, wrap the cache's token acquisition closure with an
 admission under a separate SDK-defined token-service key; application traffic uses its own keys.
 A token cache hit needs no token-service admission. Replay permission and response classification
@@ -39,13 +45,13 @@ let run = Retry::new(retry_policy, Replay::Permitted).run(
             let token = cache.get_or_refresh(token_scope, || {
                 let limiter = limiter.clone();
                 async move {
-                    limiter.acquire(&["token-service"], Mode::Wait).await?;
                     let _lease = limiter.lease("token-service", Mode::Wait).await?;
+                    limiter.acquire(&["token-service"], Mode::Wait).await?;
                     fetch_token().await // returns Token, with a provider-specific error
                 }
             }).await?;
-            limiter.acquire(&["application"], Mode::Wait).await?;
             let _lease = limiter.lease("application", Mode::Wait).await?;
+            limiter.acquire(&["application"], Mode::Wait).await?;
             send_once(attempt, token.header()).await // exactly one request
         }
     },
@@ -56,7 +62,10 @@ let run = Retry::new(retry_policy, Replay::Permitted).run(
 The attempt returns only after its lease drops. If the SDK returns a stream instead, move the
 lease into a wrapper that owns the stream and drop it on completion or cancellation. The executable
 composition test checks token cache hits, separate keys, reacquisition on each attempt and no lease
-during backoff. The stream test holds a lease through `drain`.
+during backoff. A regression test checks a cooldown observed during a lease wait and verifies that
+the local rate window is charged at dispatch. Observations arriving after `acquire` completes cannot
+revoke that admission; dispatch immediately without another intervening wait. The stream test holds
+a lease through `drain`.
 
 ## Discord migration estimate
 

@@ -7,7 +7,7 @@ use std::{
     hash::Hash,
     num::{NonZeroU32, NonZeroUsize},
     pin::Pin,
-    sync::{Arc, Mutex},
+    sync::{Arc, Mutex, MutexGuard},
     task::{Poll, Waker},
     time::Duration,
 };
@@ -49,7 +49,7 @@ impl Clock for TokioClock {
 /// Whether to queue or refuse when admission is unavailable.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Mode {
-    /// Queue in FIFO order.
+    /// Queue in FIFO order within admission or within concurrency leases.
     Wait,
     /// Return immediately.
     Refuse,
@@ -124,14 +124,37 @@ struct Waiter {
 struct State<K> {
     entries: HashMap<K, Entry>,
     global: Duration,
-    queue: VecDeque<Waiter>,
+    admission_queue: VecDeque<Waiter>,
+    lease_queue: VecDeque<Waiter>,
+}
+impl<K> State<K> {
+    fn queue(&mut self, lease: bool) -> &mut VecDeque<Waiter> {
+        if lease {
+            &mut self.lease_queue
+        } else {
+            &mut self.admission_queue
+        }
+    }
 }
 struct Shared<K> {
     state: Mutex<State<K>>,
     capacity: usize,
     clock: Arc<dyn Clock>,
 }
-/// A cheap clone sharing budgets, observations, queue and leases within this process.
+impl<K> Shared<K> {
+    fn lock(&self) -> MutexGuard<'_, State<K>> {
+        // A panic from caller-supplied code (for example K::hash) must not
+        // turn subsequent operations or lease cleanup into poison panics.
+        self.state.lock().unwrap_or_else(|error| error.into_inner())
+    }
+}
+/// A cheap clone sharing budgets, observations, queues and leases within this process.
+///
+/// Rate admissions and concurrency leases have independent FIFO queues, each shared
+/// across all keys. Order is established on first poll, not future creation. A
+/// blocked head can delay unrelated keys in its own queue; neither queue blocks the
+/// other. [`Mode::Refuse`] never bypasses a waiter in the same queue. There is no
+/// ordering guarantee between admissions and leases.
 pub struct Limiter<K>(Arc<Shared<K>>);
 impl<K> Clone for Limiter<K> {
     fn clone(&self) -> Self {
@@ -140,8 +163,9 @@ impl<K> Clone for Limiter<K> {
 }
 fn wake<K>(state: &mut State<K>) -> Vec<Waker> {
     state
-        .queue
+        .admission_queue
         .iter_mut()
+        .chain(state.lease_queue.iter_mut())
         .filter_map(|w| w.waker.take())
         .collect()
 }
@@ -157,7 +181,8 @@ impl<K: Eq + Hash + Clone> Limiter<K> {
             state: Mutex::new(State {
                 entries: HashMap::new(),
                 global: Duration::ZERO,
-                queue: VecDeque::new(),
+                admission_queue: VecDeque::new(),
+                lease_queue: VecDeque::new(),
             }),
             capacity: capacity.get(),
             clock: Arc::new(clock),
@@ -195,7 +220,7 @@ impl<K: Eq + Hash + Clone> Limiter<K> {
         if budget.window.is_zero() {
             return Err(Error::InvalidWindow);
         }
-        let mut s = self.0.state.lock().unwrap();
+        let mut s = self.0.lock();
         self.ensure(&mut s, std::slice::from_ref(&key))?;
         let e = s.entries.get_mut(&key).unwrap();
         e.budget = Some(budget);
@@ -207,7 +232,7 @@ impl<K: Eq + Hash + Clone> Limiter<K> {
     }
     /// Set the maximum simultaneous leases for a key.
     pub fn set_concurrency(&self, key: K, limit: NonZeroUsize) -> Result<(), Error> {
-        let mut s = self.0.state.lock().unwrap();
+        let mut s = self.0.lock();
         self.ensure(&mut s, std::slice::from_ref(&key))?;
         s.entries.get_mut(&key).unwrap().limit = Some(limit);
         let w = wake(&mut s);
@@ -217,14 +242,14 @@ impl<K: Eq + Hash + Clone> Limiter<K> {
     }
     /// Current unused lease slots for a configured key, if it has a concurrency limit.
     pub fn available_leases(&self, key: &K) -> Option<usize> {
-        let s = self.0.state.lock().unwrap();
+        let s = self.0.lock();
         let e = s.entries.get(key)?;
         Some(e.limit?.get().saturating_sub(e.leased))
     }
     /// Record a provider window or cooldown. Concurrent observations are combined conservatively.
     pub fn observe(&self, key: K, observation: Observation) -> Result<(), Error> {
         let now = self.now();
-        let mut s = self.0.state.lock().unwrap();
+        let mut s = self.0.lock();
         self.ensure(&mut s, std::slice::from_ref(&key))?;
         let e = s.entries.get_mut(&key).unwrap();
         match observation {
@@ -247,7 +272,7 @@ impl<K: Eq + Hash + Clone> Limiter<K> {
     }
     /// Extend the global cooldown, which gates all keys including empty key sets.
     pub fn observe_global(&self, until: Duration) {
-        let mut s = self.0.state.lock().unwrap();
+        let mut s = self.0.lock();
         s.global = s.global.max(until);
         let w = wake(&mut s);
         drop(s);
@@ -256,9 +281,9 @@ impl<K: Eq + Hash + Clone> Limiter<K> {
     /// Remove an inactive key after its windows expire. Returns false when still active or absent.
     pub fn remove(&self, key: &K) -> bool {
         let now = self.now();
-        let mut s = self.0.state.lock().unwrap();
+        let mut s = self.0.lock();
         // Queued requests may refer to this key; conservatively retain all keys while any wait.
-        if !s.queue.is_empty() {
+        if !s.admission_queue.is_empty() || !s.lease_queue.is_empty() {
             return false;
         }
         let removable = s.entries.get(key).is_some_and(|e| {
@@ -270,10 +295,17 @@ impl<K: Eq + Hash + Clone> Limiter<K> {
         removable && s.entries.remove(key).is_some()
     }
     /// Atomically charge each distinct key. Cancellation while waiting makes no charge.
+    ///
+    /// Shares FIFO order with other rate admissions, independently of [`Self::lease`].
+    /// When composing both, obtain the lease first, then acquire immediately before dispatch.
     pub async fn acquire(&self, keys: &[K], mode: Mode) -> Result<(), Error> {
         self.wait(keys, mode, false).await
     }
     /// Acquire one concurrency lease, released when the returned value is dropped.
+    ///
+    /// Shares FIFO order with other leases, independently of [`Self::acquire`].
+    /// Checks concurrency and the global cooldown, but does not charge rate budgets
+    /// or check per-key rate state. Obtain the lease before rate admission.
     pub async fn lease(&self, key: K, mode: Mode) -> Result<Lease<K>, Error> {
         self.wait(std::slice::from_ref(&key), mode, true).await?;
         Ok(Lease {
@@ -282,33 +314,37 @@ impl<K: Eq + Hash + Clone> Limiter<K> {
         })
     }
     async fn wait(&self, keys: &[K], mode: Mode, lease: bool) -> Result<(), Error> {
-        let id = Arc::new(());
-        let keys = {
-            let mut s = self.0.state.lock().unwrap();
-            let keys = self.ensure(&mut s, keys)?;
-            if mode == Mode::Wait {
-                s.queue.push_back(Waiter {
-                    id: id.clone(),
-                    waker: None,
-                });
-            }
-            keys
-        };
+        let mut keys = keys.to_vec();
+        let mut initialized = false;
         let mut guard = QueueGuard {
             shared: self.0.clone(),
-            id,
-            queued: mode == Mode::Wait,
+            id: Arc::new(()),
+            queued: false,
+            lease,
         };
         let mut timer: Option<(Duration, SleepFuture)> = None;
         poll_fn(|cx| {
             let now = self.now();
-            let mut s = self.0.state.lock().unwrap();
+            let mut s = self.0.lock();
+            if !initialized {
+                keys = self.ensure(&mut s, &keys)?;
+                if mode == Mode::Wait {
+                    s.queue(lease).push_back(Waiter {
+                        id: guard.id.clone(),
+                        waker: None,
+                    });
+                    guard.queued = true;
+                }
+                initialized = true;
+            }
+            // Setup and the first check share this lock. Later polls retain
+            // their keys through QueueGuard, so remove cannot invalidate them.
             let front = if guard.queued {
-                s.queue
+                s.queue(lease)
                     .front()
                     .is_some_and(|w| Arc::ptr_eq(&w.id, &guard.id))
             } else {
-                s.queue.is_empty()
+                s.queue(lease).is_empty()
             };
             let mut until = s.global;
             let mut blocked = false;
@@ -369,7 +405,7 @@ impl<K: Eq + Hash + Clone> Limiter<K> {
                     }
                 }
                 if guard.queued {
-                    s.queue.pop_front();
+                    s.queue(lease).pop_front();
                     guard.queued = false;
                 }
                 let w = wake(&mut s);
@@ -381,7 +417,11 @@ impl<K: Eq + Hash + Clone> Limiter<K> {
             if mode == Mode::Refuse {
                 return Poll::Ready(Err(Error::Gated(delay)));
             }
-            if let Some(waiter) = s.queue.iter_mut().find(|w| Arc::ptr_eq(&w.id, &guard.id)) {
+            if let Some(waiter) = s
+                .queue(lease)
+                .iter_mut()
+                .find(|w| Arc::ptr_eq(&w.id, &guard.id))
+            {
                 waiter.waker = Some(cx.waker().clone());
             }
             drop(s);
@@ -406,12 +446,14 @@ struct QueueGuard<K> {
     shared: Arc<Shared<K>>,
     id: Arc<()>,
     queued: bool,
+    lease: bool,
 }
 impl<K> Drop for QueueGuard<K> {
     fn drop(&mut self) {
         if self.queued {
-            let mut s = self.shared.state.lock().unwrap();
-            s.queue.retain(|w| !Arc::ptr_eq(&w.id, &self.id));
+            let mut s = self.shared.lock();
+            s.queue(self.lease)
+                .retain(|w| !Arc::ptr_eq(&w.id, &self.id));
             let w = wake(&mut s);
             drop(s);
             notify(w);
@@ -425,9 +467,11 @@ pub struct Lease<K: Eq + Hash> {
 }
 impl<K: Eq + Hash> Drop for Lease<K> {
     fn drop(&mut self) {
-        let mut s = self.shared.state.lock().unwrap();
-        if let Some(key) = self.key.take() {
-            s.entries.get_mut(&key).expect("leased key retained").leased -= 1;
+        let mut s = self.shared.lock();
+        if let Some(key) = self.key.take()
+            && let Some(entry) = s.entries.get_mut(&key)
+        {
+            entry.leased = entry.leased.saturating_sub(1);
         }
         let w = wake(&mut s);
         drop(s);
