@@ -8,9 +8,9 @@ use concord::{
 };
 use concord_auth::{Token, TokenCache};
 use concord_pagination::{Page, Pages, Resume};
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use std::{
-    collections::BTreeMap,
+    collections::{BTreeMap, BTreeSet},
     fmt,
     num::NonZeroUsize,
     sync::{Arc, Mutex},
@@ -33,6 +33,10 @@ concord::api! {
             POST create(body request: CreateContact) -> Contact;
             /// Get a contact by ID.
             GET get(id: String) -> Contact { path "{id}"; }
+            /// Read several contacts by record ID; a `200` or `207 Multi-Status` body.
+            POST batch_read(body request: BatchReadRequest) -> BatchReadResponse {
+                path "batch/read";
+            }
         }
     }
 }
@@ -126,6 +130,174 @@ pub struct Next {
     /// Opaque cursor; never follow the optional provider link as a URL.
     pub after: String,
 }
+/// Largest batch HubSpot documents for CRM object batch operations.
+pub const BATCH_READ_MAX: usize = 100;
+
+/// Contacts to read by record ID in one batch request.
+#[derive(Clone, Debug, Default)]
+pub struct BatchReadRequest {
+    /// Record IDs: 1..=[`BATCH_READ_MAX`], each non-empty and distinct.
+    pub ids: Vec<String>,
+    /// Selected property names; empty selects HubSpot's default properties.
+    pub properties: Vec<String>,
+}
+impl BatchReadRequest {
+    fn validate(&self) -> Result<(), Error> {
+        if self.ids.is_empty() || self.ids.len() > BATCH_READ_MAX {
+            return Err(Error::Invalid(
+                "batch read ID count outside 1..=BATCH_READ_MAX",
+            ));
+        }
+        let mut seen = BTreeSet::new();
+        if !self.ids.iter().all(|id| !id.is_empty() && seen.insert(id)) {
+            return Err(Error::Invalid(
+                "empty or duplicate contact ID in batch read",
+            ));
+        }
+        Ok(())
+    }
+}
+impl Serialize for BatchReadRequest {
+    /// `{"inputs":[{"id":..}],"properties":[..],"propertiesWithHistory":[]}`: lookup by record
+    /// ID (no `idProperty`); the documented required history list is always empty.
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        #[derive(Serialize)]
+        struct Input<'a> {
+            id: &'a str,
+        }
+        #[derive(Serialize)]
+        #[serde(rename_all = "camelCase")]
+        struct Wire<'a> {
+            inputs: Vec<Input<'a>>,
+            properties: &'a [String],
+            properties_with_history: [&'a str; 0],
+        }
+        Wire {
+            inputs: self.ids.iter().map(|id| Input { id }).collect(),
+            properties: &self.properties,
+            properties_with_history: [],
+        }
+        .serialize(serializer)
+    }
+}
+/// Batch read body as HubSpot sends it. [`HubSpot::batch_read`] attributes it per requested ID.
+#[derive(Clone, Debug, Deserialize)]
+pub struct BatchReadResponse {
+    /// Contacts found, in no documented order.
+    pub results: Vec<Contact>,
+    /// Item errors of a `207 Multi-Status` response.
+    #[serde(default)]
+    pub errors: Vec<BatchError>,
+}
+/// One batch item error. Only the category and `context.ids` are retained: HubSpot's message,
+/// links, sub-category, other context and error-instance `id` are never stored.
+#[derive(Clone, Debug, Deserialize)]
+pub struct BatchError {
+    /// Provider category, for example `OBJECT_NOT_FOUND`.
+    pub category: String,
+    /// Contact IDs named by the error's `context.ids`.
+    #[serde(default, rename = "context", deserialize_with = "context_ids")]
+    pub ids: Vec<String>,
+}
+fn context_ids<'de, D: Deserializer<'de>>(deserializer: D) -> Result<Vec<String>, D::Error> {
+    #[derive(Deserialize)]
+    struct Context {
+        #[serde(default)]
+        ids: Vec<String>,
+    }
+    Ok(Option::<Context>::deserialize(deserializer)?.map_or_else(Vec::new, |c| c.ids))
+}
+/// Why one requested ID has no contact. Formatting never includes a provider message.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum ItemError {
+    /// HubSpot named this ID in a batch error with this category, e.g. `OBJECT_NOT_FOUND`.
+    Provider {
+        /// The provider's error category.
+        category: String,
+    },
+    /// HubSpot's response named this ID neither as a result nor in an error.
+    Unreported,
+}
+impl fmt::Display for ItemError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Provider { category } => write!(f, "HubSpot batch item failed ({category})"),
+            Self::Unreported => f.write_str("HubSpot batch response did not report this ID"),
+        }
+    }
+}
+impl std::error::Error for ItemError {}
+/// The outcome for one requested ID.
+#[derive(Clone, Debug)]
+pub struct BatchItem {
+    /// The requested record ID.
+    pub id: String,
+    /// The contact, or why HubSpot returned none for this ID.
+    pub result: Result<Contact, ItemError>,
+}
+/// A batch read attributed per requested ID.
+#[derive(Clone, Debug)]
+pub struct BatchRead {
+    /// Exactly one outcome per requested ID, in request order.
+    pub items: Vec<BatchItem>,
+    /// Returned contacts whose ID was not requested (for example a merged contact returned under
+    /// another ID, which HubSpot does not document); not attributed to any requested ID.
+    pub unmatched: Vec<Contact>,
+    /// Categories of item errors that named no requested ID.
+    pub unattributed: Vec<String>,
+}
+impl BatchRead {
+    /// The outcome for one requested ID.
+    pub fn get(&self, id: &str) -> Option<&Result<Contact, ItemError>> {
+        self.items.iter().find(|i| i.id == id).map(|i| &i.result)
+    }
+}
+fn attribute(ids: &[String], response: BatchReadResponse) -> Result<BatchRead, Error> {
+    let requested: BTreeSet<&str> = ids.iter().map(String::as_str).collect();
+    let mut found = BTreeMap::new();
+    let mut unmatched = Vec::new();
+    for contact in response.results {
+        if !requested.contains(contact.id.as_str()) {
+            unmatched.push(contact);
+        } else if found.insert(contact.id.clone(), contact).is_some() {
+            return Err(Error::Invalid("duplicate batch read result"));
+        }
+    }
+    let mut failed = BTreeMap::new();
+    let mut unattributed = Vec::new();
+    for error in response.errors {
+        let mut named = false;
+        for id in error.ids {
+            if requested.contains(id.as_str()) {
+                if found.contains_key(&id) {
+                    return Err(Error::Invalid("batch read reported a found ID as failed"));
+                }
+                named = true;
+                failed.entry(id).or_insert_with(|| error.category.clone());
+            }
+        }
+        if !named {
+            unattributed.push(error.category);
+        }
+    }
+    let items =
+        ids.iter()
+            .map(|id| BatchItem {
+                id: id.clone(),
+                result: found.remove(id).ok_or_else(|| {
+                    failed.remove(id).map_or(ItemError::Unreported, |category| {
+                        ItemError::Provider { category }
+                    })
+                }),
+            })
+            .collect();
+    Ok(BatchRead {
+        items,
+        unmatched,
+        unattributed,
+    })
+}
+
 /// OAuth form. Its debug output never contains credentials.
 #[derive(Clone, Serialize)]
 pub struct RefreshRequest {
@@ -367,6 +539,38 @@ impl HubSpot {
         }
         Ok(self.api().await?.contacts().get(id).send().await?)
     }
+    /// Read several contacts by record ID in one request, sent once and never retried by the SDK.
+    ///
+    /// A `200` or `207 Multi-Status` response gives every requested ID either its contact or an
+    /// [`ItemError`]: the category of a batch error whose `context.ids` names the ID, or
+    /// [`ItemError::Unreported`]. A non-2xx status, timeout or undecodable body fails the whole
+    /// call as [`Error::Concord`]; repeating it is safe but is the caller's decision. Invalid
+    /// input is refused before any request; a response listing a requested ID twice, or as both
+    /// found and failed, is [`Error::Invalid`].
+    ///
+    /// ```no_run
+    /// # async fn example(sdk: concord_sdk_hubspot_crm::HubSpot) -> Result<(), concord_sdk_hubspot_crm::Error> {
+    /// use concord_sdk_hubspot_crm::{BatchReadRequest, ItemError};
+    /// let request = BatchReadRequest {
+    ///     ids: vec!["101".into(), "102".into()],
+    ///     properties: vec!["email".into()],
+    /// };
+    /// for item in sdk.batch_read(request).await?.items {
+    ///     match item.result {
+    ///         Ok(contact) => { let _email = contact.properties.get("email"); }
+    ///         Err(ItemError::Provider { category }) if category == "OBJECT_NOT_FOUND" => {}
+    ///         Err(_other) => {}
+    ///     }
+    /// }
+    /// # Ok(()) }
+    /// ```
+    pub async fn batch_read(&self, request: BatchReadRequest) -> Result<BatchRead, Error> {
+        request.validate()?;
+        let ids = request.ids.clone();
+        let api = self.api().await?;
+        let response = api.contacts().batch_read(request).send().await?;
+        attribute(&ids, response)
+    }
     /// Create exactly one request. A transport, invalid success body, or server error is uncertain.
     pub async fn create(&self, contact: CreateContact) -> Result<Contact, Error> {
         let result = self.api().await?.contacts().create(contact).send().await;
@@ -437,6 +641,33 @@ mod tests {
         assert_eq!(
             prepared.request().url().as_str(),
             "https://api.hubspot.com/oauth/2026-09/token"
+        );
+    }
+    #[test]
+    fn batch_read_default_destination_and_body() {
+        let request = BatchReadRequest {
+            ids: vec!["1".into(), "2".into()],
+            properties: vec!["email".into()],
+        };
+        let prepared = CrmApi::new(
+            reqwest::Client::new(),
+            CrmApiConfig {
+                authorization: HeaderValue::from_static("Bearer t"),
+            },
+        )
+        .contacts()
+        .batch_read(request.clone())
+        .prepare()
+        .unwrap();
+        assert_eq!(prepared.request().method(), reqwest::Method::POST);
+        assert_eq!(
+            prepared.request().url().as_str(),
+            "https://api.hubapi.com/crm/v3/objects/contacts/batch/read"
+        );
+        assert_eq!(
+            serde_json::to_value(&request).unwrap(),
+            serde_json::json!({"inputs": [{"id": "1"}, {"id": "2"}],
+                "properties": ["email"], "propertiesWithHistory": []})
         );
     }
 }

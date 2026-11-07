@@ -1,10 +1,10 @@
 # HubSpot CRM contacts SDK (bounded, example-assisted)
 
 This package covers OAuth refresh, contact search with `paging.next.after`, contact creation,
-and lookup by ID. It uses the legacy `/crm/v3/objects/contacts` routes from the cited contacts
-article and the `/oauth/2026-09/token` refresh route. It is an offline-tested example, not a full
-HubSpot SDK. Marketing automation, other CRM object types, auth-code acquisition, and exactly-once
-contact creation are out of scope. Live provider calls: **NOT_RUN**.
+lookup by ID, and batch read by ID. It uses the legacy `/crm/v3/objects/contacts` routes from the
+cited contacts article and the `/oauth/2026-09/token` refresh route. It is an offline-tested
+example, not a full HubSpot SDK. Marketing automation, other CRM object types, auth-code
+acquisition, and exactly-once contact creation are out of scope. Live provider calls: **NOT_RUN**.
 
 ```rust,no_run
 use concord::reqwest;
@@ -53,8 +53,8 @@ provide crash-safe production token persistence.
 error, or unusable successful response is `CreateUncertain`: it may have created a contact. Reconcile
 with HubSpot before deciding whether to create again. A caller that cancels the future after dispatch
 must likewise treat the result as uncertain. Explicit non-408 client errors are returned as Concord
-status errors. Search and get are also sent once; no retry or rate limiter is installed. 429 and
-other status errors are surfaced with the response head available through `concord::Error`, not
+status errors. Search, get and batch read are also sent once; no retry or rate limiter is installed.
+429 and other status errors are surfaced with the response head available through `concord::Error`, not
 parsed as provider error documents. Successful JSON bodies are limited to 1 MiB and must have JSON
 media type. Provider response bodies and values are never included in SDK error formatting.
 
@@ -63,3 +63,19 @@ Search traversals have no page cap unless `max_pages` is set. A cap or page erro
 the same query, installation and page parameters. Empty or immediately repeated cursors are refused;
 choose a finite cap to contain longer provider cursor cycles. Search `total` is page metadata, not
 a guarantee of a stable snapshot as data changes.
+
+`batch_read` reads 1..=`BATCH_READ_MAX` (100, HubSpot's documented batch size) distinct contact
+record IDs in one request; invalid input is refused before any request. A `200` or `207
+Multi-Status` answer gives every requested ID, in request order, its contact or an `ItemError`:
+`Provider { category }` when an item error's `context.ids` names the ID (for example
+`OBJECT_NOT_FOUND`), otherwise `Unreported`. Item error messages are not retained. Returned
+contacts whose ID was not requested (HubSpot may return a merged contact under its current ID; this
+is not documented) are kept in `unmatched`; categories of errors naming no requested ID are kept in
+`unattributed`. A response listing a requested ID twice, or as both found and failed, is
+`Error::Invalid`. The `context.ids` key comes from observed HubSpot responses, not from the reference
+schema, which types `context` only as a map of string arrays: an ID reported another way is
+`Unreported`, never treated as found. A batch read is safe to repeat, but the SDK sends it once: a
+status error (429 included), timeout or decode failure fails the whole call, and repeating it is the
+caller's decision. Lookup by `idProperty` (email or another unique property), `archived` and
+property history are not offered. The 1 MiB body limit applies to the whole batch; a `Limit` error
+means fewer IDs or properties per request.
