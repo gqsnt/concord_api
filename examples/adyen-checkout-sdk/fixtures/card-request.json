@@ -1,0 +1,14 @@
+{
+  "merchantAccount": "TestMerchant",
+  "amount": {"currency": "EUR", "value": 1000},
+  "reference": "order-sdk31",
+  "returnUrl": "https://merchant.example/return",
+  "paymentMethod": {
+    "type": "scheme",
+    "encryptedCardNumber": "test_4111111111111111",
+    "encryptedExpiryMonth": "test_03",
+    "encryptedExpiryYear": "test_2030",
+    "encryptedSecurityCode": "test_737"
+  },
+  "channel": "Web"
+}

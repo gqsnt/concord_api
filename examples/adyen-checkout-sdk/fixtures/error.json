@@ -1,0 +1,7 @@
+{
+  "status": 422,
+  "errorCode": "14_001",
+  "errorType": "validation",
+  "message": "synthetic-provider-secret",
+  "pspReference": "synthetic-reference-secret"
+}
