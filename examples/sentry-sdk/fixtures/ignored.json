@@ -1,0 +1,15 @@
+{
+  "id": "202",
+  "shortId": "DEMO-2",
+  "title": "Synthetic chosen failure",
+  "status": "ignored",
+  "substatus": "archived_until_condition_met",
+  "statusDetails": {
+    "ignoreCount": 25,
+    "ignoreWindow": 90
+  },
+  "project": {
+    "id": "7",
+    "slug": "demo"
+  }
+}

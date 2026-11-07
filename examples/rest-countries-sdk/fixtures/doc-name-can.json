@@ -1,0 +1,10 @@
+{
+  "data": {
+    "objects": [
+      { "names": { "common": "Canada" }, "flag": { "emoji": "🇨🇦" } },
+      { "names": { "common": "Cape Verde" }, "flag": { "emoji": "🇨🇻" } },
+      { "names": { "common": "Cameroon" }, "flag": { "emoji": "🇨🇲" } }
+    ],
+    "meta": { "total": 3, "count": 3, "limit": 25, "offset": 0, "more": false }
+  }
+}

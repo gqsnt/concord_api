@@ -111,3 +111,9 @@ Evidence identities: P1 work lives on `sdk50/integration` (from `5c3ef5f6`), mer
 | B34-M | Generated mutators undo tenant/credential ownership. | **EXPERIMENT for W4** | Xero F2, PayPal F6/F7. |
 | B34-W | Native Windows: CRLF fix verified; refused-connection test timeouts. | **tests**, done | CI run 42338837366. |
 | P-1 | Process: capsules no longer say "Read AGENTS.md/CLAUDE.md" and forbid reads outside the worktree; temporary files under `<worktree>/target/tmp`. | **applied from 06:15** | 20/28 Codex wave roles had read the handoff mission files (evidence caveat, W3 FINDINGS 36). |
+
+## Owner instruction during Wave 4 (2026-11-07 ~07:20 CET)
+
+| ID | Instruction | Disposition | Consequence |
+|---|---|---|---|
+| R-2 | "For next wave and later ones, use the current version of Concord; don't do review / change between waves. When the 50 SDKs are well made, analyze across them what could be improved / simplified / changed in concord core/macros and the other concord crates. We don't want an ultimate tooling kit; we want the cleanest/simplest API / interface / abstraction so everything integrates well and is well represented; analyze a change through 50 domains." | **Applied** | Waves 4, 5 and 6 build on `c3fd4f1e`. No between-wave lanes after Wave 4. Each SDK still gets author, fresh consumer and maintainer, verified by the coordinator. B34-V, B34-S, B34-M and the other open candidates move to one cross-50 analysis after SDK50, where every change is judged against all 50 domains and subtraction is preferred. Overrides the per-wave synthesis cycle of the mission's P2. |

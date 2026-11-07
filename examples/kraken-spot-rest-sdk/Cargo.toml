@@ -1,0 +1,25 @@
+[package]
+name = "concord-sdk-kraken-spot-rest"
+version = "0.0.0"
+edition = "2024"
+rust-version.workspace = true
+license.workspace = true
+publish = false
+description = "Bounded Kraken Spot REST reads with exact-payload signing and offline workflows"
+
+[dependencies]
+concord = { path = "../../crates/concord", default-features = false, features = ["json", "form"] }
+concord-pagination = { path = "../../crates/concord-pagination" }
+concord-retry = { path = "../../crates/concord-retry" }
+serde = { workspace = true, features = ["derive"] }
+base64 = "=0.23.1"
+hmac = "=0.13.0"
+sha2 = "=0.11.1"
+
+[dev-dependencies]
+concord-testserver = { package = "concord-example-testserver", path = "../testserver" }
+serde_json.workspace = true
+tokio = { workspace = true, features = ["macros", "rt-multi-thread", "sync", "time"] }
+
+[lints]
+workspace = true

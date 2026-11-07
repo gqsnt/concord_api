@@ -1,0 +1,42 @@
+[
+  {
+    "status": 400,
+    "id": "bad_request",
+    "message": "Synthetic invalid query"
+  },
+  {
+    "status": 401,
+    "id": "unauthorized",
+    "message": "Synthetic invalid credential"
+  },
+  {
+    "status": 403,
+    "id": "forbidden",
+    "message": "Synthetic insufficient scope"
+  },
+  {
+    "status": 404,
+    "id": "not_found",
+    "message": "Synthetic missing resource"
+  },
+  {
+    "status": 429,
+    "id": "too_many_requests",
+    "message": "Synthetic exhausted quota"
+  },
+  {
+    "status": 500,
+    "id": "server_error",
+    "message": "Synthetic server failure"
+  },
+  {
+    "status": 503,
+    "id": "unavailable",
+    "message": "Synthetic unavailable service"
+  },
+  {
+    "status": 418,
+    "id": "example_error",
+    "message": "Synthetic default error"
+  }
+]

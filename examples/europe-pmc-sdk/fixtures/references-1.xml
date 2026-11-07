@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<responseWrapper xmlns:epmc="https://www.europepmc.org/data">
+  <version>6.5</version>
+  <hitCount>5</hitCount>
+  <request><id>20485428</id><source>MED</source><offSet>0</offSet><pageSize>2</pageSize></request>
+  <referenceList>
+    <reference><id>31000001</id><source>MED</source><citationType>journal article</citationType><title>Synthetic referenced study 1</title><authorString>Example R1</authorString><journalAbbreviation>Fixture J</journalAbbreviation><pubYear>2001</pubYear></reference>
+    <reference><citationType>book</citationType><title>Synthetic unmatched reference 2</title><authorString>Example R2</authorString><pubYear>2002</pubYear></reference>
+  </referenceList>
+</responseWrapper>

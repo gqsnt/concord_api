@@ -1,0 +1,8 @@
+<!-- SYNTHETIC: manual section 3.4 error class; wording/URI fragment authored. -->
+<feed xmlns="http://www.w3.org/2005/Atom" xmlns:o="http://a9.com/-/spec/opensearch/1.1/">
+  <o:totalResults>1</o:totalResults><o:startIndex>0</o:startIndex><o:itemsPerPage>1</o:itemsPerPage>
+  <entry><id>http://arxiv.org/api/errors#max_type</id><title>Error</title>
+    <summary>max_results must be an integer</summary><updated>2026-01-02T00:00:00Z</updated>
+    <author><name>arXiv api core</name></author>
+  </entry>
+</feed>

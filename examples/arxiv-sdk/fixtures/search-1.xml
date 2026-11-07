@@ -1,0 +1,14 @@
+<?xml version="1.0"?>
+<!-- SYNTHETIC: a second page with absent optional fields and changed namespace prefixes. -->
+<t:feed xmlns:t="http://www.w3.org/2005/Atom" xmlns:s="http://a9.com/-/spec/opensearch/1.1/" xmlns:z="urn:synthetic:future">
+  <t:id>urn:synthetic:second</t:id><t:title>Second page</t:title><t:updated>2026-01-02T00:00:00Z</t:updated>
+  <s:totalResults>2</s:totalResults><s:startIndex>1</s:startIndex><s:itemsPerPage>1</s:itemsPerPage>
+  <t:entry>
+    <t:id>http://arxiv.org/abs/hep-ex/0307015v1</t:id><t:title>Synthetic legacy paper</t:title>
+    <t:summary><![CDATA[Invented legacy abstract <with literal angle brackets>.]]></t:summary>
+    <t:published>2003-07-07T12:00:00Z</t:published><t:updated>2003-07-07T12:00:00Z</t:updated>
+    <t:author><t:name>Legacy Example</t:name></t:author><t:category term="hep-ex"/>
+    <t:link href="http://arxiv.org/abs/hep-ex/0307015v1" rel="alternate"/>
+    <z:doi>Foreign optional field must be ignored</z:doi><z:unknown/>
+  </t:entry>
+</t:feed>

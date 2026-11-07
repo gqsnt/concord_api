@@ -1,0 +1,29 @@
+{
+  "errors": [],
+  "messages": [],
+  "success": true,
+  "result": [
+    {
+      "name": "zeta.example.com",
+      "ttl": 300,
+      "type": "TXT",
+      "comment": null,
+      "content": "\"v=spf1 -all\"",
+      "proxied": false,
+      "settings": {},
+      "tags": [],
+      "id": "2b00000000000000000000000000000c",
+      "created_on": "2026-06-03T00:00:00Z",
+      "meta": {},
+      "modified_on": "2026-06-03T00:00:00Z",
+      "proxiable": false
+    }
+  ],
+  "result_info": {
+    "count": 1,
+    "page": 2,
+    "per_page": 2,
+    "total_count": 3,
+    "total_pages": 2
+  }
+}
