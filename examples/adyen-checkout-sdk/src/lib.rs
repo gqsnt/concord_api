@@ -1,4 +1,4 @@
-//! Adyen Checkout v71 sandbox payment methods, payments and payment details.
+//! Adyen Checkout v71 sandbox payment methods, payments, payment details and manual capture.
 //!
 //! Ordinary generated `send()` enforces the SDK's idempotency policy. Native `prepare()`
 //! performs no I/O and deliberately bypasses that policy if executed directly.
@@ -14,7 +14,7 @@ pub use concord;
 use concord::{Json, reqwest};
 pub use error::{Error, HttpClass, Problem, ProviderFailure, Reconciliation, ReconciliationReason};
 pub use models::*;
-pub use policy::{Response, SendPolicy};
+pub use policy::{Confirm, Response, SendPolicy};
 
 /// Maximum buffered success document: 256 KiB.
 pub const RESPONSE_LIMIT: usize = 256 * 1024;
@@ -57,6 +57,19 @@ concord::api! {
                 #[sensitive] header("idempotency-key") key: String,
                 body request: DetailsRequest,
             ) -> PaymentResponse { path "payments/details"; }
+
+            /// An existing payment, by the `pspReference` Adyen returned for it.
+            scope payment(#[sensitive] psp_reference: String) {
+                path "payments/{psp_reference}";
+
+                /// Requests manual capture of an authorised payment (full or partial amount).
+                /// Adyen answers `received`; the outcome is asynchronous. Use a new key per
+                /// capture and reuse it only with identical inputs.
+                POST captures(
+                    #[sensitive] header("idempotency-key") key: String,
+                    body request: CaptureRequest,
+                ) -> CaptureReceived { path "captures"; }
+            }
         }
     }
 }

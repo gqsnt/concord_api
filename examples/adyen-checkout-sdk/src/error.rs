@@ -93,7 +93,8 @@ pub enum ReconciliationReason {
     GuaranteeExpired,
     /// The key was explicitly invalidated after provider assurance was lost.
     GuaranteeRevoked,
-    /// Success did not echo exactly one identical idempotency key.
+    /// Success did not echo exactly one identical idempotency key, or its document describes a
+    /// different request (a capture of another payment, amount, merchant account or reference).
     GuaranteeNotConfirmed,
     /// Provider error 703: idempotency storage is unavailable after bounded retries.
     GuaranteeUnavailable,

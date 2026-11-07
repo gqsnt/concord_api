@@ -229,6 +229,78 @@ impl PaymentResponse {
     }
 }
 
+/// Manual capture of an authorised payment, sent to `payments/{paymentPspReference}/captures`.
+///
+/// `amount` is the full authorised amount or less (a partial capture) in the authorisation's
+/// currency; Adyen validates both. Line items, splits and platform fields are not modeled.
+#[derive(Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CaptureRequest {
+    /// Merchant account that processed the payment.
+    pub merchant_account: String,
+    /// Amount to capture, in minor units.
+    pub amount: Amount,
+    /// Caller's reference for this capture (Adyen allows at most 80 characters).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub reference: Option<String>,
+}
+
+/// Adyen accepted a capture request for asynchronous processing (`status: received`).
+///
+/// This is **not** a capture outcome: it does not show that money moved, that the capture
+/// succeeded, or what remains authorised. The outcome arrives later as a webhook, which this
+/// SDK does not handle. The SDK returns this only after checking that the document echoes the
+/// request it sent: the payment reference in the path, merchant account, amount and reference.
+#[derive(Clone, Deserialize)]
+#[serde(try_from = "CaptureDocument")]
+pub struct CaptureReceived {
+    /// Adyen's reference for this capture request (distinct from the payment's).
+    pub psp_reference: String,
+    /// Reference of the authorised payment the capture was requested for.
+    pub payment_psp_reference: String,
+    /// The amount this capture request asked for; not a captured or settled amount.
+    pub requested: Amount,
+    /// Merchant account echoed by Adyen.
+    pub merchant_account: String,
+    /// Caller's capture reference, when one was sent.
+    pub reference: Option<String>,
+    /// Additional provider fields, preserved for reconciliation.
+    pub fields: BTreeMap<String, Value>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct CaptureDocument {
+    status: String,
+    psp_reference: String,
+    payment_psp_reference: String,
+    amount: Amount,
+    merchant_account: String,
+    reference: Option<String>,
+    #[serde(flatten)]
+    fields: BTreeMap<String, Value>,
+}
+
+impl TryFrom<CaptureDocument> for CaptureReceived {
+    type Error = &'static str;
+
+    fn try_from(document: CaptureDocument) -> Result<Self, Self::Error> {
+        // Adyen documents that this "will always have the value received"; anything else is an
+        // unknown document, never a receipt.
+        if document.status != "received" {
+            return Err("capture status is not `received`");
+        }
+        Ok(Self {
+            psp_reference: document.psp_reference,
+            payment_psp_reference: document.payment_psp_reference,
+            requested: document.amount,
+            merchant_account: document.merchant_account,
+            reference: document.reference,
+            fields: document.fields,
+        })
+    }
+}
+
 redacted_debug!(
     Amount,
     MethodsRequest,
@@ -239,5 +311,7 @@ redacted_debug!(
     PaymentRequest,
     DetailsRequest,
     Action,
-    PaymentResponse
+    PaymentResponse,
+    CaptureRequest,
+    CaptureReceived
 );

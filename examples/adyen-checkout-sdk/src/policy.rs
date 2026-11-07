@@ -1,6 +1,7 @@
 use crate::{
-    ERROR_LIMIT, Error, GUARANTEE_WINDOW, HttpClass, Problem, ProviderFailure, REQUEST_LIMIT,
-    Reconciliation, ReconciliationReason as Reason,
+    CaptureReceived, CaptureRequest, ERROR_LIMIT, Error, GUARANTEE_WINDOW, HttpClass,
+    MethodsResponse, PaymentResponse, Problem, ProviderFailure, REQUEST_LIMIT, Reconciliation,
+    ReconciliationReason as Reason,
 };
 use concord::{Endpoint, Json, Received, SendWith, field, reqwest};
 use concord_retry::{Decision, Policy, Replay, Report, Retry, StopReason};
@@ -30,6 +31,52 @@ impl<T> fmt::Debug for Response<T> {
             .field("meta", &self.meta)
             .field("retry", &self.retry)
             .finish()
+    }
+}
+
+/// A decoded success document checked against the exact request the policy sent.
+///
+/// Every output of the generated `send()` implements this. `false` means the document does
+/// not describe that request (for example, the same key was used elsewhere in the company for a
+/// different capture): the policy revokes the key and reports
+/// [`GuaranteeNotConfirmed`](crate::ReconciliationReason::GuaranteeNotConfirmed).
+pub trait Confirm {
+    /// Whether this document describes `sent`, the request the policy dispatched.
+    fn confirms(&self, sent: &reqwest::Request) -> bool;
+}
+
+impl Confirm for MethodsResponse {
+    /// A methods list does not echo the request.
+    fn confirms(&self, _: &reqwest::Request) -> bool {
+        true
+    }
+}
+
+impl Confirm for PaymentResponse {
+    /// The payment and details contract compares no echoed fields (unchanged by capture).
+    fn confirms(&self, _: &reqwest::Request) -> bool {
+        true
+    }
+}
+
+impl Confirm for CaptureReceived {
+    /// The path's payment reference, merchant account, amount and reference must all match.
+    fn confirms(&self, sent: &reqwest::Request) -> bool {
+        let Some(Ok(request)) = sent
+            .body()
+            .and_then(|b| b.as_bytes())
+            .map(serde_json::from_slice::<CaptureRequest>)
+        else {
+            return false;
+        };
+        // `.../payments/{paymentPspReference}/captures`. Concord percent-encodes path values, so
+        // a reference that needed encoding never equals its segment: it fails closed.
+        let mut segments = sent.url().path().rsplit('/');
+        segments.next() == Some("captures")
+            && segments.next() == Some(self.payment_psp_reference.as_str())
+            && request.merchant_account == self.merchant_account
+            && request.amount == self.requested
+            && request.reference == self.reference
     }
 }
 
@@ -239,7 +286,7 @@ fn transient<T>(received: &Received<T>) -> Option<Duration> {
     .map(|delay| delay.unwrap_or_default())
 }
 
-impl<T: Send> SendWith<T> for SendPolicy {
+impl<T: Send + Confirm> SendWith<T> for SendPolicy {
     type Output = Result<Response<T>, Error>;
 
     async fn send<E: Endpoint<T> + Send>(&self, endpoint: E) -> Self::Output {
@@ -398,6 +445,18 @@ impl<T: Send> SendWith<T> for SendPolicy {
                 retry: Some(retry.clone()),
             }))
         })?;
+        if !value.confirms(&template) {
+            // The key's provider record answers some other request; replaying it cannot submit
+            // this one, so the guarantee is treated like a mismatched key echo.
+            reservation.revoke();
+            return Err(Error::Reconciliation(Box::new(Reconciliation {
+                reason: Reason::GuaranteeNotConfirmed,
+                meta: Some(meta),
+                provider: None,
+                cause: None,
+                retry: Some(retry),
+            })));
+        }
         Ok(Response { value, meta, retry })
     }
 }

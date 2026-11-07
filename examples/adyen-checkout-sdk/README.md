@@ -2,11 +2,12 @@
 
 `concord-sdk-adyen-checkout` implements Checkout **v71** at
 `https://checkout-test.adyen.com`: available payment methods, sandbox payment submission,
-and `/payments/details` continuation. All verification uses local fixtures.
+`/payments/details` continuation and manual capture request. All verification uses local fixtures.
 **Live provider calls: NOT_RUN.** This is an **example-assisted** implementation; see
 [PROVENANCE.md](PROVENANCE.md) for the exact reading ledger and fixture sources.
 
-The public shape is `Checkout → v71() → payment_methods/payments/details → send()`.
+The public shape is `Checkout → v71() → payment_methods/payments/details → send()`, and
+`Checkout → v71() → payment(psp_reference) → captures → send()` for an existing payment.
 A response contains `value`, the authoritative `meta`, and `retry` accounting.
 
 ```rust,no_run
@@ -51,6 +52,51 @@ async fn local_checkout(base_url: &str) -> Result<(), Error> {
     Ok(())
 }
 ```
+
+## Manual capture
+
+With manual capture configured for the merchant account (Customer Area; this SDK's
+`PaymentRequest` has no per-payment capture field), an authorised payment is captured later:
+
+```rust,no_run
+use concord_sdk_adyen_checkout::{Amount, CaptureRequest, CheckoutV71, Error};
+
+async fn capture_part(checkout: &CheckoutV71, psp_reference: String) -> Result<(), Error> {
+    let capture = checkout.payment(psp_reference).captures("unique-capture-key", CaptureRequest {
+        merchant_account: "TestMerchant".into(),
+        amount: Amount { currency: "EUR".into(), value: 600 }, // full authorised amount or less
+        reference: Some("merchant-order-123-capture-1".into()),
+    });
+    // A deliberate retry clones this operation, preserving its key and body.
+    let receipt = capture.clone().send().await?.value;
+    // Accepted for asynchronous processing only: no money is shown to have moved.
+    let (_capture_psp, _asked) = (receipt.psp_reference, receipt.requested);
+    Ok(())
+}
+```
+
+`POST /v71/payments/{paymentPspReference}/captures` sends the merchant account, amount and
+optional reference with an `Idempotency-Key`; Adyen answers `201` with `status: received`
+([captures reference](https://docs.adyen.com/api-explorer/Checkout/71/post/payments/(paymentPspReference)/captures),
+[capture guide](https://docs.adyen.com/online-payments/capture), both read 2026-11-07).
+`send()` returns `CaptureReceived` — the capture's own `psp_reference`, the
+`payment_psp_reference`, the `requested` amount, merchant account and reference — only when the
+document says `received` and echoes exactly what was sent: the path's payment reference,
+merchant account, amount and reference (absent when none was sent). It has no state or
+outcome field; the final result arrives as a CAPTURE or CAPTURE_FAILED webhook, which this SDK
+does not handle, and a partial capture may cancel the remainder unless multiple partial captures
+are enabled. Another status or a missing field is an unreadable success document
+(`UncertainDelivery`, Decode cause). A document for a different request — for example the same
+key used elsewhere in the company for another capture — is `GuaranteeNotConfirmed` and revokes
+the key, since replaying it cannot submit this capture.
+
+Captures share the payment ledger and its rules: a retry reuses the key with identical bytes; a
+changed amount (or any change) under a used key, including the payment's own key, is
+`ChangedRequest` before sending. A capture whose total deadline passes is `Deadline` and is not
+replayed automatically; transport failures before any head are replayed automatically with the
+same key and bytes while the guarantee holds, exactly as for payments. The payment reference is
+one percent-encoded path segment (empty, `.` and `..` are refused before sending) and is withheld
+from Debug output.
 
 For cards, `SandboxMethod::test_card` accepts only Adyen-style `test_` tokens. No raw
 PAN/CVC or live encrypted card constructor is provided. The API validates merchant, currency,
@@ -119,8 +165,9 @@ messages. Header/body accessors, serialization and native requests deliberately 
 redaction does not zeroize memory. Even apparently harmless provider strings can contain secrets,
 so public provider models use redacted Debug implementations.
 
-Excluded: recurring payments, stored methods, live card capture, capture/refund/accounting
-operations, webhook verification, browser redirect execution and universal 3DS orchestration.
+Excluded: recurring payments, stored methods, live card capture, capture outcomes, line items,
+splits, refund/cancel/accounting operations, webhook verification, browser redirect execution
+and universal 3DS orchestration.
 Applications own shopper interaction, asynchronous finality and accounting reconciliation.
 
 Verification commands (run from the workspace, one Cargo command at a time):

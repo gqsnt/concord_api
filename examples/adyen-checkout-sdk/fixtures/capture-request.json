@@ -1,0 +1,5 @@
+{
+  "merchantAccount": "TestMerchant",
+  "amount": {"currency": "EUR", "value": 600},
+  "reference": "order-sdk31-capture-1"
+}
