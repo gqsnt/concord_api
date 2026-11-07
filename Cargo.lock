@@ -1053,6 +1053,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "concord-sdk-europe-pmc"
+version = "0.0.0"
+dependencies = [
+ "concord",
+ "concord-codecs",
+ "concord-example-testserver",
+ "concord-pagination",
+ "concord-retry",
+ "roxmltree",
+ "serde",
+ "tokio",
+]
+
+[[package]]
 name = "concord-sdk-frankfurter"
 version = "0.0.0"
 dependencies = [
