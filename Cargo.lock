@@ -1081,6 +1081,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "concord-sdk-nasa-neows"
+version = "0.0.0"
+dependencies = [
+ "concord",
+ "concord-example-testserver",
+ "serde",
+ "tokio",
+]
+
+[[package]]
 name = "concord-sdk-notion"
 version = "0.0.0"
 dependencies = [
