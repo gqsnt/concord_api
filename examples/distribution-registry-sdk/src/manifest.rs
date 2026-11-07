@@ -285,7 +285,7 @@ impl Repository {
         }
         .ok_or_else(|| protocol(ProtocolProblem::UnexpectedMediaType))?;
         let header_digest = meta.digest_header().map_err(protocol)?;
-        let bytes = received.decode_limited(MANIFEST_LIMIT).await?;
+        let bytes = received.decode().await?;
         let digest = Digest::compute(algorithm, &bytes);
         let integrity = |problem| RegistryError::integrity(problem, Some(meta.clone()));
         if let Some(expected) = reference.as_digest()

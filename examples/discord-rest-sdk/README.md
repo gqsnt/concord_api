@@ -164,6 +164,8 @@ admit (no I/O), execute once, record `X-RateLimit-Bucket` / `-Remaining` / `-Res
 `(bucket hash, channel or guild)` — the hash excludes the top-level resource, so two channels
 that share it keep separate windows — and on a 429 gate the global scope or that window.
 Routes that share a bucket hash (learned from responses) share a window per resource.
+Responses overlap, so while a window is open a later observation keeps the lower remaining count
+and the later reset: a success sent before an exhaustion cannot reopen it early.
 
 Not done: proactive pacing to the documented 50 requests per second; serializing concurrent
 requests on one window (two admitted requests can both meet a 429); Cloudflare's invalid-request

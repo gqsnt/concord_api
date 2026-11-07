@@ -21,6 +21,22 @@ fn client(server: &TestServer) -> NeoWs {
 }
 
 #[tokio::test]
+async fn native_send_keeps_the_declared_success_body_limit() {
+    let server = TestServer::start(|_| Reply::json(200, vec![b' '; BODY_LIMIT + 1])).await;
+    let error = client(&server)
+        .neows()
+        .lookup("3542519")
+        .prepare()
+        .unwrap()
+        .send()
+        .await
+        .unwrap_err();
+    assert_eq!(error.kind(), ErrorKind::Limit);
+    assert_eq!(error.head().unwrap().status().as_u16(), 200);
+    server.shutdown().await;
+}
+
+#[tokio::test]
 async fn wire_shapes_and_secret_redaction() {
     let server = TestServer::start(|r: &Recorded| match r.path() {
         "/neo/rest/v1/feed" => Reply::json(200, include_str!("../fixtures/feed.json")),

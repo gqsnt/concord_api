@@ -1,6 +1,6 @@
 use crate::api::{Notion, NotionConfig};
 use crate::models::{Block, List, Page, QueryResult};
-use crate::{ERROR_LIMIT, EnvelopeProblem, Error, PageSize, ProviderError, Query, RESPONSE_LIMIT};
+use crate::{ERROR_LIMIT, EnvelopeProblem, Error, PageSize, ProviderError, Query};
 use concord::{Prepared, ResponseMeta, reqwest};
 use concord_pagination::{Page as TraversalPage, Pages, Resume};
 use std::collections::HashSet;
@@ -221,7 +221,7 @@ fn validate<T>(response: &Response<List<T>>, cursor: Option<&str>) -> Result<(),
 async fn receive<T>(prepared: Prepared<T>) -> Result<Response<T>, Error> {
     let received = prepared.receive().await?;
     if received.status().is_success() {
-        let (value, meta) = received.decode_limited_with_meta(RESPONSE_LIMIT).await?;
+        let (value, meta) = received.decode_with_meta().await?;
         return Ok(Response { value, meta });
     }
     // Keep the raw bytes even when JSON decoding succeeds but the provider envelope is

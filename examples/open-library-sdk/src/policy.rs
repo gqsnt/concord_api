@@ -25,6 +25,6 @@ impl<T: Send> SendWith<T> for ReadPolicy {
                 .await;
             return Err(Error::Http(Box::new(HttpError { meta, document })));
         }
-        Ok(received.decode_limited(RESPONSE_BODY_LIMIT).await?)
+        Ok(received.decode().await?)
     }
 }
