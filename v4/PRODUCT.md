@@ -6,6 +6,12 @@ A small, typed, declarative layer over `reqwest`. One `api!` declaration describ
 HTTP API as a tree — **client → nested scopes → endpoints** — and generates ordinary Rust
 types whose methods build `reqwest::Request`s deterministically and decode typed responses.
 
+**The fixed core** (owner, 2026-11-07): the DSL as the source of the usage — one declaration
+whose client → scope → endpoint structure becomes the generated signatures — built on top of
+`reqwest`. Everything else (the responsibilities below, the current scope, the shape of the
+generated surface) can change when evidence shows a change makes Concord more useful at a
+proportionate cost (`v4/desirability/amendments/A2-owner-charter.md`).
+
 Concord owns exactly these responsibilities:
 
 1. **Domain structure.** The declared tree is the generated navigation surface
@@ -15,9 +21,12 @@ Concord owns exactly these responsibilities:
 3. **Request composition.** Base URL, path segments, subdomain labels, query parameters
    and headers contributed along the tree, composed in a documented, deterministic order,
    with explicit conflict rules decided at compile time.
-4. **Minimal representations.** JSON / text / bytes request bodies; JSON / text / bytes /
-   empty responses; a typed error that separates preparation, transport, status and
-   decoding.
+4. **Representations.** Request and response formats are ordinary implementations of the
+   public `Encode`/`Decode` (finite) and `Incremental` (streamed) traits; the standard ones
+   live in `concord-codecs` (JSON, text, bytes, form, CSV, JSON Lines, server-sent events,
+   multipart). `Json` refuses a response without a JSON `Content-Type` unless an endpoint opts
+   out explicitly. A typed error separates preparation, transport, status, metadata, decoding
+   and limits.
 5. **Sensitivity-aware diagnostics.** Values marked sensitive are sent, but are withheld
    from output that Concord itself produces (its `Debug`, error `Display`, redacted
    request rendering).
@@ -25,25 +34,32 @@ Concord owns exactly these responsibilities:
    endpoint can produce a native `reqwest::Request` (and a `reqwest::RequestBuilder`), and
    can return the native `reqwest::Response`.
 
-## What Concord is not
+## Current scope (not a permanent boundary)
 
-These are non-responsibilities, not deferred features, and V4 contains no hooks designed
-for them:
+Core Concord does not implement these policies today. Each is a statement of current scope, and
+may change through the desirability loop (`v4/desirability/`) when a measured, reviewed change
+earns its place:
 
-- **Authentication orchestration** — no credential providers, refresh, stores or
-  challenge handling. A bearer token or API key is an ordinary (optionally sensitive)
-  header or query value.
-- **Rate limiting** — no policies, windows, budgets or admission.
-- **Retries** — no retry engine, replay, budgets or attempt journals.
-- **Pagination** — no cursor DSL, traversal, or page collectors.
-- **A managed executor** — no operation identity, journal, deadlines-as-policy, observer
-  framework, middleware stack or second transport configuration surface. Timeouts,
-  redirects, proxies, TLS, default headers and connection pooling are configured on the
-  `reqwest::Client` the application provides.
+- **Authentication orchestration** — no credential providers, refresh, stores or challenge
+  handling in core. A bearer token or API key is an ordinary (optionally sensitive) header or
+  query value; `concord-auth` (pilot) offers sensitive credentials and a token cache for SDK
+  code.
+- **Rate limiting** — no policies, windows, budgets or admission in core; `concord-ratelimit` is
+  a pilot crate.
+- **Retries** — no retry engine or replay in core; `concord-retry` (pilot) owns bounded
+  application attempts when an SDK opts in.
+- **Pagination** — no cursor DSL or page collectors in core; `concord-pagination` provides
+  bounded traversal for SDK code.
+- **A managed executor** — no journal, deadlines-as-policy, observer framework, middleware stack
+  or second transport configuration surface. Timeouts, redirects, proxies, TLS, default headers
+  and connection pooling are configured on the `reqwest::Client` the application provides.
 - **Contract export / inspection tooling.**
 
-Applications implement any of the above in ordinary Rust around Concord, typically with the
-native request/response escape hatches.
+Concord offers neutral seams an SDK may use for these jobs: an SDK send policy (`SendWith`,
+`Sends`), operation identity (`Operation`, `Endpoint`, inherent `operation()`), prepared requests
+and unread responses (`Prepared`, `Received`), and the native request/response exits. Core
+implements none of the policies above itself; SDKs and applications compose them in ordinary Rust,
+optionally with the capability crates.
 
 ## Success criteria
 
