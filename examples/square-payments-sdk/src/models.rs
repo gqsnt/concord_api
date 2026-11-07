@@ -9,7 +9,8 @@ pub struct Money {
     pub currency: String,
 }
 
-/// Minimal token-based, immediate-capture create body. Fields are immutable after validation.
+/// Minimal token-based create body: immediate capture ([`Self::new`]) or
+/// authorization only ([`Self::authorization`]). Fields are immutable after validation.
 ///
 /// Clone this body or the generated operation for an exact replay. This slice does
 /// not accept cash/external payments or card-on-file inputs requiring other fields.
@@ -22,7 +23,8 @@ pub struct CreatePayment {
 }
 
 impl CreatePayment {
-    /// Constructs a payment using a previously collected payment token.
+    /// Constructs an immediate-capture payment (`autocomplete: true`) using a
+    /// previously collected payment token.
     ///
     /// Requires a 1–45 byte key, nonempty source, positive amount and three
     /// uppercase ASCII currency letters. Currency/account compatibility and
@@ -31,6 +33,30 @@ impl CreatePayment {
         idempotency_key: impl Into<String>,
         source_id: impl Into<String>,
         amount_money: Money,
+    ) -> Result<Self, InputError> {
+        Self::validated(idempotency_key, source_id, amount_money, true)
+    }
+
+    /// Constructs an authorization-only payment (`autocomplete: false`): Square
+    /// holds it `APPROVED` until `payments().complete(..)` or `cancel(..)`.
+    ///
+    /// Same inputs and checks as [`Self::new`], and the same key/body replay rule.
+    /// Square's own window and action apply (by default the authorization is
+    /// cancelled after 36 hours card-present or 7 days card-not-present); this
+    /// slice sends no `delay_duration` or `delay_action`.
+    pub fn authorization(
+        idempotency_key: impl Into<String>,
+        source_id: impl Into<String>,
+        amount_money: Money,
+    ) -> Result<Self, InputError> {
+        Self::validated(idempotency_key, source_id, amount_money, false)
+    }
+
+    fn validated(
+        idempotency_key: impl Into<String>,
+        source_id: impl Into<String>,
+        amount_money: Money,
+        autocomplete: bool,
     ) -> Result<Self, InputError> {
         let idempotency_key = idempotency_key.into();
         let source_id = source_id.into();
@@ -59,7 +85,7 @@ impl CreatePayment {
             source_id,
             idempotency_key,
             amount_money,
-            autocomplete: true,
+            autocomplete,
         })
     }
 }
@@ -96,6 +122,44 @@ impl fmt::Display for InputError {
 
 impl std::error::Error for InputError {}
 
+/// CompletePayment body: whether the caller expects a particular payment version.
+///
+/// Square completes only an `APPROVED` payment. With [`Self::expecting`], it also
+/// refuses one that changed since the caller read its `version_token`
+/// ([`ProviderError::is_version_mismatch`]). The token is opaque and not checked
+/// locally. Complete has no idempotency key: after an unknown outcome, re-read the
+/// payment instead of resending.
+#[derive(Clone, Serialize)]
+pub struct CompletePayment {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    version_token: Option<String>,
+}
+
+impl CompletePayment {
+    /// Completes only the payment version the caller read (`Payment::version_token`).
+    pub fn expecting(version_token: impl Into<String>) -> Self {
+        Self {
+            version_token: Some(version_token.into()),
+        }
+    }
+
+    /// Completes whatever the current version is (body `{}`), as Square permits
+    /// when the caller holds no token. Prefer [`Self::expecting`] when it has one.
+    pub fn unconditional() -> Self {
+        Self {
+            version_token: None,
+        }
+    }
+}
+
+impl fmt::Debug for CompletePayment {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("CompletePayment")
+            .field("version_token_present", &self.version_token.is_some())
+            .finish()
+    }
+}
+
 /// The retained accounting/inspection fields of a Square payment.
 /// Additional provider fields are ignored, including card details and receipt URLs.
 #[derive(Clone, Debug, Deserialize, PartialEq, Eq)]
@@ -104,14 +168,18 @@ pub struct Payment {
     pub id: String,
     /// Amount in minor units with currency.
     pub amount_money: Money,
-    /// Provider status, preserved verbatim for forward compatibility.
+    /// Provider status, preserved verbatim for forward compatibility
+    /// (`APPROVED` for an authorization, then `COMPLETED` or `CANCELED`).
     pub status: String,
+    /// Opaque optimistic-concurrency token of this payment version, for
+    /// [`CompletePayment::expecting`]. `None` when Square omitted it.
+    pub version_token: Option<String>,
 }
 
-/// Successful CreatePayment or GetPayment envelope.
+/// Successful CreatePayment, GetPayment, CompletePayment or CancelPayment envelope.
 #[derive(Debug, Deserialize)]
 pub struct PaymentResponse {
-    /// Created or retrieved payment.
+    /// Created, retrieved, completed or canceled payment.
     pub payment: Payment,
 }
 

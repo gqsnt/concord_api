@@ -1,9 +1,12 @@
-//! A bounded Square Payments slice: create, retrieve and cursor-page payments.
+//! A bounded Square Payments slice: create, retrieve and cursor-page payments,
+//! plus delayed capture (authorize, then complete or cancel).
 //!
 //! Every generated `send()` makes one application attempt and returns [`Error`].
 //! Retain a clone of a create operation before sending: after a timeout, explicitly
 //! sending that unchanged clone reuses the caller's key and body. Never replace
-//! the key to resolve an unknown outcome. See the package README for examples.
+//! the key to resolve an unknown outcome. A complete or cancel whose outcome is
+//! unknown is resolved by re-reading the payment, never by an SDK resend.
+//! See the package README for examples.
 
 #![doc = include_str!("../README.md")]
 
@@ -19,7 +22,9 @@ use serde::{Deserialize, Serialize};
 mod error;
 mod models;
 pub use error::{Error, ErrorDocument, ProviderError, SquareError};
-pub use models::{CreatePayment, InputError, Money, Payment, PaymentResponse, PaymentsPage};
+pub use models::{
+    CompletePayment, CreatePayment, InputError, Money, Payment, PaymentResponse, PaymentsPage,
+};
 
 /// The version pinned by the declaration (not a dynamically selected version).
 pub const API_VERSION: &str = "2026-09-16";
@@ -54,7 +59,9 @@ concord::api! {
         scope payments {
             path "payments";
 
-            /// Requests immediate capture using the caller's key in the JSON body.
+            /// Creates a payment using the caller's key in the JSON body: immediate
+            /// capture ([`CreatePayment::new`]) or authorization only
+            /// ([`CreatePayment::authorization`], status `APPROVED`).
             /// A timeout leaves the outcome unknown; replay only an unchanged operation.
             POST create(body payment: CreatePayment) -> PaymentResponse;
 
@@ -66,6 +73,24 @@ concord::api! {
             /// Reads one page. The cursor is opaque and belongs to this query/account.
             /// Square defaults to 100 results and ignores limits greater than 100.
             GET list(#[sensitive] query cursor?: String, query limit?: u32) -> PaymentsPage;
+
+            /// Completes (captures) an `APPROVED` payment. With a version token, a payment
+            /// that changed since is refused: [`ProviderError::is_version_mismatch`].
+            /// Square takes no idempotency key here: an unknown outcome
+            /// ([`Error::outcome_unknown`]) is resolved by re-reading the payment.
+            POST complete(
+                #[sensitive] payment_id: String,
+                body completion: CompletePayment,
+            ) -> PaymentResponse {
+                path "{payment_id}/complete";
+            }
+
+            /// Cancels (voids) an `APPROVED` payment; no request body. Square takes no
+            /// idempotency key here: an unknown outcome ([`Error::outcome_unknown`]) is
+            /// resolved by re-reading the payment.
+            POST cancel(#[sensitive] payment_id: String) -> PaymentResponse {
+                path "{payment_id}/cancel";
+            }
         }
     }
 }

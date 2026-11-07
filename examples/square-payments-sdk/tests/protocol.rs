@@ -2,11 +2,12 @@
 
 mod support;
 
-use concord_example_testserver::{Body, Recorded, Reply, Script, TestServer};
+use concord_example_testserver::{Body, Gate, Recorded, Reply, Script, TestServer};
 use concord_sdk_square_payments::{
-    CreatePayment, ERROR_BODY_LIMIT, Error, InputError, Money, PagesError, Resume,
+    CompletePayment, CreatePayment, ERROR_BODY_LIMIT, Error, InputError, Money, PagesError, Resume,
     SUCCESS_BODY_LIMIT, Square, SquareConfig, bearer,
     concord::{Delivery, ErrorKind, bytes::Bytes},
+    transport,
 };
 use serde_json::{Value, json};
 use std::{num::NonZeroUsize, time::Duration};
@@ -403,4 +404,273 @@ async fn redirects_are_errors_and_never_followed() {
     assert_eq!(server.requests().len(), 1);
     assert_eq!(server.shutdown().await.open_after, 0);
     assert_eq!(destination.shutdown().await.open_after, 0);
+}
+
+// ------------------------------------------------ delayed capture (maintenance)
+
+const AUTHORIZATION_REQUEST: &str = include_str!("../fixtures/authorization-request.json");
+const AUTHORIZED: &str = include_str!("../fixtures/authorized-payment.json");
+const VERSION_MISMATCH: &str = include_str!("../fixtures/version-mismatch.json");
+const VERSION_TOKEN: &str = "synthetic-version-token-1";
+
+fn authorization(amount: i64) -> CreatePayment {
+    CreatePayment::authorization(
+        "caller-key-001",
+        "cnon:synthetic-payment-token",
+        Money {
+            amount,
+            currency: "USD".into(),
+        },
+    )
+    .unwrap()
+}
+
+/// The authorized fixture with another status, as complete/cancel answer it.
+fn authorized_as(status: &str) -> String {
+    let mut document: Value = serde_json::from_str(AUTHORIZED).unwrap();
+    document["payment"]["status"] = json!(status);
+    document["payment"]["version_token"] = json!("synthetic-version-token-2");
+    document.to_string()
+}
+
+#[tokio::test]
+async fn delayed_capture_wire_shapes() {
+    let server = TestServer::start(|request: &Recorded| {
+        headers(request);
+        assert_eq!(request.method, "POST");
+        assert!(
+            request
+                .headers
+                .iter()
+                .all(|(name, _)| !name.contains("idempotency"))
+        );
+        if request.path().ends_with("/complete") {
+            Reply::json(200, authorized_as("COMPLETED"))
+        } else if request.path().ends_with("/cancel") {
+            Reply::json(200, authorized_as("CANCELED"))
+        } else {
+            Reply::json(200, AUTHORIZED)
+        }
+    })
+    .await;
+    let api = client(&server);
+    let held = api
+        .payments()
+        .create(authorization(1000))
+        .send()
+        .await
+        .unwrap()
+        .payment;
+    assert_eq!(held.status, "APPROVED");
+    assert_eq!(held.version_token.as_deref(), Some(VERSION_TOKEN));
+    let completed = api
+        .payments()
+        .complete("id/with ?%+", CompletePayment::expecting(VERSION_TOKEN))
+        .send()
+        .await
+        .unwrap()
+        .payment;
+    assert_eq!(completed.status, "COMPLETED");
+    api.payments()
+        .complete("id", CompletePayment::unconditional())
+        .send()
+        .await
+        .unwrap();
+    let canceled = api
+        .payments()
+        .cancel("id/with ?%+")
+        .send()
+        .await
+        .unwrap()
+        .payment;
+    assert_eq!(canceled.status, "CANCELED");
+
+    let requests = server.requests();
+    assert_eq!(requests.len(), 4, "one request per send");
+    // Authorization only: the create body with `autocomplete: false`, nothing else changed.
+    assert_eq!(requests[0].target, "/v2/payments");
+    let sent: Value = serde_json::from_slice(&requests[0].body).unwrap();
+    assert_eq!(
+        sent,
+        serde_json::from_str::<Value>(AUTHORIZATION_REQUEST).unwrap()
+    );
+    let mut immediate: Value = serde_json::from_str(REQUEST).unwrap();
+    immediate["autocomplete"] = json!(false);
+    assert_eq!(sent, immediate);
+    // Complete with a token: one encoded ID segment, then `/complete`.
+    assert_eq!(
+        requests[1].target,
+        "/v2/payments/id%2Fwith%20%3F%25%2B/complete"
+    );
+    assert_eq!(requests[1].header_all("content-type"), ["application/json"]);
+    assert_eq!(
+        serde_json::from_slice::<Value>(&requests[1].body).unwrap(),
+        json!({ "version_token": VERSION_TOKEN })
+    );
+    // Complete without a token is Square's documented empty object, not an absent body.
+    assert_eq!(requests[2].target, "/v2/payments/id/complete");
+    assert_eq!(requests[2].header_all("content-type"), ["application/json"]);
+    assert_eq!(requests[2].body, b"{}");
+    // Cancel has no body.
+    assert_eq!(
+        requests[3].target,
+        "/v2/payments/id%2Fwith%20%3F%25%2B/cancel"
+    );
+    assert!(requests[3].body.is_empty());
+    assert_eq!(requests[3].header("content-type"), None);
+    assert_eq!(server.shutdown().await.open_after, 0);
+}
+
+#[tokio::test]
+async fn delayed_capture_errors_are_typed_and_never_resent() {
+    let script = Script::new([
+        Reply::json(400, VERSION_MISMATCH),
+        // Square documents no status for VERSION_MISMATCH: the code decides.
+        Reply::json(409, VERSION_MISMATCH),
+        Reply::json(
+            400,
+            r#"{"errors":[{"category":"INVALID_REQUEST_ERROR","code":"DELAYED_TRANSACTION_CAPTURED"}]}"#,
+        ),
+        Reply::json(
+            503,
+            r#"{"errors":[{"category":"API_ERROR","code":"SERVICE_UNAVAILABLE"}]}"#,
+        ),
+        Reply::json(
+            400,
+            r#"{"errors":[{"category":"INVALID_REQUEST_ERROR","code":"DELAYED_TRANSACTION_CANCELED"}]}"#,
+        ),
+        Reply::json(
+            500,
+            r#"{"errors":[{"category":"API_ERROR","code":"INTERNAL_SERVER_ERROR"}]}"#,
+        ),
+        Reply::json(503, r#"{"errors":[]}"#),
+    ]);
+    let server = TestServer::start(move |_: &Recorded| script.next()).await;
+    let api = client(&server);
+    let complete = || {
+        api.payments()
+            .complete("echoed-secret", CompletePayment::expecting(VERSION_TOKEN))
+            .send()
+    };
+    let cancel = || api.payments().cancel("echoed-secret").send();
+    let provider = |error: Error| match error {
+        Error::Provider(provider) => provider,
+        Error::Concord(_) => panic!("expected an HTTP error"),
+    };
+    // (outcome_unknown, is_version_mismatch, status) per send.
+    let mut seen = Vec::new();
+    for error in [
+        complete().await.unwrap_err(),
+        complete().await.unwrap_err(),
+        complete().await.unwrap_err(),
+        complete().await.unwrap_err(),
+        cancel().await.unwrap_err(),
+        cancel().await.unwrap_err(),
+    ] {
+        redacted(&format!("{error} {error:?}"));
+        assert!(!format!("{error} {error:?}").contains(VERSION_TOKEN));
+        assert!(!error.create_outcome_unknown(), "not a create");
+        let unknown = error.outcome_unknown();
+        let provider = provider(error);
+        assert!(!provider.is_idempotency_mismatch());
+        seen.push((
+            unknown,
+            provider.is_version_mismatch(),
+            provider.meta.status().as_u16(),
+        ));
+    }
+    assert_eq!(
+        seen,
+        [
+            (false, true, 400),
+            (false, true, 409),
+            (false, false, 400),
+            (true, false, 503),
+            (false, false, 400),
+            (true, false, 500),
+        ]
+    );
+    // A read's server error is never an unknown write outcome.
+    let error = api.payments().get("id").send().await.unwrap_err();
+    assert!(!error.outcome_unknown());
+    assert_eq!(server.requests().len(), 7, "nothing was resent");
+
+    // Refused before sending: known not to have happened.
+    for error in [
+        api.payments()
+            .complete("..", CompletePayment::unconditional())
+            .send()
+            .await
+            .unwrap_err(),
+        api.payments().cancel("").send().await.unwrap_err(),
+    ] {
+        assert_eq!(kind(&error), ErrorKind::Build);
+        assert!(!error.outcome_unknown());
+    }
+    assert_eq!(server.requests().len(), 7);
+    let operation = api
+        .payments()
+        .complete("echoed-secret", CompletePayment::expecting(VERSION_TOKEN));
+    for text in [
+        format!("{operation:?}"),
+        format!("{:?}", operation.prepare().unwrap()),
+        format!("{:?}", CompletePayment::expecting(VERSION_TOKEN)),
+    ] {
+        redacted(&text);
+        assert!(!text.contains(VERSION_TOKEN));
+    }
+    assert_eq!(server.shutdown().await.open_after, 0);
+}
+
+#[tokio::test]
+async fn timed_out_complete_and_cancel_are_unknown_but_not_create_replays() {
+    // Each write commits and then holds its response head; the transport times out.
+    let server = TestServer::start(|_: &Recorded| {
+        Reply::json(200, authorized_as("COMPLETED")).after(Gate::new())
+    })
+    .await;
+    let api = Square::new(
+        transport(Duration::from_millis(150)).unwrap(),
+        SquareConfig {
+            authorization: bearer(TOKEN).unwrap(),
+        },
+    )
+    .with_base_url(server.url())
+    .unwrap();
+    let complete = api
+        .payments()
+        .complete(
+            "synthetic-payment-002",
+            CompletePayment::expecting(VERSION_TOKEN),
+        )
+        .send()
+        .await
+        .unwrap_err();
+    let cancel = api
+        .payments()
+        .cancel("synthetic-payment-002")
+        .send()
+        .await
+        .unwrap_err();
+    for error in [&complete, &cancel] {
+        assert!(error.outcome_unknown());
+        assert!(!error.create_outcome_unknown(), "re-read, never replay");
+        let Error::Concord(inner) = error else {
+            panic!("expected a transport timeout")
+        };
+        assert!(inner.transport().unwrap().is_timeout());
+        assert_eq!(inner.delivery(), Delivery::Unknown);
+    }
+    let create = api
+        .payments()
+        .create(authorization(1000))
+        .send()
+        .await
+        .unwrap_err();
+    assert!(create.outcome_unknown() && create.create_outcome_unknown());
+    let requests = server.requests();
+    assert_eq!(requests.len(), 3, "no automatic resend of any write");
+    assert!(requests[0].target.ends_with("/complete"));
+    assert!(requests[1].target.ends_with("/cancel"));
+    assert_eq!(server.shutdown().await.open_after, 0);
 }

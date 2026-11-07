@@ -49,3 +49,23 @@ files. Documentation and Cargo manifests are excluded from those groups.
 No shared fixes, live-call results, fresh-role results, commit or publication is
 claimed. The first compile failure above is preserved as author evidence; the
 corrected run is the final result.
+
+## Maintenance: delayed capture (2026-11-07)
+
+Independent maintainer; same toolchain, worktree default `target/`
+(`CARGO_TARGET_DIR` set to its absolute path), `CARGO_BUILD_JOBS=4`, one Cargo
+process at a time, `--offline`. Pre-change baseline: `cargo test --locked`
+PASS (first_use 4, protocol 11, workflows 4, doctest 1). Root manifest and lock
+unchanged (`git diff --quiet HEAD -- Cargo.toml Cargo.lock`).
+
+| Command | Result |
+| --- | --- |
+| `cargo test --locked --offline -p concord-sdk-square-payments` | PASS: delayed_capture 1, first_use 4, protocol 14 (11 existing + 3 new), workflows 4, 2 compiled no-run README doctests |
+| `cargo clippy --locked --offline -p concord-sdk-square-payments --all-targets -- -D warnings` | PASS |
+| `RUSTDOCFLAGS="-D warnings" cargo doc --locked --offline -p concord-sdk-square-payments --no-deps` | PASS |
+| `rustfmt --edition 2024 --check` on package Rust files | PASS |
+| `git diff --check` | PASS |
+
+Mutation check: six one-line source mutations, each run in isolation and
+restored, all made the new tests fail; none made a pre-existing test fail. See
+MAINTENANCE.md.

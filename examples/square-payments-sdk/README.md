@@ -3,14 +3,16 @@
 `concord-sdk-square-payments` is a bounded, example-assisted Square sandbox
 slice at API version **2026-09-16**. It creates an immediate-capture payment from
 an already collected token, retrieves a payment, and pages account payments with
-an opaque cursor. Models retain ID, integer amount/currency and status. Other
-response fields are ignored. **Live provider calls: NOT_RUN.** All verification
+an opaque cursor. For delayed capture it creates an authorization-only payment
+and completes or cancels it. Models retain ID, integer amount/currency, status
+and version token. Other response fields are ignored. **Live provider calls: NOT_RUN.** All verification
 uses `examples/testserver` on loopback.
 
 Assistance came from documentation excerpts and the shared testserver; no existing
 provider SDK source file was consulted.
 
-Use the public generated hierarchy: `Square → payments() → create/get/list`.
+Use the public generated hierarchy:
+`Square → payments() → create/get/list/complete/cancel`.
 `send()` returns `Result<T, Error>` without an extension trait or wrapper client.
 
 ```no_run
@@ -63,7 +65,7 @@ keeps the declared `/v2` prefix. `bearer` takes the token alone. The generated
 config also accepts a native header, so use `bearer` for credential validation.
 The helper transport disables redirects and reqwest retries. With an arbitrary
 caller transport, one SDK attempt can contain transport-level replays or hops.
-`PAYMENTS_WRITE` is needed for create and `PAYMENTS_READ` for get/list.
+`PAYMENTS_WRITE` is needed for create/complete/cancel and `PAYMENTS_READ` for get/list.
 
 Create keys are caller-supplied JSON fields, never headers or SDK-generated IDs.
 This slice enforces a conservative 1–45 UTF-8 byte key bound, a nonempty token
@@ -93,6 +95,63 @@ entries are retained. Status remains authoritative; no automatic recovery follow
 from any category. Success documents are limited to 1 MiB, error documents to
 64 KiB. Both use strict JSON media checks.
 
+## Delayed capture
+
+`CreatePayment::authorization(key, source, amount)` validates exactly like `new`
+and sends `autocomplete: false`: Square holds the payment `APPROVED`. The key/body
+replay rule above applies unchanged. No `delay_duration`/`delay_action` is sent,
+so Square's defaults apply: an uncaptured authorization is cancelled after 36
+hours (card present) or 7 days (card not present). `CreatePayment::new` still
+sends `autocomplete: true`.
+
+`payments().complete(id, CompletePayment::expecting(token))` captures only the
+version the caller read (`Payment::version_token`). If the payment changed since,
+Square refuses with `VERSION_MISMATCH`: `Error::Provider(p)` with
+`p.is_version_mismatch()`. Nothing was captured; re-read the payment and decide
+again. The SDK never refreshes the token. `CompletePayment::unconditional()`
+sends `{}` and completes whatever version is current. `payments().cancel(id)`
+voids an `APPROVED` payment and sends no body. Both work only on an `APPROVED`
+payment; other refusals (`DELAYED_TRANSACTION_CAPTURED`, `..._CANCELED`,
+`..._EXPIRED`) stay ordinary provider errors in `document`.
+
+Complete and cancel carry no idempotency key. A timeout, unreadable success,
+5xx or redirect is `error.outcome_unknown()`: re-read the payment with
+`payments().get(id)` and act on its `status` (`APPROVED`, `COMPLETED`,
+`CANCELED`). The SDK sends each complete/cancel once and never resends it.
+`create_outcome_unknown()` stays true only for create, so a replay rule written
+for create does not fire for complete/cancel.
+
+```no_run
+use concord_sdk_square_payments::{CompletePayment, CreatePayment, Error, Money, Square};
+
+async fn ship(api: &Square) -> Result<(), Box<dyn std::error::Error>> {
+    let body = CreatePayment::authorization("order-1001", "collected-token", Money {
+        amount: 4200, currency: "USD".into(),
+    })?;
+    let held = api.payments().create(body).send().await?.payment; // APPROVED
+    let completion = match &held.version_token {
+        Some(token) => CompletePayment::expecting(token.clone()),
+        None => CompletePayment::unconditional(),
+    };
+    match api.payments().complete(&held.id, completion).send().await {
+        Ok(done) => assert_eq!(done.payment.status, "COMPLETED"),
+        Err(Error::Provider(p)) if p.is_version_mismatch() => {
+            let fresh = api.payments().get(&held.id).send().await?.payment;
+            // Changed since checkout: decide on `fresh`, then complete its token.
+            println!("{} {:?}", fresh.status, fresh.version_token.is_some());
+        }
+        Err(e) if e.outcome_unknown() => {
+            let current = api.payments().get(&held.id).send().await?.payment;
+            println!("{}", current.status); // COMPLETED if the capture happened
+        }
+        Err(e) => return Err(e.into()),
+    }
+    Ok(())
+}
+```
+
+## Listing
+
 For one page use `list().maybe_cursor(cursor).send()`. For traversal use
 `list().pages(from, max_pages)`: `Resume::Start` or `Resume::At(cursor)` explicitly
 replaces any template cursor. An empty page with a cursor continues; absent or
@@ -105,17 +164,21 @@ not snapshots; changing records can cause duplicates or gaps. This slice leaves
 Square's time-range and main-location defaults in effect and exposes only cursor
 and limit. Square's default/max page size is 100; larger limits use its default.
 
-Debug/Display hide the Bearer token, create body, cursor, sensitive payment path
-and all error entry strings. Explicit body serialization, native request/URL,
-header/document access and payment model fields are unredacted. Concord and
+## Diagnostics and scope
+
+Debug/Display hide the Bearer token, create and complete bodies (including the
+version token), cursor, sensitive payment path and all error entry strings.
+Explicit body serialization, native request/URL, header/document access and
+payment model fields (including `version_token`) are unredacted. Concord and
 pagination types are re-exported for downstream callers. `prepare()` remains the
 ordinary Concord request; executing `prepare()?.send()` bypasses the SDK error
 policy and returns Concord's status error instead of `Error::Provider`.
 
-Excluded: card collection, OAuth acquisition/refresh, delayed capture, refunds,
-catalog, other create options, production workflows, automatic rate admission,
-universal write retries and persistent reconciliation. The SDK uses no native
-request rewrite or alternate HTTP client.
+Excluded: card collection, OAuth acquisition/refresh, refunds, catalog, other
+create options (including `delay_duration`, `delay_action`, partial
+authorization), UpdatePayment, CancelPaymentByIdempotencyKey, production
+workflows, automatic rate admission, universal write retries and persistent
+reconciliation. The SDK uses no native request rewrite or alternate HTTP client.
 
 Verification commands (one Cargo process at a time, default worktree `target/`):
 
@@ -126,5 +189,6 @@ CARGO_BUILD_JOBS=4 RUSTDOCFLAGS="-D warnings" cargo doc --locked -p concord-sdk-
 ```
 
 See [PROVENANCE.md](PROVENANCE.md) for exact sources and fixture derivations,
-[FRICTION.md](FRICTION.md) for boundary decisions, and [VERIFICATION.md](VERIFICATION.md)
-for recorded results.
+[FRICTION.md](FRICTION.md) for boundary decisions, [VERIFICATION.md](VERIFICATION.md)
+for recorded results, and [MAINTENANCE.md](MAINTENANCE.md) for the delayed-capture
+change.

@@ -16,11 +16,13 @@ impl From<concord::Error> for Error {
 }
 
 impl Error {
-    /// Whether a failed create may have taken effect.
+    /// Whether a failed write (create, complete or cancel) may have taken effect.
     ///
-    /// Conservatively true for a create's transport/unreadable success, 5xx or
-    /// redirect. This does not grant permission to change a replay's key/body.
-    pub fn create_outcome_unknown(&self) -> bool {
+    /// Conservatively true for a write's transport/unreadable success, 5xx or
+    /// redirect; never for a read or a request refused before sending. Resolve it
+    /// by the operation's own rule: replay an unchanged create (same key and body),
+    /// or re-read the payment after a complete or cancel. The SDK resends nothing.
+    pub fn outcome_unknown(&self) -> bool {
         match self {
             Self::Concord(error) => {
                 error.operation().and_then(|op| op.method()) == Some("POST")
@@ -31,6 +33,22 @@ impl Error {
                     && (error.meta.status().is_server_error()
                         || error.meta.status().is_redirection())
             }
+        }
+    }
+
+    /// Whether a failed **create** may have taken effect: [`Self::outcome_unknown`]
+    /// for `payments().create(..)` only, false for complete and cancel.
+    /// This does not grant permission to change a replay's key/body.
+    pub fn create_outcome_unknown(&self) -> bool {
+        self.operation() == Some(<SquarePaymentsCreate as Endpoint<PaymentResponse>>::operation())
+            && self.outcome_unknown()
+    }
+
+    /// The declared operation that failed, when known.
+    fn operation(&self) -> Option<concord::Operation> {
+        match self {
+            Self::Concord(error) => error.operation(),
+            Self::Provider(error) => error.meta.operation(),
         }
     }
 }
@@ -67,12 +85,22 @@ impl ProviderError {
     /// Square refused reuse of a key with different request parameters.
     /// Unknown codes remain inspectable through [`Self::document`].
     pub fn is_idempotency_mismatch(&self) -> bool {
-        self.document.as_ref().is_ok_and(|document| {
-            document
-                .errors
-                .iter()
-                .any(|error| error.code == "IDEMPOTENCY_KEY_REUSED")
-        })
+        self.has_code("IDEMPOTENCY_KEY_REUSED")
+    }
+
+    /// Square refused a complete because the payment no longer has the caller's
+    /// version token (`VERSION_MISMATCH`): it changed since the caller read it.
+    /// Nothing was captured by this request. Re-read the payment and decide again;
+    /// the SDK never refreshes the token or resends. Decided by the code alone,
+    /// since Square documents no status for it.
+    pub fn is_version_mismatch(&self) -> bool {
+        self.has_code("VERSION_MISMATCH")
+    }
+
+    fn has_code(&self, code: &str) -> bool {
+        self.document
+            .as_ref()
+            .is_ok_and(|document| document.errors.iter().any(|error| error.code == code))
     }
 }
 

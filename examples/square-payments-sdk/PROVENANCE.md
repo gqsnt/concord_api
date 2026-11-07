@@ -75,3 +75,33 @@ MIT OR Apache-2.0. The sole new lock package is this SDK, version 0.0.0, also
 MIT OR Apache-2.0. Initial `cargo build --offline` wrote that entry; later gates
 use `--locked`. Only its workspace membership and lock entry change outside
 this directory.
+
+## Maintenance: delayed capture (independent maintainer, 2026-11-07)
+
+Added by the maintainer role, not the author. The pages below were read
+**2026-11-07** through a read-only fetch tool that summarises pages; every page
+displayed API version 2026-09-16. No Square request was sent. **Live provider
+calls: NOT_RUN.**
+
+| Exact page | Facts used |
+| --- | --- |
+| https://developer.squareup.com/reference/square/payments-api/complete-payment | `POST /v2/payments/{payment_id}/complete`; completes an `APPROVED` payment; optional Beta `version_token` ("Used for optimistic concurrency"); a different server version fails with a `VERSION_MISMATCH` error; no status stated; example body `{}`; `PAYMENTS_WRITE` |
+| https://developer.squareup.com/reference/square/payments-api/cancel-payment | `POST /v2/payments/{payment_id}/cancel`; voids an `APPROVED` payment; no request body fields; example status `CANCELED`; `PAYMENTS_WRITE` |
+| https://developer.squareup.com/docs/payments-api/take-payments/card-payments/delayed-capture | `autocomplete: false` → `APPROVED`; complete → `COMPLETED`; cancel → `CANCELED`; complete "succeeds only if the payment hasn't been updated since that `version_token` was generated"; default window 36 h card-present / 7 days card-not-present; default `delay_action` CANCEL; no timeout or idempotency guidance for complete/cancel |
+| https://developer.squareup.com/reference/square/payments-api/create-payment | `autocomplete` default true, false holds the payment "in an approved state"; `delay_duration`/`delay_action` only with `autocomplete=false` (not exposed) |
+| https://developer.squareup.com/reference/square/objects/Payment | `version_token` string; status values APPROVED, PENDING, COMPLETED, CANCELED, FAILED; delay fields |
+| https://developer.squareup.com/reference/square/payments-api | Endpoint inventory, including CompletePayment, CancelPayment, UpdatePayment and CancelPaymentByIdempotencyKey (the last two excluded) |
+| https://developer.squareup.com/docs/build-basics/common-api-patterns/idempotency | Re-read: names no endpoint that lacks a key and does not mention complete/cancel; behaviour "might vary depending on the API" |
+| https://developer.squareup.com/reference/square/enums/ErrorCode | `DELAYED_TRANSACTION_{EXPIRED,CANCELED,CAPTURED,FAILED}` present; `VERSION_MISMATCH` **absent** from the enum page; no statuses |
+| https://developer.squareup.com/docs/build-basics/common-api-patterns/optimistic-concurrency | A stale update "fails with a `VERSION_MISMATCH` error"; caller re-retrieves and updates; no status |
+| https://developer.squareup.com/docs/build-basics/general-considerations/handling-errors | Re-read: no status for VERSION_MISMATCH/CONFLICT, no timeout guidance |
+
+| New fixture | Derivation and deliberate choices |
+| --- | --- |
+| `authorization-request.json` | `create-request.json` with `autocomplete: false`; same invented key/source/amount |
+| `authorized-payment.json` | Synthetic envelope from the Payment object and delayed-capture guide: `APPROVED`, invented `version_token`, `delay_action`/`delay_duration` (ignored by the model), extra `source_type` |
+| `version-mismatch.json` | Synthetic error document using the documented `VERSION_MISMATCH` code. Category, `field`, detail and the 400 status used in tests are fixture choices; Square states no status, so a 409 variant is also exercised |
+| Runtime stand-in in `tests/delayed_capture.rs` | Authored in-memory model: new token per change, `DELAYED_TRANSACTION_CAPTURED`/`_CANCELED` 400 answers for finished payments, and status checked before token. These orderings and statuses are fixture choices, not observed provider behaviour |
+
+Dependencies: none added; root `Cargo.toml` and `Cargo.lock` unchanged by
+maintenance (the package was already a member).
