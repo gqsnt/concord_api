@@ -12,6 +12,7 @@ use concord_sdk_xero_accounting::{
 use concord_testserver::{Recorded, Reply, TestServer};
 use serde_json::{Value, json};
 use std::num::NonZeroUsize;
+#[cfg(unix)]
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -39,6 +40,7 @@ const TOKEN: &str = "/connect/token";
 fn journal_dir(name: &str) -> PathBuf {
     let parent = PathBuf::from(env!("CARGO_TARGET_TMPDIR")).join("xero-first-use");
     std::fs::create_dir_all(&parent).unwrap();
+    #[cfg(unix)]
     std::fs::set_permissions(&parent, std::fs::Permissions::from_mode(0o700)).unwrap();
     let nanos = SystemTime::now()
         .duration_since(SystemTime::UNIX_EPOCH)
@@ -379,8 +381,11 @@ async fn workflow1_pages_invoices_then_retrieves_the_chosen_one() {
     let journal = journal_text(&a.dir);
     assert!(journal.contains("rt-rotated-1") && journal.contains("at-rotated-1"));
     assert!(!journal.contains("rt-original-0") && !journal.contains("at-original-0"));
-    let mode = std::fs::metadata(&a.dir).unwrap().permissions().mode() & 0o777;
-    assert_eq!(mode, 0o700);
+    #[cfg(unix)]
+    {
+        let mode = std::fs::metadata(&a.dir).unwrap().permissions().mode() & 0o777;
+        assert_eq!(mode, 0o700);
+    }
 
     // Restart: reopen the journal (not a new grant). No second refresh; the rotated token is used.
     drop((a.xero, a.tenant, a.store));
@@ -983,6 +988,8 @@ async fn rotation_after_unauthorized_uses_the_rotated_refresh_token() {
 
 /// A journal that cannot be written fails before the OAuth exchange: nothing is sent, so the
 /// current refresh token is not consumed and the operation succeeds once storage is fixed.
+/// Unix only: the failure is injected with POSIX directory permissions.
+#[cfg(unix)]
 #[tokio::test]
 async fn rotation_storage_failure_before_exchange_sends_nothing() {
     let server = TestServer::start(|req: &Recorded| match req.path() {

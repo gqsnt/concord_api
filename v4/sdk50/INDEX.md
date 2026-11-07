@@ -25,7 +25,7 @@ fixtures only).
 | | **Wave 2 (SDK26–30) complete**; between-waves changes B23-A2 (`send P -> Result<_, Error>`), B23-R (`Error::delivery()`), B23-C (`concord::field`), B23-Q, B23-G accepted and adopted; repeated-key guard not accepted (0 adopters); routing R-1 (Codex = Sol only) from Wave 3 | `waves/W2/{PLAN,STATUS,FINDINGS,SYNTHESIS}.md` |
 | | **Wave 3 (SDK31–35, payments and accounting) complete**: 15 roles; between-waves B34-D (generated docs), B34-R (`Retry::receive_with`), B34-O (inherent `operation()`) accepted; B34-A (auth rotation) not accepted; B34-V (declared values) experiment continues | `waves/W3/{PLAN,STATUS,FINDINGS,SYNTHESIS}.md` |
 | | **Waves 4–6 (SDK36–50) complete** on the baseline `c3fd4f1e` (R-2: no between-wave changes); 45 roles; Wave 6 held out; integration with all 55 SDKs `af6840c9` gate 66/66, nightly PASS | `waves/W{4,5,6}/{PLAN,STATUS,FINDINGS}.md` |
-| Cross-50 analysis | **in progress**: six read-only theme sweeps over all 55 SDKs | `cross50/` (to come) |
+| Cross-50 analysis | **synthesis done, prototypes next**: six read-only theme sweeps over all 55 SDKs, ranked proposals (docs, SDK adoption, two small additions, macro opt-ins, removals, rejections) | `cross50/{PROPOSALS.md,analysts/}` |
 | P3 final adoption and retrospective | not started | — |
 
 ## Lanes (branches; each merged into `sdk50/integration` after coordinator verification)

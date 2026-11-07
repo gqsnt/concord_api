@@ -145,6 +145,17 @@ role and every `p1-edit`, `p1-retry`, `p1-pagination`, `p2-*` and `b12-*` lane; 
 `p0-docs`, `p1-codecs`, `p1-f2-adoption`, `p1-link` (their socket tests were re-run by the
 coordinator); read-only roles have no network policy.
 
+**Cross-50 analysts** (read-only sweeps over all 55 SDKs; reports in `cross50/analysts/`):
+
+| Role | Requested | Observed (rollout turn_context) | Sandbox | Thread | Commit | Time (CET) |
+|---|---|---|---|---|---|---|
+| x50-a1-hosts-sol | gpt-6.1-sol xhigh | gpt-6.1-sol xhigh | read-only | 01a1b4f5-de03-7ba1-903c-44c58a167c71 | `af6840c9` | 2026-11-07 08:42 – 08:52 |
+| x50-a2-facts-sol | gpt-6.1-sol xhigh | gpt-6.1-sol xhigh | read-only | 01a1b4f5-de04-79e0-b0c2-0b3d0f4b7e06 | `af6840c9` | 2026-11-07 08:42 – 08:52 |
+| x50-a3-policy-errors-sol | gpt-6.1-sol xhigh | gpt-6.1-sol xhigh | read-only | 01a1b4f5-de0b-78f3-ae9c-b3cc2ef14e41 | `af6840c9` | 2026-11-07 08:42 – 08:52 |
+| x50-a4-pagination-sol | gpt-6.1-sol xhigh | gpt-6.1-sol xhigh | read-only | 01a1b4f5-de2b-7fe0-97c7-8566d6725bf6 | `af6840c9` | 2026-11-07 08:42 – 08:52 |
+| x50-a5-surface-docs-sol | gpt-6.1-sol xhigh | gpt-6.1-sol xhigh | read-only | 01a1b4f5-de02-7762-9b9e-bd88be36ef27 | `af6840c9` | 2026-11-07 08:42 – 08:55 |
+| x50-a6-crates-sol | gpt-6.1-sol xhigh | gpt-6.1-sol xhigh | read-only | 01a1b4f5-de15-7941-99f3-56065c394a37 | `af6840c9` | 2026-11-07 08:42 – 08:53 |
+
 **Routing from Wave 3 on (owner instruction, 2026-11-07 ~04:30 CET):** Codex roles use only
 `gpt-6.1-sol` at requested xhigh; `gpt-6.1-terra` and `gpt-6-astra` are no longer requested. Every
 Terra/Astra row above was run before that instruction. The rotation becomes two families (Sol and
