@@ -45,7 +45,7 @@ fn every_cursor_replaces_every_other_and_can_be_cleared() {
 }
 
 #[test]
-fn query_pairs_preserve_order_and_endpoint_debug_withholds_values() {
+fn query_pairs_preserve_order_and_endpoint_debug_withholds_the_cursor() {
     use concord_sdk_discord_rest::MessageLimit;
 
     let request = Discord::new(
@@ -59,9 +59,10 @@ fn query_pairs_preserve_order_and_endpoint_debug_withholds_values() {
     .messages()
     .set_anchor(Anchor::Before(MessageId::new(987654321)))
     .set_limit(MessageLimit::new(42).unwrap());
+    // The endpoint's Debug withholds the `query(..)` cursor; the keyed limit is shown.
     let debug = format!("{request:?}");
     assert!(
-        !debug.contains("987654321") && !debug.contains("42"),
+        !debug.contains("987654321") && debug.contains("42"),
         "{debug}"
     );
     let prepared = request.prepare().unwrap();

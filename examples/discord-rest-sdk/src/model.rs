@@ -348,12 +348,6 @@ impl concord::QueryPairs for Anchor {
     }
 }
 
-impl concord::QueryPairs for MessageLimit {
-    fn query_pairs(&self, out: &mut concord::QueryPairsWriter<'_>) {
-        out.pair("limit", self);
-    }
-}
-
 /// The JSON body of `POST /channels/{channel.id}/messages`, limited to this slice: text
 /// `content`, an optional `nonce` (with `enforce_nonce`) and `tts`. Embeds, components,
 /// stickers, files, polls and replies are outside the slice.

@@ -89,7 +89,7 @@ concord::api! {
                 /// The single message cursor.
                 query(..) anchor?: Anchor,
                 /// Maximum number of messages (1–100), after the cursor on the wire.
-                query(..) limit?: MessageLimit,
+                query limit?: MessageLimit,
             ) -> Vec<Message> { path "messages"; }
 
             /// `GET /channels/{channel.id}/messages/{message.id}`: one message. Needs
