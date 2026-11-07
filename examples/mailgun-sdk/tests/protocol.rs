@@ -460,16 +460,17 @@ async fn schema_failure_is_not_an_empty_page_or_a_valid_send() {
 }
 
 #[tokio::test]
-async fn send_that_never_connected_is_not_ambiguous() {
+async fn a_refused_connection_on_a_send_stays_ambiguous() {
     let reserved = tokio::net::TcpSocket::new_v4().unwrap();
     reserved.bind(([127, 0, 0, 1], 0).into()).unwrap();
     let origin = format!("http://{}", reserved.local_addr().unwrap());
     let api = Mailgun::local(&origin, KEY, Duration::from_secs(2)).unwrap();
     let error = domain(&api).send_message(email()).send().await.unwrap_err();
-    let Error::Concord(error) = error else {
+    let Error::AmbiguousSend(error) = error else {
         panic!("{error:?}")
     };
-    assert_eq!(error.delivery(), concord::Delivery::NotSent);
+    // Concord cannot prove a refused connection sent nothing (a redirect may follow an accepted send).
+    assert_eq!(error.delivery(), concord::Delivery::Unknown);
     assert!(error.transport().is_some_and(|e| e.is_connect()));
     drop(reserved);
 }

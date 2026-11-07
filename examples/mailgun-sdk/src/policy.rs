@@ -1,5 +1,5 @@
 use crate::{Error, ProviderError, RetryAfterError, SMALL_BODY_LIMIT, error::Problem};
-use concord::{Delivery, Endpoint, Json, Prepared, SendWith, reqwest::StatusCode};
+use concord::{Endpoint, Json, Prepared, SendWith, reqwest::StatusCode};
 use std::{
     fmt,
     time::{Duration, SystemTime},
@@ -94,7 +94,7 @@ impl SendPolicy {
     pub(crate) async fn execute<T>(prepared: Prepared<T>) -> Result<Response<T>, Error> {
         let write = prepared.request().method() == concord::reqwest::Method::POST;
         let failure = |e: concord::Error| {
-            if write && e.delivery() != Delivery::NotSent {
+            if write {
                 Error::AmbiguousSend(Box::new(e))
             } else {
                 Error::from(e)

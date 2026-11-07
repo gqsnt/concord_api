@@ -19,43 +19,14 @@ explicit:
   is `Err(PagesError::Bounded { resume, .. })`; a cap reached exactly on the last page is
   exhaustion.
 - A failed page is `Err(PagesError::Provider { error, failed, .. })` with the factory's own error,
-  moved. Every call after an error is `Err(PagesError::Ended { .. })`, never `Ok(None)`.
-- `reject_repeated_keys()` is opt-in: before requesting a continuation key already used in this
-  traversal, it returns `PagesError::RepeatedKey { resume, progress }` with value-free formatting.
-  The successful prefix includes the page that supplied that key; no duplicate request is made
-  or charged, and no provider failure is counted. `finish()` reports `Outcome::RepeatedKey`.
+  moved. Every call after a `Bounded` or `Provider` error is `Err(PagesError::Ended { .. })`, never
+  `Ok(None)`.
 - `collect_complete()` returns everything or an `Incomplete` with the collected prefix and the
   error. The stream yields the typed `Err` before it ends, so a `None` after an `Err` is not
   completeness.
 
 The factory and its futures must be `Send + 'static` (the facade erases their types); each page
 request costs one allocation for its future.
-
-The repeated-key guard requires `Eq + Hash` in addition to the existing `Clone` key bound. It
-stores one cloned key per distinct keyed page requested in a `HashSet` (O(pages) memory,
-expected O(1) lookup). Without opting in there is no history allocation, hashing or extra key
-clone. Enable it before reading; only later admissions are remembered, and enabling it again
-keeps that history. `max_pages` takes precedence if the cap and a repeated key both prevent the
-next admission. A cap still bounds a chain of distinct keys. `Resume::At(key)` records its key
-on first admission; `Resume::Start` has no key. A new traversal from either starts fresh: a
-`Resume` carries no history, so resuming after refusal may reread pages from the earlier prefix.
-It never proves a snapshot or deduplicates records. Key identity belongs to the adapter: aliases
-for the same URL, empty cursors and contradictory envelopes still require provider validation.
-
-The guard carries through `items()`, `into_stream()` and `item_events()`. `PageItems`, the
-`Sequential` engine and its `Items`/`resume_items` traversal also expose
-`reject_repeated_keys()`; engine consumers inspect `Outcome::RepeatedKey` in the report after
-`next()` returns `None`. A stream emits the typed refusal before ending, and events never emit
-`Complete` after refusal.
-
-`Jobs::reject_repeated_keys()` applies the same opt-in to the dependent manifest chain. A
-refusal emits the value-free `JobsError::RepeatedKey` once, leaves `discovery.resume` at that
-key and counts no manifest call or provider failure. As with discovery failures,
-`OnError::Stop` cancels active jobs; `OnError::Continue` finishes known queued and admitted
-jobs. The settled report is `Outcome::DiscoveryRepeatedKey`, with counters and undiscovered
-resume state retained. Finishing before that known work settles reports `Outcome::Stopped`.
-Discovery and job budgets take precedence over a refused admission. Independent job descriptors
-are not deduplicated.
 
 When item consumers also need metadata, `Pages::item_events()` returns an item for each record
 and moves metadata once after each page's items, including empty pages. `PageItemEvent::Page`
@@ -89,7 +60,7 @@ fn invoices() -> Pages<u32, String, (), ApiError> {
 async fn all_invoices() -> Result<Vec<u32>, Incomplete<u32, ApiError, String>> {
     // `Ok` only after the provider's last page; a cap or a failure keeps the prefix.
     let cap = NonZeroUsize::new(50).unwrap();
-    invoices().reject_repeated_keys().max_pages(cap).items().collect_complete().await
+    invoices().max_pages(cap).items().collect_complete().await
 }
 ```
 
@@ -156,10 +127,9 @@ async fn all_items() -> Result<Vec<u32>, std::io::Error> {
 - **Reports** distinguish exhaustion, configured bounds, observed failure, the caller's stop and
   incomplete discovery, keep failed keys apart from the restart point, hand back completed results
   that were never emitted, and separate attempted, known-unattempted and undiscovered work.
-- **Storage**: besides the window (and the jobs' descriptor backlog), failed keys are retained,
+- **Storage**: besides the window (and the jobs' descriptor backlog), only failed keys are retained,
   bounded by the budget or by `Options::failure_limit`, which ends the traversal with
-  `Outcome::FailureLimit`. Opting into the repeated-key guard additionally retains one key per
-  keyed page requested in that dependent page traversal.
+  `Outcome::FailureLimit`.
 - **Cancellation**: dropping a pending `next` (or `next_page`, or a stream's `next()`) keeps the
   request in flight for the following call. Dropping a traversal drops every owned future; nothing
   detached continues. Requests already transmitted may still run on the server; sink output is the

@@ -96,7 +96,8 @@ fn cannot_replay(email: TextEmail) {
 ```
 
 No send is retried automatically, including buffered sends, 401, 429 and 5xx.
-A refused connection is `Error::Concord` with `Delivery::NotSent`; nothing was sent.
+A refused connection on a send is still `Error::AmbiguousSend`: Concord reports it as
+`Delivery::Unknown` (a redirect target can refuse after the send was accepted).
 There is no generic Mailgun send idempotency guarantee in this slice. A transport
 failure after dispatch, timeout, or unusable success body is `Error::AmbiguousSend`:
 the message may have been accepted, and the SDK may not have obtained its ID.

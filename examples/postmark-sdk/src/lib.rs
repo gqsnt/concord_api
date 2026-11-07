@@ -6,7 +6,7 @@
 //! A batch send returns one [`BatchResult`] per submitted message, in submission order; a batch
 //! whose results cannot be read or attributed has an unknown outcome as a whole.
 
-use concord::{Delivery, Endpoint, Json, SendWith};
+use concord::{Endpoint, Json, SendWith};
 use serde::{Deserialize, Serialize};
 use std::fmt;
 
@@ -157,7 +157,7 @@ pub const ERROR_LIMIT: usize = 64 * 1024;
 #[derive(Debug)]
 #[non_exhaustive]
 pub enum Error {
-    /// A request was not sent, or a read operation failed.
+    /// Request building or a read operation failed.
     Request(concord::Error),
     /// A send may have taken effect but its response could not be received or decoded.
     UnknownOutcome(concord::Error),
@@ -260,7 +260,7 @@ impl<T: Send + Reply> SendWith<T> for PostmarkPolicy {
         let sending = prepared.request().method() == concord::reqwest::Method::POST;
         let expected = T::expected(prepared.request());
         let failure = |e: concord::Error| {
-            if sending && e.delivery() != Delivery::NotSent {
+            if sending {
                 Error::UnknownOutcome(e)
             } else {
                 Error::Request(e)

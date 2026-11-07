@@ -571,7 +571,7 @@ impl HubSpot {
         let response = api.contacts().batch_read(request).send().await?;
         attribute(&ids, response)
     }
-    /// Create once. A possibly sent request without a usable success, or a server error, is uncertain.
+    /// Create once. Anything but a build failure or a definite client error is uncertain.
     pub async fn create(&self, contact: CreateContact) -> Result<Contact, Error> {
         let result = self.api().await?.contacts().create(contact).send().await;
         match result {

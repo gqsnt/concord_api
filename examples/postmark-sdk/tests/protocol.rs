@@ -157,7 +157,7 @@ async fn retry_after_seconds_refuses_signed_repeated_and_overflowing_fields() {
 }
 
 #[tokio::test]
-async fn send_that_never_connected_has_no_unknown_outcome() {
+async fn a_refused_connection_on_a_send_stays_an_unknown_outcome() {
     let reserved = tokio::net::TcpSocket::new_v4().unwrap();
     reserved.bind(([127, 0, 0, 1], 0).into()).unwrap();
     let origin = format!("http://{}", reserved.local_addr().unwrap());
@@ -175,11 +175,12 @@ async fn send_that_never_connected_has_no_unknown_outcome() {
     .with_base_url(origin)
     .unwrap();
     let error = api.outbound().send_batch(vec![]).send().await.unwrap_err();
-    assert!(!error.is_unknown_outcome());
-    let Error::Request(error) = error else {
+    assert!(error.is_unknown_outcome());
+    let Error::UnknownOutcome(error) = error else {
         panic!("{error:?}")
     };
-    assert_eq!(error.delivery(), concord::Delivery::NotSent);
+    // Concord cannot prove a refused connection sent nothing (a redirect may follow an accepted send).
+    assert_eq!(error.delivery(), concord::Delivery::Unknown);
     assert!(error.transport().is_some_and(|e| e.is_connect()));
     drop(reserved);
 }

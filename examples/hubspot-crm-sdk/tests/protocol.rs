@@ -447,7 +447,7 @@ async fn batch_read_failures_are_sent_once() {
 }
 
 #[tokio::test]
-async fn create_that_never_connected_is_not_uncertain() {
+async fn a_refused_connection_on_create_stays_uncertain() {
     let server = TestServer::start(|request| {
         if request.path().contains("/oauth/") {
             Reply::json(200, include_str!("../fixtures/oauth.json"))
@@ -466,11 +466,9 @@ async fn create_that_never_connected_is_not_uncertain() {
     let origin = format!("http://{}", reserved.local_addr().unwrap());
     let hub = hub.with_base_url(&origin).unwrap();
     let error = hub.create(Default::default()).await.unwrap_err();
-    let Error::Concord(error) = error else {
-        panic!("{error:?}")
-    };
-    assert_eq!(error.delivery(), concord::Delivery::NotSent);
-    assert!(error.transport().is_some_and(|e| e.is_connect()));
+    // Concord cannot prove a refused connection sent nothing (a redirect may follow an accepted
+    // create), so the SDK keeps the create uncertain; the fixture saw no create request.
+    assert!(matches!(error, Error::CreateUncertain), "{error:?}");
     assert_eq!(server.requests().len(), 2);
     drop(reserved);
     server.shutdown().await;
