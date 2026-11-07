@@ -19,7 +19,7 @@ pub use models::{CsvRow, Feature, FeatureCollection, Metadata, Point, Properties
 pub use policy::{ERROR_BODY_LIMIT, Policy, Response, SUCCESS_BODY_LIMIT};
 
 use concord_codecs::Json;
-use concord_pagination::{Page, Pages, Resume};
+use concord_pagination::{OffsetError, Page, Pages, Resume, next_offset};
 use std::num::{NonZeroU64, NonZeroUsize};
 
 /// A bounded GeoJSON traversal. Offsets are one-based and are not snapshots.
@@ -50,6 +50,7 @@ concord::api! {
 
                 /// A single GeoJSON page; generated `send()` applies the SDK policy.
                 GET geojson(query offset: NonZeroU64 = NonZeroU64::MIN) -> FeatureCollection {
+                    limit SUCCESS_BODY_LIMIT;
                     path "query";
                     query { "format" = "geojson"; }
                 }
@@ -63,6 +64,7 @@ concord::api! {
 
             /// Retrieve one selected event, without time or magnitude filters.
             GET event(#[sensitive] query eventid: EventId) -> Feature {
+                limit SUCCESS_BODY_LIMIT;
                 path "query";
                 query { "format" = "geojson"; }
             }
@@ -99,7 +101,7 @@ impl UsgsCatalog {
         max_pages: NonZeroUsize,
     ) -> CatalogPages {
         let query = self.query(window);
-        let size = usize::from(window.page_size().get());
+        let size = u64::from(window.page_size().get());
         Pages::new(Resume::At(from), move |offset: Option<NonZeroU64>| {
             let query = query.clone();
             async move {
@@ -110,18 +112,15 @@ impl UsgsCatalog {
                     other => other?,
                 };
                 let features = response.data.features;
-                if features.len() > size || response.data.metadata.count != features.len() {
+                if response.data.metadata.count != features.len() {
                     return Err(Error::Protocol("inconsistent GeoJSON page count"));
                 }
-                let next = if features.len() == size {
-                    Some(
-                        offset
-                            .checked_add(size as u64)
-                            .ok_or(Error::Protocol("catalog offset overflow"))?,
-                    )
-                } else {
-                    None
-                };
+                let next = next_offset(offset.get(), size, features.len() as u64, None)
+                    .map_err(|error| match error {
+                        OffsetError::Overflow => Error::Protocol("catalog offset overflow"),
+                        _ => Error::Protocol("inconsistent GeoJSON page count"),
+                    })?
+                    .and_then(NonZeroU64::new);
                 Ok(Page::new(features, next))
             }
         })

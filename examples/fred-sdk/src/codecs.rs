@@ -1,6 +1,7 @@
 use std::io::{Cursor, Read};
 
 use concord::{CodecError, Decode, ResponseHead, bytes::Bytes};
+use concord_codecs::{Charset, check_content_type};
 use roxmltree::{Document, Node};
 use serde::de::DeserializeOwned;
 
@@ -14,40 +15,6 @@ pub struct Xml;
 /// ZIP format for FRED's `file_type=csv`; never a plain CSV decoder.
 pub struct ZippedCsv;
 pub(crate) struct ProblemDocument;
-
-fn media(head: &ResponseHead<'_>, accepted: &[&str]) -> Result<(), CodecError> {
-    let mut fields = head.headers().get_all("content-type").iter();
-    let value = fields
-        .next()
-        .ok_or_else(|| CodecError::new("missing Content-Type"))?;
-    if fields.next().is_some() {
-        return Err(CodecError::new("repeated Content-Type"));
-    }
-    let parsed = value
-        .to_str()
-        .ok()
-        .and_then(|s| s.parse::<mime::Mime>().ok())
-        .ok_or_else(|| CodecError::new("invalid Content-Type"))?;
-    if !accepted
-        .iter()
-        .any(|m| parsed.essence_str().eq_ignore_ascii_case(m))
-    {
-        return Err(CodecError::new("unexpected Content-Type"));
-    }
-    let charsets: Vec<_> = parsed
-        .params()
-        .filter(|(name, _)| *name == mime::CHARSET)
-        .collect();
-    if charsets.len() > 1
-        || charsets.iter().any(|(_, v)| {
-            !v.as_str().eq_ignore_ascii_case("utf-8")
-                && !v.as_str().eq_ignore_ascii_case("us-ascii")
-        })
-    {
-        return Err(CodecError::new("unsupported charset"));
-    }
-    Ok(())
-}
 
 fn xml(text: &str) -> Result<Document<'_>, CodecError> {
     Document::parse_with_options(
@@ -123,7 +90,7 @@ macro_rules! xml_decoder {
             type Context = ();
             const ACCEPT: Option<&'static str> = Some("text/xml");
             fn check_content_type(head: &ResponseHead<'_>) -> Result<(), CodecError> {
-                media(head, &["text/xml", "application/xml"])
+                check_content_type(head, &["text/xml", "application/xml"], Charset::Utf8)
             }
             fn context(_: &ResponseHead<'_>) -> Result<(), CodecError> {
                 Ok(())
@@ -141,7 +108,11 @@ xml_decoder!(Observations, "observations", "observation", "observations");
 impl Decode<Problem> for ProblemDocument {
     type Context = ();
     fn check_content_type(head: &ResponseHead<'_>) -> Result<(), CodecError> {
-        media(head, &["text/xml", "application/xml", "application/json"])
+        check_content_type(
+            head,
+            &["text/xml", "application/xml", "application/json"],
+            Charset::Utf8,
+        )
     }
     fn context(_: &ResponseHead<'_>) -> Result<(), CodecError> {
         Ok(())
@@ -176,13 +147,14 @@ impl Decode<CsvExport> for ZippedCsv {
     type Context = ();
     const ACCEPT: Option<&'static str> = Some("application/zip");
     fn check_content_type(head: &ResponseHead<'_>) -> Result<(), CodecError> {
-        media(
+        check_content_type(
             head,
             &[
                 "application/zip",
                 "application/x-zip-compressed",
                 "application/octet-stream",
             ],
+            Charset::Utf8,
         )
     }
     fn context(_: &ResponseHead<'_>) -> Result<(), CodecError> {

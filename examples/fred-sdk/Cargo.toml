@@ -11,7 +11,7 @@ description = "Bounded FRED v1 search, metadata, observations and zipped CSV, te
 concord = { path = "../../crates/concord" }
 concord-pagination = { path = "../../crates/concord-pagination" }
 concord-retry = { path = "../../crates/concord-retry" }
-mime.workspace = true
+concord-codecs = { path = "../../crates/concord-codecs" }
 roxmltree = "=0.21.2"
 serde = { workspace = true, features = ["derive"] }
 serde_json.workspace = true

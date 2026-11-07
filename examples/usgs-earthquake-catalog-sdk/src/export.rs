@@ -1,5 +1,6 @@
 use crate::{CsvRow, CsvRows, Error, PageSize, Response, UsgsCatalogWindow};
 use concord_codecs::stream::Completion;
+use concord_pagination::{OffsetError, next_offset};
 use std::{
     fmt,
     future::Future,
@@ -82,14 +83,21 @@ impl CsvExport {
                             return Err(Error::Protocol("CSV response did not complete"));
                         }
                         self.reader = None;
-                        if self.rows_in_page < u64::from(self.size) {
+                        let next = next_offset(
+                            self.offset.get(),
+                            u64::from(self.size),
+                            self.rows_in_page,
+                            None,
+                        )
+                        .map_err(|error| match error {
+                            OffsetError::Overflow => Error::Protocol("catalog offset overflow"),
+                            _ => Error::Protocol("CSV page exceeds requested limit"),
+                        })?;
+                        let Some(next) = next.and_then(NonZeroU64::new) else {
                             self.completion = Completion::EndOfInput;
                             return Ok(None);
-                        }
-                        self.offset = self
-                            .offset
-                            .checked_add(self.rows_in_page)
-                            .ok_or(Error::Protocol("catalog offset overflow"))?;
+                        };
+                        self.offset = next;
                         self.rows_in_page = 0;
                     }
                 }

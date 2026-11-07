@@ -1,7 +1,7 @@
 use std::num::NonZeroUsize;
 
 use concord::Sends;
-use concord_pagination::{Page, Pages, Resume};
+use concord_pagination::{Page, Pages, Resume, next_offset};
 
 use crate::{Error, Observation, Observations, OffsetOptions, SearchPage, Series};
 
@@ -44,17 +44,12 @@ where
         let operation = template.clone().set_offset(offset);
         async move {
             let (count, actual, limit, items) = operation.send().await?.into_offset_parts();
-            let len = items.len() as u64;
-            let end = offset.checked_add(len).ok_or(Error::Pagination)?;
-            if actual != offset
-                || limit == 0
-                || len > limit
-                || end > count
-                || (len == 0 && offset < count)
-            {
+            if actual != offset {
                 return Err(Error::Pagination);
             }
-            Ok(Page::new(items, (end < count).then_some(end)))
+            let next = next_offset(offset, limit, items.len() as u64, Some(count))
+                .map_err(|_| Error::Pagination)?;
+            Ok(Page::new(items, next))
         }
     })
     .max_pages(max_pages)

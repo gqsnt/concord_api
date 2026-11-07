@@ -58,7 +58,7 @@ impl<T: Send + 'static> SendWith<T> for Policy {
                 retry_after,
             })));
         }
-        Ok(received.decode_limited(BODY_LIMIT).await?)
+        Ok(received.decode().await?)
     }
 }
 
@@ -79,6 +79,7 @@ concord::api! {
         base "https://api.stlouisfed.org";
         path "fred";
         response Xml;
+        limit BODY_LIMIT;
         send Policy;
 
         /// Shared offset parameter for pageable operations.

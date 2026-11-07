@@ -50,3 +50,18 @@ The first redaction test incorrectly required every scope Debug to include a
 redaction marker; scope Debug omits inherited values, so the meaningful assertion
 is that the secret is absent. Missing test-crate documentation warnings were
 fixed before the warning-denying gate. None required shared source edits.
+
+## Between-wave capsule X adoption (2026-11-07)
+
+This is a supplied-shape migration, not new first-use evidence. The original ledger
+above records the frozen baseline. F3 now uses `concord_codecs::check_content_type`
+with `Charset::Utf8`; XML/ZIP/problem allowlists stay here and the direct `mime`
+dependency is removed. F6 now delegates checked offset/count/length arithmetic to
+`concord_pagination::next_offset`; the model projection and echoed-offset check stay
+in the SDK. The response envelope continues to supply FRED's page limit.
+
+For F4, `limit BODY_LIMIT;` on the client protects all finite typed outputs, including
+prepared sends. The policy calls `decode()` and keeps the explicit error-document
+cap. Provider-error interpretation and ZIP extraction limits remain SDK responsibilities.
+Existing assertions are preserved; new adoption tests cover prepared sends and
+quoted charset parameters followed by another parameter across all custom formats.
