@@ -1,0 +1,10 @@
+{
+  "resultCode": "RedirectShopper",
+  "action": {
+    "type": "redirect",
+    "paymentMethodType": "ideal",
+    "method": "GET",
+    "url": "https://redirect.example/authorise?token=synthetic-url-secret",
+    "paymentData": "synthetic-flow-secret"
+  }
+}

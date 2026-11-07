@@ -1,0 +1,9 @@
+{
+  "resultCode": "ChallengeShopper",
+  "action": {
+    "type": "threeDS2",
+    "subtype": "challenge",
+    "token": "synthetic-challenge-secret",
+    "paymentData": "synthetic-next-flow-secret"
+  }
+}

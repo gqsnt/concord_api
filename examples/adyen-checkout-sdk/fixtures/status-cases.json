@@ -1,0 +1,20 @@
+[
+  [301, "Other"],
+  [400, "Request"],
+  [401, "Authentication"],
+  [403, "Permission"],
+  [404, "NotFound"],
+  [405, "Request"],
+  [406, "Request"],
+  [408, "Request"],
+  [409, "Conflict"],
+  [413, "Request"],
+  [422, "Validation"],
+  [429, "RateLimited"],
+  [500, "Server"],
+  [501, "Server"],
+  [502, "Server"],
+  [503, "Server"],
+  [504, "Server"],
+  [418, "Other"]
+]
