@@ -1,0 +1,3 @@
+{
+  "Invoices": [{"HasValidationErrors": true, "StatusAttributeString": "ERROR", "ValidationErrors": [{"Message": "Synthetic rejected line with synthetic-secret-in-body"}]}]
+}
