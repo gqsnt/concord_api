@@ -8,6 +8,8 @@ workflows:
 2. **Create a ticket, then retrieve its resulting state**
    (`POST /api/v2/tickets` with an `Idempotency-Key`, then `GET /api/v2/tickets/{id}`).
 
+It also supports collision-protected status updates with a comment, based on a previously read ticket.
+
 Every test runs against local fixtures (`examples/testserver`). **No call to the real Zendesk
 service has been made** (live provider calls: NOT_RUN).
 
@@ -21,6 +23,7 @@ generated `send()`:
 | `api.tickets().list()` | `GET tickets?page[size]=100` (+ `set_page_size`, `set_after`, `set_sort`, `set_external_id`) | `TicketPage` |
 | `api.tickets().create(new_ticket, key)` | `POST tickets`, `{"ticket": {..}}`, `Idempotency-Key: key` | `CreatedTicket` (the ticket and `x-idempotency-lookup`) |
 | `api.ticket(id).show()` | `GET tickets/{id}` | `TicketResponse` (`.ticket`) |
+| `api.ticket(ticket.id).update(TicketUpdate::new(&ticket, status, comment))` | `PUT tickets/{id}` with `safe_update` and the read ticket's `updated_at` | `TicketResponse` (`.ticket`) |
 | `ticket_pages(list, from, max_pages)` | every page of a list request | `concord_pagination::Pages<Ticket, String, (), Error>` |
 
 ```rust,no_run
@@ -29,7 +32,7 @@ use std::num::NonZeroUsize;
 use concord_sdk_zendesk_support::concord_pagination::Resume;
 use concord_sdk_zendesk_support::{
     Error, IdempotencyKey, NewTicket, PageSize, Priority, Status, Zendesk, http_client,
-    ticket_pages,
+    TicketUpdate, ticket_pages,
 };
 
 async fn example(oauth_token: &str) -> Result<(), Box<dyn std::error::Error>> {
@@ -64,6 +67,24 @@ async fn example(oauth_token: &str) -> Result<(), Box<dyn std::error::Error>> {
     };
     let state = api.ticket(created.ticket.id).show().send().await?.ticket;
     println!("created ticket {} ({:?})", state.id, state.status);
+
+    // Use the id and stamp from the same read. On collision, re-read and let the caller
+    // decide whether the change and comment still make sense.
+    match api.ticket(state.id)
+        .update(TicketUpdate::new(&state, Status::Pending, "Investigating the export."))
+        .send().await
+    {
+        Ok(updated) => println!("updated ticket {}", updated.ticket.id),
+        Err(Error::Collision(_)) => {
+            let fresh = api.ticket(state.id).show().send().await?.ticket;
+            println!("ticket {} changed; review {:?}", fresh.id, fresh.status);
+        }
+        Err(Error::Uncertain(_)) => {
+            // Re-read and investigate; resending can duplicate a comment.
+            println!("update outcome unknown; investigate before retrying");
+        }
+        Err(other) => return Err(other.into()),
+    }
     Ok(())
 }
 ```
@@ -75,7 +96,7 @@ Obtaining and refreshing the OAuth token is the application's.
 
 `http_client()` builds a transport without reqwest-level retries or redirects and with a 30 s
 timeout per request. A caller-supplied client should also disable reqwest's retries, so that a
-create is written exactly once.
+write is sent exactly once.
 
 ## Failure semantics
 
@@ -88,12 +109,15 @@ Generated `send()` goes through `SendPolicy` (`prepare()` bypasses it):
   (an overall bound; a wait that would not fit is not started). A missing, invalid or too-long
   `Retry-After`, any other status and any transport failure are returned at once: there is no
   blanket retry.
-- **Writes** (`POST`) are sent exactly once.
-  - `4xx` (including `429`): `Error::Http`. The ticket was not created; a 429's `retry_after()`
-    says when the same request (same key) may be sent again.
+- **Writes** (create `POST` and update `PUT`) are sent exactly once.
+  - An update `409`: `Error::Collision`, retaining the `HttpError`; re-read the ticket and
+    decide whether to submit a fresh change. Other `4xx` (including `429`) are `Error::Http`.
+    A 429's `retry_after()` says when a request may be sent again; for creates retain the key.
   - No response after the request may have been sent (timeout, connection lost), any `5xx`, or a
     `2xx` whose head or body cannot be read: `Error::Uncertain(UncertainWrite)` with the
-    request's `idempotency_key()` and the observed `cause()`. Resolve it deliberately (above).
+    request's `idempotency_key()` when present and the observed `cause()`. Reconcile creates as
+    above; for an update, re-read and investigate before deciding, because a repeated comment
+    can be duplicated.
   - A connection that was never established: `Error::Concord` (nothing was sent).
 - `Error::Http(HttpError)` keeps the authoritative status, `attempts()`, `retry_after()`,
   `request_id()` (`X-Zendesk-Request-Id`) and the body read with a 64 KiB bound as
@@ -118,8 +142,8 @@ print their content.
 
 ## Excluded
 
-Help Center, incremental exports, attachments, ticket update/delete and bulk endpoints, offset
-pagination, side-loading (`include`), comments beyond the first, OAuth token acquisition or
+Help Center, incremental exports, attachments, ticket deletion and bulk endpoints, offset
+pagination, side-loading (`include`), comment listing, OAuth token acquisition or
 refresh, rate-limit admission or cooldown shared across calls, and blanket automatic retries.
 
 ## Files

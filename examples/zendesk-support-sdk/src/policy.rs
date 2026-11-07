@@ -18,11 +18,11 @@ use crate::{Error, HttpError, IdempotencyKey, UncertainCause, UncertainWrite};
 ///   [`read_attempts`](Self::read_attempts) times in all, and only while that delay is at most
 ///   [`max_retry_after`](Self::max_retry_after). Anything else — another status, a missing or
 ///   invalid `Retry-After`, a transport failure — is returned at once. No local backoff is added.
-/// - **Writes** (`POST`: Create Ticket) are sent exactly once. A 4xx is an [`Error::Http`]; a
+/// - **Writes** (`POST` create and `PUT` update) are sent exactly once. A 4xx is an [`Error::Http`], except an update 409 is [`Error::Collision`]; a
 ///   possibly-applied write (no response after sending, a 5xx, an unreadable 2xx) is an
-///   [`Error::Uncertain`] carrying the request's idempotency key. A `429` on a write is returned
+///   [`Error::Uncertain`] carrying the request's idempotency key when present. A `429` on a write is returned
 ///   with its `Retry-After`: the request was not processed, and the caller decides when to send
-///   it again (with the same key).
+///   it again (with the same key for a create).
 ///
 /// The policy is a client value (`send policy;`), replaced with
 /// [`Zendesk::set_policy`](crate::Zendesk::set_policy). `prepare()` bypasses it.
@@ -115,6 +115,14 @@ impl SendPolicy {
             Ok(received) if received.status().is_server_error() => {
                 let http = HttpError::read(received, 1).await;
                 Err(uncertain(UncertainCause::ServerError(Box::new(http))))
+            }
+            Ok(received)
+                if operation == "Zendesk.ticket.update"
+                    && received.status() == StatusCode::CONFLICT =>
+            {
+                Err(Error::Collision(Box::new(
+                    HttpError::read(received, 1).await,
+                )))
             }
             Ok(received) if !received.status().is_success() => {
                 Err(Error::Http(Box::new(HttpError::read(received, 1).await)))

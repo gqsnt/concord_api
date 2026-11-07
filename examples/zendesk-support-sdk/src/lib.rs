@@ -1,8 +1,8 @@
 //! A bounded Zendesk Support slice (Ticketing API v2): list tickets with cursor pagination, show
-//! one ticket, create a ticket with an idempotency key. Tests run against local fixtures only.
+//! one ticket, create a ticket with an idempotency key, and safely update a ticket. Tests run against local fixtures only.
 //!
 //! The declared client is [`Zendesk`]: `api.tickets().list()`, `api.tickets().create(..)`,
-//! `api.ticket(id).show()`, each sent with the generated `send()` through [`SendPolicy`].
+//! `api.ticket(id).show()`, `api.ticket(id).update(..)`, each sent with the generated `send()` through [`SendPolicy`].
 //! [`ticket_pages`] walks a listing. See the package README for failure semantics and
 //! exclusions.
 
@@ -23,6 +23,7 @@ pub use error::{
 pub use models::{
     CreatedTicket, CursorLinks, CursorMeta, IdempotencyKey, IdempotencyLookup, NewTicket, PageSize,
     Priority, SortField, Status, Ticket, TicketPage, TicketResponse, TicketSort, TicketType,
+    TicketUpdate,
 };
 pub use pagination::ticket_pages;
 pub use policy::SendPolicy;
@@ -32,7 +33,7 @@ use concord::reqwest::{self, header::HeaderValue};
 
 /// The largest successful List Tickets body read: 8 MiB (100 tickets per page).
 pub const PAGE_BODY_LIMIT: usize = 8 * 1024 * 1024;
-/// The largest successful single-ticket body read (show, create): 1 MiB.
+/// The largest successful single-ticket body read (show, create, update): 1 MiB.
 pub const TICKET_BODY_LIMIT: usize = 1024 * 1024;
 /// The largest error body read: 64 KiB.
 pub const ERROR_BODY_LIMIT: usize = 64 * 1024;
@@ -93,6 +94,10 @@ concord::api! {
 
             /// Show Ticket.
             GET show() -> TicketResponse;
+
+            /// Update status and add a comment using the last-read ticket's update stamp.
+            /// Pass the same ticket's id to this scope. A collision is [`Error::Collision`].
+            PUT update(body ticket: TicketUpdate) -> TicketResponse;
         }
     }
 }
@@ -121,7 +126,7 @@ impl Zendesk {
     }
 }
 
-/// A transport for this SDK: no transport-level retries (a create is sent exactly once), no
+/// A transport for this SDK: no transport-level retries (writes are sent exactly once), no
 /// redirects, a 30-second timeout per request. Applications may pass their own client with the
 /// same restrictions.
 ///

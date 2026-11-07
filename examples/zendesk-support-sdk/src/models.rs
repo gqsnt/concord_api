@@ -312,6 +312,44 @@ impl Serialize for NewTicket {
     }
 }
 
+/// A collision-protected status change and comment, based on a previously read ticket.
+///
+/// Send to the scope for the same ticket's `id`. Zendesk compares its current update time
+/// with the copied `updated_at`; a stale value is rejected rather than overwriting an edit.
+#[derive(Clone, Debug, Serialize, PartialEq)]
+pub struct TicketUpdate {
+    ticket: UpdateFields,
+}
+
+#[derive(Clone, Debug, Serialize, PartialEq)]
+struct UpdateFields {
+    safe_update: bool,
+    updated_stamp: String,
+    status: Status,
+    comment: UpdateComment,
+}
+
+#[derive(Clone, Debug, Serialize, PartialEq)]
+struct UpdateComment {
+    body: String,
+}
+
+impl TicketUpdate {
+    /// Copy the stamp from `ticket`; set the new status and plain-text comment.
+    pub fn new(ticket: &Ticket, status: Status, comment: impl Into<String>) -> Self {
+        Self {
+            ticket: UpdateFields {
+                safe_update: true,
+                updated_stamp: ticket.updated_at.clone(),
+                status,
+                comment: UpdateComment {
+                    body: comment.into(),
+                },
+            },
+        }
+    }
+}
+
 /// The value of the `Idempotency-Key` header of a ticket create.
 ///
 /// Zendesk replays the original response for a repeated key and body within two hours, and

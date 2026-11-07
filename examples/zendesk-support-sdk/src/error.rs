@@ -168,16 +168,17 @@ pub enum UncertainCause {
     NoResponse(concord::Error),
     /// A 5xx response: the server may have committed the write before failing.
     ServerError(Box<HttpError>),
-    /// A 2xx response whose head or body could not be read: the write happened, but its result
-    /// (the new ticket's id) is unknown.
+    /// A 2xx response whose head or body could not be read: the write may have happened, but its result is unknown.
     UnreadableSuccess(concord::Error),
 }
 
-/// A write (Create Ticket) that may or may not have taken effect. The SDK never repeats it.
+/// A write that may or may not have taken effect. The SDK never repeats it.
 ///
 /// Resolve it explicitly: replay the **same** request with the same [`IdempotencyKey`] within
 /// two hours (Zendesk answers `x-idempotency-lookup: hit` with the original ticket, or creates it
 /// once if the first request never arrived), or look the ticket up by its `external_id`.
+/// For an update, re-read and investigate its outcome before deciding what to do; an update
+/// has no idempotency key and repeating a comment may duplicate it.
 #[derive(Debug)]
 pub struct UncertainWrite {
     operation: &'static str,
@@ -198,12 +199,12 @@ impl UncertainWrite {
         }
     }
 
-    /// The declared endpoint (`Zendesk.tickets.create`).
+    /// The declared endpoint (for example, `Zendesk.tickets.create`).
     pub fn operation(&self) -> &'static str {
         self.operation
     }
 
-    /// The `Idempotency-Key` the request carried: replay with it.
+    /// The create request's `Idempotency-Key`, if present; updates do not carry one.
     pub fn idempotency_key(&self) -> Option<&IdempotencyKey> {
         self.idempotency_key.as_ref()
     }
@@ -235,6 +236,8 @@ pub enum Error {
     Concord(concord::Error),
     /// A non-2xx response (a 5xx on a write is [`Error::Uncertain`] instead).
     Http(Box<HttpError>),
+    /// A safe ticket update was rejected with 409; re-read the ticket before deciding.
+    Collision(Box<HttpError>),
     /// A write whose outcome is unknown; see [`UncertainWrite`].
     Uncertain(Box<UncertainWrite>),
     /// The OAuth token is not a valid bearer credential (empty, whitespace, controls, non-ASCII).
@@ -252,10 +255,10 @@ pub enum Error {
 }
 
 impl Error {
-    /// The HTTP status of an [`Error::Http`] (or of the 5xx behind an uncertain write).
+    /// The HTTP status of an HTTP error or collision (or of the 5xx behind an uncertain write).
     pub fn status(&self) -> Option<StatusCode> {
         match self {
-            Self::Http(http) => Some(http.status()),
+            Self::Http(http) | Self::Collision(http) => Some(http.status()),
             Self::Uncertain(write) => match &write.cause {
                 UncertainCause::ServerError(http) => Some(http.status()),
                 _ => None,
@@ -264,10 +267,10 @@ impl Error {
         }
     }
 
-    /// The HTTP error, if this is one.
+    /// The HTTP details of an ordinary error or collision, if present.
     pub fn http(&self) -> Option<&HttpError> {
         match self {
-            Self::Http(http) => Some(http),
+            Self::Http(http) | Self::Collision(http) => Some(http),
             _ => None,
         }
     }
@@ -298,6 +301,9 @@ impl fmt::Display for Error {
                 }
                 Ok(())
             }
+            Self::Collision(_) => {
+                f.write_str("ticket update collision; re-read the ticket before deciding")
+            }
             Self::Uncertain(write) => {
                 write!(f, "the outcome of `{}` is unknown: ", write.operation)?;
                 f.write_str(match write.cause {
@@ -305,7 +311,11 @@ impl fmt::Display for Error {
                     UncertainCause::ServerError(_) => "the server failed with a 5xx",
                     UncertainCause::UnreadableSuccess(_) => "the success response was unreadable",
                 })?;
-                f.write_str("; replay it with the same idempotency key, never with a new one")
+                if write.idempotency_key.is_some() {
+                    f.write_str("; replay it with the same idempotency key, never with a new one")
+                } else {
+                    f.write_str("; re-read and investigate before deciding whether to retry")
+                }
             }
             Self::Credential(e) => write!(f, "invalid OAuth bearer token: {e}"),
             Self::InvalidInput { what } => write!(f, "invalid {what}"),
