@@ -1,0 +1,7 @@
+{
+  "error": {
+    "type": "unavailable_shards_exception",
+    "reason": "primary shard is not active (synthetic)"
+  },
+  "status": 503
+}
