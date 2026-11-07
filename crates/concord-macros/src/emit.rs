@@ -1762,7 +1762,14 @@ fn endpoint_clone(ty: &Ident, values: &[Value], body: Option<&Body>) -> TokenStr
     }
     let mut fields: Vec<&Ident> = values.iter().map(|v| &v.name).collect();
     fields.extend(body.map(|b| &b.name));
+    // Shown by rustdoc beside the bounds, which otherwise read as an artifact (SDK23 consumer).
+    let note = if bounds.is_empty() {
+        quote!()
+    } else {
+        quote!(#[doc = " `Clone` exactly when every value of the request (and its body) is `Clone`. Each `for<'__concord> T: Clone` bound states that for one value type; the unused lifetime only lets the bound be written on a non-generic type."])
+    };
     quote! {
+        #note
         impl ::core::clone::Clone for #ty where #(#bounds,)* {
             #[inline]
             fn clone(&self) -> Self {
