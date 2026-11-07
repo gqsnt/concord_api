@@ -15,6 +15,29 @@ pages' "Run →" buttons point at the live API; none was followed.
 | <https://restcountries.com/docs/countries> | Overview (read-only, `GET` only, `Content-Type: application/json` on every response, `data` / `errors` shapes), Try it now (demo key returns a sample plus a `data._demo` block), Quick start (`Authorization: Bearer`; a lookup returns "a single-record `data.objects` array"), Base URL & versioning (`https://api.restcountries.com/countries/v5`), List, Search, Aggregate, Read by property, Search by property (paths, parameters, examples), Field reference (property paths, types, *no read* / *no search* / *premium* flags), Premium Data (in-place notice, `403` document), Sort order, Pagination (`data.meta`, out-of-range offsets), Errors (status table, `errors[].message`), Gotchas (CORS) |
 | <https://restcountries.com/docs/countries/api-versions> | `/v5` maintained, `/v1`–`/v4` deprecated; v5 served from `api.restcountries.com`; `Authorization: Bearer` preferred, `?api-key=` fallback "for browser experiments", the bare `Authorization: KEY` form also accepted |
 
+### Maintenance re-read: 2026-11-07
+
+Read both exact URLs above again with the read-only web tool before implementing the typed
+lookups. No demo/Run button or API URL was opened. The Countries page's Read by property
+section specifies exact, case-insensitive reads and shows `/region/Europe` and
+`/subregion/Northern%20Europe`. Field reference marks `languages` readable and describes
+its ISO identifiers, BCP 47 tag, English name and native name. The generic array-property
+read contract grounds `/languages/{value}`; which language representations match was not
+verified. Pagination applies to every object-returning endpoint.
+
+`Region`, `Subregion` and `Language` are open-vocabulary validated strings. Their plain-text
+syntax restrictions are an SDK policy, not a documented provider enumeration. In particular,
+the SDK neither downloads a vocabulary nor normalizes language codes using inferred v3 rules.
+Typed helpers delegate to the existing `property(...).read(...)` endpoint, `ListOptions`,
+send policy and walker. No-match remains the existing empty-page contract (Inference 1 below).
+
+The maintenance tests reuse `synthetic-no-match.json` and author small two-record pages
+inline in `tests/lookup_consumer.rs`. The country names/codes, group membership and notice
+text are local sample data, not copied provider responses or a complete country dataset.
+They exercise projection, absent fields and the already documented premium notice shape.
+No fixtures were downloaded and no dependencies were added or changed; the root manifest
+and lock already contained this package and stayed unchanged during maintenance.
+
 ## Access terms (contract note: "verify current access terms before use")
 
 What the two pages say, as of 2026-11-07:

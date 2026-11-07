@@ -88,6 +88,44 @@ async fn eu_members(api: &RestCountries) -> Result<Vec<String>, Box<dyn std::err
 }
 ```
 
+## Typed region, subregion and language lookups
+
+The [Countries API](https://restcountries.com/docs/countries), read **2026-11-07**,
+documents exact property reads, including `region`, `subregion` and the `languages` array.
+These helpers use that same property scope and share the listing's options and walker:
+
+```rust,no_run
+use std::num::{NonZeroU32, NonZeroUsize};
+use concord_sdk_rest_countries::{Fields, Language, Property, Region, RestCountries, Subregion, pages};
+
+async fn groups(api: &RestCountries) -> Result<(), Box<dyn std::error::Error>> {
+    // Plain text: Concord encodes the space in Northern Europe as %20.
+    let lookups = [
+        api.region(&Region::parse("Europe")?),
+        api.subregion(&Subregion::parse("Northern Europe")?),
+        api.language(&Language::parse("English")?),
+    ];
+    for lookup in lookups {
+        let countries = pages(lookup
+            .set_response_fields(Fields::new([Property::NAMES_COMMON, Property::CODES_ALPHA_2])?)
+            .set_limit(NonZeroU32::new(25).unwrap()))
+            .max_pages(NonZeroUsize::new(20).unwrap())
+            .items()
+            .collect_complete()
+            .await?;
+        println!("{} matches", countries.len()); // zero is an ordinary complete result
+    }
+    Ok(())
+}
+```
+
+The new types validate input syntax before a request can be constructed. They preserve case
+and accept internal spaces and Unicode. They refuse empty or padded text, controls, whitespace
+other than ASCII spaces, `.` / `..`, and URL syntax (`/`, `\`, `?`, `#`, `%`, `+`); pass plain
+spaces rather than pre-encoded text. These are SDK input rules, not a provider vocabulary.
+The docs do not give a complete accepted-value list or a language identifier normalization
+rule. Unknown well-formed values reach the provider; the SDK does not invent ISO or v3 aliases.
+
 ## What is declared
 
 | Call | Request |
@@ -98,6 +136,9 @@ async fn eu_members(api: &RestCountries) -> Result<Vec<String>, Box<dyn std::err
 | `api.property(p).read(value)` (+ `set_q`) | `GET /countries/v5/{property}/{value}`: exact, case-insensitive match (array properties: contains) |
 | `api.property(p).search(q)` | `GET /countries/v5/{property}?q=`: substring within one property |
 | `api.country(&code)` | `property(codes.alpha_2 / codes.alpha_3).read(code)` |
+| `api.region(&region)` | `property(region).read(value)` with a validated `Region` |
+| `api.subregion(&subregion)` | `property(subregion).read(value)` with a validated `Subregion` |
+| `api.language(&language)` | `property(languages).read(value)` with a validated `Language` |
 
 Every call accepts `set_response_fields(Fields)` (allowlist), `set_response_fields_omit(Fields)`
 (blocklist, applied after the allowlist), `set_limit(NonZeroU32)` and `set_offset(u64)`, and
@@ -114,6 +155,7 @@ Inputs carry the provider's rules and are checked before anything is sent:
 - `Filters`: `{property}={value}` pairs; the endpoint's own parameter names (`q`, `limit`,
   `offset`, `response_fields`, `response_fields_omit`, `pretty`) are refused as filter keys.
 - `CountryCode`: two or three ASCII letters (ISO 3166-1 alpha-2 / alpha-3), uppercased.
+- `Region`, `Subregion`, `Language`: plain-text lookup values, validated with `parse` as above.
 
 `Country` types the documented properties used here (`names`, `codes`, `flag`, `capitals`,
 `region`, `subregion`, `continents`, `landlocked`, `borders`, `population`, `memberships`,
@@ -172,5 +214,7 @@ RUSTDOCFLAGS="-D warnings" cargo doc --locked -p concord-sdk-rest-countries --no
 `tests/protocol.rs` covers the wire shapes against the documented examples, every documented
 error class, malformed, truncated, oversized and wrong-media bodies, and key redaction.
 `tests/workflows.rs` runs both workflows end to end, including the required failure: a no-match
-and unavailable fields stay ordinary outcomes. Fixture origins are in PROVENANCE.md, Concord
-costs in FRICTION.md.
+and unavailable fields stay ordinary outcomes. `tests/lookups.rs` checks typed-input validation
+and terminal no-match pages; `tests/lookup_consumer.rs` exercises fields, offsets and bounded
+walks for all three typed lookups. Fixture origins are in PROVENANCE.md, Concord costs in
+FRICTION.md, and this maintenance change is recorded in MAINTENANCE.md.

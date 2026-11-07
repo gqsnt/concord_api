@@ -1,6 +1,6 @@
 //! Caller inputs with provider rules: property dot-paths, response-field lists, property filters
-//! and ISO country codes. Every constructor is synchronous and sends nothing; a refused value
-//! never creates a request.
+//! and typed country lookup values. Every constructor is synchronous and sends nothing; a
+//! refused value never creates a request.
 
 use std::borrow::Cow;
 use std::fmt;
@@ -21,6 +21,12 @@ pub enum InputError {
     ReservedFilter,
     /// A country code is not two or three ASCII letters (ISO 3166-1 alpha-2 / alpha-3).
     CountryCode,
+    /// A region is not a non-empty, unpadded, plain-text lookup value.
+    Region,
+    /// A subregion is not a non-empty, unpadded, plain-text lookup value.
+    Subregion,
+    /// A language is not a non-empty, unpadded, plain-text lookup value.
+    Language,
 }
 
 impl fmt::Display for InputError {
@@ -30,6 +36,9 @@ impl fmt::Display for InputError {
             Self::EmptyFields => "a response-field list needs at least one property",
             Self::ReservedFilter => "a filter cannot use a reserved query parameter name",
             Self::CountryCode => "a country code must be two or three ASCII letters",
+            Self::Region => "a region must be a non-empty, unpadded, plain-text lookup value",
+            Self::Subregion => "a subregion must be a non-empty, unpadded, plain-text lookup value",
+            Self::Language => "a language must be a non-empty, unpadded, plain-text lookup value",
         })
     }
 }
@@ -312,4 +321,74 @@ impl fmt::Display for CountryCode {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str(&self.code)
     }
+}
+
+// This is SDK input hygiene, not a closed provider vocabulary. In particular, an unknown
+// well-formed value must reach the provider and may produce an empty page. URL syntax is
+// refused so callers pass plain text (spaces included), never pre-encoded path fragments.
+fn valid_lookup_value(value: &str) -> bool {
+    !value.is_empty()
+        && value.trim() == value
+        && !matches!(value, "." | "..")
+        && !value.chars().any(|c| {
+            c.is_control()
+                || (c.is_whitespace() && c != ' ')
+                || matches!(c, '/' | '\\' | '?' | '#' | '%' | '+')
+        })
+}
+
+macro_rules! lookup_values {
+    ($($(#[$doc:meta])* $name:ident;)*) => {
+        $(
+            $(#[$doc])*
+            ///
+            /// Values retain spelling and case; the provider matches case-insensitively.
+            /// No local vocabulary is assumed: a well-formed unknown value can yield no match.
+            #[derive(Clone, Debug, PartialEq, Eq, Hash)]
+            pub struct $name(String);
+
+            impl $name {
+                /// Validate plain text before constructing a lookup.
+                ///
+                /// Internal spaces, Unicode text, and language identifier hyphens are accepted.
+                /// This SDK refuses empty text, surrounding whitespace, controls, whitespace
+                /// other than ASCII spaces, `.` / `..`, and URL syntax (`/`, `\\`, `?`, `#`,
+                /// `%`, `+`). Pass spaces as spaces, not `+` or `%20`.
+                ///
+                /// # Errors
+                ///
+                /// The corresponding [`InputError`] variant for refused text; sends nothing.
+                pub fn parse(value: &str) -> Result<Self, InputError> {
+                    if !valid_lookup_value(value) {
+                        return Err(InputError::$name);
+                    }
+                    Ok(Self(value.to_owned()))
+                }
+
+                /// The original plain-text value, before URL encoding.
+                pub fn as_str(&self) -> &str {
+                    &self.0
+                }
+            }
+
+            impl fmt::Display for $name {
+                fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+                    f.write_str(&self.0)
+                }
+            }
+        )*
+    };
+}
+
+lookup_values! {
+    /// A geographic `region` value, such as `Europe`, for
+    /// [`RestCountries::region`](crate::RestCountries::region).
+    Region;
+    /// A geographic `subregion` value, such as `Northern Europe`, for
+    /// [`RestCountries::subregion`](crate::RestCountries::subregion).
+    Subregion;
+    /// A `languages` lookup value for [`RestCountries::language`](crate::RestCountries::language).
+    /// The documented array contains ISO identifiers, BCP 47 tags, English and native names;
+    /// which values match remains the provider's decision.
+    Language;
 }

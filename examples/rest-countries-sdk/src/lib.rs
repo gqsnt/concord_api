@@ -17,7 +17,9 @@ pub use error::{
     ContractError, Error, ErrorBodyError, ErrorDocument, ErrorEntry, ProviderClass, ProviderError,
     ResponseMeta,
 };
-pub use input::{CodeKind, CountryCode, Fields, Filters, InputError, Property};
+pub use input::{
+    CodeKind, CountryCode, Fields, Filters, InputError, Language, Property, Region, Subregion,
+};
 pub use model::{Capital, Codes, Country, CountryPage, Flag, NameForms, Names, PageMeta, Premium};
 
 /// The largest success body read before decoding (16 MiB): a paid plan's largest page (500
@@ -107,6 +109,27 @@ impl RestCountries {
     /// this ISO code, as a page; [`CountryPage::single`] gives the record or `None`.
     pub fn country(&self, code: &CountryCode) -> RestCountriesPropertyRead {
         self.property(code.property()).read(code.as_str())
+    }
+
+    /// `GET /countries/v5/region/{region}`: exact, case-insensitive region lookup.
+    /// Accepts the same [`ListOptions`] and [`pages`] walk as [`Self::countries`].
+    /// No match is an empty [`CountryPage`]. Validate the value with [`Region::parse`].
+    pub fn region(&self, region: &Region) -> RestCountriesPropertyRead {
+        self.property(Property::REGION).read(region.as_str())
+    }
+
+    /// `GET /countries/v5/subregion/{subregion}`: exact, case-insensitive subregion lookup.
+    /// Accepts the same [`ListOptions`] and [`pages`] walk as [`Self::countries`].
+    /// No match is an empty [`CountryPage`]. Validate the value with [`Subregion::parse`].
+    pub fn subregion(&self, subregion: &Subregion) -> RestCountriesPropertyRead {
+        self.property(Property::SUBREGION).read(subregion.as_str())
+    }
+
+    /// `GET /countries/v5/languages/{language}`: reverse lookup on the languages array.
+    /// Accepts the same [`ListOptions`] and [`pages`] walk as [`Self::countries`].
+    /// No match is an empty [`CountryPage`]. Validate the value with [`Language::parse`].
+    pub fn language(&self, language: &Language) -> RestCountriesPropertyRead {
+        self.property(Property::LANGUAGES).read(language.as_str())
     }
 }
 
