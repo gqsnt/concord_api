@@ -1137,6 +1137,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "concord-sdk-kraken-spot-rest"
+version = "0.0.0"
+dependencies = [
+ "base64",
+ "concord",
+ "concord-example-testserver",
+ "concord-retry",
+ "hmac",
+ "serde",
+ "serde_json",
+ "sha2",
+ "tokio",
+]
+
+[[package]]
 name = "concord-sdk-linear"
 version = "0.0.0"
 dependencies = [
