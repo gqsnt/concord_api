@@ -338,6 +338,22 @@ pub enum Anchor {
     After(MessageId),
 }
 
+impl concord::QueryPairs for Anchor {
+    fn query_pairs(&self, out: &mut concord::QueryPairsWriter<'_>) {
+        match self {
+            Self::Around(id) => out.pair("around", id),
+            Self::Before(id) => out.pair("before", id),
+            Self::After(id) => out.pair("after", id),
+        }
+    }
+}
+
+impl concord::QueryPairs for MessageLimit {
+    fn query_pairs(&self, out: &mut concord::QueryPairsWriter<'_>) {
+        out.pair("limit", self);
+    }
+}
+
 /// The JSON body of `POST /channels/{channel.id}/messages`, limited to this slice: text
 /// `content`, an optional `nonce` (with `enforce_nonce`) and `tts`. Embeds, components,
 /// stickers, files, polls and replies are outside the slice.

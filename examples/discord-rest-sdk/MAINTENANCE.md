@@ -3,6 +3,9 @@
 Date: 2026-11-07. Baseline: `9fbd2acad2672f22e10b8785f2daa110fd93ab63`.
 Live provider calls: **NOT_RUN**. The only HTTP calls were loopback fixtures.
 
+This is a historical record of the wrapper implementation. The later `query(..)` adoption
+replaced those wrappers while retaining `anchor` and `maybe_anchor`.
+
 ## Prior exposure and first attempt
 
 Before implementing, I read the inherited `AGENTS.md` and handoff instructions, the SDK

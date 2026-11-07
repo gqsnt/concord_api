@@ -8,8 +8,8 @@
 //! - `command`: `POST /` with SQL in the body (here only `KILL QUERY`).
 //! - `ping`: `GET /ping`.
 //!
-//! Query parameters (`param_<name>`) have names chosen per query, which a declaration cannot
-//! state: the SDK appends them to the prepared request's URL (see `client.rs`).
+//! Query parameters (`param_<name>`) have names chosen per query; the validated pairs are
+//! placed after declared query keys by `query(..)`.
 
 use concord::reqwest::header::HeaderValue;
 use concord::stream::Upload;
@@ -42,6 +42,7 @@ concord::api! {
             query("query_id") query_id?: QueryId,
             query("wait_end_of_query") wait_end_of_query?: u8,
             query("send_progress_in_http_headers") progress?: u8,
+            query(..) params?: Vec<(String, String)>,
         ) -> stream {
             headers { "x-clickhouse-format" = "{format}"; }
         }
@@ -60,6 +61,7 @@ concord::api! {
             body sql: String,
             format: OutputFormat,
             query("query_id") query_id?: QueryId,
+            query(..) params?: Vec<(String, String)>,
         ) -> stream {
             request Text;
             headers { "x-clickhouse-format" = "{format}"; }
@@ -70,5 +72,20 @@ concord::api! {
             path "ping";
             response Text;
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn dynamic_parameters_are_hidden_by_endpoint_debug_but_shown_by_prepared_debug() {
+        let endpoint = ClickHouseHttp::new(concord::reqwest::Client::new())
+            .select("SELECT {x:String}".to_owned(), OutputFormat::JsonEachRow)
+            .set_params(vec![("param_x".to_owned(), "fixture-value".to_owned())]);
+        assert!(!format!("{endpoint:?}").contains("fixture-value"));
+        let prepared = endpoint.prepare().unwrap();
+        assert!(format!("{prepared:?}").contains("param_x=fixture-value"));
     }
 }
