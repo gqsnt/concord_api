@@ -1,0 +1,409 @@
+[
+  {
+    "status": 400,
+    "body": {
+      "type": "error.list",
+      "errors": [
+        {
+          "code": "client_error"
+        }
+      ]
+    }
+  },
+  {
+    "status": 400,
+    "body": {
+      "type": "error.list",
+      "errors": [
+        {
+          "code": "bad_request"
+        }
+      ]
+    }
+  },
+  {
+    "status": 400,
+    "body": {
+      "type": "error.list",
+      "errors": [
+        {
+          "code": "type_mismatch"
+        }
+      ]
+    }
+  },
+  {
+    "status": 400,
+    "body": {
+      "type": "error.list",
+      "errors": [
+        {
+          "code": "parameter_not_found"
+        }
+      ]
+    }
+  },
+  {
+    "status": 400,
+    "body": {
+      "type": "error.list",
+      "errors": [
+        {
+          "code": "parameter_missing"
+        }
+      ]
+    }
+  },
+  {
+    "status": 400,
+    "body": {
+      "type": "error.list",
+      "errors": [
+        {
+          "code": "missing_parameter"
+        }
+      ]
+    }
+  },
+  {
+    "status": 400,
+    "body": {
+      "type": "error.list",
+      "errors": [
+        {
+          "code": "parameter_invalid"
+        }
+      ]
+    }
+  },
+  {
+    "status": 400,
+    "body": {
+      "type": "error.list",
+      "errors": [
+        {
+          "code": "data_invalid"
+        }
+      ]
+    }
+  },
+  {
+    "status": 400,
+    "body": {
+      "type": "error.list",
+      "errors": [
+        {
+          "code": "invalid_per_page"
+        }
+      ]
+    }
+  },
+  {
+    "status": 400,
+    "body": {
+      "type": "error.list",
+      "errors": [
+        {
+          "code": "intercom_version_invalid"
+        }
+      ]
+    }
+  },
+  {
+    "status": 401,
+    "body": {
+      "type": "error.list",
+      "errors": [
+        {
+          "code": "unauthorized"
+        }
+      ]
+    }
+  },
+  {
+    "status": 401,
+    "body": {
+      "type": "error.list",
+      "errors": [
+        {
+          "code": "token_not_found"
+        }
+      ]
+    }
+  },
+  {
+    "status": 401,
+    "body": {
+      "type": "error.list",
+      "errors": [
+        {
+          "code": "token_unauthorized"
+        }
+      ]
+    }
+  },
+  {
+    "status": 401,
+    "body": {
+      "type": "error.list",
+      "errors": [
+        {
+          "code": "token_suspended"
+        }
+      ]
+    }
+  },
+  {
+    "status": 401,
+    "body": {
+      "type": "error.list",
+      "errors": [
+        {
+          "code": "missing_authorization"
+        }
+      ]
+    }
+  },
+  {
+    "status": 403,
+    "body": {
+      "type": "error.list",
+      "errors": [
+        {
+          "code": "action_forbidden"
+        }
+      ]
+    }
+  },
+  {
+    "status": 403,
+    "body": {
+      "type": "error.list",
+      "errors": [
+        {
+          "code": "forbidden"
+        }
+      ]
+    }
+  },
+  {
+    "status": 403,
+    "body": {
+      "type": "error.list",
+      "errors": [
+        {
+          "code": "api_plan_restricted"
+        }
+      ]
+    }
+  },
+  {
+    "status": 404,
+    "body": {
+      "type": "error.list",
+      "errors": [
+        {
+          "code": "not_found"
+        }
+      ]
+    }
+  },
+  {
+    "status": 404,
+    "body": {
+      "type": "error.list",
+      "errors": [
+        {
+          "code": "team_not_found"
+        }
+      ]
+    }
+  },
+  {
+    "status": 404,
+    "body": {
+      "type": "error.list",
+      "errors": [
+        {
+          "code": "admin_not_found"
+        }
+      ]
+    }
+  },
+  {
+    "status": 405,
+    "body": {
+      "type": "error.list",
+      "errors": [
+        {
+          "code": "unsupported"
+        }
+      ]
+    }
+  },
+  {
+    "status": 406,
+    "body": {
+      "type": "error.list",
+      "errors": [
+        {
+          "code": "media_type_not_acceptable"
+        }
+      ]
+    }
+  },
+  {
+    "status": 408,
+    "body": {
+      "type": "error.list",
+      "errors": [
+        {
+          "code": "request_timeout"
+        }
+      ]
+    }
+  },
+  {
+    "status": 409,
+    "body": {
+      "type": "error.list",
+      "errors": [
+        {
+          "code": "conflict"
+        }
+      ]
+    }
+  },
+  {
+    "status": 409,
+    "body": {
+      "type": "error.list",
+      "errors": [
+        {
+          "code": "resource_conflict"
+        }
+      ]
+    }
+  },
+  {
+    "status": 410,
+    "body": {
+      "type": "error.list",
+      "errors": [
+        {
+          "code": "contact_merged"
+        }
+      ]
+    }
+  },
+  {
+    "status": 422,
+    "body": {
+      "type": "error.list",
+      "errors": [
+        {
+          "code": "unprocessable_entity"
+        }
+      ]
+    }
+  },
+  {
+    "status": 422,
+    "body": {
+      "type": "error.list",
+      "errors": [
+        {
+          "code": "not_restorable"
+        }
+      ]
+    }
+  },
+  {
+    "status": 422,
+    "body": {
+      "type": "error.list",
+      "errors": [
+        {
+          "code": 422
+        }
+      ]
+    }
+  },
+  {
+    "status": 429,
+    "body": {
+      "type": "error.list",
+      "errors": [
+        {
+          "code": "rate_limit_exceeded"
+        }
+      ]
+    }
+  },
+  {
+    "status": 429,
+    "body": {
+      "type": "error.list",
+      "errors": [
+        {
+          "code": "too_many_requests"
+        }
+      ]
+    }
+  },
+  {
+    "status": 500,
+    "body": {
+      "type": "error.list",
+      "errors": [
+        {
+          "code": "server_error"
+        }
+      ]
+    }
+  },
+  {
+    "status": 502,
+    "body": {
+      "type": "error.list",
+      "errors": [
+        {
+          "code": "server_error"
+        }
+      ]
+    }
+  },
+  {
+    "status": 503,
+    "body": {
+      "type": "error.list",
+      "errors": [
+        {
+          "code": "service_unavailable"
+        }
+      ]
+    }
+  },
+  {
+    "status": 504,
+    "body": {
+      "type": "error.list",
+      "errors": [
+        {
+          "code": "server_error"
+        }
+      ]
+    }
+  },
+  {
+    "status": 418,
+    "body": {
+      "type": "error.list",
+      "errors": [
+        {
+          "code": "future_error_code"
+        }
+      ]
+    }
+  }
+]
