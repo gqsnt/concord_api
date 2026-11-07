@@ -122,6 +122,9 @@ pub enum Kind {
         base: LitStr,
         /// `send P;`: the send policy of every generated `send()`.
         send: Option<Type>,
+        /// `send P -> Template;`: the declared result of every generated `send()`, with `_` for
+        /// the endpoint's output.
+        send_output: Option<Type>,
     },
     Scope,
     Endpoint {
@@ -2183,10 +2186,15 @@ fn flatten(
                 if let Err(e) = validate_base(&base) {
                     errors.push(e);
                 }
+                let (send, send_output) = match owner.stmts.send.take() {
+                    Some((ty, _, output)) => (Some(ty), output),
+                    None => (None, None),
+                };
                 Kind::Client {
                     vis,
                     base,
-                    send: owner.stmts.send.take().map(|(ty, _)| ty),
+                    send,
+                    send_output,
                 }
             }
             None => {
@@ -2198,6 +2206,7 @@ fn flatten(
                     vis,
                     base: LitStr::new("http://invalid", span),
                     send: None,
+                    send_output: None,
                 }
             }
         },

@@ -119,10 +119,13 @@ format statements, `send` (client), parameter groups `params Name(..);` (client)
 | `-> stream sse::Event` + `response Sse;` (feature `sse`) | server-sent events: `next()` → `Event` (`event()`, `data()` as text, `id()`), `last_event_id()`, `retry()`; a body ending inside an event is an error; no reconnect |
 | `prepared.follow(url)?` | the same request at a server-returned URL (same origin only; `Debug` withholds it) |
 | `send policy;` (client value or stateless type) | generated `send()` calls `SendWith<T>::send` and returns the SDK's `Output`; the policy may sign, make sub-requests or repeat requests |
+| `send policy -> Result<_, Error>;` | the same, and every generated `send()` declares that result (`_` = the endpoint's output) instead of `<P as SendWith<T>>::Output`; a mismatch is a compile error at the template ([§5.13](AUTHOR_GUIDE.md#513-the-sdks-own-send-send-policy)) |
 | `concord::Endpoint<T>` | implemented by every generated endpoint for its output `T` (`prepare`, `operation()`): write one SDK adapter for all operations |
 | `into_parts()` → `(Client, Request, Decoder)` | execute it yourself, then `decoder.finish(result)` or `decoder.decode(response)` |
 | `error.kind()`, `status()`, `endpoint()` | `Build`, `Transport`, `Status`, `Metadata`, `Decode`, `Limit`; `status()` is `Some` for `Status` only |
 | `error.head()`, `error.head_meta()` | the head of the response any failure after it arrived concerns (`Status`, `Metadata`, `Decode`, `Limit`, a mid-body `Transport`): borrowed, or an owned copy; `None` before a head |
+| `error.delivery()` → `Delivery::{NotSent, Unknown, Answered}` | whether the request reached the server: not built or never connected / no answer after connecting / a head arrived. The SDK decides which writes are uncertain ([§5.11b](AUTHOR_GUIDE.md#511b-a-write-that-may-have-happened-errordelivery)) |
+| `concord::field::unsigned(headers, name)`, `field::single(..)`; `head.unsigned(name)` | one header field, strictly: absent `Ok(None)`; repeated, invalid (`+5`), overflow → `FieldError` (no value) ([§5.11](AUTHOR_GUIDE.md#511-reading-response-metadata-in-an-sdk)) |
 | `error.response()`, `error.into_response()`, `error.meta()` | the unread response of a `Status` or a `Metadata` error: borrowed (headers), taken (body), or its head owned |
 | `error.codec_error()` | the format's `CodecError` (a `Metadata`, `Decode` or encoding `Build` error): static `label()`, `get("line")`, and `source_unredacted()` |
 | `error.transport()` | the reqwest error, which may contain URLs |
