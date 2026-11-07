@@ -27,8 +27,8 @@ mod value;
 pub mod __private;
 
 pub use codec::{
-    CODEC_ERROR_CONTEXT, CodecError, ContentTypeField, Decode, Encode, EncodedBody, Incremental,
-    Records, ResponseHead,
+    CODEC_ERROR_CONTEXT, CodecError, ContentTypeField, Decode, Encode, EncodedBody, FieldError,
+    Incremental, Records, ResponseHead,
 };
 pub use error::{Error, ErrorKind};
 pub use header::ToHeaderValue;
