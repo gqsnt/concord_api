@@ -13,6 +13,22 @@ use concord_sdk_open_library::{
 const REQUEST_SECRET: &str = "synthetic-request-secret";
 const RESPONSE_SECRET: &str = "synthetic-response-secret";
 
+#[tokio::test]
+async fn native_send_keeps_the_declared_success_body_limit() {
+    let server = TestServer::start(|_| Reply::json(200, vec![b' '; RESPONSE_BODY_LIMIT + 1])).await;
+    let error = support::client(&server)
+        .search()
+        .works("fixture")
+        .prepare()
+        .unwrap()
+        .send()
+        .await
+        .unwrap_err();
+    assert_eq!(error.kind(), ErrorKind::Limit);
+    assert_eq!(error.head().unwrap().status(), StatusCode::OK);
+    server.shutdown().await;
+}
+
 fn assert_redacted(value: impl std::fmt::Debug) {
     let shown = format!("{value:?}");
     assert!(!shown.contains(REQUEST_SECRET), "request leaked: {shown}");

@@ -6,7 +6,7 @@
 //! See the package README for examples, supported fields, and disclosure boundaries.
 
 use concord::reqwest::header::{HeaderMap, HeaderName};
-use concord::{Endpoint, Json, SendWith, Sends};
+use concord::{Endpoint, FieldError, Json, ResponseHead, SendWith, Sends};
 use serde::Deserialize;
 use std::{collections::BTreeMap, fmt, future::Future};
 
@@ -62,6 +62,7 @@ concord::api! {
         base "https://api.nasa.gov/neo/rest/v1";
         query { "api_key" = api_key; }
         format Json;
+        limit BODY_LIMIT;
         send Bounded;
         /// The supported NeoWs operations.
         scope neows {
@@ -102,19 +103,11 @@ impl Reported {
         }
     }
 
-    fn read(headers: &HeaderMap, name: &HeaderName) -> Self {
-        let mut fields = headers.get_all(name).iter();
-        let Some(field) = fields.next() else {
-            return Self::Absent;
-        };
-        if fields.next().is_some() {
-            return Self::Unparsable;
-        }
-        match field.to_str().map(|text| text.trim_matches([' ', '\t'])) {
-            Ok(text) if !text.is_empty() && text.bytes().all(|b| b.is_ascii_digit()) => {
-                text.parse().map_or(Self::Unparsable, Self::Value)
-            }
-            _ => Self::Unparsable,
+    fn read(value: Result<Option<u64>, FieldError>) -> Self {
+        match value {
+            Ok(Some(value)) => Self::Value(value),
+            Ok(None) => Self::Absent,
+            Err(_) => Self::Unparsable,
         }
     }
 }
@@ -138,9 +131,15 @@ pub struct RateLimit {
 impl RateLimit {
     /// Reads both headers of a response head (also usable on a response obtained natively).
     pub fn from_headers(headers: &HeaderMap) -> Self {
+        // Only the fields are interpreted; status and version are immaterial here.
+        let head = ResponseHead::new(
+            concord::reqwest::StatusCode::OK,
+            concord::reqwest::Version::HTTP_11,
+            headers,
+        );
         Self {
-            limit: Reported::read(headers, &X_RATELIMIT_LIMIT),
-            remaining: Reported::read(headers, &X_RATELIMIT_REMAINING),
+            limit: Reported::read(head.unsigned(&X_RATELIMIT_LIMIT)),
+            remaining: Reported::read(head.unsigned(&X_RATELIMIT_REMAINING)),
         }
     }
 }
@@ -235,7 +234,7 @@ where
 async fn metered<T: Send, E: Endpoint<T> + Send>(endpoint: E) -> Result<Metered<T>, Error> {
     let received = endpoint.prepare()?.receive().await?;
     let rate_limit = RateLimit::from_headers(received.head().headers());
-    let value = received.decode_limited(BODY_LIMIT).await?;
+    let value = received.decode().await?;
     Ok(Metered { value, rate_limit })
 }
 

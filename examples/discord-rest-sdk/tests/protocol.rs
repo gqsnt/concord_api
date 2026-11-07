@@ -20,6 +20,22 @@ use support::{
 };
 
 #[tokio::test]
+async fn native_send_keeps_the_declared_success_body_limit() {
+    let server = TestServer::start(|_| Reply::json(200, vec![b' '; SUCCESS_BODY_LIMIT + 1])).await;
+    let error = discord(&server, RateLimiter::new())
+        .channel(GENERAL)
+        .messages()
+        .prepare()
+        .unwrap()
+        .send()
+        .await
+        .unwrap_err();
+    assert_eq!(error.kind(), ErrorKind::Limit);
+    assert_eq!(error.head().unwrap().status(), StatusCode::OK);
+    server.shutdown().await;
+}
+
+#[tokio::test]
 async fn guild_channels_request_and_documented_channel_shapes() {
     let server = TestServer::start(|_| Reply::json(200, fixture("guild-channels"))).await;
     let channels = discord(&server, RateLimiter::new())

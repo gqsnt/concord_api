@@ -19,12 +19,12 @@ use concord::reqwest::header::HeaderMap;
 use concord::reqwest::{StatusCode, Url};
 use concord::{Endpoint, Json, Operation, ResponseMeta, SendWith};
 
+use crate::ERROR_BODY_LIMIT;
 use crate::error::{
     AmbiguousWrite, ApiError, Error, ErrorDocument, GateScope, Gated, RateLimitBody,
     RateLimitScope, RateLimited, Resource,
 };
 use crate::model::{ChannelId, GuildId};
-use crate::{ERROR_BODY_LIMIT, SUCCESS_BODY_LIMIT};
 
 /// A Discord rate-limit bucket hash (`X-RateLimit-Bucket`), which excludes the top-level
 /// resource.
@@ -273,13 +273,15 @@ impl RateLimiter {
         if let (Some(remaining), Some(reset_after)) = (remaining, reset_after) {
             let key = (state.bucket_ref(route, bucket.as_ref()), route.resource);
             let reset_at = later(now, reset_after);
-            state.windows.insert(
-                key,
-                Window {
-                    remaining,
-                    reset_at,
-                },
-            );
+            // Responses overlap: one sent before an exhaustion (or a 429) can arrive after it
+            // with a higher count and an earlier reset. While a window is open, keep the lower
+            // count and the later reset, so a late success never reopens it early.
+            let window = state.windows.entry(key).or_insert(Window {
+                remaining,
+                reset_at,
+            });
+            window.remaining = window.remaining.min(remaining);
+            window.reset_at = window.reset_at.max(reset_at);
         }
     }
 
@@ -390,7 +392,7 @@ impl<T: Send + 'static> SendWith<T> for RateLimiter {
                 document,
             })));
         }
-        match received.decode_limited(SUCCESS_BODY_LIMIT).await {
+        match received.decode().await {
             Ok(value) => Ok(value),
             Err(error) if route.is_write() => {
                 Err(Error::AmbiguousWrite(Box::new(AmbiguousWrite {
@@ -501,5 +503,86 @@ mod tests {
             Some(Resource::Channel(ChannelId::new(41771983423143937)))
         );
         assert_eq!(resource_of(&url("/api/v10/users/@me")), None);
+    }
+
+    fn bucket_headers(remaining: &str, reset_after: &str) -> HeaderMap {
+        HeaderMap::from_iter([
+            (
+                "x-ratelimit-bucket".parse().unwrap(),
+                "shared".parse().unwrap(),
+            ),
+            (
+                "x-ratelimit-remaining".parse().unwrap(),
+                remaining.parse().unwrap(),
+            ),
+            (
+                "x-ratelimit-reset-after".parse().unwrap(),
+                reset_after.parse().unwrap(),
+            ),
+        ])
+    }
+
+    // Found while trying `concord-ratelimit` here (lane b12-y, Codex gpt-6.1-sol).
+    #[test]
+    fn overlapping_success_cannot_reopen_or_shorten_exhaustion() {
+        let epoch = Instant::now();
+        let offset = Arc::new(Mutex::new(Duration::ZERO));
+        let clock = offset.clone();
+        let limiter = RateLimiter::with_clock(move || epoch + *clock.lock().unwrap());
+        let route = Route::new(
+            Operation::label("messages"),
+            Some(Resource::Channel(ChannelId::new(1))),
+        );
+        limiter.observe(&route, &bucket_headers("0", "60"));
+        // A success already in flight reports an older positive count and shorter reset.
+        limiter.observe(&route, &bucket_headers("4", "1"));
+        *offset.lock().unwrap() = Duration::from_secs(2);
+        let Err(Error::Gated(gate)) = limiter.admit(&route) else {
+            panic!("an overlapping response must not reopen the exhausted window");
+        };
+        assert_eq!(gate.retry_after, Duration::from_secs(58));
+        assert!(matches!(gate.scope, GateScope::Bucket { .. }));
+        *offset.lock().unwrap() = Duration::from_secs(60);
+        limiter.admit(&route).unwrap();
+        limiter.observe(&route, &HeaderMap::new());
+        assert!(
+            limiter.lock().windows.is_empty(),
+            "expired windows are pruned"
+        );
+    }
+
+    #[test]
+    fn zero_delay_429_keeps_prior_reset_despite_overlapping_success() {
+        let now = Instant::now();
+        let limiter = RateLimiter::with_clock(move || now);
+        let route = Route::new(Operation::label("messages"), None);
+        let mut headers = HeaderMap::new();
+        headers.insert("x-ratelimit-remaining", "4".parse().unwrap());
+        headers.insert("x-ratelimit-reset-after", "60".parse().unwrap());
+        limiter.observe(&route, &headers);
+        limiter.admit(&route).unwrap();
+        let limited = limiter.rate_limited(
+            route,
+            ResponseMeta::new(
+                concord::ResponseHead::new(
+                    StatusCode::TOO_MANY_REQUESTS,
+                    concord::reqwest::Version::HTTP_11,
+                    &HeaderMap::new(),
+                ),
+                Some(route.operation()),
+            ),
+            Ok(
+                serde_json::from_str(r#"{"message":"limited","retry_after":0,"global":false}"#)
+                    .unwrap(),
+            ),
+        );
+        assert_eq!(limited.retry_after, Some(Duration::ZERO));
+        // A later success cannot undo that cooldown, even though the 429's own delay was zero.
+        headers.insert("x-ratelimit-reset-after", "1".parse().unwrap());
+        limiter.observe(&route, &headers);
+        let Err(Error::Gated(gate)) = limiter.admit(&route) else {
+            panic!("the original reset horizon must remain authoritative");
+        };
+        assert_eq!(gate.retry_after, Duration::from_secs(60));
     }
 }

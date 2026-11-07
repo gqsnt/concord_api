@@ -28,6 +28,7 @@ concord::api! {
         base "https://api.dropboxapi.com/2";
         headers { AUTHORIZATION = "Bearer {token}"; }
         format Json;
+        limit crate::SUCCESS_BODY_LIMIT;
         send DropboxPolicy;
 
         scope selected(
@@ -58,12 +59,46 @@ impl<T: Send> SendWith<T> for DropboxPolicy {
             return Err(Error::Http(Box::new(HttpError { meta, body })));
         }
         // A failure after the head arrived keeps it in the Concord error (`From` reads it).
-        let (value, meta) = received
-            .decode_limited_with_meta(crate::SUCCESS_BODY_LIMIT)
-            .await?;
+        let (value, meta) = received.decode_with_meta().await?;
         Ok(Response {
             value,
             meta: ResponseMeta(meta),
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use concord_example_testserver::{Reply, TestServer};
+
+    #[tokio::test]
+    async fn native_send_keeps_the_declared_success_body_limit() {
+        let server =
+            TestServer::start(|_| Reply::json(200, vec![b' '; crate::SUCCESS_BODY_LIMIT + 1]))
+                .await;
+        let api = DropboxApi::new(
+            concord::reqwest::Client::builder()
+                .no_proxy()
+                .build()
+                .unwrap(),
+            DropboxApiConfig {
+                token: "synthetic-token".into(),
+            },
+        )
+        .with_base_url(server.url())
+        .unwrap();
+        let error = api
+            .selected("member-id", HeaderValue::from_static("{\".tag\":\"home\"}"))
+            .list_folder(ListFolderOptions::default())
+            .prepare()
+            .unwrap()
+            .send()
+            .await
+            .err()
+            .expect("native send must reject an oversized body");
+        assert_eq!(error.kind(), concord::ErrorKind::Limit);
+        assert_eq!(error.head().unwrap().status().as_u16(), 200);
+        server.shutdown().await;
     }
 }

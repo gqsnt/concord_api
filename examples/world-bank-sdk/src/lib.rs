@@ -186,6 +186,7 @@ concord::api! {
         base "https://api.worldbank.org/v2";
         send SendPolicy;
         format Json;
+        limit BODY_LIMIT;
         /// Request an indicator page; use [`WorldBank::year`] or [`WorldBank::range`] for
         /// year-specific workflows. IDs are encoded as individual path segments.
         GET indicator(country: String, indicator: String, query date: String,
@@ -222,7 +223,7 @@ impl SendWith<WireResponse> for SendPolicy {
                 }),
             };
         }
-        let (body, meta) = received.decode_limited_with_meta(BODY_LIMIT).await?;
+        let (body, meta) = received.decode_with_meta().await?;
         match body {
             WireResponse::Failure((document,)) => Err(Error::Provider {
                 meta: Box::new(meta),

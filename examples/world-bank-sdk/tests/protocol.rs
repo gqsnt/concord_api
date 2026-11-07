@@ -8,6 +8,23 @@ fn client(server: &TestServer) -> Client {
         .with_base_url(format!("{}/v2", server.url()))
         .unwrap()
 }
+
+#[tokio::test]
+async fn native_send_keeps_the_declared_success_body_limit() {
+    let server =
+        TestServer::start(|_| Reply::json(200, vec![b' '; concord_sdk_world_bank::BODY_LIMIT + 1]))
+            .await;
+    let error = client(&server)
+        .indicator("br", "SP.POP.TOTL", "2006")
+        .prepare()
+        .unwrap()
+        .send()
+        .await
+        .unwrap_err();
+    assert_eq!(error.kind(), concord::ErrorKind::Limit);
+    assert_eq!(error.head().unwrap().status().as_u16(), 200);
+    server.shutdown().await;
+}
 fn json(status: u16, body: &'static str) -> Reply {
     Reply::new(status)
         .header("content-type", "application/json")

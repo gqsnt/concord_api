@@ -24,6 +24,7 @@ concord::api! {
     pub client OpenLibrary {
         base "https://openlibrary.org";
         response Json;
+        limit RESPONSE_BODY_LIMIT;
         send ReadPolicy;
 
         /// Public search operations; pagination is specific to each endpoint.

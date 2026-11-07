@@ -248,9 +248,7 @@ async fn execute<T>(endpoint: impl Endpoint<Envelope<T>>) -> Result<Response<T>,
             }
         });
     }
-    let (envelope, meta) = received
-        .decode_limited_with_meta(SUCCESS_BODY_LIMIT)
-        .await?;
+    let (envelope, meta) = received.decode_with_meta().await?;
     let meta = ResponseMeta::capture(meta.head(), meta.operation());
     if !envelope.ok {
         return Err(match envelope.into_provider() {

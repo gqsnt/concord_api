@@ -14,6 +14,31 @@ const CHILDREN1: &[u8] = include_bytes!("../fixtures/children-1.json");
 const CHILDREN2: &[u8] = include_bytes!("../fixtures/children-2.json");
 const LAST: &[u8] = include_bytes!("../fixtures/empty-last.json");
 
+#[tokio::test]
+async fn native_send_keeps_the_declared_success_body_limit() {
+    let server =
+        TestServer::start(|_| Reply::json(200, vec![b' '; concord_sdk_notion::RESPONSE_LIMIT + 1]))
+            .await;
+    let api = concord_sdk_notion::api::Notion::new(
+        reqwest::Client::builder().no_proxy().build().unwrap(),
+        concord_sdk_notion::api::NotionConfig {
+            token: "synthetic-notion-token".into(),
+        },
+    )
+    .with_base_url(server.url())
+    .unwrap();
+    let error = api
+        .page("page-id")
+        .prepare()
+        .unwrap()
+        .send()
+        .await
+        .unwrap_err();
+    assert_eq!(error.kind(), ErrorKind::Limit);
+    assert_eq!(error.head().unwrap().status().as_u16(), 200);
+    server.shutdown().await;
+}
+
 fn json_reply(status: u16, body: &[u8]) -> Reply {
     Reply::new(status)
         .header("Content-Type", "application/json")

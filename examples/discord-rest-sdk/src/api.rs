@@ -47,6 +47,7 @@ mod raw {
             base "https://discord.com/api/v10";
             headers { AUTHORIZATION = "Bot {token}"; }
             format Json;
+            limit crate::SUCCESS_BODY_LIMIT;
             send limiter;
 
             /// One guild: `/guilds/{guild.id}` (the route's top-level resource).
