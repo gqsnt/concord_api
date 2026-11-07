@@ -3,6 +3,13 @@
 Status: **proposals, not decisions.** Nothing here changes Concord until the owner accepts it
 (rule 7). Prototypes on `sdk50/x50-*` branches are compiled measurements, not adoption.
 
+**At SDK50 close (2026-11-07):** these proposals and the prototypes are **inputs to the
+desirability loop's hypothesis queue** (`v4/desirability/QUEUE.md`, created after PR #5 merges),
+where each is pre-registered, measured and decided under the owner's instruction "finish → merge
+PR #5 → loop". None of them was decided here. Mapping: Tier 1 → H04 (docs), Tier 2 → H11
+(adoption), P1 → H09a, P2 → H10, P3 → H09b, M1/M2 → H06, M4 → H08, the removal table → H13,
+`concord-ratelimit` status → H14. See `../CLOSING.md` § "In-flight work at close".
+
 ## How this was produced
 
 - Input: integration `af6840c9`, 55 SDK packages (the 50 campaign SDKs plus five earlier ones).
