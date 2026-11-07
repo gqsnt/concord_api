@@ -1,0 +1,1 @@
+{"total":2,"results":[{"id":"101","properties":{"email":"anna.smith@example.com","firstname":"Anna"}}],"paging":{"next":{"after":"cursor+2","link":"https://untrusted.invalid/ignored"}}}

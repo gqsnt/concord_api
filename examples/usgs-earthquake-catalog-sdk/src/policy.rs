@@ -25,7 +25,7 @@ impl<T> fmt::Debug for Response<T> {
     }
 }
 
-/// One attempt, bounded finite bodies, preserved error status, and no implicit retries.
+/// `send()` returns `Result<Response<T>, Error>`: one attempt, bounded bodies, preserved status.
 #[derive(Default)]
 pub struct Policy;
 

@@ -1,12 +1,12 @@
 //! A bounded NASA NeoWs feed, browse and lookup client.
 //!
-//! Generated operations use one request and limit successful JSON bodies to [`BODY_LIMIT`].
+//! Generated `send()` returns `Result<T, Error>`, using one request and a [`BODY_LIMIT`] cap.
 //! Every result reports the per-key quota NASA sent ([`RateLimit`]): failures in
 //! [`Error::rate_limit`], successes through [`SendMetered::send_metered`].
 //! See the package README for examples, supported fields, and disclosure boundaries.
 
 use concord::reqwest::header::{HeaderMap, HeaderName};
-use concord::{Endpoint, FieldError, Json, ResponseHead, SendWith, Sends};
+use concord::{Endpoint, FieldError, Json, SendWith, Sends, field};
 use serde::Deserialize;
 use std::{collections::BTreeMap, fmt, future::Future};
 
@@ -63,7 +63,7 @@ concord::api! {
         query { "api_key" = api_key; }
         format Json;
         limit BODY_LIMIT;
-        send Bounded;
+        send Bounded -> Result<_, Error>;
         /// The supported NeoWs operations.
         scope neows {
             /// Query objects approaching Earth between two dates, inclusive as interpreted by NASA.
@@ -131,15 +131,9 @@ pub struct RateLimit {
 impl RateLimit {
     /// Reads both headers of a response head (also usable on a response obtained natively).
     pub fn from_headers(headers: &HeaderMap) -> Self {
-        // Only the fields are interpreted; status and version are immaterial here.
-        let head = ResponseHead::new(
-            concord::reqwest::StatusCode::OK,
-            concord::reqwest::Version::HTTP_11,
-            headers,
-        );
         Self {
-            limit: Reported::read(head.unsigned(&X_RATELIMIT_LIMIT)),
-            remaining: Reported::read(head.unsigned(&X_RATELIMIT_REMAINING)),
+            limit: Reported::read(field::unsigned(headers, &X_RATELIMIT_LIMIT)),
+            remaining: Reported::read(field::unsigned(headers, &X_RATELIMIT_REMAINING)),
         }
     }
 }

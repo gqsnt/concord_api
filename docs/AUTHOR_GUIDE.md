@@ -1554,9 +1554,102 @@ gives the same before a reader consumes the body. To add provider accessors (`re
 wrap it in the SDK's own type (`pub struct ResponseMeta(concord::ResponseMeta)`; the Dropbox SDK
 derefs to it): methods cannot be added to another crate's type.
 
+**One header field, strictly.** A rate-limit counter or a request id must appear at most once,
+and `str::parse::<u64>` accepts `+5`. `concord::field::single(headers, name)` and
+`concord::field::unsigned(headers, name)` read any `HeaderMap` — `received.head().headers()`,
+`meta.headers()`, a natively obtained response's, and an error's when it kept a head
+(`error.head().map(|head| field::unsigned(head.headers(), name))`) — and
+tell absent (`Ok(None)`) from
+repeated, invalid and overflowing (`FieldError`, which never contains the value);
+`ResponseHead::single`/`unsigned` are the same on a head:
+
+```rust
+use concord::field::{self, FieldError};
+use concord::reqwest::header::HeaderMap;
+
+/// A provider quota: absent and unreadable are different facts.
+#[derive(Debug, PartialEq)]
+pub enum Remaining { Absent, Unreadable(FieldError), Value(u64) }
+
+pub fn remaining(headers: &HeaderMap) -> Remaining {
+    match field::unsigned(headers, "x-ratelimit-remaining") {
+        Ok(None) => Remaining::Absent,
+        Ok(Some(n)) => Remaining::Value(n),
+        Err(e) => Remaining::Unreadable(e),
+    }
+}
+
+fn main() {
+    let mut headers = HeaderMap::new();
+    assert_eq!(remaining(&headers), Remaining::Absent);
+    headers.insert("x-ratelimit-remaining", "+5".parse().unwrap());
+    assert_eq!(remaining(&headers), Remaining::Unreadable(FieldError::Invalid));
+}
+```
+
 A provider rule on the head (a served API version) refuses by returning the SDK's error with
 `received.into_response()`, unread. A request edited natively after `into_parts()` (a `Link` URL)
 is executed with `Decoder::execute(&client, request)`, which returns the same `Received<T>`.
+
+### 5.11b A write that may have happened: `Error::delivery()`
+
+A timed-out create may have created the item. Before deciding that a failed write is *uncertain*
+(reported, never resent automatically), an SDK needs to know what the failure proves about
+delivery. `concord::Error::delivery()` states it:
+
+| `Delivery` | When |
+|---|---|
+| `NotSent` | Concord refused the request before handing it to the client (`ErrorKind::Build`: a value that cannot be written, a header set twice, a body that cannot be encoded) |
+| `Unknown` | the client failed and no response head reached Concord: a timeout, a reset, a failed upload — and a refused connection too |
+| `Answered` | a response head reached Concord (any status), even if its body then failed, was refused or was too long |
+
+A refused connection is `Unknown` on purpose: the client may have followed a redirect from a
+server that performed the write (a `303` to a host that is down ends in a connect error), and
+reqwest's `is_connect()` also reports a connection error of a nested source, such as a streamed
+body's own request. An SDK that builds its own client without redirects or retries
+(`redirect(Policy::none())`, `retry(retry::never())`: a retried `503` can end in a refused
+connection after the first attempt performed the write), and whose bodies are fixed bytes, may
+decide that `transport().is_some_and(|e| e.is_connect())` means "not sent" — its rule, stated in
+its docs. Accepting the caller's client voids that rule. A followed redirect also makes a status
+answer a later request: a performed POST answered `303`, whose target answers `429`, reaches the
+policy as a 429 (`received.url()` is the target's). An SDK that reads a write's status as
+"refused" requires redirects off.
+
+Which operations are writes, and whether an `Answered` 5xx or an unreadable 2xx is uncertain too,
+stay the SDK's rules:
+
+```rust
+use concord::{Delivery, Error};
+
+/// One SDK's rule: a write is uncertain when no answer arrived, or when the server failed (a 5xx
+/// on a create may have committed). An unreadable 2xx is classified separately by this SDK.
+pub fn uncertain(error: &Error) -> bool {
+    let write = error
+        .operation()
+        .and_then(|op| op.method())
+        .is_some_and(|method| method != "GET" && method != "HEAD");
+    let server_error = error.head().is_some_and(|head| head.status().is_server_error());
+    write && (error.delivery() == Delivery::Unknown || server_error)
+}
+
+concord::api! {
+    pub client Notes() {
+        base "https://notes.example.com";
+        POST create(header("x-note") note: String) { path "notes"; }
+    }
+}
+
+fn main() {
+    let notes = Notes::new(concord::reqwest::Client::new());
+    // A header value with a line break is refused before anything is sent.
+    let error = notes.create("a\nb").prepare().unwrap_err();
+    assert_eq!(error.delivery(), Delivery::NotSent);
+    assert!(!uncertain(&error));
+}
+```
+
+`Unknown` is a fact about this attempt only: whether the provider performed the write is learned
+from the provider (an idempotency key, a lookup by a client-chosen id), never from Concord.
 
 ### 5.12 One adapter for every operation: `concord::Endpoint`
 
@@ -1625,6 +1718,57 @@ concord::api! {
     }
 }
 ```
+
+**Name the result.** Without more, the generated `send()` is documented as returning
+`<Policy as SendWith<T>>::Output`, and a caller has to open the policy's implementation to learn
+that it is `Result<T, Error>`. Declare the shape on the statement — `_` stands for each endpoint's
+output — and every generated `send()` (and its rustdoc) names the concrete type; a template that
+is not the policy's output is a compile error at the template. A `_` inside a macro invocation
+(`result!(_)`) is the macro's, not a placeholder: its input is the macro's own grammar.
+
+```rust
+use concord::{Endpoint, Json, SendWith};
+
+#[derive(Debug)]
+pub enum Error { Concord(concord::Error), Status(u16) }
+impl From<concord::Error> for Error {
+    fn from(e: concord::Error) -> Self { Self::Concord(e) }
+}
+
+#[derive(Default)]
+pub struct Policy;
+impl<T: Send> SendWith<T> for Policy {
+    type Output = Result<T, Error>;
+    async fn send<E: Endpoint<T> + Send>(&self, endpoint: E) -> Self::Output {
+        let received = endpoint.prepare()?.receive().await?;
+        if !received.status().is_success() {
+            return Err(Error::Status(received.status().as_u16()));
+        }
+        Ok(received.decode().await?)
+    }
+}
+
+concord::api! {
+    pub client Store() {
+        base "https://store.example.com";
+        format Json;
+        send Policy -> Result<_, Error>;
+        GET count() -> u64 { path "count"; }
+    }
+}
+
+// `send()` is declared as returning `impl Future<Output = Result<u64, Error>>`.
+async fn count(store: &Store) -> Result<u64, Error> {
+    store.count().send().await
+}
+
+fn main() {
+    let _ = count;
+}
+```
+
+A policy whose output does not follow one shape for every endpoint (a policy implemented for a
+few concrete types) keeps the plain `send Policy;`.
 
 A policy with state — credentials, a region, a clock — is a client value: `send signer;` names it.
 The value is required (no `?`, no default: it is the one given to the constructor), the

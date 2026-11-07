@@ -241,11 +241,12 @@ pub use concord_codecs::sse;
 pub use concord_codecs::stream;
 #[cfg(feature = "extras")]
 pub use concord_codecs::{Binary, Encoded, IgnoreContentType, Text};
+pub use concord_core::field;
 pub use concord_core::{
-    CODEC_ERROR_CONTEXT, CodecError, ContentTypeField, Decode, Decoder, Encode, EncodedBody,
-    Endpoint, Error, ErrorKind, FieldError, HeaderNameError, HeaderNameErrors, Incoming,
-    Incremental, IntoValue, Operation, Prepared, QueryPairs, QueryPairsWriter, Received, Records,
-    ResponseHead, ResponseMeta, SendWith, Sends, ToHeaderValue, bytes, reqwest,
+    CODEC_ERROR_CONTEXT, CodecError, ContentTypeField, Decode, Decoder, Delivery, Encode,
+    EncodedBody, Endpoint, Error, ErrorKind, FieldError, HeaderNameError, HeaderNameErrors,
+    Incoming, Incremental, IntoValue, Operation, Prepared, QueryPairs, QueryPairsWriter, Received,
+    Records, ResponseHead, ResponseMeta, SendWith, Sends, ToHeaderValue, bytes, reqwest,
 };
 
 /// Declares an HTTP API as a client → scopes → endpoints tree and generates its typed client.

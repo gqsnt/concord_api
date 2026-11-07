@@ -20,6 +20,8 @@ Machine: 20 CPUs, 30 GiB RAM, 7 GiB swap; `/` ext filesystem 915 GB (nvme0n1p2),
 - 2026-11-06T23:58:11+01:00 pruned /home/canarit/projects/Concord_SDK50_Ecosystem_Handoff/work/targets/p1 (11G) reason: merged lane, reproducible cargo output
 - 2026-11-06T23:58:13+01:00 pruned /home/canarit/projects/Concord_SDK50_Ecosystem_Handoff/work/targets/integration (30G) reason: merged lane, reproducible cargo output
 
+- 2026-11-07T04:47 CET, **owner approved in chat**: 25 merged lane targets (`b12-*`, `b23-*`, `p1-docs2`, `p1-edit-k8s`, `p1-pagination`, `p1-retry`, `p2-auth`, `p2-ratelimit`, `w1-*`, `w2-*` under `work/`), ≈97 GB; each lane merged into `sdk50/integration`, clean tree, no process inside; free space 164 → 259 GB. Per-directory sizes in `work/records/RESOURCE_LEDGER.log`. (An earlier prune attempt had been refused by Claude Code's `rm` check.)
+
 ## Kept
 
 - `work/m0/target` (M0/main verification), `work/integration/target` (integration gate), active lane targets.

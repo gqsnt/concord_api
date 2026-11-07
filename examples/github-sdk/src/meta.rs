@@ -22,7 +22,7 @@ use std::fmt;
 
 use concord::reqwest::header::{ETAG, HeaderMap, HeaderName, LAST_MODIFIED, LINK, RETRY_AFTER};
 use concord::reqwest::{self, StatusCode, Url};
-use concord::{Prepared, Received, ResponseHead};
+use concord::{Prepared, Received, field};
 
 use crate::error::GitHubError;
 use crate::link::{self, LinkError, Links};
@@ -87,8 +87,7 @@ impl ResponseMeta {
                 .and_then(|v| v.to_str().ok())
                 .map(str::to_owned)
         };
-        let head = ResponseHead::new(status, reqwest::Version::HTTP_11, headers);
-        let number = |name: &HeaderName| head.unsigned(name).ok().flatten();
+        let number = |name: &HeaderName| field::unsigned(headers, name).ok().flatten();
         Self {
             status,
             request_id: text(&X_GITHUB_REQUEST_ID),

@@ -288,8 +288,7 @@ pub enum Error {
     AmbiguousWrite(Box<AmbiguousWrite>),
     /// A response broke a documented ordering or size rule.
     Protocol(Box<ProtocolError>),
-    /// Build, transport (reads, and writes that provably never left: a refused connection),
-    /// success media type, success body limit or decoding failure. Concord's error keeps the
+    /// Build, transport on a read, success media type, success body limit or decoding failure. Concord's error keeps the
     /// response head when one arrived (`error.head()`).
     Concord {
         /// Concord's error, naming the operation.

@@ -52,6 +52,25 @@ enum Repr {
     Limit(u64),
 }
 
+/// What a failed call says about whether the request reached the server: the fact an SDK needs
+/// before deciding that a write is uncertain ([`Error::delivery`]). Concord states the fact; which
+/// failures of which operations are *ambiguous writes* stays the SDK's rule.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[non_exhaustive]
+pub enum Delivery {
+    /// Nothing was sent: Concord refused the request before handing it to the client (not built,
+    /// a header set twice, a body that could not be encoded — [`ErrorKind::Build`]).
+    NotSent,
+    /// The client failed and no response head reached Concord: a refused or failed connection, a
+    /// timeout, a reset, a failed upload. A write may have been performed — even a refused
+    /// connection is no proof, because the client may have followed a redirect from a server that
+    /// performed it, and a connection error can come from a nested source (a streamed body).
+    Unknown,
+    /// The server answered: a response head arrived (any status), even if its body then failed,
+    /// was refused or was too long.
+    Answered,
+}
+
 /// The stage at which a call failed.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 #[non_exhaustive]
@@ -306,6 +325,36 @@ impl Error {
         match &self.inner.repr {
             Repr::Transport(error) => Some(error),
             _ => None,
+        }
+    }
+
+    /// What this failure proves about delivery ([`Delivery`]): `NotSent` when Concord refused the
+    /// request before sending it, `Answered` once a response head reached Concord, `Unknown`
+    /// otherwise. A send policy uses it to tell a failed write that certainly did not happen from
+    /// one that may have:
+    ///
+    /// ```
+    /// use concord_core::{Delivery, Error};
+    ///
+    /// /// An SDK rule: a write is uncertain when it may have reached the server without an answer.
+    /// fn uncertain_write(error: &Error) -> bool {
+    ///     error.delivery() == Delivery::Unknown
+    /// }
+    /// ```
+    ///
+    /// A response that arrived but could not be read (`Answered` with a failed body) is the
+    /// SDK's to classify: its status is in [`head`](Self::head).
+    pub fn delivery(&self) -> Delivery {
+        match &self.inner.repr {
+            Repr::Build { .. } | Repr::HeaderConflict { .. } | Repr::Encode(_) => Delivery::NotSent,
+            Repr::Transport(_) if self.inner.head.is_some() => Delivery::Answered,
+            // Not even a connect failure proves non-delivery: reqwest may have followed a redirect
+            // from a server that performed the request, and `is_connect()` searches the whole
+            // source chain (a streamed body's own request). Review b23-review-sol, finding 1.
+            Repr::Transport(_) => Delivery::Unknown,
+            Repr::Status(_) | Repr::Metadata(..) | Repr::Decode(_) | Repr::Limit(_) => {
+                Delivery::Answered
+            }
         }
     }
 

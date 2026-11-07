@@ -25,9 +25,13 @@ use concord_sdk_discord_rest::concord::reqwest;
 use concord_sdk_discord_rest::{Discord, DiscordConfig, RateLimiter};
 
 fn client(token: String) -> Result<Discord, reqwest::Error> {
-    // Transport settings are yours: the SDK builds no client and sets no timeout.
+    // Transport settings are yours: the SDK builds no client and sets no timeout. Turn off
+    // redirects and retries: with either, a status or error can describe a later request than
+    // your write (a performed POST redirected to a target answering 429 would look refused).
     let http = reqwest::Client::builder()
         .timeout(Duration::from_secs(15))
+        .redirect(reqwest::redirect::Policy::none())
+        .retry(reqwest::retry::never())
         .build()?;
     // One RateLimiter per bot token: Discord's limits are per bot.
     Ok(Discord::new(http, DiscordConfig { token, limiter: RateLimiter::new() }))
@@ -148,16 +152,16 @@ a URL, a provider message or a body (read those deliberately through the fields)
 | `Gated` | **no** | The limiter refused locally: a global 429 is still running, or this route bucket for this channel/guild has 0 remaining until its reset. `retry_after` says how long. Sending later is safe. |
 | `RateLimited` | yes, refused | HTTP 429. `scope` (`User`, `Global`, `Shared`, `Unspecified`), `retry_after` (the larger of `Retry-After` and the body's fractional `retry_after`, else `X-RateLimit-Reset-After`, else `None`), `bucket`, the body. The delay is now a gate. |
 | `Api` | yes | Another non-2xx. `class()` (400, 401, 403, 404, 405, 5xx, other), `code()` (Discord's JSON code: 10003 unknown channel, 10008 unknown message, 50001 missing access, 50013 missing permissions, 50035 invalid form body, ...), `document` (or why it could not be read: HTML, too large, cut off). The status is authoritative either way. After a 401, stop using the token. |
-| `AmbiguousWrite` | **maybe** | A `POST` failed after it may have reached Discord: no response (timeout, dropped connection: `accepted == None`), or a 2xx whose body could not be read (`accepted == Some(..)`: created, ID unknown). **Never resent by the SDK.** Reconcile by reading; resend only deliberately, with the same nonce. |
+| `AmbiguousWrite` | **maybe** | A `POST` failed after it may have reached Discord: no response (timeout, dropped or refused connection: `accepted == None`), or a 2xx whose body could not be read (`accepted == Some(..)`: created, ID unknown). **Never resent by the SDK.** Reconcile by reading; resend only deliberately, with the same nonce. |
 | `Protocol` | yes | A message page broke the ordering or size rule `history` relies on. |
-| `Concord` | depends | Concord's error: `Build` (nothing sent), `Transport` on a read (or a write whose connection was refused: not sent), and for a 2xx read the success `Content-Type` (`Metadata`), body limit (`Limit`) or decoding (`Decode`); `error.head()` keeps the response head. |
+| `Concord` | depends | Concord's error: `Build` (nothing sent), `Transport` on a read (on a write any transport failure, a refused connection included, is `AmbiguousWrite`), and for a 2xx read the success `Content-Type` (`Metadata`), body limit (`Limit`) or decoding (`Decode`); `error.head()` keeps the response head. |
 
 The SDK never sleeps, queues or retries. `concord::Error` and the pagination crate are
 re-exported (`concord_sdk_discord_rest::concord`, `::pagination`).
 
 ### Rate limits
 
-The client's send policy is the `RateLimiter` (`send limiter;` in the declaration). Per request:
+The client's send policy is the `RateLimiter` (`send limiter -> Result<_, Error>;` in the declaration). Per request:
 admit (no I/O), execute once, record `X-RateLimit-Bucket` / `-Remaining` / `-Reset-After` for
 `(bucket hash, channel or guild)` — the hash excludes the top-level resource, so two channels
 that share it keep separate windows — and on a 429 gate the global scope or that window.

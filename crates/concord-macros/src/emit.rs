@@ -1558,9 +1558,11 @@ fn emit_owner(
                     /// `Decode` (see `ErrorKind`).
                 }
             };
-            let policy = match &model.owners[0].kind {
-                Kind::Client { send, .. } => send.as_ref(),
-                _ => None,
+            let (policy, declared_output) = match &model.owners[0].kind {
+                Kind::Client {
+                    send, send_output, ..
+                } => (send.as_ref(), send_output.as_ref()),
+                _ => (None, None),
             };
             // `Sends<O>` for an endpoint whose client names a send policy (its `send()` future is
             // already `Send`); none otherwise.
@@ -1607,16 +1609,43 @@ fn emit_owner(
                     } else {
                         format!("`{policy_ty_text}`")
                     };
-                    let policy_text = lit(&format!(
-                        " Sends the request with the client's send policy {shown}: the result is `<{policy_ty_text} as SendWith<T>>::Output`, defined by the `SendWith` implementation of {linked} (its errors, metadata, signing). `prepare()` builds the declared request without the policy, and `prepare()?.send()` uses Concord's own handling and error instead."
-                    ));
+                    // `send P -> Template;`: the declared result, `_` replaced by this output.
+                    let declared = declared_output.map(|t| (t.span(), with_output(t, &out)));
+                    let policy_text = lit(&match &declared {
+                        Some(_) => format!(
+                            " Sends the request with the client's send policy {shown}, whose result the client declares; its errors, metadata and signing are defined by the `SendWith` implementation of {linked}. `prepare()` builds the declared request without the policy, and `prepare()?.send()` uses Concord's own handling and error instead."
+                        ),
+                        None => format!(
+                            " Sends the request with the client's send policy {shown}: the result is `<{policy_ty_text} as SendWith<T>>::Output`, defined by the `SendWith` implementation of {linked} (its errors, metadata, signing). `prepare()` builds the declared request without the policy, and `prepare()?.send()` uses Concord's own handling and error instead."
+                        ),
+                    });
                     // Spanned at the `send` statement: a type that is no policy is reported there
                     // (with the generated `send()`'s own error), not inside Concord's trait.
                     let at = policy.span();
-                    let send_output =
-                        quote_spanned!(at=> <#policy_ty as #k::SendWith<#out>>::Output);
+                    let send_output = match &declared {
+                        Some((_, declared)) => declared.clone(),
+                        None => quote_spanned!(at=> <#policy_ty as #k::SendWith<#out>>::Output),
+                    };
+                    // The declared result must be the policy's output exactly (an equality bound,
+                    // not a coercion), reported at the template.
+                    let equal = match &declared {
+                        Some((tat, declared)) => located(
+                            quote!(where #policy_ty: #k::SendWith<#out, Output = #declared>),
+                            *tat,
+                        ),
+                        None => TokenStream::new(),
+                    };
+                    let sends_bound = match &declared {
+                        Some((tat, declared)) => located(
+                            quote!(#policy_ty: #k::SendWith<#out, Output = #declared>),
+                            *tat,
+                        ),
+                        None => quote_spanned!(at=> #policy_ty: #k::SendWith<#out>),
+                    };
+                    let call =
+                        quote!(<#policy_ty as #k::SendWith<#out>>::send(&__policy, self).await);
                     sends_impl = quote_spanned! {at=>
-                        impl #k::Sends<#send_output> for #ty where #policy_ty: #k::SendWith<#out> {
+                        impl #k::Sends<#send_output> for #ty where #sends_bound {
                             #[inline] fn send(self) -> impl ::core::future::Future<Output = #send_output> + ::core::marker::Send {
                                 #ty::send(self)
                             }
@@ -1624,9 +1653,9 @@ fn emit_owner(
                     };
                     quote! {
                         #[doc = #policy_text]
-                        #[inline] pub fn send(self) -> impl ::core::future::Future<Output = <#policy_ty as #k::SendWith<#out>>::Output> + ::core::marker::Send {
+                        #[inline] pub fn send(self) -> impl ::core::future::Future<Output = #send_output> + ::core::marker::Send #equal {
                             let __policy: #policy_ty = #policy_init;
-                            async move { <#policy_ty as #k::SendWith<#out>>::send(&__policy, self).await }
+                            async move { #call }
                         }
                     }
                 }
@@ -1716,6 +1745,33 @@ fn limit_const(model: &Model, index: usize, output: Option<&Output>) -> TokenStr
         }
         _ => TokenStream::new(),
     }
+}
+
+/// A `send P -> Template;` result for one endpoint: every type placeholder `_` of the template
+/// (a `syn::Type::Infer`) becomes `out`. Not a lifetime's `'_`, a fn parameter named `_`, anything
+/// in an expression (a const argument, an array length), and nothing inside a macro invocation:
+/// a macro's input is its own grammar, so `result!(_)` keeps its `_` (rustc rejects it in the
+/// signature). The rest is re-emitted from the parsed type: a fragment forwarded by
+/// `macro_rules!` keeps its invisible group.
+fn with_output(template: &syn::Type, out: &TokenStream) -> TokenStream {
+    use proc_macro2::{Delimiter, Group, TokenTree};
+    use syn::visit_mut::{self, VisitMut};
+    struct Fill<'a>(&'a TokenStream);
+    impl VisitMut for Fill<'_> {
+        fn visit_type_mut(&mut self, ty: &mut syn::Type) {
+            if let syn::Type::Infer(_) = ty {
+                let group = Group::new(Delimiter::None, self.0.clone());
+                *ty = syn::Type::Verbatim(TokenTree::Group(group).into());
+            } else {
+                visit_mut::visit_type_mut(self, ty);
+            }
+        }
+        fn visit_expr_mut(&mut self, _: &mut syn::Expr) {}
+        fn visit_macro_mut(&mut self, _: &mut syn::Macro) {}
+    }
+    let mut filled = template.clone();
+    Fill(out).visit_type_mut(&mut filled);
+    quote!(#filled)
 }
 
 /// The unused binder of a `Clone` bound: `'__concord`, unless the type itself already names that
@@ -1818,6 +1874,15 @@ fn owner_docs(model: &Model, index: usize) -> TokenStream {
                     " Includes the parameter group{} {} (each also a trait of its setters).",
                     if names.len() > 1 { "s" } else { "" },
                     names.join(", ")
+                ));
+            }
+            // `query(..)` values choose their keys at run time: name the type that documents them.
+            for value in owner.values.iter().filter(|v| v.pairs.is_some()) {
+                let ty = &value.ty;
+                notes.push(format!(
+                    " `{}` writes its own query keys: see `{}` for which.",
+                    plain(&value.name),
+                    type_text(ty)
                 ));
             }
             let has_finite =
@@ -2688,6 +2753,46 @@ fn prepare_body(
 #[cfg(test)]
 mod tests {
     use quote::quote;
+
+    // Review b23-review-sol, finding 2: only type placeholders are the endpoint's output.
+    #[test]
+    fn a_send_template_replaces_type_placeholders_only() {
+        let text = |template: proc_macro2::TokenStream| {
+            let ty: syn::Type = syn::parse2(template).unwrap();
+            super::with_output(&ty, &quote!(Item))
+                .to_string()
+                .replace(' ', "")
+        };
+        assert_eq!(text(quote!(Result<_, Error>)), "Result<Item,Error>");
+        assert_eq!(text(quote!(fn(&'_ _) -> Vec<_>)), "fn(&'_Item)->Vec<Item>");
+        assert_eq!(
+            text(quote!(Wrap<_, [u8; { match 1 { _ => 2 } }]>)),
+            "Wrap<Item,[u8;{match1{_=>2}}]>"
+        );
+        // A parameter named `_` is not a type; an array length `_` is an expression.
+        assert_eq!(text(quote!(fn(_: u8) -> _)), "fn(_:u8)->Item");
+        assert_eq!(text(quote!([_; _])), "[Item;_]");
+        // A macro's input is its own grammar: never entered (reviews b23-review2..5 found that no
+        // token rule and no parse of an opaque input tells its type placeholders apart).
+        for kept in [
+            quote!(result! {_}),
+            quote!(result!(_)),
+            quote!(id!(fn(_: u8) -> _)),
+            quote!(result!(_::Tag, _)),
+            quote!(result!(__concord_placeholder_0, [u8; _])),
+        ] {
+            let ty: syn::Type = syn::parse2(kept.clone()).unwrap();
+            assert_eq!(
+                super::with_output(&ty, &quote!(Item)).to_string(),
+                kept.to_string()
+            );
+        }
+        assert_eq!(text(quote!(Vec<_, id!(_)>)), "Vec<Item,id!(_)>");
+        // Its tokens reach the macro as written (`&&` stays one joint pair).
+        let ty: syn::Type = syn::parse2(quote!(result!(&&u8, Item))).unwrap();
+        let exact = super::with_output(&ty, &quote!(Item)).to_string();
+        assert!(exact.contains("&&"), "{exact}");
+    }
 
     use super::{emit, key_owner};
     use crate::model::{KeyName, Model};

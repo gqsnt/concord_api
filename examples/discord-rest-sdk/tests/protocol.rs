@@ -557,7 +557,9 @@ async fn writes_failing_after_the_head_or_without_one_are_ambiguous() {
 }
 
 #[tokio::test]
-async fn a_refused_connection_is_not_an_ambiguous_write() {
+async fn a_refused_connection_on_a_write_is_ambiguous() {
+    // Review b23-review2-sol finding 1: a performed write can be followed by a redirect whose
+    // target refuses, so a connect error does not prove "not sent" with the caller's client.
     let port = {
         let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
         listener.local_addr().unwrap().port()
@@ -573,11 +575,12 @@ async fn a_refused_connection_is_not_an_ambiguous_write() {
         .send()
         .await
         .unwrap_err();
-    let Error::Concord { error: concord, .. } = &error else {
+    let Error::AmbiguousWrite(write) = &error else {
         panic!("{error:?}")
     };
-    assert!(concord.transport().unwrap().is_connect());
-    assert!(!error.is_ambiguous_write());
+    assert!(write.error.transport().unwrap().is_connect());
+    assert_eq!(write.accepted, None);
+    assert!(error.is_ambiguous_write());
 }
 
 #[tokio::test]

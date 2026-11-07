@@ -13,7 +13,7 @@ The slice supports these connected workflows:
    author's work batch at `/authors/{id}/works.json`, optionally using `limit` and `offset`.
 
 The generated `OpenLibrary` client is the public client. Search, works and author scopes
-lead to generated endpoints; every ordinary endpoint `send()` applies `ReadPolicy`.
+lead to generated endpoints; every endpoint `send()` names `Result<T, Error>` and applies `ReadPolicy`.
 There is no wrapper client, custom codec or native request rewrite.
 
 ```no_run

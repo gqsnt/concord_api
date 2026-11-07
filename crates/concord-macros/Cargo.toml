@@ -20,7 +20,7 @@ http.workspace = true
 mime.workspace = true
 proc-macro2.workspace = true
 quote.workspace = true
-syn = { workspace = true, features = ["full", "parsing", "printing", "proc-macro", "clone-impls"] }
+syn = { workspace = true, features = ["full", "parsing", "printing", "proc-macro", "clone-impls", "visit-mut"] }
 
 [dev-dependencies]
 # Only for the D11 consistency test: the runtime parser that the declared-base checker must not

@@ -669,6 +669,31 @@ async fn error_documents_are_typed_with_their_metadata() {
 }
 
 #[tokio::test]
+async fn retry_after_requires_one_unsigned_decimal_field() {
+    for (values, expected) in [
+        (vec![], None),
+        (vec![" 0 \t"], Some(Duration::ZERO)),
+        (vec!["+30"], None),
+        (vec!["30", "30"], None),
+        (vec!["18446744073709551616"], None),
+    ] {
+        let server = TestServer::start(move |_| {
+            let mut reply = Reply::json(429, ERROR_RATE_LIMITED);
+            for value in &values {
+                reply = reply.header("retry-after", *value);
+            }
+            reply
+        })
+        .await;
+        let error = api_error(alerts(&server).poll().send().await.unwrap_err());
+        assert_eq!(error.status().as_u16(), 429);
+        assert_eq!(error.retry_after(), expected);
+        assert_eq!(server.requests().len(), 1);
+        server.shutdown().await;
+    }
+}
+
+#[tokio::test]
 async fn an_error_body_that_is_not_a_document_keeps_the_status() {
     let server = TestServer::start(|request| match request.path() {
         "/alerts" => Reply::text(502, "text/html", "<html>bad gateway</html>"),
