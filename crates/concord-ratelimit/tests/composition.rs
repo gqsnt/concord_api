@@ -57,8 +57,8 @@ async fn retry_attempts_reacquire_and_token_service_has_its_own_key() {
             async move {
                 let used = cache
                     .get_or_refresh("audience", move || async move {
-                        limiter.acquire(&["token"], Mode::Wait).await.unwrap();
                         let _lease = limiter.lease("token", Mode::Wait).await.unwrap();
+                        limiter.acquire(&["token"], Mode::Wait).await.unwrap();
                         token_calls.fetch_add(1, Ordering::SeqCst);
                         Ok(Token::new(
                             bearer("synthetic").unwrap(),
@@ -68,8 +68,8 @@ async fn retry_attempts_reacquire_and_token_service_has_its_own_key() {
                     .await
                     .unwrap();
                 assert!(used.header().is_sensitive());
-                application.acquire(&["app"], Mode::Wait).await.unwrap();
                 let _lease = application.lease("app", Mode::Wait).await.unwrap();
+                application.acquire(&["app"], Mode::Wait).await.unwrap();
                 attempt // replace with exactly one application send; lease drops here
             }
         },
