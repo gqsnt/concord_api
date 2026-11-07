@@ -378,6 +378,8 @@ impl<T> Copy for Kind<T> {}
 pub struct Decoder<T> {
     pub(crate) operation: Option<Operation>,
     kind: Kind<T>,
+    /// The declared bound of a finite body read (`limit N;`), applied by `decode` and `send`.
+    limit: Option<usize>,
 }
 
 impl<T: 'static> Decoder<T> {
@@ -402,6 +404,7 @@ impl<T: 'static> Decoder<T> {
         Self {
             operation: None,
             kind: Kind::Typed(head_step::<F, T>),
+            limit: None,
         }
     }
 
@@ -415,6 +418,7 @@ impl<T: 'static> Decoder<T> {
         Self {
             operation: None,
             kind: Kind::Open(open_step::<F, I>),
+            limit: None,
         }
     }
 }
@@ -426,6 +430,7 @@ impl Decoder<Incoming> {
         Self {
             operation: None,
             kind: Kind::Incoming(|body| body),
+            limit: None,
         }
     }
 }
@@ -437,6 +442,7 @@ impl Decoder<()> {
         Self {
             operation: None,
             kind: Kind::Drain(|| ()),
+            limit: None,
         }
     }
 }
@@ -446,6 +452,7 @@ impl<T> Decoder<T> {
         Self {
             operation: Some(Operation::endpoint(meta)),
             kind: Kind::Typed(head),
+            limit: None,
         }
     }
 
@@ -453,6 +460,7 @@ impl<T> Decoder<T> {
         Self {
             operation: Some(Operation::endpoint(meta)),
             kind: Kind::Drain(unit),
+            limit: None,
         }
     }
 
@@ -460,6 +468,7 @@ impl<T> Decoder<T> {
         Self {
             operation: Some(Operation::endpoint(meta)),
             kind: Kind::Open(head),
+            limit: None,
         }
     }
 
@@ -467,7 +476,25 @@ impl<T> Decoder<T> {
         Self {
             operation: Some(Operation::endpoint(meta)),
             kind: Kind::Incoming(wrap),
+            limit: None,
         }
+    }
+
+    /// This handling with its finite body read bounded by `limit` bytes: a `-> T` output whose
+    /// body is longer is [`ErrorKind::Limit`](crate::ErrorKind::Limit) and is not decoded (nothing
+    /// more is read), on every path that applies the handling (`decode`, `finish`,
+    /// [`Received::decode`], [`Prepared::send`]). [`Received::decode_limited`] still replaces it
+    /// for one call. A drain, a stream reader or an `Incoming` is unaffected. Generated endpoints
+    /// carry the bound declared with `limit N;`.
+    #[must_use]
+    pub fn with_limit(mut self, limit: usize) -> Self {
+        self.limit = Some(limit);
+        self
+    }
+
+    /// The finite body bound this handling applies (`None`: unbounded).
+    pub fn limit(&self) -> Option<usize> {
+        self.limit
     }
 
     /// The identity of the endpoint this handling belongs to (`None` for [`Decoder::new`],
@@ -525,7 +552,8 @@ impl<T> Decoder<T> {
     /// unread), [`Transport`](crate::ErrorKind::Transport) if reading the body fails,
     /// [`Decode`](crate::ErrorKind::Decode) if it does not decode.
     pub async fn decode(self, response: reqwest::Response) -> Result<T, Error> {
-        self.decode_within(response, None).await
+        let limit = self.limit;
+        self.decode_within(response, limit).await
     }
 
     /// [`decode`](Self::decode) with a finite body read bounded by `limit` (`-> T` outputs; a drain,

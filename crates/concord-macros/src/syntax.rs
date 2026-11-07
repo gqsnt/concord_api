@@ -28,6 +28,7 @@ mod kw {
     syn::custom_keyword!(stream);
     syn::custom_keyword!(send);
     syn::custom_keyword!(params);
+    syn::custom_keyword!(limit);
 }
 
 /// HTTP methods accepted as endpoint keywords.
@@ -585,6 +586,8 @@ pub struct Stmts {
     pub response: Option<FormatDefault>,
     /// `send POLICY;` on the client: the type whose `SendWith<T>` every generated `send()` uses.
     pub send: Option<(Type, Span)>,
+    /// `limit EXPR;` on any owner: the bound, in bytes, of a finite typed output's body.
+    pub limit: Option<(Expr, Span)>,
 }
 
 #[derive(Clone)]
@@ -1016,6 +1019,34 @@ fn parse_owner_body(
                 ));
             }
             stmts.send = Some((ty, kw.span));
+            continue;
+        }
+        if input.peek(kw::limit) && !input.peek2(Token![::]) {
+            let kw: kw::limit = input.parse()?;
+            if let Some(first) = children.first() {
+                let first: &Owner = first;
+                return Err(syn::Error::new(
+                    kw.span,
+                    format!(
+                        "owner statements (`limit`, `path`, `query`, ...) must precede child declarations (first child: `{}`)",
+                        first.name
+                    ),
+                ));
+            }
+            if input.peek(Token![;]) {
+                return Err(input.error(
+                    "expected the bound in bytes, a `usize` constant expression (`limit 4 * 1024 * 1024;`)",
+                ));
+            }
+            let expr: Expr = input.parse()?;
+            input.parse::<Token![;]>()?;
+            if stmts.limit.is_some() {
+                return Err(syn::Error::new(
+                    kw.span,
+                    "duplicate `limit` statement; each owner declares it at most once",
+                ));
+            }
+            stmts.limit = Some((expr, kw.span));
             continue;
         }
         if input.peek(kw::path)

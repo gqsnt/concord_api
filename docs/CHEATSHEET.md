@@ -97,6 +97,7 @@ fn main() -> Result<(), concord::Error> {
 | `body form: MultipartBody` + `request Multipart;` (feature `multipart`) | `MultipartBody::form_data().text(..).file(..)` or `::related().part(Part::new(b).header(..))`; boundary chosen per body, sent with `Content-Length`; a contradicting declared media type or `content-type` is a `Build` error | [§5.10](AUTHOR_GUIDE.md#510-bodies-whose-media-type-is-known-at-run-time) |
 | `ACCEPT = ".."`, `remove ACCEPT` | an authored `Accept` always wins over the format's suggestion; a chain ending in `remove` sends none from Concord | [§5.8](AUTHOR_GUIDE.md#58-what-goes-on-the-wire-accept-and-content-type) |
 | `#[sensitive]` | never printed by Concord; also every key, segment and label it feeds | [§7](AUTHOR_GUIDE.md#7-sensitive-values) |
+| `limit N;` | bounds every finite typed output's body at and below this owner (nearest wins): `ErrorKind::Limit` beyond, on `send()`, `decode()` and `prepare()?.send()` | [§5.10a](AUTHOR_GUIDE.md#510a-bounding-finite-bodies-limit) |
 | `#[cfg(..)]`, `#[deprecated]`, `///` on scopes and endpoints | applied to the subtree or the navigation method; names are checked as if every `cfg` were on, so cfg-exclusive siblings need distinct names | [§8](AUTHOR_GUIDE.md#8-attributes) |
 
 Usual order inside an owner: `base` (client), `path`, `subdomain`, `query { }`, `headers { }`,

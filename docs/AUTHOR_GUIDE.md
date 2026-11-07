@@ -1361,6 +1361,48 @@ a form-data name or file name, and an empty `related` body are refused when the 
 prepared (`Build`, before I/O; the error shows no part bytes). The complete rules are on
 `concord::multipart::Multipart`.
 
+### 5.10a Bounding finite bodies: `limit`
+
+A finite typed output (`-> T`) is read into memory before it is decoded. `limit N;` on the
+client, a scope or the endpoint (the nearest wins) bounds that read to `N` bytes, a `usize`
+constant expression: a longer body is `ErrorKind::Limit` and is not decoded (nothing more is
+read). The bound travels with the endpoint's response handling, so every path that applies it
+honours it — the generated `send()`, a send policy's `received.decode()`, and the native
+`prepare()?.send()`. `received.decode_limited(n)` still replaces it for one call. A drained body
+(no `->`) is never buffered and a stream reader (`-> stream`) has its own limits, so `limit` on such
+an endpoint is a declaration error.
+
+```rust
+use concord::Json;
+use serde::Deserialize;
+
+#[derive(Deserialize)]
+pub struct Doc { pub text: String }
+
+concord::api! {
+    pub client Archive() {
+        base "https://archive.example";
+        format Json;
+        limit 4 * 1024 * 1024; // every finite output below: at most 4 MiB
+
+        GET doc(id: u64) -> Doc { path "docs/{id}"; }
+        scope thumbnails {
+            limit 64 * 1024; // nearer: these documents are small
+            GET meta(id: u64) -> Doc { path "thumbs/{id}"; }
+        }
+    }
+}
+
+fn main() -> Result<(), concord::Error> {
+    let archive = Archive::new(concord::reqwest::Client::new());
+    let (_, _, decoder) = archive.doc(1).prepare()?.into_parts();
+    assert_eq!(decoder.limit(), Some(4 * 1024 * 1024));
+    let (_, _, decoder) = archive.thumbnails().meta(1).prepare()?.into_parts();
+    assert_eq!(decoder.limit(), Some(64 * 1024));
+    Ok(())
+}
+```
+
 ### 5.11 Reading response metadata in an SDK
 
 A provider's rate-limit counter, request id or served version is read from the response head,
