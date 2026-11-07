@@ -80,8 +80,8 @@ Adopter counts are `examples/*-sdk` packages whose `Cargo.toml` depends on the c
 
 | Crate | Status | SDK adopters |
 |---|---|---|
-| `concord-pagination` | accepted (4.1); SDK50 added the `Link` parser, `next_offset`, provider-error access and item events | 39 |
-| `concord-codecs` | accepted (X-1); every SDK uses it through the facade | 5 direct, 55 via `concord` |
+| `concord-pagination` | pre-SDK50 (from the 4.4 extensions, merged to `main` with PR #3); SDK50 added the `Link` parser, `next_offset`, provider-error access and item events | 39 |
+| `concord-codecs` | accepted (X-1) | 55 in total: 53 enable it through `concord`'s features, 5 depend on it directly (overlapping; arXiv and USGS use only the direct dependency) |
 | `concord-retry` | **pilot** (X-3); its `receive_with` entry point was accepted (B34-R) | 16 |
 | `concord-auth` | **pilot** (X-5); merged, no acceptance decision recorded in SDK50; stateful rotation not accepted (B34-A) | 20 |
 | `concord-ratelimit` | **pilot, not accepted** (B12-G, B23-RL "no further investment") | 4 (arXiv, Sentry, Strava, Xero) |
@@ -108,7 +108,8 @@ The first three were merged with `448151db`.
 - **Model readers, not people.** Every consumer, maintainer and reviewer was a model session
   (Codex `gpt-6.1-sol`/`-terra`/`gpt-6-astra`, Claude Opus 5.5; ledger in `MODELS.md`). Their
   predictions are evidence about the documentation, not human usability results.
-- **No live provider calls.** Fixtures are synthetic and labelled (`PROVENANCE.md` per SDK).
+- **No live provider calls.** Fixtures are synthetic and labelled (`PROVENANCE.md` per campaign
+  SDK; `PROVIDER.md` for the five earlier GitHub, Kubernetes, Salesforce, Shopify and Stripe SDKs).
 - **Native Windows.** CI failed on Windows from `2ee1fb2f` to `c1b75b95`; the causes found
   (CRLF fixtures, Xero Unix-only code, `cargo fmt` command length, Xero directory sync) are fixed
   forward. Only the CI run on the final head counts.
@@ -122,8 +123,8 @@ The first three were merged with `448151db`.
 ## In-flight work at close
 
 Every local branch with commits not contained in this branch's head `c1b75b95`, classified
-(observed with `git rev-list` / `git cherry` at close; the 56 other `sdk50/*` branches are fully
-contained):
+(observed with `git rev-list` / `git cherry` at close; of the 60 local `sdk50/*` branches, the 54
+not listed here are fully contained):
 
 | Branch (head) | Class | Reason | Goes to |
 |---|---|---|---|

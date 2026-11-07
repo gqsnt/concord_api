@@ -185,8 +185,9 @@ tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
 | `form` | no | the `Form` format (`request Form;`, `application/x-www-form-urlencoded`), using serde and serde_urlencoded; implies `extras` |
 | `reqwest-defaults` | yes | reqwest's own default features (TLS, HTTP/2, system proxy) |
 
-The runtime lives in `concord-core` and the standard formats in `concord-extras`; `concord`
-re-exports both with the `api!` macro, so an application depends on `concord` only. With
+The runtime lives in `concord-core` and the standard formats in `concord-codecs` (`concord-extras`
+remains as a compatibility facade over it); `concord` re-exports both with the `api!` macro, so an
+application depends on `concord` only. With
 `default-features = false` there is no standard format at all (a format of your own works the
 same: implement `concord::Encode`/`concord::Decode`); enable `extras`, `json` or `form` for them.
 A crate that only offers formats can depend on `concord-core` instead.
@@ -210,7 +211,7 @@ breaking Concord release.
 | What goes on the wire: `Accept` and `Content-Type` | [Author guide, 5.8](docs/AUTHOR_GUIDE.md#58-what-goes-on-the-wire-accept-and-content-type) |
 | Error documents, timeouts, streaming, retries, pagination; patterns from other APIs | [Recipes](docs/RECIPES.md), [`examples/compat`](examples/compat) |
 | Bounded page and job traversal for an SDK: dependent cursors, known page plans, result manifests, budgets, checkpoints, reports (core Concord still does not paginate; this is a separate crate that does not depend on it) | [`concord-pagination`](crates/concord-pagination/README.md) |
-| The standard formats (`Json`, `Text`, `Binary`, `Form`, CSV, JSON Lines, server-sent events, multipart), each an ordinary `Encode`/`Decode` implementation; the facade re-exports them through its features | [`concord-codecs`](crates/concord-codecs/README.md) |
+| The standard formats (`Json`, `Text`, `Binary`, `Form`, CSV, JSON Lines, server-sent events, multipart), each an ordinary implementation of the public `Encode`/`Decode`/`Incremental` traits (server-sent events are incremental only); the facade re-exports them through its features | [`concord-codecs`](crates/concord-codecs/README.md) |
 | Sensitive Basic/Bearer credentials and a scoped, cancellation-safe token cache over your own acquisition closure (pilot: persistence, signing and retries stay in the SDK) | [`concord-auth`](crates/concord-auth/README.md) |
 | Bounded application attempts with explicit replay permission, `Retry-After` parsing and a prepared-request adapter (pilot) | [`concord-retry`](crates/concord-retry/README.md) |
 | Process-local keyed admission and concurrency leases for SDK-supplied keys (pilot, not accepted as a default; no provider quotas are built in) | [`concord-ratelimit`](crates/concord-ratelimit/README.md) |
