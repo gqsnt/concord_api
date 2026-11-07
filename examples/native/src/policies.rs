@@ -11,7 +11,8 @@ use std::sync::{Arc, RwLock};
 use std::time::Duration;
 
 use concord::ErrorKind;
-use tokio::sync::Semaphore;
+use concord_ratelimit::{Limiter, Mode, TokioClock};
+use std::num::NonZeroUsize;
 
 use crate::api::{Inventory, Item};
 
@@ -117,15 +118,27 @@ pub async fn item_with_retry(
     .await
 }
 
-/// Fetches many items with at most `admission.available_permits()` requests in flight (U31).
-///
-/// Admission is the application's: requests are **built** first (no I/O, R10), then each waits
-/// for a permit and holds it until its response is decoded. Results are in input order. The
-/// semaphore can be shared with any other code that talks to the same server.
+/// Application-owned shared concurrency admission for inventory requests.
+pub struct Admission(Limiter<()>);
+impl Admission {
+    /// Create admission with a nonzero concurrency limit.
+    pub fn new(limit: NonZeroUsize) -> Self {
+        let limiter = Limiter::new(NonZeroUsize::new(1).unwrap(), TokioClock::default());
+        limiter.set_concurrency((), limit).unwrap();
+        Self(limiter)
+    }
+    /// Number of currently unused permits.
+    pub fn available_permits(&self) -> usize {
+        self.0.available_leases(&()).unwrap()
+    }
+}
+
+/// Fetch items with bounded concurrency, holding a lease until each body is decoded.
+/// Requests are built before admission; results remain in input order.
 pub async fn items_admitted(
     api: &Inventory,
     ids: &[u64],
-    admission: Arc<Semaphore>,
+    admission: Arc<Admission>,
 ) -> Vec<Result<Item, concord::Error>> {
     let mut tasks = Vec::with_capacity(ids.len());
     for &id in ids {
@@ -134,9 +147,10 @@ pub async fn items_admitted(
         tasks.push(tokio::spawn(async move {
             let prepared = prepared?;
             let _permit = admission
-                .acquire_owned()
+                .0
+                .lease((), Mode::Wait)
                 .await
-                .expect("the application never closes this semaphore");
+                .expect("the configured key is retained");
             prepared.send().await
         }));
     }

@@ -29,7 +29,7 @@ echo "consumer logs: $scratch"
 # The metadata (about 50 KB) goes to Python as a file, never as an argument: Windows limits a
 # whole command line to 32,767 characters.
 printf '%s' "$metadata" >"$scratch/metadata.json"
-crates=(concord-core concord-codecs concord-extras concord-macros concord concord-pagination concord-retry concord-auth)
+crates=(concord-core concord-codecs concord-extras concord-macros concord concord-pagination concord-retry concord-auth concord-ratelimit)
 source_dir="$root/crates"
 if [[ -n $packaged ]]; then
   packaged=$(cd "$packaged" && pwd)
@@ -56,7 +56,7 @@ fi
 # directory, while separate cargo invocations still isolate each feature selection.
 export CARGO_TARGET_DIR="$scratch/target"
 status=0
-for consumer in core-only facade-no-extras extras-core codecs-json codecs-csv codecs-sse extras-legacy facade-full facade-json-only facade-gzip streaming phase-a-dx retry-only auth-only; do
+for consumer in core-only facade-no-extras extras-core codecs-json codecs-csv codecs-sse extras-legacy facade-full facade-json-only facade-gzip streaming phase-a-dx retry-only auth-only ratelimit-only; do
   destination="$scratch/$consumer"
   cp -R "$root/checks/consumers/$consumer" "$destination"
   # Rewrite only Concord dependency paths; retain the fixture's authored feature selection.
@@ -65,7 +65,7 @@ import json, pathlib, re, sys
 manifest, source, metadata, packaged = sys.argv[1:]
 versions = {p['name']: p['version'] for p in json.loads(pathlib.Path(metadata).read_text())['packages']}
 paths = {name: str(pathlib.Path(source) / (name + '-' + versions[name] if packaged else name))
-         for name in ('concord-core', 'concord-codecs', 'concord-extras', 'concord-macros', 'concord', 'concord-pagination', 'concord-retry', 'concord-auth')}
+         for name in ('concord-core', 'concord-codecs', 'concord-extras', 'concord-macros', 'concord', 'concord-pagination', 'concord-retry', 'concord-auth', 'concord-ratelimit')}
 p = pathlib.Path(manifest)
 text = re.sub(r'path = "../../../crates/([^"]+)"',
               lambda m: 'path = ' + json.dumps(paths[m[1]]), p.read_text())
@@ -73,7 +73,7 @@ text += '\n[patch.crates-io]\n'
 # Optional crates are patched only where a consumer uses them: an unused patch would make cargo
 # rewrite the lockfile of a consumer that keeps its own (facade-gzip, fetched with --locked).
 text += ''.join(name + ' = { path = ' + json.dumps(path) + ' }\n' for name, path in paths.items()
-                if name not in ('concord-pagination', 'concord-retry', 'concord-extras', 'concord-auth') or name in text)
+                if name not in ('concord-pagination', 'concord-retry', 'concord-extras', 'concord-auth', 'concord-ratelimit') or name in text)
 p.write_text(text)
 PY
   # A fixture with dependencies outside the workspace graph (facade-gzip: reqwest's gzip support)
@@ -100,6 +100,7 @@ PY
   if ! (cd "$destination" && cargo tree --offline -e normal --prefix none) >"$destination/tree.log" 2>&1; then failed=1; fi
   forbidden=''
   case "$consumer" in
+    ratelimit-only) forbidden='concord|concord-core|concord-macros|concord-codecs|concord-extras|concord-retry|concord-auth|reqwest|tokio|serde' ;;
     auth-only) forbidden='concord|concord-core|concord-macros|concord-codecs|concord-extras|concord-retry|reqwest|tokio|serde' ;;
     retry-only) forbidden='concord|concord-core|concord-macros|concord-codecs|concord-extras|reqwest|tokio' ;;
     core-only) forbidden='concord-macros|concord-codecs|concord-extras|concord|serde_json' ;;

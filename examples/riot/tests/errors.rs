@@ -164,3 +164,31 @@ fn the_key_and_access_tokens_are_withheld_from_debug() {
     assert!(!format!("{prepared:?}").contains("synthetic-access-token"));
     assert!(prepared.request().headers()["authorization"].is_sensitive());
 }
+
+#[tokio::test]
+async fn shared_admission_keeps_riot_cooldown_after_workflow_stops() {
+    let server = Server::reply(Reply::new(429).header("retry-after", "7")).await;
+    let gate = concord_example_riot::RiotAdmission::default();
+    let client = riot(&server);
+    for _ in 0..2 {
+        let stop = gate
+            .player_summary(
+                &client,
+                "x",
+                "y",
+                AccountRoute::Asia,
+                Platform::Kr,
+                MatchRoute::Asia,
+                1,
+            )
+            .await
+            .unwrap_err();
+        assert!(matches!(
+            stop,
+            Stop::RateLimited {
+                retry_after: Some(1..=7)
+            }
+        ));
+    }
+    assert_eq!(server.requests().len(), 1);
+}

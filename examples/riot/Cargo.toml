@@ -8,6 +8,7 @@ license.workspace = true
 publish = false
 
 [dependencies]
+concord-ratelimit = { path = "../../crates/concord-ratelimit", features = ["tokio"] }
 concord-retry = { path = "../../crates/concord-retry" }
 concord = { path = "../../crates/concord" }
 serde = { workspace = true, features = ["derive"] }
