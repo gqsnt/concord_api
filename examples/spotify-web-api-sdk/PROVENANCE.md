@@ -70,6 +70,39 @@ No new crate: `Cargo.lock` gains only this package's own entry. It uses workspac
 (derive) and `tokio` (`time`, for the retry sleep), all already in the lock; dev-dependencies
 `concord-example-testserver`, `serde_json` and `tokio` (`macros`, `rt-multi-thread`).
 
+## Maintenance ticket (2026-11-07)
+
+Re-read the exact [API calls](https://developer.spotify.com/documentation/web-api/concepts/api-calls),
+[Refreshing tokens](https://developer.spotify.com/documentation/web-api/tutorials/refreshing-tokens)
+and [Quota modes](https://developer.spotify.com/documentation/web-api/concepts/quota-modes) pages
+read-only on **2026-11-07**, plus
+[Add Items to Playlist](https://developer.spotify.com/documentation/web-api/reference/add-tracks-to-playlist)
+on that date. No additional provider pages or live endpoints were used.
+
+The add reference specifies POST `/playlists/{playlist_id}/tracks`, a JSON URI array of up to
+100 tracks/episodes, optional zero-based position (otherwise append), write scopes
+`playlist-modify-public` / `playlist-modify-private`, and a 201 snapshot document. It currently
+marks the route deprecated. The ticket's `/tracks` route is retained. The SDK's strict
+22-character base-62 catalog-URI check is a conservative validation choice consistent with the
+reference's examples, not a claim that this page specifies a universal ID-length rule.
+
+`fixtures/playlist-snapshot.json` is derived from the documented `snapshot_id` response shape,
+with a synthetic opaque version. New inline bodies in `tests/add_items.rs` and
+`tests/add_items_consumer.rs` are synthetic: they simulate writes, permissions, post-write
+playlist state, failures and token responses. The track/episode URI values in the new tests
+are reference examples; they are only strings sent to loopback. Timeouts and no write replay
+are SDK recovery policy required by the ticket, not a provider idempotency guarantee.
+
+No dependencies, features, manifest membership or lock entries changed during maintenance:
+the package was already a workspace member and already present in `Cargo.lock` at entry.
+The first baseline test used `--offline` without `--locked`; subsequent Cargo commands use
+`--offline --locked`, `CARGO_BUILD_JOBS=4`, and the default worktree `target/`.
+
+Installed `reqwest` 0.13.4 registry sources (`src/async_impl/{request,client}.rs`, `src/retry.rs`)
+were inspected for transport policy: retry/redirect configuration belongs to the supplied
+client. The caller contract therefore explicitly requires no transport retries or redirects
+when using playlist additions.
+
 ## Examples consulted
 
 This SDK is **example-assisted**. Files read, and what was taken from each:

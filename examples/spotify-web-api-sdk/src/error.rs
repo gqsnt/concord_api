@@ -44,7 +44,7 @@ pub struct OAuthErrorObject {
 pub enum ApiClass {
     /// 400: the request was malformed or a value was invalid.
     BadRequest,
-    /// 401: the access token was refused even after one refresh and replay.
+    /// 401: the access token was refused (after one refresh and replay for reads; once for writes).
     Unauthorized,
     /// 403: refused. For an app in development mode this is what a user who is not on the app's
     /// allowlist receives; it can also be any other refusal. Never retried or refreshed.
@@ -266,6 +266,11 @@ pub enum Error {
     Concord(concord::Error),
     /// The session's total deadline expired before any attempt completed.
     Deadline,
+    /// A write was dispatched but its result could not be established (transport failure,
+    /// deadline, or an unreadable success document). The items may already have been added.
+    /// Never resend automatically: re-read the playlist and reconcile it first. The boxed
+    /// error preserves the cause; a timeout during token acquisition alone is not uncertain.
+    UncertainWrite(Box<Error>),
 }
 
 impl Error {
@@ -308,11 +313,23 @@ impl Error {
     pub fn concord(&self) -> Option<&concord::Error> {
         match self {
             Self::Concord(e) => Some(e),
+            Self::UncertainWrite(cause) => cause.concord(),
             Self::Auth(a) => match &**a {
                 AuthError::Concord(e) => Some(e),
                 _ => None,
             },
             _ => None,
+        }
+    }
+
+    /// Marks an incomplete dispatched write without obscuring an explicit API refusal.
+    pub(crate) fn after_write(self) -> Self {
+        if matches!(&self, Self::Deadline)
+            || matches!(&self, Self::Concord(cause) if cause.delivery() != concord::Delivery::NotSent)
+        {
+            Self::UncertainWrite(Box::new(self))
+        } else {
+            self
         }
     }
 }
@@ -338,6 +355,7 @@ impl fmt::Debug for Error {
             Self::Protocol(m) => f.debug_tuple("Protocol").field(m).finish(),
             Self::Concord(e) => f.debug_tuple("Concord").field(e).finish(),
             Self::Deadline => f.write_str("Deadline"),
+            Self::UncertainWrite(cause) => f.debug_tuple("UncertainWrite").field(cause).finish(),
         }
     }
 }
@@ -361,6 +379,9 @@ impl fmt::Display for Error {
             Self::Protocol(m) => write!(f, "response breaks the contract: {m}"),
             Self::Concord(e) => fmt::Display::fmt(e, f),
             Self::Deadline => f.write_str("the request deadline expired"),
+            Self::UncertainWrite(_) => f.write_str(
+                "the playlist addition may have succeeded; re-read the playlist before another addition",
+            ),
         }
     }
 }
@@ -370,6 +391,7 @@ impl std::error::Error for Error {
         match self {
             Self::Concord(e) => Some(e),
             Self::Auth(a) => Some(&**a),
+            Self::UncertainWrite(cause) => Some(&**cause),
             _ => None,
         }
     }

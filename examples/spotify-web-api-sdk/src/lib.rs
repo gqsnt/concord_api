@@ -5,12 +5,15 @@
 //! 1. search the catalog for artists ([`WebApi::search_artists`]) and retrieve the one selected
 //!    ([`WebApi::artist`]);
 //! 2. list the authorized user's playlists ([`WebApiMe::playlists`]) and fetch the one selected
-//!    ([`WebApiPlaylist::get`], continued with [`WebApiPlaylist::items`]).
+//!    ([`WebApiPlaylist::get`], continued with [`WebApiPlaylist::items`]), and add items to an
+//!    owned playlist ([`WebApiPlaylist::add_items`]).
 //!
 //! Authorization is the authorization-code flow with refresh ([`OAuth`], [`Session`]). The
 //! session is the client's send policy: every generated `send()` obtains an access token
-//! (shared single-flight refresh), applies it, replays once after a 401, and returns this
-//! crate's [`Error`]. `prepare()` builds the declared request **without** `Authorization`.
+//! (shared single-flight refresh), applies it, replays reads once after a 401, and returns this
+//! crate's [`Error`]. Writes are sent once; [`Error::UncertainWrite`] requires re-reading the
+//! playlist before deciding what to do next. `prepare()` builds the declared request
+//! **without** `Authorization`.
 //!
 //! ```no_run
 //! use concord_sdk_spotify_web_api::{
@@ -35,6 +38,7 @@
 
 #![warn(missing_docs)]
 
+mod add_items;
 mod auth;
 mod error;
 mod models;
@@ -43,6 +47,7 @@ mod session;
 
 use concord::Json;
 
+pub use add_items::{AddItems, PlaylistSnapshot};
 pub use auth::{
     AppCredentials, AuthorizationCode, AuthorizeRequest, ClientSecret, Grant, OAuth, RefreshToken,
     State,
@@ -70,7 +75,8 @@ concord::api! {
     /// The Spotify Web API (`https://api.spotify.com/v1`), as far as this SDK's slice goes.
     ///
     /// Every `send()` goes through the [`Session`]: it authorizes the request, refreshes and
-    /// replays once after a 401, and maps non-2xx answers to [`Error::Api`].
+    /// replays reads once after a 401, and maps non-2xx answers to [`Error::Api`]. Writes are
+    /// never replayed, even after a 401 or a retryable 429.
     pub client WebApi(session: Session) {
         base "https://api.spotify.com";
         path "v1";
@@ -110,6 +116,18 @@ concord::api! {
 
             /// A page of the playlist's items (`GET /v1/playlists/{id}/tracks`).
             GET items(query market?: Market, ..PageParams) -> Paging<PlaylistItem> {
+                path "tracks";
+            }
+
+            /// Add up to 100 items to an owned playlist (`POST /v1/playlists/{id}/tracks`).
+            /// Requires `playlist-modify-public` or `playlist-modify-private` as appropriate.
+            /// Returns the new snapshot ID. Never replayed automatically; on
+            /// [`Error::UncertainWrite`], re-read the playlist to reconcile the addition.
+            ///
+            /// Provider reference (read 2026-11-07):
+            /// <https://developer.spotify.com/documentation/web-api/reference/add-tracks-to-playlist>.
+            /// Spotify marks this route deprecated; it is retained for this SDK's contract.
+            POST add_items(body items: AddItems) -> PlaylistSnapshot {
                 path "tracks";
             }
         }

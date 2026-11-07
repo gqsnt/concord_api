@@ -5,12 +5,14 @@
 //!   ([`concord_auth::TokenCache`], one key per session).
 //! - **The refresh token survives a refresh that does not rotate it.** It is replaced only by a
 //!   non-empty `refresh_token` in a successful refresh response.
-//! - **401** invalidates exactly the access token that request used, refreshes once and replays
-//!   the request once (every operation of this SDK is a `GET`). A second 401 is final.
+//! - **401** invalidates exactly the access token that request used. Reads refresh and replay
+//!   once; a second 401 is final. Writes return the first 401 without replay or refresh.
+//! - **Writes** acquire a token normally, then send once. A dispatched write that times out or
+//!   loses its result is [`Error::UncertainWrite`]; the caller must re-read the playlist.
 //! - **403 and 404** never refresh or invalidate anything.
 //! - **429** is returned as [`ApiClass::RateLimited`](crate::ApiClass::RateLimited) with its
 //!   `Retry-After`, or retried after that delay when [`SessionOptions::rate_limit_retries`] allows
-//!   it and the delay is within [`SessionOptions::max_retry_wait`]. A 429 whose document says
+//!   it for a read and the delay is within [`SessionOptions::max_retry_wait`]. A 429 whose document says
 //!   `QUOTA_EXCEEDED` is never retried.
 
 use std::fmt;
@@ -82,7 +84,7 @@ impl SessionOptions {
         self
     }
 
-    /// Retry a 429 (not `QUOTA_EXCEEDED`) up to `retries` times, waiting its `Retry-After`. A 429
+    /// Retry a read's 429 (not `QUOTA_EXCEEDED`) up to `retries` times, waiting its `Retry-After`. A 429
     /// without a valid `Retry-After`, or with a delay above [`max_retry_wait`](Self::max_retry_wait),
     /// is returned at once.
     #[must_use]
@@ -329,14 +331,36 @@ impl<T: Send + 'static> SendWith<T> for Session {
     type Output = Result<T, Error>;
 
     async fn send<E: Endpoint<T> + Send>(&self, endpoint: E) -> Result<T, Error> {
-        let (http, request, decoder) = endpoint.prepare()?.into_parts();
-        // Every operation of this SDK is a GET: replaying it (after a refresh, after a 429's
-        // delay) is safe. Anything else would be sent once.
-        let replay = if request.method() == Method::GET {
-            Replay::Permitted
-        } else {
-            Replay::Never
-        };
+        let (http, mut request, decoder) = endpoint.prepare()?.into_parts();
+        if request.method() != Method::GET {
+            // A cloneable POST body is not permission to repeat a playlist addition. Include
+            // success-body decoding in the deadline: a 201 head alone does not give a snapshot.
+            let mut dispatched = false;
+            let send_once = async {
+                let used = self.token().await?;
+                request
+                    .headers_mut()
+                    .insert(AUTHORIZATION, used.header().clone());
+                dispatched = true;
+                let received = decoder.execute(&http, request).await?;
+                if received.status() == StatusCode::UNAUTHORIZED {
+                    self.inner.cache.invalidate(&(), &used.generation());
+                }
+                finish(received).await
+            };
+            let result = match self.inner.deadline {
+                Some(budget) => tokio::time::timeout(budget, send_once)
+                    .await
+                    .unwrap_or(Err(Error::Deadline)),
+                None => send_once.await,
+            };
+            return if dispatched {
+                result.map_err(Error::after_write)
+            } else {
+                result
+            };
+        }
+        let replay = Replay::Permitted;
         let retries = usize::from(self.inner.rate_limit_retries);
         let mut policy = Policy::new(NonZeroUsize::MIN.saturating_add(1 + retries));
         policy.timeout = self.inner.deadline;
