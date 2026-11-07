@@ -13,7 +13,7 @@ as a bounded ZIP. Both connected workflows are exercised in `tests/workflows.rs`
 
 The declaration generates `Fred → series(series_id) → metadata/observations/export_csv`.
 Search belongs directly to `Fred`. The endpoints keep Concord's generated setters,
-`prepare()` and ordinary `send()`; the SDK's send policy returns `Result<T, Error>`.
+`prepare()` and ordinary `send()`; the declaration names `Result<T, Error>` in each generated `send()` signature.
 
 ```no_run
 use concord_sdk_fred::{Fred, FredConfig, SearchLimit, ObservationLimit, http_client};

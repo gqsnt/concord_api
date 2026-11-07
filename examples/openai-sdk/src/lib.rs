@@ -26,7 +26,7 @@ concord::api! {
     pub client OpenAiApi(#[sensitive] header(AUTHORIZATION) authorization: HeaderValue) {
         base "https://api.openai.com";
         path "v1";
-        send SendPolicy;
+        send SendPolicy -> Result<Response<_>, Error>;
         request Json;
         response Json;
         /// Create a response.
@@ -297,7 +297,7 @@ async fn checked<T>(r: Received<T>) -> Result<Received<T>, Error> {
     }
     Ok(r)
 }
-/// The send policy of [`OpenAiApi`] (`send SendPolicy;`): every generated `send()` returns
+/// The send policy of [`OpenAiApi`] (`send SendPolicy -> Result<Response<_>, Error>;`): every generated `send()` returns
 /// `Result<Response<T>, Error>`, with OpenAI's error document on a non-2xx status.
 #[derive(Default)]
 pub struct SendPolicy;

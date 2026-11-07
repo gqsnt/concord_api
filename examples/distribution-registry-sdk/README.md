@@ -206,6 +206,7 @@ println!("published {}", pushed.digest);
   before the body is read — and a `mediaType` field must agree with it. At most 4 MiB is read.
 - A blob is verified against the digest it was fetched by and, with `blob_for`, the descriptor's
   size; a contradicting `Content-Length` or `Docker-Content-Digest` fails before the body is read.
+  `Content-Length` must be one unsigned decimal field (surrounding OWS allowed; no sign).
 - `sha256` and `sha512` can be verified. Another algorithm parses (it is valid by the grammar) but
   fetching by it is refused before sending (`UnsupportedAlgorithm`): content is never accepted
   unverified.
