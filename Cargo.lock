@@ -1381,6 +1381,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "concord-sdk-xero-accounting"
+version = "0.0.0"
+dependencies = [
+ "concord",
+ "concord-auth",
+ "concord-example-testserver",
+ "concord-pagination",
+ "concord-ratelimit",
+ "concord-retry",
+ "serde",
+ "serde_json",
+ "tokio",
+]
+
+[[package]]
 name = "concord-sdk-zendesk-support"
 version = "0.0.0"
 dependencies = [
