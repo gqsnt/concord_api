@@ -104,7 +104,7 @@ Evidence identities: P1 work lives on `sdk50/integration` (from `5c3ef5f6`), mer
 |---|---|---|---|
 | B34-D | Generated endpoint docs order and wording. | **MACRO (docs)**, accepted | 4 consumer/author witnesses; unit test `request_summary_puts_the_wire_shape_first_and_names_the_policy`; review b34-review: no defect. |
 | B34-R | `Retry::receive_with` (async fallible before-attempt hook with context; dispatch/refusal/no-response accounting). | **EXTERNAL**, accepted | 4 roles in 3 SDKs; PayPal −24 net. Not adopted: Adyen (an assertion pins factory-start accounting), Xero (−5, manifest outside brief). Reversal: if Wave 4 adds no adopter, mark it a pilot at the final retrospective. |
-| B34-O | Inherent `operation()` on generated endpoint handles. | **MACRO**, accepted | Square maintainer, PayPal allowlist; kept by both b34-values variants; Square −2/+1. |
+| B34-O | Inherent `operation()` on generated endpoint handles. | **MACRO**, accepted | Square maintainer, PayPal allowlist; kept by both b34-values variants; Square −2/+1. Review b34-review2: an SDK's own inherent `operation` on a generated type now conflicts (E0592; none in the corpus) — documented in MIGRATION as a reserved generated name rather than opt-in syntax. |
 | B34-A | Stateful `TokenCache` for refresh-token rotation. | **Not accepted** (prototype `5304d763`) | QuickBooks −10, Xero +4, HubSpot +11. |
 | B34-V | Declared values readable back (getters A; `facts` B). | **EXPERIMENT continues** (prototype `4fa26231`) | A −9 / B +5 SDK lines; B ~156 core/macro lines; neither guarantees a write declares its key. |
 | B34-S | `send` on a scope or endpoint. | **EXPERIMENT for W4** | PayPal F1, QuickBooks F1. |
