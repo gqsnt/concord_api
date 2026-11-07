@@ -1343,6 +1343,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "concord-sdk-strava"
+version = "0.1.0"
+dependencies = [
+ "concord",
+ "concord-auth",
+ "concord-example-testserver",
+ "concord-pagination",
+ "concord-ratelimit",
+ "concord-retry",
+ "futures-util",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "tokio",
+]
+
+[[package]]
 name = "concord-sdk-twilio"
 version = "0.0.0"
 dependencies = [
