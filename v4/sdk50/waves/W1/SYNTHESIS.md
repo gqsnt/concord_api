@@ -141,6 +141,21 @@ cover every cfg/raw-identifier/group combination or runtime interleavings beyond
 `query(..)` position change and the adoption lane came after the reviewed range and are covered
 by a follow-up review (`b12-review2-sol`).
 
+`b12-review2-sol` (Codex gpt-6.1-sol xhigh, read-only, `d3808b29..78b1ff77`) found three more:
+
+| # | Finding | Check | Outcome |
+|---|---|---|---|
+| 1 | `limit __DECODE;` / `limit __META;` resolved to the generated statics of `prepare()` | **reproduced** (two E0308) | fixed: the bound is a private associated constant of the endpoint type |
+| 2 | "before block entries" overstated: an endpoint's `append` to an inherited key keeps that key's first position | confirmed | wording corrected; witness `v=1&v=2&p=9&new=n` |
+| 3 | the ratelimit cancellation regression's 10 ms window expired before its check | confirmed | window 1000 ms, so a stray charge is detected |
+
+Sound by its reading: `query(..)` ordering with group splices, absent values, pair-only and
+block-only endpoints; the earlier fixes; Discord's exclusive cursors and wire order; ClickHouse's
+validation and execution boundary; ratelimit locking, queues and poison recovery; the doc fixes.
+The three fixes above (`292c0fbc`) were made by the coordinator and are covered by failing-first
+or witness tests; they have not been re-reviewed and are in scope for the next between-waves
+review.
+
 ## Not done, and why
 
 - Live provider calls: NOT_RUN (no authorization); all evidence is loopback.
