@@ -65,6 +65,54 @@ let run = Retry::new(policy, Replay::Permitted).receive(
 // Check run.report; then consume run.outcome's unread Received<T> in the SDK.
 ```
 
+For asynchronous credentials, fallible admission or a guard that can expire during backoff,
+use the opt-in `Retry::receive_with`. `receive` and `run` keep their existing signatures and
+accounting. The hook owns a fresh `reqwest::Request` and returns a future yielding
+`Result<(reqwest::Request, A), E>`; neither `A` nor `E` needs an error, clone or debug trait.
+The classifier receives `(&Result<Received<T>, concord_core::Error>, &mut A) -> Decision`.
+An owned request lets the future await acquisition without boxing or borrowing the hook.
+
+```rust,ignore
+let run = Retry::new(policy, Replay::Permitted).receive_with(
+    prepared,
+    concord_retry::concord::ReplayMode::Required,
+    |mut request, attempt| async move {
+        let token = tokens.acquire().await?; // SDK-owned acquisition error E
+        let lease = limiter.lease().await?;
+        request.headers_mut().insert(AUTHORIZATION, token.header().clone());
+        Ok((request, (token.generation(), lease))) // per-attempt state A
+    },
+    |outcome, (generation, _lease)| classify(outcome, generation),
+    monotonic_clock,
+    injected_sleep,
+    injected_jitter,
+).await;
+// run.refusal is the SDK's E; it never overwrites run.outcome.
+// Hold run.context while consuming the final body, then drop it to release the lease.
+```
+
+`ReceiveRun<T, A, E>` returns `outcome`, `context`, `refusal` and `report: ReceiveReport`.
+A hook error skips dispatch and classification and stops with `ClassifierStop`. The unread
+last completed outcome stays available beside that error; on a first-hook refusal it is absent.
+`ReceiveReport::retry` is a `Report` whose `attempts` count **dispatches to Decoder::execute**,
+including a dispatch cancelled at the deadline, but excluding hooks. `completed` counts returned
+heads/transport errors; `retry.attempts - completed` detects a cancelled dispatch. `refused`
+counts hook errors (zero or one); a cancelled hook is neither a dispatch nor a refusal.
+`no_response` remembers whether **any** dispatch lacked a response head, including cancellation,
+even if a later attempt returned a head. Hook failure/cancellation and body decoding do not set
+it. This records transport history; the SDK still interprets provider ambiguity such as a 5xx.
+
+The total deadline includes hooks. A successful hook followed by expiry cannot dispatch; a
+pending hook is dropped at expiry. At exact expiry `Deadline` takes precedence over refusal,
+while the refusal value and previous outcome remain available. The hook's state stays alive
+through classification and final decoding. Before an actual retry (including zero backoff),
+it is dropped **before constructing sleep or calling the next hook**. Thus a concurrency lease
+never spans backoff. If repetition stops at a count/replay/time bound, final state is retained.
+If a later hook refuses or expires, the previous outcome remains but its state was released.
+Dropping the adapter future cancels owned work; shared acquisition work started by the hook
+may outlive it. Required replay preflight runs before hooks and I/O just as with `receive`.
+Diagnostics withhold outcomes, context and refusal values, even if their `Debug` leaks secrets.
+
 Each attempt executes `Decoder::execute(&client, request)`, keeping endpoint identity and declared
 handling. Dropped retry responses are never decoded or buffered. Once the final head is returned,
 body consumption is outside the retry owner: a decode failure or a stream failure after an item
@@ -122,12 +170,14 @@ Public API, with the reason each item exists:
 | `Policy` (`new`, `backoff`) | Bounds and inspectable overflow-safe local scheduling. |
 | `Replay` | Semantic permission independent of byte recreation and classification. |
 | `Decision` | The SDK's head/transport outcome classification and optional server minimum. |
-| `Retry` (`new`, `run`, optional `run_tokio`, `receive`) | A single owner of the attempt loop and total deadline; closures supply all dependencies. |
+| `Retry` (`new`, `run`, optional `run_tokio`, `receive`, `receive_with`) | A single owner of the attempt loop and total deadline; closures supply all dependencies. |
 | `Run<R>` | Keeps the final unconsumed outcome beside accounting, including preflight/timeout absence. |
 | `Report` | Exposes actual started attempts, waits, stop reason and replay availability without values. |
 | `StopReason` | Makes exhaustion, deadline, caller stop and replay refusal distinguishable. |
 | `http::retry_after` | Shared strict singleton-header parsing without a transport dependency. |
 | `http::RetryAfterError` | Distinguishes invalid, repeated and overflowing fields without echoing values. |
+| `concord::ReceiveRun<T, A, E>` | Preserves a typed hook refusal beside the last head/error and final admission state. |
+| `concord::ReceiveReport` | Separates dispatches, completions and refusals; remembers headless dispatches without changing `Report`. |
 | `concord::ReplayMode` | Makes preflight refusal versus best-effort single sending explicit. |
 
 Adoption: native's `retry_bounded` now delegates to the engine, retaining its existing signature,
