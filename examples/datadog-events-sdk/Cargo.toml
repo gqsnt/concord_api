@@ -1,0 +1,21 @@
+[package]
+name = "concord-sdk-datadog-events"
+description = "A bounded Datadog Events v2 read SDK (list a time range, search with cursor pagination) built with Concord, tested offline."
+version = "0.0.0"
+edition = "2024"
+rust-version.workspace = true
+license.workspace = true
+publish = false
+
+[dependencies]
+concord = { path = "../../crates/concord", features = ["json"] }
+concord-pagination = { path = "../../crates/concord-pagination" }
+serde = { workspace = true, features = ["derive"] }
+serde_json.workspace = true
+
+[dev-dependencies]
+concord-example-testserver = { path = "../testserver" }
+tokio = { workspace = true, features = ["macros", "rt-multi-thread", "time"] }
+
+[lints]
+workspace = true
