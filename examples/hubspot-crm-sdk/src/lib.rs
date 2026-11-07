@@ -383,7 +383,8 @@ struct Inner {
     http: reqwest::Client,
     crm_base: String,
     oauth_base: String,
-    secrets: Mutex<Secrets>,
+    // Shared with the acquisition future the cache stores, which must not own `Inner`.
+    secrets: Arc<Mutex<Secrets>>,
     cache: TokenCache<(), RefreshFailure>,
 }
 /// One HubSpot installation. Clones coordinate refresh in this process.
@@ -413,12 +414,12 @@ impl HubSpot {
                 http,
                 crm_base: "https://api.hubapi.com".into(),
                 oauth_base: "https://api.hubspot.com".into(),
-                secrets: Mutex::new(Secrets {
+                secrets: Arc::new(Mutex::new(Secrets {
                     client_id,
                     client_secret,
                     refresh_token,
                     uncertain: false,
-                }),
+                })),
                 cache: TokenCache::new(
                     NonZeroUsize::new(1).expect("nonzero"),
                     Duration::from_secs(30),
@@ -445,13 +446,16 @@ impl HubSpot {
         Ok(state.refresh_token.clone())
     }
     async fn token(&self) -> Result<HeaderValue, Error> {
-        let inner = self.inner.clone();
+        // The cache keeps this future while it is in flight: capture its inputs, not `Inner`.
+        let secrets = self.inner.secrets.clone();
+        let http = self.inner.http.clone();
+        let oauth_base = self.inner.oauth_base.clone();
         let snapshot = self
             .inner
             .cache
             .get_or_refresh((), move || async move {
                 let request = {
-                    let mut s = inner.secrets.lock().expect("secrets mutex");
+                    let mut s = secrets.lock().expect("secrets mutex");
                     if s.uncertain {
                         return Err(RefreshFailure {
                             status: None,
@@ -466,8 +470,8 @@ impl HubSpot {
                         refresh_token: s.refresh_token.clone(),
                     }
                 };
-                let api = OAuthApi::new(inner.http.clone())
-                    .with_base_url(&inner.oauth_base)
+                let api = OAuthApi::new(http)
+                    .with_base_url(&oauth_base)
                     .map_err(|_| RefreshFailure {
                         status: None,
                         uncertain: true,
@@ -475,7 +479,7 @@ impl HubSpot {
                 let result = api.oauth().refresh(request).send().await;
                 match result {
                     Ok(response) => {
-                        let mut s = inner.secrets.lock().expect("secrets mutex");
+                        let mut s = secrets.lock().expect("secrets mutex");
                         if let Some(replacement) = response.refresh_token {
                             if replacement.is_empty() {
                                 return Err(RefreshFailure {
@@ -507,7 +511,7 @@ impl HubSpot {
                         let status = e.status().map(|s| s.as_u16());
                         // Treat explicit OAuth credential refusals as definite; other outcomes are ambiguous.
                         let uncertain = !status.is_some_and(|s| matches!(s, 400 | 401 | 403));
-                        inner.secrets.lock().expect("secrets mutex").uncertain = uncertain;
+                        secrets.lock().expect("secrets mutex").uncertain = uncertain;
                         Err(RefreshFailure { status, uncertain })
                     }
                 }
@@ -625,6 +629,41 @@ impl HubSpot {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Abandoning every caller while a refresh is in flight must not keep the installation (its
+    /// secrets, HTTP client and cache) alive: the cache keeps the paused acquisition.
+    #[tokio::test]
+    async fn abandoned_refresh_does_not_keep_the_installation_alive() {
+        // Accepts the connection and never answers, so the refresh stays in flight.
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let url = format!("http://{}", listener.local_addr().unwrap());
+        let http = reqwest::Client::builder()
+            .redirect(reqwest::redirect::Policy::none())
+            .retry(reqwest::retry::never())
+            .timeout(Duration::from_secs(30))
+            .build()
+            .unwrap();
+        let hub = HubSpot::new(http, "id".into(), "secret".into(), "refresh".into())
+            .unwrap()
+            .with_base_url(&url)
+            .unwrap();
+        let installation = Arc::downgrade(&hub.inner);
+        let caller = tokio::spawn({
+            let hub = hub.clone();
+            async move { hub.token().await.map(drop) }
+        });
+        let (_connection, _) = tokio::task::spawn_blocking(move || listener.accept())
+            .await
+            .unwrap()
+            .unwrap();
+        caller.abort();
+        assert!(caller.await.unwrap_err().is_cancelled());
+        drop(hub);
+        assert!(
+            installation.upgrade().is_none(),
+            "the abandoned refresh keeps the installation alive"
+        );
+    }
     #[test]
     fn oauth_default_destination_is_documented_host() {
         let request = RefreshRequest {
