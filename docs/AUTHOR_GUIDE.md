@@ -445,9 +445,11 @@ Rules, each checked when the declaration compiles:
   that a key on the well-known secret list (`token`, `api_key`, ... §7) is still shown as
   `<redacted>`, as a declared key would be.
 - **Order:** a `query(..)` value is written where it is declared among the endpoint's own
-  parameters — after every key inherited from the client and scopes, before the endpoint's
-  `query { }` block entries (§4.7) — and its pairs in the order it writes them. Absent, it writes
-  nothing. An empty key is a build error (`ErrorKind::Build`) before anything is sent.
+  parameters: after every key the chain already has — an inherited key keeps its first position
+  with all its occurrences, so an endpoint's `append "v" = ..` to an inherited `v` still comes
+  first (§4.7) — and before keys first introduced by the endpoint's `query { }` block. Its pairs
+  follow in the order it writes them; absent, it writes nothing. An empty key is a build error
+  (`ErrorKind::Build`) before anything is sent.
 
 `QueryPairs` is implemented for `Vec<(K, V)>`, `[(K, V)]` and `BTreeMap<K, V>` (`K: AsRef<str>`,
 `V: Display`) for ad-hoc pairs; prefer your own type when the set of keys is a provider rule.

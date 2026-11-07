@@ -121,6 +121,20 @@ forwarded_bound!(1 + 3);
 
 /// A caller constant with the name the generated code once used.
 const __LIMIT: usize = 32;
+/// Caller constants named like the generated statics of `prepare()` (review b12-review2, 1).
+const __DECODE: usize = 48;
+/// See `__DECODE`.
+const __META: usize = 64;
+
+concord::api! {
+    /// Bounds named like generated statics.
+    pub client Statics() {
+        base "http://statics.invalid";
+        format Json;
+        GET decode() -> Doc { path "d"; limit __DECODE; }
+        GET meta() -> Doc { path "m"; limit __META; }
+    }
+}
 
 concord::api! {
     /// A bound named like a former generated constant.
@@ -162,4 +176,7 @@ fn a_declared_bound_is_evaluated_as_written_in_the_callers_context() {
         limit(aliased::Aliased::new(http()).get().prepare().unwrap()),
         Some(7)
     );
+    let statics = Statics::new(http());
+    assert_eq!(limit(statics.decode().prepare().unwrap()), Some(48));
+    assert_eq!(limit(statics.meta().prepare().unwrap()), Some(64));
 }

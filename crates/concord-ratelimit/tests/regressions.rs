@@ -337,7 +337,9 @@ async fn independent_fifo_and_cancellation(lease: bool) {
             "head",
             Budget {
                 requests: NonZeroU32::new(1).unwrap(),
-                window: Duration::from_millis(10),
+                // Longer than the cooldown, so a charge made while queued or on cancellation
+                // (t = 0) would still close the window when it is checked at t = 100 ms.
+                window: Duration::from_millis(1000),
             },
         )
         .unwrap();
@@ -379,7 +381,7 @@ async fn independent_fifo_and_cancellation(lease: bool) {
     limiter.acquire(&["head"], Mode::Refuse).await.unwrap();
     assert_eq!(
         limiter.acquire(&["head"], Mode::Refuse).await,
-        Err(Error::Gated(Some(Duration::from_millis(10))))
+        Err(Error::Gated(Some(Duration::from_millis(1000))))
     );
 }
 

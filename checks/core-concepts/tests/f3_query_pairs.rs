@@ -219,6 +219,12 @@ concord::api! {
             path "b";
             query { "again" = a; }
         }
+        /// An inherited key keeps its first position with every occurrence, the endpoint's
+        /// `append` included (review b12-review2, 2).
+        GET appended(query(..) pairs: Vec<(String, u8)>) {
+            path "c";
+            query { append "v" = "2"; "new" = "n"; }
+        }
     }
 }
 
@@ -245,5 +251,14 @@ fn pairs_keep_their_declared_position_among_the_endpoints_keys() {
     assert_eq!(
         query(ordered.middle(1, Anchor::After(2), 3).prepare().unwrap()),
         "v=1&a=1&after=2&b=3&again=1"
+    );
+    assert_eq!(
+        query(
+            ordered
+                .appended(vec![("p".to_owned(), 9)])
+                .prepare()
+                .unwrap()
+        ),
+        "v=1&v=2&p=9&new=n"
     );
 }

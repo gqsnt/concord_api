@@ -1649,6 +1649,7 @@ fn emit_owner(
                 TokenStream::new()
             };
             let shapes = shapes_static(k, model, index);
+            let limit = limit_const(model, index, output.as_ref());
             quote! {
                 #shapes
 
@@ -1665,6 +1666,7 @@ fn emit_owner(
 
                 impl #ty {
                     #controls
+                    #limit
 
                     /// Builds the native request without sending it.
                     ///
@@ -1701,6 +1703,18 @@ fn emit_owner(
                 }
             }
         }
+    }
+}
+
+/// The declared finite-body bound of an endpoint with a finite typed output, as a private
+/// associated constant: its initializer resolves names in the caller's module only (no local
+/// statics in scope) and its type is the primitive `usize` whatever the caller calls `usize`.
+fn limit_const(model: &Model, index: usize, output: Option<&Output>) -> TokenStream {
+    match (output, model.nearest_limit(index)) {
+        (Some(o), Some(limit)) if !o.stream => {
+            quote!(const __CONCORD_LIMIT: ::core::primitive::usize = #limit;)
+        }
+        _ => TokenStream::new(),
     }
 }
 
@@ -2629,10 +2643,14 @@ fn prepare_body(
             // A static: the format's `Accept` suggestion is a compile-time-checked value. The
             // output type is named first, so an unsupported pair is reported as `Decode<T>`.
             let init = located(quote!(#k::__private::DecodeFormat::<#t>::new::<#r>()), at);
-            // `limit N;` (endpoint or nearest owner): passed as written, so it resolves names
-            // only in the caller's context; the static initializer makes it a `usize` constant.
+            // `limit N;` (endpoint or nearest owner): evaluated in the endpoint type's private
+            // associated constant (`limit_const`), where only the caller's names are in scope —
+            // not this block's generated statics.
             let init = match model.nearest_limit(index) {
-                Some(limit) => quote!(#init.with_limit(#limit)),
+                Some(_) => {
+                    let ty = &model.owners[index].type_name;
+                    quote!(#init.with_limit(#ty::__CONCORD_LIMIT))
+                }
                 None => init,
             };
             quote!({

@@ -109,8 +109,9 @@ impl IntoValue<HeaderValue> for &HeaderValue {
 /// }
 /// ```
 ///
-/// The pairs are written where the value is declared among the endpoint's parameters (after
-/// inherited keys, before `query { }` block entries), in the order written. An empty key is a
+/// The pairs are written where the value is declared among the endpoint's parameters (after every
+/// key the chain already has, with all its occurrences; before keys first introduced by the
+/// endpoint's `query { }` block), in the order written. An empty key is a
 /// build error. Concord cannot redact a key it only learns at run time, so such a parameter
 /// cannot be `#[sensitive]`, and its values appear in the request's `Debug` URL — except under a
 /// key on the well-known secret list (`token`, `api_key`, ...), which is withheld as a declared
