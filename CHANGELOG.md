@@ -29,10 +29,11 @@ Not released: the version is unchanged (4.2.0). Records: `v4/desirability/` (dec
   gains a forwarding `SendOperation` impl, since it ignores the variant) and GitHub (no send
   policy: the enum only, and one exhaustive table from operation to listing id from which the
   recognized ids are derived; ids and `LinkPages::new` unchanged). The other SDKs do not adopt
-  it: Discord, Cloudflare and Xero decide by method or URL with no per-operation exception;
-  Kubernetes, S3, Adyen, Elasticsearch, Postmark and Europe PMC classify through traits that the
-  compiler already checks; Microsoft Graph and the distribution registry classify with data the
-  enum cannot carry; the rest do not classify operations.
+  it: Discord, Cloudflare, Xero, Mailgun, QuickBooks and Spotify decide by HTTP method or URL with
+  no per-operation exception; Kubernetes, S3, Adyen, Elasticsearch, Postmark and Europe PMC
+  classify through traits that the compiler already checks (Postmark also applies a uniform
+  method rule); Microsoft Graph and the distribution registry classify with data the enum cannot
+  carry; the rest do not classify operations.
 
 ### Documentation
 
