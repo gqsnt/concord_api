@@ -191,3 +191,8 @@ Append-only: a row marked `running` is superseded by a later row (`↳ … resul
 | H03 decision review (`h03-decision-review-sol`): proposed REJECT by kill condition + H03b draft legitimacy | Codex gpt-6.1-sol, xhigh, read-only | (meta.json at completion) | running | — |
 | ↳ H03 decision review observed | — | gpt-6.1-sol / xhigh / read-only (rollout turn_context); 16:13:53Z–16:18:04Z | 4m11s | ACCEPT of REJECT (LOSS by kill condition); H03b LEGITIMATE_WITH_CHANGES (applied; card 6ea66f43, pushed 17:20 before any H03 measurement result was read) |
 | H03b candidate implementer (dz/h03b; A′ then B′) — same Claude subagent resumed | Claude subagent (inherits Opus 5.5) | (transcript at completion) | running | — |
+| T3 flake sweep (dz/t3-sweep; 21 short-timeout tests, 63 bind-then-drop sites; A3 §4) — Claude subagent | Claude subagent (inherits Opus 5.5) | (transcript at completion) | running | — |
+| Pilot harness generalisation (dz/pilot-harness; A3 §2) — Claude subagent | Claude subagent (inherits Opus 5.5) | (transcript at completion) | running | — |
+| H06 candidate implementer (dz/h06 B first, then dz/h06a A) — Claude subagent | Claude subagent (inherits Opus 5.5) | (transcript at completion) | running | — |
+| ↳ H06 survey result | — | claude-opus-5-5 (subagent transcript); effort not visible | ~24 min, 136 tool uses | saved as v4/desirability/reviews/h06-design-survey.md; transcript audit: 0 forbidden-path hits in tool results (one root grep path-filtered) |
+| ↳ H03b A′ result | — | claude-opus-5-5 (subagent transcript); effort not visible | ~35 min, ~38 tool uses (resumed round) | committed fc16090d (dz/h03b, pushed); transcript audit clean (brief text only) |
