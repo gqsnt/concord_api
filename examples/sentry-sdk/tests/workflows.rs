@@ -606,3 +606,50 @@ async fn transient_headless_transport_and_gateway_failures_retry_but_auth_does_n
         }
     }
 }
+
+#[tokio::test]
+async fn reconstructed_token_rotation_retains_caller_admission_state() {
+    use concord_sdk_sentry::{SendPolicy, Sentry, http_client};
+    let server = TestServer::start(|_: &Recorded| Reply::json(200, "[]")).await;
+    let policy = SendPolicy::new(Settings {
+        requests: NonZeroU32::new(1).unwrap(),
+        window: Duration::from_secs(60),
+        timeout: Duration::from_millis(100),
+        ..support::settings()
+    })
+    .unwrap();
+    let first = Sentry::for_deployment(
+        http_client().unwrap(),
+        server.url(),
+        "old-token",
+        policy.clone(),
+    )
+    .unwrap();
+    first.organization("acme").issues().send().await.unwrap();
+    let rotated =
+        Sentry::for_deployment(http_client().unwrap(), server.url(), "new-token", policy).unwrap();
+    assert_eq!(
+        rotated
+            .organization("acme")
+            .issues()
+            .prepare()
+            .unwrap()
+            .request()
+            .headers()["authorization"],
+        "Bearer new-token"
+    );
+    let error = rotated
+        .organization("acme")
+        .issues()
+        .send()
+        .await
+        .unwrap_err();
+    let Error::RetryStopped { report, meta: None } = error else {
+        panic!("{error:?}")
+    };
+    assert_eq!(report.retry.stop, concord_retry::StopReason::Deadline);
+    assert_eq!(report.retry.attempts, 0);
+    assert_eq!(report.completed, 0);
+    assert_eq!(server.requests().len(), 1);
+    server.shutdown().await;
+}

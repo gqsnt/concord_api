@@ -481,3 +481,47 @@ async fn stalled_attempt_hits_total_deadline_and_http_success_can_still_be_refus
     assert_hidden(&format!("{response:?}"));
     server.shutdown().await;
 }
+
+#[tokio::test]
+async fn reconstructed_key_rotation_retains_the_company_ledger() {
+    let server = TestServer::start(|r: &Recorded| success(r, AUTHORISED)).await;
+    let policy = SendPolicy::default();
+    let first = api(&server, policy.clone());
+    first
+        .v71()
+        .payments("before-rotation", payment())
+        .send()
+        .await
+        .unwrap();
+    let rotated = Checkout::sandbox("synthetic-rotated-key", policy)
+        .unwrap()
+        .with_base_url(server.url())
+        .unwrap();
+    let error = rotated
+        .v71()
+        .payments("before-rotation", payment())
+        .send()
+        .await
+        .unwrap_err();
+    assert_eq!(
+        error.reconciliation().unwrap().reason,
+        ReconciliationReason::ChangedRequest
+    );
+    rotated
+        .v71()
+        .payments("after-rotation", payment())
+        .send()
+        .await
+        .unwrap();
+    let requests = server.requests();
+    assert_eq!(requests.len(), 2);
+    assert_eq!(
+        requests[0].header("x-api-key"),
+        Some("synthetic-api-secret")
+    );
+    assert_eq!(
+        requests[1].header("x-api-key"),
+        Some("synthetic-rotated-key")
+    );
+    server.shutdown().await;
+}

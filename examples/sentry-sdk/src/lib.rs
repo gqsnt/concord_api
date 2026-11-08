@@ -43,6 +43,12 @@ concord::api! {
         format Json;
         limit BODY_LIMIT;
         send policy -> Result<Response<_>, Error>;
+        // Caller identity, deployment and admission state are chosen together.
+        controls {
+            pub(crate) with_base_url;
+            remove set_authorization;
+            remove set_policy;
+        }
         /// Every Sentry operation, as the send policy classifies it (admission bucket, writes,
         /// paging).
         operations SentryOperation;
@@ -80,6 +86,18 @@ concord::api! {
 }
 
 impl Sentry {
+    /// Construct for a service deployment with its caller's shared admission state.
+    /// For token rotation, keep a clone of that caller/deployment's policy; a different
+    /// caller or deployment needs its own policy. The base path precedes `/api/0`.
+    pub fn for_deployment(
+        http: reqwest::Client,
+        base: impl AsRef<str>,
+        token: &str,
+        policy: SendPolicy,
+    ) -> Result<Self, Error> {
+        Ok(Self::with_token(http, token, policy)?.with_base_url(base)?)
+    }
+
     /// Construct with a validated token. Clones of the policy share caller/endpoint quotas.
     pub fn with_token(
         http: reqwest::Client,

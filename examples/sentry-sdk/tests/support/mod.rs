@@ -16,12 +16,11 @@ pub fn settings() -> Settings {
     }
 }
 pub fn api(server: &TestServer, settings: Settings) -> Sentry {
-    Sentry::with_token(
+    Sentry::for_deployment(
         http_client().unwrap(),
+        server.url(),
         "synthetic-bearer-secret",
         SendPolicy::new(settings).unwrap(),
     )
-    .unwrap()
-    .with_base_url(server.url())
     .unwrap()
 }

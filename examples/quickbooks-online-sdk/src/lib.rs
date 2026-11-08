@@ -62,9 +62,14 @@ concord::api! {
     /// connection's policy) adds the access token.
     pub client QuickBooks(
         /// The realm-bound OAuth connection (its `Display` is the realm ID).
+        /// `set_connection` replaces realm and credential source together. At send, the policy
+        /// selects this connection's official environment host; loopback fixtures keep theirs.
+        /// Token-free `prepare()` retains the generated client's base snapshot.
         connection: Connection,
     ) {
         base "https://quickbooks.api.intuit.com";
+        // `connect` chooses the connection's environment; fixtures validate their origin.
+        controls { pub(crate) new; pub(crate) with_base_url; }
         path "v3/company/{connection}";
         query { "minorversion" = "75"; }
         request Json;
@@ -148,6 +153,31 @@ concord::api! {
 }
 
 impl QuickBooks {
+    /// Construct for a bare HTTP origin on a literal loopback IP, using synthetic credentials.
+    /// The supplied transport must disable redirects and retries, as for [`Self::connect`].
+    pub fn for_fixture(
+        http: reqwest::Client,
+        connection: Connection,
+        origin: &str,
+    ) -> Result<Self, Error> {
+        let client = Self::connect(http, connection).with_base_url(origin)?;
+        let url = concord::reqwest::Url::parse(origin).expect("the base URL was validated");
+        let loopback = url
+            .host_str()
+            .and_then(|host| {
+                host.trim_matches(['[', ']'])
+                    .parse::<std::net::IpAddr>()
+                    .ok()
+            })
+            .is_some_and(|ip| ip.is_loopback());
+        if url.scheme() != "http" || !loopback || url.path() != "/" {
+            return Err(Error::InvalidInput {
+                what: "fixture origin",
+            });
+        }
+        Ok(client)
+    }
+
     /// A client for `connection`'s company, at its environment's base URL
     /// (`https://sandbox-quickbooks.api.intuit.com` or `https://quickbooks.api.intuit.com`).
     pub fn connect(http: reqwest::Client, connection: Connection) -> Self {

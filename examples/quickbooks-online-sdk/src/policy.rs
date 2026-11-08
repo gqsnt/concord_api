@@ -29,7 +29,11 @@ impl<T: Send + 'static> SendWith<T> for Connection {
 
     async fn send<E: Endpoint<T> + Send>(&self, endpoint: E) -> Self::Output {
         let operation = E::operation();
-        let (client, request, decoder) = endpoint.prepare()?.into_parts();
+        let (client, mut request, decoder) = endpoint.prepare()?.into_parts();
+        // A coordinated `set_connection` can change environments. The generated base is a
+        // snapshot; choose the official host from the current connection before applying auth.
+        // Explicit loopback fixture origins retain their destination.
+        self.select_environment(&mut request);
         if operation.method() == Some("GET") {
             self.read(&client, request, decoder).await
         } else {
@@ -40,6 +44,22 @@ impl<T: Send + 'static> SendWith<T> for Connection {
 }
 
 impl Connection {
+    fn select_environment(&self, request: &mut reqwest::Request) {
+        if request.url().scheme() == "https"
+            && matches!(
+                request.url().host_str(),
+                Some("quickbooks.api.intuit.com" | "sandbox-quickbooks.api.intuit.com")
+            )
+        {
+            let base = reqwest::Url::parse(self.environment().base_url())
+                .expect("the documented environment base is valid");
+            request
+                .url_mut()
+                .set_host(base.host_str())
+                .expect("the documented environment host is valid");
+        }
+    }
+
     async fn read<T>(
         &self,
         client: &reqwest::Client,
@@ -158,4 +178,76 @@ fn fault_in(error: &concord::Error) -> Option<ProviderError> {
         .downcast_ref::<FaultInSuccess>()?
         .0;
     Some(ProviderError::in_success(error.head_meta()?, fault.clone()))
+}
+
+#[cfg(test)]
+mod controls_tests {
+    use super::*;
+    use crate::{Environment, OAuthApp, QuickBooks, RealmId, RefreshToken};
+
+    fn connection(environment: Environment, realm: &str) -> Connection {
+        OAuthApp::new(
+            environment,
+            "synthetic-client",
+            "synthetic-secret",
+            "https://app.example.test/callback",
+        )
+        .unwrap()
+        .connection(
+            RealmId::new(realm).unwrap(),
+            RefreshToken::new("synthetic-refresh").unwrap(),
+        )
+    }
+
+    #[test]
+    fn coordinated_replacement_selects_the_new_environment_and_realm() {
+        for (initial, replacement) in [
+            (Environment::Sandbox, Environment::Production),
+            (Environment::Production, Environment::Sandbox),
+        ] {
+            let before = connection(initial, "111");
+            let after = connection(replacement, "222");
+            let api =
+                QuickBooks::connect(reqwest::Client::new(), before).set_connection(after.clone());
+            let prepared = api
+                .customer(crate::EntityId::new("29").unwrap())
+                .read()
+                .prepare()
+                .unwrap();
+            let (_, mut request, _) = prepared.into_parts();
+            after.select_environment(&mut request);
+            assert_eq!(
+                request.url().origin(),
+                reqwest::Url::parse(replacement.base_url())
+                    .unwrap()
+                    .origin()
+            );
+            assert_eq!(request.url().path(), "/v3/company/222/customer/29");
+            assert_eq!(request.url().query(), Some("minorversion=75"));
+            assert!(!request.headers().contains_key(AUTHORIZATION));
+        }
+    }
+
+    #[test]
+    fn coordinated_replacement_keeps_the_validated_fixture_origin() {
+        let after = connection(Environment::Production, "222");
+        let api = QuickBooks::for_fixture(
+            reqwest::Client::new(),
+            connection(Environment::Sandbox, "111"),
+            "http://127.0.0.1:1234",
+        )
+        .unwrap()
+        .set_connection(after.clone());
+        let prepared = api
+            .customer(crate::EntityId::new("29").unwrap())
+            .read()
+            .prepare()
+            .unwrap();
+        let (_, mut request, _) = prepared.into_parts();
+        after.select_environment(&mut request);
+        assert_eq!(
+            request.url().as_str(),
+            "http://127.0.0.1:1234/v3/company/222/customer/29?minorversion=75"
+        );
+    }
 }

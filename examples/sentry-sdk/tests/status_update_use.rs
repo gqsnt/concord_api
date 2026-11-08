@@ -81,13 +81,12 @@ async fn triage_resolves_ignores_and_rereads_an_uncertain_update() {
         timeout: Duration::from_millis(300),
         ..Settings::default()
     };
-    let api = Sentry::with_token(
+    let api = Sentry::for_deployment(
         http_client().unwrap(),
+        server.url(),
         TOKEN,
         SendPolicy::new(settings).unwrap(),
     )
-    .unwrap()
-    .with_base_url(server.url())
     .unwrap();
     let organization = api.organization("acme");
 

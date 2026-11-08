@@ -1,5 +1,10 @@
 # concord-sdk-discord-rest
 
+A bot token and its rate state are chosen together in `DiscordConfig`. `set_token` and
+`set_limiter` are withheld: construct another `Discord::new(http, DiscordConfig { token,
+limiter })` for another bot, with that bot's shared limiter. Other client and request setters
+remain available.
+
 A bounded Discord REST (API v10) slice built with Concord, for a bot token:
 
 | Operation | Route | SDK call |

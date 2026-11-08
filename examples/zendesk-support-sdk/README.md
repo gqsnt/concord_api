@@ -1,5 +1,12 @@
 # concord-sdk-zendesk-support
 
+A client keeps its account and destination: `set_subdomain` is withheld and `with_base_url`
+is crate-visible. Use `Zendesk::connect(http, subdomain, token)` for another account.
+For synthetic fixtures use `Zendesk::for_fixture(http_builder, subdomain, token, address)`:
+it requires a loopback socket address and resolves `{subdomain}.zendesk.test` to it, with
+proxies disabled. The builder retains caller timeout/retry/redirect settings. `set_policy`
+and same-account `set_authorization` rotation remain public.
+
 A bounded Zendesk Support (Ticketing API v2) SDK built on Concord. It covers two connected
 workflows:
 

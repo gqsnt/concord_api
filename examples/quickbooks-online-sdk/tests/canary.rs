@@ -222,9 +222,7 @@ async fn secrets_never_print() {
             RefreshToken::new(&refresh).unwrap(),
         );
         let base = if case == 6 { refused() } else { server.url() };
-        let qbo = QuickBooks::connect(http(), connection.clone())
-            .with_base_url(&base)
-            .unwrap();
+        let qbo = QuickBooks::for_fixture(http(), connection.clone(), &base).unwrap();
         let customer = EntityId::new("29").unwrap();
         let line = SalesItemLine::new(
             concord_sdk_quickbooks_online::Decimal::from_cents(10_000),
@@ -307,9 +305,7 @@ async fn secrets_never_print() {
                 .await
                 .unwrap();
             c.assert_debug_absent("exchanged connection", &exchanged);
-            let qbo = QuickBooks::connect(http(), exchanged)
-                .with_base_url(&base)
-                .unwrap();
+            let qbo = QuickBooks::for_fixture(http(), exchanged, &base).unwrap();
             let invoice = qbo.invoice(EntityId::new("238").unwrap()).read();
             sent(&mut c, "invoice Result", &invoice.send().await);
             c.assert_debug_absent("refresh expiry", &connection.refresh_token_expires_at());
@@ -345,9 +341,7 @@ async fn token_endpoint_failures_never_print() {
             RealmId::new(REALM).unwrap(),
             RefreshToken::new(&refresh).unwrap(),
         );
-        let qbo = QuickBooks::connect(http(), connection.clone())
-            .with_base_url(server.url())
-            .unwrap();
+        let qbo = QuickBooks::for_fixture(http(), connection.clone(), &server.url()).unwrap();
         for _ in 0..2 {
             let result = qbo
                 .customer(EntityId::new("29").unwrap())

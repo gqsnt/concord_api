@@ -47,6 +47,8 @@ concord::api! {
         format Json;
         limit crate::SUCCESS_BODY_LIMIT;
         send limiter -> Result<_, Error>;
+        // Another bot token needs its own rate state: construct the pair together.
+        controls { remove set_token; remove set_limiter; }
 
         /// One guild: `/guilds/{guild.id}` (the route's top-level resource).
         scope guild(guild_id: GuildId) {

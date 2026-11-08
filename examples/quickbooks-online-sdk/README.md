@@ -1,5 +1,11 @@
 # concord-sdk-quickbooks-online
 
+Construct with `QuickBooks::connect(http, connection)` to select the connection's environment.
+Generated `new` and `with_base_url` are crate-visible. Offline callers use
+`QuickBooks::for_fixture(http, connection, origin)` with a bare HTTP origin on a literal
+loopback IP. `set_connection` still replaces realm, credential source and policy together;
+the send policy selects its environment's official host after replacement, while loopback fixtures keep their origin. `prepare()` remains token-free and shows the generated base snapshot.
+
 A bounded QuickBooks Online Accounting API SDK built on Concord: realm-bound OAuth 2.0
 connections (authorization code and refresh token), customer query and read, invoice create and
 read, and recording a payment against one invoice. Every test runs against local fixtures; **no provider API request was sent to Intuit**

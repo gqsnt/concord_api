@@ -56,17 +56,12 @@ use std::{net::SocketAddr, num::NonZeroUsize};
 fn api(address: SocketAddr, token: &str) -> Zendesk {
     let http = concord::reqwest::Client::builder()
         .no_proxy()
-        .resolve("acme.localhost", address)
         .retry(concord::reqwest::retry::never())
         .redirect(concord::reqwest::redirect::Policy::none())
-        .timeout(Duration::from_secs(2))
-        .build()
-        .unwrap();
-    Zendesk::connect(http, "acme", token)
+        .timeout(Duration::from_secs(2));
+    Zendesk::for_fixture(http, "acme", token, address)
         .unwrap()
         .set_policy(SendPolicy::default().read_attempts(NonZeroUsize::new(1).unwrap()))
-        .with_base_url(format!("http://localhost:{}", address.port()))
-        .unwrap()
 }
 
 fn error(c: &mut Canaries, error: &Error) {

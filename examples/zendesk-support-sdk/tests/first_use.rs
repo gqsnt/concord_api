@@ -30,16 +30,10 @@ fn local_api(server: &TestServer) -> Zendesk {
 fn local_api_for(server: &TestServer, subdomain: &str) -> Zendesk {
     let http = reqwest::Client::builder()
         .no_proxy()
-        .resolve("acme.localhost", server.addr())
         .redirect(reqwest::redirect::Policy::none())
         .retry(reqwest::retry::never())
-        .timeout(Duration::from_secs(5))
-        .build()
-        .unwrap();
-    Zendesk::connect(http, subdomain, TOKEN)
-        .unwrap()
-        .with_base_url(format!("http://localhost:{}", server.addr().port()))
-        .unwrap()
+        .timeout(Duration::from_secs(5));
+    Zendesk::for_fixture(http, subdomain, TOKEN, server.addr()).unwrap()
 }
 
 fn ticket(id: u64, status: &str, external_id: &str) -> Value {
@@ -166,7 +160,7 @@ async fn list_cursor_pages_then_retrieve_selected_ticket() {
     assert!(
         requests
             .iter()
-            .all(|r| r.host == format!("acme.localhost:{}", server.addr().port()))
+            .all(|r| r.host == format!("acme.zendesk.test:{}", server.addr().port()))
     );
     assert_eq!(requests[0].target, requests[1].target);
     assert_eq!(requests[2].query_all("page[after]"), [CURSOR]);
