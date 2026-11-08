@@ -5,6 +5,7 @@ use std::time::Duration;
 
 use bytes::Bytes;
 use concord_example_testserver::{Body, Receive, Reply, TestServer, generated_records};
+use tokio::io::AsyncWriteExt;
 
 fn client() -> reqwest::Client {
     reqwest::Client::builder()
@@ -187,5 +188,31 @@ async fn a_slow_receiver_counts_every_request_byte_without_storing_them_all() {
     assert_eq!(request.body.len(), 1024);
     assert_eq!(request.body_len, 256 * 1024);
     assert_eq!(server.request_body_bytes(), 256 * 1024);
+    server.shutdown().await;
+}
+
+#[tokio::test]
+async fn a_chunk_cut_off_by_a_closed_connection_is_received_but_never_complete() {
+    let server = TestServer::start(|_| Reply::new(204)).await;
+    let mut stream = tokio::net::TcpStream::connect(server.addr()).await.unwrap();
+    // One complete 4-byte chunk, then 3 of the 8 bytes the next chunk announces; the client then
+    // closes the connection without finishing the body.
+    stream
+        .write_all(
+            b"POST /upload HTTP/1.1\r\nhost: loopback\r\ntransfer-encoding: chunked\r\n\r\n\
+              4\r\nabcd\r\n8\r\nefg",
+        )
+        .await
+        .unwrap();
+    drop(stream);
+    assert!(
+        server
+            .wait_until(WAIT, |s| s.connections() == 1 && s.live_connections() == 0)
+            .await
+    );
+    // Every byte that arrived is received; only the whole chunk is complete.
+    assert_eq!(server.request_body_bytes(), 7);
+    assert_eq!(server.request_chunk_bytes(), 4);
+    assert!(server.requests().is_empty(), "the request never completed");
     server.shutdown().await;
 }

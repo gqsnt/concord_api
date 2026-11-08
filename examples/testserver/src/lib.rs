@@ -333,6 +333,7 @@ struct Shared {
     peak_active_bodies: AtomicUsize,
     body_bytes_sent: AtomicU64,
     request_body_bytes: AtomicU64,
+    request_chunk_bytes: AtomicU64,
     changed: Notify,
 }
 
@@ -433,9 +434,19 @@ impl TestServer {
         self.shared.body_bytes_sent.load(Ordering::SeqCst)
     }
 
-    /// Request body bytes received so far (also past the recording limit).
+    /// Request body bytes received so far (also past the recording limit), counted as they arrive:
+    /// it can stop inside a chunk, or be read while a chunk is still arriving.
     pub fn request_body_bytes(&self) -> u64 {
         self.shared.request_body_bytes.load(Ordering::SeqCst)
+    }
+
+    /// Data bytes of request-body chunks (`transfer-encoding: chunked`) received completely: a
+    /// chunk counts once its data and the CRLF that ends it have arrived. A chunk cut off by a
+    /// closed or reset connection is never counted, and the value never stops inside a chunk, so it
+    /// measures what the client finished sending as whole chunks. Bodies sent with
+    /// `content-length` are not counted.
+    pub fn request_chunk_bytes(&self) -> u64 {
+        self.shared.request_chunk_bytes.load(Ordering::SeqCst)
     }
 
     /// Waits until `condition(self)` holds, re-checking whenever the server's counters change
@@ -824,6 +835,10 @@ async fn read_chunked(
             }
         }
         buf.drain(..2);
+        shared
+            .request_chunk_bytes
+            .fetch_add(size as u64, Ordering::SeqCst);
+        shared.changed.notify_waiters();
     }
 }
 
