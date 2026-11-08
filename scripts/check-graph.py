@@ -17,7 +17,8 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 # Allowed direct normal dependencies of each production package.
 ALLOWED = {
-    "concord-core": {"bytes", "percent-encoding", "reqwest", "url"},
+    # http-body comes with reqwest: it adds no package (the send path wraps streamed bodies).
+    "concord-core": {"bytes", "http-body", "percent-encoding", "reqwest", "url"},
     "concord-codecs": {"concord-core", "csv", "csv-core", "futures-core", "http-body", "mime", "serde",
                        "serde_json", "serde_urlencoded"},
     "concord-extras": {"concord-codecs"},

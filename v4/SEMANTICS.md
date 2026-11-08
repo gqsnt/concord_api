@@ -270,6 +270,15 @@ Each key has one **slot**, positioned at the key's first appearance on the chain
 - Concord performs no retries, no authentication, no rate limiting, no pagination and has no
   transport settings. One `send` is one `Client::execute` call; redirects, proxies, timeouts,
   compression and default headers are whatever the reqwest client does.
+- Cancellation of a streamed body. `send()`, `receive()` and `Decoder::execute` tie a streamed
+  request body (any body that is not buffered bytes: `StreamRecords`, `StreamRows`, a
+  `wrap_stream` body) to the call: a call dropped before the response arrives ends the body. Once
+  the drop returns, the body and its one-shot source are never polled again (the drop waits for a
+  poll already in progress on the connection's task), and a body that had not ended fails instead
+  of ending: the transport abandons the request, so the receiver never sees it complete. reqwest's
+  HTTP/1 connection alone would go on polling the body after the drop while the socket accepts
+  bytes. After the response has arrived, a body still being sent is the transport's; a request
+  executed with reqwest directly is not guarded.
 - Order of build checks: body encoding (the media type is a compile-time constant), then
   subdomain labels and the assembled host (IP base, 253-byte limit), path segments, query and
   headers; the first failure is returned and later values are not formatted.

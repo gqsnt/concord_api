@@ -19,7 +19,9 @@ use crate::stream::{RecordBody, RecordEncoder, Upload};
 /// **zero** times; the transport polls it while sending, once, in one pass. A source error or a
 /// record that cannot be serialized fails the transfer at that point, after the earlier records
 /// were sent (reqwest reports a body error that wraps an
-/// [`UploadError`](crate::stream::UploadError)); nothing is replayed or retried.
+/// [`UploadError`](crate::stream::UploadError)); nothing is replayed or retried. A send dropped
+/// before the response arrives never polls the source again once the drop returns
+/// ([`Decoder::execute`](concord_core::Decoder::execute), "Cancellation").
 pub struct StreamRecords<S> {
     source: S,
 }

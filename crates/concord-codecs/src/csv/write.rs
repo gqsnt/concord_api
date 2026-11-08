@@ -72,6 +72,8 @@ impl<I> fmt::Debug for Rows<I> {
 /// [`CsvWriter::upload`]) polls it zero times; sending polls it as the transport asks, once. A
 /// row error, a changed schema, an empty header-required source without columns or a source
 /// error fails the transfer after earlier bytes were sent; nothing is replayed or rolled back.
+/// A send dropped before the response arrives never polls the source again once the drop returns
+/// ([`Decoder::execute`](concord_core::Decoder::execute), "Cancellation").
 /// [`stream::from_iter`](crate::stream::from_iter) makes a source of an iterator.
 pub struct StreamRows<S> {
     rows: S,

@@ -5,6 +5,19 @@
 Not released: the version is unchanged (4.2.0). Records: `v4/desirability/` (decisions in
 `v4/desirability/DECISIONS.md`).
 
+### Fixes
+
+- **A dropped send stops polling its streamed body.** reqwest's HTTP/1 connection (hyper) polls a
+  request body from its own task and notices a dropped call only between write passes, so a
+  `send()` dropped while the receiver kept up went on polling the upload source: thousands of
+  records under CPU load, and 262,144 records (32 MiB) with a fast receiver before it stopped.
+  `Decoder::execute` (and so `send()`/`receive()`) now wraps a streamed body: once the drop of
+  the call returns, the body and its source are never polled again, and a body that had not ended
+  fails instead of ending, so the receiver never sees it complete. Buffered bodies are not wrapped.
+  `concord-core` names `http-body` (already reqwest's dependency) as a direct dependency. Tests:
+  `checks/stream-stress/tests/upload_cancel.rs` (deterministic) and the smoke test
+  `jsonl_upload_cancellation_stops_polling_the_source`, unchanged.
+
 ### Documentation
 
 - **Generated documentation states the actual contract first** (H04). The docs `api!` generates
