@@ -8,7 +8,7 @@ use concord_sdk_usgs_earthquake_catalog::{
     concord_codecs::stream::{Completion, ReadErrorKind},
     concord_pagination::{PagesError, Resume},
 };
-use concord_testserver::{Body, Recorded, Reply, TestServer};
+use concord_testserver::{Body, Recorded, Reply, TestServer, paused};
 use std::{
     num::{NonZeroU64, NonZeroUsize},
     time::Duration,
@@ -119,7 +119,9 @@ async fn same_filtered_window_exports_rows_before_the_response_finishes() {
     let before_csv = server.body_bytes_sent();
     let mut export = catalog.export(&filter, NonZeroU64::MIN, budget(3));
     assert_eq!(export.pages_requested(), 0);
-    let first = tokio::time::timeout(Duration::from_secs(1), export.next())
+    // Clock frozen while the call runs: the bound fails only a call that waits for something
+    // that never comes (then reported as stuck).
+    let first = tokio::time::timeout(Duration::from_secs(1), paused::frozen(export.next()))
         .await
         .expect("first row must arrive while the suffix is withheld")
         .unwrap()

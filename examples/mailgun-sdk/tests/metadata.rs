@@ -1,7 +1,7 @@
 //! Regression expectations from the Mailgun sources cited in PROVENANCE.md.
 mod support;
 
-use concord_example_testserver::{Recorded, Reply, TestServer};
+use concord_example_testserver::{Recorded, Reply, TestServer, paused};
 use concord_sdk_mailgun::{
     Attachment, Error, InputError, Mailgun, TextEmail, concord::bytes::Bytes,
 };
@@ -210,13 +210,18 @@ async fn metadata_does_not_grant_replay_after_an_ambiguous_send_timeout() {
             Reply::json(200, ACCEPTED).delay(Duration::from_secs(5))
         })
         .await;
-        let api = Mailgun::local(&server.url(), KEY, Duration::from_millis(150)).unwrap();
+        let timeout = Duration::from_millis(150);
+        let api = Mailgun::local(&server.url(), KEY, timeout).unwrap();
         let polls = Arc::new(AtomicUsize::new(0));
-        let error = domain(&api)
+        // Paused clock: the 150 ms timeout fires only once the server has read the whole send.
+        tokio::time::pause();
+        let send = domain(&api)
             .send_message(tagged(with_attachment(attachment(streamed, &polls))))
-            .send()
+            .send();
+        let error = paused::time_out(&server, |_| true, timeout, send)
             .await
             .unwrap_err();
+        tokio::time::resume();
         assert!(matches!(error, Error::AmbiguousSend(_)));
         assert!(
             error

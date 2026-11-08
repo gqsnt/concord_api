@@ -22,7 +22,7 @@ use concord_example_salesforce_sdk::csv::{CONTACT_EXPORT_FIELDS, ContactExportRo
 use concord_example_salesforce_sdk::ids::{MaxRecords, QueryJobId};
 use concord_example_salesforce_sdk::soql::FieldPath;
 use concord_example_salesforce_sdk::{LinkErrorKind, ProtocolErrorKind, SfError};
-use concord_example_testserver::{Body, Recorded, Reply, generated_records};
+use concord_example_testserver::{Body, Recorded, Reply, generated_records, paused};
 use concord_pagination::{
     Budget, JobOptions, OnError, Options, Order, Outcome, Resume, manifest_jobs, sequential,
 };
@@ -591,8 +591,16 @@ async fn sf_b_permits_are_held_through_stalled_bodies() {
         |key| manifests.fetch(key),
         |part| runner.run(part),
     );
-    // Heads arrive at once, bodies never: `next` stays pending.
-    let pending = tokio::time::timeout(Duration::from_millis(300), jobs.next()).await;
+    // Heads arrive at once, bodies never: `next` stays pending. Paused clock: the 300 ms wait runs
+    // out only once both stalled bodies have started and both shards are staged.
+    let wait = Duration::from_millis(300);
+    let both_stalled = || {
+        server.active_bodies() == 2 && staging.partial_files().is_ok_and(|files| files.len() == 2)
+    };
+    tokio::time::pause();
+    let next = tokio::time::timeout(wait, jobs.next());
+    let pending = paused::time_out_when(both_stalled, wait, next).await;
+    tokio::time::resume();
     assert!(pending.is_err());
     assert!(
         server

@@ -4,7 +4,7 @@ mod support;
 
 use std::{error::Error as _, num::NonZeroU32, time::Duration};
 
-use concord_example_testserver::{Body, Recorded, Reply, Script, TestServer};
+use concord_example_testserver::{Body, Recorded, Reply, Script, TestServer, paused};
 use concord_sdk_open_library::{
     AuthorId, ERROR_BODY_LIMIT, Error, OpenLibrary, RESPONSE_BODY_LIMIT, RecordKind, WorkId,
     concord::{ErrorKind, bytes::Bytes, reqwest::StatusCode},
@@ -336,9 +336,11 @@ async fn media_refusal_happens_before_a_stalled_body_is_read() {
         Reply::text(200, "malformed", ""),
     ];
     for reply in replies {
+        // Clock frozen while the call runs: the bound fails only a call that waits for something
+        // that never comes (then reported as stuck).
         let error = tokio::time::timeout(
             Duration::from_secs(1),
-            search_error(reply.with_body(Body::Stall)),
+            paused::frozen(search_error(reply.with_body(Body::Stall))),
         )
         .await
         .expect("media refusal must not wait for the body");

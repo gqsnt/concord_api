@@ -1,6 +1,6 @@
 //! Connected workflows run exclusively against TestServer fixtures.
 mod support;
-use concord_example_testserver::{Body, Recorded, Reply, TestServer};
+use concord_example_testserver::{Body, Recorded, Reply, TestServer, paused};
 use concord_sdk_mailgun::{
     concord::{ErrorKind, bytes::Bytes},
     pagination::{Outcome, PagesError, Resume},
@@ -242,7 +242,9 @@ async fn one_shot_attachment_prepares_without_polling_and_sends_once() {
     server.shutdown().await;
 }
 
-#[tokio::test]
+// Paused clock: the 150 ms timeout fires only once the server has read the whole POST, and, when it
+// stalls the body, written the head, so it ends the body and never the wait for the head.
+#[tokio::test(start_paused = true)]
 async fn post_upload_timeout_is_ambiguous_and_never_replays_either_source() {
     for streamed in [false, true] {
         for after_head in [false, true] {
@@ -254,7 +256,8 @@ async fn post_upload_timeout_is_ambiguous_and_never_replays_either_source() {
                 }
             })
             .await;
-            let api = Mailgun::local(&server.url(), KEY, Duration::from_millis(150)).unwrap();
+            let timeout = Duration::from_millis(150);
+            let api = Mailgun::local(&server.url(), KEY, timeout).unwrap();
             let polls = Arc::new(AtomicUsize::new(0));
             let attachment = if streamed {
                 let seen = polls.clone();
@@ -270,11 +273,15 @@ async fn post_upload_timeout_is_ambiguous_and_never_replays_either_source() {
             } else {
                 Attachment::bytes("report.txt", "text/plain", FILE).unwrap()
             };
-            let error = domain(&api)
+            let send = domain(&api)
                 .send_message(with_attachment(attachment))
-                .send()
-                .await
-                .unwrap_err();
+                .send();
+            let error = if after_head {
+                paused::time_out_in_body(&server, |_| true, timeout, send).await
+            } else {
+                paused::time_out(&server, |_| true, timeout, send).await
+            }
+            .unwrap_err();
             assert!(matches!(error, Error::AmbiguousSend(_)));
             let cause = error.concord_error().unwrap();
             assert_eq!(cause.kind(), ErrorKind::Transport);

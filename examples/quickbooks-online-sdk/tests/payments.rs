@@ -4,7 +4,7 @@ mod support;
 
 use std::time::Duration;
 
-use concord_example_testserver::{Recorded, Reply, TestServer};
+use concord_example_testserver::{Recorded, Reply, TestServer, paused};
 use concord_sdk_quickbooks_online::{
     AuthorizationKind, Decimal, EntityId, Error, NewPayment, RefreshToken, UncertainCause,
 };
@@ -30,7 +30,9 @@ async fn serve(reply: impl Fn(&Recorded) -> Reply + Send + Sync + 'static) -> Te
     .await
 }
 
-#[tokio::test]
+// Paused clock: the token refresh and the delivery of the payment complete in frozen time; the
+// 300 ms timeout fires only once the server holds the payment.
+#[tokio::test(start_paused = true)]
 async fn a_timed_out_payment_keeps_its_generated_id_and_is_not_resent() {
     let server = serve(|request| {
         assert_eq!(request.method, "POST");
@@ -38,15 +40,12 @@ async fn a_timed_out_payment_keeps_its_generated_id_and_is_not_resent() {
         json_fixture(200, "payment-created.json").delay(Duration::from_secs(2))
     })
     .await;
-    let qbo = qbo_with(
-        &server,
-        connection(&server, REALM_A, "stored-a"),
-        Duration::from_millis(300),
-    );
-    let error = qbo
-        .payments()
-        .create(payment("25.1300"))
-        .send()
+    let timeout = Duration::from_millis(300);
+    let qbo = qbo_with(&server, connection(&server, REALM_A, "stored-a"), timeout);
+    let payments = qbo.payments();
+    let create = payments.create(payment("25.1300")).send();
+    let payment_path = format!("/v3/company/{REALM_A}/payment");
+    let error = paused::time_out(&server, |r| r.path() == payment_path, timeout, create)
         .await
         .unwrap_err();
     let uncertain = error

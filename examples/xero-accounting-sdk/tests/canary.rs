@@ -31,7 +31,7 @@ use concord_testserver::{Body, Recorded, Reply, TestServer};
 use std::fmt::Debug;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, SystemTime};
-use std::{fs, net::TcpListener, num::NonZeroUsize};
+use std::{fs, num::NonZeroUsize};
 
 const TENANT: &str = "45e4708e-d862-4111-ab3a-dd8cd03913e1";
 const CONTACT: &str = "3138017f-8ddc-420e-a159-e7e1cf9e643d";
@@ -112,10 +112,7 @@ impl Probe {
 }
 
 fn refused() -> String {
-    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
-    let url = format!("http://{}", listener.local_addr().unwrap());
-    drop(listener);
-    url
+    concord_testserver::refused_url()
 }
 
 /// A new journal directory under <worktree>/target/tmp (never the system temp directory).

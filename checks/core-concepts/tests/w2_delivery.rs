@@ -7,7 +7,7 @@
 use std::time::Duration;
 
 use concord::{Delivery, ErrorKind, Json};
-use concord_example_testserver::{Body, Reply, TestServer};
+use concord_example_testserver::{Body, Reply, TestServer, paused};
 use serde::{Deserialize, Serialize};
 
 /// A created item.
@@ -84,10 +84,13 @@ async fn a_request_without_an_answer_may_have_been_performed() {
     // The server reads the whole request, then answers too late.
     let server =
         TestServer::start(|_| Reply::json(201, r#"{"id":1}"#).delay(Duration::from_secs(5))).await;
-    assert_eq!(
-        delivery(&store(&server.url(), Duration::from_millis(300))).await,
-        (Delivery::Unknown, ErrorKind::Transport)
-    );
+    let timeout = Duration::from_millis(300);
+    let late = store(&server.url(), timeout);
+    // Paused clock: the 300 ms timeout fires only once the server has read the whole request.
+    tokio::time::pause();
+    let outcome = paused::time_out(&server, |_| true, timeout, delivery(&late)).await;
+    tokio::time::resume();
+    assert_eq!(outcome, (Delivery::Unknown, ErrorKind::Transport));
     assert_eq!(server.requests().len(), 1, "the write reached the server");
 
     // The server reads the request and closes the connection without a response.

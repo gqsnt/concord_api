@@ -3,7 +3,7 @@ use concord::{
     ErrorKind,
     reqwest::{self, header::HeaderValue},
 };
-use concord_example_testserver::{Body, Reply, Script, TestServer};
+use concord_example_testserver::{Body, Reply, Script, TestServer, paused};
 use concord_sdk_hubspot_crm::{
     BATCH_READ_MAX, BatchReadRequest, CrmApi, CrmApiConfig, Error, HubSpot, ItemError,
     SearchRequest,
@@ -437,8 +437,19 @@ async fn batch_read_failures_are_sent_once() {
             }
         })
         .await;
-        let hub = batch_hub(&server.url(), Duration::from_millis(150));
-        let e = hub.batch_read(batch(&["101"])).await.unwrap_err();
+        let timeout = Duration::from_millis(150);
+        let hub = batch_hub(&server.url(), timeout);
+        // Paused clock: the token request and the delivery of the batch complete in frozen time;
+        // the 150 ms timeout fires only once the server holds the batch (it answers 400 ms later).
+        tokio::time::pause();
+        let read = hub.batch_read(batch(&["101"]));
+        let e = if hang_up {
+            paused::drive(read).await
+        } else {
+            paused::time_out(&server, |r| r.target == BATCH, timeout, read).await
+        }
+        .unwrap_err();
+        tokio::time::resume();
         assert!(matches!(&e, Error::Concord(c) if c.kind() == ErrorKind::Transport));
         tokio::time::sleep(Duration::from_millis(400)).await;
         assert_eq!(server.requests().len(), 2);

@@ -12,7 +12,7 @@ use std::time::Duration;
 
 use concord::ErrorKind;
 use concord::bytes::Bytes;
-use concord_example_testserver::{Body, Reply, TestServer};
+use concord_example_testserver::{Body, Reply, TestServer, paused};
 use concord_sdk_anthropic_messages::{
     ApiErrorType, ContentBlock, Error, IncompleteCause, Message, Role, StopReason, StreamEvent,
     StreamState,
@@ -264,7 +264,10 @@ async fn workflow_2_thinking_blocks_pass_through_and_usage_may_be_absent() {
     );
 }
 
-#[tokio::test]
+// Paused clock: the response and the reads before the deadline complete in frozen time, then the
+// 50 ms deadline and the server's 300 ms pause run on one virtual clock, so the deadline always
+// passes first, however slowly the earlier reads were processed.
+#[tokio::test(start_paused = true)]
 async fn workflow_2_a_per_event_timeout_loses_no_event() {
     // The basic stream with a pause in the middle of the first text delta's data line.
     let body = fixture("stream-basic.sse");
@@ -283,15 +286,13 @@ async fn workflow_2_a_per_event_timeout_loses_no_event() {
             .with_body(Body::Chunks(chunks.clone()))
     })
     .await;
-    let mut stream = api(&server)
-        .messages()
-        .stream(hello().streaming())
-        .send()
+    let messages = api(&server).messages();
+    let mut stream = paused::drive(messages.stream(hello().streaming()).send())
         .await
         .unwrap()
         .value;
     for _ in 0..3 {
-        stream.next().await.unwrap().unwrap(); // message_start, content_block_start, ping
+        paused::drive(stream.next()).await.unwrap().unwrap(); // message_start, content_block_start, ping
     }
     // The delta is half received: the deadline expires and the pending call is dropped.
     let expired = tokio::time::timeout(Duration::from_millis(50), stream.next()).await;

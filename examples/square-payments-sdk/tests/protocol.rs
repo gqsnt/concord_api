@@ -2,7 +2,7 @@
 
 mod support;
 
-use concord_example_testserver::{Body, Gate, Recorded, Reply, Script, TestServer};
+use concord_example_testserver::{Body, Gate, Recorded, Reply, Script, TestServer, paused};
 use concord_sdk_square_payments::{
     CompletePayment, CreatePayment, ERROR_BODY_LIMIT, Error, InputError, Money, PagesError, Resume,
     SUCCESS_BODY_LIMIT, Square, SquareConfig, bearer,
@@ -622,34 +622,35 @@ async fn delayed_capture_errors_are_typed_and_never_resent() {
     assert_eq!(server.shutdown().await.open_after, 0);
 }
 
-#[tokio::test]
+// Paused clock: the 150 ms timeout fires for each write only once the server holds it.
+#[tokio::test(start_paused = true)]
 async fn timed_out_complete_and_cancel_are_unknown_but_not_create_replays() {
     // Each write commits and then holds its response head; the transport times out.
     let server = TestServer::start(|_: &Recorded| {
         Reply::json(200, authorized_as("COMPLETED")).after(Gate::new())
     })
     .await;
+    let timeout = Duration::from_millis(150);
     let api = Square::new(
-        transport(Duration::from_millis(150)).unwrap(),
+        transport(timeout).unwrap(),
         SquareConfig {
             authorization: bearer(TOKEN).unwrap(),
         },
     )
     .with_base_url(server.url())
     .unwrap();
-    let complete = api
-        .payments()
+    let payments = api.payments();
+    let complete = payments
         .complete(
             "synthetic-payment-002",
             CompletePayment::expecting(VERSION_TOKEN),
         )
-        .send()
+        .send();
+    let complete = paused::time_out(&server, |_| true, timeout, complete)
         .await
         .unwrap_err();
-    let cancel = api
-        .payments()
-        .cancel("synthetic-payment-002")
-        .send()
+    let cancel = payments.cancel("synthetic-payment-002").send();
+    let cancel = paused::time_out(&server, |_| true, timeout, cancel)
         .await
         .unwrap_err();
     for error in [&complete, &cancel] {
@@ -661,10 +662,8 @@ async fn timed_out_complete_and_cancel_are_unknown_but_not_create_replays() {
         assert!(inner.transport().unwrap().is_timeout());
         assert_eq!(inner.delivery(), Delivery::Unknown);
     }
-    let create = api
-        .payments()
-        .create(authorization(1000))
-        .send()
+    let create = payments.create(authorization(1000)).send();
+    let create = paused::time_out(&server, |_| true, timeout, create)
         .await
         .unwrap_err();
     assert!(create.outcome_unknown() && create.create_outcome_unknown());

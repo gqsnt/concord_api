@@ -2,7 +2,7 @@
 
 mod support;
 
-use concord_example_testserver::{Gate, Recorded, Reply, TestServer};
+use concord_example_testserver::{Gate, Recorded, Reply, TestServer, paused};
 use concord_sdk_square_payments::{
     Error, PagesError, Resume, Square, SquareConfig, bearer, transport,
 };
@@ -52,7 +52,9 @@ async fn create_then_retrieve() {
     assert_eq!(server.shutdown().await.open_after, 0);
 }
 
-#[tokio::test]
+// Paused clock: the 150 ms timeout fires only once the server holds the first create; the replay,
+// the read and the mismatched create complete while virtual time stands still.
+#[tokio::test(start_paused = true)]
 async fn timeout_exact_replay_and_mismatched_replay() {
     // A synthetic ledger commits before holding the first response head forever.
     // It compares actual key/body bytes, independently of SDK serialization.
@@ -79,8 +81,9 @@ async fn timeout_exact_replay_and_mismatched_replay() {
         }
     })
     .await;
+    let timeout = Duration::from_millis(150);
     let api = Square::new(
-        transport(Duration::from_millis(150)).unwrap(),
+        transport(timeout).unwrap(),
         SquareConfig {
             authorization: bearer(TOKEN).unwrap(),
         },
@@ -88,7 +91,9 @@ async fn timeout_exact_replay_and_mismatched_replay() {
     .with_base_url(server.url())
     .unwrap();
     let original = api.payments().create(create(1000));
-    let error = original.clone().send().await.unwrap_err();
+    let error = paused::time_out(&server, |_| true, timeout, original.clone().send())
+        .await
+        .unwrap_err();
     assert!(error.create_outcome_unknown());
     let Error::Concord(error) = error else {
         panic!("expected transport timeout")
@@ -100,19 +105,13 @@ async fn timeout_exact_replay_and_mismatched_replay() {
     );
     assert_eq!(server.requests().len(), 1, "no automatic replay");
 
-    let replayed = original.send().await.unwrap().payment;
-    let retrieved = api
-        .payments()
-        .get(&replayed.id)
-        .send()
+    let replayed = paused::drive(original.send()).await.unwrap().payment;
+    let retrieved = paused::drive(api.payments().get(&replayed.id).send())
         .await
         .unwrap()
         .payment;
     assert_eq!(retrieved, replayed);
-    let error = api
-        .payments()
-        .create(create(1001))
-        .send()
+    let error = paused::drive(api.payments().create(create(1001)).send())
         .await
         .unwrap_err();
     let Error::Provider(error) = error else {

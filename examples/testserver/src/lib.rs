@@ -40,6 +40,8 @@ use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::{Notify, watch};
 use tokio::task::{JoinHandle, JoinSet};
 
+pub mod paused;
+
 /// One request as observed on the wire.
 #[derive(Debug, Clone)]
 pub struct Recorded {
@@ -335,6 +337,8 @@ struct Shared {
     active_bodies: AtomicUsize,
     peak_active_bodies: AtomicUsize,
     body_bytes_sent: AtomicU64,
+    heads_sent: AtomicUsize,
+    held_replies: AtomicUsize,
     request_body_bytes: AtomicU64,
     request_chunk_bytes: AtomicU64,
     accept_errors: AtomicUsize,
@@ -438,6 +442,18 @@ impl TestServer {
     /// Response body bytes handed to the socket so far.
     pub fn body_bytes_sent(&self) -> u64 {
         self.shared.body_bytes_sent.load(Ordering::SeqCst)
+    }
+
+    /// Response heads handed to the socket so far (a head held by a delay or a gate is not
+    /// counted until it is written).
+    pub fn heads_sent(&self) -> usize {
+        self.shared.heads_sent.load(Ordering::SeqCst)
+    }
+
+    /// Replies the server is holding right now: a head waiting for its [`Reply::delay`] or its
+    /// [`Reply::after`] gate, or a [`Body::Stall`] body after its head.
+    pub fn held_replies(&self) -> usize {
+        self.shared.held_replies.load(Ordering::SeqCst)
     }
 
     /// Request body bytes received so far (also past the recording limit), counted as they arrive:
@@ -629,6 +645,24 @@ impl Drop for BodyGuard<'_> {
     }
 }
 
+/// Counts a reply the server is holding: its head waits for a delay or a gate, or its body stalls.
+struct HeldGuard<'a>(&'a Shared);
+
+impl<'a> HeldGuard<'a> {
+    fn new(shared: &'a Shared) -> Self {
+        shared.held_replies.fetch_add(1, Ordering::SeqCst);
+        shared.changed.notify_waiters();
+        Self(shared)
+    }
+}
+
+impl Drop for HeldGuard<'_> {
+    fn drop(&mut self) {
+        self.0.held_replies.fetch_sub(1, Ordering::SeqCst);
+        self.0.changed.notify_waiters();
+    }
+}
+
 async fn serve(
     mut stream: TcpStream,
     shared: &Shared,
@@ -706,9 +740,11 @@ async fn serve(
             return Ok(());
         }
         if let Some(delay) = reply.delay {
+            let _held = HeldGuard::new(shared);
             tokio::time::sleep(delay).await;
         }
         if let Some(gate) = &reply.after {
+            let _held = HeldGuard::new(shared);
             gate.wait().await;
         }
         let mut out = format!("HTTP/1.1 {} X\r\n", reply.status);
@@ -719,6 +755,7 @@ async fn serve(
             Body::Full(bytes) => {
                 out.push_str(&format!("content-length: {}\r\n\r\n", bytes.len()));
                 stream.write_all(out.as_bytes()).await?;
+                head_sent(shared);
                 let _active = BodyGuard::new(shared);
                 stream.write_all(&bytes).await?;
                 shared
@@ -728,10 +765,12 @@ async fn serve(
             Body::HeadOnly(declared) => {
                 out.push_str(&format!("content-length: {declared}\r\n\r\n"));
                 stream.write_all(out.as_bytes()).await?;
+                head_sent(shared);
             }
             body => {
                 out.push_str("transfer-encoding: chunked\r\n\r\n");
                 stream.write_all(out.as_bytes()).await?;
+                head_sent(shared);
                 let _active = BodyGuard::new(shared);
                 let complete = write_chunked(&mut stream, shared, body).await?;
                 if !complete {
@@ -741,6 +780,12 @@ async fn serve(
         }
         stream.flush().await?;
     }
+}
+
+/// Counts a response head handed to the socket.
+fn head_sent(shared: &Shared) {
+    shared.heads_sent.fetch_add(1, Ordering::SeqCst);
+    shared.changed.notify_waiters();
 }
 
 async fn write_frame(stream: &mut TcpStream, shared: &Shared, chunk: &[u8]) -> std::io::Result<()> {
@@ -792,6 +837,7 @@ async fn write_chunked(
         }
         Body::Stall => {
             stream.flush().await?;
+            let _held = HeldGuard::new(shared);
             std::future::pending::<()>().await;
         }
         Body::GenerateThenFail(mut next) => {
@@ -975,3 +1021,40 @@ pub fn generated_records(
 
 /// A boxed future, for responders that compute replies asynchronously in tests.
 pub type BoxFuture<T> = Pin<Box<dyn Future<Output = T> + Send>>;
+
+// ---------------------------------------------------------------------------------------------
+// A port that refuses connections
+
+/// A loopback address whose port refuses every TCP connection for the rest of the process.
+///
+/// A socket is bound to the port and never listens, so a connection attempt is refused
+/// (`ConnectionRefused`; Windows retries a refused attempt for about two seconds before reporting
+/// it), and the port stays in use: a listener bound with the standard library or Tokio gets
+/// `AddrInUse`, and the operating system does not hand the port out to a listener asking for port
+/// 0. A port freed by dropping a listener has neither guarantee: before the test connects, a
+/// concurrent test's server can be given it, and the request is then answered or hung up on
+/// instead of refused (on Linux the connecting socket can even be given the freed port as its own
+/// local port and connect to itself). `tests/refused.rs` checks refusal and `AddrInUse` on every
+/// platform the suite runs on.
+///
+/// One port serves the whole test process, so callers never manage its lifetime; refusing is
+/// stateless, so concurrent tests can share it.
+pub fn refused_addr() -> SocketAddr {
+    static REFUSED: std::sync::OnceLock<(tokio::net::TcpSocket, SocketAddr)> =
+        std::sync::OnceLock::new();
+    REFUSED
+        .get_or_init(|| {
+            let socket = tokio::net::TcpSocket::new_v4().expect("create a TCP socket");
+            socket
+                .bind(SocketAddr::from(([127, 0, 0, 1], 0)))
+                .expect("bind a loopback port");
+            let addr = socket.local_addr().expect("local addr");
+            (socket, addr)
+        })
+        .1
+}
+
+/// `http://127.0.0.1:<port>` of [`refused_addr`] (no trailing slash).
+pub fn refused_url() -> String {
+    format!("http://{}", refused_addr())
+}

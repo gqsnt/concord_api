@@ -10,7 +10,7 @@ use std::time::Duration;
 use common::*;
 use concord::ErrorKind;
 use concord::reqwest::{self, header::HeaderValue};
-use concord_example_testserver::{Body, Recorded, Reply, TestServer};
+use concord_example_testserver::{Body, Recorded, Reply, TestServer, paused};
 use concord_pagination::{PagesError, Resume};
 use concord_sdk_amazon_s3::sigv4::sign_request;
 use concord_sdk_amazon_s3::{
@@ -1479,13 +1479,19 @@ async fn dropping_a_body_or_a_pending_call_releases_the_connection() {
 
     // The head arrived; the caller's deadline drops a pending read (nothing is lost: the next
     // read returns the chunk), then the caller drops the body.
-    let mut output = bucket.get_object(key("endless")).send().await.unwrap();
+    // Paused clock: the 5 ms deadline and the server's 50 ms chunk delay run on one virtual
+    // clock, so the deadline always passes first, however slowly the head was processed.
+    tokio::time::pause();
+    let mut output = paused::drive(bucket.get_object(key("endless")).send())
+        .await
+        .unwrap();
     let pending = tokio::time::timeout(Duration::from_millis(5), output.body.chunk()).await;
     assert!(
         pending.is_err(),
         "the read was pending and its future was dropped"
     );
     assert_eq!(&output.body.chunk().await.unwrap().unwrap()[..], b"chunk");
+    tokio::time::resume();
     assert_eq!(output.body.received(), 5);
     assert!(output.body.expected().is_none());
     drop(output);
@@ -1497,12 +1503,14 @@ async fn dropping_a_body_or_a_pending_call_releases_the_connection() {
     );
 
     // The head has not arrived: dropping the pending `send()` abandons the request.
+    // Paused clock: the 100 ms deadline runs out only once the server holds the request.
     let call = bucket.get_object(key("slow-head")).send();
-    assert!(
-        tokio::time::timeout(Duration::from_millis(100), call)
-            .await
-            .is_err()
-    );
+    let wait = Duration::from_millis(100);
+    let late = |r: &Recorded| r.path().ends_with("slow-head");
+    tokio::time::pause();
+    let abandoned = paused::time_out(&server, late, wait, tokio::time::timeout(wait, call)).await;
+    tokio::time::resume();
+    assert!(abandoned.is_err());
     assert!(
         server
             .wait_until(Duration::from_secs(5), |s| s.live_connections() == 0)

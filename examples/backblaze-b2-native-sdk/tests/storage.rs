@@ -9,7 +9,7 @@ use std::{
     time::Duration,
 };
 
-use concord_example_testserver::{Recorded, Reply};
+use concord_example_testserver::{Recorded, Reply, paused};
 use concord_sdk_backblaze_b2_native::{
     BucketId, Error, ErrorCode, FileId, FileName, FileNameQuery, InputError, Violation,
     concord::{Delivery, ErrorKind, ResponseMeta},
@@ -306,7 +306,9 @@ async fn delete_sends_exact_json_name_and_id_and_types_a_mismatch_as_provider_re
     fixture.shutdown().await;
 }
 
-#[tokio::test]
+// Paused clock: authorizing the account, the delivery of the delete and the caller's list complete
+// in frozen time; the 200 ms timeout fires only once the server holds the delete.
+#[tokio::test(start_paused = true)]
 async fn a_timed_out_delete_can_have_committed_or_not_and_is_never_resent() {
     for commits in [true, false] {
         let exists = Arc::new(Mutex::new(true));
@@ -330,10 +332,13 @@ async fn a_timed_out_delete_can_have_committed_or_not_and_is_never_resent() {
             }
         })
         .await;
-        let session = fixture.session(Duration::from_millis(200)).await;
-        let error = session
-            .storage()
-            .delete_file_version(&FileName::new(NAME).unwrap(), &FileId::new(ID).unwrap())
+        let timeout = Duration::from_millis(200);
+        let session = paused::drive(fixture.session(timeout)).await;
+        let storage = session.storage();
+        let (name, id) = (FileName::new(NAME).unwrap(), FileId::new(ID).unwrap());
+        let delete = storage.delete_file_version(&name, &id);
+        let late = |r: &Recorded| r.path().ends_with("b2_delete_file_version");
+        let error = paused::time_out(&fixture.api, late, timeout, delete)
             .await
             .unwrap_err();
         assert!(error.may_have_deleted());
@@ -342,7 +347,7 @@ async fn a_timed_out_delete_can_have_committed_or_not_and_is_never_resent() {
         );
         assert_eq!(*exists.lock().unwrap(), !commits);
         let mut check = session.storage().list_file_names(query(), cap(1));
-        let found = check.next_page().await.unwrap().unwrap();
+        let found = paused::drive(check.next_page()).await.unwrap().unwrap();
         assert_eq!(found.files.is_empty(), commits);
         assert!(check.is_complete());
         assert_eq!(

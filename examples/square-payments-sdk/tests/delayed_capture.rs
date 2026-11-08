@@ -3,7 +3,7 @@
 //! on cancellation. A stale token is acted on; an uncertain complete or cancel is resolved
 //! by re-reading the payment, never by an SDK resend. Live provider calls: NOT_RUN.
 
-use concord_example_testserver::{Gate, Recorded, Reply, TestServer};
+use concord_example_testserver::{Gate, Recorded, Reply, TestServer, paused};
 use concord_sdk_square_payments::concord::Delivery;
 use concord_sdk_square_payments::{
     CompletePayment, CreatePayment, Error, Money, Payment, Square, SquareConfig, bearer, transport,
@@ -209,15 +209,18 @@ fn completes(server: &TestServer) -> usize {
         .count()
 }
 
-#[tokio::test]
+// Paused clock: every call completes while virtual time stands still, and the 300 ms timeout fires
+// only once the server holds the complete (step 3) or the cancel (step 4) it committed.
+#[tokio::test(start_paused = true)]
 async fn authorize_capture_void_with_stale_and_uncertain_outcomes() -> Result {
     let state = Arc::new(Mutex::new(Sandbox::default()));
     let server = {
         let state = state.clone();
         TestServer::start(move |request: &Recorded| sandbox_reply(&state, request)).await
     };
+    let client_timeout = Duration::from_millis(300);
     let api = Square::new(
-        transport(Duration::from_millis(300))?,
+        transport(client_timeout)?,
         SquareConfig {
             authorization: bearer(TOKEN)?,
         },
@@ -225,13 +228,18 @@ async fn authorize_capture_void_with_stale_and_uncertain_outcomes() -> Result {
     .with_base_url(server.url())?;
 
     // 1. Authorize, inspect, capture with the token read at checkout.
-    let held = authorize(&api, "1001", 4200).await?;
+    let held = paused::drive(authorize(&api, "1001", 4200)).await?;
     assert_eq!(held.status, "APPROVED");
     let token = held.version_token.clone().expect("Square returns a token");
     let sent: Value = serde_json::from_slice(&server.requests()[0].body)?;
     assert_eq!(sent["autocomplete"], json!(false));
-    assert_eq!(api.payments().get(&held.id).send().await?.payment, held);
-    let Capture::Completed(captured) = capture(&api, &held).await? else {
+    assert_eq!(
+        paused::drive(api.payments().get(&held.id).send())
+            .await?
+            .payment,
+        held
+    );
+    let Capture::Completed(captured) = paused::drive(capture(&api, &held)).await? else {
         panic!("a fresh token captures")
     };
     assert_eq!(captured.status, "COMPLETED");
@@ -249,10 +257,10 @@ async fn authorize_capture_void_with_stale_and_uncertain_outcomes() -> Result {
 
     // 2. Stale token: the payment changed after checkout. The mismatch is typed, nothing was
     //    captured, and the application decides on the fresh read (here: capture that version).
-    let held = authorize(&api, "1002", 1500).await?;
+    let held = paused::drive(authorize(&api, "1002", 1500)).await?;
     state.lock().unwrap().changed_elsewhere(&held.id);
     let before = server.requests().len();
-    let Capture::Changed(fresh) = capture(&api, &held).await? else {
+    let Capture::Changed(fresh) = paused::drive(capture(&api, &held)).await? else {
         panic!("a stale token is refused")
     };
     assert_eq!(fresh.status, "APPROVED", "nothing was captured");
@@ -262,7 +270,7 @@ async fn authorize_capture_void_with_stale_and_uncertain_outcomes() -> Result {
         before + 2,
         "one complete, one re-read"
     );
-    let Capture::Completed(captured) = capture(&api, &fresh).await? else {
+    let Capture::Completed(captured) = paused::drive(capture(&api, &fresh)).await? else {
         panic!("the fresh version captures")
     };
     assert_eq!(captured.status, "COMPLETED");
@@ -270,10 +278,12 @@ async fn authorize_capture_void_with_stale_and_uncertain_outcomes() -> Result {
 
     // 3. Uncertain complete: Square captured, then the answer never came. The routine re-reads
     //    and learns it is done; exactly one complete was sent for this order.
-    let held = authorize(&api, "1003", 900).await?;
+    let held = paused::drive(authorize(&api, "1003", 900)).await?;
     state.lock().unwrap().hold = Some("complete");
     let before = completes(&server);
-    let Capture::Uncertain { first, current } = capture(&api, &held).await? else {
+    let held_complete = |r: &Recorded| r.target.ends_with("/complete");
+    let uncertain = paused::time_out(&server, held_complete, client_timeout, capture(&api, &held));
+    let Capture::Uncertain { first, current } = uncertain.await? else {
         panic!("the complete timed out")
     };
     assert!(first.outcome_unknown());
@@ -292,22 +302,24 @@ async fn authorize_capture_void_with_stale_and_uncertain_outcomes() -> Result {
 
     // 4. Void an authorization, including an uncertain void resolved by a re-read; a later
     //    capture of the voided payment is an ordinary typed refusal, not a mismatch.
-    let held = authorize(&api, "1004", 700).await?;
-    let voided = void(&api, &held).await?;
+    let held = paused::drive(authorize(&api, "1004", 700)).await?;
+    let voided = paused::drive(void(&api, &held)).await?;
     assert_eq!(voided.status, "CANCELED");
     let cancel = server.requests().pop().unwrap();
     assert_eq!(cancel.target, format!("/v2/payments/{}/cancel", held.id));
     assert!(cancel.body.is_empty());
-    let held = authorize(&api, "1005", 800).await?;
+    let held = paused::drive(authorize(&api, "1005", 800)).await?;
     state.lock().unwrap().hold = Some("cancel");
     let before = server.requests().len();
-    assert_eq!(void(&api, &held).await?.status, "CANCELED");
+    let held_cancel = |r: &Recorded| r.target.ends_with("/cancel");
+    let voided = paused::time_out(&server, held_cancel, client_timeout, void(&api, &held)).await?;
+    assert_eq!(voided.status, "CANCELED");
     assert_eq!(
         server.requests().len(),
         before + 2,
         "one cancel, one re-read"
     );
-    let error = match capture(&api, &held).await {
+    let error = match paused::drive(capture(&api, &held)).await {
         Err(error) => error,
         Ok(other) => panic!("a voided payment cannot be captured: {other:?}"),
     };
@@ -322,12 +334,12 @@ async fn authorize_capture_void_with_stale_and_uncertain_outcomes() -> Result {
     );
 
     // 5. An application that kept only the payment ID completes unconditionally (`{}`).
-    let held = authorize(&api, "1006", 300).await?;
+    let held = paused::drive(authorize(&api, "1006", 300)).await?;
     let id_only = Payment {
         version_token: None,
         ..held
     };
-    let Capture::Completed(captured) = capture(&api, &id_only).await? else {
+    let Capture::Completed(captured) = paused::drive(capture(&api, &id_only)).await? else {
         panic!("an unconditional complete captures")
     };
     assert_eq!(captured.status, "COMPLETED");
@@ -335,7 +347,9 @@ async fn authorize_capture_void_with_stale_and_uncertain_outcomes() -> Result {
 
     // 6. Immediate capture is unchanged for existing callers.
     let immediate = CreatePayment::new("order-1007", SOURCE, usd(100))?;
-    let paid = api.payments().create(immediate).send().await?.payment;
+    let paid = paused::drive(api.payments().create(immediate).send())
+        .await?
+        .payment;
     assert_eq!(paid.status, "COMPLETED");
     let sent: Value = serde_json::from_slice(&server.requests().pop().unwrap().body)?;
     assert_eq!(sent["autocomplete"], json!(true));

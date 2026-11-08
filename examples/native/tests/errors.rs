@@ -62,10 +62,7 @@ async fn non_problem_error_body_keeps_status_and_a_content_free_reason() {
 #[tokio::test]
 async fn non_status_errors_propagate_unchanged() {
     // A port with nothing listening: a transport error, not a status error.
-    let addr = {
-        let l = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
-        l.local_addr().unwrap()
-    };
+    let addr = support::refused_addr();
     let error = rename_item(&inventory_at(addr, "Bearer t"), 7, "Pen")
         .await
         .unwrap_err();

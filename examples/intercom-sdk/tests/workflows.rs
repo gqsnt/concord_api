@@ -4,7 +4,7 @@ mod support;
 
 use std::num::NonZeroUsize;
 
-use concord_example_testserver::{Recorded, Reply, TestServer};
+use concord_example_testserver::{Recorded, Reply, TestServer, paused};
 use concord_sdk_intercom::{
     Error, HeaderNumber, NewContact, PageSize, Role,
     pagination::{PagesError, Resume},
@@ -111,13 +111,17 @@ async fn headerless_429_interrupts_pagination_with_prefix_and_no_reset_or_retry(
     })
     .await;
     let api = api(&server);
+    // Clock frozen while the call runs: the bound fails only a call that waits for something
+    // that never comes (then reported as stuck).
     let result = tokio::time::timeout(
         std::time::Duration::from_millis(500),
-        api.contacts()
-            .list()
-            .pages(Resume::Start, cap(20))
-            .items()
-            .collect_complete(),
+        paused::frozen(
+            api.contacts()
+                .list()
+                .pages(Resume::Start, cap(20))
+                .items()
+                .collect_complete(),
+        ),
     )
     .await
     .unwrap();

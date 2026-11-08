@@ -7,7 +7,7 @@ use std::num::{NonZeroU32, NonZeroUsize};
 use std::time::Duration;
 
 use common::*;
-use concord_example_testserver::{Body, Recorded, Reply, Script, TestServer};
+use concord_example_testserver::{Body, Recorded, Reply, Script, TestServer, paused};
 use concord_sdk_elasticsearch::concord::bytes::Bytes;
 use concord_sdk_elasticsearch::concord::{Delivery, ErrorKind, reqwest};
 use concord_sdk_elasticsearch::{
@@ -395,7 +395,9 @@ async fn no_answer_is_uncertain() {
     server.shutdown().await;
 }
 
-#[tokio::test]
+// Paused clock: the 300 ms timeout fires only once the server has written the head, so it ends the
+// stalled body and never the wait for the head.
+#[tokio::test(start_paused = true)]
 async fn a_stalled_answer_is_bounded_by_the_transport_timeout() {
     let script = Script::new(vec![
         Reply::new(200)
@@ -403,14 +405,18 @@ async fn a_stalled_answer_is_bounded_by_the_transport_timeout() {
             .with_body(Body::Stall),
     ]);
     let server = TestServer::start(move |_: &Recorded| script.next()).await;
+    let timeout = Duration::from_millis(300);
     let http = reqwest::Client::builder()
         .no_proxy()
         .retry(reqwest::retry::never())
-        .timeout(Duration::from_millis(300))
+        .timeout(timeout)
         .build()
         .unwrap();
     let es = Elasticsearch::new(http, &server.url(), ApiKey::new(KEY).unwrap()).unwrap();
-    let error = es.bulk(documented_operations()).await.unwrap_err();
+    let operations = documented_operations();
+    let error = paused::time_out_in_body(&server, |_| true, timeout, es.bulk(operations))
+        .await
+        .unwrap_err();
     assert_eq!(concord_kind(&error), Some(ErrorKind::Transport));
     assert_eq!(error.concord().unwrap().delivery(), Delivery::Answered);
     assert!(error.is_uncertain(), "a 2xx head arrived, its body did not");
