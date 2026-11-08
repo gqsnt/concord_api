@@ -317,3 +317,6 @@ with 2 regressions, complete samples).
   independent check where the exempted value decides correctness.
 - `clearance.py` does not enforce that its report (which can quote transcript excerpts) is written
   under `work/sealed`; write it there.
+- `clearance.py` classifies some exclusion code (e.g. `assert not name.startswith('tools/desirability/')`
+  inside a script) and a lane's own self-report as `access` (blocking); read every `access` hit
+  before acting on it (first seen on the H06 A Codex rollout: 5 false positives).
