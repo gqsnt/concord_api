@@ -35,6 +35,8 @@ concord::api! {
         response Json;
         limit RESPONSE_LIMIT;
         send policy;
+        /// Every Kraken operation, as the send policy classifies it (signed or public).
+        operations KrakenOperation;
 
         /// Public market data; never decorates requests with account credentials.
         scope public {

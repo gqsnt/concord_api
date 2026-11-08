@@ -78,6 +78,9 @@ concord::api! {
         response Json;
         limit BODY_LIMIT;
         send policy -> Result<Response<_>, Error>;
+        /// Every Strava operation, as the send policy classifies it (scope, quota windows,
+        /// retries, uncertainty).
+        operations StravaOperation;
 
         /// The authorized athlete (no arbitrary athlete identifier).
         scope athlete {

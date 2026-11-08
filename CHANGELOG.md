@@ -5,6 +5,23 @@
 Not released: the version is unchanged (4.2.0). Records: `v4/desirability/` (decisions in
 `v4/desirability/DECISIONS.md`).
 
+### Added
+
+- **An omitted operation classification fails the SDK build** (H08, candidate B). The opt-in
+  client statement `operations Name;` generates `Name`, a `#[non_exhaustive]` enum with one variant
+  per endpoint (the endpoint's path below the client in UpperCamelCase, `items.get` → `ItemsGet`;
+  `#[cfg]`s carried over), with `ALL`, `operation()` and `from_operation()`. With `send`, every
+  generated `send()` passes its endpoint's variant to the policy through the new
+  `concord::SendOperation<T, Name>` (the sibling of `SendWith<T>`, which is unchanged), so a policy
+  that classifies with a `match` without a wildcard arm stops compiling (E0004, naming the variant)
+  when an endpoint is added and not classified. Clients without the statement generate exactly
+  what they did. Adopted by the Strava (`Class::of`, the uncertain-outcome wording), Sentry
+  (admission buckets, the read/write split and the paging flag; the run-time
+  `Configuration("unsupported operation")` refusal is gone) and Kraken (signed or public per
+  operation, no longer per URL path, so a base URL with a path prefix is followed instead of every
+  call being refused as `SigningInput`) SDKs; their policies implement `SendOperation` instead of
+  `SendWith`. Author guide §5.14.
+
 ### Documentation
 
 - **Generated documentation states the actual contract first** (H04). The docs `api!` generates

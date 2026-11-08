@@ -43,6 +43,9 @@ concord::api! {
         format Json;
         limit BODY_LIMIT;
         send policy -> Result<Response<_>, Error>;
+        /// Every Sentry operation, as the send policy classifies it (admission bucket, writes,
+        /// paging).
+        operations SentryOperation;
 
         /// Organization id or slug, encoded as one segment.
         scope organization(organization: String) {

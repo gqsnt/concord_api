@@ -148,9 +148,11 @@ Concord's `Form` serializes the typed options once. `Policy` prepends its alloca
 decimal nonce to those exact bytes, hashes `decimal nonce || encoded body`, then
 HMAC-SHA512 signs `URI path || hash` with the decoded secret and Base64 encodes the
 result. It sets sensitive `API-Key` and `API-Sign` headers. The query and origin
-are not included in the signature. The exact path comes from the prepared URL;
-only the five declared paths are accepted, so base URLs with path prefixes refuse
-at the policy boundary. The form choice follows the authentication guide's
+are not included in the signature. The exact path comes from the prepared URL,
+a base URL's path prefix included. Whether a request is signed is decided per
+declared operation (an exhaustive `match` over the generated `KrakenOperation`),
+not by its URL, so a base URL with a path prefix is followed by public and signed
+calls alike. The form choice follows the authentication guide's
 encoded-payload example; the endpoint pages currently demonstrate JSON instead.
 
 Share one `Nonces` source across every caller using a key. Its seed is the last
@@ -179,7 +181,7 @@ Failure and transport semantics
 
 | Failure | SDK result and behavior |
 |---|---|
-| Invalid credentials, missing auth, exhausted nonce, unsupported signing path | `Error::Local`, no dispatch |
+| Invalid credentials, missing auth, exhausted nonce, another client's endpoint given to `prepare_signed` | `Error::Local`, no dispatch |
 | Ambiguous, absent or offline pair; missing/mismatched ticker | `Error::Local`, workflow stops |
 | Invalid base URL / request preparation | Concord `Build`, no dispatch |
 | Connection loss, timeout, truncated body | `Error::Concord` / `Transport`; no replay |

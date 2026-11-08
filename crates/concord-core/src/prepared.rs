@@ -244,12 +244,65 @@ pub trait SendWith<T> {
         E: Endpoint<T> + Send;
 }
 
+/// A send policy that is also told **which operation** it sends: the sibling of [`SendWith`] for a
+/// client that declares `operations Name;`.
+///
+/// That statement makes `api!` generate `Name`, an enum with one variant per endpoint of the
+/// client, and makes each generated `send()` call [`send`](Self::send) with its endpoint's variant
+/// next to the endpoint. The policy classifies the operation with a `match` over `Name` **without
+/// a wildcard arm**, so an endpoint added to the declaration and not classified is a compile error
+/// of the SDK (E0004, naming the variant), not a silent default at run time. The enum only
+/// identifies the operation; what each one means (a scope, a quota bucket, whether it is signed
+/// or retried) is the policy's.
+///
+/// ```ignore
+/// // declaration: `pub client Api(policy: Policy) { ...; send policy; operations ApiOperation; ... }`
+/// impl<T: Send> concord::SendOperation<T, ApiOperation> for Policy {
+///     type Output = Result<T, SdkError>;
+///     async fn send<E: concord::Endpoint<T> + Send>(
+///         &self,
+///         operation: ApiOperation,
+///         endpoint: E,
+///     ) -> Self::Output {
+///         let write = match operation {
+///             ApiOperation::ItemsGet | ApiOperation::ItemsList => false,
+///             ApiOperation::ItemsUpdate => true,
+///         };
+///         // ...
+///     }
+/// }
+/// ```
+///
+/// Everything else is as for [`SendWith`]: the policy value (`send value;` or `send P;`), the
+/// `send P -> Template;` result, [`Sends`], and `prepare()` bypassing the policy. A client without
+/// `operations` keeps [`SendWith`].
+#[diagnostic::on_unimplemented(
+    message = "the send policy `{Self}` does not send a `{T}` output identified by `{O}`",
+    label = "the client declares `operations` and `send`: it needs `{Self}: SendOperation<{T}, {O}>`",
+    note = "a client with `operations Name;` passes each endpoint's `Name` variant to its policy: implement `concord::SendOperation<T, Name>` (usually generically over `T`) instead of `SendWith<T>`, and classify the operation with a `match` without a wildcard arm"
+)]
+pub trait SendOperation<T, O> {
+    /// What `send()` returns.
+    type Output;
+
+    /// Sends the endpoint's request according to the policy. `operation` is the endpoint's
+    /// variant of the client's generated operation enum; `self` is the policy value, as for
+    /// [`SendWith::send`].
+    fn send<E>(
+        &self,
+        operation: O,
+        endpoint: E,
+    ) -> impl std::future::Future<Output = Self::Output> + Send
+    where
+        E: Endpoint<T> + Send;
+}
+
 /// The generated `send()` of an endpoint whose client names a send policy (`send P;` or
 /// `send value;`), seen generically: each such endpoint implements `Sends<O>` for `O`, the
-/// policy's [`SendWith::Output`] for its output. An SDK helper written once over several
-/// endpoints — every page of a listing, a batch — then sends through the client's policy (its
-/// errors, metadata, signing, the policy value cloned from the client) exactly as callers do,
-/// without being handed the policy:
+/// policy's [`SendWith::Output`] (or [`SendOperation::Output`]) for its output. An SDK helper
+/// written once over several endpoints — every page of a listing, a batch — then sends through
+/// the client's policy (its errors, metadata, signing, the policy value cloned from the client)
+/// exactly as callers do, without being handed the policy:
 ///
 /// ```ignore
 /// async fn all_pages<E>(first: E) -> Result<Vec<Item>, SdkError>

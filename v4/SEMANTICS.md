@@ -263,6 +263,16 @@ Each key has one **slot**, positioned at the key's first appearance on the chain
 - `send P;` on the client (once, before children) makes every generated `send()` return
   `<P as SendWith<T>>::Output` by calling `P::send(endpoint)`; the policy owns execution, errors and
   metadata (it usually calls `prepare()` and `receive()`). Without it, `send()` is `prepare()?.send()`.
+- `doc* operations Name;` on the client (once, before children) generates `Name`, a
+  `#[non_exhaustive]` enum at the client's visibility with one variant per endpoint, in declaration
+  order, under the endpoint's own and inherited `#[cfg]`s; a variant is the endpoint's path below the
+  client in UpperCamelCase (its type name without the client's: `items.get` is `ItemsGet`). `Name`
+  has `ALL`, `operation(self) -> Operation` and `from_operation(Operation) -> Option<Name>`. With
+  `send P;`, every generated `send()` instead requires `P: SendOperation<T, Name>` and calls
+  `P::send(variant, endpoint)`, returning its `Output`; a policy `match` over `Name` without a
+  wildcard arm therefore fails to compile (E0004) when an endpoint is added and not classified.
+  `Name` must not be a generated type, the config struct or a parameter group; a variant `Self` or
+  `ALL` is an error. Without the statement nothing is generated.
 - Every generated endpoint type implements the public `Endpoint<T>` trait for its output `T` (the
   generated `prepare()`, `operation()` — the declared identity without building a request); it adds
   nothing to the generated namespace. `Received::bytes_limited(n)` reads the body of any status up

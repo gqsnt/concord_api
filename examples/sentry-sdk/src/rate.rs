@@ -1,3 +1,4 @@
+use crate::SentryOperation;
 use concord::{field, reqwest::header::HeaderMap};
 use concord_ratelimit::{Limiter, Observation};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
@@ -55,8 +56,8 @@ impl RateLimits {
 
     pub(crate) fn observe(
         self,
-        limiter: &Limiter<&'static str>,
-        key: &'static str,
+        limiter: &Limiter<SentryOperation>,
+        key: SentryOperation,
         local_concurrency: usize,
         fallback: Duration,
     ) -> Result<(), &'static str> {

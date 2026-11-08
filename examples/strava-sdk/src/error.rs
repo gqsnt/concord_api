@@ -1,5 +1,5 @@
 //! Value-free diagnostics with explicit access to provider payloads.
-use crate::{RateLimits, StravaActivitiesUpdate, UploadStatus};
+use crate::{RateLimits, StravaOperation, UploadStatus};
 use serde::Deserialize;
 use std::fmt;
 
@@ -112,10 +112,20 @@ impl fmt::Display for Error {
         f.write_str(match self {
             Self::Invalid(reason) => reason,
             Self::Concord(_) => "Strava request failed",
-            Self::Ambiguous(e) if e.operation() == Some(StravaActivitiesUpdate::operation()) => {
-                "activity update outcome is uncertain; re-read the activity, it is never resent"
-            }
-            Self::Ambiguous(_) => "upload outcome is ambiguous; automatic replay is forbidden",
+            // No wildcard arm: a new operation chooses its wording here (E0004 otherwise). Reads
+            // are never uncertain; an error of another client keeps the upload wording.
+            Self::Ambiguous(e) => match e.operation().and_then(StravaOperation::from_operation) {
+                Some(StravaOperation::ActivitiesUpdate) => {
+                    "activity update outcome is uncertain; re-read the activity, it is never resent"
+                }
+                Some(
+                    StravaOperation::UploadsCreate
+                    | StravaOperation::AthleteActivities
+                    | StravaOperation::ActivitiesGet
+                    | StravaOperation::UploadsStatus,
+                )
+                | None => "upload outcome is ambiguous; automatic replay is forbidden",
+            },
             Self::Http(_) => "Strava HTTP rejection",
             Self::Auth(_) => "Strava token acquisition failed",
             Self::Admission(_) => "Strava quota admission refused",

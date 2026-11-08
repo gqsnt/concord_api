@@ -713,6 +713,67 @@ error: the client is declared here
 **Fix:** rename the scope. Collisions *between* two `api!` invocations in one module are reported
 by rustc as `E0428` ("the name ... is defined multiple times"); give each client its own module.
 
+## Operations (`operations Name;`)
+
+### An endpoint the policy does not classify
+
+With `operations StoreOperation;` the send policy receives each endpoint's variant; a `match`
+without a wildcard arm makes a forgotten endpoint a compile error of the SDK. Here `DELETE remove`
+was added after the policy was written. Excerpt of
+[`operations_policy_unclassified.stderr`](../crates/concord/tests/ui/operations_policy_unclassified.stderr):
+
+```text
+error[E0004]: non-exhaustive patterns: `StoreOperation::ItemsRemove` not covered
+  --> tests/ui/operations_policy_unclassified.rs:16:28
+   |
+16 |         let _write = match operation {
+   |                            ^^^^^^^^^ pattern `StoreOperation::ItemsRemove` not covered
+   |
+note: `StoreOperation` defined here
+  --> tests/ui/operations_policy_unclassified.rs:28:20
+   |
+28 |         operations StoreOperation;
+   |                    ^^^^^^^^^^^^^^
+...
+34 |             DELETE remove(id: u64) { path "{id}"; }
+   |                    ------ not covered
+```
+
+**Fix:** add an arm for the new variant that states what the operation is (the help's
+`todo!()` arm compiles but panics at run time). Do not add a wildcard arm: it would silence the
+next omission too.
+
+### A policy that implements `SendWith` only
+
+Excerpt of [`operations_policy_send_with.stderr`](../crates/concord/tests/ui/operations_policy_send_with.stderr):
+
+```text
+error[E0277]: the send policy `Policy` does not send a `()` output identified by `StoreOperation`
+  --> tests/ui/operations_policy_send_with.rs:19:14
+   |
+19 |         send Policy;
+   |              ^^^^^^ the client declares `operations` and `send`: it needs `Policy: SendOperation<(), StoreOperation>`
+```
+
+**Fix:** implement `concord::SendOperation<T, StoreOperation>` (it receives the variant before the
+endpoint) instead of `SendWith<T>`, or remove the `operations` statement.
+
+### The statement itself
+
+Excerpt of [`operations_errors.stderr`](../crates/concord/tests/ui/operations_errors.stderr):
+
+```text
+error: `operations ShopItems;` names a type this declaration already generates (for `Shop.items`); choose another name for the enum
+  --> tests/ui/operations_errors.rs:34:20
+   |
+34 |         operations ShopItems;
+   |                    ^^^^^^^^^
+```
+
+**Fix:** `operations` is written once, on the client, before its children, with the name of a new
+type: not a generated type, the client's config struct or a parameter group. An endpoint whose
+variant would be `Self` or `ALL` is renamed.
+
 ## Attributes
 
 ### An unsupported attribute
@@ -758,6 +819,7 @@ error: use of deprecated method `Api::list`: use `items`
 | URL | `base_errors`, `base_invalid_port`, `path_errors`, `optional_in_path`, `scope_trailing_slash`, `subdomain_errors` |
 | Query and headers | `invalid_header_name`, `header_literal_value`, `header_name_exceeds_native_limit`, `reserved_header`, `reserved_headers_all`, `duplicate_header_case`, `duplicate_inherited_key`, `override_without_target`, `override_needs_else_inherit`, `else_inherit_needs_optional_source`, `override_after_remove`, `remove_without_target`, `remove_acts_on_inherited`, `each_and_scalar` |
 | Wire formatting | `option_has_no_wire_spelling`, `vec_needs_each` |
+| Operations | `operations_policy_unclassified`, `operations_policy_send_with`, `operations_errors` |
 | Formats | `representation_missing_via`, `representation_unsupported_payload`, `representation_alpha_spelling`, `format_via_removed`, `format_endpoint_statement`, `format_output_media_type`, `format_header_media_conflict`, `format_media_type_invalid`, `format_invalid_content_type`, `format_inherited_unsupported`, `format_type_paths`, `format_unknown_type`, `format_swapped_order`; with `json`: `ui_json/format_serde_bound`, `ui_json/format_missing_import`; with `json` and `form` off: `ui_features/feature_disabled_formats` |
 
 Known rough edges (compiler-origin): an over-long literal header name is rejected by the native
