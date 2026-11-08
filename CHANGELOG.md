@@ -1,5 +1,22 @@
 # Changelog
 
+## Unreleased — desirability loop (candidate)
+
+Not released: the version is unchanged (4.2.0). Records: `v4/desirability/` (decisions in
+`v4/desirability/DECISIONS.md`).
+
+### Documentation
+
+- **Generated documentation states the actual contract first** (H04). The docs `api!` generates
+  show, on every request type, the declared base, the declared path and the composed default
+  request separately, and that `with_base_url` replaces the whole base including its path; the
+  declared `send()` result first (for a policy without a result template, the `SendWith`
+  implementation that defines it); `concord::Error` named fully; the `Accept` outcome the
+  declaration already decides; the operation name and method. Navigation methods on client and
+  scope pages carry a short entry pointing to the request type instead of repeating its summary
+  (client and scope pages are about half as long). Policy wording no longer assumes every policy
+  signs. No public API, behaviour or version change: only emitted doc attributes changed.
+
 ## Unreleased — interface consolidation (candidate)
 
 Not released: the version is unchanged (4.2.0) and no release has been decided. Records:

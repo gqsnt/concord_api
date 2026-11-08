@@ -1827,7 +1827,7 @@ decorated request from an SDK method named `prepare` keep compiling and fail onl
 `S3Client::prepare(op)` returning a signed request) and say so in the migration notes.
 
 If the declaration stays private behind the SDK's own client, do not re-export its generated
-`{Client}Config` as the SDK's construction type: its generated docs link to the hidden client and
+`{Client}Config` as the SDK's construction type: its generated docs name the hidden client and
 its `set_*` methods (observed in the Dropbox SDK). Re-export the declared client too, or give the
 SDK's constructor a configuration type of its own.
 
