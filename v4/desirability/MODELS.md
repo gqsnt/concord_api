@@ -1,5 +1,7 @@
 # Model and effort ledger — requested vs observed (from harness metadata: rollout turn_context, subagent transcripts, process args)
 
+Append-only: a row marked `running` is superseded by a later row (`↳ … result` / `observed`) for the same role.
+
 | Role / task | Requested | Observed (source) | Start–end (UTC) | Result |
 |---|---|---|---|---|
 | Coordinator | Claude Opus 5.5, xhigh | claude-opus-5-5, effort xhigh (desktop harness process args `--model=claude-opus-5-5 --effort=xhigh`) | 2026-11-07T19:11– | running |
@@ -56,3 +58,30 @@
 | L0 I3 fix round 5 — Claude subagent | Claude subagent (inherits Opus 5.5) | (transcript at completion) | 00:4x– | running |
 | L0 INSTRUMENT review 7 (I4, `l0-instrument-review-7-sol`) on 7f5a83e6 | Codex gpt-6.1-sol, xhigh, read-only | gpt-6.1-sol / xhigh / read-only (rollout turn_context) | 23:19:18–23:24:05 | REJECT: symlink overwrite, forgeable oracle, Kraken self-check |
 | L0 I4 fix round 3 — Claude subagent | Claude subagent (inherits Opus 5.5) | (transcript at completion) | 00:5x– | running |
+| L0 T1 docs-truth review (`t1-review-sol`) on 8c97e367 | Codex gpt-6.1-sol, xhigh, read-only | (meta.json at completion) | 01:1x– | running |
+| L0 T1 docs-truth review (`t1-review-sol`) on 8c97e367 | Codex gpt-6.1-sol, xhigh, read-only | gpt-6.1-sol / xhigh / read-only (rollout turn_context) | 23:31:39–23:34:00 | ACCEPT_WITH_FIXES (1 wording fix applied 32fc4312) |
+| L0 I3 fix round 5 — Claude subagent afcac11b | Claude subagent (inherits Opus 5.5) | claude-opus-5-5 (transcript); effort not visible | 00:4x–01:0x | syn types + std table; committed b77c9cef |
+| L0 INSTRUMENT review 8 (I3, `l0-instrument-review-8-sol`) on 6638e5b6 | Codex gpt-6.1-sol, xhigh, read-only | (meta.json at completion) | 01:2x– | running |
+| L0 INSTRUMENT review 8 (I3, `l0-instrument-review-8-sol`) on 6638e5b6 | Codex gpt-6.1-sol, xhigh, read-only | gpt-6.1-sol / xhigh / read-only (rollout turn_context) | 23:42:05–23:44:48 | REJECT: lifetime args discarded; alias surplus args dropped |
+| L0 I3 fix round 6 — Claude subagent | Claude subagent (inherits Opus 5.5) | (transcript at completion) | 01:3x– | running |
+| L0 I4 fix round 3 — Claude subagent ae1fa9b2 | Claude subagent (inherits Opus 5.5) | claude-opus-5-5 (transcript); effort not visible | 00:5x–01:3x | 5 findings fixed; committed 9fb2423d; bank af768919… |
+| I4 fix3 smoke edit agent (kraken e4) | Codex gpt-6.1-sol, xhigh, danger-full-access inside bwrap | gpt-6.1-sol / xhigh / danger-full-access (rollout turn_context) | 2m46s | valid, oracle 3/3 |
+| L0 INSTRUMENT review 9 (I4, `l0-instrument-review-9-sol`) on f81caeac | Codex gpt-6.1-sol, xhigh, read-only | (meta.json at completion) | 01:4x– | running |
+| ↳ review 9 observed | — | gpt-6.1-sol / xhigh / read-only (rollout turn_context); 23:57:26Z–00:01:12Z | 3m46s | ACCEPT_WITH_FIXES (2 non-blocking) |
+| L0 I4 fix round 4 — Claude subagent (general-purpose) | Claude subagent (inherits Opus 5.5) | (transcript at completion) | 01:0x– | running |
+| L0 I3 fix round 6 — Claude subagent (general-purpose) | Claude subagent (inherits Opus 5.5) | claude-opus-5-5 (transcript); effort not visible | ~33 min, 97 tool uses | self-test 138/138 + 27 effects; committed 1708a9ad (with coordinator reader-text sentence) |
+| L0 INSTRUMENT review 10 (I3, `l0-instrument-review-10-sol`) on 05413782 | Codex gpt-6.1-sol, xhigh, read-only | (meta.json at completion) | 01:3x– | running |
+| ↳ I4 fix round 4 result | — | claude-opus-5-5 (subagent transcript); effort not visible | ~18 min, 74 tool uses | validate 0 diffs/40; committed eb078a78, merged 66edaeff; bank e7d963b9… |
+| L0 INSTRUMENT review 11 (I4 fix4, `l0-instrument-review-11-sol`) on 66edaeff | Codex gpt-6.1-sol, xhigh, read-only | (meta.json at completion) | running | — |
+| ↳ review 10 observed | — | gpt-6.1-sol / xhigh / read-only (rollout turn_context); 00:20:35Z–00:24:43Z | 4m08s | REJECT (1 blocking: absolute paths; 1 non-blocking: variance) |
+| ↳ review 11 observed | — | gpt-6.1-sol / xhigh / read-only (rollout turn_context); 00:21:29Z–00:25:07Z | 3m38s | ACCEPT_WITH_FIXES (2 non-blocking) |
+| L0 I3 fix round 7 — same Claude subagent resumed (SendMessage) | Claude subagent (inherits Opus 5.5) | (transcript at completion) | running | — |
+| L0 I4 fix round 5 — same Claude subagent resumed (SendMessage) | Claude subagent (inherits Opus 5.5) | (transcript at completion) | running | — |
+| ↳ I3 fix round 7 result | — | claude-opus-5-5 (subagent transcript); effort not visible | ~9.5 min, 32 tool uses | self-test 154 + 29 effects; committed ab405ce8, merged 8dc50be7 |
+| L0 INSTRUMENT review 12 (I3, `l0-instrument-review-12-sol`) on 8dc50be7 | Codex gpt-6.1-sol, xhigh, read-only | (meta.json at completion) | running | — |
+| ↳ review 12 observed | — | gpt-6.1-sol / xhigh / read-only (rollout turn_context); 00:35:26Z–00:39:24Z | 3m58s | ACCEPT_WITH_FIXES (2 non-blocking); I3 ACCEPTED |
+| L0 I3 fix round 8 — same Claude subagent resumed | Claude subagent (inherits Opus 5.5) | (transcript at completion) | running | — |
+| ↳ I4 fix round 5 result | — | claude-opus-5-5 (subagent transcript); effort not visible | interrupted by host restart ~05:17, resumed, finished | validate 0 diffs/40; bank unchanged e7d963b9; committed c02c6659, merged cfa1e41f |
+| ↳ I3 fix round 8 result | — | claude-opus-5-5 (subagent transcript); effort not visible | interrupted by host restart before edits, resumed, ~9 min | self-test 154 + 32 effects; committed f1792fed, merged bc997a04 |
+| L0 INSTRUMENT review 13 (I3 fix8 + I4 fix5 + I1 reachability, `l0-instrument-review-13-sol`) on bc997a04 | Codex gpt-6.1-sol, xhigh, read-only | (meta.json at completion) | running | — |
+| ↳ review 13 observed | — | gpt-6.1-sol / xhigh / read-only (rollout turn_context); 04:28:32Z–04:33:48Z | 5m16s | ACCEPT_WITH_FIXES (4 non-blocking); 3 recorded as limits, 1 fixed by coordinator eb46bf2b |

@@ -48,7 +48,7 @@ def build(repo, rustdoc_dir=None, nightly=None):
     per, tot = static_scan.scan(examples)
     if rustdoc_dir:
         shares, words, eps = [], 0, 0
-        gen_eps = fwd = 0
+        gen_eps = fwd = unreachable = 0
         for sdk, row in per.items():
             pkg = os.path.join(examples, sdk)
             path = os.path.join(rustdoc_dir, f"{crate_name(pkg)}.json")
@@ -59,11 +59,13 @@ def build(repo, rustdoc_dir=None, nightly=None):
             r = rustdoc_metrics.analyse(path, pkg, names, row["forwarders"], row["endpoints"])
             row["rustdoc"] = r
             gen_eps += r["generated_endpoint_entry_points"]
+            unreachable += r["generated_endpoint_fns_unreachable"]
             fwd += len(row["forwarders"])
             words += r["R4c_generated_doc_words"]
             eps += row["endpoints"]
         tot["D1c_generated_share"] = round(gen_eps / (gen_eps + fwd), 4) if gen_eps + fwd else None
         tot["R4c_words_per_endpoint"] = round(words / eps, 1) if eps else None
+        tot["generated_endpoint_fns_unreachable"] = unreachable
         tot["rustdoc_nightly"] = nightly
     try:
         sha = subprocess.run(["git", "-C", repo, "rev-parse", "HEAD"], capture_output=True,

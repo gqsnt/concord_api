@@ -42,7 +42,9 @@ Answer with one JSON object:
 ```
 
 Write type paths as the materials spell them (a type the SDK re-exports or names in its
-documentation, or `concord::…`); do not invent a crate or module prefix.
+documentation, or `concord::…`); do not invent a crate or module prefix. Write each result type
+out in full, as the compiler resolves it: no `_`, `impl`, `Self`, elided lifetimes or
+`<T as Trait>::Name` projections.
 
 Rules for call answers (`code`):
 - `code` is one expression evaluating to the `send().await` result: it ends with `.send().await`,
@@ -50,6 +52,7 @@ Rules for call answers (`code`):
 - Chain client setters on `api` (`api.set_x(..).endpoint(..).send().await`) and write values
   inline: no `;`, no `let` or `use` statements, no other `.await` or `?`, and no `return`,
   `break`, `continue`, loops, `async` blocks or `unsafe`.
+- Use only `vec!` and `format!` macros.
 
 Rules for wire answers:
 - Give query pairs in the order they are sent.

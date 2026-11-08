@@ -52,38 +52,49 @@ Steps (see `README.md` for what each outcome means):
 5. **Nothing the agent could configure runs on the host.** After the agent, the host only *reads*
    its tree: a manifest of `.git/**` (compared with the one taken before the launch), the
    `.cargo/` directories and toolchain files, then a copy of the tree **without** any `.git`, any
-   `.cargo/` and any cargo target directory (`CACHEDIR.TAG`) into `<run>/measure`, every file with
-   a fresh modification time (the measurement target is shared between runs and cargo decides
-   freshness by mtime: an older file would let an earlier run's build be reused). Every command
-   on that copy runs inside bubblewrap with the network unshared and only the copy (and the
-   measurement target directory) bound: the diff is `git diff --no-index` between the immutable
-   baseline and the copy under a trusted git environment (`GIT_CONFIG_NOSYSTEM=1`,
-   `GIT_CONFIG_GLOBAL=/dev/null`, a scratch `HOME`, `-c core.fsmonitor=false -c diff.external=
-   -c core.hooksPath=/dev/null`, `--no-ext-diff --no-textconv`); cargo runs with the owner's
-   `CARGO_HOME` (read-only in the agent's sandbox) and the baseline's toolchain pinned through
-   `RUSTUP_TOOLCHAIN`.
+   `.cargo/` and any cargo target directory (`CACHEDIR.TAG`) into `<run>/measure`: regular files
+   and directories only (a symbolic link or special file is left out and makes the session
+   invalid), every file with a fresh modification time (the measurement target is shared between
+   runs and cargo decides freshness by mtime: an older file would let an earlier run's build be
+   reused). Every command on that copy runs inside bubblewrap with the network unshared: the diff
+   is `git diff --no-index` between the immutable baseline and the copy under a trusted git
+   environment (`GIT_CONFIG_NOSYSTEM=1`, `GIT_CONFIG_GLOBAL=/dev/null`, a scratch `HOME`,
+   `-c core.fsmonitor=false -c diff.external= -c core.hooksPath=/dev/null`, `--no-ext-diff
+   --no-textconv`); cargo runs with the copy bound **read-only** (only the measurement target
+   directory is writable; one `cargo metadata` sees it writable to refresh `Cargo.lock`), the
+   owner's `CARGO_HOME` (read-only in the agent's sandbox) and the baseline's toolchain pinned
+   through `RUSTUP_TOOLCHAIN`.
 6. **Exposure and tampering → invalid.** The transcript, the agent's diff, its changed paths and
    the `.git` files it created or changed (loose objects decompressed) are scanned for paths only
    the hidden bank has (`LEAK`). Tampering signals: a `.git` change beyond normal commits and index
-   updates (`GIT_NORMAL`), any `.cargo/` file, a changed toolchain file, a nested `.git`. Either
-   kind of hit sets `outcome.status = "invalid"`; nothing is scored (the measurements are kept
-   under `unscored`).
+   updates (`GIT_NORMAL`), any `.cargo/` file, a changed toolchain file, a nested `.git`, a
+   symbolic link or special file, a refused oracle installation or an oracle changed during the
+   measurement, build-time code or a changed measurement harness (`build_time_code`), and a
+   harness-forging pattern in the added lines (`harness_scan`; its ambiguous hits make the status
+   `needs review` instead). Any hit sets `outcome.status = "invalid"`; nothing is scored (the
+   measurements are kept under `unscored`).
 7. **Measure** (cargo one command at a time):
    - the diff (files, hunks, stat: diagnostics only);
    - **authoritative semantic edit sites** (`expected_sites`): per named provider fact, where the
      final tree states it -- reference site, declared alternative, elsewhere in the SDK, or not
-     recognised; an unrecognised behavioural fact is `needs review` when the oracle passed (the
-     pattern may miss a behaviour-preserving spelling) and `not stated` otherwise;
+     recognised; a behavioural fact (every role but `docs`) counts only where code states it
+     (comments and rustdoc blanked, `code_text`); an unrecognised behavioural fact is `needs
+     review` when the oracle passed (the pattern may miss a behaviour-preserving spelling) and
+     `not stated` otherwise;
    - **missed propagation** (`propagation_checks`), next to the counts for the baseline and the
      reference solution;
    - the SDK's existing tests (and the agent's own): `cargo test -p <pkg> --no-fail-fast`;
-   - the **hidden oracle**: copied to `examples/<sdk>-sdk/tests/oracle_<kind>.rs`, run with
+   - the **hidden oracle**: written to `examples/<sdk>-sdk/tests/oracle_<kind>.rs` after the
+     existing tests (`install_oracle`: no link is followed, an existing path is refused), run with
      `cargo test -p <pkg> --test oracle_<kind> -- --format pretty` and listed with `-- --list`;
      it passes only if every oracle test named in the sealed source is reported as executed and
-     `ok`, nothing else ran and the summary counts agree (exit status alone is not enough);
-   - for e4, the **classification**: whether the tree contains the reference's classification
-     site; when it does not, the stage that caught the omission, or `needs review` when the oracle
-     passed.
+     `ok`, nothing else ran and the summary counts agree (exit status alone is not enough); its
+     hash is checked again afterwards;
+   - for e4, the **classification**: whether the tree's code (comments and rustdoc blanked)
+     contains the reference's classification site; when it does not, the stage that caught the
+     omission, attributed only on the task's classification-specific evidence naming the new
+     operation, both inside one failure block (`omission_stage`; else `cannot be assessed`), or
+     `needs review` when the oracle passed.
 8. Write `<out>/result.json` (plus `events.jsonl`, `last.md`, `stderr.log`, `agent.patch`,
    `EDIT_REPORT.md`, cargo logs, `isolation.txt`) and remove the run's trees unless `--keep`.
 
@@ -140,6 +151,25 @@ GIT_HEAD = re.compile(r"^(?:ref: refs/heads/\S+|[0-9a-f]{40,64})\n?$")
 TOOLCHAIN_FILES = ("rust-toolchain", "rust-toolchain.toml")
 # The no-op cargo runner of the harness controls (validate.py and the run.py replay control).
 NOOP_RUNNER_CONFIG = "[target.'cfg(all())']\nrunner = \"/usr/bin/true\"\n"
+# The measurement harness the oracles build on: the loopback test server crate (every oracle) and
+# the registry crates an oracle uses for its own expectations. The agent's diff must not change the
+# crate's files, nor redirect any of these crates to another source (`path`, `git`, ...).
+HARNESS_DIRS = ("examples/testserver/",)
+HARNESS_CRATES = {"concord-example-testserver", "concord-testserver", "serde_json", "tokio", "base64",
+                  "hmac", "sha2", "bytes"}
+DEP_TABLES = ("dependencies", "dev-dependencies", "dev_dependencies")
+BUILD_DEP_TABLES = ("build-dependencies", "build_dependencies")
+SOURCE_KEYS = ("path", "git", "registry", "registry-index", "branch", "tag", "rev")
+# Static scan of the agent's added lines for code that could forge the test harness's verdict
+# (the oracle's assertions run in the candidate's process; see the README's residual risk).
+FORGE = re.compile(r"test result:|\.\.\. (?:ok|FAILED|ignored)\b|running (?:\d+|\{[^}]*\}) tests?\b")
+STDIO = re.compile(r"\b(?:e?print(?:ln)?|dbg)!\s*\(|\bio::(?:stdout|stderr)\b|\b(?:stdout|stderr)\(\)|"
+                   r"/dev/(?:stdout|stderr|tty|fd/)|/proc/self/fd|\bfrom_raw_fd\b|\bFromRawFd\b|"
+                   r"\blibc::(?:write|dup2?|fdopen)\b")
+EXIT = re.compile(r"\bprocess::(?:exit|abort)\b|\buse\s+std::process::(?:\*|\{[^}]*\b(?:exit|abort)\b|"
+                  r"(?:exit|abort)\b)|\blibc::(?:_exit|exit|abort|kill|raise)\b|\bintrinsics::abort\b")
+BEFORE_MAIN = re.compile(r"\blink_section\b|\.init_array|#\[\s*used\s*\]|\bno_mangle\b|\bexport_name\b|"
+                         r"\bglobal_asm!|\basm!\s*\(")
 
 
 def now():
@@ -766,7 +796,9 @@ def is_cargo_target(path):
 def copy_agent_tree(src, dst, skip_root_files=("EDIT_REPORT.md",)):
     """Copy the agent's tree to `dst` without reading it through anything the agent configures:
     no `.git` (at any depth), no `.cargo` (at any depth, whatever its type), no cargo target
-    directory; symbolic links copied as links, special files skipped. Returns what was left out."""
+    directory. Only regular files and directories are copied: symbolic links and special files are
+    left out and recorded (each one makes the session invalid), so the measurement copy contains
+    no link a later host-side write could follow. Returns what was left out."""
     left_out = {"git": [], "cargo": [], "target_dirs": [], "special": [], "symlinks": []}
 
     def walk(s, d, rel):
@@ -800,8 +832,7 @@ def copy_agent_tree(src, dst, skip_root_files=("EDIT_REPORT.md",)):
                 except OSError:
                     left_out["special"].append(r + " (unreadable)")
             elif stat.S_ISLNK(st.st_mode):
-                os.symlink(os.readlink(e.path), os.path.join(d, e.name))
-                left_out["symlinks"].append(r)
+                left_out["symlinks"].append(f"{r} -> {os.readlink(e.path)}")
             else:
                 left_out["special"].append(r)
 
@@ -858,6 +889,247 @@ def baseline_toolchain(baseline):
         return None
 
 
+def links_and_special(root):
+    """Every symbolic link and special file under `root` (lstat only; links are not followed)."""
+    found = []
+    for dirpath, dirnames, filenames in os.walk(root):
+        for name in dirnames + filenames:
+            p = os.path.join(dirpath, name)
+            mode = os.lstat(p).st_mode
+            if stat.S_ISLNK(mode):
+                found.append(f"{os.path.relpath(p, root)} -> {os.readlink(p)}")
+            elif not (stat.S_ISDIR(mode) or stat.S_ISREG(mode)):
+                found.append(f"{os.path.relpath(p, root)} (special, mode {oct(mode)})")
+    return sorted(found)
+
+
+def install_oracle(root, rel, text):
+    """Write the oracle at `root/rel` on the host without following anything the agent could have
+    placed: every parent is opened relative to the previous one with O_NOFOLLOW|O_DIRECTORY (and
+    checked with lstat to be a real directory), the file itself is created with
+    O_CREAT|O_EXCL|O_NOFOLLOW, so an existing file or link at the path is an error, never a target.
+    Returns (ok, detail)."""
+    parts = rel.split("/")
+    fd = os.open(root, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+    checked = []
+    try:
+        for name in parts[:-1]:
+            try:
+                st = os.lstat(name, dir_fd=fd)
+            except FileNotFoundError:
+                os.mkdir(name, 0o755, dir_fd=fd)
+                st = os.lstat(name, dir_fd=fd)
+            if not stat.S_ISDIR(st.st_mode):
+                return False, f"parent {'/'.join(checked + [name])} is not a real directory (mode {oct(st.st_mode)})"
+            nfd = os.open(name, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=fd)
+            os.close(fd)
+            fd = nfd
+            checked.append(name)
+        try:
+            out = os.open(parts[-1], os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o444, dir_fd=fd)
+        except FileExistsError:
+            try:
+                mode = oct(os.lstat(parts[-1], dir_fd=fd).st_mode)
+            except OSError:
+                mode = "?"
+            return False, f"the oracle path {rel} already exists in the measurement copy (mode {mode})"
+        with os.fdopen(out, "w", encoding="utf-8") as f:
+            f.write(text)
+        return True, "created with O_CREAT|O_EXCL|O_NOFOLLOW; parents opened with O_NOFOLLOW|O_DIRECTORY"
+    except OSError as e:
+        return False, f"oracle installation refused: {e}"
+    finally:
+        os.close(fd)
+
+
+def diff_added_lines(patch):
+    """{path: [(new line number, text), ..]} of the lines a unified diff adds."""
+    out, path, n = {}, None, 0
+    for ln in patch.splitlines():
+        if ln.startswith("diff --git "):
+            path = None
+        elif ln.startswith("+++ "):
+            p = ln[4:].strip().strip('"')
+            path = p[2:] if p.startswith("b/") else None
+            if path is not None:
+                out.setdefault(path, [])
+        elif ln.startswith("@@"):
+            m = re.match(r"@@ -\d+(?:,\d+)? \+(\d+)", ln)
+            n = int(m.group(1)) if m else 0
+        elif path is not None and ln.startswith("+"):
+            out[path].append((n, ln[1:]))
+            n += 1
+        elif path is not None and not ln.startswith("-") and not ln.startswith("\\"):
+            n += 1
+    return out
+
+
+def comment_flags(lines):
+    """Per line of Rust source: is it a comment or rustdoc line (`//`, `/* .. */`, `#[doc ..]`)?"""
+    flags, block = [], False
+    for ln in lines:
+        s = ln.strip()
+        if block:
+            flags.append(True)
+            block = "*/" not in s
+            continue
+        if s.startswith("/*"):
+            flags.append(True)
+            block = "*/" not in s
+            continue
+        flags.append(s.startswith(("//", "*", "#[doc", "#![doc")))
+    return flags
+
+
+def harness_scan(patch):
+    """Static scan of the lines the agent added for code that could forge the test harness's
+    verdict from inside the oracle binary (or the existing tests): text shaped like libtest output
+    (`test result:`, `... ok`, `running N tests`), writes to stdout/stderr and process exit/abort in
+    library code, and code that runs before `main` or replaces a symbol. Returns
+    {"invalid": [..], "review": [..]} ("path:line: reason: text")."""
+    added = diff_added_lines(patch)
+    invalid, review, stdio = [], [], []
+    forging = False
+    for path, rows in sorted(added.items()):
+        is_rs = path.endswith(".rs")
+        is_doc = path.lower().endswith((".md", ".txt", ".adoc", ".rst"))
+        lib = is_rs and "/src/" in f"/{path}" and not re.search(r"(^|/)src/(main\.rs|bin/)", path)
+        test = is_rs and not lib and re.search(r"(^|/)(tests|benches)/", path)
+        flags = comment_flags([t for _, t in rows]) if is_rs else [is_doc] * len(rows)
+        for (n, text), comment in zip(rows, flags):
+            where = f"{path}:{n}"
+            snippet = text.strip()[:160]
+            if FORGE.search(text):
+                if comment or is_doc:
+                    review.append(f"{where}: libtest-shaped text in a comment or document: {snippet}")
+                else:
+                    forging = True
+                    invalid.append(f"{where}: libtest-shaped text (harness forging): {snippet}")
+            if not is_rs or comment:
+                continue
+            if BEFORE_MAIN.search(text):
+                invalid.append(f"{where}: code that runs before main or replaces a symbol: {snippet}")
+            if EXIT.search(text):
+                (invalid if lib else review).append(
+                    f"{where}: process exit/abort added in {'library' if lib else 'test' if test else 'other'} code: {snippet}")
+            if lib and STDIO.search(text):
+                stdio.append(f"{where}: library code writes to stdout/stderr: {snippet}")
+    if stdio:
+        if forging:
+            invalid += [s + " (with libtest-shaped text in the same diff)" for s in stdio]
+        else:
+            review += stdio
+    return {"invalid": invalid[:50], "review": review[:50]}
+
+
+def load_toml(path):
+    if not os.path.isfile(path) or os.path.islink(path):
+        return None
+    try:
+        return tomllib.load(open(path, "rb"))
+    except (tomllib.TOMLDecodeError, UnicodeDecodeError, OSError):
+        return "unparseable"
+
+
+def dep_tables(doc):
+    """(table label, {name: spec}) for every dependency table of a manifest, target-specific ones
+    and `[workspace.dependencies]` included."""
+    out = []
+    for t in DEP_TABLES + BUILD_DEP_TABLES:
+        if isinstance(doc.get(t), dict):
+            out.append((t, doc[t]))
+    for cfg, body in (doc.get("target") or {}).items():
+        if isinstance(body, dict):
+            for t in DEP_TABLES + BUILD_DEP_TABLES:
+                if isinstance(body.get(t), dict):
+                    out.append((f"target.{cfg}.{t}", body[t]))
+    ws = doc.get("workspace")
+    if isinstance(ws, dict) and isinstance(ws.get("dependencies"), dict):
+        out.append(("workspace.dependencies", ws["dependencies"]))
+    return out
+
+
+def dep_source(spec):
+    if not isinstance(spec, dict):
+        return {}
+    return {k: spec.get(k) for k in SOURCE_KEYS if k in spec}
+
+
+def is_proc_macro(doc):
+    lib = doc.get("lib") if isinstance(doc, dict) else None
+    return isinstance(lib, dict) and bool(lib.get("proc-macro") or lib.get("proc_macro"))
+
+
+def manifest_changes(old, new):
+    """Build-time code and dependency redirection a manifest change introduces."""
+    hits = []
+    old = old if isinstance(old, dict) else {}
+    po, pn = old.get("package") or {}, new.get("package") or {}
+    for key in ("build", "links", "metabuild"):
+        if pn.get(key) != po.get(key):
+            hits.append(f"[package] {key} = {pn.get(key)!r} (was {po.get(key)!r})")
+    if is_proc_macro(new) and not is_proc_macro(old):
+        hits.append("declares a proc-macro crate ([lib] proc-macro = true)")
+    for key in ("patch", "replace"):
+        if new.get(key) != old.get(key):
+            hits.append(f"[{key}] changed")
+    old_tables = dict(dep_tables(old))
+    old_sources = {}
+    for _, table in old_tables.items():
+        for name, spec in table.items():
+            old_sources.setdefault(name, dep_source(spec))
+    for label, table in dep_tables(new):
+        if label.endswith(BUILD_DEP_TABLES):
+            if table != old_tables.get(label, {}):
+                hits.append(f"[{label}] changed")
+            continue
+        for name, spec in table.items():
+            crate = spec.get("package", name) if isinstance(spec, dict) else name
+            source = dep_source(spec)
+            # Registry crates come from the read-only owner cache; only a non-registry source
+            # (path, git, another registry) that the baseline did not give the same entry redirects one.
+            if (name in HARNESS_CRATES or crate in HARNESS_CRATES) and source and source != old_sources.get(name):
+                hits.append(f"[{label}] {name}: source {source} (was {old_sources.get(name) or 'the registry'}): "
+                            f"a measurement-harness crate redirected")
+    return hits
+
+
+def nearest_manifest(root, rel):
+    d = os.path.dirname(rel)
+    while True:
+        m = os.path.join(root, d, "Cargo.toml") if d else os.path.join(root, "Cargo.toml")
+        if os.path.isfile(m) and not os.path.islink(m):
+            return os.path.relpath(m, root)
+        if not d:
+            return None
+        d = os.path.dirname(d)
+
+
+def build_time_code(baseline, copy, files):
+    """Changes that let the agent's code run at build time or replace the measurement harness:
+    an added or changed `build.rs`; a manifest that adds or changes `[build-dependencies]`, a
+    `build`/`links` key, `[patch]`/`[replace]`, or declares a proc-macro crate; a change inside an
+    existing proc-macro crate; a change of the harness crate (`HARNESS_DIRS`) or a redirection of a
+    harness crate (`HARNESS_CRATES`). No task needs any of them. Returns a list of findings."""
+    hits = []
+    for rel in sorted(files):
+        exists = os.path.lexists(os.path.join(copy, rel))
+        if os.path.basename(rel) == "build.rs" and exists:
+            hits.append(f"{rel}: build script added or changed")
+        if any(rel.startswith(h) for h in HARNESS_DIRS):
+            hits.append(f"{rel}: the measurement harness crate was changed")
+        if os.path.basename(rel) == "Cargo.toml" and exists:
+            new = load_toml(os.path.join(copy, rel))
+            if isinstance(new, dict):
+                hits += [f"{rel}: {h}" for h in manifest_changes(load_toml(os.path.join(baseline, rel)), new)]
+        for root in (baseline, copy):
+            m = nearest_manifest(root, rel)
+            if m and is_proc_macro(load_toml(os.path.join(root, m))):
+                hits.append(f"{rel}: inside the proc-macro crate {os.path.dirname(m)}")
+                break
+    return sorted(set(hits))
+
+
 # ------------------------------------------------------------------ measurements
 
 def tree_files(root, pattern):
@@ -875,22 +1147,185 @@ def tree_files(root, pattern):
     return sorted(hits)
 
 
+def doc_spans(rel, text):
+    """Character ranges of `text` that are comments or documentation: for Rust sources the comments
+    and doc attributes found by the token-aware `rust_comment_spans`; for prose files (`.md`,
+    `.txt`) the whole text. Data files: none."""
+    if rel.lower().endswith((".md", ".txt", ".adoc", ".rst")):
+        return [(0, len(text))]
+    if not rel.endswith(".rs"):
+        return []
+    return rust_comment_spans(text)
+
+
+# Where a Rust token that matters for comment detection can start: a comment, an attribute, an
+# identifier (string prefixes `b`, `c`, `r`, `br`, `cr` are identifiers to the lexer until a quote
+# or `#` follows), a string or a character literal / lifetime.
+_RS_START = re.compile(r"""//|/\*|#!?\[|[A-Za-z_][A-Za-z0-9_]*|["']""")
+_RS_DOC_ATTR = re.compile(r"#!?\[\s*doc\b")
+_RS_RAW = re.compile(r'(?:br|cr|r)(#*)"')
+_RS_CHAR = re.compile(r"'(?:\\(?:x[0-9A-Fa-f]{2}|u\{[0-9A-Fa-f_]{1,6}\}|[^\n])|[^\\'\n\r\t])'")
+
+
+def _rs_quoted_end(text, j):
+    """End of a `"`-delimited (non-raw) string whose opening quote is at `j`: backslash escapes
+    skip the next character; the literal may span lines; unterminated runs to the end."""
+    n, j = len(text), j + 1
+    while j < n:
+        ch = text[j]
+        if ch == "\\":
+            j += 2
+            continue
+        j += 1
+        if ch == '"':
+            return j
+    return n
+
+
+def _rs_block_end(text, j):
+    """End of a block comment opening at `j` (`/*`, `/**`, `/*!`); Rust block comments nest."""
+    n, depth, j = len(text), 1, j + 2
+    while j < n and depth:
+        if text.startswith("/*", j):
+            depth, j = depth + 1, j + 2
+        elif text.startswith("*/", j):
+            depth, j = depth - 1, j + 2
+        else:
+            j += 1
+    return j
+
+
+def _rs_token_end(text, i):
+    """If a string, raw string, character literal or comment starts at `i`, its end; else None.
+    `('comment', end)` for comments, `('literal', end)` for literals."""
+    if text.startswith("//", i):
+        e = text.find("\n", i)
+        return "comment", len(text) if e < 0 else e
+    if text.startswith("/*", i):
+        return "comment", _rs_block_end(text, i)
+    m = _RS_RAW.match(text, i)
+    if m:
+        close = '"' + m.group(1)
+        e = text.find(close, m.end())
+        return "literal", len(text) if e < 0 else e + len(close)
+    if text.startswith(('b"', 'c"'), i):
+        return "literal", _rs_quoted_end(text, i + 1)
+    if text.startswith('"', i):
+        return "literal", _rs_quoted_end(text, i)
+    q = i + 1 if text.startswith("b'", i) else i
+    if text.startswith("'", q):
+        m = _RS_CHAR.match(text, q)
+        if m:
+            return "literal", m.end()
+    return None
+
+
+def rust_comment_spans(text):
+    """Comment and documentation ranges of Rust source, from a scan that follows the lexer: line
+    comments (`//`, `///`, `//!`) to the end of the line, block comments (`/* */`, `/** */`,
+    `/*! */`) with nesting, and `#[doc ..]` / `#![doc ..]` attributes whole (bracket-balanced). String
+    contents are never comments: normal strings with escapes, byte strings `b".."`, C strings
+    `c".."`, raw strings `r#".."#`, `br#".."#`, `cr#".."#` (any number of `#`), strings spanning
+    lines; a character literal (`'"'`, `'\\''`, `'\\u{..}'`, `b'x'`) is told from a lifetime or
+    label (`'a`, `'static`) by its closing quote."""
+    spans, i, n = [], 0, len(text)
+    while i < n:
+        m = _RS_START.search(text, i)
+        if not m:
+            break
+        i, tok = m.start(), m.group()
+        if tok.startswith("#"):
+            if _RS_DOC_ATTR.match(text, i) and (i == 0 or not (text[i - 1].isalnum() or text[i - 1] == "_")):
+                spans.append((i, _rs_attr_end(text, text.index("[", i))))
+                i = spans[-1][1]
+            else:
+                i = m.end()
+            continue
+        if tok[0].isalpha() or tok[0] == "_":
+            # A string prefix only when the identifier is exactly one and a quote or `#"` follows.
+            if tok in ("r", "br", "cr", "b", "c"):
+                found = _rs_token_end(text, i)
+                if found:
+                    i = found[1]
+                    continue
+            i = m.end()
+            continue
+        found = _rs_token_end(text, i)
+        if found is None:  # a lifetime or label: the quote alone
+            i += 1
+            continue
+        kind, end = found
+        if kind == "comment":
+            spans.append((i, end))
+        i = end
+    return spans
+
+
+def _rs_attr_end(text, j):
+    """End of an attribute whose `[` is at `j`: brackets balanced, literals and comments skipped."""
+    n, depth = len(text), 0
+    while j < n:
+        found = _rs_token_end(text, j)
+        if found:
+            j = found[1]
+            continue
+        ch = text[j]
+        if ch == "[":
+            depth += 1
+        elif ch == "]":
+            depth -= 1
+            if depth == 0:
+                return j + 1
+        j += 1
+    return n
+
+
 def count_matches(sdk_root, checks):
+    """Per check: matches of its regex over its glob, split into code and comment/documentation
+    matches (`doc_spans`), with the file list of each."""
     rows = []
     for c in checks:
-        n, where = 0, []
+        n, docs, where, where_doc = 0, 0, [], []
         for rel in tree_files(sdk_root, c["glob"]):
             try:
                 text = open(os.path.join(sdk_root, rel), encoding="utf-8").read()
             except (UnicodeDecodeError, OSError):
                 continue
-            k = len(re.findall(c["regex"], text))
-            if k:
-                n += k
-                where.append(f"{rel}:{k}")
+            hits = [m.start() for m in re.finditer(c["regex"], text)]
+            if not hits:
+                continue
+            spans = doc_spans(rel, text)
+            k_doc = sum(1 for h in hits if any(a <= h < b for a, b in spans))
+            n += len(hits)
+            docs += k_doc
+            where.append(f"{rel}:{len(hits)}")
+            if k_doc:
+                where_doc.append(f"{rel}:{k_doc}")
         rows.append({"class": c.get("class"), "meaning": c["meaning"], "regex": c["regex"],
-                     "glob": c["glob"], "count": n, "where": where})
+                     "glob": c["glob"], "count": n, "code_count": n - docs, "doc_count": docs,
+                     "where": where, "where_in_comments_or_docs": where_doc})
     return rows
+
+
+def code_text(rel, text):
+    """`text` with its comments and documentation (`doc_spans`) blanked to spaces, newlines and
+    offsets kept: the code a behavioural pattern must match. A comment such as
+    `// TODO: admit /0/private/BalanceEx` states nothing, and a pattern spanning several parts
+    (`fn list_comments[\\s\\S]*?validate\\(`) cannot complete itself inside a comment."""
+    spans = doc_spans(rel, text)
+    if not spans:
+        return text
+    chars = list(text)
+    for a, b in spans:
+        for i in range(a, min(b, len(chars))):
+            if chars[i] != "\n":
+                chars[i] = " "
+    return "".join(chars)
+
+
+def code_match(regex, rel, text):
+    """Does `regex` match `text` with its comments and documentation blanked (`code_text`)?"""
+    return re.search(regex, code_text(rel, text)) is not None
 
 
 def read(sdk_root, rel):
@@ -925,15 +1360,22 @@ NEEDS_REVIEW = "needs review (not recognised by the pattern, but the oracle pass
 
 
 def check_sites(sdk_root, sites, changed):
-    """Classify every named provider fact by where the agent's final tree states it."""
+    """Classify every named provider fact by where the agent's final tree states it. A behavioural
+    fact (every role but `docs`) is stated only by code: its `after` pattern is matched with the
+    comments and documentation blanked (`code_match`), so a comment naming the new fact earns no
+    credit (it is listed under `new_fact_only_in_comment_or_doc_in`). `docs` facts are read raw."""
     rows = []
     for s in sites:
         if s["role"] in SITE_BOUND_ROLES and not s.get("any_file"):
             files = [f for f in [s["file"]] + s.get("alternatives", []) if os.path.isfile(os.path.join(sdk_root, f))]
         else:
             files = sorted({rel for pat in search_area(s) for rel in tree_files(sdk_root, pat)})
-        found = [rel for rel in files if s.get("after") and re.search(s["after"], read(sdk_root, rel))]
+        raw_after = [rel for rel in files if s.get("after") and re.search(s["after"], read(sdk_root, rel))]
+        found = [rel for rel in raw_after if s["role"] == "docs" or code_match(s["after"], rel, read(sdk_root, rel))]
         stale = [rel for rel in files if s.get("before") and re.search(s["before"], read(sdk_root, rel))]
+        # The old fact only in a comment or rustdoc (a historical note): settled with the oracle
+        # verdict in `review_unrecognised` (a review candidate when the oracle passed).
+        stale_code = [rel for rel in stale if s["role"] == "docs" or code_match(s["before"], rel, read(sdk_root, rel))]
         ref = s["file"]
         alts = s.get("alternatives", [])
         if s.get("any_file"):
@@ -947,10 +1389,13 @@ def check_sites(sdk_root, sites, changed):
         else:
             where = NOT_STATED
         old_at_ref = bool(s.get("before")) and (ref in stale or (s.get("any_file") and bool(stale)))
+        old_in_code = bool(s.get("before")) and (ref in stale_code or (s.get("any_file") and bool(stale_code)))
         rows.append({"fact": s["fact"], "role": s["role"], "reference_file": ref,
                      "declared_alternatives": alts, "where": where,
                      "new_fact_in": found, "new_fact_in_changed_files": [f for f in found if f in changed],
+                     "new_fact_only_in_comment_or_doc_in": [f for f in raw_after if f not in found],
                      "old_fact_in": stale, "old_fact_at_reference_site": old_at_ref,
+                     "old_fact_at_reference_site_in_code": old_in_code,
                      # kept for comparison with earlier results: the reference-site-only reading
                      "satisfied_at_reference_site": ref in found and not old_at_ref if not s.get("any_file") else bool(found) and not stale,
                      "stated": where != NOT_STATED and not old_at_ref})
@@ -959,12 +1404,19 @@ def check_sites(sdk_root, sites, changed):
 
 def review_unrecognised(rows, oracle_passed):
     """An unrecognised behavioural fact is `needs review` when the oracle passed (behaviour
-    preserved, spelling unknown to the pattern), and stays `not stated` when it did not."""
+    preserved, spelling unknown to the pattern), and stays `not stated` when it did not. An old fact
+    left at the reference site only inside a comment or rustdoc (a historical note) does not count
+    against the fact when the oracle passed: it is a review candidate instead."""
     for r in rows:
         if r["where"] == NOT_STATED and oracle_passed and r["role"] in BEHAVIOURAL_ROLES:
             r["where"] = NEEDS_REVIEW
             r["stated"] = False
             r["needs_review"] = True
+        if oracle_passed and r["old_fact_at_reference_site"] and not r["old_fact_at_reference_site_in_code"]:
+            r["old_fact_at_reference_site"] = False
+            r["old_fact_only_in_comment_or_doc"] = True
+            r["review_candidate"] = "the old fact appears at the reference site only in a comment or rustdoc"
+            r["stated"] = r["where"] not in (NOT_STATED, NEEDS_REVIEW)
     return rows
 
 
@@ -1005,16 +1457,184 @@ def tree_diff(ctx):
     return patch, {"files": files, "hunks": hunks, "stat": [stat_line] if files else []}
 
 
-def cargo(ctx, args, log):
+def cargo(ctx, args, log, tree_writable=False):
     """One cargo command on the measurement copy, in the sandbox, network unshared, offline, with
-    the trusted CARGO_HOME and the baseline's toolchain."""
+    the trusted CARGO_HOME and the baseline's toolchain. The copy is bound **read-only** (build
+    scripts, proc macros and tests cannot rewrite the sources, the injected oracle or the harness
+    crate); only the measurement target directory is writable. `tree_writable` is used once, for
+    `cargo metadata` (which may refresh `Cargo.lock` and runs no build script or macro)."""
     env = {"CARGO_NET_OFFLINE": "true", "CARGO_TARGET_DIR": ctx["measure"],
            "CARGO_HOME": os.path.join(HOME, ".cargo")}
     if ctx.get("toolchain"):
         env["RUSTUP_TOOLCHAIN"] = ctx["toolchain"]
-    cmd = sandbox_cmd([ctx["measure_dir"], ctx["measure"]], ["cargo"] + args, ctx["measure_dir"], env,
-                      network=False)
+    writable = [ctx["measure"]] + ([ctx["measure_dir"]] if tree_writable else [])
+    ro = [] if tree_writable else [ctx["measure_dir"]]
+    cmd = sandbox_cmd(writable, ["cargo"] + args, ctx["measure_dir"], env, ro=ro, network=False)
     return sh(cmd, log=log, timeout=3600)
+
+
+TEST_BLOCK = re.compile(r"^---- (.+) stdout ----\s*$")
+ERROR_LINE = re.compile(r"^error(\[E\d+\])?:")
+LISTED_FAILURE = re.compile(r"^    (\S.*?)\s*$")
+# libtest's pretty run list adds the test mode to a name (`test x - should panic ... FAILED`); the
+# failure headers and the final list use the bare name.
+TEST_MODE = re.compile(r" - (?:should panic|compile fail|compile)$")
+
+
+def _error_blocks(lines):
+    """rustc diagnostics in cargo's own output: an `error` line up to the blank line that ends it."""
+    blocks, cur = [], []
+    for ln in lines:
+        if ERROR_LINE.match(ln):
+            if cur:
+                blocks.append("\n".join(cur))
+            cur = [ln]
+        elif cur and ln.strip():
+            cur.append(ln)
+        elif cur:
+            blocks.append("\n".join(cur))
+            cur = []
+    if cur:
+        blocks.append("\n".join(cur))
+    return blocks
+
+
+def _test_section_blocks(sec):
+    """One test target's section of a cargo log (its `Running` / `Doc-tests` line up to the next):
+    (failure blocks, framing problem or None, index of the first line after the target's output).
+
+    libtest frames failures as: the run list (`test <name> ... FAILED`), a `failures:` line, one
+    `---- <name> stdout ----` header per failed test with output followed by that output, a second
+    `failures:` line with the failed names (`    <name>`), the `test result:` summary. Captured
+    output may contain any of these lines, so the framing is read from the outside in: the last
+    summary line, the last `failures:` line before it (the final list), the first `failures:`
+    line; the inventory of failed tests is the final list, which must equal the run list's FAILED
+    names and the summary's count. A header is a boundary only if it names a test of that
+    inventory; a header-shaped line naming anything else stays inside the block it occurs in and is
+    not evidence (it is dropped from the block's text); two headers naming the same test, output
+    before the first header, or an inventory that disagrees make the section ambiguous (no blocks)."""
+    name = sec[0].strip()
+    results = [i for i, ln in enumerate(sec) if RESULT_LINE.search(ln)]
+    lists = [i for i, ln in enumerate(sec) if ln.strip() == "failures:"]
+    headers = [i for i, ln in enumerate(sec) if TEST_BLOCK.match(ln)]
+    if not results:
+        # A binary that ended without a summary (abort, exit): cargo's own lines follow; a failure
+        # framing without its summary cannot be read.
+        if lists or headers:
+            return [], f"{name}: failure output without the target's summary line", len(sec)
+        return [], None, 1
+    r = results[-1]
+    nfailed = int(RESULT_LINE.search(sec[r]).group(3))
+    lists = [i for i in lists if i < r]
+    if not nfailed:
+        if lists or any(h < r for h in headers):
+            return [], f"{name}: failure framing in a target whose summary reports no failure", r + 1
+        return [], None, r + 1
+    if len(lists) < 2:
+        return [], f"{name}: {nfailed} failed, but the `failures:` framing is incomplete", r + 1
+    f1, f2 = lists[0], lists[-1]
+    inventory = []
+    for ln in sec[f2 + 1:r]:
+        if not ln.strip():
+            continue
+        m = LISTED_FAILURE.match(ln)
+        if not m:
+            return [], f"{name}: unexpected line in the final failures list: {ln.strip()[:80]}", r + 1
+        inventory.append(m.group(1))
+    run_list = sorted(TEST_MODE.sub("", t.group(1).strip()) for ln in sec[:f1]
+                      if (t := TEST_LINE.match(ln.rstrip())) and t.group(2) == "FAILED")
+    if sorted(inventory) != run_list or len(set(inventory)) != len(inventory) or len(inventory) != nfailed:
+        return [], (f"{name}: the failed-test inventory disagrees (final list {sorted(inventory)}, run list "
+                    f"{run_list}, summary {nfailed} failed)"), r + 1
+    region = sec[f1 + 1:f2]
+    bounds = [(i, m.group(1)) for i, ln in enumerate(region)
+              if (m := TEST_BLOCK.match(ln)) and m.group(1) in inventory]
+    named = [b for _, b in bounds]
+    duplicated = sorted({b for b in named if named.count(b) > 1})
+    if duplicated:
+        return [], f"{name}: more than one failure header for {duplicated}", r + 1
+    first = bounds[0][0] if bounds else len(region)
+    if any(ln.strip() for ln in region[:first]):
+        return [], f"{name}: output before the first failure header", r + 1
+    blocks = []
+    for k, (i, _) in enumerate(bounds):
+        end = bounds[k + 1][0] if k + 1 < len(bounds) else len(region)
+        body = [ln for ln in region[i + 1:end] if not TEST_BLOCK.match(ln)]
+        blocks.append("\n".join([region[i]] + body))
+    return blocks, None, r + 1
+
+
+def failure_blocks(log):
+    """The failure reports of a cargo log, one block each, and the framing problems found:
+    `(blocks, problems)`. A block is one rustc `error` diagnostic in cargo's own output (outside
+    any test target's output) or one failed test's output with its `---- <test> stdout ----` header
+    (which names the test), framed against the failed-test inventory (`_test_section_blocks`). A
+    target whose framing is ambiguous contributes no block and one problem."""
+    lines = log.splitlines()
+    starts = [i for i, ln in enumerate(lines) if RUNNING.match(ln)]
+    outside = [lines[:starts[0]] if starts else lines]
+    blocks, problems = [], []
+    for k, s in enumerate(starts):
+        e = starts[k + 1] if k + 1 < len(starts) else len(lines)
+        found, problem, after = _test_section_blocks(lines[s:e])
+        blocks += found
+        if problem:
+            problems.append(problem)
+        outside.append(lines[s + after:e])
+    for seg in outside:
+        blocks += _error_blocks(seg)
+    return blocks, problems
+
+
+def omission_stage(evidence, stages):
+    """The stage that detected an omitted classification, attributed only on evidence that is both
+    classification-specific and tied to the new operation: `evidence` is the sealed
+    `omission_evidence` (`regex`: the omission's own failure, e.g. Kraken `SigningInput`;
+    `subject`: a term naming the new operation, type or path, e.g. `BalanceEx`), `stages` the
+    ordered list of (stage, failed, log) of the stages that ran. The detecting stage is the first
+    failed stage with one failure block (`failure_blocks`: one rustc diagnostic or one test's
+    failure output) that matches **both** patterns; a match anywhere else in the log does not count.
+    A failed stage whose failure output is ambiguously framed (a delimiter collision in captured
+    output, `_test_section_blocks`) ends the search before any of its blocks is accepted as
+    evidence: the row says `cannot be assessed` (captured output could have manufactured a
+    matching block, and an earlier stage may have detected the omission unseen). Failures without that
+    evidence are listed, not attributed; with none the row says `cannot be assessed`."""
+    evidence = evidence or {}
+    regex, subject = evidence.get("regex"), evidence.get("subject")
+    failed = [s for s, f, _ in stages if f]
+    if not regex or not subject:
+        return {"stage": "cannot be assessed (no classification-specific evidence naming the new operation "
+                         "is declared for this task)",
+                "evidence": regex, "subject": subject, "failed_without_evidence": failed}
+    unrelated, outside = [], []
+    for name, is_failed, log in stages:
+        if not is_failed:
+            continue
+        blocks, problems = failure_blocks(log)
+        if problems:
+            return {"stage": (f"cannot be assessed: the failure output of {name} is ambiguously framed "
+                              f"({'; '.join(problems)[:300]})"),
+                    "evidence": regex, "subject": subject, "failed_without_evidence": unrelated + [name],
+                    "evidence_outside_a_block_naming_the_operation": outside,
+                    "ambiguous_framing": {name: problems}}
+        for block in blocks:
+            m, n = re.search(regex, block), re.search(subject, block)
+            if m and n:
+                return {"stage": name, "evidence": regex, "subject": subject, "evidence_text": m.group(0),
+                        "subject_text": n.group(0), "evidence_block": block.splitlines()[0][:200],
+                        "failed_without_evidence": unrelated,
+                        "evidence_outside_a_block_naming_the_operation": outside,
+                        "ambiguous_framing": {}}
+        if any(re.search(regex, b) for b in blocks):
+            # The failure kind is there, but no single failure names the new operation with it
+            # (e.g. `SigningInput` from a test of the existing `Balance` operation).
+            outside.append(name)
+        unrelated.append(name)
+    return {"stage": ("cannot be assessed: " + (", ".join(unrelated) + " failed, but not with classification-"
+                      "specific evidence naming the new operation in one failure" if unrelated
+                      else "no stage failed")),
+            "evidence": regex, "subject": subject, "failed_without_evidence": unrelated,
+            "evidence_outside_a_block_naming_the_operation": outside}
 
 
 def reference_counts(ctx, reference_text, sdk_dir, checks):
@@ -1043,44 +1663,79 @@ def measure(ctx, task, result):
     result["diagnostics"] = {"diff": stats, "files_outside_sdk": outside,
                              "build_or_manifest_changed": build_scripts,
                              "note": "hunks and files are diagnostics only (PLAN_AMENDMENT_A1 §6)"}
+    # Static checks of the diff (no agent code runs): build-time code or a changed measurement
+    # harness, and code that could forge the harness's output.
+    result["build_time_code"] = build_time_code(ctx["baseline"], mdir, list(stats["files"]))
+    result["harness_scan"] = harness_scan(patch)
     sites = check_sites(sdk_root, meta.get("expected_sites", []), changed)
     prop = count_matches(sdk_root, meta.get("propagation_checks", []))
 
-    code, text = cargo(ctx, ["test", "-p", meta["package"], "--no-fail-fast"],
-                       os.path.join(out, "cargo-existing.log"))
-    rows = targets(text)
-    built = "could not compile" not in text
+    lock = os.path.join(mdir, "Cargo.lock")
+    lock_before = sha256_file(lock) if os.path.isfile(lock) and not os.path.islink(lock) else None
+    mcode, mtext = cargo(ctx, ["metadata", "--offline", "--format-version", "1"], None, tree_writable=True)
+    with open(os.path.join(out, "cargo-lock.log"), "w", encoding="utf-8") as f:
+        f.write(f"$ cargo metadata --offline --format-version 1 (tree writable; exit {mcode})\n"
+                + (mtext[-4000:] if mcode else "ok\n"))
+    result["lockfile"] = {"metadata_exit": mcode, "cargo_lock_changed":
+                          lock_before != (sha256_file(lock) if os.path.isfile(lock) and not os.path.islink(lock) else None)}
+
+    code, existing_text = cargo(ctx, ["test", "-p", meta["package"], "--no-fail-fast"],
+                                os.path.join(out, "cargo-existing.log"))
+    rows = targets(existing_text)
+    built = "could not compile" not in existing_text
     result["existing_tests"] = {"built": built, "passed": code == 0 and bool(rows) and all(r["ok"] for r in rows),
                                 "exit": code, "targets": [{k: v for k, v in r.items() if k != "tests"} for r in rows],
                                 "tests_passed": sum(r["passed"] for r in rows),
                                 "tests_failed": sum(r["failed"] for r in rows)}
     if not result["existing_tests"]["passed"]:
-        result["existing_tests"]["first_error"] = first_error(text)
+        result["existing_tests"]["first_error"] = first_error(existing_text)
+
     test_name = f"oracle_{kind}"
-    with open(os.path.join(sdk_root, "tests", f"{test_name}.rs"), "w", encoding="utf-8") as f:
-        f.write(task["oracle"])
-    code, text = cargo(ctx, ["test", "-p", meta["package"], "--test", test_name, "--", "--format", "pretty"],
-                       os.path.join(out, "cargo-oracle.log"))
-    listed = None
-    if "could not compile" not in text:
-        lcode, ltext = cargo(ctx, ["test", "-p", meta["package"], "--test", test_name, "--", "--list"],
-                             os.path.join(out, "cargo-oracle-list.log"))
-        listed = parse_listing(ltext) if lcode == 0 else []
+    rel = f"{meta['sdk_dir']}/tests/{test_name}.rs"
+    before_install = links_and_special(mdir)
+    ok, detail = install_oracle(mdir, rel, task["oracle"])
+    sealed_sha = hashlib.sha256(task["oracle"].encode("utf-8")).hexdigest()
+    result["oracle_installation"] = {"path": rel, "ok": ok, "detail": detail, "sealed_sha256": sealed_sha,
+                                     "links_or_special_files_before": before_install}
+    text, code, listed = "", -1, None
+    if ok:
+        code, text = cargo(ctx, ["test", "-p", meta["package"], "--test", test_name, "--", "--format", "pretty"],
+                           os.path.join(out, "cargo-oracle.log"))
+        if "could not compile" not in text:
+            lcode, ltext = cargo(ctx, ["test", "-p", meta["package"], "--test", test_name, "--", "--list"],
+                                 os.path.join(out, "cargo-oracle-list.log"))
+            listed = parse_listing(ltext) if lcode == 0 else []
     verdict = oracle_verdict(task["oracle_tests"], text, code, listed)
+    if not ok:
+        verdict["status"] = "not_run (oracle installation refused)"
     result["oracle"] = verdict
-    if not verdict["pass"]:
+    if not verdict["pass"] and ok:
         result["oracle"]["first_error"] = first_error(text)
+    if ok:
+        try:
+            fd = os.open(os.path.join(mdir, rel), os.O_RDONLY | os.O_NOFOLLOW)
+            with os.fdopen(fd, "rb") as f:
+                after_sha = hashlib.sha256(f.read()).hexdigest()
+        except OSError as e:
+            after_sha = f"unreadable: {e}"
+        result["oracle_installation"]["after_runs_sha256"] = after_sha
+        result["oracle_installation"]["unchanged"] = after_sha == sealed_sha
+    result["links_or_special_files_after_measurement"] = links_and_special(mdir)
     status = verdict["status"]
     result["edit_sites"] = review_unrecognised(sites, verdict["pass"])
 
     cls = meta.get("classification")
     if kind == "e4" and cls:
         chk = cls.get("check")
-        present = None
+        present, only_comment = None, None
         if chk:
-            present = bool(re.search(chk["regex"], read(sdk_root, chk["file"])))
+            # Code only: a comment or rustdoc naming the classification is not one.
+            chk_text = read(sdk_root, chk["file"])
+            present = code_match(chk["regex"], chk["file"], chk_text)
+            only_comment = not present and bool(re.search(chk["regex"], chk_text))
         row = {"applies": cls.get("applies"), "reference_site": cls.get("site"),
                "classification_site_present": present,
+               "classification_check_only_in_comment_or_doc": only_comment,
                "compiler_catches_omission_by_design": cls.get("compiler_catches_omission")}
         if present and status == "passed":
             row["verdict"] = "classified (reference site present, oracle passed)"
@@ -1093,14 +1748,15 @@ def measure(ctx, task, result):
                               "the oracle passed (a behaviour-preserving classification elsewhere or in "
                               "another spelling; read agent.patch)")
         elif present is False:
-            if not result["existing_tests"]["built"]:
-                row["omission_caught_by"] = "compiler (SDK build)"
-            elif not result["existing_tests"]["passed"]:
-                row["omission_caught_by"] = "existing tests (or the agent's own tests)"
-            elif status == "compile_error":
-                row["omission_caught_by"] = "compiler at the caller (hidden oracle compile)"
-            else:
-                row["omission_caught_by"] = "not by the compiler or existing tests: hidden oracle only"
+            existing = result["existing_tests"]
+            stages = [("compiler (SDK build)", not existing["built"], existing_text),
+                      ("existing tests (or the agent's own tests)", existing["built"] and not existing["passed"],
+                       existing_text),
+                      ("compiler at the caller (hidden oracle compile)", status == "compile_error", text),
+                      ("hidden oracle at run time only", status != "compile_error" and not verdict["pass"], text)]
+            found = omission_stage(cls.get("omission_evidence"), stages)
+            row["omission_caught_by"] = found["stage"]
+            row["omission_evidence"] = found
             row["verdict"] = "classification site absent (fact missing); caught by: " + row["omission_caught_by"]
         result["classification"] = row
 
@@ -1110,9 +1766,20 @@ def measure(ctx, task, result):
     for i, row in enumerate(prop):
         row["base_count"] = base[i]["count"]
         row["reference_count"] = ref[i]["count"] if ref else None
-        row["missed"] = row["count"] > (row["reference_count"] or 0)
+        row["reference_code_count"] = ref[i]["code_count"] if ref else None
+        excess = row["count"] > (row["reference_count"] or 0)
+        code_excess = row["code_count"] > (row["reference_code_count"] or 0)
+        if excess and not code_excess and verdict["pass"]:
+            # Only comments or documentation carry the extra old-pattern matches (e.g. a historical
+            # note naming the previous version) and the oracle passed: not missed propagation.
+            row["missed"] = False
+            row["review_candidate"] = ("matches beyond the reference only in comments or documentation "
+                                       "(oracle passed): read agent.patch")
+        else:
+            row["missed"] = excess
     result["propagation"] = prop
     result["missed_propagation"] = [r["meaning"] for r in prop if r["missed"]]
+    result["propagation_review_candidates"] = [r["meaning"] for r in prop if r.get("review_candidate")]
     return patch
 
 
@@ -1226,15 +1893,25 @@ def main():
         tamper["left_out_of_measurement"] = copy_agent_tree(src, ctx["measure_dir"])
         if os.path.exists(os.path.join(ctx["measure_dir"], ".cargo")):
             raise RuntimeError("the measurement copy still has a .cargo directory")
+        left = tamper["left_out_of_measurement"]
         signals = ([f".git: {x}" for x in gitc["beyond_normal"]]
                    + [f".cargo: {x}" for x in tamper["cargo_files"]]
                    + [f"nested .git: {x}" for x in tamper["nested_git"]]
                    + [f"toolchain file changed: {x}" for x in tamper["toolchain_files_changed"]]
-                   + [f"special file: {x}" for x in tamper["left_out_of_measurement"]["special"]])
-        tamper["signals"] = signals
+                   + [f"symbolic link (not copied): {x}" for x in left["symlinks"]]
+                   + [f"special file (not copied): {x}" for x in left["special"]])
         result["tampering"] = tamper
 
         patch = measure(ctx, task, result)
+        inst = result["oracle_installation"]
+        signals += ([f"oracle installation refused: {inst['detail']}"] if not inst["ok"] else [])
+        signals += ([f"the oracle changed during the measurement ({inst.get('after_runs_sha256')})"]
+                    if inst["ok"] and not inst.get("unchanged") else [])
+        signals += [f"link or special file in the measurement copy after the build: {x}"
+                    for x in result["links_or_special_files_after_measurement"]]
+        signals += [f"build-time code or measurement-harness change: {x}" for x in result["build_time_code"]]
+        signals += [f"harness forging pattern: {x}" for x in result["harness_scan"]["invalid"]]
+        tamper["signals"] = signals
         in_transcript, in_tree = exposure(transcript, patch, result["diagnostics"]["diff"]["files"])
         result["exposure"] = {"transcript_hits": in_transcript, "tree_hits": in_tree,
                               "git_hits": gitc["leak_hits"], "pattern": LEAK.pattern}
@@ -1250,6 +1927,8 @@ def main():
             "facts_not_stated": [s["fact"] for s in sites if s["where"] == NOT_STATED],
             "old_fact_left_at_reference_site": [s["fact"] for s in sites if s["old_fact_at_reference_site"]],
             "missed_propagation": len(result["missed_propagation"]),
+            "propagation_review_candidates": result["propagation_review_candidates"],
+            "old_fact_only_in_comment_or_doc": [s["fact"] for s in sites if s.get("old_fact_only_in_comment_or_doc")],
             "classification": result.get("classification", {}).get("verdict"),
         }
         common = {"observed_model": agent["observed"], "requested": agent["requested"]}
@@ -1258,10 +1937,15 @@ def main():
             reasons.append("the transcript, the tree or its .git shows access to a bank file")
         if signals:
             reasons.append("tampering: " + "; ".join(signals[:10]))
+        review = result["harness_scan"]["review"]
         if reasons:
             result["unscored"] = scored
             result["outcome"] = {"status": "invalid", "scored": False, "reason": " | ".join(reasons),
-                                 **common}
+                                 "also_needs_review": review, **common}
+        elif review:
+            # Ambiguous scan hits (stdout/stderr writes or exit in non-library code, libtest-shaped
+            # text in a comment or document): scored, but read agent.patch before using the scores.
+            result["outcome"] = {"status": "needs review", "scored": True, "review": review, **scored, **common}
         else:
             result["outcome"] = {"status": "valid", "scored": True, **scored, **common}
     finally:

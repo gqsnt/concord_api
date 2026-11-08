@@ -10,6 +10,7 @@ import re
 import shutil
 import subprocess
 import sys
+import threading
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.dirname(HERE))  # tools/desirability: decl, static_scan
@@ -624,7 +625,9 @@ def split_generics(text, sep=","):
 
 def parse_type(text):
     """A small Rust type parser: ("path", [segments], [args]) | ("ref", mut, inner) | ("tuple", [..])
-    | ("slice", inner) | ("array", inner, len) | ("infer",) | ("raw", text)."""
+    | ("slice", inner) | ("array", inner, len) | ("infer",) | ("raw", text). Heuristic and lenient
+    (it is used on SDK declaration text, whose results the compile steps check); R2 answer and
+    truth types are parsed by `syn` instead (`type_tree`), which repairs nothing."""
     s = re.sub(r"\s+", " ", (text or "").strip())
     s = s.strip("`").strip()
     if not s:
@@ -822,26 +825,189 @@ def unify(pattern, target, gens, binding):
     return type_str(pattern) == type_str(target)
 
 
-# Identity tags of R2 (README "Scoring", R2): a type path canonicalizes to the definition it
-# reaches, tagged by kind, never to a printable path; an answer cannot write an identity.
+# ---------------------------------------------------------------- R2 types: the `syn` parser
+
+FORM_CHECK_DIR = os.path.join(HERE, "form-check")
+FORM_CHECK_BIN = os.path.join(CARGO_TARGET_DIR, "release", "concord-probe-form-check")
+_FORM_BUILT = []
+INVALID = "invalid"  # ("invalid", text, why): a text that is not exactly one Rust type
+
+
+def form_check_binary():
+    """The form-check helper (`form-check/`, a small `syn` binary that is not a workspace member;
+    R3 answer contract and R2 types), built once per process with `cargo build --offline
+    --release` (a no-op when it is up to date)."""
+    if not _FORM_BUILT:
+        p = subprocess.run(["cargo", "build", "--offline", "--release", "--quiet", "--manifest-path",
+                            os.path.join(FORM_CHECK_DIR, "Cargo.toml")], env=cargo_env(), capture_output=True, text=True)
+        if p.returncode or not os.access(FORM_CHECK_BIN, os.X_OK):
+            raise SystemExit(f"the form-check helper ({FORM_CHECK_DIR}) did not build:\n{p.stderr[-2000:]}")
+        _FORM_BUILT.append(FORM_CHECK_BIN)
+    return _FORM_BUILT[0]
+
+
+class _TypeParser:
+    """The form-check helper in `--type` mode, kept running: one hex-encoded type per line in, one
+    JSON line out (`{"ok": tree}` or `{"err": why}`). A text the helper dies on is invalid; the
+    helper is restarted for the next one."""
+
+    def __init__(self):
+        self.proc, self.lock, self.cache = None, threading.Lock(), {}
+
+    def _ask(self, text):
+        if self.proc is None or self.proc.poll() is not None:
+            self.proc = subprocess.Popen([form_check_binary(), "--type"], stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                                         stderr=subprocess.DEVNULL, text=True, encoding="utf-8", errors="replace")
+        try:
+            # hex: newlines in the text cannot break the protocol; a lone surrogate reaches the
+            # helper as invalid UTF-8, which it refuses
+            self.proc.stdin.write(text.encode("utf-8", "surrogatepass").hex() + "\n")
+            self.proc.stdin.flush()
+            line = self.proc.stdout.readline()
+        except OSError:
+            line = ""
+        if not line:
+            try:
+                self.proc.kill()
+                self.proc.wait(timeout=10)
+            except (OSError, subprocess.TimeoutExpired):
+                pass
+            self.proc = None
+            return {"err": "the type parser failed on this text"}
+        return json.loads(line)
+
+    def verdict(self, text):
+        with self.lock:
+            if text not in self.cache:
+                self.cache[text] = self._ask(text)
+            return self.cache[text]
+
+
+_TYPES = _TypeParser()
+
+
+def _from_json(j):
+    k = j["k"]
+    if k == "path":  # lifetime arguments are left out (`Cow<'static, str>` is `Cow<str>`)
+        return ("path", list(j["segs"]), [_from_json(a) for a in j["args"] if a["k"] != "lifetime"])
+    if k == "ref":
+        return ("ref", bool(j["mut"]), _from_json(j["elem"]))
+    if k == "tuple":
+        return ("tuple", [_from_json(e) for e in j["elems"]])
+    if k == "slice":
+        return ("slice", _from_json(j["elem"]))
+    if k == "array":
+        return ("array", _from_json(j["elem"]), j["len"])
+    if k == "infer":
+        return ("infer",)
+    return ("raw", j["text"])
+
+
+def type_tree(text):
+    """The tree of one Rust type, with the node kinds of `parse_type`, parsed by `syn` (the
+    form-check helper's `--type` mode; README "Scoring", R2): ("path", [segments], [args]) (a
+    leading `::` is a first segment ""; generic arguments are the last segment's, lifetimes left
+    out), ("ref", mut, inner) (lifetime left out), ("tuple", [..]), ("slice", inner), ("array",
+    inner, len text), ("infer",), ("raw", token text) for what is compared as text (`dyn`/`impl`
+    bounds, `<A as B>::C`, ..), and ("invalid", text, why) when the text is not exactly one Rust
+    type (a missing comma, an extra `>`, a stray token). Nothing is repaired."""
+    r = _TYPES.verdict(text)
+    if "ok" in r:
+        return _from_json(r["ok"])
+    return (INVALID, text, r.get("err") or "")
+
+
+def type_judge(text):
+    """None when the text is exactly one Rust type that the R2 rustc identity check can judge;
+    otherwise why not (README "Scoring", R2; fix round 6): it does not parse as one type, or it
+    holds what the check's function body would infer or run (`_`, `'_`, a reference with an
+    elided lifetime, `impl Trait`, a `dyn` lifetime bound other than `'static`, `Self`, a macro,
+    an attribute, an expression other than an integer literal), or a qualified path `<T as
+    Trait>::Name`, which would have rustc compute the type for the answer. Decided by the
+    form-check helper's `--type` mode (`judge`)."""
+    r = _TYPES.verdict(text)
+    if "ok" not in r:
+        return r.get("err") or "does not parse as a Rust type"
+    return r.get("judge")
+
+
+def has_invalid(t):
+    """True when the tree (`type_tree` or `canon_ident`) holds an ("invalid", ..) node."""
+    k = t[0]
+    if k == INVALID:
+        return True
+    if k in ("path", "id"):
+        return any(has_invalid(a) for a in t[2])
+    if k == "ref":
+        return has_invalid(t[2])
+    if k == "tuple":
+        return any(has_invalid(a) for a in t[1])
+    if k in ("slice", "array"):
+        return has_invalid(t[1])
+    return False
+
+
+# Identity tags of the R2 identity diagnostic (README "Scoring", R2; since fix round 6 a
+# diagnostic, `R2.diag_identity.*`: rustc decides R2 credit): a type path canonicalizes to the
+# definition it reaches, tagged by kind, never to a printable path; an answer cannot write an
+# identity.
 SDK_DEF = "sdk-def"        # ("sdk-def", <crate>, *module path, Name): a definition in the module index
 SDK_ITEM = "sdk-item"      # ("sdk-item", <crate>, Name): an SDK item the index does not place (macro-made)
 EXT = "ext-crate"          # ("ext-crate", <crate>, *path): an item of another crate the SDK uses, by path
-STD = "std-lib"            # ("std-lib", *path): a std/core/alloc path that is not a prelude type
+STD = "std-lib"            # ("std-lib", "collections", Name): HashMap, BTreeMap (STD_PATHS)
 PRELUDE = "std-prelude"    # ("std-prelude", Name): Result, Option, Vec, String, Box
 PRIM = "primitive"         # ("primitive", name): bool, char, str, the integers and floats
 UNRESOLVED = "unresolved"  # ("unresolved", "<path as written>"): equal to no resolved identity
 IDENTITY_TAGS = (SDK_DEF, SDK_ITEM, EXT, STD, PRELUDE, PRIM, UNRESOLVED)
 PRIMITIVES = frozenset(("bool", "char", "str") + PRIM_INT + PRIM_FLOAT)
+PRELUDE_MODULES = ("v1", "rust_2015", "rust_2018", "rust_2021", "rust_2024")
+
+
+def _std_paths():
+    t = {}
+
+    def add(identity, *paths):
+        for p in paths:
+            t[tuple(p.split("::"))] = identity
+
+    for name, mod in (("Option", "option"), ("Result", "result")):  # defined in core, re-exported by std
+        add((PRELUDE, name), f"std::{mod}::{name}", f"core::{mod}::{name}",
+            *(f"{c}::prelude::{v}::{name}" for c in ("std", "core") for v in PRELUDE_MODULES))
+    for name, mod in (("Vec", "vec"), ("String", "string"), ("Box", "boxed")):  # alloc, re-exported by std
+        add((PRELUDE, name), f"std::{mod}::{name}", f"alloc::{mod}::{name}",
+            *(f"std::prelude::{v}::{name}" for v in PRELUDE_MODULES))
+    add((STD, "collections", "HashMap"), "std::collections::HashMap", "std::collections::hash_map::HashMap")
+    add((STD, "collections", "BTreeMap"), "std::collections::BTreeMap", "std::collections::btree_map::BTreeMap",
+        "alloc::collections::BTreeMap", "alloc::collections::btree_map::BTreeMap")
+    for p in sorted(PRIMITIVES):
+        add((PRIM, p), f"std::primitive::{p}", f"core::primitive::{p}")
+    return t
+
+
+# The real standard-library paths the R2 identity diagnostic accepts (README "Scoring", R2;
+# review 6, finding 1; rustc decides R2 credit since fix round 6): the std
+# types of the truth and their common spellings, with the re-exports (`std` re-exports `core` and
+# `alloc`; the prelude modules), each mapped to its identity. A std/core/alloc path not listed is
+# unresolved (`alloc::result::Result`, `core::vec::Vec`, `std::results::Result`), so an answer
+# cannot invent a standard-library owner. `score.py --selftest` compiles every listed path.
+STD_PATHS = _std_paths()
 
 
 def canon_ident(text, sdk, ctx=(), _depth=0):
     """The R2 identity tree of a type (see README "Scoring", R2), read in the scope of the
-    declaration's module `ctx` (`Sdk.decl_module`; `()` is the crate root). Two types are the same
-    answer only when their trees are equal. A path node is `("id", identity, args)`, where
-    `identity` is a tagged tuple (`IDENTITY_TAGS`) and `args` the generic arguments' trees; the
-    other nodes are `("ref", mut, inner)`, `("tuple", elems)`, `("slice", inner)`, `("array",
-    inner, len)`, `("infer",)` and `("raw", text)` (unparsed: `dyn ..`, `impl ..`, `<A as B>::C`).
+    declaration's module `ctx` (`Sdk.decl_module`; `()` is the crate root). Since fix round 6 this
+    is a diagnostic (`R2.diag_identity.*`), not credit: rustc compiles the identity check
+    (score.py `r2_check_fn`). It drops lifetime arguments and an alias's surplus arguments (review
+    8), which rustc refuses. Two types are the same answer only when their trees are equal. A path
+    node is `("id", identity, args)`, where `identity` is a tagged tuple (`IDENTITY_TAGS`) and
+    `args` the generic arguments' trees; the other nodes are `("ref", mut, inner)`, `("tuple",
+    elems)`, `("slice", inner)`, `("array", inner, len)`, `("infer",)`, `("raw", token text)`
+    (compared as text: `dyn ..`, `impl ..`, `<A as B>::C`) and `("invalid", text, why)`: the text
+    is not exactly one Rust type.
+
+    The text is parsed by `syn` (`type_tree`, the form-check helper), for answers and truth alike;
+    a text that does not parse is invalid as a whole (a missing comma, an extra `>`, a stray
+    token), never repaired. SDK alias targets are parsed the same way.
 
     A qualified SDK path (`crate::`, `self::`, `super::`, `<crate name>::`, a leading module name)
     is resolved through the SDK's module index (`ModuleIndex.resolve_path`): every segment must be
@@ -854,12 +1020,14 @@ def canon_ident(text, sdk, ctx=(), _depth=0):
     scope (definitions, `use` imports, globs), then the primitives, the std prelude, then SDK-wide.
     Names the SDK imports from other crates are the imported item (`use concord::Error` →
     `("ext-crate", "concord", "Error")`); `concord::reqwest::..`/`concord::bytes::..` are
-    `reqwest::..`/`bytes::..`; std prelude paths are the prelude type; a leading `::` is dropped.
-    Any other qualified path is another crate's item when its first segment is a crate the SDK
-    uses (`Sdk.crates`), kept by path, so a wrong owner (`reqwest::Error`, `concord::Bytes`) does
-    not match; with any other first segment (`made_up::Error`, `x::concord::Error`) it is
+    `reqwest::..`/`bytes::..`; a std/core/alloc path is its `STD_PATHS` identity
+    (`std::result::Result` = `core::result::Result` = the prelude `Result`), or unresolved when the
+    table does not list it (`alloc::result::Result`); a leading `::` is dropped. Any other
+    qualified path is another crate's item when its first segment is a crate the SDK uses
+    (`Sdk.crates`), kept by path, so a wrong owner (`reqwest::Error`, `concord::Bytes`) does not
+    match; with any other first segment (`made_up::Error`, `x::concord::Error`) it is
     unresolved."""
-    return _canon(parse_type(text), sdk, _depth, tuple(ctx or ()))
+    return _canon(type_tree(text), sdk, _depth, tuple(ctx or ()))
 
 
 def canon_type(text, sdk, ctx=(), _depth=0):
@@ -885,11 +1053,11 @@ def ident_str(n):
         return "[" + ident_str(n[1]) + "; " + n[2] + "]"
     if k == "infer":
         return "_"
+    if k == INVALID:
+        return "{invalid " + n[1] + "}"
     return n[1]
 
 
-PRELUDE_PATHS = {("result", "Result"), ("option", "Option"), ("vec", "Vec"), ("string", "String"),
-                 ("boxed", "Box")}
 PRELUDE_TYPES = {"Result", "Option", "Vec", "String", "Box"}
 
 
@@ -933,10 +1101,9 @@ def _canon_path(segs, args, sdk, depth, ctx=()):
         if len(segs) >= 3 and segs[1] in ("reqwest", "bytes"):
             return _id((EXT, *segs[1:]), cargs)
         return _id((EXT, *segs), cargs)  # `concord::X` by path: a root export, or a wrong owner
-    if head in ("std", "core", "alloc"):
-        if len(segs) == 3 and (segs[1], segs[2]) in PRELUDE_PATHS:
-            return _id((PRELUDE, segs[2]), cargs)
-        return _id((STD, *segs[1:]), cargs)
+    if head in ("std", "core", "alloc"):  # only real paths (STD_PATHS); any other is an invented owner
+        identity = STD_PATHS.get(tuple(segs))
+        return _id(identity, cargs) if identity else _unresolved(segs, cargs)
     if len(segs) == 1:
         return _canon_name(segs[0], args, cargs, sdk, depth, ctx)
     # SDK-qualified: `crate::X`, `self::X`, `super::X`, `<crate name>::X`, `<sdk module>::..::X`,
@@ -960,16 +1127,23 @@ def _canon_resolved(r, cargs, sdk, depth):
     if r[0] == "def":
         mpath, item = r[1], r[2]
         if item.get("alias"):
-            params, target = item["alias"]
-            subst = {}
-            for i, (pn, dflt) in enumerate(params):
-                if i < len(cargs):
-                    subst[pn] = ("canon", cargs[i])
-                elif dflt:
-                    subst[pn] = ("canon", _canon(parse_type(dflt), sdk, depth + 1, mpath))
-            return _canon(substitute(parse_type(target), subst), sdk, depth + 1, mpath)
+            return _expand_alias(item["alias"], cargs, sdk, depth, mpath)
         return _id((SDK_DEF, sdk.crate, *mpath, item["name"]), cargs)
     return _canon_path(list(r[1]), [("canon", c) for c in cargs], sdk, depth + 1, ())
+
+
+def _expand_alias(alias, cargs, sdk, depth, mpath):
+    """An SDK `type` alias (params, target text) applied to the already canonical arguments,
+    read in its own module `mpath` (generic parameters with defaults filled in); the target and
+    defaults are parsed by `syn` like every R2 type."""
+    params, target = alias
+    subst = {}
+    for i, (pn, dflt) in enumerate(params):
+        if i < len(cargs):
+            subst[pn] = ("canon", cargs[i])
+        elif dflt:
+            subst[pn] = ("canon", _canon(type_tree(dflt), sdk, depth + 1, mpath))
+    return _canon(substitute(type_tree(target), subst), sdk, depth + 1, mpath)
 
 
 def _canon_name(name, args, cargs, sdk, depth, ctx=()):
@@ -996,10 +1170,8 @@ def _canon_name(name, args, cargs, sdk, depth, ctx=()):
             return _id((SDK_ITEM, sdk.crate, name), cargs)
         if len(full) > 1:
             return _canon_path(full, args, sdk, depth + 1, ())
-    if name in sdk.aliases:
-        expanded = sdk.resolve_alias(type_str(("path", [name], args)))
-        if expanded != type_str(("path", [name], args)):
-            return _canon(parse_type(expanded), sdk, depth + 1)
+    if name in sdk.aliases:  # a top-level alias the module index does not place
+        return _expand_alias(sdk.aliases[name], cargs, sdk, depth, ())
     if sdk.defines_type(name):
         return _id((SDK_ITEM, sdk.crate, name), cargs)
     return _unresolved([name], cargs)

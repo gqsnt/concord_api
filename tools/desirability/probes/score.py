@@ -9,10 +9,22 @@ scored against `<bank>/truth/<sdk>.json` (truth.py). Normalization rules are in 
 - R1 per field: method; destination (scheme, host, path); query (pairs in order); header names
   (as a set); non-secret header values (exact); body (JSON structurally, else text); Content-Type;
   Accept. Per item: `critical` = method + destination + query all right; `exact` = every field.
-- R2: `send_returns` and `error_type` compared as tagged definition identities in the declaration
-  module's scope (qualified SDK paths resolved through the SDK's real modules, SDK aliases and
-  imports resolved; an unresolved path is its own `unresolved` identity, equal to no resolved
-  one; see common.canon_ident); `base_url` in the set of strings that keep the prefix.
+- R2: `send_returns` and `error_type` are judged by rustc (fix round 6): an answer that parses
+  as exactly one Rust type (`syn`, the `form-check/` helper's `--type` mode; never repaired),
+  passes the regex guard and holds nothing the check would infer, run or compute (`_`, `'_`,
+  `impl`, a macro, `Self`, a qualified path, ..) is compiled, in the declaration's module and in
+  the same bubblewrap compile sandbox as R3, as `same(PhantomData::<*mut (TRUTH)>,
+  PhantomData::<*mut (ANSWER)>)` with one generic `T` behind that invariant marker (fix round 7),
+  which compiles iff rustc can make the two types equal; with the gate's refusal of inference
+  variables (`_`, `'_`, elided lifetimes), iff they are the same type (rustc resolves paths,
+  re-exports, aliases, generic arity, lifetime arguments and higher-ranked binders). The crate's
+  own name and `alloc` are crate-root aliases in the throwaway copy (`inject_root_aliases`, fix
+  round 7; only where `alias_state`'s fail-closed precondition holds, fix round 8, else the SDK's
+  R2 items are not scorable),
+  so `::<crate>::..` and `::alloc::..` resolve too. Each truth type is also compiled against
+  itself (a positive control). The tagged-identity comparison of
+  fix rounds 4-5 (common.canon_ident) is kept as a diagnostic, `R2.diag_identity.*`. `base_url`
+  in the set of strings that keep the prefix.
 - R3: the answer is one expression whose value is the public `send().await` result (it ends with
   `.send().await`; no statement, early exit or other `.await`/`?`), checked with a Rust parser
   (the `form-check/` helper, built on `syn`) behind the regex guard. It passes when, bound to the
@@ -26,13 +38,16 @@ scored against `<bank>/truth/<sdk>.json` (truth.py). Normalization rules are in 
 
 `--selftest` scores seeded readers built from the truth (`oracle`, `wrong`, `broken` and the
 controls in SELFTEST_EXPECT: wrong and invented error owners, owners built from the SDK's real
-modules, internal canonical spellings written directly, documented spellings, wrapped call
-spellings, `vec![x; n]` in a struct literal and closures with statements, wrong bodies and
+modules, internal canonical spellings written directly, documented spellings, invented and real
+standard-library paths, malformed types, lifetime and surplus alias arguments (review 8), `_`
+placeholders and rustdoc projections, wrapped call spellings, `vec![x; n]` in a struct
+literal, closures with statements and `std::`-qualified macros, wrong bodies and
 headers, discarded, swallowed and raw results, early returns (also between raw byte strings), a
 stream reply of the wrong media type, file-system, network, compile-time file and environment,
 and host-socket escapes), prints each expected rate
 next to the observed one, and checks the sandbox effects against the same answers outside the
-sandbox. Repetitions of an item
+sandbox, the R2 positive controls, the standard-library table against rustc and the truth types
+under `syn`. Repetitions of an item
 (several readers) are not independent participants: pooled rates average each item over readers
 first, then over items (n = items). Run Python with `-I`.
 """
@@ -48,6 +63,7 @@ import stat
 import subprocess
 import sys
 import threading
+import time
 from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor
 from urllib.parse import unquote_plus
@@ -158,9 +174,18 @@ def score_wire(t, a, canaries):
 # ---------------------------------------------------------------- R2
 
 def clean_type_answer(s):
+    """The answer's type text for `syn`: surrounding whitespace dropped, one markdown code span
+    around the whole answer (`` `T` ``) unwrapped and one trailing `;` dropped; nothing else is
+    touched (a one-sided backtick or a second `;` stays and fails to parse)."""
     if not isinstance(s, str):
         return ""
-    return s.strip().strip("`").strip().rstrip(";").strip()
+    s = s.strip()
+    m = re.fullmatch(r"(`+)(.*?)\1", s, re.DOTALL)
+    if m:
+        s = m.group(2).strip()
+    if s.endswith(";"):
+        s = s[:-1].rstrip()
+    return s
 
 
 def norm_base(u):
@@ -169,23 +194,467 @@ def norm_base(u):
     return (m.group(1).lower() + "://" + m.group(2).lower() + hexup(m.group(3))) if m else u
 
 
+def r2_scorable(t):
+    """The R2 type fields of an item's truth that are scored (`send_returns`, and `error_type`
+    when the declared result is a `Result`)."""
+    r2 = (t or {}).get("r2", {})
+    if not (r2.get("resolvable") and r2.get("verified")):
+        return ()
+    return tuple(f for f in R2_FIELDS if r2.get(f))
+
+
 def score_result(t, a, sdk, ctx=()):
-    """R2 for one item; `ctx` is the declaration's module (`Sdk.decl_module`), the scope both
-    the truth's and the answer's types are read in."""
+    """R2 for one item apart from the rustc identity check (`r2_modules`, compiled with R3):
+    `base_url`, and each type field's tagged-identity comparison as a diagnostic
+    (`diag_identity_<field>`, never credit; fix rounds 4-5's rule). `ctx` is the declaration's
+    module (`Sdk.decl_module`), the scope both the truth's and the answer's types are read in."""
     a = a or {}
     res = {}
     r2 = t.get("r2", {})
-    if r2.get("resolvable") and r2.get("verified"):
-        # both sides canonicalized now, by the same rules (truth files keep theirs for the record),
-        # and compared as tagged definition identities (common.canon_ident), never as text
-        canon = lambda x: C.canon_ident(x, sdk, ctx=ctx)  # noqa: E731
-        res["send_returns"] = canon(clean_type_answer(a.get("send_returns"))) == canon(r2["send_returns"])
-        if r2.get("error_type"):
-            res["error_type"] = canon(clean_type_answer(a.get("error_type"))) == canon(r2["error_type"])
+    for f in r2_scorable(t):
+        # both sides parsed by `syn` and canonicalized by the same rules (common.canon_ident);
+        # this comparison drops lifetime arguments and an alias's surplus arguments (review 8)
+        got, want = C.canon_ident(clean_type_answer(a.get(f)), sdk, ctx=ctx), C.canon_ident(r2[f], sdk, ctx=ctx)
+        res[f"diag_identity_{f}"] = not C.has_invalid(got) and not C.has_invalid(want) and got == want
     bu = t.get("base_url") or {}
     if bu.get("keeps"):
         res["base_url"] = norm_base(a.get("base_url")) in {norm_base(k) for k in bu["keeps"]}
     return res
+
+
+# ---------------------------------------------------------------- R2: type identity judged by rustc
+
+R2_FIELDS = ("send_returns", "error_type")
+R2_FN_PREFIX = "__concord_probe_r2"
+R2_HEADER = ("// Generated by tools/desirability/probes/score.py: R2 type answers for `{short}` ({file}), judged by rustc.\n"
+             "// Included (`include!`) into the declaration's module, so each check is an item of that module: its\n"
+             "// scope exactly, `self::` and `super::` included. Do not edit; regenerate.\n")
+JUDGE_OFF = "__judge_off"  # suffix: the same R2 answers compiled without the judgeability refusal (self-test)
+
+
+def r2_gate(answer, judge=True):
+    """(type text, None) when an R2 answer may be pasted into the identity check, else (None,
+    refusal). The text (`clean_type_answer`) must parse as exactly one Rust type (`syn`, the
+    form-check helper's `--type` mode), pass the regex guard, and hold nothing the check cannot
+    judge (`common.type_judge`: `_`, `'_`, an elided reference lifetime, `impl`, a `dyn` lifetime
+    bound other than `'static`, `Self`, a macro, an attribute, an expression other than an integer
+    literal) and no qualified path `<T as Trait>::Name`, with which rustc would compute the type
+    for the answer (a plain `send P;` client's rustdoc shows `<P as SendWith<T>>::Output`: R2 asks
+    what it resolves to); `judge=False` skips that last refusal (the self-test's discrimination
+    reference). A text that passes cannot add items or statements: it is one type, and its only
+    expressions are integer literals."""
+    text = clean_type_answer(answer)
+    if not text:
+        return None, "no answer"
+    tree = C.type_tree(text)
+    if tree[0] == C.INVALID:
+        return None, tree[2] or "does not parse as a Rust type"
+    g = GUARD.search(text)
+    if g:
+        return None, f"refused before compiling (guard: `{g.group(0)}`)"
+    why = C.type_judge(text)
+    if why and judge:
+        return None, f"refused before compiling (the identity check cannot judge it): {why}"
+    return text, None
+
+
+def r2_check_fn(name, truth, answer, marker="invariant"):
+    """The R2 identity check: a function that compiles iff rustc can make `truth` and `answer` one
+    type. Both are wrapped in an invariant marker, `PhantomData<*mut T>`, as arguments of one
+    generic `T: ?Sized`: no coercion applies to them, and invariance rules out subtyping (with the
+    covariant `PhantomData<T>` of fix round 6, `for<'a> fn(&'a str)` passed for `fn(&'static str)`,
+    review 10, finding 2). So rustc must resolve both (paths, re-exports, privacy, aliases with
+    their arity and defaults, lifetime arguments, higher-ranked binders up to renaming) to the same
+    type; what it can still unify are inference variables (`_`, `'_`, elided lifetimes), which
+    `r2_gate` refuses. Each type is on lines of its own (in parentheses), so a trailing `//` comment
+    in an answer cannot reach the closing tokens. The crate's own name and `alloc` are nameable
+    through the crate-root aliases (`inject_root_aliases`), also as `::<crate>::..` and `::alloc::..`.
+    `marker="covariant"` is the fix-round-6 form, for the self-test's discrimination reference only."""
+    if marker == "covariant":
+        param, open_, close = "::core::marker::PhantomData<T>", "::core::marker::PhantomData::<", ">"
+    else:
+        param, open_, close = "::core::marker::PhantomData<*mut T>", "::core::marker::PhantomData::<*mut (", ")>"
+    return ("#[allow(dead_code, unused, non_snake_case)]\n"
+            f"fn {name}() {{\n"
+            f"    fn __same<T: ?Sized>(_: {param}, _: {param}) {{}}\n"
+            f"    __same({open_}\n"
+            f"{truth}\n"
+            f"    {close}, {open_}\n"
+            f"{answer}\n"
+            f"    {close});\n}}")
+
+
+# Crate-root aliases (fix round 7) and their preconditions (fix round 8, review 12). The aliases
+# are injected only into a crate in a shape these checks support; they do not model Rust's name
+# resolution, they fail closed: an SDK outside that shape gets no aliases, and its R2 items are
+# recorded as not scorable (never scored 0 or 1).
+ALIAS_ITEM_MACROS = frozenset(("concord::api", "::concord::api"))  # names its items from its input
+ALIAS_EXPR_MACROS = frozenset(("include_str", "include_bytes", "concat", "stringify", "env", "option_env",
+                               "line", "column", "file", "module_path"))  # expand to expressions, never items
+ALIAS_INERT_ATTRS = frozenset(("cfg", "doc", "allow", "warn", "deny", "forbid", "expect", "must_use",
+                               "non_exhaustive", "repr", "derive", "path", "macro_export", "macro_use", "inline",
+                               "cold", "deprecated", "serde", "track_caller", "automatically_derived", "rustfmt"))
+_MACRO_CALL = re.compile(r"(\$?(?:::)?[A-Za-z_]\w*(?:\s*::\s*[A-Za-z_]\w*)*)\s*!\s*[(\[{]")
+_ATTR = re.compile(r"#\s*!?\s*\[\s*((?:::)?[A-Za-z_]\w*(?:\s*::\s*[A-Za-z_]\w*)*)")
+_LIB_TARGETS = {}  # manifest path -> [(name, src path, kinds)] or ("error", message)
+# keywords `_MACRO_CALL` can match before a `!` that is a negation (`if !(..)`), not a macro
+_NOT_MACROS = frozenset(("if", "while", "match", "return", "let", "in", "else", "break", "continue", "for", "loop",
+                         "mut", "ref", "as", "move", "unsafe", "where", "impl", "dyn", "yield", "await"))
+
+
+def lib_targets(manifest):
+    """The library targets cargo reports for the package of `manifest` (`cargo metadata --offline
+    --no-deps`, one call per workspace: every member is cached): [(crate name, src path, kinds)],
+    or ("error", message) when cargo fails or does not list the package."""
+    manifest = os.path.realpath(manifest)
+    if manifest not in _LIB_TARGETS:
+        p = subprocess.run(["cargo", "metadata", "--offline", "--no-deps", "--format-version", "1",
+                            "--manifest-path", manifest], env=C.cargo_env(), capture_output=True, text=True, timeout=600)
+        if p.returncode:
+            _LIB_TARGETS[manifest] = ("error", (p.stderr.strip().splitlines() or ["?"])[-1])
+        else:
+            for pkg in json.loads(p.stdout)["packages"]:
+                _LIB_TARGETS[os.path.realpath(pkg["manifest_path"])] = [
+                    (t["name"], os.path.realpath(t["src_path"]), tuple(t["kind"])) for t in pkg["targets"]
+                    if set(t["kind"]) & {"lib", "rlib", "dylib", "cdylib", "staticlib", "proc-macro"}]
+            _LIB_TARGETS.setdefault(manifest, ("error", "cargo metadata does not list this package"))
+    return _LIB_TARGETS[manifest]
+
+
+def _close(clean, i):
+    """The offset of the bracket closing the one at `i` (`(`, `[` or `{`), or len(clean)."""
+    pairs, stack = {"(": ")", "[": "]", "{": "}"}, []
+    for k in range(i, len(clean)):
+        c = clean[k]
+        if c in pairs:
+            stack.append(pairs[c])
+        elif stack and c == stack[-1]:
+            stack.pop()
+            if not stack:
+                return k
+    return len(clean)
+
+
+def _local_macros(sdk):
+    """{name: [definition text]} of every `macro_rules!` in the SDK's sources (strings and comments
+    stripped)."""
+    if not hasattr(sdk, "_probe_macros"):
+        out = {}
+        for path in sorted(sdk.files):
+            clean = C.strip_strings_and_comments(sdk.files[path])
+            for mm in re.finditer(r"\bmacro_rules\s*!\s*(\w+)\s*([(\[{])", clean):
+                out.setdefault(mm.group(1), []).append(clean[mm.end() - 1:_close(clean, mm.end() - 1) + 1])
+        sdk._probe_macros = out
+    return sdk._probe_macros
+
+
+def _word(text, w):
+    return re.search(rf"(?<![\w$]){re.escape(w)}(?!\w)", text) is not None
+
+
+def _macro_ok(sdk, path, words, seen):
+    """True when a module-level invocation of `path!` cannot define an item named in `words`: an
+    expression-only standard macro, Concord's `api!` (its items are named from its input, which the
+    word check covers), or a `macro_rules!` macro of the SDK whose every definition names no word in
+    `words`, has only inert attributes and invokes only macros that are themselves ok (no `paste!`
+    or other macro that could build a name)."""
+    path = re.sub(r"\s+", "", path)
+    if path in ALIAS_ITEM_MACROS or path in ALIAS_EXPR_MACROS or path in _NOT_MACROS:
+        return True
+    name = path.split("::")[-1] if path.startswith(("$crate::", "crate::")) else path
+    defs = _local_macros(sdk).get(name) if "::" not in name else None
+    if not defs or name in seen:
+        return False
+    seen = seen | {name}
+    for body in defs:
+        if any(_word(body, w) for w in words):
+            return False
+        if any(a.group(1).lstrip(":").split("::")[0] not in ALIAS_INERT_ATTRS for a in _ATTR.finditer(body)):
+            return False
+        if not all(_macro_ok(sdk, mm.group(1), words, seen) for mm in _MACRO_CALL.finditer(body)):
+            return False
+    return True
+
+
+def _module_shape(sdk, mpath, words, seen=frozenset()):
+    """Why module `mpath` of the SDK could define or bring in a name in `words` (so a crate-root
+    alias of that name could collide with it or silently shadow it), or None. Checked on the
+    module's source text (strings and comments stripped), failing closed: the module's text names a
+    word anywhere (any item, import, rename, `extern crate`, `#[cfg]`'d item, macro input, nested
+    module); holds `extern crate self`; invokes at module level a macro `_macro_ok` does not accept;
+    has a module-level attribute outside `ALIAS_INERT_ATTRS` (an attribute macro could define
+    items; derive macros are assumed to add impls only); or glob-imports (`use ..::*`) anything but
+    an SDK module that passes the same checks (recursively)."""
+    m = sdk.index.mods.get(mpath)
+    label = "::".join(("crate",) + tuple(mpath))
+    if m is None:
+        return f"`{label}` is not in the module index"
+    if mpath in seen:
+        return None
+    seen = seen | {mpath}
+    clean, depth = sdk.index._file(m["file"])
+    lo, hi = m["span"]
+    base, text = depth[lo], clean[lo:hi]
+    for w in words:
+        if _word(text, w):
+            return f"`{label}` names `{w}`"
+    if re.search(r"\bextern\s+crate\s+self\b", text):
+        return f"`{label}` has an `extern crate self`"
+    for mm in _MACRO_CALL.finditer(clean, lo, hi):
+        if depth[mm.start()] == base and not _macro_ok(sdk, mm.group(1), words, frozenset()):
+            return f"`{label}` invokes `{re.sub(r'[ \t\n]+', '', mm.group(1))}!` at module level (it could define items)"
+    for am in _ATTR.finditer(clean, lo, hi):
+        head = am.group(1).lstrip(":").split("::")[0]
+        if depth[am.start()] == base and head not in ALIAS_INERT_ATTRS:
+            return (f"`{label}` has the attribute `#[{re.sub(r'[ \t\n]+', '', am.group(1))}]` at module level (an "
+                    "attribute macro could define items)")
+    for um in re.finditer(r"\buse\b", clean[lo:hi]):
+        at = lo + um.start()
+        if depth[at] != base:
+            continue
+        end = at
+        while end < hi and not (clean[end] == ";" and depth[end] == base):
+            end += 1
+        for _, full, glob in C.use_entries(clean[at + 3:end]):
+            if not glob:
+                continue
+            r = sdk.index.resolve_use(mpath, full.split("::"))
+            if not (r and r[0] == "mod"):
+                return f"`{label}` glob-imports `{full}::*`, which is not one of the SDK's modules"
+            why = _module_shape(sdk, tuple(r[1]), words, seen)
+            if why:
+                return f"`{label}` glob-imports `{full}::*`: {why}"
+    return None
+
+
+def alias_state(sdk):
+    """Whether the crate-root aliases can be injected into the SDK's crate: {"ok", "reason", "lib":
+    (crate name, root file)}. The library target comes from `cargo metadata` (`lib_targets`) and
+    must be the default one the probes assume everywhere (indexing, harness injection): one `lib`
+    target named after the package (`-` as `_`) at `src/lib.rs`; any other target is unsupported.
+    The crate root must then pass `_module_shape` for the alias names (the crate name, `alloc`)."""
+    want = os.path.realpath(os.path.join(sdk.dir, "src", "lib.rs"))
+    targets = lib_targets(os.path.join(sdk.dir, "Cargo.toml"))
+    if isinstance(targets, tuple):
+        return {"ok": False, "lib": None, "reason": f"cargo metadata: {targets[1]}"}
+    if len(targets) != 1:
+        return {"ok": False, "lib": None, "reason": f"{len(targets)} library targets (the probes need exactly one)"}
+    name, path, kinds = targets[0]
+    lib = (name, path)
+    if name != sdk.crate:
+        return {"ok": False, "lib": lib, "reason": f"non-default library target: crate name `{name}` (the probes assume `{sdk.crate}`)"}
+    if path != want:
+        return {"ok": False, "lib": lib, "reason": f"non-default library target: root `{os.path.relpath(path, sdk.dir)}` (the probes assume `src/lib.rs`)"}
+    if not set(kinds) <= {"lib", "rlib"}:
+        return {"ok": False, "lib": lib, "reason": f"non-default library target: kind {list(kinds)}"}
+    why = _module_shape(sdk, (), (name, "alloc"))
+    return {"ok": why is None, "lib": lib, "reason": why}
+
+
+def inject_root_aliases(copy_root, repo, targets):
+    """`#[cfg(test)] extern crate self as <crate>;` and `#[cfg(test)] extern crate alloc;` appended
+    to the library root of each SDK in `targets` ({short: (crate name, root file)}, from
+    `alias_state`; supported crates only) in the throwaway copy. At the crate root an `extern crate`
+    item also enters the extern prelude, so the crate's own name (as rustdoc writes paths) and the
+    real `alloc::` paths resolve in every module, with or without a leading `::` (review 10,
+    finding 1). {short: {"crate", "root", "added"}}."""
+    recs = {}
+    for short, (name, path) in sorted(targets.items()):
+        rel = os.path.relpath(path, os.path.realpath(repo))
+        with open(os.path.join(copy_root, rel), "a", encoding="utf-8") as f:
+            f.write("\n// Added by tools/desirability/probes/score.py (R2): crate-root aliases, also in the extern prelude.\n"
+                    f"#[cfg(test)]\nextern crate self as {name};\n#[cfg(test)]\nextern crate alloc;\n")
+        recs[short] = {"crate": name, "root": rel, "added": [name, "alloc"]}
+    return recs
+
+
+def split_r2_jobs(jobs, alias):
+    """(jobs to compile, {key: not-scorable result}) for R2 jobs [(reader, item id, field, answer)]
+    given `alias` ({short: alias_state}): the jobs of an SDK whose alias precondition fails are not
+    compiled; each is recorded as not scorable (`ok` None, excluded from R2 like a drop)."""
+    keep, out = [], {}
+    for job in jobs:
+        a = alias.get(job[1].split("/")[0])
+        if a is not None and not a["ok"]:
+            out[job[:3]] = {"ok": None, "stage": "precondition", "rustc": None,
+                            "reason": f"not scorable: alias precondition ({a['reason']})"}
+        else:
+            keep.append(job)
+    return keep, out
+
+
+# Self-test: synthetic crates (`alias_controls`, under the probe target directory, scanned with
+# `cargo metadata` only, never built) for each shape the precondition must refuse, and shapes it
+# must accept: (case, extra manifest text, {file: text}, supported, a word the reason must hold).
+_CLEAN_MODELS = "pub struct Holiday;\npub mod inner { pub struct Detail; }\n"
+_FRED_MACRO = ('macro_rules! limit {\n    ($name:ident, $max:expr, $doc:literal) => {\n        #[doc = $doc]\n'
+               '        #[derive(Clone, Copy, Debug)]\n        pub struct $name(u32);\n    };\n}\n'
+               'limit!(SearchLimit, 1000, "A search page size.");\n')
+ALIAS_CASES = (
+    ("supported-clean", "", {"src/lib.rs": '#![doc = include_str!("../README.md")]\nmod models;\npub use models::*;\n'
+                                           + _FRED_MACRO + "#[derive(Debug)]\npub struct Client;\n",
+                             "src/models.rs": _CLEAN_MODELS}, True, None),
+    ("glob-external", "", {"src/lib.rs": "pub use std::collections::*;\n"}, False, "glob-imports"),
+    ("glob-exports-alloc", "", {"src/lib.rs": "mod models;\npub use models::*;\n",
+                                "src/models.rs": "pub mod alloc { pub struct Vec; }\n"}, False, "names `alloc`"),
+    ("glob-nested-exports-alloc", "", {"src/lib.rs": "mod models;\npub use models::*;\n",
+                                       "src/models.rs": "mod inner;\npub use inner::*;\n",
+                                       "src/models/inner.rs": "pub struct alloc;\n"}, False, "names `alloc`"),
+    ("root-macro", "", {"src/lib.rs": "other_crate::define_items!(Thing);\n"}, False, "invokes"),
+    ("local-macro-paste", "", {"src/lib.rs": "macro_rules! m {\n    ($n:ident) => { paste::paste! { pub struct [<$n Kind>]; } };\n}\nm!(X);\n"},
+     False, "invokes"),
+    ("attribute-macro", "", {"src/lib.rs": "#[some_crate::make_items]\npub struct Thing;\n"}, False, "attribute"),
+    ("extern-alloc-nested", "", {"src/lib.rs": "mod inner {\n    extern crate alloc;\n}\n"}, False, "names `alloc`"),
+    ("extern-alloc-renamed", "", {"src/lib.rs": "extern crate alloc as heap;\n"}, False, "names `alloc`"),
+    ("extern-alloc-cfg", "", {"src/lib.rs": '#[cfg(feature = "std")]\nextern crate alloc;\n'}, False, "names `alloc`"),
+    ("extern-self", "", {"src/lib.rs": "extern crate self as other_name;\n"}, False, "extern crate self"),
+    ("cfg-test-item", "", {"src/lib.rs": "#[cfg(test)]\nmod alloc {}\n"}, False, "names `alloc`"),
+    ("crate-name-item", "", {"src/lib.rs": "pub mod concord_probe_alias_crate_name_item {}\n"}, False,
+     "names `concord_probe_alias_crate_name_item`"),
+    ("lib-path", '\n[lib]\npath = "src/root.rs"\n', {"src/lib.rs": "pub struct Unused;\n", "src/root.rs": "pub struct Thing;\n"},
+     False, "non-default library target: root"),
+    ("lib-name", '\n[lib]\nname = "other_name"\n', {"src/lib.rs": "pub struct Thing;\n"}, False,
+     "non-default library target: crate name"),
+)
+
+
+def alias_controls(repo):
+    """{case: {"ok", "reason", "expected", "word", "match"}} for `ALIAS_CASES`, each a fresh
+    synthetic crate under `<probe target>/probe-alias-controls/` (its own `[workspace]`)."""
+    root = os.path.join(C.CARGO_TARGET_DIR, "probe-alias-controls")
+    out = {}
+    for case, extra, files, ok, word in ALIAS_CASES:
+        d = os.path.join(root, f"{case}-sdk")
+        if os.path.isdir(d):
+            shutil.rmtree(d)
+        name = "concord-probe-alias-" + case
+        files = dict(files, **{"Cargo.toml": f'[package]\nname = "{name}"\nversion = "0.0.0"\nedition = "2024"\n'
+                                              f"publish = false\n\n[workspace]\n{extra}"})
+        for rel, text in files.items():
+            os.makedirs(os.path.dirname(os.path.join(d, rel)), exist_ok=True)
+            with open(os.path.join(d, rel), "w", encoding="utf-8") as f:
+                f.write(text)
+        st = alias_state(C.Sdk(d, repo))
+        out[case] = {"ok": st["ok"], "reason": st["reason"], "expected": ok, "word": word,
+                     "match": st["ok"] == ok and (ok or (word or "") in (st["reason"] or ""))}
+    return out
+
+
+def all_sdk_alias_states(repo, sdk_objs):
+    """{short: alias_state} for every `examples/*-sdk` (the bank's SDK objects reused)."""
+    out = {}
+    for d in C.sdk_dirs(repo):
+        short = C.short_name(d)
+        out[short] = alias_state(sdk_objs.get(short) or C.Sdk(d, repo))
+    return out
+
+
+# Discrimination reference for the invariant marker (review 10, finding 2): synthetic (truth,
+# answer) pairs compiled with both markers, with whether each must compile under the invariant
+# one and under fix round 6's covariant one. The negatives differ only by higher-ranked subtyping.
+MARKER_PAIRS = (
+    ("hrtb_more_general", "fn(&'static str)", "for<'a> fn(&'a str)", False, True),
+    ("hrtb_more_general_ret", "fn(&'static u8) -> &'static u8", "for<'a> fn(&'a u8) -> &'a u8", False, True),
+    ("hrtb_less_general", "for<'a> fn(&'a str)", "fn(&'static str)", False, False),
+    ("hrtb_renamed", "for<'a> fn(&'a str)", "for<'b> fn(&'b str)", True, True),
+    ("hrtb_elided", "for<'a> fn(&'a str)", "fn(&str)", True, True),
+    ("dyn_bound_order", "Box<dyn std::error::Error + Send>", "Box<dyn Send + std::error::Error + 'static>", True, True),
+)
+
+
+def r2_modules(copy_root, banks, truths, sdks, jobs, judge_off=(), markers=()):
+    """The R2 identity checks for `jobs` ([(reader, item id, field, answer)]): ({key: refusal},
+    {(pkg, file): Module}, {key: tag}, {(item id, field): positive-control tag}), key = (reader,
+    item id, field). All answers of one declaration file go into one module (one file, included
+    into the declaration's module, `inject_r2`); each answer is its own function (`r2_check_fn`),
+    so `T.compile_rounds` drops a failing one alone and records its rustc error. Each scored truth
+    type gets one positive control, the truth against itself. Readers in `judge_off` skip the
+    judgeability refusal (self-test only). `markers` (`MARKER_PAIRS`, self-test only) are compiled
+    with both markers in the first module; a fifth value maps (name, marker) to their tags."""
+    refused, modules, tags, controls, names = {}, {}, {}, {}, set()
+    harness_dir = os.path.join(copy_root, HARNESS_SUBDIR)
+
+    def fn_name(*parts):
+        base = re.sub(r"\W", "_", "_".join((R2_FN_PREFIX,) + parts))
+        name, n = base, 1
+        while name in names:
+            n += 1
+            name = f"{base}_{n}"
+        names.add(name)
+        return name
+
+    for reader, iid, field, answer in jobs:
+        short = iid.split("/")[0]
+        b = banks[short]
+        pick = b["picks"][next(i for i in b["items"] if i["id"] == iid)["pick"]]
+        truth = truths[short]["items"][iid]["r2"][field]
+        mkey = (b["pkg"], pick["client_file"])
+        if mkey not in modules:
+            stem = os.path.splitext(os.path.basename(pick["client_file"]))[0]
+            modules[mkey] = T.Module(b["pkg"], pick["client_file"], os.path.join(harness_dir, f"{short}__{stem}.r2.rs"),
+                                     R2_HEADER.format(short=short, file=pick["client_file"]))
+        m = modules[mkey]
+        if (iid, field) not in controls:
+            controls[(iid, field)] = f"{iid}|{field}#r2truth"
+            m.add(controls[(iid, field)], r2_check_fn(fn_name(iid, field, "truth"), truth, truth))
+        key = (reader, iid, field)
+        text, why = r2_gate(answer, judge=reader not in judge_off)
+        if why:
+            refused[key] = why
+            continue
+        tags[key] = f"{reader}|{iid}|{field}#r2"
+        m.add(tags[key], r2_check_fn(fn_name(iid, field, reader), truth, text))
+    marker_tags = {}
+    if modules:
+        m = modules[sorted(modules)[0]]
+        for name, truth, answer, _, _ in markers:
+            for marker in ("invariant", "covariant"):
+                marker_tags[(name, marker)] = f"marker|{name}|{marker}#r2marker"
+                m.add(marker_tags[(name, marker)], r2_check_fn(fn_name("marker", name, marker), truth, answer, marker))
+    return refused, modules, tags, controls, marker_tags
+
+
+def inject_r2(copy_root, modules):
+    """`#[cfg(test)] include!("<module file>");` at the end of each R2 module's declaration module
+    (the innermost inline `mod` around the file's first `api!` block, else the end of the file,
+    where `T.inject` puts the R3 harness module), so the checks are items of that module itself."""
+    seen = set()
+    for m in modules:
+        assert m.api_file not in seen, m.api_file
+        seen.add(m.api_file)
+        target = os.path.join(copy_root, m.api_file)
+        text = open(target, encoding="utf-8").read()
+        decl = f"\n#[cfg(test)]\ninclude!({C.rust_str(os.path.abspath(m.path))});\n"
+        at = T.inline_module_end(text)
+        text = text + decl if at is None else text[:at] + decl + text[at:]
+        with open(target, "w", encoding="utf-8") as f:
+            f.write(text)
+
+
+RUSTC_CODE = re.compile(r"^(E\d{4}): ")
+
+
+def r2_results(jobs, refused, tags, controls, failed):
+    """{(reader, item id, field): {"ok", "reason", "rustc", "stage"}} after compiling: `ok` True
+    when the identity check compiled; False when the answer was refused before compiling (stage
+    "refused") or rustc refused it (stage "rustc", with its error code in `rustc` and the message in
+    `reason`); None when the truth's positive control did not compile (the item cannot be judged)."""
+    out = {}
+    for reader, iid, field, _ in jobs:
+        key = (reader, iid, field)
+        ctag = controls.get((iid, field))
+        if ctag in failed:
+            out[key] = {"ok": None, "stage": "control", "rustc": None,
+                        "reason": "the truth's positive control does not compile: " + failed[ctag]}
+        elif key in refused:
+            out[key] = {"ok": False, "stage": "refused", "rustc": None, "reason": refused[key]}
+        elif tags[key] in failed:
+            m = RUSTC_CODE.match(failed[tags[key]])
+            out[key] = {"ok": False, "stage": "rustc", "rustc": m.group(1) if m else None,
+                        "reason": "not the same type (rustc): " + failed[tags[key]]}
+        else:
+            out[key] = {"ok": True, "stage": "rustc", "rustc": None, "reason": None}
+    return out
 
 
 # ---------------------------------------------------------------- R3
@@ -198,23 +667,10 @@ RUN_MAX_FILE = 64 << 20  # RLIMIT_FSIZE of a run: caps its output and any file i
 HARNESS_SUBDIR = ".probe-score-harness"  # answer modules, inside the throwaway copy
 # the R3 answer contract (README "R3 answer contract"): a single expression whose value is the
 # public `send().await` result (optionally `?`, the compatibility path), checked with a Rust parser
-# (`form-check/`, a small `syn` binary that is not a workspace member; built offline on first use)
-FORM_CHECK_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "form-check")
-FORM_CHECK_BIN = os.path.join(C.CARGO_TARGET_DIR, "release", "concord-probe-form-check")
+# (`form-check/`, a small `syn` binary that is not a workspace member; built offline on first use,
+# `common.form_check_binary`; its `--type` mode parses the R2 types)
+form_check_binary = C.form_check_binary
 _FORM_CACHE = {}  # code -> (lexes, form or None, cut, reason or None)
-_FORM_BUILT = []
-
-
-def form_check_binary():
-    """The form-check helper, built once per process with `cargo build --offline --release`
-    (a no-op when it is up to date)."""
-    if not _FORM_BUILT:
-        p = subprocess.run(["cargo", "build", "--offline", "--release", "--quiet", "--manifest-path",
-                            os.path.join(FORM_CHECK_DIR, "Cargo.toml")], env=C.cargo_env(), capture_output=True, text=True)
-        if p.returncode or not os.access(FORM_CHECK_BIN, os.X_OK):
-            raise SystemExit(f"R3 needs the form-check helper ({FORM_CHECK_DIR}); building it failed:\n{p.stderr[-2000:]}")
-        _FORM_BUILT.append(FORM_CHECK_BIN)
-    return _FORM_BUILT[0]
 
 
 def _form_run(codes):
@@ -264,7 +720,8 @@ def call_form(code):
     must be the declared result's `Ok` type). The receiver must hold no `return`, `break`,
     `continue`, `?`, loop or block with statements outside closure bodies, and nowhere an
     `.await`, `async`, `unsafe`, `yield`, `try` block, item, attribute or macro other than `vec!`
-    and `format!` (whose arguments are checked the same way). form None: refused, with the reason;
+    and `format!` (bare or as `std::`, `::std::` or `alloc::` paths; their arguments are checked
+    the same way). form None: refused, with the reason;
     the code is returned unchanged."""
     _, form, cut, why = form_check([code])[code]
     if form is None:
@@ -631,33 +1088,62 @@ def _first_exchange(recs, rid, canaries):
     return p0, [T.req_record(r, canaries) for r in (p0 or {}).get("requests", [])]
 
 
-def r3_compile_and_check(repo, banks, truths, answers, log, guard_off=(), form_off=(), unbound=(), parent_env=None,
-                         fixtures=None):
-    """answers: [(reader, item id, code)] → ({(reader, item id): {"compiles", "pass", "reason", ..}},
-    context for the self-test's follow-up steps). Answers are compiled with cargo inside bubblewrap
-    (`CompileSandbox`); each answer's test then runs alone in the run sandbox (`sandbox_cmd`).
-    `parent_env`: the environment bwrap itself starts with (it passes none of it on). `pass` is
-    None for items without a request check, and for items whose result is not checked (their
-    request-only outcome is `diag_pass_result_unchecked`), so R3.pass always means "the same
-    requests and an `Ok` value"."""
+def compile_and_check(repo, banks, truths, answers, log, guard_off=(), form_off=(), unbound=(), parent_env=None,
+                      fixtures=None, r2_jobs=(), sdks=None, judge_off=(), markers=()):
+    """answers: R3 answers [(reader, item id, code)]; r2_jobs: R2 type answers [(reader, item id,
+    field, answer)] → ({(reader, item id): R3 result {"compiles", "pass", "reason", ..}}, context
+    for the self-test's follow-up steps, with `ctx["r2"]` = {(reader, item id, field): R2 result,
+    `r2_results`}). R3 answers and R2 identity checks are compiled together, in one cargo build per
+    round inside bubblewrap (`CompileSandbox`); each R3 answer's test then runs alone in the run
+    sandbox (`sandbox_cmd`). `parent_env`: the environment bwrap itself starts with (it passes none
+    of it on). `pass` is None for items without a request check, and for items whose result is not
+    checked (their request-only outcome is `diag_pass_result_unchecked`), so R3.pass always means
+    "the same requests and an `Ok` value". Every compiled SDK crate that passes the alias
+    precondition (`alias_state`; `ctx["alias"]`) gets the crate-root aliases
+    (`inject_root_aliases`; `ctx["root_aliases"]`); the R2 jobs of an SDK that fails it are not
+    compiled and come back not scorable (`ctx["r2_not_scorable"]`); `markers` (`MARKER_PAIRS`) give
+    `ctx["r2_markers"]`."""
     copy_root = os.path.join(repo, "target", "tmp", "probe-score-copy")
     out, modules, runs = _answer_modules(copy_root, repo, banks, truths, answers, guard_off, form_off, unbound, fixtures)
+    # the crate-root aliases' precondition (fail closed): R2 jobs of an SDK that fails it are not
+    # compiled but recorded as not scorable
+    alias = {s_: alias_state(sdks[s_]) for s_ in banks if s_ in (sdks or {})}
+    r2_jobs, r2_blocked = split_r2_jobs(r2_jobs, alias)
+    r2_refused, r2_mods, r2_tags, r2_controls, marker_tags = r2_modules(copy_root, banks, truths, sdks, r2_jobs,
+                                                                         judge_off, markers)
     mods = list(modules.values())
-    ctx = {"copy_root": copy_root, "runs": runs, "exes": {}, "failed": {}, "sandbox": None, "modules": modules}
+    ctx = {"copy_root": copy_root, "runs": runs, "exes": {}, "failed": {}, "sandbox": None, "modules": modules,
+           "r2_controls": r2_controls, "r2_refused": r2_refused, "alias": alias,
+           "r2_not_scorable": {s_: {"reason": a["reason"], "items": sorted({k[1] for k in r2_blocked if k[1].startswith(s_ + "/")})}
+                               for s_, a in alias.items() if not a["ok"]}}
     failed, results = {}, {}
-    if mods and not (os.access(BWRAP, os.X_OK) and shutil.which("timeout")):
-        raise SystemExit(f"R3 needs {BWRAP} and timeout(1) to compile and run answers in a sandbox; refusing to run them without one")
-    if mods:
+    if (mods or r2_mods) and not (os.access(BWRAP, os.X_OK) and shutil.which("timeout")):
+        raise SystemExit(f"R2 and R3 need {BWRAP} and timeout(1) to compile answers in a sandbox; refusing to compile them without one")
+    if mods or r2_mods:
         C.scratch_copy(repo, "probe-score-copy")
-        T.inject(copy_root, mods, SCORE_MOD)
+        if mods:
+            T.inject(copy_root, mods, SCORE_MOD)
+        inject_r2(copy_root, r2_mods.values())
+        pkgs = {m.pkg for m in mods} | {m.pkg for m in r2_mods.values()}
+        ctx["root_aliases"] = inject_root_aliases(copy_root, repo, {s_: alias[s_]["lib"] for s_, b in banks.items()
+                                                                    if b["pkg"] in pkgs and alias.get(s_, {}).get("ok")})
         sandbox = CompileSandbox(copy_root, C.CARGO_TARGET_DIR, parent_env)
-        log.append({"compile": sandbox.describe(), "run_sockets_masked": run_sockets()})
+        log.append({"compile": sandbox.describe(), "run_sockets_masked": run_sockets(),
+                    "r3_answers": sum(1 for v in out.values() if v is None), "r2_checks": len(r2_tags),
+                    "r2_positive_controls": len(r2_controls)})
         exes = {}
-        failed = T.compile_rounds(copy_root, mods, log, artifacts=exes, runner=sandbox)
-        T.write_modules(mods)
-        results, n_listed = _run_tests(exes, runs, failed, os.path.join(repo, "target", "tmp", "probe-score-run"))
-        log.append({"run": "bwrap", "executables": len(exes), "tests_listed": n_listed})
+        t0 = time.monotonic()
+        failed = T.compile_rounds(copy_root, mods + list(r2_mods.values()), log, artifacts=exes, runner=sandbox)
+        log.append({"compile_seconds": round(time.monotonic() - t0, 1)})
+        T.write_modules(mods + list(r2_mods.values()))
+        if runs:
+            t0 = time.monotonic()
+            results, n_listed = _run_tests(exes, runs, failed, os.path.join(repo, "target", "tmp", "probe-score-run"))
+            log.append({"run": "bwrap", "executables": len(exes), "tests_listed": n_listed,
+                        "run_seconds": round(time.monotonic() - t0, 1)})
         ctx.update(exes=exes, failed=failed, sandbox=sandbox)
+    ctx["r2"] = {**r2_results(r2_jobs, r2_refused, r2_tags, r2_controls, failed), **r2_blocked}
+    ctx["r2_markers"] = {key: {"compiles": tag not in failed, "reason": failed.get(tag)} for key, tag in marker_tags.items()}
     for key in [k for k, v in out.items() if v is None]:
         reader, iid = key
         short = iid.split("/")[0]
@@ -821,6 +1307,10 @@ POSITIVE_FORMS = {
     "r3_closure_statements": lambda call: ('(move || -> Option<_> { let n: usize = "2".parse().ok()?; '
                                            'if n == 0 { return None; } Some(api) })().unwrap()'
                                            f"{call[len('api'):]}.send().await"),
+    # review 6, finding 3: `format!` and `vec!` written as standard-library paths (`alloc::` ones
+    # need `extern crate alloc`, which the SDK crates do not declare: the helper's tests cover them)
+    "r3_qualified_macros": lambda call: ('(std::format!("{}", 1), ::std::vec![0u8; 2], api).2'
+                                         f"{call[len('api'):]}.send().await"),
 }
 # review 3, finding 4: equivalent spellings of the contract form
 WRAPPED = {"r3_paren_wrapped": lambda code: f"({code})", "r3_block_wrapped": lambda code: f"{{ {code} }}"}
@@ -904,6 +1394,27 @@ def _requalify(t, sdk, crate_word, ctx):
     return ("path", segs, args)
 
 
+def _absolute(t):
+    """The type tree (`parse_type` or `type_tree` form) with a leading `::` on every path that can
+    take one: two or more segments, not headed by `crate`, `self` or `super` (a crate-name,
+    `concord::`, `std::`, `core::` or `alloc::` path); bare names are kept."""
+    k = t[0]
+    if k == "ref":
+        return ("ref", t[1], _absolute(t[2]))
+    if k == "tuple":
+        return ("tuple", [_absolute(a) for a in t[1]])
+    if k == "slice":
+        return ("slice", _absolute(t[1]))
+    if k == "array":
+        return ("array", _absolute(t[1]), t[2])
+    if k != "path":
+        return t
+    segs = list(t[1])
+    if len([x for x in segs if x]) > 1 and segs[0] not in ("", "crate", "self", "super"):
+        segs = [""] + segs
+    return ("path", segs, [_absolute(a) for a in t[2]])
+
+
 def wrong_owners(sdk, ctx, name):
     """Wrong-owner R2 spellings of `name` built from the SDK's existing modules:
     {"r2_owner_wrong_module": `crate::<m>::<name>` for the first module m (closest to the root)
@@ -923,10 +1434,326 @@ def wrong_owners(sdk, ctx, name):
 
 
 def _with_error(send_returns, err):
-    t = C.parse_type(send_returns)
+    t = C.type_tree(send_returns)
     if t[0] == "path" and t[1][-1] == "Result" and len(t[2]) == 2:
-        return C.type_str(("path", t[1], [t[2][0], C.parse_type(err)]))
+        return C.type_str(t[:2] + ([t[2][0], ("raw", err)],))
     return None
+
+
+def _std_spellings(identity):
+    """The real paths `common.STD_PATHS` lists for a standard-library identity, in table order."""
+    return [list(p) for p, i in C.STD_PATHS.items() if i == identity]
+
+
+def spell_std(identity):
+    """The `std::` spelling (`std::result::Result`, `std::primitive::u8`)."""
+    return _std_spellings(identity)[0]
+
+
+def spell_core_alloc(identity):
+    """A `core::`/`alloc::` spelling (`core::result::Result`, `alloc::vec::Vec`), else the second
+    real `std::` one (`std::collections::hash_map::HashMap`: there is no core or alloc HashMap)."""
+    ps = _std_spellings(identity)
+    return next((p for p in ps if p[0] in ("core", "alloc") and "prelude" not in p), ps[1 if len(ps) > 1 else 0])
+
+
+def respell_std(t, sdk, ctx, spell, outer_only=False):
+    """The type tree `t` (`common.type_tree`) with each path that names a standard-library type by
+    its own name (its identity is std-prelude, primitive or std-lib, ends with the path's last
+    segment and has as many arguments as written; so an SDK alias is never respelled) written as
+    `spell(identity)` (a segment list, or None to keep the path); `outer_only`: only the outermost
+    path (the R2 standard-library controls)."""
+    k = t[0]
+    if k == "ref":
+        return ("ref", t[1], respell_std(t[2], sdk, ctx, spell, outer_only))
+    if k == "tuple":
+        return ("tuple", [respell_std(a, sdk, ctx, spell, outer_only) for a in t[1]])
+    if k == "slice":
+        return ("slice", respell_std(t[1], sdk, ctx, spell, outer_only))
+    if k == "array":
+        return ("array", respell_std(t[1], sdk, ctx, spell, outer_only), t[2])
+    if k != "path":
+        return t
+    args = list(t[2]) if outer_only else [respell_std(a, sdk, ctx, spell, False) for a in t[2]]
+    n = C.canon_ident(C.type_str(t), sdk, ctx)
+    segs = t[1]
+    if (n[0] == "id" and n[1][0] in (C.PRELUDE, C.PRIM, C.STD) and n[1][-1] == [s for s in segs if s][-1]
+            and len(n[2]) == len(t[2])):
+        segs = spell(n[1]) or segs
+    return ("path", segs, args)
+
+
+def _std_ids(n):
+    """The standard-library identities (std-prelude, primitive, std-lib) in an identity tree."""
+    if n[0] == "id":
+        own = [n[1]] if n[1][0] in (C.PRELUDE, C.PRIM, C.STD) else []
+        return own + [i for a in n[2] for i in _std_ids(a)]
+    if n[0] == "ref":
+        return _std_ids(n[2])
+    if n[0] == "tuple":
+        return [i for a in n[1] for i in _std_ids(a)]
+    if n[0] in ("slice", "array"):
+        return _std_ids(n[1])
+    return []
+
+
+def _unresolved_ids(n):
+    """The unresolved identities and invalid nodes in an identity tree."""
+    if n[0] == C.INVALID:
+        return [n[:2]]
+    if n[0] == "id":
+        own = [n[1]] if n[1][0] == C.UNRESOLVED else []
+        return own + [i for a in n[2] for i in _unresolved_ids(a)]
+    if n[0] == "ref":
+        return _unresolved_ids(n[2])
+    if n[0] == "tuple":
+        return [i for a in n[1] for i in _unresolved_ids(a)]
+    if n[0] in ("slice", "array"):
+        return _unresolved_ids(n[1])
+    return []
+
+
+# review 6, finding 1: standard-library owners that do not exist (each a control's outermost
+# `Result`, or every `Vec`), and the real spellings
+R2_STD_MADE_UP = {"r2_std_alloc_result": (lambda i: ["alloc", "result", "Result"] if i == (C.PRELUDE, "Result") else None, True),
+                  "r2_std_misspelled_module": (lambda i: ["std", "results", "Result"] if i == (C.PRELUDE, "Result") else None, True),
+                  "r2_std_core_vec": (lambda i: ["core", "vec", "Vec"] if i == (C.PRELUDE, "Vec") else None, False)}
+R2_STD_REAL = {"r2_std_real_std": spell_std, "r2_std_real_core_alloc": spell_core_alloc}
+# review 10, finding 1: the same real spellings with a leading `::` (`::std::..`, `::core::..`, `::alloc::..`)
+R2_STD_REAL_ABS = {"r2_abs_std_real_std": lambda i: [""] + spell_std(i),
+                   "r2_abs_std_real_core_alloc": lambda i: [""] + spell_core_alloc(i)}
+# review 10, finding 1: crate-name and absolute spellings (positive) and absolute wrong owners (negative)
+R2_ABS = ("r2_crate_name_paths", "r2_abs_crate_name_paths", "r2_abs_documented", "r2_abs_owner_made_up",
+          "r2_abs_owner_wrong_module", "r2_abs_std_alloc_result") + tuple(R2_STD_REAL_ABS)
+# made-up standard-library spellings the rustc table check expects to fail (and the scorer to leave
+# unresolved), next to every spelling the table lists
+STD_MADE_UP_PATHS = ("alloc::result::Result", "std::results::Result", "core::vec::Vec", "core::string::String",
+                     "core::boxed::Box", "alloc::option::Option", "core::collections::BTreeMap",
+                     "alloc::collections::HashMap", "std::collections::Vec", "std::bytes::Bytes", "core::primitive::String")
+_STD_ARITY = {"Result": 2, "Option": 1, "Vec": 1, "Box": 1, "HashMap": 2, "BTreeMap": 2}
+
+
+def _std_sample(path):
+    n = _STD_ARITY.get(path.rsplit("::", 1)[-1], 0)
+    return path + ("<" + ", ".join(["u8"] * n) + ">" if n else "")
+
+
+def std_table_check(repo, sdk):
+    """Every standard-library spelling R2 accepts (`common.STD_PATHS`) compiled as a type with
+    rustc (one crate), and each made-up spelling (`STD_MADE_UP_PATHS`) compiled alone, which must
+    fail; with the scorer's identity of each. Built under the probe target directory."""
+    out_dir = os.path.join(C.CARGO_TARGET_DIR, "probe-std-table")
+    os.makedirs(out_dir, exist_ok=True)
+    env = dict(C.cargo_env(), TMPDIR=out_dir)
+
+    def rustc(paths, tag):
+        src = "extern crate alloc;\n" + "".join(f"pub type __T{i} = {_std_sample(p)};\n" for i, p in enumerate(paths))
+        p = subprocess.run(["rustc", "--edition", "2024", "--crate-type", "lib", "--crate-name", f"probe_std_{tag}",
+                            "--emit", "metadata", "-o", os.path.join(out_dir, f"{tag}.rmeta"), "-"],
+                           input=src, cwd=repo, env=env, capture_output=True, text=True, timeout=300)
+        err = [ln for ln in p.stderr.splitlines() if ln.startswith("error")]
+        return p.returncode == 0, err[:3]
+
+    version = subprocess.run(["rustc", "--version"], cwd=repo, env=env, capture_output=True, text=True).stdout.strip()
+    listed = sorted("::".join(p) for p in C.STD_PATHS)
+    ok, err = rustc(listed, "listed")
+    tags = {p: C.canon_ident(_std_sample(p), sdk)[1][0] for p in listed}
+    made_up = {}
+    for i, p in enumerate(STD_MADE_UP_PATHS):
+        compiles, errs = rustc([p], f"made_up_{i}")
+        made_up[p] = {"compiles": compiles, "error": (errs or [None])[0], "identity": C.canon_ident(_std_sample(p), sdk)[1][0]}
+    return {"rustc": version, "listed": len(listed), "listed_compile": ok, "listed_errors": err,
+            "listed_unresolved": sorted(p for p, tag in tags.items() if tag == C.UNRESOLVED), "made_up": made_up}
+
+
+def r2_truth_check(banks, truths, sdks):
+    """Every scorable R2 truth type parsed by `syn` and canonicalized: none may be invalid or hold
+    an unresolved identity (an unresolved truth would equal the same text written as an answer)."""
+    n, bad, std_ids = 0, {}, set()
+    for short, b in banks.items():
+        sdk = sdks[short]
+        for it in b["items"]:
+            t = truths[short]["items"].get(it["id"])
+            r2 = (t or {}).get("r2", {})
+            if it["kind"] != "result" or not (r2.get("resolvable") and r2.get("verified")):
+                continue
+            ctx = sdk.decl_module(b["picks"][it["pick"]]["client_file"])
+            for key in ("send_returns", "error_type"):
+                if r2.get(key):
+                    n += 1
+                    tree = C.canon_ident(r2[key], sdk, ctx)
+                    std_ids.update(_std_ids(tree))
+                    if _unresolved_ids(tree):
+                        bad[f"{it['id']}.{key}"] = [list(x) for x in _unresolved_ids(tree)]
+    return {"types": n, "invalid_or_unresolved": bad,
+            "std_identities": sorted(C.ident_str(("id", i, ())) for i in std_ids),
+            "std_identities_listed": all(i in set(C.STD_PATHS.values()) for i in std_ids)}
+
+
+R2_MALFORMED = ("r2_malformed_missing_comma", "r2_malformed_extra_gt", "r2_malformed_stray_token")
+
+
+def malformed(send_returns, err):
+    """The review-6 malformed spellings of a `Result<A, B>` truth (finding 2): {reader: (send
+    returns, error type)}; the error type stays right where the perturbation has no place in it."""
+    t = C.type_tree(send_returns)
+    if t[0] != "path" or len(t[2]) != 2:
+        return {}
+    head, (a, b) = "::".join(t[1]), (C.type_str(x) for x in t[2])
+    return {"r2_malformed_missing_comma": (f"{head}<{a} {b}>", err),
+            "r2_malformed_extra_gt": (f"{head}<{a}, {b}>>", f"{err}>"),
+            "r2_malformed_stray_token": (f"{head}<{a}, 'a {b}>", f"'a {err}")}
+
+
+# review 8: lifetime arguments (finding 1) and an alias's surplus arguments (finding 2), which the
+# tagged-identity rule dropped; rustc refuses them (E0107, also for `DeploymentList<made_up::Wrong>`)
+R2_REVIEW8 = ("r2_review8_lifetime_result", "r2_review8_lifetime_error", "r2_review8_alias_surplus",
+              "r2_review8_alias_made_up")
+REVIEW8_ITEMS = {"nager-holidays/r1": ("r2_review8_lifetime_result", "r2_review8_lifetime_error"),
+                 "kubernetes/r3": ("r2_review8_alias_surplus", "r2_review8_alias_made_up")}
+
+
+def _path_text(segs, args):
+    return "::".join(segs) + ("<" + ", ".join(args) + ">" if args else "")
+
+
+def zero_param_alias(sdk, ctx, t):
+    """True when the type tree `t` is a bare name without arguments that names, in the declaration
+    module's scope (else SDK-wide, as the identity diagnostic reads a bare name), an SDK `type`
+    alias without generic parameters (`DeploymentList` = `ObjectList<Deployment>` on
+    `kubernetes/r3`)."""
+    if t[0] != "path" or t[2] or len([x for x in t[1] if x]) != 1:
+        return False
+    name = t[1][-1]
+    r = sdk.index.lookup(ctx, name, ctx) if ctx in sdk.index.mods else None
+    if r is None:
+        defs = sdk.index.defs_named(name)
+        r = ("def",) + defs[0] if defs else None
+    return bool(r and r[0] == "def" and r[2].get("alias") is not None and not r[2]["alias"][0])
+
+
+def review8(send_returns, err, sdk, ctx):
+    """The review-8 reproducers built from a truth: {reader: (send returns, error type)}.
+    `Result<A, B>` → `Result<'static, A, B>` (the error type left right); an error type without
+    arguments `E` → `E<'static>`, in the result too (`nager-holidays/r1`: `Error<'static>`); and,
+    where `A` is an SDK alias without generic parameters, `Result<A<u8>, B>` and
+    `Result<A<made_up::Wrong>, B>` (`kubernetes/r3`: `DeploymentList<u8>`), the error type left
+    right."""
+    out = {}
+    sr, et = C.type_tree(send_returns), C.type_tree(err)
+    if sr[0] == "path" and sr[2]:
+        out["r2_review8_lifetime_result"] = (_path_text(sr[1], ["'static"] + [C.type_str(x) for x in sr[2]]), err)
+    if et[0] == "path" and not et[2]:
+        e = _path_text(et[1], ["'static"])
+        with_e = _with_error(send_returns, e)
+        if with_e:
+            out["r2_review8_lifetime_error"] = (with_e, e)
+    if sr[0] == "path" and len(sr[2]) == 2 and zero_param_alias(sdk, ctx, sr[2][0]):
+        a, b = sr[2]
+        for reader, arg in (("r2_review8_alias_surplus", "u8"), ("r2_review8_alias_made_up", "made_up::Wrong")):
+            out[reader] = (_path_text(sr[1], [_path_text(a[1], [arg]), C.type_str(b)]), err)
+    return out
+
+
+# answers the judgeability refusal must refuse (effect check), with a word its reason holds
+JUDGE_SAMPLES = (("_", "`_`"), ("Result<_, Error>", "`_`"), ("Error<'_>", "`'_`"), ("&str", "elided"),
+                 ("Vec<&'_ str>", "`'_`"), ("impl std::error::Error", "`impl"),
+                 ("Box<dyn std::error::Error + 'a>", "`dyn`"), ("Result<Self, Error>", "`Self`"),
+                 ("concord::ty!()", "macro"), ("[u8; { fn f() {} 3 }]", "expression"),
+                 ("Result<HolidayResponse, [u8; N]>", "expression"),
+                 ("<SendPolicy as concord::SendWith<Rate>>::Output", "qualified path"))
+
+
+def policy_projection(sdk, pick):
+    """The type a plain `send P;` client's rustdoc shows as its send() output,
+    `<P as concord::SendWith<T>>::Output` (T the endpoint's output; P the policy's type, as
+    truth.r2_truth reads it), or None for other clients."""
+    client = next(c for c, _ in sdk.clients if c["name"] == pick["client"])
+    send = (client["stmts"].get("send") or "").strip()
+    if not send or "->" in send:
+        return None
+    cp = next((x for x in client["params"] if x.get("name") == send), None)
+    out = (pick.get("output") or "").strip() or "()"
+    return f"<{cp['type'] if cp else send} as concord::SendWith<{out}>>::Output"
+
+
+def r2_effects(ctx, details, banks, truths):
+    """The R2 rustc check, per reader: answers compiled, refused before compiling, refused by rustc
+    (with the rustc error codes, and any failure without one) and not judged; the review-8
+    reproducers on the reviewer's items with their outcomes; the truth types that the gate would
+    refuse or that hold a lifetime or a reference; the judgeability refusal on `JUDGE_SAMPLES`."""
+    per = {}
+    for (reader, iid, f), res in sorted(ctx["r2"].items()):
+        d = per.setdefault(reader, {"answers": 0, "compiled": 0, "refused_before": 0, "rustc_refused": 0,
+                                    "rustc_codes": {}, "rustc_refused_without_code": 0, "not_judged": 0,
+                                    "not_scorable_alias_precondition": 0})
+        d["answers"] += 1
+        if res["ok"] is None and res["stage"] == "precondition":
+            d["not_scorable_alias_precondition"] += 1
+        elif res["ok"] is None:
+            d["not_judged"] += 1
+        elif res["ok"]:
+            d["compiled"] += 1
+        elif res["stage"] == "refused":
+            d["refused_before"] += 1
+        else:
+            d["rustc_refused"] += 1
+            if res["rustc"]:
+                d["rustc_codes"][res["rustc"]] = d["rustc_codes"].get(res["rustc"], 0) + 1
+            else:
+                d["rustc_refused_without_code"] += 1
+    examples = {}
+    for iid, readers in REVIEW8_ITEMS.items():
+        for reader in readers:
+            d = details.get(reader, {}).get(iid)
+            if d:
+                examples[f"{reader} {iid}"] = {f: {"answer": d[f], "ok": (ctx["r2"].get((reader, iid, f)) or {}).get("ok"),
+                                                   "reason": (ctx["r2"].get((reader, iid, f)) or {}).get("reason")}
+                                               for f in R2_FIELDS}
+    gate_refused, lifetimes = {}, []
+    for short, b in banks.items():
+        for it in b["items"]:
+            t = truths[short]["items"].get(it["id"])
+            for f in r2_scorable(t):
+                text = t["r2"][f]
+                why = r2_gate(text)[1]
+                if why:
+                    gate_refused[f"{it['id']}.{f}"] = why
+                if "'" in text or "&" in text:
+                    lifetimes.append(f"{it['id']}.{f}")
+    markers = {name: {"truth": truth, "answer": answer, "gate": r2_gate(answer)[1],
+                      "invariant": ctx.get("r2_markers", {}).get((name, "invariant")),
+                      "covariant": ctx.get("r2_markers", {}).get((name, "covariant")),
+                      "expected": {"invariant": inv, "covariant": cov}}
+               for name, truth, answer, inv, cov in MARKER_PAIRS if (name, "invariant") in ctx.get("r2_markers", {})}
+    return {"per_reader": per, "review8_examples": examples, "truth_gate_refused": gate_refused,
+            "truth_with_lifetime_or_reference": lifetimes,
+            "judge_samples": {text: C.type_judge(text) for text, _ in JUDGE_SAMPLES},
+            "root_aliases": ctx.get("root_aliases", {}), "markers": markers,
+            "r2_not_scorable": ctx.get("r2_not_scorable", {})}
+
+
+def malformed_effects(details):
+    """Per malformed control and field: the answers that differ from the truth, how many `syn`
+    refuses, and how many the hand-written parser (fix round 4's R2 parser, `common.parse_type`,
+    still used on declaration text) reads as the truth's type; with the reviewer's item."""
+    out = {}
+    for reader in R2_MALFORMED:
+        rows = details.get(reader, {})
+        res = {f: {"n": 0, "syn_refused": 0, "handwritten_as_truth": 0} for f in ("send_returns", "error_type")}
+        for d in rows.values():
+            for f, truth in zip(("send_returns", "error_type"), d["truth"]):
+                if d[f] == truth:
+                    continue  # the perturbation has no place in this field
+                res[f]["n"] += 1
+                res[f]["syn_refused"] += C.type_tree(d[f])[0] == C.INVALID
+                res[f]["handwritten_as_truth"] += C.type_str(C.parse_type(d[f])) == C.type_str(C.parse_type(truth))
+        ex = rows.get("nager-holidays/r1")
+        if ex:
+            res["example"] = {"item": "nager-holidays/r1", "send_returns": ex["send_returns"],
+                              "syn": C.type_tree(ex["send_returns"])[2] if C.type_tree(ex["send_returns"])[0] == C.INVALID else None}
+        out[reader] = res
+    return out
 
 
 def _spell(n, ident):
@@ -1092,6 +1919,37 @@ SELFTEST_EXPECT = {
     "r2_spoof_internal_all": {"R2.send_returns": 0, "R2.error_type": 0},
     "r2_spoof_canonical": {"R2.send_returns": 0, "R2.error_type": 0},
     "r2_spoof_tag_path": {"R2.send_returns": 0, "R2.error_type": 0},
+    # review 6: invented standard-library owners (the error type is left right) and real spellings
+    "r2_std_alloc_result": {"R2.send_returns": 0, "R2.error_type": 1},
+    "r2_std_misspelled_module": {"R2.send_returns": 0, "R2.error_type": 1},
+    "r2_std_core_vec": {"R2.send_returns": 0, "R2.error_type": 1},
+    "r2_std_real_std": {"R2.send_returns": 1, "R2.error_type": 1},
+    "r2_std_real_core_alloc": {"R2.send_returns": 1, "R2.error_type": 1},
+    # review 10, finding 1: crate-name paths and absolute paths (a leading `::`) are real spellings;
+    # absolute paths to invented owners are not
+    "r2_crate_name_paths": {"R2.send_returns": 1, "R2.error_type": 1},
+    "r2_abs_crate_name_paths": {"R2.send_returns": 1, "R2.error_type": 1},
+    "r2_abs_documented": {"R2.send_returns": 1, "R2.error_type": 1},
+    "r2_abs_std_real_std": {"R2.send_returns": 1, "R2.error_type": 1},
+    "r2_abs_std_real_core_alloc": {"R2.send_returns": 1, "R2.error_type": 1},
+    "r2_abs_owner_made_up": {"R2.send_returns": 0, "R2.error_type": 0},
+    "r2_abs_owner_wrong_module": {"R2.send_returns": 0, "R2.error_type": 0},
+    "r2_abs_std_alloc_result": {"R2.send_returns": 0, "R2.error_type": 1},
+    # review 6: malformed types (a missing comma leaves the error type right)
+    "r2_malformed_missing_comma": {"R2.send_returns": 0, "R2.error_type": 1},
+    "r2_malformed_extra_gt": {"R2.send_returns": 0, "R2.error_type": 0},
+    "r2_malformed_stray_token": {"R2.send_returns": 0, "R2.error_type": 0},
+    # review 8: lifetime arguments and an alias's surplus arguments (rustc refuses them; the error
+    # type is left right where the perturbation has no place in it)
+    "r2_review8_lifetime_result": {"R2.send_returns": 0, "R2.error_type": 1},
+    "r2_review8_lifetime_error": {"R2.send_returns": 0, "R2.error_type": 0},
+    "r2_review8_alias_surplus": {"R2.send_returns": 0, "R2.error_type": 1},
+    "r2_review8_alias_made_up": {"R2.send_returns": 0, "R2.error_type": 1},
+    # fix round 6: a `_` placeholder (it would compile against any type) and the projection a plain
+    # `send P;` client's rustdoc shows (rustc would resolve it for the reader) are refused before
+    # compiling (the error type is left right in the projection control)
+    "r2_infer_placeholder": {"R2.send_returns": 0, "R2.error_type": 0},
+    "r2_policy_projection": {"R2.send_returns": 0, "R2.error_type": 1},
     "r3_ok_form": {"R3.pass": 1, "R3.diag_compiles": 1},
     "r3_paren_wrapped": {"R3.pass": 1, "R3.diag_compiles": 1},
     "r3_block_wrapped": {"R3.pass": 1, "R3.diag_compiles": 1},
@@ -1105,6 +1963,7 @@ SELFTEST_EXPECT = {
     "r3_byte_string_early_return": {"R3.pass": 0, "R3.diag_compiles": 0},
     "r3_vec_repeat_in_struct": {"R3.pass": 1, "R3.diag_compiles": 1},
     "r3_closure_statements": {"R3.pass": 1, "R3.diag_compiles": 1},
+    "r3_qualified_macros": {"R3.pass": 1, "R3.diag_compiles": 1},
     "r3_stream_wrong_media": {"R3.pass": 0, "R3.diag_compiles": 1, "R3.diag_legacy_pass": 1},
     "r3_sandbox_fs": {"R3.pass": 0, "R3.diag_compiles": 1},
     "r3_sandbox_net": {"R3.pass": 0, "R3.diag_compiles": 1},
@@ -1125,7 +1984,20 @@ UNBOUND_EXPECT["r3_stream_wrong_media" + UNBOUND] = {"R3.pass": 1, "R3.diag_comp
 #   off compile and pass, so the parser is what refuses them.
 EARLY_EXITS = ("r3_early_return", "r3_review5_reproducer", "r3_byte_string_early_return")
 FORM_OFF_EXPECT = {r + FORM_RULE_OFF: {"R3.pass": 1, "R3.diag_compiles": 1} for r in EARLY_EXITS}
-REFERENCE_EXPECT = {**UNBOUND_EXPECT, **FORM_OFF_EXPECT}
+# - the `_` placeholder answers compiled without the judgeability refusal compile (rustc infers
+#   `_`), so the refusal is what makes the control fail.
+#   The same holds for the `<P as concord::SendWith<T>>::Output` projections: rustc resolves them
+#   to the truth, so the refusal is what keeps a copied rustdoc projection from being credited.
+JUDGE_OFF_EXPECT = {"r2_infer_placeholder" + JUDGE_OFF: {"R2.send_returns": 1, "R2.error_type": 1},
+                    "r2_policy_projection" + JUDGE_OFF: {"R2.send_returns": 1, "R2.error_type": 1}}
+REFERENCE_EXPECT = {**UNBOUND_EXPECT, **FORM_OFF_EXPECT, **JUDGE_OFF_EXPECT}
+# - the review-8 answers scored by the tagged-identity rule of fix rounds 4-5 (kept as the
+#   diagnostic `R2.diag_identity.*`, the same code as at b77c9cef) are credited, so rustc is what
+#   refuses them (the perturbed fields only).
+R2_IDENTITY_EXPECT = {"r2_review8_lifetime_result": {"R2.diag_identity.send_returns": 1},
+                      "r2_review8_lifetime_error": {"R2.diag_identity.send_returns": 1, "R2.diag_identity.error_type": 1},
+                      "r2_review8_alias_surplus": {"R2.diag_identity.send_returns": 1},
+                      "r2_review8_alias_made_up": {"R2.diag_identity.send_returns": 1}}
 SANDBOX_CONTROL_ITEMS = 2  # items each file-system, network, include and env control runs on
 GUARD_OFF = ("r3_sandbox_include", "r3_sandbox_env", "r3_sandbox_ipc")  # only the sandbox stands in the way
 EVASION_READERS = tuple(RESULT_EVASIONS) + tuple(r + UNBOUND for r in RESULT_EVASIONS)
@@ -1150,7 +2022,10 @@ def selftest_answers(banks, truths, sdks, repo, ctl):
                "r3_sandbox_ipc": {"targets": {}}, "r3_wrong_body": {}, "r3_wrong_header": {},
                "r2_owner_wrong_module": {}, "r2_owner_repeated_module": {}, "r3_stream_wrong_media": {},
                "r3_early_return": {}, "r3_review5_reproducer": {}, "r3_byte_string_early_return": {},
-               "r2_spoof_internal_error": {}, "r2_spoof_tag_path": {}}
+               "r2_spoof_internal_error": {}, "r2_spoof_tag_path": {}, "r2_infer_placeholder": {},
+               "r2_policy_projection": {},
+               **{r: {} for r in list(R2_STD_MADE_UP) + list(R2_STD_REAL) + list(R2_MALFORMED) + list(R2_REVIEW8)
+                  + list(R2_ABS)}}
     escape_dir = os.path.join(repo, "target", "tmp", "probe-sandbox-escape")
     n_fs = n_net = n_inc = n_env = 0
     ipc_left = list(ctl.get("ipc_targets") or [])
@@ -1199,9 +2074,29 @@ def selftest_answers(banks, truths, sdks, repo, ctl):
                         sr = _with_error(r2["send_returns"], owner)
                         if sr:  # the right type except the error's owner
                             put(reader, short, "rc", {"q": q, "send_returns": sr, "error_type": owner})
-                    alias_sr = C.type_str(_requalify(C.parse_type(r2["send_returns"]), sdk, "crate", ctx))
-                    alias_err = C.type_str(_requalify(C.parse_type(r2["error_type"]), sdk, sdk.crate, ctx))
-                    put("r2_alias_documented", short, "rc", {"q": q, "send_returns": alias_sr, "error_type": alias_err})
+                    alias_sr_t = _requalify(C.parse_type(r2["send_returns"]), sdk, "crate", ctx)
+                    alias_err_t = _requalify(C.parse_type(r2["error_type"]), sdk, sdk.crate, ctx)
+                    put("r2_alias_documented", short, "rc", {"q": q, "send_returns": C.type_str(alias_sr_t),
+                                                             "error_type": C.type_str(alias_err_t)})
+                    # review 10, finding 1: every SDK type by its crate name, and absolute paths (a
+                    # leading `::` wherever a path can take one; resolved through the crate-root aliases)
+                    cn_sr_t = _requalify(C.parse_type(r2["send_returns"]), sdk, sdk.crate, ctx)
+                    cn_err_t = _requalify(C.parse_type(r2["error_type"]), sdk, sdk.crate, ctx)
+                    for reader, (a_sr, a_err) in (("r2_crate_name_paths", (cn_sr_t, cn_err_t)),
+                                                  ("r2_abs_crate_name_paths", (_absolute(cn_sr_t), _absolute(cn_err_t))),
+                                                  ("r2_abs_documented", (_absolute(alias_sr_t), _absolute(alias_err_t)))):
+                        put(reader, short, "rc", {"q": q, "send_returns": C.type_str(a_sr), "error_type": C.type_str(a_err)})
+                        details[reader][it["id"]] = {"send_returns": C.type_str(a_sr), "error_type": C.type_str(a_err)}
+                    # ... and absolute wrong owners: invented, and a real module without the name
+                    abs_owners = [("r2_abs_owner_made_up", f"::made_up::{last}")]
+                    wm = wrong_owners(sdk, ctx, last).get("r2_owner_wrong_module")
+                    if wm:
+                        abs_owners.append(("r2_abs_owner_wrong_module", "::" + sdk.crate + wm[len("crate"):]))
+                    for reader, owner in abs_owners:
+                        sr = _with_error(r2["send_returns"], owner)
+                        if sr:
+                            put(reader, short, "rc", {"q": q, "send_returns": sr, "error_type": owner})
+                            details[reader][it["id"]] = sr
                     # review 5, finding 2: internal canonical spellings written directly
                     sr_id, err_id = C.canon_ident(r2["send_returns"], sdk, ctx), C.canon_ident(r2["error_type"], sdk, ctx)
                     if _has_sdk_identity(err_id):  # the fix-round-3 text of an SDK error was `sdk::..`
@@ -1218,6 +2113,44 @@ def selftest_answers(banks, truths, sdks, repo, ctl):
                     put("r2_spoof_tag_path", short, "rc", {"q": q, "send_returns": tag_sr,
                                                            "error_type": _spell(err_id, tag_path_spelling)})
                     details["r2_spoof_tag_path"][it["id"]] = tag_sr
+                    # review 6, finding 1: invented standard-library owners, and the real spellings
+                    sr_tree, err_tree = C.type_tree(r2["send_returns"]), C.type_tree(r2["error_type"])
+                    for reader, (spell, outer) in R2_STD_MADE_UP.items():
+                        sr = C.type_str(respell_std(sr_tree, sdk, ctx, spell, outer))
+                        if sr != C.type_str(sr_tree):  # the perturbation applies (an outer Result, a Vec)
+                            put(reader, short, "rc", {"q": q, "send_returns": sr, "error_type": r2["error_type"]})
+                            details[reader][it["id"]] = sr
+                    for reader, spell in list(R2_STD_REAL.items()) + list(R2_STD_REAL_ABS.items()):
+                        sr = C.type_str(respell_std(sr_tree, sdk, ctx, spell))
+                        put(reader, short, "rc", {"q": q, "send_returns": sr,
+                                                  "error_type": C.type_str(respell_std(err_tree, sdk, ctx, spell))})
+                        details[reader][it["id"]] = sr
+                    sr = C.type_str(respell_std(sr_tree, sdk, ctx, lambda i: ["", "alloc", "result", "Result"]
+                                                if i == (C.PRELUDE, "Result") else None, True))
+                    if sr != C.type_str(sr_tree):  # `::alloc::result::Result` (no such path), the error left right
+                        put("r2_abs_std_alloc_result", short, "rc", {"q": q, "send_returns": sr, "error_type": r2["error_type"]})
+                        details["r2_abs_std_alloc_result"][it["id"]] = sr
+                    # review 6, finding 2: malformed types (the hand-written parser repaired some)
+                    for reader, (sr, err) in malformed(r2["send_returns"], r2["error_type"]).items():
+                        put(reader, short, "rc", {"q": q, "send_returns": sr, "error_type": err})
+                        details[reader][it["id"]] = {"send_returns": sr, "error_type": err,
+                                                     "truth": [r2["send_returns"], r2["error_type"]]}
+                    # review 8: lifetime arguments and an alias's surplus arguments
+                    for reader, (sr, err) in review8(r2["send_returns"], r2["error_type"], sdk, ctx).items():
+                        put(reader, short, "rc", {"q": q, "send_returns": sr, "error_type": err})
+                        details[reader][it["id"]] = {"send_returns": sr, "error_type": err}
+                    # fix round 6: `_` placeholders, which rustc would infer (the judgeability refusal)
+                    if sr_tree[0] == "path" and sr_tree[2]:
+                        ph = _path_text(sr_tree[1], ["_"] + [C.type_str(x) for x in sr_tree[2][1:]])
+                        for reader in ("r2_infer_placeholder", "r2_infer_placeholder" + JUDGE_OFF):
+                            put(reader, short, "rc", {"q": q, "send_returns": ph, "error_type": "_"})
+                        details["r2_infer_placeholder"][it["id"]] = ph
+                    # the projection a plain `send P;` client's rustdoc shows (`impl SendWith` truths)
+                    proj = policy_projection(sdk, pick) if (r2.get("how") or "").startswith("impl SendWith") else None
+                    if proj:
+                        for reader in ("r2_policy_projection", "r2_policy_projection" + JUDGE_OFF):
+                            put(reader, short, "rc", {"q": q, "send_returns": proj, "error_type": r2["error_type"]})
+                        details["r2_policy_projection"][it["id"]] = proj
             elif it["kind"] == "call":
                 put("oracle", short, "rc", {"q": q, "code": t["reference"]})
                 put("wrong", short, "rc", {"q": q, "code": "let _ = api.clone();"})
@@ -1346,6 +2279,8 @@ def aggregate(item_rows):
     res = [r for r in item_rows if r["kind"] == "result"]
     for f in ("send_returns", "error_type", "base_url"):
         agg[f"R2.{f}"] = rate([r.get(f) for r in res])
+    for metric, f in R2_DIAG.items():
+        agg[metric] = rate([r.get(f) for r in res])
     calls = [r for r in item_rows if r["kind"] == "call"]
     agg["R3.pass"] = rate([r.get("pass") for r in calls])
     for metric, f in R3_DIAG.items():
@@ -1353,6 +2288,9 @@ def aggregate(item_rows):
     return agg
 
 
+# R2 diagnostic (fix round 6): the tagged-identity comparison of fix rounds 4-5, never credit
+R2_DIAG = {"R2.diag_identity.send_returns": "diag_identity_send_returns",
+           "R2.diag_identity.error_type": "diag_identity_error_type"}
 # R3 diagnostics: compiles only; the old method/path/query-only rule; the item's result was checked;
 # the request check alone on items whose result is not checked (never part of R3.pass)
 R3_DIAG = {"R3.diag_compiles": "compiles", "R3.diag_legacy_pass": "diag_legacy_pass",
@@ -1411,6 +2349,21 @@ def main():
             ctl["codex_home"] = os.environ.get("CODEX_HOME") or f"/nonexistent/concord-probe-host-codex-home-{secrets.token_hex(4)}"
             extra_env = {} if os.environ.get("CODEX_HOME") else {"CODEX_HOME": ctl["codex_home"]}
         readers, details = selftest_answers(banks, truths, sdk_objs, repo, ctl)
+        # R2 (review 6): the standard-library table against rustc, the truth types under `syn`, and
+        # the malformed controls under `syn` and under the hand-written parser
+        effects["std_table"] = std_table_check(repo, next(iter(sdk_objs.values())))
+        effects["r2_truth"] = r2_truth_check(banks, truths, sdk_objs)
+        effects["r2_malformed"] = malformed_effects(details)
+        # R2 alias precondition (fix round 8): every SDK under examples/, the synthetic crates, and an
+        # SDK forced to fail it (its jobs must come back not scorable, none compiled)
+        effects["alias_all_sdks"] = all_sdk_alias_states(repo, sdk_objs)
+        effects["alias_controls"] = alias_controls(repo)
+        forced = next(iter(sorted(banks)))
+        jobs = [("oracle", it["id"], f, None) for it in banks[forced]["items"]
+                for f in r2_scorable(truths[forced]["items"].get(it["id"]))]
+        keep, blocked = split_r2_jobs(jobs, {forced: {"ok": False, "reason": "forced by the self-test", "lib": None}})
+        effects["alias_blocked"] = {"sdk": forced, "jobs": len(jobs), "compiled": len(keep), "blocked": len(blocked),
+                                    "results": list(blocked.values())}
         for paths in details["r3_sandbox_fs"]["paths"].values():
             if os.path.exists(paths):
                 os.remove(paths)
@@ -1419,7 +2372,7 @@ def main():
         readers, metas = load_runs(os.path.abspath(a.runs), banks)
     base_readers = ("oracle", "wrong", "broken")
     rows = {}  # reader -> [row]
-    r3_jobs = []
+    r3_jobs, r2_jobs = [], []
     for reader, per_sdk in readers.items():
         for short, sessions in per_sdk.items():
             b, tr = banks[short], truths[short]["items"]
@@ -1442,25 +2395,47 @@ def main():
                     row.update(score_result(t, ans, sdk_objs[short], sdk_objs[short].decl_module(b["picks"][it["pick"]]["client_file"])))
                     if a.selftest and reader not in base_readers and "base_url" not in ans:
                         row.pop("base_url", None)  # R2 controls answer the types only
+                    # the type fields are judged by rustc (compiled with R3 below)
+                    r2_jobs += [(reader, it["id"], f, (ans or {}).get(f)) for f in r2_scorable(t)]
                 elif it["kind"] == "call":
                     row["code"] = (ans or {}).get("code")
                     r3_jobs.append((reader, it["id"], row["code"]))
                 rows.setdefault(reader, []).append(row)
     log = []
-    if r3_jobs and not a.no_r3:
-        kw = {}
+    r2_not_scorable = {}  # {sdk: {"reason", "items"}}: R2 items left out because the alias precondition fails
+    if r2_jobs or (r3_jobs and not a.no_r3):
+        kw = {"r2_jobs": r2_jobs, "sdks": sdk_objs}
         if a.selftest:
             stream_fx = details.get("r3_stream_wrong_media", {})
-            kw = {"guard_off": GUARD_OFF, "form_off": FORM_OFF, "unbound": tuple(UNBOUND_EXPECT),
-                  "parent_env": dict(os.environ, **extra_env),
-                  "fixtures": {(r, iid): fx for iid, fx in stream_fx.items()
-                               for r in ("r3_stream_wrong_media", "r3_stream_wrong_media" + UNBOUND)}}
-        r3, ctx = r3_compile_and_check(repo, banks, truths, r3_jobs, log, **kw)
+            kw.update({"guard_off": GUARD_OFF, "form_off": FORM_OFF, "unbound": tuple(UNBOUND_EXPECT),
+                       "parent_env": dict(os.environ, **extra_env), "judge_off": tuple(JUDGE_OFF_EXPECT),
+                       "markers": MARKER_PAIRS,
+                       "fixtures": {(r, iid): fx for iid, fx in stream_fx.items()
+                                    for r in ("r3_stream_wrong_media", "r3_stream_wrong_media" + UNBOUND)}})
+        r3, ctx = compile_and_check(repo, banks, truths, [] if a.no_r3 else r3_jobs, log, **kw)
+        r2 = ctx["r2"]
         for reader, rs in rows.items():
             for row in rs:
-                if row["kind"] == "call":
+                if row["kind"] == "call" and not a.no_r3:
                     row.update(r3.get((reader, row["id"]), {}))
+                elif row["kind"] == "result":
+                    for f in R2_FIELDS:
+                        res = r2.get((reader, row["id"], f))
+                        if res:
+                            row[f] = res["ok"]
+                            if res["reason"]:
+                                row[f + "_reason"] = res["reason"]
+                            if res["rustc"]:
+                                row[f + "_rustc"] = res["rustc"]
+        # every scored truth type compiled against itself: an item whose control fails is not judged
+        r2_report = {"positive_controls": len(ctx["r2_controls"]),
+                     "positive_controls_failed": {f"{iid}.{f}": ctx["failed"][tag] for (iid, f), tag in ctx["r2_controls"].items()
+                                                  if tag in ctx["failed"]}}
+        log.append({"r2": r2_report})
+        r2_not_scorable = ctx.get("r2_not_scorable", {})
         if a.selftest:
+            effects["r2_rustc"] = dict(r2_report, **r2_effects(ctx, details, banks, truths))
+        if a.selftest and r3_jobs and not a.no_r3:
             if listener:
                 threading.Event().wait(0.3)
                 effects["net_sandbox_connections"] = listener.accepted
@@ -1474,7 +2449,7 @@ def main():
         ulistener.close()
     report = {"bank": bank_dir, "mode": "selftest" if a.selftest else "runs", "runs": a.runs,
               "measures": "docs-assisted prediction", "readers": {}, "pooled": {}, "r3_compile_log": log,
-              "metas": metas}
+              "metas": metas, "r2_not_scorable": r2_not_scorable}
     for reader, rs in rows.items():
         by_sdk = defaultdict(list)
         for r in rs:
@@ -1493,7 +2468,7 @@ def main():
         pooled = {}
         for metric in list(aggregate([]).keys()):
             kind = {"R1": "wire", "R2": "result", "R3": "call"}[metric.split(".")[0]]
-            f = R3_DIAG.get(metric, metric.split(".", 1)[1])
+            f = {**R2_DIAG, **R3_DIAG}.get(metric, metric.split(".", 1)[1])
             vals = []
             for iid, rs in per_item.items():
                 v = [r.get(f) for r in rs if r["kind"] == kind and r.get(f) is not None]
@@ -1575,7 +2550,7 @@ def selftest_verdict(report, effects, details, no_r3, subset):
     next to the observed one, and the sandbox and rule effect checks. A control with no
     applicable item fails the verdict on the whole bank and is `n/a` when `--sdk` selects a subset."""
     rows, ok = [], True
-    for reader, exp in list(SELFTEST_EXPECT.items()) + list(REFERENCE_EXPECT.items()):
+    for reader, exp in list(SELFTEST_EXPECT.items()) + list(REFERENCE_EXPECT.items()) + list(R2_IDENTITY_EXPECT.items()):
         overall = report["readers"].get(reader, {}).get("overall", {})
         for metric, want in exp.items():
             if no_r3 and metric.startswith("R3"):
@@ -1592,6 +2567,81 @@ def selftest_verdict(report, effects, details, no_r3, subset):
     def check(name, present, cond):
         checks.append((name, (None if subset else False) if not present else bool(cond)))
 
+    rr = effects.get("r2_rustc") or {}
+    per = rr.get("per_reader") or {}
+    check(f"R2 (rustc): every scored truth type compiles against itself in the declaration's module (positive "
+          f"control, {rr.get('positive_controls')}), and passes the parser, the regex guard and the judgeability refusal",
+          bool(rr.get("positive_controls")),
+          rr.get("positive_controls_failed") == {} and rr.get("truth_gate_refused") == {})
+    check("R2 (rustc): no scored truth type holds a lifetime or a reference (in the check's function body an elided "
+          "lifetime is inferred, so it could not be told from `'static`)", bool(rr.get("positive_controls")),
+          rr.get("truth_with_lifetime_or_reference") == [])
+    check("R2 (rustc): every answer rustc refuses has a rustc error code (recorded as its reason); no answer is left "
+          "unjudged", bool(per),
+          all(d["rustc_refused_without_code"] == 0 and d["not_judged"] == 0 for d in per.values()))
+    ex = rr.get("review8_examples") or {}
+    want_ex = {f"{r} {i}" for i, rs in REVIEW8_ITEMS.items() for r in rs}
+    check("R2 (rustc): review 8's reproducers on nager-holidays/r1 (`Result<'static, HolidayResponse, Error>`, "
+          "`Error<'static>`) and kubernetes/r3 (`DeploymentList<u8>`, `DeploymentList<made_up::Wrong>`) are refused by "
+          "rustc (perturbed fields), with a rustc error code", set(ex) & want_ex,
+          set(ex) == want_ex and all(not v["send_returns"]["ok"] and "(rustc): E0" in (v["send_returns"]["reason"] or "")
+                                     for v in ex.values())
+          and all(not v["error_type"]["ok"] for k, v in ex.items() if k.startswith("r2_review8_lifetime_error")))
+    ra = rr.get("root_aliases") or {}
+    check(f"R2 (rustc): every compiled SDK crate passes the alias precondition and got the crate-root aliases "
+          f"`extern crate self as <crate>` and `extern crate alloc` ({len(ra)} crates), so `<crate>::..`, `::<crate>::..`, "
+          "`alloc::..` and `::alloc::..` resolve in every module; no R2 item is left not scorable", bool(ra),
+          rr.get("r2_not_scorable") == {} and all(len(v["added"]) == 2 for v in ra.values())
+          and all(d["not_scorable_alias_precondition"] == 0 for d in per.values()))
+    al = effects.get("alias_all_sdks") or {}
+    check(f"R2 alias precondition: every SDK under examples/ ({len(al)}) has the default library target (cargo "
+          "metadata) and a supported crate root", bool(al), all(v["ok"] for v in al.values()))
+    ac = effects.get("alias_controls") or {}
+    check("R2 alias precondition, synthetic crates (cargo metadata only, never built): a glob import from outside the "
+          "SDK, a glob of an SDK module exporting `alloc` (also through a nested glob), a root macro invocation, a local "
+          "`macro_rules!` that invokes `paste!`, an attribute macro, a nested, renamed or `#[cfg]`'d `extern crate alloc`, "
+          "`extern crate self as ..`, a `#[cfg(test)] mod alloc`, an item named after the crate, `[lib] path` and "
+          "`[lib] name` are each refused with their reason; a clean crate with an SDK-internal glob, a fred-style "
+          "local `macro_rules!` and `include_str!` in a doc attribute is accepted",
+          len(ac) == len(ALIAS_CASES), all(v["match"] for v in ac.values()))
+    ab = effects.get("alias_blocked") or {}
+    check("R2 alias precondition: an SDK that fails it (forced here) has every R2 answer recorded as not scorable "
+          "(no score, the reason kept), none compiled", bool(ab.get("blocked")),
+          ab.get("compiled") == 0 and ab.get("blocked") == ab.get("jobs")
+          and all(r["ok"] is None and r["reason"].startswith("not scorable: alias precondition (") for r in ab.get("results", [])))
+    mk = rr.get("markers") or {}
+    check("R2 (rustc) discrimination reference, invariant marker: each higher-ranked pair that differs only by "
+          "subtyping (`for<'a> fn(&'a str)` for `fn(&'static str)`, and with a return type) compiles with fix round "
+          "6's covariant `PhantomData<T>` and fails (E0308) with `PhantomData<*mut T>`; renamed binders, an elided "
+          "late-bound lifetime and reordered `dyn` bounds compile with both; every pair's answer passes the gate",
+          len(mk) == len(MARKER_PAIRS),
+          all(v["gate"] is None and v["invariant"]["compiles"] == v["expected"]["invariant"]
+              and v["covariant"]["compiles"] == v["expected"]["covariant"]
+              and (v["invariant"]["compiles"] or (v["invariant"]["reason"] or "").startswith("E0308"))
+              for v in mk.values())
+          and any(not v["invariant"]["compiles"] and v["covariant"]["compiles"] for v in mk.values()))
+    js = rr.get("judge_samples") or {}
+    check("R2 (rustc): the judgeability refusal refuses each unjudgeable sample (`_`, `'_`, `&str`, `impl`, "
+          "`dyn .. + 'a`, `Self`, a macro, an array length holding code, a qualified path `<T as Trait>::Name`)", bool(js),
+          all(js.get(text) and word in js[text] for text, word in JUDGE_SAMPLES))
+    st = effects.get("std_table") or {}
+    mu = st.get("made_up") or {}
+    check(f"identity diagnostic: every standard-library spelling it accepts ({st.get('listed')} in common.STD_PATHS) compiles as a type "
+          f"with rustc and resolves; each of the {len(mu)} made-up spellings (alloc::result::Result, core::vec::Vec, "
+          "std::results::Result, ..) fails to compile and is unresolved to the scorer", bool(st),
+          st.get("listed_compile") is True and st.get("listed_unresolved") == [] and len(mu) == len(STD_MADE_UP_PATHS)
+          and all(not v["compiles"] and v["identity"] == C.UNRESOLVED for v in mu.values()))
+    rt = effects.get("r2_truth") or {}
+    check("identity diagnostic: every scorable R2 truth type parses with syn and resolves (no invalid node, no unresolved identity); "
+          "its standard-library identities are all in the table", bool(rt.get("types")),
+          rt.get("invalid_or_unresolved") == {} and rt.get("std_identities_listed") is True)
+    mf = effects.get("r2_malformed") or {}
+    check("syn refuses every malformed control answer (missing comma, extra `>`, stray token), and the hand-written "
+          "parser (fix round 4's R2 parser) reads every missing-comma and stray-token send_returns answer as the "
+          "truth's type", all(mf.get(r, {}).get("send_returns", {}).get("n") for r in R2_MALFORMED),
+          all(v["syn_refused"] == v["n"] for r in R2_MALFORMED for f, v in mf.get(r, {}).items() if f != "example")
+          and all(mf[r]["send_returns"]["handwritten_as_truth"] == mf[r]["send_returns"]["n"]
+                  for r in ("r2_malformed_missing_comma", "r2_malformed_stray_token")))
     if not no_r3:
         check("the escape directory is writable on the host", True, effects.get("fs_dir_host_writable") is True)
         check("no file written outside the sandbox scratch", bool(effects.get("fs_paths_checked")),
@@ -1645,7 +2695,8 @@ def selftest_verdict(report, effects, details, no_r3, subset):
               and fa.get("r3_review5_reproducer", {}).get("n") == 1
               and all(w in (effects.get("review5_reproducer_refusal") or "")
                       for w in ("`return` outside a closure", "a `?` other than", "an `.await` other than")))
-        check("the call-form rule accepts every `vec![x; n]`-in-a-struct-literal and closure-with-statements answer",
+        check("the call-form rule accepts every `vec![x; n]`-in-a-struct-literal, closure-with-statements and "
+              "`std::format!`/`::std::vec!` answer",
               any(fa.get(r, {}).get("n") for r in POSITIVE_FORMS),
               all(fa.get(r, {}).get("form_refused") == 0 for r in POSITIVE_FORMS))
         check("the call-form rule alone also refuses every file-system/network/include/env/ipc control answer (statements)",
@@ -1676,13 +2727,26 @@ def render_md(report):
             row.append(fmt(report["pooled"][m]))
         lines.append(f"| {m} | " + " | ".join(row) + " |")
     lines += ["", "Rates are correct/applicable (n). R1.critical = method + destination + query; "
+              "R2.send_returns and R2.error_type = rustc compiles the identity check `same(PhantomData::<*mut (TRUTH)>, "
+              "PhantomData::<*mut (ANSWER)>)` in the declaration's module (an invariant marker: the types are the same); R2.diag_identity.* = "
+              "the tagged-identity rule of fix rounds 4-5 (a diagnostic, never credit); "
               "R3.pass = compiles and, run in the sandbox, sends the reference's requests (method, path, query, "
               "headers, body) and succeeds where the result is checked; R3.diag_compiles = compiles only; "
               "R3.diag_legacy_pass = the old method/path/query-only rule; R3.diag_result_checked = items whose "
               "reply decodes into the declared output; R3.diag_pass_result_unchecked = the request check alone on items "
               "whose result is not checked (never in R3.pass). Readers ending in `__unbound` (bound without the declared "
-              "type or result check) and `__form_off` (compiled with the call-form rule off) are self-test "
+              "type or result check), `__form_off` (compiled with the call-form rule off) and `__judge_off` (R2 answers "
+              "compiled without the judgeability refusal) are self-test "
               "discrimination references, not scores.", ""]
+    ns = report.get("r2_not_scorable") or {}
+    lines += ["## R2 items not scorable (alias precondition)", ""]
+    if ns:
+        lines += ["Left out of R2 (no score): the SDK's crate is outside the shape in which the crate-root aliases "
+                  "are injected (README \"Scoring\", R2).", "", "| sdk | items | reason |", "|---|---|---|"]
+        lines += [f"| {k} | {', '.join(v['items'])} | {v['reason']} |" for k, v in sorted(ns.items())]
+    else:
+        lines.append("None: every SDK with R2 items passes the alias precondition.")
+    lines.append("")
     st = report.get("selftest")
     if st:
         lines += [f"## Self-test verdict: {'ALL EXPECTATIONS MET' if st['all_ok'] else 'EXPECTATIONS NOT MET'}", "",

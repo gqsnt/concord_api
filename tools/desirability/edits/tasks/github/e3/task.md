@@ -11,3 +11,9 @@ Public names the hidden check uses:
   `triggering_actor=<login>`;
 - the caller-facing filter of the run list carries it too: `RunFilter::triggering_actor:
   Option<Login>` (public field), applied by `RepoContext::runs(&filter)`.
+
+**Limits of this change.** No part of this task needs build-time code or a different test
+harness: do not add or change a `build.rs`, `[build-dependencies]`, a `build` or `links` manifest
+key, `[patch]`/`[replace]` sections or a proc-macro crate, do not change `examples/testserver/`
+or where a dependency comes from, and do not add code that prints test-runner output or exits the
+process from the SDK's library code. A session that does any of these is not scored.

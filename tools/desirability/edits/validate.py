@@ -37,8 +37,13 @@ the oracle and the whole suite must accept. Kinds:
 - `weakness` (any kind): an incomplete provider change that an earlier oracle accepted;
 - `valid variant`: a correct solution spelled differently from the reference.
 
-`--old-oracle REV` also runs each control against the oracle as committed at `REV` (from the
-repository history, `tools/desirability/edits/tasks/<sdk>/<kind>/oracle.rs`).
+`--old-oracle REV|DIR` also runs each control against an earlier oracle: as committed at `REV`
+(from the repository history, `tools/desirability/edits/tasks/<sdk>/<kind>/oracle.rs`) or from a
+snapshot of an earlier sealed bank (`DIR/tasks/<sdk>/<kind>/oracle.rs`, e.g.
+`<bank>/previous/<hash>`). For the total-omission control of an e4 task, the stage the runner
+would attribute from the task's `classification.omission_evidence` (its `regex` and its `subject`
+naming the new operation, both inside one failure block: `run.omission_stage`) is recorded next to
+the detecting stage (`evidence_stage`, `evidence_matches_stage`).
 
 Results are merged into `<bank>/validation.json` (one entry per task, the latest run wins, with the
 bank hash it ran on) and `<bank>/VALIDATION.md` is regenerated from it (plus
@@ -101,6 +106,7 @@ def run_oracle(wt, pkg, test_name, names, log, listing=True):
     v = R.oracle_verdict(names, out, code, listed)
     if not v["pass"]:
         v["first_error"] = R.first_error(out)
+    v["_log"] = out
     return v
 
 
@@ -140,6 +146,7 @@ def validate(wt, task, bank, logs, old_oracle_rev=None):
     oracle = os.path.join(d, "oracle.rs")
     shutil.copy(oracle, dest)
     rec["before"] = run_oracle(wt, pkg, test_name, names, stem + ".before.log", listing=False)
+    rec["before"].pop("_log", None)
     code, out = sh(["git", "apply", patch], wt)
     if code:
         rec["verdict"] = "invalid: reference.patch failed to apply after copying the oracle"
@@ -168,6 +175,7 @@ def validate(wt, task, bank, logs, old_oracle_rev=None):
         with open(os.path.join(wt, ".cargo", "config.toml"), "w", encoding="utf-8") as f:
             f.write(R.NOOP_RUNNER_CONFIG)
         hv = run_oracle(wt, pkg, test_name, names, stem + ".noop-runner.log")
+        hv.pop("_log", None)
         rec["harness_control"] = {"what": "reference + .cargo/config.toml runner = /usr/bin/true",
                                   "cargo_exit": hv["exit"], "status": hv["status"],
                                   "caught": not hv["pass"]}
@@ -186,6 +194,18 @@ def validate(wt, task, bank, logs, old_oracle_rev=None):
                "expect": c.get("expect", "fail")}
         row.update(control_stage(wt, pkg, cpatch, oracle, dest, test_name, names, f"{stem}.{name}",
                                  row["expect"]))
+        evidence = (meta.get("classification") or {}).get("omission_evidence")
+        if c["kind"] == "total omission" and "stages" in row:
+            # The runner attributes the detecting stage only on classification-specific evidence
+            # naming the new operation within one failure block: the omission control must show
+            # that evidence at the stage it is caught by.
+            found = R.omission_stage(evidence, row.pop("stages"))
+            row["evidence_stage"] = found["stage"]
+            row["evidence_text"] = found.get("evidence_text")
+            row["evidence_subject_text"] = found.get("subject_text")
+            row["evidence_block"] = found.get("evidence_block")
+            row["evidence_matches_stage"] = found["stage"] == row["stage"]
+        row.pop("stages", None)
         if old_oracle_rev:
             row["old_oracle"] = old_oracle_status(wt, pkg, cpatch, task, old_oracle_rev, dest,
                                                   test_name, f"{stem}.{name}")
@@ -204,9 +224,18 @@ def validate(wt, task, bank, logs, old_oracle_rev=None):
 
 
 def old_oracle_status(wt, pkg, patch, task, rev, dest, test_name, stem):
-    """The oracle as committed at `rev` against the control `patch` (did it catch it?)."""
+    """The earlier oracle against the control `patch` (did it catch it?): `rev` is a commit whose
+    tree still carried the bank (`tools/desirability/edits/tasks/..`) or a directory holding a
+    snapshot of an earlier sealed bank (`<dir>/tasks/<sdk>/<kind>/oracle.rs`)."""
     sdk, kind = task.split("/")
-    code, text = sh(["git", "show", f"{rev}:tools/desirability/edits/tasks/{sdk}/{kind}/oracle.rs"], wt)
+    if os.path.isdir(rev):
+        path = os.path.join(rev, "tasks", sdk, kind, "oracle.rs")
+        if not os.path.isfile(path):
+            return {"status": "no oracle in " + rev}
+        code, text = 0, open(path, encoding="utf-8").read()
+        rev = "bank snapshot " + os.path.basename(os.path.normpath(rev))
+    else:
+        code, text = sh(["git", "show", f"{rev}:tools/desirability/edits/tasks/{sdk}/{kind}/oracle.rs"], wt)
     if code:
         return {"status": "no oracle at " + rev}
     reset(wt)
@@ -216,6 +245,7 @@ def old_oracle_status(wt, pkg, patch, task, rev, dest, test_name, stem):
     with open(dest, "w", encoding="utf-8") as f:
         f.write(text)
     v = run_oracle(wt, pkg, test_name, R.oracle_test_names(text), stem + ".old-oracle.log")
+    v.pop("_log", None)
     reset(wt)
     return {"rev": rev, "status": v["status"], "caught": not v["pass"],
             **({"first_error": v.get("first_error")} if not v["pass"] else {})}
@@ -232,7 +262,12 @@ def control_stage(wt, pkg, patch, oracle, dest, test_name, names, stem, expect):
     out["existing"] = summary
     shutil.copy(oracle, dest)
     out["oracle"] = run_oracle(wt, pkg, test_name, names, stem + ".control-oracle.log")
+    olog = out["oracle"].pop("_log", "")
     status = out["oracle"]["status"]
+    out["stages"] = [("compiler (SDK build)", not summary["built"], text),
+                     ("existing tests", summary["built"] and not summary["passed"], text),
+                     ("compiler at the caller (hidden oracle compile)", status == "compile_error", olog),
+                     ("hidden oracle at run time only", status != "compile_error" and not out["oracle"]["pass"], olog)]
     if expect == "pass":
         out["stage"] = ("accepted (valid variant)" if summary["passed"] and out["oracle"]["pass"]
                         else "rejected (a valid variant failed)")
@@ -284,13 +319,21 @@ def write_report(results, bank, digest):
                  "`omission.patch` is the reference patch minus its classification hunks. Observed, per\n"
                  "task: does the SDK still build, do its existing tests still pass, and does the hidden\n"
                  "oracle catch it (at compile or at run time).\n\n"
-                 "| Task | Omission hunks | SDK builds | Existing tests pass | Oracle | Detecting stage | Matches meta.json |\n"
-                 "|---|---|---|---|---|---|---|\n")
+                 "*Evidence*: the stage the runner attributes from the task's classification-specific\n"
+                 "evidence (`classification.omission_evidence` in the sealed `meta.json`: its `regex` and\n"
+                 "its `subject`, a term naming the new operation, matched inside one failure block) and the\n"
+                 "texts they matched; it must equal the detecting stage.\n\n"
+                 "| Task | Omission hunks | SDK builds | Existing tests pass | Oracle | Detecting stage | Matches meta.json | Evidence stage (matched text) |\n"
+                 "|---|---|---|---|---|---|---|---|\n")
         for t, o in om:
             e = o.get("existing", {})
+            ev = o.get("evidence_stage", "-")
+            if o.get("evidence_text"):
+                ev += f" (`{o['evidence_text'][:60]}`"
+                ev += f" with `{o['evidence_subject_text'][:40]}`)" if o.get("evidence_subject_text") else ")"
             text += (f"| `{t}` | {o['patch']['hunks']} | {e.get('built')} | {e.get('passed')} "
                      f"({e.get('tests_passed')}/{e.get('tests_failed')}) | {o.get('oracle', {}).get('status')} | "
-                     f"{o['stage']} | {results[t].get('omission_stage_matches_meta', '-')} |\n")
+                     f"{o['stage']} | {results[t].get('omission_stage_matches_meta', '-')} | {ev} |\n")
     ctl = [(t, c) for t in sorted(results) for c in results[t].get("controls", [])]
     if ctl:
         text += ("\n## Controls: every known-bad one must fail the oracle, every valid variant pass\n\n"
@@ -304,7 +347,7 @@ def write_report(results, bank, digest):
             text += (f"| `{t}` | `{c['file']}` | {c['kind']} | {c.get('expect', 'fail')} | {c.get('what', '')} | "
                      f"{e.get('built')} | {e.get('passed')} ({e.get('tests_passed')}/{e.get('tests_failed')}) | "
                      f"{c.get('oracle', {}).get('status')} | {c['stage']} | "
-                     f"{(old.get('status', 'not run') + (' @' + old['rev'][:8] if old.get('rev') else ''))} |\n")
+                     f"{(old.get('status', 'not run') + (' @' + old['rev'][:8] if old.get('rev') and not old['rev'].startswith('bank') else ' (' + old['rev'] + ')' if old.get('rev') else ''))} |\n")
     notes = os.path.join(bank, "VALIDATION_NOTES.md")
     if os.path.exists(notes):
         text += "\n" + open(notes, encoding="utf-8").read()

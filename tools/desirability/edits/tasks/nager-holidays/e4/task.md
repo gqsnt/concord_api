@@ -11,3 +11,9 @@ Public names the hidden check uses:
 - `client.next_public_holidays(country_code)` (`country_code`: `&str` or `String`);
 - its `send().await` returns `Result<HolidayResponse, Error>` like `holidays(..).send()`, and an
   HTTP 400 is `ErrorKind::InvalidRequest`.
+
+**Limits of this change.** No part of this task needs build-time code or a different test
+harness: do not add or change a `build.rs`, `[build-dependencies]`, a `build` or `links` manifest
+key, `[patch]`/`[replace]` sections or a proc-macro crate, do not change `examples/testserver/`
+or where a dependency comes from, and do not add code that prints test-runner output or exits the
+process from the SDK's library code. A session that does any of these is not scored.

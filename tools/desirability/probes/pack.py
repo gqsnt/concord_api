@@ -455,7 +455,9 @@ def questions_text(bank, session):
         for name in sorted({bank["picks"][it["pick"]]["client"] for it in items}):
             ctors.append(f"let api = {bank['clients'][name]['ctor']};")
         parts.append("In these questions `api` is the client built like this:\n\n```rust\n" + "\n".join(ctors) + "\n```")
-        keys = ("Answer a result question with `send_returns`, `error_type` (and `base_url` when asked); "
+        keys = ("Answer a result question with `send_returns`, `error_type` (and `base_url` when asked), "
+                "each type written out in full: no `_`, `impl`, `Self`, elided lifetimes or "
+                "`<T as Trait>::Name` projections; "
                 "a call question with `code`, one expression ending in `.send().await`.")
     else:
         keys = "Answer each question with `method`, `url`, `headers`, `body`, `content_type`, `accept`."

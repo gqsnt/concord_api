@@ -16,3 +16,9 @@ Public names the hidden check uses:
   `Result<Response<List<Comment>>, Error>`; a contradictory envelope (`has_more` true without a
   `next_cursor`, an empty cursor, or a cursor that did not advance) is `Error::Envelope`, a Notion
   error document is `Error::Provider`.
+
+**Limits of this change.** No part of this task needs build-time code or a different test
+harness: do not add or change a `build.rs`, `[build-dependencies]`, a `build` or `links` manifest
+key, `[patch]`/`[replace]` sections or a proc-macro crate, do not change `examples/testserver/`
+or where a dependency comes from, and do not add code that prints test-runner output or exits the
+process from the SDK's library code. A session that does any of these is not scored.

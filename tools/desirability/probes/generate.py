@@ -476,7 +476,8 @@ CALL_CONTRACT = ("`code` is one Rust expression evaluating to the `send().await`
                  "with `.send().await`, with no `?` on that outermost send and no trailing `;`. Chain client "
                  "setters on `api` (`api.set_x(..).endpoint(..).send().await`) and write values inline: no "
                  "`;`, no `let` or `use` statements, no other `.await` or `?`, and no `return`, `break`, "
-                 "`continue`, loops, `async` blocks or `unsafe`. It is evaluated as "
+                 "`continue`, loops, `async` blocks or `unsafe`. Use only `vec!` and `format!` macros. "
+                 "It is evaluated as "
                  "`let result: <the send() result type> = {{ code }};` inside an `async fn` with "
                  "`api: {client}`.")
 

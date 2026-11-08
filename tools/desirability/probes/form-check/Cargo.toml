@@ -3,13 +3,16 @@ name = "concord-probe-form-check"
 version = "0.1.0"
 edition = "2024"
 publish = false
-description = "I3 probes: the R3 answer contract (one expression whose value is the send().await result), checked with a Rust parser"
+description = "I3 probes: the R3 answer contract (one expression whose value is the send().await result) and R2 answer types, checked with a Rust parser"
 
-# Not a member of the repository's workspace: its own workspace and Cargo.lock. score.py builds
+# Not a member of the repository's workspace: its own workspace and Cargo.lock. common.py builds
 # it with `cargo build --offline --release` against the registry already on disk.
 [workspace]
 
 [dependencies]
-# the workspace's syn major version (3.0.9 is in the repository's Cargo.lock)
-syn = { version = "=3.0.9", default-features = false, features = ["full", "visit", "parsing"] }
+# the workspace's syn major version (3.0.9 is in the repository's Cargo.lock); `printing` gives
+# the token text of the type nodes the R2 tree keeps as text (`dyn ..`, `impl ..`, `<A as B>::C`)
+syn = { version = "=3.0.9", default-features = false, features = ["full", "visit", "parsing", "printing"] }
 proc-macro2 = { version = "=1.0.107", default-features = false, features = ["span-locations"] }
+# the version in the repository's Cargo.lock
+quote = { version = "=1.0.47", default-features = false }

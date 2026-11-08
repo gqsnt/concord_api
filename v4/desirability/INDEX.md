@@ -23,6 +23,14 @@ Instruments: `tools/desirability/` (I1 scoreboard, I3 probes, I4 edits, I5 diagn
 They are tools, not gates: nothing is added to `scripts/verify.sh` (canary tests run as ordinary
 SDK tests).
 
+Instrument status (independent Codex gpt-6.1-sol reviews, triage in `reviews/`): I1, I2 and I5
+have had no open blocking finding since review 2 (its I1/I5 items were fixed or non-blocking; the
+I1 reachability follow-up was accepted in review 13), I3 accepted (review
+12 after rounds 1–8; follow-ups review 13), I4 accepted (review 11 after rounds 1–5; follow-ups
+review 13). The I4 task bank and the I3 validation/final banks are sealed outside the repository;
+only their hashes are committed (`tools/desirability/edits/BANK.sha256`,
+`tools/desirability/probes/SEALED.sha256`, `FINAL.sha256`).
+
 Plan amendments: `amendments/A1-astra-review.md` (the owner-adopted desirability review: task
 outcomes primary, structural counts diagnostic, WIN/LOSS/INCONCLUSIVE/KEEP_CURRENT,
 pilot-then-migrate) and `amendments/A2-owner-charter.md` (the owner's charter: the fixed core is
