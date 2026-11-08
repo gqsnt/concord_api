@@ -169,3 +169,25 @@ Append-only: a row marked `running` is superseded by a later row (`↳ … resul
 | ↳ H08 full migration result | — | claude-opus-5-5 (subagent transcript); effort not visible | ~13 min, 55 tool uses | committed adf4bf7a (dz/h08, pushed); boundary audit clean; workspace tests 3957/0 |
 | H08 MIGRATION review (`h08-migration-review-sol`) on adf4bf7a | Codex gpt-6.1-sol, xhigh, read-only | (meta.json at completion) | running | — |
 | ↳ H08 migration review observed | — | gpt-6.1-sol / xhigh / read-only (rollout turn_context); 12:10:33Z–12:15:13Z | 4m40s | ACCEPT_WITH_FIXES (1 non-blocking CHANGELOG wording, fixed); adoption complete |
+| T2 flake repair lane (dz/t2-flakes) — Claude subagent | Claude subagent (inherits Opus 5.5) | (transcript at completion) | running | — |
+| ↳ T2 flake repair result | — | claude-opus-5-5 (subagent transcript; its Explore sub-survey's model not shown); effort not visible | ~88 min, 203 tool uses | committed 0b4b3061 (dz/t2-flakes, pushed); boundary audit clean |
+| T2 review (`t2-review-sol`) on 0b4b3061 | Codex gpt-6.1-sol, xhigh, read-only | (meta.json at completion) | running | — |
+| ↳ T2 review observed | — | gpt-6.1-sol / xhigh / read-only (rollout turn_context); 13:54:18Z–13:59:08Z | 4m50s | REJECT (2 blocking: Snowflake root cause, evidence; 1 non-blocking CRLF) |
+| T2 round 2 — same Claude subagent resumed | Claude subagent (inherits Opus 5.5) | (transcript at completion) | running | — |
+| H03 input-inference survey — Claude Explore subagent | Claude subagent (Explore) | (transcript at completion) | running | — |
+| ↳ H03 survey result | — | Claude Explore subagent (transcript); effort not visible | ~10 min, 70 tool uses | recorded as v4/desirability/reviews/h03-design-survey.md |
+| H03 candidate implementer (dz/h03; A, then B) — Claude subagent | Claude subagent (inherits Opus 5.5) | (transcript at completion) | running | — |
+| ↳ T2 round 2 result | — | claude-opus-5-5 (subagent transcript); effort not visible | ~33 min, 50 tool uses | committed 2fcfea5c (dz/t2-flakes, pushed); evidence work/dev/t2/evidence/EVIDENCE.md |
+| T2 review 2 (`t2-review-2-sol`) on 2fcfea5c | Codex gpt-6.1-sol, xhigh, read-only | (meta.json at completion) | running | — |
+| ↳ T2 review 2 observed | — | gpt-6.1-sol / xhigh / read-only (rollout turn_context); 14:33:55Z–14:39:01Z | 5m06s | ACCEPT (no findings) |
+| ↳ H03 candidate A result | — | claude-opus-5-5 (subagent transcript); effort not visible | ~40 min, ~170 tool uses | committed on dz/h03 (pushed); boundary note: one grep listed file names/counts under tools/desirability (no contents), git-archive export's tools/ deleted unread |
+| H03 alternative B (named generics on A) — same Claude subagent resumed | Claude subagent (inherits Opus 5.5) | (transcript at completion) | running | — |
+| ↳ H03 alternative B result | — | claude-opus-5-5 (subagent transcript); effort not visible | ~45 min, ~75 tool uses (resumed round) | committed 7f14da4d (dz/h03, pushed); transcript audit: round 2 no access to work/sealed, work/baseline, tools/desirability |
+| T3 upload-cancellation investigation (dz/t3-cancel) — Claude subagent | Claude subagent (inherits Opus 5.5) | (transcript at completion) | running | — |
+| H03 measurement lane (dz/h03-bank; idiom corpus, I5 relabel, costs) — Claude subagent | Claude subagent (inherits Opus 5.5) | (transcript at completion) | running | — |
+| H03 candidate review 1 (`h03-candidate-review-1-sol`) on d793fecc + 7f14da4d | Codex gpt-6.1-sol, xhigh, read-only | (meta.json at completion) | running | — |
+| H06 construction/controls design survey — Claude Explore subagent (wt/h06s @ a883f7bb) | Claude subagent (Explore) | (transcript at completion) | running | — |
+| ↳ H03 candidate review 1 observed | — | gpt-6.1-sol / xhigh / read-only (rollout turn_context); 16:03:24Z–16:10:48Z | 7m24s | REJECT (4 blocking: B test feature gate; kill condition "newly rejected spelling" fires for A and B; B E0643 for external group-trait impls; raw type identifiers) |
+| H03 decision review (`h03-decision-review-sol`): proposed REJECT by kill condition + H03b draft legitimacy | Codex gpt-6.1-sol, xhigh, read-only | (meta.json at completion) | running | — |
+| ↳ H03 decision review observed | — | gpt-6.1-sol / xhigh / read-only (rollout turn_context); 16:13:53Z–16:18:04Z | 4m11s | ACCEPT of REJECT (LOSS by kill condition); H03b LEGITIMATE_WITH_CHANGES (applied; card 6ea66f43, pushed 17:20 before any H03 measurement result was read) |
+| H03b candidate implementer (dz/h03b; A′ then B′) — same Claude subagent resumed | Claude subagent (inherits Opus 5.5) | (transcript at completion) | running | — |
