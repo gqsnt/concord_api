@@ -68,8 +68,7 @@ fn group_traits(k: &TokenStream, model: &Model, vis: &syn::Visibility) -> TokenS
         // only those endpoints' configurations define.
         let cfg = owners_cfg(model, &user_indices);
         let about = lit(&format!(
-            " The setters of the parameter group `{}`, implemented by every endpoint that includes it (`..{0}`): {listed}. Each method is the endpoint's own setter of the same name.",
-            plain(name)
+            " Shared setters for {listed}. Each endpoint also provides these methods directly."
         ));
         let mut methods = TokenStream::new();
         let mut forwards = TokenStream::new();
@@ -625,7 +624,7 @@ fn value_notes(model: &Model) -> Vec<Vec<Vec<String>>> {
                     }
                     if value.debug_sensitive {
                         notes.push(
-                            " Sensitive: sent normally, withheld from Concord's `Debug` output and errors."
+                            " Sensitive: withheld from Concord's `Debug` output and errors."
                                 .to_owned(),
                         );
                     } else if !value.debug_when.is_empty() {
@@ -889,26 +888,103 @@ fn placement_label(family: Family, key: &str) -> LitStr {
     })
 }
 
-/// The request an endpoint builds, as rustdoc derived from the resolved model: method and URL
-/// template (`{x}` holes are filled from values), then the query and header keys it may send.
-fn request_summary(model: &Model, endpoint: usize, method: &Ident) -> TokenStream {
-    let Some(composed) = model.owners[endpoint].composed.as_ref() else {
-        return quote!();
-    };
+/// One endpoint's generated description, in reading order: what `send()` returns, where the
+/// request goes, what else it sends, how a response is handled, and the endpoint's identity.
+/// The request type carries all of it (`request_summary`); the parent's navigation method a short
+/// entry (`navigation_summary`), so the shared framework prose is not repeated on parent pages.
+struct Summary {
+    /// What `send()` returns: the concrete result when one is declared, else the policy's
+    /// `Output` projection and where its implementation is listed.
+    result: String,
+    /// The same result, shortened for the navigation entry.
+    result_short: String,
+    default_request: String,
+    /// The declared base and path, subdomain labels and what `with_base_url` replaces.
+    url: Vec<String>,
+    /// Query keys and headers (SDK-specific; on the navigation entry too).
+    sent: Vec<String>,
+    body: Option<String>,
+    /// Response handling (prepared execution under a policy), then the policy bypass.
+    output: Vec<String>,
+    operation: String,
+}
+
+/// The output type prepared execution yields (`Prepared<T>`), as prose: a stream's reader type,
+/// `concord::Incoming`, or `()` for an endpoint without `->`.
+fn prepared_output_for_docs(output: Option<&Output>, incoming: bool) -> TokenStream {
+    match output {
+        Some(o) if o.stream => {
+            let ty = &o.ty;
+            let format = &o.format.0;
+            quote!(concord::Records<#format, #ty>)
+        }
+        Some(o) => {
+            let ty = &o.ty;
+            quote!(#ty)
+        }
+        None if incoming => quote!(concord::Incoming),
+        None => quote!(()),
+    }
+}
+
+/// Whether the format's `Accept` suggestion is sent, from what this endpoint's chain does to
+/// `accept`. A chain of literal names is decided here (the slot `prepare_body` reads for
+/// `accept_removed`). A chain with native names is composed at run time: without a `remove` it
+/// cannot end removed; with one, the rule is stated in the composition order the summary lists.
+fn accept_note(model: &Model, composed: &Composed, item: &str) -> String {
+    let unless = format!(" `{item}::ACCEPT`, if any, is sent unless an `accept` header is sent.");
+    match &composed.headers {
+        HeaderComposition::Static(slots) => {
+            match slots.iter().find(|slot| slot.key.lit() == Some("accept")) {
+                None => format!(" `{item}::ACCEPT`, if any, is sent as the `accept` header."),
+                Some(slot) if slot.removed => {
+                    format!(
+                        " `{item}::ACCEPT` is not sent: this endpoint's headers remove `accept`."
+                    )
+                }
+                Some(_) => unless,
+            }
+        }
+        HeaderComposition::Dynamic(seq)
+            if !seq
+                .iter()
+                .any(|&id| model.contrib(id).op == crate::syntax::Op::Remove) =>
+        {
+            unless
+        }
+        HeaderComposition::Dynamic(_) => format!(
+            " `{item}::ACCEPT`, if any, is sent unless an `accept` header is sent or, in the chain order above, the last operation on `accept` is a `remove` (a placement counts even when its value is absent)."
+        ),
+    }
+}
+
+fn summary_parts(model: &Model, endpoint: usize, method: &Ident) -> Option<Summary> {
+    let composed = model.owners[endpoint].composed.as_ref()?;
     let base = match &model.owners[0].kind {
         Kind::Client { base, .. } => base.value(),
-        _ => return quote!(),
+        _ => return None,
     };
+    let Kind::Endpoint {
+        output,
+        incoming,
+        body,
+        ..
+    } = &model.owners[endpoint].kind
+    else {
+        return None;
+    };
+    let (output, incoming) = (output.as_ref(), *incoming);
     let (scheme, rest) = base.split_once("://").unwrap_or(("", base.as_str()));
     let (host, base_path) = match rest.find('/') {
         Some(i) => rest.split_at(i),
         None => (rest, ""),
     };
-    let mut url = format!("{scheme}://");
+    let mut labels = String::new();
     for &(o, i) in &composed.labels {
-        url.push_str(&model.owners[o].labels[i].text);
-        url.push('.');
+        labels.push_str(&model.owners[o].labels[i].text);
+        labels.push('.');
     }
+    let mut url = format!("{scheme}://{labels}");
     url.push_str(host);
     if composed.segments.is_empty() && !composed.trailing_slash {
         url.push_str(base_path);
@@ -937,22 +1013,81 @@ fn request_summary(model: &Model, endpoint: usize, method: &Ident) -> TokenStrea
         shown.join(", ")
     };
     let content_type = KeyName::Lit("content-type".to_owned());
-    // The wire shape first (method, URL, query, headers), then body, output and policy mechanics.
-    let mut lines = vec![
-        lit(""),
-        lit(&format!(
-            " Request: `{method} {url}` (the declared base URL; the client's `with_base_url` replaces it)."
-        )),
-    ];
+    let mut path = String::new();
+    for &(o, i) in &composed.segments {
+        path.push('/');
+        path.push_str(&model.owners[o].segments[i].text);
+    }
+    if composed.trailing_slash {
+        path.push('/');
+    }
+    let path = if path.is_empty() {
+        "none".to_owned()
+    } else {
+        format!("`{path}`")
+    };
+    // Ordinary execution first; the wire output below belongs to prepared execution.
+    let policy = match &model.owners[0].kind {
+        Kind::Client { send, .. } => send.as_ref(),
+        _ => None,
+    };
+    let prepared = type_text(&prepared_output_for_docs(output, incoming));
+    let (result, result_short) = match policy {
+        // The generated `send()` returns `Result<T, concord::Error>` for the prepared output `T`.
+        None => {
+            let result = format!(" `send()` returns `Result<{prepared}, concord::Error>`.");
+            (result.clone(), result)
+        }
+        Some(policy) => {
+            // Visibility of a user-supplied type is unknown; a private policy has no rustdoc page.
+            let name = policy_code(model, policy);
+            let value = model.send_value().map_or_else(String::new, |vi| {
+                format!(
+                    " (the client value `{}`)",
+                    plain(&model.owners[0].values[vi].name)
+                )
+            });
+            match declared_result_for_docs(model, output, incoming) {
+                Some(result) => {
+                    let result = format!(" `send()` returns `{result}` via {name}{value}.");
+                    (result.clone(), result)
+                }
+                // No result template: the signature shows only the projection. Name it with this
+                // endpoint's output and say where its concrete type is written.
+                None => {
+                    let projection = format!(
+                        "<{} as SendWith<{prepared}>>::Output",
+                        type_text(&policy_ty_for_docs(model, policy))
+                    );
+                    (
+                        format!(
+                            " `send()` returns `{projection}`: the `Output` type of the `SendWith<{prepared}>` implementation of {name}{value}, listed among the trait implementations of {name}."
+                        ),
+                        format!(
+                            " `send()` returns `{projection}`, set by the `SendWith` implementation of {name}."
+                        ),
+                    )
+                }
+            }
+        }
+    };
+    let mut url_lines = vec![format!(" Declared base: `{base}`. Declared path: {path}.")];
+    if !labels.is_empty() {
+        url_lines.push(format!(
+            " Declared subdomain labels: `{labels}`, prepended to the base host; a replacement base must then have a domain name."
+        ));
+    }
+    url_lines.push(" `with_base_url` replaces the whole base, including its path; declared paths are appended. Construction or a send policy may select or restrict the actual URL.".to_owned());
+    let mut sent = Vec::new();
     let query = keys(&composed.query);
     if !query.is_empty() {
-        lines.push(lit(&format!(" Query (when present): {query}.")));
+        sent.push(format!(" Query (when present): {query}."));
     }
     match &composed.headers {
         HeaderComposition::Static(slots) => {
             let headers = keys(slots);
             if !headers.is_empty() {
-                lines.push(lit(&format!(" Headers (when present): {headers}.")));
+                sent.push(format!(" Headers (when present): {headers}."));
             }
         }
         HeaderComposition::Dynamic(seq) => {
@@ -977,159 +1112,208 @@ fn request_summary(model: &Model, endpoint: usize, method: &Ident) -> TokenStrea
                 shown.push(text);
             }
             if !shown.is_empty() {
-                lines.push(lit(&format!(
+                sent.push(format!(
                     " Headers, in chain order (sent when present; native names are compared when the request is built): {}.",
                     shown.join(", ")
-                )));
+                ));
             }
         }
     }
-    if let Kind::Endpoint {
-        output,
-        incoming,
-        body,
-        ..
-    } = &model.owners[endpoint].kind
-    {
-        if let Some(b) = body {
-            let presence = if b.optional { "optional " } else { "" };
-            // 8b: a `content-type` header contribution surviving composition replaces the
-            // format's media type, and is sent with or without the body.
-            let header = match &composed.headers {
-                HeaderComposition::Static(slots) => slots
-                    .iter()
-                    .any(|s| s.key == content_type && !s.items.is_empty()),
-                HeaderComposition::Dynamic(seq) => seq.iter().any(|&id| {
-                    let c = model.contrib(id);
-                    c.key == content_type && c.op != crate::syntax::Op::Remove
-                }),
-            };
-            // A native key may name `content-type` (the macro cannot tell): say so.
-            let native_maybe = !header
-                && matches!(&composed.headers, HeaderComposition::Dynamic(seq) if seq.iter().any(|&id| {
-                    let c = model.contrib(id);
-                    matches!(c.key, KeyName::Path(_)) && c.op != crate::syntax::Op::Remove
-                }));
-            let media = match (&b.media, &b.format) {
-                (Some((m, origin)), _) => format!(
-                    " `Content-Type: {}` ({}) is sent with the body; a format that binds another media type to the body at run time (`Encode::encode_body`) is a `Build` error.",
-                    m.value(),
-                    match origin {
-                        Origin::Endpoint => "declared by the endpoint request statement".to_owned(),
-                        Origin::Default(o) =>
-                            format!("from the `request` default of {}", model.describe(*o)),
-                    }
-                ),
-                (None, _) if header => " `Content-Type`: the declared `content-type` header when it is sent (with or without the body), otherwise the format's media type with the body; a media type the format binds to the body at run time (`Encode::encode_body`) must equal a sent header, else a `Build` error.".to_owned(),
-                (None, _) => {
-                    " `Content-Type`: the format's media type, sent with the body: the one its `Encode::encode_body` binds to the body at run time, else its `Encode::CONTENT_TYPE`."
-                        .to_owned()
-                }
-            };
-            let media = if native_maybe && b.media.is_none() {
-                format!(
-                    "{media} A header of this chain whose native name is `content-type` replaces it (and is sent with or without the body)."
-                )
+    let body = body.as_ref().map(|b| {
+        let presence = if b.optional { "optional " } else { "" };
+        // 8b: a `content-type` header contribution surviving composition replaces the
+        // format's media type, and is sent with or without the body.
+        let header = match &composed.headers {
+            HeaderComposition::Static(slots) => slots
+                .iter()
+                .any(|s| s.key == content_type && !s.items.is_empty()),
+            HeaderComposition::Dynamic(seq) => seq.iter().any(|&id| {
+                let c = model.contrib(id);
+                c.key == content_type && c.op != crate::syntax::Op::Remove
+            }),
+        };
+        // A native key may name `content-type` (the macro cannot tell): say so.
+        let native_maybe = !header
+            && matches!(&composed.headers, HeaderComposition::Dynamic(seq) if seq.iter().any(|&id| {
+                let c = model.contrib(id);
+                matches!(c.key, KeyName::Path(_)) && c.op != crate::syntax::Op::Remove
+            }));
+        let media = match (&b.media, &b.format) {
+            (Some((m, _)), _) => format!(
+                " `Content-Type: {}` is sent with the body; a format that binds another media type to the body at run time (`Encode::encode_body`) is a `Build` error.",
+                m.value(),
+            ),
+            (None, _) if header => " `Content-Type`: the declared `content-type` header when it is sent (with or without the body), otherwise the format's media type with the body; a media type the format binds to the body at run time (`Encode::encode_body`) must equal a sent header, else a `Build` error.".to_owned(),
+            (None, _) => {
+                " `Content-Type`: the format's media type, sent with the body: the one its `Encode::encode_body` binds to the body at run time, else its `Encode::CONTENT_TYPE`."
+                    .to_owned()
+            }
+        };
+        let media = if native_maybe && b.media.is_none() {
+            format!(
+                "{media} A header of this chain whose native name is `content-type` replaces it (and is sent with or without the body)."
+            )
+        } else {
+            media
+        };
+        let absent = if b.optional {
+            " Absent: no body, and the format adds no `Content-Type`."
+        } else {
+            ""
+        };
+        format!(
+            " Body ({presence}`{}`): `{}`, encoded with the format {}.{media}{absent}",
+            plain(&b.name),
+            type_text(&b.ty),
+            format_origin(model, &b.format, b.origin, true),
+        )
+    });
+    let handling = if policy.is_some() {
+        "Prepared execution"
+    } else {
+        "Output"
+    };
+    let execution = if policy.is_some() {
+        "`Prepared::send()`"
+    } else {
+        "`send()`"
+    };
+    let mut output_lines = vec![match output {
+        Some(o) if o.stream => format!(
+            " {handling}: a stream of `{}` from a 2xx response with {} (`Incremental<{}>`). {execution} returns the format's reader without reading the body. The format checks the head first; rejection is `ErrorKind::Metadata` with the response kept unread. Later read errors name this endpoint.{}",
+            type_text(&o.ty),
+            format_origin(model, &o.format, o.origin, false),
+            type_text(&o.ty),
+            accept_note(model, composed, "Incremental"),
+        ),
+        Some(o) => {
+            let unit = if matches!(&o.ty, syn::Type::Tuple(t) if t.elems.is_empty()) {
+                " An endpoint without `->` decodes no output and accepts any 2xx.".to_owned()
             } else {
-                media
+                String::new()
             };
-            let absent = if b.optional {
-                " Absent: no body, and the format adds no `Content-Type`."
-            } else {
-                ""
-            };
-            lines.push(lit(&format!(
-                " Body ({presence}`{}`): `{}`, encoded with the format {}.{media}{absent}",
-                plain(&b.name),
-                type_text(&b.ty),
-                format_origin(model, &b.format, b.origin, true),
-            )));
-        }
-        lines.push(lit(&match output {
-            Some(o) if o.stream => format!(
-                " Output: a stream of `{}`, opened from a 2xx response with the format {} (`Incremental<{}>`): `send()` returns the format's reader without reading the body; the format checks the response head first (a refusal is `ErrorKind::Metadata`, the response kept unread), its later read errors name this endpoint, and its `Incremental::ACCEPT`, if any, is sent when this endpoint's headers leave no `accept` and do not end by removing it.",
+            format!(
+                " {handling}: `{}`, decoded from a 2xx response with {}. The format checks the head before reading; rejection is `ErrorKind::Metadata` with the response kept unread.{}{unit}",
                 type_text(&o.ty),
                 format_origin(model, &o.format, o.origin, false),
-                type_text(&o.ty),
-            ),
-            Some(o) => {
-                let unit = if matches!(&o.ty, syn::Type::Tuple(t) if t.elems.is_empty()) {
-                    format!(" `()` is decoded like any output type, with `{}`. An endpoint without `->` decodes no output and accepts any 2xx.", o.format.text())
-                } else {
-                    String::new()
-                };
-                format!(
-                    " Output: `{}`, decoded from a 2xx response with the format {}: the format checks the response head before the body is read (a refusal is `ErrorKind::Metadata`, the response kept unread), and its `Decode::ACCEPT`, if any, is sent when this endpoint's headers leave no `accept` and do not end by removing it.{unit}",
-                    type_text(&o.ty),
-                    format_origin(model, &o.format, o.origin, false),
-                )
-            }
-            None if *incoming => {
-                let ignored = match model.nearest_default(endpoint, false) {
-                    Some(o) => format!(
-                        "; the `response` default `{}` of {} does not apply",
-                        model.owners[o].response.as_ref().expect("nearest").format.text(),
-                        model.describe(o)
-                    ),
-                    None => String::new(),
-                };
-                format!(
-                    " Output: the unread body (`Incoming`) of a 2xx response, for an incremental reader chosen by the caller (it checks the head itself and names this endpoint in its errors); nothing is read here{ignored}."
-                )
-            }
-            None => {
-                let ignored = match model.nearest_default(endpoint, false) {
-                    Some(o) => format!(
-                        "; the `response` default `{}` of {} does not apply",
-                        model.owners[o].response.as_ref().expect("nearest").format.text(),
-                        model.describe(o)
-                    ),
-                    None => String::new(),
-                };
-                format!(
-                    " Output: none (`()`): any 2xx succeeds and the response body is drained{ignored}."
-                )
-            }
-        }));
-        // With a send policy, `send()` returns the policy's output, not the declared handling's.
-        if let Kind::Client {
-            send: Some(policy),
-            send_output,
-            ..
-        } = &model.owners[0].kind
-        {
-            let shown = match model.send_value() {
-                Some(vi) => format!(
-                    "(the client value `{}`)",
-                    plain(&model.owners[0].values[vi].name)
-                ),
-                None => format!("`{}`", type_text(policy)),
-            };
-            let result = if send_output.is_some() {
-                "the result the client declares on its `send` statement"
-            } else {
-                "its `SendWith<T>::Output` for this output `T`"
-            };
-            lines.push(lit(&format!(
-                " `send()` goes through the client's send policy {shown} and returns {result}; `prepare()` (then `send()` or `receive()` on the `Prepared`) applies the declared handling above."
-            )));
+                accept_note(model, composed, "Decode"),
+            )
         }
+        None if incoming => {
+            let ignored = match model.nearest_default(endpoint, false) {
+                Some(o) => format!(
+                    "; the `response` default `{}` of {} does not apply",
+                    model.owners[o]
+                        .response
+                        .as_ref()
+                        .expect("nearest")
+                        .format
+                        .text(),
+                    model.describe(o)
+                ),
+                None => String::new(),
+            };
+            format!(
+                " {handling}: the unread body (`Incoming`) of a 2xx response, for a reader chosen by the caller. The reader checks the head and names this endpoint in its errors; nothing is read here{ignored}."
+            )
+        }
+        None => {
+            let ignored = match model.nearest_default(endpoint, false) {
+                Some(o) => format!(
+                    "; the `response` default `{}` of {} does not apply",
+                    model.owners[o]
+                        .response
+                        .as_ref()
+                        .expect("nearest")
+                        .format
+                        .text(),
+                    model.describe(o)
+                ),
+                None => String::new(),
+            };
+            format!(
+                " {handling}: none (`()`): any 2xx succeeds and the response body is drained{ignored}."
+            )
+        }
+    }];
+    if policy.is_some() {
+        output_lines.push(" `prepare()` bypasses the policy; `Prepared::send()` (or `receive()` then `decode()`) applies the handling above and uses `concord::Error`.".to_owned());
+    }
+    Some(Summary {
+        result,
+        result_short,
+        default_request: format!(" Default request: `{method} {url}`."),
+        url: url_lines,
+        sent,
+        body,
+        output: output_lines,
+        operation: format!(
+            " Operation: name `{}`, method `{method}` (see `operation()`).",
+            model.owners[endpoint].dotted
+        ),
+    })
+}
+
+/// Doc attributes for paragraphs of lines, each paragraph after an empty line.
+fn paragraphs(groups: Vec<Vec<String>>) -> TokenStream {
+    let mut lines = Vec::new();
+    for group in groups.into_iter().filter(|g| !g.is_empty()) {
+        lines.push(lit(""));
+        lines.extend(group.iter().map(|l| lit(l)));
     }
     quote!(#(#[doc = #lines])*)
 }
 
-/// "`json` (the endpoint statement)" / "`json` (the `request` default of the client `Shop`)".
+/// The request an endpoint builds, as rustdoc derived from the resolved model, for the request
+/// type: the result of `send()` first, then the URL (default request, declared base and path),
+/// the query and header keys it may send, the body, the response handling and the identity.
+fn request_summary(model: &Model, endpoint: usize, method: &Ident) -> TokenStream {
+    let Some(s) = summary_parts(model, endpoint, method) else {
+        return quote!();
+    };
+    let mut url = vec![s.default_request];
+    url.extend(s.url);
+    paragraphs(vec![
+        vec![s.result],
+        url,
+        s.sent,
+        s.body.into_iter().collect(),
+        s.output,
+        vec![s.operation],
+    ])
+}
+
+/// The navigation method's entry for an endpoint: its result, default request, query and header
+/// keys, and where the rest is described (the request type the method returns).
+fn navigation_summary(model: &Model, endpoint: usize, method: &Ident) -> TokenStream {
+    let Some(s) = summary_parts(model, endpoint, method) else {
+        return quote!();
+    };
+    let more = format!(
+        " Base URL{} and response handling: `{}`.",
+        if s.body.is_some() { ", body" } else { "" },
+        plain(&model.owners[endpoint].type_name)
+    );
+    paragraphs(vec![
+        vec![s.result_short, s.default_request],
+        s.sent,
+        vec![more],
+    ])
+}
+
+/// "`json` (endpoint statement)" / "`json` (`request` default of the client `Shop`)".
 fn format_origin(model: &Model, format: &Format, origin: Origin, request: bool) -> String {
     let origin = match origin {
-        Origin::Endpoint => "the endpoint statement".to_owned(),
+        Origin::Endpoint => "endpoint statement".to_owned(),
         Origin::Default(o) => format!(
-            "the `{}` default of {}",
+            "`{}` default of {}",
             if request { "request" } else { "response" },
             model.describe(o)
         ),
     };
-    // An intra-doc link: the format's own documentation says what it sends and accepts.
-    format!("[`{0}`]({0}) ({origin})", format.text())
+    // The macro cannot see whether this format is exported. Links to private formats can
+    // silently render as literal brackets, so use code text for every format.
+    format!("`{}` ({origin})", format.text())
 }
 
 /// The format defaults that reach the endpoints below a client or scope, for its documentation.
@@ -1169,7 +1353,7 @@ fn defaults_line(model: &Model, index: usize) -> Option<LitStr> {
     .collect();
     (!parts.is_empty()).then(|| {
         lit(&format!(
-            " Formats of the endpoints below: {}. The nearest format statement wins (endpoint, inner scopes, client); an endpoint without `->` drains its response.",
+            " Formats: {}. Closer scopes or endpoint formats take precedence. An endpoint without `->` drains its response.",
             parts.join("; ")
         ))
     })
@@ -1365,7 +1549,7 @@ fn emit_owner(
                     (false, false) => "",
                 };
                 let config_doc = lit(&format!(
-                    " The required values of [`{ty}`], passed to [`{ty}::new`].{later}"
+                    " The required values of `{ty}`, passed to `{ty}::new`.{later}"
                 ));
                 let config_label = lit(&config.to_string());
                 let config_debug = debug_fields(k, model, required.iter().copied(), &quote!(self));
@@ -1393,8 +1577,8 @@ fn emit_owner(
                 #config_item
 
                 #docs
-                // The generated docs link each format by its path (`[`F`](F)`); rustdoc calls such a
-                // link redundant when the path also resolves as an intra-doc link.
+                // Kept although no generated doc writes an explicit link any more: see the
+                // endpoint type below.
                 #[allow(rustdoc::redundant_explicit_links)]
                 #[derive(::core::clone::Clone)]
                 #vis struct #ty {
@@ -1426,13 +1610,15 @@ fn emit_owner(
                         }
                     }
 
-                    /// Replaces the declared base URL (for example with a staging server or a
-                    /// local test server). It must be an `http`/`https` URL with a host, no port 0
-                    /// and no user information, query or fragment; anything else is an error.
+                    /// Replaces the whole declared base URL, including its path (for example
+                    /// with a staging or local server). It must be an `http`/`https` URL with a
+                    /// host, no port 0 and no user information, query or fragment; otherwise
+                    /// returns `concord::Error`.
                     /// Declared paths are appended to its path. With `subdomain` labels the host
                     /// must be a domain name: to reach a local server, keep a domain and map it
                     /// with `reqwest::ClientBuilder::resolve`. Returns a new handle: scopes and
-                    /// requests created from the old one keep the old base.
+                    /// requests created from the old one keep the old base. A send policy may
+                    /// further restrict which URLs it accepts.
                     #[inline] pub fn with_base_url(mut self, url: impl ::core::convert::AsRef<str>) -> ::core::result::Result<Self, #k::Error> {
                         let base = #k::__private::Base::parse(url.as_ref())?;
                         ::std::sync::Arc::make_mut(&mut self.__s).__base = base;
@@ -1467,8 +1653,8 @@ fn emit_owner(
             let debug = debug_fields(k, model, &owner.values, &quote!(__s));
             quote! {
                 #docs
-                // The generated docs link each format by its path (`[`F`](F)`); rustdoc calls such a
-                // link redundant when the path also resolves as an intra-doc link.
+                // Kept although no generated doc writes an explicit link any more: see the
+                // endpoint type below.
                 #[allow(rustdoc::redundant_explicit_links)]
                 #[derive(::core::clone::Clone)]
                 #vis struct #ty {
@@ -1507,6 +1693,12 @@ fn emit_owner(
             let incoming = *incoming;
             let op_name = lit(&owner.dotted);
             let op_method = lit(&method.to_string());
+            // The name and method spelled out, so a caller can match an `Operation` by name
+            // without naming this type.
+            let operation_doc = lit(&format!(
+                " The declared identity, name `{}` and method `{method}`, without building a request or naming its output. The `ResponseMeta` and `concord::Error` of this endpoint's own request report it through their `operation()` when they carry one.",
+                owner.dotted
+            ));
             let parent_ty = &model.owners[owner.parent.unwrap()].type_name;
             let controls = controls(
                 k,
@@ -1549,12 +1741,12 @@ fn emit_owner(
                     /// for a 2xx response, returns the body **unread** for incremental reading
                     /// (the stream format's reader, or the `Incoming` body for a reader you
                     /// choose): nothing is drained or collected. A non-2xx status is
-                    /// `ErrorKind::Status` holding the unread response (`Error::into_response`);
+                    /// `ErrorKind::Status` holding the unread response (`concord::Error::into_response`);
                     /// Concord never retries. Dropping the result closes the response.
                     ///
                     /// # Errors
                     ///
-                    /// `Build` as for `prepare`, then `Transport`, `Status` or `Metadata` (the
+                    /// `concord::Error`: `Build` as for `prepare`, then `Transport`, `Status` or `Metadata` (the
                     /// stream format refused the response head; the response is kept unread).
                     /// Later read errors come from the reader and name this endpoint.
                 }
@@ -1562,11 +1754,11 @@ fn emit_owner(
                 quote! {
                     /// Sends the request once (`prepare` then one `reqwest::Client::execute`) and
                     /// decodes a 2xx response. A non-2xx status is `ErrorKind::Status` holding the
-                    /// unread response (`Error::into_response`); Concord never retries.
+                    /// unread response (`concord::Error::into_response`); Concord never retries.
                     ///
                     /// # Errors
                     ///
-                    /// `Build` as for `prepare`, then `Transport`, `Status`, `Metadata` (the
+                    /// `concord::Error`: `Build` as for `prepare`, then `Transport`, `Status`, `Metadata` (the
                     /// format refused the response head; the response is kept unread) or
                     /// `Decode` (see `ErrorKind`).
                 }
@@ -1611,26 +1803,29 @@ fn emit_owner(
                             format!("`{}`", type_text(policy)),
                         ),
                     };
-                    // Name the policy as a link when it is a plain path, so a reader reaches the
-                    // `SendWith` implementation that defines this method's result.
-                    let policy_ty_text = type_text(&policy_ty_for_docs(model, policy));
-                    let linked = if policy_ty_text
-                        .chars()
-                        .all(|c| c.is_alphanumeric() || c == '_' || c == ':')
-                    {
-                        format!("[`{policy_ty_text}`]")
-                    } else {
-                        format!("`{policy_ty_text}`")
-                    };
+                    // Visibility is unknown, so name the policy as code text, as in the summary.
+                    let policy_name = policy_code(model, policy);
                     // `send P -> Template;`: the declared result, `_` replaced by this output.
                     let declared = declared_output.map(|t| (t.span(), with_output(t, &out)));
-                    let policy_text = lit(&match &declared {
-                        Some(_) => format!(
-                            " Sends the request with the client's send policy {shown}, whose result the client declares; its errors, metadata and signing are defined by the `SendWith` implementation of {linked}. `prepare()` builds the declared request without the policy, and `prepare()?.send()` uses Concord's own handling and error instead."
+                    let result = declared_result_for_docs(model, output.as_ref(), incoming);
+                    // Not every policy signs: name what it may add without claiming any of it.
+                    let adds = format!(
+                        "See {policy_name} for its errors and metadata, and for anything it adds (for example signing)."
+                    );
+                    let policy_text = lit(&match result {
+                        Some(result) => format!(
+                            " Returns `{result}` using the client's send policy {shown}. {adds}"
                         ),
-                        None => format!(
-                            " Sends the request with the client's send policy {shown}: the result is `<{policy_ty_text} as SendWith<T>>::Output`, defined by the `SendWith` implementation of {linked} (its errors, metadata, signing). `prepare()` builds the declared request without the policy, and `prepare()?.send()` uses Concord's own handling and error instead."
-                        ),
+                        // No result template: the signature names the projection; say which
+                        // implementation writes its concrete type.
+                        None => {
+                            let prepared =
+                                type_text(&prepared_output_for_docs(output.as_ref(), incoming));
+                            format!(
+                                " Returns `<{} as SendWith<{prepared}>>::Output` using the client's send policy {shown}: the `Output` type of the `SendWith<{prepared}>` implementation of {policy_name}, listed among the trait implementations of {policy_name}. {adds}",
+                                type_text(&policy_ty_for_docs(model, policy))
+                            )
+                        }
                     });
                     // Spanned at the `send` statement: a type that is no policy is reported there
                     // (with the generated `send()`'s own error), not inside Concord's trait.
@@ -1685,7 +1880,7 @@ fn emit_owner(
             let prepare_note = if policy.is_some() {
                 quote! {
                     #[doc = ""]
-                    #[doc = " With the client's send policy this is the declared request **before** the policy (not signed or decorated by it); `send()` goes through the policy, `prepare()?.send()` does not."]
+                    #[doc = " Bypasses the client's send policy: nothing the policy adds or checks applies (for example signing, authentication headers or retries). Use `send()` to apply it."]
                 }
             } else {
                 TokenStream::new()
@@ -1696,6 +1891,9 @@ fn emit_owner(
                 #shapes
 
                 #docs
+                // No generated doc writes an explicit link any more (formats are code text); the
+                // allowance is kept so a documentation-only change leaves the emitted attributes
+                // (and rustdoc's record of them) as they were.
                 #[allow(rustdoc::redundant_explicit_links)]
                 #[must_use = "an endpoint request does nothing until `send` or `prepare` is called"]
                 #vis struct #ty {
@@ -1710,7 +1908,7 @@ fn emit_owner(
                     #controls
                     #limit
 
-                    /// The declared identity, without building a request or naming its output.
+                    #[doc = #operation_doc]
                     #[inline] pub fn operation() -> #k::Operation {
                         #k::__private::declared(#op_name, #op_method)
                     }
@@ -1719,7 +1917,7 @@ fn emit_owner(
                     ///
                     /// # Errors
                     ///
-                    /// `ErrorKind::Build` when a value cannot be written (a path segment, host
+                    /// `concord::Error` with `ErrorKind::Build` when a value cannot be written (a path segment, host
                     /// label, header value or body) or two native header names collide; nothing
                     /// is sent.
                     #prepare_note
@@ -1850,11 +2048,11 @@ fn endpoint_clone(ty: &Ident, values: &[Value], body: Option<&Body>) -> TokenStr
     }
     let mut fields: Vec<&Ident> = values.iter().map(|v| &v.name).collect();
     fields.extend(body.map(|b| &b.name));
-    // Shown by rustdoc beside the bounds, which otherwise read as an artifact (SDK23 consumer).
+    // State the exact Clone condition beside the generated bounds in rustdoc.
     let note = if bounds.is_empty() {
         quote!()
     } else {
-        quote!(#[doc = " `Clone` exactly when every value of the request (and its body) is `Clone`. Each `for<'__concord> T: Clone` bound states that for one value type; the unused lifetime only lets the bound be written on a non-generic type."])
+        quote!(#[doc = " `Clone` exactly when all request values and the body implement `Clone`."])
     };
     quote! {
         #note
@@ -1889,8 +2087,7 @@ fn owner_docs(model: &Model, index: usize) -> TokenStream {
                     .map(|g| format!("`{}`", plain(g)))
                     .collect();
                 notes.push(format!(
-                    " Includes the parameter group{} {} (each also a trait of its setters).",
-                    if names.len() > 1 { "s" } else { "" },
+                    " Implements the shared setter traits: {}.",
                     names.join(", ")
                 ));
             }
@@ -1939,6 +2136,29 @@ fn policy_ty_for_docs(model: &Model, policy: &syn::Type) -> syn::Type {
         Some(vi) => model.owners[0].values[vi].ty.clone(),
         None => policy.clone(),
     }
+}
+
+/// Visibility of a user-supplied policy is unknown; use code text, including for plain paths.
+fn policy_code(model: &Model, policy: &syn::Type) -> String {
+    let text = type_text(&policy_ty_for_docs(model, policy));
+    format!("`{text}`")
+}
+
+/// The declared send result, with the prepared output substituted for `_`, for prose only.
+fn declared_result_for_docs(
+    model: &Model,
+    output: Option<&Output>,
+    incoming: bool,
+) -> Option<String> {
+    let Kind::Client {
+        send_output: Some(template),
+        ..
+    } = &model.owners[0].kind
+    else {
+        return None;
+    };
+    let out = prepared_output_for_docs(output, incoming);
+    Some(type_text(&with_output(template, &out)))
 }
 
 /// Navigation methods on `index` for each of its children.
@@ -1998,7 +2218,8 @@ fn navigation(k: &TokenStream, model: &Model, index: usize) -> TokenStream {
                 } else {
                     quote!(#[doc = ""])
                 };
-                let summary = request_summary(model, child, method);
+                // A short entry: the request type the method returns describes the rest.
+                let summary = navigation_summary(model, child, method);
                 out.extend(quote! {
                     #(#docs)*
                     #sep
@@ -2403,26 +2624,35 @@ fn validate_header_names(k: &TokenStream, model: &Model, headers: &Headers) -> T
             checked.join(", ")
         )
     };
-    let docs = [
-        " Checks the header names of every endpoint compiled under the current `cfg`, without a",
-        " client, a configuration, an endpoint value, a network or an async runtime: only the native",
-        " `HeaderName` constants are read. It applies the structural rules `prepare()` applies when",
-        " it composes the headers (a header introduced twice, an `override`/`else inherit`/`remove`",
-        " with nothing to act on, a header field reqwest manages, a `content-type` header next to a",
-        " declared body media type); their verdict does not depend on which optional values are",
-        " present, so no request of a reported endpoint can be built: its `prepare()` fails with",
-        " this problem unless an earlier step (encoding the body, formatting the host, path or",
-        " query) fails first. `Ok(())` means no `prepare()` fails on header names. Values, their",
-        " conversion and servers are not checked.",
-        "",
-        " # Errors",
-        "",
-        " The endpoints whose header names break a rule, one problem per endpoint.",
-        "",
-    ]
-    .into_iter()
-    .chain(std::iter::once(scope.as_str()))
-    .map(lit);
+    // With no native name the check has nothing to do: one sentence says so, instead of the
+    // rules it would apply (the method stays where it was, and documented, so the API and its
+    // rustdoc record are unchanged).
+    let rules: &[&str] = if checked.is_empty() {
+        &[]
+    } else {
+        &[
+            " Checks the header names of every endpoint compiled under the current `cfg`, without a",
+            " client, a configuration, an endpoint value, a network or an async runtime: only the native",
+            " `HeaderName` constants are read. It applies the structural rules `prepare()` applies when",
+            " it composes the headers (a header introduced twice, an `override`/`else inherit`/`remove`",
+            " with nothing to act on, a header field reqwest manages, a `content-type` header next to a",
+            " declared body media type); their verdict does not depend on which optional values are",
+            " present, so no request of a reported endpoint can be built: its `prepare()` fails with",
+            " this problem unless an earlier step (encoding the body, formatting the host, path or",
+            " query) fails first. `Ok(())` means no `prepare()` fails on header names. Values, their",
+            " conversion and servers are not checked.",
+            "",
+            " # Errors",
+            "",
+            " The endpoints whose header names break a rule, one problem per endpoint.",
+            "",
+        ]
+    };
+    let docs = rules
+        .iter()
+        .copied()
+        .chain(std::iter::once(scope.as_str()))
+        .map(lit);
     quote! {
         impl #client {
             #(#[doc = #docs])*
@@ -2898,10 +3128,8 @@ mod tests {
         assert_eq!(repeated.matches(&line(ops)).count(), 2);
     }
 
-    /// Wave 3 consumers: the wire shape comes first (request, query, headers, then body and
-    /// mechanics), the shown URL is labelled as the declared base, a value policy reads as such
-    /// ("the client's send policy (the client value `policy`)"), and a declared send result is
-    /// not described as `SendWith<T>::Output`.
+    /// The URL, query, headers and body remain in wire order. The declared send result is
+    /// concrete and distinct from prepared execution; a value policy is identified as such.
     #[test]
     fn request_summary_puts_the_wire_shape_first_and_names_the_policy() {
         let docs = docs(quote! {
@@ -2918,9 +3146,7 @@ mod tests {
             docs.find(needle)
                 .unwrap_or_else(|| panic!("{needle} missing in {docs}"))
         };
-        let request = at(
-            "Request: `POST http://x.test/items` (the declared base URL; the client's `with_base_url` replaces it).",
-        );
+        let request = at("Default request: `POST http://x.test/items`.");
         let query = at("Query (when present): `k`.");
         let headers = at("Headers (when present): `x-trace`.");
         let body = at("Body (`item`)");
@@ -2928,8 +3154,13 @@ mod tests {
             request < query && query < headers && headers < body,
             "{docs}"
         );
-        assert!(docs.contains("`send()` goes through the client's send policy (the client value `policy`) and returns the result the client declares on its `send` statement"), "{docs}");
-        assert!(docs.contains("Sends the request with the client's send policy (the client value `policy`), whose result the client declares"), "{docs}");
+        assert!(
+            docs.contains(
+                "`send()` returns `Result<Item, Error>` via `Policy` (the client value `policy`)."
+            ),
+            "{docs}"
+        );
+        assert!(docs.contains("Returns `Result<Item, Error>` using the client's send policy (the client value `policy`)"), "{docs}");
         assert!(!docs.contains("SendWith<T>::Output"), "{docs}");
         assert!(!docs.contains("policy the client value"), "{docs}");
     }
@@ -2973,22 +3204,31 @@ mod tests {
             }
         });
         for expected in [
-            " Formats of the endpoints below: request bodies `Json` (declared here); typed outputs `Json` (declared here).",
-            " Body (`item`): `NewItem`, encoded with the format [`Json`](Json) (the `request` default of the client `Shop`). `Content-Type`: the format's media type, sent with the body: the one its `Encode::encode_body` binds to the body at run time, else its `Encode::CONTENT_TYPE`.",
-            " Output: `Item`, decoded from a 2xx response with the format [`Json`](Json) (the `response` default of the client `Shop`): the format checks the response head before the body is read (a refusal is `ErrorKind::Metadata`, the response kept unread), and its `Decode::ACCEPT`, if any, is sent when this endpoint's headers leave no `accept` and do not end by removing it.",
-            " Body (`p`): `Patch`, encoded with the format [`Json`](Json) (the endpoint statement). `Content-Type: application/merge-patch+json` (declared by the endpoint request statement) is sent with the body; a format that binds another media type to the body at run time (`Encode::encode_body`) is a `Build` error.",
-            " Output: `String`, decoded from a 2xx response with the format [`Text`](Text) (the endpoint statement): the format checks the response head before the body is read (a refusal is `ErrorKind::Metadata`, the response kept unread), and its `Decode::ACCEPT`, if any, is sent when this endpoint's headers leave no `accept` and do not end by removing it.",
+            " Formats: request bodies `Json` (declared here); typed outputs `Json` (declared here).",
+            " Body (`item`): `NewItem`, encoded with the format `Json` (`request` default of the client `Shop`). `Content-Type`: the format's media type, sent with the body: the one its `Encode::encode_body` binds to the body at run time, else its `Encode::CONTENT_TYPE`.",
+            " Output: `Item`, decoded from a 2xx response with `Json` (`response` default of the client `Shop`). The format checks the head before reading; rejection is `ErrorKind::Metadata` with the response kept unread. `Decode::ACCEPT`, if any, is sent as the `accept` header.",
+            " Body (`p`): `Patch`, encoded with the format `Json` (endpoint statement). `Content-Type: application/merge-patch+json` is sent with the body; a format that binds another media type to the body at run time (`Encode::encode_body`) is a `Build` error.",
+            " Output: `String`, decoded from a 2xx response with `Text` (endpoint statement). The format checks the head before reading; rejection is `ErrorKind::Metadata` with the response kept unread. `Decode::ACCEPT`, if any, is sent as the `accept` header.",
             " Absent: no body, and the format adds no `Content-Type`.",
             " Output: none (`()`): any 2xx succeeds and the response body is drained; the `response` default `Json` of the client `Shop` does not apply.",
-            " `()` is decoded like any output type, with `Json`. An endpoint without `->` decodes no output and accepts any 2xx.",
-            " Formats of the endpoints below: request bodies `crate::Csv` (declared here, media type `text/csv; header=present`); typed outputs `crate::Csv` (declared here).",
-            " Body (`rows`): `Rows`, encoded with the format [`crate::Csv`](crate::Csv) (the `request` default of scope `Shop.csv`). `Content-Type: text/csv; header=present` (from the `request` default of scope `Shop.csv`) is sent with the body; a format that binds another media type to the body at run time (`Encode::encode_body`) is a `Build` error.",
+            " An endpoint without `->` decodes no output and accepts any 2xx.",
+            " Formats: request bodies `crate::Csv` (declared here, media type `text/csv; header=present`); typed outputs `crate::Csv` (declared here).",
+            " Body (`rows`): `Rows`, encoded with the format `crate::Csv` (`request` default of scope `Shop.csv`). `Content-Type: text/csv; header=present` is sent with the body; a format that binds another media type to the body at run time (`Encode::encode_body`) is a `Build` error.",
         ] {
             // The expected text, escaped as in a doc literal of the token stream.
             let quoted = format!("{expected:?}");
             let escaped = &quoted[1..quoted.len() - 1];
             assert!(docs.contains(escaped), "missing {expected:?}");
         }
+        assert!(docs.contains("Output: `()`, decoded from a 2xx response with `Json` (`response` default of the client `Shop`)."), "{docs}");
+        assert!(
+            !docs.contains("`()` is decoded like any output type"),
+            "{docs}"
+        );
+        assert!(
+            !docs.contains("declared by the endpoint request statement"),
+            "{docs}"
+        );
     }
 
     /// Format row 8b in the docs: a surviving `content-type` header replaces the format's media
@@ -3001,11 +3241,751 @@ mod tests {
                 POST up(body data: Vec<u8>) { request Binary; }
             }
         });
-        let expected = " Body (`data`): `Vec<u8>`, encoded with the format [`Binary`](Binary) (the endpoint statement). `Content-Type`: the declared `content-type` header when it is sent (with or without the body), otherwise the format's media type with the body; a media type the format binds to the body at run time (`Encode::encode_body`) must equal a sent header, else a `Build` error.";
+        let expected = " Body (`data`): `Vec<u8>`, encoded with the format `Binary` (endpoint statement). `Content-Type`: the declared `content-type` header when it is sent (with or without the body), otherwise the format's media type with the body; a media type the format binds to the body at run time (`Encode::encode_body`) must equal a sent header, else a `Build` error.";
         assert!(
             docs.contains(&format!("{expected:?}")),
             "missing {expected:?}"
         );
+    }
+
+    /// A removal followed by an optional placement reopens the Accept chain, even when the
+    /// value is absent (an owner's `remove` acts before its own placements). With literal names
+    /// the docs state the outcome the macro computed; with a native name they state the run-time
+    /// rule with its composition order. Decoding and streaming say the same. The full response
+    /// handling is on the request type only (the navigation entry points to it).
+    #[test]
+    fn accept_docs_cover_remove_then_optional_reintroduction() {
+        for (key, native) in [(quote!("accept"), false), (quote!(ACCEPT), true)] {
+            let docs = docs(quote! {
+                pub client Api {
+                    base "http://x.test";
+                    response Json;
+                    headers { #key = "application/json"; }
+                    GET item(header("accept") wanted?: String) -> Item {
+                        headers { remove #key; }
+                    }
+                    GET events(header("accept") wanted?: String) -> stream Event {
+                        headers { remove #key; }
+                    }
+                }
+            });
+            for format in ["Decode", "Incremental"] {
+                let rule = if native {
+                    format!(
+                        "`{format}::ACCEPT`, if any, is sent unless an `accept` header is sent or, in the chain order above, the last operation on `accept` is a `remove` (a placement counts even when its value is absent)."
+                    )
+                } else {
+                    format!(
+                        "`{format}::ACCEPT`, if any, is sent unless an `accept` header is sent."
+                    )
+                };
+                assert_eq!(docs.matches(&rule).count(), 1, "{docs}");
+                // The remove written after the optional placement does not withhold it.
+                assert!(
+                    !docs.contains(&format!("`{format}::ACCEPT` is not sent")),
+                    "{docs}"
+                );
+            }
+            assert_eq!(
+                docs.matches("with the response kept unread.").count(),
+                2,
+                "{docs}"
+            );
+            assert!(
+                docs.contains("`send()` returns the format's reader"),
+                "{docs}"
+            );
+            assert!(!docs.contains("supplied or explicitly removed"), "{docs}");
+        }
+    }
+
+    #[test]
+    fn request_docs_distinguish_no_path_from_the_base_path() {
+        let docs = docs(quote! {
+            pub client Api {
+                base "https://x.test/api/";
+                GET root();
+                scope v1 {
+                    path "v1";
+                    GET list() { path "items/"; }
+                }
+            }
+        });
+        // The default request is on the request type and its navigation entry; the declared
+        // base and path, and what `with_base_url` replaces, on the request type only.
+        for (expected, count) in [
+            (
+                "Declared base: `https://x.test/api/`. Declared path: none.",
+                1,
+            ),
+            ("Default request: `GET https://x.test/api/`.", 2),
+            ("Declared path: `/v1/items/`.", 1),
+            ("Default request: `GET https://x.test/api/v1/items/`.", 2),
+            (
+                "`with_base_url` replaces the whole base, including its path; declared paths are appended.",
+                2,
+            ),
+        ] {
+            assert_eq!(docs.matches(expected).count(), count, "{docs}");
+        }
+        assert!(!docs.contains("Declared subdomain labels:"), "{docs}");
+    }
+
+    #[test]
+    fn request_docs_compose_subdomain_labels_deepest_first() {
+        let docs = docs(quote! {
+            pub client Api {
+                base "https://example.test/api";
+                subdomain "api";
+                scope region(region: String) {
+                    subdomain "{region}";
+                    scope shard(n: u32) {
+                        subdomain "s{n}";
+                        GET get(key: String) { path "objects/{key}"; }
+                    }
+                }
+            }
+        });
+        for (expected, count) in [
+            (
+                "Declared subdomain labels: `s{n}.{region}.api.`, prepended to the base host; a replacement base must then have a domain name.",
+                1,
+            ),
+            (
+                "Default request: `GET https://s{n}.{region}.api.example.test/api/objects/{key}`.",
+                2,
+            ),
+        ] {
+            assert_eq!(docs.matches(expected).count(), count, "{docs}");
+        }
+    }
+
+    #[test]
+    fn format_names_and_summary_policy_are_plain_code() {
+        let api: Api = syn::parse2(quote! {
+            pub client Api(required: String) {
+                base "http://x.test";
+                path "{required}";
+                request crate::codecs::Private;
+                response self::Alias;
+                send crate::PrivatePolicy -> Result<_, Error>;
+                POST put(body data: Data) -> Item;
+                GET events() -> stream Event { response super::Codec<3>; }
+            }
+        })
+        .unwrap();
+        let (model, _) = Model::build(api).unwrap();
+        for (index, owner) in model.owners.iter().enumerate() {
+            if let crate::model::Kind::Endpoint { method, .. } = &owner.kind {
+                let summary = super::request_summary(&model, index, method).to_string();
+                assert!(summary.contains("via `crate::PrivatePolicy`."), "{summary}");
+                assert!(!summary.contains("[`"), "{summary}");
+            }
+        }
+        let docs = emit(&model, quote!(::concord)).to_string();
+        for expected in [
+            "`crate::codecs::Private` (`request` default of the client `Api`)",
+            "`self::Alias` (`response` default of the client `Api`)",
+            "`super::Codec<3>` (endpoint statement)",
+            "The required values of `Api`, passed to `Api::new`.",
+            "See `crate::PrivatePolicy` for its errors and metadata, and for anything it adds (for example signing).",
+        ] {
+            assert!(docs.contains(expected), "{docs}");
+        }
+        // Check all emitted documentation, including config, defaults and method docs: no
+        // intra-doc link and no explicit link. (The `redundant_explicit_links` allowance stays
+        // on the generated types, so the emitted attributes are unchanged.)
+        assert!(!docs.contains("[`"), "{docs}");
+        assert!(!docs.contains("]("), "{docs}");
+    }
+
+    #[test]
+    fn policy_send_docs_use_code_and_keep_prepared_details_in_the_summary() {
+        for (parameter, policy) in [
+            (quote!(), quote!(crate::PrivatePolicy)),
+            (quote!((policy: crate::PrivatePolicy)), quote!(policy)),
+            (quote!(), quote!(crate::PrivatePolicy<3>)),
+        ] {
+            for result in [quote!(), quote!(-> Result<_, Error>)] {
+                let file: syn::File = syn::parse_str(&docs(quote! {
+                    pub client Api #parameter {
+                        base "http://x.test";
+                        response Json;
+                        send #policy #result;
+                        GET get() -> Item;
+                    }
+                }))
+                .unwrap();
+                let mut sends = 0;
+                for item in &file.items {
+                    if let syn::Item::Impl(item) = item
+                        && item.trait_.is_none()
+                    {
+                        for member in &item.items {
+                            if let syn::ImplItem::Fn(method) = member
+                                && method.sig.ident == "send"
+                            {
+                                sends += 1;
+                                let text = doc_text(&method.attrs);
+                                assert!(text.contains("See `crate::PrivatePolicy"), "{text}");
+                                assert!(!text.contains("[`"), "{text}");
+                                assert!(!text.contains("`prepare()` bypasses"), "{text}");
+                                assert!(!text.contains("`prepare()?.send()`"), "{text}");
+                            }
+                        }
+                    }
+                }
+                assert_eq!(sends, 1);
+            }
+        }
+    }
+
+    #[test]
+    fn declared_result_docs_cover_all_prepared_outputs_and_order() {
+        for (output, expected, handling) in [
+            (quote!(-> Item), "Result<Item, Error>", "`Item`, decoded"),
+            (
+                quote!(-> stream Event),
+                "Result<concord::Records<Json, Event>, Error>",
+                "a stream of `Event`",
+            ),
+            (
+                quote!(-> stream),
+                "Result<concord::Incoming, Error>",
+                "the unread body (`Incoming`)",
+            ),
+            (
+                quote!(),
+                "Result<(), Error>",
+                "none (`()`): any 2xx succeeds and the response body is drained",
+            ),
+            (quote!(-> ()), "Result<(), Error>", "`()`, decoded"),
+        ] {
+            let api: Api = syn::parse2(quote! {
+                pub client Api(policy: Policy) {
+                    base "http://x.test";
+                    response Json;
+                    send policy -> Result<_, Error>;
+                    GET get() #output;
+                }
+            })
+            .unwrap();
+            let (model, _) = Model::build(api).unwrap();
+            let crate::model::Kind::Endpoint {
+                method,
+                output,
+                incoming,
+                ..
+            } = &model.owners[1].kind
+            else {
+                panic!("expected endpoint");
+            };
+            assert_eq!(
+                super::declared_result_for_docs(&model, output.as_ref(), *incoming).as_deref(),
+                Some(expected)
+            );
+            let summary = super::request_summary(&model, 1, method).to_string();
+            let result = summary
+                .find(&format!(
+                    "`send()` returns `{expected}` via `Policy` (the client value `policy`)."
+                ))
+                .unwrap();
+            assert!(
+                result < summary.find("Declared base:").unwrap(),
+                "{summary}"
+            );
+            assert!(
+                result
+                    < summary
+                        .find(&format!("Prepared execution: {handling}"))
+                        .unwrap(),
+                "{summary}"
+            );
+            assert!(summary.contains("`prepare()` bypasses the policy; `Prepared::send()` (or `receive()` then `decode()`) applies the handling above and uses `concord::Error`."), "{summary}");
+            let emitted = emit(&model, quote!(::concord)).to_string();
+            assert!(
+                emitted.contains(&format!(
+                    "Returns `{expected}` using the client's send policy"
+                )),
+                "{emitted}"
+            );
+            assert!(
+                emitted
+                    .contains("`Prepared::send()` (or `receive()` then `decode()`) applies the handling above and uses `concord::Error`."),
+                "{emitted}"
+            );
+            if output.as_ref().is_some_and(|o| o.stream) {
+                assert!(
+                    summary.contains("`Prepared::send()` returns the format's reader"),
+                    "{summary}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn policy_docs_without_a_result_template_name_the_actual_source() {
+        for (parameter, policy, value) in [
+            (quote!(), quote!(Signer), ""),
+            (
+                quote!((policy: Signer)),
+                quote!(policy),
+                " (the client value `policy`)",
+            ),
+        ] {
+            let docs = docs(quote! {
+                pub client Api #parameter {
+                    base "http://x.test";
+                    response Json;
+                    send #policy;
+                    GET get() -> Item;
+                }
+            });
+            // The request type names the projection with this endpoint's output and where its
+            // concrete type is written; the navigation entry carries the short form.
+            let result = format!(
+                "`send()` returns `<Signer as SendWith<Item>>::Output`: the `Output` type of the `SendWith<Item>` implementation of `Signer`{value}, listed among the trait implementations of `Signer`."
+            );
+            assert_eq!(docs.matches(&result).count(), 1, "{docs}");
+            assert_eq!(
+                docs.matches("`send()` returns `<Signer as SendWith<Item>>::Output`, set by the `SendWith` implementation of `Signer`.").count(),
+                1,
+                "{docs}"
+            );
+            assert!(
+                docs.find(&result).unwrap() < docs.find("Declared base:").unwrap(),
+                "{docs}"
+            );
+            assert!(
+                docs.contains(
+                    "Returns `<Signer as SendWith<Item>>::Output` using the client's send policy"
+                ),
+                "{docs}"
+            );
+            assert!(docs.contains("Prepared execution: `Item`"), "{docs}");
+            assert!(
+                docs.contains("`Prepared::send()` (or `receive()` then `decode()`) applies the handling above and uses `concord::Error`."),
+                "{docs}"
+            );
+        }
+    }
+
+    /// Read the generated doc attributes as rustdoc does, independent of token spacing.
+    fn doc_text(attrs: &[syn::Attribute]) -> String {
+        let lines: Vec<_> = attrs
+            .iter()
+            .filter_map(|attr| {
+                if attr.path().is_ident("doc")
+                    && let syn::Meta::NameValue(meta) = &attr.meta
+                    && let syn::Expr::Lit(expr) = &meta.value
+                    && let syn::Lit::Str(text) = &expr.lit
+                {
+                    Some(text.value())
+                } else {
+                    None
+                }
+            })
+            .collect();
+        lines
+            .join(" ")
+            .split_whitespace()
+            .collect::<Vec<_>>()
+            .join(" ")
+    }
+
+    /// Without a native header name the check is trivial and says so in one sentence; with one,
+    /// the rules and the checked endpoints stay documented. Either way the method stays visible
+    /// (no `#[doc(hidden)]`) and where it was (its own impl block first), so the public API and
+    /// rustdoc's record of it do not change.
+    #[test]
+    fn header_validation_docs_are_short_only_without_native_names() {
+        let trivial = "No endpoint of this declaration writes a native `HeaderName` constant: every header name was checked when the declaration compiled, and this returns `Ok(())`.";
+        for (headers, native) in [
+            (quote!(), false),
+            (quote!(headers { "x-key" = "value"; }), false),
+            (quote!(headers { X_KEY = "value"; }), true),
+        ] {
+            let file: syn::File = syn::parse_str(&docs(quote! {
+                pub client Api {
+                    base "http://x.test";
+                    #headers
+                    GET get();
+                }
+            }))
+            .unwrap();
+            let methods: Vec<_> = file
+                .items
+                .iter()
+                .filter_map(|item| match item {
+                    syn::Item::Impl(item) if item.trait_.is_none() => Some(&item.items),
+                    _ => None,
+                })
+                .flatten()
+                .filter_map(|item| match item {
+                    syn::ImplItem::Fn(method) => Some(method),
+                    _ => None,
+                })
+                .collect();
+            let validation = methods
+                .iter()
+                .find(|m| m.sig.ident == "validate_header_names")
+                .unwrap();
+            assert!(!validation.attrs.iter().any(|attr| {
+                attr.path().is_ident("doc")
+                    && attr
+                        .parse_args::<syn::Ident>()
+                        .is_ok_and(|name| name == "hidden")
+            }));
+            let validation_at = methods
+                .iter()
+                .position(|m| m.sig.ident == "validate_header_names")
+                .unwrap();
+            for name in ["new", "with_base_url", "get"] {
+                assert!(validation_at < methods.iter().position(|m| m.sig.ident == name).unwrap());
+            }
+            let text = doc_text(&validation.attrs);
+            if native {
+                assert!(
+                    text.contains("It applies the structural rules `prepare()` applies"),
+                    "{text}"
+                );
+                assert!(text.contains("# Errors"), "{text}");
+                assert!(text.contains("`Api.get`"), "{text}");
+                assert!(!text.contains(trivial), "{text}");
+            } else {
+                assert_eq!(text, trivial);
+            }
+        }
+    }
+
+    /// A parent's navigation method carries a short entry: identity, `send()`'s result, the
+    /// default request, the query and header keys, and the request type that describes the rest.
+    /// The shared framework prose (base replacement, body media rules, response handling, policy
+    /// bypass) is on the request type only.
+    #[test]
+    fn navigation_entries_are_short_and_point_to_the_request_type() {
+        let file: syn::File = syn::parse_str(&docs(quote! {
+            pub client Api(policy: Policy) {
+                base "https://x.test/api";
+                response Json;
+                send policy -> Result<_, Error>;
+                scope items {
+                    /// Create one item.
+                    POST create(query dry_run?: bool, header("x-trace") trace?: String, body item: Item) -> Item {
+                        path "items";
+                        request Json;
+                    }
+                }
+            }
+        }))
+        .unwrap();
+        let mut entry = None;
+        let mut request_type = None;
+        for item in &file.items {
+            match item {
+                syn::Item::Impl(item) if item.trait_.is_none() => {
+                    for member in &item.items {
+                        if let syn::ImplItem::Fn(method) = member
+                            && method.sig.ident == "create"
+                        {
+                            entry = Some(doc_text(&method.attrs));
+                        }
+                    }
+                }
+                syn::Item::Struct(item) if item.ident == "ApiItemsCreate" => {
+                    request_type = Some(doc_text(&item.attrs));
+                }
+                _ => {}
+            }
+        }
+        let (entry, request_type) = (entry.unwrap(), request_type.unwrap());
+        let result =
+            "`send()` returns `Result<Item, Error>` via `Policy` (the client value `policy`).";
+        for expected in [
+            "Create one item.",
+            "`POST` endpoint `Api.items.create`.",
+            result,
+            "Default request: `POST https://x.test/api/items`.",
+            "Query (when present): `dry_run`.",
+            "Headers (when present): `x-trace`.",
+            "Base URL, body and response handling: `ApiItemsCreate`.",
+        ] {
+            assert!(entry.contains(expected), "{expected} missing in {entry}");
+        }
+        for absent in [
+            "Declared base:",
+            "`with_base_url` replaces",
+            "Body (`item`)",
+            "Prepared execution",
+            "`prepare()` bypasses",
+            "Operation:",
+        ] {
+            assert!(!entry.contains(absent), "{absent} in {entry}");
+        }
+        // The request type keeps the full description, its result first.
+        for expected in [
+            result,
+            "Default request: `POST https://x.test/api/items`.",
+            "Declared base: `https://x.test/api`. Declared path: `/items`.",
+            "Body (`item`): `Item`",
+            "Prepared execution: `Item`",
+            "`prepare()` bypasses the policy",
+            "Operation: name `Api.items.create`, method `POST` (see `operation()`).",
+        ] {
+            assert!(
+                request_type.contains(expected),
+                "{expected} missing in {request_type}"
+            );
+        }
+        assert!(
+            request_type.find(result).unwrap() < request_type.find("Default request:").unwrap()
+        );
+    }
+
+    /// The identity a caller compares against is spelled out: on the request type and on its
+    /// `operation()`, with the same name and method the generated `operation()` returns.
+    #[test]
+    fn operation_docs_spell_out_the_declared_name_and_method() {
+        let docs = docs(quote! {
+            pub client Api {
+                base "http://x.test";
+                scope repo(id: u64) {
+                    path "repos/{id}";
+                    DELETE remove();
+                }
+            }
+        });
+        assert!(
+            docs.contains(
+                "Operation: name `Api.repo.remove`, method `DELETE` (see `operation()`)."
+            ),
+            "{docs}"
+        );
+        assert!(docs.contains("The declared identity, name `Api.repo.remove` and method `DELETE`, without building a request or naming its output. The `ResponseMeta` and `concord::Error` of this endpoint's own request report it through their `operation()` when they carry one."), "{docs}");
+        // Its navigation entry has no body to point to.
+        assert!(
+            docs.contains("Base URL and response handling: `ApiRepoRemove`."),
+            "{docs}"
+        );
+        // The generated `operation()` returns that name and method.
+        assert!(
+            docs.contains("declared (\"Api.repo.remove\" , \"DELETE\")"),
+            "{docs}"
+        );
+    }
+
+    /// Without a policy, `send()`'s result is still stated first: Concord's own error type.
+    /// With literal header names the Accept fallback is decided: sent with no `accept` header in
+    /// the chain, never sent when the chain ends by removing it.
+    #[test]
+    fn plain_results_and_static_accept_outcomes() {
+        let docs = docs(quote! {
+            pub client Api {
+                base "http://x.test";
+                response Json;
+                headers { "accept" = "application/json"; }
+                GET kept() -> Item;
+                GET dropped() -> Item { headers { remove "accept"; } }
+                scope plain {
+                    headers { remove "accept"; }
+                    GET none() -> stream Event { headers { "accept" = "text/event-stream"; } }
+                }
+            }
+        });
+        assert!(
+            docs.contains("`send()` returns `Result<Item, concord::Error>`."),
+            "{docs}"
+        );
+        assert!(
+            docs.contains(
+                "`send()` returns `Result<concord::Records<Json, Event>, concord::Error>`."
+            ),
+            "{docs}"
+        );
+        assert_eq!(
+            docs.matches("`Decode::ACCEPT`, if any, is sent unless an `accept` header is sent.")
+                .count(),
+            1,
+            "{docs}"
+        );
+        assert_eq!(
+            docs.matches("`Decode::ACCEPT` is not sent: this endpoint's headers remove `accept`.")
+                .count(),
+            1,
+            "{docs}"
+        );
+        assert_eq!(
+            docs.matches(
+                "`Incremental::ACCEPT`, if any, is sent unless an `accept` header is sent."
+            )
+            .count(),
+            1,
+            "{docs}"
+        );
+        let open = self::docs(quote! {
+            pub client Api {
+                base "http://x.test";
+                response Json;
+                GET get() -> Item;
+            }
+        });
+        assert!(
+            open.contains("`Decode::ACCEPT`, if any, is sent as the `accept` header."),
+            "{open}"
+        );
+        // A chain with a native name but no `remove` cannot end removed.
+        let native = self::docs(quote! {
+            pub client Api(header(X_KEY) key: String) {
+                base "http://x.test";
+                response Json;
+                GET get() -> Item;
+            }
+        });
+        assert!(
+            native.contains("`Decode::ACCEPT`, if any, is sent unless an `accept` header is sent."),
+            "{native}"
+        );
+        assert!(!native.contains("in the chain order above"), "{native}");
+    }
+
+    #[test]
+    fn sensitive_value_notes_keep_wire_placements_separate() {
+        let api: Api = syn::parse2(quote! {
+            pub client Api(#[sensitive] policy: Policy, #[sensitive] connection: Connection) {
+                base "http://x.test";
+                path "{connection}";
+                send policy;
+                GET get(#[sensitive] query token: String);
+            }
+        })
+        .unwrap();
+        let (model, _) = Model::build(api).unwrap();
+        let notes = super::value_notes(&model);
+        let sensitive = " Sensitive: withheld from Concord's `Debug` output and errors.";
+        assert_eq!(notes[0][0], [sensitive]);
+        assert_eq!(
+            notes[0][1],
+            [" Sent as: path segment `{connection}`.", sensitive]
+        );
+        assert_eq!(
+            notes[1][0],
+            [" Sent as: query parameter `token`.", sensitive]
+        );
+        let emitted = emit(&model, quote!(::concord)).to_string();
+        assert!(!emitted.contains("sent normally"), "{emitted}");
+        // Both the setter and the required-values configuration field keep the path-placement note.
+        assert_eq!(
+            emitted
+                .matches("Sent as: path segment `{connection}`.")
+                .count(),
+            2
+        );
+    }
+
+    #[test]
+    fn owner_clone_group_and_execution_notes_keep_caller_facts() {
+        let file: syn::File = syn::parse_str(&docs(quote! {
+            pub client Api(policy: Policy) {
+                base "http://x.test";
+                response Json;
+                send policy;
+                params Paging(query page: u32 = 1);
+                scope items {
+                    POST put(..Paging, body item: Item) -> Item { request Json; }
+                }
+            }
+        }))
+        .unwrap();
+        let client = file
+            .items
+            .iter()
+            .find_map(|item| match item {
+                syn::Item::Struct(item) if item.ident == "Api" => Some(item),
+                _ => None,
+            })
+            .unwrap();
+        assert!(doc_text(&client.attrs).contains("Formats: typed outputs `Json` (declared here). Closer scopes or endpoint formats take precedence. An endpoint without `->` drains its response."));
+        let scope = file
+            .items
+            .iter()
+            .find_map(|item| match item {
+                syn::Item::Struct(item) if item.ident == "ApiItems" => Some(item),
+                _ => None,
+            })
+            .unwrap();
+        assert!(doc_text(&scope.attrs).contains("Scope `Api.items`."));
+        assert!(
+            doc_text(&scope.attrs)
+                .contains("typed outputs `Json` (the default of the client `Api`)")
+        );
+        let endpoint = file
+            .items
+            .iter()
+            .find_map(|item| match item {
+                syn::Item::Struct(item) if item.ident == "ApiItemsPut" => Some(item),
+                _ => None,
+            })
+            .unwrap();
+        assert!(
+            doc_text(&endpoint.attrs).contains("Implements the shared setter traits: `Paging`.")
+        );
+        let group = file
+            .items
+            .iter()
+            .find_map(|item| match item {
+                syn::Item::Trait(item) if item.ident == "Paging" => Some(item),
+                _ => None,
+            })
+            .unwrap();
+        assert!(doc_text(&group.attrs).contains(
+            "Shared setters for `ApiItemsPut`. Each endpoint also provides these methods directly."
+        ));
+        let clone = file
+            .items
+            .iter()
+            .find_map(|item| match item {
+                syn::Item::Impl(item) if doc_text(&item.attrs).contains("`Clone` exactly when") => {
+                    Some(item)
+                }
+                _ => None,
+            })
+            .unwrap();
+        assert_eq!(
+            doc_text(&clone.attrs),
+            "`Clone` exactly when all request values and the body implement `Clone`."
+        );
+        let mut checked = Vec::new();
+        for item in &file.items {
+            if let syn::Item::Impl(item) = item
+                && item.trait_.is_none()
+            {
+                for member in &item.items {
+                    if let syn::ImplItem::Fn(method) = member {
+                        let text = doc_text(&method.attrs);
+                        if method.sig.ident == "with_base_url" {
+                            checked.push("with_base_url");
+                            assert!(text.contains(
+                                "Replaces the whole declared base URL, including its path"
+                            ));
+                            assert!(text.contains("otherwise returns `concord::Error`"));
+                            assert!(text.contains(
+                                "With `subdomain` labels the host must be a domain name"
+                            ));
+                            assert!(text.contains(
+                                "A send policy may further restrict which URLs it accepts."
+                            ));
+                        }
+                        if method.sig.ident == "prepare" {
+                            checked.push("prepare");
+                            assert!(text.contains("Builds the native request without sending it."));
+                            assert!(text.contains("`concord::Error` with `ErrorKind::Build`"));
+                            assert!(text.contains("Bypasses the client's send policy: nothing the policy adds or checks applies (for example signing, authentication headers or retries). Use `send()` to apply it."));
+                        }
+                    }
+                }
+            }
+        }
+        assert_eq!(checked, ["with_base_url", "prepare"]);
     }
 
     /// Initializers are documented as Rust is usually written, not as spaced tokens.
