@@ -293,7 +293,7 @@ async fn invalid_status_links_are_explicit_protocol_errors_before_another_reques
 
 #[tokio::test]
 async fn malformed_or_uncorrelated_partition_links_are_not_an_empty_success() {
-    let headers = [
+    for header in [
         "malformed Link".to_owned(),
         format!("<https://different-account.invalid/api/v2/statements/{B}?partition=1>; rel=next"),
         format!("</api/v2/statements/{A}?partition=1>; rel=next"),
@@ -304,19 +304,9 @@ async fn malformed_or_uncorrelated_partition_links_are_not_an_empty_success() {
         ),
         format!("</api/v2/statements/{B}?partition=1>; rel=next; title=\"unterminated"),
         format!("</api/v2/statements/{B}?partition=1>; rel=next; anchor=\"/different-context\""),
-    ];
-    // One server and one client for every case: each submission is answered with the next
-    // header over the same kept-alive connection, so no case depends on binding, connecting to
-    // and tearing down a server of its own (eight in a row, alongside the other tests' servers).
-    let script = Script::new(
-        headers
-            .iter()
-            .map(|header| json(200, RESULT).header("link", header)),
-    );
-    let s = TestServer::start(move |_| script.next()).await;
-    let snowflake = client(&s);
-    for case in 0..headers.len() {
-        let error = snowflake.submit(context(), statement()).await.unwrap_err();
+    ] {
+        let s = TestServer::start(move |_| json(200, RESULT).header("link", &header)).await;
+        let error = client(&s).submit(context(), statement()).await.unwrap_err();
         assert!(matches!(
             error,
             Error::Protocol {
@@ -325,10 +315,9 @@ async fn malformed_or_uncorrelated_partition_links_are_not_an_empty_success() {
             }
         ));
         assert_eq!(error.response_meta().unwrap().status().as_u16(), 200);
-        // Exactly one request for this case: the submission, nothing after it.
-        assert_eq!(s.requests().len(), case + 1);
+        assert_eq!(s.requests().len(), 1);
+        s.shutdown().await;
     }
-    s.shutdown().await;
 }
 
 #[tokio::test]
