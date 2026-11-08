@@ -41,7 +41,8 @@ pub const ERROR_BODY_LIMIT: usize = 64 * 1024;
 concord::api! {
     /// Zendesk Support, `https://{subdomain}.zendesk.com/api/v2`, with an OAuth access token.
     pub client Zendesk(
-        /// The account subdomain (`acme` for `acme.zendesk.com`).
+        /// The account subdomain (`acme` for `acme.zendesk.com`). Fixed for the client: another
+        /// account is another client ([`Zendesk::connect`]) with its own token.
         subdomain: String,
         /// `Bearer {access_token}`; build it with [`Zendesk::connect`] or
         /// `concord_auth::bearer(token)`.
@@ -58,6 +59,8 @@ concord::api! {
         /// Every Zendesk operation, as the [`SendPolicy`] classifies it (read or write, and
         /// whether a `409` is a collision).
         operations ZendeskOperation;
+        // The token belongs to one account: a client keeps its subdomain.
+        controls { remove set_subdomain; }
 
         /// The ticket collection.
         scope tickets {

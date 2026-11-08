@@ -7,6 +7,20 @@ Not released: the version is unchanged (4.2.0). Records: `v4/desirability/` (dec
 
 ### Added
 
+- **An SDK can withhold a generated control** (H06, candidate B: control visibility). The opt-in
+  owner statement `controls { pub(crate) name; remove name; }` on the client or a scope makes a
+  generated control crate-visible or leaves it out of the expansion; every control not listed
+  stays public, and a declaration without the statement generates exactly what it did. The
+  controls are the client's `new` and `with_base_url` and the `set_x` / `maybe_x` of the owner's
+  values (a send policy value's `set_policy` included); `new` cannot be removed, and an optional
+  value's `set_x` and `maybe_x` take the same access. Adopted where a public control contradicted
+  the SDK's own invariant: Shopify (`ShopifyAdminShop::set_shop` removed: another shop is another
+  `shop(..)` entry; `set_access_token` kept), Zendesk (`Zendesk::set_subdomain` removed: another
+  account is `Zendesk::connect`; `set_policy` kept), Salesforce (`SalesforceApi::with_base_url`
+  crate-visible and `set_version` removed: `OrgContext::new` is the route to another instance or
+  version) and Mastodon (the generated client `Api` is now public, from `Mastodon::api()`, with
+  its `new` and `with_base_url` crate-visible, so it stays bound to its instance). Author guide
+  §2.2.
 - **An omitted operation classification fails the SDK build** (H08, candidate B). The opt-in
   client statement `operations Name;` generates `Name`, a `#[non_exhaustive]` enum with one variant
   per endpoint (the endpoint's path below the client in UpperCamelCase, `items.get` → `ItemsGet`;

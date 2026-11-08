@@ -1,0 +1,5 @@
+error: `pub(super)` is not a control visibility: write `pub(crate) name;` (crate-visible) or `remove name;` (not generated)
+ --> tests/ui/controls_visibility.rs:5:20
+  |
+5 |         controls { pub(super) set_key; }
+  |                    ^^^

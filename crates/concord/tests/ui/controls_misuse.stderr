@@ -1,0 +1,35 @@
+error: `new` cannot be removed: nothing could create the client; `pub(crate) new;` keeps it for this crate's own constructor
+ --> tests/ui/controls_misuse.rs:6:13
+  |
+6 |             remove new;
+  |             ^^^^^^
+
+error: `with_base_url` is listed twice in `controls`
+ --> tests/ui/controls_misuse.rs:8:20
+  |
+8 |             remove with_base_url;
+  |                    ^^^^^^^^^^^^^
+
+error: first listed here
+ --> tests/ui/controls_misuse.rs:7:24
+  |
+7 |             pub(crate) with_base_url;
+  |                        ^^^^^^^^^^^^^
+
+error: `set_token` and `maybe_token` both set `token` (`maybe_token(Some(v))` is `set_token(v)`): give them the same access, `pub(crate) set_token; pub(crate) maybe_token;`
+ --> tests/ui/controls_misuse.rs:9:24
+  |
+9 |             pub(crate) set_token;
+  |                        ^^^^^^^^^
+
+error: `region` is optional and has no initializer: without `set_region` and `maybe_region` it is always absent and never sent; keep them for this crate (`pub(crate)`) or remove the value
+  --> tests/ui/controls_misuse.rs:10:20
+   |
+10 |             remove set_region;
+   |                    ^^^^^^^^^^
+
+error: `controls` restricts the controls of the client or a scope; an endpoint's setters only configure the request they return
+  --> tests/ui/controls_misuse.rs:17:13
+   |
+17 |             controls { remove set_q; }
+   |             ^^^^^^^^

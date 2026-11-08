@@ -215,6 +215,21 @@ pub struct Owner {
     pub groups: Vec<Ident>,
     /// `limit EXPR;` declared here: the finite body bound for typed outputs at and below.
     pub limit: Option<syn::Expr>,
+    /// Who may call the client's `new` (`controls`); `Public` on scopes and endpoints.
+    pub new: Access,
+    /// Who may call the client's `with_base_url` (`controls`); `Public` on scopes and endpoints.
+    pub with_base_url: Access,
+}
+
+/// Who may call a generated control, as `controls { .. }` declares it on the client or a scope.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum Access {
+    /// The default: `pub`.
+    Public,
+    /// `pub(crate) name;`: callable by the crate that declares the client only.
+    Crate,
+    /// `remove name;`: not generated.
+    Removed,
 }
 
 impl Owner {
@@ -262,6 +277,10 @@ pub struct Value {
     /// `query(..) x: T`: the value writes its own query pairs (`QueryPairs`); it has no static
     /// key and takes no part in key composition. Endpoints only; never `#[sensitive]`.
     pub pairs: Option<Span>,
+    /// Who may call `set_x` (`controls`); always `Public` on endpoints.
+    pub set: Access,
+    /// Who may call `maybe_x` (`controls`; optional values only); always `Public` on endpoints.
+    pub maybe: Access,
 }
 
 impl Value {
@@ -2208,6 +2227,133 @@ fn validate_base(lit: &LitStr) -> syn::Result<()> {
     Ok(())
 }
 
+/// `controls { .. }` on `dotted`: records each entry's access on the control it names and
+/// returns the access of the client's `new` and `with_base_url`. The names are the generated
+/// methods: `new` and `with_base_url` on the client, `set_x` for every value and `maybe_x` for
+/// every optional one, on the client or a scope. Every other method stays public.
+fn apply_controls(
+    controls: syntax::Controls,
+    kind: &Kind,
+    dotted: &str,
+    values: &mut [Value],
+    errors: &mut Errors,
+) -> (Access, Access) {
+    let client = matches!(kind, Kind::Client { .. });
+    if matches!(kind, Kind::Endpoint { .. }) {
+        errors.push(syn::Error::new(
+            controls.span,
+            "`controls` restricts the controls of the client or a scope; an endpoint's setters only configure the request they return",
+        ));
+        return (Access::Public, Access::Public);
+    }
+    #[derive(Clone, Copy, PartialEq)]
+    enum Target {
+        New,
+        WithBaseUrl,
+        Set(usize),
+        Maybe(usize),
+    }
+    let mut available: Vec<(String, Target)> = Vec::new();
+    if client {
+        available.push(("new".to_owned(), Target::New));
+        available.push(("with_base_url".to_owned(), Target::WithBaseUrl));
+    }
+    for (i, value) in values.iter().enumerate() {
+        let name = plain(&value.name);
+        available.push((format!("set_{name}"), Target::Set(i)));
+        if value.optional {
+            available.push((format!("maybe_{name}"), Target::Maybe(i)));
+        }
+    }
+    let (mut new, mut with_base_url) = (Access::Public, Access::Public);
+    // The entry that restricted each value's `set_x` / `maybe_x`, for the pairing check.
+    let mut listed: Vec<[Option<(Span, Access)>; 2]> = vec![[None, None]; values.len()];
+    let mut seen: BTreeMap<String, Span> = BTreeMap::new();
+    for entry in controls.entries {
+        let name = plain(&entry.name);
+        let access = if entry.removed {
+            Access::Removed
+        } else {
+            Access::Crate
+        };
+        if let Some(first) = seen.insert(name.clone(), entry.name.span()) {
+            let mut e = syn::Error::new(
+                entry.name.span(),
+                format!("`{name}` is listed twice in `controls`"),
+            );
+            e.combine(syn::Error::new(first, "first listed here"));
+            errors.push(e);
+            continue;
+        }
+        let Some(&(_, target)) = available.iter().find(|(n, _)| *n == name) else {
+            let names: Vec<String> = available.iter().map(|(n, _)| format!("`{n}`")).collect();
+            let near = available
+                .iter()
+                .map(|(n, _)| n)
+                .find(|n| edit_distance(n, &name) <= 2);
+            let mut msg = format!("`{name}` is not a generated control of `{dotted}`");
+            match near {
+                Some(near) => msg.push_str(&format!("; did you mean `{near}`?")),
+                None if names.is_empty() => msg
+                    .push_str("; this scope declares no values, so it has no controls to restrict"),
+                None => msg.push_str(&format!("; its controls are {}", names.join(", "))),
+            }
+            if !client && (name == "new" || name == "with_base_url") {
+                msg.push_str(&format!(
+                    " (`{name}` belongs to the client: restrict it in the client's `controls`)"
+                ));
+            }
+            errors.push(syn::Error::new(entry.name.span(), msg));
+            continue;
+        };
+        match target {
+            Target::New if entry.removed => errors.push(syn::Error::new(
+                entry.span,
+                "`new` cannot be removed: nothing could create the client; `pub(crate) new;` keeps it for this crate's own constructor",
+            )),
+            Target::New => new = access,
+            Target::WithBaseUrl => with_base_url = access,
+            Target::Set(i) => {
+                values[i].set = access;
+                listed[i][0] = Some((entry.name.span(), access));
+            }
+            Target::Maybe(i) => {
+                values[i].maybe = access;
+                listed[i][1] = Some((entry.name.span(), access));
+            }
+        }
+    }
+    // `maybe_x(Some(v))` is `set_x(v)`: restricting one of them alone restricts nothing.
+    for (value, listed) in values.iter().zip(&listed) {
+        if !value.optional {
+            continue;
+        }
+        let x = plain(&value.name);
+        if value.set != value.maybe {
+            let (span, access) = listed[0].or(listed[1]).expect("a restricted control");
+            let written = match access {
+                Access::Crate => "pub(crate)",
+                _ => "remove",
+            };
+            errors.push(syn::Error::new(
+                span,
+                format!(
+                    "`set_{x}` and `maybe_{x}` both set `{x}` (`maybe_{x}(Some(v))` is `set_{x}(v)`): give them the same access, `{written} set_{x}; {written} maybe_{x};`"
+                ),
+            ));
+        } else if value.set == Access::Removed && value.default.is_none() {
+            let (span, _) = listed[0].expect("a removed control");
+            errors.push(syn::Error::new(
+                span,
+                format!(
+                    "`{x}` is optional and has no initializer: without `set_{x}` and `maybe_{x}` it is always absent and never sent; keep them for this crate (`pub(crate)`) or remove the value"
+                ),
+            ));
+        }
+    }
+    (new, with_base_url)
+}
+
 fn flatten(
     mut owner: syntax::Owner,
     parent: Option<(usize, &str, &str)>,
@@ -2413,8 +2559,14 @@ fn flatten(
             usage: None,
             text: false,
             header: false,
+            set: Access::Public,
+            maybe: Access::Public,
         });
     }
+    let (new, with_base_url) = match owner.stmts.controls.take() {
+        Some(controls) => apply_controls(controls, &kind, &dotted, &mut values, errors),
+        None => (Access::Public, Access::Public),
+    };
     let mut cfgs: Vec<Attribute> = parent.map(|p| out[p.0].cfgs.clone()).unwrap_or_default();
     cfgs.extend(owner.cfgs.iter().cloned());
     out.push(Owner {
@@ -2440,6 +2592,8 @@ fn flatten(
         response,
         groups: owner.groups,
         limit,
+        new,
+        with_base_url,
     });
     stmts.push(owner.stmts);
 

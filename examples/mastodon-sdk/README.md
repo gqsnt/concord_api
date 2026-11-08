@@ -204,8 +204,9 @@ heartbeat interval is not documented.
 ## Token destinations
 
 - The token is a sensitive `Authorization: Bearer` header, sent to the client's instance and to
-  the streaming host discovered from it. The generated client stays private: its
-  `with_base_url` keeps every client value, so it is not exposed.
+  the streaming host discovered from it. The generated client is public (`Api`, from
+  `Mastodon::api()`), but its constructor and `with_base_url` are not: `with_base_url` keeps
+  every client value, so only the SDK chooses the host.
 - reqwest's default redirect policy drops `Authorization` on a cross-origin hop (tested); a
   redirect policy of yours must keep that rule.
 - `prepare()` returns the native request with the header: if you redirect that request

@@ -30,6 +30,7 @@ mod kw {
     syn::custom_keyword!(params);
     syn::custom_keyword!(limit);
     syn::custom_keyword!(operations);
+    syn::custom_keyword!(controls);
 }
 
 /// HTTP methods accepted as endpoint keywords.
@@ -593,6 +594,27 @@ pub struct Stmts {
     /// `/// docs` `operations Name;` on the client: the generated enum of its endpoints, whose
     /// variant each generated `send()` passes to the send policy.
     pub operations: Option<Operations>,
+    /// `controls { pub(crate) name; remove name; }` on the client or a scope: the generated
+    /// controls that are crate-visible or not generated (every other control is public).
+    pub controls: Option<Controls>,
+}
+
+/// `controls { .. }`: restrictions of an owner's generated controls (`new`, `with_base_url`,
+/// `set_x`, `maybe_x`), checked against the owner by the model.
+pub struct Controls {
+    /// The `controls` keyword.
+    pub span: Span,
+    pub entries: Vec<ControlEntry>,
+}
+
+/// `pub(crate) name;` or `remove name;` in a `controls` block.
+pub struct ControlEntry {
+    /// The generated method it restricts, as written.
+    pub name: Ident,
+    /// `true` for `remove name;` (not generated), `false` for `pub(crate) name;`.
+    pub removed: bool,
+    /// The visibility or `remove`, for diagnostics.
+    pub span: Span,
 }
 
 /// `/// docs` `operations Name;` on the client.
@@ -1024,6 +1046,28 @@ fn parse_owner_body(
             stmts.operations = Some(Operations { docs, name });
             continue;
         }
+        // `controls { .. }`: which generated controls are crate-visible or not generated.
+        if input.peek(kw::controls) && !input.peek2(Token![::]) {
+            let kw: kw::controls = input.parse()?;
+            if let Some(first) = children.first() {
+                let first: &Owner = first;
+                return Err(syn::Error::new(
+                    kw.span,
+                    format!(
+                        "owner statements (`controls`, `path`, `query`, ...) must precede child declarations (first child: `{}`)",
+                        first.name
+                    ),
+                ));
+            }
+            if !input.peek(syn::token::Brace) {
+                return Err(input.error(
+                    "expected the restricted controls in braces: `controls { pub(crate) with_base_url; remove set_x; }`",
+                ));
+            }
+            let controls = parse_controls(input, kw.span)?;
+            set_once(&mut stmts.controls, controls, kw.span, "controls")?;
+            continue;
+        }
         if input.peek(kw::base) {
             let kw: kw::base = input.parse()?;
             let Some(slot) = base.as_deref_mut() else {
@@ -1137,6 +1181,61 @@ fn parse_owner_body(
         children.push(parse_child(input)?);
     }
     Ok((stmts, children))
+}
+
+/// The braces of `controls { pub(crate) name; remove name; }`. Which names are controls of the
+/// owner is the model's to check; here only the form of each entry.
+fn parse_controls(input: ParseStream<'_>, span: Span) -> syn::Result<Controls> {
+    const FORM: &str = "`pub(crate) name;` (crate-visible) or `remove name;` (not generated)";
+    let content;
+    braced!(content in input);
+    let mut entries = Vec::new();
+    while !content.is_empty() {
+        let (removed, at) = if content.peek(kw::remove) {
+            (true, content.parse::<kw::remove>()?.span)
+        } else if content.peek(Token![pub]) {
+            let vis: Visibility = content.parse()?;
+            let at = vis.span();
+            match &vis {
+                Visibility::Restricted(r) if r.in_token.is_none() && r.path.is_ident("crate") => {}
+                Visibility::Public(_) => {
+                    return Err(syn::Error::new(
+                        at,
+                        format!(
+                            "`pub` is the default; list only the controls you restrict: {FORM}"
+                        ),
+                    ));
+                }
+                _ => {
+                    return Err(syn::Error::new(
+                        at,
+                        format!(
+                            "`{}` is not a control visibility: write {FORM}",
+                            type_text(&vis)
+                        ),
+                    ));
+                }
+            }
+            (false, at)
+        } else {
+            return Err(content.error(format!(
+                "expected {FORM}: a control not listed stays public"
+            )));
+        };
+        let name: Ident = content.call(Ident::parse_any).map_err(|e| {
+            syn::Error::new(
+                e.span(),
+                "expected the name of a generated control: `new`, `with_base_url`, or a value's `set_x` / `maybe_x`",
+            )
+        })?;
+        content.parse::<Token![;]>()?;
+        entries.push(ControlEntry {
+            name,
+            removed,
+            span: at,
+        });
+    }
+    Ok(Controls { span, entries })
 }
 
 /// `format F;`, `request F;`, `request F "media/type";`, `response F;`: the formats of the bodies

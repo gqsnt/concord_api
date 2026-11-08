@@ -34,13 +34,17 @@ concord::api! {
         response Json;
 
         /// One shop and its access token. Tokens are per shop (per app installation), so the
-        /// token belongs to this scope, not to the client.
+        /// token belongs to this scope, not to the client, and the shop of a handle cannot be
+        /// replaced (there is no `set_shop`): another shop is another `shop(..)` entry with its
+        /// own token. `set_access_token` replaces the token of the same shop.
         scope shop(
             shop: ShopDomain,
             #[sensitive] header(X_SHOPIFY_ACCESS_TOKEN) access_token: String,
         ) {
             subdomain "{shop}";
             path "admin/api/{client.version}/graphql.json";
+            // A handle keeps its shop: replacing it would send this shop's token to another one.
+            controls { remove set_shop; }
 
             /// `ShopIdentity`: which shop answered.
             POST shop_info(body variables: ShopQuery) -> Answer<ShopQuery>;
