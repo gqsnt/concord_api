@@ -1,0 +1,25 @@
+{
+ "format": 1,
+ "card": "work/state/cards/H04.md (as h04/decision.py implements it). Task-level conditions only: the two control-fact rules (a control fact regressing in >= 2 pairs; a control fact passing in every baseline answer and failing in a candidate answer) are fact-level and stay in h04/decision.py, entered here as the fact `fact_level_rules`.",
+ "precedence": ["LOSS", "INCONCLUSIVE"],
+ "otherwise": "INCONCLUSIVE",
+ "rules": [
+  {"id": "G1", "outcome": "LOSS", "type": "trigger", "metric": "fact", "name": "gates", "op": "==", "value": "fail"},
+  {"id": "G2", "outcome": "LOSS", "type": "trigger", "metric": "fact", "name": "docs_truth", "op": "==", "value": "fail"},
+  {"id": "W1", "outcome": "WIN", "type": "require", "metric": "net", "filter": {"role": "witness"}, "op": ">=", "value": 6,
+   "note": ">= 6 net additional correct witness answers"},
+  {"id": "W2", "outcome": "WIN", "type": "require", "metric": "net", "filter": {"role": "witness"}, "per": "provider",
+   "quantifier": "none", "op": "<", "value": 0, "note": "no provider with a negative witness net"},
+  {"id": "W3", "outcome": "WIN", "type": "require", "metric": "regressions", "filter": {"role": "control"}, "op": "<=", "value": 2,
+   "note": "controls lose <= 2 answers (regressions, never offset)"},
+  {"id": "W4", "outcome": "WIN", "type": "require", "metric": "regressions", "per": "task", "quantifier": "none", "op": ">=", "value": 2,
+   "note": "no recurrent new critical-task failure (2 regressions in one SDK/task)"},
+  {"id": "W5", "outcome": "WIN", "type": "require", "metric": "total", "filter": {"role": "witness"}, "op": "==", "value": 72,
+   "note": "complete witness sample"},
+  {"id": "W6", "outcome": "WIN", "type": "require", "metric": "total", "filter": {"role": "control"}, "op": "==", "value": 72,
+   "note": "complete control sample"},
+  {"id": "W7", "outcome": "WIN", "type": "require", "metric": "fact", "name": "gates", "op": "==", "value": "pass"},
+  {"id": "W8", "outcome": "WIN", "type": "require", "metric": "fact", "name": "docs_truth", "op": "==", "value": "pass"},
+  {"id": "W9", "outcome": "WIN", "type": "require", "metric": "fact", "name": "fact_level_rules", "op": "==", "value": "pass"}
+ ]
+}

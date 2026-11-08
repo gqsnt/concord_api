@@ -1,0 +1,34 @@
+{
+ "class": "detected",
+ "control": {
+  "expect": "pass"
+ },
+ "expect": {
+  "names_endpoint": true,
+  "stages": [
+   "SDK build",
+   "caller compile (existing tests)",
+   "caller compile"
+  ]
+ },
+ "format": 1,
+ "id": "ctl/stage/detected",
+ "kind": "stage",
+ "names": "HolidayResponse|\\bmeta\\b",
+ "oracle": "oracle.rs",
+ "patches": {
+  "*": {
+   "controls": [
+    {
+     "expect": "fail",
+     "name": "wrong-path",
+     "patch": "control-path.patch"
+    }
+   ],
+   "omission": "omission-build.patch",
+   "reference": "reference.patch"
+  }
+ },
+ "role": "control",
+ "sdk": "nager-holidays"
+}

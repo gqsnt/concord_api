@@ -304,11 +304,17 @@ def copy_commit(repo, commit):
 
 
 class Batch:
-    """Generated blocks for one compile: per SDK one integration-test module."""
+    """Generated blocks for one compile: per SDK one integration-test module.
 
-    def __init__(self, repo, commit, sdks, fixture_roots):
+    `tree`, `target_dir`, `run_root` (all optional; used by `tools/desirability/pilot/`): an
+    already materialised tree of `commit` whose provenance the caller checked (no `git archive`
+    here), the cargo target directory to compile into (default `C.CARGO_TARGET_DIR`) and the
+    directory of the run sandbox's scratch directories. Without them the behaviour is unchanged."""
+
+    def __init__(self, repo, commit, sdks, fixture_roots, tree=None, target_dir=None, run_root=None):
         self.repo, self.commit, self.sdks, self.fixture_roots = repo, commit, sdks, fixture_roots
-        self.copy_root = os.path.join(repo, "target", "tmp", COPY_NAME)
+        self.tree, self.target_dir, self.run_root = tree, target_dir, run_root
+        self.copy_root = tree or os.path.join(repo, "target", "tmp", COPY_NAME)
         self.modules = {}   # sdk short -> T.Module
         self.runs = {}      # key -> (sdk short, test fn name, rid)
         self.types = {}     # key -> block tag
@@ -320,7 +326,7 @@ class Batch:
             info = self.sdks[short]
             sdk_dir = os.path.join(self.copy_root, "examples", info["dir"])
             path = os.path.join(sdk_dir, "tests", f"{TEST_NAME}.rs")
-            ts = T.testserver_crate(os.path.join(self.repo, "examples", info["dir"]))
+            ts = T.testserver_crate(os.path.join(self.tree or self.repo, "examples", info["dir"]))
             self.modules[short] = T.Module(info["pkg"], None, path, header(info["crate"], ts, f"H04 checks for `{short}`"))
         return self.modules[short]
 
@@ -347,12 +353,13 @@ class Batch:
         ({key: result}, failed blocks)."""
         if not (os.access(S.BWRAP, os.X_OK) and shutil.which("timeout")):
             raise SystemExit(f"H04 checks need {S.BWRAP} and timeout(1): refusing to compile answers without a sandbox")
-        copy_commit(self.repo, self.commit)
+        if self.tree is None:
+            copy_commit(self.repo, self.commit)
         mods = list(self.modules.values())
         if not mods:
             return {}, {}
         exes = {}
-        box = S.CompileSandbox(self.copy_root, C.CARGO_TARGET_DIR) if sandbox else None
+        box = S.CompileSandbox(self.copy_root, self.target_dir or C.CARGO_TARGET_DIR) if sandbox else None
 
         def runner(cwd, args):
             args = list(args)
@@ -386,7 +393,7 @@ class Batch:
         log.append({"compile_seconds": round(time.monotonic() - t0, 1), "failed_blocks": len(failed)})
         T.write_modules(mods)
         results = {}
-        run_root = os.path.join(self.repo, "target", "tmp", RUN_NAME)
+        run_root = self.run_root or os.path.join(self.repo, "target", "tmp", RUN_NAME)
         names = {}
         for short, m in self.modules.items():
             exe = exes.get(m.pkg)
