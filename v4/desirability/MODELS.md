@@ -134,3 +134,13 @@ Append-only: a row marked `running` is superseded by a later row (`↳ … resul
 | ↳ H04 instrument fix round 8 result | — | claude-opus-5-5 (subagent transcript); effort not visible | ~6 min, 17 tool uses; no model calls | committed 6ede0339 (local); bank 06be1a2b; e2e 32/32 |
 | H04 INSTRUMENT review 9 (`h04-instrument-review-9-sol`) on 6ede0339 | Codex gpt-6.1-sol, xhigh, read-only | (meta.json at completion) | running | — |
 | ↳ H04 review 9 observed | — | gpt-6.1-sol / xhigh / read-only (rollout turn_context); 08:37:24Z–08:41:15Z | 3m51s | ACCEPT (no findings); H04 instrument accepted |
+| H04 pilot readers, 72 sessions (`work/sealed/h04-runs/pilot-2`), arms 1d519c73 vs 4145921f | Claude `claude -p` claude-opus-5-5 (no tools, no setting sources) and Codex gpt-6.1-sol xhigh read-only, both in bubblewrap | (per-session transcripts / rollouts) | 09:0x– | running |
+| ↳ H04 pilot readers observed | — | Claude claude-opus-5-5 36/36 (effort not visible); Codex gpt-6.1-sol/xhigh 36/36; 0 retries, 0 malformed | sessions ~1h | witness net +7, control lost 1 → WIN_PENDING_GATES |
+| H04 DECISION review (`h04-decision-review-sol`) | Codex gpt-6.1-sol, xhigh, read-only | (meta.json at completion) | running | — |
+| ↳ H04 decision review observed | — | gpt-6.1-sol / xhigh / read-only (rollout turn_context); 08:47:55Z–08:54:16Z | 6m21s | REJECT; INCONCLUSIVE (clearance unsubstantiated) — pilot-2 non-qualifying |
+| H04 CLEARANCE review 2 (`h04-clearance-review-2-sol`, full diffs, pilot-3) | Codex gpt-6.1-sol, xhigh, read-only | (meta.json at completion; rollout checked for complete reads) | running | — |
+| ↳ H04 clearance review 2 observed | — | gpt-6.1-sol / xhigh / read-only (rollout turn_context); 08:55:34Z–08:58:52Z | 3m18s | CLEAR ×5; full reads verified from rollout |
+| H04 pilot-3 readers, 72 sessions (`work/sealed/h04-runs/pilot-3`, seed 5) | Claude claude-opus-5-5 / Codex gpt-6.1-sol xhigh, bubblewrap | (per-session metadata) | running | — |
+| ↳ H04 pilot-3 readers observed | — | Claude claude-opus-5-5 36/36 (effort not visible); Codex gpt-6.1-sol/xhigh/read-only 36/36; 0 retries, 0 malformed | 249 s wall | witness net +6, control lost 0 → WIN_PENDING_GATES |
+| H04 DECISION review 2 (`h04-decision-review-2-sol`, pilot-3) | Codex gpt-6.1-sol, xhigh, read-only | (meta.json at completion) | running | — |
+| ↳ H04 decision review 2 observed | — | gpt-6.1-sol / xhigh / read-only (rollout turn_context); 09:05:17Z–09:11:04Z | 5m47s | ACCEPT_WITH_FIXES; WIN_PENDING_CI |
