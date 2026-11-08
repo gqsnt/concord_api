@@ -20,6 +20,9 @@
 //! Counters ([`TestServer::live_connections`], [`TestServer::active_bodies`],
 //! [`TestServer::peak_active_bodies`]) make the server's own resource use observable in tests,
 //! and [`TestServer::wait_until`] polls a condition with a bounded deadline (no fixed sleeps).
+//!
+//! A failed `accept` is skipped, never fatal: the listener and the open connections stay up
+//! ([`TestServer::accept_errors`]; [`TestServer::fail_next_accept`] injects one).
 
 #![allow(missing_docs)]
 
@@ -333,6 +336,10 @@ struct Shared {
     peak_active_bodies: AtomicUsize,
     body_bytes_sent: AtomicU64,
     request_body_bytes: AtomicU64,
+    request_chunk_bytes: AtomicU64,
+    accept_errors: AtomicUsize,
+    injected_accept_errors: Mutex<VecDeque<std::io::ErrorKind>>,
+    injected: Notify,
     changed: Notify,
 }
 
@@ -433,9 +440,38 @@ impl TestServer {
         self.shared.body_bytes_sent.load(Ordering::SeqCst)
     }
 
-    /// Request body bytes received so far (also past the recording limit).
+    /// Request body bytes received so far (also past the recording limit), counted as they arrive:
+    /// it can stop inside a chunk, or be read while a chunk is still arriving.
     pub fn request_body_bytes(&self) -> u64 {
         self.shared.request_body_bytes.load(Ordering::SeqCst)
+    }
+
+    /// Data bytes of request-body chunks (`transfer-encoding: chunked`) received completely: a
+    /// chunk counts once its data and the CRLF that ends it have arrived. A chunk cut off by a
+    /// closed or reset connection is never counted, and the value never stops inside a chunk, so it
+    /// measures what the client finished sending as whole chunks. Bodies sent with
+    /// `content-length` are not counted.
+    pub fn request_chunk_bytes(&self) -> u64 {
+        self.shared.request_chunk_bytes.load(Ordering::SeqCst)
+    }
+
+    /// Accept attempts that failed so far. A failed accept is skipped: the listener and every
+    /// connection stay open and the server keeps accepting.
+    pub fn accept_errors(&self) -> usize {
+        self.shared.accept_errors.load(Ordering::SeqCst)
+    }
+
+    /// Fault injection: the server's next accept attempt fails with `kind` instead of taking a
+    /// connection, as an operating system's `accept` can fail while the listener stays usable (a
+    /// queued connection reset by its peer, a momentary shortage of buffers or descriptors).
+    /// Calls queue up; each one fails one attempt.
+    pub fn fail_next_accept(&self, kind: std::io::ErrorKind) {
+        self.shared
+            .injected_accept_errors
+            .lock()
+            .unwrap()
+            .push_back(kind);
+        self.shared.injected.notify_one();
     }
 
     /// Waits until `condition(self)` holds, re-checking whenever the server's counters change
@@ -488,12 +524,37 @@ async fn accept_loop(
     mut stopped: watch::Receiver<bool>,
 ) {
     let mut connections = JoinSet::new();
+    // Accept attempts that failed in a row, and the pause before the next attempt.
+    let mut failures: u32 = 0;
+    let mut pause = Duration::ZERO;
     loop {
+        if !pause.is_zero() {
+            tokio::select! {
+                biased;
+                _ = stopped.changed() => break,
+                () = tokio::time::sleep(pause) => {}
+            }
+        }
         tokio::select! {
             biased;
             _ = stopped.changed() => break,
-            accepted = listener.accept() => {
-                let Ok((stream, _)) = accepted else { break };
+            accepted = accept(&listener, &shared) => {
+                let stream = match accepted {
+                    Ok(stream) => stream,
+                    // A failed accept concerns one attempt (a connection reset while it was
+                    // queued, a momentary shortage of buffers or descriptors), not the listener:
+                    // skip it and keep serving every connection. Failures in a row are retried
+                    // after a growing pause, so a lasting condition cannot spin this loop.
+                    Err(_) => {
+                        shared.accept_errors.fetch_add(1, Ordering::SeqCst);
+                        shared.changed.notify_waiters();
+                        failures += 1;
+                        pause = accept_backoff(failures);
+                        continue;
+                    }
+                };
+                failures = 0;
+                pause = Duration::ZERO;
                 // The head and body are written separately: without TCP_NODELAY, Nagle's
                 // algorithm plus the client's delayed ACK adds ~40 ms to each response.
                 let _ = stream.set_nodelay(true);
@@ -513,6 +574,30 @@ async fn accept_loop(
     }
     drop(listener);
     connections.shutdown().await;
+}
+
+/// The next accepted connection, or the next failure queued by [`TestServer::fail_next_accept`].
+async fn accept(listener: &TcpListener, shared: &Shared) -> std::io::Result<TcpStream> {
+    loop {
+        if let Some(kind) = shared.injected_accept_errors.lock().unwrap().pop_front() {
+            return Err(std::io::Error::new(kind, "injected accept failure"));
+        }
+        tokio::select! {
+            biased;
+            () = shared.injected.notified() => {}
+            // `accept` is cancel-safe: no connection is lost when an injection wins.
+            accepted = listener.accept() => return accepted.map(|(stream, _)| stream),
+        }
+    }
+}
+
+/// The pause before the next accept after `failures` failed ones in a row: none after a single
+/// failure, then 1 ms, doubling up to 100 ms.
+fn accept_backoff(failures: u32) -> Duration {
+    if failures < 2 {
+        return Duration::ZERO;
+    }
+    Duration::from_millis((1u64 << (failures - 2).min(7)).min(100))
 }
 
 /// Decrements the live-connection counter when a connection task ends or is aborted.
@@ -823,7 +908,15 @@ async fn read_chunked(
                 return Err(std::io::ErrorKind::UnexpectedEof.into());
             }
         }
+        // The chunk is complete only with the CRLF that ends its data.
+        if buf[..2] != *b"\r\n" {
+            return Err(std::io::ErrorKind::InvalidData.into());
+        }
         buf.drain(..2);
+        shared
+            .request_chunk_bytes
+            .fetch_add(size as u64, Ordering::SeqCst);
+        shared.changed.notify_waiters();
     }
 }
 

@@ -290,7 +290,7 @@ impl Write {
     }
 }
 
-#[tokio::test]
+#[tokio::test(start_paused = true)]
 async fn timed_out_writes_repeat_identical_bytes_only_with_the_operations_request_id() {
     for write in [Write::Authorize, Write::Capture, Write::Void] {
         for (with_id, resolved) in [(false, false), (true, true), (true, false)] {
@@ -305,11 +305,19 @@ async fn timed_out_writes_repeat_identical_bytes_only_with_the_operations_reques
                 }
             })
             .await;
-            let paypal = builder_with(&server, Duration::from_millis(50))
-                .build()
-                .unwrap();
+            let timeout = Duration::from_millis(50);
+            let paypal = builder_with(&server, timeout).build().unwrap();
             let id = with_id.then(|| RequestId::new("logical-write-1").unwrap());
-            let result = write.send(&paypal, id.clone()).await;
+            // The attempts answered late: the first, and an unresolved repetition.
+            let late = if with_id && !resolved { 2 } else { 1 };
+            let result = time_out(
+                &server,
+                write.path(),
+                timeout,
+                late,
+                write.send(&paypal, id.clone()),
+            )
+            .await;
             if resolved {
                 result.unwrap();
             } else {
@@ -463,7 +471,7 @@ async fn void_accepts_a_200_acknowledgement_and_authorize_preserves_unknown_stat
     assert_eq!(server.shutdown().await.open_after, 0);
 }
 
-#[tokio::test]
+#[tokio::test(start_paused = true)]
 async fn an_uncertain_authorize_is_reconciled_by_reading_authorizations_without_another_write() {
     let server = serve(|r| match (r.method.as_str(), r.path()) {
         ("POST", AUTHORIZE_PATH) => {
@@ -473,22 +481,24 @@ async fn an_uncertain_authorize_is_reconciled_by_reading_authorizations_without_
         _ => panic!("unexpected request"),
     })
     .await;
-    let paypal = builder_with(&server, Duration::from_millis(50))
-        .build()
-        .unwrap();
-    let error = paypal
+    let timeout = Duration::from_millis(50);
+    let paypal = builder_with(&server, timeout).build().unwrap();
+    let authorize = paypal
         .order(OrderId::new(ORDER).unwrap())
         .authorize(AuthorizeRequest::new())
-        .send()
+        .send();
+    let error = time_out(&server, AUTHORIZE_PATH, timeout, 1, authorize)
         .await
         .unwrap_err();
     assert_eq!(error.uncertain().unwrap().attempts(), 1);
-    let reconciled = paypal
-        .order(OrderId::new(ORDER).unwrap())
-        .get_authorized()
-        .send()
-        .await
-        .unwrap();
+    let reconciled = drive(
+        paypal
+            .order(OrderId::new(ORDER).unwrap())
+            .get_authorized()
+            .send(),
+    )
+    .await
+    .unwrap();
     assert_eq!(reconciled.status, OrderStatus::Completed);
     let authorization = reconciled.authorizations().next().unwrap();
     assert_eq!(authorization.id.as_str(), AUTHORIZATION);

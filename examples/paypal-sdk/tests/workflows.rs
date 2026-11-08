@@ -127,21 +127,23 @@ async fn capture_an_approved_order_then_retrieve_the_capture() {
 
 /// Required failure: a capture without a `PayPal-Request-Id` that times out is sent once and
 /// surfaced as uncertain, although the server did capture.
-#[tokio::test]
+#[tokio::test(start_paused = true)]
 async fn a_timed_out_capture_without_request_id_is_uncertain_and_never_repeated() {
     let fake = FakePayPal::new();
     let server = fake.start().await;
     fake.approve();
     fake.plan_captures(&[CapturePlan::AnswerAfter(Duration::from_secs(2))]);
-    let paypal = builder_with(&server, Duration::from_millis(300))
+    let timeout = Duration::from_millis(300);
+    let paypal = builder_with(&server, timeout)
         .writes(fast(5)) // even with room for more attempts
         .build()
         .unwrap();
 
-    let error = paypal
+    let capture = paypal
         .order(order_id())
         .capture(CaptureRequest::new())
-        .send()
+        .send();
+    let error = time_out(&server, CAPTURE_ORDER_PATH, timeout, 1, capture)
         .await
         .unwrap_err();
     let Error::Uncertain(uncertain) = &error else {
@@ -160,7 +162,7 @@ async fn a_timed_out_capture_without_request_id_is_uncertain_and_never_repeated(
     // reading the order, not by capturing again.
     assert_eq!(count(&server, "POST", CAPTURE_ORDER_PATH), 1);
     assert_eq!(fake.captures_performed(), 1);
-    let order = paypal.order(order_id()).get().send().await.unwrap();
+    let order = drive(paypal.order(order_id()).get().send()).await.unwrap();
     assert_eq!(order.status, OrderStatus::Completed);
 }
 
@@ -190,21 +192,21 @@ async fn a_failed_capture_without_request_id_is_uncertain_and_sent_once() {
 
 /// With a request ID the operation permits repetition: a timed-out capture is sent again with
 /// the same ID and body, and PayPal's stored result (`200`) completes the call. One capture.
-#[tokio::test]
+#[tokio::test(start_paused = true)]
 async fn a_timed_out_capture_with_request_id_is_repeated_with_the_same_id() {
     let fake = FakePayPal::new();
     let server = fake.start().await;
     fake.approve();
     fake.plan_captures(&[CapturePlan::AnswerAfter(Duration::from_secs(2))]);
-    let paypal = builder_with(&server, Duration::from_millis(300))
-        .build()
-        .unwrap();
+    let timeout = Duration::from_millis(300);
+    let paypal = builder_with(&server, timeout).build().unwrap();
 
-    let order = paypal
+    let capture = paypal
         .order(order_id())
         .capture(CaptureRequest::new())
         .set_request_id(RequestId::new("synthetic-capture-0002").unwrap())
-        .send()
+        .send();
+    let order = time_out(&server, CAPTURE_ORDER_PATH, timeout, 1, capture)
         .await
         .unwrap();
     assert_eq!(order.status, OrderStatus::Completed);
