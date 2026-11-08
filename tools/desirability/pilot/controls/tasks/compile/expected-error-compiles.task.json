@@ -1,0 +1,16 @@
+{
+ "class": "must-fail",
+ "code": "let api = NagerHolidays::new(::concord::reqwest::Client::new());\nlet _r: ::core::result::Result<HolidayResponse, Error> = api.holidays(\"AT\", 2026).send().await;",
+ "control": {
+  "expect": "fail",
+  "reason": "compiles, expected a compile error"
+ },
+ "expect": {
+  "compiles": false
+ },
+ "format": 1,
+ "id": "ctl/compile/expected-error-compiles",
+ "kind": "compile",
+ "role": "control",
+ "sdk": "nager-holidays"
+}

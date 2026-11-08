@@ -1,0 +1,28 @@
+{
+ "class": "must-fail",
+ "control": {
+  "expect": "fail",
+  "reason": "omission detected at `never`"
+ },
+ "expect": {
+  "names_endpoint": true,
+  "stages": [
+   "SDK build",
+   "caller compile (existing tests)",
+   "caller compile"
+  ]
+ },
+ "format": 1,
+ "id": "ctl/stage/not-detected",
+ "kind": "stage",
+ "names": "HolidayResponse|\\bmeta\\b",
+ "oracle": "oracle.rs",
+ "patches": {
+  "*": {
+   "omission": "omission-silent.patch",
+   "reference": "reference.patch"
+  }
+ },
+ "role": "control",
+ "sdk": "nager-holidays"
+}
