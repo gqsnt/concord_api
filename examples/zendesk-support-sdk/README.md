@@ -101,7 +101,10 @@ performed create redirected to a target answering `429` would look refused).
 
 ## Failure semantics
 
-Generated `send()` goes through `SendPolicy` (`prepare()` bypasses it):
+Generated `send()` goes through `SendPolicy` (`prepare()` bypasses it). Read or write, and
+which write turns a `409` into a collision, are one exhaustive `match` over the generated
+`ZendeskOperation` (`src/policy.rs`): an endpoint added to the declaration does not compile
+until it is classified there.
 
 - **Reads** (`GET`) may be repeated. A `429`, or a `503` carrying `Retry-After`, is sent again
   after exactly the server's delay (seconds or HTTP date, parsed by

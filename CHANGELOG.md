@@ -21,6 +21,18 @@ Not released: the version is unchanged (4.2.0). Records: `v4/desirability/` (dec
   operation, no longer per URL path, so a base URL with a path prefix is followed instead of every
   call being refused as `SigningInput`) SDKs; their policies implement `SendOperation` instead of
   `SendWith`. Author guide §5.14.
+- **Full migration** (H08): every other SDK whose policy or paging classified operations by name,
+  path or table adopts it. PayPal (read/write and `PayPal-Request-Id` replay per operation, the
+  method rule folded in), Zendesk (read/write and the update's `409` collision; the string
+  literal `"Zendesk.ticket.update"` is gone), Datadog (the legacy v1 post told apart from the
+  `POST` search), Square (`Error::create_outcome_unknown`; `SquarePolicy` keeps `SendWith` and
+  gains a forwarding `SendOperation` impl, since it ignores the variant) and GitHub (no send
+  policy: the enum only, and one exhaustive table from operation to listing id from which the
+  recognized ids are derived; ids and `LinkPages::new` unchanged). The other SDKs do not adopt
+  it: Discord, Cloudflare and Xero decide by method or URL with no per-operation exception;
+  Kubernetes, S3, Adyen, Elasticsearch, Postmark and Europe PMC classify through traits that the
+  compiler already checks; Microsoft Graph and the distribution registry classify with data the
+  enum cannot carry; the rest do not classify operations.
 
 ### Documentation
 

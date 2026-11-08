@@ -55,6 +55,9 @@ concord::api! {
         format Json;
         limit PAGE_BODY_LIMIT;
         send policy -> Result<_, Error>;
+        /// Every Zendesk operation, as the [`SendPolicy`] classifies it (read or write, and
+        /// whether a `409` is a collision).
+        operations ZendeskOperation;
 
         /// The ticket collection.
         scope tickets {

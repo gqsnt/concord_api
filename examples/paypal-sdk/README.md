@@ -145,6 +145,9 @@ any returned representation is ignored.
 
 - **Request-ID support is per endpoint.** This SDK permits repeats for create order, order
   authorize/capture, and authorization capture/void, only when the caller supplied an ID.
+  Read or write, and request-ID support, are one exhaustive `match` over the generated
+  `PayPalOperation` (`src/policy.rs`): an endpoint added to the declaration does not compile
+  until it is classified there.
   The create/order-capture references describe 6-hour default retention. Do not assume that
   retention for Payments v2 or that every PayPal endpoint supports request IDs. Default write
   bounds remain 2 attempts with identical method, target, ID and body; check operation-specific

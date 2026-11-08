@@ -119,7 +119,9 @@ Complete and cancel carry no idempotency key. A timeout, unreadable success,
 `payments().get(id)` and act on its `status` (`APPROVED`, `COMPLETED`,
 `CANCELED`). The SDK sends each complete/cancel once and never resends it.
 `create_outcome_unknown()` stays true only for create, so a replay rule written
-for create does not fire for complete/cancel.
+for create does not fire for complete/cancel. Which operation that is comes from
+an exhaustive `match` over the generated `SquareOperation` (`src/error.rs`): an
+endpoint added to the declaration does not compile until it is classified there.
 
 ```no_run
 use concord_sdk_square_payments::{CompletePayment, CreatePayment, Error, Money, Square};
