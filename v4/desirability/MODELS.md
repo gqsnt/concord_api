@@ -196,3 +196,9 @@ Append-only: a row marked `running` is superseded by a later row (`↳ … resul
 | H06 candidate implementer (dz/h06 B first, then dz/h06a A) — Claude subagent | Claude subagent (inherits Opus 5.5) | (transcript at completion) | running | — |
 | ↳ H06 survey result | — | claude-opus-5-5 (subagent transcript); effort not visible | ~24 min, 136 tool uses | saved as v4/desirability/reviews/h06-design-survey.md; transcript audit: 0 forbidden-path hits in tool results (one root grep path-filtered) |
 | ↳ H03b A′ result | — | claude-opus-5-5 (subagent transcript); effort not visible | ~35 min, ~38 tool uses (resumed round) | committed fc16090d (dz/h03b, pushed); transcript audit clean (brief text only) |
+| ↳ T3 cancellation result | — | claude-opus-5-5 (subagent transcript); effort not visible | ~70 min, 155 tool uses | real defect (hyper polls the body inside a write pass after the send is dropped); fix in concord-core; committed on dz/t3-cancel (pushed); transcript audit clean |
+| T3 cancellation review (`t3-cancel-review-sol`) on 7f29045e | Codex gpt-6.1-sol, xhigh, read-only | (meta.json at completion) | running | — |
+| ↳ T3 cancellation review observed | — | gpt-6.1-sol / xhigh / read-only (rollout turn_context); 17:08:22Z–17:14:14Z | 5m52s | ACCEPT_WITH_FIXES (2 blocking: docs boundary / end-of-stream after cancel; timing-dependent test) |
+| ↳ Pilot harness result | — | claude-opus-5-5 (subagent transcript); effort not visible | ~52 min, 125 tool uses | committed 54e27660 (dz/pilot-harness, local); H04 pilot-3 regression 288/288 identical, WIN; selftest 82/82 |
+| Pilot harness review 1 (`pilot-harness-review-1-sol`) on 54e27660 | Codex gpt-6.1-sol, xhigh, read-only | (meta.json at completion) | running | — |
+| ↳ Pilot harness review 1 observed | — | gpt-6.1-sol / xhigh / read-only (rollout turn_context); 17:19:15Z–17:24:32Z | 5m17s | ACCEPT (6 non-blocking, recorded as known limits) |
