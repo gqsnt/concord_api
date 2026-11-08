@@ -18,7 +18,7 @@
 
 use concord_check_canary::Canaries;
 use concord_example_testserver::{Body, Recorded, Reply, TestServer};
-use std::{net::TcpListener, num::NonZeroU32, time::Duration};
+use std::{num::NonZeroU32, time::Duration};
 
 use concord_sdk_open_library::{AuthorId, Error, OpenLibrary, WorkId, WorkSort};
 
@@ -33,10 +33,7 @@ fn http() -> concord::reqwest::Client {
 }
 
 fn refused() -> String {
-    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
-    let url = format!("http://{}", listener.local_addr().unwrap());
-    drop(listener);
-    url
+    concord_example_testserver::refused_url()
 }
 
 // Echo the canary into headers and into every body whose content the SDK withholds.

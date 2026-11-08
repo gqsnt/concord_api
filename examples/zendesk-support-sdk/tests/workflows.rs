@@ -10,7 +10,7 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Duration;
 
-use concord_example_testserver::{Recorded, Reply, TestServer};
+use concord_example_testserver::{Recorded, Reply, TestServer, paused};
 use concord_sdk_zendesk_support::concord_pagination::{PagesError, Resume};
 use concord_sdk_zendesk_support::{
     Error, IdempotencyKey, IdempotencyLookup, NewTicket, PageSize, PaginationError, Priority,
@@ -126,20 +126,21 @@ async fn create_a_ticket_then_retrieve_its_resulting_state() {
 /// The required failure of workflow 2: the create reaches the server, which stores the ticket,
 /// but the response arrives after the client's timeout. The SDK surfaces an uncertain write with
 /// the key, sends nothing else, and the caller resolves it by replaying the same request.
-#[tokio::test]
+// Paused clock: the 300 ms timeout fires only once the server holds the first create; the replay
+// and the read complete while time stands still.
+#[tokio::test(start_paused = true)]
 async fn an_uncertain_create_is_surfaced_once_and_resolved_by_replaying_its_key() {
     let fake = FakeZendesk::default();
     let responder = fake.clone();
     let server = TestServer::start(move |r: &Recorded| responder.respond(r)).await;
-    let api = api_with(&server, Duration::from_millis(300), SendPolicy::default());
+    let timeout = Duration::from_millis(300);
+    let api = api_with(&server, timeout, SendPolicy::default());
     fake.delay_next_create(Duration::from_secs(3));
 
     let new = NewTicket::new("Synthetic: refund not received.").subject("Synthetic: refund");
     let key = IdempotencyKey::new("synthetic-refund-5").unwrap();
-    let error = api
-        .tickets()
-        .create(new.clone(), key.clone())
-        .send()
+    let create = api.tickets().create(new.clone(), key.clone()).send();
+    let error = paused::time_out(&server, |_| true, timeout, create)
         .await
         .unwrap_err();
     let Error::Uncertain(write) = &error else {
@@ -156,12 +157,17 @@ async fn an_uncertain_create_is_surfaced_once_and_resolved_by_replaying_its_key(
     assert_eq!(fake.ticket_count(), 1);
 
     // The caller's explicit resolution: the same body and key replay the original response.
-    let replayed = api.tickets().create(new, key).send().await.unwrap();
+    let replayed = paused::drive(api.tickets().create(new, key).send())
+        .await
+        .unwrap();
     assert_eq!(replayed.idempotency, IdempotencyLookup::Hit);
     assert_eq!(replayed.ticket.id, 9001);
     assert_eq!(fake.ticket_count(), 1, "no duplicate ticket");
 
-    let state = api.ticket(9001).show().send().await.unwrap().ticket;
+    let state = paused::drive(api.ticket(9001).show().send())
+        .await
+        .unwrap()
+        .ticket;
     assert_eq!(state.status, Status::New);
     assert_eq!(state.subject.as_deref(), Some("Synthetic: refund"));
     assert_eq!(server.requests().len(), 3);

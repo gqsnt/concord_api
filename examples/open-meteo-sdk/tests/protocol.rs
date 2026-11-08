@@ -3,7 +3,7 @@
 use std::time::Duration;
 
 use concord::{ErrorKind, bytes::Bytes};
-use concord_example_testserver::{Body, Recorded, Reply, TestServer};
+use concord_example_testserver::{Body, Recorded, Reply, TestServer, paused};
 use concord_sdk_open_meteo::{
     ERROR_BODY_LIMIT, Error, ErrorBodyError, FORECAST_BODY_LIMIT, ForecastData, ForecastQuery,
     HourlyVariable, OpenMeteo, ResponseErrorKind, ResponseFormat,
@@ -197,9 +197,11 @@ async fn non_json_error_document_retains_head_without_reading_stalled_body() {
             .with_body(Body::Stall)
     })
     .await;
+    // Clock frozen while the call runs: the bound fails only a call that waits for something
+    // that never comes (then reported as stuck).
     let error = tokio::time::timeout(
         Duration::from_secs(1),
-        client(&server).forecast(&query(), ResponseFormat::Csv),
+        paused::frozen(client(&server).forecast(&query(), ResponseFormat::Csv)),
     )
     .await
     .expect("must reject the head without waiting for the body")
@@ -261,9 +263,11 @@ async fn mismatched_missing_duplicate_and_unsupported_media_are_refused_before_b
             reply
         })
         .await;
+        // Clock frozen while the call runs: the bound fails only a call that waits for something
+        // that never comes (then reported as stuck).
         let error = tokio::time::timeout(
             Duration::from_secs(1),
-            client(&server).forecast(&query(), format),
+            paused::frozen(client(&server).forecast(&query(), format)),
         )
         .await
         .expect("head refusal must not read a stalled body")

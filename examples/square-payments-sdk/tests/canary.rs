@@ -24,7 +24,7 @@ use concord_sdk_square_payments::{
     CompletePayment, CreatePayment, Error, Money, Resume, Square, SquareConfig,
     SquarePaymentsCreate, bearer,
 };
-use std::{net::TcpListener, num::NonZeroUsize, time::Duration};
+use std::{num::NonZeroUsize, time::Duration};
 
 const PAYMENT: &str = include_str!("../fixtures/payment.json");
 const AUTHORIZED: &str = include_str!("../fixtures/authorized-payment.json");
@@ -40,10 +40,7 @@ fn http() -> concord::reqwest::Client {
 }
 
 fn refused() -> String {
-    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
-    let url = format!("http://{}", listener.local_addr().unwrap());
-    drop(listener);
-    url
+    concord_example_testserver::refused_url()
 }
 
 fn reply(case: usize, success: &str, echo: &str) -> Reply {

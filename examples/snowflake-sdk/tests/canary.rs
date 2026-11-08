@@ -28,7 +28,7 @@ use concord_sdk_snowflake::{
     Client, ClientOptions, Error, FirstResult, LocalStop, PollOutcome, PollPolicy, Query,
     RequestContext, RequestId, Statement, StatementState, TokenType,
 };
-use std::{net::TcpListener, num::NonZeroUsize, time::Duration};
+use std::{num::NonZeroUsize, time::Duration};
 
 const A: &str = "00000000-0000-4000-8000-00000000000a";
 const B: &str = "00000000-0000-4000-8000-00000000000b";
@@ -38,10 +38,7 @@ const SUBMIT: &str = "00000000-0000-4000-8000-000000000101";
 const CANCEL: &str = "00000000-0000-4000-8000-000000000102";
 
 fn refused() -> String {
-    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
-    let url = format!("http://{}", listener.local_addr().unwrap());
-    drop(listener);
-    url
+    concord_example_testserver::refused_url()
 }
 
 fn options() -> ClientOptions {

@@ -7,7 +7,7 @@
 use std::time::Duration;
 
 use concord::{ErrorKind, reqwest};
-use concord_example_testserver::{Body, Recorded, Reply, Script, TestServer};
+use concord_example_testserver::{Body, Recorded, Reply, Script, TestServer, paused};
 use concord_sdk_frankfurter::{
     Date, Decimal, ERROR_BODY_LIMIT, Error, ErrorBodyError, Frankfurter, Problem, ProviderError,
     RateResponse, ResponseMeta,
@@ -404,7 +404,9 @@ async fn a_success_body_cut_off_yields_no_rate() -> TestResult {
     Ok(())
 }
 
-#[tokio::test]
+// Paused clock: the 300 ms timeout fires only once the server has written the head, so it ends the
+// stalled body and never the wait for the head.
+#[tokio::test(start_paused = true)]
 async fn a_stalled_success_body_ends_at_the_transport_timeout() -> TestResult {
     let server = TestServer::start(|_| {
         Reply::new(200)
@@ -412,13 +414,13 @@ async fn a_stalled_success_body_ends_at_the_transport_timeout() -> TestResult {
             .with_body(Body::Stall)
     })
     .await;
-    let http = reqwest::Client::builder()
-        .timeout(Duration::from_millis(300))
-        .build()?;
+    let timeout = Duration::from_millis(300);
+    let http = reqwest::Client::builder().timeout(timeout).build()?;
     let api = Frankfurter::new(http).with_base_url(server.url())?;
 
     let started = std::time::Instant::now();
-    let result = api.latest_pair("EUR", "USD").send().await;
+    let pair = api.latest_pair("EUR", "USD").send();
+    let result = paused::time_out_in_body(&server, |_| true, timeout, pair).await;
     assert!(
         started.elapsed() < Duration::from_secs(4),
         "{:?}",

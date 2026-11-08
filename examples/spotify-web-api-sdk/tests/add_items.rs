@@ -8,7 +8,7 @@ use common::{BASIC, ManualClock, api, at, form, granted, json, oauth, options};
 use concord_sdk_spotify_web_api::{
     AddItems, ApiClass, Error, RefreshToken, SessionOptions, SpotifyId, WebApi, WebApiConfig,
 };
-use concord_testserver::{Body, Recorded, Reply, TestServer};
+use concord_testserver::{Body, Recorded, Reply, TestServer, paused};
 use serde_json::{Value, json as value};
 
 const PLAYLIST: &str = "0SyntheticPlaylist0003";
@@ -296,12 +296,19 @@ async fn timeouts_before_the_head_or_during_the_body_are_uncertain_and_never_rep
             )
             .with_base_url(server.url())
             .unwrap();
-            let error = api
-                .playlist(id())
-                .add_items(batch())
-                .send()
-                .await
-                .unwrap_err();
+            // Paused clock: the 200 ms budget (the session's Tokio timeout for the write, or the
+            // client timeout) runs out only once the server holds the POST, after writing its head
+            // when it stalls the body; the re-read completes while virtual time stands still.
+            tokio::time::pause();
+            let playlist = api.playlist(id());
+            let add = playlist.add_items(batch()).send();
+            let late = |r: &Recorded| r.path() == TARGET;
+            let error = if stalled_body {
+                paused::time_out_in_body(&server, late, budget, add).await
+            } else {
+                paused::time_out(&server, late, budget, add).await
+            }
+            .unwrap_err();
             let Error::UncertainWrite(cause) = &error else {
                 panic!("expected uncertain addition: {error:?}")
             };
@@ -311,7 +318,10 @@ async fn timeouts_before_the_head_or_during_the_body_are_uncertain_and_never_rep
                 assert!(error.concord().unwrap().transport().unwrap().is_timeout());
             }
             assert!(error.to_string().contains("re-read the playlist"));
-            let playlist = api.playlist(id()).get().send().await.unwrap();
+            let playlist = paused::drive(api.playlist(id()).get().send())
+                .await
+                .unwrap();
+            tokio::time::resume();
             assert_eq!(playlist.snapshot_id, "synthetic-new-snapshot+/=");
             let Some(concord_sdk_spotify_web_api::Playable::Track(track)) =
                 &playlist.tracks.items[0].track

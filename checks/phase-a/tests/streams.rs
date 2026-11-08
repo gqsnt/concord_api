@@ -9,7 +9,7 @@ use concord::csv::{CsvOptions, CsvReader, CsvWriter, HeaderMode, StreamRows};
 use concord::jsonl::{JsonLinesOptions, JsonLinesReader, RecordErrors};
 use concord::stream::{Completion, ReadErrorKind};
 use concord_check_phase_a::{Event, Reports, ReportsConfig, Row};
-use concord_example_testserver::{Body, Reply, TestServer};
+use concord_example_testserver::{Body, Reply, TestServer, paused};
 use futures_util::{StreamExt, TryStreamExt};
 
 fn api(server: &TestServer) -> Reports {
@@ -383,7 +383,10 @@ async fn an_own_parser_reads_incoming_chunks_with_identity() {
     assert!(!error.to_string().contains("127.0.0.1"), "{error}");
 }
 
-#[tokio::test]
+// Paused clock: the response and the reads before the deadline complete in frozen time, then the
+// 50 ms deadline and the server's 300 ms pause run on one virtual clock, so the deadline always
+// passes first, however slowly the earlier reads were processed.
+#[tokio::test(start_paused = true)]
 async fn a_cancelled_chunk_call_loses_no_byte() {
     // The second chunk arrives 300 ms after the first: a `chunk()` cancelled while waiting for
     // it (a timeout, a `select!` branch) must leave it to the next call, whole.
@@ -393,9 +396,11 @@ async fn a_cancelled_chunk_call_loses_no_byte() {
             .with_body(chunks(&[("data: one\n\n", 0), ("data: two\n\n", 300)]))
     })
     .await;
-    let mut incoming = api(&server).export("c").send().await.unwrap();
+    let mut incoming = paused::drive(api(&server).export("c").send())
+        .await
+        .unwrap();
     let mut read = Vec::new();
-    read.extend_from_slice(&incoming.chunk().await.unwrap().unwrap());
+    read.extend_from_slice(&paused::drive(incoming.chunk()).await.unwrap().unwrap());
     assert!(
         tokio::time::timeout(Duration::from_millis(50), incoming.chunk())
             .await

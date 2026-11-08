@@ -4,7 +4,7 @@
 //! reacts to an athlete who did not grant `activity:write`, and sees the update share the
 //! non-upload usage windows with reads. Live provider calls: NOT_RUN.
 
-use concord_example_testserver::{Recorded, Reply, TestServer};
+use concord_example_testserver::{Recorded, Reply, TestServer, paused};
 use concord_sdk_strava::pagination::Resume;
 use concord_sdk_strava::{
     ActivityUpdate, Credentials, DataType, Error, OAuth, Session, TokenRequest, Tokens, UploadFile,
@@ -165,7 +165,9 @@ async fn edit_a_listed_activity_and_use_the_returned_activity() -> Res {
     Ok(())
 }
 
-#[tokio::test]
+// Paused clock: the 250 ms timeout fires only once the server holds the first PUT; the reads and
+// the explicit resend complete while time stands still.
+#[tokio::test(start_paused = true)]
 async fn uncertain_update_is_resolved_by_rereading_never_by_an_automatic_resend() -> Res {
     for applied in [true, false] {
         let stored = Stored::new();
@@ -189,19 +191,21 @@ async fn uncertain_update_is_resolved_by_rereading_never_by_an_automatic_resend(
             _ => Reply::json(200, provider.body()),
         })
         .await;
+        let timeout = Duration::from_millis(250);
         let api = connect(
             &server,
             tokens("read activity:read_all activity:write"),
-            Duration::from_millis(250),
+            timeout,
         )
         .client();
         let edit = ActivityUpdate::new().name("Renamed after the race".into());
-        let err = api
-            .activities()
-            .update(15_500_000_001, edit.clone())
-            .send()
-            .await
-            .unwrap_err();
+        let update = api.activities().update(15_500_000_001, edit.clone()).send();
+        let err = if applied {
+            paused::time_out(&server, |r| r.method == "PUT", timeout, update).await
+        } else {
+            paused::drive(update).await
+        }
+        .unwrap_err();
         assert!(err.is_ambiguous(), "{err:?}");
         assert!(matches!(err, Error::Ambiguous(_)), "{err:?}");
         assert_eq!(
@@ -211,15 +215,14 @@ async fn uncertain_update_is_resolved_by_rereading_never_by_an_automatic_resend(
         );
 
         // The application resolves the uncertainty by reading the activity again.
-        let current = api.activities().get(15_500_000_001).send().await?.value;
+        let current = paused::drive(api.activities().get(15_500_000_001).send())
+            .await?
+            .value;
         assert_eq!(edit.is_reflected_in(&current), applied);
         if !edit.is_reflected_in(&current) {
             // Its own decision, made after looking: send the edit again, explicitly.
-            let resent = api
-                .activities()
-                .update(15_500_000_001, edit.clone())
-                .send()
-                .await?;
+            let resent =
+                paused::drive(api.activities().update(15_500_000_001, edit.clone()).send()).await?;
             assert!(edit.is_reflected_in(&resent.value));
         }
         let methods: Vec<String> = server.requests().into_iter().map(|r| r.method).collect();

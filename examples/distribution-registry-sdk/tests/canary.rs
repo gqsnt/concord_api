@@ -25,7 +25,7 @@ use concord_sdk_distribution_registry::{
     ManifestMediaType, ManifestUpload, ProtocolProblem, Reference, Registry, RegistryError,
     RepositoryName, TokenAuth,
 };
-use std::{net::TcpListener, time::Duration};
+use std::time::Duration;
 
 const MANIFEST: &[u8] = include_bytes!("../fixtures/manifest-oci.json");
 const UNAUTHORIZED: &[u8] = include_bytes!("../fixtures/token-spec-unauthorized.json");
@@ -47,10 +47,7 @@ fn http() -> concord::reqwest::Client {
 }
 
 fn refused() -> String {
-    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
-    let url = format!("http://{}", listener.local_addr().unwrap());
-    drop(listener);
-    url
+    concord_example_testserver::refused_url()
 }
 
 fn challenge(realm: &str, echo: &str) -> Reply {

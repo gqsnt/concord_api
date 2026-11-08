@@ -20,7 +20,7 @@ use concord_example_testserver::{Body, Recorded, Reply, TestServer};
 use concord_sdk_openai::{
     Batch, BatchInput, Error, OpenAi, OpenAiApi, OpenAiApiConfig, ResponseRequest, batch_jsonl,
 };
-use std::{net::TcpListener, time::Duration};
+use std::time::Duration;
 
 const ERROR: &str = include_str!("../fixtures/error.json");
 const RESPONSE: &str = include_str!("../fixtures/response.json");
@@ -40,10 +40,7 @@ fn http() -> concord::reqwest::Client {
 }
 
 fn refused() -> String {
-    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
-    let url = format!("http://{}", listener.local_addr().unwrap());
-    drop(listener);
-    url
+    concord_example_testserver::refused_url()
 }
 
 /// `in_body`: whether a malformed or wrong-type body may carry the echo (only where Concord,

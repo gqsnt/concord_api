@@ -22,7 +22,7 @@ tokio = { workspace = true, features = ["time"] }
 [dev-dependencies]
 concord-check-canary = { path = "../../checks/canary" }
 concord-example-testserver = { path = "../testserver" }
-tokio = { workspace = true, features = ["macros", "rt-multi-thread", "time", "net"] }
+tokio = { workspace = true, features = ["macros", "rt-multi-thread", "time", "net", "test-util"] }
 
 [lints]
 workspace = true

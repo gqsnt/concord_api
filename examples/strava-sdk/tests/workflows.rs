@@ -1,6 +1,6 @@
 //! Connected workflows and failure recovery, exclusively against local fixtures.
 mod support;
-use concord_example_testserver::{Recorded, Reply, TestServer};
+use concord_example_testserver::{Recorded, Reply, TestServer, paused};
 use concord_sdk_strava::{
     concord,
     pagination::{PagesError, Resume},
@@ -210,7 +210,7 @@ async fn upload_file_then_poll_its_id_until_activity_exists() {
     server.shutdown().await;
 }
 
-#[tokio::test]
+#[tokio::test(start_paused = true)]
 async fn upload_timeout_is_ambiguous_and_never_replays_one_shot_source() {
     let count = Arc::new(AtomicUsize::new(0));
     let polled = count.clone();
@@ -225,11 +225,14 @@ async fn upload_timeout_is_ambiguous_and_never_replays_one_shot_source() {
         Reply::json(201, RECEIPT).delay(Duration::from_secs(1))
     })
     .await;
-    let api = session(&server.url(), TOKENS, Duration::from_millis(100)).client();
+    let timeout = Duration::from_millis(100);
+    let api = session(&server.url(), TOKENS, timeout).client();
     let file = UploadFile::new("one-shot.gpx", DataType::Gpx, body).unwrap();
-    let error = api
-        .uploads()
-        .upload_and_poll(file, polls(2))
+    // Paused clock: the 100 ms (connect and request) timeout fires only once the server has the
+    // whole upload.
+    let uploads = api.uploads();
+    let upload = uploads.upload_and_poll(file, polls(2));
+    let error = paused::time_out(&server, |r| r.target == "/api/v3/uploads", timeout, upload)
         .await
         .unwrap_err();
     assert!(error.is_ambiguous());

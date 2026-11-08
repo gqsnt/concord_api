@@ -33,10 +33,7 @@ fn http(server: &TestServer) -> concord::reqwest::Client {
 
 // A refused connection: a port nothing listens on, still under the shop's subdomain.
 fn refused_port() -> u16 {
-    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
-    let port = listener.local_addr().unwrap().port();
-    drop(listener);
-    port
+    concord_example_testserver::refused_addr().port()
 }
 
 // Echo credentials in headers and in diagnostics whose formatting is withheld.

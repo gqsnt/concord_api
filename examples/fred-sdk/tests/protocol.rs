@@ -3,7 +3,7 @@
 mod support;
 
 use concord::ErrorKind;
-use concord_example_testserver::{Body, Recorded, Reply, TestServer};
+use concord_example_testserver::{Body, Recorded, Reply, TestServer, paused};
 use concord_sdk_fred::{
     BODY_LIMIT, ERROR_BODY_LIMIT, Error, Fred, FredConfig, ObservationLimit, SearchLimit, concord,
 };
@@ -262,9 +262,11 @@ async fn wrong_missing_duplicate_and_invalid_media_refused_before_read() {
             reply.with_body(Body::Stall)
         })
         .await;
+        // Clock frozen while the call runs: the bound fails only a call that waits for something
+        // that never comes (then reported as stuck).
         let error = tokio::time::timeout(
             std::time::Duration::from_secs(2),
-            api(&server).series("SYN_A").observations().send(),
+            paused::frozen(api(&server).series("SYN_A").observations().send()),
         )
         .await
         .expect("head rejection must not read the stalled body")

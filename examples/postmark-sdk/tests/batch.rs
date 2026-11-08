@@ -1,7 +1,7 @@
 //! Batch sending: one result per message, and whole-batch unknown outcomes.
 
 use concord::ErrorKind;
-use concord_example_testserver::{Body, Recorded, Reply, TestServer};
+use concord_example_testserver::{Body, Recorded, Reply, TestServer, paused};
 use concord_sdk_postmark::{BatchResult, Email, Error, Postmark, PostmarkConfig, RESPONSE_LIMIT};
 use serde_json::{Value, json};
 use std::time::Duration;
@@ -152,12 +152,19 @@ async fn lost_or_unreadable_batch_response_is_unknown_and_never_resent() {
             "timeout" | "stall" => Duration::from_millis(300),
             _ => Duration::from_secs(5),
         };
-        let error = client(&server, timeout)
-            .outbound()
-            .send_batch(emails(2))
-            .send()
-            .await
-            .unwrap_err();
+        let postmark = client(&server, timeout);
+        // Paused clock: the 300 ms timeout fires only once the server holds the batch (timeout)
+        // or has written the head of its stalled answer (stall); in the other cases no timeout can
+        // fire before the answer ends the send.
+        tokio::time::pause();
+        let send = postmark.outbound().send_batch(emails(2)).send();
+        let error = match case {
+            "timeout" => paused::time_out(&server, |_| true, timeout, send).await,
+            "stall" => paused::time_out_in_body(&server, |_| true, timeout, send).await,
+            _ => paused::drive(send).await,
+        }
+        .unwrap_err();
+        tokio::time::resume();
         assert!(error.is_unknown_outcome(), "{case}: {error:?}");
         let text = format!("{error:?} {error}");
         assert!(
