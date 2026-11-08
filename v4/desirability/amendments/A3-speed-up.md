@@ -73,3 +73,20 @@ No new push, merge, tag, publication or deletion right.
 9. **Reporting.** Wall-clock time per hypothesis (card commit, or survey start where the survey
    precedes the card, to decision row) is reported after the next two hypotheses (H03b and H06),
    from `work/state/HYPOTHESIS_TIMES.md`.
+
+## Addendum A3.1 — lanes run on Codex (owner instruction, 2026-11-08 ~18:40 CET)
+
+Owner: "i have 57k credit that can be used (codex credit), i would like you to use them instead of
+me using a reset." Application:
+- Every new working lane — candidate implementation, measurement (task files, harness runs),
+  surveys, repairs and their fix rounds — runs as a Codex `gpt-6.1-sol` session through
+  `work/tools/codex_role.sh` (`workspace-write`, the lane's cargo target, evidence folder and
+  `~/.cargo` added with `--add-dir`, `CARGO_NET_OFFLINE=true`). Codex cannot commit (`.git` is
+  read-only in its sandbox); the Claude coordinator audits the lane (transcript audit, diff check)
+  and commits. Smoke test passed 2026-11-08 17:36Z.
+- Claude subagents are no longer started for working lanes. The five Claude lanes already deep in
+  their work when this arrived (H03 measurement, H03b B′, H06 B, T3 round 2, T3 sweep) finish their
+  current stage only; their next stages move to Codex.
+- Reviews stay Codex `gpt-6.1-sol` xhigh read-only (DECISION_RULE A9), in a separate session from
+  any Codex author. For Codex-authored work this review is **independent but same-provider**, not
+  cross-provider; records say so (CLAUDE.md rule 6).
