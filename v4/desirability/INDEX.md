@@ -34,5 +34,9 @@ only their hashes are committed (`tools/desirability/edits/BANK.sha256`,
 Plan amendments: `amendments/A1-astra-review.md` (the owner-adopted desirability review: task
 outcomes primary, structural counts diagnostic, WIN/LOSS/INCONCLUSIVE/KEEP_CURRENT,
 pilot-then-migrate) and `amendments/A2-owner-charter.md` (the owner's charter: the fixed core is
-the DSL usage — client → scope → endpoint — on reqwest; everything else is challengeable). The
+the DSL usage — client → scope → endpoint — on reqwest; everything else is challengeable) and
+`amendments/A3-speed-up.md` (the owner's speed-up: verdict-changing instrument findings only, ≤ 2
+instrument-review rounds, one reusable pilot harness, CI required only on the merged commit, one
+combined review per hypothesis, two hypotheses in flight, explicit expected breakages in kill
+conditions; decision rule and gates unchanged). The
 review itself: `review/`. Instrument reviews and their triage: `reviews/`.
