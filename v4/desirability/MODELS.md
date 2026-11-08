@@ -97,3 +97,5 @@ Append-only: a row marked `running` is superseded by a later row (`↳ … resul
 | H04 instrument fix round 1 — same Claude subagent resumed | Claude subagent (inherits Opus 5.5) | (transcript at completion) | running | — |
 | ↳ BASELINE I4 edit agents observed | — | gpt-6.1-sol / xhigh / danger-full-access inside bwrap in 40/40 rollouts (turn_context); isolation check passed before each launch | agent median 120 s (82–287 s); 47 min wall | 40/40 valid; oracle 39/40 |
 | ↳ BASELINE review (`l0-baseline-review-sol`) on 7ac81a4d | Codex gpt-6.1-sol, xhigh, read-only | gpt-6.1-sol / xhigh / read-only (rollout turn_context); 06:01:17Z–06:10:19Z | 9m02s | REJECT (2 blocking: noise-band rounding, I4 propagation reading; 4 non-blocking) — all fixed |
+| BASELINE re-review (`l0-baseline-review-2-sol`) on b2af3043 | Codex gpt-6.1-sol, xhigh, read-only | (meta.json at completion) | running | — |
+| ↳ BASELINE re-review observed | — | gpt-6.1-sol / xhigh / read-only (rollout turn_context); 06:12:05Z–06:16:18Z | 4m13s | ACCEPT (no findings); L0 complete |

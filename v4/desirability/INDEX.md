@@ -7,7 +7,7 @@ independent review. Records:
 | Record | What |
 |---|---|
 | `MERGE_RECEIPT.md` | PR #5 merge and `main` verification (first commit of this branch) |
-| `BASELINE.md` | all metrics at the start, noise bands, instrument versions |
+| `BASELINE.md` | all metrics at the start, noise bands, instrument versions (measured commit `734991e9`; accepted by review `reviews/l0-baseline-review-2-sol.md`; L0 complete) |
 | `QUEUE.md` | hypothesis queue (re-ranked after each decision) |
 | `cards/HNN.md` | pre-registered hypothesis cards (committed before implementation) |
 | `impact/HNN.md` | 55-row impact tables |
