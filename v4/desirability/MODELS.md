@@ -99,3 +99,38 @@ Append-only: a row marked `running` is superseded by a later row (`↳ … resul
 | ↳ BASELINE review (`l0-baseline-review-sol`) on 7ac81a4d | Codex gpt-6.1-sol, xhigh, read-only | gpt-6.1-sol / xhigh / read-only (rollout turn_context); 06:01:17Z–06:10:19Z | 9m02s | REJECT (2 blocking: noise-band rounding, I4 propagation reading; 4 non-blocking) — all fixed |
 | BASELINE re-review (`l0-baseline-review-2-sol`) on b2af3043 | Codex gpt-6.1-sol, xhigh, read-only | (meta.json at completion) | running | — |
 | ↳ BASELINE re-review observed | — | gpt-6.1-sol / xhigh / read-only (rollout turn_context); 06:12:05Z–06:16:18Z | 4m13s | ACCEPT (no findings); L0 complete |
+| ↳ H04 instrument fix round 1 result | — | claude-opus-5-5 (subagent transcript); effort not visible | ~32 min, 78 tool uses; isolation probe: 1 dummy session per provider | validation all pass; committed c8c82534 (local); bank e68bee14 |
+| H04 INSTRUMENT review 2 (`h04-instrument-review-2-sol`) on c8c82534 | Codex gpt-6.1-sol, xhigh, read-only | (meta.json at completion) | running | — |
+| ↳ H04 review 2 observed | — | gpt-6.1-sol / xhigh / read-only (rollout turn_context); 06:23:49Z–06:29:57Z | 6m08s | REJECT (6 blocking) |
+| H04 instrument fix round 2 — same Claude subagent resumed | Claude subagent (inherits Opus 5.5) | (transcript at completion) | running | — |
+| ↳ H04 instrument fix round 2 result | — | claude-opus-5-5 (subagent transcript); effort not visible | ~15 min, 29 tool uses; isolation probes with a dummy prompt | validation all pass; committed e50a22ae (local); bank f21f432e |
+| H04 INSTRUMENT review 3 (`h04-instrument-review-3-sol`) on e50a22ae | Codex gpt-6.1-sol, xhigh, read-only | (meta.json at completion) | running | — |
+| ↳ H04 review 3 observed | — | gpt-6.1-sol / xhigh / read-only (rollout turn_context); 06:45:47Z–06:50:58Z | 5m11s | REJECT (3 blocking) |
+| H04 instrument fix round 3 — same Claude subagent resumed | Claude subagent (inherits Opus 5.5) | (transcript at completion) | running | — |
+| ↳ H04 instrument fix round 3 result | — | claude-opus-5-5 (subagent transcript); effort not visible | ~28 min, 120 tool uses; no model calls | validation all pass; committed 81618089 (local); bank 4b93f872 |
+| H04 INSTRUMENT review 4 (`h04-instrument-review-4-sol`) on 81618089 | Codex gpt-6.1-sol, xhigh, read-only | (meta.json at completion) | running | — |
+| ↳ H04 review 4 observed | — | gpt-6.1-sol / xhigh / read-only (rollout turn_context); 07:20:00Z–07:24:28Z | 4m28s | REJECT (1 blocking) |
+| H04 instrument fix round 4 — same Claude subagent resumed | Claude subagent (inherits Opus 5.5) | (transcript at completion) | running | — |
+| H04 candidate implementer (generator docs, `dz/h04`) — Claude subagent | Claude subagent (inherits Opus 5.5) | (transcript at completion) | 08:3x– | running |
+| ↳ H04 instrument fix round 4 result | — | claude-opus-5-5 (subagent transcript); effort not visible | ~23 min, 64 tool uses; isolation probe 1 dummy session per provider (observed claude-opus-5-5; gpt-6.1-sol/xhigh) | validation all pass; committed c383065a (local); bank 636a6738 |
+| H04 INSTRUMENT review 5 (`h04-instrument-review-5-sol`) on c383065a | Codex gpt-6.1-sol, xhigh, read-only | (meta.json at completion) | running | — |
+| ↳ H04 review 5 observed | — | gpt-6.1-sol / xhigh / read-only (rollout turn_context); 07:48:51Z–07:52:42Z | 3m51s | REJECT (1 blocking: backstop bypass; 1 non-blocking: card hash) |
+| H04 instrument fix round 5 — same Claude subagent resumed | Claude subagent (inherits Opus 5.5) | (transcript at completion) | running | — |
+| ↳ H04 instrument fix round 5 result | — | claude-opus-5-5 (subagent transcript); effort not visible | ~6 min, 20 tool uses; no model calls | gate selftest 11/11; committed 9ce64a00 (local); bank unchanged 636a6738 |
+| H04 INSTRUMENT review 6 (`h04-instrument-review-6-sol`) on 9ce64a00 | Codex gpt-6.1-sol, xhigh, read-only | (meta.json at completion) | running | — |
+| ↳ H04 review 6 observed | — | gpt-6.1-sol / xhigh / read-only (rollout turn_context); 07:59:23Z–08:04:31Z | 5m08s | REJECT (2 blocking: moves/deletions, normalisation) |
+| H04 instrument fix round 6 — same Claude subagent resumed | Claude subagent (inherits Opus 5.5) | (transcript at completion) | running | — |
+| ↳ H04 instrument fix round 6 result | — | claude-opus-5-5 (subagent transcript); effort not visible | ~5 min, 19 tool uses; no model calls | gate selftest 29/29; committed a3fceb08 (local); bank unchanged |
+| H04 INSTRUMENT review 7 (`h04-instrument-review-7-sol`) on a3fceb08 | Codex gpt-6.1-sol, xhigh, read-only | (meta.json at completion) | running | — |
+| ↳ H04 candidate implementer result | — | claude-opus-5-5 (subagent transcript); effort not visible | ~45 min, 196 tool uses | generator-only; API identical without docs (64 crates); expanded code identical (10 SDKs); committed 4145921f on dz/h04 (pushed for CI); boundary audit clean |
+| H04 instrument fix round 7 (stale per-arm rustdoc, found in use) — same Claude subagent resumed | Claude subagent (inherits Opus 5.5) | (transcript at completion) | running | — |
+| ↳ H04 review 7 observed | — | gpt-6.1-sol / xhigh / read-only (rollout turn_context); 08:10:29Z–08:14:52Z | 4m23s | REJECT (4 blocking: prompt integrity) |
+| ↳ H04 instrument fix round 7 result | — | claude-opus-5-5 (subagent transcript); effort not visible | ~10 min, 31 tool uses; no model calls | committed dcf99c21 (local); render control ok; e2e 22/22 |
+| H04 INSTRUMENT review 8 (`h04-instrument-review-8-sol`) on dcf99c21 | Codex gpt-6.1-sol, xhigh, read-only | (meta.json at completion) | running | — |
+| H04 CANDIDATE review 1 (`h04-candidate-review-1-sol`) on 4145921f | Codex gpt-6.1-sol, xhigh, read-only | (meta.json at completion) | running | — |
+| ↳ H04 candidate review 1 observed | — | gpt-6.1-sol / xhigh / read-only (rollout turn_context); 08:24:12Z–08:28:12Z | 4m00s | ACCEPT; clearance CLEAR ×5 |
+| ↳ H04 review 8 observed | — | gpt-6.1-sol / xhigh / read-only (rollout turn_context); 08:24:12Z–08:30:30Z | 6m18s | REJECT (2 blocking: run integrity) |
+| H04 instrument fix round 8 — same Claude subagent resumed | Claude subagent (inherits Opus 5.5) | (transcript at completion) | running | — |
+| ↳ H04 instrument fix round 8 result | — | claude-opus-5-5 (subagent transcript); effort not visible | ~6 min, 17 tool uses; no model calls | committed 6ede0339 (local); bank 06be1a2b; e2e 32/32 |
+| H04 INSTRUMENT review 9 (`h04-instrument-review-9-sol`) on 6ede0339 | Codex gpt-6.1-sol, xhigh, read-only | (meta.json at completion) | running | — |
+| ↳ H04 review 9 observed | — | gpt-6.1-sol / xhigh / read-only (rollout turn_context); 08:37:24Z–08:41:15Z | 3m51s | ACCEPT (no findings); H04 instrument accepted |
