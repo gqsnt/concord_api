@@ -8,7 +8,7 @@
 //! wrong request count.
 //!
 //! Such tests run on Tokio's paused clock (`#[tokio::test(start_paused = true)]`) and drive their
-//! calls with [`drive`], [`time_out`], [`time_out_attempts`], [`time_out_in_body`] or
+//! calls with [`drive`], [`time_out`], [`time_out_in_body`] or
 //! [`time_out_when`]. The runtime is kept busy while a call is driven, so virtual time never jumps
 //! ahead by itself while loopback I/O is in flight; it moves only once the server has received the
 //! request that is meant to time out and is holding its reply
@@ -122,41 +122,14 @@ pub async fn time_out<F: Future>(
     timeout: Duration,
     call: F,
 ) -> F::Output {
-    time_out_attempts(server, matches, timeout, 1, Duration::ZERO, call).await
-}
-
-/// [`time_out`] for a call whose first `late` attempts matching `matches` the server answers
-/// later than `timeout`. After each of them has timed out, if the call goes on (a session backing
-/// off before it repeats the request), virtual time also moves past `backoff`, the longest wait
-/// before the next attempt. Later attempts, and everything else, complete while time stands still.
-pub async fn time_out_attempts<F: Future>(
-    server: &TestServer,
-    matches: impl Fn(&Recorded) -> bool,
-    timeout: Duration,
-    late: usize,
-    backoff: Duration,
-    call: F,
-) -> F::Output {
     let mut call = pin!(call);
     let before = received(server, &matches);
     let held_before = server.held_replies();
-    for attempt in 1..=late {
-        let held = || {
-            received(server, &matches) >= before + attempt
-                && server.held_replies() >= held_before + attempt
-        };
-        if let Some(ended) = drive_until(call.as_mut(), held).await {
-            return ended;
-        }
-        tokio::time::advance(timeout + TICK).await;
-        // The next poll observes the timeout: the call ends, or the session backs off.
-        if let Poll::Ready(output) = poll_once(call.as_mut()).await {
-            return output;
-        }
-        if !backoff.is_zero() {
-            tokio::time::advance(backoff + TICK).await;
-        }
+    let held = || received(server, &matches) > before && server.held_replies() > held_before;
+    if let Some(ended) = drive_until(call.as_mut(), held).await {
+        return ended;
     }
+    tokio::time::advance(timeout + TICK).await;
     drive(call).await
 }
 
