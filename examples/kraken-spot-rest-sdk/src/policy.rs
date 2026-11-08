@@ -53,7 +53,10 @@ impl Policy {
     /// Prefer generated `send()` normally. This explicit escape supports inspection
     /// or controlled scheduling; sending these out of order can cause InvalidNonce.
     /// Generated `prepare()` alone is unsigned and does not run this policy.
-    /// An endpoint of another client is refused (`SigningInput`).
+    /// An endpoint whose declared name and method are not one of `Kraken`'s is refused
+    /// (`SigningInput`). The identity is textual: an endpoint of another client with the same
+    /// dotted name and method (a client also named `Kraken`) is indistinguishable and is signed
+    /// as Kraken's.
     pub fn prepare_signed<T, E: Endpoint<Envelope<T>>>(
         &self,
         endpoint: E,
@@ -69,6 +72,9 @@ impl Policy {
         endpoint: E,
     ) -> Result<Signed<T>, Error> {
         let (client, mut request, decoder) = endpoint.prepare()?.into_parts();
+        // The exact path sent, a base URL's path prefix included: right when the verifier sees
+        // that path. A proxy that strips its mount before forwarding to Kraken (which verifies
+        // `/0/private/...`) invalidates the signature (README, "Signing and nonces").
         let path = request.url().path();
         // Signed or public per declared operation, whatever the base URL's path. No wildcard
         // arm: an endpoint added to the declaration without a decision here does not compile

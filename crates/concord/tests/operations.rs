@@ -150,3 +150,44 @@ async fn send_passes_the_endpoint_variant_to_the_policy() {
         Some(StoreItemsItemRemove::operation())
     );
 }
+
+// Two clients with the same name, in different modules.
+mod first {
+    concord::api! {
+        pub client Twin {
+            base "http://first.invalid";
+            operations TwinOperation;
+            GET ping();
+        }
+    }
+}
+
+mod second {
+    concord::api! {
+        pub client Twin {
+            base "http://second.invalid";
+            operations TwinOperation;
+            GET ping();
+            POST other();
+        }
+    }
+}
+
+/// `from_operation` compares the declared identity textually (`Operation`'s `==`: endpoint,
+/// dotted name, method): an operation of another client with the same dotted name and method is
+/// indistinguishable, as documented; another name or method is not.
+#[test]
+fn from_operation_compares_the_declared_name_and_method_only() {
+    assert_eq!(
+        first::TwinOperation::from_operation(second::TwinPing::operation()),
+        Some(first::TwinOperation::Ping)
+    );
+    assert_eq!(
+        second::TwinOperation::from_operation(first::TwinPing::operation()),
+        Some(second::TwinOperation::Ping)
+    );
+    assert_eq!(
+        first::TwinOperation::from_operation(second::TwinOther::operation()),
+        None
+    );
+}

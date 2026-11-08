@@ -113,7 +113,7 @@ impl fmt::Display for Error {
             Self::Invalid(reason) => reason,
             Self::Concord(_) => "Strava request failed",
             // No wildcard arm: a new operation chooses its wording here (E0004 otherwise). Reads
-            // are never uncertain; an error of another client keeps the upload wording.
+            // are never uncertain; an error naming no Strava operation keeps the upload wording.
             Self::Ambiguous(e) => match e.operation().and_then(StravaOperation::from_operation) {
                 Some(StravaOperation::ActivitiesUpdate) => {
                     "activity update outcome is uncertain; re-read the activity, it is never resent"

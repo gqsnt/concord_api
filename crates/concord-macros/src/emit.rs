@@ -94,7 +94,7 @@ fn operations_enum(k: &TokenStream, model: &Model, vis: &syn::Visibility) -> Tok
             " Every generated `send()` passes its endpoint's variant to the client's send policy (`concord::SendOperation<T, {shown}>`). Classify it with a `match` without a wildcard arm: an endpoint added to the declaration and not classified is then a compile error (E0004, naming its variant). Outside this crate the enum is `#[non_exhaustive]`: a `match` there needs a wildcard arm."
         ),
         _ => format!(
-            " The client has no send policy: `{shown}::from_operation` identifies the endpoint of an `Operation` (from an error or a response), for a `match` without a wildcard arm. Outside this crate the enum is `#[non_exhaustive]`: a `match` there needs a wildcard arm."
+            " The client has no send policy: `{shown}::from_operation` maps an `Operation` (from an error or a response) to the variant with the same declared name and method, for a `match` without a wildcard arm. Outside this crate the enum is `#[non_exhaustive]`: a `match` there needs a wildcard arm."
         ),
     };
     let docs = &operations.docs;
@@ -137,9 +137,12 @@ fn operations_enum(k: &TokenStream, model: &Model, vis: &syn::Visibility) -> Tok
                 }
             }
 
-            /// The operation `operation` identifies, if it is an endpoint of this client (`None`
-            /// for another client's endpoint or a label): for an `Operation` read back from an
-            /// error, a `ResponseMeta` or a `Prepared`.
+            /// The variant whose declared identity equals `operation` (as `Operation`'s `==`:
+            /// an endpoint, its dotted name `Client.scope.endpoint` and its method), for an
+            /// `Operation` read back from an error, a `ResponseMeta` or a `Prepared`. `None` for
+            /// a label or another name or method. The comparison is textual: an operation of
+            /// another client with the same dotted name and method (a client of the same name in
+            /// another module or crate) is indistinguishable and maps to that variant.
             #[inline] pub fn from_operation(operation: #k::Operation) -> ::core::option::Option<Self> {
                 Self::ALL.iter().copied().find(|op| op.operation() == operation)
             }

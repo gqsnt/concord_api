@@ -1852,7 +1852,10 @@ for that edit:
   client's name — and carries the endpoint's own and inherited `#[cfg]`s. `Name::ALL` lists the
   variants in declaration order, `op.operation()` is the endpoint's `concord::Operation`, and
   `Name::from_operation(op)` maps an `Operation` back (from an error's or a response's
-  `operation()`; `None` for another client's endpoint or a label).
+  `operation()`) by its declared identity: endpoint, dotted name (`Store.items.get`) and method,
+  as `Operation`'s `==`. A label or another name or method is `None`; an operation of another
+  client with the same dotted name and method — a client of the same name in another module or
+  crate — is indistinguishable and maps to the variant.
 - With `send`, every generated `send()` calls `concord::SendOperation<T, Name>::send` with its
   endpoint's variant and the endpoint, where a client without the statement calls
   `SendWith<T>::send`. The policy implements `SendOperation<T, Name>` instead of `SendWith<T>`;

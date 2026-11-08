@@ -267,7 +267,9 @@ Each key has one **slot**, positioned at the key's first appearance on the chain
   `#[non_exhaustive]` enum at the client's visibility with one variant per endpoint, in declaration
   order, under the endpoint's own and inherited `#[cfg]`s; a variant is the endpoint's path below the
   client in UpperCamelCase (its type name without the client's: `items.get` is `ItemsGet`). `Name`
-  has `ALL`, `operation(self) -> Operation` and `from_operation(Operation) -> Option<Name>`. With
+  has `ALL`, `operation(self) -> Operation` and `from_operation(Operation) -> Option<Name>` (by
+  `Operation`'s `==`: endpoint, dotted name and method; a same-named client elsewhere is
+  indistinguishable). With
   `send P;`, every generated `send()` instead requires `P: SendOperation<T, Name>` and calls
   `P::send(variant, endpoint)`, returning its `Output`; a policy `match` over `Name` without a
   wildcard arm therefore fails to compile (E0004) when an endpoint is added and not classified.

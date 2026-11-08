@@ -152,8 +152,13 @@ are not included in the signature. The exact path comes from the prepared URL,
 a base URL's path prefix included. Whether a request is signed is decided per
 declared operation (an exhaustive `match` over the generated `KrakenOperation`),
 not by its URL, so a base URL with a path prefix is followed by public and signed
-calls alike. The form choice follows the authentication guide's
-encoded-payload example; the endpoint pages currently demonstrate JSON instead.
+calls alike. Signing the exact outgoing path is right only when the verifier sees
+that same path (Kraken itself, or a gateway that forwards the path unchanged). A
+proxy that strips its mount (`/kraken`) before forwarding invalidates the
+signature: Kraken verifies over `/0/private/...`. This SDK has no setting for that
+deployment; send signed calls to a base URL without such a prefix. The form choice
+follows the authentication guide's encoded-payload example; the endpoint pages
+currently demonstrate JSON instead.
 
 Share one `Nonces` source across every caller using a key. Its seed is the last
 used nonce; the first allocation is seed + 1. Clones share one atomic counter;
@@ -181,7 +186,7 @@ Failure and transport semantics
 
 | Failure | SDK result and behavior |
 |---|---|
-| Invalid credentials, missing auth, exhausted nonce, another client's endpoint given to `prepare_signed` | `Error::Local`, no dispatch |
+| Invalid credentials, missing auth, exhausted nonce, an endpoint whose declared name and method are not Kraken's given to `prepare_signed` | `Error::Local`, no dispatch |
 | Ambiguous, absent or offline pair; missing/mismatched ticker | `Error::Local`, workflow stops |
 | Invalid base URL / request preparation | Concord `Build`, no dispatch |
 | Connection loss, timeout, truncated body | `Error::Concord` / `Transport`; no replay |
