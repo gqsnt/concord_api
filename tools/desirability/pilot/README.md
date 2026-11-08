@@ -301,3 +301,19 @@ with 2 regressions, complete samples).
 - Public summaries name task ids and classes; ids must be chosen opaque by task authors.
 - The transcript audit is lexical: an unusual exclusion form is reported as access and needs a
   reviewer's reading; a forbidden path built at run time (string concatenation) is not seen.
+
+### Known limits recorded by the instrument review (`pilot-harness-review-1-sol`, ACCEPT; A3: non-blocking)
+- Reader scores are loaded without checking their set hash, run hash or arm commits (deterministic
+  results are bound); a stale reader score could enter a later tally. Check the binding by hand
+  until fixed.
+- A scheduled reader session without metadata contributes no rows instead of a zero score; a card
+  that relies on reader rates must require completeness (all scheduled sessions present).
+- `compile_at: arm` for reader items is documented but refused by `score_items`; arm-specific
+  reader compilation is not available (H04's fixed compilation commit is unaffected).
+- Provenance is checked before entering `h04/harness.py` `Batch`, not before each cargo command
+  inside it (the "before every cargo command" statement above is stronger than the code).
+- A `request` task may exempt any named header from comparison, including `Accept` or
+  authentication headers; an exemption must be justified in the task's `note` and backed by an
+  independent check where the exempted value decides correctness.
+- `clearance.py` does not enforce that its report (which can quote transcript excerpts) is written
+  under `work/sealed`; write it there.
