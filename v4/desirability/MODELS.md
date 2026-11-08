@@ -215,3 +215,13 @@ Append-only: a row marked `running` is superseded by a later row (`↳ … resul
 | H06 combined review (`h06-combined-review-sol`): candidate + measurement + decision | Codex gpt-6.1-sol, xhigh, read-only | (meta.json at completion) | running | — |
 | ↳ H06 combined review observed | — | gpt-6.1-sol / xhigh / read-only (rollout turn_context); 18:38:08Z–18:46:15Z | 8m07s | ACCEPT_WITH_FIXES; DECISION WIN (B) pending timing, full migration + review, CI on merge commit; A not WIN |
 | H06 full migration (dz/h06) — Codex lane in bwrap jail | Codex gpt-6.1-sol, xhigh, danger-full-access inside codex_jail.sh | (meta.json at completion) | running | — |
+| ↳ H06 migration observed | — | gpt-6.1-sol / xhigh / danger-full-access in codex_jail.sh (rollout turn_context); 18:47:54Z–19:13:32Z | 25m38s | committed 74cad812 (dz/h06, pushed); clearance: diff clear, 2 "access" hits = jail tmpfs note (false positive) |
+| H06 migration review (`h06-migration-review-sol`) on 74cad812 | Codex gpt-6.1-sol, xhigh, read-only | (meta.json at completion) | running | — |
+| ↳ H06 migration review observed | — | gpt-6.1-sol / xhigh / read-only (rollout turn_context); 19:15:39Z–19:23:20Z | 7m41s | REJECT (QuickBooks send-time rewrite = wire change kill; 17 removals outside E1–E6 = card scope conflict -> owner decision) |
+| H06 pilot-scope docs (dz/h06-pilot) — Codex lane in jail | Codex gpt-6.1-sol, xhigh, danger-full-access in codex_jail.sh | (meta.json at completion) | running | — |
+| H06c candidate revision (dz/h06) — Codex lane in jail | Codex gpt-6.1-sol, xhigh, danger-full-access in codex_jail.sh | (meta.json at completion) | running | — |
+| ↳ H06 pilot docs observed | — | gpt-6.1-sol / xhigh / danger-full-access in codex_jail.sh (rollout turn_context); 19:25:45Z–19:30:10Z | 4m25s | committed 6db75e22 (dz/h06-pilot, pushed) |
+| ↳ H06c candidate observed | — | gpt-6.1-sol / xhigh / danger-full-access in codex_jail.sh (rollout turn_context); 19:27:27Z–19:39:40Z | 12m13s | committed 12ebe813 (dz/h06, pushed) |
+| ↳ H03 measurement lane result | — | claude-opus-5-5 (subagent transcript; effort inherited, started before A3.2) | ~3h45m, ~240 tool uses | tooling committed 3f76ce74 (dz/h03-bank); corpus d63b6a19 frozen before first non-reference compile; witness gain +18.6 for A/B/A′/B′; audit: 0 accesses to work/dev/h03 |
+| H03b combined review (`h03b-combined-review-sol`): candidate + measurement + decision (proposed KEEP_CURRENT) | Codex gpt-6.1-sol, xhigh, read-only | (meta.json at completion) | running | — |
+| ↳ H03b combined review observed | — | gpt-6.1-sol / xhigh / read-only (rollout turn_context); 19:49:10Z–19:55:52Z | 6m42s | ACCEPT_WITH_FIXES; DECISION KEEP_CURRENT (+18.6 < 20); INPUT family closes |
