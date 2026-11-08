@@ -144,3 +144,28 @@ Append-only: a row marked `running` is superseded by a later row (`↳ … resul
 | ↳ H04 pilot-3 readers observed | — | Claude claude-opus-5-5 36/36 (effort not visible); Codex gpt-6.1-sol/xhigh/read-only 36/36; 0 retries, 0 malformed | 249 s wall | witness net +6, control lost 0 → WIN_PENDING_GATES |
 | H04 DECISION review 2 (`h04-decision-review-2-sol`, pilot-3) | Codex gpt-6.1-sol, xhigh, read-only | (meta.json at completion) | running | — |
 | ↳ H04 decision review 2 observed | — | gpt-6.1-sol / xhigh / read-only (rollout turn_context); 09:05:17Z–09:11:04Z | 5m47s | ACCEPT_WITH_FIXES; WIN_PENDING_CI |
+| H08 design survey (operation classification in 9 SDKs) — Claude Explore subagent | Claude subagent (Explore) | (transcript at completion) | running | — |
+| ↳ H08 design survey result | — | Claude Explore subagent (transcript); effort not visible | ~7 min, 62 tool uses | recorded as v4/desirability/reviews/h08-design-survey.md |
+| H08 candidate B implementer (dz/h08) — Claude subagent | Claude subagent (inherits Opus 5.5) | (transcript at completion) | running | — |
+| H08 alternative A implementer (dz/h08a, Strava) — Claude subagent | Claude subagent (inherits Opus 5.5) | (transcript at completion) | running | — |
+| ↳ H08 alternative A result | — | claude-opus-5-5 (subagent transcript); effort not visible | ~14 min, 75 tool uses | committed fd06686f (dz/h08a, local); omission → SDK build, diagnostic names output type not endpoint; +55 public items, 33 signatures changed; boundary audit clean |
+| ↳ H08 candidate B result | — | claude-opus-5-5 (subagent transcript); effort not visible | ~41 min, 200 tool uses | committed 3c5323f6 (dz/h08, pushed); boundary audit clean (2 hits = git archive excluding tools/desirability) |
+| H08 measurement lane (sealed omission harness + I4 bank for arm B) — Claude subagent | Claude subagent (inherits Opus 5.5) | (transcript at completion) | running | — |
+| H08 CANDIDATE review 1 (`h08-candidate-review-1-sol`) on 3c5323f6 | Codex gpt-6.1-sol, xhigh, read-only | (meta.json at completion) | running | — |
+| ↳ H08 candidate review 1 observed | — | gpt-6.1-sol / xhigh / read-only (rollout turn_context); 10:45:04Z–10:50:15Z | 5m11s | ACCEPT_WITH_FIXES (2 non-blocking docs); B preferred over A |
+| H08 candidate B follow-up (review fixes) — same Claude subagent resumed | Claude subagent (inherits Opus 5.5) | (transcript at completion) | running | — |
+| ↳ H08 candidate B follow-up result | — | claude-opus-5-5 (subagent transcript); effort not visible | short | docs + 1 regression test; committed on dz/h08 (pushed) |
+| ↳ H08 measurement lane result | — | claude-opus-5-5 (subagent transcript); effort not visible | ~37 min, 161 tool uses | 14/14 references pass, 14/14 omissions reproduce; B: 6/6 → SDK build naming; A: Strava SDK build, not naming; committed 0eaae35c (local) |
+| H08 INSTRUMENT review 1 (`h08-instrument-review-1-sol`) on 0eaae35c | Codex gpt-6.1-sol, xhigh, read-only | (meta.json at completion) | running | — |
+| ↳ H08 instrument review 1 observed | — | gpt-6.1-sol / xhigh / read-only (rollout turn_context); 11:10:17Z–11:15:54Z | 5m37s | ACCEPT_WITH_FIXES (1 non-blocking: coverage check) |
+| H08 I4 e4 agent runs (18: 3 reps × strava/sentry/kraken × baseline ec643a54 / B 3c5323f6) | Codex gpt-6.1-sol, xhigh, danger-full-access inside bwrap | (per-run result.json) | running | — |
+| ↳ H08 harness coverage-check fix | — | claude-opus-5-5 (subagent transcript); effort not visible | short | 53/53 groups covered; selftest 9/9; committed on dz/h08-bank |
+| H08 migration scope survey — Claude Explore subagent | Claude subagent (Explore) | (transcript at completion) | running | — |
+| ↳ H08 migration scope survey result | — | Claude Explore subagent (transcript); effort not visible | short | include PayPal, Zendesk, Datadog, Square, GitHub; work/state/h08-migration-survey.md |
+| ↳ H08 agent runs observed | — | gpt-6.1-sol / xhigh / danger-full-access in 18/18 rollouts; isolation check passed | 32 min wall (2 parallel) | baseline 9/9, B 9/9 valid + oracle pass + classified |
+| H08 DECISION review (`h08-decision-review-sol`) | Codex gpt-6.1-sol, xhigh, read-only | (meta.json at completion) | running | — |
+| ↳ H08 decision review observed | — | gpt-6.1-sol / xhigh / read-only (rollout turn_context); 11:49:20Z–11:55:09Z | 5m49s | ACCEPT_WITH_FIXES; WIN_PENDING_CI |
+| H08 full migration (PayPal, Zendesk, Datadog, Square, GitHub) — same Claude subagent resumed | Claude subagent (inherits Opus 5.5) | (transcript at completion) | running | — |
+| ↳ H08 full migration result | — | claude-opus-5-5 (subagent transcript); effort not visible | ~13 min, 55 tool uses | committed adf4bf7a (dz/h08, pushed); boundary audit clean; workspace tests 3957/0 |
+| H08 MIGRATION review (`h08-migration-review-sol`) on adf4bf7a | Codex gpt-6.1-sol, xhigh, read-only | (meta.json at completion) | running | — |
+| ↳ H08 migration review observed | — | gpt-6.1-sol / xhigh / read-only (rollout turn_context); 12:10:33Z–12:15:13Z | 4m40s | ACCEPT_WITH_FIXES (1 non-blocking CHANGELOG wording, fixed); adoption complete |
