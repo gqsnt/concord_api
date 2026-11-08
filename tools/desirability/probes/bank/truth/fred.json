@@ -2,31 +2,28 @@
  "sdk": "fred-sdk",
  "short": "fred",
  "pkg": "concord-sdk-fred",
- "repo_head": "984bd2f6a981dd85e8b104c21daae06421a7a48a",
+ "repo_head": "734991e9cdb69a73620c2415c5a6d1e6fd98d87f",
  "truth_format": 3,
  "aliases": [
-  "AggregationMethod = sdk::AggregationMethod (imported: options::AggregationMethod)",
-  "Bytes = bytes::Bytes (imported: concord::bytes::Bytes)",
-  "Charset = concord_codecs::Charset (imported: concord_codecs::Charset)",
-  "CodecError = concord::CodecError (imported: concord::CodecError)",
-  "Cursor = std::io::Cursor (imported: std::io::Cursor)",
-  "Decode = concord::Decode (imported: concord::Decode)",
-  "Deserialize = serde::Deserialize (imported: serde::Deserialize)",
-  "DeserializeOwned = serde::de::DeserializeOwned (imported: serde::de::DeserializeOwned)",
-  "Document = roxmltree::Document (imported: roxmltree::Document)",
-  "Endpoint = concord::Endpoint (imported: concord::Endpoint)",
-  "Frequency = sdk::Frequency (imported: options::Frequency)",
-  "Node = roxmltree::Node (imported: roxmltree::Node)",
-  "NonZeroUsize = std::num::NonZeroUsize (imported: std::num::NonZeroUsize)",
-  "OffsetOptions = sdk::OffsetOptions (imported: crate::OffsetOptions)",
-  "Page = concord_pagination::Page (imported: concord_pagination::Page)",
-  "Pages = concord_pagination::Pages (imported: concord_pagination::Pages)",
-  "Read = std::io::Read (imported: std::io::Read)",
-  "ResponseHead = concord::ResponseHead (imported: concord::ResponseHead)",
-  "Resume = concord_pagination::Resume (imported: concord_pagination::Resume)",
-  "SendWith = concord::SendWith (imported: concord::SendWith)",
-  "Sends = concord::Sends (imported: concord::Sends)",
-  "Units = sdk::Units (imported: options::Units)"
+  "AggregationMethod = {sdk-item concord_sdk_fred::AggregationMethod} (imported: options::AggregationMethod)",
+  "Bytes = {ext-crate bytes::Bytes} (imported: concord::bytes::Bytes)",
+  "Charset = {ext-crate concord_codecs::Charset} (imported: concord_codecs::Charset)",
+  "CodecError = {ext-crate concord::CodecError} (imported: concord::CodecError)",
+  "Decode = {ext-crate concord::Decode} (imported: concord::Decode)",
+  "Deserialize = {ext-crate serde::Deserialize} (imported: serde::Deserialize)",
+  "DeserializeOwned = {ext-crate serde::de::DeserializeOwned} (imported: serde::de::DeserializeOwned)",
+  "Document = {ext-crate roxmltree::Document} (imported: roxmltree::Document)",
+  "Endpoint = {ext-crate concord::Endpoint} (imported: concord::Endpoint)",
+  "Frequency = {sdk-item concord_sdk_fred::Frequency} (imported: options::Frequency)",
+  "Node = {ext-crate roxmltree::Node} (imported: roxmltree::Node)",
+  "OffsetOptions = {sdk-item concord_sdk_fred::OffsetOptions} (imported: crate::OffsetOptions)",
+  "Page = {ext-crate concord_pagination::Page} (imported: concord_pagination::Page)",
+  "Pages = {ext-crate concord_pagination::Pages} (imported: concord_pagination::Pages)",
+  "ResponseHead = {ext-crate concord::ResponseHead} (imported: concord::ResponseHead)",
+  "Resume = {ext-crate concord_pagination::Resume} (imported: concord_pagination::Resume)",
+  "SendWith = {ext-crate concord::SendWith} (imported: concord::SendWith)",
+  "Sends = {ext-crate concord::Sends} (imported: concord::Sends)",
+  "Units = {sdk-item concord_sdk_fred::Units} (imported: options::Units)"
  ],
  "items": {
   "fred/w1": {
@@ -71,8 +68,8 @@
     "how": "send template",
     "verified": true,
     "decl_module": "crate",
-    "send_returns_canon": "Result<sdk::models::CsvExport, sdk::error::Error>",
-    "error_type_canon": "sdk::error::Error"
+    "send_returns_canon": "{std-prelude Result}<{sdk-def concord_sdk_fred::models::CsvExport}, {sdk-def concord_sdk_fred::error::Error}>",
+    "error_type_canon": "{sdk-def concord_sdk_fred::error::Error}"
    },
    "base_url": {
     "keep": "/fred",
@@ -186,8 +183,8 @@
     "how": "send template",
     "verified": true,
     "decl_module": "crate",
-    "send_returns_canon": "Result<sdk::models::SearchPage, sdk::error::Error>",
-    "error_type_canon": "sdk::error::Error"
+    "send_returns_canon": "{std-prelude Result}<{sdk-def concord_sdk_fred::models::SearchPage}, {sdk-def concord_sdk_fred::error::Error}>",
+    "error_type_canon": "{sdk-def concord_sdk_fred::error::Error}"
    },
    "base_url": null,
    "boundary": "operation",
@@ -288,8 +285,8 @@
     "how": "send template",
     "verified": true,
     "decl_module": "crate",
-    "send_returns_canon": "Result<sdk::models::Observations, sdk::error::Error>",
-    "error_type_canon": "sdk::error::Error"
+    "send_returns_canon": "{std-prelude Result}<{sdk-def concord_sdk_fred::models::Observations}, {sdk-def concord_sdk_fred::error::Error}>",
+    "error_type_canon": "{sdk-def concord_sdk_fred::error::Error}"
    },
    "base_url": null,
    "boundary": "operation",
@@ -390,8 +387,8 @@
     "how": "send template",
     "verified": true,
     "decl_module": "crate",
-    "send_returns_canon": "Result<sdk::models::SearchPage, sdk::error::Error>",
-    "error_type_canon": "sdk::error::Error"
+    "send_returns_canon": "{std-prelude Result}<{sdk-def concord_sdk_fred::models::SearchPage}, {sdk-def concord_sdk_fred::error::Error}>",
+    "error_type_canon": "{sdk-def concord_sdk_fred::error::Error}"
    },
    "base_url": null,
    "boundary": "operation",
@@ -492,8 +489,8 @@
     "how": "send template",
     "verified": true,
     "decl_module": "crate",
-    "send_returns_canon": "Result<sdk::models::Metadata, sdk::error::Error>",
-    "error_type_canon": "sdk::error::Error"
+    "send_returns_canon": "{std-prelude Result}<{sdk-def concord_sdk_fred::models::Metadata}, {sdk-def concord_sdk_fred::error::Error}>",
+    "error_type_canon": "{sdk-def concord_sdk_fred::error::Error}"
    },
    "base_url": null,
    "boundary": "operation",
@@ -594,8 +591,8 @@
     "how": "send template",
     "verified": true,
     "decl_module": "crate",
-    "send_returns_canon": "Result<sdk::models::Metadata, sdk::error::Error>",
-    "error_type_canon": "sdk::error::Error"
+    "send_returns_canon": "{std-prelude Result}<{sdk-def concord_sdk_fred::models::Metadata}, {sdk-def concord_sdk_fred::error::Error}>",
+    "error_type_canon": "{sdk-def concord_sdk_fred::error::Error}"
    },
    "base_url": null,
    "boundary": "operation",

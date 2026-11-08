@@ -2,24 +2,22 @@
  "sdk": "slack-sdk",
  "short": "slack",
  "pkg": "concord-sdk-slack",
- "repo_head": "984bd2f6a981dd85e8b104c21daae06421a7a48a",
+ "repo_head": "734991e9cdb69a73620c2415c5a6d1e6fd98d87f",
  "truth_format": 3,
  "aliases": [
   "type Users = Pages<User, Cursor, UsersPageMeta, Error>",
-  "BTreeMap = std::collections::BTreeMap (imported: std::collections::BTreeMap)",
-  "Bytes = bytes::Bytes (imported: concord::bytes::Bytes)",
-  "ClientConfig = SlackApiConfig (imported: wire::SlackApiConfig)",
-  "Deserialize = serde::Deserialize (imported: serde::Deserialize)",
-  "Deserializer = serde::Deserializer (imported: serde::Deserializer)",
-  "Duration = std::time::Duration (imported: std::time::Duration)",
-  "Endpoint = concord::Endpoint (imported: concord::Endpoint)",
-  "HeaderMap = reqwest::header::HeaderMap (imported: concord::reqwest::header::HeaderMap)",
-  "Json = concord::Json (imported: concord::Json)",
-  "Operation = concord::Operation (imported: concord::Operation)",
-  "Page = concord_pagination::Page (imported: pagination::Page)",
-  "Pages = concord_pagination::Pages (imported: pagination::Pages)",
-  "Resume = concord_pagination::Resume (imported: pagination::Resume)",
-  "SlackApi = sdk::SlackApi (imported: wire::SlackApi)"
+  "BTreeMap = {std-lib collections::BTreeMap} (imported: std::collections::BTreeMap)",
+  "Bytes = {ext-crate bytes::Bytes} (imported: concord::bytes::Bytes)",
+  "Deserialize = {ext-crate serde::Deserialize} (imported: serde::Deserialize)",
+  "Deserializer = {ext-crate serde::Deserializer} (imported: serde::Deserializer)",
+  "Endpoint = {ext-crate concord::Endpoint} (imported: concord::Endpoint)",
+  "HeaderMap = {ext-crate reqwest::header::HeaderMap} (imported: concord::reqwest::header::HeaderMap)",
+  "Json = {ext-crate concord::Json} (imported: concord::Json)",
+  "Operation = {ext-crate concord::Operation} (imported: concord::Operation)",
+  "Page = {ext-crate concord_pagination::Page} (imported: pagination::Page)",
+  "Pages = {ext-crate concord_pagination::Pages} (imported: pagination::Pages)",
+  "Resume = {ext-crate concord_pagination::Resume} (imported: pagination::Resume)",
+  "SlackApi = {sdk-item concord_sdk_slack::SlackApi} (imported: wire::SlackApi)"
  ],
  "items": {
   "slack/w1": {
@@ -53,8 +51,8 @@
     "how": "no send policy",
     "verified": true,
     "decl_module": "crate::wire",
-    "send_returns_canon": "Result<sdk::wire::Envelope<sdk::wire::UsersPayload>, concord::Error>",
-    "error_type_canon": "concord::Error"
+    "send_returns_canon": "{std-prelude Result}<{sdk-def concord_sdk_slack::wire::Envelope}<{sdk-def concord_sdk_slack::wire::UsersPayload}>, {ext-crate concord::Error}>",
+    "error_type_canon": "{ext-crate concord::Error}"
    },
    "base_url": {
     "keep": "/api",
@@ -165,8 +163,8 @@
     "how": "no send policy",
     "verified": true,
     "decl_module": "crate::wire",
-    "send_returns_canon": "Result<sdk::wire::Envelope<sdk::wire::ConversationPayload>, concord::Error>",
-    "error_type_canon": "concord::Error"
+    "send_returns_canon": "{std-prelude Result}<{sdk-def concord_sdk_slack::wire::Envelope}<{sdk-def concord_sdk_slack::wire::ConversationPayload}>, {ext-crate concord::Error}>",
+    "error_type_canon": "{ext-crate concord::Error}"
    },
    "base_url": null,
    "boundary": "prepared",

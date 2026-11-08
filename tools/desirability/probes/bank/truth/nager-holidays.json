@@ -2,18 +2,18 @@
  "sdk": "nager-holidays-sdk",
  "short": "nager-holidays",
  "pkg": "concord-sdk-nager-holidays",
- "repo_head": "984bd2f6a981dd85e8b104c21daae06421a7a48a",
+ "repo_head": "734991e9cdb69a73620c2415c5a6d1e6fd98d87f",
  "truth_format": 3,
  "aliases": [
-  "ConcordErrorKind = concord::ErrorKind (imported: concord::ErrorKind)",
-  "Date = chrono::NaiveDate (imported: chrono::NaiveDate)",
-  "Deserialize = serde::Deserialize (imported: serde::Deserialize)",
-  "Deserializer = serde::Deserializer (imported: serde::Deserializer)",
-  "Endpoint = concord::Endpoint (imported: concord::Endpoint)",
-  "Json = concord::Json (imported: concord::Json)",
-  "ResponseMeta = concord::ResponseMeta (imported: concord::ResponseMeta)",
-  "SendWith = concord::SendWith (imported: concord::SendWith)",
-  "StatusCode = reqwest::StatusCode (imported: concord::reqwest::StatusCode)"
+  "ConcordErrorKind = {ext-crate concord::ErrorKind} (imported: concord::ErrorKind)",
+  "Date = {ext-crate chrono::NaiveDate} (imported: chrono::NaiveDate)",
+  "Deserialize = {ext-crate serde::Deserialize} (imported: serde::Deserialize)",
+  "Deserializer = {ext-crate serde::Deserializer} (imported: serde::Deserializer)",
+  "Endpoint = {ext-crate concord::Endpoint} (imported: concord::Endpoint)",
+  "Json = {ext-crate concord::Json} (imported: concord::Json)",
+  "ResponseMeta = {ext-crate concord::ResponseMeta} (imported: concord::ResponseMeta)",
+  "SendWith = {ext-crate concord::SendWith} (imported: concord::SendWith)",
+  "StatusCode = {ext-crate reqwest::StatusCode} (imported: concord::reqwest::StatusCode)"
  ],
  "items": {
   "nager-holidays/w1": {
@@ -58,8 +58,8 @@
     "how": "impl SendWith for KeepHead",
     "verified": true,
     "decl_module": "crate",
-    "send_returns_canon": "Result<sdk::HolidayResponse, sdk::error::Error>",
-    "error_type_canon": "sdk::error::Error"
+    "send_returns_canon": "{std-prelude Result}<{sdk-def concord_sdk_nager_holidays::HolidayResponse}, {sdk-def concord_sdk_nager_holidays::error::Error}>",
+    "error_type_canon": "{sdk-def concord_sdk_nager_holidays::error::Error}"
    },
    "base_url": null,
    "boundary": "operation",

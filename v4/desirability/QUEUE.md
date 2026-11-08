@@ -8,14 +8,14 @@ a card (`cards/HNN.md`) is committed before any implementation.
 
 | Rank | ID | Family | Hypothesis (short) | Primary outcome (A1 §2.2) | Notes |
 |---|---|---|---|---|---|
-| 1 | H04 | DOCS | Generated docs tell the caller the actual contract (base/path, actual send result, error owner, decisive exceptions) — docs-only pilot on current signatures | discover the contract; complete ordinary use | Witnesses Cloudflare, Sentry, Kraken; controls Nager, Xero, Strava; 72 sessions, 2 providers; candidate from `sdk50/x50-docs` round 3 |
+| 1 | H04 | DOCS | Generated docs tell the caller the actual contract (base/path, actual send result, error owner, decisive exceptions) — docs-only pilot on current signatures | discover the contract; complete ordinary use | Witnesses Cloudflare, Sentry, Kraken; controls Nager, Xero, Strava; 72 sessions, 2 providers; candidate from `sdk50/x50-docs` round 3; baseline (B=734991e9): I3 R2/R3 at ceiling (1.00) on the broad bank, R1 misses are query order and path encoding; H04 uses its own sealed bank |
 | 2 | H08 | POLICY | An omitted operation classification is caught early (SDK-local exhaustive mapping vs one narrow opt-in macro design) | change one provider fact (omission detection stage) | I4 e4 omission controls: only 2 of 7 SDKs catch an omission at compile time today |
-| 3 | H03 | INPUT | Exact inputs infer (`Default::default()`, `.parse()`, `.into()`) without the sealed `IntoValue<T>` barrier | complete ordinary use; diagnose and recover | I5 caller bank: all 5 `Default::default()` body cases name `concord_core::IntoValue` |
+| 3 | H03 | INPUT | Exact inputs infer (`Default::default()`, `.parse()`, `.into()`) without the sealed `IntoValue<T>` barrier | complete ordinary use; diagnose and recover | I5 caller bank: all 5 `Default::default()` body cases name `concord_core::IntoValue`; baseline (B=734991e9): I5 caller bank 25/30, all 5 failures `default_body` (internal `IntoValue`/`__macro` in the first error) |
 | 4 | H06 | SURFACE | Generated construction and controls match intended use; scopes cheap to add/remove (no flattening) | trustworthy construction; scope representation | Classify wrappers first (mechanical / provider semantics / safety boundary / residue); counterexamples QuickBooks, S3/Kubernetes rotation |
 | 5 | H01 | RESULT | The public send result is visible and accurate (docs/aliases vs a representation change) | discover the contract | after H04 |
 | 6 | H02a | RESULT | A reusable value+metadata carrier | complete ordinary use; maintainer cost | split from old H02 |
 | 7 | H02b | RESULT | Provider error-document ownership | diagnose and recover | higher semantic risk |
-| 8 | H12 | DOMAIN | One-place versioning / shared path prefix without a navigation step; scope cost | change one provider fact (I4 e1) | Mastodon mixed versions must stay expressible |
+| 8 | H12 | DOMAIN | One-place versioning / shared path prefix without a navigation step; scope cost | change one provider fact (I4 e1) | Mastodon mixed versions must stay expressible; baseline (B=734991e9): I4 e1 version/prefix — missed propagation in 6/8 tasks, Kubernetes e1 oracle fail 1/4 |
 | 9 | H09a | CAPABILITY | `Pages::starting_at` removes `_from` twins | complete ordinary use | Mailgun eager validation |
 | 10 | H09b | CAPABILITY | A page whose continuation failed after its records were accepted | diagnose and recover | Kubernetes/Elasticsearch/Discord must still reject |
 | 11 | H10 | CAPABILITY | Opt-in single-attempt transport constructor | diagnose and recover (write uncertainty) | same-origin redirect SDKs; opaque supplied clients |
@@ -25,4 +25,5 @@ a card (`cards/HNN.md`) is committed before any implementation.
 | 15 | H07 | SURFACE | Facade residue after H01–H06 | — | classify by purpose |
 | 16 | H13 | RESTRAINT | Remove unused surface with compatibility evidence | concept cost | — |
 | 17 | H14 | CAPABILITY | Capability-crate status (records reconciliation) | records truth | largely done in v4/sdk50/CLOSING.md |
+| 18 | H16 | REQUEST | Request composition order and encoding are predictable from the declaration (fixed query pairs vs caller values; path-value percent-encoding) | discover the contract (R1 query/destination) | baseline I3: Claude misses query order on Kubernetes w1/w2/w6 and MediaWiki w1–w3 in both runs, Nager path value encoding; docs or ordering change, to be carded after H04 |
 | — | T1 | DOCS-TRUTH | `v4/PRODUCT.md` "What Concord is not" states the fixed core and current scope (A2) | records truth | docs-truth path (A1 §3) |

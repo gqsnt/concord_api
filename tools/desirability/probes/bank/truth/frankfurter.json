@@ -2,21 +2,21 @@
  "sdk": "frankfurter-sdk",
  "short": "frankfurter",
  "pkg": "concord-sdk-frankfurter",
- "repo_head": "984bd2f6a981dd85e8b104c21daae06421a7a48a",
+ "repo_head": "734991e9cdb69a73620c2415c5a6d1e6fd98d87f",
  "truth_format": 3,
  "aliases": [
-  "Date = chrono::NaiveDate (imported: chrono::NaiveDate)",
-  "Decimal = bigdecimal::BigDecimal (imported: bigdecimal::BigDecimal)",
-  "Deserialize = serde::Deserialize (imported: serde::Deserialize)",
-  "Deserializer = serde::Deserializer (imported: serde::Deserializer)",
-  "Endpoint = concord::Endpoint (imported: concord::Endpoint)",
-  "ErrorKind = concord::ErrorKind (imported: concord::ErrorKind)",
-  "Json = concord::Json (imported: concord::Json)",
-  "Operation = concord::Operation (imported: concord::Operation)",
-  "RawValue = serde_json::value::RawValue (imported: serde_json::value::RawValue)",
-  "ResponseMeta = concord::ResponseMeta (imported: concord::ResponseMeta)",
-  "SendWith = concord::SendWith (imported: concord::SendWith)",
-  "StatusCode = reqwest::StatusCode (imported: concord::reqwest::StatusCode)"
+  "Date = {ext-crate chrono::NaiveDate} (imported: chrono::NaiveDate)",
+  "Decimal = {ext-crate bigdecimal::BigDecimal} (imported: bigdecimal::BigDecimal)",
+  "Deserialize = {ext-crate serde::Deserialize} (imported: serde::Deserialize)",
+  "Deserializer = {ext-crate serde::Deserializer} (imported: serde::Deserializer)",
+  "Endpoint = {ext-crate concord::Endpoint} (imported: concord::Endpoint)",
+  "ErrorKind = {ext-crate concord::ErrorKind} (imported: concord::ErrorKind)",
+  "Json = {ext-crate concord::Json} (imported: concord::Json)",
+  "Operation = {ext-crate concord::Operation} (imported: concord::Operation)",
+  "RawValue = {ext-crate serde_json::value::RawValue} (imported: serde_json::value::RawValue)",
+  "ResponseMeta = {ext-crate concord::ResponseMeta} (imported: concord::ResponseMeta)",
+  "SendWith = {ext-crate concord::SendWith} (imported: concord::SendWith)",
+  "StatusCode = {ext-crate reqwest::StatusCode} (imported: concord::reqwest::StatusCode)"
  ],
  "items": {
   "frankfurter/w1": {
@@ -61,8 +61,8 @@
     "how": "impl SendWith for SendPolicy",
     "verified": true,
     "decl_module": "crate",
-    "send_returns_canon": "Result<sdk::RateResponse, sdk::error::Error>",
-    "error_type_canon": "sdk::error::Error"
+    "send_returns_canon": "{std-prelude Result}<{sdk-def concord_sdk_frankfurter::RateResponse}, {sdk-def concord_sdk_frankfurter::error::Error}>",
+    "error_type_canon": "{sdk-def concord_sdk_frankfurter::error::Error}"
    },
    "base_url": null,
    "boundary": "operation",

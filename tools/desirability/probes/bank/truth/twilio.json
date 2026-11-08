@@ -2,20 +2,20 @@
  "sdk": "twilio-sdk",
  "short": "twilio",
  "pkg": "concord-sdk-twilio",
- "repo_head": "984bd2f6a981dd85e8b104c21daae06421a7a48a",
+ "repo_head": "734991e9cdb69a73620c2415c5a6d1e6fd98d87f",
  "truth_format": 3,
  "aliases": [
   "type Error = TwilioError",
-  "Deserialize = serde::Deserialize (imported: serde::Deserialize)",
-  "Endpoint = concord::Endpoint (imported: concord::Endpoint)",
-  "ErrorKind = concord::ErrorKind (imported: concord::ErrorKind)",
-  "Form = concord::Form (imported: concord::Form)",
-  "HeaderValue = reqwest::header::HeaderValue (imported: concord::reqwest::header::HeaderValue)",
-  "Json = concord::Json (imported: concord::Json)",
-  "Operation = concord::Operation (imported: concord::Operation)",
-  "Prepared = concord::Prepared (imported: concord::Prepared)",
-  "ResponseMeta = concord::ResponseMeta (imported: concord::ResponseMeta)",
-  "Serialize = serde::Serialize (imported: serde::Serialize)"
+  "Deserialize = {ext-crate serde::Deserialize} (imported: serde::Deserialize)",
+  "Endpoint = {ext-crate concord::Endpoint} (imported: concord::Endpoint)",
+  "ErrorKind = {ext-crate concord::ErrorKind} (imported: concord::ErrorKind)",
+  "Form = {ext-crate concord::Form} (imported: concord::Form)",
+  "HeaderValue = {ext-crate reqwest::header::HeaderValue} (imported: concord::reqwest::header::HeaderValue)",
+  "Json = {ext-crate concord::Json} (imported: concord::Json)",
+  "Operation = {ext-crate concord::Operation} (imported: concord::Operation)",
+  "Prepared = {ext-crate concord::Prepared} (imported: concord::Prepared)",
+  "ResponseMeta = {ext-crate concord::ResponseMeta} (imported: concord::ResponseMeta)",
+  "Serialize = {ext-crate serde::Serialize} (imported: serde::Serialize)"
  ],
  "items": {
   "twilio/w1": {
@@ -49,8 +49,8 @@
     "how": "no send policy",
     "verified": true,
     "decl_module": "crate::wire",
-    "send_returns_canon": "Result<sdk::models::Message, concord::Error>",
-    "error_type_canon": "concord::Error"
+    "send_returns_canon": "{std-prelude Result}<{sdk-def concord_sdk_twilio::models::Message}, {ext-crate concord::Error}>",
+    "error_type_canon": "{ext-crate concord::Error}"
    },
    "base_url": null,
    "boundary": "prepared",

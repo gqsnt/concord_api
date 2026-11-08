@@ -2,20 +2,19 @@
  "sdk": "airtable-sdk",
  "short": "airtable",
  "pkg": "concord-sdk-airtable",
- "repo_head": "984bd2f6a981dd85e8b104c21daae06421a7a48a",
+ "repo_head": "734991e9cdb69a73620c2415c5a6d1e6fd98d87f",
  "truth_format": 3,
  "aliases": [
   "type RecordPages = Pages<Record, String, ResponseMeta, Error>",
-  "BTreeMap = std::collections::BTreeMap (imported: std::collections::BTreeMap)",
-  "Deserialize = serde::Deserialize (imported: serde::Deserialize)",
-  "Endpoint = concord::Endpoint (imported: concord::Endpoint)",
-  "Json = concord::Json (imported: concord::Json)",
-  "NonZeroUsize = std::num::NonZeroUsize (imported: std::num::NonZeroUsize)",
-  "Page = concord_pagination::Page (imported: concord_pagination::Page)",
-  "Pages = concord_pagination::Pages (imported: concord_pagination::Pages)",
-  "ResponseMeta = concord::ResponseMeta (imported: concord::ResponseMeta)",
-  "Resume = concord_pagination::Resume (imported: concord_pagination::Resume)",
-  "SendWith = concord::SendWith (imported: concord::SendWith)"
+  "BTreeMap = {std-lib collections::BTreeMap} (imported: std::collections::BTreeMap)",
+  "Deserialize = {ext-crate serde::Deserialize} (imported: serde::Deserialize)",
+  "Endpoint = {ext-crate concord::Endpoint} (imported: concord::Endpoint)",
+  "Json = {ext-crate concord::Json} (imported: concord::Json)",
+  "Page = {ext-crate concord_pagination::Page} (imported: concord_pagination::Page)",
+  "Pages = {ext-crate concord_pagination::Pages} (imported: concord_pagination::Pages)",
+  "ResponseMeta = {ext-crate concord::ResponseMeta} (imported: concord::ResponseMeta)",
+  "Resume = {ext-crate concord_pagination::Resume} (imported: concord_pagination::Resume)",
+  "SendWith = {ext-crate concord::SendWith} (imported: concord::SendWith)"
  ],
  "items": {
   "airtable/w1": {
@@ -72,8 +71,8 @@
     "how": "impl SendWith for Policy",
     "verified": true,
     "decl_module": "crate",
-    "send_returns_canon": "Result<sdk::Response<sdk::RecordPage>, sdk::Error>",
-    "error_type_canon": "sdk::Error"
+    "send_returns_canon": "{std-prelude Result}<{sdk-def concord_sdk_airtable::Response}<{sdk-def concord_sdk_airtable::RecordPage}>, {sdk-def concord_sdk_airtable::Error}>",
+    "error_type_canon": "{sdk-def concord_sdk_airtable::Error}"
    },
    "base_url": null,
    "boundary": "operation",

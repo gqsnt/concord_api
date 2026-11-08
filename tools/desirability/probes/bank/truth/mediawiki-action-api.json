@@ -2,31 +2,29 @@
  "sdk": "mediawiki-action-api-sdk",
  "short": "mediawiki-action-api",
  "pkg": "concord-sdk-mediawiki-action-api",
- "repo_head": "984bd2f6a981dd85e8b104c21daae06421a7a48a",
+ "repo_head": "734991e9cdb69a73620c2415c5a6d1e6fd98d87f",
  "truth_format": 3,
  "aliases": [
   "type Answers = BTreeMap<u64, Option<Result<PageContent, Unavailable>>>",
   "type CategoryPages = Pages<PageIdentity, Continuation, (), Error>",
-  "BTreeMap = std::collections::BTreeMap (imported: std::collections::BTreeMap)",
-  "BTreeSet = std::collections::BTreeSet (imported: std::collections::BTreeSet)",
-  "Deserialize = serde::Deserialize (imported: serde::Deserialize)",
-  "DeserializeOwned = serde::de::DeserializeOwned (imported: serde::de::DeserializeOwned)",
-  "Deserializer = serde::Deserializer (imported: serde::Deserializer)",
-  "Endpoint = concord::Endpoint (imported: concord::Endpoint)",
-  "Invalid = sdk::Invalid (imported: crate::Unavailable::Invalid)",
-  "Json = concord::Json (imported: concord::Json)",
-  "MediaWikiQuery = sdk::MediaWikiQuery (imported: crate::MediaWikiQuery)",
-  "Missing = sdk::Missing (imported: crate::Unavailable::Missing)",
-  "NoContent = sdk::NoContent (imported: crate::Unavailable::NoContent)",
-  "NonZeroUsize = std::num::NonZeroUsize (imported: std::num::NonZeroUsize)",
-  "Page = concord_pagination::Page (imported: concord_pagination::Page)",
-  "Pages = concord_pagination::Pages (imported: concord_pagination::Pages)",
-  "QueryPairs = concord::QueryPairs (imported: concord::QueryPairs)",
-  "QueryPairsWriter = concord::QueryPairsWriter (imported: concord::QueryPairsWriter)",
-  "ResponseMeta = concord::ResponseMeta (imported: concord::ResponseMeta)",
-  "Resume = concord_pagination::Resume (imported: concord_pagination::Resume)",
-  "SendWith = concord::SendWith (imported: concord::SendWith)",
-  "Value = serde_json::Value (imported: serde_json::Value)"
+  "BTreeMap = {std-lib collections::BTreeMap} (imported: std::collections::BTreeMap)",
+  "Deserialize = {ext-crate serde::Deserialize} (imported: serde::Deserialize)",
+  "DeserializeOwned = {ext-crate serde::de::DeserializeOwned} (imported: serde::de::DeserializeOwned)",
+  "Deserializer = {ext-crate serde::Deserializer} (imported: serde::Deserializer)",
+  "Endpoint = {ext-crate concord::Endpoint} (imported: concord::Endpoint)",
+  "Invalid = {sdk-item concord_sdk_mediawiki_action_api::Invalid} (imported: crate::Unavailable::Invalid)",
+  "Json = {ext-crate concord::Json} (imported: concord::Json)",
+  "MediaWikiQuery = {sdk-item concord_sdk_mediawiki_action_api::MediaWikiQuery} (imported: crate::MediaWikiQuery)",
+  "Missing = {sdk-item concord_sdk_mediawiki_action_api::Missing} (imported: crate::Unavailable::Missing)",
+  "NoContent = {sdk-item concord_sdk_mediawiki_action_api::NoContent} (imported: crate::Unavailable::NoContent)",
+  "Page = {ext-crate concord_pagination::Page} (imported: concord_pagination::Page)",
+  "Pages = {ext-crate concord_pagination::Pages} (imported: concord_pagination::Pages)",
+  "QueryPairs = {ext-crate concord::QueryPairs} (imported: concord::QueryPairs)",
+  "QueryPairsWriter = {ext-crate concord::QueryPairsWriter} (imported: concord::QueryPairsWriter)",
+  "ResponseMeta = {ext-crate concord::ResponseMeta} (imported: concord::ResponseMeta)",
+  "Resume = {ext-crate concord_pagination::Resume} (imported: concord_pagination::Resume)",
+  "SendWith = {ext-crate concord::SendWith} (imported: concord::SendWith)",
+  "Value = {ext-crate serde_json::Value} (imported: serde_json::Value)"
  ],
  "items": {
   "mediawiki-action-api/w1": {
@@ -83,8 +81,8 @@
     "how": "impl SendWith for QueryPolicy",
     "verified": true,
     "decl_module": "crate",
-    "send_returns_canon": "Result<sdk::models::QueryResponse<sdk::models::CategoryResults>, sdk::error::Error>",
-    "error_type_canon": "sdk::error::Error"
+    "send_returns_canon": "{std-prelude Result}<{sdk-def concord_sdk_mediawiki_action_api::models::QueryResponse}<{sdk-def concord_sdk_mediawiki_action_api::models::CategoryResults}>, {sdk-def concord_sdk_mediawiki_action_api::error::Error}>",
+    "error_type_canon": "{sdk-def concord_sdk_mediawiki_action_api::error::Error}"
    },
    "base_url": {
     "keep": "/w/api.php",
@@ -217,8 +215,8 @@
     "how": "impl SendWith for QueryPolicy",
     "verified": true,
     "decl_module": "crate",
-    "send_returns_canon": "Result<sdk::models::QueryResponse<sdk::models::SearchResults>, sdk::error::Error>",
-    "error_type_canon": "sdk::error::Error"
+    "send_returns_canon": "{std-prelude Result}<{sdk-def concord_sdk_mediawiki_action_api::models::QueryResponse}<{sdk-def concord_sdk_mediawiki_action_api::models::SearchResults}>, {sdk-def concord_sdk_mediawiki_action_api::error::Error}>",
+    "error_type_canon": "{sdk-def concord_sdk_mediawiki_action_api::error::Error}"
    },
    "base_url": null,
    "boundary": "operation",
@@ -339,8 +337,8 @@
     "how": "impl SendWith for QueryPolicy",
     "verified": true,
     "decl_module": "crate",
-    "send_returns_canon": "Result<sdk::models::QueryResponse<sdk::models::ContentResults>, sdk::error::Error>",
-    "error_type_canon": "sdk::error::Error"
+    "send_returns_canon": "{std-prelude Result}<{sdk-def concord_sdk_mediawiki_action_api::models::QueryResponse}<{sdk-def concord_sdk_mediawiki_action_api::models::ContentResults}>, {sdk-def concord_sdk_mediawiki_action_api::error::Error}>",
+    "error_type_canon": "{sdk-def concord_sdk_mediawiki_action_api::error::Error}"
    },
    "base_url": null,
    "boundary": "operation",

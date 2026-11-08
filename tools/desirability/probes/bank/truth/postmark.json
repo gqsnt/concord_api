@@ -2,14 +2,14 @@
  "sdk": "postmark-sdk",
  "short": "postmark",
  "pkg": "concord-sdk-postmark",
- "repo_head": "984bd2f6a981dd85e8b104c21daae06421a7a48a",
+ "repo_head": "734991e9cdb69a73620c2415c5a6d1e6fd98d87f",
  "truth_format": 3,
  "aliases": [
-  "Deserialize = serde::Deserialize (imported: serde::Deserialize)",
-  "Endpoint = concord::Endpoint (imported: concord::Endpoint)",
-  "Json = concord::Json (imported: concord::Json)",
-  "SendWith = concord::SendWith (imported: concord::SendWith)",
-  "Serialize = serde::Serialize (imported: serde::Serialize)"
+  "Deserialize = {ext-crate serde::Deserialize} (imported: serde::Deserialize)",
+  "Endpoint = {ext-crate concord::Endpoint} (imported: concord::Endpoint)",
+  "Json = {ext-crate concord::Json} (imported: concord::Json)",
+  "SendWith = {ext-crate concord::SendWith} (imported: concord::SendWith)",
+  "Serialize = {ext-crate serde::Serialize} (imported: serde::Serialize)"
  ],
  "items": {
   "postmark/w1": {
@@ -66,8 +66,8 @@
     "how": "send template",
     "verified": true,
     "decl_module": "crate",
-    "send_returns_canon": "Result<sdk::MessagePage, sdk::Error>",
-    "error_type_canon": "sdk::Error"
+    "send_returns_canon": "{std-prelude Result}<{sdk-def concord_sdk_postmark::MessagePage}, {sdk-def concord_sdk_postmark::Error}>",
+    "error_type_canon": "{sdk-def concord_sdk_postmark::Error}"
    },
    "base_url": null,
    "boundary": "operation",
@@ -188,8 +188,8 @@
     "how": "send template",
     "verified": true,
     "decl_module": "crate",
-    "send_returns_canon": "Result<sdk::Message, sdk::Error>",
-    "error_type_canon": "sdk::Error"
+    "send_returns_canon": "{std-prelude Result}<{sdk-def concord_sdk_postmark::Message}, {sdk-def concord_sdk_postmark::Error}>",
+    "error_type_canon": "{sdk-def concord_sdk_postmark::Error}"
    },
    "base_url": null,
    "boundary": "operation",

@@ -2,19 +2,18 @@
  "sdk": "nasa-neows-sdk",
  "short": "nasa-neows",
  "pkg": "concord-sdk-nasa-neows",
- "repo_head": "984bd2f6a981dd85e8b104c21daae06421a7a48a",
+ "repo_head": "734991e9cdb69a73620c2415c5a6d1e6fd98d87f",
  "truth_format": 3,
  "aliases": [
-  "BTreeMap = std::collections::BTreeMap (imported: std::collections::BTreeMap)",
-  "Deserialize = serde::Deserialize (imported: serde::Deserialize)",
-  "Endpoint = concord::Endpoint (imported: concord::Endpoint)",
-  "FieldError = concord::FieldError (imported: concord::FieldError)",
-  "Future = std::future::Future (imported: std::future::Future)",
-  "HeaderMap = reqwest::header::HeaderMap (imported: concord::reqwest::header::HeaderMap)",
-  "HeaderName = reqwest::header::HeaderName (imported: concord::reqwest::header::HeaderName)",
-  "Json = concord::Json (imported: concord::Json)",
-  "SendWith = concord::SendWith (imported: concord::SendWith)",
-  "Sends = concord::Sends (imported: concord::Sends)"
+  "BTreeMap = {std-lib collections::BTreeMap} (imported: std::collections::BTreeMap)",
+  "Deserialize = {ext-crate serde::Deserialize} (imported: serde::Deserialize)",
+  "Endpoint = {ext-crate concord::Endpoint} (imported: concord::Endpoint)",
+  "FieldError = {ext-crate concord::FieldError} (imported: concord::FieldError)",
+  "HeaderMap = {ext-crate reqwest::header::HeaderMap} (imported: concord::reqwest::header::HeaderMap)",
+  "HeaderName = {ext-crate reqwest::header::HeaderName} (imported: concord::reqwest::header::HeaderName)",
+  "Json = {ext-crate concord::Json} (imported: concord::Json)",
+  "SendWith = {ext-crate concord::SendWith} (imported: concord::SendWith)",
+  "Sends = {ext-crate concord::Sends} (imported: concord::Sends)"
  ],
  "items": {
   "nasa-neows/w1": {
@@ -59,8 +58,8 @@
     "how": "send template",
     "verified": true,
     "decl_module": "crate",
-    "send_returns_canon": "Result<sdk::BrowsePage, sdk::Error>",
-    "error_type_canon": "sdk::Error"
+    "send_returns_canon": "{std-prelude Result}<{sdk-def concord_sdk_nasa_neows::BrowsePage}, {sdk-def concord_sdk_nasa_neows::Error}>",
+    "error_type_canon": "{sdk-def concord_sdk_nasa_neows::Error}"
    },
    "base_url": {
     "keep": "/neo/rest/v1",
@@ -174,8 +173,8 @@
     "how": "send template",
     "verified": true,
     "decl_module": "crate",
-    "send_returns_canon": "Result<sdk::Asteroid, sdk::Error>",
-    "error_type_canon": "sdk::Error"
+    "send_returns_canon": "{std-prelude Result}<{sdk-def concord_sdk_nasa_neows::Asteroid}, {sdk-def concord_sdk_nasa_neows::Error}>",
+    "error_type_canon": "{sdk-def concord_sdk_nasa_neows::Error}"
    },
    "base_url": null,
    "boundary": "operation",
@@ -276,8 +275,8 @@
     "how": "send template",
     "verified": true,
     "decl_module": "crate",
-    "send_returns_canon": "Result<sdk::Feed, sdk::Error>",
-    "error_type_canon": "sdk::Error"
+    "send_returns_canon": "{std-prelude Result}<{sdk-def concord_sdk_nasa_neows::Feed}, {sdk-def concord_sdk_nasa_neows::Error}>",
+    "error_type_canon": "{sdk-def concord_sdk_nasa_neows::Error}"
    },
    "base_url": null,
    "boundary": "operation",

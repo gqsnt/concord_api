@@ -85,3 +85,13 @@ Append-only: a row marked `running` is superseded by a later row (`↳ … resul
 | ↳ I3 fix round 8 result | — | claude-opus-5-5 (subagent transcript); effort not visible | interrupted by host restart before edits, resumed, ~9 min | self-test 154 + 32 effects; committed f1792fed, merged bc997a04 |
 | L0 INSTRUMENT review 13 (I3 fix8 + I4 fix5 + I1 reachability, `l0-instrument-review-13-sol`) on bc997a04 | Codex gpt-6.1-sol, xhigh, read-only | (meta.json at completion) | running | — |
 | ↳ review 13 observed | — | gpt-6.1-sol / xhigh / read-only (rollout turn_context); 04:28:32Z–04:33:48Z | 5m16s | ACCEPT_WITH_FIXES (4 non-blocking); 3 recorded as limits, 1 fixed by coordinator eb46bf2b |
+| BASELINE I3 readers run 1+2 (`work/baseline/i3/runs-claude-{1,2}`) on 734991e9 | Claude `claude -p` claude-opus-5-5, no tools, effort not passed (default) | (per-session transcripts: message.model / modelUsage) | 05:4x– | running |
+| BASELINE I3 readers run 1+2 (`work/baseline/i3/runs-codex-{1,2}`) on 734991e9 | Codex gpt-6.1-sol, xhigh, read-only, empty dir | (per-session rollout turn_context) | 05:4x– | running |
+| ↳ BASELINE I3 Claude readers observed | — | claude-opus-5-5 in 128/128 sessions (transcript message.model / modelUsage); effort not visible; 0 tool calls, 0 retries | run1 134s, run2 130s | R1.critical 0.92/0.92, R1.exact 0.86/0.86, R2 1.00, R3 1.00 |
+| ↳ BASELINE I3 Codex readers observed | — | gpt-6.1-sol / xhigh / read-only in 128/128 sessions (rollout turn_context); 0 tool calls, 0 retries | run1 192s, run2 186s | R1.critical 1.00/0.95, R1.exact 0.94/0.90, R2 1.00, R3 1.00 |
+| BASELINE I4 edit agents, 40 sealed tasks (`work/baseline/i4/runs`) on 734991e9 | Codex gpt-6.1-sol, xhigh, danger-full-access inside bwrap | (per-run result.json: rollout turn_context) | 06:0x– | running |
+| H04 instrument lane (sealed task bank + scorer) — Claude subagent | Claude subagent (inherits Opus 5.5) | (transcript at completion) | 06:1x– | running |
+| ↳ H04 instrument lane result | — | claude-opus-5-5 (subagent transcript); effort not visible | ~50 min, 126 tool uses | 24 tasks / 66 facts sealed (bank 2c9cae59); validation 24/24, 66/66, 24/24, selftest 23/23; tooling c0839cad (local) |
+| H04 INSTRUMENT review 1 (`h04-instrument-review-1-sol`) on c0839cad | Codex gpt-6.1-sol, xhigh, read-only | (meta.json at completion) | running | — |
+| ↳ H04 review 1 observed | — | gpt-6.1-sol / xhigh / read-only (rollout turn_context); 05:43:07Z–05:49:19Z | 6m12s | REJECT (8 blocking) |
+| H04 instrument fix round 1 — same Claude subagent resumed | Claude subagent (inherits Opus 5.5) | (transcript at completion) | running | — |

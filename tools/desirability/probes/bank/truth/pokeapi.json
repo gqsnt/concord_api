@@ -2,18 +2,18 @@
  "sdk": "pokeapi-sdk",
  "short": "pokeapi",
  "pkg": "concord-sdk-pokeapi",
- "repo_head": "984bd2f6a981dd85e8b104c21daae06421a7a48a",
+ "repo_head": "734991e9cdb69a73620c2415c5a6d1e6fd98d87f",
  "truth_format": 3,
  "aliases": [
   "type Client = PokeApi",
-  "BTreeMap = std::collections::BTreeMap (imported: std::collections::BTreeMap)",
-  "Deserialize = serde::Deserialize (imported: serde::Deserialize)",
-  "Endpoint = concord::Endpoint (imported: concord::Endpoint)",
-  "HeaderMap = reqwest::header::HeaderMap (imported: concord::reqwest::header::HeaderMap)",
-  "Json = concord::Json (imported: concord::Json)",
-  "Received = concord::Received (imported: concord::Received)",
-  "SendWith = concord::SendWith (imported: concord::SendWith)",
-  "Url = reqwest::Url (imported: concord::reqwest::Url)"
+  "BTreeMap = {std-lib collections::BTreeMap} (imported: std::collections::BTreeMap)",
+  "Deserialize = {ext-crate serde::Deserialize} (imported: serde::Deserialize)",
+  "Endpoint = {ext-crate concord::Endpoint} (imported: concord::Endpoint)",
+  "HeaderMap = {ext-crate reqwest::header::HeaderMap} (imported: concord::reqwest::header::HeaderMap)",
+  "Json = {ext-crate concord::Json} (imported: concord::Json)",
+  "Received = {ext-crate concord::Received} (imported: concord::Received)",
+  "SendWith = {ext-crate concord::SendWith} (imported: concord::SendWith)",
+  "Url = {ext-crate reqwest::Url} (imported: concord::reqwest::Url)"
  ],
  "items": {
   "pokeapi/w1": {
@@ -58,8 +58,8 @@
     "how": "send template",
     "verified": true,
     "decl_module": "crate",
-    "send_returns_canon": "Result<sdk::Response<sdk::PokemonPage>, sdk::Error>",
-    "error_type_canon": "sdk::Error"
+    "send_returns_canon": "{std-prelude Result}<{sdk-def concord_sdk_pokeapi::Response}<{sdk-def concord_sdk_pokeapi::PokemonPage}>, {sdk-def concord_sdk_pokeapi::Error}>",
+    "error_type_canon": "{sdk-def concord_sdk_pokeapi::Error}"
    },
    "base_url": {
     "keep": "/api/v2",
@@ -173,8 +173,8 @@
     "how": "send template",
     "verified": true,
     "decl_module": "crate",
-    "send_returns_canon": "Result<sdk::Response<sdk::Pokemon>, sdk::Error>",
-    "error_type_canon": "sdk::Error"
+    "send_returns_canon": "{std-prelude Result}<{sdk-def concord_sdk_pokeapi::Response}<{sdk-def concord_sdk_pokeapi::Pokemon}>, {sdk-def concord_sdk_pokeapi::Error}>",
+    "error_type_canon": "{sdk-def concord_sdk_pokeapi::Error}"
    },
    "base_url": null,
    "boundary": "operation",

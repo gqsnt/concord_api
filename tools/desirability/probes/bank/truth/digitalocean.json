@@ -2,24 +2,21 @@
  "sdk": "digitalocean-sdk",
  "short": "digitalocean",
  "pkg": "concord-sdk-digitalocean",
- "repo_head": "984bd2f6a981dd85e8b104c21daae06421a7a48a",
+ "repo_head": "734991e9cdb69a73620c2415c5a6d1e6fd98d87f",
  "truth_format": 3,
  "aliases": [
   "type Traversal<T> = Pages<T, NextLink, ResponseMeta, Error>",
-  "Cow = std::borrow::Cow (imported: std::borrow::Cow)",
-  "Deserialize = serde::Deserialize (imported: serde::Deserialize)",
-  "DigitalOcean = sdk::DigitalOcean (imported: crate::DigitalOcean)",
-  "Duration = std::time::Duration (imported: std::time::Duration)",
-  "Endpoint = concord::Endpoint (imported: concord::Endpoint)",
-  "Json = concord::Json (imported: concord::Json)",
-  "NonZeroUsize = std::num::NonZeroUsize (imported: std::num::NonZeroUsize)",
-  "Page = concord_pagination::Page (imported: concord_pagination::Page)",
-  "Pages = concord_pagination::Pages (imported: concord_pagination::Pages)",
-  "Received = concord::Received (imported: concord::Received)",
-  "Resume = concord_pagination::Resume (imported: concord_pagination::Resume)",
-  "SendWith = concord::SendWith (imported: concord::SendWith)",
-  "Sends = concord::Sends (imported: concord::Sends)",
-  "Url = reqwest::Url (imported: concord::reqwest::Url)"
+  "Deserialize = {ext-crate serde::Deserialize} (imported: serde::Deserialize)",
+  "DigitalOcean = {sdk-item concord_sdk_digitalocean::DigitalOcean} (imported: crate::DigitalOcean)",
+  "Endpoint = {ext-crate concord::Endpoint} (imported: concord::Endpoint)",
+  "Json = {ext-crate concord::Json} (imported: concord::Json)",
+  "Page = {ext-crate concord_pagination::Page} (imported: concord_pagination::Page)",
+  "Pages = {ext-crate concord_pagination::Pages} (imported: concord_pagination::Pages)",
+  "Received = {ext-crate concord::Received} (imported: concord::Received)",
+  "Resume = {ext-crate concord_pagination::Resume} (imported: concord_pagination::Resume)",
+  "SendWith = {ext-crate concord::SendWith} (imported: concord::SendWith)",
+  "Sends = {ext-crate concord::Sends} (imported: concord::Sends)",
+  "Url = {ext-crate reqwest::Url} (imported: concord::reqwest::Url)"
  ],
  "items": {
   "digitalocean/w1": {
@@ -76,8 +73,8 @@
     "how": "send template",
     "verified": true,
     "decl_module": "crate",
-    "send_returns_canon": "Result<sdk::Response<sdk::models::Actions>, sdk::error::Error>",
-    "error_type_canon": "sdk::error::Error"
+    "send_returns_canon": "{std-prelude Result}<{sdk-def concord_sdk_digitalocean::Response}<{sdk-def concord_sdk_digitalocean::models::Actions}>, {sdk-def concord_sdk_digitalocean::error::Error}>",
+    "error_type_canon": "{sdk-def concord_sdk_digitalocean::error::Error}"
    },
    "base_url": {
     "keep": "/v2",
@@ -211,8 +208,8 @@
     "how": "send template",
     "verified": true,
     "decl_module": "crate",
-    "send_returns_canon": "Result<sdk::Response<sdk::models::Droplets>, sdk::error::Error>",
-    "error_type_canon": "sdk::error::Error"
+    "send_returns_canon": "{std-prelude Result}<{sdk-def concord_sdk_digitalocean::Response}<{sdk-def concord_sdk_digitalocean::models::Droplets}>, {sdk-def concord_sdk_digitalocean::error::Error}>",
+    "error_type_canon": "{sdk-def concord_sdk_digitalocean::error::Error}"
    },
    "base_url": null,
    "boundary": "operation",
@@ -333,8 +330,8 @@
     "how": "send template",
     "verified": true,
     "decl_module": "crate",
-    "send_returns_canon": "Result<sdk::Response<sdk::models::DropletDocument>, sdk::error::Error>",
-    "error_type_canon": "sdk::error::Error"
+    "send_returns_canon": "{std-prelude Result}<{sdk-def concord_sdk_digitalocean::Response}<{sdk-def concord_sdk_digitalocean::models::DropletDocument}>, {sdk-def concord_sdk_digitalocean::error::Error}>",
+    "error_type_canon": "{sdk-def concord_sdk_digitalocean::error::Error}"
    },
    "base_url": null,
    "boundary": "operation",
@@ -455,8 +452,8 @@
     "how": "send template",
     "verified": true,
     "decl_module": "crate",
-    "send_returns_canon": "Result<sdk::Response<sdk::models::ActionDocument>, sdk::error::Error>",
-    "error_type_canon": "sdk::error::Error"
+    "send_returns_canon": "{std-prelude Result}<{sdk-def concord_sdk_digitalocean::Response}<{sdk-def concord_sdk_digitalocean::models::ActionDocument}>, {sdk-def concord_sdk_digitalocean::error::Error}>",
+    "error_type_canon": "{sdk-def concord_sdk_digitalocean::error::Error}"
    },
    "base_url": null,
    "boundary": "operation",
@@ -577,8 +574,8 @@
     "how": "send template",
     "verified": true,
     "decl_module": "crate",
-    "send_returns_canon": "Result<sdk::Response<sdk::models::Snapshots>, sdk::error::Error>",
-    "error_type_canon": "sdk::error::Error"
+    "send_returns_canon": "{std-prelude Result}<{sdk-def concord_sdk_digitalocean::Response}<{sdk-def concord_sdk_digitalocean::models::Snapshots}>, {sdk-def concord_sdk_digitalocean::error::Error}>",
+    "error_type_canon": "{sdk-def concord_sdk_digitalocean::error::Error}"
    },
    "base_url": null,
    "boundary": "operation",

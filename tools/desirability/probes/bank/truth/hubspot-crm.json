@@ -2,28 +2,23 @@
  "sdk": "hubspot-crm-sdk",
  "short": "hubspot-crm",
  "pkg": "concord-sdk-hubspot-crm",
- "repo_head": "984bd2f6a981dd85e8b104c21daae06421a7a48a",
+ "repo_head": "734991e9cdb69a73620c2415c5a6d1e6fd98d87f",
  "truth_format": 3,
  "aliases": [
-  "Arc = std::sync::Arc (imported: std::sync::Arc)",
-  "BTreeMap = std::collections::BTreeMap (imported: std::collections::BTreeMap)",
-  "BTreeSet = std::collections::BTreeSet (imported: std::collections::BTreeSet)",
-  "Delivery = concord::Delivery (imported: concord::Delivery)",
-  "Deserialize = serde::Deserialize (imported: serde::Deserialize)",
-  "Deserializer = serde::Deserializer (imported: serde::Deserializer)",
-  "Duration = std::time::Duration (imported: std::time::Duration)",
-  "Form = concord::Form (imported: concord::Form)",
-  "HeaderValue = reqwest::header::HeaderValue (imported: concord::reqwest::header::HeaderValue)",
-  "Json = concord::Json (imported: concord::Json)",
-  "Mutex = std::sync::Mutex (imported: std::sync::Mutex)",
-  "NonZeroUsize = std::num::NonZeroUsize (imported: std::num::NonZeroUsize)",
-  "Page = concord_pagination::Page (imported: concord_pagination::Page)",
-  "Pages = concord_pagination::Pages (imported: concord_pagination::Pages)",
-  "Resume = concord_pagination::Resume (imported: concord_pagination::Resume)",
-  "Serialize = serde::Serialize (imported: serde::Serialize)",
-  "Serializer = serde::Serializer (imported: serde::Serializer)",
-  "Token = concord_auth::Token (imported: concord_auth::Token)",
-  "TokenCache = concord_auth::TokenCache (imported: concord_auth::TokenCache)"
+  "BTreeMap = {std-lib collections::BTreeMap} (imported: std::collections::BTreeMap)",
+  "Delivery = {ext-crate concord::Delivery} (imported: concord::Delivery)",
+  "Deserialize = {ext-crate serde::Deserialize} (imported: serde::Deserialize)",
+  "Deserializer = {ext-crate serde::Deserializer} (imported: serde::Deserializer)",
+  "Form = {ext-crate concord::Form} (imported: concord::Form)",
+  "HeaderValue = {ext-crate reqwest::header::HeaderValue} (imported: concord::reqwest::header::HeaderValue)",
+  "Json = {ext-crate concord::Json} (imported: concord::Json)",
+  "Page = {ext-crate concord_pagination::Page} (imported: concord_pagination::Page)",
+  "Pages = {ext-crate concord_pagination::Pages} (imported: concord_pagination::Pages)",
+  "Resume = {ext-crate concord_pagination::Resume} (imported: concord_pagination::Resume)",
+  "Serialize = {ext-crate serde::Serialize} (imported: serde::Serialize)",
+  "Serializer = {ext-crate serde::Serializer} (imported: serde::Serializer)",
+  "Token = {ext-crate concord_auth::Token} (imported: concord_auth::Token)",
+  "TokenCache = {ext-crate concord_auth::TokenCache} (imported: concord_auth::TokenCache)"
  ],
  "items": {
   "hubspot-crm/w1": {
@@ -65,8 +60,8 @@
     "how": "no send policy",
     "verified": true,
     "decl_module": "crate",
-    "send_returns_canon": "Result<sdk::BatchReadResponse, concord::Error>",
-    "error_type_canon": "concord::Error"
+    "send_returns_canon": "{std-prelude Result}<{sdk-def concord_sdk_hubspot_crm::BatchReadResponse}, {ext-crate concord::Error}>",
+    "error_type_canon": "{ext-crate concord::Error}"
    },
    "base_url": null,
    "boundary": "prepared",
@@ -172,8 +167,8 @@
     "how": "no send policy",
     "verified": true,
     "decl_module": "crate",
-    "send_returns_canon": "Result<sdk::Contact, concord::Error>",
-    "error_type_canon": "concord::Error"
+    "send_returns_canon": "{std-prelude Result}<{sdk-def concord_sdk_hubspot_crm::Contact}, {ext-crate concord::Error}>",
+    "error_type_canon": "{ext-crate concord::Error}"
    },
    "base_url": null,
    "boundary": "prepared",
@@ -275,8 +270,8 @@
     "how": "no send policy",
     "verified": true,
     "decl_module": "crate",
-    "send_returns_canon": "Result<sdk::SearchResponse, concord::Error>",
-    "error_type_canon": "concord::Error"
+    "send_returns_canon": "{std-prelude Result}<{sdk-def concord_sdk_hubspot_crm::SearchResponse}, {ext-crate concord::Error}>",
+    "error_type_canon": "{ext-crate concord::Error}"
    },
    "base_url": null,
    "boundary": "prepared",
@@ -388,8 +383,8 @@
     "how": "no send policy",
     "verified": true,
     "decl_module": "crate",
-    "send_returns_canon": "Result<sdk::Contact, concord::Error>",
-    "error_type_canon": "concord::Error"
+    "send_returns_canon": "{std-prelude Result}<{sdk-def concord_sdk_hubspot_crm::Contact}, {ext-crate concord::Error}>",
+    "error_type_canon": "{ext-crate concord::Error}"
    },
    "base_url": null,
    "boundary": "prepared",

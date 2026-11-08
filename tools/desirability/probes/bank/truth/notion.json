@@ -2,27 +2,26 @@
  "sdk": "notion-sdk",
  "short": "notion",
  "pkg": "concord-sdk-notion",
- "repo_head": "984bd2f6a981dd85e8b104c21daae06421a7a48a",
+ "repo_head": "734991e9cdb69a73620c2415c5a6d1e6fd98d87f",
  "truth_format": 3,
  "aliases": [
   "type BlockPages = Pages<Block, String, ResponseMeta, Error>",
   "type QueryPages = Pages<QueryResult, String, ResponseMeta, Error>",
-  "BTreeMap = std::collections::BTreeMap (imported: std::collections::BTreeMap)",
-  "Bytes = bytes::Bytes (imported: concord::bytes::Bytes)",
-  "Deserialize = serde::Deserialize (imported: serde::Deserialize)",
-  "DeserializeOwned = serde::de::DeserializeOwned (imported: serde::de::DeserializeOwned)",
-  "Deserializer = serde::Deserializer (imported: serde::Deserializer)",
-  "HashSet = std::collections::HashSet (imported: std::collections::HashSet)",
-  "Json = concord::Json (imported: concord::Json)",
-  "Notion = sdk::Notion (imported: crate::api::Notion)",
-  "NotionConfig = sdk::NotionConfig (imported: crate::api::NotionConfig)",
-  "Pages = concord_pagination::Pages (imported: concord_pagination::Pages)",
-  "Prepared = concord::Prepared (imported: concord::Prepared)",
-  "ResponseMeta = concord::ResponseMeta (imported: concord::ResponseMeta)",
-  "Resume = concord_pagination::Resume (imported: concord_pagination::Resume)",
-  "Serialize = serde::Serialize (imported: serde::Serialize)",
-  "TraversalPage = concord_pagination::Page (imported: concord_pagination::Page)",
-  "Value = serde_json::Value (imported: serde_json::Value)"
+  "BTreeMap = {std-lib collections::BTreeMap} (imported: std::collections::BTreeMap)",
+  "Bytes = {ext-crate bytes::Bytes} (imported: concord::bytes::Bytes)",
+  "Deserialize = {ext-crate serde::Deserialize} (imported: serde::Deserialize)",
+  "DeserializeOwned = {ext-crate serde::de::DeserializeOwned} (imported: serde::de::DeserializeOwned)",
+  "Deserializer = {ext-crate serde::Deserializer} (imported: serde::Deserializer)",
+  "Json = {ext-crate concord::Json} (imported: concord::Json)",
+  "Notion = {sdk-item concord_sdk_notion::Notion} (imported: crate::api::Notion)",
+  "NotionConfig = {sdk-item concord_sdk_notion::NotionConfig} (imported: crate::api::NotionConfig)",
+  "Pages = {ext-crate concord_pagination::Pages} (imported: concord_pagination::Pages)",
+  "Prepared = {ext-crate concord::Prepared} (imported: concord::Prepared)",
+  "ResponseMeta = {ext-crate concord::ResponseMeta} (imported: concord::ResponseMeta)",
+  "Resume = {ext-crate concord_pagination::Resume} (imported: concord_pagination::Resume)",
+  "Serialize = {ext-crate serde::Serialize} (imported: serde::Serialize)",
+  "TraversalPage = {ext-crate concord_pagination::Page} (imported: concord_pagination::Page)",
+  "Value = {ext-crate serde_json::Value} (imported: serde_json::Value)"
  ],
  "items": {
   "notion/w1": {
@@ -60,8 +59,8 @@
     "how": "no send policy",
     "verified": true,
     "decl_module": "crate::api",
-    "send_returns_canon": "Result<sdk::models::List<sdk::models::Block>, concord::Error>",
-    "error_type_canon": "concord::Error"
+    "send_returns_canon": "{std-prelude Result}<{sdk-def concord_sdk_notion::models::List}<{sdk-def concord_sdk_notion::models::Block}>, {ext-crate concord::Error}>",
+    "error_type_canon": "{ext-crate concord::Error}"
    },
    "base_url": {
     "keep": "/v1",
@@ -184,8 +183,8 @@
     "how": "no send policy",
     "verified": true,
     "decl_module": "crate::api",
-    "send_returns_canon": "Result<sdk::models::Page, concord::Error>",
-    "error_type_canon": "concord::Error"
+    "send_returns_canon": "{std-prelude Result}<{sdk-def concord_sdk_notion::models::Page}, {ext-crate concord::Error}>",
+    "error_type_canon": "{ext-crate concord::Error}"
    },
    "base_url": null,
    "boundary": "prepared",

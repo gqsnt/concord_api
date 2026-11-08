@@ -2,21 +2,19 @@
  "sdk": "square-payments-sdk",
  "short": "square-payments",
  "pkg": "concord-sdk-square-payments",
- "repo_head": "984bd2f6a981dd85e8b104c21daae06421a7a48a",
+ "repo_head": "734991e9cdb69a73620c2415c5a6d1e6fd98d87f",
  "truth_format": 3,
  "aliases": [
-  "CredentialError = concord_auth::CredentialError (imported: concord_auth::CredentialError)",
-  "Deserialize = serde::Deserialize (imported: serde::Deserialize)",
-  "Duration = std::time::Duration (imported: std::time::Duration)",
-  "Endpoint = concord::Endpoint (imported: concord::Endpoint)",
-  "HeaderValue = reqwest::header::HeaderValue (imported: reqwest::header::HeaderValue)",
-  "Json = concord::Json (imported: concord::Json)",
-  "NonZeroUsize = std::num::NonZeroUsize (imported: std::num::NonZeroUsize)",
-  "Pages = concord_pagination::Pages (imported: concord_pagination::Pages)",
-  "PagesError = concord_pagination::PagesError (imported: concord_pagination::PagesError)",
-  "Resume = concord_pagination::Resume (imported: concord_pagination::Resume)",
-  "SendWith = concord::SendWith (imported: concord::SendWith)",
-  "Serialize = serde::Serialize (imported: serde::Serialize)"
+  "CredentialError = {ext-crate concord_auth::CredentialError} (imported: concord_auth::CredentialError)",
+  "Deserialize = {ext-crate serde::Deserialize} (imported: serde::Deserialize)",
+  "Endpoint = {ext-crate concord::Endpoint} (imported: concord::Endpoint)",
+  "HeaderValue = {ext-crate reqwest::header::HeaderValue} (imported: reqwest::header::HeaderValue)",
+  "Json = {ext-crate concord::Json} (imported: concord::Json)",
+  "Pages = {ext-crate concord_pagination::Pages} (imported: concord_pagination::Pages)",
+  "PagesError = {ext-crate concord_pagination::PagesError} (imported: concord_pagination::PagesError)",
+  "Resume = {ext-crate concord_pagination::Resume} (imported: concord_pagination::Resume)",
+  "SendWith = {ext-crate concord::SendWith} (imported: concord::SendWith)",
+  "Serialize = {ext-crate serde::Serialize} (imported: serde::Serialize)"
  ],
  "items": {
   "square-payments/w1": {
@@ -81,8 +79,8 @@
     "how": "send template",
     "verified": true,
     "decl_module": "crate",
-    "send_returns_canon": "Result<sdk::models::PaymentsPage, sdk::error::Error>",
-    "error_type_canon": "sdk::error::Error"
+    "send_returns_canon": "{std-prelude Result}<{sdk-def concord_sdk_square_payments::models::PaymentsPage}, {sdk-def concord_sdk_square_payments::error::Error}>",
+    "error_type_canon": "{sdk-def concord_sdk_square_payments::error::Error}"
    },
    "base_url": {
     "keep": "/v2",
@@ -232,8 +230,8 @@
     "how": "send template",
     "verified": true,
     "decl_module": "crate",
-    "send_returns_canon": "Result<sdk::models::PaymentResponse, sdk::error::Error>",
-    "error_type_canon": "sdk::error::Error"
+    "send_returns_canon": "{std-prelude Result}<{sdk-def concord_sdk_square_payments::models::PaymentResponse}, {sdk-def concord_sdk_square_payments::error::Error}>",
+    "error_type_canon": "{sdk-def concord_sdk_square_payments::error::Error}"
    },
    "base_url": null,
    "boundary": "operation",
@@ -370,8 +368,8 @@
     "how": "send template",
     "verified": true,
     "decl_module": "crate",
-    "send_returns_canon": "Result<sdk::models::PaymentResponse, sdk::error::Error>",
-    "error_type_canon": "sdk::error::Error"
+    "send_returns_canon": "{std-prelude Result}<{sdk-def concord_sdk_square_payments::models::PaymentResponse}, {sdk-def concord_sdk_square_payments::error::Error}>",
+    "error_type_canon": "{sdk-def concord_sdk_square_payments::error::Error}"
    },
    "base_url": null,
    "boundary": "operation",

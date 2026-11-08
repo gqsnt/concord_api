@@ -2,21 +2,18 @@
  "sdk": "open-library-sdk",
  "short": "open-library",
  "pkg": "concord-sdk-open-library",
- "repo_head": "984bd2f6a981dd85e8b104c21daae06421a7a48a",
+ "repo_head": "734991e9cdb69a73620c2415c5a6d1e6fd98d87f",
  "truth_format": 3,
  "aliases": [
-  "AuthorId = sdk::AuthorId (imported: models::AuthorId)",
-  "Deserialize = serde::Deserialize (imported: serde::Deserialize)",
-  "Endpoint = concord::Endpoint (imported: concord::Endpoint)",
-  "FromStr = std::str::FromStr (imported: std::str::FromStr)",
-  "Json = concord::Json (imported: concord::Json)",
-  "NonZeroU32 = std::num::NonZeroU32 (imported: std::num::NonZeroU32)",
-  "ResponseMeta = concord::ResponseMeta (imported: concord::ResponseMeta)",
-  "SendWith = concord::SendWith (imported: concord::SendWith)",
-  "StatusCode = reqwest::StatusCode (imported: concord::reqwest::StatusCode)",
-  "StdError = std::error::Error (imported: std::error::Error)",
-  "Value = serde_json::Value (imported: serde_json::Value)",
-  "WorkId = sdk::WorkId (imported: models::WorkId)"
+  "AuthorId = {sdk-item concord_sdk_open_library::AuthorId} (imported: models::AuthorId)",
+  "Deserialize = {ext-crate serde::Deserialize} (imported: serde::Deserialize)",
+  "Endpoint = {ext-crate concord::Endpoint} (imported: concord::Endpoint)",
+  "Json = {ext-crate concord::Json} (imported: concord::Json)",
+  "ResponseMeta = {ext-crate concord::ResponseMeta} (imported: concord::ResponseMeta)",
+  "SendWith = {ext-crate concord::SendWith} (imported: concord::SendWith)",
+  "StatusCode = {ext-crate reqwest::StatusCode} (imported: concord::reqwest::StatusCode)",
+  "Value = {ext-crate serde_json::Value} (imported: serde_json::Value)",
+  "WorkId = {sdk-item concord_sdk_open_library::WorkId} (imported: models::WorkId)"
  ],
  "items": {
   "open-library/w1": {
@@ -61,8 +58,8 @@
     "how": "send template",
     "verified": true,
     "decl_module": "crate",
-    "send_returns_canon": "Result<sdk::models::WorkSearch, sdk::error::Error>",
-    "error_type_canon": "sdk::error::Error"
+    "send_returns_canon": "{std-prelude Result}<{sdk-def concord_sdk_open_library::models::WorkSearch}, {sdk-def concord_sdk_open_library::error::Error}>",
+    "error_type_canon": "{sdk-def concord_sdk_open_library::error::Error}"
    },
    "base_url": null,
    "boundary": "operation",
@@ -163,8 +160,8 @@
     "how": "send template",
     "verified": true,
     "decl_module": "crate",
-    "send_returns_canon": "Result<sdk::models::AuthorSearch, sdk::error::Error>",
-    "error_type_canon": "sdk::error::Error"
+    "send_returns_canon": "{std-prelude Result}<{sdk-def concord_sdk_open_library::models::AuthorSearch}, {sdk-def concord_sdk_open_library::error::Error}>",
+    "error_type_canon": "{sdk-def concord_sdk_open_library::error::Error}"
    },
    "base_url": null,
    "boundary": "operation",
