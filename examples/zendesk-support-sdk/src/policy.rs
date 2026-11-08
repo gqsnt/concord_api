@@ -5,11 +5,11 @@ use std::time::{Duration, Instant, SystemTime};
 
 use concord::reqwest::StatusCode;
 use concord::reqwest::header::RETRY_AFTER;
-use concord::{Endpoint, Prepared, Received, SendWith};
+use concord::{Endpoint, Prepared, Received, SendOperation};
 use concord_retry::concord::ReplayMode;
 use concord_retry::{Decision, Replay, Retry};
 
-use crate::{Error, HttpError, IdempotencyKey, UncertainCause, UncertainWrite};
+use crate::{Error, HttpError, IdempotencyKey, UncertainCause, UncertainWrite, ZendeskOperation};
 
 /// How generated `send()` treats reads and writes.
 ///
@@ -99,6 +99,7 @@ impl SendPolicy {
         &self,
         prepared: Prepared<T>,
         operation: &'static str,
+        collision_on_conflict: bool,
     ) -> Result<T, Error> {
         let key = prepared
             .request()
@@ -116,10 +117,7 @@ impl SendPolicy {
                 let http = HttpError::read(received, 1).await;
                 Err(uncertain(UncertainCause::ServerError(Box::new(http))))
             }
-            Ok(received)
-                if operation == "Zendesk.ticket.update"
-                    && received.status() == StatusCode::CONFLICT =>
-            {
+            Ok(received) if collision_on_conflict && received.status() == StatusCode::CONFLICT => {
                 Err(Error::Collision(Box::new(
                     HttpError::read(received, 1).await,
                 )))
@@ -160,16 +158,54 @@ fn classify_read<T>(outcome: &Result<Received<T>, concord::Error>, max: Duration
     }
 }
 
-impl<T: Send + 'static> SendWith<T> for SendPolicy {
+/// Every Zendesk rule the policy keys on the operation.
+struct Class {
+    /// Safe to repeat after a `429` or a `503` with `Retry-After`.
+    read: bool,
+    /// A `409` is [`Error::Collision`]: the ticket changed since the stamp the update carries.
+    collision_on_conflict: bool,
+}
+
+impl Class {
+    /// No wildcard arm: an endpoint added to the declaration without a class here does not
+    /// compile (E0004, naming its `ZendeskOperation` variant).
+    fn of(operation: ZendeskOperation) -> Self {
+        use ZendeskOperation as Op;
+        match operation {
+            Op::TicketsList | Op::TicketShow => Self {
+                read: true,
+                collision_on_conflict: false,
+            },
+            Op::TicketsCreate => Self {
+                read: false,
+                collision_on_conflict: false,
+            },
+            Op::TicketUpdate => Self {
+                read: false,
+                collision_on_conflict: true,
+            },
+        }
+    }
+}
+
+impl<T: Send + 'static> SendOperation<T, ZendeskOperation> for SendPolicy {
     type Output = Result<T, Error>;
 
-    async fn send<E: Endpoint<T> + Send>(&self, endpoint: E) -> Self::Output {
-        let operation = E::operation();
+    async fn send<E: Endpoint<T> + Send>(
+        &self,
+        operation: ZendeskOperation,
+        endpoint: E,
+    ) -> Self::Output {
+        let Class {
+            read,
+            collision_on_conflict,
+        } = Class::of(operation);
         let prepared = endpoint.prepare()?;
-        if operation.method() == Some("GET") {
+        if read {
             self.read(prepared).await
         } else {
-            self.write(prepared, operation.name()).await
+            self.write(prepared, E::operation().name(), collision_on_conflict)
+                .await
         }
     }
 }

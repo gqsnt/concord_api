@@ -1,10 +1,7 @@
 //! OAuth rotation and the single owner of application retries.
-use crate::{
-    Error, OAuth, RateLimits, Response, Strava, StravaActivitiesUpdate, StravaConfig,
-    StravaUploadsCreate, StravaUploadsStatus, finish,
-};
+use crate::{Error, OAuth, RateLimits, Response, Strava, StravaConfig, StravaOperation, finish};
 use concord::{
-    Endpoint, SendWith,
+    Endpoint, SendOperation,
     reqwest::{self, header::AUTHORIZATION},
 };
 use concord_auth::{Token, TokenCache};
@@ -271,20 +268,38 @@ struct Class {
     scope: Option<&'static str>,
 }
 impl Class {
-    fn of(operation: concord::Operation) -> Self {
-        let upload = operation == StravaUploadsCreate::operation();
-        let update = operation == StravaActivitiesUpdate::operation();
-        Self {
-            read: operation.method() == Some("GET"),
-            retry_delay: if operation == StravaUploadsStatus::operation() {
-                Duration::from_secs(1)
-            } else {
-                Duration::from_millis(25)
+    /// A plain read; every operation states what differs from it.
+    const READ: Self = Self {
+        read: true,
+        retry_delay: Duration::from_millis(25),
+        non_upload: true,
+        uncertain: false,
+        scope: None,
+    };
+
+    /// No wildcard arm: an endpoint added to the declaration without a class here does not
+    /// compile (E0004, naming its `StravaOperation` variant).
+    fn of(operation: StravaOperation) -> Self {
+        use StravaOperation as Op;
+        match operation {
+            Op::AthleteActivities | Op::ActivitiesGet => Self::READ,
+            Op::UploadsStatus => Self {
+                retry_delay: Duration::from_secs(1),
+                ..Self::READ
             },
-            non_upload: !upload,
-            uncertain: upload || update,
+            Op::ActivitiesUpdate => Self {
+                read: false,
+                uncertain: true,
+                scope: Some("activity:write"),
+                ..Self::READ
+            },
             // Uploads also need `activity:write`; they keep their pre-update behavior (sent).
-            scope: update.then_some("activity:write"),
+            Op::UploadsCreate => Self {
+                read: false,
+                non_upload: false,
+                uncertain: true,
+                ..Self::READ
+            },
         }
     }
 }
@@ -295,16 +310,20 @@ fn granted(scopes: &str, required: &str) -> bool {
         .any(|scope| scope == required)
 }
 
-impl<T: Send> SendWith<T> for Session {
+impl<T: Send> SendOperation<T, StravaOperation> for Session {
     type Output = Result<Response<T>, Error>;
-    async fn send<E: Endpoint<T> + Send>(&self, endpoint: E) -> Self::Output {
+    async fn send<E: Endpoint<T> + Send>(
+        &self,
+        operation: StravaOperation,
+        endpoint: E,
+    ) -> Self::Output {
         let Class {
             read,
             retry_delay,
             non_upload,
             uncertain,
             scope,
-        } = Class::of(E::operation());
+        } = Class::of(operation);
         if let Some(required) = scope {
             let stored = self.0.tokens.lock().await;
             if stored

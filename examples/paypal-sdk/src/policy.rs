@@ -7,15 +7,14 @@ use std::time::{Duration, Instant};
 
 use concord::reqwest::header::AUTHORIZATION;
 use concord::reqwest::{self, StatusCode, Url};
-use concord::{Endpoint, Operation, Received, SendWith};
+use concord::{Endpoint, Received, SendOperation};
 use concord_auth::{Generation, RefreshError, Snapshot, TokenCache};
 use concord_retry::{Decision, Replay, Retry, concord::ReplayMode};
 
 use crate::auth::{OAuth, fetch_token};
 use crate::{
-    AuthorizedOrder, Capture, Credentials, Error, HttpError, Order, PayPalAuthorizationCapture,
-    PayPalAuthorizationVoid, PayPalOrderAuthorize, PayPalOrderCapture, PayPalOrdersCreate,
-    RequestId, TokenError, Uncertain, UncertainCause,
+    Credentials, Error, HttpError, PayPalOperation, RequestId, TokenError, Uncertain,
+    UncertainCause,
 };
 
 pub(crate) fn default_reads() -> concord_retry::Policy {
@@ -124,14 +123,35 @@ impl Session {
     }
 }
 
-/// The endpoints whose reference documents `PayPal-Request-Id`: the only writes that may be
-/// repeated, and only when the header is present.
-fn accepts_request_id(operation: &Operation) -> bool {
-    *operation == <PayPalOrdersCreate as Endpoint<Order>>::operation()
-        || *operation == <PayPalOrderCapture as Endpoint<Order>>::operation()
-        || *operation == <PayPalOrderAuthorize as Endpoint<AuthorizedOrder>>::operation()
-        || *operation == <PayPalAuthorizationCapture as Endpoint<Capture>>::operation()
-        || *operation == <PayPalAuthorizationVoid as Endpoint<()>>::operation()
+/// Every PayPal rule the policy keys on the operation.
+struct Class {
+    /// A write: sent within the write bounds, and possibly applied when unanswered.
+    write: bool,
+    /// The endpoint's reference documents `PayPal-Request-Id`: the only writes that may be
+    /// repeated, and only when the header is present.
+    accepts_request_id: bool,
+}
+
+impl Class {
+    /// No wildcard arm: an endpoint added to the declaration without a class here does not
+    /// compile (E0004, naming its `PayPalOperation` variant).
+    fn of(operation: PayPalOperation) -> Self {
+        use PayPalOperation as Op;
+        match operation {
+            Op::OrderGet | Op::OrderGetAuthorized | Op::CaptureGet => Self {
+                write: false,
+                accepts_request_id: false,
+            },
+            Op::OrdersCreate
+            | Op::OrderAuthorize
+            | Op::OrderCapture
+            | Op::AuthorizationCapture
+            | Op::AuthorizationVoid => Self {
+                write: true,
+                accepts_request_id: true,
+            },
+        }
+    }
 }
 
 #[derive(Default)]
@@ -169,11 +189,18 @@ fn classify<T>(
     }
 }
 
-impl<T: Send + 'static> SendWith<T> for Session {
+impl<T: Send + 'static> SendOperation<T, PayPalOperation> for Session {
     type Output = Result<T, Error>;
 
-    async fn send<E: Endpoint<T> + Send>(&self, endpoint: E) -> Self::Output {
-        let operation = E::operation();
+    async fn send<E: Endpoint<T> + Send>(
+        &self,
+        operation: PayPalOperation,
+        endpoint: E,
+    ) -> Self::Output {
+        let Class {
+            write,
+            accepts_request_id,
+        } = Class::of(operation);
         let prepared = endpoint.prepare()?;
         if prepared.request().url().origin() != self.inner.base.origin() {
             return Err(Error::Destination);
@@ -184,8 +211,7 @@ impl<T: Send + 'static> SendWith<T> for Session {
             .get("paypal-request-id")
             .and_then(|v| v.to_str().ok())
             .and_then(|v| RequestId::new(v).ok());
-        let write = operation.method() != Some("GET");
-        let permitted = !write || (request_id.is_some() && accepts_request_id(&operation));
+        let permitted = !write || (request_id.is_some() && accepts_request_id);
 
         let replay = if permitted {
             Replay::Permitted
@@ -219,7 +245,7 @@ impl<T: Send + 'static> SendWith<T> for Session {
             .await;
         let attempts = run.report.retry.attempts;
         seen.ambiguous |= run.report.no_response;
-        let name = operation.name();
+        let name = E::operation().name();
 
         if !write {
             if let Some(e) = run.refusal {

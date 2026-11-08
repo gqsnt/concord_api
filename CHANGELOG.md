@@ -5,6 +5,36 @@
 Not released: the version is unchanged (4.2.0). Records: `v4/desirability/` (decisions in
 `v4/desirability/DECISIONS.md`).
 
+### Added
+
+- **An omitted operation classification fails the SDK build** (H08, candidate B). The opt-in
+  client statement `operations Name;` generates `Name`, a `#[non_exhaustive]` enum with one variant
+  per endpoint (the endpoint's path below the client in UpperCamelCase, `items.get` → `ItemsGet`;
+  `#[cfg]`s carried over), with `ALL`, `operation()` and `from_operation()`. With `send`, every
+  generated `send()` passes its endpoint's variant to the policy through the new
+  `concord::SendOperation<T, Name>` (the sibling of `SendWith<T>`, which is unchanged), so a policy
+  that classifies with a `match` without a wildcard arm stops compiling (E0004, naming the variant)
+  when an endpoint is added and not classified. Clients without the statement generate exactly
+  what they did. Adopted by the Strava (`Class::of`, the uncertain-outcome wording), Sentry
+  (admission buckets, the read/write split and the paging flag; the run-time
+  `Configuration("unsupported operation")` refusal is gone) and Kraken (signed or public per
+  operation, no longer per URL path, so a base URL with a path prefix is followed instead of every
+  call being refused as `SigningInput`) SDKs; their policies implement `SendOperation` instead of
+  `SendWith`. Author guide §5.14.
+- **Full migration** (H08): every other SDK whose policy or paging classified operations by name,
+  path or table adopts it. PayPal (read/write and `PayPal-Request-Id` replay per operation, the
+  method rule folded in), Zendesk (read/write and the update's `409` collision; the string
+  literal `"Zendesk.ticket.update"` is gone), Datadog (the legacy v1 post told apart from the
+  `POST` search), Square (`Error::create_outcome_unknown`; `SquarePolicy` keeps `SendWith` and
+  gains a forwarding `SendOperation` impl, since it ignores the variant) and GitHub (no send
+  policy: the enum only, and one exhaustive table from operation to listing id from which the
+  recognized ids are derived; ids and `LinkPages::new` unchanged). The other SDKs do not adopt
+  it: Discord, Cloudflare, Xero, Mailgun, QuickBooks and Spotify decide by HTTP method or URL with
+  no per-operation exception; Kubernetes, S3, Adyen, Elasticsearch, Postmark and Europe PMC
+  classify through traits that the compiler already checks (Postmark also applies a uniform
+  method rule); Microsoft Graph and the distribution registry classify with data the enum cannot
+  carry; the rest do not classify operations.
+
 ### Documentation
 
 - **Generated documentation states the actual contract first** (H04). The docs `api!` generates

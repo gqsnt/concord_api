@@ -220,14 +220,6 @@ async fn local_refusals_make_no_requests() {
     let client = api(&server, private())
         .with_base_url(format!("{}/prefix", server.url()))
         .unwrap();
-    assert!(matches!(
-        client
-            .account()
-            .balances(BalanceOptions::default())
-            .send()
-            .await,
-        Err(Error::Local(LocalError::SigningInput))
-    ));
     let build_error = client
         .clone()
         .with_base_url("not a URL secret-echo")

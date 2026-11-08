@@ -618,24 +618,25 @@ async fn workflow2_local_refusals_send_nothing() -> TestResult {
         u64::MAX
     );
 
-    // A base URL with a path prefix (a proxy mount). Predicted: public calls follow it and only
-    // signing refuses. Observed: every call refuses locally as SigningInput, public ones and
-    // public-only policies included (README: only the four declared paths are accepted).
+    // A base URL with a path prefix (a proxy mount). Signing is decided per declared operation
+    // (H08), not per URL path: every call follows the mount, the private read signed over the
+    // path it is sent to, public reads unsigned. This server knows only unmounted paths (404).
     let mount = format!("{}/kraken", server.url());
     let mounted = private_api(&server, Nonces::new(LAST_USED))?.with_base_url(&mount)?;
-    let error = mounted
+    let mounted_error = mounted
         .account()
         .balances(BalanceOptions::default())
         .send()
         .await
         .unwrap_err();
-    assert!(
-        matches!(error, Error::Local(LocalError::SigningInput)),
-        "{error:?}"
+    assert_eq!(
+        mounted_error.status().map(|s| s.as_u16()),
+        Some(404),
+        "{mounted_error:?}"
     );
     let listed = mounted.public().pairs().send().await;
     assert!(
-        matches!(listed, Err(Error::Local(LocalError::SigningInput))),
+        matches!(&listed, Err(e) if e.status().map(|s| s.as_u16()) == Some(404)),
         "{listed:?}"
     );
     let public_mounted = Kraken::new(
@@ -647,10 +648,17 @@ async fn workflow2_local_refusals_send_nothing() -> TestResult {
     .with_base_url(&mount)?;
     let listed = public_mounted.select_market("XBT/USD").await;
     assert!(
-        matches!(listed, Err(Error::Local(LocalError::SigningInput))),
+        matches!(&listed, Err(e) if e.status().map(|s| s.as_u16()) == Some(404)),
         "{listed:?}"
     );
-    assert_eq!(server.requests().len(), 1, "the refused calls sent nothing");
+    let sent = server.requests();
+    assert_eq!(sent.len(), 4, "the mounted calls were sent");
+    assert_eq!(
+        assert_signed(&sent[1], "/kraken/0/private/Balance", None),
+        LAST_USED + 1
+    );
+    assert_public(&sent[2], "/kraken/0/public/AssetPairs");
+    assert_public(&sent[3], "/kraken/0/public/AssetPairs");
     println!("Local Display: {error}");
     server.shutdown().await;
     Ok(())

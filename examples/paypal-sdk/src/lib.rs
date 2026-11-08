@@ -68,6 +68,9 @@ concord::api! {
         format Json;
         limit BODY_LIMIT;
         send session -> Result<_, Error>;
+        /// Every PayPal operation, as the [`Session`] classifies it (read or write, and whether a
+        /// write may be repeated with its `PayPal-Request-Id`).
+        operations PayPalOperation;
 
         /// Orders v2 collection.
         scope orders {

@@ -106,6 +106,7 @@
 //! | [`Incoming`] | an unread 2xx body with its operation identity, for an incremental reader chosen at run time |
 //! | [`Decoder<T>`](Decoder) | a response handling (an endpoint's, or [`Decoder::new`] for a format of your choice), for a response you obtained natively: `decode`, `finish` |
 //! | [`Endpoint<T>`](Endpoint), [`SendWith<T>`](SendWith) | generated operations implement `Endpoint`; a client's `send policy;` delegates generated `send()` to the policy's `SendWith::send`, returning its `Output` |
+//! | [`SendOperation<T, O>`](SendOperation) | under `operations Name;`, the policy's trait instead of `SendWith`: generated `send()` also passes its endpoint's variant of the generated enum `Name`, for a `match` without a wildcard arm |
 //! | [`Error`], [`ErrorKind`] | Concord's error type: `kind`, `endpoint`, `status`, `response`, `into_response`, `codec_error`, `transport` |
 //! | [`Encode<T>`](Encode), [`Decode<T>`](Decode) | the open format traits, implemented by `Json` (feature `json`), `Text`, `Binary`, `IgnoreContentType<F>` (feature `extras`), `Form` (feature `form`) and by your own types; a statement names a format by its type path (`format Json;`) |
 //! | [`Incremental<T>`](Incremental) | the open format contract for `-> stream T`: checks the head, then opens its reader over an unread `Incoming` |
@@ -135,6 +136,8 @@
 //!              format FORMAT;  request FORMAT;  request FORMAT "media/type";  response FORMAT;
 //!              (on clients, scopes and endpoints; the nearest one wins)
 //!              send policy;  (client only: a policy value or a stateless policy type)
+//!              operations Name;  (client only: the enum `Name` of its endpoints; with `send`,
+//!                                 each `send()` passes its variant to `SendOperation<T, Name>`)
 //!
 //! query / headers blocks (a header key is a literal or a native constant):
 //!     KEY = v;                        set a key no enclosing owner sets
@@ -246,7 +249,8 @@ pub use concord_core::{
     CODEC_ERROR_CONTEXT, CodecError, ContentTypeField, Decode, Decoder, Delivery, Encode,
     EncodedBody, Endpoint, Error, ErrorKind, FieldError, HeaderNameError, HeaderNameErrors,
     Incoming, Incremental, IntoValue, Operation, Prepared, QueryPairs, QueryPairsWriter, Received,
-    Records, ResponseHead, ResponseMeta, SendWith, Sends, ToHeaderValue, bytes, reqwest,
+    Records, ResponseHead, ResponseMeta, SendOperation, SendWith, Sends, ToHeaderValue, bytes,
+    reqwest,
 };
 
 /// Declares an HTTP API as a client → scopes → endpoints tree and generates its typed client.

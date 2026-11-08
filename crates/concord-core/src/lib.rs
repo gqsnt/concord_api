@@ -34,6 +34,6 @@ pub use codec::{
 pub use error::{Delivery, Error, ErrorKind};
 pub use header::ToHeaderValue;
 pub use names::{HeaderNameError, HeaderNameErrors};
-pub use prepared::{Decoder, Endpoint, Prepared, SendWith, Sends};
+pub use prepared::{Decoder, Endpoint, Prepared, SendOperation, SendWith, Sends};
 pub use response::{Incoming, Operation, Received, ResponseMeta};
 pub use value::{IntoValue, QueryPairs, QueryPairsWriter};
