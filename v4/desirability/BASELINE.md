@@ -39,7 +39,7 @@ Toolchains: rustc 1.99.1 (gate, truth, scoring); nightly `rustc 1.101.0-nightly 
 | S2 | Hand-maintained redaction impls | 192 in 44 SDKs | ~164 of 357 | I1 counts every manual `Debug`/`Display` impl that withholds or replaces a field (361 manual `Debug`, 314 manual `Display` impls in total); the seed's script classified more narrowly |
 | S3 | Unmarked credential-like values (candidates before triage) | 1: `clickhouse-sdk:quota_key` | 0 (2 false positives) | triage: a ClickHouse quota grouping key ("any string"), not an authentication secret → false positive; S3 = 0 after triage (reviewer to confirm) |
 | R4a | DSL lines per endpoint | 6.554 (2,071 / 316) | 2,071 / 316 | equal |
-| R4b | Declaration doc lines on Concord mechanics | 73 | 74 | |
+| R4b | Declaration doc lines on Concord mechanics | 73 | 74 | the seed scanner also counted a commented-out declaration example in NASA NeoWs that the current scanner excludes (classification difference, verified by the baseline review) |
 | R4c | Generated rustdoc words per endpoint | 543.8 | (L0) | public view |
 
 Inventory: 55 SDKs, 63 clients, 91 scopes, 316 endpoints; 130 sensitive values; 41 SDKs declare a
@@ -58,8 +58,13 @@ a universal proof.
 
 Readers: Claude `claude -p` (requested `claude-opus-5-5`, observed `claude-opus-5-5` in 128/128
 sessions, effort not visible) and Codex (requested and observed `gpt-6.1-sol` / `xhigh` /
-`read-only` in 128/128 sessions). Fresh sessions, no tools, no repository; 0 tool calls, 0
-retries, 0 malformed answers. Two runs per provider on the same bank.
+`read-only` in 128/128 sessions). Fresh sessions with the materials only; 0 tool calls observed,
+0 retries, 0 malformed answers. Two runs per provider on the same bank. Isolation limit: tools
+and repository access were not mechanically removed — Claude ran with `--tools ""`, Codex
+`read-only` in an empty directory under the checkout (it receives Codex's standard instructions
+and skill list, no project file); a session with any tool call would have been discarded and
+re-run, and none occurred. The H04 runner adds a bubblewrap sandbox that hides the home and the
+repository.
 
 | Reader | Run | R1.critical (88) | R1.exact (88) | R1.query | R1.accept | R2.send_returns (86) | R2.error_type (86) | R2.base_url (19) | R3.pass (88) |
 |---|---|---|---|---|---|---|---|---|---|
@@ -68,21 +73,29 @@ retries, 0 malformed answers. Two runs per provider on the same bank.
 | Codex | 1 | 1.00 | 0.94 | 1.00 | 0.95 | 1.00 | 1.00 | 1.00 | 1.00 |
 | Codex | 2 | 0.95 | 0.90 | 0.97 | 0.95 | 1.00 | 1.00 | 1.00 | 1.00 |
 
-**Noise bands** (larger of the two-run spread and 2 pts; DESIRABILITY § I3): Claude — every
-metric 2 pts (identical runs); Codex — R1.critical 5 pts, R1.exact 4 pts, R1.query 3 pts, others
-2 pts.
+**Noise bands** (larger of the two-run spread and 2 pts; DESIRABILITY § I3), computed from item
+counts and kept exact for comparisons: Claude — every metric 2 pts (identical runs); Codex —
+R1.critical 4.55 pts (88/88 vs 84/88), R1.exact 4.55 pts (83/88 vs 79/88), R1.query 3.41 pts
+(88/88 vs 85/88), every other metric 2 pts.
 
 **Ceiling.** R2 and R3 are 1.00 for both providers in both runs: with the rustdoc in the
 materials R2 is largely a lookup (the leak scan finds the exact truth type in 82 of 86 items),
 and docs-assisted call writing succeeds everywhere. They cannot show an improvement on this bank;
 a hypothesis that targets them needs its own task bank (H04 has one).
 
-**What readers get wrong (R1).** Claude, both runs: (a) *query order* — Kubernetes w1/w2/w6 and
-MediaWiki w1–w3: an endpoint's fixed query pair (`watch=1`, `list=categorymembers`) is sent after
-the caller's values, readers place it first; (b) *path-value encoding* — Nager w1: the path value
-`x&y=z` is sent as `x%26y%3Dz`, the reader wrote it raw. Codex run 2 repeats some of (a). These
-are candidate problems for the queue (composition order and encoding are documented rules that
-readers do not predict), not decisions.
+**What readers get wrong (R1).** *Critical* misses (method + destination + query): (a) *query
+order* — Kubernetes w1/w2/w6 (Claude both runs, Codex run 2) and MediaWiki w1–w3 (Claude both
+runs): an endpoint's fixed query pair (`watch=1`, `list=categorymembers`) is sent after the
+caller's values, readers place it first; (b) *path-value encoding* — Nager w1 (Claude both runs,
+Codex run 2): the path value `x&y=z` is sent as `x%26y%3Dz`, the reader wrote it raw. *Other
+exact-match misses*, the same items for both providers in every run: header names and `Accept` on
+ClickHouse w1 and OpenAI w1 (Claude run 2: Backblaze B2 w2 instead of OpenAI w1), header values and
+`Accept` on FRED w4/w6 (e.g. the format sends `accept: text/xml`, readers predict
+`application/xml`), and the body of HubSpot w1. Field rates (every run): method 1.00,
+content_type 1.00, header_names 0.977, header_values 0.976 (82 items), body 0.989, accept 0.955;
+destination 0.989 except Codex run 1 (1.00); query 0.932 (Claude), 1.00 / 0.966 (Codex). These are
+candidate problems for the queue (composition order, encoding and the format-implied `Accept` are
+documented rules that readers do not predict), not decisions.
 
 Truth: regenerated on B (`truth_format` 3; the committed truth predated the diagnostic
 identity format: only `aliases` and the R2 diagnostic canonical forms changed, no truth value).
@@ -112,10 +125,15 @@ two at a time.
 - e4 classification: 7/7 applicable tasks classified at the reference site with the oracle
   passing (Nager e4 has no classification); no omission occurred, so no detection stage is
   observed at baseline.
-- *Missed propagation* (the old fact left in code where the change should also apply, while the
-  oracle passes) concentrates on **version/prefix changes (6 of 8)**: the agent changed the place
-  the task named and left the old literal elsewhere — the repeated-fact pattern D2a counts (18
-  version paths). This is the strongest baseline signal for the scope/prefix hypotheses.
+- *Missed-propagation flags* (an old fact still stated somewhere the change should also reach):
+  8 tasks, 6 of them version/prefix (e1) and 2 shared header (e2). Seven of the eight are **test
+  expectations** — an existing SDK test still names the old version, prefix, path or header
+  (these tests still pass, so they do not check the changed request) —
+  and one is **package documentation** (Kubernetes e1, which also fails its oracle). Behaviour
+  checked by the oracles passed in 39/40 tasks. So the flags show that version/prefix facts are
+  duplicated into SDK tests and docs that editors do not update; they do **not** show missed
+  production request paths, and they do not directly measure the repeated endpoint literals D2a
+  counts. A scope/prefix hypothesis (H12) may use them as supporting evidence only.
 - One run per task (L0.6); edit-site counts and hunks are diagnostics in the raw records.
 
 ## I5 diagnostics (R5)
