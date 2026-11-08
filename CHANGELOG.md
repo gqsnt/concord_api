@@ -7,15 +7,14 @@ Not released: the version is unchanged (4.2.0). Records: `v4/desirability/` (dec
 
 ### Added
 
-- **H06 full SDK migration:** audited all 55 example SDKs; 11 adopt `controls`, including
+- **H06c full SDK migration:** audited all 55 example SDKs; 11 adopt `controls`, including
   the four pilots. Credentials and their rate/ledger state are replaced together in Discord,
   Sentry and Adyen; DigitalOcean, QuickBooks, Zendesk and USGS withhold destination changes;
   QuickBooks, Salesforce and Datadog withhold unchecked generated construction (Datadog also
   withholds independent key setters). Validated fixture/deployment constructors preserve local
   tests, token rotation retains shared state, QuickBooks `set_connection` and Cloudflare/Zendesk
-  `set_policy` remain public. QuickBooks sends select the current connection's official environment
-  host after coordinated replacement; validated fixture origins stay fixed. The other 44 SDKs are unchanged. Per-SDK replacement routes are in
-  [MIGRATION](docs/MIGRATION.md); the [impact table](v4/desirability/impact/H06.md) records all decisions.
+  `set_policy` remain public. The other 44 SDKs are unchanged. Per-SDK replacement routes are in
+  [MIGRATION](docs/MIGRATION.md); the [impact table](v4/desirability/impact/H06c.md) records all decisions.
 - **An SDK can withhold a generated control** (H06, candidate B: control visibility). The opt-in
   owner statement `controls { pub(crate) name; remove name; }` on the client or a scope makes a
   generated control crate-visible or leaves it out of the expansion; every control not listed

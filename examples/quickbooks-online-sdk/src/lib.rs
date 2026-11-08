@@ -62,9 +62,7 @@ concord::api! {
     /// connection's policy) adds the access token.
     pub client QuickBooks(
         /// The realm-bound OAuth connection (its `Display` is the realm ID).
-        /// `set_connection` replaces realm and credential source together. At send, the policy
-        /// selects this connection's official environment host; loopback fixtures keep theirs.
-        /// Token-free `prepare()` retains the generated client's base snapshot.
+        /// `set_connection` replaces realm and credential source together.
         connection: Connection,
     ) {
         base "https://quickbooks.api.intuit.com";
