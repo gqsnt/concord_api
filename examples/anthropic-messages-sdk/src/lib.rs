@@ -103,9 +103,11 @@ concord::api! {
             }
 
             /// Creates a message as a stream of server-sent events (`POST /v1/messages` with
-            /// `"stream": true`). `send().await` checks the status and the `text/event-stream` head and
-            /// returns `Result<Response<MessageStream>, Error>` without reading the body; errors before the stream
-            /// starts are [`Error::Api`], errors in it [`Error::Incomplete`].
+            /// `"stream": true`). `send().await` returns `Result<Response<MessageStream>, Error>`: on a 2xx
+            /// it checks the `text/event-stream` head and returns the stream without reading its body;
+            /// a non-2xx answer is [`Error::Api`] (its error document read, bounded); a build, transport or
+            /// head-check failure before the stream opens is [`Error::Concord`]; errors in the stream are
+            /// [`Error::Incomplete`].
             POST stream(body request: StreamRequest) -> stream StreamEvent {
                 response MessageEvents;
             }
