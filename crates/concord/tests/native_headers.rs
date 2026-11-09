@@ -696,7 +696,7 @@ fn full_header_map_with_native_values() {
     static META: EndpointMeta = EndpointMeta {
         name: "Native.fill",
         method: "GET",
-        route: "",
+        route: concord_core::__private::route(""),
         query_pairs: false,
         labels: 0,
         sensitive_labels: &[],

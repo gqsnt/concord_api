@@ -198,7 +198,7 @@ fn plan_scaling(c: &mut Criterion) {
     static META: EndpointMeta = EndpointMeta {
         name: "Bench.plan",
         method: "GET",
-        route: "",
+        route: concord_core::__private::route(""),
         query_pairs: false,
         labels: 0,
         sensitive_labels: &[],

@@ -61,6 +61,8 @@ pub struct Capture(Arc<Mutex<State>>);
 struct Recorder {
     state: Arc<Mutex<State>>,
     next: AtomicU64,
+    /// Which callsites this subscriber is interested in (its own filter, on metadata alone).
+    select: fn(&Metadata<'_>) -> bool,
 }
 
 impl Recorder {
@@ -76,11 +78,15 @@ impl Recorder {
 }
 
 impl Subscriber for Recorder {
-    fn register_callsite(&self, _: &'static Metadata<'static>) -> Interest {
-        Interest::always()
+    fn register_callsite(&self, meta: &'static Metadata<'static>) -> Interest {
+        if (self.select)(meta) {
+            Interest::always()
+        } else {
+            Interest::never()
+        }
     }
-    fn enabled(&self, _: &Metadata<'_>) -> bool {
-        true
+    fn enabled(&self, meta: &Metadata<'_>) -> bool {
+        (self.select)(meta)
     }
     fn new_span(&self, attributes: &Attributes<'_>) -> Id {
         let id = self.next.fetch_add(1, Ordering::Relaxed);
@@ -123,9 +129,16 @@ impl Subscriber for Recorder {
 
 impl Capture {
     pub fn dispatch(&self) -> tracing::Dispatch {
+        self.dispatch_selecting(|_| true)
+    }
+
+    /// A subscriber interested only in the callsites `select` accepts (a name, kind or field
+    /// filter, as an application's own subscriber may have).
+    pub fn dispatch_selecting(&self, select: fn(&Metadata<'_>) -> bool) -> tracing::Dispatch {
         tracing::Dispatch::new(Recorder {
             state: self.0.clone(),
             next: AtomicU64::new(1),
+            select,
         })
     }
 

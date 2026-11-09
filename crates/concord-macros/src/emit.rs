@@ -3294,7 +3294,7 @@ fn prepare_body(
         static __META: #k::__private::EndpointMeta = #k::__private::EndpointMeta {
             name: #name,
             method: #method_str,
-            route: #route,
+            route: #k::__private::route(#route),
             query_pairs: #query_pairs,
             labels: #label_count,
             sensitive_labels: &[#(#sensitive_labels),*],
@@ -3314,31 +3314,35 @@ fn prepare_body(
     }
 }
 
-/// The authored path template of an endpoint, holes kept as written: the declared base's path,
-/// then every generated segment (root first) and a trailing slash, without a leading slash. No
-/// host, subdomain or query: a static identity for diagnostics, never a URL.
+/// The authored path template of an endpoint, holes kept as written, without the leading slash,
+/// host or query: a static identity for diagnostics, never a URL. It has the shape of the path
+/// `Parts::finish` sends: without generated segments the declared base path unchanged (a trailing
+/// slash included); otherwise that path minus at most one trailing slash, then each segment and
+/// the endpoint's trailing slash.
 fn route_template(model: &Model, root: usize, composed: &Composed) -> String {
-    let mut parts: Vec<String> = Vec::new();
+    let mut path = String::new();
     if let Kind::Client { base, .. } = &model.owners[root].kind {
         let base = base.value();
         let after_scheme = base
             .split_once("://")
             .map_or(base.as_str(), |(_, rest)| rest);
-        if let Some((_, path)) = after_scheme.split_once('/') {
-            let path = path.strip_suffix('/').unwrap_or(path);
-            if !path.is_empty() {
-                parts.push(path.to_owned());
-            }
+        if let Some(at) = after_scheme.find('/') {
+            path.push_str(&after_scheme[at..]);
         }
     }
-    for &(o, si) in &composed.segments {
-        parts.push(model.owners[o].segments[si].text.clone());
+    if !composed.segments.is_empty() || composed.trailing_slash {
+        if path.ends_with('/') {
+            path.pop();
+        }
+        for &(o, si) in &composed.segments {
+            path.push('/');
+            path.push_str(&model.owners[o].segments[si].text);
+        }
+        if composed.trailing_slash {
+            path.push('/');
+        }
     }
-    let mut route = parts.join("/");
-    if composed.trailing_slash {
-        route.push('/');
-    }
-    route
+    path.strip_prefix('/').unwrap_or(&path).to_owned()
 }
 
 #[cfg(test)]

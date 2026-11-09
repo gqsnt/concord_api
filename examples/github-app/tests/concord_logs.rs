@@ -364,3 +364,162 @@ async fn every_placement_is_a_canary_and_none_reaches_the_subscriber() {
         server.shutdown().await;
     }
 }
+
+/// An application's subscriber may select Concord's event by its own metadata — the event name,
+/// the event kind, a field, for either outcome — and then receives exactly that one event.
+#[tokio::test(flavor = "current_thread")]
+async fn subscribers_selecting_the_event_by_name_kind_or_field_receive_it() {
+    type Select = fn(&tracing::Metadata<'_>) -> bool;
+    let cases: [(&str, Select, bool); 5] = [
+        ("name", |m| m.name() == "concord.call", false),
+        ("name, refused", |m| m.name() == "concord.call", true),
+        (
+            "event kind",
+            |m| m.is_event() && m.target() == "concord",
+            false,
+        ),
+        (
+            "field status",
+            |m| m.fields().field("status").is_some(),
+            false,
+        ),
+        (
+            "field transport",
+            |m| m.fields().field("transport").is_some(),
+            true,
+        ),
+    ];
+    for (label, select, refused) in cases {
+        let server = TestServer::start(|_: &Recorded| Reply::json(200, "[]")).await;
+        let capture = Capture::default();
+        let dispatch = capture.dispatch_selecting(select);
+        let _subscriber = tracing::dispatcher::set_default(&dispatch);
+        let origin = if refused {
+            concord_example_testserver::refused_url()
+        } else {
+            server.url()
+        };
+        let github = GitHubContext::new(http(), GitHubConfig { token: "t".into() })
+            .with_base_url(origin)
+            .unwrap();
+        let result = github
+            .repo(RepoRef::new("octo-org", "octo-repo"))
+            .handle()
+            .issues()
+            .send()
+            .await;
+        assert_eq!(result.is_ok(), !refused, "{label}");
+        capture.assert_call(
+            "GitHub.repo.issues",
+            "GET",
+            "repos/{owner}/{name}/issues",
+            (!refused).then_some(200),
+        );
+        server.shutdown().await;
+    }
+}
+
+concord::api! {
+    pub client SlashBase() {
+        base "http://slash.invalid/api/";
+        GET root();
+        GET items() { path "items"; }
+        GET folder() { path "items/"; }
+        GET item(id: u32) { path "items/{id}"; }
+    }
+}
+
+concord::api! {
+    pub client BareBase() {
+        base "http://bare.invalid/api";
+        GET root();
+    }
+}
+
+concord::api! {
+    pub client HostBase() {
+        base "http://host.invalid";
+        GET root();
+        GET items() { path "items"; }
+    }
+}
+
+/// The event's route and the path actually sent for one prepared request.
+async fn route_and_wire<T: 'static>(
+    server: &TestServer,
+    prepared: concord::Prepared<T>,
+) -> (String, String) {
+    let capture = Capture::default();
+    let dispatch = capture.dispatch();
+    let _subscriber = tracing::dispatcher::set_default(&dispatch);
+    let before = server.requests().len();
+    let _ = prepared.receive().await.unwrap();
+    let route = match capture.concord()[0].fields.get("route") {
+        Some(log_capture::Value::Text(route)) => route.clone(),
+        other => panic!("route field: {other:?}"),
+    };
+    let target = server.requests()[before].target.clone();
+    let path = target.split('?').next().unwrap();
+    (route, path.strip_prefix('/').unwrap_or(path).to_owned())
+}
+
+/// The route has the shape of the sent path: a base path's trailing slash is kept when no segment
+/// follows it, dropped once before appended segments; an endpoint's own trailing slash is kept.
+/// Holes stay `{name}`; substituting the argument gives the wire path.
+#[tokio::test(flavor = "current_thread")]
+async fn the_route_has_the_shape_of_the_sent_path() {
+    let server = TestServer::start(|_: &Recorded| Reply::new(204)).await;
+    let slash = SlashBase::new(http())
+        .with_base_url(format!("{}/api/", server.url()))
+        .unwrap();
+    let bare = BareBase::new(http())
+        .with_base_url(format!("{}/api", server.url()))
+        .unwrap();
+    let host = HostBase::new(http()).with_base_url(server.url()).unwrap();
+    let cases = [
+        (
+            route_and_wire(&server, slash.root().prepare().unwrap()).await,
+            "api/",
+            "",
+        ),
+        (
+            route_and_wire(&server, slash.items().prepare().unwrap()).await,
+            "api/items",
+            "",
+        ),
+        (
+            route_and_wire(&server, slash.folder().prepare().unwrap()).await,
+            "api/items/",
+            "",
+        ),
+        (
+            route_and_wire(&server, slash.item(7).prepare().unwrap()).await,
+            "api/items/{id}",
+            "7",
+        ),
+        (
+            route_and_wire(&server, bare.root().prepare().unwrap()).await,
+            "api",
+            "",
+        ),
+        (
+            route_and_wire(&server, host.root().prepare().unwrap()).await,
+            "",
+            "",
+        ),
+        (
+            route_and_wire(&server, host.items().prepare().unwrap()).await,
+            "items",
+            "",
+        ),
+    ];
+    for ((route, wire), expected, id) in cases {
+        assert_eq!(route, expected);
+        assert_eq!(
+            route.replace("{id}", id),
+            wire,
+            "route {route:?} vs wire {wire:?}"
+        );
+    }
+    server.shutdown().await;
+}

@@ -34,7 +34,7 @@ mod header_map_capacity {
     static META: EndpointMeta = EndpointMeta {
         name: "Capacity.fill",
         method: "GET",
-        route: "",
+        route: concord_core::__private::route(""),
         query_pairs: false,
         labels: 0,
         sensitive_labels: &[],

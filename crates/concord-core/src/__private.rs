@@ -23,8 +23,9 @@ pub struct EndpointMeta {
     /// The HTTP method, as written.
     pub method: &'static str,
     /// The authored path template (`repos/{owner}/{name}/issues`): the declared base path and
-    /// every generated segment, holes as written, no leading slash, no host and no query.
-    pub route: &'static str,
+    /// every generated segment, holes as written, no leading slash, no host and no query. Kept
+    /// only with feature `tracing`, its one reader ([`route`]).
+    pub route: Route,
     /// Whether the endpoint declares a `query(..)` value: its keys and values are only known at
     /// run time, so Concord's renderings withhold the whole query string.
     pub query_pairs: bool,
@@ -49,6 +50,25 @@ pub struct EndpointMeta {
     /// chain decides it in [`HeaderPlan`]): the format's suggestion is then not sent.
     pub accept_removed: bool,
 }
+
+/// [`EndpointMeta::route`]: the template with feature `tracing`, nothing without it.
+#[cfg(feature = "tracing")]
+pub type Route = &'static str;
+/// [`EndpointMeta::route`]: the template with feature `tracing`, nothing without it.
+#[cfg(not(feature = "tracing"))]
+pub type Route = ();
+
+/// Stores an endpoint's authored route (a compile-time constant; without feature `tracing` the
+/// literal is dropped during constant evaluation).
+#[cfg(feature = "tracing")]
+pub const fn route(template: &'static str) -> Route {
+    template
+}
+
+/// Stores an endpoint's authored route (a compile-time constant; without feature `tracing` the
+/// literal is dropped during constant evaluation).
+#[cfg(not(feature = "tracing"))]
+pub const fn route(_template: &'static str) -> Route {}
 
 /// A value written as text: path segments, subdomain labels, query values and template holes
 /// (`Display`). The trait only carries the diagnostic; every `Display` type implements it.
