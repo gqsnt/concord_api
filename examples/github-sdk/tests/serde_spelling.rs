@@ -2,7 +2,7 @@
 
 use std::fmt::Display;
 
-use concord::{Delivery, ErrorKind, reqwest};
+use concord::reqwest;
 use concord_example_github_sdk::ids::*;
 use concord_example_github_sdk::models::{AuthorAssociation, RunState, State};
 use concord_example_github_sdk::params::*;
@@ -137,7 +137,10 @@ concord::api! {
 }
 
 #[test]
-fn a_sequence_is_a_build_error_naming_the_placement_without_its_contents() {
+fn a_sequence_panics_in_the_adapter_without_its_contents() {
+    // Owner decision 7: serde_plain's documented contract is a panic for a non-scalar shape, and
+    // Concord does not catch it. The panic message is printed by the hook, so it must not carry
+    // the value.
     let value = Sequence(vec!["WIRE_DISPLAY_CANARY".into()]);
     let mut buffer = String::new();
     assert!(
@@ -146,13 +149,16 @@ fn a_sequence_is_a_build_error_naming_the_placement_without_its_contents() {
         }))
         .is_err()
     );
-    let error = ScalarOnly::new(reqwest::Client::new())
-        .read(value)
-        .prepare()
-        .unwrap_err();
-    assert_eq!(error.kind(), ErrorKind::Build);
-    assert_eq!(error.delivery(), Delivery::NotSent);
-    let shown = format!("{error} {error:?}");
-    assert!(shown.contains("query parameter `values` could not be formatted"));
-    assert!(!shown.contains("WIRE_DISPLAY_CANARY"));
+    let client = ScalarOnly::new(reqwest::Client::new());
+    let payload = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        let _ = client.read(value).prepare();
+    }))
+    .unwrap_err();
+    let message = payload
+        .downcast_ref::<String>()
+        .map(String::as_str)
+        .or_else(|| payload.downcast_ref::<&str>().copied())
+        .unwrap_or_default();
+    assert!(!message.is_empty());
+    assert!(!message.contains("WIRE_DISPLAY_CANARY"));
 }
