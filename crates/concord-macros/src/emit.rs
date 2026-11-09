@@ -1081,6 +1081,151 @@ fn accept_note(model: &Model, composed: &Composed, item: &str) -> String {
     }
 }
 
+/// Describe a value without evaluating its initializer or its `Display` implementation.
+/// Group values have already been spliced into the endpoint's parameter list by the parser.
+fn query_value_for_docs(model: &Model, value: ValueRef) -> String {
+    let owner = &model.owners[value.owner];
+    let v = model.value(value);
+    let mut notes = Vec::new();
+    if v.optional {
+        notes.push("optional".to_owned());
+    }
+    if let Some(default) = &v.default {
+        notes.push(format!("initial value `{}`", expr_text(quote!(#default))));
+    }
+    for name in &owner.groups {
+        if let Some(group) = model.groups.iter().find(|g| plain(&g.name) == plain(name))
+            && group
+                .params
+                .iter()
+                .any(|p| plain(&p.name) == plain(&v.name))
+        {
+            notes.push(format!("parameter group `{}`", plain(name)));
+        }
+    }
+    let notes = if notes.is_empty() {
+        String::new()
+    } else {
+        format!(" ({})", notes.join("; "))
+    };
+    format!("caller value `{}.{}`{notes}", owner.dotted, plain(&v.name))
+}
+
+/// The surviving occurrences of a query slot, including an optional override's fallback.
+/// This walks the same `Item` tree as `items_code`; replaced/removed sources are not shown.
+fn query_items_for_docs(model: &Model, items: &[Item]) -> String {
+    let source = |id| {
+        let c = model.contrib(id);
+        let key = model.key_text(&c.key);
+        let owner = if model.owners[id.owner].is_endpoint() {
+            format!("endpoint `{}`", model.owners[id.owner].dotted)
+        } else {
+            model.describe(id.owner)
+        };
+        match c.source.as_ref().expect("a surviving query writer") {
+            Source::Template { pieces } => {
+                let mut text = String::new();
+                let mut fixed = true;
+                for piece in pieces {
+                    match piece {
+                        Piece::Lit(s) => text.push_str(s),
+                        Piece::Hole(r) => {
+                            fixed = false;
+                            text.push_str(&format!(
+                                "{{{}.{}}}",
+                                model.owners[r.owner].dotted,
+                                plain(&model.value(*r).name)
+                            ));
+                        }
+                    }
+                }
+                format!(
+                    "`{key}={}` ({}; {})",
+                    text.escape_debug(),
+                    if fixed {
+                        "fixed"
+                    } else {
+                        "template; sent when all its values are present"
+                    },
+                    owner,
+                )
+            }
+            Source::Ref { value, each } => format!(
+                "`{key}` from {}{}",
+                query_value_for_docs(model, *value),
+                if *each {
+                    "; one occurrence per item in iteration order"
+                } else {
+                    ""
+                },
+            ),
+        }
+    };
+    items
+        .iter()
+        .map(|item| match item {
+            Item::Emit(id) => source(*id),
+            Item::Override { src, fallback } => format!(
+                "{} when present; otherwise [{}]",
+                source(*src),
+                query_items_for_docs(model, fallback),
+            ),
+        })
+        .collect::<Vec<_>>()
+        .join("; then ")
+}
+
+/// Interleave `query(..)` at exactly the ranks used by `prepare_body`: inherited slots first,
+/// endpoint direct placements by parameter index, newly introduced block slots last.
+fn query_for_docs(model: &Model, endpoint: usize, composed: &Composed) -> Vec<String> {
+    let owner = &model.owners[endpoint];
+    let mut pairs = owner
+        .values
+        .iter()
+        .enumerate()
+        .filter(|(_, v)| v.pairs.is_some())
+        .peekable();
+    let mut entries = Vec::new();
+    let mut add_pairs = |entries: &mut Vec<String>, before| {
+        while let Some((index, value)) = pairs.next_if(|&(param, _)| param < before) {
+            entries.push(format!(
+                "`query(..)` from {}; pairs in the order its `{}` implementation of `QueryPairs` writes them (see that type for the keys)",
+                query_value_for_docs(model, ValueRef { owner: endpoint, index }),
+                type_text(&value.ty),
+            ));
+        }
+    };
+    for slot in &composed.query {
+        let rank = match slot.history.first() {
+            Some(first) if first.owner == endpoint => {
+                owner.query[first.index].param.unwrap_or(usize::MAX)
+            }
+            _ => 0,
+        };
+        add_pairs(&mut entries, rank);
+        if !slot.items.is_empty() {
+            entries.push(query_items_for_docs(model, &slot.items));
+        }
+    }
+    add_pairs(&mut entries, usize::MAX);
+    if entries.is_empty() {
+        return Vec::new();
+    }
+    let mut lines = vec![
+        " Query in wire order (before form encoding; absent values emit nothing):".to_owned(),
+        String::new(),
+    ];
+    lines.extend(
+        entries
+            .into_iter()
+            .enumerate()
+            .map(|(i, text)| format!(" {}. {text}.", i + 1)),
+    );
+    lines.push(String::new());
+    lines.push(" Query keys keep their first-appearance slots (client, scopes, endpoint); occurrences within a slot follow contribution order, including overrides and removal/reintroduction. Direct parameters precede each owner's block entries; parameter groups are spliced at their written positions. Setter call order does not change this sequence. Pairs use `application/x-www-form-urlencoded` encoding (space becomes `+`).".to_owned());
+    lines
+}
+
 fn summary_parts(model: &Model, endpoint: usize, method: &Ident) -> Option<Summary> {
     let composed = model.owners[endpoint].composed.as_ref()?;
     let base = match &model.owners[0].kind {
@@ -1207,16 +1352,27 @@ fn summary_parts(model: &Model, endpoint: usize, method: &Ident) -> Option<Summa
         Access::Crate => " The crate that declares the client chooses the base (its `with_base_url` is not public): construction may replace the declared base, including its path; declared paths are appended. A send policy may select or restrict the actual URL.",
         Access::Removed => " The client has no `with_base_url`: requests go to the declared base. A send policy may select or restrict the actual URL.",
     }.to_owned());
-    let mut sent = Vec::new();
-    let query = keys(&composed.query);
-    if !query.is_empty() {
-        sent.push(format!(" Query (when present): {query}."));
+    let mut sent = query_for_docs(model, endpoint, composed);
+    if composed.segments.iter().any(|&(o, i)| {
+        model.owners[o].segments[i]
+            .pieces
+            .iter()
+            .any(|p| matches!(p, Piece::Hole(_)))
+    }) {
+        sent.push(" Each path hole's `Display` value is sent as one percent-encoded segment: every UTF-8 byte except RFC 3986 unreserved `A-Z a-z 0-9 - . _ ~` is escaped (`/` becomes `%2F`, `&` becomes `%26`, `=` becomes `%3D`, `%` becomes `%25`, space becomes `%20`). Literal template text stays verbatim, including text around a hole; a value cannot add a segment. A completed dynamic segment that is empty, `.` or `..` is a `Build` error.".to_owned());
     }
     match &composed.headers {
         HeaderComposition::Static(slots) => {
             let headers = keys(slots);
             if !headers.is_empty() {
                 sent.push(format!(" Headers (when present): {headers}."));
+                for slot in slots.iter().filter(|s| !s.items.is_empty()) {
+                    sent.push(format!(
+                        " Authored header `{}`: {}.",
+                        model.key_text(&slot.key),
+                        query_items_for_docs(model, &slot.items)
+                    ));
+                }
             }
         }
         HeaderComposition::Dynamic(seq) => {
@@ -1245,6 +1401,11 @@ fn summary_parts(model: &Model, endpoint: usize, method: &Ident) -> Option<Summa
                     " Headers, in chain order (sent when present; native names are compared when the request is built): {}.",
                     shown.join(", ")
                 ));
+                for &id in seq {
+                    if model.contrib(id).source.is_some() {
+                        sent.push(format!(" Authored header contribution: {} (subject to the chain operations above).", query_items_for_docs(model, &[Item::Emit(id)])));
+                    }
+                }
             }
         }
     }
@@ -1290,6 +1451,12 @@ fn summary_parts(model: &Model, endpoint: usize, method: &Ident) -> Option<Summa
         } else {
             ""
         };
+        sent.push(format!(
+            " Request format: {}. See `{}`'s `Encode<{}>` implementation for its declared `CONTENT_TYPE` and runtime media type.{media}{absent}",
+            format_origin(model, &b.format, b.origin, true),
+            b.format.text(),
+            type_text(&b.ty),
+        ));
         format!(
             " Body ({presence}`{}`): `{}`, encoded with the format {}.{media}{absent}",
             plain(&b.name),
@@ -1297,6 +1464,21 @@ fn summary_parts(model: &Model, endpoint: usize, method: &Ident) -> Option<Summa
             format_origin(model, &b.format, b.origin, true),
         )
     });
+    if body.is_none() {
+        sent.push(" No request body: no format-added `Content-Type`; an authored header above can still send it.".to_owned());
+    }
+    sent.push(match output {
+        Some(o) => format!(
+            " `Accept` fallback comes from the declared response format {}. See `{}`'s `{}<{}>` implementation for its declared `ACCEPT` value.{}",
+            format_origin(model, &o.format, o.origin, false),
+            o.format.text(),
+            if o.stream { "Incremental" } else { "Decode" },
+            type_text(&o.ty),
+            accept_note(model, composed, if o.stream { "Incremental" } else { "Decode" }),
+        ),
+        None => " No typed output: no format-added `Accept`; an authored header above can still send it.".to_owned(),
+    });
+    sent.push(" Header notes describe `prepare()` before transport defaults or send-policy edits. reqwest fills missing names from its client defaults at execution (its default `Accept` is `*/*`); header names are lowercase, and order between different names is not specified.".to_owned());
     let handling = if policy.is_some() {
         "Prepared execution"
     } else {
@@ -1309,11 +1491,10 @@ fn summary_parts(model: &Model, endpoint: usize, method: &Ident) -> Option<Summa
     };
     let mut output_lines = vec![match output {
         Some(o) if o.stream => format!(
-            " {handling}: a stream of `{}` from a 2xx response with {} (`Incremental<{}>`). {execution} returns the format's reader without reading the body. The format checks the head first; rejection is `ErrorKind::Metadata` with the response kept unread. Later read errors name this endpoint.{}",
+            " {handling}: a stream of `{}` from a 2xx response with {} (`Incremental<{}>`). {execution} returns the format's reader without reading the body. The format checks the head first; rejection is `ErrorKind::Metadata` with the response kept unread. Later read errors name this endpoint.",
             type_text(&o.ty),
             format_origin(model, &o.format, o.origin, false),
             type_text(&o.ty),
-            accept_note(model, composed, "Incremental"),
         ),
         Some(o) => {
             let unit = if matches!(&o.ty, syn::Type::Tuple(t) if t.elems.is_empty()) {
@@ -1322,10 +1503,9 @@ fn summary_parts(model: &Model, endpoint: usize, method: &Ident) -> Option<Summa
                 String::new()
             };
             format!(
-                " {handling}: `{}`, decoded from a 2xx response with {}. The format checks the head before reading; rejection is `ErrorKind::Metadata` with the response kept unread.{}{unit}",
+                " {handling}: `{}`, decoded from a 2xx response with {}. The format checks the head before reading; rejection is `ErrorKind::Metadata` with the response kept unread.{unit}",
                 type_text(&o.ty),
                 format_origin(model, &o.format, o.origin, false),
-                accept_note(model, composed, "Decode"),
             )
         }
         None if incoming => {
@@ -3318,7 +3498,7 @@ mod tests {
                 .unwrap_or_else(|| panic!("{needle} missing in {docs}"))
         };
         let request = at("Default request: `POST http://x.test/items`.");
-        let query = at("Query (when present): `k`.");
+        let query = at("Query in wire order");
         let headers = at("Headers (when present): `x-trace`.");
         let body = at("Body (`item`)");
         assert!(
@@ -3334,6 +3514,126 @@ mod tests {
         assert!(docs.contains("Returns `Result<Item, Error>` using the client's send policy (the client value `policy`)"), "{docs}");
         assert!(!docs.contains("SendWith<T>::Output"), "{docs}");
         assert!(!docs.contains("policy the client value"), "{docs}");
+    }
+
+    /// Independent expected order: inherited slots (including descendant appends), direct
+    /// values, group splices and dynamic pairs, then new endpoint block keys.
+    #[test]
+    fn query_docs_interleave_groups_pairs_and_fixed_values_in_wire_order() {
+        let file: syn::File = syn::parse_str(&docs(quote! {
+            pub client Api(query("tag") each tags: Vec<String> = Vec::new()) {
+                base "http://x.test";
+                query { "v" = "2"; }
+                params Options(query middle?: bool = true, query(..) extra?: Extra);
+                GET get(query first?: String, ..Options, query(..) cursor?: Cursor, query last: bool = true, tag?: String) {
+                    query { append "tag" = tag; "fixed" = "x& y"; }
+                }
+            }
+        })).unwrap();
+        let mut summaries = Vec::new();
+        for item in &file.items {
+            match item {
+                syn::Item::Struct(s) if s.ident == "ApiGet" => summaries.push(doc_text(&s.attrs)),
+                syn::Item::Impl(i) if i.trait_.is_none() => {
+                    for member in &i.items {
+                        if let syn::ImplItem::Fn(f) = member
+                            && f.sig.ident == "get"
+                        {
+                            summaries.push(doc_text(&f.attrs));
+                        }
+                    }
+                }
+                _ => {}
+            }
+        }
+        assert_eq!(summaries.len(), 2);
+        for text in summaries {
+            let mut previous = 0;
+            for expected in [
+                "1. `tag` from caller value `Api.tags`",
+                "; then `tag` from caller value `Api.get.tag` (optional)",
+                "2. `v=2` (fixed; the client `Api`)",
+                "3. `first` from caller value `Api.get.first` (optional)",
+                "4. `middle` from caller value `Api.get.middle` (optional; initial value `true`; parameter group `Options`)",
+                "5. `query(..)` from caller value `Api.get.extra` (optional; parameter group `Options`)",
+                "6. `query(..)` from caller value `Api.get.cursor` (optional)",
+                "7. `last` from caller value `Api.get.last` (initial value `true`)",
+                "8. `fixed=x& y` (fixed; endpoint `Api.get`)",
+            ] {
+                let at = text
+                    .find(expected)
+                    .unwrap_or_else(|| panic!("missing {expected}: {text}"));
+                assert!(at >= previous, "{expected} out of order: {text}");
+                previous = at;
+            }
+            assert!(text.contains("Setter call order does not change this sequence"));
+            assert!(text.contains("space becomes `+`"));
+        }
+    }
+
+    #[test]
+    fn query_docs_preserve_slots_for_overrides_and_reintroductions() {
+        let text = docs(quote! {
+            pub client Api {
+                base "http://x.test";
+                query { "v" = "1"; "removed" = "old"; "gone" = "never sent"; }
+                scope nested(v?: String) {
+                    query { override "v" = v else inherit; }
+                    GET get(query(..) pairs: Pairs, query removed?: String) {
+                        query { remove "removed"; remove "gone"; "tail" = "t"; }
+                    }
+                }
+            }
+        });
+        for expected in [
+            "1. `v` from caller value `Api.nested.v` (optional) when present; otherwise [`v=1` (fixed; the client `Api`)]",
+            "2. `removed` from caller value `Api.nested.get.removed` (optional)",
+            "3. `query(..)` from caller value `Api.nested.get.pairs`",
+            "4. `tail=t` (fixed; endpoint `Api.nested.get`)",
+        ] {
+            assert_eq!(text.matches(expected).count(), 2, "missing {expected}");
+        }
+        assert!(!text.contains("gone=never sent"));
+        assert!(!text.contains("removed=old"));
+    }
+
+    #[test]
+    fn composition_docs_state_hole_escape_set_and_format_header_sources() {
+        let text = docs(quote! {
+            pub client Api {
+                base "http://x.test";
+                response Xml;
+                POST get(id: String, body b?: Data) -> Item {
+                    path "prefix-{id}.xml";
+                    request Encoder "application/example";
+                    headers { "x-fixed" = "literal"; }
+                }
+            }
+        });
+        for expected in [
+            "Each path hole's `Display` value is sent as one percent-encoded segment",
+            "every UTF-8 byte except RFC 3986 unreserved `A-Z a-z 0-9 - . _ ~` is escaped",
+            "`&` becomes `%26`, `=` becomes `%3D`, `%` becomes `%25`, space becomes `%20`",
+            "Literal template text stays verbatim, including text around a hole",
+            "Authored header `x-fixed`: `x-fixed=literal` (fixed; endpoint `Api.get`)",
+            "Request format: `Encoder` (endpoint statement)",
+            "See `Encoder`'s `Encode<Data>` implementation",
+            "`Accept` fallback comes from the declared response format `Xml` (`response` default of the client `Api`)",
+            "See `Xml`'s `Decode<Item>` implementation for its declared `ACCEPT` value",
+            "Header notes describe `prepare()` before transport defaults or send-policy edits",
+        ] {
+            assert_eq!(text.matches(expected).count(), 2, "missing {expected}");
+        }
+        // Also on the request type's fuller body paragraph.
+        assert_eq!(
+            text.matches("`Content-Type: application/example` is sent with the body")
+                .count(),
+            3
+        );
+        assert!(
+            !text.contains("text/xml"),
+            "custom constants cannot be inferred from a type name"
+        );
     }
 
     /// Placement notes are deduplicated (a label seen twice is listed once) and keep first-seen
@@ -3377,9 +3677,9 @@ mod tests {
         for expected in [
             " Formats: request bodies `Json` (declared here); typed outputs `Json` (declared here).",
             " Body (`item`): `NewItem`, encoded with the format `Json` (`request` default of the client `Shop`). `Content-Type`: the format's media type, sent with the body: the one its `Encode::encode_body` binds to the body at run time, else its `Encode::CONTENT_TYPE`.",
-            " Output: `Item`, decoded from a 2xx response with `Json` (`response` default of the client `Shop`). The format checks the head before reading; rejection is `ErrorKind::Metadata` with the response kept unread. `Decode::ACCEPT`, if any, is sent as the `accept` header.",
+            " Output: `Item`, decoded from a 2xx response with `Json` (`response` default of the client `Shop`). The format checks the head before reading; rejection is `ErrorKind::Metadata` with the response kept unread.",
             " Body (`p`): `Patch`, encoded with the format `Json` (endpoint statement). `Content-Type: application/merge-patch+json` is sent with the body; a format that binds another media type to the body at run time (`Encode::encode_body`) is a `Build` error.",
-            " Output: `String`, decoded from a 2xx response with `Text` (endpoint statement). The format checks the head before reading; rejection is `ErrorKind::Metadata` with the response kept unread. `Decode::ACCEPT`, if any, is sent as the `accept` header.",
+            " Output: `String`, decoded from a 2xx response with `Text` (endpoint statement). The format checks the head before reading; rejection is `ErrorKind::Metadata` with the response kept unread.",
             " Absent: no body, and the format adds no `Content-Type`.",
             " Output: none (`()`): any 2xx succeeds and the response body is drained; the `response` default `Json` of the client `Shop` does not apply.",
             " An endpoint without `->` decodes no output and accepts any 2xx.",
@@ -3450,7 +3750,7 @@ mod tests {
                         "`{format}::ACCEPT`, if any, is sent unless an `accept` header is sent."
                     )
                 };
-                assert_eq!(docs.matches(&rule).count(), 1, "{docs}");
+                assert_eq!(docs.matches(&rule).count(), 2, "{docs}");
                 // The remove written after the optional placement does not withhold it.
                 assert!(
                     !docs.contains(&format!("`{format}::ACCEPT` is not sent")),
@@ -3831,8 +4131,8 @@ mod tests {
 
     /// A parent's navigation method carries a short entry: identity, `send()`'s result, the
     /// default request, the query and header keys, and the request type that describes the rest.
-    /// The shared framework prose (base replacement, body media rules, response handling, policy
-    /// bypass) is on the request type only.
+    /// Composition and format headers are on both; the full response handling, base replacement
+    /// and policy bypass remain on the request type.
     #[test]
     fn navigation_entries_are_short_and_point_to_the_request_type() {
         let file: syn::File = syn::parse_str(&docs(quote! {
@@ -3877,7 +4177,7 @@ mod tests {
             "`POST` endpoint `Api.items.create`.",
             result,
             "Default request: `POST https://x.test/api/items`.",
-            "Query (when present): `dry_run`.",
+            "1. `dry_run` from caller value `Api.items.create.dry_run` (optional).",
             "Headers (when present): `x-trace`.",
             "Base URL, body and response handling: `ApiItemsCreate`.",
         ] {
@@ -3976,13 +4276,13 @@ mod tests {
         assert_eq!(
             docs.matches("`Decode::ACCEPT`, if any, is sent unless an `accept` header is sent.")
                 .count(),
-            1,
+            2,
             "{docs}"
         );
         assert_eq!(
             docs.matches("`Decode::ACCEPT` is not sent: this endpoint's headers remove `accept`.")
                 .count(),
-            1,
+            2,
             "{docs}"
         );
         assert_eq!(
@@ -3990,7 +4290,7 @@ mod tests {
                 "`Incremental::ACCEPT`, if any, is sent unless an `accept` header is sent."
             )
             .count(),
-            1,
+            2,
             "{docs}"
         );
         let open = self::docs(quote! {

@@ -73,6 +73,9 @@ impl Session {
     /// status `200`, `X-Bz-File-Id` equal to `file_id`, and the SHA-1 of the bytes equal to
     /// `X-Bz-Content-Sha1` (B2: "you should check the SHA1 of the data you receive"). No
     /// `Range` is sent, so the whole file is checked. The bytes are returned only once verified.
+    /// Sends the account token as `authorization`. The declared `Binary` output suggests no
+    /// `accept`, and this GET adds no `content-type`. reqwest fills a missing `accept` from
+    /// client defaults at execution (`*/*` by default).
     ///
     /// # Errors
     ///

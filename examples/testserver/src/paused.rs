@@ -136,12 +136,12 @@ pub async fn time_out<F: Future>(
 /// Runs `call`, which sends one request matching `matches` whose response head the server sends
 /// at once and whose body then stalls ([`Body::Stall`](crate::Body::Stall)). Once the server has
 /// received the request, written the head and is holding the body, and the client has had
-/// [`SETTLE`] of real time and [`SETTLE_POLLS`] polls to read the head,
+/// `SETTLE` of real time and `SETTLE_POLLS` polls to read the head,
 /// virtual time moves past the client's `timeout`, so the timeout ends the body, never the wait
 /// for the head; everything else completes while time stands still.
 ///
 /// The settling is the one real-time allowance: the head is already in the kernel when the server
-/// has written it, and only a loopback delivery delayed by more than [`SETTLE`] after that write
+/// has written it, and only a loopback delivery delayed by more than `SETTLE` after that write
 /// could still let the timeout fire before the client read it.
 pub async fn time_out_in_body<F: Future>(
     server: &TestServer,
