@@ -48,5 +48,30 @@ revert would restore the baseline's base-URL wording only). The final confirmati
 candidate is frozen again.
 
 ## I4 on the 8 control SDKs
-Running (`work/tools/holdout_i4.sh`; bank copy, hash `e7d963b9…` verified; re-validation at F, then one fresh Codex
-agent per task in two sequential queues with private measure targets). Results to follow.
+Method (`work/tools/holdout_i4.sh`): a copy of the sealed bank (hash `e7d963b9…`, 141 files, 40 tasks — verified
+against the repository's `BANK.sha256`; the original untouched), re-validation at F in a throwaway checkout, then one
+fresh Codex agent per task (requested `gpt-6.1-sol` xhigh — observed in all 40 rollouts), the I4 tools unchanged since
+B, two sequential queues with private measure targets (the baseline's shared-target contamination avoided).
+
+**Validation at F: 24 of 40 tasks kept.** The bank is pinned to B's code; accepted changes drifted 16 tasks: 12 reference
+patches no longer apply (files edited by H06c, H08, H09c, H16s, T5 …); Sentry e1/e3/e5 oracles no longer compile
+(E0624: `with_base_url` is private — H06c withheld it); Strava e1's oracle fails after its reference. These 16 are not
+scored (no valid reference at F) — a limit of an edit bank tied to the baseline.
+
+**Agent runs: all 40 invalid by the runner's tamper check — a runner artifact.** Every flag is `.git` housekeeping only
+(1,960 identical removed loose objects and `gc.pid` per run; no SDK-tree, cargo or symlink signal): the runner exports
+each task as a fresh one-commit repo, and at F (5,373 files vs 5,199 at B) its own export commit crosses git's
+auto-gc threshold (≈ 6,700 loose objects), starting a detached `gc --auto` that packs objects during the session.
+Fix (instrument, branch `dz/i4-gcauto` `1f952284`): `gc.auto=0` in the export's config and the trusted git prefix.
+**Re-score without new agents** (`work/tools/holdout_i4_replay.sh`): each saved agent edit (`agent.patch`) replayed with
+the fixed runner at F, sequentially on one private target, for the 24 tasks valid at F; controls on Nager e1: reference
+valid and passing, a no-op change failing the oracle (as designed).
+
+| 24 tasks valid at F | B (corrected: Kubernetes e1 by the H12 replay) | F (replayed agent edits) |
+|---|---|---|
+| oracle pass | 24/24 | 24/24 |
+| existing suite pass | 24/24 | 24/24 |
+| tasks with missed propagation | 4 (GitHub e1, Nager e1, Notion e1, Notion e2) | 4 (GitHub e1, Nager e5, Notion e1, Notion e2) |
+
+No regression on I4 (Nager e1's flag cleared; Nager e5 gained one test-expectation flag: a test document still uses the
+old field name). One run per task; no noise band beyond the counts. **No overfitting finding on I4.**
