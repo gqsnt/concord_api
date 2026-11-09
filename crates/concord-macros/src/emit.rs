@@ -3234,6 +3234,8 @@ fn prepare_body(
 
     let name = lit(&owner.dotted);
     let method_str = lit(&method.to_string());
+    let route = lit(&route_template(model, places.chain[0], composed));
+    let query_pairs = owner.values.iter().any(|value| value.pairs.is_some());
     let label_count = composed.labels.len();
     let segment_count = composed.segments.len() + usize::from(composed.trailing_slash);
     let root = format_ident!("__o0");
@@ -3292,6 +3294,8 @@ fn prepare_body(
         static __META: #k::__private::EndpointMeta = #k::__private::EndpointMeta {
             name: #name,
             method: #method_str,
+            route: #route,
+            query_pairs: #query_pairs,
             labels: #label_count,
             sensitive_labels: &[#(#sensitive_labels),*],
             segments: #segment_count,
@@ -3308,6 +3312,33 @@ fn prepare_body(
         let (__decoder, __accept) = #decoder;
         __p.finish(#k::reqwest::Method::#method, &#root.__http, __body, __decoder, __accept)
     }
+}
+
+/// The authored path template of an endpoint, holes kept as written: the declared base's path,
+/// then every generated segment (root first) and a trailing slash, without a leading slash. No
+/// host, subdomain or query: a static identity for diagnostics, never a URL.
+fn route_template(model: &Model, root: usize, composed: &Composed) -> String {
+    let mut parts: Vec<String> = Vec::new();
+    if let Kind::Client { base, .. } = &model.owners[root].kind {
+        let base = base.value();
+        let after_scheme = base
+            .split_once("://")
+            .map_or(base.as_str(), |(_, rest)| rest);
+        if let Some((_, path)) = after_scheme.split_once('/') {
+            let path = path.strip_suffix('/').unwrap_or(path);
+            if !path.is_empty() {
+                parts.push(path.to_owned());
+            }
+        }
+    }
+    for &(o, si) in &composed.segments {
+        parts.push(model.owners[o].segments[si].text.clone());
+    }
+    let mut route = parts.join("/");
+    if composed.trailing_slash {
+        route.push('/');
+    }
+    route
 }
 
 #[cfg(test)]

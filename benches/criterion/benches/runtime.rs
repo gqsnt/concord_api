@@ -198,6 +198,8 @@ fn plan_scaling(c: &mut Criterion) {
     static META: EndpointMeta = EndpointMeta {
         name: "Bench.plan",
         method: "GET",
+        route: "",
+        query_pairs: false,
         labels: 0,
         sensitive_labels: &[],
         segments: 0,

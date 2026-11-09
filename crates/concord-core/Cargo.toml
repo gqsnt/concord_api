@@ -14,6 +14,8 @@ include = ["/src/**/*.rs", "/Cargo.toml", "/README.md", "/LICENSE-APACHE", "/LIC
 [features]
 ## Enables reqwest's own default features (TLS, HTTP/2, charset, system proxy).
 reqwest-defaults = ["reqwest/default"]
+## One `concord.call` event per execution (target `concord`, static fields only); off by default.
+tracing = ["dep:tracing"]
 
 [dependencies]
 bytes.workspace = true
@@ -21,6 +23,8 @@ bytes.workspace = true
 http-body.workspace = true
 percent-encoding.workspace = true
 reqwest.workspace = true
+# Already in reqwest's graph (hyper-util); compiled into Concord only with feature `tracing`.
+tracing = { version = "0.1.44", optional = true, default-features = false, features = ["std"] }
 url.workspace = true
 
 [dev-dependencies]

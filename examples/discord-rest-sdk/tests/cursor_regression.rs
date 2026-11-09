@@ -70,6 +70,10 @@ fn query_pairs_preserve_order_and_endpoint_debug_withholds_the_cursor() {
         prepared.request().url().query(),
         Some("before=987654321&limit=42")
     );
+    // J3: `Prepared`'s Debug withholds the whole query of a `query(..)` endpoint.
     let debug = format!("{prepared:?}");
-    assert!(debug.contains("before=987654321&limit=42"), "{debug}");
+    assert!(
+        debug.contains("?<withheld>") && !debug.contains("987654321"),
+        "{debug}"
+    );
 }

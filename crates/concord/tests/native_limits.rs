@@ -34,6 +34,8 @@ mod header_map_capacity {
     static META: EndpointMeta = EndpointMeta {
         name: "Capacity.fill",
         method: "GET",
+        route: "",
+        query_pairs: false,
         labels: 0,
         sensitive_labels: &[],
         segments: 0,

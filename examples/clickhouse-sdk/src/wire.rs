@@ -81,12 +81,25 @@ mod tests {
     use super::*;
 
     #[test]
-    fn dynamic_parameters_are_hidden_by_endpoint_debug_but_shown_by_prepared_debug() {
+    fn dynamic_parameters_are_hidden_by_endpoint_debug_and_by_prepared_debug() {
         let endpoint = ClickHouseHttp::new(concord::reqwest::Client::new())
             .select("SELECT {x:String}".to_owned(), OutputFormat::JsonEachRow)
             .set_params(vec![("param_x".to_owned(), "fixture-value".to_owned())]);
         assert!(!format!("{endpoint:?}").contains("fixture-value"));
         let prepared = endpoint.prepare().unwrap();
-        assert!(format!("{prepared:?}").contains("param_x=fixture-value"));
+        // The native URL still carries the pair (positive control); Concord's rendering withholds
+        // the query of an endpoint with a `query(..)` value whole.
+        assert!(
+            prepared
+                .request()
+                .url()
+                .as_str()
+                .contains("param_x=fixture-value")
+        );
+        let shown = format!("{prepared:?}");
+        assert!(
+            !shown.contains("fixture-value") && shown.contains("?<withheld>"),
+            "{shown}"
+        );
     }
 }

@@ -22,6 +22,12 @@ pub struct EndpointMeta {
     pub name: &'static str,
     /// The HTTP method, as written.
     pub method: &'static str,
+    /// The authored path template (`repos/{owner}/{name}/issues`): the declared base path and
+    /// every generated segment, holes as written, no leading slash, no host and no query.
+    pub route: &'static str,
+    /// Whether the endpoint declares a `query(..)` value: its keys and values are only known at
+    /// run time, so Concord's renderings withhold the whole query string.
+    pub query_pairs: bool,
     /// Number of generated host labels (they are the leftmost labels).
     pub labels: usize,
     /// Indices (from the left) of generated labels that contain a sensitive value.
@@ -657,7 +663,8 @@ impl<'a> Parts<'a> {
     }
 }
 
-/// Renders a URL built by `meta`'s endpoint with sensitive placements replaced by `<redacted>`.
+/// Renders a URL built by `meta`'s endpoint with sensitive placements replaced by `<redacted>`
+/// and, for an endpoint with a `query(..)` value (run-time keys), the query withheld whole.
 pub(crate) fn redacted_url(url: &Url, meta: &EndpointMeta) -> String {
     const REDACTED: &str = "<redacted>";
     let mut out = String::new();
@@ -698,7 +705,9 @@ pub(crate) fn redacted_url(url: &Url, meta: &EndpointMeta) -> String {
             out.push_str(if hide { REDACTED } else { piece });
         }
     }
-    if let Some(query) = url.query() {
+    if meta.query_pairs && url.query().is_some() {
+        out.push_str("?<withheld>");
+    } else if let Some(query) = url.query() {
         out.push('?');
         for (i, pair) in query.split('&').enumerate() {
             if i > 0 {

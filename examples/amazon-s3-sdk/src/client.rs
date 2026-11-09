@@ -322,7 +322,8 @@ impl fmt::Debug for S3Client {
 ///
 /// The native request's own `Debug` prints the full URL; the `authorization` and
 /// `x-amz-security-token` values are flagged sensitive (reqwest prints `Sensitive`). This type's
-/// `Debug` prints the operation, the method and the header names only.
+/// `Debug` delegates to Concord's native summary: declared operation and method, with the
+/// entire URL, header names and values, and body withheld after `into_parts()`.
 pub struct SignedRequest<T> {
     client: reqwest::Client,
     request: reqwest::Request,
@@ -361,19 +362,7 @@ impl<T> SignedRequest<T> {
 
 impl<T> fmt::Debug for SignedRequest<T> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("SignedRequest")
-            .field("operation", &self.operation())
-            .field("method", &self.request.method().as_str())
-            .field(
-                "headers",
-                &self
-                    .request
-                    .headers()
-                    .keys()
-                    .map(HeaderName::as_str)
-                    .collect::<Vec<_>>(),
-            )
-            .finish()
+        fmt::Debug::fmt(&self.decoder.summary(), f)
     }
 }
 

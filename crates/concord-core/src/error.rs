@@ -6,6 +6,7 @@ use std::fmt;
 use crate::__private::EndpointMeta;
 use crate::codec::{CodecError, ResponseHead};
 use crate::response::{Operation, ResponseMeta};
+use crate::summary::Summary;
 
 /// Why a Concord call failed.
 ///
@@ -167,6 +168,14 @@ impl Error {
     pub(crate) fn with_body(mut self, body: bytes::Bytes) -> Self {
         self.inner.body = Some(body);
         self
+    }
+
+    /// One line, `OPERATION: METHOD <withheld> -> KIND`, or `-> STATUS (KIND)` once a response
+    /// head arrived: no URL, header, body or source text.
+    pub fn summary(&self) -> Summary<'static> {
+        Summary::operation(self.inner.operation)
+            .with_status(self.head().map(|head| head.status().as_u16()))
+            .with_kind(self.kind())
     }
 
     /// The stage at which the call failed.

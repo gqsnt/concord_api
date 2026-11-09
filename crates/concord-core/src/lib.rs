@@ -20,9 +20,12 @@ mod codec;
 mod error;
 pub mod field;
 mod header;
+#[cfg(feature = "tracing")]
+mod log;
 mod names;
 mod prepared;
 mod response;
+mod summary;
 mod value;
 
 #[doc(hidden)]
@@ -37,4 +40,5 @@ pub use header::ToHeaderValue;
 pub use names::{HeaderNameError, HeaderNameErrors};
 pub use prepared::{Decoder, Endpoint, Prepared, SendOperation, SendWith, Sends};
 pub use response::{Incoming, Operation, Received, ResponseMeta};
+pub use summary::Summary;
 pub use value::{IntoValue, QueryPairs, QueryPairsWriter};

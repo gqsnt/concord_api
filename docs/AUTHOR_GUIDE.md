@@ -441,9 +441,9 @@ Rules, each checked when the declaration compiles:
 - **No key, no `each`, no `header(..)`.** The value writes every pair, repeated keys included.
 - **Never `#[sensitive]`.** Concord redacts by key, and these keys are only known at run time;
   give a secret its own keyed placement (`#[sensitive] query("token") token: String`). The
-  endpoint's `Debug` withholds a `query(..)` value; `Prepared`'s `Debug` shows its pairs, except
-  that a key on the well-known secret list (`token`, `api_key`, ... §7) is still shown as
-  `<redacted>`, as a declared key would be.
+  endpoint's `Debug` withholds a `query(..)` value, and `Prepared`'s `Debug` (and `summary()`)
+  withholds that endpoint's whole query string as `?<withheld>`: keys chosen at run time cannot
+  be redacted one by one.
 - **Order:** a `query(..)` value is written where it is declared among the endpoint's own
   parameters: after every key the chain already has — an inherited key keeps its first position
   with all its occurrences, so an endpoint's `append "v" = ..` to an inherited `v` still comes

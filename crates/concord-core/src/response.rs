@@ -23,6 +23,7 @@ use crate::__private::EndpointMeta;
 use crate::codec::ResponseHead;
 use crate::error::Error;
 use crate::prepared::Decoder;
+use crate::summary::Summary;
 
 /// The safe identity of a call: a declared endpoint (`GitHub.repo.issue`, with its method), or a
 /// static label an SDK chose for a response it obtained natively (a signed download URL).
@@ -182,6 +183,13 @@ impl<T> Received<T> {
     /// The response status.
     pub fn status(&self) -> StatusCode {
         self.response.status()
+    }
+
+    /// One line, `OPERATION: METHOD <withheld> -> STATUS`: no URL, header or body.
+    pub fn summary(&self) -> Summary<'static> {
+        self.decoder
+            .summary()
+            .with_status(Some(self.response.status().as_u16()))
     }
 
     /// The HTTP version.
