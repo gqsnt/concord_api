@@ -96,7 +96,10 @@ without any has no config struct (`Client::new(http)`), and optional or initiali
 are changed after `new` with `set_*`. Config fields take exactly the declared type (`.into()` for
 a string literal). `with_base_url` replaces the declared base and returns an error for anything
 that is not an `http`/`https` URL with a host (no user information, query, fragment or port 0);
-IDN hosts and percent escapes in the path are accepted, the escapes kept as written.
+IDN hosts and percent escapes in the path are accepted, the escapes kept as written. An SDK may
+withhold some of these controls from you (`new`, `with_base_url` or a `set_*` that would break
+its own rule, such as moving a token to another account): they are then missing from its
+documentation, and the SDK documents the route to use instead.
 
 Excerpt of [`examples/quickstart/tests/caller_guide.rs`](../examples/quickstart/tests/caller_guide.rs):
 

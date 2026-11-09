@@ -1,0 +1,5 @@
+error: `pub` is the default; list only the controls you restrict: `pub(crate) name;` (crate-visible) or `remove name;` (not generated)
+ --> tests/ui/controls_public.rs:5:20
+  |
+5 |         controls { pub set_key; }
+  |                    ^^^

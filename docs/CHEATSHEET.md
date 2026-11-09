@@ -88,6 +88,7 @@ fn main() -> Result<(), concord::Error> {
 | `GET name(..) -> T { .. }` | an endpoint (`GET POST PUT PATCH DELETE HEAD OPTIONS`); no `->`: no typed output | [§5.5](AUTHOR_GUIDE.md#55-no-output-versus---) |
 | `x: T`, `x: T = e`, `x?: T`, `x?: T = e` | required, initialized, optional, optional and initially present | [§2](AUTHOR_GUIDE.md#2-values-required-optional-initialized) |
 | `params Name(x?: T, ..);` (client), `GET op(..Name)` | a parameter group: optional/initialized values written once, spliced where `..Name` is written; trait `Name` holds their setters for every including endpoint | [§2.1](AUTHOR_GUIDE.md#21-parameter-groups-one-fact-many-endpoints) |
+| `controls { pub(crate) with_base_url; remove set_x; }` (client, scope) | withholds generated controls (`new`, `with_base_url`, `set_x`, `maybe_x`) from callers: `pub(crate)` keeps one for the SDK's own code, `remove` does not generate it; the rest stay public | [§2.2](AUTHOR_GUIDE.md#22-withholding-a-control-controls) |
 | `path "a/{x}"`, `subdomain "{x}"` | templates; `{client.x}` or `{scope.x}` reads an enclosing owner's value | [§3](AUTHOR_GUIDE.md#3-base-paths-and-subdomains) |
 | `query x`, `query("k") x`, `header("k") x`, `header(KEY) x`, `body x` | placements in the parameter list; `each` sends one occurrence per item | [§4.1](AUTHOR_GUIDE.md#41-placing-a-value) |
 | `query(..) x?: T` (endpoints) | `T: QueryPairs` writes its own key(s): exclusive cursors, run-time names; never `#[sensitive]` | [§4.1a](AUTHOR_GUIDE.md#41a-values-that-choose-their-own-keys-query) |
@@ -103,8 +104,8 @@ fn main() -> Result<(), concord::Error> {
 | `#[cfg(..)]`, `#[deprecated]`, `///` on scopes and endpoints | applied to the subtree or the navigation method; names are checked as if every `cfg` were on, so cfg-exclusive siblings need distinct names | [§8](AUTHOR_GUIDE.md#8-attributes) |
 
 Usual order inside an owner: `base` (client), `path`, `subdomain`, `query { }`, `headers { }`,
-format statements, `send` and `operations` (client), parameter groups `params Name(..);` (client),
-then children.
+format statements, `send` and `operations` (client), `controls`, parameter groups `params Name(..);`
+(client), then children.
 
 ## Calling
 

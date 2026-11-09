@@ -20,6 +20,8 @@ attr       := doc | "#[sensitive]"
 stmt       := "path" STRING ";" | "subdomain" STRING ";"
             | "query" "{" entry* "}" | "headers" "{" entry* "}"
             | "format" fmt ";" | "request" fmt STRING? ";" | "response" fmt ";"
+            | "controls" "{" control* "}"      (client and scopes; §3)
+control    := "pub(crate)" name ";" | "remove" name ";"
 fmt        := "json" | "text" | "bytes" | "form" | TypePath
 entry      := op? key "=" rhs ("else" "inherit")? ";" | "remove" key ";"
 op         := "append" | "override"
@@ -93,6 +95,18 @@ reference  := name | owner "." name       (owner = `client` or an enclosing scop
   scope handle copies that owner's values once (copy-on-write); setters on a unique handle, scope
   entry, endpoint calls, `prepare` and `send` copy none.
 - No `reset`: to return to an initializer, use the original handle or a fresh entry call.
+- **Controls.** The client's `new` and `with_base_url` and the `set_x` / `maybe_x` of client and
+  scope values are generated `pub`, unless the owner's `controls { .. }` statement (at most once,
+  before its children) lists them: `pub(crate) name;` generates the control `pub(crate)`,
+  `remove name;` does not generate it. A name must be a control of that owner (`new` and
+  `with_base_url` on the client only); each is listed at most once; `pub` and other visibilities
+  are rejected; `new` cannot be removed; an optional value's `set_x` and `maybe_x` must have the
+  same access, and an optional value without an initializer cannot have both removed. Endpoints
+  have no `controls`. The statement changes no value, entry argument, `{Client}Config` field or
+  request; a removed control's name is still reserved (§2). The generated documentation of request
+  types states the base accordingly (`with_base_url` public, crate-visible or absent), and
+  `{Client}Config` mentions only setters a caller has. Without the statement, or with an empty one,
+  the expansion is unchanged.
 - `x?: Option<U>` has three states: absent (`maybe_x(None)`), present `None` (`set_x(None)`),
   present `Some(u)`.
 - Client and scope value types must be `Clone` (handles are copy-on-write snapshots). An endpoint
@@ -103,8 +117,9 @@ reference  := name | owner "." name       (owner = `client` or an enclosing scop
 
 ## 4. URL composition
 
-**Base.** Declared with `base`; replaceable at runtime with `with_base_url(url)`. It must be an
-`http`/`https` URL with a host, optional port and path, and no user information, query or fragment.
+**Base.** Declared with `base`; replaceable at runtime with `with_base_url(url)` (unless `controls`
+withholds it, §3). It must be an `http`/`https` URL with a host, optional port and path, and no
+user information, query or fragment.
 The declared base must additionally fall within a strict subset (ASCII DNS name, dotted IPv4 or
 bracketed IPv6 host; decimal port 1–65535; `pchar` path without `%`) checked at compile time, so the
 generated constructor cannot fail. Port 0 is rejected in both forms, and a declared base may not contain `xn--`

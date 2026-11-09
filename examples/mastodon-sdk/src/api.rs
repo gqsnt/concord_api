@@ -1,7 +1,8 @@
-//! The declaration. The generated client stays private to the crate: its `with_base_url` keeps
-//! every client value, the access token included, so a caller holding it could point a token at
-//! another host. [`Mastodon`](crate::Mastodon) holds it, binds it to one instance and hands out
-//! the generated endpoint values, whose setters, `prepare()` and `send()` are the ordinary ones.
+//! The declaration. The generated client [`Api`] is public, but its constructor and
+//! `with_base_url` are this crate's (`controls`): `with_base_url` keeps every client value, the
+//! access token included, so a caller allowed to call it could point a token at another host.
+//! [`Mastodon`](crate::Mastodon) creates it, binds it to one instance and hands out the generated
+//! endpoint values, whose setters, `prepare()` and `send()` are the ordinary ones.
 
 use concord::Json;
 use concord::reqwest::header::{AUTHORIZATION, HeaderValue};
@@ -13,6 +14,11 @@ use crate::streaming::{PublicStreamFormat, StreamEvent};
 concord::api! {
     /// One Mastodon instance's REST API, or its streaming host (the same declaration, another
     /// base). Every `send()` returns `Result<_, Error>`.
+    ///
+    /// Bound to one instance: create it with [`Mastodon::new`](crate::Mastodon::new) and reach
+    /// it with [`Mastodon::api`](crate::Mastodon::api). Only this crate creates it and chooses
+    /// its host (the instance, or the streaming host that instance advertises), so its token is
+    /// sent nowhere else.
     pub client Api(
         /// `Authorization: Bearer <token>`, set by [`Mastodon::with_token`](crate::Mastodon::with_token);
         /// absent for anonymous calls.
@@ -26,6 +32,8 @@ concord::api! {
         // Every finite document below (a timeline page of at most 40 statuses, one status, the
         // instance document) is read into memory: at most 8 MiB.
         limit 8 * 1024 * 1024;
+        // The token is bound to the instance: only this crate creates the client and moves it.
+        controls { pub(crate) new; pub(crate) with_base_url; }
 
         /// Selectors and paging shared by public and hashtag timelines. Unset values are not
         /// sent: server defaults apply (false flags, 20 statuses).

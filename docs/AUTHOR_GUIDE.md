@@ -251,6 +251,78 @@ fn main() -> Result<(), concord::Error> {
   below). A group is declared on the client, may not include another group, and must be included
   somewhere. A value declared both on an endpoint and in one of its groups is an error.
 
+### 2.2 Withholding a control: `controls`
+
+Every generated control is public by default: the client's `new` and `with_base_url`, and the
+`set_x` / `maybe_x` of every client and scope value. Some contradict what the SDK promises. A
+token belongs to one account, yet `set_subdomain` on the client keeps the token and changes the
+account; `with_base_url` keeps every value, credentials included, and changes the host; a version
+that the SDK's constructor checked can be replaced unchecked. Hiding the whole generated client
+behind a facade of your own withholds them too, at the cost of forwarding every method. Instead,
+list the controls that callers must not have in a `controls` statement on the owner that
+generates them:
+
+```rust
+use concord::reqwest;
+
+mod sdk {
+    use concord::reqwest;
+
+    concord::api! {
+        pub client Account(
+            subdomain: String,
+            #[sensitive] header("x-token") token: String,
+        ) {
+            base "https://example.com";
+            // The token belongs to one account and one host.
+            controls { pub(crate) with_base_url; remove set_subdomain; }
+            subdomain "{subdomain}";
+
+            scope shop(shop: String, #[sensitive] header("x-shop-key") key: String) {
+                controls { remove set_shop; } // another shop is another `shop(..)` entry
+                path "shops/{shop}";
+                GET orders() { path "orders"; }
+            }
+        }
+    }
+
+    /// The SDK's constructor; it alone chooses a host other than the declared one.
+    pub fn connect(http: reqwest::Client, subdomain: &str, token: &str) -> Account {
+        Account::new(http, AccountConfig { subdomain: subdomain.into(), token: token.into() })
+    }
+}
+
+fn main() -> Result<(), concord::Error> {
+    let account = sdk::connect(reqwest::Client::new(), "acme", "t-1");
+    // Rotation is still the callers': `set_token` and `set_key` are not listed.
+    let shop = account.set_token("t-2").shop("s1", "k-1").set_key("k-2");
+    let orders = shop.orders().prepare()?;
+    assert_eq!(orders.request().url().as_str(), "https://acme.example.com/shops/s1/orders");
+    assert_eq!(orders.request().headers()["x-token"], "t-2");
+    Ok(())
+}
+```
+
+- **`pub(crate) name;`** generates the control as `pub(crate)`: the SDK's own constructor or
+  helper still calls it (here a test-server constructor could call `with_base_url`), callers in
+  other crates do not have it. **`remove name;`** does not generate it at all. A control that is
+  not listed stays `pub`; writing `pub` is an error, and so is any other visibility.
+- The names are the generated methods: `new` and `with_base_url` on the client, and `set_x` (every
+  value) or `maybe_x` (optional values) on the client or the scope that declares `x` — a send
+  policy value's `set_policy` too. Navigation methods, `send` and `prepare` are not controls, and
+  an endpoint has no `controls`: its setters configure only the request they return.
+- `new` can be `pub(crate)` (the SDK's own constructor is then the only way to a client, so the
+  declared base — a placeholder such as `https://api.invalid` — is never where a caller's client
+  sends) but not removed. An optional value's `set_x` and `maybe_x` take the same access
+  (`maybe_x(Some(v))` is `set_x(v)`), and an optional value without an initializer keeps at least
+  crate-visible setters (removed, it would never be sent).
+- Withholding changes no request: a value is still supplied where it is declared (`{Client}Config`,
+  the scope's or endpoint's arguments) and sent as before. A removed control's name stays taken
+  (§9). For callers, removing or restricting a control that was public is a breaking change, like
+  renaming it (§11); the replacement route is what the SDK documents (a new entry, its own
+  constructor).
+- `controls` is an owner statement: at most once per client or scope, before its children.
+
 ## 3. Base, paths and subdomains
 
 **Base.** `base "https://api.example.com/v2";` is checked at compile time: `http` or `https`, an
@@ -2147,7 +2219,7 @@ fn main() {
 | `scope repo` under `Forge` | `ForgeRepo`, reached with `forge.repo(..)` |
 | `GET list_issues` under `scope repo` | `ForgeRepoListIssues`, reached with `repo.list_issues(..)` |
 | `operations ForgeOperation;` on the client | the enum `ForgeOperation`; `GET list_issues` under `scope repo` is its variant `RepoListIssues` (§5.14) |
-| value `x` | `set_x`; `maybe_x` when optional |
+| value `x` | `set_x`; `maybe_x` when optional (public unless `controls` restricts them, §2.2) |
 
 - Within one generated type, navigation methods, value controls and the built-ins (`new`,
   `with_base_url`, `send`, `prepare`, `clone`) must not collide; a collision is a compile error
@@ -2221,6 +2293,7 @@ each edit does to code that calls the endpoint:
 | Move an endpoint to another scope | breaks: navigation goes through the new scope |
 | Rename an endpoint, scope or value | breaks: the method names follow |
 | Move a value between owners | breaks: it is supplied where it is now declared |
+| Restrict or remove a control (`controls { pub(crate) set_x; }`, `remove with_base_url;`) | breaks code outside the crate that called it; requests are unchanged ([§2.2](#22-withholding-a-control-controls)) |
 | Move a literal query or header entry into the enclosing scope | unchanged code; every endpoint below inherits it and the query order can change ([§11.1](#111-moving-a-default-into-a-scope)) |
 
 `#[deprecated]` on a scope or endpoint (§8) lets callers migrate before a removal.

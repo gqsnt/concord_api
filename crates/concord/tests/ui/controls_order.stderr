@@ -1,0 +1,5 @@
+error: owner statements (`controls`, `path`, `query`, ...) must precede child declarations (first child: `ping`)
+ --> tests/ui/controls_order.rs:7:9
+  |
+7 |         controls { remove set_key; }
+  |         ^^^^^^^^

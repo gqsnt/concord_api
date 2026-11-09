@@ -1,9 +1,11 @@
 # Migration
 
-Eight paths, newest first: the interface consolidation (unreleased candidate), 4.1 to 4.2 (a
-maintenance release; summary in the [changelog](../CHANGELOG.md)), then the two parts of 4.1.0
-(the modular V4), then older ones:
+Nine paths, newest first: the H06 pilot SDK controls, the interface consolidation (unreleased
+candidate), 4.1 to 4.2 (a maintenance release; summary in the [changelog](../CHANGELOG.md)), then
+the two parts of 4.1.0 (the modular V4), then older ones:
 
+- [To H06 pilot SDK controls](#to-h06-pilot-sdk-controls) — callers of the withheld Shopify,
+  Zendesk and Salesforce controls use the replacement construction routes below.
 - [To the consolidated interface](#to-the-consolidated-interface) — additive: existing code
   compiles (one rare exception: a generated name, below); the new response, body, stream and
   pagination boundaries, declared limits and send results, parameter groups and `query(..)` values
@@ -30,6 +32,26 @@ maintenance release; summary in the [changelog](../CHANGELOG.md)), then the two 
 Code blocks marked "does not compile" show the old form. Every other Rust block in this file is
 compiled and run as a doctest of `examples/quickstart` (`cargo test --doc -p
 concord-example-quickstart`).
+
+## To H06 pilot SDK controls
+
+H06 (candidate B, `controls`) is accepted at pilot scope by the owner decision of 2026-11-08,
+at `d39ef1df`. Callers of these withheld controls in the example SDKs change as follows; the
+values are required, so there is no corresponding `maybe_x` setter.
+
+- **shopify-sdk:** `ShopifyAdminShop::set_shop` is removed. Another shop requires a new
+  `shop(b, token_b)` entry, with that shop's own token, or another `ShopContext`. Same-shop
+  `set_access_token` rotation stays public.
+- **zendesk-support-sdk:** `Zendesk::set_subdomain` is removed. Use
+  `Zendesk::connect(http, other, token)` for another account with its own token. `set_policy` and
+  same-account `set_authorization` rotation stay public.
+- **salesforce-sdk:** `SalesforceApi::with_base_url` is crate-visible and `set_version` is
+  removed. Use `OrgContext::new(http, instance, version, token)`, with
+  `version >= ApiVersion::MINIMUM`, then `api()`. Another instance or version requires another
+  validated context.
+
+The [impact table](../v4/desirability/impact/H06.md) records all 55 SDK decisions. The broader
+migration is deferred to H06c; its additional restrictions are not part of this pilot.
 
 ## To the consolidated interface
 
