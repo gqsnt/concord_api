@@ -96,8 +96,8 @@ impl Serialize for DocumentId {
 /// An Elasticsearch API key, sent as `Authorization: ApiKey <key>` (the form the bulk API
 /// reference's curl example uses). Pass the encoded key Elasticsearch issued; the SDK does not
 /// encode it again. `Debug` never prints it.
-#[derive(Clone)]
-pub struct ApiKey(HeaderValue);
+#[derive(Clone, concord::Debug)]
+pub struct ApiKey(#[sensitive] HeaderValue);
 
 impl ApiKey {
     /// Validates the key (non-empty visible ASCII) and builds the sensitive header value with
@@ -110,12 +110,6 @@ impl ApiKey {
 
     pub(crate) fn into_header(self) -> HeaderValue {
         self.0
-    }
-}
-
-impl fmt::Debug for ApiKey {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str("ApiKey(<redacted>)")
     }
 }
 

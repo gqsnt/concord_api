@@ -51,6 +51,7 @@ pub const MAX_HEADER_CHARS: usize = 32_000;
 const SPOOL_BATCH: usize = 512;
 
 /// A CSV configuration, header or encoding failure before anything was sent.
+#[derive(concord::Debug)]
 #[non_exhaustive]
 pub enum CsvError {
     /// The codec refused the dialect (never expected for a [`BulkDialect`]).
@@ -75,7 +76,7 @@ pub enum CsvError {
         limit: usize,
     },
     /// The row source failed while spooling (its error is kept, withheld from `Display`).
-    Source(Box<dyn StdError + Send + Sync>),
+    Source(#[sensitive] Box<dyn StdError + Send + Sync>),
 }
 
 impl fmt::Display for CsvError {
@@ -97,29 +98,6 @@ impl fmt::Display for CsvError {
                 )
             }
             CsvError::Source(_) => f.write_str("the row source failed while spooling"),
-        }
-    }
-}
-
-impl fmt::Debug for CsvError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            CsvError::Config(e) => f.debug_tuple("Config").field(e).finish(),
-            CsvError::Encode(e) => f.debug_tuple("Encode").field(e).finish(),
-            CsvError::InvalidColumn { index, reason } => f
-                .debug_struct("InvalidColumn")
-                .field("index", index)
-                .field("reason", reason)
-                .finish(),
-            CsvError::HeaderTooLong { chars } => f
-                .debug_struct("HeaderTooLong")
-                .field("chars", chars)
-                .finish(),
-            CsvError::UploadTooLarge { limit } => f
-                .debug_struct("UploadTooLarge")
-                .field("limit", limit)
-                .finish(),
-            CsvError::Source(_) => f.write_str("Source(<withheld>)"),
         }
     }
 }
@@ -453,8 +431,8 @@ impl fmt::Debug for FieldColumns {
 
 /// Text for an ingest field. The literal `#N/A` is refused: in Bulk API 2.0 CSV it means
 /// "set to null", so as text it would be ambiguous ([`IngestValue::Null`] says it explicitly).
-#[derive(Clone, PartialEq, Eq)]
-pub struct FieldText(String);
+#[derive(Clone, PartialEq, Eq, concord::Debug)]
+pub struct FieldText(#[sensitive] String);
 
 impl FieldText {
     /// The text.
@@ -476,12 +454,6 @@ impl FieldText {
     /// The text.
     pub fn as_str(&self) -> &str {
         &self.0
-    }
-}
-
-impl fmt::Debug for FieldText {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str("FieldText(..)")
     }
 }
 
@@ -531,39 +503,38 @@ impl Serialize for IngestValue {
 /// Loyalty_Tier__c, HasOptedOutOfEmail FROM Contact`, in that column order
 /// ([`CONTACT_EXPORT_FIELDS`]). Empty optional fields are `None` (the results do not distinguish
 /// `null` from empty); `HasOptedOutOfEmail` is a boolean that is never empty (`true`/`false`), so
-/// an empty or other value is a decode error of its result set. `Debug` shows the id only.
-#[derive(Clone, PartialEq, Serialize, Deserialize)]
+/// an empty or other value is a decode error of its result set. `Debug` shows the id and
+/// redaction markers for record contents.
+#[derive(Clone, PartialEq, Serialize, Deserialize, concord::Debug)]
 pub struct ContactExportRow {
     /// `Id`.
     #[serde(rename = "Id")]
     pub id: RecordId,
     /// `FirstName`.
     #[serde(rename = "FirstName")]
+    #[sensitive]
     pub first_name: Option<String>,
     /// `LastName`.
     #[serde(rename = "LastName")]
+    #[sensitive]
     pub last_name: String,
     /// `Email`.
     #[serde(rename = "Email")]
+    #[sensitive]
     pub email: Option<String>,
     /// `AccountId`.
     #[serde(rename = "AccountId")]
+    #[sensitive]
     pub account_id: Option<RecordId>,
     /// `Loyalty_Tier__c` (custom).
     #[serde(rename = "Loyalty_Tier__c")]
+    #[sensitive]
     pub loyalty_tier: Option<String>,
     /// `HasOptedOutOfEmail` (standard boolean, label "Email Opt Out"): the Contact does not
     /// want e-mail.
     #[serde(rename = "HasOptedOutOfEmail")]
+    #[sensitive]
     pub has_opted_out_of_email: bool,
-}
-
-impl fmt::Debug for ContactExportRow {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("ContactExportRow")
-            .field("id", &self.id)
-            .finish_non_exhaustive()
-    }
 }
 
 /// The columns of [`ContactExportRow`], in order.

@@ -25,7 +25,6 @@ use concord::reqwest;
 use concord_pagination::{Page, Pages, Resume};
 use models::{CreateBody, InvoicesDocument, Utc};
 use std::{
-    fmt,
     num::NonZeroUsize,
     time::{Duration, SystemTime},
 };
@@ -61,15 +60,11 @@ mod wire {
 /// Tenant operations send `xero-tenant-id` from the selected store-bound tenant ID.
 ///
 /// Tenant-bound Accounting client. Clones share auth flights, concurrency and cooldown state.
-#[derive(Clone)]
+#[derive(Clone, concord::Debug)]
+#[sensitive]
 pub struct Xero {
     api: wire::Accounting,
     tenant: TenantId,
-}
-impl fmt::Debug for Xero {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str("Xero(<redacted>)")
-    }
 }
 impl Xero {
     /// Use Xero's Accounting and OAuth origins. No requests occur during construction.
@@ -140,15 +135,11 @@ fn validate_origin(value: &str) -> Result<(), Error> {
 }
 
 /// Fixed tenant context, carrying no publicly mutable credential or tenant setters.
-#[derive(Clone)]
+#[derive(Clone, concord::Debug)]
+#[sensitive]
 pub struct Tenant {
     api: wire::AccountingTenant,
     id: TenantId,
-}
-impl fmt::Debug for Tenant {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str("Tenant(<withheld>)")
-    }
 }
 impl Tenant {
     /// The immutable context chosen by the caller.
@@ -306,7 +297,8 @@ impl Tenant {
 pub type InvoicePages = Pages<Invoice, PageCursor, Option<Pagination>, Error>;
 /// Tenant, page-size and modified-since bound continuation; its fields cannot be reassigned by
 /// callers.
-#[derive(Clone, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq, concord::Debug)]
+#[sensitive]
 pub struct PageCursor {
     tenant: TenantId,
     page: u32,
@@ -317,11 +309,6 @@ impl PageCursor {
     /// The next one-based page number.
     pub fn page(&self) -> u32 {
         self.page
-    }
-}
-impl fmt::Debug for PageCursor {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str("PageCursor(<withheld>)")
     }
 }
 /// A page with its validated continuation and optional modern metadata.

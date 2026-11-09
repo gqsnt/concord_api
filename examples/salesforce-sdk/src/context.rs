@@ -400,21 +400,13 @@ impl fmt::Debug for OrgContext {
 
 /// A validated result link: the locator (absent for the first result set) and the
 /// `maxRecords` the link carries. `Debug` never shows the locator.
-#[derive(Clone, PartialEq, Eq, Hash)]
+#[derive(Clone, PartialEq, Eq, Hash, concord::Debug)]
 pub struct ResultLink {
     /// The `locator`.
+    #[sensitive]
     pub locator: Option<ResultLocator>,
     /// The `maxRecords`.
     pub max_records: Option<MaxRecords>,
-}
-
-impl fmt::Debug for ResultLink {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("ResultLink")
-            .field("locator", &self.locator.as_ref().map(|_| ".."))
-            .field("max_records", &self.max_records)
-            .finish()
-    }
 }
 
 #[cfg(test)]

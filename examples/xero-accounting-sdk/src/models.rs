@@ -18,9 +18,9 @@ pub(crate) fn uuid(value: &str) -> bool {
 }
 
 /// A tenant ID selected from the application's authorized Xero connections.
-#[derive(Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Clone, PartialEq, Eq, Hash, Serialize, Deserialize, concord::Debug)]
 #[serde(transparent)]
-pub struct TenantId(String);
+pub struct TenantId(#[sensitive] String);
 impl TenantId {
     /// Validate a UUID-shaped identifier. Authorization is supplied by the application grant.
     pub fn new(value: impl Into<String>) -> Result<Self, Error> {
@@ -35,14 +35,10 @@ impl TenantId {
         &self.0
     }
 }
-impl fmt::Debug for TenantId {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str("TenantId(<withheld>)")
-    }
-}
 
 /// An invoice identifier permanently bound to the tenant that produced it.
-#[derive(Clone, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq, concord::Debug)]
+#[sensitive]
 pub struct InvoiceRef {
     pub(crate) tenant: TenantId,
     pub(crate) id: String,
@@ -55,11 +51,6 @@ impl InvoiceRef {
     /// The owning tenant.
     pub fn tenant(&self) -> &TenantId {
         &self.tenant
-    }
-}
-impl fmt::Debug for InvoiceRef {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str("InvoiceRef(<withheld>)")
     }
 }
 
@@ -149,15 +140,11 @@ impl fmt::Debug for ModifiedSince {
 }
 
 /// A pre-existing contact chosen within one tenant (no Contacts endpoint is implemented).
-#[derive(Clone)]
+#[derive(Clone, concord::Debug)]
+#[sensitive]
 pub struct ContactRef {
     pub(crate) tenant: TenantId,
     pub(crate) id: String,
-}
-impl fmt::Debug for ContactRef {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str("ContactRef(<withheld>)")
-    }
 }
 
 /// An exact nonnegative amount with two decimal places, serialized as a JSON number.
@@ -182,8 +169,9 @@ impl Serialize for Amount {
 }
 
 /// One draft invoice line; this slice leaves tax/account defaults to Xero.
-#[derive(Clone, Serialize)]
+#[derive(Clone, Serialize, concord::Debug)]
 #[serde(rename_all = "PascalCase")]
+#[sensitive]
 pub struct LineItem {
     description: String,
     quantity: u32,
@@ -209,15 +197,11 @@ impl LineItem {
         })
     }
 }
-impl fmt::Debug for LineItem {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str("LineItem(<withheld>)")
-    }
-}
 
 /// A single sales invoice whose Status is always DRAFT and Type always ACCREC.
-#[derive(Clone, Serialize)]
+#[derive(Clone, Serialize, concord::Debug)]
 #[serde(rename_all = "PascalCase")]
+#[sensitive]
 pub struct DraftInvoice {
     #[serde(skip)]
     pub(crate) tenant: TenantId,
@@ -246,14 +230,10 @@ impl DraftInvoice {
         })
     }
 }
-impl fmt::Debug for DraftInvoice {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str("DraftInvoice(<withheld>)")
-    }
-}
 
 /// Returned invoice state. Unmodeled fields, tax calculations and state transitions stay in Xero.
-#[derive(Clone)]
+#[derive(Clone, concord::Debug)]
+#[sensitive]
 pub struct Invoice {
     /// Tenant-bound reference usable for a later retrieval.
     pub reference: InvoiceRef,
@@ -263,11 +243,6 @@ pub struct Invoice {
     pub invoice_type: String,
     /// Human-facing invoice number, if returned.
     pub invoice_number: Option<String>,
-}
-impl fmt::Debug for Invoice {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str("Invoice(<withheld>)")
-    }
 }
 
 #[derive(Deserialize)]

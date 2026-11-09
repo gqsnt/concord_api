@@ -57,8 +57,8 @@ fn secret_text(value: &str) -> bool {
 }
 
 /// An OAuth refresh token. Secret: `Debug` withholds it and it has no `Display`.
-#[derive(Clone, PartialEq, Eq)]
-pub struct RefreshToken(String);
+#[derive(Clone, PartialEq, Eq, concord::Debug)]
+pub struct RefreshToken(#[sensitive] String);
 
 impl RefreshToken {
     /// Wraps a stored refresh token.
@@ -83,15 +83,9 @@ impl RefreshToken {
     }
 }
 
-impl fmt::Debug for RefreshToken {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str("RefreshToken(<redacted>)")
-    }
-}
-
 /// An OAuth authorization code from the redirect. Secret, and valid for one exchange only.
-#[derive(Clone, PartialEq, Eq)]
-pub struct AuthorizationCode(String);
+#[derive(Clone, PartialEq, Eq, concord::Debug)]
+pub struct AuthorizationCode(#[sensitive] String);
 
 impl AuthorizationCode {
     /// Wraps the `code` parameter.
@@ -108,12 +102,6 @@ impl AuthorizationCode {
                 what: "authorization code",
             })
         }
-    }
-}
-
-impl fmt::Debug for AuthorizationCode {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str("AuthorizationCode(<redacted>)")
     }
 }
 
@@ -193,10 +181,11 @@ impl AuthorizationCallback {
 ///
 /// An app registered with Intuit: its client ID and secret (development keys for the sandbox,
 /// production keys otherwise) and its redirect URI.
-#[derive(Clone)]
+#[derive(Clone, concord::Debug)]
 pub struct OAuthApp {
     environment: Environment,
     client_id: String,
+    #[sensitive]
     credentials: HeaderValue,
     redirect_uri: String,
     token_base: String,
@@ -323,26 +312,17 @@ impl OAuthApp {
     }
 }
 
-impl fmt::Debug for OAuthApp {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("OAuthApp")
-            .field("environment", &self.environment)
-            .field("client_id", &self.client_id)
-            .field("client_secret", &"<redacted>")
-            .field("redirect_uri", &self.redirect_uri)
-            .finish()
-    }
-}
-
 /// The form body of a token request.
-#[derive(Serialize)]
+#[derive(Serialize, concord::Debug)]
 pub(crate) struct Grant {
     grant_type: &'static str,
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[sensitive]
     code: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     redirect_uri: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[sensitive]
     refresh_token: Option<String>,
 }
 
@@ -366,26 +346,15 @@ impl Grant {
     }
 }
 
-impl fmt::Debug for Grant {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "Grant({}, <redacted>)", self.grant_type)
-    }
-}
-
 /// The token endpoint's success document.
-#[derive(Deserialize)]
+#[derive(Deserialize, concord::Debug)]
+#[sensitive]
 pub(crate) struct TokenResponse {
     token_type: String,
     access_token: String,
     expires_in: u64,
     refresh_token: String,
     x_refresh_token_expires_in: Option<u64>,
-}
-
-impl fmt::Debug for TokenResponse {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str("TokenResponse(<redacted>)")
-    }
 }
 
 /// An OAuth error document (RFC 6749 §5.2).

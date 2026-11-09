@@ -1,0 +1,42 @@
+error[E0277]: `Opaque` doesn't implement `Debug`
+ --> tests/ui_debug/missing_debug.rs:8:14
+  |
+8 |     payload: Opaque,
+  |              ^^^^^^ the trait `Debug` is not implemented for `Opaque`
+  |
+  = note: required for the cast from `&Opaque` to `&dyn Debug`
+help: consider annotating `Opaque` with `#[derive(Debug)]`
+  |
+3 + #[derive(Debug)]
+4 | struct Opaque;
+  |
+
+error[E0277]: `Opaque` doesn't implement `Debug`
+  --> tests/ui_debug/missing_debug.rs:17:29
+   |
+17 |     let _ = format!("{:?}", Generic { value: Opaque });
+   |                      ----   ^^^^^^^^^^^^^^^^^^^^^^^^^ `Opaque` cannot be formatted using `{:?}` because it doesn't implement `Debug`
+   |                      |
+   |                      required by this formatting parameter
+   |
+   = help: the trait `Debug` is not implemented for `Opaque`
+help: the trait `Debug` is conditionally implemented for `Generic<T>`
+  --> tests/ui_debug/missing_debug.rs:11:10
+   |
+11 | #[derive(concord::Debug)]
+   |          ^^^^^^^^^^^^^^ unsatisfied requirement introduced here: `Opaque: Debug`
+note: required for `Generic<Opaque>` to implement `Debug`
+  --> tests/ui_debug/missing_debug.rs:12:8
+   |
+11 | #[derive(concord::Debug)]
+   |          -------------- type parameter would need to implement `Debug`
+12 | struct Generic<T> {
+   |        ^^^^^^^^^^
+   = help: consider manually implementing `Debug` to avoid undesired bounds caused by "imperfect derives"
+   = note: to learn more, visit <https://github.com/rust-lang/rust/issues/26925>
+   = note: this error originates in the macro `$crate::__export::format_args` which comes from the expansion of the derive macro `concord::Debug` (in Nightly builds, run with -Z macro-backtrace for more info)
+help: consider annotating `Opaque` with `#[derive(Debug)]`
+   |
+ 3 + #[derive(Debug)]
+ 4 | struct Opaque;
+   |

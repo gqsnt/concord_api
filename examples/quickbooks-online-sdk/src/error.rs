@@ -12,11 +12,13 @@ use serde::Deserialize;
 use crate::{ERROR_BODY_LIMIT, RealmId, RequestId};
 
 /// One `Error` element of a QuickBooks `Fault`.
-#[derive(Clone, PartialEq, Eq, Deserialize)]
+#[derive(Clone, PartialEq, Eq, Deserialize, concord::Debug)]
 pub struct FaultError {
     #[serde(rename = "Message")]
+    #[sensitive]
     message: Option<String>,
     #[serde(rename = "Detail")]
+    #[sensitive]
     detail: Option<String>,
     code: Option<String>,
     element: Option<String>,
@@ -41,17 +43,6 @@ impl FaultError {
     /// The detail. It can quote submitted values, so this SDK never formats it.
     pub fn detail_unredacted(&self) -> Option<&str> {
         self.detail.as_deref()
-    }
-}
-
-impl fmt::Debug for FaultError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("FaultError")
-            .field("code", &self.code)
-            .field("element", &self.element)
-            .field("message", &self.message.as_ref().map(|_| "<withheld>"))
-            .field("detail", &self.detail.as_ref().map(|_| "<withheld>"))
-            .finish()
     }
 }
 

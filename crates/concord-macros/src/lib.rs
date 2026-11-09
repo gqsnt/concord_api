@@ -5,6 +5,7 @@
 use proc_macro::TokenStream;
 use proc_macro2::{TokenStream as TokenStream2, TokenTree};
 
+mod debug;
 mod emit;
 mod model;
 mod syntax;
@@ -37,4 +38,10 @@ pub fn api(input: TokenStream) -> TokenStream {
         }
         Err(error) => error.to_compile_error().into(),
     }
+}
+
+/// Implementation of `#[derive(concord::Debug)]`; use it through `concord::Debug`.
+#[proc_macro_derive(Debug, attributes(sensitive, public))]
+pub fn derive_debug(input: TokenStream) -> TokenStream {
+    debug::derive(input.into()).into()
 }

@@ -21,23 +21,15 @@ pub type DynamicFields = BTreeMap<String, Value>;
 /// The `attributes` object of every REST record: its type and its URL
 /// (`/services/data/v68.0/sobjects/Contact/003...`). The URL is a returned link: validate it
 /// with [`crate::OrgContext::record_link`] before use.
-#[derive(Clone, Deserialize)]
+#[derive(Clone, Deserialize, concord::Debug)]
 pub struct Attributes {
     /// The sObject type.
     #[serde(rename = "type")]
     pub sobject: SObjectName,
     /// The record's resource URL, as returned (unvalidated).
     #[serde(default)]
+    #[sensitive]
     pub url: Option<String>,
-}
-
-impl fmt::Debug for Attributes {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("Attributes")
-            .field("sobject", &self.sobject)
-            .field("url", &self.url.as_ref().map(|_| ".."))
-            .finish()
-    }
 }
 
 /// A selected field that may be absent from a response: not selected (absent), selected and
@@ -80,75 +72,72 @@ impl<'de, T: Deserialize<'de>> Deserialize<'de> for Field<T> {
 /// An Account of the selected schema. `Id` and `Name` are required; `Industry` and
 /// `AnnualRevenue` are optional standard fields; `Customer_Tier__c` is an optional custom field
 /// that an org may not have. Every other returned field stays dynamic in `extra`.
-#[derive(Clone, Deserialize)]
+#[derive(Clone, Deserialize, concord::Debug)]
 pub struct Account {
     /// `attributes`.
+    #[sensitive]
     pub attributes: Attributes,
     /// `Id`.
     #[serde(rename = "Id")]
     pub id: RecordId,
     /// `Name`.
     #[serde(rename = "Name")]
+    #[sensitive]
     pub name: String,
     /// `Industry` (picklist).
     #[serde(rename = "Industry", default)]
+    #[sensitive]
     pub industry: Field<String>,
     /// `AnnualRevenue` (currency).
     #[serde(rename = "AnnualRevenue", default)]
+    #[sensitive]
     pub annual_revenue: Field<f64>,
     /// `Customer_Tier__c` (custom picklist; optional in the selected schema).
     #[serde(rename = "Customer_Tier__c", default)]
+    #[sensitive]
     pub customer_tier: Field<String>,
     /// Fields outside the typed schema.
     #[serde(flatten)]
+    #[sensitive]
     pub extra: DynamicFields,
 }
 
 /// A Contact of the selected schema: `Id` and `LastName` required; `FirstName`, `Email`,
 /// `AccountId` optional; `Loyalty_Tier__c` an optional custom field. `Account.Name` (a
 /// relationship path) arrives as a nested object and stays dynamic in `extra["Account"]`.
-#[derive(Clone, Deserialize)]
+#[derive(Clone, Deserialize, concord::Debug)]
 pub struct Contact {
     /// `attributes`.
+    #[sensitive]
     pub attributes: Attributes,
     /// `Id`.
     #[serde(rename = "Id")]
     pub id: RecordId,
     /// `FirstName`.
     #[serde(rename = "FirstName", default)]
+    #[sensitive]
     pub first_name: Field<String>,
     /// `LastName`.
     #[serde(rename = "LastName")]
+    #[sensitive]
     pub last_name: String,
     /// `Email`.
     #[serde(rename = "Email", default)]
+    #[sensitive]
     pub email: Field<String>,
     /// `AccountId`.
     #[serde(rename = "AccountId", default)]
+    #[sensitive]
     pub account_id: Field<RecordId>,
     /// `Loyalty_Tier__c` (custom; optional in the selected schema).
     #[serde(rename = "Loyalty_Tier__c", default)]
+    #[sensitive]
     pub loyalty_tier: Field<String>,
     /// Fields outside the typed schema.
     #[serde(flatten)]
+    #[sensitive]
     pub extra: DynamicFields,
 }
-
-macro_rules! redacted_record_debug {
-    ($name:ident) => {
-        impl fmt::Debug for $name {
-            /// The type and id only: field values are record contents.
-            fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-                f.debug_struct(stringify!($name))
-                    .field("id", &self.id)
-                    .finish_non_exhaustive()
-            }
-        }
-    };
-}
-
-redacted_record_debug!(Account);
-redacted_record_debug!(Contact);
 
 /// A record of any object, every field dynamic.
 #[derive(Clone, Deserialize)]
@@ -269,12 +258,13 @@ pub struct FieldDescribe {
 ///
 /// `Debug` shows the code and the fields; the message is withheld (it can quote record values or
 /// ids) and read deliberately with [`message_unredacted`](Self::message_unredacted).
-#[derive(Clone, Deserialize, PartialEq, Eq)]
+#[derive(Clone, Deserialize, PartialEq, Eq, concord::Debug)]
 pub struct ApiErrorDoc {
     /// The error code (`INVALID_QUERY_LOCATOR`, `NOT_FOUND`, `INVALID_SESSION_ID`, ...).
     #[serde(rename = "errorCode")]
     pub error_code: String,
     #[serde(default)]
+    #[sensitive]
     message: String,
     /// The fields concerned, if any.
     #[serde(default)]
@@ -285,16 +275,6 @@ impl ApiErrorDoc {
     /// The human-readable message, **unredacted**.
     pub fn message_unredacted(&self) -> &str {
         &self.message
-    }
-}
-
-impl fmt::Debug for ApiErrorDoc {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("ApiErrorDoc")
-            .field("error_code", &self.error_code)
-            .field("fields", &self.fields)
-            .field("message", &"<withheld>")
-            .finish()
     }
 }
 

@@ -588,10 +588,11 @@ impl fmt::Display for LinkError {
 impl std::error::Error for LinkError {}
 
 /// A job that ended `Failed` or `Aborted`. Its `errorMessage` is withheld from `Display`/`Debug`.
-#[derive(Clone)]
+#[derive(Clone, concord::Debug)]
 pub struct JobFailure {
     job: String,
     state: JobState,
+    #[sensitive]
     error_message: Option<String>,
 }
 
@@ -627,18 +628,5 @@ impl JobFailure {
 impl fmt::Display for JobFailure {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "Bulk job {} ended {}", self.job, self.state.as_str())
-    }
-}
-
-impl fmt::Debug for JobFailure {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("JobFailure")
-            .field("job", &self.job)
-            .field("state", &self.state)
-            .field(
-                "error_message",
-                &self.error_message.as_ref().map(|_| "<withheld>"),
-            )
-            .finish()
     }
 }

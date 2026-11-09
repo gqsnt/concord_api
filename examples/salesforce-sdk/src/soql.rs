@@ -77,24 +77,24 @@ impl fmt::Debug for FieldPath {
 }
 
 /// A SOQL literal: user data, escaped for SOQL when written.
-#[derive(Clone, PartialEq)]
+#[derive(Clone, PartialEq, concord::Debug)]
 pub enum Literal {
     /// A quoted string literal.
-    Text(String),
+    Text(#[sensitive] String),
     /// A `LIKE` pattern: user text (its `%`/`_` escaped) around the SDK's own wildcards.
-    Pattern(Vec<PatternPart>),
+    Pattern(#[sensitive] Vec<PatternPart>),
     /// An id, written quoted.
-    Id(RecordId),
+    Id(#[sensitive] RecordId),
     /// An integer.
-    Integer(i64),
+    Integer(#[sensitive] i64),
     /// `true` / `false`.
-    Bool(bool),
+    Bool(#[sensitive] bool),
     /// `null`.
     Null,
     /// A date literal `YYYY-MM-DD` (validated shape).
-    Date(String),
+    Date(#[sensitive] String),
     /// A dateTime literal `YYYY-MM-DDThh:mm:ssZ` (validated shape).
-    DateTime(String),
+    DateTime(#[sensitive] String),
 }
 
 impl Literal {
@@ -220,22 +220,6 @@ impl Literal {
             Literal::Null => out.push_str("null"),
             Literal::Date(d) | Literal::DateTime(d) => out.push_str(d),
         }
-    }
-}
-
-impl fmt::Debug for Literal {
-    /// The kind only: a literal is user data.
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(match self {
-            Literal::Text(_) => "Literal::Text(..)",
-            Literal::Pattern(_) => "Literal::Pattern(..)",
-            Literal::Id(_) => "Literal::Id(..)",
-            Literal::Integer(_) => "Literal::Integer(..)",
-            Literal::Bool(_) => "Literal::Bool(..)",
-            Literal::Null => "Literal::Null",
-            Literal::Date(_) => "Literal::Date(..)",
-            Literal::DateTime(_) => "Literal::DateTime(..)",
-        })
     }
 }
 

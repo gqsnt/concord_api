@@ -1,15 +1,14 @@
 //! Message request and response values.
 
-use std::fmt;
-
 use serde::{Deserialize, Serialize};
 
 /// A text message from an explicit sender to one recipient.
 ///
 /// No phone-number, sender authorization or provider-specific content validation is done.
 /// Optional form values are omitted only for `None`; `Some("")` sends an empty value.
-#[derive(Clone, Serialize)]
+#[derive(Clone, Serialize, concord::Debug)]
 #[serde(rename_all = "PascalCase")]
+#[sensitive]
 pub struct CreateMessage {
     /// Recipient, normally an E.164 phone number for this SMS slice.
     pub to: String,
@@ -58,12 +57,6 @@ impl CreateMessage {
     pub fn with_status_callback(mut self, url: impl Into<String>) -> Self {
         self.status_callback = Some(url.into());
         self
-    }
-}
-
-impl fmt::Debug for CreateMessage {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("CreateMessage").finish_non_exhaustive()
     }
 }
 
@@ -128,38 +121,34 @@ impl From<String> for MessageStatus {
 
 /// The relevant fields of a single Message resource. Additional JSON fields are ignored.
 ///
-/// A successful fetch can return `Failed` or `Undelivered`: inspect `error_code` and
-/// `error_message`. That is distinct from an HTTP error rejecting the fetch itself.
-#[derive(Clone, PartialEq, Eq, Deserialize)]
-pub struct Message {
-    /// Resource SID to pass to [`crate::Twilio::get_message`]. An identifier, shown by `Debug`.
-    pub sid: String,
-    /// Account owning the message.
-    pub account_sid: String,
-    /// Observed status at the time of this response.
-    pub status: MessageStatus,
-    /// Message text; missing or null is retained as `None`.
-    pub body: Option<String>,
-    /// Sender, when present.
-    pub from: Option<String>,
-    /// Recipient, when present.
-    pub to: Option<String>,
-    /// Provider's message processing error code, when present.
-    pub error_code: Option<i64>,
-    /// Unredacted provider explanation; may contain submitted data.
-    pub error_message: Option<String>,
-}
-
 /// Shows `sid`, `status` and `error_code`: the message SID is a resource identifier (what a
 /// workflow correlates on and what Twilio support asks for), not a credential. Withholds the
 /// account SID (the Basic username in account-SID/auth-token authentication), `from`, `to`,
 /// `body` and `error_message` (which can quote submitted data).
-impl fmt::Debug for Message {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("Message")
-            .field("sid", &self.sid)
-            .field("status", &self.status)
-            .field("error_code", &self.error_code)
-            .finish_non_exhaustive()
-    }
+///
+/// A successful fetch can return `Failed` or `Undelivered`: inspect `error_code` and
+/// `error_message`. That is distinct from an HTTP error rejecting the fetch itself.
+#[derive(Clone, PartialEq, Eq, Deserialize, concord::Debug)]
+pub struct Message {
+    /// Resource SID to pass to [`crate::Twilio::get_message`]. An identifier, shown by `Debug`.
+    pub sid: String,
+    /// Account owning the message.
+    #[sensitive]
+    pub account_sid: String,
+    /// Observed status at the time of this response.
+    pub status: MessageStatus,
+    /// Message text; missing or null is retained as `None`.
+    #[sensitive]
+    pub body: Option<String>,
+    /// Sender, when present.
+    #[sensitive]
+    pub from: Option<String>,
+    /// Recipient, when present.
+    #[sensitive]
+    pub to: Option<String>,
+    /// Provider's message processing error code, when present.
+    pub error_code: Option<i64>,
+    /// Unredacted provider explanation; may contain submitted data.
+    #[sensitive]
+    pub error_message: Option<String>,
 }

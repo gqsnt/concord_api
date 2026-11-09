@@ -8,8 +8,8 @@ use concord::reqwest::header::HeaderValue;
 ///
 /// The username can represent an API key SID or account SID; the password its secret or
 /// auth token. Offline examples deliberately use invalid, visibly synthetic credentials.
-#[derive(Clone)]
-pub struct BasicAuth(HeaderValue);
+#[derive(Clone, concord::Debug)]
+pub struct BasicAuth(#[sensitive] HeaderValue);
 
 impl BasicAuth {
     /// Encodes `username:password` using standard padded Base64.
@@ -30,12 +30,6 @@ impl BasicAuth {
 
     pub(crate) fn into_header(self) -> HeaderValue {
         self.0
-    }
-}
-
-impl fmt::Debug for BasicAuth {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str("BasicAuth(<redacted>)")
     }
 }
 

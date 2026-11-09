@@ -1,0 +1,29 @@
+error: duplicate `#[sensitive]`
+ --> tests/ui_debug/markers.rs:6:5
+  |
+6 |     #[sensitive]
+  |     ^^^^^^^^^^^^
+
+error: `#[sensitive]` takes no arguments
+  --> tests/ui_debug/markers.rs:12:5
+   |
+12 |     #[sensitive(always)]
+   |     ^^^^^^^^^^^^^^^^^^^^
+
+error: a field is either `#[public]` or `#[sensitive]`
+  --> tests/ui_debug/markers.rs:19:5
+   |
+19 |     #[public]
+   |     ^^^^^^^^^
+
+error: this field is already withheld: its type or variant is `#[sensitive]`
+  --> tests/ui_debug/markers.rs:26:5
+   |
+26 |     #[sensitive]
+   |     ^^^^^^^^^^^^
+
+error: this variant is already withheld: its enum is `#[sensitive]`
+  --> tests/ui_debug/markers.rs:33:5
+   |
+33 |     #[sensitive]
+   |     ^^^^^^^^^^^^

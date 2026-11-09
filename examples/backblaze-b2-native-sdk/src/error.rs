@@ -189,10 +189,11 @@ impl fmt::Display for ErrorCode {
 }
 
 /// B2's error document (`status`, `code`, `message`), as the endpoint pages document it.
-#[derive(Clone)]
+#[derive(Clone, concord::Debug)]
 pub struct ErrorDocument {
     status: u16,
     code: ErrorCode,
+    #[sensitive]
     message: Option<String>,
 }
 
@@ -220,16 +221,6 @@ impl ErrorDocument {
     /// printed by this SDK.
     pub fn message(&self) -> Option<&str> {
         self.message.as_deref()
-    }
-}
-
-impl fmt::Debug for ErrorDocument {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("ErrorDocument")
-            .field("status", &self.status)
-            .field("code", &self.code)
-            .field("message", &self.message.as_ref().map(|_| "<withheld>"))
-            .finish()
     }
 }
 

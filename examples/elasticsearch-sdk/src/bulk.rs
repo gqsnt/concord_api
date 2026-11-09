@@ -545,9 +545,11 @@ impl BulkItem {
 /// at least one failure it comes back inside [`Error::PartialBulk`]. It keeps the submitted
 /// operations, so that [`resubmit`](Self::resubmit) can build a request of failed operations
 /// only: an applied operation can never be selected.
+#[derive(concord::Debug)]
 pub struct BulkReport {
     took: u64,
     items: Vec<BulkItem>,
+    #[sensitive]
     operations: Vec<Operation>,
     limits: BulkLimits,
     refresh: Option<Refresh>,
@@ -599,15 +601,6 @@ impl BulkReport {
     /// [`resubmit`](Self::resubmit) the rejected (`429`) operations only.
     pub fn resubmit_rejected(&self) -> Option<BulkRequest> {
         self.resubmit(BulkItem::is_rejected)
-    }
-}
-
-impl fmt::Debug for BulkReport {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("BulkReport")
-            .field("took", &self.took)
-            .field("items", &self.items)
-            .finish_non_exhaustive()
     }
 }
 

@@ -328,7 +328,7 @@ async fn message_debug_shows_identity_and_outcome_but_not_contents() {
     let message = format!("{:?}", fetched.value);
     assert_eq!(
         message,
-        "Message { sid: \"SM_fixture_message\", status: Undelivered, error_code: Some(30007), .. }"
+        "Message { sid: \"SM_fixture_message\", account_sid: <redacted>, status: Undelivered, body: Some(<redacted>), from: Some(<redacted>), to: Some(<redacted>), error_code: Some(30007), error_message: Some(<redacted>) }"
     );
     let response = format!("{fetched:?}");
     assert!(response.starts_with(&format!("Response {{ value: {message}, meta: ")));
