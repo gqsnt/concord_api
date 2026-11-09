@@ -266,3 +266,4 @@ Append-only: a row marked `running` is superseded by a later row (`↳ … resul
 | H11 baseline agent runs (I4 run.py via h11-bank/run-coordinator.sh: probe, replays, 6 tasks x 3 reps) | Codex gpt-6.1-sol xhigh inside the I4 runner bwrap | (per-run result.json + rollout) | running | — |
 | H16 combined review (`h16-combined-review-sol`) on 02bc13b6 + measurement (proposed INCONCLUSIVE) | Codex gpt-6.1-sol, xhigh, read-only | (meta.json at completion) | running | — |
 | ↳ H16 pilot measurement observed | — | Codex gpt-6.1-sol xhigh; Claude claude-opus-5-5 medium (I3 runner, per-session metadata) | — | W Codex 53->53, Claude 40->43 (pooled +3); prompts identical between arms for 8/10 SDKs (I3 packs source, not generated rustdoc); attributable gain FRED/OpenAI only |
+| ↳ H16 combined review observed | — | gpt-6.1-sol / xhigh / read-only; 02:06:45Z–02:13:27Z | 6m42s | ACCEPT_WITH_FIXES; DECISION INCONCLUSIVE (instrument did not expose generated docs) |
