@@ -92,6 +92,9 @@ impl Client {
     ///
     /// The account token is valid for at most 24 hours; this SDK does not re-authorize on its
     /// own (an `expired_auth_token` answer is returned as [`Error::Provider`]).
+    /// Prepares `authorization: Basic <base64(key-id:application-key)>` and, from the
+    /// declared `Json` output, `accept: application/json`. This GET has no body or
+    /// format-added `content-type`; header names are lowercase.
     ///
     /// # Errors
     ///
@@ -165,6 +168,8 @@ impl Session {
     /// `b2_get_upload_url` for `bucket`: an upload URL and its own upload token, at the issued
     /// `apiUrl`. The URL must not downgrade the `apiUrl`'s `https` and must carry no
     /// credentials or fragment (its path and query are kept as issued).
+    /// Sends the account token verbatim as `authorization`, with `accept: application/json`
+    /// from the declared `Json` output. This GET adds no `content-type`.
     ///
     /// # Errors
     ///

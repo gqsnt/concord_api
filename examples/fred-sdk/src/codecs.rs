@@ -11,8 +11,11 @@ use crate::{
 };
 
 /// FRED XML response format, with DTDs disabled and a bounded node count.
+/// Its `Decode::ACCEPT` suggests `accept: text/xml`; the response check accepts both
+/// `text/xml` and `application/xml`.
 pub struct Xml;
 /// ZIP format for FRED's `file_type=csv`; never a plain CSV decoder.
+/// Its `Decode::ACCEPT` suggests `accept: application/zip`.
 pub struct ZippedCsv;
 pub(crate) struct ProblemDocument;
 

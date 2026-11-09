@@ -23,6 +23,10 @@ concord::api! {
     /// Wire declarations for the supported operations. Every `send()` returns
     /// `Result<Response<T>, Error>` (this crate's, through [`SendPolicy`]); [`OpenAi`] adds the
     /// per-operation input rules, the event stream and the bounded downloads.
+    ///
+    /// The declared `Json` request format sends `content-type: application/json` with
+    /// JSON bodies; the declared `Json` response format suggests `accept: application/json`
+    /// for typed JSON outputs. GET operations have no body and add no `content-type`.
     pub client OpenAiApi(#[sensitive] header(AUTHORIZATION) authorization: HeaderValue) {
         base "https://api.openai.com";
         path "v1";
@@ -32,11 +36,15 @@ concord::api! {
         /// Create a response.
         POST response(body request: ResponseRequest) -> ResponseObject { path "responses"; }
         /// Open a response event stream: the unread body, for [`EventStream`].
+        /// Sends `content-type: application/json` from `Json` and the authored
+        /// `accept: text/event-stream`; this untyped stream adds no format suggestion.
         POST response_stream(body request: ResponseRequest) -> stream {
             path "responses";
             headers { "accept" = "text/event-stream"; }
         }
         /// Upload batch input: a `multipart/form-data` body whose boundary the format chooses.
+        /// `Multipart` binds `content-type: multipart/form-data; boundary=<boundary>` to
+        /// the body; the `Json` output suggests `accept: application/json`.
         POST upload(body form: MultipartBody) -> FileObject {
             path "files";
             request Multipart;
@@ -44,6 +52,8 @@ concord::api! {
         /// Retrieve metadata.
         GET file(id: String) -> FileObject { path "files/{id}"; }
         /// Retrieve file bytes.
+        /// `Binary` suggests no `accept`; no body means no format-added `content-type`.
+        /// At execution reqwest fills a missing `accept` from client defaults (`*/*` by default).
         GET content(id: String) -> Vec<u8> { path "files/{id}/content"; response Binary; }
         /// Create a batch.
         POST batch(body request: BatchRequest) -> Batch { path "batches"; }
