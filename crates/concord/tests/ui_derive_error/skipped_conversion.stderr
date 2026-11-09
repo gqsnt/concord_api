@@ -1,0 +1,14 @@
+error[E0277]: the trait bound `SfError: From<ApiFailure>` is not satisfied
+  --> tests/ui_derive_error/skipped_conversion.rs:20:33
+   |
+20 |     let _: SfError = ApiFailure.into();
+   |                                 ^^^^ unsatisfied trait bound
+   |
+help: the trait `From<ApiFailure>` is not implemented for `SfError`
+      but trait `From<concord::Error>` is implemented for it
+  --> tests/ui_derive_error/skipped_conversion.rs:7:13
+   |
+ 7 |     Concord(concord::Error),
+   |             ^^^^^^^
+   = help: for that trait implementation, expected `concord::Error`, found `ApiFailure`
+   = note: required for `ApiFailure` to implement `Into<SfError>`

@@ -1,0 +1,16 @@
+error[E0277]: `Error` doesn't implement `Debug`
+ --> tests/ui_derive_error/missing_debug.rs:2:10
+  |
+2 | pub enum Error {
+  |          ^^^^^ the trait `Debug` is not implemented for `Error`
+  |
+note: required by a bound in `std::error::Error`
+ --> $RUST/core/src/error.rs
+  |
+  | pub trait Error: Debug + Display {
+  |                  ^^^^^ required by this bound in `Error`
+help: consider annotating `Error` with `#[derive(Debug)]`
+  |
+2 + #[derive(Debug)]
+3 | pub enum Error {
+  |

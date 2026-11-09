@@ -1,0 +1,23 @@
+error: the enum's `#[display(with = ..)]` already formats every variant; keep one of the two
+ --> tests/ui_derive_error/misplaced_attributes.rs:4:15
+  |
+4 |     #[display("{0}")]
+  |               ^^^^^
+
+error: a format string belongs on each variant; the enum takes `#[display(with = path)]`
+  --> tests/ui_derive_error/misplaced_attributes.rs:13:11
+   |
+13 | #[display("{0}")]
+   |           ^^^^^
+
+error: `with = path` formats the whole enum: put `#[display(with = path)]` on the enum
+  --> tests/ui_derive_error/misplaced_attributes.rs:15:15
+   |
+15 |     #[display(with = fmt_error)]
+   |               ^^^^
+
+error: `#[from(skip)]` belongs on a single-field tuple variant; this variant has no `From`
+  --> tests/ui_derive_error/misplaced_attributes.rs:18:12
+   |
+18 |     #[from(skip)]
+   |            ^^^^

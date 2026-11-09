@@ -16,29 +16,44 @@ use crate::transport::ApiUsage;
 pub const MAX_ERROR_BODY: usize = 64 * 1024;
 
 /// A failure of an SDK operation.
+///
+/// `From<concord::Error>` keeps its unread response; [`SfError::from_concord`] reads a
+/// non-2xx error document. There is no `source()` chain; inspect the variants deliberately.
+#[derive(Debug, concord::Error)]
 #[non_exhaustive]
 pub enum SfError {
     /// A declared operation failed inside Concord: the request could not be built, the transport
     /// failed, a 2xx head was refused (`Metadata`) or a 2xx body did not decode. (Non-2xx
     /// statuses become [`SfError::Api`].)
+    #[display("{0}")]
     Concord(concord::Error),
     /// Salesforce answered a non-2xx status, with its error document when one could be read.
+    #[display("{0}")]
+    #[from(skip)]
     Api(Box<ApiFailure>),
     /// A response contradicts the documented protocol (a missing next link, a changed dialect,
     /// a record count that disagrees with `Sforce-NumberOfRecords`, ...).
+    #[display("{0}")]
     Protocol(Box<ProtocolError>),
     /// A link returned by Salesforce was refused before use.
+    #[display("{0}")]
     Link(LinkError),
     /// A CSV body's head was refused before it was read (the response is kept unread).
+    #[display("{0}")]
+    #[from(skip)]
     Open(Box<OpenError>),
     /// A CSV body failed while it was read (transport, format, decode or limit).
+    #[display("{0}")]
     Read(Box<ReadError>),
     /// A result part's completion was asked for before its validated end
     /// ([`crate::bulk_query::ResultPartRows::finish`]).
+    #[display("{0}")]
     Incomplete(Box<IncompletePart>),
     /// A job ended `Failed` or `Aborted`.
+    #[display("{0}")]
     Job(Box<JobFailure>),
     /// A CSV configuration or encoding failure before anything was sent.
+    #[display("{0}")]
     Csv(Box<crate::csv::CsvError>),
 }
 
@@ -98,86 +113,6 @@ impl SfError {
         self.has_error_code("INVALID_QUERY_LOCATOR")
     }
 }
-
-impl From<ProtocolError> for SfError {
-    fn from(e: ProtocolError) -> Self {
-        SfError::Protocol(Box::new(e))
-    }
-}
-
-impl From<JobFailure> for SfError {
-    fn from(e: JobFailure) -> Self {
-        SfError::Job(Box::new(e))
-    }
-}
-
-impl From<concord::Error> for SfError {
-    /// Keeps the error as is (a `Status` error keeps its unread response); use
-    /// [`SfError::from_concord`] to read the provider's error document instead.
-    fn from(e: concord::Error) -> Self {
-        SfError::Concord(e)
-    }
-}
-
-impl From<LinkError> for SfError {
-    fn from(e: LinkError) -> Self {
-        SfError::Link(e)
-    }
-}
-
-impl From<ReadError> for SfError {
-    fn from(e: ReadError) -> Self {
-        SfError::Read(Box::new(e))
-    }
-}
-
-impl From<IncompletePart> for SfError {
-    fn from(e: IncompletePart) -> Self {
-        SfError::Incomplete(Box::new(e))
-    }
-}
-
-impl From<crate::csv::CsvError> for SfError {
-    fn from(e: crate::csv::CsvError) -> Self {
-        SfError::Csv(Box::new(e))
-    }
-}
-
-impl fmt::Display for SfError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            SfError::Concord(e) => fmt::Display::fmt(e, f),
-            SfError::Api(e) => fmt::Display::fmt(e, f),
-            SfError::Protocol(e) => fmt::Display::fmt(e, f),
-            SfError::Link(e) => fmt::Display::fmt(e, f),
-            SfError::Open(e) => fmt::Display::fmt(e, f),
-            SfError::Read(e) => fmt::Display::fmt(e, f),
-            SfError::Incomplete(e) => fmt::Display::fmt(e, f),
-            SfError::Job(e) => fmt::Display::fmt(e, f),
-            SfError::Csv(e) => fmt::Display::fmt(e, f),
-        }
-    }
-}
-
-impl fmt::Debug for SfError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            SfError::Concord(e) => f.debug_tuple("Concord").field(e).finish(),
-            SfError::Api(e) => f.debug_tuple("Api").field(e).finish(),
-            SfError::Protocol(e) => f.debug_tuple("Protocol").field(e).finish(),
-            SfError::Link(e) => f.debug_tuple("Link").field(e).finish(),
-            SfError::Open(e) => f.debug_tuple("Open").field(e).finish(),
-            SfError::Read(e) => f.debug_tuple("Read").field(e).finish(),
-            SfError::Incomplete(e) => f.debug_tuple("Incomplete").field(e).finish(),
-            SfError::Job(e) => f.debug_tuple("Job").field(e).finish(),
-            SfError::Csv(e) => f.debug_tuple("Csv").field(e).finish(),
-        }
-    }
-}
-
-/// No `source()` chain: like `concord::Error`, the wrapped errors are reached through the enum
-/// and their own deliberate accessors.
-impl std::error::Error for SfError {}
 
 /// What a non-2xx response said.
 pub struct ApiFailure {

@@ -1,0 +1,5 @@
+error: variant `Local` needs `#[display("...")]` (or the enum needs `#[display(with = path)]`)
+ --> tests/ui_derive_error/missing_display.rs:5:5
+  |
+5 |     Local(u16),
+  |     ^^^^^

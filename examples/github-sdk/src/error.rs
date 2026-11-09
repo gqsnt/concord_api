@@ -28,6 +28,8 @@ pub enum EnvelopeProblem {
 }
 
 /// An error of this SDK.
+#[derive(concord::Error)]
+#[display(with = fmt_error)]
 #[non_exhaustive]
 pub enum GitHubError {
     /// A Concord error: build, transport, non-2xx status, refused head or undecodable body.
@@ -131,12 +133,6 @@ impl GitHubError {
     }
 }
 
-impl From<ContextError> for GitHubError {
-    fn from(error: ContextError) -> Self {
-        Self::Context(error)
-    }
-}
-
 /// A Concord error without captured metadata (for `prepare()?`).
 impl From<concord::Error> for GitHubError {
     fn from(error: concord::Error) -> Self {
@@ -144,34 +140,32 @@ impl From<concord::Error> for GitHubError {
     }
 }
 
-impl fmt::Display for GitHubError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::Api { error, .. } => fmt::Display::fmt(error, f),
-            Self::Link { error, .. } => write!(f, "GitHub page: {error}"),
-            Self::ForeignLink { .. } => {
-                f.write_str("GitHub page: next link is outside the API origin; not followed")
-            }
-            Self::LinkDidNotAdvance { .. } => {
-                f.write_str("GitHub page: next link is the URL just requested; not followed")
-            }
-            Self::MalformedStoredLink => {
-                f.write_str("GitHub continuation: not a stored link of this SDK")
-            }
-            Self::ContinuationMismatch { expected, found } => write!(
-                f,
-                "GitHub continuation of `{}` used for `{}`",
-                found.operation(),
-                expected.operation()
-            ),
-            Self::Envelope { problem, .. } => match problem {
-                EnvelopeProblem::TotalBelowPage { total_count, items } => write!(
-                    f,
-                    "GitHub page: total_count {total_count} is below the {items} items on the page"
-                ),
-            },
-            Self::Context(error) => fmt::Display::fmt(error, f),
+fn fmt_error(error: &GitHubError, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+    match error {
+        GitHubError::Api { error, .. } => fmt::Display::fmt(error, f),
+        GitHubError::Link { error, .. } => write!(f, "GitHub page: {error}"),
+        GitHubError::ForeignLink { .. } => {
+            f.write_str("GitHub page: next link is outside the API origin; not followed")
         }
+        GitHubError::LinkDidNotAdvance { .. } => {
+            f.write_str("GitHub page: next link is the URL just requested; not followed")
+        }
+        GitHubError::MalformedStoredLink => {
+            f.write_str("GitHub continuation: not a stored link of this SDK")
+        }
+        GitHubError::ContinuationMismatch { expected, found } => write!(
+            f,
+            "GitHub continuation of `{}` used for `{}`",
+            found.operation(),
+            expected.operation()
+        ),
+        GitHubError::Envelope { problem, .. } => match problem {
+            EnvelopeProblem::TotalBelowPage { total_count, items } => write!(
+                f,
+                "GitHub page: total_count {total_count} is below the {items} items on the page"
+            ),
+        },
+        GitHubError::Context(error) => fmt::Display::fmt(error, f),
     }
 }
 
@@ -210,6 +204,3 @@ impl fmt::Debug for GitHubError {
         }
     }
 }
-
-/// No `source()`: the Concord error has no chain by design, and the others are leaves.
-impl std::error::Error for GitHubError {}

@@ -276,17 +276,23 @@ pub struct ProtocolError {
 
 /// Every failure of a generated `send()` (and of the [`history`](crate::DiscordChannel::history)
 /// traversal).
-#[derive(Debug)]
+#[derive(Debug, concord::Error)]
+#[display(with = fmt_error)]
 pub enum Error {
     /// Refused locally before any I/O by the rate limiter.
+    #[from(skip)]
     Gated(Box<Gated>),
     /// HTTP 429 from Discord.
+    #[from(skip)]
     RateLimited(Box<RateLimited>),
     /// Another non-2xx response.
+    #[from(skip)]
     Api(Box<ApiError>),
     /// A write (`POST`) whose outcome is unknown; never resent.
+    #[from(skip)]
     AmbiguousWrite(Box<AmbiguousWrite>),
     /// A response broke a documented ordering or size rule.
+    #[from(skip)]
     Protocol(Box<ProtocolError>),
     /// Build, transport on a read, success media type, success body limit or decoding failure. Concord's error keeps the
     /// response head when one arrived (`error.head()`).
@@ -375,62 +381,58 @@ impl fmt::Display for Seconds {
     }
 }
 
-impl fmt::Display for Error {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::Gated(e) => {
-                let scope = match &e.scope {
-                    GateScope::Global => "the global rate limit",
-                    GateScope::Bucket { .. } => "a route rate limit",
-                };
-                write!(
-                    f,
-                    "{} refused before sending: {scope} opens in {}",
-                    e.route,
-                    Seconds(e.retry_after)
-                )
-            }
-            Self::RateLimited(e) => {
-                write!(
-                    f,
-                    "{} was rate limited (HTTP 429, {:?} scope",
-                    e.route, e.scope
-                )?;
-                match e.retry_after {
-                    Some(delay) => write!(f, ", retry after {})", Seconds(delay)),
-                    None => f.write_str(", no usable delay)"),
-                }
-            }
-            Self::Api(e) => {
-                write!(f, "{} failed with HTTP {}", e.route, e.status().as_u16())?;
-                match &e.document {
-                    Ok(document) => write!(f, " (Discord code {})", document.code.0),
-                    Err(error) if error.kind() == ErrorKind::Limit => {
-                        f.write_str(" (error document too large)")
-                    }
-                    Err(_) => f.write_str(" (no readable error document)"),
-                }
-            }
-            Self::AmbiguousWrite(e) => match e.accepted {
-                None => write!(
-                    f,
-                    "{} may or may not have been applied (no response); it was not resent",
-                    e.route
-                ),
-                Some(status) => write!(
-                    f,
-                    "{} was accepted (HTTP {}) but its response could not be read; it was not resent",
-                    e.route,
-                    status.as_u16()
-                ),
-            },
-            Self::Protocol(e) => write!(f, "{} broke a provider rule: {:?}", e.route, e.problem),
-            Self::Concord { error, resource } => match resource {
-                Some(resource) => write!(f, "{error} (on {resource})"),
-                None => error.fmt(f),
-            },
+fn fmt_error(error: &Error, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+    match error {
+        Error::Gated(e) => {
+            let scope = match &e.scope {
+                GateScope::Global => "the global rate limit",
+                GateScope::Bucket { .. } => "a route rate limit",
+            };
+            write!(
+                f,
+                "{} refused before sending: {scope} opens in {}",
+                e.route,
+                Seconds(e.retry_after)
+            )
         }
+        Error::RateLimited(e) => {
+            write!(
+                f,
+                "{} was rate limited (HTTP 429, {:?} scope",
+                e.route, e.scope
+            )?;
+            match e.retry_after {
+                Some(delay) => write!(f, ", retry after {})", Seconds(delay)),
+                None => f.write_str(", no usable delay)"),
+            }
+        }
+        Error::Api(e) => {
+            write!(f, "{} failed with HTTP {}", e.route, e.status().as_u16())?;
+            match &e.document {
+                Ok(document) => write!(f, " (Discord code {})", document.code.0),
+                Err(error) if error.kind() == ErrorKind::Limit => {
+                    f.write_str(" (error document too large)")
+                }
+                Err(_) => f.write_str(" (no readable error document)"),
+            }
+        }
+        Error::AmbiguousWrite(e) => match e.accepted {
+            None => write!(
+                f,
+                "{} may or may not have been applied (no response); it was not resent",
+                e.route
+            ),
+            Some(status) => write!(
+                f,
+                "{} was accepted (HTTP {}) but its response could not be read; it was not resent",
+                e.route,
+                status.as_u16()
+            ),
+        },
+        Error::Protocol(e) => write!(f, "{} broke a provider rule: {:?}", e.route, e.problem),
+        Error::Concord { error, resource } => match resource {
+            Some(resource) => write!(f, "{error} (on {resource})"),
+            None => fmt::Display::fmt(error, f),
+        },
     }
 }
-
-impl std::error::Error for Error {}

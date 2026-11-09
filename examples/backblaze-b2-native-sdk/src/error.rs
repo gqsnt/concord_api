@@ -445,7 +445,8 @@ impl fmt::Debug for ChecksumError {
 }
 
 /// An SDK failure.
-#[derive(Debug)]
+#[derive(Debug, concord::Error)]
+#[display(with = fmt_error)]
 #[non_exhaustive]
 pub enum Error {
     /// Refused locally; nothing was sent.
@@ -455,10 +456,13 @@ pub enum Error {
     /// operation and keeps the head when one arrived ([`concord::Error::head`]).
     Concord(concord::Error),
     /// A non-2xx answer.
+    #[from(skip)]
     Provider(Box<ProviderError>),
     /// A 2xx answer that broke a documented rule.
+    #[from(skip)]
     Contract(Box<ContractError>),
     /// A download that does not verify.
+    #[from(skip)]
     Checksum(Box<ChecksumError>),
     /// An upload policy's total deadline expired while an attempt was in flight; that attempt
     /// was abandoned and may have stored the file.
@@ -498,51 +502,35 @@ impl Error {
     }
 }
 
-impl From<concord::Error> for Error {
-    fn from(error: concord::Error) -> Self {
-        Self::Concord(error)
-    }
-}
-
-impl From<InputError> for Error {
-    fn from(error: InputError) -> Self {
-        Self::Input(error)
-    }
-}
-
-impl fmt::Display for Error {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::Input(e) => e.fmt(f),
-            Self::Concord(e) => e.fmt(f),
-            Self::Provider(e) => {
-                match e.meta().operation() {
-                    Some(op) => write!(f, "{op}: ")?,
-                    None => f.write_str("B2: ")?,
-                }
-                write!(f, "HTTP status {}", e.status().as_u16())?;
-                match &e.body {
-                    Body::Document(d) => write!(f, " ({})", d.code),
-                    Body::Inconsistent(_) => f.write_str(" (error document with another status)"),
-                    Body::Unreadable(_) => f.write_str(" (no B2 error document)"),
-                }
+fn fmt_error(error: &Error, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+    match error {
+        Error::Input(e) => fmt::Display::fmt(e, f),
+        Error::Concord(e) => fmt::Display::fmt(e, f),
+        Error::Provider(e) => {
+            match e.meta().operation() {
+                Some(op) => write!(f, "{op}: ")?,
+                None => f.write_str("B2: ")?,
             }
-            Self::Contract(e) => {
-                write!(f, "B2 response broke a documented rule: {:?}", e.violation)
+            write!(f, "HTTP status {}", e.status().as_u16())?;
+            match &e.body {
+                Body::Document(d) => write!(f, " ({})", d.code),
+                Body::Inconsistent(_) => f.write_str(" (error document with another status)"),
+                Body::Unreadable(_) => f.write_str(" (no B2 error document)"),
             }
-            Self::Checksum(e) => match &e.failure {
-                ChecksumFailure::Mismatch { .. } => {
-                    f.write_str("downloaded bytes do not match X-Bz-Content-Sha1")
-                }
-                ChecksumFailure::Missing => f.write_str("download has no single X-Bz-Content-Sha1"),
-                ChecksumFailure::Unavailable => {
-                    f.write_str("B2 has no SHA-1 for this file (X-Bz-Content-Sha1: none)")
-                }
-                ChecksumFailure::Malformed => f.write_str("X-Bz-Content-Sha1 is not a SHA-1"),
-            },
-            Self::Deadline => f.write_str("the upload deadline expired during an attempt"),
         }
+        Error::Contract(e) => {
+            write!(f, "B2 response broke a documented rule: {:?}", e.violation)
+        }
+        Error::Checksum(e) => match &e.failure {
+            ChecksumFailure::Mismatch { .. } => {
+                f.write_str("downloaded bytes do not match X-Bz-Content-Sha1")
+            }
+            ChecksumFailure::Missing => f.write_str("download has no single X-Bz-Content-Sha1"),
+            ChecksumFailure::Unavailable => {
+                f.write_str("B2 has no SHA-1 for this file (X-Bz-Content-Sha1: none)")
+            }
+            ChecksumFailure::Malformed => f.write_str("X-Bz-Content-Sha1 is not a SHA-1"),
+        },
+        Error::Deadline => f.write_str("the upload deadline expired during an attempt"),
     }
 }
-
-impl std::error::Error for Error {}
