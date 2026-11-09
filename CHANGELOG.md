@@ -7,8 +7,8 @@ Not released: the version is unchanged (4.2.0). Records: `v4/desirability/` (dec
 
 ### Added
 
-- **H06c broader `controls` adoption:** audited all 55 example SDKs; nine more adopt `controls`
-  (11 with the four H06 pilots). Credentials and their rate/ledger state are replaced together in Discord,
+- **H06c broader `controls` adoption:** audited all 55 example SDKs; seven more SDKs adopt
+  `controls` and two H06 pilots (Salesforce, Zendesk) extend theirs (11 adopters in all). Credentials and their rate/ledger state are replaced together in Discord,
   Sentry and Adyen; DigitalOcean, QuickBooks, Zendesk and USGS withhold destination changes;
   QuickBooks, Salesforce and Datadog withhold unchecked generated construction (Datadog also
   withholds independent key setters). Validated fixture/deployment constructors preserve local

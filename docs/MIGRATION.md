@@ -5,7 +5,7 @@ candidate), 4.1 to 4.2 (a maintenance release; summary in the [changelog](../CHA
 the two parts of 4.1.0 (the modular V4), then older ones:
 
 - [To H06 pilot SDK controls](#to-h06-pilot-sdk-controls) — callers of withheld controls in the
-  pilot SDKs (Shopify, Zendesk, Salesforce) and, with H06c, nine more SDKs use the replacement
+  pilot SDKs (Shopify, Zendesk, Salesforce) and, with H06c, seven more SDKs plus two pilot extensions use the replacement
   construction routes below.
 - [To the consolidated interface](#to-the-consolidated-interface) — additive: existing code
   compiles (one rare exception: a generated name, below); the new response, body, stream and
