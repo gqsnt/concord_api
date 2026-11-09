@@ -176,20 +176,13 @@ impl fmt::Debug for ResponseMeta {
 }
 
 /// A decoded value and the metadata of its response.
+#[derive(concord::Debug)]
 pub struct WithMeta<T> {
     /// The endpoint's typed output.
+    #[sensitive]
     pub value: T,
     /// The response metadata.
     pub meta: ResponseMeta,
-}
-
-impl<T> fmt::Debug for WithMeta<T> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("WithMeta")
-            .field("value", &format_args!("<withheld>"))
-            .field("meta", &self.meta)
-            .finish()
-    }
 }
 
 /// The result of a conditional request (`If-None-Match`).

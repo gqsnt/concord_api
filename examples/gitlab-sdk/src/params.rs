@@ -196,8 +196,8 @@ impl fmt::Debug for ProjectRef {
 
 /// A personal, project or group access token, sent as `PRIVATE-TOKEN` (GitLab's recommended
 /// header). The value is flagged sensitive; `Debug` never shows it.
-#[derive(Clone)]
-pub struct PrivateToken(HeaderValue);
+#[derive(Clone, concord::Debug)]
+pub struct PrivateToken(#[sensitive] HeaderValue);
 
 impl PrivateToken {
     /// A token as GitLab issued it.
@@ -221,12 +221,6 @@ impl PrivateToken {
     /// when rotating a token on an existing client.
     pub fn into_header_value(self) -> HeaderValue {
         self.0
-    }
-}
-
-impl fmt::Debug for PrivateToken {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str("PrivateToken(<redacted>)")
     }
 }
 

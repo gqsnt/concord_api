@@ -191,8 +191,8 @@ impl ApiVersion {
 /// A Stripe secret (`sk_...`) or restricted (`rk_...`) API key. It has no `Display`; `Debug` is
 /// redacted. It reaches the wire only inside the context's `Authorization` header value, which
 /// is flagged sensitive.
-#[derive(Clone, PartialEq, Eq)]
-pub struct SecretKey(String);
+#[derive(Clone, PartialEq, Eq, concord::Debug)]
+pub struct SecretKey(#[sensitive] String);
 
 impl SecretKey {
     /// Validates a key's shape (not its validity: only Stripe knows that).
@@ -222,17 +222,12 @@ impl SecretKey {
     }
 }
 
-impl fmt::Debug for SecretKey {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str("SecretKey(<redacted>)")
-    }
-}
-
 /// An application-supplied `Idempotency-Key`. The SDK never generates one: the application owns
 /// the key policy (which operation a key names, when a repeat is safe). `Debug` is redacted;
 /// `Display` is the key text, which the declaration places in a header marked sensitive.
-#[derive(Clone, PartialEq, Eq, Hash)]
-pub struct IdempotencyKey(String);
+#[derive(Clone, PartialEq, Eq, Hash, Serialize, concord::Debug, WireDisplay)]
+#[serde(transparent)]
+pub struct IdempotencyKey(#[sensitive] String);
 
 impl IdempotencyKey {
     /// Validates a key: 1–255 visible ASCII characters (Stripe documents keys up to 255
@@ -253,17 +248,5 @@ impl IdempotencyKey {
     /// The key text. Deliberately named.
     pub fn expose(&self) -> &str {
         &self.0
-    }
-}
-
-impl fmt::Display for IdempotencyKey {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(&self.0)
-    }
-}
-
-impl fmt::Debug for IdempotencyKey {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str("IdempotencyKey(<redacted>)")
     }
 }
