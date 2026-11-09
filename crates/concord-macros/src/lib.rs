@@ -44,10 +44,11 @@ pub fn api(input: TokenStream) -> TokenStream {
 /// placement encodes it), a number or boolean in decimal, a unit variant as its serde name
 /// (`rename`, `rename_all`), a newtype or `untagged` newtype variant as its content. Any other
 /// shape fails to format, and a request that places it fails to build, naming the placement.
-#[proc_macro_derive(WireDisplay)]
+/// Use `#[wire_display(crate = path)]` when the Concord dependency has another name.
+#[proc_macro_derive(WireDisplay, attributes(wire_display))]
 pub fn wire_display(input: TokenStream) -> TokenStream {
-    match syn::parse::<syn::DeriveInput>(input) {
-        Ok(input) => wire_display::derive(input).into(),
+    match syn::parse::<syn::DeriveInput>(input).and_then(wire_display::derive) {
+        Ok(output) => output.into(),
         Err(error) => error.to_compile_error().into(),
     }
 }

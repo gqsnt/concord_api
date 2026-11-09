@@ -59,5 +59,5 @@ pub use text::Text;
 #[cfg(any(feature = "json", feature = "form", feature = "csv", feature = "jsonl"))]
 pub mod __wire {
     pub use crate::wire_text::wire_text;
-    pub use serde::Serialize;
+    pub use serde::{Serialize, Serializer};
 }

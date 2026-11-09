@@ -254,6 +254,7 @@ pub use concord_core::{
 };
 
 /// Derives `Display` as the value's wire text, read from its serde spelling.
+/// With a renamed dependency, use `#[wire_display(crate = concord4)]`.
 ///
 /// ```
 /// # #[cfg(feature = "json")] {
@@ -286,7 +287,7 @@ macro_rules! api {
 #[doc(hidden)]
 pub mod __macro {
     #[cfg(any(feature = "json", feature = "form", feature = "csv", feature = "jsonl"))]
-    pub use concord_codecs::__wire::{Serialize, wire_text};
+    pub use concord_codecs::__wire::{Serialize, Serializer, wire_text};
     pub use concord_core;
     pub use concord_macros::api;
 }
