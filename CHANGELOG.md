@@ -3,7 +3,13 @@
 ## Unreleased — desirability loop (candidate)
 
 Not released: the version is unchanged (4.2.0). Records: `v4/desirability/` (decisions in
-`v4/desirability/DECISIONS.md`).
+`v4/desirability/DECISIONS.md`; retrospective in `v4/desirability/FINAL.md`).
+
+**Version.** No major bump: the accepted changes to the versioned `concord-*` crates are additive
+(the opt-in `controls { … }` statement, H06; the opt-in `operations` enum and `SendOperation`, H08),
+fixes (T3) and documentation (H04, H16s). The public API removals (H06, H06c) are in the example
+SDK crates, which are not published (version 0.0.0); their replacement routes are in
+[MIGRATION](docs/MIGRATION.md).
 
 ### Added
 
@@ -72,14 +78,14 @@ Not released: the version is unchanged (4.2.0). Records: `v4/desirability/` (dec
 
 ### Fixes
 
-- **QuickBooks connection replacement selects the matching environment.** After
+- **QuickBooks connection replacement selects the matching environment** (T4). After
   `connect(sandbox).set_connection(production)` (or the reverse), `send()` now selects the
   replacement connection's official HTTPS host before acquiring or applying its token, instead
   of sending the new realm and credentials to the old environment. Same-environment requests
   and loopback fixture origins keep their wire behavior. `prepare()` stays token-free and
   retains the generated base snapshot. No caller code change is required; see
   [migration notes](docs/MIGRATION.md#quickbooks-environment-replacement-t4).
-- **A dropped send stops polling its streamed body.** reqwest's HTTP/1 connection (hyper) polls a
+- **A dropped send stops polling its streamed body** (T3). reqwest's HTTP/1 connection (hyper) polls a
   request body from its own task and notices a dropped call only between write passes, so a
   `send()` dropped while the receiver kept up went on polling the upload source: thousands of
   records under CPU load, and 262,144 records (32 MiB) with a fast receiver before it stopped.
@@ -101,6 +107,13 @@ Not released: the version is unchanged (4.2.0). Records: `v4/desirability/` (dec
 
 ### Documentation
 
+- **Send-result statements corrected against source** (T5): 33 statements in 25 files (Adyen,
+  Anthropic, the core `SendWith` example, Intercom, Kubernetes, Mastodon, ntfy, NASA NeoWs, Notion,
+  REST Countries, Salesforce, GitHub, Stripe; error-owner wording in Elasticsearch, Spotify, Square)
+  now state what the generated `send()` and each SDK's policy actually return. No code change.
+- **The charter states the fixed core** (T1): `v4/PRODUCT.md` "What Concord is not" now names the
+  fixed core (the `api!` DSL, client → scope → endpoint, on reqwest) and treats the former
+  exclusions as current scope rather than permanent non-goals.
 - **Generated documentation states the actual contract first** (H04). The docs `api!` generates
   show, on every request type, the declared base, the declared path and the composed default
   request separately, and that `with_base_url` replaces the whole base including its path; the
@@ -110,6 +123,14 @@ Not released: the version is unchanged (4.2.0). Records: `v4/desirability/` (dec
   scope pages carry a short entry pointing to the request type instead of repeating its summary
   (client and scope pages are about half as long). Policy wording no longer assumes every policy
   signs. No public API, behaviour or version change: only emitted doc attributes changed.
+
+### Maintenance
+
+- **Intermittent test failures repaired** (T2, T3): the test server keeps accepting after a failed
+  accept (bounded backoff) and counts chunk terminators exactly; tests that assert a refused
+  connection hold a bound, never-listening socket instead of binding and dropping (64 sites); timeout
+  and stalled-body tests run on tokio's paused clock (shared helpers in
+  `examples/testserver/src/paused.rs`). Test-only; no library change.
 
 ## Unreleased — interface consolidation (candidate)
 
