@@ -204,7 +204,8 @@ impl<T, D> Received<T, D> {
 
     /// Applies the operation's declared response handling, exactly as
     /// [`Prepared::send`](crate::Prepared::send) does after executing: a non-2xx status is
-    /// [`ErrorKind::Status`](crate::ErrorKind::Status) (response kept unread), then the format
+    /// [`ErrorKind::Status`](crate::ErrorKind::Status) (response kept unread, or read into
+    /// [`Error::provider`] with a declared error document), then the format
     /// checks the head ([`Metadata`](crate::ErrorKind::Metadata), unread) and the body is
     /// decoded (a finite `-> T`), drained (no `->`) or opened for incremental reading
     /// (`-> stream T`; nothing is read).

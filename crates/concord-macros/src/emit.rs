@@ -1276,7 +1276,11 @@ fn summary_parts(model: &Model, endpoint: usize, method: &Ident) -> Option<Summa
     let (result, result_short) = match policy {
         // The generated `send()` returns `Result<T, concord::Error>` for the prepared output `T`.
         None => {
-            let result = format!(" `send()` returns `Result<{prepared}, concord::Error>`.");
+            let error = error_doc_for_docs(model, endpoint).map_or_else(
+                || "concord::Error".to_owned(),
+                |d| format!("concord::Error<{d}>"),
+            );
+            let result = format!(" `send()` returns `Result<{prepared}, {error}>`.");
             (result.clone(), result)
         }
         Some(policy) => {
@@ -1296,7 +1300,8 @@ fn summary_parts(model: &Model, endpoint: usize, method: &Ident) -> Option<Summa
                 // No result template: the signature shows only the projection. Name it with this
                 // endpoint's output and say where its concrete type is written.
                 None => {
-                    let (policy_trait, trait_name) = policy_trait_for_docs(model, &prepared);
+                    let (policy_trait, trait_name) =
+                        policy_trait_for_docs(model, endpoint, &prepared);
                     let projection = format!(
                         "<{} as {policy_trait}>::Output",
                         type_text(&policy_ty_for_docs(model, policy))
@@ -2031,13 +2036,25 @@ fn emit_owner(
                 },
                 None => quote!(self.prepare()?.send().await),
             };
-            // With `error D in F;` the non-2xx body is read, not kept unread.
-            let error_docs = match error_doc {
-                Some(_) => quote! {
-                    #[doc = ""]
-                    #[doc = " This endpoint declares an error document (`error D in F;`): a non-2xx body is read once, bounded, into `concord::Error::provider` instead of being kept unread."]
+            // What a non-2xx becomes: kept unread, or read into the declared error document.
+            let status_docs = match (
+                error_doc,
+                incoming || output.as_ref().is_some_and(|o| o.stream),
+            ) {
+                (None, true) => quote! {
+                    /// `ErrorKind::Status` holding the unread response (`concord::Error::into_response`);
                 },
-                None => TokenStream::new(),
+                (Some(_), true) => quote! {
+                    /// `ErrorKind::Status` with the declared error document read, bounded (`concord::Error::provider`);
+                },
+                (None, false) => quote! {
+                    /// decodes a 2xx response. A non-2xx status is `ErrorKind::Status` holding the
+                    /// unread response (`concord::Error::into_response`); Concord never retries.
+                },
+                (Some(_), false) => quote! {
+                    /// decodes a 2xx response. A non-2xx status is `ErrorKind::Status` with the declared
+                    /// error document read, bounded (`concord::Error::provider`); Concord never retries.
+                },
             };
             let send_docs = if incoming || output.as_ref().is_some_and(|o| o.stream) {
                 quote! {
@@ -2045,7 +2062,7 @@ fn emit_owner(
                     /// for a 2xx response, returns the body **unread** for incremental reading
                     /// (the stream format's reader, or the `Incoming` body for a reader you
                     /// choose): nothing is drained or collected. A non-2xx status is
-                    /// `ErrorKind::Status` holding the unread response (`concord::Error::into_response`);
+                    #status_docs
                     /// Concord never retries. Dropping the result closes the response.
                     ///
                     /// # Errors
@@ -2057,8 +2074,7 @@ fn emit_owner(
             } else {
                 quote! {
                     /// Sends the request once (`prepare` then one `reqwest::Client::execute`) and
-                    /// decodes a 2xx response. A non-2xx status is `ErrorKind::Status` holding the
-                    /// unread response (`concord::Error::into_response`); Concord never retries.
+                    #status_docs
                     ///
                     /// # Errors
                     ///
@@ -2079,7 +2095,6 @@ fn emit_owner(
             let send_fn = match policy {
                 None => quote! {
                     #send_docs
-                    #error_docs
                     #[inline] pub async fn send(self) -> ::core::result::Result<#out, #error_ty> {
                         #send_body
                     }
@@ -2126,7 +2141,7 @@ fn emit_owner(
                         None => {
                             let prepared =
                                 type_text(&prepared_output_for_docs(output.as_ref(), incoming));
-                            let (policy_trait, _) = policy_trait_for_docs(model, &prepared);
+                            let (policy_trait, _) = policy_trait_for_docs(model, index, &prepared);
                             format!(
                                 " Returns `<{} as {policy_trait}>::Output` using the client's send policy {shown}: the `Output` type of the `{policy_trait}` implementation of {policy_name}, listed among the trait implementations of {policy_name}. {adds}",
                                 type_text(&policy_ty_for_docs(model, policy))
@@ -2467,14 +2482,21 @@ fn policy_ty_for_docs(model: &Model, policy: &syn::Type) -> syn::Type {
 /// The trait the client's policy implements, with this endpoint's prepared output, for prose:
 /// `SendOperation<Out, Name>` under `operations Name;`, `SendWith<Out>` otherwise; and the trait's
 /// bare name.
-fn policy_trait_for_docs(model: &Model, prepared: &str) -> (String, &'static str) {
+fn policy_trait_for_docs(model: &Model, endpoint: usize, prepared: &str) -> (String, &'static str) {
+    // `error D in F;` (nearest owner): the trait's last argument.
+    let error = error_doc_for_docs(model, endpoint).map_or_else(String::new, |d| format!(", {d}"));
     match model.operations() {
         Some(ops) => (
-            format!("SendOperation<{prepared}, {}>", plain(&ops.name)),
+            format!("SendOperation<{prepared}, {}{error}>", plain(&ops.name)),
             "SendOperation",
         ),
-        None => (format!("SendWith<{prepared}>"), "SendWith"),
+        None => (format!("SendWith<{prepared}{error}>"), "SendWith"),
     }
+}
+
+/// The error document of an endpoint (`error D in F;` on it or its nearest owner), as code text.
+fn error_doc_for_docs(model: &Model, endpoint: usize) -> Option<String> {
+    model.nearest_error(endpoint).map(|e| type_text(&e.ty))
 }
 
 /// Visibility of a user-supplied policy is unknown; use code text, including for plain paths.

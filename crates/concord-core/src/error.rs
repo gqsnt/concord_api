@@ -230,7 +230,8 @@ impl<D> Error<D> {
         }
     }
 
-    /// The unread response of an [`ErrorKind::Status`] error (a non-2xx) or an
+    /// The unread response of an [`ErrorKind::Status`] error (a non-2xx without a declared error
+    /// document; with one, the head is in [`provider`](Self::provider)) or an
     /// [`ErrorKind::Metadata`] error (a response whose head the format refused), borrowed: its status
     /// and headers (`Retry-After`, a request id, the `Content-Type` the format refused) can be read
     /// while the error is kept, for example by a predicate written as `Fn(&Error) -> bool`. To
@@ -258,7 +259,8 @@ impl<D> Error<D> {
 
     /// The head of the response this error concerns — status, version and header fields,
     /// borrowed — whenever a response arrived: a [`Status`](ErrorKind::Status) or
-    /// [`Metadata`](ErrorKind::Metadata) error (the response is kept unread), and a
+    /// [`Metadata`](ErrorKind::Metadata) error (the response kept unread, or a declared error
+    /// document's [`provider`](Self::provider) failure), and a
     /// [`Decode`](ErrorKind::Decode), [`Limit`](ErrorKind::Limit) or
     /// [`Transport`](ErrorKind::Transport) error raised while that response's body was read
     /// (Concord moved the head out of the native response before reading the body: no header is
@@ -299,10 +301,11 @@ impl<D> Error<D> {
     }
 
     /// The unread response of an [`ErrorKind::Status`] or [`ErrorKind::Metadata`] error; any other
-    /// error is returned unchanged as `Err`. Concord never reads or prints the body: read it
+    /// error is returned unchanged as `Err`, a declared error document's failure too (its body
+    /// was read: [`into_provider`](Self::into_provider)). Concord never prints the body: read it
     /// yourself (unbounded, with reqwest), or to read a provider's error document **bounded and
-    /// with the format's head checks**, receive the response instead of sending it
-    /// (`prepare()?.receive().await?`) and use
+    /// with the format's head checks**, declare it (`error D in F;`), or receive the response
+    /// instead of sending it (`prepare()?.receive().await?`) and use
     /// [`Received::document`](crate::Received::document).
     ///
     /// ```no_run

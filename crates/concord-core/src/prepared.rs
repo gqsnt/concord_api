@@ -95,7 +95,8 @@ impl<T, D> Prepared<T, D> {
     ///
     /// [`ErrorKind::Transport`](crate::ErrorKind::Transport) if reqwest fails to send the request
     /// or read the response, [`Status`](crate::ErrorKind::Status) for a non-2xx response (kept
-    /// unread), [`Metadata`](crate::ErrorKind::Metadata) if the format refuses the 2xx response's
+    /// unread; with a declared error document, read into [`Error::provider`]),
+    /// [`Metadata`](crate::ErrorKind::Metadata) if the format refuses the 2xx response's
     /// head (kept unread), [`Decode`](crate::ErrorKind::Decode) if the body does not decode.
     pub async fn send(self) -> Result<T, Error<D>> {
         match self.receive().await {
@@ -241,8 +242,8 @@ pub trait Endpoint<T, D = ()>: Sized {
 /// is unchanged either way, for callers that need the native (unsigned) request.
 #[diagnostic::on_unimplemented(
     message = "the send policy `{Self}` does not send a `{T}` output",
-    label = "named by the client's `send` statement; it needs `{Self}: SendWith<{T}>`",
-    note = "a send policy implements `concord::SendWith<T>` for every output `T` its endpoints declare (usually generically: `impl<T: Send> SendWith<T> for Policy`)"
+    label = "named by the client's `send` statement; it needs `{Self}: SendWith<{T}, {D}>`",
+    note = "a send policy implements `concord::SendWith<T, D>` for every output `T` its endpoints declare, `D` being their error document (`error D in F;`, `()` without one): usually generically, `impl<T: Send> SendWith<T> for Policy` or `impl<T: Send> SendWith<T, D> for Policy`"
 )]
 pub trait SendWith<T, D = ()> {
     /// What `send()` returns.
@@ -290,7 +291,7 @@ pub trait SendWith<T, D = ()> {
 /// `operations` keeps [`SendWith`].
 #[diagnostic::on_unimplemented(
     message = "the send policy `{Self}` does not send a `{T}` output identified by `{O}`",
-    label = "the client declares `operations` and `send`: it needs `{Self}: SendOperation<{T}, {O}>`",
+    label = "the client declares `operations` and `send`: it needs `{Self}: SendOperation<{T}, {O}, {D}>`",
     note = "a client with `operations Name;` passes each endpoint's `Name` variant to its policy: implement `concord::SendOperation<T, Name>` (usually generically over `T`) instead of `SendWith<T>`, and classify the operation with a `match` without a wildcard arm"
 )]
 pub trait SendOperation<T, O, D = ()> {
@@ -687,7 +688,8 @@ impl<T, D> Decoder<T, D> {
     }
 
     /// Handles `response` as the endpoint would have: a non-2xx status is
-    /// [`ErrorKind::Status`](crate::ErrorKind::Status) and keeps the response unread; the format
+    /// [`ErrorKind::Status`](crate::ErrorKind::Status) and keeps the response unread (with a
+    /// declared error document, its body is read into [`Error::provider`]); the format
     /// then checks the head and, if it accepts it, the body is read and decoded.
     ///
     /// # Errors
