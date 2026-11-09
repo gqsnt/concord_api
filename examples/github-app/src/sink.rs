@@ -14,7 +14,6 @@
 //! Both honour a [`CancelFlag`]: once it is raised, the next chunk is refused with
 //! [`SinkError::Cancelled`], which stops the transfer (the SDK drops the response).
 
-use std::fmt;
 use std::fs::{self, File};
 use std::io::Write;
 use std::path::{Path, PathBuf};
@@ -60,6 +59,8 @@ impl CancelFlag {
 /// Why a sink refused a chunk or could not commit.
 #[derive(Debug)]
 #[non_exhaustive]
+#[derive(concord::derive::Error)]
+#[display(with = display_sink_error)]
 pub enum SinkError {
     /// The chunk would exceed the sink's limit.
     Full {
@@ -69,20 +70,17 @@ pub enum SinkError {
     /// The [`CancelFlag`] was raised.
     Cancelled,
     /// A file operation failed.
+    #[from(skip)]
     Io(std::io::Error),
 }
 
-impl fmt::Display for SinkError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::Full { limit } => write!(f, "sink full: limit {limit} bytes"),
-            Self::Cancelled => f.write_str("sink cancelled"),
-            Self::Io(error) => write!(f, "sink I/O failed: {}", error.kind()),
-        }
+fn display_sink_error(value: &SinkError, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    match value {
+        SinkError::Full { limit } => write!(f, "sink full: limit {limit} bytes"),
+        SinkError::Cancelled => f.write_str("sink cancelled"),
+        SinkError::Io(error) => write!(f, "sink I/O failed: {}", error.kind()),
     }
 }
-
-impl std::error::Error for SinkError {}
 
 /// An in-memory sink that refuses to grow past `limit` bytes.
 #[derive(Debug)]

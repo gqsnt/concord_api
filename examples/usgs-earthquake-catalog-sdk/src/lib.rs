@@ -31,6 +31,7 @@ concord::api! {
     /// Public earthquake catalog client. Always use a local base for this fixture-only capsule.
     pub client Usgs(origin: FixtureOrigin) {
         base origin;
+        error String in concord::Text;
         path "fdsnws/event/1";
         query { "nodata" = "404"; }
         response Json;

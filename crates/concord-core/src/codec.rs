@@ -225,6 +225,16 @@ pub trait Decode<T> {
     /// and `'static` (it cannot borrow the response).
     type Context: Send + 'static;
 
+    /// Erased response handling used by generated error-document declarations.
+    #[doc(hidden)]
+    fn __concord_error_head(
+        head: &ResponseHead<'_>,
+    ) -> Result<crate::prepared::BodyStep<T>, CodecError> {
+        Self::check_content_type(head)?;
+        let context = Self::context(head)?;
+        Ok(Box::new(move |body| Self::decode_body(context, body)))
+    }
+
     /// A request `Accept` value this format suggests, sent only as a fallback: for an endpoint
     /// with a typed output whose header chain leaves no `accept` value and does not end by
     /// removing one. An authored `Accept` (literal or native, present or empty) always wins.

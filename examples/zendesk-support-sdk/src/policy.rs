@@ -69,7 +69,10 @@ impl SendPolicy {
         self
     }
 
-    async fn read<T: Send + 'static>(&self, prepared: Prepared<T>) -> Result<T, Error> {
+    async fn read<T: Send + 'static>(
+        &self,
+        prepared: Prepared<T, crate::Problem>,
+    ) -> Result<T, Error> {
         let mut bounds = concord_retry::Policy::new(self.read_attempts);
         bounds.timeout = self.read_deadline;
         let max = self.max_retry_after;
@@ -88,7 +91,9 @@ impl SendPolicy {
         match run.outcome {
             None => Err(Error::DeadlineExceeded),
             Some(Err(e)) => Err(Error::Concord(e)),
-            Some(Ok(received)) if received.status().is_success() => Ok(received.decode().await?),
+            Some(Ok(received)) if received.status().is_success() => {
+                Ok(received.into_success()?.decode().await?)
+            }
             Some(Ok(received)) => Err(Error::Http(Box::new(
                 HttpError::read(received, run.report.attempts).await,
             ))),
@@ -97,7 +102,7 @@ impl SendPolicy {
 
     async fn write<T: Send + 'static>(
         &self,
-        prepared: Prepared<T>,
+        prepared: Prepared<T, crate::Problem>,
         operation: &'static str,
         collision_on_conflict: bool,
     ) -> Result<T, Error> {
@@ -126,6 +131,7 @@ impl SendPolicy {
                 Err(Error::Http(Box::new(HttpError::read(received, 1).await)))
             }
             Ok(received) => received
+                .into_success()?
                 .decode()
                 .await
                 .map_err(|e| uncertain(UncertainCause::UnreadableSuccess(e))),
@@ -135,7 +141,10 @@ impl SendPolicy {
 
 /// A read is repeated only for a `429`, or a `503` with `Retry-After`, whose delay is parsed and
 /// within `max`.
-fn classify_read<T>(outcome: &Result<Received<T>, concord::Error>, max: Duration) -> Decision {
+fn classify_read<T>(
+    outcome: &Result<Received<T, crate::Problem>, concord::Error>,
+    max: Duration,
+) -> Decision {
     let Ok(received) = outcome else {
         return Decision::Done; // no blanket retry of transport failures
     };
@@ -180,10 +189,10 @@ impl Class {
     }
 }
 
-impl<T: Send + 'static> SendWith<T> for SendPolicy {
+impl<T: Send + 'static> SendWith<T, crate::Problem> for SendPolicy {
     type Output = Result<T, Error>;
 
-    async fn send<E: Endpoint<T> + Send>(&self, endpoint: E) -> Self::Output {
+    async fn send<E: Endpoint<T, crate::Problem> + Send>(&self, endpoint: E) -> Self::Output {
         let operation =
             ZendeskOperation::from_operation(E::operation()).ok_or(Error::InvalidInput {
                 what: "operation is not declared by this SDK",

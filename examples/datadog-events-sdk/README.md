@@ -1,5 +1,9 @@
 # concord-sdk-datadog-events
 
+The declaration owns the provider error document: `error crate::ErrorDocument in concord::Json;`. Native prepared/decoded
+paths carry that document as `D` in `Prepared<T, D>` and `concord::Error<D>`; SDK status routing
+and validation remain in the policy. Concord withholds document contents in formatting.
+
 A bounded SDK for Datadog Events reads (v2) and posting (v1), built on
 [Concord](../../README.md): list the events of a time range and inspect one, and search events
 with a filter following the documented cursor pagination, on any Datadog site. Post a validated

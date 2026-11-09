@@ -8,6 +8,20 @@ in generated documentation, and by retiring the experimental scalar-display deri
 example SDK crates are not published (`publish = false`). What the loop tried and decided: [`v4/desirability/SUMMARY.md`](v4/desirability/SUMMARY.md); its records
 are on the [archive branch](https://github.com/gqsnt/concord_api/tree/archive/desirability-loop-1/v4/desirability).
 
+### Provider error facts (P4.4)
+
+- Added `error D in F;`, inherited at the nearest owner, and bounded `Failure<D>`/`Document<D>`
+  on non-2xx status errors. `Error`, `Prepared`, `Received`, `Decoder`, dispatch and continuations
+  carry a defaulted document parameter. Provider documents never enter Concord's formatting.
+- SDK error enums use `concord::derive::Error` for Display, sources and tuple conversions;
+  `#[from(concord::Error<D>)]` generates the provider split. Formatter hooks retain authored
+  resolution, referenced raw fields format safely, and ambient constants cannot capture bindings.
+- Migrated applicable SDKs and examples to declare their document/format pair. Status routing,
+  retry-after interpretation, in-2xx refusals and page validation remain SDK behavior.
+- Added `Failure::into_document`, `Received::error_document`/`into_success` and public `Error::widen` for native
+  adapters; retry and incremental-reader adapters preserve declared document types. Execution
+  rustdoc names the resolved `Error<D>` without increasing endpoint prose.
+
 ### Construction facts (P4.3)
 
 - Required client and scope values are fixed unless declared `mut`; optional/initialized values

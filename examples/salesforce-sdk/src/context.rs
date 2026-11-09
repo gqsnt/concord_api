@@ -47,24 +47,26 @@ pub struct OrgContext {
 /// Why a context could not be created.
 #[derive(Debug)]
 #[non_exhaustive]
+#[derive(concord::derive::Error)]
+#[display(with = display_context_error)]
 pub enum ContextError {
     /// The version is older than [`ApiVersion::MINIMUM`].
+    #[from(skip)]
     UnsupportedVersion(ApiVersion),
 }
 
-impl fmt::Display for ContextError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            ContextError::UnsupportedVersion(v) => write!(
-                f,
-                "API version {v} is older than {} (the oldest version with every operation of this SDK)",
-                ApiVersion::MINIMUM
-            ),
-        }
+fn display_context_error(
+    value: &ContextError,
+    f: &mut std::fmt::Formatter<'_>,
+) -> std::fmt::Result {
+    match value {
+        ContextError::UnsupportedVersion(v) => write!(
+            f,
+            "API version {v} is older than {} (the oldest version with every operation of this SDK)",
+            ApiVersion::MINIMUM
+        ),
     }
 }
-
-impl std::error::Error for ContextError {}
 
 impl OrgContext {
     /// A context for the org at `instance`, at `version`, authenticated with `token`. Sends

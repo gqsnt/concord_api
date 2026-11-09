@@ -3,7 +3,7 @@
 #![allow(missing_docs)]
 
 use concord::{
-    Binary, Endpoint, IgnoreContentType, Json, Received, SendWith,
+    Binary, Endpoint, Json, Received, SendWith,
     multipart::{Multipart, MultipartBody},
     reqwest::{
         self,
@@ -15,7 +15,6 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::{
     collections::{BTreeMap, HashSet},
-    fmt,
     time::Duration,
 };
 
@@ -29,6 +28,7 @@ concord::api! {
     /// for typed JSON outputs. GET operations have no body and add no `content-type`.
     pub client OpenAiApi(#[sensitive] header(AUTHORIZATION) authorization: HeaderValue) {
         base "https://api.openai.com";
+        error crate::ErrorEnvelope in concord::IgnoreContentType<concord::Json>;
         path "v1";
         send SendPolicy -> Result<Response<_>, Error>;
         request Json;
@@ -253,11 +253,13 @@ pub struct ProviderError {
     pub code: Option<Value>,
 }
 #[derive(Debug, Deserialize)]
-struct ErrorEnvelope {
+pub struct ErrorEnvelope {
     error: ProviderError,
 }
-#[derive(Debug)]
+#[derive(Debug, concord::derive::Error)]
+#[display(with = display_error)]
 pub enum Error {
+    #[from(skip)]
     Concord(concord::Error),
     Provider {
         meta: Box<ResponseMeta>,
@@ -267,22 +269,25 @@ pub enum Error {
         meta: Box<ResponseMeta>,
         error: concord::Error,
     },
+    #[from(skip)]
     Json(serde_json::Error),
+    #[from(skip)]
     Invalid(&'static str),
+    #[from(skip)]
     Stream(String),
+    #[from(skip)]
     StreamFailed(Box<ResponseObject>),
     StreamEventError {
         message: String,
         code: Option<Value>,
     },
+    #[from(skip)]
     PollLimit(Box<Batch>),
 }
-impl fmt::Display for Error {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{self:?}")
-    }
+fn display_error(value: &Error, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    write!(f, "{value:?}")
 }
-impl std::error::Error for Error {}
+
 impl From<concord::Error> for Error {
     fn from(error: concord::Error) -> Self {
         match error.head_meta() {
@@ -294,11 +299,11 @@ impl From<concord::Error> for Error {
         }
     }
 }
-async fn checked<T>(r: Received<T>) -> Result<Received<T>, Error> {
+async fn checked<T>(
+    r: Received<T, crate::ErrorEnvelope>,
+) -> Result<Received<T, crate::ErrorEnvelope>, Error> {
     if !r.status().is_success() {
-        let (meta, document) = r
-            .document::<IgnoreContentType<Json>, ErrorEnvelope>(65536)
-            .await;
+        let (meta, document) = r.failure(65536).await.into_document();
         let error = document.ok().map(|e| Box::new(e.error));
         return Err(Error::Provider {
             meta: Box::new(meta),
@@ -312,12 +317,12 @@ async fn checked<T>(r: Received<T>) -> Result<Received<T>, Error> {
 #[derive(Default)]
 pub struct SendPolicy;
 
-impl<T: Send> SendWith<T> for SendPolicy {
+impl<T: Send> SendWith<T, crate::ErrorEnvelope> for SendPolicy {
     type Output = Result<Response<T>, Error>;
 
-    async fn send<E: Endpoint<T> + Send>(&self, endpoint: E) -> Self::Output {
+    async fn send<E: Endpoint<T, crate::ErrorEnvelope> + Send>(&self, endpoint: E) -> Self::Output {
         let r = checked(endpoint.prepare()?.receive().await?).await?;
-        let (value, meta) = r.decode_with_meta().await?;
+        let (value, meta) = r.into_success()?.decode_with_meta().await?;
         Ok(Response { value, meta })
     }
 }
@@ -405,7 +410,7 @@ impl OpenAi {
             return Err(Error::Invalid("empty file ID"));
         }
         let r = checked(self.api.content(id).prepare()?.receive().await?).await?;
-        let (value, meta) = r.decode_limited_with_meta(limit).await?;
+        let (value, meta) = r.into_success()?.decode_limited_with_meta(limit).await?;
         Ok(Response { value, meta })
     }
     pub async fn create_batch(&self, request: BatchRequest) -> Result<Response<Batch>, Error> {

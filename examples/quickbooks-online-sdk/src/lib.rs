@@ -70,6 +70,7 @@ concord::api! {
         mut connection: Connection,
     ) {
         base connection;
+        error crate::FaultResponse in concord::Json;
         path "v3/company/{connection}";
         query { "minorversion" = "75"; }
         request Json;
@@ -143,6 +144,7 @@ concord::api! {
         #[sensitive] header(concord::reqwest::header::AUTHORIZATION) client_credentials: concord::reqwest::header::HeaderValue,
     ) {
         base origin;
+        error crate::auth::OAuthError in concord::Json;
         path "oauth2/v1/tokens";
         request concord::Form;
         response Json;
@@ -225,6 +227,9 @@ pub struct ReadmeExamples;
 /// ```
 #[cfg(doctest)]
 pub struct ConstructionExamples;
+
+/// The provider error document used by declared request handling.
+pub use error::FaultResponse;
 
 #[cfg(test)]
 mod tests {

@@ -23,6 +23,7 @@ mod wire {
     concord::api! {
         pub client ForecastApi {
             base "https://api.open-meteo.com";
+        error crate::Problem in concord::Json;
 
             GET forecast(
                 query latitude: f64,
@@ -96,9 +97,13 @@ impl OpenMeteo {
         if let Some(days) = query.forecast_days {
             operation = operation.set_forecast_days(days);
         }
-        let received = operation.prepare()?.receive().await?;
+        let received = operation
+            .prepare()?
+            .error_body_limit(crate::ERROR_BODY_LIMIT)
+            .receive()
+            .await?;
         if !received.status().is_success() {
-            let (meta, document) = received.document::<Json, Problem>(ERROR_BODY_LIMIT).await;
+            let (meta, document) = received.error_document(ERROR_BODY_LIMIT).await;
             let document = document.map_err(ErrorBodyError::from);
             return Err(Error::Provider(Box::new(ProviderError { meta, document })));
         }

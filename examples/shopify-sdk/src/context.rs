@@ -207,9 +207,11 @@ impl fmt::Debug for ShopContext {
 ///
 /// `Display`/`Debug` follow Concord's policy (endpoint, stage, status code; never the token, a
 /// variable or the body).
-#[derive(concord::Debug)]
+#[derive(concord::Debug, concord::derive::Error)]
+#[display(with = display_request_error)]
 pub enum RequestError {
     /// Concord's error: build, transport, status (unread response kept), metadata or decode.
+    #[from(skip)]
     Concord(concord::Error),
     /// A 2xx answer served under another version than the one requested (`served: None`: an
     /// unparseable header). The body was not read.
@@ -233,26 +235,27 @@ impl RequestError {
     }
 }
 
-impl fmt::Display for RequestError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::Concord(e) => fmt::Display::fmt(e, f),
-            Self::VersionMismatch {
-                requested,
-                served: Some(served),
-            } => write!(f, "requested API version {requested}, served {served}"),
-            Self::VersionMismatch {
-                requested,
-                served: None,
-            } => {
-                write!(
-                    f,
-                    "requested API version {requested}, served an unparseable version"
-                )
-            }
-            Self::VersionUnconfirmed => f.write_str("the response does not state its API version"),
+fn display_request_error(
+    value: &RequestError,
+    f: &mut std::fmt::Formatter<'_>,
+) -> std::fmt::Result {
+    match value {
+        RequestError::Concord(e) => fmt::Display::fmt(e, f),
+        RequestError::VersionMismatch {
+            requested,
+            served: Some(served),
+        } => write!(f, "requested API version {requested}, served {served}"),
+        RequestError::VersionMismatch {
+            requested,
+            served: None,
+        } => {
+            write!(
+                f,
+                "requested API version {requested}, served an unparseable version"
+            )
+        }
+        RequestError::VersionUnconfirmed => {
+            f.write_str("the response does not state its API version")
         }
     }
 }
-
-impl std::error::Error for RequestError {}

@@ -1,5 +1,9 @@
 # concord-sdk-fred
 
+The declaration owns the provider error document: `error crate::Problem in crate::codecs::ProblemDocument;`. Native prepared/decoded
+paths carry that document as `D` in `Prepared<T, D>` and `concord::Error<D>`; SDK status routing
+and validation remain in the policy. Concord withholds document contents in formatting.
+
 A bounded FRED v1 slice, maintained against frozen Concord baseline `e1995ff7`.
 **Live provider calls: NOT_RUN.** Every test uses `concord-example-testserver` on loopback.
 This is documentation/example-assisted work; the complete reading record is in

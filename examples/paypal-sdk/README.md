@@ -1,5 +1,9 @@
 # concord-sdk-paypal
 
+The declaration owns the provider error document: `error crate::ApiError in concord::Json;`, `error crate::auth::IdentityError in concord::Json;`. Native prepared/decoded
+paths carry that document as `D` in `Prepared<T, D>` and `concord::Error<D>`; SDK status routing
+and validation remain in the policy. Concord withholds document contents in formatting.
+
 A bounded PayPal REST client for the **sandbox**, built on [Concord](../../README.md): an access
 token from client credentials, then the connected payment workflows below.
 

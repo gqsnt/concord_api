@@ -38,11 +38,12 @@ async fn a_rejected_token_reaches_the_caller_as_a_status_error() {
         .await
         .unwrap_err();
     let error = error
-        .downcast_ref::<concord::Error>()
+        .downcast_ref::<concord::Error<concord_example_quickstart::Problem>>()
         .expect("the first call's Concord error");
     assert_eq!(error.kind(), concord::ErrorKind::Status);
     assert_eq!(error.status().map(|s| s.as_u16()), Some(401));
     assert_eq!(error.endpoint(), Some("Tasks.project.create"));
+    assert!(error.provider().is_some());
     // Concord's own rendering never contains the token.
     assert_eq!(
         error.to_string(),
@@ -67,6 +68,8 @@ fn the_documented_signatures() {
     let _: fn(TasksProjectTasks, bool) -> TasksProjectTasks = TasksProjectTasks::set_done;
     let _: fn(TasksProjectTasks, Option<bool>) -> TasksProjectTasks = TasksProjectTasks::maybe_done;
     let _: fn(TasksProjectTasks, u32) -> TasksProjectTasks = TasksProjectTasks::set_limit;
-    let _: fn(TasksProjectTasks) -> Result<Prepared<Vec<Task>>, Error> = TasksProjectTasks::prepare;
-    let _: fn(TasksProjectCreate) -> Result<Prepared<Task>, Error> = TasksProjectCreate::prepare;
+    type PreparedTasks = Result<Prepared<Vec<Task>, Problem>, Error>;
+    let _: fn(TasksProjectTasks) -> PreparedTasks = TasksProjectTasks::prepare;
+    let _: fn(TasksProjectCreate) -> Result<Prepared<Task, Problem>, Error> =
+        TasksProjectCreate::prepare;
 }

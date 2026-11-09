@@ -1,7 +1,5 @@
 //! U14: decoding an API's error document from a non-2xx response.
 
-use std::fmt;
-
 use concord::{CodecError, Decode, Json, reqwest};
 use serde::Deserialize;
 
@@ -22,7 +20,8 @@ pub struct Problem {
 
 /// Why [`rename_item`] failed. Nothing is dropped: the status always accompanies the problem
 /// document or the reason it could not be read.
-#[derive(Debug)]
+#[derive(Debug, concord::derive::Error)]
+#[display(with = display_rename_error)]
 pub enum RenameError {
     /// Any failure other than a non-2xx status (build, transport, decoding the 2xx body).
     Concord(concord::Error),
@@ -49,22 +48,12 @@ pub enum RenameError {
     },
 }
 
-impl fmt::Display for RenameError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::Concord(e) => e.fmt(f),
-            Self::Problem { status, problem } => write!(f, "{status}: {}", problem.title),
-            Self::ProblemUnread { status, .. } => write!(f, "{status}: error body unreadable"),
-            Self::ProblemUndecodable { status, error } => write!(f, "{status}: {error}"),
-        }
-    }
-}
-
-impl std::error::Error for RenameError {}
-
-impl From<concord::Error> for RenameError {
-    fn from(error: concord::Error) -> Self {
-        Self::Concord(error)
+fn display_rename_error(value: &RenameError, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    match value {
+        RenameError::Concord(e) => std::fmt::Display::fmt(e, f),
+        RenameError::Problem { status, problem } => write!(f, "{status}: {}", problem.title),
+        RenameError::ProblemUnread { status, .. } => write!(f, "{status}: error body unreadable"),
+        RenameError::ProblemUndecodable { status, error } => write!(f, "{status}: {error}"),
     }
 }
 

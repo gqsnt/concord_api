@@ -1,14 +1,12 @@
 //! Finite JSON page traversal with explicit completion and resumable partial outcomes.
 use std::{num::NonZeroUsize, sync::Arc};
 
-use concord::{
-    Endpoint, ErrorKind, Follow, IgnoreContentType, Json, NextUrl, Prepared, ResponseMeta,
-};
+use concord::{Endpoint, ErrorKind, Follow, NextUrl, Prepared, ResponseMeta};
 use concord_pagination::{Page, Pages, Resume};
 
 use crate::{
     DeltaLink, GraphClient, GraphError, LinkProblem, NextLink, ProtocolProblem,
-    error::{ErrorBody, ErrorEnvelope},
+    error::ErrorBody,
     links::{Binding, Collection, LinkKind, StoredLink, validate_url},
     model::Envelope,
 };
@@ -27,8 +25,11 @@ pub type GraphPage<T> = Page<T, NextLink, PageMeta>;
 /// Owned traversal. Use `next_page` for delta so the final metadata is retained.
 pub type GraphPages<T> = Pages<T, NextLink, PageMeta, GraphError>;
 
-type Factory<T> =
-    Arc<dyn Fn(Option<NextUrl>) -> Result<Prepared<Envelope<T>>, concord::Error> + Send + Sync>;
+type Factory<T> = Arc<
+    dyn Fn(Option<NextUrl>) -> Result<Prepared<Envelope<T>, crate::ErrorEnvelope>, concord::Error>
+        + Send
+        + Sync,
+>;
 
 /// A reusable request factory bound to one authorization context, collection and selection.
 /// Creation performs no HTTP I/O. Every fetch uses the Concord-declared operation once.
@@ -66,7 +67,7 @@ impl<T: Send + 'static> Listing<T> {
         valid: fn(&T) -> bool,
     ) -> Result<Self, GraphError>
     where
-        E: Follow<Envelope<T>> + Clone + Send + Sync + 'static,
+        E: Follow<Envelope<T>, crate::ErrorEnvelope> + Clone + Send + Sync + 'static,
     {
         let prepare = move |target: Option<NextUrl>| match target {
             Some(target) => endpoint.clone().follow(target).prepare(),
@@ -117,9 +118,7 @@ impl<T: Send + 'static> Listing<T> {
         let requested = prepared.request().url().clone();
         let received = prepared.receive().await?;
         if !received.status().is_success() {
-            let (meta, document) = received
-                .document::<IgnoreContentType<Json>, ErrorEnvelope>(self.error_limit)
-                .await;
+            let (meta, document) = received.failure(self.error_limit).await.into_document();
             let body = match document {
                 Ok(envelope) => ErrorBody::Parsed(Box::new(envelope.error)),
                 Err(error) if error.kind() == ErrorKind::Decode => ErrorBody::Malformed,
@@ -137,6 +136,7 @@ impl<T: Send + 'static> Listing<T> {
             });
         }
         let (envelope, meta) = received
+            .into_success()?
             .decode_limited_with_meta(self.success_limit)
             .await?;
         let protocol = |problem| GraphError::Protocol {

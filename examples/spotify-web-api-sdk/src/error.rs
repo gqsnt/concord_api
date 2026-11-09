@@ -24,7 +24,8 @@ pub struct ErrorObject {
 }
 
 #[derive(Deserialize)]
-pub(crate) struct ErrorEnvelope {
+/// Declared provider error document; its contents are explicitly accessible.
+pub struct ErrorEnvelope {
     pub(crate) error: ErrorObject,
 }
 
@@ -161,13 +162,16 @@ impl fmt::Debug for TokenFailure {
 
 /// Why an access token could not be obtained.
 #[non_exhaustive]
-#[derive(concord::Debug)]
+#[derive(concord::Debug, concord::derive::Error)]
+#[display(with = display_auth_error)]
 pub enum AuthError {
     /// The token endpoint answered `invalid_grant`: the refresh token (or authorization code) is
     /// expired, revoked or otherwise invalid. The session stops using that refresh token; send the
     /// user through the authorization flow again and call [`crate::Session::replace_grant`].
+    #[from(skip)]
     InvalidGrant(Box<TokenFailure>),
     /// Any other refusal of the token endpoint (`invalid_client`, a 5xx, an unreadable document).
+    #[from(skip)]
     Refused(Box<TokenFailure>),
     /// A previous refresh was answered `invalid_grant`; nothing was sent this time.
     ReauthorizationRequired,
@@ -176,11 +180,14 @@ pub enum AuthError {
     /// The token endpoint answered 2xx with a document that breaks the contract (not `Bearer`,
     /// a lifetime not longer than the refresh margin, an access token that is not a header-safe
     /// token).
+    #[from(skip)]
     Protocol(&'static str),
     /// Concord could not complete the token request (transport, wrong media type, malformed or
     /// oversized document).
-    Concord(concord::Error),
+    #[from(skip)]
+    Concord(#[source] concord::Error),
     /// The token cache refused the acquisition (lifetime overflow or capacity).
+    #[from(skip)]
     Cache(&'static str),
 }
 
@@ -202,63 +209,57 @@ impl AuthError {
     }
 }
 
-impl fmt::Display for AuthError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::InvalidGrant(t) => write!(
-                f,
-                "the token endpoint answered invalid_grant ({}): reauthorization required",
-                t.status()
-            ),
-            Self::Refused(t) => {
-                write!(f, "the token endpoint refused the request ({})", t.status())
-            }
-            Self::ReauthorizationRequired => {
-                f.write_str("the refresh token was rejected earlier: reauthorization required")
-            }
-            Self::NoRefreshToken => {
-                f.write_str("the access token expired and no refresh token is held")
-            }
-            Self::Protocol(m) => write!(f, "token response breaks the contract: {m}"),
-            Self::Concord(e) => write!(f, "token request failed: {e}"),
-            Self::Cache(m) => write!(f, "token cache: {m}"),
+fn display_auth_error(value: &AuthError, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    match value {
+        AuthError::InvalidGrant(t) => write!(
+            f,
+            "the token endpoint answered invalid_grant ({}): reauthorization required",
+            t.status()
+        ),
+        AuthError::Refused(t) => {
+            write!(f, "the token endpoint refused the request ({})", t.status())
         }
-    }
-}
-
-impl std::error::Error for AuthError {
-    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
-        match self {
-            Self::Concord(e) => Some(e),
-            _ => None,
+        AuthError::ReauthorizationRequired => {
+            f.write_str("the refresh token was rejected earlier: reauthorization required")
         }
+        AuthError::NoRefreshToken => {
+            f.write_str("the access token expired and no refresh token is held")
+        }
+        AuthError::Protocol(m) => write!(f, "token response breaks the contract: {m}"),
+        AuthError::Concord(e) => write!(f, "token request failed: {e}"),
+        AuthError::Cache(m) => write!(f, "token cache: {m}"),
     }
 }
 
 /// The SDK's error.
 #[non_exhaustive]
-#[derive(concord::Debug)]
+#[derive(concord::Debug, concord::derive::Error)]
+#[display(with = display_error)]
 pub enum Error {
     /// A value the SDK refused before building any request.
+    #[from(skip)]
     InvalidInput(&'static str),
     /// The Web API answered with a non-2xx status.
+    #[from(skip)]
     Api(Box<ApiFailure>),
     /// No access token could be obtained. Shared by every request that waited on the same
     /// refresh, hence the `Arc`.
-    Auth(Arc<AuthError>),
+    Auth(#[source] Arc<AuthError>),
     /// A 2xx response breaks the provider contract the SDK relies on (a page that does not
     /// start at the requested offset, a next page without progress).
+    #[from(skip)]
     Protocol(&'static str),
     /// Concord: a request that could not be built, a transport failure, a 2xx response with
     /// another media type, a malformed, truncated or oversized body.
-    Concord(concord::Error),
+    Concord(#[source] concord::Error),
     /// The session's total deadline expired before any attempt completed.
     Deadline,
     /// A write was dispatched but its result could not be established (transport failure,
     /// deadline, or an unreadable success document). The items may already have been added.
     /// Never resend automatically: re-read the playlist and reconcile it first. The boxed
     /// error preserves the cause; a timeout during token acquisition alone is not uncertain.
-    UncertainWrite(Box<Error>),
+    #[from(skip)]
+    UncertainWrite(#[source] Box<Error>),
 }
 
 impl Error {
@@ -322,23 +323,10 @@ impl Error {
     }
 }
 
-impl From<concord::Error> for Error {
-    fn from(e: concord::Error) -> Self {
-        Self::Concord(e)
-    }
-}
-
-impl From<AuthError> for Error {
-    fn from(e: AuthError) -> Self {
-        Self::Auth(Arc::new(e))
-    }
-}
-
-impl fmt::Display for Error {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::InvalidInput(m) => write!(f, "invalid input: {m}"),
-            Self::Api(a) => {
+fn display_error(value: &Error, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    match value {
+            Error::InvalidInput(m) => write!(f, "invalid input: {m}"),
+            Error::Api(a) => {
                 write!(f, "the Web API answered {}", a.status())?;
                 match a.class {
                     ApiClass::Forbidden => f.write_str(
@@ -349,26 +337,14 @@ impl fmt::Display for Error {
                     _ => Ok(()),
                 }
             }
-            Self::Auth(a) => write!(f, "authentication failed: {a}"),
-            Self::Protocol(m) => write!(f, "response breaks the contract: {m}"),
-            Self::Concord(e) => fmt::Display::fmt(e, f),
-            Self::Deadline => f.write_str("the request deadline expired"),
-            Self::UncertainWrite(_) => f.write_str(
+            Error::Auth(a) => write!(f, "authentication failed: {a}"),
+            Error::Protocol(m) => write!(f, "response breaks the contract: {m}"),
+            Error::Concord(e) => fmt::Display::fmt(e, f),
+            Error::Deadline => f.write_str("the request deadline expired"),
+            Error::UncertainWrite(_) => f.write_str(
                 "the playlist addition may have succeeded; re-read the playlist before another addition",
             ),
         }
-    }
-}
-
-impl std::error::Error for Error {
-    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
-        match self {
-            Self::Concord(e) => Some(e),
-            Self::Auth(a) => Some(&**a),
-            Self::UncertainWrite(cause) => Some(&**cause),
-            _ => None,
-        }
-    }
 }
 
 /// Classifies a status (and, for 429, the document's reason).

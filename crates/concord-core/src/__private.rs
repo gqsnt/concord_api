@@ -264,12 +264,10 @@ pub struct ErrorFormat<D> {
     head: HeadStep<D>,
 }
 
-impl<D: 'static> ErrorFormat<D> {
-    /// The format `F` for the error document `D`.
-    pub const fn new<F: Decode<D> + 'static>() -> Self {
-        Self {
-            head: head_step::<F, D>,
-        }
+impl<D> ErrorFormat<D> {
+    /// The checked format's erased head and body handling.
+    pub const fn new(head: HeadStep<D>) -> Self {
+        Self { head }
     }
 }
 

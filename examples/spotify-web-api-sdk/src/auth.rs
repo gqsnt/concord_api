@@ -14,7 +14,7 @@ use concord::{Form, Json};
 use serde::{Deserialize, Serialize};
 
 use crate::Error;
-use crate::error::{AuthError, OAuthErrorObject, TokenFailure};
+use crate::error::{AuthError, TokenFailure};
 use crate::session::{Session, SessionOptions};
 
 /// Error documents of the token endpoint are read up to this many bytes.
@@ -147,6 +147,7 @@ concord::api! {
     /// The accounts service (`accounts.spotify.com`).
     client Accounts {
         base "https://accounts.spotify.com";
+        error crate::error::OAuthErrorObject in concord::Json;
 
         /// The authorization page. Never sent by the SDK: its prepared URL is what the user's
         /// browser opens.
@@ -321,9 +322,7 @@ impl OAuth {
             .await
             .map_err(AuthError::Concord)?;
         if !received.status().is_success() {
-            let (meta, document) = received
-                .document::<Json, OAuthErrorObject>(TOKEN_ERROR_LIMIT)
-                .await;
+            let (meta, document) = received.failure(TOKEN_ERROR_LIMIT).await.into_document();
             let failure = Box::new(TokenFailure { meta, document });
             return Err(if failure.code() == Some("invalid_grant") {
                 AuthError::InvalidGrant(failure)
@@ -331,7 +330,12 @@ impl OAuth {
                 AuthError::Refused(failure)
             });
         }
-        let response = received.decode().await.map_err(AuthError::Concord)?;
+        let response = received
+            .into_success()
+            .map_err(AuthError::Concord)?
+            .decode()
+            .await
+            .map_err(AuthError::Concord)?;
         validate(response)
     }
 }

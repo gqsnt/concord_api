@@ -65,7 +65,7 @@ fn reply(case: usize, success: &str, echo: &str) -> Reply {
         .header("set-cookie", echo)
 }
 
-fn concord_error(c: &mut Canaries, e: &concord::Error) {
+fn concord_error<D: 'static>(c: &mut Canaries, e: &concord::Error<D>) {
     c.assert_debug_absent("Concord error", e);
     c.assert_error_absent("Concord error/source chain", e);
     c.assert_debug_absent("error kind", &e.kind());
@@ -95,7 +95,10 @@ fn error(c: &mut Canaries, e: &Error) {
     }
 }
 
-async fn receive<T: std::fmt::Debug>(c: &mut Canaries, prepared: concord::Prepared<T>) {
+async fn receive<T: std::fmt::Debug, D: 'static>(
+    c: &mut Canaries,
+    prepared: concord::Prepared<T, D>,
+) {
     c.assert_debug_absent("Prepared", &prepared);
     let result = prepared.receive().await;
     c.assert_debug_absent("Received Result", &result);

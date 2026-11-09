@@ -1,8 +1,9 @@
 # Migration
 
-Migration paths, newest first: construction facts, runtime operations and paging, SDK-owned formatting, the QuickBooks environment repair (T4), the interface consolidation (unreleased candidate), 4.1 to 4.2 (a maintenance release; summary in the [changelog](../CHANGELOG.md)), then
+Migration paths, newest first: provider error facts, construction facts, runtime operations and paging, SDK-owned formatting, the QuickBooks environment repair (T4), the interface consolidation (unreleased candidate), 4.1 to 4.2 (a maintenance release; summary in the [changelog](../CHANGELOG.md)), then
 the two parts of 4.1.0 (the modular V4), then older ones:
 
+- [Provider error facts (P4.4)](#provider-error-facts-p44) — declared documents, typed native errors and derived SDK enums.
 - [Construction facts (P4.3)](#construction-facts-p43) — fixed handle values, checked runtime bases and borrowed getters.
 - [Runtime operations and paging (P4.2)](#runtime-operations-and-paging-p42) — one send trait and private inventories.
 - [SDK-owned formatting](#sdk-owned-formatting) — declarative Debug redaction and scalar serde Display.
@@ -33,6 +34,19 @@ the two parts of 4.1.0 (the modular V4), then older ones:
 Code blocks marked "does not compile" show the old form. Every other Rust block in this file is
 compiled and run as a doctest of `examples/quickstart` (`cargo test --doc -p
 concord-example-quickstart`).
+
+## Provider error facts (P4.4)
+
+Declare `error Problem in Json;` where the provider's error schema applies. Native execution
+and policy bounds then carry `Problem`; the [detailed migration](#declared-provider-errors-p44)
+lists the affected runtime types and adapters. SDK convenience calls keep their result shapes.
+Native prepared non-2xx responses are consumed into `Failure<Problem>`; inspect its document,
+state and bounded bytes instead of taking an unread response.
+
+SDK enums derive `concord::derive::Error`. Its boxed/shared sources expose the inner error:
+Frankfurter, Open-Meteo and REST Countries now return `ProviderError` rather than
+`Box<ProviderError>` from `source()`. Adjust source downcasts accordingly. Anthropic's
+`ApiError::document_error()` is replaced by inspecting `failure().state()`.
 
 ## SDK-owned formatting
 
@@ -233,9 +247,31 @@ async fn summary(api: &Ledger, id: u64) -> Result<(Summary, ResponseMeta), SdkEr
 
 `Error::head()` (borrowed) and `Error::head_meta()` (owned) are `Some` for every error raised after
 a response head arrived: `Status`, `Metadata`, and a `Decode`, `Limit` or `Transport` error while
-the body was read. `Error::meta()` keeps its contract — `Some` only for a `Status` or `Metadata`
-error, exactly when `into_response()` returns the response — so code that reads `meta()` or
-`status()` keeps its meaning; the status of a decode failure is `error.head().map(|h| h.status())`.
+the body was read. `Error::meta()` is `Some` exactly when `into_response()` returns an unread
+response. A declared provider failure instead exposes its head through `provider().meta()` or
+`head_meta()`; a consumed metadata refusal also uses `head_meta()`. The status of any failure
+with a head is `error.head().map(|h| h.status())`.
+
+### Declared provider errors (P4.4)
+
+Move the provider pair to `error Problem in Json;`
+on its client, scope or endpoint. `Prepared<T>`, `Received<T>`, `Decoder<T>`, `Endpoint<T>`,
+`SendWith<T>`, `Follow<T>` and the link/URL continuation traits become their `<T, Problem>` forms
+for those operations; APIs without a declaration retain the default `()`. Preparation and
+raw-receive errors still use ordinary `concord::Error`; decoded sends use `concord::Error<Problem>`.
+`Retry::receive`/`receive_with` accept the document parameter too, and `ReceiveRun` gains a final
+`D = ()` parameter. Update explicit policy/helper signatures; the compiler locates mismatches at `send`.
+
+SDK error enums can derive `concord::derive::Error`. Mark a provider tuple variant
+`#[from(concord::Error<Problem>)]`; its payload converts from `Failure<Problem>`, and the enum
+also converts ordinary `concord::Error`. Keep status routing and in-2xx validation in Rust.
+`received.failure(n)` uses the declared format. `Failure::into_document()` preserves existing
+`Result<Problem, concord::Error>` payloads and error stages, but its consumed metadata failure
+has no unread response. `received.into_success()?` keeps ordinary success-stage errors after
+custom routing. `received.error_document(n)` keeps a refused head unread using the declared pair.
+Native `document::<F, D>`/`failure_as::<F, D>` remain explicit escapes.
+Neither formatting nor request headers change merely by declaring the error document.
+The 64 KiB default can be replaced with `Prepared::error_body_limit`.
 
 **Provider error documents.** A policy that read an error document with
 `received.bytes_limited(n)` and then `<Json as Decode<D>>::decode_body((), bytes)` skipped the
@@ -244,7 +280,7 @@ reading, reads at most `n` bytes and returns `(ResponseMeta, Result<D, Error>)` 
 head is kept whatever happened to the document, and a body that does not decode stays readable
 through `error.body_unredacted()`. What the SDK's callers can notice: a document whose
 `Content-Type` the format refuses is now a `Metadata` error instead of being parsed. For a provider
-that labels its errors loosely, read it with `document::<IgnoreContentType<Json>, D>`, as the
+that labels its errors loosely, declare `error D in IgnoreContentType<Json>;`, as the
 [quick start](QUICKSTART.md#4-configure-the-client-call-handle-the-result) does.
 
 **Bounds declared once.** A policy that called `received.decode_limited(n)` with a fixed `n`

@@ -3,7 +3,7 @@
 use concord::{Endpoint, Json, SendWith};
 use concord_pagination::{Page, Pages, Resume};
 use serde::{Deserialize, Deserializer};
-use std::{fmt, num::NonZeroU32};
+use std::num::NonZeroU32;
 
 pub use concord::ResponseMeta;
 pub use concord_pagination;
@@ -115,7 +115,8 @@ pub struct IndicatorPage {
 }
 
 /// An error from the SDK. HTTP heads are preserved where one arrived.
-#[derive(Debug)]
+#[derive(Debug, concord::derive::Error)]
+#[display(with = display_error)]
 pub enum Error {
     /// Provider error document, including when sent with a successful HTTP status.
     Provider {
@@ -166,24 +167,22 @@ impl From<concord::Error> for Error {
         Self::Concord { source, meta }
     }
 }
-impl fmt::Display for Error {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::Provider { meta, .. } => write!(f, "World Bank error (HTTP {})", meta.status()),
-            Self::Http { meta, .. } => write!(f, "World Bank HTTP {}", meta.status()),
-            Self::Concord { source, .. } => source.fmt(f),
-            Self::InvalidPage { reason, .. } => write!(f, "invalid page metadata: {reason}"),
-            Self::InvalidRange => f.write_str("year range starts after it ends"),
-        }
+fn display_error(value: &Error, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    match value {
+        Error::Provider { meta, .. } => write!(f, "World Bank error (HTTP {})", meta.status()),
+        Error::Http { meta, .. } => write!(f, "World Bank HTTP {}", meta.status()),
+        Error::Concord { source, .. } => std::fmt::Display::fmt(source, f),
+        Error::InvalidPage { reason, .. } => write!(f, "invalid page metadata: {reason}"),
+        Error::InvalidRange => f.write_str("year range starts after it ends"),
     }
 }
-impl std::error::Error for Error {}
 
 concord::api! {
     /// Unauthenticated Indicators client. `WorldBank::new(http)` accepts a caller-configured
     /// transport; `with_base_url` replaces the v2 base for testing or another deployment.
     pub client WorldBank() {
         base "https://api.worldbank.org/v2";
+        error crate::WireResponse in concord::Json;
         send SendPolicy;
         format Json;
         limit BODY_LIMIT;
@@ -202,12 +201,15 @@ pub type Client = WorldBank;
 /// Send policy that decodes the full bounded JSON response and keeps its HTTP head.
 #[derive(Default)]
 pub struct SendPolicy;
-impl SendWith<WireResponse> for SendPolicy {
+impl SendWith<WireResponse, crate::WireResponse> for SendPolicy {
     type Output = Result<IndicatorPage, Error>;
-    async fn send<E: Endpoint<WireResponse> + Send>(&self, endpoint: E) -> Self::Output {
+    async fn send<E: Endpoint<WireResponse, crate::WireResponse> + Send>(
+        &self,
+        endpoint: E,
+    ) -> Self::Output {
         let received = endpoint.prepare()?.receive().await?;
         if !received.status().is_success() {
-            let (meta, body) = received.document::<Json, WireResponse>(BODY_LIMIT).await;
+            let (meta, body) = received.failure(BODY_LIMIT).await.into_document();
             return match body {
                 Ok(WireResponse::Failure((document,))) => Err(Error::Provider {
                     meta: Box::new(meta),
@@ -223,7 +225,7 @@ impl SendWith<WireResponse> for SendPolicy {
                 }),
             };
         }
-        let (body, meta) = received.decode_with_meta().await?;
+        let (body, meta) = received.into_success()?.decode_with_meta().await?;
         match body {
             WireResponse::Failure((document,)) => Err(Error::Provider {
                 meta: Box::new(meta),

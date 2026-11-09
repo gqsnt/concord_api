@@ -1,5 +1,9 @@
 # concord-sdk-quickbooks-online
 
+The declaration owns the provider error document: `error crate::FaultResponse in concord::Json;`, `error crate::auth::OAuthError in concord::Json;`. Native prepared/decoded
+paths carry that document as `D` in `Prepared<T, D>` and `concord::Error<D>`; SDK status routing
+and validation remain in the policy. Concord withholds document contents in formatting.
+
 Construct with `QuickBooks::connect(http, connection)` to select the connection's environment.
 `set_connection` replaces realm, base, credential source and policy together. `prepare()` reads
 the connection's base and realm; `send()` applies its access token. Existing scopes and requests

@@ -100,7 +100,8 @@ impl fmt::Display for PageIds {
 }
 
 /// Why a requested page has no content in a batch answer.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, concord::derive::Error)]
+#[display(with = display_unavailable)]
 pub enum Unavailable {
     /// The wiki has no page with this ID (`missing`).
     Missing,
@@ -111,17 +112,13 @@ pub enum Unavailable {
     NoContent,
 }
 
-impl fmt::Display for Unavailable {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(match self {
-            Self::Missing => "the page is missing",
-            Self::Invalid => "the page is invalid",
-            Self::NoContent => "the page has no readable content",
-        })
-    }
+fn display_unavailable(value: &Unavailable, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    f.write_str(match value {
+        Unavailable::Missing => "the page is missing",
+        Unavailable::Invalid => "the page is invalid",
+        Unavailable::NoContent => "the page has no readable content",
+    })
 }
-
-impl std::error::Error for Unavailable {}
 
 /// One requested page ID's answer, at the position the caller requested it.
 #[derive(Clone, Debug, PartialEq, Eq)]

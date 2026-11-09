@@ -6,7 +6,10 @@ use concord_sdk_strava::{
     concord::{Endpoint, ErrorKind},
 };
 
-fn prepared_effect<T, E: Endpoint<T>>(endpoint: E, expected: bool) {
+fn prepared_effect<T, E: Endpoint<T, concord_sdk_strava::ErrorDocument>>(
+    endpoint: E,
+    expected: bool,
+) {
     let declared = E::operation();
     assert_eq!(declared.is_read(), expected);
     let prepared = endpoint.prepare().unwrap();
@@ -29,7 +32,10 @@ fn preparation_and_native_escape_keep_the_effect_without_sending() {
     prepared_effect(api.uploads().create(support::file()), false);
 }
 
-async fn received_and_decode_error_effect<T: std::fmt::Debug, E: Endpoint<T>>(
+async fn received_and_decode_error_effect<
+    T: std::fmt::Debug,
+    E: Endpoint<T, concord_sdk_strava::ErrorDocument>,
+>(
     endpoint: E,
     expected: bool,
 ) {

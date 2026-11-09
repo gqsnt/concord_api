@@ -23,6 +23,7 @@ concord::api! {
     /// Open Library's read-only search and work slice. No credentials are required.
     pub client OpenLibrary {
         base "https://openlibrary.org";
+        error serde_json::Value in concord::Json;
         response Json;
         limit RESPONSE_BODY_LIMIT;
         send ReadPolicy -> Result<_, Error>;

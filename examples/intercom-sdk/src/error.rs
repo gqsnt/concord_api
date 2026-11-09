@@ -1,7 +1,4 @@
-use std::{
-    fmt,
-    time::{Duration, SystemTime},
-};
+use std::time::{Duration, SystemTime};
 
 use concord::reqwest::{StatusCode, header::HeaderMap};
 use serde::Deserialize;
@@ -136,15 +133,18 @@ impl ProviderError {
 }
 
 /// SDK failure. No variant automatically retries, including ambiguous creates.
-#[derive(Debug)]
+#[derive(Debug, concord::derive::Error)]
+#[display(with = display_error)]
 pub enum Error {
     /// Request construction, transport, media, decoding or body limit failure.
     Concord(concord::Error),
     /// Any non-2xx response, regardless of error body validity.
+    #[from(concord::Error<crate::error::ErrorDocument>)]
     Provider(Box<ProviderError>),
     /// Invalid local list size, refused before I/O.
     PageSize,
     /// Empty or immediately repeated provider cursor; no guessed next page.
+    #[from(skip)]
     InvalidCursor(Box<concord::ResponseMeta>),
 }
 
@@ -160,23 +160,18 @@ impl Error {
     }
 }
 
-impl From<concord::Error> for Error {
-    fn from(error: concord::Error) -> Self {
-        Self::Concord(error)
+fn display_error(value: &Error, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    match value {
+        Error::Concord(e) => std::fmt::Display::fmt(e, f),
+        Error::Provider(e) => write!(f, "Intercom returned HTTP {}", e.meta.status().as_u16()),
+        Error::PageSize => f.write_str("Intercom page size must be between 1 and 150"),
+        Error::InvalidCursor(_) => f.write_str("Intercom returned an empty or nonadvancing cursor"),
     }
 }
 
-impl fmt::Display for Error {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::Concord(e) => e.fmt(f),
-            Self::Provider(e) => write!(f, "Intercom returned HTTP {}", e.meta.status().as_u16()),
-            Self::PageSize => f.write_str("Intercom page size must be between 1 and 150"),
-            Self::InvalidCursor(_) => {
-                f.write_str("Intercom returned an empty or nonadvancing cursor")
-            }
-        }
+impl From<concord::Failure<crate::error::ErrorDocument>> for ProviderError {
+    fn from(failure: concord::Failure<crate::error::ErrorDocument>) -> Self {
+        let (meta, document) = failure.into_document();
+        Self { meta, document }
     }
 }
-
-impl std::error::Error for Error {}

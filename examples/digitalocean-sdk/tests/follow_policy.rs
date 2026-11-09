@@ -113,9 +113,12 @@ pub struct ProbePage {
 #[derive(Clone)]
 pub struct CountingPolicy(Arc<Mutex<Vec<__ProbeOperation>>>);
 
-impl<T: Send> SendWith<T> for CountingPolicy {
+impl<T: Send> SendWith<T, concord_sdk_digitalocean::Problem> for CountingPolicy {
     type Output = Result<Response<T>, Error>;
-    async fn send<E: Endpoint<T> + Send>(&self, endpoint: E) -> Self::Output {
+    async fn send<E: Endpoint<T, concord_sdk_digitalocean::Problem> + Send>(
+        &self,
+        endpoint: E,
+    ) -> Self::Output {
         let operation = __ProbeOperation::from_operation(E::operation()).unwrap();
         assert!(operation.operation().is_read());
         assert!(E::operation().is_read());
@@ -126,7 +129,7 @@ impl<T: Send> SendWith<T> for CountingPolicy {
 
 concord::api! {
     pub client Probe(policy: CountingPolicy) {
-        base "http://127.0.0.1";
+        base "http://127.0.0.1"; error concord_sdk_digitalocean::Problem in concord::Json;
         format concord::Json;
         send policy -> Result<Response<_>, Error>;
         GET list(query per_page: u32 = 7) -> ProbePage {

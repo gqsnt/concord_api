@@ -18,12 +18,18 @@ pub enum RecordKind {
 /// automatic source chain; underlying Concord details require deliberate accessor use.
 #[derive(Debug)]
 #[non_exhaustive]
+#[derive(concord::derive::Error)]
 pub enum Error {
     /// Missing or invalid selected ID. No request was constructed by the conversion.
+    #[display("missing or invalid Open Library {0:?} ID")]
+    #[from(skip)]
     InvalidId(RecordKind),
     /// Build, transport, media, JSON shape/syntax or body-limit failure.
+    #[display("{0}")]
     Concord(concord::Error),
     /// Any non-2xx status, even when its body cannot be decoded as JSON.
+    #[display("{0}")]
+    #[from(concord::Error<serde_json::Value>)]
     Http(Box<HttpError>),
 }
 
@@ -37,24 +43,6 @@ impl Error {
         }
     }
 }
-
-impl From<concord::Error> for Error {
-    fn from(value: concord::Error) -> Self {
-        Self::Concord(value)
-    }
-}
-
-impl fmt::Display for Error {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::InvalidId(kind) => write!(f, "missing or invalid Open Library {kind:?} ID"),
-            Self::Concord(error) => fmt::Display::fmt(error, f),
-            Self::Http(error) => fmt::Display::fmt(error, f),
-        }
-    }
-}
-
-impl StdError for Error {}
 
 /// An HTTP failure with its original status and the bounded, untrusted JSON document outcome.
 pub struct HttpError {
@@ -96,3 +84,10 @@ impl fmt::Display for HttpError {
 }
 
 impl StdError for HttpError {}
+
+impl From<concord::Failure<serde_json::Value>> for HttpError {
+    fn from(failure: concord::Failure<serde_json::Value>) -> Self {
+        let (meta, document) = failure.into_document();
+        Self { meta, document }
+    }
+}

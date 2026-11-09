@@ -76,6 +76,7 @@ concord::api! {
         base "https://tasks.example.com/api";
         headers { AUTHORIZATION = "Bearer {token}"; }
         format Json;
+        error Problem in IgnoreContentType<Json>;
 
         scope project(project: String) {
             path "projects/{project}";
@@ -123,6 +124,8 @@ Read it top-down:
   2xx response only when it has exactly one `Content-Type`, `application/json` or
   `application/*+json`, and checks that before reading the body. A response labelled `text/html`,
   or not labelled, is an `ErrorKind::Metadata` error, not a parse failure.
+- `error Problem in IgnoreContentType<Json>;` — non-2xx bodies are bounded provider documents;
+  success sends use `concord::Error<Problem>`. The error format adds no request headers.
 - `scope project(project: String)` — a navigation level, `api.project("demo")`, that adds the path
   `projects/demo`. The value is formatted with `Display` and percent-encoded as one segment.
 - `GET tasks(query done?: bool, query limit: u32 = 20) -> Vec<Task>` — an endpoint with an
@@ -159,7 +162,7 @@ TasksProjectTasks::set_done(self, value: impl IntoValue<bool>) -> TasksProjectTa
 TasksProjectTasks::maybe_done(self, value: Option<bool>) -> TasksProjectTasks
 TasksProjectTasks::set_limit(self, value: impl IntoValue<u32>) -> TasksProjectTasks
 TasksProjectTasks::prepare(self) -> Result<concord::Prepared<Vec<Task>>, concord::Error>
-async TasksProjectTasks::send(self) -> Result<Vec<Task>, concord::Error>
+async TasksProjectTasks::send(self) -> Result<Vec<Task>, concord::Error<Problem>>
 ```
 
 `cargo doc --open` in your crate shows them with the documentation Concord generates (which
@@ -198,9 +201,7 @@ pub async fn run(base_url: &str, token: String) -> Result<(), Box<dyn std::error
         println!("unexpectedly created task #{}", task.id);
     } else {
         // Preserve this API's policy of accepting JSON regardless of the media label.
-        let (meta, problem) = received
-            .document::<IgnoreContentType<Json>, Problem>(64 * 1024)
-            .await;
+        let (meta, problem) = received.failure(64 * 1024).await.into_document();
         println!("rejected with {}: {}", meta.status(), problem?.title);
     }
     Ok(())

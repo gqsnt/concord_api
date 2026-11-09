@@ -1,5 +1,9 @@
 # Kraken Spot REST SDK47
 
+The declaration owns the provider error document: `error crate::ErrorDocument in concord::Json;`. Native prepared/decoded
+paths carry that document as `D` in `Prepared<T, D>` and `concord::Error<D>`; SDK status routing
+and validation remain in the policy. Concord withholds document contents in formatting.
+
 `concord-sdk-kraken-spot-rest` is a bounded, read-only SDK at Concord baseline
 `c3fd4f1ee30c1727e26b285270f2cc8d8b694e77`. **Live provider calls: NOT_RUN.**
 All execution and verification use `examples/testserver` on loopback. This result is

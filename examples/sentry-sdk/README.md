@@ -1,5 +1,9 @@
 # Sentry issue and event reads and issue status updates
 
+The declaration owns the provider error document: `error crate::Problem in concord::Json;`. Native prepared/decoded
+paths carry that document as `D` in `Prepared<T, D>` and `concord::Error<D>`; SDK status routing
+and validation remain in the policy. Concord withholds document contents in formatting.
+
 `concord-sdk-sentry` is an **example-assisted**, bounded SDK over Concord's generated
 client → organization/issue scopes → endpoints. It lists organization issues by cursor,
 retrieves a chosen issue, pages that issue's events, and retrieves an event by `eventID`.

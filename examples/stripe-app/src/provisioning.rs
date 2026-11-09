@@ -529,7 +529,10 @@ impl Run<'_> {
         &mut self,
         step: Step,
         account: &AccountOverride,
-        build: impl Fn(IdempotencyKey) -> Result<Prepared<T>, concord::Error>,
+        build: impl Fn(
+            IdempotencyKey,
+        )
+            -> Result<Prepared<T, concord_example_stripe_sdk::ErrorDocument>, concord::Error>,
     ) -> Option<T> {
         let mut record = WriteRecord {
             step,
@@ -626,7 +629,9 @@ impl Run<'_> {
 }
 
 /// What identifies a request for the ledger: method, path and query, `Stripe-Account`, body.
-fn request_identity<T>(prepared: &Prepared<T>) -> Vec<u8> {
+fn request_identity<T>(
+    prepared: &Prepared<T, concord_example_stripe_sdk::ErrorDocument>,
+) -> Vec<u8> {
     let request = prepared.request();
     let mut identity = Vec::new();
     identity.extend_from_slice(request.method().as_str().as_bytes());

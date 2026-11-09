@@ -1,7 +1,6 @@
 use crate::input::validate_magnitude_bounds;
 use crate::{Error, HttpFailure, HttpKind, Magnitude, Timestamp, Window};
 use concord::{Endpoint, SendWith};
-use concord_codecs::Text;
 
 /// Finite GeoJSON response limit (8 MiB). Streaming CSV has its own independent limits.
 pub const SUCCESS_BODY_LIMIT: usize = 8 * 1024 * 1024;
@@ -23,10 +22,10 @@ pub struct Response<T> {
 #[derive(Default)]
 pub struct Policy;
 
-impl<T: Send> SendWith<T> for Policy {
+impl<T: Send> SendWith<T, String> for Policy {
     type Output = Result<Response<T>, Error>;
 
-    async fn send<E: Endpoint<T> + Send>(&self, endpoint: E) -> Self::Output {
+    async fn send<E: Endpoint<T, String> + Send>(&self, endpoint: E) -> Self::Output {
         let prepared = endpoint.prepare()?;
         // Scope setters can replace time or magnitude bounds. Check their relations on the
         // prepared request so every generated send() validates the final values before I/O.
@@ -68,7 +67,7 @@ impl<T: Send> SendWith<T> for Policy {
             let (meta, document) = if status == 204 {
                 (received.meta(), Ok(String::new()))
             } else {
-                received.document::<Text, String>(ERROR_BODY_LIMIT).await
+                received.failure(ERROR_BODY_LIMIT).await.into_document()
             };
             return Err(Error::Http(Box::new(HttpFailure {
                 kind,
@@ -76,7 +75,7 @@ impl<T: Send> SendWith<T> for Policy {
                 document,
             })));
         }
-        let (data, meta) = received.decode_with_meta().await?;
+        let (data, meta) = received.into_success()?.decode_with_meta().await?;
         Ok(Response { data, meta })
     }
 }

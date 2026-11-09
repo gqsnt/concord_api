@@ -22,6 +22,8 @@ use std::fmt;
 /// Why a selector requirement was refused. Names the rule, never the offending text.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[non_exhaustive]
+#[derive(concord::derive::Error)]
+#[display(with = display_selector_error)]
 pub enum SelectorError {
     /// A label key is empty, too long or uses invalid characters.
     InvalidLabelKey,
@@ -33,18 +35,17 @@ pub enum SelectorError {
     InvalidFieldPath,
 }
 
-impl fmt::Display for SelectorError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(match self {
-            Self::InvalidLabelKey => "invalid label key",
-            Self::InvalidLabelValue => "invalid label value",
-            Self::EmptySet => "a set requirement needs at least one value",
-            Self::InvalidFieldPath => "invalid field path",
-        })
-    }
+fn display_selector_error(
+    value: &SelectorError,
+    f: &mut std::fmt::Formatter<'_>,
+) -> std::fmt::Result {
+    f.write_str(match value {
+        SelectorError::InvalidLabelKey => "invalid label key",
+        SelectorError::InvalidLabelValue => "invalid label value",
+        SelectorError::EmptySet => "a set requirement needs at least one value",
+        SelectorError::InvalidFieldPath => "invalid field path",
+    })
 }
-
-impl std::error::Error for SelectorError {}
 
 /// `[A-Za-z0-9]([-A-Za-z0-9_.]*[A-Za-z0-9])?`, at most 63 bytes (a label name or value).
 fn is_qualified_name_part(s: &str) -> bool {

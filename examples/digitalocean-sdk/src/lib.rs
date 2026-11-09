@@ -25,6 +25,7 @@ concord::api! {
     /// Generated client. Prefer `connect` or `for_fixture` to configure safe transport.
     pub client DigitalOcean(destination: Destination, #[sensitive] header(AUTHORIZATION) mut authorization: reqwest::header::HeaderValue) {
         base destination;
+        error crate::Problem in concord::Json;
         path "v2";
         format Json;
         limit SUCCESS_BODY_LIMIT;
@@ -107,23 +108,25 @@ fn transport() -> Result<reqwest::Client, Error> {
 #[derive(Debug, Default)]
 pub struct Policy;
 
-impl<T: Send> SendWith<T> for Policy {
+impl<T: Send> SendWith<T, crate::Problem> for Policy {
     type Output = Result<Response<T>, Error>;
 
-    async fn send<E: Endpoint<T> + Send>(&self, endpoint: E) -> Self::Output {
-        Self::finish(endpoint.prepare()?.receive().await?).await
+    async fn send<E: Endpoint<T, crate::Problem> + Send>(&self, endpoint: E) -> Self::Output {
+        Self::finish(
+            endpoint
+                .prepare()?
+                .error_body_limit(crate::ERROR_BODY_LIMIT)
+                .receive()
+                .await?,
+        )
+        .await
     }
 }
 
 impl Policy {
-    pub(crate) async fn finish<T>(received: Received<T>) -> Result<Response<T>, Error> {
-        if !received.status().is_success() {
-            let (head, document) = received.document::<Json, Problem>(ERROR_BODY_LIMIT).await;
-            return Err(Error::Provider(Box::new(ProviderError {
-                meta: ResponseMeta(head),
-                document,
-            })));
-        }
+    pub(crate) async fn finish<T>(
+        received: Received<T, crate::Problem>,
+    ) -> Result<Response<T>, Error> {
         let (value, head) = received.decode_with_meta().await?;
         Ok(Response {
             value,

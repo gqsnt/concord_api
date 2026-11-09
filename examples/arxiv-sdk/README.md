@@ -1,5 +1,9 @@
 # concord-sdk-arxiv
 
+The declaration owns the provider error document: `error crate::Feed in crate::Atom;`. Native prepared/decoded
+paths carry that document as `D` in `Prepared<T, D>` and `concord::Error<D>`; SDK status routing
+and validation remain in the policy. Concord withholds document contents in formatting.
+
 A small public-metadata SDK using Concord's client → scope → endpoint hierarchy:
 `Arxiv → papers → search / query / fetch`. All three use the arXiv query route;
 term search and typed queries supply `search_query`, while direct lookup supplies `id_list`.

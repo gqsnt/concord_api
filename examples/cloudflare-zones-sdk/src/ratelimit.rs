@@ -16,7 +16,6 @@
 //! and `w` are ignored; those four must be non-negative integers. Several field lines form one
 //! list. Anything else is a [`RateLimitHeaderError`], which never contains the header's value.
 
-use std::fmt;
 use std::time::{Duration, SystemTime};
 
 use concord::reqwest::header::{HeaderMap, RETRY_AFTER};
@@ -102,6 +101,8 @@ impl RateLimits {
 /// A rate-limit header that does not follow the documented syntax. The value is not kept.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[non_exhaustive]
+#[derive(concord::derive::Error)]
+#[display(with = display_rate_limit_header_error)]
 pub enum RateLimitHeaderError {
     /// `Ratelimit` is malformed.
     Ratelimit,
@@ -109,16 +110,15 @@ pub enum RateLimitHeaderError {
     Policy,
 }
 
-impl fmt::Display for RateLimitHeaderError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(match self {
-            Self::Ratelimit => "the Ratelimit header is malformed",
-            Self::Policy => "the Ratelimit-Policy header is malformed",
-        })
-    }
+fn display_rate_limit_header_error(
+    value: &RateLimitHeaderError,
+    f: &mut std::fmt::Formatter<'_>,
+) -> std::fmt::Result {
+    f.write_str(match value {
+        RateLimitHeaderError::Ratelimit => "the Ratelimit header is malformed",
+        RateLimitHeaderError::Policy => "the Ratelimit-Policy header is malformed",
+    })
 }
-
-impl std::error::Error for RateLimitHeaderError {}
 
 /// `Retry-After`, read strictly: one field, delay seconds or an HTTP date.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

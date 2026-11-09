@@ -38,6 +38,7 @@ concord::api! {
         base "https://tasks.example.com/api";
         headers { AUTHORIZATION = "Bearer {token}"; }
         format Json;
+        error Problem in IgnoreContentType<Json>;
 
         scope project(project: String) {
             path "projects/{project}";
@@ -80,9 +81,7 @@ pub async fn run(base_url: &str, token: String) -> Result<(), Box<dyn std::error
         println!("unexpectedly created task #{}", task.id);
     } else {
         // Preserve this API's policy of accepting JSON regardless of the media label.
-        let (meta, problem) = received
-            .document::<IgnoreContentType<Json>, Problem>(64 * 1024)
-            .await;
+        let (meta, problem) = received.failure(64 * 1024).await.into_document();
         println!("rejected with {}: {}", meta.status(), problem?.title);
     }
     Ok(())

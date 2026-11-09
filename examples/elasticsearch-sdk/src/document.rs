@@ -235,28 +235,36 @@ impl<'de> Deserialize<'de> for Get404 {
     }
 }
 
-impl ResponsePolicy for GetDocument {
-    async fn read(received: Received<Self>) -> Result<Self, Error> {
+impl ResponsePolicy<GetErrorDocument> for GetDocument {
+    async fn read(received: Received<Self, GetErrorDocument>) -> Result<Self, Error> {
         if received.status() == StatusCode::NOT_FOUND {
-            let (meta, body) = received
-                .document::<Json, Get404>(ERROR_DOCUMENT_LIMIT)
-                .await;
+            let (meta, body) = received.failure(ERROR_DOCUMENT_LIMIT).await.into_document();
             let document = match body {
-                Ok(Get404::Document(missing @ Self::NotFound { .. })) => return Ok(missing),
-                Ok(Get404::Document(Self::Found(_))) => {
+                Ok(GetErrorDocument::Lookup(Ok(missing @ Self::NotFound { .. }))) => {
+                    return Ok(missing);
+                }
+                Ok(GetErrorDocument::Lookup(Ok(Self::Found(_)))) => {
                     return Err(Error::Protocol(Protocol::DocumentStatus));
                 }
-                Ok(Get404::Error { error, status }) => Ok(ErrorDocument {
-                    error: Some(error),
-                    status,
-                }),
+                Ok(GetErrorDocument::Lookup(Err(document))) => Ok(document),
+                Ok(GetErrorDocument::Provider(_)) => unreachable!("404 codec selected"),
                 Err(error) => Err(error),
             };
             return Err(Error::Provider(Box::new(ProviderError::new(
                 meta, document,
             ))));
         }
-        let result = standard_response(received).await?;
+        if !received.status().is_success() {
+            let (meta, document) = received.failure(ERROR_DOCUMENT_LIMIT).await.into_document();
+            let document = document.map(|document| match document {
+                GetErrorDocument::Provider(document) => document,
+                GetErrorDocument::Lookup(_) => unreachable!("non-404 codec selected"),
+            });
+            return Err(Error::Provider(Box::new(ProviderError::new(
+                meta, document,
+            ))));
+        }
+        let result = received.into_success()?.decode().await?;
         match result {
             Self::Found(_) => Ok(result),
             Self::NotFound { .. } => Err(Error::Protocol(Protocol::DocumentStatus)),
@@ -298,10 +306,48 @@ pub struct IndexResponse {
 }
 
 impl ResponsePolicy for IndexResponse {
-    async fn read(received: Received<Self>) -> Result<Self, Error> {
+    async fn read(received: Received<Self, crate::ErrorDocument>) -> Result<Self, Error> {
         if received.status() == StatusCode::CONFLICT {
             return Err(Error::VersionConflict(provider_error(received).await));
         }
         standard_response(received).await
+    }
+}
+
+/// A document lookup has a distinct HTTP 404 representation; other statuses use the API error.
+pub enum GetErrorDocument {
+    /// HTTP 404 is either an explicit missing document or a provider error.
+    Lookup(Result<GetDocument, ErrorDocument>),
+    /// Other non-2xx statuses use the ordinary API error.
+    Provider(ErrorDocument),
+}
+/// JSON error handling for a document lookup, selected by the response status.
+pub struct GetErrorJson;
+impl concord::Decode<GetErrorDocument> for GetErrorJson {
+    type Context = u16;
+    fn check_content_type(head: &concord::ResponseHead<'_>) -> Result<(), concord::CodecError> {
+        <Json as concord::Decode<ErrorDocument>>::check_content_type(head)
+    }
+    fn context(head: &concord::ResponseHead<'_>) -> Result<u16, concord::CodecError> {
+        Ok(head.status().as_u16())
+    }
+    fn decode_body(
+        status: u16,
+        body: concord::bytes::Bytes,
+    ) -> Result<GetErrorDocument, concord::CodecError> {
+        if status == 404 {
+            <Json as concord::Decode<Get404>>::decode_body((), body).map(|document| {
+                GetErrorDocument::Lookup(match document {
+                    Get404::Document(document) => Ok(document),
+                    Get404::Error { error, status } => Err(ErrorDocument {
+                        error: Some(error),
+                        status,
+                    }),
+                })
+            })
+        } else {
+            <Json as concord::Decode<ErrorDocument>>::decode_body((), body)
+                .map(GetErrorDocument::Provider)
+        }
     }
 }

@@ -253,7 +253,7 @@ pub trait Endpoint<T, D = ()>: Sized {
 #[diagnostic::on_unimplemented(
     message = "the send policy `{Self}` does not send a `{T}` output",
     label = "named by the client's `send` statement; it needs `{Self}: SendWith<{T}, {D}>`",
-    note = "a send policy implements `concord::SendWith<T, D>` for every output `T` its endpoints declare, `D` being their error document (`error D in F;`, `()` without one): usually generically, `impl<T: Send> SendWith<T> for Policy` or `impl<T: Send> SendWith<T, D> for Policy`"
+    note = "implement `impl<T: Send> concord::SendWith<T, {D}> for {Self}` with `E: concord::Endpoint<T, {D}> + Send`; the second parameter is the declared error document, or `()` without one"
 )]
 pub trait SendWith<T, D = ()> {
     /// What `send()` returns.
@@ -346,7 +346,7 @@ impl fmt::Debug for DebugHeaders<'_> {
 
 /// The format's continuation once the head was accepted: decodes the body with the context taken
 /// from the head. Boxing a zero-sized context allocates nothing.
-type BodyStep<T> = Box<dyn FnOnce(Bytes) -> Result<T, CodecError> + Send>;
+pub(crate) type BodyStep<T> = Box<dyn FnOnce(Bytes) -> Result<T, CodecError> + Send>;
 
 /// Checks a response head with a format and returns its body step.
 pub(crate) type HeadStep<T> = fn(&ResponseHead<'_>) -> Result<BodyStep<T>, CodecError>;
@@ -575,6 +575,51 @@ impl<T, D> Decoder<T, D> {
         limit: usize,
     ) -> crate::Failure<D> {
         crate::failure::read(response, self.error, limit, self.operation).await
+    }
+
+    /// The declared error document, with a head refusal left unread for SDK status routing.
+    pub(crate) async fn error_document(
+        self,
+        mut response: reqwest::Response,
+        limit: usize,
+    ) -> (ResponseMeta, Result<D, Error>) {
+        let operation = self.operation;
+        let checked = self.error.map(|step| step(&ResponseHead::of(&response)));
+        let decode = match checked {
+            Some(Ok(decode)) => decode,
+            Some(Err(error)) => {
+                let meta = ResponseMeta::new(ResponseHead::of(&response), operation);
+                return (meta, Err(Error::from_metadata(operation, error, response)));
+            }
+            None => {
+                let meta = ResponseMeta::take(&mut response, operation);
+                let error =
+                    Error::from_decode(operation, CodecError::new("no error document declared"))
+                        .with_head(meta.clone());
+                return (meta, Err(error));
+            }
+        };
+        let meta = ResponseMeta::take(&mut response, operation);
+        let document = match read_limited(response, limit, operation).await {
+            Ok(body) => decode(body.clone())
+                .map_err(|error| Error::from_decode(operation, error).with_body(body)),
+            Err(error) => Err(error),
+        };
+        (
+            meta.clone(),
+            document.map_err(|error| error.with_head(meta)),
+        )
+    }
+
+    /// Success handling after the SDK has applied its own status rule.
+    pub(crate) fn success(self) -> Decoder<T> {
+        Decoder {
+            operation: self.operation,
+            kind: self.kind,
+            limit: self.limit,
+            error: None,
+            error_limit: self.error_limit,
+        }
     }
 
     /// The identity of the endpoint this handling belongs to (`None` for [`Decoder::new`],

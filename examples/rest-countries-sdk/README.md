@@ -1,5 +1,9 @@
 # concord-sdk-rest-countries
 
+The declaration owns the provider error document: `error crate::error::ErrorDocument in concord::Json;`. Native prepared/decoded
+paths carry that document as `D` in `Prepared<T, D>` and `concord::Error<D>`; SDK status routing
+and validation remain in the policy. Concord withholds document contents in formatting.
+
 A bounded Rust SDK for the [REST Countries](https://restcountries.com) **Countries API, version
 5** (`https://api.restcountries.com/countries/v5`), built on Concord. It covers two connected
 workflows:

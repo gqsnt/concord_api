@@ -1,5 +1,9 @@
 # Square Payments SDK33
 
+The declaration owns the provider error document: `error crate::error::ErrorDocument in concord::Json;`. Native prepared/decoded
+paths carry that document as `D` in `Prepared<T, D>` and `concord::Error<D>`; SDK status routing
+and validation remain in the policy. Concord withholds document contents in formatting.
+
 `concord-sdk-square-payments` is a bounded, example-assisted Square sandbox
 slice at API version **2026-09-16**. It creates an immediate-capture payment from
 an already collected token, retrieves a payment, and pages account payments with

@@ -232,11 +232,16 @@ impl Client {
     }
 }
 
-async fn execute<T>(endpoint: impl Endpoint<Envelope<T>>) -> Result<Response<T>, Error> {
+async fn execute<T>(
+    endpoint: impl Endpoint<
+        Envelope<T>,
+        crate::wire::Envelope<serde_json::Map<String, serde_json::Value>>,
+    >,
+) -> Result<Response<T>, Error> {
     let received = endpoint.prepare()?.receive().await?;
     if !received.status().is_success() {
         let meta = ResponseMeta::capture(received.head(), received.operation());
-        let body = Box::new(ErrorBody::new(received.bytes_limited(64 * 1024).await));
+        let body = Box::new(ErrorBody::from_failure(received.failure(64 * 1024).await));
         return Err(if meta.status == reqwest::StatusCode::TOO_MANY_REQUESTS {
             Error::RateLimited {
                 retry_after: meta.retry_after(),
@@ -250,7 +255,7 @@ async fn execute<T>(endpoint: impl Endpoint<Envelope<T>>) -> Result<Response<T>,
             }
         });
     }
-    let (envelope, meta) = received.decode_with_meta().await?;
+    let (envelope, meta) = received.into_success()?.decode_with_meta().await?;
     let meta = ResponseMeta::capture(meta.head(), meta.operation());
     if !envelope.ok {
         return Err(match envelope.into_provider() {

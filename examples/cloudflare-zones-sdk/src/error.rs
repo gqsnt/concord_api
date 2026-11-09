@@ -201,29 +201,36 @@ impl fmt::Display for EnvelopeProblem {
 /// Every failure of this SDK.
 #[derive(Debug)]
 #[non_exhaustive]
+#[derive(concord::derive::Error)]
+#[display(with = display_error)]
 pub enum Error {
     /// Cloudflare refused the request: `success: false` (whatever the 2xx status), or a non-2xx
     /// status other than 429. The status is authoritative even when the body is unreadable.
+    #[from(skip)]
     Provider(Box<ProviderError>),
     /// HTTP 429: a global or a service limit was exceeded. Read
     /// [`ProviderError::retry_after`] and [`ResponseMeta::rate_limits`].
+    #[from(skip)]
     RateLimited(Box<ProviderError>),
     /// An HTTP 2xx `success: true` envelope without what the call needs.
+    #[from(skip)]
     Envelope(Box<EnvelopeError>),
     /// The API token is not a valid bearer credential; nothing was sent.
-    Credential(concord_auth::CredentialError),
+    #[from(skip)]
+    Credential(#[source] concord_auth::CredentialError),
     /// Invalid create input; no request was sent.
-    Input(crate::RecordInputError),
+    Input(#[source] crate::RecordInputError),
     /// A create reached the transport but no usable success envelope was received (including
     /// a timeout before headers or while reading a successful body). The record may exist.
     /// List the zone's records to reconcile before deciding whether to create again.
     /// The SDK never resends a create automatically.
-    CreateUncertain(concord::Error),
+    #[from(skip)]
+    CreateUncertain(#[source] concord::Error),
     /// Concord's failure: `Build` (nothing sent), `Transport`, `Metadata` (a 2xx that is not
     /// JSON), `Decode` (a body that is not an envelope), `Limit` (a body over
     /// [`SUCCESS_BODY_LIMIT`](crate::SUCCESS_BODY_LIMIT)). Once a response head arrived,
     /// `error.head()` has it.
-    Concord(concord::Error),
+    Concord(#[source] concord::Error),
     /// The retry owner completed no attempt. Not expected with this SDK's policy (no deadline,
     /// reads); kept so that its outcome is mapped totally.
     NoAttempt,
@@ -257,53 +264,28 @@ impl Error {
     }
 }
 
-impl From<concord::Error> for Error {
-    fn from(error: concord::Error) -> Self {
-        Self::Concord(error)
-    }
-}
-
-impl From<crate::RecordInputError> for Error {
-    fn from(error: crate::RecordInputError) -> Self {
-        Self::Input(error)
-    }
-}
-
-impl fmt::Display for Error {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::Provider(e) => e.fmt(f),
-            Self::RateLimited(e) => {
-                e.fmt(f)?;
-                match e.retry_after() {
-                    RetryAfter::After(delay) => write!(f, " (rate limited, retry after {delay:?})"),
-                    RetryAfter::Absent => f.write_str(" (rate limited, no Retry-After)"),
-                    RetryAfter::Invalid => f.write_str(" (rate limited, invalid Retry-After)"),
-                }
+fn display_error(value: &Error, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    match value {
+        Error::Provider(e) => std::fmt::Display::fmt(e, f),
+        Error::RateLimited(e) => {
+            std::fmt::Display::fmt(e, f)?;
+            match e.retry_after() {
+                RetryAfter::After(delay) => write!(f, " (rate limited, retry after {delay:?})"),
+                RetryAfter::Absent => f.write_str(" (rate limited, no Retry-After)"),
+                RetryAfter::Invalid => f.write_str(" (rate limited, invalid Retry-After)"),
             }
-            Self::Envelope(e) => {
-                let op = e.meta.operation().map_or("a request", |o| o.name());
-                write!(f, "unusable Cloudflare envelope for {op}: {}", e.problem)
-            }
-            Self::Credential(e) => write!(f, "invalid Cloudflare API token: {e}"),
-            Self::Input(e) => write!(f, "invalid Cloudflare DNS create input: {e}"),
-            Self::CreateUncertain(e) => write!(
-                f,
-                "Cloudflare DNS create is uncertain; list the zone's records to reconcile: {e}"
-            ),
-            Self::Concord(e) => e.fmt(f),
-            Self::NoAttempt => f.write_str("no attempt completed"),
         }
-    }
-}
-
-impl std::error::Error for Error {
-    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
-        match self {
-            Self::Concord(e) | Self::CreateUncertain(e) => Some(e),
-            Self::Credential(e) => Some(e),
-            Self::Input(e) => Some(e),
-            _ => None,
+        Error::Envelope(e) => {
+            let op = e.meta.operation().map_or("a request", |o| o.name());
+            write!(f, "unusable Cloudflare envelope for {op}: {}", e.problem)
         }
+        Error::Credential(e) => write!(f, "invalid Cloudflare API token: {e}"),
+        Error::Input(e) => write!(f, "invalid Cloudflare DNS create input: {e}"),
+        Error::CreateUncertain(e) => write!(
+            f,
+            "Cloudflare DNS create is uncertain; list the zone's records to reconcile: {e}"
+        ),
+        Error::Concord(e) => std::fmt::Display::fmt(e, f),
+        Error::NoAttempt => f.write_str("no attempt completed"),
     }
 }

@@ -53,7 +53,7 @@ pub fn derive_debug(input: TokenStream) -> TokenStream {
 /// - `#[display("...")]` on each variant: a format string over its fields (`{0}`, `{name}`).
 ///   Exactly one field (`"{0}"`) formats as that field, with the caller's flags. Or
 ///   `#[display(with = path)]` on the enum: `fn(&Self, &mut Formatter<'_>) -> fmt::Result`.
-/// - Each single-field tuple variant converts `From` its field (`From<T>` for `Box<T>`);
+/// - Each single-field tuple variant converts `From` its field (`From<T>` for `Box<T>`/`Arc<T>`);
 ///   `#[from(skip)]` withholds one. `#[from(concord::Error<D>)]` makes the variant the provider's
 ///   answer: its field is built `From` the `Failure<D>`, any other failure goes through
 ///   `From<concord::Error>`.

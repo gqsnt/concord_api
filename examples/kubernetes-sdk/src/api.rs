@@ -50,6 +50,7 @@ concord::api! {
         #[sensitive] header(AUTHORIZATION) authorization?: HeaderValue,
     ) {
         base origin;
+        error crate::model::Status in concord::IgnoreContentType<concord::Json>;
         format Json;
 
         /// The parameters every list endpoint (`GET .../{plural}`) shares.

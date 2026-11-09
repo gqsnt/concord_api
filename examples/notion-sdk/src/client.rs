@@ -1,6 +1,6 @@
 use crate::api::{Notion, NotionConfig};
 use crate::models::{Block, List, Page, QueryResult};
-use crate::{ERROR_LIMIT, EnvelopeProblem, Error, PageSize, ProviderError, Query};
+use crate::{ERROR_LIMIT, EnvelopeProblem, Error, PageSize, Query};
 use concord::{Prepared, ResponseMeta, reqwest};
 use concord_pagination::{Page as TraversalPage, Pages, Resume};
 
@@ -185,17 +185,26 @@ fn validate<T>(response: &Response<List<T>>, cursor: Option<&str>) -> Result<(),
     }
 }
 
-async fn receive<T>(prepared: Prepared<T>) -> Result<Response<T>, Error> {
+async fn receive<T>(prepared: Prepared<T, crate::ProviderError>) -> Result<Response<T>, Error> {
     let received = prepared.receive().await?;
     if received.status().is_success() {
-        let (value, meta) = received.decode_with_meta().await?;
+        let (value, meta) = received.into_success()?.decode_with_meta().await?;
         return Ok(Response { value, meta });
     }
-    // Keep the raw bytes even when JSON decoding succeeds but the provider envelope is
-    // inconsistent with the head; `document` retains bytes only after a decode failure.
-    let meta = received.meta();
-    let body = received.bytes_limited(ERROR_LIMIT).await?;
-    match serde_json::from_slice::<ProviderError>(&body) {
+    let failure = received.failure(ERROR_LIMIT).await;
+    let complete = !matches!(
+        failure.state(),
+        concord::Document::TooLong { .. } | concord::Document::Broken(_)
+    );
+    let body = failure.body().clone();
+    let (meta, document) = failure.into_document();
+    if !complete {
+        return Err(document
+            .err()
+            .expect("incomplete body has a read error")
+            .into());
+    }
+    match document {
         Ok(error) if error.object == "error" && error.status == meta.status().as_u16() => {
             Err(Error::Provider {
                 error: Box::new(error),

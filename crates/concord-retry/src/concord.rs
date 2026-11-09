@@ -1,5 +1,5 @@
 //! Prepared-request adapter (feature `concord`). No decoding, provider classification or stream
-//! resumption happens here. Each attempt returns an unread `Received<T>` with endpoint identity.
+//! resumption happens here. Each attempt returns an unread `Received<T, D>` with endpoint identity.
 //!
 //! A supplied `reqwest::Client` may retry or redirect internally: report counts are application
 //! attempts. Strict wire accounting requires disabling those policies explicitly:
@@ -45,19 +45,19 @@ impl Retry {
         clippy::too_many_arguments,
         reason = "explicit closures keep injected time and policy visible without an extra runtime abstraction"
     )]
-    pub async fn receive<T, H, C, N, S, Sleep, J>(
+    pub async fn receive<T, D, H, C, N, S, Sleep, J>(
         self,
-        prepared: Prepared<T>,
+        prepared: Prepared<T, D>,
         mode: ReplayMode,
         mut hook: H,
         classify: C,
         now: N,
         sleep: S,
         jitter: J,
-    ) -> Run<Result<Received<T>, Error>>
+    ) -> Run<Result<Received<T, D>, Error>>
     where
         H: FnMut(&mut reqwest::Request, usize),
-        C: FnMut(&Result<Received<T>, Error>) -> Decision,
+        C: FnMut(&Result<Received<T, D>, Error>) -> Decision,
         N: FnMut() -> Duration,
         S: FnMut(Duration) -> Sleep,
         Sleep: Future<Output = ()>,
@@ -120,9 +120,9 @@ pub struct ReceiveReport {
 
 /// An async adapter's last completed outcome, final attempt state and independent hook refusal.
 /// A refusal never overwrites a previous outcome. `Debug` withholds all three caller values.
-pub struct ReceiveRun<T, A, E> {
+pub struct ReceiveRun<T, A, E, D = ()> {
     /// Last completed dispatch, unread and unconsumed; retained through later hook/dispatch expiry.
-    pub outcome: Option<Result<Received<T>, Error>>,
+    pub outcome: Option<Result<Received<T, D>, Error>>,
     /// State returned by the hook for the final completed dispatch, retained through decoding.
     /// Dropped before another hook or backoff, even though `outcome` is retained.
     pub context: Option<A>,
@@ -132,7 +132,7 @@ pub struct ReceiveRun<T, A, E> {
     pub report: ReceiveReport,
 }
 
-impl<T, A, E> fmt::Debug for ReceiveRun<T, A, E> {
+impl<T, A, E, D> fmt::Debug for ReceiveRun<T, A, E, D> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("ReceiveRun")
             .field("outcome", &self.outcome.as_ref().map(|_| "<withheld>"))
@@ -199,20 +199,20 @@ impl Retry {
         clippy::too_many_arguments,
         reason = "explicit closures keep injected time and policy visible without an extra runtime abstraction"
     )]
-    pub async fn receive_with<T, A, E, H, Hook, C, N, S, Sleep, J>(
+    pub async fn receive_with<T, D, A, E, H, Hook, C, N, S, Sleep, J>(
         self,
-        prepared: Prepared<T>,
+        prepared: Prepared<T, D>,
         mode: ReplayMode,
         mut hook: H,
         mut classify: C,
         mut now: N,
         mut sleep: S,
         mut jitter: J,
-    ) -> ReceiveRun<T, A, E>
+    ) -> ReceiveRun<T, A, E, D>
     where
         H: FnMut(reqwest::Request, usize) -> Hook,
         Hook: Future<Output = Result<(reqwest::Request, A), E>>,
-        C: FnMut(&Result<Received<T>, Error>, &mut A) -> Decision,
+        C: FnMut(&Result<Received<T, D>, Error>, &mut A) -> Decision,
         N: FnMut() -> Duration,
         S: FnMut(Duration) -> Sleep,
         Sleep: Future<Output = ()>,

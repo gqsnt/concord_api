@@ -51,7 +51,10 @@ fn reply(case: usize, success: &str, problem: &str, echo: &str) -> Reply {
         .header("set-cookie", echo)
 }
 
-async fn receive<T>(c: &mut Canaries, prepared: concord::Prepared<T>) -> Result<T, concord::Error> {
+async fn receive<T, D: 'static>(
+    c: &mut Canaries,
+    prepared: concord::Prepared<T, D>,
+) -> Result<T, concord::Error<D>> {
     let result = prepared.receive().await;
     c.assert_debug_absent("Received Result", &result);
     match result {
@@ -60,11 +63,11 @@ async fn receive<T>(c: &mut Canaries, prepared: concord::Prepared<T>) -> Result<
             c.assert_debug_absent("response metadata", &received.meta());
             received.decode().await
         }
-        Err(error) => Err(error),
+        Err(error) => Err(error.widen()),
     }
 }
 
-fn concord_error(c: &mut Canaries, error: &concord::Error) {
+fn concord_error<D: 'static>(c: &mut Canaries, error: &concord::Error<D>) {
     c.assert_debug_absent("concord::Error", error);
     c.assert_error_absent("concord::Error and sources", error);
     if let Some(meta) = error.head_meta() {

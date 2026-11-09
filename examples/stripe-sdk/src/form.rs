@@ -127,21 +127,30 @@ impl Serialize for MetadataPatch {
 /// Why a value could not be encoded. `Display` names the rule, never a key or value.
 #[derive(Clone, Debug, PartialEq, Eq)]
 #[non_exhaustive]
+#[derive(concord::derive::Error)]
 pub enum FormError {
     /// The body is not a struct or a map (a form needs named fields).
+    #[display("a form body must be a struct or a map")]
     TopLevel,
     /// A value of this serde kind has no form spelling here (bytes, unit, tuple or struct enum
     /// variants, a newtype variant).
+    #[display("a {0} value has no form encoding")]
+    #[from(skip)]
     Unsupported(&'static str),
     /// A key is empty or contains `[` or `]` (Stripe documents that metadata keys cannot
     /// contain square brackets; they would also be read as structure).
+    #[display("a form key must be non-empty and contain no `[` or `]`")]
     Key,
     /// A map key is not text or an integer.
+    #[display("a form map key must be text or an integer")]
     KeyType,
     /// A float is NaN or infinite.
+    #[display("a float in a form must be finite")]
     NonFinite,
     /// A `Serialize` implementation reported its own error (its message is kept for deliberate
     /// inspection through [`FormError::custom_message`], not shown by `Display`).
+    #[display("a value's serializer failed")]
+    #[from(skip)]
     Custom(String),
 }
 
@@ -154,21 +163,6 @@ impl FormError {
         }
     }
 }
-
-impl fmt::Display for FormError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::TopLevel => f.write_str("a form body must be a struct or a map"),
-            Self::Unsupported(kind) => write!(f, "a {kind} value has no form encoding"),
-            Self::Key => f.write_str("a form key must be non-empty and contain no `[` or `]`"),
-            Self::KeyType => f.write_str("a form map key must be text or an integer"),
-            Self::NonFinite => f.write_str("a float in a form must be finite"),
-            Self::Custom(_) => f.write_str("a value's serializer failed"),
-        }
-    }
-}
-
-impl std::error::Error for FormError {}
 
 impl ser::Error for FormError {
     fn custom<M: fmt::Display>(message: M) -> Self {

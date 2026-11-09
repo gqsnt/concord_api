@@ -1,5 +1,9 @@
 # Backblaze B2 Native API: a bounded Concord SDK slice
 
+The declaration owns the provider error document: `error crate::WireErrorDocument in concord::Json;`. Native prepared/decoded
+paths carry that document as `D` in `Prepared<T, D>` and `concord::Error<D>`; SDK status routing
+and validation remain in the policy. Concord withholds document contents in formatting.
+
 `concord-sdk-backblaze-b2-native` covers two connected workflows of the B2 Native API **v4**:
 
 1. **Authorize and upload**: `b2_authorize_account` with an application key returns the account

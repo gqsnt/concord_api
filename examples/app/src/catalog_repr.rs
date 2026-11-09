@@ -9,14 +9,13 @@
 //! conversion that returns the generated [`CatalogActivity`] operation. The caller keeps its
 //! setters, `prepare()` and `send()`.
 
-use std::fmt;
-
 use concord_example_sdk::{Catalog, CatalogActivity};
 
 use crate::domain::{AccountId, Moment};
 
 /// A domain value Catalog cannot represent exactly.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, concord::derive::Error)]
+#[display(with = display_catalog_repr_error)]
 pub enum CatalogReprError {
     /// Catalog's `since` has whole seconds only, and the instant has a fractional part.
     FractionalSeconds {
@@ -31,22 +30,21 @@ pub enum CatalogReprError {
     },
 }
 
-impl fmt::Display for CatalogReprError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match *self {
-            Self::FractionalSeconds { subsec_nanos } => write!(
-                f,
-                "Catalog `since` takes whole seconds; the instant is {subsec_nanos} ns past its second"
-            ),
-            Self::YearOutOfRange { unix_seconds } => write!(
-                f,
-                "Catalog `since` takes years 0000 through 9999; Unix second {unix_seconds} is outside them"
-            ),
-        }
+fn display_catalog_repr_error(
+    value: &CatalogReprError,
+    f: &mut std::fmt::Formatter<'_>,
+) -> std::fmt::Result {
+    match *value {
+        CatalogReprError::FractionalSeconds { subsec_nanos } => write!(
+            f,
+            "Catalog `since` takes whole seconds; the instant is {subsec_nanos} ns past its second"
+        ),
+        CatalogReprError::YearOutOfRange { unix_seconds } => write!(
+            f,
+            "Catalog `since` takes years 0000 through 9999; Unix second {unix_seconds} is outside them"
+        ),
     }
 }
-
-impl std::error::Error for CatalogReprError {}
 
 /// `0000-01-01T00:00:00Z`.
 const FIRST_SECOND: i64 = -62_167_219_200;

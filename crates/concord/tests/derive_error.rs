@@ -207,7 +207,7 @@ fn an_enum_wide_formatter_formats_every_variant() {
     assert!(wrapped(None).source().is_none());
 }
 
-/// `concord::Error` the type and `concord::Error` the derive in one enum, generic too.
+/// `concord::Error` the type and `concord::derive::Error` in one enum, generic too.
 #[derive(Debug, concord::derive::Error)]
 enum Generic<T: fmt::Debug + fmt::Display> {
     #[display("{0}")]
@@ -349,6 +349,9 @@ fn non_ascii_field_names_format() {
 /// `#[source]` on one field per variant: plain, boxed, optional and named fields.
 #[derive(Debug, concord::derive::Error)]
 enum Caused {
+    #[display("shared")]
+    #[from(skip)]
+    Shared(#[source] std::sync::Arc<Other>),
     #[display("plain")]
     Plain(#[source] Other),
     #[display("boxed after {0} tries")]
@@ -367,6 +370,11 @@ impl std::error::Error for Other {}
 
 #[test]
 fn marked_fields_are_the_source() {
+    let shared = Caused::Shared(std::sync::Arc::new(Other(6)));
+    assert_eq!(
+        shared.source().unwrap().downcast_ref::<Other>().unwrap().0,
+        6
+    );
     let source = |e: &Caused| e.source().map(ToString::to_string);
     assert_eq!(source(&Caused::Plain(Other(1))).as_deref(), Some("other 1"));
     assert_eq!(
@@ -386,4 +394,20 @@ fn marked_fields_are_the_source() {
 #[test]
 fn ui() {
     trybuild::TestCases::new().compile_fail("tests/ui_derive_error/*.rs");
+}
+
+#[derive(Debug, concord::derive::Error)]
+enum Shared {
+    #[display("{0}")]
+    Cause(#[source] std::sync::Arc<Other>),
+}
+
+#[test]
+fn shared_payloads_convert_and_expose_the_inner_source() {
+    let error = Shared::from(Other(7));
+    assert_eq!(error.to_string(), "other 7");
+    assert_eq!(
+        error.source().unwrap().downcast_ref::<Other>().unwrap().0,
+        7
+    );
 }

@@ -1,7 +1,6 @@
 use concord::{ResponseMeta, reqwest::StatusCode};
 use concord_retry::concord::ReceiveReport;
 use serde::Deserialize;
-use std::fmt;
 
 /// HTTP failure classification; status remains authoritative if its document cannot be read.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -61,15 +60,18 @@ pub struct ProviderError {
 }
 
 /// SDK errors. Formatting never includes token, URL, cursor, headers or body content.
-#[derive(Debug)]
+#[derive(Debug, concord::derive::Error)]
+#[display(with = display_error)]
 pub enum Error {
     /// Invalid bearer token; nothing was sent.
     Credential,
     /// Invalid local policy settings; nothing was sent.
+    #[from(skip)]
     Configuration(&'static str),
     /// Concord build, transport or successful-response decoding failure.
     Concord(Box<concord::Error>),
     /// Authoritative non-2xx failure.
+    #[from(skip)]
     Provider(Box<ProviderError>),
     /// Invalid Sentry Link semantics; the head is retained.
     Pagination {
@@ -96,6 +98,7 @@ pub enum Error {
         meta: Option<Box<ResponseMeta>>,
     },
     /// A status change outside the documented details; nothing was sent.
+    #[from(skip)]
     InvalidUpdate(&'static str),
     /// A dispatched status update received no response head (a client timeout, reset or
     /// refused connection, or the SDK deadline expiring in flight). It may have been applied.
@@ -108,40 +111,28 @@ pub enum Error {
         report: Box<ReceiveReport>,
     },
 }
-impl From<concord::Error> for Error {
-    fn from(value: concord::Error) -> Self {
-        Self::Concord(Box::new(value))
-    }
-}
-impl From<concord_ratelimit::Error> for Error {
-    fn from(value: concord_ratelimit::Error) -> Self {
-        Self::Admission(value)
-    }
-}
-impl fmt::Display for Error {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::Credential => f.write_str("invalid Sentry bearer token"),
-            Self::Configuration(reason) => write!(f, "Sentry policy: {reason}"),
-            Self::Concord(error) => write!(f, "Sentry call: {error}"),
-            Self::Provider(error) => write!(
-                f,
-                "Sentry HTTP {} ({:?})",
-                error.meta.status().as_u16(),
-                error.class
-            ),
-            Self::Pagination { reason, .. } => write!(f, "Sentry pagination: {reason}"),
-            Self::RateMetadata { reason, .. } => write!(f, "Sentry quota metadata: {reason}"),
-            Self::Admission(error) => write!(f, "Sentry {error}"),
-            Self::RetryStopped { report, .. } => {
-                write!(f, "Sentry retry stopped: {:?}", report.retry.stop)
-            }
-            Self::InvalidUpdate(reason) => write!(f, "Sentry issue update: {reason}"),
-            Self::Uncertain { .. } => {
-                f.write_str("Sentry issue update outcome unknown: re-read the issue")
-            }
+
+fn display_error(value: &Error, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    match value {
+        Error::Credential => f.write_str("invalid Sentry bearer token"),
+        Error::Configuration(reason) => write!(f, "Sentry policy: {reason}"),
+        Error::Concord(error) => write!(f, "Sentry call: {error}"),
+        Error::Provider(error) => write!(
+            f,
+            "Sentry HTTP {} ({:?})",
+            error.meta.status().as_u16(),
+            error.class
+        ),
+        Error::Pagination { reason, .. } => write!(f, "Sentry pagination: {reason}"),
+        Error::RateMetadata { reason, .. } => write!(f, "Sentry quota metadata: {reason}"),
+        Error::Admission(error) => write!(f, "Sentry {error}"),
+        Error::RetryStopped { report, .. } => {
+            write!(f, "Sentry retry stopped: {:?}", report.retry.stop)
+        }
+        Error::InvalidUpdate(reason) => write!(f, "Sentry issue update: {reason}"),
+        Error::Uncertain { .. } => {
+            f.write_str("Sentry issue update outcome unknown: re-read the issue")
         }
     }
 }
 // Do not expose an untrusted provider formatter through a source chain.
-impl std::error::Error for Error {}

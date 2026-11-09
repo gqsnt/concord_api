@@ -87,17 +87,22 @@ impl fmt::Debug for HttpFailure {
 }
 
 /// SDK input, HTTP, response, or pagination-contract failure. Body text is never formatted.
-#[derive(Debug)]
+#[derive(Debug, concord::derive::Error)]
+#[display(with = display_error)]
 pub enum Error {
     /// Input refused before I/O, with a static explanation.
+    #[from(skip)]
     InvalidInput(&'static str),
     /// Transport, metadata, decoding or body-size error from Concord.
     Concord(Box<concord::Error>),
     /// Provider status with bounded diagnostic text or its decoding failure.
+    #[from(skip)]
     Http(Box<HttpFailure>),
     /// An inconsistent page or impossible continuation.
+    #[from(skip)]
     Protocol(&'static str),
     /// A terminal CSV record/transport failure; preceding rows have already been delivered.
+    #[from(skip)]
     Stream(concord_codecs::stream::ReadError),
     /// The CSV page budget was exhausted before a short or empty page established completion.
     PageBudget {
@@ -115,29 +120,20 @@ impl Error {
     }
 }
 
-impl From<concord::Error> for Error {
-    fn from(error: concord::Error) -> Self {
-        Self::Concord(Box::new(error))
-    }
-}
-
-impl fmt::Display for Error {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::InvalidInput(message) | Self::Protocol(message) => f.write_str(message),
-            Self::Concord(error) => error.fmt(f),
-            Self::Stream(error) => error.fmt(f),
-            Self::PageBudget { .. } => f.write_str("CSV page budget exhausted"),
-            Self::ExportFailed => f.write_str("CSV export already failed"),
-            Self::Http(error) => write!(
-                f,
-                "USGS HTTP {} ({:?})",
-                error.meta.status().as_u16(),
-                error.kind
-            ),
-        }
+fn display_error(value: &Error, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    match value {
+        Error::InvalidInput(message) | Error::Protocol(message) => f.write_str(message),
+        Error::Concord(error) => std::fmt::Display::fmt(error, f),
+        Error::Stream(error) => std::fmt::Display::fmt(error, f),
+        Error::PageBudget { .. } => f.write_str("CSV page budget exhausted"),
+        Error::ExportFailed => f.write_str("CSV export already failed"),
+        Error::Http(error) => write!(
+            f,
+            "USGS HTTP {} ({:?})",
+            error.meta.status().as_u16(),
+            error.kind
+        ),
     }
 }
 
 // No source chain: native/codec sources and provider text can echo body or URL data.
-impl std::error::Error for Error {}

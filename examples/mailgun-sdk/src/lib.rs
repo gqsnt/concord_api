@@ -63,6 +63,7 @@ concord::api! {
     /// Advanced `new` callers must supply an equivalent transport.
     pub client Mailgun(origin: concord::BaseUrl, #[sensitive] header(AUTHORIZATION) authorization: HeaderValue) {
         base origin;
+        error crate::Problem in concord::Json;
         path "v3";
         response Json;
         limit EVENT_BODY_LIMIT;

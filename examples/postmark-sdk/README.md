@@ -1,5 +1,9 @@
 # Postmark SDK slice
 
+The declaration owns the provider error document: `error crate::ErrorDocument in concord::Json;`. Native prepared/decoded
+paths carry that document as `D` in `Prepared<T, D>` and `concord::Error<D>`; SDK status routing
+and validation remain in the policy. Concord withholds document contents in formatting.
+
 A small Concord SDK for transactional email submission (single and batch) and outbound message search and details. The server token is sent in `X-Postmark-Server-Token`. The default base is `https://api.postmarkapp.com`; `with_base_url` is useful for local fixtures. Configure an HTTP timeout; use the provided builder to disable transport retries and redirects. Do not re-enable either, or configure an independent client to replay requests. Generated `send()` names its `Result<T, Error>` output. `prepare()` and native transport escapes bypass the SDK policy.
 
 ```rust,no_run

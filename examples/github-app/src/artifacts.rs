@@ -221,29 +221,25 @@ pub enum Stage {
 
 /// Why a retrieval stopped. The underlying errors are kept typed.
 #[non_exhaustive]
+#[derive(concord::derive::Error)]
 pub enum RetrievalError<E> {
     /// A GitHub API request failed.
+    #[display("artifact retrieval: {0}")]
+    #[from(skip)]
     GitHub(GitHubError),
     /// The download location could not be obtained.
+    #[display("artifact retrieval: {0}")]
+    #[from(skip)]
     Locate(LocateError),
     /// The transfer failed (transport, byte limit, the sink's refusal or cancellation).
+    #[display("artifact retrieval: {0}")]
+    #[from(skip)]
     Stream(StreamError<E>),
     /// The sink could not commit.
+    #[display("artifact retrieval: the sink could not commit")]
+    #[from(skip)]
     Commit(E),
 }
-
-impl<E> fmt::Display for RetrievalError<E> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::GitHub(error) => write!(f, "artifact retrieval: {error}"),
-            Self::Locate(error) => write!(f, "artifact retrieval: {error}"),
-            Self::Stream(error) => write!(f, "artifact retrieval: {error}"),
-            Self::Commit(_) => f.write_str("artifact retrieval: the sink could not commit"),
-        }
-    }
-}
-
-impl<E> std::error::Error for RetrievalError<E> {}
 
 /// What a retrieval had established before it stopped.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]

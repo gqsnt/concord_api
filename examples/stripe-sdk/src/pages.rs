@@ -139,7 +139,9 @@ pub trait ListRequest: Clone {
     /// # Errors
     ///
     /// Concord's `Build` error.
-    fn prepare_list(self) -> Result<Prepared<List<Self::Item>>, concord::Error>;
+    fn prepare_list(
+        self,
+    ) -> Result<Prepared<List<Self::Item>, crate::ErrorDocument>, concord::Error>;
 }
 
 macro_rules! list_request {
@@ -152,7 +154,7 @@ macro_rules! list_request {
             fn with_ending_before(self, cursor: Option<<$item as Object>::Id>) -> Self {
                 self.maybe_ending_before(cursor)
             }
-            fn prepare_list(self) -> Result<Prepared<List<$item>>, concord::Error> {
+            fn prepare_list(self) -> Result<Prepared<List<$item>, crate::ErrorDocument>, concord::Error> {
                 self.prepare()
             }
         }
@@ -473,7 +475,7 @@ fn has_cursor(url: &Url) -> bool {
         .any(|(key, _)| key == "starting_after" || key == "ending_before")
 }
 
-fn fingerprint<T>(prepared: &Prepared<T>) -> u64 {
+fn fingerprint<T>(prepared: &Prepared<T, crate::ErrorDocument>) -> u64 {
     let request = prepared.request();
     let mut hasher = DefaultHasher::new();
     request.method().as_str().hash(&mut hasher);

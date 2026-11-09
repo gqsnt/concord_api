@@ -73,16 +73,20 @@ impl ProviderClass {
 
 /// Why a non-2xx response's error document could not be read. Each variant holds the
 /// [`concord::Error`] of `Received::document`, with its kind, operation and response head.
-#[derive(Debug)]
+#[derive(Debug, concord::derive::Error)]
+#[display(with = display_error_body_error)]
 pub enum ErrorBodyError {
-    /// Missing, repeated or non-JSON `Content-Type` (a proxy's HTML page); the body was not
-    /// read (kind `Metadata`).
-    Metadata(concord::Error),
+    /// Missing, repeated or non-JSON `Content-Type` (a proxy's HTML page); bounded body
+    /// retained (kind `Metadata`).
+    #[from(skip)]
+    Metadata(#[source] concord::Error),
     /// The body exceeded [`crate::ERROR_BODY_LIMIT`] or could not be read completely (kind
     /// `Limit` or `Transport`).
-    Read(concord::Error),
+    #[from(skip)]
+    Read(#[source] concord::Error),
     /// JSON-labelled, but not an [`ErrorDocument`] (kind `Decode`).
-    Decode(concord::Error),
+    #[from(skip)]
+    Decode(#[source] concord::Error),
 }
 
 impl From<concord::Error> for ErrorBodyError {
@@ -103,16 +107,11 @@ impl ErrorBodyError {
     }
 }
 
-impl fmt::Display for ErrorBodyError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        fmt::Display::fmt(self.source_error(), f)
-    }
-}
-
-impl std::error::Error for ErrorBodyError {
-    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
-        Some(self.source_error())
-    }
+fn display_error_body_error(
+    value: &ErrorBodyError,
+    f: &mut std::fmt::Formatter<'_>,
+) -> std::fmt::Result {
+    fmt::Display::fmt(value.source_error(), f)
 }
 
 /// A non-2xx answer: the response head and the bounded attempt to read the error document.
@@ -175,33 +174,26 @@ impl std::error::Error for ProviderError {
 /// shown.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[non_exhaustive]
+#[derive(concord::derive::Error)]
 pub enum ContractError {
     /// `meta.count` (or `meta.total`, for a single lookup) differs from the records received.
+    #[display("the page's count disagrees with its records")]
     CountMismatch,
     /// The page arithmetic is impossible (more records than `limit`, past `total`, an empty
     /// page before `total`).
+    #[display("inconsistent page: {0}")]
+    #[from(skip)]
     Offset(OffsetError),
     /// `meta.more` contradicts `offset + count` against `total`.
+    #[display("the page's `more` flag contradicts its offsets")]
     MoreMismatch,
     /// A lookup expected to be unique (an ISO code) matched several records.
+    #[display("a unique lookup matched {total} records")]
     NotUnique {
         /// The number of matches the provider reported.
         total: u64,
     },
 }
-
-impl fmt::Display for ContractError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::CountMismatch => f.write_str("the page's count disagrees with its records"),
-            Self::Offset(error) => write!(f, "inconsistent page: {error}"),
-            Self::MoreMismatch => f.write_str("the page's `more` flag contradicts its offsets"),
-            Self::NotUnique { total } => write!(f, "a unique lookup matched {total} records"),
-        }
-    }
-}
-
-impl std::error::Error for ContractError {}
 
 /// What every generated `send()` (and [`crate::pages`]) returns on failure.
 ///
@@ -209,15 +201,20 @@ impl std::error::Error for ContractError {}
 /// `Error`); `From<concord::Error>` converts it into [`Error::Concord`], so `?` works.
 #[derive(Debug)]
 #[non_exhaustive]
+#[derive(concord::derive::Error)]
 pub enum Error {
     /// Any non-2xx status, with the bounded error-document attempt. A no-match is *not* this:
     /// it is a successful, empty [`CountryPage`](crate::CountryPage).
-    Provider(Box<ProviderError>),
+    #[display("{0}")]
+    #[from(concord::Error<crate::error::ErrorDocument>)]
+    Provider(#[source] Box<ProviderError>),
     /// Building, sending, the success `Content-Type`, reading (`Limit`, `Transport`) or decoding
     /// the success body. After a head arrived, `error.head()` keeps it.
-    Concord(concord::Error),
+    #[display("{0}")]
+    Concord(#[source] concord::Error),
     /// A 2xx page that contradicts the contract ([`ContractError`]).
-    Contract(ContractError),
+    #[display("{0}")]
+    Contract(#[source] ContractError),
 }
 
 impl Error {
@@ -248,34 +245,12 @@ impl Error {
     }
 }
 
-impl From<concord::Error> for Error {
-    fn from(error: concord::Error) -> Self {
-        Self::Concord(error)
-    }
-}
-
-impl From<ContractError> for Error {
-    fn from(error: ContractError) -> Self {
-        Self::Contract(error)
-    }
-}
-
-impl fmt::Display for Error {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::Provider(error) => fmt::Display::fmt(error, f),
-            Self::Concord(error) => fmt::Display::fmt(error, f),
-            Self::Contract(error) => fmt::Display::fmt(error, f),
-        }
-    }
-}
-
-impl std::error::Error for Error {
-    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
-        match self {
-            Self::Provider(error) => Some(error),
-            Self::Concord(error) => Some(error),
-            Self::Contract(error) => Some(error),
+impl From<concord::Failure<crate::error::ErrorDocument>> for ProviderError {
+    fn from(failure: concord::Failure<crate::error::ErrorDocument>) -> Self {
+        let (meta, document) = failure.into_document();
+        Self {
+            meta,
+            document: document.map_err(ErrorBodyError::from),
         }
     }
 }

@@ -1,5 +1,9 @@
 # Microsoft Graph SDK
 
+The declaration owns the provider error document: `error crate::ErrorEnvelope in concord::IgnoreContentType<concord::Json>;`. Native prepared/decoded
+paths carry that document as `D` in `Prepared<T, D>` and `concord::Error<D>`; SDK status routing
+and validation remain in the policy. Concord withholds document contents in formatting.
+
 `concord-sdk-microsoft-graph` is an unpublished, bounded Graph **v1.0** client built
 with `concord::api!`. It provides users delta, group listing, and direct group
 members, with typed records, selected fields, opaque continuations, and errors

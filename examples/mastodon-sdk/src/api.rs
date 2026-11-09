@@ -16,6 +16,7 @@ concord::api! {
         #[sensitive] header(AUTHORIZATION) authorization?: HeaderValue,
     ) {
         base origin;
+        error crate::ErrorDocument in concord::Json;
         send MastodonPolicy -> Result<_, Error>;
         format Json;
         // Every finite document below (a timeline page of at most 40 statuses, one status, the
@@ -87,6 +88,7 @@ mod streaming_api {
             #[sensitive] header(AUTHORIZATION) authorization?: HeaderValue,
         ) {
             base origin;
+        error crate::ErrorDocument in concord::Json;
             send MastodonPolicy -> Result<_, Error>;
             /// The public (federated) timeline as server-sent events:
             /// `GET /api/v1/streaming/public` on the streaming host.

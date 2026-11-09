@@ -1,7 +1,6 @@
 //! Small value types shared by the declaration, the models and the request bodies.
 
 use std::collections::BTreeMap;
-use std::fmt;
 use std::str::FromStr;
 
 use serde::{Deserialize, Deserializer, Serialize};
@@ -17,6 +16,8 @@ pub type Metadata = BTreeMap<String, String>;
 /// A value the SDK refused before building a request. `Display` names the rule, never the value.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[non_exhaustive]
+#[derive(concord::derive::Error)]
+#[display(with = display_value_error)]
 pub enum ValueError {
     /// A currency is not three lowercase ASCII letters.
     Currency,
@@ -32,20 +33,16 @@ pub enum ValueError {
     IdempotencyKey,
 }
 
-impl fmt::Display for ValueError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(match self {
-            Self::Currency => "currency must be three lowercase ASCII letters",
-            Self::Limit => "list limit must be between 1 and 100",
-            Self::ExpandPath => "expansion path must have 1-4 non-empty dot-separated segments",
-            Self::ApiVersion => "API version must be non-empty visible ASCII",
-            Self::SecretKey => "secret key must start with `sk_` or `rk_` and be visible ASCII",
-            Self::IdempotencyKey => "idempotency key must be 1-255 visible ASCII characters",
-        })
-    }
+fn display_value_error(value: &ValueError, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    f.write_str(match value {
+        ValueError::Currency => "currency must be three lowercase ASCII letters",
+        ValueError::Limit => "list limit must be between 1 and 100",
+        ValueError::ExpandPath => "expansion path must have 1-4 non-empty dot-separated segments",
+        ValueError::ApiVersion => "API version must be non-empty visible ASCII",
+        ValueError::SecretKey => "secret key must start with `sk_` or `rk_` and be visible ASCII",
+        ValueError::IdempotencyKey => "idempotency key must be 1-255 visible ASCII characters",
+    })
 }
-
-impl std::error::Error for ValueError {}
 
 /// A three-letter ISO currency code in lowercase, as Stripe writes it (`usd`, `eur`). Totals are
 /// kept per currency; amounts in different currencies are never added.

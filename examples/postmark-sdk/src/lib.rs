@@ -8,7 +8,6 @@
 
 use concord::{Endpoint, Json, SendWith};
 use serde::{Deserialize, Serialize};
-use std::fmt;
 
 /// HTTP client builder with redirects and transport retries disabled. Set a timeout before building.
 /// Re-enabling either can cause an email to be submitted more than once.
@@ -150,10 +149,14 @@ pub const ERROR_LIMIT: usize = 64 * 1024;
 /// Failure of an SDK operation. Formatting never includes provider error text or credentials.
 #[derive(Debug)]
 #[non_exhaustive]
+#[derive(concord::derive::Error)]
+#[display(with = display_error)]
 pub enum Error {
     /// Request building or a read operation failed.
+    #[from(skip)]
     Request(concord::Error),
     /// A send may have taken effect but its response could not be received or decoded.
+    #[from(skip)]
     UnknownOutcome(concord::Error),
     /// A non-success status, with a document if the bounded JSON read succeeded.
     Api {
@@ -183,29 +186,26 @@ impl Error {
         matches!(self, Self::UnknownOutcome(_) | Self::UnmatchedBatch { .. })
     }
 }
-impl fmt::Display for Error {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::Request(e) => write!(f, "Postmark request failed: {e}"),
-            Self::UnknownOutcome(e) => write!(f, "Postmark send outcome unknown: {e}"),
-            Self::Api {
-                status, document, ..
-            } => {
-                write!(f, "Postmark returned HTTP {}", status.as_u16())?;
-                if let Some(d) = document {
-                    write!(f, " (code {})", d.error_code)?;
-                }
-                Ok(())
+fn display_error(value: &Error, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    match value {
+        Error::Request(e) => write!(f, "Postmark request failed: {e}"),
+        Error::UnknownOutcome(e) => write!(f, "Postmark send outcome unknown: {e}"),
+        Error::Api {
+            status, document, ..
+        } => {
+            write!(f, "Postmark returned HTTP {}", status.as_u16())?;
+            if let Some(d) = document {
+                write!(f, " (code {})", d.error_code)?;
             }
-            Self::UnmatchedBatch { submitted, results } => write!(
-                f,
-                "Postmark batch outcome unknown: {submitted} emails submitted, {} results returned",
-                results.len()
-            ),
+            Ok(())
         }
+        Error::UnmatchedBatch { submitted, results } => write!(
+            f,
+            "Postmark batch outcome unknown: {submitted} emails submitted, {} results returned",
+            results.len()
+        ),
     }
 }
-impl std::error::Error for Error {}
 
 mod reply {
     /// A rule the policy applies to a decoded 2xx output of one operation.
@@ -247,9 +247,9 @@ impl Reply for Vec<BatchResult> {
 /// batch's results attributed to its emails only when there is exactly one result per email.
 #[derive(Clone, Copy, Debug, Default)]
 pub struct PostmarkPolicy;
-impl<T: Send + Reply> SendWith<T> for PostmarkPolicy {
+impl<T: Send + Reply> SendWith<T, crate::ErrorDocument> for PostmarkPolicy {
     type Output = Result<T, Error>;
-    async fn send<E: Endpoint<T> + Send>(&self, endpoint: E) -> Self::Output {
+    async fn send<E: Endpoint<T, crate::ErrorDocument> + Send>(&self, endpoint: E) -> Self::Output {
         let prepared = endpoint.prepare().map_err(Error::Request)?;
         let sending = prepared.request().method() == concord::reqwest::Method::POST;
         let expected = T::expected(prepared.request());
@@ -267,14 +267,19 @@ impl<T: Send + Reply> SendWith<T> for PostmarkPolicy {
                 concord::field::unsigned(received.head().headers(), "retry-after")
                     .ok()
                     .flatten();
-            let (_, document) = received.document::<Json, ErrorDocument>(ERROR_LIMIT).await;
+            let (_, document) = received.failure(ERROR_LIMIT).await.into_document();
             return Err(Error::Api {
                 status,
                 document: document.ok(),
                 retry_after_seconds,
             });
         }
-        let output = received.decode().await.map_err(failure)?;
+        let output = received
+            .into_success()
+            .map_err(failure)?
+            .decode()
+            .await
+            .map_err(failure)?;
         output.check(expected)
     }
 }
@@ -283,6 +288,7 @@ concord::api! {
     /// Postmark server-scoped client. Use a server token, not an account token.
     pub client Postmark(#[sensitive] mut token: String) {
         base "https://api.postmarkapp.com";
+        error crate::ErrorDocument in concord::Json;
         headers { "X-Postmark-Server-Token" = "{token}"; }
         format Json;
         limit 16777216;

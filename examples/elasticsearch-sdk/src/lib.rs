@@ -60,6 +60,7 @@ concord::api! {
     /// The deployment is selected at construction through a checked base URL.
     pub client ElasticsearchApi(origin: concord::BaseUrl, #[sensitive] header(AUTHORIZATION) authorization: HeaderValue) {
         base origin;
+        error crate::ErrorDocument in concord::Json;
         send SendPolicy -> Result<_, Error>;
         format Json;
         limit RESPONSE_LIMIT;
@@ -76,7 +77,8 @@ concord::api! {
             path "{name}";
 
             /// `GET /<index>/_doc/<id>`: a document and its concurrency token, or typed absence.
-            GET get_document(id: DocumentId) -> GetDocument { path "_doc/{id}"; }
+            GET get_document(id: DocumentId) -> GetDocument {
+                error crate::document::GetErrorDocument in crate::document::GetErrorJson; path "_doc/{id}"; }
 
             /// `PUT /<index>/_doc/<id>` with both required optimistic concurrency parameters.
             PUT conditional_index(id: DocumentId, body document: DocumentSource,
@@ -106,10 +108,10 @@ concord::api! {
 #[derive(Debug, Default)]
 pub struct SendPolicy;
 
-impl<T: ResponsePolicy> SendWith<T> for SendPolicy {
+impl<T: ResponsePolicy<D>, D: Send> SendWith<T, D> for SendPolicy {
     type Output = Result<T, Error>;
 
-    async fn send<E: Endpoint<T> + Send>(&self, endpoint: E) -> Self::Output {
+    async fn send<E: Endpoint<T, D> + Send>(&self, endpoint: E) -> Self::Output {
         let received = endpoint.prepare()?.receive().await?;
         T::read(received).await
     }
@@ -119,32 +121,43 @@ impl<T: ResponsePolicy> SendWith<T> for SendPolicy {
 // exceptions are local to the two document endpoints, without matching endpoint-name strings.
 /// Internal response dispatch for the client-wide [`SendPolicy`].
 #[doc(hidden)]
-pub trait ResponsePolicy: Sized + Send {
+pub trait ResponsePolicy<D: Send = crate::ErrorDocument>: Sized + Send {
     /// Consumes one response without replaying its request.
     fn read(
-        received: concord::Received<Self>,
-    ) -> impl std::future::Future<Output = Result<Self, Error>> + Send {
-        standard_response(received)
-    }
+        received: concord::Received<Self, D>,
+    ) -> impl std::future::Future<Output = Result<Self, Error>> + Send;
 }
 
-impl ResponsePolicy for BulkResponse {}
-impl ResponsePolicy for OpenPitResponse {}
-impl ResponsePolicy for SearchResponse {}
-impl ResponsePolicy for ClosePitResponse {}
+macro_rules! standard_responses {
+    ($($ty:ty),* $(,)?) => {$(
+        impl ResponsePolicy for $ty {
+            async fn read(received: concord::Received<Self, crate::ErrorDocument>) -> Result<Self, Error> {
+                standard_response(received).await
+            }
+        }
+    )*};
+}
+standard_responses!(
+    BulkResponse,
+    OpenPitResponse,
+    SearchResponse,
+    ClosePitResponse
+);
 
-pub(crate) async fn provider_error<T>(received: concord::Received<T>) -> Box<ProviderError> {
-    let (meta, document) = received
-        .document::<Json, ErrorDocument>(ERROR_DOCUMENT_LIMIT)
-        .await;
+pub(crate) async fn provider_error<T>(
+    received: concord::Received<T, crate::ErrorDocument>,
+) -> Box<ProviderError> {
+    let (meta, document) = received.failure(ERROR_DOCUMENT_LIMIT).await.into_document();
     Box::new(ProviderError::new(meta, document))
 }
 
-pub(crate) async fn standard_response<T>(received: concord::Received<T>) -> Result<T, Error> {
+pub(crate) async fn standard_response<T>(
+    received: concord::Received<T, crate::ErrorDocument>,
+) -> Result<T, Error> {
     if !received.status().is_success() {
         return Err(Error::Provider(provider_error(received).await));
     }
-    Ok(received.decode().await?)
+    Ok(received.into_success()?.decode().await?)
 }
 
 /// The SDK client: the generated [`ElasticsearchApi`] plus document, bulk and point-in-time

@@ -5,7 +5,7 @@ use concord::{Endpoint, Json, SendWith};
 
 use crate::credentials::{ApiKey, ApplicationKey};
 use crate::destination::Destination;
-use crate::error::{AuthError, Error, ErrorBodyError, ErrorDocument, ProviderError, Rejected};
+use crate::error::{AuthError, Error, ErrorBodyError, ProviderError, Rejected};
 use crate::model::EventsPage;
 use crate::post::{EventAcceptance, NewEvent, PostJson};
 use crate::posting::posting;
@@ -58,6 +58,7 @@ concord::api! {
         #[sensitive] application_key: ApplicationKey,
     ) {
         base destination;
+        error crate::ErrorDocument in concord::Json;
         headers { DD_API_KEY = "{api_key}"; DD_APPLICATION_KEY = "{application_key}"; }
         path "api";
         format Json;
@@ -111,10 +112,10 @@ concord::api! {
 #[derive(Clone, Copy, Debug, Default)]
 pub struct SendPolicy;
 
-impl<T: Send> SendWith<T> for SendPolicy {
+impl<T: Send> SendWith<T, crate::ErrorDocument> for SendPolicy {
     type Output = Result<T, Error>;
 
-    async fn send<E: Endpoint<T> + Send>(&self, endpoint: E) -> Self::Output {
+    async fn send<E: Endpoint<T, crate::ErrorDocument> + Send>(&self, endpoint: E) -> Self::Output {
         let operation = DatadogApiOperation::from_operation(E::operation())
             .ok_or(Error::Protocol(crate::ProtocolError::UndeclaredOperation))?;
         let posting = posting(operation);
@@ -137,17 +138,15 @@ impl<T: Send> SendWith<T> for SendPolicy {
                     meta: Some(Box::new(received.meta())),
                 });
             }
-            return received.decode().await.map_err(call_error);
+            return received.into_success()?.decode().await.map_err(call_error);
         }
         Err(rejection(received, host).await)
     }
 }
 
-async fn rejection<T>(received: concord::Received<T>, host: String) -> Error {
+async fn rejection<T>(received: concord::Received<T, crate::ErrorDocument>, host: String) -> Error {
     let status = received.status();
-    let (meta, document) = received
-        .document::<Json, ErrorDocument>(ERROR_BODY_LIMIT)
-        .await;
+    let (meta, document) = received.failure(ERROR_BODY_LIMIT).await.into_document();
     let provider = ProviderError {
         meta,
         document: document.map_err(ErrorBodyError::from),
@@ -170,11 +169,11 @@ pub(crate) use __DatadogApiOperation as DatadogApiOperation;
 mod runtime_policy_tests {
     use super::*;
     struct Foreign;
-    impl Endpoint<()> for Foreign {
+    impl Endpoint<(), crate::ErrorDocument> for Foreign {
         fn operation() -> concord::Operation {
             concord::Operation::label("foreign")
         }
-        fn prepare(self) -> Result<concord::Prepared<()>, concord::Error> {
+        fn prepare(self) -> Result<concord::Prepared<(), crate::ErrorDocument>, concord::Error> {
             panic!("foreign endpoint must be refused before preparing")
         }
     }

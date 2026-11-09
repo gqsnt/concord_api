@@ -1,6 +1,5 @@
 use crate::ResponseMeta;
 use serde::Deserialize;
-use std::fmt;
 
 /// An error document. Explicit field access discloses untrusted provider text.
 #[derive(Deserialize, concord::Debug)]
@@ -58,7 +57,8 @@ impl ProviderError {
 }
 
 /// SDK failures; formatting never includes credentials, response text or link targets.
-#[derive(Debug)]
+#[derive(Debug, concord::derive::Error)]
+#[display(with = display_error)]
 pub enum Error {
     /// Invalid bearer token syntax, before I/O.
     Credential,
@@ -77,32 +77,36 @@ pub enum Error {
     /// Concord build, transport, metadata, decode or size-limit failure.
     Concord(concord::Error),
     /// HTTP failure; status is authoritative even when its document fails.
+    #[from(concord::Error<crate::Problem>)]
     Provider(Box<ProviderError>),
 }
-impl From<concord::Error> for Error {
-    fn from(error: concord::Error) -> Self {
-        Self::Concord(error)
-    }
-}
-impl fmt::Display for Error {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::Credential => f.write_str("invalid bearer credential"),
-            Self::FixtureOrigin => f.write_str("invalid loopback fixture origin"),
-            Self::TransportSetup => f.write_str("could not configure transport"),
-            Self::PageNumber => f.write_str("page number must be positive"),
-            Self::PageSize => f.write_str("page size must be between 1 and 200"),
-            Self::TagName => f.write_str("tag name must be non-empty, without spaces or controls"),
-            Self::UnsafeNext => f.write_str("unsafe pagination target"),
-            Self::Concord(error) => error.fmt(f),
-            Self::Provider(error) => write!(
-                f,
-                "DigitalOcean HTTP {} ({:?})",
-                error.meta.status(),
-                error.class()
-            ),
-        }
+
+fn display_error(value: &Error, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    match value {
+        Error::Credential => f.write_str("invalid bearer credential"),
+        Error::FixtureOrigin => f.write_str("invalid loopback fixture origin"),
+        Error::TransportSetup => f.write_str("could not configure transport"),
+        Error::PageNumber => f.write_str("page number must be positive"),
+        Error::PageSize => f.write_str("page size must be between 1 and 200"),
+        Error::TagName => f.write_str("tag name must be non-empty, without spaces or controls"),
+        Error::UnsafeNext => f.write_str("unsafe pagination target"),
+        Error::Concord(error) => std::fmt::Display::fmt(error, f),
+        Error::Provider(error) => write!(
+            f,
+            "DigitalOcean HTTP {} ({:?})",
+            error.meta.status(),
+            error.class()
+        ),
     }
 }
 // Deliberately no automatic source chain through untrusted provider documents.
-impl std::error::Error for Error {}
+
+impl From<concord::Failure<crate::Problem>> for ProviderError {
+    fn from(failure: concord::Failure<crate::Problem>) -> Self {
+        let (meta, document) = failure.into_document();
+        Self {
+            meta: ResponseMeta(meta),
+            document,
+        }
+    }
+}

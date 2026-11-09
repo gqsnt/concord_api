@@ -26,9 +26,7 @@ use std::fmt;
 
 use concord::bytes::Bytes;
 use concord::reqwest::{self, StatusCode};
-use concord::{
-    Decode, ErrorKind, IgnoreContentType, Json, Operation, Prepared, Received, ResponseHead,
-};
+use concord::{Decode, ErrorKind, Json, Operation, Prepared, ResponseHead};
 use serde::Deserialize;
 
 /// The largest error document [`send`] reads (Stripe's are a few hundred bytes).
@@ -204,7 +202,8 @@ impl ApiError {
 }
 
 #[derive(Deserialize)]
-struct ErrorDocument {
+/// Declared provider error document; its contents are explicitly accessible.
+pub struct ErrorDocument {
     error: ApiError,
 }
 
@@ -290,9 +289,11 @@ impl fmt::Display for ProtocolError {
 
 /// An SDK error. See the [module documentation](self) for what its output shows.
 #[non_exhaustive]
-#[derive(concord::Debug)]
+#[derive(concord::Debug, concord::derive::Error)]
+#[display(with = display_error)]
 pub enum Error {
     /// Stripe answered with a non-2xx status.
+    #[from(concord::Error<crate::ErrorDocument>)]
     Api(Box<ApiFailure>),
     /// A Concord error: building the request, the transport, a refused response head, or a 2xx
     /// body that does not decode. `meta` is `Some` once a response head was received.
@@ -376,47 +377,43 @@ impl From<concord::Error> for Error {
     }
 }
 
-impl fmt::Display for Error {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::Api(failure) => {
-                write!(
-                    f,
-                    "{}: Stripe returned HTTP {}",
-                    failure.endpoint.unwrap_or("Stripe request"),
-                    failure.meta.status
-                )?;
-                match &failure.error {
-                    Ok(error) => {
-                        write!(f, " ({}", error.kind.as_str())?;
-                        if let Some(code) = &error.code {
-                            write!(f, "/{code}")?;
-                        }
-                        f.write_str(")")?;
+fn display_error(value: &Error, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    match value {
+        Error::Api(failure) => {
+            write!(
+                f,
+                "{}: Stripe returned HTTP {}",
+                failure.endpoint.unwrap_or("Stripe request"),
+                failure.meta.status
+            )?;
+            match &failure.error {
+                Ok(error) => {
+                    write!(f, " ({}", error.kind.as_str())?;
+                    if let Some(code) = &error.code {
+                        write!(f, "/{code}")?;
                     }
-                    Err(problem) => write!(f, " (error document unreadable: {problem:?})")?,
+                    f.write_str(")")?;
                 }
-                if let Some(reason) = &failure.meta.rate_limited_reason {
-                    write!(f, ", rate limited: {}", reason.as_str())?;
-                }
-                if let Some(id) = &failure.meta.request_id {
-                    write!(f, ", request {id}")?;
-                }
-                Ok(())
+                Err(problem) => write!(f, " (error document unreadable: {problem:?})")?,
             }
-            Self::Concord { error, .. } => fmt::Display::fmt(error, f),
-            Self::Protocol { problem, meta } => {
-                write!(f, "Stripe list protocol error: {problem}")?;
-                if let Some(id) = meta.as_ref().and_then(|m| m.request_id.as_ref()) {
-                    write!(f, " (request {id})")?;
-                }
-                Ok(())
+            if let Some(reason) = &failure.meta.rate_limited_reason {
+                write!(f, ", rate limited: {}", reason.as_str())?;
             }
+            if let Some(id) = &failure.meta.request_id {
+                write!(f, ", request {id}")?;
+            }
+            Ok(())
+        }
+        Error::Concord { error, .. } => fmt::Display::fmt(error, f),
+        Error::Protocol { problem, meta } => {
+            write!(f, "Stripe list protocol error: {problem}")?;
+            if let Some(id) = meta.as_ref().and_then(|m| m.request_id.as_ref()) {
+                write!(f, " (request {id})")?;
+            }
+            Ok(())
         }
     }
 }
-
-impl std::error::Error for Error {}
 
 /// Sends a prepared operation once and returns its value with Stripe's response metadata, or an
 /// [`Error`] that keeps the metadata and the typed error document. See the
@@ -426,16 +423,10 @@ impl std::error::Error for Error {}
 ///
 /// [`Error::Api`] for a non-2xx status, [`Error::Concord`] for transport, response-head and
 /// decoding failures.
-pub async fn send<T>(prepared: Prepared<T>) -> Result<Response<T>, Error> {
+pub async fn send<T>(prepared: Prepared<T, crate::ErrorDocument>) -> Result<Response<T>, Error> {
     // A transport failure: `Error::Concord` with `meta: None` (no response arrived).
-    let received = prepared.receive().await?;
-    if !received.status().is_success() {
-        let endpoint = received
-            .operation()
-            .filter(Operation::is_endpoint)
-            .map(|operation| operation.name());
-        return Err(api_failure(endpoint, received).await);
-    }
+    let received = prepared.error_body_limit(MAX_ERROR_BODY).receive().await?;
+
     let (value, meta) = received.decode_with_meta().await?;
     Ok(Response {
         value,
@@ -443,24 +434,26 @@ pub async fn send<T>(prepared: Prepared<T>) -> Result<Response<T>, Error> {
     })
 }
 
-/// A non-2xx answer: Stripe's error document, read explicitly from the unread body.
-async fn api_failure<T>(endpoint: Option<&'static str>, received: Received<T>) -> Error {
-    // Stripe error documents are interpreted even when a proxy labels them as text.
-    let (meta, document) = received
-        .document::<IgnoreContentType<Json>, ErrorDocument>(MAX_ERROR_BODY)
-        .await;
-    let error = document
-        .map(|document| document.error)
-        .map_err(|error| match error.kind() {
-            ErrorKind::Decode => DocumentProblem::NotADocument,
-            ErrorKind::Limit => DocumentProblem::TooLarge,
-            _ => DocumentProblem::Read,
-        });
-    Error::Api(Box::new(ApiFailure {
-        endpoint,
-        meta: ResponseMeta::from_head(&meta.head()),
-        error,
-    }))
+impl From<concord::Failure<ErrorDocument>> for ApiFailure {
+    fn from(failure: concord::Failure<ErrorDocument>) -> Self {
+        let endpoint = failure
+            .operation()
+            .filter(Operation::is_endpoint)
+            .map(|operation| operation.name());
+        let (meta, document) = failure.into_document();
+        let error = document
+            .map(|document| document.error)
+            .map_err(|error| match error.kind() {
+                ErrorKind::Decode => DocumentProblem::NotADocument,
+                ErrorKind::Limit => DocumentProblem::TooLarge,
+                _ => DocumentProblem::Read,
+            });
+        Self {
+            endpoint,
+            meta: ResponseMeta::from_head(&meta.head()),
+            error,
+        }
+    }
 }
 
 /// Decodes a Stripe error document (`{"error": {..}}`) from bytes, with no head check.

@@ -35,6 +35,7 @@ concord::api! {
         #[sensitive] token: String,
     ) {
         base "https://slack.com/api";
+        error crate::wire::Envelope<serde_json::Map<String, serde_json::Value>> in concord::IgnoreContentType<concord::Json>;
         headers { AUTHORIZATION = "Bearer {token}"; }
         format Json;
         limit crate::SUCCESS_BODY_LIMIT;

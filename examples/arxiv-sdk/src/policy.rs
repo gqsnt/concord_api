@@ -1,4 +1,4 @@
-use crate::{ApiFailure, Atom, ERROR_BODY_LIMIT, Error, Feed, HttpFailure};
+use crate::{ApiFailure, Error, Feed};
 use concord::{Endpoint, SendWith};
 use concord_ratelimit::{Budget, Clock, Limiter, Mode, TokioClock};
 use std::{
@@ -37,9 +37,9 @@ impl Policy {
     }
 }
 
-impl SendWith<Feed> for Policy {
+impl SendWith<Feed, crate::Feed> for Policy {
     type Output = Result<Feed, Error>;
-    async fn send<E: Endpoint<Feed> + Send>(&self, endpoint: E) -> Self::Output {
+    async fn send<E: Endpoint<Feed, crate::Feed> + Send>(&self, endpoint: E) -> Self::Output {
         let prepared = endpoint.prepare()?;
         let pairs: Vec<_> = prepared.request().url().query_pairs().collect();
         let number = |name| {
@@ -65,11 +65,11 @@ impl SendWith<Feed> for Policy {
             .acquire(&[()], Mode::Wait)
             .await
             .map_err(Error::Admission)?;
-        let received = prepared.receive().await?;
-        if !received.status().is_success() {
-            let (meta, document) = received.document::<Atom, Feed>(ERROR_BODY_LIMIT).await;
-            return Err(Error::Http(Box::new(HttpFailure { meta, document })));
-        }
+        let received = prepared
+            .error_body_limit(crate::ERROR_BODY_LIMIT)
+            .receive()
+            .await?;
+
         let (mut feed, meta) = received.decode_with_meta().await?;
         if let Some(problem) = feed.problem.take() {
             return Err(Error::Api(Box::new(ApiFailure { meta, problem })));

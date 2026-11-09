@@ -191,7 +191,7 @@ impl Client {
 
     pub(crate) async fn execute<T>(
         &self,
-        prepared: Prepared<T>,
+        prepared: Prepared<T, crate::error::ErrorDocument>,
         statuses: &[u16],
         expected: Option<&StatementHandle>,
     ) -> Result<Reply<T>, Error> {
@@ -205,27 +205,29 @@ impl Client {
                 read_error: None,
                 decode_error: None,
             };
-            match received.bytes_limited(self.options.max_error_bytes).await {
-                Ok(bytes) => {
-                    match serde_json::from_slice::<ServerMessage>(&bytes) {
-                        Ok(doc) => {
-                            if let (Some(expected), Some(actual)) =
-                                (expected, &doc.statement_handle)
-                                && expected != actual
-                            {
-                                return Err(Error::protocol(
-                                    ProtocolError::HandleMismatch,
-                                    Some(&meta),
-                                ));
-                            }
-                            error.document = Some(doc);
-                        }
-                        Err(e) => error.decode_error = Some(e),
+            let failure = received.failure(self.options.max_error_bytes).await;
+            let complete = !matches!(
+                failure.state(),
+                concord::Document::TooLong { .. } | concord::Document::Broken(_)
+            );
+            let bytes = failure.body().clone();
+            let (_, document) = failure.into_document();
+            match document {
+                Ok(Ok(doc)) => {
+                    if let (Some(expected), Some(actual)) = (expected, &doc.statement_handle)
+                        && expected != actual
+                    {
+                        return Err(Error::protocol(ProtocolError::HandleMismatch, Some(&meta)));
                     }
-                    error.body = bytes;
+                    error.document = Some(doc);
                 }
+                Ok(Err(e)) => error.decode_error = Some(e),
                 Err(e) => error.read_error = Some(e),
             }
+            if complete {
+                error.body = bytes;
+            }
+
             return Err(Error::Server(Box::new(error)));
         }
         if !statuses.contains(&received.status().as_u16()) {
@@ -235,6 +237,7 @@ impl Client {
             ));
         }
         let (value, meta) = received
+            .into_success()?
             .decode_limited_with_meta(self.options.max_response_bytes)
             .await?;
         Ok(Reply { value, meta })
@@ -325,7 +328,7 @@ impl Query {
     }
     async fn execute<T>(
         &self,
-        prepared: Prepared<T>,
+        prepared: Prepared<T, crate::error::ErrorDocument>,
         statuses: &[u16],
         url: &Url,
     ) -> Result<Reply<T>, Error> {

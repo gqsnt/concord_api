@@ -48,7 +48,7 @@ fn reply(case: usize, success: &str, forbidden: &str, internal: &str, echo: &str
         .header("set-cookie", echo)
 }
 
-fn concord_error(c: &mut Canaries, e: &concord::Error) {
+fn concord_error<D: 'static>(c: &mut Canaries, e: &concord::Error<D>) {
     c.assert_debug_absent("Concord error", e);
     c.assert_error_absent("Concord error/source chain", e);
     c.assert_debug_absent("error kind", &e.kind());
@@ -56,7 +56,10 @@ fn concord_error(c: &mut Canaries, e: &concord::Error) {
     c.assert_debug_absent("error metadata", &e.head_meta());
 }
 
-async fn receive<T: std::fmt::Debug>(c: &mut Canaries, prepared: concord::Prepared<T>) {
+async fn receive<T: std::fmt::Debug, D: 'static>(
+    c: &mut Canaries,
+    prepared: concord::Prepared<T, D>,
+) {
     c.assert_debug_absent("Prepared", &prepared);
     let result = prepared.receive().await;
     c.assert_debug_absent("Received Result", &result);
@@ -94,7 +97,10 @@ fn api_error(c: &mut Canaries, e: &ApiError) {
 }
 
 /// Classifies a failed generated send through the SDK, checking both renderings.
-async fn kube_error(c: &mut Canaries, e: concord::Error) -> KubeError {
+async fn kube_error(
+    c: &mut Canaries,
+    e: concord::Error<concord_example_kubernetes_sdk::Status>,
+) -> KubeError {
     concord_error(c, &e);
     let e = KubeError::from_concord(e).await;
     c.assert_debug_absent("KubeError", &e);

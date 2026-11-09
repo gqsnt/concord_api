@@ -1,5 +1,9 @@
 # Intercom contacts SDK29
 
+The declaration owns the provider error document: `error crate::error::ErrorDocument in concord::Json;`. Native prepared/decoded
+paths carry that document as `D` in `Prepared<T, D>` and `concord::Error<D>`; SDK status routing
+and validation remain in the policy. Concord withholds document contents in formatting.
+
 `concord-sdk-intercom` is a bounded Intercom **2.17** contacts SDK using Concord's
 client → contacts scope → endpoint hierarchy. It lists contacts with provider
 cursor pagination, searches by exact email, retrieves by Intercom ID, and creates by email with optional

@@ -1,11 +1,10 @@
 //! The SDK's errors. No `Display` or `Debug` here prints a token, a client secret, an
 //! authorization code, a URL, a provider message or detail, or a response body.
 
-use std::fmt;
 use std::sync::Arc;
 
 use concord::reqwest::StatusCode;
-use concord::{Json, Received, ResponseMeta};
+use concord::{Received, ResponseMeta};
 use concord_pagination::OffsetError;
 use serde::Deserialize;
 
@@ -75,7 +74,7 @@ impl Fault {
 
 /// An error document: `{"Fault": {..}, "time": ..}`.
 #[derive(Deserialize)]
-pub(crate) struct FaultResponse {
+pub struct FaultResponse {
     #[serde(rename = "Fault")]
     fault: Fault,
 }
@@ -90,10 +89,8 @@ pub struct ProviderError {
 }
 
 impl ProviderError {
-    pub(crate) async fn read<T>(received: Received<T>) -> Self {
-        let (meta, document) = received
-            .document::<Json, FaultResponse>(ERROR_BODY_LIMIT)
-            .await;
+    pub(crate) async fn read<T>(received: Received<T, crate::FaultResponse>) -> Self {
+        let (meta, document) = received.failure(ERROR_BODY_LIMIT).await.into_document();
         Self {
             meta,
             fault: document.map(|d| d.fault),
@@ -327,27 +324,35 @@ pub enum PaginationError {
 /// Errors of this SDK.
 #[derive(Debug)]
 #[non_exhaustive]
+#[derive(concord::derive::Error)]
+#[display(with = display_error)]
 pub enum Error {
     /// A request that could not be built (nothing sent), a transport failure of a read, or a 2xx
     /// read whose head or body was refused (`Metadata`, `Decode`, `Limit`).
-    Concord(concord::Error),
+    Concord(#[source] concord::Error),
     /// QuickBooks answered with a `Fault` (a 5xx on a write is [`Error::Uncertain`] instead,
     /// a 401 is [`Error::Authorization`]).
+    #[from(skip)]
     Provider(Box<ProviderError>),
     /// A recoverable authorization failure of one realm.
+    #[from(skip)]
     Authorization(Box<AuthorizationError>),
     /// A write whose outcome is unknown; see [`UncertainWrite`].
+    #[from(skip)]
     Uncertain(Box<UncertainWrite>),
     /// A rejected OAuth redirect.
+    #[from(skip)]
     Callback(CallbackError),
     /// A client ID, secret or token that is not a valid credential (empty, controls, ...).
-    Credential(concord_auth::CredentialError),
+    #[from(skip)]
+    Credential(#[source] concord_auth::CredentialError),
     /// An SDK input outside its documented range; nothing was sent.
     InvalidInput {
         /// Which input.
         what: &'static str,
     },
     /// A customer page that cannot be followed.
+    #[from(skip)]
     Pagination(PaginationError),
 }
 
@@ -390,81 +395,63 @@ impl Error {
     }
 }
 
-impl From<concord::Error> for Error {
-    fn from(value: concord::Error) -> Self {
-        Self::Concord(value)
-    }
-}
-
-impl fmt::Display for Error {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::Concord(e) => e.fmt(f),
-            Self::Provider(p) => {
-                write!(f, "QuickBooks answered {} with a fault", p.status())?;
-                if let Ok(fault) = p.fault()
-                    && let Some(kind) = fault.kind()
-                {
-                    write!(f, " ({kind}")?;
-                    if let Some(code) = fault.code() {
-                        write!(f, " {code}")?;
-                    }
-                    f.write_str(")")?;
+fn display_error(value: &Error, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    match value {
+        Error::Concord(e) => std::fmt::Display::fmt(e, f),
+        Error::Provider(p) => {
+            write!(f, "QuickBooks answered {} with a fault", p.status())?;
+            if let Ok(fault) = p.fault()
+                && let Some(kind) = fault.kind()
+            {
+                write!(f, " ({kind}")?;
+                if let Some(code) = fault.code() {
+                    write!(f, " {code}")?;
                 }
-                Ok(())
+                f.write_str(")")?;
             }
-            Self::Authorization(a) => {
-                write!(f, "authorization failed for realm {}: ", a.realm)?;
-                f.write_str(match a.kind {
-                    AuthorizationKind::GrantRejected => {
-                        "the token endpoint rejected the grant; reauthorize this realm"
-                    }
-                    AuthorizationKind::GrantUncertain => {
-                        "the token refresh had no usable answer; the next call tries again"
-                    }
-                    AuthorizationKind::TokenServiceUnavailable => {
-                        "the token endpoint is unavailable; try again later"
-                    }
-                    AuthorizationKind::AccessTokenRejected => {
-                        "QuickBooks rejected the access token (401)"
-                    }
-                })
-            }
-            Self::Uncertain(w) => {
-                write!(f, "the outcome of `{}` is unknown: ", w.operation)?;
-                f.write_str(match w.cause {
-                    UncertainCause::NoResponse(_) => "no response arrived",
-                    UncertainCause::ServerError(_) => "the server failed with a 5xx",
-                    UncertainCause::UnreadableSuccess(_) => "the success response was unreadable",
-                })?;
-                f.write_str("; replay it with the same request ID, never with a new one")
-            }
-            Self::Callback(c) => f.write_str(match c {
-                CallbackError::StateMismatch => "the OAuth callback state does not match",
-                CallbackError::RealmMismatch => {
-                    "the OAuth callback is for another realm than this connection"
-                }
-                CallbackError::Missing(_) => "the OAuth callback lacks a required parameter",
-                CallbackError::Denied(_) => "the authorization was refused",
-            }),
-            Self::Credential(e) => write!(f, "invalid credential: {e}"),
-            Self::InvalidInput { what } => write!(f, "invalid {what}"),
-            Self::Pagination(kind) => match kind {
-                PaginationError::StartPositionMismatch => {
-                    f.write_str("a customer page reports another start position")
-                }
-                PaginationError::Offset(e) => write!(f, "a customer page cannot be followed: {e}"),
-            },
+            Ok(())
         }
-    }
-}
-
-impl std::error::Error for Error {
-    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
-        match self {
-            Self::Concord(e) => Some(e),
-            Self::Credential(e) => Some(e),
-            _ => None,
+        Error::Authorization(a) => {
+            write!(f, "authorization failed for realm {}: ", a.realm)?;
+            f.write_str(match a.kind {
+                AuthorizationKind::GrantRejected => {
+                    "the token endpoint rejected the grant; reauthorize this realm"
+                }
+                AuthorizationKind::GrantUncertain => {
+                    "the token refresh had no usable answer; the next call tries again"
+                }
+                AuthorizationKind::TokenServiceUnavailable => {
+                    "the token endpoint is unavailable; try again later"
+                }
+                AuthorizationKind::AccessTokenRejected => {
+                    "QuickBooks rejected the access token (401)"
+                }
+            })
         }
+        Error::Uncertain(w) => {
+            write!(f, "the outcome of `{}` is unknown: ", w.operation)?;
+            f.write_str(match w.cause {
+                UncertainCause::NoResponse(_) => "no response arrived",
+                UncertainCause::ServerError(_) => "the server failed with a 5xx",
+                UncertainCause::UnreadableSuccess(_) => "the success response was unreadable",
+            })?;
+            f.write_str("; replay it with the same request ID, never with a new one")
+        }
+        Error::Callback(c) => f.write_str(match c {
+            CallbackError::StateMismatch => "the OAuth callback state does not match",
+            CallbackError::RealmMismatch => {
+                "the OAuth callback is for another realm than this connection"
+            }
+            CallbackError::Missing(_) => "the OAuth callback lacks a required parameter",
+            CallbackError::Denied(_) => "the authorization was refused",
+        }),
+        Error::Credential(e) => write!(f, "invalid credential: {e}"),
+        Error::InvalidInput { what } => write!(f, "invalid {what}"),
+        Error::Pagination(kind) => match kind {
+            PaginationError::StartPositionMismatch => {
+                f.write_str("a customer page reports another start position")
+            }
+            PaginationError::Offset(e) => write!(f, "a customer page cannot be followed: {e}"),
+        },
     }
 }

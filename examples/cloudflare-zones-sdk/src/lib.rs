@@ -66,6 +66,7 @@ concord::api! {
         mut policy: SendPolicy,
     ) {
         base "https://api.cloudflare.com";
+        error crate::ErrorEnvelope in concord::Json;
         path "client/v4";
         format Json;
         limit SUCCESS_BODY_LIMIT;

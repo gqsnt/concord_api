@@ -1,5 +1,9 @@
 # concord-sdk-ntfy
 
+The declaration owns the provider error document: `error crate::ErrorDocument in concord::IgnoreContentType<concord::Json>;`. Native prepared/decoded
+paths carry that document as `D` in `Prepared<T, D>` and `concord::Error<D>`; SDK status routing
+and validation remain in the policy. Concord withholds document contents in formatting.
+
 A small SDK for [ntfy](https://docs.ntfy.sh) declared with `concord::api!`. It publishes a message
 to a topic, subscribes to the topic as **Server-Sent Events** or **line-delimited JSON**, and
 replays the server's message cache with a `since` cursor. Checked against the documentation of

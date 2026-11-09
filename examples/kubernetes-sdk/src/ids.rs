@@ -16,6 +16,8 @@ use serde::{Deserialize, Serialize};
 /// Why a caller-supplied name was refused. Never contains the name itself.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[non_exhaustive]
+#[derive(concord::derive::Error)]
+#[display(with = display_name_error)]
 pub enum NameError {
     /// The name is empty.
     Empty,
@@ -29,20 +31,16 @@ pub enum NameError {
     InvalidCharacters,
 }
 
-impl fmt::Display for NameError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::Empty => f.write_str("name is empty"),
-            Self::TooLong { max } => write!(f, "name is longer than {max} bytes"),
-            Self::InvalidCharacters => f.write_str(
-                "name must consist of lowercase alphanumerics and '-' (and '.' between labels), \
+fn display_name_error(value: &NameError, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    match value {
+        NameError::Empty => f.write_str("name is empty"),
+        NameError::TooLong { max } => write!(f, "name is longer than {max} bytes"),
+        NameError::InvalidCharacters => f.write_str(
+            "name must consist of lowercase alphanumerics and '-' (and '.' between labels), \
                  starting and ending with an alphanumeric",
-            ),
-        }
+        ),
     }
 }
-
-impl std::error::Error for NameError {}
 
 /// An RFC 1123 label: at most 63 bytes of `a-z`, `0-9` and `-`, starting and ending with an
 /// alphanumeric (Kubernetes `IsDNS1123Label`).

@@ -1,5 +1,9 @@
 # Linear issue SDK slice
 
+The declaration owns the provider error document: `error crate::Envelope<serde_json::Value> in concord::IgnoreContentType<concord::Json>;`. Native prepared/decoded
+paths carry that document as `D` in `Prepared<T, D>` and `concord::Error<D>`; SDK status routing
+and validation remain in the policy. Concord withholds document contents in formatting.
+
 A read-only, offline-tested Concord client for Linear's GraphQL issue connection and issue by ID or identifier. It selects `id`, `title`, and the nullable `description` and `dueDate` (`Issue::due_date`, Linear's `TimelessDate` kept as the returned string, not parsed); the connection selects `nodes` and forward `pageInfo`. It uses fixed query documents and JSON variables. Mutations, schema introspection and generation, other GraphQL operations, filtering, backward paging, credential acquisition, retry and rate-limit policy are outside this slice. This is not a general GraphQL client.
 
 Construct a `Linear` with an application-configured `concord::reqwest::Client`. `api_key` sends its argument verbatim in `Authorization`; `oauth` sends it as `Bearer`. Configure timeouts, proxies, and redirect behavior in the transport. Treat credentials and response headers as sensitive; the SDK does not obtain or refresh tokens. For tests or a trusted gateway, `with_base_url` changes the endpoint's base (the `/graphql` path is still appended).

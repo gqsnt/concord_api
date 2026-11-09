@@ -66,3 +66,6 @@ pub const ERROR_BODY_LIMIT: usize = 64 * 1024;
 #[cfg(doctest)]
 #[doc = include_str!("../README.md")]
 struct ReadmeDoctests;
+
+/// The declared status-specific provider error document.
+pub use error::{ErrorJson, FailureDocument};

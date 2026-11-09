@@ -7,6 +7,7 @@ use concord_sdk_discord_rest::{Error, RateLimiter, concord};
 concord::api! {
     client ReadEffects(limiter: RateLimiter) {
         base "http://127.0.0.1";
+        error concord_sdk_discord_rest::FailureDocument in concord_sdk_discord_rest::ErrorJson;
         format concord::Json;
         send limiter -> Result<_, Error>;
 

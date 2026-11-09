@@ -1,5 +1,9 @@
 # concord-sdk-cloudflare-zones
 
+The declaration owns the provider error document: `error crate::ErrorEnvelope in concord::Json;`. Native prepared/decoded
+paths carry that document as `D` in `Prepared<T, D>` and `concord::Error<D>`; SDK status routing
+and validation remain in the policy. Concord withholds document contents in formatting.
+
 A bounded slice of the Cloudflare API v4 on [Concord](../../README.md): list the zones
 of an account and fetch one zone; list, fetch and create a zone's DNS records. It is tested
 offline against local fixtures only: **no request has been made to the real API** (live status

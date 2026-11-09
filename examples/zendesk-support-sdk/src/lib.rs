@@ -53,6 +53,7 @@ concord::api! {
         mut policy: SendPolicy,
     ) {
         base subdomain;
+        error crate::Problem in crate::codecs::ProblemFormat;
         path "api/v2";
         format Json;
         limit PAGE_BODY_LIMIT;

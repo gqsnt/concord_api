@@ -6,7 +6,7 @@ use std::time::{Duration, SystemTime};
 
 use concord::reqwest::StatusCode;
 use concord::reqwest::header::RETRY_AFTER;
-use concord::{Json, Received, ResponseMeta};
+use concord::{Received, ResponseMeta};
 use concord_retry::http::RetryAfterError;
 use serde::Deserialize;
 
@@ -125,7 +125,7 @@ pub struct HttpError {
 
 impl HttpError {
     pub(crate) async fn read<T>(
-        received: Received<T>,
+        received: Received<T, crate::ApiError>,
         operation: &'static str,
         attempts: usize,
     ) -> Self {
@@ -138,7 +138,7 @@ impl HttpError {
                 .map(|v| v.as_bytes()),
             SystemTime::now(),
         );
-        let (meta, document) = received.document::<Json, ApiError>(ERROR_BODY_LIMIT).await;
+        let (meta, document) = received.failure(ERROR_BODY_LIMIT).await.into_document();
         Self {
             operation,
             meta,
@@ -279,19 +279,24 @@ impl Uncertain {
 }
 
 /// An SDK failure.
-#[derive(Debug)]
+#[derive(Debug, concord::derive::Error)]
+#[display(with = display_error)]
 pub enum Error {
     /// An input refused before any request was built.
+    #[from(skip)]
     Invalid(&'static str),
     /// A request that could not be built (nothing sent), or a read that failed without a
     /// usable answer: transport, response head refused (`Metadata`), body too long (`Limit`),
     /// body not decodable (`Decode`).
-    Concord(concord::Error),
+    Concord(#[source] concord::Error),
     /// No access token could be obtained; the API request was not sent.
-    Token(TokenError),
+    #[from(skip)]
+    Token(#[source] TokenError),
     /// PayPal answered with a non-2xx status: a read failed, or a write was refused (`4xx`).
+    #[from(skip)]
     Http(Box<HttpError>),
     /// A create, authorize, capture or void may have been applied.
+    #[from(skip)]
     Uncertain(Box<Uncertain>),
     /// The request's origin is not the one the session's credentials are bound to (a native policy call
     /// supplied an endpoint for another destination); nothing was sent and no token was requested.
@@ -318,57 +323,39 @@ impl Error {
     }
 }
 
-impl fmt::Display for Error {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::Invalid(why) => write!(f, "PayPal: invalid input: {why}"),
-            Self::Concord(e) => write!(f, "PayPal request failed: {e}"),
-            Self::Token(e) => write!(f, "PayPal access token: {e}"),
-            Self::Http(http) => write!(f, "PayPal: {http}"),
-            Self::Uncertain(u) => {
-                write!(
-                    f,
-                    "PayPal: {} may have been applied after {} attempt(s) (",
-                    u.operation, u.attempts
-                )?;
-                match &u.cause {
-                    UncertainCause::NoResponse(e) => write!(f, "no response: {:?}", e.kind())?,
-                    UncertainCause::ServerError(h) => write!(f, "HTTP {}", h.status().as_u16())?,
-                    UncertainCause::UnreadableSuccess(e) => {
-                        write!(f, "unreadable success: {:?}", e.kind())?;
-                    }
-                    UncertainCause::LaterRefusal(h) => {
-                        write!(f, "then refused with HTTP {}", h.status().as_u16())?;
-                    }
-                    UncertainCause::LaterToken(_) => f.write_str("then no access token")?,
-                    UncertainCause::Interrupted => f.write_str("attempt cancelled by deadline")?,
+fn display_error(value: &Error, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    match value {
+        Error::Invalid(why) => write!(f, "PayPal: invalid input: {why}"),
+        Error::Concord(e) => write!(f, "PayPal request failed: {e}"),
+        Error::Token(e) => write!(f, "PayPal access token: {e}"),
+        Error::Http(http) => write!(f, "PayPal: {http}"),
+        Error::Uncertain(u) => {
+            write!(
+                f,
+                "PayPal: {} may have been applied after {} attempt(s) (",
+                u.operation, u.attempts
+            )?;
+            match &u.cause {
+                UncertainCause::NoResponse(e) => write!(f, "no response: {:?}", e.kind())?,
+                UncertainCause::ServerError(h) => write!(f, "HTTP {}", h.status().as_u16())?,
+                UncertainCause::UnreadableSuccess(e) => {
+                    write!(f, "unreadable success: {:?}", e.kind())?;
                 }
-                if u.request_id.is_some() {
-                    f.write_str("); resend with the same PayPal-Request-Id to learn the outcome")
-                } else {
-                    f.write_str("); no PayPal-Request-Id: read the order before resending")
+                UncertainCause::LaterRefusal(h) => {
+                    write!(f, "then refused with HTTP {}", h.status().as_u16())?;
                 }
+                UncertainCause::LaterToken(_) => f.write_str("then no access token")?,
+                UncertainCause::Interrupted => f.write_str("attempt cancelled by deadline")?,
             }
-            Self::Destination => {
-                f.write_str("PayPal: request origin differs from the session's; nothing was sent")
+            if u.request_id.is_some() {
+                f.write_str("); resend with the same PayPal-Request-Id to learn the outcome")
+            } else {
+                f.write_str("); no PayPal-Request-Id: read the order before resending")
             }
-            Self::Deadline => f.write_str("PayPal: deadline elapsed before an attempt completed"),
         }
-    }
-}
-
-impl std::error::Error for Error {
-    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
-        match self {
-            Self::Concord(e) => Some(e),
-            Self::Token(e) => Some(e),
-            _ => None,
+        Error::Destination => {
+            f.write_str("PayPal: request origin differs from the session's; nothing was sent")
         }
-    }
-}
-
-impl From<concord::Error> for Error {
-    fn from(e: concord::Error) -> Self {
-        Self::Concord(e)
+        Error::Deadline => f.write_str("PayPal: deadline elapsed before an attempt completed"),
     }
 }

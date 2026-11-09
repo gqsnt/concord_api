@@ -1,5 +1,9 @@
 # MediaWiki Action API SDK39
 
+The declaration owns the provider error document: `error crate::error::ErrorDocument in concord::Json;`. Native prepared/decoded
+paths carry that document as `D` in `Prepared<T, D>` and `concord::Error<D>`; SDK status routing
+and validation remain in the policy. Concord withholds document contents in formatting.
+
 Package: `concord-sdk-mediawiki-action-api`. A small, example-assisted public-data SDK
 at Concord baseline `c3fd4f1ee30c1727e26b285270f2cc8d8b694e77`.
 Live provider calls: **NOT_RUN**. Every executed workflow uses `examples/testserver` on loopback.

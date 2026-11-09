@@ -18,7 +18,7 @@ pub use models::{CsvExport, Metadata, Observation, Observations, SearchPage, Ser
 pub use options::{AggregationMethod, Frequency, Units};
 pub use pagination::{OffsetEnvelope, pages};
 
-use codecs::{ProblemDocument, Xml, ZippedCsv};
+use codecs::{Xml, ZippedCsv};
 use concord::{Endpoint, SendWith};
 
 /// Maximum HTTP success body, including a compressed ZIP: 1 MiB.
@@ -34,10 +34,10 @@ pub const ERROR_BODY_LIMIT: usize = 16 * 1024;
 #[derive(Clone, Copy, Debug, Default)]
 pub struct Policy;
 
-impl<T: Send + 'static> SendWith<T> for Policy {
+impl<T: Send + 'static> SendWith<T, crate::Problem> for Policy {
     type Output = Result<T, Error>;
 
-    async fn send<E: Endpoint<T> + Send>(&self, endpoint: E) -> Self::Output {
+    async fn send<E: Endpoint<T, crate::Problem> + Send>(&self, endpoint: E) -> Self::Output {
         let received = endpoint.prepare()?.receive().await?;
         if !received.status().is_success() {
             let retry_after = concord_retry::http::retry_after(
@@ -49,16 +49,14 @@ impl<T: Send + 'static> SendWith<T> for Policy {
                     .map(|v| v.as_bytes()),
                 std::time::SystemTime::now(),
             );
-            let (meta, document) = received
-                .document::<ProblemDocument, Problem>(ERROR_BODY_LIMIT)
-                .await;
+            let (meta, document) = received.failure(ERROR_BODY_LIMIT).await.into_document();
             return Err(Error::Http(Box::new(HttpError {
                 meta,
                 document,
                 retry_after,
             })));
         }
-        Ok(received.decode().await?)
+        Ok(received.into_success()?.decode().await?)
     }
 }
 
@@ -82,6 +80,7 @@ concord::api! {
     /// These GET operations have no body and add no `content-type` header.
     pub client Fred(#[sensitive] query api_key: String) {
         base "https://api.stlouisfed.org";
+        error crate::Problem in crate::codecs::ProblemDocument;
         path "fred";
         response Xml;
         limit BODY_LIMIT;

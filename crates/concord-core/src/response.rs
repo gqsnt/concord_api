@@ -240,6 +240,24 @@ impl<T, D> Received<T, D> {
         self.decoder.failure(self.response, limit).await
     }
 
+    /// Reads the declared error document with a bound, leaving a refused head's body unread.
+    /// Returns `(ResponseMeta, Result<D, Error>)`; unlike `failure`, it stops at a head refusal.
+    pub async fn error_document(self, limit: usize) -> (ResponseMeta, Result<D, Error>) {
+        self.decoder.error_document(self.response, limit).await
+    }
+
+    /// Requires a 2xx status and keeps the declared success handling with `Error<()>`.
+    /// Use after an SDK's own status routing. A non-2xx is returned unread as `ErrorKind::Status`.
+    pub fn into_success(self) -> Result<Received<T>, Error> {
+        if !self.response.status().is_success() {
+            return Err(Error::from_status(self.decoder.operation(), self.response));
+        }
+        Ok(Received {
+            response: self.response,
+            decoder: self.decoder.success(),
+        })
+    }
+
     /// [`failure`](Self::failure) with the error document `Doc` in the format `F`, for a response
     /// that arrived outside a declared endpoint's handling (an unread refusal, say).
     pub async fn failure_as<F, Doc>(self, limit: usize) -> crate::Failure<Doc>

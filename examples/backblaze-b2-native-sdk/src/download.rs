@@ -97,7 +97,10 @@ impl Session {
         if !received.status().is_success() {
             return Err(provider_error(received).await);
         }
-        let (bytes, meta) = received.decode_limited_with_meta(limit).await?;
+        let (bytes, meta) = received
+            .into_success()?
+            .decode_limited_with_meta(limit)
+            .await?;
         if meta.status() != StatusCode::OK {
             return Err(Error::contract(Violation::DownloadStatus, Some(meta)));
         }

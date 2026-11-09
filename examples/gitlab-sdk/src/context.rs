@@ -19,16 +19,19 @@ pub struct IssueContext {
 }
 
 /// Why [`GitLab::issue_context`] did not complete. Each variant says what was retrieved.
-#[derive(Debug)]
+#[derive(Debug, concord::derive::Error)]
+#[display(with = display_context_error)]
 #[non_exhaustive]
 pub enum ContextError {
     /// The issue could not be retrieved; nothing else was requested.
-    Issue(GitLabError),
+    #[from(skip)]
+    Issue(#[source] GitLabError),
     /// The issue was retrieved; its project was not.
     Project {
         /// The retrieved issue.
         issue: Box<Response<Issue>>,
         /// Why the project request failed.
+        #[source]
         error: GitLabError,
     },
     /// GitLab answered the project request with another project than the issue's `project_id`.
@@ -58,25 +61,17 @@ impl ContextError {
     }
 }
 
-impl fmt::Display for ContextError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::Issue(error) => write!(f, "issue not retrieved: {error}"),
-            Self::Project { error, .. } => {
-                write!(f, "issue retrieved, its project not: {error}")
-            }
-            Self::Mismatch { issue, project } => write!(
-                f,
-                "issue retrieved, but GitLab returned project {} for project_id {}",
-                project.value.id, issue.value.project_id
-            ),
+fn display_context_error(value: &ContextError, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+    match value {
+        ContextError::Issue(error) => write!(f, "issue not retrieved: {error}"),
+        ContextError::Project { error, .. } => {
+            write!(f, "issue retrieved, its project not: {error}")
         }
-    }
-}
-
-impl std::error::Error for ContextError {
-    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
-        self.gitlab_error().map(|e| e as _)
+        ContextError::Mismatch { issue, project } => write!(
+            f,
+            "issue retrieved, but GitLab returned project {} for project_id {}",
+            project.value.id, issue.value.project_id
+        ),
     }
 }
 

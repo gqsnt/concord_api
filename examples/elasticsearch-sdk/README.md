@@ -1,5 +1,9 @@
 # concord-sdk-elasticsearch
 
+The declaration owns the provider error document: `error crate::ErrorDocument in concord::Json;`, `error crate::document::GetErrorDocument in crate::document::GetErrorJson;`. Native prepared/decoded
+paths carry that document as `D` in `Prepared<T, D>` and `concord::Error<D>`; SDK status routing
+and validation remain in the policy. Concord withholds document contents in formatting.
+
 A bounded Elasticsearch SDK slice built on Concord. It covers these workflows:
 
 1. **Bulk**: send a bounded set of `index` / `create` / `update` / `delete` operations as one

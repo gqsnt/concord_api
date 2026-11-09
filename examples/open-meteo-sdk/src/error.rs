@@ -13,14 +13,20 @@ pub struct Problem {
 }
 
 /// Failure to obtain the optional typed non-2xx document.
-#[derive(Debug)]
+#[derive(Debug, concord::derive::Error)]
 pub enum ErrorBodyError {
     /// The response was not labelled as JSON; body was not read.
-    Metadata(concord::Error),
+    #[display("{0}")]
+    #[from(skip)]
+    Metadata(#[source] concord::Error),
     /// The body was too large or transport failed while reading it.
-    Read(concord::Error),
+    #[display("{0}")]
+    #[from(skip)]
+    Read(#[source] concord::Error),
     /// JSON bytes did not match the documented error envelope.
-    Decode(concord::Error),
+    #[display("{0}")]
+    #[from(skip)]
+    Decode(#[source] concord::Error),
 }
 impl From<concord::Error> for ErrorBodyError {
     fn from(error: concord::Error) -> Self {
@@ -28,20 +34,6 @@ impl From<concord::Error> for ErrorBodyError {
             concord::ErrorKind::Metadata => Self::Metadata(error),
             concord::ErrorKind::Decode => Self::Decode(error),
             _ => Self::Read(error),
-        }
-    }
-}
-impl fmt::Display for ErrorBodyError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::Metadata(e) | Self::Decode(e) | Self::Read(e) => fmt::Display::fmt(e, f),
-        }
-    }
-}
-impl std::error::Error for ErrorBodyError {
-    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
-        match self {
-            Self::Metadata(e) | Self::Decode(e) | Self::Read(e) => Some(e),
         }
     }
 }
@@ -85,21 +77,27 @@ pub enum ResponseErrorKind {
 }
 
 /// SDK failure. Response metadata survives all failures after the head arrived.
-#[derive(Debug)]
+#[derive(Debug, concord::derive::Error)]
 pub enum Error {
     /// Non-2xx response with a bounded typed error-document attempt.
-    Provider(Box<ProviderError>),
+    #[display("{0}")]
+    #[from(concord::Error<crate::Problem>)]
+    Provider(#[source] Box<ProviderError>),
     /// Request construction, transport, or bounded body-read failure.
+    #[display("{source}")]
     Concord {
+        #[source]
         /// Original Concord failure and its operation identity.
         source: concord::Error,
         /// Captured head, absent before a response arrived.
         meta: Option<Box<ResponseMeta>>,
     },
     /// Success media or body validation failed; no partial forecast is returned.
+    #[display("Open-Meteo {kind:?}: {source}")]
     Response {
         /// Validation stage.
         kind: ResponseErrorKind,
+        #[source]
         /// Safe label, positions, and optional underlying diagnostic.
         source: CodecError,
         /// Actual response head.
@@ -145,21 +143,13 @@ impl From<concord::Error> for Error {
         Self::Concord { source, meta }
     }
 }
-impl fmt::Display for Error {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::Provider(e) => fmt::Display::fmt(e, f),
-            Self::Concord { source, .. } => fmt::Display::fmt(source, f),
-            Self::Response { kind, source, .. } => write!(f, "Open-Meteo {kind:?}: {source}"),
-        }
-    }
-}
-impl std::error::Error for Error {
-    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
-        match self {
-            Self::Provider(e) => Some(e),
-            Self::Concord { source, .. } => Some(source),
-            Self::Response { source, .. } => Some(source),
+
+impl From<concord::Failure<crate::Problem>> for ProviderError {
+    fn from(failure: concord::Failure<crate::Problem>) -> Self {
+        let (meta, document) = failure.into_document();
+        Self {
+            meta,
+            document: document.map_err(ErrorBodyError::from),
         }
     }
 }

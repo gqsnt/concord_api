@@ -11,7 +11,6 @@ use concord_pagination::{Page, Pages, Resume};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use std::{
     collections::{BTreeMap, BTreeSet},
-    fmt,
     num::NonZeroUsize,
     sync::{Arc, Mutex},
     time::Duration,
@@ -208,25 +207,19 @@ fn context_ids<'de, D: Deserializer<'de>>(deserializer: D) -> Result<Vec<String>
     Ok(Option::<Context>::deserialize(deserializer)?.map_or_else(Vec::new, |c| c.ids))
 }
 /// Why one requested ID has no contact. Formatting never includes a provider message.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, concord::derive::Error)]
 pub enum ItemError {
     /// HubSpot named this ID in a batch error with this category, e.g. `OBJECT_NOT_FOUND`.
+    #[display("HubSpot batch item failed ({category})")]
     Provider {
         /// The provider's error category.
         category: String,
     },
     /// HubSpot's response named this ID neither as a result nor in an error.
+    #[display("HubSpot batch response did not report this ID")]
     Unreported,
 }
-impl fmt::Display for ItemError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::Provider { category } => write!(f, "HubSpot batch item failed ({category})"),
-            Self::Unreported => f.write_str("HubSpot batch response did not report this ID"),
-        }
-    }
-}
-impl std::error::Error for ItemError {}
+
 /// The outcome for one requested ID.
 #[derive(Clone, Debug)]
 pub struct BatchItem {
@@ -319,7 +312,8 @@ pub struct RefreshResponse {
 }
 
 /// An SDK failure. Formatting never includes request values or response bodies.
-#[derive(Debug)]
+#[derive(Debug, concord::derive::Error)]
+#[display(with = display_error)]
 pub enum Error {
     /// Concord transport, status, media, size, decoding or construction failure.
     Concord(concord::Error),
@@ -335,30 +329,23 @@ pub enum Error {
     /// A create may have reached HubSpot. Reconcile before attempting another create.
     CreateUncertain,
     /// An SDK input or response continuation was invalid.
+    #[from(skip)]
     Invalid(&'static str),
 }
-impl fmt::Display for Error {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::Concord(e) => write!(f, "HubSpot request: {e}"),
-            Self::Refresh { status, uncertain } => write!(
-                f,
-                "HubSpot refresh failed (status {status:?}, uncertain {uncertain})"
-            ),
-            Self::RefreshUncertain => {
-                f.write_str("HubSpot refresh outcome uncertain; recover credentials")
-            }
-            Self::CreateUncertain => {
-                f.write_str("HubSpot contact creation outcome uncertain; reconcile before retrying")
-            }
-            Self::Invalid(s) => write!(f, "HubSpot: {s}"),
+fn display_error(value: &Error, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    match value {
+        Error::Concord(e) => write!(f, "HubSpot request: {e}"),
+        Error::Refresh { status, uncertain } => write!(
+            f,
+            "HubSpot refresh failed (status {status:?}, uncertain {uncertain})"
+        ),
+        Error::RefreshUncertain => {
+            f.write_str("HubSpot refresh outcome uncertain; recover credentials")
         }
-    }
-}
-impl std::error::Error for Error {}
-impl From<concord::Error> for Error {
-    fn from(e: concord::Error) -> Self {
-        Self::Concord(e)
+        Error::CreateUncertain => {
+            f.write_str("HubSpot contact creation outcome uncertain; reconcile before retrying")
+        }
+        Error::Invalid(s) => write!(f, "HubSpot: {s}"),
     }
 }
 

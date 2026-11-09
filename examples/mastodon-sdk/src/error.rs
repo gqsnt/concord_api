@@ -3,7 +3,7 @@
 use std::fmt;
 
 use concord::reqwest::StatusCode;
-use concord::{Endpoint, Json, Operation, Received, SendWith};
+use concord::{Endpoint, Operation, SendWith};
 
 use crate::model::ErrorDocument;
 use crate::streaming::DiscoveryError;
@@ -26,21 +26,6 @@ pub struct ApiError {
 }
 
 impl ApiError {
-    /// Reads a non-2xx response: its body, up to [`ERROR_BODY_LIMIT`], as an error document
-    /// labelled JSON.
-    async fn read<T>(received: Received<T>) -> Self {
-        let operation = received.operation();
-        let status = received.status();
-        let (_, document) = received
-            .document::<Json, ErrorDocument>(ERROR_BODY_LIMIT)
-            .await;
-        Self {
-            operation,
-            status,
-            document: document.ok(),
-        }
-    }
-
     /// The declared endpoint that was answered (`Api.public_timeline`, ...).
     pub fn operation(&self) -> Option<Operation> {
         self.operation
@@ -98,15 +83,20 @@ impl std::error::Error for ApiError {}
 /// [`Mastodon::discover_streaming`](crate::Mastodon::discover_streaming).
 #[derive(Debug)]
 #[non_exhaustive]
+#[derive(concord::derive::Error)]
 pub enum Error {
     /// Concord's error, kept whole and redacted by Concord: the request was not built (`Build`),
     /// no answer arrived or the body broke off (`Transport`), a 2xx head was refused before its
     /// body was read (`Metadata`: a status that is not JSON, a stream that is not
     /// `text/event-stream`), a finite body did not decode (`Decode`) or was too long (`Limit`).
+    #[display("{0}")]
     Request(concord::Error),
     /// The server answered non-2xx.
+    #[display("{0}")]
+    #[from(concord::Error<crate::ErrorDocument>)]
     Api(Box<ApiError>),
     /// The streaming host could not be determined, or belongs to another instance.
+    #[display("{0}")]
     Discovery(DiscoveryError),
 }
 
@@ -136,30 +126,6 @@ impl Error {
     }
 }
 
-impl From<concord::Error> for Error {
-    fn from(error: concord::Error) -> Self {
-        Self::Request(error)
-    }
-}
-
-impl From<DiscoveryError> for Error {
-    fn from(error: DiscoveryError) -> Self {
-        Self::Discovery(error)
-    }
-}
-
-impl fmt::Display for Error {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::Request(error) => error.fmt(f),
-            Self::Api(error) => error.fmt(f),
-            Self::Discovery(error) => error.fmt(f),
-        }
-    }
-}
-
-impl std::error::Error for Error {}
-
 /// The send policy of the declaration (`send MastodonPolicy -> Result<_, Error>;`): one
 /// execution with `Prepared::receive`; a non-2xx answer becomes [`Error::Api`] with its error
 /// document read (bounded); anything else is handled as declared — a finite document is decoded,
@@ -168,14 +134,29 @@ impl std::error::Error for Error {}
 #[derive(Clone, Copy, Debug, Default)]
 pub struct MastodonPolicy;
 
-impl<T: Send> SendWith<T> for MastodonPolicy {
+impl<T: Send> SendWith<T, crate::ErrorDocument> for MastodonPolicy {
     type Output = Result<T, Error>;
 
-    async fn send<E: Endpoint<T> + Send>(&self, endpoint: E) -> Self::Output {
-        let received = endpoint.prepare()?.receive().await?;
-        if !received.status().is_success() {
-            return Err(Error::Api(Box::new(ApiError::read(received).await)));
-        }
+    async fn send<E: Endpoint<T, crate::ErrorDocument> + Send>(&self, endpoint: E) -> Self::Output {
+        let received = endpoint
+            .prepare()?
+            .error_body_limit(ERROR_BODY_LIMIT)
+            .receive()
+            .await?;
+
         Ok(received.decode().await?)
+    }
+}
+
+impl From<concord::Failure<ErrorDocument>> for ApiError {
+    fn from(failure: concord::Failure<ErrorDocument>) -> Self {
+        let operation = failure.operation();
+        let status = failure.status();
+        let (_, document) = failure.into_document();
+        Self {
+            operation,
+            status,
+            document: document.ok(),
+        }
     }
 }

@@ -145,7 +145,7 @@ fn respond(case: usize, e: &Echo, r: &Recorded) -> WireReply {
     }
 }
 
-fn concord_error(c: &mut Canaries, error: &concord::Error) {
+fn concord_error<D: 'static>(c: &mut Canaries, error: &concord::Error<D>) {
     c.assert_debug_absent("concord::Error", error);
     c.assert_error_absent("concord::Error and sources", error);
     if let Some(meta) = error.head_meta() {

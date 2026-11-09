@@ -84,7 +84,7 @@ pub trait ListOperation: ListOptions + Clone + Send + Sync + 'static {
     /// The generated `send()`: one request, the decoded list envelope.
     fn send_list(
         self,
-    ) -> impl Future<Output = Result<ObjectList<Self::Item>, concord::Error>> + Send;
+    ) -> impl Future<Output = Result<ObjectList<Self::Item>, concord::Error<crate::model::Status>>> + Send;
 }
 
 macro_rules! list_operation {
@@ -93,7 +93,7 @@ macro_rules! list_operation {
             type Item = $item;
             fn send_list(
                 self,
-            ) -> impl Future<Output = Result<ObjectList<Self::Item>, concord::Error>> + Send {
+            ) -> impl Future<Output = Result<ObjectList<Self::Item>, concord::Error<crate::model::Status>>> + Send {
                 <$op>::send(self)
             }
         }
@@ -167,13 +167,18 @@ pub type ListPage<T> = Page<T, Continuation, ListPageMeta>;
 /// Why a chunk failed.
 #[derive(Debug)]
 #[non_exhaustive]
+#[derive(concord::derive::Error)]
+#[display(with = display_list_error)]
 pub enum ListError {
     /// Concord's error (not built, transport, refused head, undecodable body), kept whole.
+    #[from(skip)]
     Request(concord::Error),
     /// A non-2xx answer other than `410`.
+    #[from(skip)]
     Api(ApiError),
     /// `410 Gone`: the continue token expired, or the requested `resourceVersion` is no longer
     /// available. A consistent list restarts from the first chunk.
+    #[from(skip)]
     Expired(ApiError),
     /// A continued chunk reported a different collection snapshot than the chunk whose token it
     /// used (or none at all). Its items were not returned.
@@ -188,7 +193,7 @@ pub enum ListError {
 
 impl ListError {
     /// Classifies a Concord error, reading the `Status` document of a non-2xx answer.
-    pub async fn from_concord(error: concord::Error) -> Self {
+    pub async fn from_concord(error: concord::Error<crate::model::Status>) -> Self {
         match ApiError::read(error).await {
             Ok(api) if api.is_expired() => Self::Expired(api),
             Ok(api) => Self::Api(api),
@@ -202,26 +207,22 @@ impl ListError {
     }
 }
 
-impl fmt::Display for ListError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::Request(error) => error.fmt(f),
-            Self::Api(error) => error.fmt(f),
-            Self::Expired(error) => write!(f, "list snapshot expired: {error}"),
-            Self::InconsistentSnapshot => {
-                f.write_str("a continued list chunk reported a different collection snapshot")
-            }
-            Self::MissingSnapshot => {
-                f.write_str("a list chunk returned a continue token without a resourceVersion")
-            }
-            Self::ContinueDidNotAdvance => f.write_str(
-                "a continued list chunk returned the continue token it was requested with",
-            ),
+fn display_list_error(value: &ListError, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    match value {
+        ListError::Request(error) => std::fmt::Display::fmt(error, f),
+        ListError::Api(error) => std::fmt::Display::fmt(error, f),
+        ListError::Expired(error) => write!(f, "list snapshot expired: {error}"),
+        ListError::InconsistentSnapshot => {
+            f.write_str("a continued list chunk reported a different collection snapshot")
+        }
+        ListError::MissingSnapshot => {
+            f.write_str("a list chunk returned a continue token without a resourceVersion")
+        }
+        ListError::ContinueDidNotAdvance => {
+            f.write_str("a continued list chunk returned the continue token it was requested with")
         }
     }
 }
-
-impl std::error::Error for ListError {}
 
 /// Fetches the chunks of one list operation: the request factory for
 /// `concord_pagination::sequential`.

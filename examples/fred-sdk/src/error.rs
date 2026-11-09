@@ -1,5 +1,3 @@
-use std::fmt;
-
 /// A FRED error document. Its message may echo the key and is never formatted.
 #[derive(serde::Deserialize, concord::Debug)]
 pub struct Problem {
@@ -29,11 +27,13 @@ pub struct HttpError {
 }
 
 /// SDK failures. No formatter includes a URL, key, provider message or response body.
-#[derive(Debug)]
+#[derive(Debug, concord::derive::Error)]
+#[display(with = display_error)]
 pub enum Error {
     /// Build, transport, metadata, decode or HTTP-body limit failure.
     Concord(concord::Error),
     /// Any non-2xx, including FRED's 400, 404, 423, 429 and 500.
+    #[from(skip)]
     Http(Box<HttpError>),
     /// A page size outside the provider's range.
     InvalidLimit {
@@ -49,23 +49,14 @@ pub enum Error {
     Pagination,
 }
 
-impl From<concord::Error> for Error {
-    fn from(value: concord::Error) -> Self {
-        Self::Concord(value)
-    }
-}
-
-impl fmt::Display for Error {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::Concord(e) => e.fmt(f),
-            Self::Http(e) => write!(f, "FRED HTTP {}", e.meta.status().as_u16()),
-            Self::InvalidLimit { maximum } => write!(f, "FRED limit must be in 1..={maximum}"),
-            Self::InvalidParameter { parameter } => write!(f, "invalid FRED {parameter}"),
-            Self::Pagination => f.write_str("FRED pagination envelope is inconsistent"),
-        }
+fn display_error(value: &Error, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    match value {
+        Error::Concord(e) => std::fmt::Display::fmt(e, f),
+        Error::Http(e) => write!(f, "FRED HTTP {}", e.meta.status().as_u16()),
+        Error::InvalidLimit { maximum } => write!(f, "FRED limit must be in 1..={maximum}"),
+        Error::InvalidParameter { parameter } => write!(f, "invalid FRED {parameter}"),
+        Error::Pagination => f.write_str("FRED pagination envelope is inconsistent"),
     }
 }
 
 // No source chain: even a provider's error text may contain a query key.
-impl std::error::Error for Error {}

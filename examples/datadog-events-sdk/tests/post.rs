@@ -192,13 +192,17 @@ async fn wrong_region_and_missing_application_key_stay_redacted_authentication_e
     concord::api! {
         client Invalid(header("x-invalid") value: String) {
             base "http://127.0.0.1";
+            error concord_sdk_datadog_events::ErrorDocument in concord::Json;
             POST post();
         }
     }
     use concord::SendWith as _;
     struct Posting(InvalidPost);
-    impl concord::Endpoint<()> for Posting {
-        fn prepare(self) -> Result<concord::Prepared<()>, concord::Error> {
+    impl concord::Endpoint<(), concord_sdk_datadog_events::ErrorDocument> for Posting {
+        fn prepare(
+            self,
+        ) -> Result<concord::Prepared<(), concord_sdk_datadog_events::ErrorDocument>, concord::Error>
+        {
             self.0.prepare()
         }
         fn operation() -> concord::Operation {

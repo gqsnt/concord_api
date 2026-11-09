@@ -1,12 +1,10 @@
-//! Errors: Concord's error kept whole, and the API's `Status` document read from a status
-//! error.
+//! Errors retain Concord failures and the API's declared `Status` document.
 //!
 //! Kubernetes answers failures with a `Status` document (`reason`, `code`, `message`). A non-2xx
-//! response reaches the SDK as a Concord `Status` error that keeps the **unread** response;
-//! [`ApiError::read`] takes it, reads at most [`STATUS_BODY_LIMIT`] bytes and decodes the
-//! document with `Received::document` and `IgnoreContentType<Json>` (the media type is ignored).
-//! Display and Debug name the endpoint, the HTTP status and the reason — never the message (it can quote object
-//! names), a token or a URL.
+//! reaches the SDK as `concord::Error<Status>`, with its bounded provider answer already read.
+//! [`ApiError::read`] exposes it. Native responses use [`ApiError::from_response`].
+//! Display and Debug name the endpoint, HTTP status and reason, withholding messages, names,
+//! credentials and URLs.
 
 use std::fmt;
 
@@ -26,19 +24,14 @@ pub struct ApiError {
 }
 
 impl ApiError {
-    /// Reads the `Status` document of a Concord `Status` error (a non-2xx answer). Any other
+    /// Takes the declared `Status` document of a Concord non-2xx error. Any other
     /// error (build, transport, a 2xx refused by the format, decode) is returned unchanged.
     ///
     /// # Errors
     ///
     /// The original error when it carries no non-2xx response.
-    pub async fn read(error: concord::Error) -> Result<Self, concord::Error> {
-        if error.status().is_none() {
-            return Err(error);
-        }
-        let endpoint = error.endpoint();
-        let response = error.into_response()?;
-        Ok(Self::from_response(endpoint, response).await)
+    pub async fn read(error: concord::Error<Status>) -> Result<Self, concord::Error> {
+        error.into_provider().map(Self::from)
     }
 
     /// Reads the `Status` document of a non-2xx response obtained another way (the unread
@@ -126,11 +119,14 @@ impl std::error::Error for ApiError {}
 /// A failed single operation.
 #[derive(Debug)]
 #[non_exhaustive]
+#[derive(concord::derive::Error)]
+#[display(with = display_kube_error)]
 pub enum KubeError {
     /// Concord's error: the request was not built or sent, the 2xx head was refused, or the body
     /// did not decode. Kept whole (redacted by Concord).
     Request(concord::Error),
     /// The server answered non-2xx.
+    #[from(concord::Error<Status>)]
     Api(ApiError),
     /// A bearer token that cannot be a header value.
     InvalidToken,
@@ -138,7 +134,7 @@ pub enum KubeError {
 
 impl KubeError {
     /// Classifies a Concord error, reading the `Status` document of a non-2xx answer.
-    pub async fn from_concord(error: concord::Error) -> Self {
+    pub async fn from_concord(error: concord::Error<Status>) -> Self {
         match ApiError::read(error).await {
             Ok(api) => Self::Api(api),
             Err(error) => Self::Request(error),
@@ -154,14 +150,26 @@ impl KubeError {
     }
 }
 
-impl fmt::Display for KubeError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::Request(error) => error.fmt(f),
-            Self::Api(error) => error.fmt(f),
-            Self::InvalidToken => crate::ids::InvalidToken.fmt(f),
-        }
+fn display_kube_error(value: &KubeError, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    match value {
+        KubeError::Request(error) => std::fmt::Display::fmt(error, f),
+        KubeError::Api(error) => std::fmt::Display::fmt(error, f),
+        KubeError::InvalidToken => std::fmt::Display::fmt(&crate::ids::InvalidToken, f),
     }
 }
 
-impl std::error::Error for KubeError {}
+impl From<concord::Failure<Status>> for ApiError {
+    fn from(failure: concord::Failure<Status>) -> Self {
+        let endpoint = failure
+            .operation()
+            .filter(concord::Operation::is_endpoint)
+            .map(|operation| operation.name());
+        let http_status = failure.status();
+        let (_, document) = failure.into_document();
+        Self {
+            endpoint,
+            http_status,
+            status: document.ok().map(Box::new),
+        }
+    }
+}

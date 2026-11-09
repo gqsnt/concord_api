@@ -39,7 +39,7 @@ fn reply(case: usize, media: &str, success: &str, problem: &str, echo: &str) -> 
         .header("set-cookie", echo)
 }
 
-fn concord_error(c: &mut Canaries, e: &concord::Error) {
+fn concord_error<D: 'static>(c: &mut Canaries, e: &concord::Error<D>) {
     c.assert_debug_absent("Concord error", e);
     c.assert_error_absent("Concord error/source chain", e);
     c.assert_debug_absent("error kind", &e.kind());
@@ -47,7 +47,10 @@ fn concord_error(c: &mut Canaries, e: &concord::Error) {
     c.assert_debug_absent("error metadata", &e.head_meta());
 }
 
-async fn receive<T: std::fmt::Debug>(c: &mut Canaries, prepared: concord::Prepared<T>) {
+async fn receive<T: std::fmt::Debug, D: 'static>(
+    c: &mut Canaries,
+    prepared: concord::Prepared<T, D>,
+) {
     // Ordinary request values are printable in Prepared; this is not a secret input.
     let _ = format!("{prepared:?} {prepared:#?}");
     let result = prepared.receive().await;

@@ -35,6 +35,7 @@ mod wire {
     concord::api! {
         pub client Accounting(origin: concord::BaseUrl, policy:Policy) {
             base origin;
+        error crate::Problem in concord::Json;
             path "api.xro/2.0";
             format concord::Json;
             limit BODY_LIMIT;

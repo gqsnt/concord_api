@@ -1,7 +1,5 @@
 //! Basic credentials, encoded once and never rendered by SDK diagnostics.
 
-use std::fmt;
-
 use concord::reqwest::header::HeaderValue;
 
 /// Configured Basic authentication, independent of the account in the request path.
@@ -34,7 +32,8 @@ impl BasicAuth {
 }
 
 /// Invalid Basic credentials. Diagnostics never include the supplied values.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, concord::derive::Error)]
+#[display(with = display_auth_error)]
 pub enum AuthError {
     /// Empty username, a colon, or a control character.
     Username,
@@ -44,14 +43,10 @@ pub enum AuthError {
     Header,
 }
 
-impl fmt::Display for AuthError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(match self {
-            Self::Username => "invalid Basic username",
-            Self::Password => "invalid Basic password",
-            Self::Header => "invalid Basic header",
-        })
-    }
+fn display_auth_error(value: &AuthError, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    f.write_str(match value {
+        AuthError::Username => "invalid Basic username",
+        AuthError::Password => "invalid Basic password",
+        AuthError::Header => "invalid Basic header",
+    })
 }
-
-impl std::error::Error for AuthError {}

@@ -12,6 +12,8 @@ use serde::Deserialize;
 /// A local refusal: nothing was sent. The refused value is never included.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[non_exhaustive]
+#[derive(concord::derive::Error)]
+#[display(with = display_input_error)]
 pub enum InputError {
     /// The application key ID or key is empty, the ID contains a colon, or either contains a
     /// control character (the Basic credential cannot carry it).
@@ -38,25 +40,21 @@ pub enum InputError {
     MaxFileCount,
 }
 
-impl fmt::Display for InputError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let what = match self {
-            Self::ApplicationKey => "application key",
-            Self::BucketId => "bucket ID",
-            Self::FileId => "file ID",
-            Self::FileName => "file name",
-            Self::ContentType => "content type",
-            Self::Sha1 => "SHA-1",
-            Self::BaseUrl => "base URL",
-            Self::EmptyStream => "one-shot stream of zero bytes",
-            Self::SourceConsumed => "one-shot source already consumed",
-            Self::MaxFileCount => "maximum file count (over 10000)",
-        };
-        write!(f, "invalid B2 input: {what}")
-    }
+fn display_input_error(value: &InputError, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    let what = match value {
+        InputError::ApplicationKey => "application key",
+        InputError::BucketId => "bucket ID",
+        InputError::FileId => "file ID",
+        InputError::FileName => "file name",
+        InputError::ContentType => "content type",
+        InputError::Sha1 => "SHA-1",
+        InputError::BaseUrl => "base URL",
+        InputError::EmptyStream => "one-shot stream of zero bytes",
+        InputError::SourceConsumed => "one-shot source already consumed",
+        InputError::MaxFileCount => "maximum file count (over 10000)",
+    };
+    write!(f, "invalid B2 input: {what}")
 }
-
-impl std::error::Error for InputError {}
 
 /// The `code` of a B2 error document: every code the implemented operations document, and
 /// [`Other`](Self::Other) for any other identifier (kept as sent).
@@ -198,7 +196,8 @@ pub struct ErrorDocument {
 }
 
 #[derive(Deserialize)]
-pub(crate) struct WireErrorDocument {
+/// Declared provider error document; its contents are explicitly accessible.
+pub struct WireErrorDocument {
     status: u16,
     code: String,
     #[serde(default)]
@@ -431,7 +430,7 @@ pub enum Error {
     /// operation and keeps the head when one arrived ([`concord::Error::head`]).
     Concord(concord::Error),
     /// A non-2xx answer.
-    #[from(skip)]
+    #[from(concord::Error<crate::WireErrorDocument>)]
     Provider(Box<ProviderError>),
     /// A 2xx answer that broke a documented rule.
     #[from(skip)]
@@ -507,5 +506,12 @@ fn fmt_error(error: &Error, f: &mut fmt::Formatter<'_>) -> fmt::Result {
             ChecksumFailure::Malformed => f.write_str("X-Bz-Content-Sha1 is not a SHA-1"),
         },
         Error::Deadline => f.write_str("the upload deadline expired during an attempt"),
+    }
+}
+
+impl From<concord::Failure<WireErrorDocument>> for ProviderError {
+    fn from(failure: concord::Failure<WireErrorDocument>) -> Self {
+        let (meta, document) = failure.into_document();
+        Self::new(meta, document)
     }
 }

@@ -1,5 +1,4 @@
 use crate::Metadata;
-use std::fmt;
 
 /// A refused local input. No supplied values are retained.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -97,18 +96,23 @@ impl ProviderError {
 }
 
 /// SDK failures; formatting never prints provider values or native error sources.
-#[derive(Debug)]
+#[derive(Debug, concord::derive::Error)]
+#[display(with = display_error)]
 pub enum Error {
     /// Invalid input before a request starts.
+    #[from(skip)]
     Input(InputError),
     /// Build failure or event-read failure, preserving Concord's stage and head.
     Concord(Box<concord::Error>),
     /// A send may have taken effect but no usable acknowledgement was obtained.
     /// Never automatically replay, even with a buffered attachment.
+    #[from(skip)]
     AmbiguousSend(Box<concord::Error>),
     /// Non-success status, including an unreadable error document.
+    #[from(skip)]
     Provider(Box<ProviderError>),
     /// Event continuation rejected before dispatch.
+    #[from(skip)]
     Link(LinkError),
 }
 
@@ -122,30 +126,21 @@ impl Error {
     }
 }
 
-impl From<concord::Error> for Error {
-    fn from(value: concord::Error) -> Self {
-        Self::Concord(Box::new(value))
-    }
-}
-
-impl fmt::Display for Error {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::Input(kind) => write!(f, "invalid Mailgun input: {kind:?}"),
-            Self::Link(kind) => write!(f, "Mailgun continuation refused: {kind:?}"),
-            Self::Concord(error) => write!(f, "Mailgun request failed: {:?}", error.kind()),
-            Self::AmbiguousSend(_) => {
-                f.write_str("Mailgun send outcome unknown; do not automatically replay")
-            }
-            Self::Provider(error) => write!(
-                f,
-                "Mailgun HTTP {} ({:?})",
-                error.meta.status().as_u16(),
-                error.class()
-            ),
+fn display_error(value: &Error, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    match value {
+        Error::Input(kind) => write!(f, "invalid Mailgun input: {kind:?}"),
+        Error::Link(kind) => write!(f, "Mailgun continuation refused: {kind:?}"),
+        Error::Concord(error) => write!(f, "Mailgun request failed: {:?}", error.kind()),
+        Error::AmbiguousSend(_) => {
+            f.write_str("Mailgun send outcome unknown; do not automatically replay")
         }
+        Error::Provider(error) => write!(
+            f,
+            "Mailgun HTTP {} ({:?})",
+            error.meta.status().as_u16(),
+            error.class()
+        ),
     }
 }
 
 // Deliberately no source chain: native sources may contain secrets.
-impl std::error::Error for Error {}

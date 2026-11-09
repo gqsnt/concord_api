@@ -26,35 +26,41 @@ pub struct ApiFailure {
     pub problem: Problem,
 }
 /// SDK failures. Formatting excludes terms, IDs, body text, URLs and response header values.
-#[derive(Debug)]
+#[derive(Debug, concord::derive::Error)]
+#[display(with = display_error)]
 pub enum Error {
     /// Input refused before admission or network I/O.
+    #[from(skip)]
     Input(&'static str),
     /// Concord build, transport, metadata, decode or byte-limit failure.
     Concord(Box<concord::Error>),
     /// A non-2xx response, regardless of whether its document decoded.
+    #[from(concord::Error<crate::Feed>)]
     Http(Box<HttpFailure>),
     /// A provider error entry inside a 2xx feed.
+    #[from(skip)]
     Api(Box<ApiFailure>),
     /// Paging metadata is inconsistent; traversal stops explicitly.
+    #[from(skip)]
     Pagination(&'static str),
     /// Local admission failed, for example because a clock overflowed.
+    #[from(skip)]
     Admission(concord_ratelimit::Error),
 }
-impl From<concord::Error> for Error {
-    fn from(error: concord::Error) -> Self {
-        Self::Concord(Box::new(error))
+
+fn display_error(value: &Error, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    match value {
+        Error::Input(s) | Error::Pagination(s) => f.write_str(s),
+        Error::Concord(e) => std::fmt::Display::fmt(e, f),
+        Error::Http(e) => write!(f, "arXiv HTTP {}", e.meta.status()),
+        Error::Api(_) => f.write_str("arXiv returned an Atom error entry"),
+        Error::Admission(e) => std::fmt::Display::fmt(e, f),
     }
 }
-impl fmt::Display for Error {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::Input(s) | Self::Pagination(s) => f.write_str(s),
-            Self::Concord(e) => e.fmt(f),
-            Self::Http(e) => write!(f, "arXiv HTTP {}", e.meta.status()),
-            Self::Api(_) => f.write_str("arXiv returned an Atom error entry"),
-            Self::Admission(e) => e.fmt(f),
-        }
+
+impl From<concord::Failure<crate::Feed>> for HttpFailure {
+    fn from(failure: concord::Failure<crate::Feed>) -> Self {
+        let (meta, document) = failure.into_document();
+        Self { meta, document }
     }
 }
-impl std::error::Error for Error {}

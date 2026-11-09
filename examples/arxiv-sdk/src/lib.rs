@@ -28,6 +28,7 @@ concord::api! {
     /// Public arXiv metadata. Reuse the client or its policy to share pacing.
     pub client Arxiv(policy: Policy) {
         base "https://export.arxiv.org/api";
+        error crate::Feed in crate::Atom;
         response Atom;
         limit BODY_LIMIT;
         send policy -> Result<_, Error>;

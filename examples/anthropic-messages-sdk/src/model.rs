@@ -5,8 +5,6 @@
 //! documentation pages (see `PROVENANCE.md`). Content blocks other than `text` (tool use,
 //! thinking) are kept as received and are not interpreted: they are outside this slice.
 
-use std::fmt;
-
 use serde::de::{self, Deserializer};
 use serde::{Deserialize, Serialize, Serializer};
 use serde_json::Value;
@@ -65,6 +63,8 @@ impl InputMessage {
 /// ([`ApiError`](crate::ApiError)).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 #[non_exhaustive]
+#[derive(concord::derive::Error)]
+#[display(with = display_invalid_request)]
 pub enum InvalidRequest {
     /// The model name is empty.
     EmptyModel,
@@ -74,17 +74,16 @@ pub enum InvalidRequest {
     NoMessages,
 }
 
-impl fmt::Display for InvalidRequest {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(match self {
-            Self::EmptyModel => "the model name is empty",
-            Self::ZeroMaxTokens => "max_tokens must be at least 1",
-            Self::NoMessages => "a message request needs at least one input message",
-        })
-    }
+fn display_invalid_request(
+    value: &InvalidRequest,
+    f: &mut std::fmt::Formatter<'_>,
+) -> std::fmt::Result {
+    f.write_str(match value {
+        InvalidRequest::EmptyModel => "the model name is empty",
+        InvalidRequest::ZeroMaxTokens => "max_tokens must be at least 1",
+        InvalidRequest::NoMessages => "a message request needs at least one input message",
+    })
 }
-
-impl std::error::Error for InvalidRequest {}
 
 /// The body of a non-streaming message request: `model`, `max_tokens`, text `messages` and
 /// optional `system` and `tools`. Its JSON has no `stream` field;

@@ -10,6 +10,8 @@ use std::{
 /// Local refusals. No variant stores a credential, selector, body or URL.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[non_exhaustive]
+#[derive(concord::derive::Error)]
+#[display(with = display_local_error)]
 pub enum LocalError {
     /// API key is empty or not an ASCII token.
     InvalidKey,
@@ -26,12 +28,9 @@ pub enum LocalError {
     /// Ticker response does not contain exactly the selected canonical market.
     TickerMismatch,
 }
-impl fmt::Display for LocalError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "Kraken local refusal: {self:?}")
-    }
+fn display_local_error(value: &LocalError, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    write!(f, "Kraken local refusal: {value:?}")
 }
-impl std::error::Error for LocalError {}
 
 /// Stable SDK classifications; raw unknown provider errors are retained separately.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -164,18 +163,24 @@ pub struct PageFailure {
 /// All SDK failure stages. Nothing is automatically retried.
 #[derive(Debug)]
 #[non_exhaustive]
+#[derive(concord::derive::Error)]
+#[display(with = display_error)]
 pub enum Error {
     /// A value or provider-independent local rule refused the operation.
     Local(LocalError),
     /// Build, transport, metadata, decode or response-size failure from Concord.
     Concord(concord::Error),
     /// A non-2xx response, keeping the status even when the body failed.
+    #[from(skip)]
     Http(Box<HttpFailure>),
     /// Kraken reported at least one error inside a 2xx envelope.
+    #[from(skip)]
     Api(Box<ApiFailure>),
     /// An empty error list without a result is not successful.
+    #[from(skip)]
     MissingResult(Box<ResponseMeta>),
     /// A trade-history page contradicts the offset walk (see [`PageProblem`]).
+    #[from(skip)]
     Page(Box<PageFailure>),
 }
 impl Error {
@@ -191,29 +196,15 @@ impl Error {
         }
     }
 }
-impl From<concord::Error> for Error {
-    fn from(e: concord::Error) -> Self {
-        Self::Concord(e)
-    }
-}
-impl From<LocalError> for Error {
-    fn from(e: LocalError) -> Self {
-        Self::Local(e)
-    }
-}
-impl fmt::Display for Error {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::Local(e) => fmt::Display::fmt(e, f),
-            Self::Concord(e) => fmt::Display::fmt(e, f),
-            Self::Http(e) => write!(f, "Kraken HTTP failure: {}", e.meta.status().as_u16()),
-            Self::Api(e) => write!(f, "Kraken API failure: {:?}", e.classes()),
-            Self::MissingResult(_) => {
-                f.write_str("Kraken successful envelope is missing its result")
-            }
-            Self::Page(e) => write!(f, "Kraken trade-history page refused: {:?}", e.problem),
-        }
+
+fn display_error(value: &Error, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    match value {
+        Error::Local(e) => fmt::Display::fmt(e, f),
+        Error::Concord(e) => fmt::Display::fmt(e, f),
+        Error::Http(e) => write!(f, "Kraken HTTP failure: {}", e.meta.status().as_u16()),
+        Error::Api(e) => write!(f, "Kraken API failure: {:?}", e.classes()),
+        Error::MissingResult(_) => f.write_str("Kraken successful envelope is missing its result"),
+        Error::Page(e) => write!(f, "Kraken trade-history page refused: {:?}", e.problem),
     }
 }
 // Untrusted provider/parser/transport sources require explicit access, never an error chain.
-impl std::error::Error for Error {}

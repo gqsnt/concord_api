@@ -1,5 +1,5 @@
-use crate::{Error, ProviderError, RetryAfterError, SMALL_BODY_LIMIT, error::Problem};
-use concord::{Endpoint, Json, Prepared, SendWith, reqwest::StatusCode};
+use crate::{Error, ProviderError, RetryAfterError, SMALL_BODY_LIMIT};
+use concord::{Endpoint, Prepared, SendWith, reqwest::StatusCode};
 use std::time::{Duration, SystemTime};
 
 /// A strict numeric header observation; invalid and absent remain distinct.
@@ -74,16 +74,18 @@ pub struct Response<T> {
 #[derive(Clone, Copy, Debug, Default)]
 pub struct SendPolicy;
 
-impl<T: Send> SendWith<T> for SendPolicy {
+impl<T: Send> SendWith<T, crate::Problem> for SendPolicy {
     type Output = Result<Response<T>, Error>;
 
-    async fn send<E: Endpoint<T> + Send>(&self, endpoint: E) -> Self::Output {
+    async fn send<E: Endpoint<T, crate::Problem> + Send>(&self, endpoint: E) -> Self::Output {
         Self::execute(endpoint.prepare()?).await
     }
 }
 
 impl SendPolicy {
-    pub(crate) async fn execute<T>(prepared: Prepared<T>) -> Result<Response<T>, Error> {
+    pub(crate) async fn execute<T>(
+        prepared: Prepared<T, crate::Problem>,
+    ) -> Result<Response<T>, Error> {
         let write = prepared.request().method() == concord::reqwest::Method::POST;
         let failure = |e: concord::Error| {
             if write {
@@ -94,13 +96,17 @@ impl SendPolicy {
         };
         let received = prepared.receive().await.map_err(failure)?;
         if !received.status().is_success() {
-            let (meta, document) = received.document::<Json, Problem>(SMALL_BODY_LIMIT).await;
+            let (meta, document) = received.failure(SMALL_BODY_LIMIT).await.into_document();
             return Err(Error::Provider(Box::new(ProviderError {
                 meta: Metadata(meta),
                 document: document.map_err(Box::new),
             })));
         }
-        let (value, meta) = received.decode_with_meta().await.map_err(failure)?;
+        let (value, meta) = received
+            .into_success()?
+            .decode_with_meta()
+            .await
+            .map_err(failure)?;
         Ok(Response {
             value,
             meta: Metadata(meta),

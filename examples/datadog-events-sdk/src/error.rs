@@ -23,14 +23,19 @@ pub struct ErrorDocument {
 /// status of the answer stays authoritative either way.
 #[derive(Debug)]
 #[non_exhaustive]
+#[derive(concord::derive::Error)]
+#[display(with = display_error_body_error)]
 pub enum ErrorBodyError {
-    /// The body is not labelled JSON (or not labelled); it was not read (kind `Metadata`).
-    Metadata(concord::Error),
+    /// The body is not labelled JSON (or not labelled); bounded bytes are retained (kind `Metadata`).
+    #[from(skip)]
+    Metadata(#[source] concord::Error),
     /// The body exceeded [`ERROR_BODY_LIMIT`](crate::ERROR_BODY_LIMIT) or broke off (kind
     /// `Limit` or `Transport`).
-    Read(concord::Error),
+    #[from(skip)]
+    Read(#[source] concord::Error),
     /// The body is labelled JSON but is not an `{"errors": [..]}` document (kind `Decode`).
-    Decode(concord::Error),
+    #[from(skip)]
+    Decode(#[source] concord::Error),
 }
 
 impl From<concord::Error> for ErrorBodyError {
@@ -52,16 +57,11 @@ impl ErrorBodyError {
     }
 }
 
-impl fmt::Display for ErrorBodyError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        fmt::Display::fmt(self.concord(), f)
-    }
-}
-
-impl std::error::Error for ErrorBodyError {
-    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
-        Some(self.concord())
-    }
+fn display_error_body_error(
+    value: &ErrorBodyError,
+    f: &mut std::fmt::Formatter<'_>,
+) -> std::fmt::Result {
+    fmt::Display::fmt(value.concord(), f)
 }
 
 /// A non-2xx answer: its head and its error document (or why there is none).
@@ -246,6 +246,8 @@ impl std::error::Error for AuthError {
 /// A page or endpoint that breaks the SDK protocol contract.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[non_exhaustive]
+#[derive(concord::derive::Error)]
+#[display(with = display_protocol_error)]
 pub enum ProtocolError {
     /// `meta.page.after` is present but empty: sending it back would not continue the
     /// listing.
@@ -254,16 +256,15 @@ pub enum ProtocolError {
     UndeclaredOperation,
 }
 
-impl fmt::Display for ProtocolError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(match self {
-            Self::EmptyCursor => "the page's `meta.page.after` cursor is empty",
-            Self::UndeclaredOperation => "the operation is not declared by this SDK",
-        })
-    }
+fn display_protocol_error(
+    value: &ProtocolError,
+    f: &mut std::fmt::Formatter<'_>,
+) -> std::fmt::Result {
+    f.write_str(match value {
+        ProtocolError::EmptyCursor => "the page's `meta.page.after` cursor is empty",
+        ProtocolError::UndeclaredOperation => "the operation is not declared by this SDK",
+    })
 }
-
-impl std::error::Error for ProtocolError {}
 
 /// Every failure of a request sent through this SDK (each generated `send()` returns it).
 ///
@@ -271,23 +272,30 @@ impl std::error::Error for ProtocolError {}
 /// [`Error::Concord`].
 #[derive(Debug)]
 #[non_exhaustive]
+#[derive(concord::derive::Error)]
+#[display(with = display_error)]
 pub enum Error {
     /// The keys are missing, malformed or rejected (401/403), the site included.
-    Authentication(AuthError),
+    Authentication(#[source] AuthError),
     /// 400: the provider refused the request (a query it cannot parse, say).
-    BadRequest(Box<ProviderError>),
+    #[from(skip)]
+    BadRequest(#[source] Box<ProviderError>),
     /// 429: too many requests. The head is kept (`ProviderError::meta`); the SDK does not
     /// retry.
-    RateLimited(Box<ProviderError>),
+    #[from(skip)]
+    RateLimited(#[source] Box<ProviderError>),
     /// Any other non-2xx status (including a redirect, which the SDK's transport does not
     /// follow).
-    Provider(Box<ProviderError>),
+    #[from(skip)]
+    Provider(#[source] Box<ProviderError>),
     /// A page or endpoint broke the SDK protocol contract.
-    Protocol(ProtocolError),
+    #[from(skip)]
+    Protocol(#[source] ProtocolError),
     /// A post may have reached Datadog, but its documented acceptance could not be read.
     /// The event may exist. No automatic retry was made; an aggregation key cannot deduplicate
     /// a retry. A 202 head, when present, records HTTP acceptance despite a body failure.
     PostUncertain {
+        #[source]
         /// Transport or acceptance-body failure, if any. `None` for an unexpected 2xx status.
         source: Option<concord::Error>,
         /// The response head, if one arrived (including an unexpected 2xx).
@@ -296,6 +304,7 @@ pub enum Error {
     /// Build, transport, response media type, size limit or success-body decoding: Concord's
     /// error, with the response head when one arrived.
     Concord {
+        #[source]
         /// Concord's error (kind, operation, head).
         source: concord::Error,
         /// The response head, when one arrived.
@@ -370,46 +379,24 @@ impl From<concord::Error> for Error {
     }
 }
 
-impl From<AuthError> for Error {
-    fn from(error: AuthError) -> Self {
-        Error::Authentication(error)
-    }
-}
-
-impl fmt::Display for Error {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Error::Authentication(error) => fmt::Display::fmt(error, f),
-            Error::BadRequest(provider) => write!(f, "Datadog refused the request: {provider}"),
-            Error::RateLimited(provider) => write!(f, "Datadog rate limit reached: {provider}"),
-            Error::Provider(provider) => write!(f, "Datadog answered {provider}"),
-            Error::Protocol(error) => write!(f, "Datadog pagination contract broken: {error}"),
-            Error::Concord { source, .. } => fmt::Display::fmt(source, f),
-            Error::PostUncertain { source, meta } => {
-                f.write_str(
-                    "Datadog event post outcome uncertain: the event may exist; it was not retried",
-                )?;
-                if let Some(source) = source {
-                    write!(f, ": {source}")?;
-                } else if let Some(meta) = meta {
-                    write!(f, ": unexpected HTTP {} (expected 202)", meta.status())?;
-                }
-                Ok(())
+fn display_error(value: &Error, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    match value {
+        Error::Authentication(error) => fmt::Display::fmt(error, f),
+        Error::BadRequest(provider) => write!(f, "Datadog refused the request: {provider}"),
+        Error::RateLimited(provider) => write!(f, "Datadog rate limit reached: {provider}"),
+        Error::Provider(provider) => write!(f, "Datadog answered {provider}"),
+        Error::Protocol(error) => write!(f, "Datadog pagination contract broken: {error}"),
+        Error::Concord { source, .. } => fmt::Display::fmt(source, f),
+        Error::PostUncertain { source, meta } => {
+            f.write_str(
+                "Datadog event post outcome uncertain: the event may exist; it was not retried",
+            )?;
+            if let Some(source) = source {
+                write!(f, ": {source}")?;
+            } else if let Some(meta) = meta {
+                write!(f, ": unexpected HTTP {} (expected 202)", meta.status())?;
             }
-        }
-    }
-}
-
-impl std::error::Error for Error {
-    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
-        match self {
-            Error::Authentication(error) => Some(error),
-            Error::BadRequest(provider)
-            | Error::RateLimited(provider)
-            | Error::Provider(provider) => Some(provider.as_ref()),
-            Error::Protocol(error) => Some(error),
-            Error::Concord { source, .. } => Some(source),
-            Error::PostUncertain { source, .. } => source.as_ref().map(|source| source as _),
+            Ok(())
         }
     }
 }

@@ -420,20 +420,25 @@ impl BodyError {
 
 /// An S3 call that did not produce its result.
 #[non_exhaustive]
-#[derive(concord::Debug)]
+#[derive(concord::Debug, concord::derive::Error)]
+#[display(with = display_s3_error)]
 pub enum S3Error {
     /// An SDK input was refused; nothing was sent.
     Input(InputError),
     /// Concord could not build the request (`ErrorKind::Build`); nothing was sent.
+    #[from(skip)]
     Build(concord::Error),
     /// The request could not be signed; nothing was sent.
     Signing(SigningError),
     /// No response head arrived (connect failure, timeout): Concord's `Transport` error, URL
     /// removed.
+    #[from(skip)]
     Transport(concord::Error),
     /// S3 answered a non-2xx status other than `304`.
+    #[from(skip)]
     Api(Box<ApiError>),
     /// `304 Not Modified` (a read condition held the caller's copy current).
+    #[from(skip)]
     NotModified(Box<NotModified>),
     /// A 2xx response whose head the format refused (`Metadata`) or whose body did not decode
     /// (`Decode`), or whose body could not be read (`Transport`).
@@ -453,6 +458,7 @@ pub enum S3Error {
         meta: Box<ResponseMeta>,
     },
     /// Reading a streamed object body failed or was refused.
+    #[from(skip)]
     Body(Box<BodyError>),
 }
 
@@ -520,55 +526,39 @@ impl S3Error {
     }
 }
 
-impl fmt::Display for S3Error {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::Input(e) => fmt::Display::fmt(e, f),
-            Self::Build(e) | Self::Transport(e) => fmt::Display::fmt(e, f),
-            Self::Signing(e) => fmt::Display::fmt(e, f),
-            Self::Api(e) => {
-                write!(f, "{}: HTTP {}", e.operation, e.status().as_u16())?;
-                match e.code() {
-                    Some(code) => write!(f, " {code}")?,
-                    None => write!(f, " (no S3 error document)")?,
-                }
-                if let Some(id) = e.meta.request_id() {
-                    write!(f, " (request id {id})")?;
-                }
-                Ok(())
+fn display_s3_error(value: &S3Error, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    match value {
+        S3Error::Input(e) => fmt::Display::fmt(e, f),
+        S3Error::Build(e) | S3Error::Transport(e) => fmt::Display::fmt(e, f),
+        S3Error::Signing(e) => fmt::Display::fmt(e, f),
+        S3Error::Api(e) => {
+            write!(f, "{}: HTTP {}", e.operation, e.status().as_u16())?;
+            match e.code() {
+                Some(code) => write!(f, " {code}")?,
+                None => write!(f, " (no S3 error document)")?,
             }
-            Self::NotModified(e) => write!(f, "{}: 304 Not Modified", e.operation),
-            Self::Response { error, .. } => fmt::Display::fmt(error, f),
-            Self::Protocol {
-                operation, kind, ..
-            } => write!(f, "{operation}: {}", kind.label()),
-            Self::Body(e) => {
-                let what = match e.kind {
-                    BodyErrorKind::Transport => "reading the object body failed",
-                    BodyErrorKind::Truncated => "the object body ended early",
-                    BodyErrorKind::LimitExceeded => "the object body exceeds the caller's limit",
-                };
-                write!(f, "{}: {what} ({} bytes received", e.operation, e.received)?;
-                if let Some(expected) = e.expected {
-                    write!(f, " of {expected}")?;
-                }
-                f.write_str(")")
+            if let Some(id) = e.meta.request_id() {
+                write!(f, " (request id {id})")?;
             }
+            Ok(())
         }
-    }
-}
-
-impl std::error::Error for S3Error {}
-
-impl From<InputError> for S3Error {
-    fn from(error: InputError) -> Self {
-        Self::Input(error)
-    }
-}
-
-impl From<SigningError> for S3Error {
-    fn from(error: SigningError) -> Self {
-        Self::Signing(error)
+        S3Error::NotModified(e) => write!(f, "{}: 304 Not Modified", e.operation),
+        S3Error::Response { error, .. } => fmt::Display::fmt(error, f),
+        S3Error::Protocol {
+            operation, kind, ..
+        } => write!(f, "{operation}: {}", kind.label()),
+        S3Error::Body(e) => {
+            let what = match e.kind {
+                BodyErrorKind::Transport => "reading the object body failed",
+                BodyErrorKind::Truncated => "the object body ended early",
+                BodyErrorKind::LimitExceeded => "the object body exceeds the caller's limit",
+            };
+            write!(f, "{}: {what} ({} bytes received", e.operation, e.received)?;
+            if let Some(expected) = e.expected {
+                write!(f, " of {expected}")?;
+            }
+            f.write_str(")")
+        }
     }
 }
 

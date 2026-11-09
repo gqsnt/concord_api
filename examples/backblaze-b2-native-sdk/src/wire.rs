@@ -13,12 +13,13 @@ use concord::reqwest::header::{AUTHORIZATION, HeaderValue};
 use concord::{Binary, Encoded, EncodedBody, Endpoint, Json, Received, ResponseMeta, SendWith};
 use serde::{Deserialize, Serialize};
 
-use crate::error::{Error, ProviderError, WireErrorDocument};
+use crate::error::Error;
 
 concord::api! {
     /// Backblaze B2 Native API v4: the operations of this slice.
     pub client B2Wire(origin: concord::BaseUrl) {
         base origin;
+        error crate::WireErrorDocument in concord::Json;
         path "b2api/v4";
         format Json;
         limit crate::JSON_BODY_LIMIT;
@@ -74,30 +75,34 @@ concord::api! {
     }
 }
 
-/// The JSON operations' policy: one execution; a non-2xx is a [`ProviderError`] with the bounded
+/// The JSON operations' policy: one execution; a non-2xx is a [`crate::ProviderError`] with the bounded
 /// error document; a 2xx is decoded with its head.
 #[derive(Default)]
 pub struct B2Policy;
 
-impl<T: Send> SendWith<T> for B2Policy {
+impl<T: Send> SendWith<T, crate::WireErrorDocument> for B2Policy {
     type Output = Result<(T, ResponseMeta), Error>;
 
-    async fn send<E: Endpoint<T> + Send>(&self, endpoint: E) -> Self::Output {
-        let received = endpoint.prepare()?.receive().await?;
-        if !received.status().is_success() {
-            return Err(provider_error(received).await);
-        }
+    async fn send<E: Endpoint<T, crate::WireErrorDocument> + Send>(
+        &self,
+        endpoint: E,
+    ) -> Self::Output {
+        let received = endpoint
+            .prepare()?
+            .error_body_limit(crate::ERROR_BODY_LIMIT)
+            .receive()
+            .await?;
+
         Ok(received.decode_with_meta().await?)
     }
 }
 
 /// Reads a non-2xx body as B2's error document, bounded; the status stays the failure whatever
 /// the body is.
-pub(crate) async fn provider_error<T>(received: Received<T>) -> Error {
-    let (meta, document) = received
-        .document::<Json, WireErrorDocument>(crate::ERROR_BODY_LIMIT)
-        .await;
-    Error::Provider(Box::new(ProviderError::new(meta, document)))
+pub(crate) async fn provider_error<T>(received: Received<T, crate::WireErrorDocument>) -> Error {
+    Error::Provider(Box::new(
+        received.failure(crate::ERROR_BODY_LIMIT).await.into(),
+    ))
 }
 
 #[derive(Deserialize)]

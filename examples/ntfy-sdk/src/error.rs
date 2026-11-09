@@ -5,7 +5,7 @@ use std::time::Duration;
 
 use concord::reqwest::StatusCode;
 use concord::reqwest::header::RETRY_AFTER;
-use concord::{Endpoint, IgnoreContentType, Json, Operation, Received, SendWith};
+use concord::{Endpoint, Operation, SendWith};
 
 use crate::model::ErrorDocument;
 
@@ -26,31 +26,6 @@ pub struct ApiError {
 }
 
 impl ApiError {
-    /// Reads a non-2xx response: `Retry-After` from the head, then the body up to
-    /// [`ERROR_BODY_LIMIT`] decoded as ntfy's error document (its `Content-Type` is not judged).
-    /// A body that is larger, unreadable, not JSON or not that document leaves
-    /// [`document`](Self::document) empty; the status is always kept.
-    async fn read<T>(received: Received<T>) -> Self {
-        let operation = received.operation();
-        let status = received.status();
-        let retry_after = received
-            .head()
-            .unsigned(RETRY_AFTER)
-            .ok()
-            .flatten()
-            .map(Duration::from_secs);
-        let (_, document) = received
-            .document::<IgnoreContentType<Json>, ErrorDocument>(ERROR_BODY_LIMIT)
-            .await;
-        let document = document.ok().map(Box::new);
-        Self {
-            operation,
-            status,
-            document,
-            retry_after,
-        }
-    }
-
     /// The declared endpoint that was answered.
     pub fn operation(&self) -> Option<Operation> {
         self.operation
@@ -121,13 +96,17 @@ impl std::error::Error for ApiError {}
 /// Why a call failed: what every generated `send()` of [`Ntfy`](crate::Ntfy) returns as its error.
 #[derive(Debug)]
 #[non_exhaustive]
+#[derive(concord::derive::Error)]
 pub enum NtfyError {
     /// Concord's error, kept whole and redacted by Concord: the request was not built (`Build`),
     /// no response arrived (`Transport`), a 2xx head was refused before its body was read
     /// (`Metadata`, the response kept unread: `concord::Error::into_response`), or a finite body
     /// did not decode (`Decode`).
+    #[display("{0}")]
     Request(concord::Error),
     /// The server answered non-2xx.
+    #[display("{0}")]
+    #[from(concord::Error<crate::ErrorDocument>)]
     Api(ApiError),
 }
 
@@ -149,17 +128,6 @@ impl NtfyError {
     }
 }
 
-impl fmt::Display for NtfyError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::Request(error) => error.fmt(f),
-            Self::Api(error) => error.fmt(f),
-        }
-    }
-}
-
-impl std::error::Error for NtfyError {}
-
 /// The send policy of [`Ntfy`](crate::Ntfy) (`send NtfyPolicy -> Result<_, NtfyError>;`): one execution with
 /// `Prepared::receive`; a non-2xx answer becomes [`NtfyError::Api`] with its error document read
 /// (bounded); anything else is decoded as declared — a stream endpoint returns its open
@@ -167,19 +135,39 @@ impl std::error::Error for NtfyError {}
 #[derive(Clone, Copy, Debug, Default)]
 pub struct NtfyPolicy;
 
-impl<T: Send> SendWith<T> for NtfyPolicy {
+impl<T: Send> SendWith<T, crate::ErrorDocument> for NtfyPolicy {
     type Output = Result<T, NtfyError>;
 
-    async fn send<E: Endpoint<T> + Send>(&self, endpoint: E) -> Self::Output {
+    async fn send<E: Endpoint<T, crate::ErrorDocument> + Send>(&self, endpoint: E) -> Self::Output {
         let received = endpoint
             .prepare()
             .map_err(NtfyError::Request)?
+            .error_body_limit(ERROR_BODY_LIMIT)
             .receive()
             .await
             .map_err(NtfyError::Request)?;
-        if !received.status().is_success() {
-            return Err(NtfyError::Api(ApiError::read(received).await));
+
+        received.decode().await.map_err(NtfyError::from)
+    }
+}
+
+impl From<concord::Failure<ErrorDocument>> for ApiError {
+    fn from(failure: concord::Failure<ErrorDocument>) -> Self {
+        let operation = failure.operation();
+        let status = failure.status();
+        let retry_after = failure
+            .meta()
+            .head()
+            .unsigned(RETRY_AFTER)
+            .ok()
+            .flatten()
+            .map(Duration::from_secs);
+        let (_, document) = failure.into_document();
+        Self {
+            operation,
+            status,
+            retry_after,
+            document: document.ok().map(Box::new),
         }
-        received.decode().await.map_err(NtfyError::Request)
     }
 }

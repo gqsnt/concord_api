@@ -86,16 +86,19 @@ fn respond(case: usize, r: &Recorded, echo: &str) -> Reply {
     reply(case, success, echo)
 }
 
-async fn receive<T>(c: &mut Canaries, prepared: concord::Prepared<T>) -> Result<T, concord::Error> {
+async fn receive<T, D: 'static>(
+    c: &mut Canaries,
+    prepared: concord::Prepared<T, D>,
+) -> Result<T, concord::Error<D>> {
     let result = prepared.receive().await;
     c.assert_debug_absent("Received Result", &result);
-    let received = result?;
+    let received = result.map_err(concord::Error::widen)?;
     c.assert_debug_absent("response head", &received.head());
     c.assert_debug_absent("response metadata", &received.meta());
     received.decode().await
 }
 
-fn concord_error(c: &mut Canaries, error: &concord::Error) {
+fn concord_error<D: 'static>(c: &mut Canaries, error: &concord::Error<D>) {
     c.assert_debug_absent("concord::Error", error);
     c.assert_error_absent("concord::Error and sources", error);
     if let Some(meta) = error.head_meta() {

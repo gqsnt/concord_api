@@ -21,12 +21,12 @@ use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::time::{Duration, Instant, SystemTime};
 
 use concord::reqwest::{Method, StatusCode, header::AUTHORIZATION, header::HeaderValue};
-use concord::{Endpoint, Json, Received, SendWith};
+use concord::{Endpoint, Received, SendWith};
 use concord_auth::{RefreshError, Snapshot, Token, TokenCache};
 use concord_retry::{Decision, Policy, Replay, Retry, http::RetryAfterError};
 
 use crate::auth::{Grant, OAuth, RefreshToken};
-use crate::error::{ApiFailure, AuthError, ErrorEnvelope, classify};
+use crate::error::{ApiFailure, AuthError, classify};
 use crate::{ApiClass, Error};
 
 /// Web API error documents are read up to this many bytes.
@@ -313,17 +313,20 @@ impl Session {
 /// One attempt's outcome, classified before the retry owner decides.
 enum Attempt<T> {
     /// Any answer the policy does not repeat, unread.
-    Answer(Received<T>),
+    Answer(Received<T, crate::ErrorEnvelope>),
     /// 401: the access token used was invalidated; the response is unread.
-    Unauthorized(Received<T>),
+    Unauthorized(Received<T, crate::ErrorEnvelope>),
     /// 429: its document was read to tell quota exhaustion from rate limiting.
     Throttled(Box<ApiFailure>),
 }
 
-impl<T: Send + 'static> SendWith<T> for Session {
+impl<T: Send + 'static> SendWith<T, crate::ErrorEnvelope> for Session {
     type Output = Result<T, Error>;
 
-    async fn send<E: Endpoint<T> + Send>(&self, endpoint: E) -> Result<T, Error> {
+    async fn send<E: Endpoint<T, crate::ErrorEnvelope> + Send>(
+        &self,
+        endpoint: E,
+    ) -> Result<T, Error> {
         let (http, mut request, decoder) = endpoint.prepare()?.into_parts();
         if request.method() != Method::GET {
             // A cloneable POST body is not permission to repeat a playlist addition. Include
@@ -416,18 +419,18 @@ impl<T: Send + 'static> SendWith<T> for Session {
     }
 }
 
-fn retry_after<T>(received: &Received<T>) -> Result<Option<Duration>, RetryAfterError> {
+fn retry_after<T>(
+    received: &Received<T, crate::ErrorEnvelope>,
+) -> Result<Option<Duration>, RetryAfterError> {
     let head = received.head();
     let values = head.headers().get_all("retry-after");
     concord_retry::http::retry_after(values.iter().map(|v| v.as_bytes()), SystemTime::now())
 }
 
 /// Reads a non-2xx answer's error document (bounded) into an [`ApiFailure`].
-async fn failure<T>(received: Received<T>) -> Box<ApiFailure> {
+async fn failure<T>(received: Received<T, crate::ErrorEnvelope>) -> Box<ApiFailure> {
     let retry_after = retry_after(&received);
-    let (meta, document) = received
-        .document::<Json, ErrorEnvelope>(ERROR_BODY_LIMIT)
-        .await;
+    let (meta, document) = received.failure(ERROR_BODY_LIMIT).await.into_document();
     let document = document.map(|envelope| envelope.error);
     let class = classify(meta.status().as_u16(), document.as_ref().ok());
     Box::new(ApiFailure {
@@ -440,9 +443,9 @@ async fn failure<T>(received: Received<T>) -> Box<ApiFailure> {
 
 /// The final answer: a 2xx decodes as declared (bounded by the declaration's `limit`); anything
 /// else is the provider's failure.
-async fn finish<T>(received: Received<T>) -> Result<T, Error> {
+async fn finish<T>(received: Received<T, crate::ErrorEnvelope>) -> Result<T, Error> {
     if received.status().is_success() {
-        Ok(received.decode().await?)
+        Ok(received.into_success()?.decode().await?)
     } else {
         Err(Error::Api(failure(received).await))
     }

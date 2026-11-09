@@ -138,32 +138,35 @@ pub fn export_soql(input: &ExportInput) -> Result<Soql, ExportError> {
 /// A failure that prevents the export from running.
 #[derive(Debug)]
 #[non_exhaustive]
+#[derive(concord::derive::Error)]
+#[display(with = display_export_error)]
 pub enum ExportError {
     /// The statement could not be built.
+    #[from(skip)]
     Query(concord_example_salesforce_sdk::ids::InvalidValue),
     /// Creating or polling the job failed, or the job ended `Failed`/`Aborted`.
+    #[from(skip)]
     Job(SfError),
     /// The staging directory could not be used.
+    #[from(skip)]
     Staging(io::Error),
     /// The CSV dialect or header was refused.
+    #[from(skip)]
     Csv(CsvError),
     /// Combining the shards failed (they stay published; the restart still holds them).
+    #[from(skip)]
     Combine(io::Error),
 }
 
-impl fmt::Display for ExportError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            ExportError::Query(e) => write!(f, "export query: {e}"),
-            ExportError::Job(e) => write!(f, "export job: {e}"),
-            ExportError::Staging(e) => write!(f, "staging directory: {}", e.kind()),
-            ExportError::Csv(e) => write!(f, "export CSV: {e}"),
-            ExportError::Combine(e) => write!(f, "combining shards: {}", e.kind()),
-        }
+fn display_export_error(value: &ExportError, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    match value {
+        ExportError::Query(e) => write!(f, "export query: {e}"),
+        ExportError::Job(e) => write!(f, "export job: {e}"),
+        ExportError::Staging(e) => write!(f, "staging directory: {}", e.kind()),
+        ExportError::Csv(e) => write!(f, "export CSV: {e}"),
+        ExportError::Combine(e) => write!(f, "combining shards: {}", e.kind()),
     }
 }
-
-impl std::error::Error for ExportError {}
 
 /// Why one part failed.
 #[derive(Debug)]

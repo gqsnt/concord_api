@@ -10,14 +10,13 @@
 //! conversion that returns the generated [`LedgerEntries`] operation. The caller keeps its
 //! setters (`set_page_size`, `maybe_page_token`), `prepare()` and `send()`.
 
-use std::fmt;
-
 use concord_example_sdk::{Ledger, LedgerEntries};
 
 use crate::domain::{AccountId, Moment};
 
 /// A domain value Ledger cannot represent exactly.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, concord::derive::Error)]
+#[display(with = display_ledger_repr_error)]
 pub enum LedgerReprError {
     /// Ledger's `from_ms` counts whole milliseconds, and the instant has a finer part.
     SubMillisecond {
@@ -36,26 +35,25 @@ pub enum LedgerReprError {
     },
 }
 
-impl fmt::Display for LedgerReprError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match *self {
-            Self::SubMillisecond { subsec_nanos } => write!(
-                f,
-                "Ledger `from_ms` takes whole milliseconds; the instant is {subsec_nanos} ns past its second"
-            ),
-            Self::BeforeEpoch { unix_seconds } => write!(
-                f,
-                "Ledger `from_ms` takes instants from the Unix epoch on; Unix second {unix_seconds} is before it"
-            ),
-            Self::OutOfRange { unix_seconds } => write!(
-                f,
-                "Ledger `from_ms` is an unsigned 64-bit millisecond count; Unix second {unix_seconds} does not fit"
-            ),
-        }
+fn display_ledger_repr_error(
+    value: &LedgerReprError,
+    f: &mut std::fmt::Formatter<'_>,
+) -> std::fmt::Result {
+    match *value {
+        LedgerReprError::SubMillisecond { subsec_nanos } => write!(
+            f,
+            "Ledger `from_ms` takes whole milliseconds; the instant is {subsec_nanos} ns past its second"
+        ),
+        LedgerReprError::BeforeEpoch { unix_seconds } => write!(
+            f,
+            "Ledger `from_ms` takes instants from the Unix epoch on; Unix second {unix_seconds} is before it"
+        ),
+        LedgerReprError::OutOfRange { unix_seconds } => write!(
+            f,
+            "Ledger `from_ms` is an unsigned 64-bit millisecond count; Unix second {unix_seconds} does not fit"
+        ),
     }
 }
-
-impl std::error::Error for LedgerReprError {}
 
 /// Ledger's account text: `acct-` plus lowercase hexadecimal, zero-padded to four digits.
 pub fn account(id: AccountId) -> String {

@@ -1555,7 +1555,8 @@ fn summary_parts(model: &Model, endpoint: usize, method: &Ident) -> Option<Summa
         }
     }];
     if policy.is_some() {
-        output_lines.push(" `prepare()` bypasses the policy; `Prepared::send()` (or `receive()` then `decode()`) applies the handling above and uses `concord::Error`.".to_owned());
+        let error = error_name_for_docs(model, endpoint);
+        output_lines.push(format!(" `prepare()` bypasses the policy; `Prepared::send()` (or `receive()` then `decode()`) applies the handling above and uses `{error}`."));
     }
     Some(Summary {
         result,
@@ -2086,8 +2087,9 @@ fn emit_owner(
             let read = model.is_read(index);
             // The name and method spelled out, so a caller can match an `Operation` by name
             // without naming this type.
+            let operation_error = error_name_for_docs(model, index);
             let operation_doc = lit(&format!(
-                " The declared identity, name `{}` and method `{method}`, without building a request or naming its output. The `ResponseMeta` and `concord::Error` of this endpoint's own request report it through their `operation()` when they carry one.",
+                " The declared identity, name `{}` and method `{method}`, without building a request or naming its output. The `ResponseMeta` and `{operation_error}` of this endpoint's own request report it through their `operation()` when they carry one.",
                 owner.dotted
             ));
             let parent_ty = &model.owners[owner.parent.unwrap()].type_name;
@@ -2150,18 +2152,35 @@ fn emit_owner(
                 (None, true) => quote! {
                     /// `ErrorKind::Status` holding the unread response (`concord::Error::into_response`);
                 },
-                (Some(_), true) => quote! {
-                    /// `ErrorKind::Status` with the declared error document read, bounded (`concord::Error::provider`);
-                },
+                (Some(_), true) => {
+                    let error = error_name_for_docs(model, index);
+                    let text = lit(&format!(
+                        " `ErrorKind::Status` with bounded provider document (`{error}::provider`);"
+                    ));
+                    quote!(#[doc = #text])
+                }
                 (None, false) => quote! {
                     /// decodes a 2xx response. A non-2xx status is `ErrorKind::Status` holding the
                     /// unread response (`concord::Error::into_response`); Concord never retries.
                 },
-                (Some(_), false) => quote! {
-                    /// decodes a 2xx response. A non-2xx status is `ErrorKind::Status` with the declared
-                    /// error document read, bounded (`concord::Error::provider`); Concord never retries.
-                },
+                (Some(_), false) => {
+                    let error = error_name_for_docs(model, index);
+                    let text = lit(&format!(
+                        " bounded document (`{error}::provider`); Concord never retries."
+                    ));
+                    quote! {
+                        /// decodes a 2xx response. A non-2xx is `ErrorKind::Status` with a
+                        #[doc = #text]
+                    }
+                }
             };
+            let send_error = error_name_for_docs(model, index);
+            let stream_errors = lit(&format!(
+                " `{send_error}`: `Build` as for `prepare`, then `Transport`, `Status` or `Metadata` (the"
+            ));
+            let finite_errors = lit(&format!(
+                " `{send_error}`: `Build` as for `prepare`, then `Transport`, `Status`, `Metadata` (the"
+            ));
             let send_docs = if incoming || output.as_ref().is_some_and(|o| o.stream) {
                 quote! {
                     /// Sends the request once (`prepare` then one `reqwest::Client::execute`) and,
@@ -2173,7 +2192,7 @@ fn emit_owner(
                     ///
                     /// # Errors
                     ///
-                    /// `concord::Error`: `Build` as for `prepare`, then `Transport`, `Status` or `Metadata` (the
+                    #[doc = #stream_errors]
                     /// stream format refused the response head; the response is kept unread).
                     /// Later read errors come from the reader and name this endpoint.
                 }
@@ -2184,7 +2203,7 @@ fn emit_owner(
                     ///
                     /// # Errors
                     ///
-                    /// `concord::Error`: `Build` as for `prepare`, then `Transport`, `Status`, `Metadata` (the
+                    #[doc = #finite_errors]
                     /// format refused the response head; the response is kept unread) or
                     /// `Decode` (see `ErrorKind`).
                 }
@@ -2290,13 +2309,19 @@ fn emit_owner(
                         ),
                         None => quote_spanned!(at=> #policy_ty: #k::#policy_trait_at<#trait_args>),
                     };
-                    let call = quote!(<#policy_ty as #k::#policy_trait<#trait_args>>::send(&__policy, self).await);
+                    let call = located(
+                        quote!(<#policy_ty as #k::#policy_trait<#trait_args>>::send(&__policy, self).await),
+                        at,
+                    );
                     // The same policy call with the endpoint followed to a provider URL.
-                    let send_followed = quote! {
-                        let __policy: #policy_ty = #policy_init;
-                        let __followed = #k::__private::followed(self, __target);
-                        async move { <#policy_ty as #k::#policy_trait<#trait_args>>::send(&__policy, __followed).await }
-                    };
+                    let send_followed = located(
+                        quote! {
+                            let __policy: #policy_ty = #policy_init;
+                            let __followed = #k::__private::followed(self, __target);
+                            async move { <#policy_ty as #k::#policy_trait<#trait_args>>::send(&__policy, __followed).await }
+                        },
+                        at,
+                    );
                     let (this, target) = (quote!(self), quote!(__target));
                     sends_impl = quote_spanned! {at=>
                         impl #k::Sends<#send_output> for #ty where #sends_bound {
@@ -2308,12 +2333,20 @@ fn emit_owner(
                             }
                         }
                     };
-                    quote! {
+                    let method = quote! {
                         #[doc = #policy_text]
                         #[inline] pub fn send(self) -> impl ::core::future::Future<Output = #send_output> + ::core::marker::Send #equal {
                             let __policy: #policy_ty = #policy_init;
                             async move { #call }
                         }
+                    };
+                    if declared.is_none() {
+                        // Every obligation of an inferred policy result belongs to `send P;`.
+                        // A concrete result template retains its own authored spans instead.
+                        sends_impl = located(sends_impl, at);
+                        located(method, at)
+                    } else {
+                        method
                     }
                 }
             };
@@ -2697,9 +2730,17 @@ fn policy_ty_for_docs(model: &Model, policy: &syn::Type) -> syn::Type {
     }
 }
 
+/// Execution errors use the nearest document; preparation errors remain `Error<()>`.
+fn error_name_for_docs(model: &Model, endpoint: usize) -> String {
+    model.nearest_error(endpoint).map_or_else(
+        || "concord::Error".to_owned(),
+        |error| format!("concord::Error<{}>", type_text(&error.ty)),
+    )
+}
+
 /// The policy trait with this endpoint's output and error document, for prose.
 fn policy_trait_for_docs(model: &Model, endpoint: usize, prepared: &str) -> (String, &'static str) {
-    let error = error_doc_for_docs(model, endpoint).map_or_else(String::new, |d| format!(", {d}"));
+    let error = error_doc_for_docs(model, endpoint).map_or_else(String::new, |d| format!(",{d}"));
     (format!("SendWith<{prepared}{error}>"), "SendWith")
 }
 
@@ -3569,7 +3610,7 @@ fn prepare_body(
             let d = &e.ty;
             let f = format_type(&e.format);
             let init = located(
-                quote!(#k::__private::ErrorFormat::<#d>::new::<#f>()),
+                quote!(#k::__private::ErrorFormat::<#d>::new(<#f as #k::Decode<#d>>::__concord_error_head)),
                 e.format.span(),
             );
             quote! {
@@ -4501,6 +4542,78 @@ mod tests {
             docs.contains("declared (\"Api.repo.remove\" , \"DELETE\" , false)"),
             "{docs}"
         );
+    }
+
+    #[test]
+    fn execution_docs_name_the_inherited_document_without_adding_words() {
+        let prose = |expanded: String| {
+            let file: syn::File = syn::parse_str(&expanded).unwrap();
+            let mut text = String::new();
+            for item in file.items {
+                match item {
+                    syn::Item::Struct(item) => text.push_str(&doc_text(&item.attrs)),
+                    syn::Item::Impl(item) => {
+                        for member in item.items {
+                            if let syn::ImplItem::Fn(method) = member {
+                                text.push_str(&doc_text(&method.attrs));
+                            }
+                        }
+                    }
+                    _ => {}
+                }
+            }
+            text
+        };
+        for endpoint in [
+            quote!(GET item() -> Item { response Json; }),
+            quote!(GET item() -> stream Item { response JsonStream; }),
+            quote!(GET item() -> stream;),
+            quote!(GET item();),
+        ] {
+            for policy in [
+                quote!(),
+                quote!(send Policy;),
+                quote!(send Policy -> Result<_, SdkError>;),
+            ] {
+                for overridden in [false, true] {
+                    let plain_body = if overridden {
+                        quote!(scope admin { #endpoint })
+                    } else {
+                        endpoint.clone()
+                    };
+                    let typed_body = if overridden {
+                        quote!(scope admin { error Fault in Json; #endpoint })
+                    } else {
+                        endpoint.clone()
+                    };
+                    let expected = if overridden {
+                        "concord::Error<Fault>"
+                    } else {
+                        "concord::Error<Problem>"
+                    };
+                    let plain = prose(docs(quote! {
+                        pub client Api { base "https://example.test"; #policy #plain_body }
+                    }));
+                    let typed = prose(docs(quote! {
+                        pub client Api { base "https://example.test"; #policy
+                            error Problem in Json; #typed_body
+                        }
+                    }));
+                    assert!(
+                        typed.contains(&format!("uses `{expected}`"))
+                            || typed.contains(&format!("`{expected}`: `Build`")),
+                        "{typed}"
+                    );
+                    assert!(!typed.contains("uses `concord::Error`."), "{typed}");
+                    assert!(
+                        typed.split_whitespace().count() <= plain.split_whitespace().count(),
+                        "{} > {}",
+                        typed.split_whitespace().count(),
+                        plain.split_whitespace().count()
+                    );
+                }
+            }
+        }
     }
 
     /// Without a policy, `send()`'s result is still stated first: Concord's own error type.

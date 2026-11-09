@@ -388,6 +388,8 @@ impl fmt::Debug for RepoContext {
 /// A native request a context could not build. Never contains the token or path data.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[non_exhaustive]
+#[derive(concord::derive::Error)]
+#[display(with = display_context_error)]
 pub enum ContextError {
     /// The owner or repository name is empty, `.` or `..`.
     Repository,
@@ -403,18 +405,17 @@ pub enum ContextError {
     },
 }
 
-impl fmt::Display for ContextError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str("GitHub context: request not built: ")?;
-        match self {
-            Self::Repository => f.write_str("owner or repository is empty, `.` or `..`"),
-            Self::Segment { index } => write!(f, "path segment {index} is empty, `.` or `..`"),
-            Self::HeaderValue { name } => write!(f, "{name} value is not a valid header value"),
-        }
+fn display_context_error(
+    value: &ContextError,
+    f: &mut std::fmt::Formatter<'_>,
+) -> std::fmt::Result {
+    f.write_str("GitHub context: request not built: ")?;
+    match value {
+        ContextError::Repository => f.write_str("owner or repository is empty, `.` or `..`"),
+        ContextError::Segment { index } => write!(f, "path segment {index} is empty, `.` or `..`"),
+        ContextError::HeaderValue { name } => write!(f, "{name} value is not a valid header value"),
     }
 }
-
-impl std::error::Error for ContextError {}
 
 fn is_dot_or_empty(segment: &str) -> bool {
     segment.is_empty() || segment == "." || segment == ".."

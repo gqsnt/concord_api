@@ -9,6 +9,7 @@ use crate::{ChangesPage, File, FilesPage, NewFile, StartPageToken};
 concord::api! {
     pub(crate) client DriveApi(origin: concord::BaseUrl, #[sensitive] token: String) {
         base origin;
+        error crate::Document in concord::IgnoreContentType<concord::Json>;
         headers { AUTHORIZATION = "Bearer {token}"; }
         format Json;
 

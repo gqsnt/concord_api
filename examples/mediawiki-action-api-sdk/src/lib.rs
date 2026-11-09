@@ -35,6 +35,7 @@ concord::api! {
     /// A single wiki's public Action API. The caller supplies its identifying User-Agent.
     pub client MediaWiki(origin: concord::BaseUrl, #[sensitive] header(USER_AGENT) user_agent: String) {
         base origin;
+        error crate::error::ErrorDocument in concord::Json;
         response Json;
         limit BODY_LIMIT;
         send QueryPolicy;

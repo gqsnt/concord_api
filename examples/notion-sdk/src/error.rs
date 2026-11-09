@@ -91,9 +91,12 @@ pub enum EnvelopeProblem {
 
 /// SDK failures. Response metadata is retained after every received head.
 #[non_exhaustive]
+#[derive(concord::derive::Error)]
+#[display(with = display_error)]
 pub enum Error {
     /// Build, transport, response-media, JSON decoding, or bounded-body failure.
     Api {
+        #[source]
         /// Original Concord error, preserving operation identity and kind.
         source: concord::Error,
         /// Present once a response head was received.
@@ -193,21 +196,12 @@ impl fmt::Debug for Error {
     }
 }
 
-impl fmt::Display for Error {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::Api { source, .. } => source.fmt(f),
-            Self::Provider { meta, .. } => write!(f, "Notion HTTP {}", meta.status().as_u16()),
-            Self::InvalidErrorBody { .. } => f.write_str("invalid Notion error document"),
-            Self::Envelope { problem, .. } => write!(f, "invalid Notion pagination: {problem:?}"),
-            Self::IncompleteQuery { .. } => {
-                f.write_str("Notion query completeness was not confirmed")
-            }
-        }
-    }
-}
-impl std::error::Error for Error {
-    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
-        self.concord().map(|source| source as _)
+fn display_error(value: &Error, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    match value {
+        Error::Api { source, .. } => std::fmt::Display::fmt(source, f),
+        Error::Provider { meta, .. } => write!(f, "Notion HTTP {}", meta.status().as_u16()),
+        Error::InvalidErrorBody { .. } => f.write_str("invalid Notion error document"),
+        Error::Envelope { problem, .. } => write!(f, "invalid Notion pagination: {problem:?}"),
+        Error::IncompleteQuery { .. } => f.write_str("Notion query completeness was not confirmed"),
     }
 }

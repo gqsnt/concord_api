@@ -263,6 +263,8 @@ impl SearchRequest {
 /// An input the SDK refuses before building a request.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[non_exhaustive]
+#[derive(concord::derive::Error)]
+#[display(with = display_input_error)]
 pub enum InputError {
     /// A time range whose lower bound is after its upper bound.
     InvertedRange,
@@ -274,17 +276,11 @@ pub enum InputError {
     AggregationKeyTooLong,
 }
 
-impl fmt::Display for InputError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(match self {
-            InputError::InvertedRange => "the time range's lower bound is after its upper bound",
-            InputError::PageLimit => "the page limit must be between 1 and 2147483647",
-            InputError::EventTextTooLong => "event text must not exceed 4000 characters",
-            InputError::AggregationKeyTooLong => {
-                "event aggregation key must not exceed 100 characters"
-            }
-        })
-    }
+fn display_input_error(value: &InputError, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    f.write_str(match value {
+        InputError::InvertedRange => "the time range's lower bound is after its upper bound",
+        InputError::PageLimit => "the page limit must be between 1 and 2147483647",
+        InputError::EventTextTooLong => "event text must not exceed 4000 characters",
+        InputError::AggregationKeyTooLong => "event aggregation key must not exceed 100 characters",
+    })
 }
-
-impl std::error::Error for InputError {}

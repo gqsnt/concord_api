@@ -14,25 +14,33 @@ use crate::bulk::BulkReport;
 /// statuses, positions, counts and Elasticsearch error *types*.
 #[derive(Debug)]
 #[non_exhaustive]
+#[derive(concord::derive::Error)]
+#[display(with = display_error)]
 pub enum Error {
     /// An input this SDK refuses before anything is sent.
+    #[from(skip)]
     Invalid(Invalid),
     /// Concord's own error: the request could not be built, the transport failed, or a 2xx
     /// response was refused by its format, too long or malformed. `delivery()` says whether the
     /// request may have reached Elasticsearch.
+    #[from(skip)]
     Concord(Box<concord::Error>),
     /// Elasticsearch answered with a non-2xx status. The status is authoritative whether its
     /// error document is typed, absent, malformed or oversized.
+    #[from(skip)]
     Provider(Box<ProviderError>),
     /// Conditional indexing was rejected with HTTP 409. Read the current document and let the
     /// caller resolve the conflict; do not automatically repeat the write with a newer token.
+    #[from(skip)]
     VersionConflict(Box<ProviderError>),
     /// A 2xx response that contradicts the request or the documented contract (a bulk item
     /// that cannot be matched with its operation, a PIT page without its PIT id or sort values).
+    #[from(skip)]
     Protocol(Protocol),
     /// A bulk request whose response reports at least one failed operation. The report holds
     /// every operation's outcome; [`BulkReport::resubmit`] builds a request of failed
     /// operations only.
+    #[from(skip)]
     PartialBulk(Box<BulkReport>),
     /// A search page that Elasticsearch marked incomplete (`timed_out`, or `_shards.failed`
     /// greater than zero). Continuing after it could skip hits, so the traversal stops.
@@ -108,41 +116,37 @@ impl Error {
     }
 }
 
-impl fmt::Display for Error {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Error::Invalid(invalid) => write!(f, "invalid input: {invalid}"),
-            // Concord's `Display` is redacted (endpoint, static label, numbers).
-            Error::Concord(error) => error.fmt(f),
-            Error::Provider(provider) => provider.fmt(f),
-            Error::VersionConflict(provider) => {
-                write!(f, "conditional indexing conflict: {provider}")
-            }
-            Error::Protocol(protocol) => write!(f, "unexpected Elasticsearch response: {protocol}"),
-            Error::PartialBulk(report) => write!(
+fn display_error(value: &Error, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    match value {
+        Error::Invalid(invalid) => write!(f, "invalid input: {invalid}"),
+        // Concord's `Display` is redacted (endpoint, static label, numbers).
+        Error::Concord(error) => std::fmt::Display::fmt(error, f),
+        Error::Provider(provider) => std::fmt::Display::fmt(provider, f),
+        Error::VersionConflict(provider) => {
+            write!(f, "conditional indexing conflict: {provider}")
+        }
+        Error::Protocol(protocol) => write!(f, "unexpected Elasticsearch response: {protocol}"),
+        Error::PartialBulk(report) => write!(
+            f,
+            "bulk request partially failed: {} of {} operations failed",
+            report.failed().count(),
+            report.items().len()
+        ),
+        Error::PartialSearch {
+            shards_failed,
+            timed_out,
+        } => write!(
+            f,
+            "incomplete search page ({shards_failed} shard failures, timed_out: {timed_out})"
+        ),
+        Error::PageCap { pages } => {
+            write!(
                 f,
-                "bulk request partially failed: {} of {} operations failed",
-                report.failed().count(),
-                report.items().len()
-            ),
-            Error::PartialSearch {
-                shards_failed,
-                timed_out,
-            } => write!(
-                f,
-                "incomplete search page ({shards_failed} shard failures, timed_out: {timed_out})"
-            ),
-            Error::PageCap { pages } => {
-                write!(
-                    f,
-                    "page cap reached after {pages} pages while more remained"
-                )
-            }
+                "page cap reached after {pages} pages while more remained"
+            )
         }
     }
 }
-
-impl std::error::Error for Error {}
 
 impl From<concord::Error> for Error {
     fn from(error: concord::Error) -> Self {

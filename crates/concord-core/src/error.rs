@@ -53,6 +53,8 @@ enum Repr<D> {
     /// with `Received::document`); the response is unread.
     Metadata(CodecError, reqwest::Response),
     Decode(CodecError),
+    /// A declared error document whose head was refused; its body has been read.
+    DocumentMetadata(CodecError),
     /// A body read with a byte limit was longer.
     Limit(u64),
     /// A non-2xx answer read as the declared error document; the response is consumed.
@@ -92,7 +94,8 @@ pub enum ErrorKind {
     /// The format refused the response head (its `Content-Type`, or another header the format
     /// checks) before the body was read: a 2xx response of a declared output, or a response of
     /// any status read with [`Received::document`](crate::Received::document). The response is
-    /// kept unread ([`Error::response`], [`Error::into_response`]).
+    /// kept unread ([`Error::response`], [`Error::into_response`]), except when adapted from an
+    /// already consumed [`Failure::into_document`].
     Metadata,
     /// A response body could not be decoded with the format: a 2xx body of a declared output, or
     /// a document of any status read with [`Received::document`](crate::Received::document).
@@ -143,6 +146,10 @@ impl Error {
         response: reqwest::Response,
     ) -> Self {
         Self::new(operation, Repr::Metadata(error, response))
+    }
+
+    pub(crate) fn from_document_metadata(operation: Option<Operation>, error: CodecError) -> Self {
+        Self::new(operation, Repr::DocumentMetadata(error))
     }
 
     pub(crate) fn from_decode(operation: Option<Operation>, error: CodecError) -> Self {
@@ -196,7 +203,7 @@ impl<D> Error<D> {
             Repr::Build { .. } | Repr::HeaderConflict { .. } | Repr::Encode(_) => ErrorKind::Build,
             Repr::Transport(_) => ErrorKind::Transport,
             Repr::Status(_) | Repr::Provider(_) => ErrorKind::Status,
-            Repr::Metadata(..) => ErrorKind::Metadata,
+            Repr::Metadata(..) | Repr::DocumentMetadata(_) => ErrorKind::Metadata,
             Repr::Decode(_) => ErrorKind::Decode,
             Repr::Limit(_) => ErrorKind::Limit,
         }
@@ -232,7 +239,8 @@ impl<D> Error<D> {
 
     /// The unread response of an [`ErrorKind::Status`] error (a non-2xx without a declared error
     /// document; with one, the head is in [`provider`](Self::provider)) or an
-    /// [`ErrorKind::Metadata`] error (a response whose head the format refused), borrowed: its status
+    /// [`ErrorKind::Metadata`] error with an unread response (a consumed failure adapted with
+    /// [`Failure::into_document`] has none), borrowed: its status
     /// and headers (`Retry-After`, a request id, the `Content-Type` the format refused) can be read
     /// while the error is kept, for example by a predicate written as `Fn(&Error) -> bool`. To
     /// read the body, take the response with [`into_response`](Self::into_response).
@@ -380,6 +388,7 @@ impl<D> Error<D> {
             Repr::Transport(_) => Delivery::Unknown,
             Repr::Status(_)
             | Repr::Metadata(..)
+            | Repr::DocumentMetadata(_)
             | Repr::Decode(_)
             | Repr::Limit(_)
             | Repr::Provider(_) => Delivery::Answered,
@@ -401,7 +410,10 @@ impl<D> Error<D> {
     /// [`CodecError::source_unredacted`], never through [`std::error::Error::source`].
     pub fn codec_error(&self) -> Option<&CodecError> {
         match &self.inner.repr {
-            Repr::Encode(e) | Repr::Decode(e) | Repr::Metadata(e, _) => Some(e),
+            Repr::Encode(e)
+            | Repr::Decode(e)
+            | Repr::Metadata(e, _)
+            | Repr::DocumentMetadata(e) => Some(e),
             _ => None,
         }
     }
@@ -434,7 +446,7 @@ impl<D> Error<D> {
     /// The same failure under another document type (a `Provider` failure keeps its head and
     /// bytes; a read document becomes `Unrecognized`). Concord applies it to failures of the
     /// stages before a status is read, which hold no document.
-    pub(crate) fn widen<E>(self) -> Error<E> {
+    pub fn widen<E>(self) -> Error<E> {
         let Inner {
             operation,
             repr,
@@ -449,6 +461,7 @@ impl<D> Error<D> {
             Repr::Status(r) => Repr::Status(r),
             Repr::Metadata(e, r) => Repr::Metadata(e, r),
             Repr::Decode(e) => Repr::Decode(e),
+            Repr::DocumentMetadata(e) => Repr::DocumentMetadata(e),
             Repr::Limit(l) => Repr::Limit(l),
             Repr::Provider(f) => Repr::Provider(f.recast()),
         };
@@ -509,7 +522,9 @@ impl<D> fmt::Display for Error<D> {
                     None => Ok(()),
                 }
             }
-            Repr::Metadata(e, _) => write!(f, "response metadata not accepted: {e}"),
+            Repr::Metadata(e, _) | Repr::DocumentMetadata(e) => {
+                write!(f, "response metadata not accepted: {e}")
+            }
             Repr::Decode(e) => write!(f, "response not decoded: {e}"),
             Repr::Limit(limit) => {
                 write!(f, "response body longer than the limit of {limit} bytes")

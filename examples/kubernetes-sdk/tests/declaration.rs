@@ -29,7 +29,7 @@ fn name(name: &str) -> ObjectName {
     ObjectName::new(name).unwrap()
 }
 
-fn target<T>(prepared: &concord::Prepared<T>) -> String {
+fn target<T>(prepared: &concord::Prepared<T, concord_example_kubernetes_sdk::Status>) -> String {
     let url = prepared.request().url();
     match url.query() {
         Some(q) => format!("{}?{q}", url.path()),
@@ -37,7 +37,11 @@ fn target<T>(prepared: &concord::Prepared<T>) -> String {
     }
 }
 
-fn check<T>(prepared: concord::Prepared<T>, expected: &str, accept: Option<&str>) {
+fn check<T>(
+    prepared: concord::Prepared<T, concord_example_kubernetes_sdk::Status>,
+    expected: &str,
+    accept: Option<&str>,
+) {
     assert_eq!(prepared.request().method(), Method::GET);
     assert_eq!(target(&prepared), expected);
     let headers = prepared.request().headers();
@@ -316,21 +320,31 @@ fn watch_outputs_are_typed_event_streams() -> Result<(), concord::Error> {
     use concord_example_kubernetes_sdk::model::{Deployment, Ingress, Pod};
     use concord_example_kubernetes_sdk::watch::WatchStream;
 
-    fn endpoint<T>(prepared: concord::Prepared<T>) -> Option<&'static str> {
+    fn endpoint<T>(
+        prepared: concord::Prepared<T, concord_example_kubernetes_sdk::Status>,
+    ) -> Option<&'static str> {
         prepared.into_parts().2.operation().map(|op| op.name())
     }
     let kube = kube();
     let a = kube.namespace(ns("team-a"));
-    let pods: concord::Prepared<WatchStream<Pod>> = kube.core().watch_pods().prepare()?;
-    let ns_pods: concord::Prepared<WatchStream<Pod>> = a.core().watch_pods().prepare()?;
-    let deployments: concord::Prepared<WatchStream<Deployment>> =
-        kube.apps().watch_deployments().prepare()?;
-    let ns_deployments: concord::Prepared<WatchStream<Deployment>> =
-        a.apps().watch_deployments().prepare()?;
-    let ingresses: concord::Prepared<WatchStream<Ingress>> =
+    let pods: concord::Prepared<WatchStream<Pod>, concord_example_kubernetes_sdk::Status> =
+        kube.core().watch_pods().prepare()?;
+    let ns_pods: concord::Prepared<WatchStream<Pod>, concord_example_kubernetes_sdk::Status> =
+        a.core().watch_pods().prepare()?;
+    let deployments: concord::Prepared<
+        WatchStream<Deployment>,
+        concord_example_kubernetes_sdk::Status,
+    > = kube.apps().watch_deployments().prepare()?;
+    let ns_deployments: concord::Prepared<
+        WatchStream<Deployment>,
+        concord_example_kubernetes_sdk::Status,
+    > = a.apps().watch_deployments().prepare()?;
+    let ingresses: concord::Prepared<WatchStream<Ingress>, concord_example_kubernetes_sdk::Status> =
         kube.networking().watch_ingresses().prepare()?;
-    let ns_ingresses: concord::Prepared<WatchStream<Ingress>> =
-        a.networking().watch_ingresses().prepare()?;
+    let ns_ingresses: concord::Prepared<
+        WatchStream<Ingress>,
+        concord_example_kubernetes_sdk::Status,
+    > = a.networking().watch_ingresses().prepare()?;
     assert_eq!(
         [
             endpoint(pods),

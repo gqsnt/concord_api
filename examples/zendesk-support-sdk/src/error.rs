@@ -10,7 +10,6 @@ use concord::{Received, ResponseMeta};
 use concord_retry::http::RetryAfterError;
 use serde::Deserialize;
 
-use crate::codecs::ProblemFormat;
 use crate::{ERROR_BODY_LIMIT, IdempotencyKey};
 
 /// A business-level error document: `{"error": .., "description": .., "details": ..}`.
@@ -90,7 +89,7 @@ pub struct HttpError {
 }
 
 impl HttpError {
-    pub(crate) async fn read<T>(received: Received<T>, attempts: usize) -> Self {
+    pub(crate) async fn read<T>(received: Received<T, crate::Problem>, attempts: usize) -> Self {
         let retry_after = concord_retry::http::retry_after(
             received
                 .head()
@@ -100,9 +99,7 @@ impl HttpError {
                 .map(|v| v.as_bytes()),
             SystemTime::now(),
         );
-        let (meta, document) = received
-            .document::<ProblemFormat, Problem>(ERROR_BODY_LIMIT)
-            .await;
+        let (meta, document) = received.failure(ERROR_BODY_LIMIT).await.into_document();
         Self {
             meta,
             document,
@@ -219,24 +216,31 @@ pub enum PaginationError {
 /// Errors of this SDK.
 #[derive(Debug)]
 #[non_exhaustive]
+#[derive(concord::derive::Error)]
+#[display(with = display_error)]
 pub enum Error {
     /// A request that could not be built (nothing sent), a transport failure of a read, or a
     /// 2xx read whose head or body was refused (`Metadata`, `Decode`, `Limit`).
-    Concord(concord::Error),
+    Concord(#[source] concord::Error),
     /// A non-2xx response (a 5xx on a write is [`Error::Uncertain`] instead).
+    #[from(skip)]
     Http(Box<HttpError>),
     /// A safe ticket update was rejected with 409; re-read the ticket before deciding.
+    #[from(skip)]
     Collision(Box<HttpError>),
     /// A write whose outcome is unknown; see [`UncertainWrite`].
+    #[from(skip)]
     Uncertain(Box<UncertainWrite>),
     /// The OAuth token is not a valid bearer credential (empty, whitespace, controls, non-ASCII).
-    Credential(concord_auth::CredentialError),
+    #[from(skip)]
+    Credential(#[source] concord_auth::CredentialError),
     /// An SDK input outside its documented range; nothing was sent.
     InvalidInput {
         /// Which input.
         what: &'static str,
     },
     /// A cursor page that cannot be followed safely.
+    #[from(skip)]
     Pagination(PaginationError),
     /// The read deadline of [`SendPolicy::read_deadline`](crate::SendPolicy::read_deadline)
     /// expired before any response arrived.
@@ -273,59 +277,39 @@ impl Error {
     }
 }
 
-impl From<concord::Error> for Error {
-    fn from(value: concord::Error) -> Self {
-        Self::Concord(value)
-    }
-}
-
-impl fmt::Display for Error {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::Concord(e) => e.fmt(f),
-            Self::Http(http) => {
-                write!(f, "Zendesk responded {}", http.status())?;
-                if let Ok(Some(code)) = http.document().map(Problem::error) {
-                    write!(f, " ({code})")?;
-                }
-                Ok(())
+fn display_error(value: &Error, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    match value {
+        Error::Concord(e) => std::fmt::Display::fmt(e, f),
+        Error::Http(http) => {
+            write!(f, "Zendesk responded {}", http.status())?;
+            if let Ok(Some(code)) = http.document().map(Problem::error) {
+                write!(f, " ({code})")?;
             }
-            Self::Collision(_) => {
-                f.write_str("ticket update collision; re-read the ticket before deciding")
-            }
-            Self::Uncertain(write) => {
-                write!(f, "the outcome of `{}` is unknown: ", write.operation)?;
-                f.write_str(match write.cause {
-                    UncertainCause::NoResponse(_) => "no response arrived",
-                    UncertainCause::ServerError(_) => "the server failed with a 5xx",
-                    UncertainCause::UnreadableSuccess(_) => "the success response was unreadable",
-                })?;
-                if write.idempotency_key.is_some() {
-                    f.write_str("; replay it with the same idempotency key, never with a new one")
-                } else {
-                    f.write_str("; re-read and investigate before deciding whether to retry")
-                }
-            }
-            Self::Credential(e) => write!(f, "invalid OAuth bearer token: {e}"),
-            Self::InvalidInput { what } => write!(f, "invalid {what}"),
-            Self::Pagination(kind) => f.write_str(match kind {
-                PaginationError::MissingCursor => "a page with more results has no after cursor",
-                PaginationError::RepeatedCursor => "a page names the cursor that produced it",
-                PaginationError::InconsistentNextLink => {
-                    "a page's next link and after cursor disagree"
-                }
-            }),
-            Self::DeadlineExceeded => f.write_str("the read deadline expired before a response"),
+            Ok(())
         }
-    }
-}
-
-impl std::error::Error for Error {
-    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
-        match self {
-            Self::Concord(e) => Some(e),
-            Self::Credential(e) => Some(e),
-            _ => None,
+        Error::Collision(_) => {
+            f.write_str("ticket update collision; re-read the ticket before deciding")
         }
+        Error::Uncertain(write) => {
+            write!(f, "the outcome of `{}` is unknown: ", write.operation)?;
+            f.write_str(match write.cause {
+                UncertainCause::NoResponse(_) => "no response arrived",
+                UncertainCause::ServerError(_) => "the server failed with a 5xx",
+                UncertainCause::UnreadableSuccess(_) => "the success response was unreadable",
+            })?;
+            if write.idempotency_key.is_some() {
+                f.write_str("; replay it with the same idempotency key, never with a new one")
+            } else {
+                f.write_str("; re-read and investigate before deciding whether to retry")
+            }
+        }
+        Error::Credential(e) => write!(f, "invalid OAuth bearer token: {e}"),
+        Error::InvalidInput { what } => write!(f, "invalid {what}"),
+        Error::Pagination(kind) => f.write_str(match kind {
+            PaginationError::MissingCursor => "a page with more results has no after cursor",
+            PaginationError::RepeatedCursor => "a page names the cursor that produced it",
+            PaginationError::InconsistentNextLink => "a page's next link and after cursor disagree",
+        }),
+        Error::DeadlineExceeded => f.write_str("the read deadline expired before a response"),
     }
 }

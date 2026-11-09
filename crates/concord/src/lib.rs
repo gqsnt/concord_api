@@ -105,13 +105,14 @@
 //! |---|---|
 //! | [`api!`] | the declaration macro |
 //! | [`derive::Error`] | derives an SDK's own error enum: `Display`, `std::error::Error`, `From` per variant, the provider's answer of `Error<D>` |
-//! | [`Prepared<T>`](Prepared) | a built request, not yet sent: `request()`, `receive()`, `send()`, `send_raw()`, `into_parts()` |
-//! | [`Received<T>`](Received) | any-status response, body unread: `head()`, `meta()`, then `decode()`, `decode_limited()`, `bytes_limited()`, `into_incoming()` or a native exit |
+//! | [`Prepared<T, D>`](Prepared) | a built request, not yet sent: `request()`, `receive()`, `send()`, `send_raw()`, `into_parts()` |
+//! | [`Received<T, D>`](Received) | any-status response, body unread: `head()`, `meta()`, then `decode()`, `decode_limited()`, `failure()`, `bytes_limited()`, `into_incoming()` or a native exit |
 //! | [`Incoming`] | an unread 2xx body with its operation identity, for an incremental reader chosen at run time |
-//! | [`Decoder<T>`](Decoder) | a response handling (an endpoint's, or [`Decoder::new`] for a format of your choice), for a response you obtained natively: `decode`, `finish` |
-//! | [`Endpoint<T>`](Endpoint), [`SendWith<T>`](SendWith) | generated operations implement `Endpoint`; a client's `send policy;` delegates generated `send()` to the policy's `SendWith::send`, returning its `Output` |
+//! | [`Decoder<T, D>`](Decoder) | a response handling (an endpoint's, or [`Decoder::new`] for a format of your choice), for a response you obtained natively: `decode`, `finish` |
+//! | [`Endpoint<T, D>`](Endpoint), [`SendWith<T, D>`](SendWith) | generated operations implement `Endpoint`; a client's `send policy;` delegates generated `send()` to the policy's `SendWith::send`, returning its `Output` |
 //! | [`Follow<T>`](Follow), [`Followed<E>`](Followed), [`NextUrl`] | an endpoint with `page next link;` or `page next url a?.b;`: `follow(next)` is the same endpoint at the provider's URL (same origin only), sent as its own `send()` (the client's send policy, if any) |
 //! | [`Error`], [`ErrorKind`] | Concord's error type: `kind`, `endpoint`, `status`, `response`, `into_response`, `codec_error`, `transport` |
+//! | [`Failure<D>`](Failure), [`Document<D>`](Document) | a bounded provider answer: response metadata, raw bytes and document state; `Failure::into_document()` adapts it to a decoded document or a stage error |
 //! | [`Encode<T>`](Encode), [`Decode<T>`](Decode) | the open format traits, implemented by `Json` (feature `json`), `Text`, `Binary`, `IgnoreContentType<F>` (feature `extras`), `Form` (feature `form`) and by your own types; a statement names a format by its type path (`format Json;`) |
 //! | [`Incremental<T>`](Incremental) | the open format contract for `-> stream T`: checks the head, then opens its reader over an unread `Incoming` |
 //! | [`ResponseHead`], [`ContentTypeField`] | what a [`Decode`] or [`Incremental`] implementation reads before the body: status, version, header fields |
@@ -140,6 +141,7 @@
 //! statements:  path "a/{x}";  subdomain "{x}";  query { .. }  headers { .. }
 //!              format FORMAT;  request FORMAT;  request FORMAT "media/type";  response FORMAT;
 //!              (on clients, scopes and endpoints; the nearest one wins)
+//!              error D in FORMAT;  (the provider's error document; inherited, nearest wins)
 //!              send policy;  (client only: a policy value or a stateless policy type)
 //!              page next link;  page next url a?.b;  (bodyless GET: where the next page's URL is)
 //!
@@ -150,6 +152,9 @@
 //!     override KEY = v else inherit;  v can be absent: replace when present, keep when absent
 //!     remove KEY;                     drop the inherited occurrences (acts first in its owner)
 //! ```
+//!
+//! `D` defaults to `()` without an error declaration. With `error D in FORMAT;`, native execution
+//! returns [`Error<D>`](Error); preparation and transport-only operations still return [`Error<()>`](Error).
 //!
 //! `?` is Concord's presence marker; no meaning is inferred from type names. Every body and typed
 //! output has a format: the nearest `request`/`response` (or `format`) statement of the endpoint,

@@ -1,5 +1,9 @@
 # concord-sdk-discord-rest
 
+The declaration owns the provider error document: `error crate::FailureDocument in crate::error::ErrorJson;`. Native prepared/decoded
+paths carry that document as `D` in `Prepared<T, D>` and `concord::Error<D>`; SDK status routing
+and validation remain in the policy. Concord withholds document contents in formatting.
+
 For `channel.history(limit).starting_at(from)`, use `concord_sdk_discord_rest::pagination::Resume` for the
 position. `Resume::Start` repeats the channel's newest-message page with `limit`;
 `Resume::At(key)` takes the `MessageId` in a returned page's `next` (its oldest message),

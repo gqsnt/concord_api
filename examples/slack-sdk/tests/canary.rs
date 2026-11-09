@@ -39,7 +39,7 @@ fn reply(case: usize, status: u16, success: &str, problem: &str, echo: &str) -> 
     response.header("x-canary", echo).header("set-cookie", echo)
 }
 
-fn concord_error(c: &mut Canaries, error: &concord::Error) {
+fn concord_error<D: 'static>(c: &mut Canaries, error: &concord::Error<D>) {
     c.assert_debug_absent("concord::Error", error);
     c.assert_error_absent("concord::Error and sources", error);
     c.assert_debug_absent("error kind", &error.kind());

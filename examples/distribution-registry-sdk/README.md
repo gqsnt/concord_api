@@ -1,5 +1,9 @@
 # concord-sdk-distribution-registry
 
+The declaration owns the provider error document: `error ErrorDocument in IgnoreContentType<Json>;`. Native prepared/decoded
+paths carry that document as `D` in `Prepared<T, D>` and `concord::Error<D>`; SDK status routing
+and validation remain in the policy. Concord withholds document contents in formatting.
+
 A provider SDK slice for the **CNCF Distribution registry HTTP API v2** (the Docker registry
 protocol), written with `concord::api!`: discover repositories and tags, pull a manifest and
 verify its blobs, push blobs in resumable chunks and publish a manifest, with the registry's

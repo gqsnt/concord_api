@@ -65,6 +65,7 @@ concord::api! {
         session: Session,
     ) {
         base session;
+        error crate::ApiError in concord::Json;
         format Json;
         limit BODY_LIMIT;
         send session -> Result<_, Error>;

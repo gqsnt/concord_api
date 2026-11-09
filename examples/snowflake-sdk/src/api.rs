@@ -39,6 +39,7 @@ concord::api! {
         header(USER_AGENT) user_agent: HeaderValue,
     ) {
         base origin;
+        error crate::error::ErrorDocument in crate::error::ServerErrorJson;
         path "api/v2/statements";
         headers { "Content-Type" = "application/json"; }
         format Json;

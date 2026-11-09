@@ -15,7 +15,6 @@
 //! opt-in (see the `sf_b` binary).
 
 use std::error::Error as StdError;
-use std::fmt;
 use std::future::Future;
 use std::num::NonZeroUsize;
 
@@ -119,12 +118,18 @@ pub struct IngestReport {
 /// A failure of the sub-scenario.
 #[derive(Debug)]
 #[non_exhaustive]
+#[derive(concord::derive::Error)]
 pub enum IngestError {
     /// Encoding into the spool failed (or exceeded the limit); no job was created.
+    #[display("ingest encoding: {0}")]
+    #[from(skip)]
     Encode(CsvError),
     /// Creating the job failed.
+    #[display("ingest job creation: {0}")]
+    #[from(skip)]
     Create(SfError),
     /// A step after creation failed; the job exists and may still be `Open`.
+    #[display("ingest job {job}: {step} failed: {error}")]
     Job {
         /// The job.
         job: IngestJobId,
@@ -134,20 +139,6 @@ pub enum IngestError {
         error: SfError,
     },
 }
-
-impl fmt::Display for IngestError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            IngestError::Encode(e) => write!(f, "ingest encoding: {e}"),
-            IngestError::Create(e) => write!(f, "ingest job creation: {e}"),
-            IngestError::Job { job, step, error } => {
-                write!(f, "ingest job {job}: {step} failed: {error}")
-            }
-        }
-    }
-}
-
-impl StdError for IngestError {}
 
 /// Runs the ingest sub-scenario with `rows` (a one-shot stream, polled once).
 ///

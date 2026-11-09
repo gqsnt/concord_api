@@ -1,5 +1,9 @@
 # concord-sdk-mastodon
 
+The declaration owns the provider error document: `error crate::ErrorDocument in concord::Json;`. Native prepared/decoded
+paths carry that document as `D` in `Prepared<T, D>` and `concord::Error<D>`; SDK status routing
+and validation remain in the policy. Concord withholds document contents in formatting.
+
 A bounded [Mastodon](https://docs.joinmastodon.org) SDK slice built on Concord's `concord::api!`.
 It covers two connected workflows against the caller's instance:
 

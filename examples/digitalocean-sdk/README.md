@@ -1,5 +1,9 @@
 # concord-sdk-digitalocean
 
+The declaration owns the provider error document: `error crate::Problem in concord::Json;`. Native prepared/decoded
+paths carry that document as `D` in `Prepared<T, D>` and `concord::Error<D>`; SDK status routing
+and validation remain in the policy. Concord withholds document contents in formatting.
+
 A bounded, read-only DigitalOcean slice using Concord's client → scope → endpoint
 declaration and generated `send()` methods. Implements both connected workflows:
 

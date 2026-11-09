@@ -4,14 +4,14 @@ use std::num::NonZeroUsize;
 use std::time::{Duration, Instant};
 
 use concord::reqwest::StatusCode;
-use concord::{Endpoint, ErrorKind, Json, Prepared, Received, SendWith};
+use concord::{Endpoint, ErrorKind, Prepared, Received, SendWith};
 use concord_retry::concord::ReplayMode;
 use concord_retry::{Decision, Replay, Retry};
 
 use crate::ERROR_BODY_LIMIT;
 use crate::error::{EnvelopeError, EnvelopeProblem, Error, ProviderError, ResponseMeta};
 use crate::ratelimit::RetryAfter;
-use crate::wire::{ErrorEnvelope, PageInfo, Paged, ResponseInfo, Single};
+use crate::wire::{PageInfo, Paged, ResponseInfo, Single};
 
 /// A successful single-object call (zone/record details, or a created DNS record).
 #[derive(Debug)]
@@ -97,9 +97,9 @@ impl SendPolicy {
     /// One call: the request (repeated only as documented), then the status rule.
     async fn receive<T: Send + 'static>(
         &self,
-        prepared: Prepared<T>,
+        prepared: Prepared<T, crate::ErrorEnvelope>,
         read: bool,
-    ) -> Result<(Received<T>, usize), Error> {
+    ) -> Result<(Received<T, crate::ErrorEnvelope>, usize), Error> {
         let (outcome, attempts) = if self.attempts.get() == 1 || !read {
             (prepared.receive().await, 1)
         } else {
@@ -124,9 +124,7 @@ impl SendPolicy {
         if status.is_success() {
             return Ok((received, attempts));
         }
-        let (meta, document) = received
-            .document::<Json, ErrorEnvelope>(ERROR_BODY_LIMIT)
-            .await;
+        let (meta, document) = received.failure(ERROR_BODY_LIMIT).await.into_document();
         let error = Box::new(ProviderError::new(meta.into(), document, attempts));
         Err(if status == StatusCode::TOO_MANY_REQUESTS {
             Error::RateLimited(error)
@@ -137,7 +135,10 @@ impl SendPolicy {
 }
 
 /// A read is repeated only for a 429 whose `Retry-After` is valid and within `max`.
-fn classify<T>(outcome: &Result<Received<T>, concord::Error>, max: Duration) -> Decision {
+fn classify<T>(
+    outcome: &Result<Received<T, crate::ErrorEnvelope>, concord::Error>,
+    max: Duration,
+) -> Decision {
     match outcome {
         Ok(received) if received.status() == StatusCode::TOO_MANY_REQUESTS => {
             match RetryAfter::from_headers(received.head().headers()) {
@@ -150,14 +151,17 @@ fn classify<T>(outcome: &Result<Received<T>, concord::Error>, max: Duration) -> 
 }
 
 // Replay is deliberately GET/HEAD-only; a declared POST read or OPTIONS remains single-shot.
-fn is_read<E: Endpoint<T>, T>() -> bool {
+fn is_read<E: Endpoint<T, crate::ErrorEnvelope>, T>() -> bool {
     matches!(E::operation().method(), Some("GET" | "HEAD"))
 }
 
-impl<R: Send + 'static> SendWith<Single<R>> for SendPolicy {
+impl<R: Send + 'static> SendWith<Single<R>, crate::ErrorEnvelope> for SendPolicy {
     type Output = Result<Response<R>, Error>;
 
-    async fn send<E: Endpoint<Single<R>> + Send>(&self, endpoint: E) -> Self::Output {
+    async fn send<E: Endpoint<Single<R>, crate::ErrorEnvelope> + Send>(
+        &self,
+        endpoint: E,
+    ) -> Self::Output {
         let read = is_read::<E, Single<R>>();
         let create = matches!(E::operation().method(), Some("POST"));
         let prepared = endpoint.prepare()?;
@@ -172,6 +176,7 @@ impl<R: Send + 'static> SendWith<Single<R>> for SendPolicy {
                     other => other,
                 })?;
         let (envelope, meta) = received
+            .into_success()?
             .decode_with_meta()
             .await
             .map_err(|error| create_failure(error, create))?;
@@ -207,13 +212,16 @@ fn create_failure(error: concord::Error, create: bool) -> Error {
     }
 }
 
-impl<R: Send + 'static> SendWith<Paged<R>> for SendPolicy {
+impl<R: Send + 'static> SendWith<Paged<R>, crate::ErrorEnvelope> for SendPolicy {
     type Output = Result<PageResponse<R>, Error>;
 
-    async fn send<E: Endpoint<Paged<R>> + Send>(&self, endpoint: E) -> Self::Output {
+    async fn send<E: Endpoint<Paged<R>, crate::ErrorEnvelope> + Send>(
+        &self,
+        endpoint: E,
+    ) -> Self::Output {
         let read = is_read::<E, Paged<R>>();
         let (received, attempts) = self.receive(endpoint.prepare()?, read).await?;
-        let (envelope, meta) = received.decode_with_meta().await?;
+        let (envelope, meta) = received.into_success()?.decode_with_meta().await?;
         let meta = ResponseMeta::from(meta);
         match envelope {
             Paged::Failure(document) => Err(Error::Provider(Box::new(ProviderError::new(

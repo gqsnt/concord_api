@@ -1,5 +1,9 @@
 # Open-Meteo hourly forecast SDK
 
+The declaration owns the provider error document: `error crate::Problem in concord::Json;`. Native prepared/decoded
+paths carry that document as `D` in `Prepared<T, D>` and `concord::Error<D>`; SDK status routing
+and validation remain in the policy. Concord withholds document contents in formatting.
+
 `concord-sdk-open-meteo` is an unpublished Concord example for the public
 `GET /v1/forecast` interface. One operation retrieves a single location's hourly
 forecast, selecting JSON or CSV at runtime. Any documented numeric hourly

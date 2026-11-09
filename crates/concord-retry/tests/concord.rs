@@ -340,3 +340,72 @@ async fn stream_is_returned_unread_and_body_failure_never_restarts_it() {
     assert_eq!(server.requests().len(), 1);
     server.shutdown().await;
 }
+
+struct Problem(Vec<u8>);
+struct ProblemBytes;
+impl concord_core::Decode<Problem> for ProblemBytes {
+    type Context = ();
+    fn context(_: &concord_core::ResponseHead<'_>) -> Result<(), concord_core::CodecError> {
+        Ok(())
+    }
+    fn decode_body(
+        (): (),
+        body: concord_core::bytes::Bytes,
+    ) -> Result<Problem, concord_core::CodecError> {
+        Ok(Problem(body.to_vec()))
+    }
+}
+concord::api! {
+    client Typed {
+        base "http://unused.invalid";
+        error Problem in ProblemBytes;
+        GET item();
+    }
+}
+
+#[tokio::test]
+async fn both_receive_adapters_keep_the_declared_document_decoder_and_bound() {
+    let server = TestServer::start(|_| Reply::new(409).body("provider-document")).await;
+    let api = Typed::new(reqwest::Client::new())
+        .with_base_url(server.url())
+        .unwrap();
+    let first = retry(1)
+        .receive(
+            api.item().prepare().unwrap().error_body_limit(64),
+            ReplayMode::BestEffort,
+            |_, _| {},
+            |_| Decision::Done,
+            || Duration::ZERO,
+            |_| ready(()),
+            |_, ceiling| ceiling,
+        )
+        .await
+        .outcome
+        .unwrap()
+        .unwrap();
+    let error: concord_core::Error<Problem> = first.decode().await.unwrap_err();
+    assert_eq!(error.document().unwrap().0, b"provider-document");
+    assert_eq!(error.operation().unwrap().name(), "Typed.item");
+    let second = retry(1)
+        .receive_with(
+            api.item().prepare().unwrap().error_body_limit(4),
+            ReplayMode::BestEffort,
+            |request, _| ready(Ok::<_, Infallible>((request, ()))),
+            |_, _| Decision::Done,
+            || Duration::ZERO,
+            |_| ready(()),
+            |_, ceiling| ceiling,
+        )
+        .await
+        .outcome
+        .unwrap()
+        .unwrap();
+    let error: concord_core::Error<Problem> = second.decode().await.unwrap_err();
+    assert!(matches!(
+        error.provider().unwrap().state(),
+        concord_core::Document::TooLong { limit: 4 }
+    ));
+    assert_eq!(error.provider().unwrap().body().as_ref(), b"prov");
+    assert_eq!(server.requests().len(), 2);
+    server.shutdown().await;
+}

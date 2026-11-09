@@ -106,6 +106,7 @@ concord::api! {
         #[sensitive] header(AUTHORIZATION) authorization?: HeaderValue,
     ) {
         base origin;
+        error crate::ErrorDocument in concord::IgnoreContentType<concord::Json>;
         send NtfyPolicy -> Result<_, NtfyError>;
 
         /// One topic (`/<topic>`).

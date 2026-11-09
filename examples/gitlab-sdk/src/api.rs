@@ -50,6 +50,7 @@ concord::api! {
         #[sensitive] header(PRIVATE_TOKEN) token: HeaderValue,
     ) {
         base origin;
+        error crate::ErrorDocument in concord::IgnoreContentType<concord::Json>;
         send SendPolicy -> Result<crate::Response<_>, crate::GitLabError>;
         format Json;
 

@@ -1,6 +1,5 @@
 //! U28 (R08): reading a chunked response incrementally and stopping early.
 
-use std::fmt;
 use std::time::Duration;
 
 use concord::bytes::Bytes;
@@ -9,36 +8,28 @@ use concord::reqwest;
 use crate::api::Inventory;
 
 /// Why [`first_event_chunks`] stopped without its chunks.
-#[derive(Debug)]
+#[derive(Debug, concord::derive::Error)]
 pub enum StreamError {
     /// The request could not be built or sent (Concord's error, redacted).
+    #[display("{0}")]
+    #[from(skip)]
     Concord(concord::Error),
     /// The server answered with a non-2xx status; `send_raw` does not check it, so the recipe
     /// does. The body was not read.
+    #[display("event stream answered {0}")]
+    #[from(skip)]
     Status(reqwest::StatusCode),
     /// Reading a chunk failed (native error, URL removed).
+    #[display("event stream read failed")]
+    #[from(skip)]
     Read(reqwest::Error),
     /// No chunk arrived within the application's per-chunk deadline.
+    #[display("event stream stalled after {received} chunks")]
     Stalled {
         /// Chunks received before the stall.
         received: usize,
     },
 }
-
-impl fmt::Display for StreamError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::Concord(e) => e.fmt(f),
-            Self::Status(s) => write!(f, "event stream answered {s}"),
-            Self::Read(_) => f.write_str("event stream read failed"),
-            Self::Stalled { received } => {
-                write!(f, "event stream stalled after {received} chunks")
-            }
-        }
-    }
-}
-
-impl std::error::Error for StreamError {}
 
 /// Reads at most `max_chunks` chunks of the event export, waiting at most `per_chunk` for each,
 /// then drops the response.

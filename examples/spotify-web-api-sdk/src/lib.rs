@@ -79,6 +79,7 @@ concord::api! {
     /// never replayed, even after a 401 or a retryable 429.
     pub client WebApi(session: Session) {
         base "https://api.spotify.com";
+        error crate::ErrorEnvelope in concord::Json;
         path "v1";
         format Json;
         limit BODY_LIMIT;
@@ -133,3 +134,6 @@ concord::api! {
         }
     }
 }
+
+/// The provider error document used by declared request handling.
+pub use error::ErrorEnvelope;

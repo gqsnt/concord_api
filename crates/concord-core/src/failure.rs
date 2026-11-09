@@ -6,7 +6,7 @@ use bytes::Bytes;
 
 use crate::codec::{CodecError, ResponseHead};
 use crate::error::Error;
-use crate::prepared::HeadStep;
+use crate::prepared::{BodyStep, HeadStep};
 use crate::response::{Operation, ResponseMeta};
 
 /// The bound of an error body read when the SDK sets none
@@ -23,7 +23,15 @@ pub struct Failure<D> {
     meta: ResponseMeta,
     state: Document<D>,
     body: Bytes,
+    head_refused: bool,
+    // Preserve the format's result for adapters of an empty document, while the public state
+    // still describes the wire fact (`Empty`). This also lets byte formats return empty bytes.
+    empty_document: Option<EmptyDecoder<D>>,
 }
+
+// Only empty bodies retain a pending decoder. Boxing keeps ordinary failures small; the mutex
+// preserves Sync even when a custom format's Context is Send-only. It is consumed, never locked.
+type EmptyDecoder<D> = Box<std::sync::Mutex<Result<BodyStep<D>, CodecError>>>;
 
 /// What became of an error document.
 #[non_exhaustive]
@@ -82,6 +90,47 @@ impl<D> Failure<D> {
         (self.meta, self.state, self.body)
     }
 
+    /// The head and typed document outcome, for SDKs that expose `Result<D, Error>`.
+    /// The error reflects the metadata/decode/read/limit state, head and bounded bytes.
+    /// A read or size failure takes precedence over a format refusal.
+    /// A metadata refusal has already consumed the body; it has no unread response.
+    pub fn into_document(self) -> (ResponseMeta, Result<D, Error>) {
+        let Self {
+            meta,
+            state,
+            body,
+            head_refused,
+            empty_document,
+        } = self;
+        let operation = meta.operation();
+        let outcome = match state {
+            Document::Read(document) => Ok(document),
+            Document::Empty => empty_document
+                .map(|pending| {
+                    (*pending)
+                        .into_inner()
+                        .unwrap_or_else(std::sync::PoisonError::into_inner)
+                })
+                .unwrap_or_else(|| Err(CodecError::new("empty error document")))
+                .and_then(|decode| decode(body.clone()))
+                .map_err(|error| {
+                    if head_refused {
+                        Error::from_document_metadata(operation, error)
+                    } else {
+                        Error::from_decode(operation, error)
+                    }
+                }),
+            Document::Unrecognized(error) if head_refused => {
+                Err(Error::from_document_metadata(operation, error))
+            }
+            Document::Unrecognized(error) => Err(Error::from_decode(operation, error)),
+            Document::TooLong { limit } => Err(Error::limit(operation, limit as u64)),
+            Document::Broken(error) => Err(error),
+        };
+        let outcome = outcome.map_err(|error| error.with_head(meta.clone()).with_body(body));
+        (meta, outcome)
+    }
+
     /// The same failure with a document of another type (`Read` becomes `Unrecognized`).
     pub(crate) fn recast<E>(self) -> Failure<E> {
         let state = match self.state {
@@ -97,6 +146,8 @@ impl<D> Failure<D> {
             meta: self.meta,
             state,
             body: self.body,
+            head_refused: self.head_refused,
+            empty_document: None,
         }
     }
 }
@@ -110,6 +161,7 @@ pub(crate) async fn read<D>(
     operation: Option<Operation>,
 ) -> Failure<D> {
     let checked = step.map(|step| step(&ResponseHead::of(&response)));
+    let head_refused = matches!(&checked, Some(Err(_)));
     let meta = ResponseMeta::take(&mut response, operation);
     let mut body = bytes::BytesMut::new();
     let mut state = None;
@@ -133,9 +185,13 @@ pub(crate) async fn read<D>(
         }
     }
     let body = body.freeze();
+    let mut empty_document = None;
     let state = match state {
         Some(state) => state,
-        None if body.is_empty() => Document::Empty,
+        None if body.is_empty() => {
+            empty_document = checked.map(|checked| Box::new(std::sync::Mutex::new(checked)));
+            Document::Empty
+        }
         None => match checked {
             None => Document::Unrecognized(CodecError::new("no error document declared")),
             Some(Err(e)) => Document::Unrecognized(e),
@@ -145,7 +201,13 @@ pub(crate) async fn read<D>(
             },
         },
     };
-    Failure { meta, state, body }
+    Failure {
+        meta,
+        state,
+        body,
+        head_refused,
+        empty_document,
+    }
 }
 
 impl<D> fmt::Debug for Failure<D> {

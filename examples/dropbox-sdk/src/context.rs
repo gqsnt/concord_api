@@ -1,12 +1,11 @@
 //! Explicit, immutable context for one member's listing.
 
-use std::fmt;
-
 use concord::reqwest::header::HeaderValue;
 use serde::Serialize;
 
 /// An invalid local input. The rejected value is never included in diagnostics.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, concord::derive::Error)]
+#[display(with = display_input_error)]
 pub enum InputError {
     /// A namespace ID must match Dropbox's `[-_0-9a-zA-Z:]+` schema.
     NamespaceId,
@@ -16,13 +15,9 @@ pub enum InputError {
     PageSize,
 }
 
-impl fmt::Display for InputError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "invalid Dropbox input: {self:?}")
-    }
+fn display_input_error(value: &InputError, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    write!(f, "invalid Dropbox input: {value:?}")
 }
-
-impl std::error::Error for InputError {}
 
 /// An opaque namespace identifier, kept as text without integer conversion.
 ///

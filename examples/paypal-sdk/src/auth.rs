@@ -2,7 +2,6 @@
 //! `grant_type=client_credentials`). There is no refresh token: an expired access token is
 //! obtained again with the same grant.
 
-use std::fmt;
 use std::time::Duration;
 
 use concord::reqwest::StatusCode;
@@ -59,6 +58,7 @@ concord::api! {
     /// The token endpoint. Its `Basic` credential is the only header this client sets.
     pub client OAuth(origin: concord::BaseUrl, #[sensitive] header(AUTHORIZATION) basic: HeaderValue) {
         base origin;
+        error crate::auth::IdentityError in concord::Json;
         response Json;
         limit TOKEN_BODY_LIMIT;
 
@@ -108,7 +108,8 @@ impl IdentityError {
 
 /// Why no access token could be obtained. It holds no credential, token or body; every waiter of
 /// one shared acquisition receives a clone.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, concord::derive::Error)]
+#[display(with = display_token_error)]
 pub enum TokenError {
     /// The token endpoint answered with a non-2xx status (`401` with `invalid_client` for wrong
     /// credentials). `document` is `None` when the body was not a readable identity document.
@@ -126,26 +127,23 @@ pub enum TokenError {
     },
     /// A `2xx` token document that cannot be used (not `Bearer`, an invalid token, a lifetime
     /// not longer than the refresh margin).
+    #[from(skip)]
     Unusable(&'static str),
 }
 
-impl fmt::Display for TokenError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::Refused { status, document } => {
-                write!(f, "token request refused with HTTP {}", status.as_u16())?;
-                if let Some(document) = document {
-                    write!(f, " ({})", document.error)?;
-                }
-                Ok(())
+fn display_token_error(value: &TokenError, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    match value {
+        TokenError::Refused { status, document } => {
+            write!(f, "token request refused with HTTP {}", status.as_u16())?;
+            if let Some(document) = document {
+                write!(f, " ({})", document.error)?;
             }
-            Self::Failed { kind } => write!(f, "token request failed ({kind:?})"),
-            Self::Unusable(why) => write!(f, "token response unusable: {why}"),
+            Ok(())
         }
+        TokenError::Failed { kind } => write!(f, "token request failed ({kind:?})"),
+        TokenError::Unusable(why) => write!(f, "token response unusable: {why}"),
     }
 }
-
-impl std::error::Error for TokenError {}
 
 /// One client-credentials acquisition, run at most once at a time by the session's cache.
 pub(crate) async fn fetch_token(oauth: OAuth, margin: Duration) -> Result<Token, TokenError> {
@@ -159,15 +157,18 @@ pub(crate) async fn fetch_token(oauth: OAuth, margin: Duration) -> Result<Token,
         .map_err(failed)?;
     let status = received.status();
     if !status.is_success() {
-        let (_, document) = received
-            .document::<Json, IdentityError>(ERROR_BODY_LIMIT)
-            .await;
+        let (_, document) = received.failure(ERROR_BODY_LIMIT).await.into_document();
         return Err(TokenError::Refused {
             status,
             document: document.ok(),
         });
     }
-    let token = received.decode().await.map_err(failed)?;
+    let token = received
+        .into_success()
+        .map_err(failed)?
+        .decode()
+        .await
+        .map_err(failed)?;
     if !token.token_type.eq_ignore_ascii_case("bearer") {
         return Err(TokenError::Unusable("token_type is not Bearer"));
     }

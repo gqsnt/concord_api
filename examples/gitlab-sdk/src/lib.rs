@@ -103,3 +103,6 @@ pub(crate) fn same_origin(a: &Url, b: &Url) -> bool {
         && a.host_str() == b.host_str()
         && a.port_or_known_default() == b.port_or_known_default()
 }
+
+/// The provider error document used by declared request handling.
+pub use error::ErrorDocument;

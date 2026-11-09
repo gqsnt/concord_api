@@ -135,6 +135,7 @@ concord::api! {
         #[sensitive] account?: AccountId,
     ) {
         base "https://api.stripe.com/v1";
+        error crate::ErrorDocument in concord::IgnoreContentType<concord::Json>;
         headers { "stripe-version" = "{version}"; "stripe-account" = "{account}"; }
         request StripeForm;
         response Json;
@@ -436,3 +437,6 @@ concord::api! {
         }
     }
 }
+
+/// The provider error document used by declared request handling.
+pub use send::ErrorDocument;

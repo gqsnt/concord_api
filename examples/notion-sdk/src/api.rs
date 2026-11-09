@@ -15,6 +15,7 @@ concord::api! {
         header("Notion-Version") version: String = crate::NOTION_VERSION.to_owned(),
     ) {
         base "https://api.notion.com/v1";
+        error crate::ProviderError in concord::IgnoreContentType<concord::Json>;
         headers { AUTHORIZATION = "Bearer {token}"; }
         format Json;
         limit crate::RESPONSE_LIMIT;

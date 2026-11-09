@@ -1,6 +1,6 @@
 //! Private declaration and common response policy.
 
-use crate::{Entry, Error, ErrorBody, HttpError, ListFolderOptions, Response, ResponseMeta};
+use crate::{Entry, Error, ListFolderOptions, Response, ResponseMeta};
 use concord::{
     Endpoint, Json, SendWith,
     reqwest::header::{AUTHORIZATION, HeaderValue},
@@ -27,6 +27,7 @@ concord::api! {
         #[sensitive] token: String,
     ) {
         base "https://api.dropboxapi.com/2";
+        error crate::ProviderError in concord::IgnoreContentType<concord::Json>;
         headers { AUTHORIZATION = "Bearer {token}"; }
         format Json;
         limit crate::SUCCESS_BODY_LIMIT;
@@ -49,16 +50,16 @@ concord::api! {
 #[derive(Default)]
 pub struct DropboxPolicy;
 
-impl<T: Send> SendWith<T> for DropboxPolicy {
+impl<T: Send> SendWith<T, crate::ProviderError> for DropboxPolicy {
     type Output = Result<Response<T>, Error>;
 
-    async fn send<E: Endpoint<T> + Send>(&self, endpoint: E) -> Self::Output {
-        let received = endpoint.prepare()?.receive().await?;
-        if !received.status().is_success() {
-            let meta = ResponseMeta(received.meta());
-            let body = ErrorBody::new(received.bytes_limited(crate::ERROR_BODY_LIMIT).await);
-            return Err(Error::Http(Box::new(HttpError { meta, body })));
-        }
+    async fn send<E: Endpoint<T, crate::ProviderError> + Send>(&self, endpoint: E) -> Self::Output {
+        let received = endpoint
+            .prepare()?
+            .error_body_limit(crate::ERROR_BODY_LIMIT)
+            .receive()
+            .await?;
+
         // A failure after the head arrived keeps it in the Concord error (`From` reads it).
         let (value, meta) = received.decode_with_meta().await?;
         Ok(Response {

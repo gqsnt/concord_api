@@ -246,7 +246,16 @@ async fn prepared_send_has_concord_status_semantics_and_bypasses_sdk_policy() {
         .unwrap_err();
     assert_eq!(error.kind(), ErrorKind::Status);
     assert_eq!(error.status(), Some(StatusCode::NOT_FOUND));
-    assert!(error.response().is_some());
+    assert!(error.response().is_none());
+    let failure = error.provider().expect("declared error document");
+    assert_eq!(
+        failure.document().unwrap(),
+        &serde_json::from_str::<serde_json::Value>(include_str!("../fixtures/error.json")).unwrap()
+    );
+    assert_eq!(
+        failure.body().as_ref(),
+        include_bytes!("../fixtures/error.json")
+    );
     assert_redacted(&error);
     assert!(!error.to_string().contains(REQUEST_SECRET));
     assert_eq!(server.requests().len(), 1);

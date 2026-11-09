@@ -13,6 +13,8 @@ use serde::{Deserialize, Serialize};
 /// A value GitHub would not accept (or would silently reinterpret). Nothing was sent.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[non_exhaustive]
+#[derive(concord::derive::Error)]
+#[display(with = display_param_error)]
 pub enum ParamError {
     /// `per_page` must be 1 through 100.
     PerPage,
@@ -24,18 +26,14 @@ pub enum ParamError {
     ApiVersion,
 }
 
-impl fmt::Display for ParamError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(match self {
-            Self::PerPage => "per_page must be 1 through 100",
-            Self::Timestamp => "timestamp is not YYYY-MM-DDTHH:MM:SSZ",
-            Self::Labels => "labels must be non-empty names without commas",
-            Self::ApiVersion => "API version is not a YYYY-MM-DD date",
-        })
-    }
+fn display_param_error(value: &ParamError, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    f.write_str(match value {
+        ParamError::PerPage => "per_page must be 1 through 100",
+        ParamError::Timestamp => "timestamp is not YYYY-MM-DDTHH:MM:SSZ",
+        ParamError::Labels => "labels must be non-empty names without commas",
+        ParamError::ApiVersion => "API version is not a YYYY-MM-DD date",
+    })
 }
-
-impl std::error::Error for ParamError {}
 
 macro_rules! wire_enum {
     ($(#[$doc:meta])* $name:ident { $($(#[$vdoc:meta])* $variant:ident = $wire:literal),+ $(,)? }) => {

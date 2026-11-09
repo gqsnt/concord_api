@@ -40,18 +40,19 @@ pub const MAX_PAGES: usize = 20;
 #[derive(Default)]
 pub struct SendPolicy;
 
-impl<T: Document + Send> SendWith<T> for SendPolicy {
+impl<T: Document + Send> SendWith<T, concord::bytes::Bytes> for SendPolicy {
     type Output = Result<T, Error>;
 
-    async fn send<E: Endpoint<T> + Send>(&self, endpoint: E) -> Self::Output {
+    async fn send<E: Endpoint<T, concord::bytes::Bytes> + Send>(
+        &self,
+        endpoint: E,
+    ) -> Self::Output {
         let prepared = endpoint.prepare()?;
         let requested = requested_page_size(prepared.request()).unwrap_or(100);
-        let received = prepared.receive().await?;
-        if !received.status().is_success() {
-            let meta = received.meta();
-            let body = received.bytes_limited(ERROR_BODY_LIMIT).await;
-            return Err(Error::Http(Box::new(HttpError { meta, body })));
-        }
+        let received = prepared
+            .error_body_limit(ERROR_BODY_LIMIT)
+            .receive()
+            .await?;
         let value = received.decode().await?;
         value.validate(requested)?;
         Ok(value)
@@ -72,6 +73,7 @@ concord::api! {
     /// Public Europe PMC REST client. Queries and opaque cursors are withheld in generated Debug.
     pub client EuropePmc {
         base "https://www.ebi.ac.uk/europepmc/webservices/rest";
+        error concord::bytes::Bytes in concord::Binary;
         limit BODY_LIMIT;
         send SendPolicy -> Result<_, Error>;
 

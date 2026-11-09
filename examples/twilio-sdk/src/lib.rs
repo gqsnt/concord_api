@@ -25,6 +25,7 @@ mod wire {
             #[sensitive] account_sid: String,
         ) {
             base "https://api.twilio.com";
+        error crate::ProviderError in concord::Json;
             path "2010-04-01/Accounts/{account_sid}";
             headers { AUTHORIZATION = authorization; }
             response Json;
@@ -130,7 +131,7 @@ impl Twilio {
     pub fn prepare_create_message(
         &self,
         message: CreateMessage,
-    ) -> Result<Prepared<Message>, TwilioError> {
+    ) -> Result<Prepared<Message, crate::ProviderError>, TwilioError> {
         Ok(self.api.create_message(message).prepare()?)
     }
 
@@ -139,12 +140,17 @@ impl Twilio {
     pub fn prepare_get_message(
         &self,
         sid: impl Into<String>,
-    ) -> Result<Prepared<Message>, TwilioError> {
+    ) -> Result<Prepared<Message, crate::ProviderError>, TwilioError> {
         let sid = sid.into();
         if sid.is_empty() {
-            return Err(TwilioError::EmptySid {
-                operation: <wire::TwilioApiGetMessage as Endpoint<Message>>::operation(),
-            });
+            return Err(
+                TwilioError::EmptySid {
+                    operation: <wire::TwilioApiGetMessage as Endpoint<
+                        Message,
+                        crate::ProviderError,
+                    >>::operation(),
+                },
+            );
         }
         Ok(self.api.get_message(sid).prepare()?)
     }

@@ -1,5 +1,5 @@
 //! One generated-send policy owns authentication, admission, repetition and bounded errors.
-use crate::{Class, Error, ErrorKind, Problem, ProviderFailure, auth::Auth};
+use crate::{Class, Error, ErrorKind, ProviderFailure, auth::Auth};
 use concord::{
     Endpoint, Received, SendWith,
     reqwest::{Method, StatusCode, header::AUTHORIZATION},
@@ -30,9 +30,9 @@ impl Policy {
         Self { auth, limiter }
     }
 }
-impl<T: Send> SendWith<T> for Policy {
+impl<T: Send> SendWith<T, crate::Problem> for Policy {
     type Output = Result<T, Error>;
-    async fn send<E: Endpoint<T> + Send>(&self, endpoint: E) -> Self::Output {
+    async fn send<E: Endpoint<T, crate::Problem> + Send>(&self, endpoint: E) -> Self::Output {
         let (http, request, decoder) = endpoint.prepare()?.into_parts();
         // The generated declaration is private; this extra check binds policy to header context.
         if request
@@ -124,7 +124,7 @@ impl<T: Send> SendWith<T> for Policy {
     }
 }
 fn retry_after<T>(
-    r: &Received<T>,
+    r: &Received<T, crate::Problem>,
 ) -> Result<Option<Duration>, concord_retry::http::RetryAfterError> {
     concord_retry::http::retry_after(
         r.head()
@@ -135,13 +135,11 @@ fn retry_after<T>(
         SystemTime::now(),
     )
 }
-pub(crate) async fn finish<T>(received: Received<T>) -> Result<T, Error> {
+pub(crate) async fn finish<T>(received: Received<T, crate::Problem>) -> Result<T, Error> {
     if !received.status().is_success() {
         let class = Class::status(received.status().as_u16());
         let retry_after = retry_after(&received);
-        let (meta, document) = received
-            .document::<concord::Json, Problem>(ERROR_BODY_LIMIT)
-            .await;
+        let (meta, document) = received.failure(ERROR_BODY_LIMIT).await.into_document();
         return Err(Error::new(ErrorKind::Provider(Box::new(ProviderFailure {
             class,
             meta,
@@ -149,5 +147,5 @@ pub(crate) async fn finish<T>(received: Received<T>) -> Result<T, Error> {
             retry_after,
         }))));
     }
-    Ok(received.decode().await?)
+    Ok(received.into_success()?.decode().await?)
 }

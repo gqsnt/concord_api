@@ -120,11 +120,13 @@ then children.
 | `docs.folder(7)`, `folder.rename(3, change)` | navigation: required values are positional, in declaration order |
 | `.send().await` (no client send policy) | `prepare`, one `execute`, require 2xx, then declared handling: finite decode, drain or open an unread stream; no Concord retry or extra request (also true of `Prepared::send`) |
 | `.prepare()?` → `Prepared` | `receive()` (below), `send()`, the native `reqwest::Request` (`request()`), `send_raw()`, `into_parts()` |
+| `error Problem in Json;` | non-2xx document at the client, scope or endpoint; nearest wins; `send()` uses `concord::Error<Problem>`; no request header changes ([§5.11a](AUTHOR_GUIDE.md#511a-declared-error-documents)) |
+| `#[derive(concord::derive::Error)]` | SDK enum Display, source fields and tuple conversions; `#[from(concord::Error<Problem>)]` splits a provider `Failure<Problem>` from other errors |
 | `.prepare()?.receive().await?` → `Received` | one execution, any status, body unread: `head()`, `meta()` (owned copy), `status()`, `url()`, then one of `decode()`, `decode_limited(n)`, `decode_with_meta()` (value and head), `document::<F, D>(n)` (any status, bounded, the format's head checks first: provider error documents), `into_incoming()`, `bytes_limited(n)`, `into_response()` ([§5.11](AUTHOR_GUIDE.md#511-reading-response-metadata-in-an-sdk)) |
 | `-> stream T` / `-> stream` | `send()` returns the reader / the unread `Incoming`; readers' `open(..)` takes `Incoming`, `Received` or a native response; `completion()`, `into_stream()` |
 | `-> stream sse::Event` + `response Sse;` (feature `sse`) | server-sent events: `next()` → `Event` (`event()`, `data()` as text, `id()`), `last_event_id()`, `retry()`; a body ending inside an event is an error; no reconnect |
 | `prepared.follow(url)?` | the same request at a server-returned URL (same origin only; `Debug` withholds it) |
-| `send policy;` (client value or stateless type) | generated `send()` calls `SendWith<T>::send` and returns the SDK's `Output`; the policy may sign, make sub-requests or repeat requests |
+| `send policy;` (client value or stateless type) | generated `send()` calls `SendWith<T, D>::send` (`D = ()` without an error document) and returns the SDK's `Output`; the policy may sign, make sub-requests or repeat requests |
 | `send policy -> Result<_, Error>;` | the same, and every generated `send()` declares that result (`_` = the endpoint's output) instead of `<P as SendWith<T>>::Output`; a mismatch is a compile error at the template ([§5.13](AUTHOR_GUIDE.md#513-the-sdks-own-send-send-policy)) |
 | `concord::Endpoint<T>` | implemented by every generated endpoint for its output `T` (`prepare`, `operation()`): write one SDK adapter for all operations |
 | `GeneratedEndpoint::operation()` | the endpoint's declared identity without naming its output: compare with `error.operation()` |

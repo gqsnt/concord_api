@@ -60,7 +60,8 @@ impl std::fmt::Debug for ServerError {
 }
 
 /// A partition failed after its bounded wire bytes were received.
-#[derive(Debug)]
+#[derive(Debug, concord::derive::Error)]
+#[display(with = display_partition_body_error)]
 pub enum PartitionBodyError {
     /// Inflated output exceeded the configured maximum. At most limit + 1 bytes are collected.
     Limit {
@@ -68,25 +69,29 @@ pub enum PartitionBodyError {
         limit: usize,
     },
     /// Invalid/truncated gzip, bad checksum, or invalid trailing data.
+    #[from(skip)]
     Gzip(std::io::Error),
     /// The complete uncompressed bytes were not a valid partition JSON document.
+    #[from(skip)]
     Json(serde_json::Error),
 }
-impl std::fmt::Display for PartitionBodyError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str(match self {
-            Self::Limit { .. } => "inflated partition exceeds byte limit",
-            Self::Gzip(_) => "invalid gzip partition",
-            Self::Json(_) => "invalid partition JSON",
-        })
-    }
+fn display_partition_body_error(
+    value: &PartitionBodyError,
+    f: &mut std::fmt::Formatter<'_>,
+) -> std::fmt::Result {
+    f.write_str(match value {
+        PartitionBodyError::Limit { .. } => "inflated partition exceeds byte limit",
+        PartitionBodyError::Gzip(_) => "invalid gzip partition",
+        PartitionBodyError::Json(_) => "invalid partition JSON",
+    })
 }
-impl std::error::Error for PartitionBodyError {}
 
 /// SDK errors distinguish provider rejection, protocol validation and transport/codec failures.
-#[derive(Debug)]
+#[derive(Debug, concord::derive::Error)]
+#[display(with = display_error)]
 pub enum Error {
     /// Invalid local configuration; no request was sent.
+    #[from(skip)]
     Config(&'static str),
     /// Concord build, HTTP, body-limit or successful-body decode error.
     Concord {
@@ -103,6 +108,7 @@ pub enum Error {
         source: PartitionBodyError,
     },
     /// A non-success status, with bounded error body and metadata.
+    #[from(skip)]
     Server(Box<ServerError>),
     /// Provider data did not meet the scoped protocol contract.
     Protocol {
@@ -135,15 +141,29 @@ impl From<concord::Error> for Error {
         Self::Concord { meta, source }
     }
 }
-impl std::fmt::Display for Error {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::Config(s) => write!(f, "Snowflake configuration: {s}"),
-            Self::Concord { source, .. } => source.fmt(f),
-            Self::PartitionBody { source, .. } => write!(f, "Snowflake partition: {source}"),
-            Self::Server(e) => write!(f, "Snowflake HTTP {}", e.meta.status()),
-            Self::Protocol { kind, .. } => write!(f, "Snowflake protocol: {kind:?}"),
-        }
+fn display_error(value: &Error, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    match value {
+        Error::Config(s) => write!(f, "Snowflake configuration: {s}"),
+        Error::Concord { source, .. } => std::fmt::Display::fmt(source, f),
+        Error::PartitionBody { source, .. } => write!(f, "Snowflake partition: {source}"),
+        Error::Server(e) => write!(f, "Snowflake HTTP {}", e.meta.status()),
+        Error::Protocol { kind, .. } => write!(f, "Snowflake protocol: {kind:?}"),
     }
 }
-impl std::error::Error for Error {}
+
+/// Snowflake's server-message parse outcome, preserving the SDK's concrete JSON diagnostic.
+pub type ErrorDocument = Result<ServerMessage, serde_json::Error>;
+/// The SQL API error document is JSON regardless of its advertised media type.
+pub struct ServerErrorJson;
+impl concord::Decode<ErrorDocument> for ServerErrorJson {
+    type Context = ();
+    fn context(_: &concord::ResponseHead<'_>) -> Result<(), concord::CodecError> {
+        Ok(())
+    }
+    fn decode_body(
+        (): (),
+        body: concord::bytes::Bytes,
+    ) -> Result<ErrorDocument, concord::CodecError> {
+        Ok(serde_json::from_slice(&body))
+    }
+}

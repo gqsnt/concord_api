@@ -553,7 +553,8 @@ async fn b_single_calls_send_the_sdk_error_document_and_metadata() {
         .project(ProjectRef::path(PROJECT).unwrap())
         .issue(IssueIid::new(31).unwrap());
 
-    let error: concord::Error = issue.clone().prepare().unwrap().send().await.unwrap_err();
+    let error: concord::Error<concord_sdk_gitlab::ErrorDocument> =
+        issue.clone().prepare().unwrap().send().await.unwrap_err();
     assert_eq!(error.kind(), ErrorKind::Status);
     assert_eq!(error.status().unwrap().as_u16(), 404);
     let GitLabError::Api(api) = issue.send().await.unwrap_err() else {

@@ -93,7 +93,8 @@ impl CreatePayment {
 }
 
 /// An input was refused before building an HTTP request. No input is retained.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, concord::derive::Error)]
+#[display(with = display_input_error)]
 pub enum InputError {
     /// The key is empty or exceeds this slice's conservative 45-byte limit.
     IdempotencyKey,
@@ -105,18 +106,14 @@ pub enum InputError {
     Currency,
 }
 
-impl fmt::Display for InputError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(match self {
-            Self::IdempotencyKey => "idempotency key must contain 1 to 45 bytes",
-            Self::Source => "a nonempty payment token source is required",
-            Self::Amount => "payment amount must be positive",
-            Self::Currency => "currency must be three uppercase ASCII letters",
-        })
-    }
+fn display_input_error(value: &InputError, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    f.write_str(match value {
+        InputError::IdempotencyKey => "idempotency key must contain 1 to 45 bytes",
+        InputError::Source => "a nonempty payment token source is required",
+        InputError::Amount => "payment amount must be positive",
+        InputError::Currency => "currency must be three uppercase ASCII letters",
+    })
 }
-
-impl std::error::Error for InputError {}
 
 /// CompletePayment body: whether the caller expects a particular payment version.
 ///

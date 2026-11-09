@@ -1,9 +1,6 @@
 //! Validated create inputs. The read models remain open to unknown provider values.
 
-use std::{
-    fmt,
-    net::{Ipv4Addr, Ipv6Addr},
-};
+use std::net::{Ipv4Addr, Ipv6Addr};
 
 use serde::Serialize;
 
@@ -12,6 +9,8 @@ use crate::RecordType;
 /// A create-input constraint failure. Contains no caller-supplied values.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[non_exhaustive]
+#[derive(concord::derive::Error)]
+#[display(with = display_record_input_error)]
 pub enum RecordInputError {
     /// The create target's zone identifier must contain 1..=32 characters.
     ZoneId,
@@ -27,22 +26,29 @@ pub enum RecordInputError {
     Proxied,
 }
 
-impl fmt::Display for RecordInputError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(match self {
-            Self::ZoneId => "create requires a zone identifier of 1..=32 characters",
-            Self::UnsupportedType => "create supports A, AAAA, CNAME, NS, PTR and TXT records",
-            Self::Name => "invalid complete ASCII/Punycode DNS record name",
-            Self::Content => "invalid content for the DNS record type",
-            Self::Ttl => "TTL must be automatic (1) or within the zone plan's documented range",
-            Self::Proxied => "proxying requires an A, AAAA or CNAME record",
-        })
-    }
+fn display_record_input_error(
+    value: &RecordInputError,
+    f: &mut std::fmt::Formatter<'_>,
+) -> std::fmt::Result {
+    f.write_str(match value {
+        RecordInputError::ZoneId => "create requires a zone identifier of 1..=32 characters",
+        RecordInputError::UnsupportedType => {
+            "create supports A, AAAA, CNAME, NS, PTR and TXT records"
+        }
+        RecordInputError::Name => "invalid complete ASCII/Punycode DNS record name",
+        RecordInputError::Content => "invalid content for the DNS record type",
+        RecordInputError::Ttl => {
+            "TTL must be automatic (1) or within the zone plan's documented range"
+        }
+        RecordInputError::Proxied => "proxying requires an A, AAAA or CNAME record",
+    })
 }
 
 // ZoneId stays permissive for existing readers. Validate only the new create target, after
 // Concord has encoded the scope identifier as one segment, before any network I/O.
-pub(crate) fn validate_target<T>(prepared: &concord::Prepared<T>) -> Result<(), RecordInputError> {
+pub(crate) fn validate_target<T>(
+    prepared: &concord::Prepared<T, crate::ErrorEnvelope>,
+) -> Result<(), RecordInputError> {
     let segment = prepared
         .request()
         .url()
@@ -58,8 +64,6 @@ pub(crate) fn validate_target<T>(prepared: &concord::Prepared<T>) -> Result<(), 
         Err(RecordInputError::ZoneId)
     }
 }
-
-impl std::error::Error for RecordInputError {}
 
 /// A validated TTL for creation. `1` means automatic.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]

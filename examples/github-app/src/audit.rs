@@ -317,12 +317,17 @@ pub enum FailedAt {
 
 /// Why an audit stopped early.
 #[non_exhaustive]
-#[derive(concord::Debug)]
+#[derive(concord::Debug, concord::derive::Error)]
 pub enum AuditError {
     /// A GitHub request failed (Concord's error and response metadata, unchanged).
+    #[display("activity audit: {0}")]
+    #[from(skip)]
     GitHub(GitHubError),
     /// The replayed parent page no longer has the continuation's item at its position (the
     /// listing changed between runs).
+    #[display(
+        "activity audit: continuation expected issue {expected}, the listing now has {found}"
+    )]
     StaleContinuation {
         /// The number the continuation expected.
         expected: IssueNumber,
@@ -340,20 +345,6 @@ impl AuditError {
         }
     }
 }
-
-impl fmt::Display for AuditError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::GitHub(error) => write!(f, "activity audit: {error}"),
-            Self::StaleContinuation { expected, found } => write!(
-                f,
-                "activity audit: continuation expected issue {expected}, the listing now has {found}"
-            ),
-        }
-    }
-}
-
-impl std::error::Error for AuditError {}
 
 /// How the run ended.
 // One value per audit run, moved once into the report: boxing the larger variants would only

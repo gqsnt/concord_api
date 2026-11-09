@@ -31,6 +31,7 @@ concord::api! {
     /// Read-only Kraken Spot REST slice. Use [`transport`] to disable redirects and replays.
     pub client Kraken(policy: Policy) {
         base "https://api.kraken.com";
+        error crate::ErrorDocument in concord::Json;
         path "0";
         response Json;
         limit RESPONSE_LIMIT;

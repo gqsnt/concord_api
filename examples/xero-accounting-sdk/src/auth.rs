@@ -29,15 +29,16 @@ struct TokenResponse {
 }
 #[derive(Clone, Default)]
 struct TokenPolicy;
-impl<T: Send> SendWith<T> for TokenPolicy {
+impl<T: Send> SendWith<T, crate::Problem> for TokenPolicy {
     type Output = Result<T, Error>;
-    async fn send<E: Endpoint<T> + Send>(&self, op: E) -> Self::Output {
+    async fn send<E: Endpoint<T, crate::Problem> + Send>(&self, op: E) -> Self::Output {
         finish(op.prepare()?.receive().await?).await
     }
 }
 concord::api! {
     client OAuth(origin: concord::BaseUrl, #[sensitive] header(AUTHORIZATION) credential:HeaderValue) {
         base origin;
+        error crate::Problem in concord::Json;
         request concord::Form;
         response concord::Json;
         limit 64*1024;

@@ -1,5 +1,9 @@
 # concord-sdk-amazon-s3
 
+The declaration owns the provider error document: `error ErrorDocument in IgnoreContentType<S3ErrorXml>;`. Native prepared/decoded
+paths carry that document as `D` in `Prepared<T, D>` and `concord::Error<D>`; SDK status routing
+and validation remain in the policy. Concord withholds document contents in formatting.
+
 A bounded Amazon S3 SDK for **general-purpose buckets**, built on Concord (`concord::api!`,
 `Prepared`/`Decoder`/`Received`, custom `Decode`/`Incremental` formats) and `concord-pagination`.
 Every request is signed with **AWS Signature Version 4** in the `Authorization` header.

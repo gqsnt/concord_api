@@ -1,5 +1,9 @@
 # Dropbox team folder listing
 
+The declaration owns the provider error document: `error crate::ProviderError in concord::IgnoreContentType<concord::Json>;`. Native prepared/decoded
+paths carry that document as `D` in `Prepared<T, D>` and `concord::Error<D>`; SDK status routing
+and validation remain in the policy. Concord withholds document contents in formatting.
+
 `concord-sdk-dropbox` is an unpublished, read-only Dropbox API v2 slice built with
 `concord::api!`. It supports `files/list_folder` and `files/list_folder/continue`,
 bearer authentication, and an explicit `Dropbox-API-Select-User` plus

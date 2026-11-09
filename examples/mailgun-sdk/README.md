@@ -1,5 +1,9 @@
 # Mailgun SDK27
 
+The declaration owns the provider error document: `error crate::Problem in concord::Json;`. Native prepared/decoded
+paths carry that document as `D` in `Prepared<T, D>` and `concord::Error<D>`; SDK status routing
+and validation remain in the policy. Concord withholds document contents in formatting.
+
 A bounded Mailgun slice: text email with one file attachment, retained message ID,
 and paged domain-event searches with per-recipient delivery inspection.
 Live provider calls: **NOT_RUN**. Tests use only loopback fixtures.

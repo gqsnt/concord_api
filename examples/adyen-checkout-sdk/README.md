@@ -1,5 +1,9 @@
 # Adyen Checkout SDK31
 
+The declaration owns the provider error document: `error crate::Problem in concord::Json;`. Native prepared/decoded
+paths carry that document as `D` in `Prepared<T, D>` and `concord::Error<D>`; SDK status routing
+and validation remain in the policy. Concord withholds document contents in formatting.
+
 `concord-sdk-adyen-checkout` implements Checkout **v71** at
 `https://checkout-test.adyen.com`: available payment methods, sandbox payment submission,
 `/payments/details` continuation and manual capture request. All verification uses local fixtures.

@@ -114,11 +114,12 @@ impl fmt::Display for Protocol {
 /// Why a connection page is not a page.
 ///
 /// `Display`/`Debug` name the failure, error codes and counts, never cursors or contents.
-#[derive(concord::Debug)]
+#[derive(concord::Debug, concord::derive::Error)]
+#[display(with = display_page_error)]
 pub enum PageError {
     /// The request failed or the envelope did not decode (Concord's error, unread response kept
     /// for a status error), or the served API version was not the pinned one.
-    Request(RequestError),
+    Request(#[source] RequestError),
     /// The response has no such connection: `data` absent or `null`, or a nullable parent was
     /// `null`. The errors explain why (throttling, access, an unknown id); `data` says which.
     NoConnection {
@@ -176,34 +177,17 @@ impl PageError {
     }
 }
 
-impl fmt::Display for PageError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::Request(e) => write!(f, "connection page: {e}"),
-            Self::NoConnection { data, errors, .. } => {
-                write!(f, "connection page: no connection (data {data:?}")?;
-                match errors.first() {
-                    Some(first) => write!(f, ", {} error(s), first: {first})", errors.len()),
-                    None => f.write_str(", no error)"),
-                }
+fn display_page_error(value: &PageError, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    match value {
+        PageError::Request(e) => write!(f, "connection page: {e}"),
+        PageError::NoConnection { data, errors, .. } => {
+            write!(f, "connection page: no connection (data {data:?}")?;
+            match errors.first() {
+                Some(first) => write!(f, ", {} error(s), first: {first})", errors.len()),
+                None => f.write_str(", no error)"),
             }
-            Self::Protocol { violation, .. } => write!(f, "connection page: {violation}"),
         }
-    }
-}
-
-impl std::error::Error for PageError {
-    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
-        match self {
-            Self::Request(e) => Some(e),
-            _ => None,
-        }
-    }
-}
-
-impl From<RequestError> for PageError {
-    fn from(e: RequestError) -> Self {
-        Self::Request(e)
+        PageError::Protocol { violation, .. } => write!(f, "connection page: {violation}"),
     }
 }
 

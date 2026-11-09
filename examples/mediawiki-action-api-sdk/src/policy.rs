@@ -1,23 +1,27 @@
-use concord::{Endpoint, Json, SendWith};
+use concord::{Endpoint, SendWith};
 use serde::de::DeserializeOwned;
 
-use crate::{ERROR_BODY_LIMIT, Envelope, Error, HttpFailure, QueryResponse, error::ErrorDocument};
+use crate::{Envelope, Error, QueryResponse};
 
 /// One HTTP attempt followed by bounded JSON/envelope validation. No native request mutation.
 #[derive(Default)]
 pub struct QueryPolicy;
 
-impl<T: DeserializeOwned + Send> SendWith<Envelope<T>> for QueryPolicy {
+impl<T: DeserializeOwned + Send> SendWith<Envelope<T>, crate::error::ErrorDocument>
+    for QueryPolicy
+{
     type Output = Result<QueryResponse<T>, Error>;
 
-    async fn send<E: Endpoint<Envelope<T>> + Send>(&self, endpoint: E) -> Self::Output {
-        let received = endpoint.prepare()?.receive().await?;
-        if !received.status().is_success() {
-            let (meta, document) = received
-                .document::<Json, ErrorDocument>(ERROR_BODY_LIMIT)
-                .await;
-            return Err(Error::Http(Box::new(HttpFailure { meta, document })));
-        }
+    async fn send<E: Endpoint<Envelope<T>, crate::error::ErrorDocument> + Send>(
+        &self,
+        endpoint: E,
+    ) -> Self::Output {
+        let received = endpoint
+            .prepare()?
+            .error_body_limit(crate::ERROR_BODY_LIMIT)
+            .receive()
+            .await?;
+
         let (envelope, meta) = received.decode_with_meta().await?;
         if let Some(problem) = envelope.error {
             return Err(Error::Api {

@@ -1,5 +1,9 @@
 # concord-sdk-notion
 
+The declaration owns the provider error document: `error crate::ProviderError in concord::IgnoreContentType<concord::Json>;`. Native prepared/decoded
+paths carry that document as `D` in `Prepared<T, D>` and `concord::Error<D>`; SDK status routing
+and validation remain in the policy. Concord withholds document contents in formatting.
+
 A read-only Notion SDK slice built from scratch with `concord::api!`. The default
 `Notion-Version` is **2026-03-11**, checked against the three endpoint references on
 **2026-11-06**. Version overrides are explicit and do not migrate the schema.

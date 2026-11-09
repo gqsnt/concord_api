@@ -102,6 +102,8 @@ pub enum Located {
 
 /// Why [`locate`] produced no location.
 #[non_exhaustive]
+#[derive(concord::derive::Error)]
+#[display(with = display_locate_error)]
 pub enum LocateError {
     /// The request failed or GitHub answered another status (a Concord error; a status error
     /// keeps its unread response).
@@ -153,12 +155,10 @@ impl LocateError {
     }
 }
 
-impl fmt::Display for LocateError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::Api(error) => fmt::Display::fmt(error, f),
-            other => write!(f, "GitHub artifact download: {}", other.label()),
-        }
+fn display_locate_error(value: &LocateError, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    match value {
+        LocateError::Api(error) => fmt::Display::fmt(error, f),
+        other => write!(f, "GitHub artifact download: {}", other.label()),
     }
 }
 
@@ -172,14 +172,6 @@ impl fmt::Debug for LocateError {
                 .field("meta", &other.meta())
                 .finish(),
         }
-    }
-}
-
-impl std::error::Error for LocateError {}
-
-impl From<GitHubError> for LocateError {
-    fn from(error: GitHubError) -> Self {
-        Self::Api(error)
     }
 }
 
@@ -303,10 +295,12 @@ impl fmt::Debug for StreamReceipt {
 
 /// Why a transfer did not complete. Bytes already written to the sink stay written: the sink
 /// decides what a partial write means (delete, keep for inspection).
-#[derive(concord::Debug)]
+#[derive(concord::Debug, concord::derive::Error)]
+#[display(with = display_stream_error)]
 pub enum StreamError<E> {
     /// The download host could not be reached, or answered a non-2xx status (Concord's error,
     /// URL removed; a status error keeps the unread response). Unlabeled: no endpoint name.
+    #[from(skip)]
     Request(concord::Error),
     /// The declared length or the received bytes exceed [`DownloadLimits::max_bytes`].
     TooLarge {
@@ -346,36 +340,35 @@ impl<E> StreamError<E> {
     }
 }
 
-impl<E> fmt::Display for StreamError<E> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::Request(error) => write!(f, "artifact download: {error}"),
-            Self::TooLarge {
-                declared: Some(declared),
-                limit,
-                ..
-            } => write!(
+fn display_stream_error<E>(
+    value: &StreamError<E>,
+    f: &mut std::fmt::Formatter<'_>,
+) -> std::fmt::Result {
+    match value {
+        StreamError::Request(error) => write!(f, "artifact download: {error}"),
+        StreamError::TooLarge {
+            declared: Some(declared),
+            limit,
+            ..
+        } => write!(
+            f,
+            "artifact download: declared {declared} bytes exceed {limit}"
+        ),
+        StreamError::TooLarge { written, limit, .. } => write!(
+            f,
+            "artifact download: more than {limit} bytes (stopped after writing {written})"
+        ),
+        StreamError::Read { received, .. } => {
+            write!(
                 f,
-                "artifact download: declared {declared} bytes exceed {limit}"
-            ),
-            Self::TooLarge { written, limit, .. } => write!(
-                f,
-                "artifact download: more than {limit} bytes (stopped after writing {written})"
-            ),
-            Self::Read { received, .. } => {
-                write!(
-                    f,
-                    "artifact download: body read failed after {received} bytes"
-                )
-            }
-            Self::Sink { written, .. } => {
-                write!(f, "artifact download: sink stopped after {written} bytes")
-            }
+                "artifact download: body read failed after {received} bytes"
+            )
+        }
+        StreamError::Sink { written, .. } => {
+            write!(f, "artifact download: sink stopped after {written} bytes")
         }
     }
 }
-
-impl<E> std::error::Error for StreamError<E> {}
 
 /// Step 2: streams the archive at `location` into `sink`, with `http` (normally
 /// [`crate::GitHubContext::http`]). See the [module documentation](self).

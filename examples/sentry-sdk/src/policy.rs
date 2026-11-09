@@ -1,8 +1,7 @@
 use crate::{
-    ERROR_BODY_LIMIT, Error, HttpClass, Problem, ProviderError, RateLimits, Response,
-    SentryOperation,
+    ERROR_BODY_LIMIT, Error, HttpClass, ProviderError, RateLimits, Response, SentryOperation,
 };
-use concord::{Endpoint, Json, SendWith};
+use concord::{Endpoint, SendWith};
 use concord_ratelimit::{Budget, Lease, Limiter, Mode, Observation, TokioClock};
 use concord_retry::{Decision, Policy, Replay, Retry, StopReason, concord::ReplayMode};
 use std::{
@@ -106,9 +105,9 @@ struct Attempt {
     scheduling_error: Option<&'static str>,
 }
 
-impl<T: Send> SendWith<T> for SendPolicy {
+impl<T: Send> SendWith<T, crate::Problem> for SendPolicy {
     type Output = Result<Response<T>, Error>;
-    async fn send<E: Endpoint<T> + Send>(&self, endpoint: E) -> Self::Output {
+    async fn send<E: Endpoint<T, crate::Problem> + Send>(&self, endpoint: E) -> Self::Output {
         let operation = SentryOperation::from_operation(E::operation()).ok_or(
             Error::Configuration("operation is not declared by this SDK"),
         )?;
@@ -245,7 +244,7 @@ impl<T: Send> SendWith<T> for SendPolicy {
         // `context` owns the lease until final decode or bounded error-document consumption ends.
         let result = if !received.status().is_success() {
             let class = HttpClass::of(received.status());
-            let (meta, document) = received.document::<Json, Problem>(ERROR_BODY_LIMIT).await;
+            let (meta, document) = received.failure(ERROR_BODY_LIMIT).await.into_document();
             Err(Error::Provider(Box::new(ProviderError {
                 class,
                 meta,
@@ -269,7 +268,7 @@ impl<T: Send> SendWith<T> for SendPolicy {
             } else {
                 None
             };
-            let (value, meta) = received.decode_with_meta().await?;
+            let (value, meta) = received.into_success()?.decode_with_meta().await?;
             Ok(Response {
                 value,
                 meta,

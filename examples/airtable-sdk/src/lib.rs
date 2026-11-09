@@ -94,8 +94,11 @@ struct Envelope {
 }
 
 /// Failures retain the HTTP head after it arrives, even when a body is invalid or interrupted.
+#[derive(concord::derive::Error)]
+#[display(with = display_error)]
 pub enum Error {
     /// Invalid local input; no request was made.
+    #[from(skip)]
     InvalidInput(&'static str),
     /// Construction, transport, or success body failure.
     Concord {
@@ -170,21 +173,19 @@ impl Error {
         }
     }
 }
-impl fmt::Display for Error {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::InvalidInput(s) => write!(f, "invalid input: {s}"),
-            Self::Concord { source, .. } => source.fmt(f),
-            Self::Http { meta, .. } => write!(f, "Airtable HTTP {}", meta.status()),
-            Self::EmptyOffset { .. } => f.write_str("Airtable returned an empty offset"),
-        }
+fn display_error(value: &Error, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    match value {
+        Error::InvalidInput(s) => write!(f, "invalid input: {s}"),
+        Error::Concord { source, .. } => std::fmt::Display::fmt(source, f),
+        Error::Http { meta, .. } => write!(f, "Airtable HTTP {}", meta.status()),
+        Error::EmptyOffset { .. } => f.write_str("Airtable returned an empty offset"),
     }
 }
-impl std::error::Error for Error {}
 
 concord::api! {
     pub(crate) client AirtableApi(#[sensitive] token: String) {
         base "https://api.airtable.com";
+        error Envelope in concord::IgnoreContentType<concord::Json>;
         headers { AUTHORIZATION = "Bearer {token}"; }
         format Json;
         limit SUCCESS_BODY_LIMIT;
@@ -202,21 +203,23 @@ concord::api! {
 
 #[derive(Default)]
 struct Policy;
-impl SendWith<RecordPage> for Policy {
+impl SendWith<RecordPage, Envelope> for Policy {
     type Output = Result<Response<RecordPage>, Error>;
-    async fn send<E: Endpoint<RecordPage> + Send>(&self, endpoint: E) -> Self::Output {
+    async fn send<E: Endpoint<RecordPage, Envelope> + Send>(&self, endpoint: E) -> Self::Output {
         let received = endpoint.prepare()?.receive().await?;
         if !received.status().is_success() {
-            // Keep the complete raw body even when the provider document decodes.
-            let meta = received.meta();
-            let (body, body_error) = match received.bytes_limited(ERROR_BODY_LIMIT).await {
-                Ok(bytes) => (Some(bytes), None),
-                Err(error) => (None, Some(error)),
+            let failure = received.failure(ERROR_BODY_LIMIT).await;
+            let complete = !matches!(
+                failure.state(),
+                concord::Document::TooLong { .. } | concord::Document::Broken(_)
+            );
+            let body = complete.then(|| failure.body().clone());
+            let (meta, document) = failure.into_document();
+            let (provider, body_error) = match document {
+                Ok(envelope) => (Some(envelope.error), None),
+                Err(error) if !complete => (None, Some(error)),
+                Err(_) => (None, None),
             };
-            let provider = body
-                .as_ref()
-                .and_then(|b| serde_json::from_slice::<Envelope>(b).ok())
-                .map(|e| e.error);
             return Err(Error::Http {
                 meta: Box::new(meta),
                 provider,
@@ -224,7 +227,7 @@ impl SendWith<RecordPage> for Policy {
                 body_error,
             });
         }
-        let (value, meta) = received.decode_with_meta().await?;
+        let (value, meta) = received.into_success()?.decode_with_meta().await?;
         if value.offset.as_deref() == Some("") {
             return Err(Error::EmptyOffset {
                 meta: Box::new(meta),

@@ -7,6 +7,7 @@ use crate::model::{DirectoryObject, Envelope, Group, UserDelta};
 concord::api! {
     pub client GraphApi(origin: concord::BaseUrl, #[sensitive] header(AUTHORIZATION) authorization: HeaderValue) {
         base origin;
+        error crate::ErrorEnvelope in concord::IgnoreContentType<concord::Json>;
         format Json;
 
         GET users_delta(query("$select") select?: String) -> Envelope<UserDelta> {

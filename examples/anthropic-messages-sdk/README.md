@@ -1,5 +1,9 @@
 # concord-sdk-anthropic-messages
 
+The declaration owns the provider error document: `error ErrorDocument in Json;`. Native prepared/decoded
+paths carry that document as `D` in `Prepared<T, D>` and `concord::Error<D>`; SDK status routing
+and validation remain in the policy. Concord withholds document contents in formatting.
+
 A bounded SDK for the [Anthropic Messages API](https://platform.claude.com/docs/en/build-with-claude/streaming),
 built on Concord. It counts an existing request's input tokens before either generation workflow:
 

@@ -1,9 +1,9 @@
 //! The client's send policy: every generated `send()` returns the typed value with its
 //! [`ResponseMeta`], or a [`GitLabError`] that keeps GitLab's error document.
 
-use concord::{Endpoint, IgnoreContentType, Json, Received, SendWith};
+use concord::{Endpoint, Received, SendWith};
 
-use crate::error::{ApiError, ERROR_BODY_LIMIT, ErrorBody, ErrorDocument, GitLabError};
+use crate::error::{ApiError, ERROR_BODY_LIMIT, ErrorBody, GitLabError};
 use crate::meta::{Response, ResponseMeta};
 
 /// The send policy of [`GitLab`](crate::GitLab) (`send SendPolicy -> Result<crate::Response<_>, crate::GitLabError>;`): what every generated
@@ -28,10 +28,10 @@ use crate::meta::{Response, ResponseMeta};
 #[derive(Default)]
 pub struct SendPolicy;
 
-impl<T: Send + 'static> SendWith<T> for SendPolicy {
+impl<T: Send + 'static> SendWith<T, crate::ErrorDocument> for SendPolicy {
     type Output = Result<Response<T>, GitLabError>;
 
-    async fn send<E: Endpoint<T> + Send>(&self, endpoint: E) -> Self::Output {
+    async fn send<E: Endpoint<T, crate::ErrorDocument> + Send>(&self, endpoint: E) -> Self::Output {
         let received = endpoint.prepare()?.receive().await?;
         finish(received).await
     }
@@ -39,7 +39,9 @@ impl<T: Send + 'static> SendWith<T> for SendPolicy {
 
 /// The SDK's handling of a received response: metadata first, then GitLab's error document for a
 /// non-2xx status, then the declared decoding.
-pub(crate) async fn finish<T: 'static>(received: Received<T>) -> Result<Response<T>, GitLabError> {
+pub(crate) async fn finish<T: 'static>(
+    received: Received<T, crate::ErrorDocument>,
+) -> Result<Response<T>, GitLabError> {
     let meta = ResponseMeta::capture(&received);
     if !received.status().is_success() {
         return Err(api_error(received, meta).await);
@@ -49,10 +51,10 @@ pub(crate) async fn finish<T: 'static>(received: Received<T>) -> Result<Response
 
 /// The declared decoding of a 2xx response, keeping `meta` with the value or the error.
 async fn decode<T: 'static>(
-    received: Received<T>,
+    received: Received<T, crate::ErrorDocument>,
     meta: ResponseMeta,
 ) -> Result<Response<T>, GitLabError> {
-    match received.decode().await {
+    match received.into_success()?.decode().await {
         Ok(value) => Ok(Response { value, meta }),
         Err(error) => Err(GitLabError::Request {
             error,
@@ -63,12 +65,13 @@ async fn decode<T: 'static>(
 
 /// A non-2xx response as [`GitLabError::Api`], its body read up to the limit. GitLab's documents
 /// are read whatever their `Content-Type` (a proxy page is kept raw as `Unrecognized`).
-async fn api_error<T>(received: Received<T>, meta: ResponseMeta) -> GitLabError {
+async fn api_error<T>(
+    received: Received<T, crate::ErrorDocument>,
+    meta: ResponseMeta,
+) -> GitLabError {
     let operation = received.operation();
     let status = received.status();
-    let (_, document) = received
-        .document::<IgnoreContentType<Json>, ErrorDocument>(ERROR_BODY_LIMIT)
-        .await;
+    let (_, document) = received.failure(ERROR_BODY_LIMIT).await.into_document();
     let body = match document {
         Ok(document) => ErrorBody::Document(document),
         Err(error) => match error.kind() {

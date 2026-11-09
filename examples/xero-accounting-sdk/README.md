@@ -1,5 +1,9 @@
 # Xero Accounting invoice SDK (SDK35)
 
+The declaration owns the provider error document: `error crate::Problem in concord::Json;`. Native prepared/decoded
+paths carry that document as `D` in `Prepared<T, D>` and `concord::Error<D>`; SDK status routing
+and validation remain in the policy. Concord withholds document contents in formatting.
+
 `concord-sdk-xero-accounting` implements two connected workflows: page an authorized tenant's invoices and retrieve a chosen invoice; create one draft sales invoice and retrieve its current state in that same tenant. Maintenance added an incremental listing of invoices modified since a sync point (see [MAINTENANCE.md](MAINTENANCE.md)). This is an **example-assisted**, bounded SDK over frozen Concord commit `14b9e1e0a89775dbe5cbb9f7837bde677ea5878e`. Live provider calls: **NOT_RUN**. All execution evidence uses local `concord-example-testserver` fixtures.
 
 The declaration in `src/lib.rs` retains client → tenant scope → list/get/create endpoint. Every request, including OAuth refresh, uses a generated Concord `send()`. The private declaration protects credentials and tenant context from arbitrary generated setters. Public operations retain the familiar `.send().await` terminal method.

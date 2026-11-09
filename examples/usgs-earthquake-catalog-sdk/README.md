@@ -1,5 +1,9 @@
 # USGS Earthquake Catalog SDK
 
+The declaration owns the provider error document: `error String in concord::Text;`. Native prepared/decoded
+paths carry that document as `D` in `Prepared<T, D>` and `concord::Error<D>`; SDK status routing
+and validation remain in the policy. Concord withholds document contents in formatting.
+
 A bounded slice of the public FDSN event service: query earthquakes as GeoJSON,
 retrieve a selected event, and export the same filter as incremental CSV across
 bounded pages. **Live provider calls: NOT_RUN.** Every executed workflow uses

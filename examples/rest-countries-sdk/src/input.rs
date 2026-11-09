@@ -10,6 +10,8 @@ use concord::{QueryPairs, QueryPairsWriter};
 /// A refused caller input. Messages are static and never repeat the refused value.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[non_exhaustive]
+#[derive(concord::derive::Error)]
+#[display(with = display_input_error)]
 pub enum InputError {
     /// A property path is empty, has an empty segment, or uses a character outside
     /// `a-z`, `0-9` and `_` (segments are joined by `.`, as in `memberships.eu`).
@@ -29,21 +31,19 @@ pub enum InputError {
     Language,
 }
 
-impl fmt::Display for InputError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(match self {
-            Self::Property => "a property path must be dot-separated segments of a-z, 0-9 and _",
-            Self::EmptyFields => "a response-field list needs at least one property",
-            Self::ReservedFilter => "a filter cannot use a reserved query parameter name",
-            Self::CountryCode => "a country code must be two or three ASCII letters",
-            Self::Region => "a region must be a non-empty, unpadded, plain-text lookup value",
-            Self::Subregion => "a subregion must be a non-empty, unpadded, plain-text lookup value",
-            Self::Language => "a language must be a non-empty, unpadded, plain-text lookup value",
-        })
-    }
+fn display_input_error(value: &InputError, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    f.write_str(match value {
+        InputError::Property => "a property path must be dot-separated segments of a-z, 0-9 and _",
+        InputError::EmptyFields => "a response-field list needs at least one property",
+        InputError::ReservedFilter => "a filter cannot use a reserved query parameter name",
+        InputError::CountryCode => "a country code must be two or three ASCII letters",
+        InputError::Region => "a region must be a non-empty, unpadded, plain-text lookup value",
+        InputError::Subregion => {
+            "a subregion must be a non-empty, unpadded, plain-text lookup value"
+        }
+        InputError::Language => "a language must be a non-empty, unpadded, plain-text lookup value",
+    })
 }
-
-impl std::error::Error for InputError {}
 
 /// A country property as the provider names it: a dot-path such as `region`, `names.common` or
 /// `memberships.eu` (Countries API field reference).

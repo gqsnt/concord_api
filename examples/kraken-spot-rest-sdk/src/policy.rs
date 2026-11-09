@@ -3,7 +3,7 @@
 use crate::{
     ApiFailure, Credentials, Envelope, Error, HttpFailure, KrakenOperation, LocalError, Nonces,
 };
-use concord::{Decoder, Endpoint, Json, ResponseMeta, SendWith, reqwest};
+use concord::{Decoder, Endpoint, ResponseMeta, SendWith, reqwest};
 use std::fmt;
 
 /// Maximum successful response body, in bytes. Oversized reads fail explicitly.
@@ -56,7 +56,7 @@ impl Policy {
     /// (`SigningInput`). The identity is textual: an endpoint of another client with the same
     /// dotted name and method (a client also named `Kraken`) is indistinguishable and is signed
     /// as Kraken's.
-    pub fn prepare_signed<T, E: Endpoint<Envelope<T>>>(
+    pub fn prepare_signed<T, E: Endpoint<Envelope<T>, crate::ErrorDocument>>(
         &self,
         endpoint: E,
     ) -> Result<Signed<T>, Error> {
@@ -65,7 +65,7 @@ impl Policy {
         self.sign(operation, endpoint)
     }
 
-    fn sign<T, E: Endpoint<Envelope<T>>>(
+    fn sign<T, E: Endpoint<Envelope<T>, crate::ErrorDocument>>(
         &self,
         operation: KrakenOperation,
         endpoint: E,
@@ -118,7 +118,7 @@ impl Policy {
 pub struct Signed<T> {
     client: reqwest::Client,
     request: reqwest::Request,
-    decoder: Decoder<Envelope<T>>,
+    decoder: Decoder<Envelope<T>, crate::ErrorDocument>,
 }
 impl<T> fmt::Debug for Signed<T> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -138,12 +138,10 @@ impl<T> Signed<T> {
     pub async fn send(self) -> Result<Response<T>, Error> {
         let received = self.decoder.execute(&self.client, self.request).await?;
         if !received.status().is_success() {
-            let (meta, document) = received
-                .document::<Json, crate::ErrorDocument>(ERROR_LIMIT)
-                .await;
+            let (meta, document) = received.failure(ERROR_LIMIT).await.into_document();
             return Err(Error::Http(Box::new(HttpFailure { meta, document })));
         }
-        let (envelope, meta) = received.decode_with_meta().await?;
+        let (envelope, meta) = received.into_success()?.decode_with_meta().await?;
         if !envelope.error.is_empty() {
             return Err(Error::Api(Box::new(ApiFailure {
                 meta,
@@ -157,9 +155,12 @@ impl<T> Signed<T> {
     }
 }
 
-impl<T: Send> SendWith<Envelope<T>> for Policy {
+impl<T: Send> SendWith<Envelope<T>, crate::ErrorDocument> for Policy {
     type Output = Result<Response<T>, Error>;
-    async fn send<E: Endpoint<Envelope<T>> + Send>(&self, endpoint: E) -> Self::Output {
+    async fn send<E: Endpoint<Envelope<T>, crate::ErrorDocument> + Send>(
+        &self,
+        endpoint: E,
+    ) -> Self::Output {
         let operation =
             KrakenOperation::from_operation(E::operation()).ok_or(LocalError::SigningInput)?;
         self.sign(operation, endpoint)?.send().await

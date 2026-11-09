@@ -1,5 +1,9 @@
 # Airtable records over Concord
 
+The declaration owns the provider error document: `error Envelope in concord::IgnoreContentType<concord::Json>;`. Native prepared/decoded
+paths carry that document as `D` in `Prepared<T, D>` and `concord::Error<D>`; SDK status routing
+and validation remain in the policy. Concord withholds document contents in formatting.
+
 Read table records using Airtable's v0 GET endpoint: traverse opaque offset pages or pass a filter, selected field names, a view and page/record limits. Dynamic fields are JSON values keyed by the provider's field names. Airtable omits empty-valued fields: a missing key is not evidence of a schema or a default value. Writes, schema administration, and formula semantics are outside this SDK. This GET-only implementation does not automatically switch to POST for long queries; Airtable documents a 16,000-character URL limit.
 
 Construct with a caller-configured HTTP transport and bearer token. A redirect policy of `none` avoids forwarding credentials or query data to another destination. Set timeouts suitable for your application. Only trust a replacement base URL that may receive the token.

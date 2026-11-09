@@ -204,3 +204,6 @@ impl Session {
         Ok(UploadUrl { url, token })
     }
 }
+
+/// The provider error document used by declared request handling.
+pub use error::WireErrorDocument;

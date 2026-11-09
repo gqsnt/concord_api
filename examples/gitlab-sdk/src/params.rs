@@ -14,6 +14,8 @@ use serde::{Deserialize, Serialize};
 /// value (a token or a project path can be private).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[non_exhaustive]
+#[derive(concord::derive::Error)]
+#[display(with = display_input_error)]
 pub enum InputError {
     /// A project path is empty, or has no `/` (a full path is `namespace/project`, and a bare
     /// number would be read by GitLab as a project ID).
@@ -36,32 +38,28 @@ pub enum InputError {
     Label,
 }
 
-impl fmt::Display for InputError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(match self {
-            Self::ProjectPathNotNamespaced => {
-                "a project path must be `namespace/project` (at least one `/`)"
-            }
-            Self::ProjectPathSegment => {
-                "a project path segment is empty, `.` or `..` (leading, trailing or doubled `/`)"
-            }
-            Self::ProjectPathPreEncoded => {
-                "a project path contains `%`: pass it unencoded, the SDK encodes it once"
-            }
-            Self::ProjectPathCharacter => {
-                "a project path contains whitespace or a control character"
-            }
-            Self::ZeroId => "GitLab identifiers start at 1",
-            Self::Token => {
-                "a private token must be non-empty visible ASCII without surrounding whitespace"
-            }
-            Self::PerPage => "per_page must be between 1 and 100",
-            Self::Label => "a label name must be non-empty and contain no comma",
-        })
-    }
+fn display_input_error(value: &InputError, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    f.write_str(match value {
+        InputError::ProjectPathNotNamespaced => {
+            "a project path must be `namespace/project` (at least one `/`)"
+        }
+        InputError::ProjectPathSegment => {
+            "a project path segment is empty, `.` or `..` (leading, trailing or doubled `/`)"
+        }
+        InputError::ProjectPathPreEncoded => {
+            "a project path contains `%`: pass it unencoded, the SDK encodes it once"
+        }
+        InputError::ProjectPathCharacter => {
+            "a project path contains whitespace or a control character"
+        }
+        InputError::ZeroId => "GitLab identifiers start at 1",
+        InputError::Token => {
+            "a private token must be non-empty visible ASCII without surrounding whitespace"
+        }
+        InputError::PerPage => "per_page must be between 1 and 100",
+        InputError::Label => "a label name must be non-empty and contain no comma",
+    })
 }
-
-impl std::error::Error for InputError {}
 
 /// A project's global ID (`id` of a project, `project_id` of an issue).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Deserialize, Serialize)]

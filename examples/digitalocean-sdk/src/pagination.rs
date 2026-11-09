@@ -84,7 +84,11 @@ impl Listing for Snapshots {
 fn pages<L, E>(template: E, max_pages: NonZeroUsize) -> Traversal<L::Item>
 where
     L: Listing,
-    E: UrlContinuation<L> + Sends<Result<Response<L>, Error>> + Clone + Send + 'static,
+    E: UrlContinuation<L, crate::Problem>
+        + Sends<Result<Response<L>, Error>>
+        + Clone
+        + Send
+        + 'static,
 {
     Pages::new(Resume::Start, move |cursor: Option<NextLink>| {
         let endpoint = template.clone();

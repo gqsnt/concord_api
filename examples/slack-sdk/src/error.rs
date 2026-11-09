@@ -156,15 +156,27 @@ pub struct ErrorBody {
 }
 
 impl ErrorBody {
-    pub(crate) fn new(read: Result<Bytes, concord::Error>) -> Self {
-        let provider = read.as_ref().ok().and_then(|bytes| {
-            let envelope: Envelope<serde_json::Map<String, serde_json::Value>> =
-                serde_json::from_slice(bytes).ok()?;
-            if envelope.ok {
-                return None;
+    pub(crate) fn from_failure(
+        failure: concord::Failure<Envelope<serde_json::Map<String, serde_json::Value>>>,
+    ) -> Self {
+        let complete = !matches!(
+            failure.state(),
+            concord::Document::TooLong { .. } | concord::Document::Broken(_)
+        );
+        let bytes = failure.body().clone();
+        let (_, document) = failure.into_document();
+        let (read, provider) = match document {
+            Ok(envelope) => {
+                let provider = if envelope.ok {
+                    None
+                } else {
+                    envelope.into_provider().ok()
+                };
+                (Ok(bytes), provider)
             }
-            envelope.into_provider().ok()
-        });
+            Err(error) if !complete => (Err(error), None),
+            Err(_) => (Ok(bytes), None),
+        };
         Self { read, provider }
     }
 
@@ -194,7 +206,8 @@ impl fmt::Debug for ErrorBody {
 }
 
 /// SDK errors. [`Self::meta`] preserves headers whenever a response head arrived.
-#[derive(Debug)]
+#[derive(Debug, concord::derive::Error)]
+#[display(with = display_error)]
 pub enum Error {
     /// Request construction, transport, content type, JSON, or body-read failure.
     Concord {
@@ -257,19 +270,15 @@ impl From<concord::Error> for Error {
     }
 }
 
-impl fmt::Display for Error {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::Concord { error, .. } => error.fmt(f),
-            Self::Api { .. } => f.write_str("Slack application failure"),
-            Self::RateLimited { .. } => f.write_str("Slack rate limit (HTTP 429)"),
-            Self::Http { meta, .. } => write!(f, "Slack HTTP failure ({})", meta.status),
-            Self::Envelope { problem, .. } => write!(f, "invalid Slack envelope: {problem:?}"),
-        }
+fn display_error(value: &Error, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    match value {
+        Error::Concord { error, .. } => std::fmt::Display::fmt(error, f),
+        Error::Api { .. } => f.write_str("Slack application failure"),
+        Error::RateLimited { .. } => f.write_str("Slack rate limit (HTTP 429)"),
+        Error::Http { meta, .. } => write!(f, "Slack HTTP failure ({})", meta.status),
+        Error::Envelope { problem, .. } => write!(f, "invalid Slack envelope: {problem:?}"),
     }
 }
-
-impl std::error::Error for Error {}
 
 impl<T> Envelope<T> {
     pub(crate) fn into_provider(self) -> Result<ProviderError, EnvelopeProblem> {

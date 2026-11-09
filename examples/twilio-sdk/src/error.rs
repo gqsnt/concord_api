@@ -2,7 +2,7 @@
 
 use std::fmt;
 
-use concord::{ErrorKind, Json, Operation, Prepared};
+use concord::{ErrorKind, Operation, Prepared};
 use serde::Deserialize;
 
 /// Maximum retained bytes of a non-success response body (64 KiB).
@@ -64,6 +64,8 @@ pub enum ErrorDocumentProblem {
 /// error for an unusable base URL); `?` converts it into [`TwilioError::Concord`].
 #[derive(Debug)]
 #[non_exhaustive]
+#[derive(concord::derive::Error)]
+#[display(with = display_twilio_error)]
 pub enum TwilioError {
     /// A non-2xx response, with a provider exception or the reason it could not be decoded.
     Provider {
@@ -139,40 +141,36 @@ impl From<concord::Error> for TwilioError {
     }
 }
 
-impl fmt::Display for TwilioError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::Concord { error, .. } => fmt::Display::fmt(error, f),
-            Self::Provider { meta, document } => {
-                if let Some(operation) = meta.operation() {
-                    write!(f, "{operation}: ")?;
-                }
-                write!(f, "Twilio HTTP {}", meta.status().as_u16())?;
-                match document {
-                    Ok(document) => {
-                        if let Some(code) = document.code {
-                            write!(f, " (code {code})")?;
-                        }
-                        Ok(())
+fn display_twilio_error(value: &TwilioError, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    match value {
+        TwilioError::Concord { error, .. } => fmt::Display::fmt(error, f),
+        TwilioError::Provider { meta, document } => {
+            if let Some(operation) = meta.operation() {
+                write!(f, "{operation}: ")?;
+            }
+            write!(f, "Twilio HTTP {}", meta.status().as_u16())?;
+            match document {
+                Ok(document) => {
+                    if let Some(code) = document.code {
+                        write!(f, " (code {code})")?;
                     }
-                    Err(problem) => write!(f, " (error document: {problem:?})"),
+                    Ok(())
                 }
+                Err(problem) => write!(f, " (error document: {problem:?})"),
             }
-            Self::EmptySid { operation } => {
-                write!(f, "{operation}: empty message SID (nothing sent)")
-            }
+        }
+        TwilioError::EmptySid { operation } => {
+            write!(f, "{operation}: empty message SID (nothing sent)")
         }
     }
 }
 
-impl std::error::Error for TwilioError {}
-
-pub(crate) async fn send<T>(prepared: Prepared<T>) -> Result<Response<T>, TwilioError> {
+pub(crate) async fn send<T>(
+    prepared: Prepared<T, crate::ProviderError>,
+) -> Result<Response<T>, TwilioError> {
     let received = prepared.receive().await?;
     if !received.status().is_success() {
-        let (meta, document) = received
-            .document::<Json, ProviderError>(MAX_ERROR_BODY)
-            .await;
+        let (meta, document) = received.failure(MAX_ERROR_BODY).await.into_document();
         let document = document.map_err(|error| match error.kind() {
             ErrorKind::Metadata => ErrorDocumentProblem::ContentType,
             ErrorKind::Limit => ErrorDocumentProblem::TooLarge,
@@ -184,6 +182,6 @@ pub(crate) async fn send<T>(prepared: Prepared<T>) -> Result<Response<T>, Twilio
             document,
         });
     }
-    let (value, meta) = received.decode_with_meta().await?;
+    let (value, meta) = received.into_success()?.decode_with_meta().await?;
     Ok(Response { value, meta })
 }

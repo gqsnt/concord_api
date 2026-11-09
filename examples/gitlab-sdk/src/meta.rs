@@ -67,7 +67,7 @@ pub struct ResponseMeta {
 impl ResponseMeta {
     /// Reads the metadata of `received` without consuming it. Relative `Link` targets resolve
     /// against the final response URL (after any redirect the client followed).
-    pub fn capture<T>(received: &Received<T>) -> Self {
+    pub fn capture<T, D>(received: &Received<T, D>) -> Self {
         Self::from_head(received.status(), received.head().headers(), received.url())
     }
 

@@ -2,18 +2,14 @@ use super::*;
 use std::fmt;
 
 /// SDK call failure. Provider strings and response header values are withheld from diagnostics.
-#[derive(Debug)]
+#[derive(Debug, concord::derive::Error)]
+#[display(with = display_error)]
 pub enum Error {
     /// Request build, transport, success metadata, decode or body-limit failure.
-    Concord(concord::Error),
+    Concord(#[source] concord::Error),
     /// Any non-2xx status, even if its error document cannot be read.
+    #[from(concord::Error<crate::error::ErrorDocument>)]
     Provider(Box<ProviderError>),
-}
-
-impl From<concord::Error> for Error {
-    fn from(value: concord::Error) -> Self {
-        Self::Concord(value)
-    }
 }
 
 impl Error {
@@ -64,21 +60,10 @@ impl Error {
     }
 }
 
-impl fmt::Display for Error {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::Concord(error) => fmt::Display::fmt(error, f),
-            Self::Provider(error) => write!(f, "Square HTTP {}", error.meta.status().as_u16()),
-        }
-    }
-}
-
-impl std::error::Error for Error {
-    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
-        match self {
-            Self::Concord(error) => Some(error),
-            Self::Provider(_) => None,
-        }
+fn display_error(value: &Error, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    match value {
+        Error::Concord(error) => fmt::Display::fmt(error, f),
+        Error::Provider(error) => write!(f, "Square HTTP {}", error.meta.status().as_u16()),
     }
 }
 
@@ -134,4 +119,11 @@ pub struct SquareError {
     pub detail: Option<String>,
     /// Provider field name, possibly echoing request values.
     pub field: Option<String>,
+}
+
+impl From<concord::Failure<crate::error::ErrorDocument>> for ProviderError {
+    fn from(failure: concord::Failure<crate::error::ErrorDocument>) -> Self {
+        let (meta, document) = failure.into_document();
+        Self { meta, document }
+    }
 }

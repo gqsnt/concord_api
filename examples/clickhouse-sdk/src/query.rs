@@ -17,6 +17,8 @@ use std::fmt;
 /// never a bound value).
 #[derive(Clone, Debug, PartialEq, Eq)]
 #[non_exhaustive]
+#[derive(concord::derive::Error)]
+#[display(with = display_request_error)]
 pub enum RequestError {
     /// The SQL text is empty or only whitespace.
     EmptyQuery,
@@ -57,33 +59,32 @@ pub enum RequestError {
     },
 }
 
-impl fmt::Display for RequestError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::EmptyQuery => f.write_str("the SQL text is empty"),
-            Self::Unbound { name } => write!(f, "the placeholder `{name}` has no bound value"),
-            Self::UnknownParameter { name } => {
+fn display_request_error(
+    value: &RequestError,
+    f: &mut std::fmt::Formatter<'_>,
+) -> std::fmt::Result {
+    match value {
+            RequestError::EmptyQuery => f.write_str("the SQL text is empty"),
+            RequestError::Unbound { name } => write!(f, "the placeholder `{name}` has no bound value"),
+            RequestError::UnknownParameter { name } => {
                 write!(f, "`{name}` is not a placeholder of the SQL text")
             }
-            Self::DuplicateParameter { name } => write!(f, "`{name}` is bound twice"),
-            Self::InvalidIdentifier => {
+            RequestError::DuplicateParameter { name } => write!(f, "`{name}` is bound twice"),
+            RequestError::InvalidIdentifier => {
                 f.write_str("an identifier must match [A-Za-z_][A-Za-z0-9_]* (at most 255 bytes)")
             }
-            Self::InvalidToken { what } => {
+            RequestError::InvalidToken { what } => {
                 write!(f, "the {what} is empty or contains a control character")
             }
-            Self::InvalidCredentials => f.write_str(
+            RequestError::InvalidCredentials => f.write_str(
                 "the credentials cannot be sent (a `:` or control character in the user name, or a value that is not a header value)",
             ),
-            Self::InvalidColumns { label } => write!(f, "the insert columns are refused: {label}"),
-            Self::NonFiniteFloat { name } => {
+            RequestError::InvalidColumns { label } => write!(f, "the insert columns are refused: {label}"),
+            RequestError::NonFiniteFloat { name } => {
                 write!(f, "the value bound to `{name}` is NaN or infinite")
             }
         }
-    }
 }
-
-impl std::error::Error for RequestError {}
 
 /// A table, database or column name: `[A-Za-z_][A-Za-z0-9_]*`, 1 to 255 bytes.
 ///

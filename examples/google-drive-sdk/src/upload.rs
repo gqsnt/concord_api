@@ -287,7 +287,7 @@ impl UploadSession {
 
     async fn accept(
         &mut self,
-        received: Received<File>,
+        received: Received<File, crate::Document>,
         max_ack: u64,
         probing: bool,
     ) -> Result<UploadStatus, Error> {

@@ -17,12 +17,12 @@ use std::time::{Duration, Instant};
 
 use concord::reqwest::header::HeaderMap;
 use concord::reqwest::{StatusCode, Url};
-use concord::{Endpoint, Json, Operation, ResponseMeta, SendWith};
+use concord::{Endpoint, Operation, ResponseMeta, SendWith};
 
 use crate::ERROR_BODY_LIMIT;
 use crate::error::{
-    AmbiguousWrite, ApiError, Error, ErrorDocument, GateScope, Gated, RateLimitBody,
-    RateLimitScope, RateLimited, Resource,
+    AmbiguousWrite, ApiError, Error, GateScope, Gated, RateLimitBody, RateLimitScope, RateLimited,
+    Resource,
 };
 use crate::model::{ChannelId, GuildId};
 
@@ -339,12 +339,15 @@ impl fmt::Debug for RateLimiter {
     }
 }
 
-impl<T: Send + 'static> SendWith<T> for RateLimiter {
+impl<T: Send + 'static> SendWith<T, crate::FailureDocument> for RateLimiter {
     type Output = Result<T, Error>;
 
     /// Admit, execute once, observe; map the status to [`Error`]. A `POST` that fails after it
     /// may have been sent is [`Error::AmbiguousWrite`], never resent.
-    async fn send<E: Endpoint<T> + Send>(&self, endpoint: E) -> Self::Output {
+    async fn send<E: Endpoint<T, crate::FailureDocument> + Send>(
+        &self,
+        endpoint: E,
+    ) -> Self::Output {
         let prepared = endpoint.prepare()?;
         let route = Route {
             operation: E::operation(),
@@ -358,24 +361,28 @@ impl<T: Send + 'static> SendWith<T> for RateLimiter {
         self.observe(&route, received.head().headers());
         let status = received.status();
         if status == StatusCode::TOO_MANY_REQUESTS {
-            let (meta, body) = received
-                .document::<Json, RateLimitBody>(ERROR_BODY_LIMIT)
-                .await;
-            return Err(Error::RateLimited(Box::new(
-                self.rate_limited(route, meta, body),
-            )));
+            let (meta, body) = received.failure(ERROR_BODY_LIMIT).await.into_document();
+            return Err(Error::RateLimited(Box::new(self.rate_limited(
+                route,
+                meta,
+                body.map(|document| match document {
+                    crate::FailureDocument::RateLimited(body) => body,
+                    _ => unreachable!("429 codec selected"),
+                }),
+            ))));
         }
         if !status.is_success() {
-            let (meta, document) = received
-                .document::<Json, ErrorDocument>(ERROR_BODY_LIMIT)
-                .await;
+            let (meta, document) = received.failure(ERROR_BODY_LIMIT).await.into_document();
             return Err(Error::Api(Box::new(ApiError {
                 route,
                 meta,
-                document,
+                document: document.map(|document| match document {
+                    crate::FailureDocument::Api(document) => document,
+                    _ => unreachable!("API codec selected"),
+                }),
             })));
         }
-        match received.decode().await {
+        match received.into_success()?.decode().await {
             Ok(value) => Ok(value),
             Err(error) if route.is_write() => {
                 Err(Error::AmbiguousWrite(Box::new(AmbiguousWrite {

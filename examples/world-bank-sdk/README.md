@@ -1,5 +1,9 @@
 # World Bank Indicators SDK
 
+The declaration owns the provider error document: `error crate::WireResponse in concord::Json;`. Native prepared/decoded
+paths carry that document as `D` in `Prepared<T, D>` and `concord::Error<D>`; SDK status routing
+and validation remain in the policy. Concord withholds document contents in formatting.
+
 An unauthenticated, small World Bank Indicators API **v2** client for a country's indicator in a single year or an inclusive range of years. It uses the JSON metadata/data array, preserves nullable observation values and traverses numbered pages. This is not a general World Bank SDK: SDMX, XML, metadata catalog queries, other date frequencies, retries, and economic interpretation are out of scope. Fixtures are synthetic offline contract examples, not vendor conformance tests; see [PROVENANCE.md](PROVENANCE.md).
 
 Construct `Client` with a caller-configured `concord::reqwest::Client`; no credentials or configuration record are required. The transport controls timeouts, proxies, TLS, redirects and default headers. `with_base_url` can replace the default `https://api.worldbank.org/v2`, including its path, for offline tests. IDs are each encoded as one path segment; this slice expects one country and one indicator, and leaves their validity to the provider.

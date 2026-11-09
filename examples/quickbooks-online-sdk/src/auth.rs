@@ -10,7 +10,6 @@ use std::num::NonZeroUsize;
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::time::{Duration, Instant, SystemTime};
 
-use concord::Json;
 use concord::reqwest::{self, StatusCode, header::HeaderValue};
 use concord_auth::{RefreshError, Snapshot, Token, TokenCache};
 use serde::{Deserialize, Serialize};
@@ -353,7 +352,7 @@ pub(crate) struct TokenResponse {
 
 /// An OAuth error document (RFC 6749 §5.2).
 #[derive(Deserialize)]
-struct OAuthError {
+pub(crate) struct OAuthError {
     error: String,
 }
 
@@ -421,14 +420,17 @@ async fn request_tokens(
         .map_err(|e| TokenFailure::local(AuthorizationKind::GrantUncertain, e))?;
     let status = received.status();
     if status.is_success() {
-        return match received.decode().await {
+        return match received
+            .into_success()
+            .map_err(|e| TokenFailure::local(AuthorizationKind::GrantUncertain, e))?
+            .decode()
+            .await
+        {
             Ok(document) => document.issue(),
             Err(e) => Err(TokenFailure::local(AuthorizationKind::GrantUncertain, e)),
         };
     }
-    let (_, document) = received
-        .document::<Json, OAuthError>(ERROR_BODY_LIMIT)
-        .await;
+    let (_, document) = received.failure(ERROR_BODY_LIMIT).await.into_document();
     let kind = if status == StatusCode::BAD_REQUEST || status == StatusCode::UNAUTHORIZED {
         AuthorizationKind::GrantRejected
     } else if status.is_server_error() {

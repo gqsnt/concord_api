@@ -1,5 +1,9 @@
 # concord-sdk-gitlab
 
+The declaration owns the provider error document: `error crate::ErrorDocument in concord::IgnoreContentType<concord::Json>;`. Native prepared/decoded
+paths carry that document as `D` in `Prepared<T, D>` and `concord::Error<D>`; SDK status routing
+and validation remain in the policy. Concord withholds document contents in formatting.
+
 A slice of the [GitLab REST API v4](https://docs.gitlab.com/api/rest/) written with
 `concord::api!`: page through a project's issues, and retrieve one issue with its project.
 Tested offline against hand-authored fixtures (`cargo test -p concord-sdk-gitlab`); it has never

@@ -1,5 +1,9 @@
 # OpenAI SDK slice
 
+The declaration owns the provider error document: `error crate::ErrorEnvelope in concord::IgnoreContentType<concord::Json>;`. Native prepared/decoded
+paths carry that document as `D` in `Prepared<T, D>` and `concord::Error<D>`; SDK status routing
+and validation remain in the policy. Concord withholds document contents in formatting.
+
 A non-published, offline-tested Rust client for Responses create (ordinary and streaming), Files batch upload, file metadata and content, and Batch create/retrieve/poll. It uses Concord's public API; HTTP execution is not delegated to an OpenAI SDK. Realtime, other endpoints, model evaluation, automatic retries, and paid calls are outside scope. The fixtures are synthetic and are **not** vendor conformance tests.
 
 Construct with a caller-configured Concord re-export of reqwest. Choose timeouts, proxy and redirect policy appropriate for your application; the authorization header is sensitive. `with_base_url` changes the trusted origin (the `/v1` path remains), so only use a destination trusted with the token. The examples use a clearly synthetic token and perform no live requests on their own.

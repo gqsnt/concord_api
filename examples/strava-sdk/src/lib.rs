@@ -70,6 +70,7 @@ concord::api! {
     /// Strava client. Construct with [`Strava::connect`] to enforce transport policy.
     pub client Strava(policy: Session) {
         base policy;
+        error crate::ErrorDocument in concord::Json;
         path "api/v3";
         response Json;
         limit BODY_LIMIT;
@@ -114,6 +115,7 @@ concord::api! {
     /// OAuth token service, separate from authenticated API traffic.
     pub client OAuth(origin: concord::BaseUrl) {
         base origin;
+        error crate::ErrorDocument in concord::Json;
         response Json;
         limit ERROR_LIMIT;
         send TokenPolicy -> Result<Response<_>, Error>;
@@ -129,22 +131,22 @@ concord::api! {
 /// Stateless OAuth response/error policy. No token grant is retried.
 #[derive(Default)]
 pub struct TokenPolicy;
-impl<T: Send> SendWith<T> for TokenPolicy {
+impl<T: Send> SendWith<T, crate::ErrorDocument> for TokenPolicy {
     type Output = Result<Response<T>, Error>;
-    async fn send<E: Endpoint<T> + Send>(&self, endpoint: E) -> Self::Output {
+    async fn send<E: Endpoint<T, crate::ErrorDocument> + Send>(&self, endpoint: E) -> Self::Output {
         finish(endpoint.prepare()?.receive().await?, false, 1).await
     }
 }
 
 pub(crate) async fn finish<T>(
-    received: Received<T>,
+    received: Received<T, crate::ErrorDocument>,
     uncertain: bool,
     attempts: usize,
 ) -> Result<Response<T>, Error> {
     let rates = RateLimits::parse(received.head().headers());
     if !received.status().is_success() {
         let ambiguous = uncertain && received.status().is_server_error();
-        let (meta, document) = received.document::<Json, ErrorDocument>(ERROR_LIMIT).await;
+        let (meta, document) = received.failure(ERROR_LIMIT).await.into_document();
         return Err(Error::Http(Box::new(HttpFailure {
             meta,
             document,
@@ -153,6 +155,7 @@ pub(crate) async fn finish<T>(
         })));
     }
     let (value, meta) = received
+        .into_success()?
         .decode_with_meta()
         .await
         .map_err(|e| Error::from_call(e, uncertain))?;

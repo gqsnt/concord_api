@@ -43,6 +43,7 @@ concord::api! {
         policy: SendPolicy,
     ) {
         base deployment;
+        error crate::Problem in concord::Json;
         path "api/0";
         format Json;
         limit BODY_LIMIT;

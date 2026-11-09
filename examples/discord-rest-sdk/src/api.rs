@@ -43,6 +43,7 @@ concord::api! {
         header(USER_AGENT) user_agent: String = default_user_agent(),
     ) {
         base "https://discord.com/api/v10";
+        error crate::FailureDocument in crate::error::ErrorJson;
         headers { AUTHORIZATION = "Bot {token}"; }
         format Json;
         limit crate::SUCCESS_BODY_LIMIT;
@@ -148,7 +149,8 @@ fn history_page(
 ) -> Result<Page<Message, MessageId>, Error> {
     let route = |problem| {
         let resource = messages.first().map(|m| Resource::Channel(m.channel_id));
-        let operation = <DiscordChannelMessages as Endpoint<Vec<Message>>>::operation();
+        let operation =
+            <DiscordChannelMessages as Endpoint<Vec<Message>, crate::FailureDocument>>::operation();
         Error::Protocol(Box::new(ProtocolError {
             route: Route::new(operation, resource),
             problem,

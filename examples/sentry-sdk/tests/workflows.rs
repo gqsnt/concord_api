@@ -662,7 +662,7 @@ async fn reconstructed_token_rotation_retains_caller_admission_state() {
 #[tokio::test]
 async fn declared_link_endpoints_keep_policy_identity_and_literal_target() {
     use concord_sdk_sentry::concord::{Follow, LinkContinuation, NextUrl};
-    fn declared<T, E: LinkContinuation<Vec<T>>>(_: &E) {}
+    fn declared<T, E: LinkContinuation<Vec<T>, concord_sdk_sentry::Problem>>(_: &E) {}
     let server = TestServer::start(|request: &Recorded| {
         assert_eq!(
             request.header("authorization"),

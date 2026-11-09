@@ -49,6 +49,7 @@ concord::api! {
     /// Square sandbox API, with a caller-owned Bearer header.
     pub client Square(#[sensitive] header(AUTHORIZATION) authorization: HeaderValue) {
         base "https://connect.squareupsandbox.com";
+        error crate::error::ErrorDocument in concord::Json;
         path "v2";
         headers { "square-version" = "2026-09-16"; }
         format Json;
@@ -99,17 +100,19 @@ concord::api! {
 #[derive(Default)]
 pub struct SquarePolicy;
 
-impl<T: Send> SendWith<T> for SquarePolicy {
+impl<T: Send> SendWith<T, crate::error::ErrorDocument> for SquarePolicy {
     type Output = Result<T, Error>;
 
-    async fn send<E: Endpoint<T> + Send>(&self, endpoint: E) -> Self::Output {
-        let received = endpoint.prepare()?.receive().await?;
-        if !received.status().is_success() {
-            let (meta, document) = received
-                .document::<Json, ErrorDocument>(ERROR_BODY_LIMIT)
-                .await;
-            return Err(Error::Provider(Box::new(ProviderError { meta, document })));
-        }
+    async fn send<E: Endpoint<T, crate::error::ErrorDocument> + Send>(
+        &self,
+        endpoint: E,
+    ) -> Self::Output {
+        let received = endpoint
+            .prepare()?
+            .error_body_limit(crate::ERROR_BODY_LIMIT)
+            .receive()
+            .await?;
+
         Ok(received.decode().await?)
     }
 }

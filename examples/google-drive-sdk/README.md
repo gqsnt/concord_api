@@ -1,5 +1,9 @@
 # Google Drive v3 SDK slice
 
+The declaration owns the provider error document: `error crate::Document in concord::IgnoreContentType<concord::Json>;`. Native prepared/decoded
+paths carry that document as `D` in `Prepared<T, D>` and `concord::Error<D>`; SDK status routing
+and validation remain in the policy. Concord withholds document contents in formatting.
+
 `concord-sdk-google-drive` is an unpublished, edition 2024 SDK built with
 `concord::api!` against frozen Concord commit `6d6d66aa` and Rust 1.99.1.
 It covers these connected operations:

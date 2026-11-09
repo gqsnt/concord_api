@@ -1,5 +1,9 @@
 # concord-sdk-clickhouse
 
+The declaration owns the provider error document: `error String in IgnoreContentType<Text>;`. Native prepared/decoded
+paths carry that document as `D` in `Prepared<T, D>` and `concord::Error<D>`; SDK status routing
+and validation remain in the policy. Concord withholds document contents in formatting.
+
 A bounded SDK for the [ClickHouse HTTP interface](https://clickhouse.com/docs/interfaces/http),
 declared with `concord::api!` ([`src/wire.rs`](src/wire.rs)) and wrapped in a small public
 client. Not published (`publish = false`); a workspace example of Concord.

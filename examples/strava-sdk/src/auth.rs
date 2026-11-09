@@ -294,9 +294,9 @@ fn granted(scopes: &str, required: &str) -> bool {
         .any(|scope| scope == required)
 }
 
-impl<T: Send> SendWith<T> for Session {
+impl<T: Send> SendWith<T, crate::ErrorDocument> for Session {
     type Output = Result<Response<T>, Error>;
-    async fn send<E: Endpoint<T> + Send>(&self, endpoint: E) -> Self::Output {
+    async fn send<E: Endpoint<T, crate::ErrorDocument> + Send>(&self, endpoint: E) -> Self::Output {
         let operation = StravaOperation::from_operation(E::operation())
             .ok_or(Error::Invalid("operation is not declared by this SDK"))?;
         let read = E::operation().is_read();

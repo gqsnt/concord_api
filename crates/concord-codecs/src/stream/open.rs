@@ -9,7 +9,7 @@ mod sealed {
     pub trait Sealed {}
     impl Sealed for concord_core::reqwest::Response {}
     impl Sealed for concord_core::Incoming {}
-    impl<T> Sealed for concord_core::Received<T> {}
+    impl<T, D> Sealed for concord_core::Received<T, D> {}
     impl Sealed for (concord_core::reqwest::Response, concord_core::Operation) {}
 }
 
@@ -52,7 +52,7 @@ impl Openable for (reqwest::Response, concord_core::Operation) {
     }
 }
 
-impl<T> Openable for Received<T> {
+impl<T, D> Openable for Received<T, D> {
     fn into_open(self) -> (reqwest::Response, Option<&'static str>) {
         let operation = self.operation().map(|op| op.name());
         (self.into_response(), operation)

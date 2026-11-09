@@ -1,5 +1,9 @@
 # concord-sdk-spotify-web-api
 
+The declaration owns the provider error document: `error crate::ErrorEnvelope in concord::Json;`, `error crate::error::OAuthErrorObject in concord::Json;`. Native prepared/decoded
+paths carry that document as `D` in `Prepared<T, D>` and `concord::Error<D>`; SDK status routing
+and validation remain in the policy. Concord withholds document contents in formatting.
+
 A bounded SDK for the [Spotify Web API](https://developer.spotify.com/documentation/web-api)
 built on Concord. It covers two connected workflows of an authorized user, and the OAuth
 authorization-code flow with refresh that they need, plus adding items to an owned playlist.

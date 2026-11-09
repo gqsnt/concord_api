@@ -32,6 +32,7 @@ concord::api! {
         policy: SendPolicy,
     ) {
         base "https://checkout-test.adyen.com";
+        error crate::Problem in concord::Json;
         format Json;
         limit RESPONSE_LIMIT;
         send policy -> Result<Response<_>, Error>;

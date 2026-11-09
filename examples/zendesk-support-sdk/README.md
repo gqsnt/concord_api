@@ -1,5 +1,9 @@
 # concord-sdk-zendesk-support
 
+The declaration owns the provider error document: `error crate::Problem in crate::codecs::ProblemFormat;`. Native prepared/decoded
+paths carry that document as `D` in `Prepared<T, D>` and `concord::Error<D>`; SDK status routing
+and validation remain in the policy. Concord withholds document contents in formatting.
+
 A bounded Zendesk Support (Ticketing API v2) SDK built on Concord. It covers two connected
 workflows:
 

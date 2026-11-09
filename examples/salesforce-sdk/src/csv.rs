@@ -53,6 +53,8 @@ const SPOOL_BATCH: usize = 512;
 /// A CSV configuration, header or encoding failure before anything was sent.
 #[derive(concord::Debug)]
 #[non_exhaustive]
+#[derive(concord::derive::Error)]
+#[display(with = display_csv_error)]
 pub enum CsvError {
     /// The codec refused the dialect (never expected for a [`BulkDialect`]).
     Config(CsvConfigError),
@@ -76,43 +78,28 @@ pub enum CsvError {
         limit: usize,
     },
     /// The row source failed while spooling (its error is kept, withheld from `Display`).
+    #[from(skip)]
     Source(#[sensitive] Box<dyn StdError + Send + Sync>),
 }
 
-impl fmt::Display for CsvError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            CsvError::Config(e) => write!(f, "Salesforce CSV dialect refused: {}", e.label()),
-            CsvError::Encode(e) => write!(f, "Salesforce CSV encoding failed: {e}"),
-            CsvError::InvalidColumn { index, reason } => {
-                write!(f, "Salesforce CSV header column {index} refused: {reason}")
-            }
-            CsvError::HeaderTooLong { chars } => write!(
-                f,
-                "Salesforce CSV header has {chars} characters (limit {MAX_HEADER_CHARS})"
-            ),
-            CsvError::UploadTooLarge { limit } => {
-                write!(
-                    f,
-                    "Salesforce CSV upload larger than {limit} bytes, not sent"
-                )
-            }
-            CsvError::Source(_) => f.write_str("the row source failed while spooling"),
+fn display_csv_error(value: &CsvError, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    match value {
+        CsvError::Config(e) => write!(f, "Salesforce CSV dialect refused: {}", e.label()),
+        CsvError::Encode(e) => write!(f, "Salesforce CSV encoding failed: {e}"),
+        CsvError::InvalidColumn { index, reason } => {
+            write!(f, "Salesforce CSV header column {index} refused: {reason}")
         }
-    }
-}
-
-impl StdError for CsvError {}
-
-impl From<CsvConfigError> for CsvError {
-    fn from(e: CsvConfigError) -> Self {
-        CsvError::Config(e)
-    }
-}
-
-impl From<CodecError> for CsvError {
-    fn from(e: CodecError) -> Self {
-        CsvError::Encode(e)
+        CsvError::HeaderTooLong { chars } => write!(
+            f,
+            "Salesforce CSV header has {chars} characters (limit {MAX_HEADER_CHARS})"
+        ),
+        CsvError::UploadTooLarge { limit } => {
+            write!(
+                f,
+                "Salesforce CSV upload larger than {limit} bytes, not sent"
+            )
+        }
+        CsvError::Source(_) => f.write_str("the row source failed while spooling"),
     }
 }
 

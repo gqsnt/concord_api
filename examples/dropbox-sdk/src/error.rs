@@ -171,7 +171,8 @@ pub struct UserMessage {
 }
 
 /// Provider error envelope. Use typed tags, not exact equality on the summary.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Deserialize)]
+#[serde(from = "Envelope")]
 pub struct ProviderError {
     /// Human-readable summary whose suffix is not stable.
     pub summary: String,
@@ -197,20 +198,6 @@ pub struct ErrorBody {
 }
 
 impl ErrorBody {
-    pub(crate) fn new(read: Result<Bytes, concord::Error>) -> Self {
-        let provider = read.as_ref().ok().and_then(|bytes| {
-            let envelope: Envelope = serde_json::from_slice(bytes).ok()?;
-            let kind = serde_json::from_value(envelope.error.clone()).ok()?;
-            Some(ProviderError {
-                summary: envelope.error_summary,
-                kind,
-                detail: envelope.error,
-                user_message: envelope.user_message,
-            })
-        });
-        Self { read, provider }
-    }
-
     /// Complete raw bytes when the body was read successfully within the byte limit.
     pub fn bytes(&self) -> Option<&[u8]> {
         self.read.as_deref().ok()
@@ -246,7 +233,8 @@ pub struct HttpError {
 }
 
 /// SDK failure. Metadata survives every failure after a response head was received.
-#[derive(Debug)]
+#[derive(Debug, concord::derive::Error)]
+#[display(with = display_error)]
 pub enum Error {
     /// Request construction, transport, content-type, JSON, or success-body size failure.
     Concord {
@@ -256,6 +244,7 @@ pub enum Error {
         meta: Option<Box<ResponseMeta>>,
     },
     /// Non-2xx status, including context (422) and rate-limit (429) failures.
+    #[from(concord::Error<crate::ProviderError>)]
     Http(Box<HttpError>),
     /// A page omitted the required nonempty cursor. Never interpreted as exhaustion.
     EmptyCursor {
@@ -290,14 +279,42 @@ impl From<concord::Error> for Error {
     }
 }
 
-impl fmt::Display for Error {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::Concord { error, .. } => error.fmt(f),
-            Self::Http(e) => write!(f, "Dropbox HTTP failure ({})", e.meta.status()),
-            Self::EmptyCursor { .. } => f.write_str("Dropbox returned an empty cursor"),
-        }
+fn display_error(value: &Error, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    match value {
+        Error::Concord { error, .. } => std::fmt::Display::fmt(error, f),
+        Error::Http(e) => write!(f, "Dropbox HTTP failure ({})", e.meta.status()),
+        Error::EmptyCursor { .. } => f.write_str("Dropbox returned an empty cursor"),
     }
 }
 
-impl std::error::Error for Error {}
+impl From<Envelope> for ProviderError {
+    fn from(envelope: Envelope) -> Self {
+        let kind =
+            serde_json::from_value(envelope.error.clone()).expect("Other accepts any JSON value");
+        Self {
+            summary: envelope.error_summary,
+            kind,
+            detail: envelope.error,
+            user_message: envelope.user_message,
+        }
+    }
+}
+impl From<concord::Failure<ProviderError>> for HttpError {
+    fn from(failure: concord::Failure<ProviderError>) -> Self {
+        let complete = !matches!(
+            failure.state(),
+            concord::Document::TooLong { .. } | concord::Document::Broken(_)
+        );
+        let bytes = failure.body().clone();
+        let (meta, document) = failure.into_document();
+        let (read, provider) = match document {
+            Ok(document) => (Ok(bytes), Some(document)),
+            Err(error) if !complete => (Err(error), None),
+            Err(_) => (Ok(bytes), None),
+        };
+        Self {
+            meta: ResponseMeta(meta),
+            body: ErrorBody { read, provider },
+        }
+    }
+}

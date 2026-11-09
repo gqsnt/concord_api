@@ -436,3 +436,34 @@ fn fmt_error(error: &Error, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         },
     }
 }
+
+/// The provider's error document, selected by HTTP status.
+pub enum FailureDocument {
+    /// HTTP 429 uses the rate-limit document.
+    RateLimited(RateLimitBody),
+    /// Every other non-2xx uses the API error document.
+    Api(ErrorDocument),
+}
+/// Discord's JSON error formats, with the HTTP 429 schema selected by the response head.
+pub struct ErrorJson;
+impl concord::Decode<FailureDocument> for ErrorJson {
+    type Context = u16;
+    fn check_content_type(head: &concord::ResponseHead<'_>) -> Result<(), concord::CodecError> {
+        <concord::Json as concord::Decode<ErrorDocument>>::check_content_type(head)
+    }
+    fn context(head: &concord::ResponseHead<'_>) -> Result<u16, concord::CodecError> {
+        Ok(head.status().as_u16())
+    }
+    fn decode_body(
+        status: u16,
+        body: concord::bytes::Bytes,
+    ) -> Result<FailureDocument, concord::CodecError> {
+        if status == 429 {
+            <concord::Json as concord::Decode<RateLimitBody>>::decode_body((), body)
+                .map(FailureDocument::RateLimited)
+        } else {
+            <concord::Json as concord::Decode<ErrorDocument>>::decode_body((), body)
+                .map(FailureDocument::Api)
+        }
+    }
+}

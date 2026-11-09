@@ -1,5 +1,9 @@
 # Open Library SDK21
 
+The declaration owns the provider error document: `error serde_json::Value in concord::Json;`. Native prepared/decoded
+paths carry that document as `D` in `Prepared<T, D>` and `concord::Error<D>`; SDK status routing
+and validation remain in the policy. Concord withholds document contents in formatting.
+
 `concord-sdk-open-library` is a bounded, public-data SDK over Concord at baseline
 `56a16ee34f8aa714bd51dca67f744e5870e813b6`. This implementation is **example-assisted**:
 Concord guide excerpts and the shared test server were consulted; the complete ledger is in

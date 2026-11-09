@@ -1527,18 +1527,17 @@ status, and the SDK then consumes the body once. Three facts make the ordinary p
   returned head is moved out of the response when the document is read; a failure's error also
   carries a copy of it (`Error::head`), so a failed document costs one header-map clone.
 
-A policy that returns a value with its metadata, or the provider's typed error document
+A policy that returns a value with its metadata, or the provider's declared error document (the error enum derives the provider split)
 (Excerpt of `examples/frankfurter-sdk/src/lib.rs`):
 
 ```rust,ignore
-async fn send<E: Endpoint<Rate> + Send>(&self, endpoint: E) -> Self::Output {
-    let received = endpoint.prepare()?.receive().await?;
-    if !received.status().is_success() {
-        // Status is authoritative even when the document is absent, invalid or inconsistent.
-        let (meta, document) = received.document::<Json, Problem>(ERROR_BODY_LIMIT).await;
-        let document = document.map_err(ErrorBodyError::from);
-        return Err(Error::Provider(Box::new(ProviderError { meta, document })));
-    }
+async fn send<E: Endpoint<Rate, crate::Problem> + Send>(&self, endpoint: E) -> Self::Output {
+    let received = endpoint
+        .prepare()?
+        .error_body_limit(crate::ERROR_BODY_LIMIT)
+        .receive()
+        .await?;
+
     // A success-body failure keeps the head in the Concord error (`Error::head_meta`).
     let (rate, meta) = received.decode_with_meta().await?;
     Ok(RateResponse { rate, meta })
@@ -1659,6 +1658,64 @@ fn main() {
 `Unknown` is a fact about this attempt only: whether the provider performed the write is learned
 from the provider (an idempotency key, a lookup by a client-chosen id), never from Concord.
 
+### 5.11a Declared error documents
+
+Declare a provider's non-2xx document where it is true. The nearest `error` statement wins;
+it is independent of the success format and never adds `Accept` or `Content-Type`.
+
+```rust
+use concord::Json;
+#[derive(Debug, serde::Deserialize)]
+pub struct Problem { pub title: String }
+concord::api! {
+    pub client Api {
+        base "https://example.test";
+        error Problem in Json;
+        GET item() -> String { response Json; }
+    }
+}
+#[derive(Debug, concord::derive::Error)]
+pub enum SdkError {
+    #[display("{0}")]
+    Concord(#[source] concord::Error),
+    #[display("provider refusal")]
+    #[from(concord::Error<Problem>)]
+    Provider(concord::Failure<Problem>),
+}
+```
+
+`send()` returns `concord::Error<Problem>`; `prepare()` still returns `concord::Error`,
+with a `Prepared<T, Problem>` on success. `Endpoint<T, Problem>` and `SendWith<T, Problem>`
+carry the same document. Without `error`, the default document is `()` and existing signatures
+keep their shape. `Decoder`, `Received` and the continuation traits carry this defaulted parameter too.
+
+A non-2xx stays `ErrorKind::Status`. Its `provider()` is a `Failure<D>` containing the head,
+bounded bytes and `Document::{Read, Empty, Unrecognized, TooLong, Broken}`. The default error-body
+bound is 64 KiB; set a different one with `prepared.error_body_limit(n)`. `Failure` and `Error`
+withhold document contents in all ordinary formatting; their document/body accessors are unredacted.
+An SDK's own payload formatter remains its responsibility.
+
+The derive implements Display from each variant's `#[display("...")]`, or an enum-wide
+`#[display(with = path)]` formatter. Tuple fields use `{0}`; named fields use `{name}` (raw names
+use `{r#type}`). It creates `From` for single-field tuple variants (including `Box`/`Arc` wrapping), except
+`#[from(skip)]`. `#[source]` marks one plain, boxed, shared (`Arc`) or optional cause per variant.
+`#[from(concord::Error<D>)]` instead builds that variant from `Failure<D>` through its field's
+`From` implementation and sends every other failure through the enum's `From<concord::Error>`.
+Status-specific routing, retry hints and refusals inside a 2xx body remain Rust behavior.
+
+`received.failure(n)` uses the declared error handling, including for an SDK's own status rule.
+`failure.into_document()` adapts to `(ResponseMeta, Result<D, concord::Error>)`, preserving the
+metadata/decode/read/limit state and bounded bytes (read/size failure takes precedence over a
+format refusal). A metadata refusal has already consumed the
+body and has no unread native response. `received.error_document(n)` instead stops at a refused
+head and keeps its response unread, using the same declared pair; Open-Meteo retains that rule for
+stalled wrong-media bodies. Empty documents keep the `Empty` wire state; the adapter
+alone asks the format to decode empty bytes. `received.into_success()?` checks for a 2xx and keeps
+the success decoder with ordinary `concord::Error`; use it after custom status routing.
+`failure_as::<F, D>(n)` remains available for responses obtained outside a declared endpoint.
+`Error::widen::<D>()` adapts a native error to another document type; an already read document
+becomes unrecognized while its head and bytes remain available.
+
 ### 5.12 One adapter for every operation: `concord::Endpoint`
 
 An SDK that returns its own error type and response metadata does not need a wrapper method per
@@ -1696,8 +1753,8 @@ the trait cannot host a per-operation rule. A generated operation is not a futur
 `api.op(..)` where a future is expected (`tokio::time::timeout(d, api.op(..))`) needs the adapter's
 call (`api.op(..).call()`), and rustc's E0277 does not suggest it.
 
-A provider error document on a non-2xx response is read with `received.document::<F, D>(n)`
-(§5.11): the format's head checks and context, then the body up to `n` bytes (`ErrorKind::Limit`
+A declared provider error document is read with `received.failure(n)` (§5.11a). For a response
+obtained outside a declaration, `received.document::<F, D>(n)` runs the format's head checks and context, then the body up to `n` bytes (`ErrorKind::Limit`
 beyond; nothing more is read), then its `decode_body`. `received.bytes_limited(n)` is the raw
 read for an SDK that keeps or parses the bytes itself. `<E as Endpoint<T>>::operation()` names
 the endpoint without building a request; a concrete endpoint type also has an inherent
@@ -1708,8 +1765,8 @@ with `error.operation()` or `received.operation()`.
 
 When every call of a client should return the SDK's result — its error type with the provider's
 error document, response metadata — or every request must be signed after it is built, name a
-**send policy** on the client. A policy implements `concord::SendWith<T>` (usually generically over
-`T`); each generated `send()` then calls it with the endpoint and returns its `Output`. Callers keep
+**send policy** on the client. A policy implements `concord::SendWith<T, D>` (`D = ()` without an error document, usually
+generic over `T`); each generated `send()` then calls it with the endpoint and returns its `Output`. Callers keep
 one terminal method and need no import; `prepare()` still returns the declared, native request with
 Concord's `Error`.
 
@@ -1847,7 +1904,7 @@ the Snowflake first-use run, where telling a dropped body from a bad document ne
 
 ### 5.14 Classifying every operation at runtime
 
-Every send policy implements `concord::SendWith<T>` and reads `E::operation()` for the endpoint's
+Every send policy implements `concord::SendWith<T, D>` (`D = ()` by default) and reads `E::operation()` for the endpoint's
 name, method and `is_read()` fact. `GET`, `HEAD` and `OPTIONS` read by default; mark a reading
 POST with `#[read]` on that endpoint or its enclosing read scope. This fact describes the API;
 retry, signing, scope and quota decisions remain ordinary Rust.

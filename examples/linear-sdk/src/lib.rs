@@ -9,7 +9,6 @@ use concord::{
 use concord_pagination::{Page, Pages, Resume};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use std::fmt;
 
 const LIST: &str = "query Issues($first: Int!, $after: String) { issues(first: $first, after: $after) { nodes { id title description dueDate } pageInfo { hasNextPage endCursor } } }";
 const ISSUE: &str = "query Issue($id: String!) { issue(id: $id) { id title description dueDate } }";
@@ -50,6 +49,7 @@ concord::api! {
     /// Wire operations; applications normally use [`Linear`].
     pub client LinearApi(#[sensitive] header(AUTHORIZATION) authorization: HeaderValue) {
         base "https://api.linear.app";
+        error crate::Envelope<serde_json::Value> in concord::IgnoreContentType<concord::Json>;
         path "graphql";
         request Graphql;
         response Json;
@@ -167,9 +167,11 @@ impl<T> Response<T> {
     }
 }
 /// Request or connection failure. HTTP and decode failures retain response metadata when received.
-#[derive(Debug)]
+#[derive(Debug, concord::derive::Error)]
+#[display(with = display_error)]
 pub enum Error {
     /// Request construction or transport failure before the response head.
+    #[from(skip)]
     Concord(concord::Error),
     /// Non-success HTTP status, with bounded raw body and optional GraphQL diagnostic envelope.
     Http {
@@ -196,19 +198,18 @@ pub enum Error {
         reason: &'static str,
     },
     /// An invalid client or operation input.
+    #[from(skip)]
     Invalid(&'static str),
 }
-impl fmt::Display for Error {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::Concord(e) => write!(f, "Linear request: {e}"),
-            Self::Http { meta, .. } => write!(f, "Linear HTTP {}", meta.status()),
-            Self::Response { source, .. } => write!(f, "Linear response: {source}"),
-            Self::Page { reason, .. } | Self::Invalid(reason) => write!(f, "Linear: {reason}"),
-        }
+fn display_error(value: &Error, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    match value {
+        Error::Concord(e) => write!(f, "Linear request: {e}"),
+        Error::Http { meta, .. } => write!(f, "Linear HTTP {}", meta.status()),
+        Error::Response { source, .. } => write!(f, "Linear response: {source}"),
+        Error::Page { reason, .. } | Error::Invalid(reason) => write!(f, "Linear: {reason}"),
     }
 }
-impl std::error::Error for Error {}
+
 impl From<concord::Error> for Error {
     fn from(source: concord::Error) -> Self {
         match source.head_meta() {
@@ -223,23 +224,29 @@ impl From<concord::Error> for Error {
 
 const BODY_LIMIT: usize = 1024 * 1024;
 async fn send<T: serde::de::DeserializeOwned>(
-    prepared: Result<Prepared<Envelope<T>>, concord::Error>,
+    prepared: Result<Prepared<Envelope<T>, crate::Envelope<serde_json::Value>>, concord::Error>,
 ) -> Result<Response<T>, Error> {
     let received = prepared?.receive().await?;
     if !received.status().is_success() {
-        // Keep the raw bytes alongside even a successfully parsed GraphQL document.
-        let meta = received.meta();
-        let body = received.bytes_limited(65536).await?.to_vec();
-        let errors = serde_json::from_slice::<Envelope<Value>>(&body)
-            .map(|e| e.errors)
-            .unwrap_or_default();
+        let failure = received.failure(65536).await;
+        let complete = !matches!(
+            failure.state(),
+            concord::Document::TooLong { .. } | concord::Document::Broken(_)
+        );
+        let body = failure.body().to_vec();
+        let (meta, document) = failure.into_document();
+        let errors = match document {
+            Ok(envelope) => envelope.errors,
+            Err(error) if !complete => return Err(error.into()),
+            Err(_) => Vec::new(),
+        };
         return Err(Error::Http {
             meta: Box::new(meta),
             body,
             errors,
         });
     }
-    let (envelope, meta) = received.decode_with_meta().await?;
+    let (envelope, meta) = received.into_success()?.decode_with_meta().await?;
     Ok(Response { envelope, meta })
 }
 

@@ -1,5 +1,9 @@
 # Twilio Messaging fixture SDK
 
+The declaration owns the provider error document: `error crate::ProviderError in concord::Json;`. Native prepared/decoded
+paths carry that document as `D` in `Prepared<T, D>` and `concord::Error<D>`; SDK status routing
+and validation remain in the policy. Concord withholds document contents in formatting.
+
 `concord-sdk-twilio` is an unpublished Concord SDK slice for creating a text Message
 (`To`, `From`, `Body`, optional `MessageIntent` and `StatusCallback`) and fetching it
 by SID to inspect status and processing errors. It targets Twilio's `2010-04-01` REST paths. All tests

@@ -1,5 +1,9 @@
 # Snowflake SQL API SDK
 
+The declaration owns the provider error document: `error crate::error::ErrorDocument in crate::error::ServerErrorJson;`. Native prepared/decoded
+paths carry that document as `D` in `Prepared<T, D>` and `concord::Error<D>`; SDK status routing
+and validation remain in the policy. Concord withholds document contents in formatting.
+
 `concord-sdk-snowflake` is an unpublished, bounded SQL API **v2** slice built with
 `concord::api!`. It covers asynchronous submit, single status checks, bounded polling,
 independently indexed result partitions, and explicit remote cancellation. All HTTP

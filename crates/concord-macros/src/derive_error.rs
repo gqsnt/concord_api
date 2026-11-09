@@ -33,8 +33,20 @@ pub fn expand(item: &Item) -> syn::Result<TokenStream> {
     };
     let mut errors = Errors::default();
     let hook = errors.keep(enum_hook(&input.attrs)).flatten();
+    // A hook can itself be named like our formatter parameter. Its root must stay outside the
+    // shield; only the generated parameter changes spelling in that case.
+    let formatter = if hook.as_ref().is_some_and(|path| {
+        path.segments
+            .first()
+            .is_some_and(|s| s.ident == "__formatter")
+    }) {
+        Ident::new("__formatter_", Span::mixed_site())
+    } else {
+        formatter()
+    };
 
     let mut arms = Vec::new();
+    let mut display_bindings = vec![formatter.clone()];
     let mut froms = Vec::new();
     let mut causes = Vec::new();
     let mut sources: Vec<(String, &Ident)> = Vec::new();
@@ -58,7 +70,7 @@ pub fn expand(item: &Item) -> syn::Result<TokenStream> {
         };
         match (&hook, attrs.display) {
             (None, Some(lit)) => {
-                if let Some(arm) = errors.keep(display_arm(variant, &lit)) {
+                if let Some(arm) = errors.keep(display_arm(variant, &lit, &mut display_bindings)) {
                     arms.push(arm);
                 }
             }
@@ -119,7 +131,6 @@ pub fn expand(item: &Item) -> syn::Result<TokenStream> {
 
     let name = &input.ident;
     let (impl_generics, ty_generics, where_clause) = input.generics.split_for_impl();
-    let formatter = formatter();
     let body = match hook {
         Some(path) => {
             let args = quote!(self, #formatter);
@@ -138,43 +149,42 @@ pub fn expand(item: &Item) -> syn::Result<TokenStream> {
             }
         }
     });
-    // Mixed-site hygiene separates local bindings, but constants still resolve at the call site.
-    // Functions can be shadowed by bindings: these imports shield every generated local name.
-    let mut bindings = vec![
-        formatter.clone(),
-        Ident::new("__source", Span::mixed_site()),
-        Ident::new("cause", Span::mixed_site()),
-        Ident::new("value", Span::mixed_site()),
-        Ident::new("error", Span::mixed_site()),
-        Ident::new("failure", Span::mixed_site()),
-    ];
-    for variant in &input.variants {
-        for (index, field) in variant.fields.iter().enumerate() {
-            let key = field
-                .ident
-                .as_ref()
-                .map_or_else(|| format!("_{index}"), ToString::to_string);
-            let binding = alias(&key);
-            if !bindings.contains(&binding) {
-                bindings.push(binding);
-            }
-        }
-    }
-    Ok(quote! {
-        const _: () = {
-            #[allow(unused_imports)]
-            use ::core::convert::{#(identity as #bindings),*};
+    // Each shield encloses only the impl using those bindings. In particular a formatter hook
+    // must resolve in the author's scope, without the conversion/source binding imports.
+    let display = shield(
+        quote! {
             impl #impl_generics ::core::fmt::Display for #name #ty_generics #where_clause {
                 fn fmt(&self, #formatter: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
                     #body
                 }
             }
+        },
+        &display_bindings,
+    );
+    let error = shield(
+        quote! {
             impl #impl_generics ::core::error::Error for #name #ty_generics #where_clause {
                 #source
             }
-            #(#froms)*
+        },
+        &[
+            Ident::new("__source", Span::mixed_site()),
+            Ident::new("cause", Span::mixed_site()),
+        ],
+    );
+    Ok(quote! { #display #error #(#froms)* })
+}
+
+/// Constants can be interpreted as patterns even with mixed-site spans. A function import
+/// permits the generated binding to shadow it, inside the smallest impl that needs it.
+fn shield(body: TokenStream, bindings: &[Ident]) -> TokenStream {
+    quote! {
+        const _: () = {
+            #[allow(unused_imports)]
+            use ::core::convert::{#(identity as #bindings),*};
+            #body
         };
-    })
+    }
 }
 
 /// The `Display::fmt` formatter parameter; hygienic, so no field binding can shadow it.
@@ -185,7 +195,10 @@ fn formatter() -> Ident {
 /// The hygienic binding of a referenced field (`_0`, `status`); the format string reaches it
 /// through an explicit named argument, never by capture.
 fn alias(key: &str) -> Ident {
-    Ident::new(&format!("__field_{key}"), Span::mixed_site())
+    Ident::new(
+        &format!("__field_{}", key.strip_prefix("r#").unwrap_or(key)),
+        Span::mixed_site(),
+    )
 }
 
 /// Collects every authored mistake, so one build reports all of them.
@@ -287,7 +300,17 @@ impl VariantAttrs {
                     if input.peek(skip) {
                         return Ok(FromAttr::Skip(input.parse::<skip>()?.span));
                     }
-                    Ok(FromAttr::Provider(Box::new(input.parse::<Type>()?)))
+                    let ty = input.parse::<Type>()?;
+                    let typed_error = matches!(&ty, Type::Path(path)
+                        if path.qself.is_none() && path.path.segments.last().is_some_and(|s|
+                            s.ident == "Error" && matches!(&s.arguments,
+                                syn::PathArguments::AngleBracketed(args)
+                                if args.args.len() == 1 && matches!(args.args.first(), Some(syn::GenericArgument::Type(_))))));
+                    if !typed_error {
+                        return Err(syn::Error::new_spanned(ty,
+                            "expected `concord::Error<Document>`: this conversion splits the provider's error document; use `#[from(skip)]` to keep a custom conversion"));
+                    }
+                    Ok(FromAttr::Provider(Box::new(ty)))
                 })?;
                 if out.from.replace(from).is_some() {
                     return Err(syn::Error::new_spanned(
@@ -306,8 +329,8 @@ impl VariantAttrs {
     }
 }
 
-/// The variant's `source()` arm: its field marked `#[source]` (at most one; a syntactic `Box<T>`
-/// is the `T`, an `Option<T>` is a source when present).
+/// The variant's `source()` arm: its field marked `#[source]` (at most one; a syntactic
+/// `Box<T>`/`Arc<T>` is the `T`, an `Option<T>` is a source when present).
 fn source_arm(variant: &Variant) -> syn::Result<Option<TokenStream>> {
     let mut marked = None;
     for (index, field) in variant.fields.iter().enumerate() {
@@ -376,7 +399,11 @@ enum FieldRef {
 /// One `match` arm. A string that is exactly one field (`"{0}"`, `"{error}"`) delegates to that
 /// field's `Display` with the caller's formatter (flags, width and precision pass through); any
 /// other string is written with `write!`, each referenced field passed as a named argument.
-fn display_arm(variant: &Variant, lit: &LitStr) -> syn::Result<TokenStream> {
+fn display_arm(
+    variant: &Variant,
+    lit: &LitStr,
+    bindings: &mut Vec<Ident>,
+) -> syn::Result<TokenStream> {
     let text = lit.value();
     let (refs, rewritten) = scan(&text).map_err(|message| syn::Error::new(lit.span(), message))?;
     let ident = &variant.ident;
@@ -390,6 +417,12 @@ fn display_arm(variant: &Variant, lit: &LitStr) -> syn::Result<TokenStream> {
         };
         if !keys.contains(&key) {
             keys.push(key);
+        }
+    }
+    for key in &keys {
+        let binding = alias(key);
+        if !bindings.contains(&binding) {
+            bindings.push(binding);
         }
     }
     let used = |key: &str| keys.iter().any(|k| k == key);
@@ -458,7 +491,7 @@ fn display_arm(variant: &Variant, lit: &LitStr) -> syn::Result<TokenStream> {
         _ => {
             let rewritten = LitStr::new(&rewritten, lit.span());
             let args = keys.iter().map(|key| {
-                let name = Ident::new(key, lit.span());
+                let name = alias(key);
                 let alias = alias(key);
                 quote!(, #name = #alias)
             });
@@ -517,10 +550,10 @@ fn scan(text: &str) -> Result<(Vec<FieldRef>, String), String> {
         }
         if let Ok(index) = arg.parse::<usize>() {
             refs.push(FieldRef::Index(index));
-            out.push_str(&format!("{{_{index}{spec}}}"));
+            out.push_str(&format!("{{{}{spec}}}", alias(&format!("_{index}"))));
         } else {
             refs.push(FieldRef::Name(arg.to_owned()));
-            out.push_str(&format!("{{{arg}{spec}}}"));
+            out.push_str(&format!("{{{}{spec}}}", alias(arg)));
         }
         rest = &tail[end + 1..];
     }
@@ -528,7 +561,7 @@ fn scan(text: &str) -> Result<(Vec<FieldRef>, String), String> {
     Ok((refs, out))
 }
 
-/// The `From` source of a field: `T` for a syntactic `Box<T>` (built with `Box::new`), the field
+/// The `From` source: `T` for a syntactic `Box<T>` or `Arc<T>` (built with `new`), the field
 /// type otherwise.
 fn conversion_source(ty: &Type) -> (&Type, bool) {
     if let Type::Path(path) = ty
@@ -546,7 +579,7 @@ fn conversion_source(ty: &Type) -> (&Type, bool) {
                 .map(String::as_str)
                 .collect::<Vec<_>>()
                 .as_slice(),
-            ["Box"] | ["std" | "alloc", "boxed", "Box"]
+            ["Box" | "Arc"] | ["std" | "alloc", "boxed", "Box"] | ["std" | "alloc", "sync", "Arc"]
         );
         if boxed
             && let Some(last) = path.path.segments.last()
@@ -585,16 +618,19 @@ fn provider_impl(
         value
     };
     let rest = quote_spanned!(provider.span()=> <Self as ::core::convert::From<_>>::from(#error));
-    quote_spanned! {provider.span()=>
-        impl #impl_generics ::core::convert::From<#provider> for #name #ty_generics #where_clause {
-            fn from(#error: #provider) -> Self {
-                match #error.into_provider() {
-                    ::core::result::Result::Ok(#failure) => Self::#ident(#built),
-                    ::core::result::Result::Err(#error) => #rest,
+    shield(
+        quote_spanned! {provider.span()=>
+            impl #impl_generics ::core::convert::From<#provider> for #name #ty_generics #where_clause {
+                fn from(#error: #provider) -> Self {
+                    match #error.into_provider() {
+                        ::core::result::Result::Ok(#failure) => Self::#ident(#built),
+                        ::core::result::Result::Err(#error) => #rest,
+                    }
                 }
             }
-        }
-    }
+        },
+        &[error, failure],
+    )
 }
 
 fn from_impl(
@@ -613,11 +649,14 @@ fn from_impl(
     } else {
         quote!(#value)
     };
-    quote_spanned! {field.span()=>
-        impl #impl_generics ::core::convert::From<#source> for #name #ty_generics #where_clause {
-            fn from(#value: #source) -> Self {
-                Self::#ident(#built)
+    shield(
+        quote_spanned! {field.span()=>
+            impl #impl_generics ::core::convert::From<#source> for #name #ty_generics #where_clause {
+                fn from(#value: #source) -> Self {
+                    Self::#ident(#built)
+                }
             }
-        }
-    }
+        },
+        &[value],
+    )
 }

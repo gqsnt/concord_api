@@ -540,3 +540,131 @@ mod merged_policy {
         assert_eq!(request.method, "GET");
     }
 }
+
+#[tokio::test]
+async fn document_adapters_preserve_stages_heads_and_bounded_bytes() {
+    for (reply, limit, kind, expected) in [
+        (
+            Reply::text(409, "proxy"),
+            64,
+            ErrorKind::Metadata,
+            b"proxy".as_slice(),
+        ),
+        (
+            Reply::json(409, "bad json"),
+            64,
+            ErrorKind::Decode,
+            b"bad json".as_slice(),
+        ),
+        (Reply::json(409, ""), 64, ErrorKind::Decode, b"".as_slice()),
+        (
+            Reply::json(409, "0123456789"),
+            4,
+            ErrorKind::Limit,
+            b"0123".as_slice(),
+        ),
+    ] {
+        let (_server, api) = api(reply).await;
+        let received = api.item().prepare().unwrap().receive().await.unwrap();
+        let (meta, document) = received.failure(limit).await.into_document();
+        assert_eq!(meta.status().as_u16(), 409);
+        let error = document.unwrap_err();
+        assert_eq!(error.kind(), kind);
+        assert_eq!(error.head().unwrap().status().as_u16(), 409);
+        assert_eq!(error.operation().unwrap().name(), "Api.item");
+        assert_eq!(error.body_unredacted().unwrap().as_ref(), expected);
+        assert!(error.response().is_none());
+    }
+    let (_server, api) = api(Reply::json(409, r#"{"title":"typed"}"#)).await;
+    let received = api.item().prepare().unwrap().receive().await.unwrap();
+    let (meta, document) = received.failure(64).await.into_document();
+    assert_eq!(meta.status().as_u16(), 409);
+    assert_eq!(document.unwrap().title, "typed");
+}
+
+#[tokio::test]
+async fn empty_byte_documents_decode_only_when_adapted() {
+    static EMPTY_DECODED: AtomicUsize = AtomicUsize::new(0);
+    struct EmptyBytes;
+    impl Decode<Bytes> for EmptyBytes {
+        type Context = std::cell::Cell<u8>;
+        fn context(_: &ResponseHead<'_>) -> Result<Self::Context, CodecError> {
+            Ok(std::cell::Cell::new(0))
+        }
+        fn decode_body(context: Self::Context, body: Bytes) -> Result<Bytes, CodecError> {
+            assert_eq!(context.get(), 0);
+            EMPTY_DECODED.fetch_add(1, Ordering::SeqCst);
+            Ok(body)
+        }
+    }
+    fn send_sync<T: Send + Sync>() {}
+    send_sync::<concord::Error<Bytes>>();
+    send_sync::<concord::Failure<Bytes>>();
+    let server = Server::reply(Reply::new(409)).await;
+    let received = concord::Decoder::drain().receive(reqwest::get(server.url()).await.unwrap());
+    let failure = received.failure_as::<EmptyBytes, Bytes>(64).await;
+    assert!(matches!(failure.state(), Document::Empty));
+    assert_eq!(EMPTY_DECODED.load(Ordering::SeqCst), 0);
+    assert!(failure.into_document().1.unwrap().is_empty());
+    assert_eq!(EMPTY_DECODED.load(Ordering::SeqCst), 1);
+}
+
+#[tokio::test]
+async fn sdk_status_routing_keeps_success_handling_and_untyped_errors() {
+    let (_server, api) = api(Reply::json(200, "invalid")).await;
+    let received = api.item().prepare().unwrap().receive().await.unwrap();
+    let error: concord::Error = received.into_success().unwrap().decode().await.unwrap_err();
+    assert_eq!(error.kind(), ErrorKind::Decode);
+    assert_eq!(error.head().unwrap().status().as_u16(), 200);
+    assert_eq!(error.operation().unwrap().name(), "Api.item");
+    let (_server, api) = self::api(Reply::json(409, "unread")).await;
+    let received = api.item().prepare().unwrap().receive().await.unwrap();
+    let error = received.into_success().unwrap_err();
+    assert_eq!(error.kind(), ErrorKind::Status);
+    assert_eq!(
+        error.into_response().unwrap().text().await.unwrap(),
+        "unread"
+    );
+}
+
+#[tokio::test]
+async fn sdk_early_head_refusal_uses_the_declared_pair_and_keeps_the_response() {
+    let (_server, api) = api(Reply::text(409, "unread proxy")).await;
+    let received = api.item().prepare().unwrap().receive().await.unwrap();
+    let (meta, document) = received.error_document(64).await;
+    assert_eq!(meta.status().as_u16(), 409);
+    let error = document.unwrap_err();
+    assert_eq!(error.kind(), ErrorKind::Metadata);
+    assert_eq!(error.operation().unwrap().name(), "Api.item");
+    assert_eq!(
+        error.into_response().unwrap().text().await.unwrap(),
+        "unread proxy"
+    );
+}
+
+#[tokio::test]
+async fn native_error_adaptation_keeps_the_status_head_and_bytes() {
+    let (_server, api) = api(Reply::json(409, r#"{"title":"withheld"}"#)).await;
+    let error = api.item().send().await.unwrap_err();
+    let error: concord::Error<Fault> = error.widen();
+    let failure = error.provider().unwrap();
+    assert_eq!(failure.status().as_u16(), 409);
+    assert_eq!(failure.operation().unwrap().name(), "Api.item");
+    assert!(matches!(failure.state(), Document::Unrecognized(_)));
+    assert_eq!(failure.body().as_ref(), br#"{"title":"withheld"}"#);
+    assert!(!format!("{error} {error:?}").contains("withheld"));
+}
+
+#[cfg(feature = "jsonl")]
+#[tokio::test]
+async fn a_typed_received_response_can_be_opened_with_a_custom_reader() {
+    let (_server, api) = api(Reply::json(200, "{\"title\":\"one\"}\n{invalid")).await;
+    let received = api.item().prepare().unwrap().receive().await.unwrap();
+    let mut values = concord::jsonl::JsonValuesReader::default()
+        .open::<Problem>(received)
+        .unwrap();
+    assert_eq!(values.next().await.unwrap().unwrap().title, "one");
+    let error = values.next().await.unwrap().unwrap_err();
+    assert_eq!(error.operation(), Some("Api.item"));
+    assert!(values.next().await.is_none());
+}

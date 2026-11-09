@@ -1,9 +1,9 @@
 use crate::{
     CaptureReceived, CaptureRequest, ERROR_LIMIT, Error, GUARANTEE_WINDOW, HttpClass,
-    MethodsResponse, PaymentResponse, Problem, ProviderFailure, REQUEST_LIMIT, Reconciliation,
+    MethodsResponse, PaymentResponse, ProviderFailure, REQUEST_LIMIT, Reconciliation,
     ReconciliationReason as Reason,
 };
-use concord::{Endpoint, Json, Received, SendWith, field, reqwest};
+use concord::{Endpoint, Received, SendWith, field, reqwest};
 use concord_retry::{Decision, Policy, Replay, Report, Retry, StopReason};
 use std::{
     collections::BTreeMap,
@@ -241,7 +241,7 @@ fn check(entry: &Entry, window: Duration) -> Result<(), Error> {
     }
 }
 
-fn assurance_lost<T>(received: &Received<T>, key: &str) -> bool {
+fn assurance_lost<T>(received: &Received<T, crate::Problem>, key: &str) -> bool {
     match field::single(received.head().headers(), "idempotency-key") {
         Ok(Some(value)) => value.as_bytes() != key.as_bytes(),
         Ok(None) => received.status().is_success(),
@@ -249,7 +249,7 @@ fn assurance_lost<T>(received: &Received<T>, key: &str) -> bool {
     }
 }
 
-fn transient<T>(received: &Received<T>) -> Option<Duration> {
+fn transient<T>(received: &Received<T, crate::Problem>) -> Option<Duration> {
     // Missing, false, repeated and malformed transient-error never grant replay permission.
     if received.status().is_success()
         || field::single(received.head().headers(), "transient-error")
@@ -272,10 +272,10 @@ fn transient<T>(received: &Received<T>) -> Option<Duration> {
     .map(|delay| delay.unwrap_or_default())
 }
 
-impl<T: Send + Confirm> SendWith<T> for SendPolicy {
+impl<T: Send + Confirm> SendWith<T, crate::Problem> for SendPolicy {
     type Output = Result<Response<T>, Error>;
 
-    async fn send<E: Endpoint<T> + Send>(&self, endpoint: E) -> Self::Output {
+    async fn send<E: Endpoint<T, crate::Problem> + Send>(&self, endpoint: E) -> Self::Output {
         let prepared = endpoint.prepare()?;
         let request = prepared.request();
         let url = request.url();
@@ -392,7 +392,7 @@ impl<T: Send + Confirm> SendWith<T> for SendPolicy {
         }
         if !received.status().is_success() {
             let is_transient = transient(&received).is_some();
-            let (meta, document) = received.document::<Json, Problem>(ERROR_LIMIT).await;
+            let (meta, document) = received.failure(ERROR_LIMIT).await.into_document();
             let reason = document
                 .as_ref()
                 .ok()
@@ -422,15 +422,19 @@ impl<T: Send + Confirm> SendWith<T> for SendPolicy {
             }
             return Err(Error::Provider(failure));
         }
-        let (value, meta) = received.decode_with_meta().await.map_err(|cause| {
-            Error::Reconciliation(Box::new(Reconciliation {
-                reason: Reason::UncertainDelivery,
-                meta: None,
-                provider: None,
-                cause: Some(Box::new(cause)),
-                retry: Some(retry.clone()),
-            }))
-        })?;
+        let (value, meta) = received
+            .into_success()?
+            .decode_with_meta()
+            .await
+            .map_err(|cause| {
+                Error::Reconciliation(Box::new(Reconciliation {
+                    reason: Reason::UncertainDelivery,
+                    meta: None,
+                    provider: None,
+                    cause: Some(Box::new(cause)),
+                    retry: Some(retry.clone()),
+                }))
+            })?;
         if !value.confirms(&template) {
             // The key's provider record answers some other request; replaying it cannot submit
             // this one, so the guarantee is treated like a mismatched key echo.

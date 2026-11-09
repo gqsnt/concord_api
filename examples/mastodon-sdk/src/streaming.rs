@@ -145,10 +145,13 @@ impl fmt::Debug for StreamingHost {
 /// Why no streaming host is available.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[non_exhaustive]
+#[derive(concord::derive::Error)]
+#[display(with = display_discovery_error)]
 pub enum DiscoveryError {
     /// The instance document has no (or an empty) `configuration.urls.streaming`.
     NotAdvertised,
     /// The advertised value is not a `ws`, `wss`, `http` or `https` origin: the rule it broke.
+    #[from(skip)]
     Unsupported(&'static str),
     /// An `https` instance advertised a plaintext (`ws` or `http`) streaming host.
     Insecure,
@@ -156,22 +159,21 @@ pub enum DiscoveryError {
     OtherInstance,
 }
 
-impl fmt::Display for DiscoveryError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::NotAdvertised => f.write_str("the instance advertises no streaming URL"),
-            Self::Unsupported(rule) => write!(f, "the advertised streaming URL {rule}"),
-            Self::Insecure => {
-                f.write_str("an https instance advertised a plaintext streaming URL (refused)")
-            }
-            Self::OtherInstance => {
-                f.write_str("the streaming host belongs to another instance (nothing was sent)")
-            }
+fn display_discovery_error(
+    value: &DiscoveryError,
+    f: &mut std::fmt::Formatter<'_>,
+) -> std::fmt::Result {
+    match value {
+        DiscoveryError::NotAdvertised => f.write_str("the instance advertises no streaming URL"),
+        DiscoveryError::Unsupported(rule) => write!(f, "the advertised streaming URL {rule}"),
+        DiscoveryError::Insecure => {
+            f.write_str("an https instance advertised a plaintext streaming URL (refused)")
+        }
+        DiscoveryError::OtherInstance => {
+            f.write_str("the streaming host belongs to another instance (nothing was sent)")
         }
     }
 }
-
-impl std::error::Error for DiscoveryError {}
 
 /// One event of a public or hashtag stream (see the [module](self) for the mapping).
 #[derive(Clone, Debug)]

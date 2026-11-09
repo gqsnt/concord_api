@@ -43,7 +43,8 @@ impl Tally {
 
 /// Why a one-shot source could not supply its declared bytes. The transfer fails; its own error
 /// is withheld from `Display` and `Debug` (it may quote content).
-#[derive(Debug)]
+#[derive(Debug, concord::derive::Error)]
+#[display(with = display_source_failure)]
 pub(crate) enum SourceFailure {
     /// The source ended before the declared length.
     Shorter,
@@ -51,16 +52,15 @@ pub(crate) enum SourceFailure {
     Source,
 }
 
-impl fmt::Display for SourceFailure {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(match self {
-            Self::Shorter => "the upload source ended before its declared length",
-            Self::Source => "the upload source failed",
-        })
-    }
+fn display_source_failure(
+    value: &SourceFailure,
+    f: &mut std::fmt::Formatter<'_>,
+) -> std::fmt::Result {
+    f.write_str(match value {
+        SourceFailure::Shorter => "the upload source ended before its declared length",
+        SourceFailure::Source => "the upload source failed",
+    })
 }
-
-impl StdError for SourceFailure {}
 
 /// Adapts the caller's stream error type.
 struct Boxed<S>(Pin<Box<S>>);
@@ -749,7 +749,7 @@ impl Session {
         url: &UploadUrl,
         meta: &Meta,
         body: reqwest::Body,
-    ) -> Result<Prepared<FileVersionWire>, Error> {
+    ) -> Result<Prepared<FileVersionWire, crate::WireErrorDocument>, Error> {
         let api = crate::wire::B2Wire::new(
             self.wire.http().clone(),
             crate::wire::B2WireConfig {
@@ -806,7 +806,12 @@ impl Session {
             };
             return (evidence, Err(provider_error(received).await));
         }
-        match received.decode_with_meta().await {
+        match received
+            .into_success()
+            .expect("success status checked")
+            .decode_with_meta()
+            .await
+        {
             Ok((wire, head)) => match stored(wire, bucket, meta) {
                 Ok(file) => (Evidence::Stored, Ok(file)),
                 Err(violation) => (

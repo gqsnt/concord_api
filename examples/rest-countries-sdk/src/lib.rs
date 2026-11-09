@@ -58,6 +58,7 @@ concord::api! {
         #[sensitive] header(AUTHORIZATION) authorization: HeaderValue,
     ) {
         base "https://api.restcountries.com";
+        error crate::error::ErrorDocument in concord::Json;
         path "countries/v5";
         response Json; // every answer is JSON; no endpoint has a body
         limit RESPONSE_BODY_LIMIT;
@@ -141,19 +142,19 @@ impl RestCountries {
 #[derive(Debug, Default)]
 pub struct SendPolicy;
 
-impl SendWith<CountryPage> for SendPolicy {
+impl SendWith<CountryPage, crate::error::ErrorDocument> for SendPolicy {
     type Output = Result<CountryPage, Error>;
 
-    async fn send<E: Endpoint<CountryPage> + Send>(&self, endpoint: E) -> Self::Output {
-        let received = endpoint.prepare()?.receive().await?;
-        if !received.status().is_success() {
-            // The status is authoritative even when the document is absent or unreadable.
-            let (meta, document) = received
-                .document::<Json, ErrorDocument>(ERROR_BODY_LIMIT)
-                .await;
-            let document = document.map_err(ErrorBodyError::from);
-            return Err(Error::Provider(Box::new(ProviderError { meta, document })));
-        }
+    async fn send<E: Endpoint<CountryPage, crate::error::ErrorDocument> + Send>(
+        &self,
+        endpoint: E,
+    ) -> Self::Output {
+        let received = endpoint
+            .prepare()?
+            .error_body_limit(crate::ERROR_BODY_LIMIT)
+            .receive()
+            .await?;
+
         Ok(received.decode().await?)
     }
 }

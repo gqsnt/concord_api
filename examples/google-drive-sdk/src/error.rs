@@ -1,7 +1,7 @@
 use std::fmt;
 
 use concord::reqwest::StatusCode;
-use concord::{IgnoreContentType, Json, Operation, Received};
+use concord::{Operation, Received};
 use serde::Deserialize;
 
 /// Status, version, response headers (Location, Range, Retry-After, request identifiers) and the
@@ -153,18 +153,12 @@ impl Error {
     }
 
     pub(crate) async fn provider_response<T>(
-        received: Received<T>,
+        received: Received<T, crate::Document>,
         limit: usize,
         session: bool,
     ) -> Self {
-        #[derive(Deserialize)]
-        struct Document {
-            error: ProviderError,
-        }
         // Drive error documents are decoded regardless of the advertised media type.
-        let (meta, document) = received
-            .document::<IgnoreContentType<Json>, Document>(limit)
-            .await;
+        let (meta, document) = received.failure(limit).await.into_document();
         let kind = if session && meta.status() == StatusCode::NOT_FOUND {
             ErrorKind::SessionExpired
         } else {
@@ -218,4 +212,11 @@ impl std::error::Error for Error {
             .as_ref()
             .map(|source| source as &(dyn std::error::Error + 'static))
     }
+}
+
+/// Drive HTTP error envelope. Explicit field access is unredacted.
+#[derive(Deserialize)]
+pub struct Document {
+    /// The provider error.
+    pub error: ProviderError,
 }

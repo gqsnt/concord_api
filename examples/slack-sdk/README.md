@@ -1,5 +1,9 @@
 # Slack Web API SDK slice
 
+The declaration owns the provider error document: `error crate::wire::Envelope<serde_json::Map<String, serde_json::Value>> in concord::IgnoreContentType<concord::Json>;`. Native prepared/decoded
+paths carry that document as `D` in `Prepared<T, D>` and `concord::Error<D>`; SDK status routing
+and validation remain in the policy. Concord withholds document contents in formatting.
+
 `concord-sdk-slack` covers GET `users.list` (one page, lazy pages, items, and a standard Rust
 item stream) and GET `conversations.info` (channel and direct-message shapes). It handles bearer
 authentication, Slack's `ok`/`error` envelope, response metadata, and HTTP 429 with `Retry-After`.

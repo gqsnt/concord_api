@@ -135,9 +135,11 @@ pub enum ErrorClass {
 }
 
 /// SDK error. Rendering omits tokens, links, response header values and provider messages.
-#[derive(Debug)]
+#[derive(Debug, concord::derive::Error)]
+#[display(with = display_graph_error)]
 pub enum GraphError {
     /// Invalid configuration.
+    #[from(skip)]
     Configuration(ConfigurationProblem),
     /// A build, transport, JSON metadata, decode or response-size failure.
     Concord {
@@ -237,25 +239,24 @@ impl From<concord::Error> for GraphError {
         Self::Concord { error, meta }
     }
 }
-impl fmt::Display for GraphError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::Configuration(p) => write!(f, "Graph configuration: {p:?}"),
-            Self::Concord { error, .. } => fmt::Display::fmt(error, f),
-            Self::Provider { meta, .. } => write!(
-                f,
-                "Graph HTTP {} ({:?})",
-                meta.status().as_u16(),
-                self.class()
-            ),
-            Self::Link { problem, .. } => write!(f, "Graph continuation: {problem:?}"),
-            Self::Protocol { problem, .. } => write!(f, "Graph response: {problem:?}"),
-        }
+fn display_graph_error(value: &GraphError, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    match value {
+        GraphError::Configuration(p) => write!(f, "Graph configuration: {p:?}"),
+        GraphError::Concord { error, .. } => fmt::Display::fmt(error, f),
+        GraphError::Provider { meta, .. } => write!(
+            f,
+            "Graph HTTP {} ({:?})",
+            meta.status().as_u16(),
+            value.class()
+        ),
+        GraphError::Link { problem, .. } => write!(f, "Graph continuation: {problem:?}"),
+        GraphError::Protocol { problem, .. } => write!(f, "Graph response: {problem:?}"),
     }
 }
-impl std::error::Error for GraphError {}
 
 #[derive(Deserialize)]
-pub(crate) struct ErrorEnvelope {
+/// Declared provider error document; its contents are explicitly accessible.
+pub struct ErrorEnvelope {
+    /// The provider diagnostic, accessible explicitly.
     pub error: ProviderError,
 }

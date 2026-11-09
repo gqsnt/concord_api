@@ -20,3 +20,6 @@ pub use model::{
     UserField,
 };
 pub use paging::{GraphPage, GraphPages, Listing, PageMeta};
+
+/// The provider error document used by declared request handling.
+pub use error::ErrorEnvelope;

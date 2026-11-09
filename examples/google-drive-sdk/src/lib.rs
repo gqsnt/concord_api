@@ -16,3 +16,6 @@ pub use model::{
     ListOptions, NewFile, PageToken, StartPageToken,
 };
 pub use upload::{CHUNK_ALIGNMENT, UploadCheckpoint, UploadSession, UploadStatus};
+
+/// The provider error document used by declared request handling.
+pub use error::Document;

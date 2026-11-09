@@ -38,8 +38,6 @@
 //! A [`QueryResume`] is bound to its org, API version and statement: resuming it against another
 //! is refused ([`ExtractionError::ResumeMismatch`]).
 
-use std::fmt;
-
 use concord_example_salesforce_sdk::ids::{
     ApiVersion, BatchSize, FieldList, FieldName, QueryLocator, RecordId, SObjectName,
 };
@@ -220,8 +218,11 @@ impl Completion {
 /// A failure before any section ran.
 #[derive(Debug)]
 #[non_exhaustive]
+#[derive(concord::derive::Error)]
+#[display(with = display_extraction_error)]
 pub enum ExtractionError {
     /// A describe call failed.
+    #[from(skip)]
     Describe(SfError),
     /// A required field of the selected schema is missing from the org.
     MissingRequiredField {
@@ -242,25 +243,24 @@ pub enum ExtractionError {
     },
 }
 
-impl fmt::Display for ExtractionError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            ExtractionError::Describe(e) => write!(f, "describe failed: {e}"),
-            ExtractionError::MissingRequiredField { object, field } => {
-                write!(f, "{object} has no field {field}")
-            }
-            ExtractionError::FilterFieldMissing { field } => {
-                write!(f, "a filter needs the missing field {field}")
-            }
-            ExtractionError::ResumeMismatch { section } => write!(
-                f,
-                "the {section} resume point belongs to another org, version or statement"
-            ),
+fn display_extraction_error(
+    value: &ExtractionError,
+    f: &mut std::fmt::Formatter<'_>,
+) -> std::fmt::Result {
+    match value {
+        ExtractionError::Describe(e) => write!(f, "describe failed: {e}"),
+        ExtractionError::MissingRequiredField { object, field } => {
+            write!(f, "{object} has no field {field}")
         }
+        ExtractionError::FilterFieldMissing { field } => {
+            write!(f, "a filter needs the missing field {field}")
+        }
+        ExtractionError::ResumeMismatch { section } => write!(
+            f,
+            "the {section} resume point belongs to another org, version or statement"
+        ),
     }
 }
-
-impl std::error::Error for ExtractionError {}
 
 const ACCOUNT_REQUIRED: [&str; 2] = ["Id", "Name"];
 const ACCOUNT_OPTIONAL: [&str; 3] = ["Industry", "AnnualRevenue", "Customer_Tier__c"];

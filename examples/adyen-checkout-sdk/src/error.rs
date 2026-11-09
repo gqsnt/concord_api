@@ -120,9 +120,11 @@ pub struct Reconciliation {
 }
 
 /// SDK errors. Debug and Display withhold credentials, keys, request and response bodies.
-#[derive(Debug)]
+#[derive(Debug, concord::derive::Error)]
+#[display(with = display_error)]
 pub enum Error {
     /// Invalid local input; no request was dispatched.
+    #[from(skip)]
     InvalidInput(&'static str),
     /// Ledger capacity reached. Entries are never silently evicted to permit unsafe reuse.
     LedgerFull,
@@ -131,8 +133,10 @@ pub enum Error {
     /// Concord preparation failure; no I/O occurred.
     Concord(Box<concord::Error>),
     /// A provider HTTP error with authoritative metadata.
+    #[from(skip)]
     Provider(Box<ProviderFailure>),
     /// Reconcile using the original key/reference; never silently issue a fresh payment.
+    #[from(skip)]
     Reconciliation(Box<Reconciliation>),
 }
 
@@ -156,29 +160,17 @@ impl Error {
     }
 }
 
-impl From<concord::Error> for Error {
-    fn from(e: concord::Error) -> Self {
-        Self::Concord(Box::new(e))
-    }
-}
-
-impl fmt::Display for Error {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::InvalidInput(label) => f.write_str(label),
-            Self::LedgerFull => {
-                f.write_str("idempotency ledger is full; preserve it and reconcile")
-            }
-            Self::PolicyUnavailable => f.write_str("idempotency policy is unavailable"),
-            Self::Concord(_) => f.write_str("request preparation failed"),
-            Self::Provider(e) => {
-                write!(f, "Adyen HTTP {} ({:?})", e.meta.status().as_u16(), e.class)
-            }
-            Self::Reconciliation(e) => {
-                write!(f, "payment requires reconciliation ({:?})", e.reason)
-            }
+fn display_error(value: &Error, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    match value {
+        Error::InvalidInput(label) => f.write_str(label),
+        Error::LedgerFull => f.write_str("idempotency ledger is full; preserve it and reconcile"),
+        Error::PolicyUnavailable => f.write_str("idempotency policy is unavailable"),
+        Error::Concord(_) => f.write_str("request preparation failed"),
+        Error::Provider(e) => {
+            write!(f, "Adyen HTTP {} ({:?})", e.meta.status().as_u16(), e.class)
+        }
+        Error::Reconciliation(e) => {
+            write!(f, "payment requires reconciliation ({:?})", e.reason)
         }
     }
 }
-
-impl std::error::Error for Error {}

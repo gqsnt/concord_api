@@ -46,17 +46,19 @@ pub struct Response<T> {
 #[derive(Default)]
 pub struct ResponsePolicy;
 
-impl<T: Send> SendWith<T> for ResponsePolicy {
+impl<T: Send> SendWith<T, crate::error::ErrorDocument> for ResponsePolicy {
     type Output = Result<Response<T>, Error>;
 
-    async fn send<E: Endpoint<T> + Send>(&self, endpoint: E) -> Self::Output {
-        let received = endpoint.prepare()?.receive().await?;
-        if !received.status().is_success() {
-            let (meta, document) = received
-                .document::<Json, ErrorDocument>(ERROR_BODY_LIMIT)
-                .await;
-            return Err(Error::Provider(Box::new(ProviderError { meta, document })));
-        }
+    async fn send<E: Endpoint<T, crate::error::ErrorDocument> + Send>(
+        &self,
+        endpoint: E,
+    ) -> Self::Output {
+        let received = endpoint
+            .prepare()?
+            .error_body_limit(crate::ERROR_BODY_LIMIT)
+            .receive()
+            .await?;
+
         let (value, meta) = received.decode_with_meta().await?;
         Ok(Response { value, meta })
     }
@@ -69,6 +71,7 @@ concord::api! {
         #[sensitive] header(AUTHORIZATION) authorization: reqwest::header::HeaderValue,
     ) {
         base "https://api.intercom.io";
+        error crate::error::ErrorDocument in concord::Json;
         headers { "intercom-version" = "2.17"; }
         format Json;
         limit SUCCESS_BODY_LIMIT;

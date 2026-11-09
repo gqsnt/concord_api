@@ -140,9 +140,11 @@ impl ReconcileRequest {
 }
 
 /// Why a page of a traversal failed.
-#[derive(concord::Debug)]
+#[derive(concord::Debug, concord::derive::Error)]
+#[display(with = display_sync_failure)]
 pub enum SyncFailure {
     /// The adapter's failure (request, no connection, inconsistent `pageInfo`).
+    #[from(skip)]
     Page(PageError),
     /// [`PartialData::Reject`] refused a page that had data and errors.
     PartialRejected {
@@ -184,18 +186,14 @@ impl SyncFailure {
     }
 }
 
-impl fmt::Display for SyncFailure {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::Page(e) => fmt::Display::fmt(e, f),
-            Self::PartialRejected { errors, .. } => {
-                write!(f, "page refused: data with {} error(s)", errors.len())
-            }
+fn display_sync_failure(value: &SyncFailure, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    match value {
+        SyncFailure::Page(e) => fmt::Display::fmt(e, f),
+        SyncFailure::PartialRejected { errors, .. } => {
+            write!(f, "page refused: data with {} error(s)", errors.len())
         }
     }
 }
-
-impl std::error::Error for SyncFailure {}
 
 /// How one traversal ended.
 ///

@@ -168,7 +168,7 @@ struct Observed {
 }
 
 fn classify<T>(
-    outcome: &Result<Received<T>, concord::Error>,
+    outcome: &Result<Received<T, crate::ApiError>, concord::Error>,
     generation: &Generation,
     seen: &mut Observed,
     cache: &TokenCache<(), TokenError>,
@@ -194,10 +194,10 @@ fn classify<T>(
     }
 }
 
-impl<T: Send + 'static> SendWith<T> for Session {
+impl<T: Send + 'static> SendWith<T, crate::ApiError> for Session {
     type Output = Result<T, Error>;
 
-    async fn send<E: Endpoint<T> + Send>(&self, endpoint: E) -> Self::Output {
+    async fn send<E: Endpoint<T, crate::ApiError> + Send>(&self, endpoint: E) -> Self::Output {
         let operation = PayPalOperation::from_operation(E::operation())
             .ok_or(Error::Invalid("operation is not declared by this SDK"))?;
         let Class { accepts_request_id } = Class::of(operation);
@@ -257,7 +257,7 @@ impl<T: Send + 'static> SendWith<T> for Session {
                 None => Err(Error::Deadline),
                 Some(Err(e)) => Err(Error::Concord(e)),
                 Some(Ok(received)) if received.status().is_success() => {
-                    Ok(received.decode().await?)
+                    Ok(received.into_success()?.decode().await?)
                 }
                 Some(Ok(received)) => Err(Error::Http(Box::new(
                     HttpError::read(received, name, attempts).await,
@@ -288,6 +288,7 @@ impl<T: Send + 'static> SendWith<T> for Session {
             None => Err(Error::Deadline),
             Some(Err(e)) => Err(uncertain(UncertainCause::NoResponse(e))),
             Some(Ok(received)) if received.status().is_success() => received
+                .into_success()?
                 .decode()
                 .await
                 .map_err(|e| uncertain(UncertainCause::UnreadableSuccess(e))),

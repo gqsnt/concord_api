@@ -54,7 +54,7 @@
 //!
 //! ```no_run
 //! # use concord_example_kubernetes_sdk::{KubeContext, ResourceVersionMatch};
-//! # async fn run(kube: KubeContext) -> Result<(), concord::Error> {
+//! # async fn run(kube: KubeContext) -> Result<(), concord::Error<concord_example_kubernetes_sdk::Status>> {
 //! let mut events = kube.core().watch_pods()
 //!     .set_send_initial_events(true)
 //!     .set_resource_version_match(ResourceVersionMatch::NotOlderThan)
@@ -66,7 +66,7 @@
 //! [`WatchOperation::with_resource_version_match`] before calling [`open`].
 //!
 //! `send()` fails with Concord's error: a non-2xx answer is `ErrorKind::Status` holding the
-//! unread response, which [`KubeError::from_concord`](crate::KubeError::from_concord) reads into
+//! bounded typed document, which [`KubeError::from_concord`](crate::KubeError::from_concord) exposes as
 //! [`ApiError`] (`410`: [`ApiError::is_expired`]); a 2xx head the reader refuses (not JSON) is
 //! `ErrorKind::Metadata`, the response kept unread (`concord::Error::into_response`). Every read
 //! error of the stream names the declared endpoint (`ReadError::operation`), and
@@ -86,7 +86,6 @@
 
 use serde::Deserialize;
 use std::collections::BTreeMap;
-use std::fmt;
 
 use concord::jsonl::{JsonValues, JsonValuesReader};
 use concord::reqwest;
@@ -224,7 +223,9 @@ pub trait WatchOperation: WatchOptions + Clone + Send + Sync + 'static {
     }
     /// The generated `prepare()`: the request with its declared stream handling (`send().await?` on
     /// the result returns the [`WatchStream`]).
-    fn prepare_watch(self) -> Result<concord::Prepared<WatchStream<Self::Item>>, concord::Error>;
+    fn prepare_watch(
+        self,
+    ) -> Result<concord::Prepared<WatchStream<Self::Item>, crate::model::Status>, concord::Error>;
 }
 
 macro_rules! watch_operation {
@@ -233,7 +234,7 @@ macro_rules! watch_operation {
             type Item = $item;
             fn prepare_watch(
                 self,
-            ) -> Result<concord::Prepared<WatchStream<Self::Item>>, concord::Error> {
+            ) -> Result<concord::Prepared<WatchStream<Self::Item>, crate::model::Status>, concord::Error> {
                 self.prepare()
             }
         }
@@ -252,28 +253,22 @@ watch_operation! {
 /// Why [`open`] could not open a watch: the complete classification (no response, non-2xx,
 /// refused head), so callers can match it exhaustively. (The generated `send()` reports the same
 /// cases as Concord's `Transport` / `Status` / `Metadata` errors.)
-#[derive(Debug)]
+#[derive(Debug, concord::derive::Error)]
 pub enum WatchOpenError {
     /// The request was not built, or no response arrived (Concord's error, redacted).
+    #[display("{0}")]
+    #[from(skip)]
     Request(concord::Error),
     /// The server answered non-2xx; `410` ([`ApiError::is_expired`]) means the start resource
     /// version is older than the server's history: list again.
+    #[display("{0}")]
+    #[from(skip)]
     Api(ApiError),
     /// The 2xx response's head was refused by the decoder's media policy (kept unread).
+    #[display("{0}")]
+    #[from(skip)]
     Refused(OpenError),
 }
-
-impl fmt::Display for WatchOpenError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::Request(error) => error.fmt(f),
-            Self::Api(error) => error.fmt(f),
-            Self::Refused(error) => error.fmt(f),
-        }
-    }
-}
-
-impl std::error::Error for WatchOpenError {}
 
 /// One open watch connection: typed events decoded incrementally from the response body. It is
 /// the success value of a watch endpoint's generated `send()` and of [`open`].

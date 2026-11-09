@@ -136,17 +136,24 @@ impl DriveClient {
         })
     }
 
-    pub(crate) async fn receive<T>(&self, prepared: Prepared<T>) -> Result<Received<T>, Error> {
+    pub(crate) async fn receive<T>(
+        &self,
+        prepared: Prepared<T, crate::Document>,
+    ) -> Result<Received<T, crate::Document>, Error> {
         Ok(prepared.receive().await?)
     }
 
-    pub(crate) async fn finish<T>(&self, received: Received<T>) -> Result<Response<T>, Error> {
+    pub(crate) async fn finish<T>(
+        &self,
+        received: Received<T, crate::Document>,
+    ) -> Result<Response<T>, Error> {
         if !received.status().is_success() {
             return Err(
                 Error::provider_response(received, self.config.max_error_bytes, false).await,
             );
         }
         let (value, meta) = received
+            .into_success()?
             .decode_limited_with_meta(self.config.max_response_bytes)
             .await?;
         Ok(Response { value, meta })

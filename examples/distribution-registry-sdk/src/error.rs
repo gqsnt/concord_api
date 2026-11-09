@@ -153,6 +153,8 @@ impl From<concord::Error> for RegistryError {
 /// An input the SDK refused before sending anything.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[non_exhaustive]
+#[derive(concord::derive::Error)]
+#[display(with = display_input_error)]
 pub enum InputError {
     /// Not a repository name (`[a-z0-9]+(?:[._-][a-z0-9]+)*` components joined by `/`, < 256).
     RepositoryName,
@@ -191,30 +193,26 @@ pub enum InputError {
     ReaderEnded,
 }
 
-impl fmt::Display for InputError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(match self {
-            Self::RepositoryName => "not a repository name",
-            Self::Tag => "not a tag",
-            Self::Digest => "not a content digest",
-            Self::PageSize => "a page size must be at least 1",
-            Self::RegistryUrl => "the registry URL must be http(s) with a host, without user information, query or fragment",
-            Self::RealmUrl => "a trusted realm must be an http(s) URL with a host",
-            Self::Credentials => "the Basic credentials cannot be encoded",
-            Self::NoMediaType => "at least one manifest media type must be accepted",
-            Self::Manifest => "the bytes are not an image manifest of the declared media type",
-            Self::ReferenceDigest => "the digest reference does not match the manifest bytes",
-            Self::EmptyChunk => "a chunk must not be empty",
-            Self::OneByteFirstChunk => "a first chunk of one byte cannot be acknowledged unambiguously",
-            Self::ChunkSize => "a chunk size must be at least 2",
-            Self::StatusRequired => "the upload state is uncertain: query its status first",
-            Self::UploadFinished => "the upload is already complete",
-            Self::ReaderEnded => "the blob reader already ended",
+fn display_input_error(value: &InputError, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    f.write_str(match value {
+            InputError::RepositoryName => "not a repository name",
+            InputError::Tag => "not a tag",
+            InputError::Digest => "not a content digest",
+            InputError::PageSize => "a page size must be at least 1",
+            InputError::RegistryUrl => "the registry URL must be http(s) with a host, without user information, query or fragment",
+            InputError::RealmUrl => "a trusted realm must be an http(s) URL with a host",
+            InputError::Credentials => "the Basic credentials cannot be encoded",
+            InputError::NoMediaType => "at least one manifest media type must be accepted",
+            InputError::Manifest => "the bytes are not an image manifest of the declared media type",
+            InputError::ReferenceDigest => "the digest reference does not match the manifest bytes",
+            InputError::EmptyChunk => "a chunk must not be empty",
+            InputError::OneByteFirstChunk => "a first chunk of one byte cannot be acknowledged unambiguously",
+            InputError::ChunkSize => "a chunk size must be at least 2",
+            InputError::StatusRequired => "the upload state is uncertain: query its status first",
+            InputError::UploadFinished => "the upload is already complete",
+            InputError::ReaderEnded => "the blob reader already ended",
         })
-    }
 }
-
-impl std::error::Error for InputError {}
 
 /// A non-2xx answer of the registry, with its bounded document and bytes. `Debug` withholds the
 /// document and body (the failure's own `Debug`), even when the model implements `Debug`.

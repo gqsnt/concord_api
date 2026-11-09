@@ -1,15 +1,10 @@
 error[E0277]: the send policy `Policy` does not send a `()` output
-  --> tests/ui_json/error_document_policy_mismatch.rs:16:1
+  --> tests/ui_json/error_document_policy_mismatch.rs:20:14
    |
-16 | / concord::api! {
-17 | |     pub client Api {
-18 | |         base "http://x.test";
-19 | |         format Json;
-...  |
-24 | | }
-   | |_^ named by the client's `send` statement; it needs `Policy: SendWith<(), Problem>`
+20 |         send Policy;
+   |              ^^^^^^ named by the client's `send` statement; it needs `Policy: SendWith<(), Problem>`
    |
-   = note: a send policy implements `concord::SendWith<T, D>` for every output `T` its endpoints declare, `D` being their error document (`error D in F;`, `()` without one): usually generically, `impl<T: Send> SendWith<T> for Policy` or `impl<T: Send> SendWith<T, D> for Policy`
+   = note: implement `impl<T: Send> concord::SendWith<T, Problem> for Policy` with `E: concord::Endpoint<T, Problem> + Send`; the second parameter is the declared error document, or `()` without one
 help: the trait `SendWith<(), Problem>` is not implemented for `Policy`
       but trait `SendWith<(), ()>` is implemented for it
   --> tests/ui_json/error_document_policy_mismatch.rs:10:1
@@ -17,28 +12,6 @@ help: the trait `SendWith<(), Problem>` is not implemented for `Policy`
 10 | impl<T: Send> SendWith<T> for Policy {
    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
    = help: for that trait implementation, expected `()`, found `Problem`
-   = note: this error originates in the macro `concord::api` (in Nightly builds, run with -Z macro-backtrace for more info)
-
-error[E0277]: the send policy `Policy` does not send a `()` output
-  --> tests/ui_json/error_document_policy_mismatch.rs:16:1
-   |
-16 | / concord::api! {
-17 | |     pub client Api {
-18 | |         base "http://x.test";
-19 | |         format Json;
-...  |
-24 | | }
-   | |_^ named by the client's `send` statement; it needs `Policy: SendWith<(), Problem>`
-   |
-   = note: a send policy implements `concord::SendWith<T, D>` for every output `T` its endpoints declare, `D` being their error document (`error D in F;`, `()` without one): usually generically, `impl<T: Send> SendWith<T> for Policy` or `impl<T: Send> SendWith<T, D> for Policy`
-help: the trait `SendWith<(), Problem>` is not implemented for `Policy`
-      but trait `SendWith<(), ()>` is implemented for it
-  --> tests/ui_json/error_document_policy_mismatch.rs:10:1
-   |
-10 | impl<T: Send> SendWith<T> for Policy {
-   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-   = help: for that trait implementation, expected `()`, found `Problem`
-   = note: this error originates in the macro `concord::api` (in Nightly builds, run with -Z macro-backtrace for more info)
 
 error[E0277]: the send policy `Policy` does not send a `()` output
   --> tests/ui_json/error_document_policy_mismatch.rs:20:14
@@ -46,7 +19,7 @@ error[E0277]: the send policy `Policy` does not send a `()` output
 20 |         send Policy;
    |              ^^^^^^ named by the client's `send` statement; it needs `Policy: SendWith<(), Problem>`
    |
-   = note: a send policy implements `concord::SendWith<T, D>` for every output `T` its endpoints declare, `D` being their error document (`error D in F;`, `()` without one): usually generically, `impl<T: Send> SendWith<T> for Policy` or `impl<T: Send> SendWith<T, D> for Policy`
+   = note: implement `impl<T: Send> concord::SendWith<T, Problem> for Policy` with `E: concord::Endpoint<T, Problem> + Send`; the second parameter is the declared error document, or `()` without one
 help: the trait `SendWith<(), Problem>` is not implemented for `Policy`
       but trait `SendWith<(), ()>` is implemented for it
   --> tests/ui_json/error_document_policy_mismatch.rs:10:1
@@ -54,3 +27,4 @@ help: the trait `SendWith<(), Problem>` is not implemented for `Policy`
 10 | impl<T: Send> SendWith<T> for Policy {
    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
    = help: for that trait implementation, expected `()`, found `Problem`
+   = note: this error originates in the macro `$crate::__macro::api` which comes from the expansion of the macro `concord::api` (in Nightly builds, run with -Z macro-backtrace for more info)

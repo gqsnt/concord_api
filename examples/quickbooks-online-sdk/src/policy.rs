@@ -26,10 +26,10 @@ use crate::{
     UncertainCause, UncertainWrite,
 };
 
-impl<T: Send + 'static> SendWith<T> for Connection {
+impl<T: Send + 'static> SendWith<T, crate::FaultResponse> for Connection {
     type Output = Result<T, Error>;
 
-    async fn send<E: Endpoint<T> + Send>(&self, endpoint: E) -> Self::Output {
+    async fn send<E: Endpoint<T, crate::FaultResponse> + Send>(&self, endpoint: E) -> Self::Output {
         let operation = E::operation();
         let (client, mut request, decoder) = endpoint.prepare()?.into_parts();
         // The declared base comes from this connection. Keep the official-host selection
@@ -65,7 +65,7 @@ impl Connection {
         &self,
         client: &reqwest::Client,
         request: reqwest::Request,
-        decoder: Decoder<T>,
+        decoder: Decoder<T, crate::FaultResponse>,
     ) -> Result<T, Error> {
         let again = request.try_clone();
         let used = self.access_token(client).await?;
@@ -91,7 +91,7 @@ impl Connection {
         &self,
         client: &reqwest::Client,
         request: reqwest::Request,
-        decoder: Decoder<T>,
+        decoder: Decoder<T, crate::FaultResponse>,
         operation: &'static str,
     ) -> Result<T, Error> {
         // The policy sees the built request only: the declared `requestid` is read back from it.
@@ -127,7 +127,7 @@ impl Connection {
                 ProviderError::read(received).await,
             )));
         }
-        match received.decode().await {
+        match received.into_success()?.decode().await {
             Ok(value) => Ok(value),
             Err(e) => match fault_in(&e) {
                 Some(provider) => Err(Error::Provider(Box::new(provider))),
@@ -136,7 +136,7 @@ impl Connection {
         }
     }
 
-    async fn rejected<T>(&self, received: Received<T>) -> Error {
+    async fn rejected<T>(&self, received: Received<T, crate::FaultResponse>) -> Error {
         let response = ProviderError::read(received).await;
         Error::Authorization(Box::new(AuthorizationError::access_rejected(
             self.realm().clone(),
@@ -149,9 +149,9 @@ impl Connection {
 async fn execute<T>(
     client: &reqwest::Client,
     mut request: reqwest::Request,
-    decoder: Decoder<T>,
+    decoder: Decoder<T, crate::FaultResponse>,
     used: &Snapshot,
-) -> Result<Received<T>, concord::Error> {
+) -> Result<Received<T, crate::FaultResponse>, concord::Error> {
     request
         .headers_mut()
         .insert(AUTHORIZATION, used.header().clone());
@@ -159,16 +159,20 @@ async fn execute<T>(
 }
 
 /// The declared handling of a read's final response.
-async fn finish<T>(received: Received<T>) -> Result<T, Error> {
+async fn finish<T>(received: Received<T, crate::FaultResponse>) -> Result<T, Error> {
     if !received.status().is_success() {
         return Err(Error::Provider(Box::new(
             ProviderError::read(received).await,
         )));
     }
-    received.decode().await.map_err(|e| match fault_in(&e) {
-        Some(provider) => Error::Provider(Box::new(provider)),
-        None => Error::Concord(e),
-    })
+    received
+        .into_success()?
+        .decode()
+        .await
+        .map_err(|e| match fault_in(&e) {
+            Some(provider) => Error::Provider(Box::new(provider)),
+            None => Error::Concord(e),
+        })
 }
 
 /// The `Fault` that [`QboJson`](crate::QboJson) found in a 2xx body, with that response's head.
