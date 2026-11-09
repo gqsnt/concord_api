@@ -208,7 +208,9 @@
 //! **Not covered:** the native `reqwest::Request`, `Url` and `Response` `Debug` output (it prints
 //! full URLs), reqwest errors from requests you execute yourself, redirects (reqwest forwards
 //! custom headers and a `Referer` with the query), other crates' tracing (reqwest's stack logs the
-//! host at `DEBUG`/`TRACE`), middleware, proxies, server logs and the base URL itself.
+//! host at `DEBUG`/`TRACE`), middleware, proxies, server logs and an unmarked base URL in explicit
+//! Prepared formatting. Mark a value base `#[sensitive]` to withhold it. Automatic events always
+//! exclude the host.
 //!
 //! # Guides
 //!

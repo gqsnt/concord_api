@@ -138,7 +138,7 @@ concord::api! {
     }
 }
 
-/// S07: the base URL is never treated as sensitive. Pinned: a caller-supplied base with private
+/// S07: an unmarked literal base stays public. Pinned: a caller-supplied base with private
 /// data appears in client `Debug` and `Prepared` `Debug` (positive control); `with_base_url`
 /// errors do not echo it; transport errors carry no URL although the native error does.
 #[tokio::test]

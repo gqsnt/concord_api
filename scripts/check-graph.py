@@ -76,7 +76,7 @@ EXCLUDED = [
 def main():
     problems = []
     meta = json.loads(subprocess.run(
-        ["cargo", "metadata", "--format-version", "1", "--no-deps", "--locked"],
+        ["cargo", "metadata", "--format-version", "1", "--no-deps", "--locked", "--offline"],
         cwd=ROOT, capture_output=True, text=True, check=True).stdout)
     packages = {p["name"]: p for p in meta["packages"]}
     for name, allowed in ALLOWED.items():
@@ -103,7 +103,7 @@ def main():
         print(f"{name}: {', '.join(sorted(normal))}")
     for name, args, excluded in EXCLUDED:
         tree = subprocess.run(
-            ["cargo", "tree", "--locked", "-e", "normal", "--prefix", "none", "-p", name, *args],
+            ["cargo", "tree", "--locked", "--offline", "-e", "normal", "--prefix", "none", "-p", name, *args],
             cwd=ROOT, capture_output=True, text=True, check=True).stdout
         found = {line.split()[0] for line in tree.splitlines() if line.strip()}
         bad = sorted(found & excluded)

@@ -29,8 +29,9 @@ pub struct EndpointMeta {
     /// The base is a sensitive client value; withhold the complete URL in rendered output.
     pub sensitive_base: bool,
     /// The authored path template (`repos/{owner}/{name}/issues`): the declared base path and
-    /// every generated segment, holes as written, no leading slash, no host and no query. Kept
-    /// only with feature `tracing`, its one reader ([`route`]).
+    /// every generated segment, holes as written, no leading slash, no host and no query. A value
+    /// base contributes only the generated segments, never its runtime path. Kept only with
+    /// feature `tracing`, its one reader ([`route`]).
     pub route: Route,
     /// Whether the endpoint declares a `query(..)` value: its keys and values are only known at
     /// run time, so Concord's renderings withhold the whole query string.

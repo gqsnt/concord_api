@@ -8,6 +8,24 @@ in generated documentation, and by retiring the experimental scalar-display deri
 example SDK crates are not published (`publish = false`). What the loop tried and decided: [`v4/desirability/SUMMARY.md`](v4/desirability/SUMMARY.md); its records
 are on the [archive branch](https://github.com/gqsnt/concord_api/tree/archive/desirability-loop-1/v4/desirability).
 
+### Concord logging (P4.5)
+
+- Optional feature `tracing` emits one INFO `concord.call` event at the response head or transport
+  failure, with exactly six fields: static operation, method and authored route, status (or
+  `transport="failed"`), elapsed milliseconds and delivery. Runtime bases, hosts, values and
+  provider documents are excluded; cancellation before a response head emits nothing. The direct
+  dependency, logging code, clocks and stored route templates are feature-gated.
+- Added `Summary` and `summary()` on `Prepared`, `Decoder`, `Received` and `Error<D>`, with or
+  without `tracing`. Prepared uses Debug redaction; native/followed targets are withheld.
+- **Debug text change:** `Prepared` always renders the entire query of a `query(..)` endpoint
+  as `?<withheld>`, including ordinary pairs, whether `tracing` is enabled or disabled.
+- **SDK Debug text changes:** S3 `SignedRequest<T>` and Kraken `Signed<T>` delegate to the decoder
+  summary (`OPERATION: METHOD <withheld>`), replacing their previous structured output.
+- Added off/on binary-footprint regression checks and canaries for operation lookup/read facts,
+  followed pages, value bases, and provider error documents. See [Logging](docs/CALLER_GUIDE.md#logging)
+  for subscriber filtering and the reqwest/hyper host caveat.
+- Fixed USGS SDK isolated builds by enabling `extras` for its declared `Text` error document.
+
 ### Provider error facts (P4.4)
 
 - Added `error D in F;`, inherited at the nearest owner, and bounded `Failure<D>`/`Document<D>`

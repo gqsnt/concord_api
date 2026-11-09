@@ -122,9 +122,7 @@ pub struct Signed<T> {
 }
 impl<T> fmt::Debug for Signed<T> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("Signed")
-            .field("operation", &self.decoder.operation())
-            .finish()
+        fmt::Debug::fmt(&self.decoder.summary(), f)
     }
 }
 impl<T> Signed<T> {

@@ -595,6 +595,25 @@ metadata with the typed value, interleaved query parameters). When you execute a
 and need the response before decoding, convert a failure with `decoder.finish(Err(e))` rather than
 returning reqwest's error: its `Display` prints the full URL.
 
+## Logging
+
+Enable Concord's optional `tracing` feature in the application and install a subscriber with
+`concord=info` in its filter. Each execution through Concord emits one `concord.call` event
+at INFO: `operation`, `method`, authored `route`, `status`, `elapsed_ms`, and `delivery`.
+Before a response head, `transport="failed"` replaces `status`, with `delivery="unknown"`.
+Routes keep template holes; a value base contributes no host or runtime path. No request or
+response values enter the event. Cancellation before a response head emits nothing.
+
+reqwest and hyper log the host at DEBUG/TRACE. Keep those targets at INFO or above in
+production; a filter such as `info,concord=info` does that. The
+[GitHub logging example](../examples/github-app/src/bin/log_one.rs) installs an INFO subscriber.
+
+For an explicit log line, `prepared.summary()`, `decoder.summary()`, `received.summary()` and
+`error.summary()` work with or without the feature. Prepared targets follow Debug redaction:
+ordinary values print, sensitive placements are redacted, and `query(..)` withholds the whole
+query as `?<withheld>`. Followed targets and all decoder, received and error targets print
+`<withheld>`; error summaries never format a provider document.
+
 ## 8. What Concord redacts, and what it does not
 
 Covered — output produced by Concord:
@@ -605,8 +624,10 @@ Covered — output produced by Concord:
   values — a request does not repeat its scope's or client's; for the whole request use
   `Prepared`'s `Debug`;
 - `Prepared`'s `Debug`: sensitive query values, path segments and host labels appear as
-  `<redacted>`, sensitive headers as `name: <redacted>`;
-- `Error`'s `Display` and `Debug`.
+  `<redacted>`, sensitive headers as `name: <redacted>`; `query(..)` withholds the entire query
+  as `?<withheld>`, with or without `tracing`; a sensitive value base withholds the whole URL;
+- `Error`'s `Display` and `Debug`, the redacted `summary()` views, and the static
+  `concord.call` event described under [Logging](#logging).
 
 Sensitive values are those marked `#[sensitive]`, those feeding a key with a well-known secret
 name (`authorization`, `cookie`, `x-api-key`, `token`, `password`, ... — full list in the
@@ -626,5 +647,6 @@ Not covered:
   bytes a failed decode kept, `into_response()` the native response. `Error`'s own `Display` and
   `Debug` show none of these; reading them is an explicit choice;
 - redirects: reqwest forwards custom headers and sends a `Referer` with the query;
-- tracing, middleware, proxies and server logs;
-- the base URL, which is never treated as sensitive.
+- other libraries’ tracing, middleware, proxies and server logs;
+- an unmarked base URL in Prepared Debug or its explicit summary (mark its client value
+  `#[sensitive]` to withhold it). Automatic events always exclude the host and runtime base.

@@ -3650,10 +3650,10 @@ fn prepare_body(
 }
 
 /// The authored path template of an endpoint, holes kept as written, without the leading slash,
-/// host or query: a static identity for diagnostics, never a URL. It has the shape of the path
-/// `Parts::finish` sends: without generated segments the declared base path unchanged (a trailing
-/// slash included); otherwise that path minus at most one trailing slash, then each segment and
-/// the endpoint's trailing slash.
+/// host or query: a static identity for diagnostics, never a URL. A value base contributes no
+/// runtime path. For a literal base it has the shape of the path `Parts::finish` sends: without
+/// generated segments the declared base path unchanged (a trailing slash included); otherwise
+/// that path minus at most one trailing slash, then each segment and the endpoint's trailing slash.
 fn route_template(model: &Model, root: usize, composed: &Composed) -> String {
     let mut path = String::new();
     // A value base (`base x;`) is known only at run time: the route then holds the authored

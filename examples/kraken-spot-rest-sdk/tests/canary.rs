@@ -182,6 +182,10 @@ async fn secrets_never_print() {
         // The unsigned Prepared still tests Concord's redaction/response/error path.
         receive(&mut c, read.clone().prepare().unwrap()).await;
         let signed = policy.prepare_signed(read).unwrap();
+        assert_eq!(
+            format!("{signed:?}"),
+            "Kraken.account.balances: POST <withheld>"
+        );
         c.assert_debug_absent("signed request", &signed);
         let result = signed.send().await;
         c.assert_debug_absent("signed balance Result", &result);

@@ -1,0 +1,17 @@
+[package]
+name = "concord-check-tracing-footprint"
+version = "0.0.0"
+edition = "2024"
+rust-version.workspace = true
+license.workspace = true
+publish = false
+
+[features]
+tracing = ["concord/tracing"]
+
+[dependencies]
+concord = { path = "../../crates/concord", default-features = false }
+concord-core = { path = "../../crates/concord-core" }
+
+[lints]
+workspace = true

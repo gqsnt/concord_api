@@ -60,6 +60,7 @@ async fn seven_cases_have_one_static_event_and_no_secret() {
         let github = GitHubContext::new(
             http(),
             GitHubConfig {
+                origin: concord::BaseUrl::from_static("https://api.github.com"),
                 token: token.clone(),
             },
         )
@@ -140,6 +141,7 @@ async fn build_cancel_and_native_execution_do_not_fabricate_head_events() {
     let github = GitHubContext::new(
         http(),
         GitHubConfig {
+            origin: concord::BaseUrl::from_static("https://api.github.com"),
             token: "synthetic-token".into(),
         },
     )
@@ -399,9 +401,15 @@ async fn subscribers_selecting_the_event_by_name_kind_or_field_receive_it() {
         } else {
             server.url()
         };
-        let github = GitHubContext::new(http(), GitHubConfig { token: "t".into() })
-            .with_base_url(origin)
-            .unwrap();
+        let github = GitHubContext::new(
+            http(),
+            GitHubConfig {
+                origin: concord::BaseUrl::from_static("https://api.github.com"),
+                token: "t".into(),
+            },
+        )
+        .with_base_url(origin)
+        .unwrap();
         let result = github
             .repo(RepoRef::new("octo-org", "octo-repo"))
             .handle()
@@ -521,5 +529,274 @@ async fn the_route_has_the_shape_of_the_sent_path() {
             "route {route:?} vs wire {wire:?}"
         );
     }
+    server.shutdown().await;
+}
+
+concord::api! {
+    pub client IdentityProbe(origin: concord::BaseUrl) {
+        base origin;
+        scope records {
+            path "records";
+            GET list(id: String) { path "{id}"; page next link; }
+            HEAD head();
+            OPTIONS options();
+            #[read]
+            POST search();
+            POST create();
+            #[read]
+            scope report {
+                POST run();
+            }
+        }
+    }
+}
+
+/// Runtime lookup and read classification agree before construction, on the prepared decoder,
+/// and after execution; the event uses that identity even for a POST declared as a read.
+#[tokio::test(flavor = "current_thread")]
+async fn static_event_identity_agrees_with_runtime_lookup_and_read_facts() {
+    let server = TestServer::start(|_| Reply::new(204)).await;
+    let api = IdentityProbe::new(
+        http(),
+        IdentityProbeConfig {
+            origin: concord::BaseUrl::parse(&server.url()).unwrap(),
+        },
+    );
+    let records = api.records();
+    let cases = [
+        (
+            records.list("CANARYIDENTITYPATH").prepare().unwrap(),
+            __IdentityProbeOperation::RecordsList,
+            "GET",
+            "records/{id}",
+            true,
+        ),
+        (
+            records.head().prepare().unwrap(),
+            __IdentityProbeOperation::RecordsHead,
+            "HEAD",
+            "records",
+            true,
+        ),
+        (
+            records.options().prepare().unwrap(),
+            __IdentityProbeOperation::RecordsOptions,
+            "OPTIONS",
+            "records",
+            true,
+        ),
+        (
+            records.search().prepare().unwrap(),
+            __IdentityProbeOperation::RecordsSearch,
+            "POST",
+            "records",
+            true,
+        ),
+        (
+            records.create().prepare().unwrap(),
+            __IdentityProbeOperation::RecordsCreate,
+            "POST",
+            "records",
+            false,
+        ),
+        (
+            records.report().run().prepare().unwrap(),
+            __IdentityProbeOperation::RecordsReportRun,
+            "POST",
+            "records",
+            true,
+        ),
+    ];
+    assert_eq!(cases.len(), __IdentityProbeOperation::ALL.len());
+    for (prepared, variant, method, route, read) in cases {
+        let operation = prepared.operation().unwrap();
+        assert_eq!(
+            __IdentityProbeOperation::from_operation(operation),
+            Some(variant)
+        );
+        assert_eq!(operation, variant.operation());
+        assert_eq!(operation.is_read(), read);
+        assert_eq!(variant.operation().is_read(), read);
+        assert_eq!(operation.method(), Some(method));
+        let capture = Capture::default();
+        let dispatch = capture.dispatch();
+        let _subscriber = tracing::dispatcher::set_default(&dispatch);
+        let received = prepared.receive().await.unwrap();
+        assert_eq!(received.operation(), Some(operation));
+        assert_eq!(received.operation().unwrap().is_read(), read);
+        received.decode().await.unwrap();
+        capture.assert_call(operation.name(), method, route, Some(204));
+        capture.assert_absent(&["CANARYIDENTITYPATH", &server.url()]);
+    }
+    assert_eq!(server.requests().len(), 6);
+    assert!(server.requests()[0].target.contains("CANARYIDENTITYPATH"));
+    server.shutdown().await;
+}
+
+/// A Followed request keeps the authored operation/template on each page, including send's
+/// generated continuation path and Endpoint::prepare's path. The provider's URL never prints.
+#[tokio::test(flavor = "current_thread")]
+async fn followed_requests_emit_once_per_request_for_the_original_operation() {
+    use concord::{Endpoint, Follow, NextUrl};
+    let server = TestServer::start(|_| Reply::new(204)).await;
+    let api = IdentityProbe::new(
+        http(),
+        IdentityProbeConfig {
+            origin: concord::BaseUrl::parse(&server.url()).unwrap(),
+        },
+    );
+    let target = format!(
+        "{}/CANARYFOLLOWPATH?CANARYFOLLOWKEY=CANARYFOLLOWVALUE",
+        server.url()
+    );
+    for page in 0..3 {
+        let capture = Capture::default();
+        let dispatch = capture.dispatch();
+        let _subscriber = tracing::dispatcher::set_default(&dispatch);
+        let endpoint = api.records().list("CANARYINITIALPATH");
+        match page {
+            0 => endpoint.send().await.unwrap(),
+            1 => endpoint
+                .follow(NextUrl::parse(&target).unwrap())
+                .send()
+                .await
+                .unwrap(),
+            _ => {
+                let followed = endpoint.follow(NextUrl::parse(&target).unwrap());
+                let prepared = followed.prepare().unwrap();
+                let operation = prepared.operation().unwrap();
+                assert_eq!(
+                    __IdentityProbeOperation::from_operation(operation),
+                    Some(__IdentityProbeOperation::RecordsList)
+                );
+                assert!(operation.is_read());
+                assert_eq!(
+                    prepared.summary().to_string(),
+                    "IdentityProbe.records.list: GET <withheld>"
+                );
+                prepared.receive().await.unwrap().decode().await.unwrap();
+            }
+        }
+        capture.assert_call(
+            "IdentityProbe.records.list",
+            "GET",
+            "records/{id}",
+            Some(204),
+        );
+        capture.assert_absent(&[
+            "CANARYINITIALPATH",
+            "CANARYFOLLOWPATH",
+            "CANARYFOLLOWKEY",
+            "CANARYFOLLOWVALUE",
+            &server.url(),
+        ]);
+    }
+    let requests = server.requests();
+    assert_eq!(requests.len(), 3);
+    assert_eq!(requests[0].target, "/records/CANARYINITIALPATH");
+    for request in &requests[1..] {
+        assert_eq!(
+            request.target,
+            "/CANARYFOLLOWPATH?CANARYFOLLOWKEY=CANARYFOLLOWVALUE"
+        );
+    }
+    server.shutdown().await;
+}
+
+/// A public, unmarked base is still runtime data: both its host and path are excluded from the
+/// static event. Repeat with different bases so the first construction cannot become metadata.
+#[tokio::test(flavor = "current_thread")]
+async fn value_base_events_contain_only_authored_segments() {
+    let server = TestServer::start(|_| Reply::new(204)).await;
+    let host = "canaryvaluebasehost.invalid";
+    let http = reqwest::Client::builder()
+        .no_proxy()
+        .resolve(host, server.addr())
+        .build()
+        .unwrap();
+    for base_path in ["CANARYVALUEBASEONE", "CANARYVALUEBASETWO"] {
+        let base = format!("http://{host}:{}/{base_path}/", server.addr().port());
+        let api = IdentityProbe::new(
+            http.clone(),
+            IdentityProbeConfig {
+                origin: concord::BaseUrl::parse(&base).unwrap(),
+            },
+        );
+        let capture = Capture::default();
+        let dispatch = capture.dispatch();
+        let _subscriber = tracing::dispatcher::set_default(&dispatch);
+        api.records()
+            .list("CANARYVALUEBASEHOLE")
+            .send()
+            .await
+            .unwrap();
+        capture.assert_call(
+            "IdentityProbe.records.list",
+            "GET",
+            "records/{id}",
+            Some(204),
+        );
+        capture.assert_absent(&[host, base_path, &base, "CANARYVALUEBASEHOLE"]);
+    }
+    let requests = server.requests();
+    assert_eq!(requests.len(), 2);
+    for (request, base_path) in requests
+        .iter()
+        .zip(["CANARYVALUEBASEONE", "CANARYVALUEBASETWO"])
+    {
+        assert!(request.host.contains(host));
+        assert_eq!(
+            request.target,
+            format!("/{base_path}/records/CANARYVALUEBASEHOLE")
+        );
+    }
+    server.shutdown().await;
+}
+
+concord::api! {
+    pub client DocumentProbe {
+        base "http://document.invalid";
+        error serde_json::Value in concord::Json;
+        GET read(id: String) { path "documents/{id}"; }
+    }
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn error_document_summaries_never_format_the_provider_document() {
+    let document = r#"{"CANARYDOCUMENTKEY":"CANARYDOCUMENTVALUE"}"#;
+    let server = TestServer::start(move |_| {
+        Reply::json(403, document).header("x-private", "CANARYDOCUMENTHEADER")
+    })
+    .await;
+    let api = DocumentProbe::new(http())
+        .with_base_url(server.url())
+        .unwrap();
+    let capture = Capture::default();
+    let dispatch = capture.dispatch();
+    let _subscriber = tracing::dispatcher::set_default(&dispatch);
+    let error: concord::Error<serde_json::Value> =
+        api.read("CANARYDOCUMENTPATH").send().await.unwrap_err();
+    // Positive control: a decoded, inspectable provider document really exists.
+    assert_eq!(
+        error.document().unwrap()["CANARYDOCUMENTKEY"],
+        "CANARYDOCUMENTVALUE"
+    );
+    assert_eq!(error.provider().unwrap().body(), document.as_bytes());
+    assert_eq!(
+        format!("{}", error.summary()),
+        "DocumentProbe.read: GET <withheld> -> 403 (status)"
+    );
+    assert_eq!(
+        format!("{:?}", error.summary()),
+        "DocumentProbe.read: GET <withheld> -> 403 (status)"
+    );
+    capture.assert_call("DocumentProbe.read", "GET", "documents/{id}", Some(403));
+    capture.assert_absent(&[
+        "CANARYDOCUMENTKEY",
+        "CANARYDOCUMENTVALUE",
+        "CANARYDOCUMENTPATH",
+        "CANARYDOCUMENTHEADER",
+    ]);
+    assert_eq!(server.requests()[0].target, "/documents/CANARYDOCUMENTPATH");
     server.shutdown().await;
 }

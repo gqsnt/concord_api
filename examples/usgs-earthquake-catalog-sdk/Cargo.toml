@@ -8,7 +8,7 @@ publish = false
 description = "Bounded USGS catalog queries, event lookup, and incremental CSV exports."
 
 [dependencies]
-concord = { path = "../../crates/concord", default-features = false, features = ["reqwest-defaults"] }
+concord = { path = "../../crates/concord", default-features = false, features = ["reqwest-defaults", "extras"] }
 concord-codecs = { path = "../../crates/concord-codecs", default-features = false, features = ["json", "csv"] }
 concord-pagination = { path = "../../crates/concord-pagination" }
 concord-retry = { path = "../../crates/concord-retry" }

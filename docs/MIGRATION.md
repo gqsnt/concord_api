@@ -1,8 +1,9 @@
 # Migration
 
-Migration paths, newest first: provider error facts, construction facts, runtime operations and paging, SDK-owned formatting, the QuickBooks environment repair (T4), the interface consolidation (unreleased candidate), 4.1 to 4.2 (a maintenance release; summary in the [changelog](../CHANGELOG.md)), then
+Migration paths, newest first: Concord logging, provider error facts, construction facts, runtime operations and paging, SDK-owned formatting, the QuickBooks environment repair (T4), the interface consolidation (unreleased candidate), 4.1 to 4.2 (a maintenance release; summary in the [changelog](../CHANGELOG.md)), then
 the two parts of 4.1.0 (the modular V4), then older ones:
 
+- [Concord logging (P4.5)](#concord-logging-p45) — optional static events and redacted summaries.
 - [Provider error facts (P4.4)](#provider-error-facts-p44) — declared documents, typed native errors and derived SDK enums.
 - [Construction facts (P4.3)](#construction-facts-p43) — fixed handle values, checked runtime bases and borrowed getters.
 - [Runtime operations and paging (P4.2)](#runtime-operations-and-paging-p42) — one send trait and private inventories.
@@ -34,6 +35,24 @@ the two parts of 4.1.0 (the modular V4), then older ones:
 Code blocks marked "does not compile" show the old form. Every other Rust block in this file is
 compiled and run as a doctest of `examples/quickstart` (`cargo test --doc -p
 concord-example-quickstart`).
+
+## Concord logging (P4.5)
+
+Applications can enable feature `tracing`, install a subscriber and filter `concord=info` to get
+one static `concord.call` event per execution. Keep reqwest and hyper at INFO or above in
+production: their DEBUG/TRACE events can contain hosts. No SDK declaration changes are needed.
+
+`summary()` on `Prepared`, `Decoder`, `Received` and `Error<D>` replaces hand-written request
+log formatting and is available with or without `tracing`. Prepared summaries show ordinary
+values with sensitive placements redacted; other targets and followed URLs are withheld.
+Error summaries omit provider documents, body bytes, headers and source text.
+
+**Debug text changes:** `Prepared` now always withholds the entire query on a `query(..)`
+endpoint as `?<withheld>`, including ordinary keys and values. This applies with `tracing`
+disabled as well as enabled. Update Debug snapshots; explicit `request().url()` inspection
+still exposes the native query. S3 `SignedRequest<T>` and Kraken `Signed<T>` now print the
+decoder summary (`OPERATION: METHOD <withheld>`) instead of their previous structured Debug.
+No request bytes or SDK call signatures change.
 
 ## Provider error facts (P4.4)
 

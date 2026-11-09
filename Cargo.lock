@@ -572,6 +572,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "concord-check-tracing-footprint"
+version = "0.0.0"
+dependencies = [
+ "concord",
+ "concord-core",
+]
+
+[[package]]
 name = "concord-clone-compat"
 version = "0.0.0"
 dependencies = [

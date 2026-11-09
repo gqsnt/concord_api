@@ -14,7 +14,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let http = reqwest::Client::builder()
         .redirect(redirect_policy())
         .build()?;
-    let github = GitHubContext::new(http, GitHubConfig { token });
+    let github = GitHubContext::new(
+        http,
+        GitHubConfig {
+            origin: concord::BaseUrl::from_static("https://api.github.com"),
+            token,
+        },
+    );
     let repo = github.repo(RepoRef::new("octo-org", "octo-repo"));
     let _issues = repo.handle().issues().send().await?;
     Ok(())

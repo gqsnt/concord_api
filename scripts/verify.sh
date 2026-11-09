@@ -113,6 +113,8 @@ step tool-tests "$python" -I -B -m unittest discover -s scripts/tests -p "test_*
 step output-dirs scripts/tests/output-dirs.sh
 # The production edges of the crates (manifests, then one resolved graph per package).
 step graph "$python" -I scripts/check-graph.py
+# Select a single consumer off/on: workspace feature unification must not hide logging code.
+step tracing-footprint "$python" -I scripts/check-tracing-footprint.py
 # `cargo fmt --all` hands every root file to one rustfmt command line, which outgrew the Windows
 # limit with the 55 SDKs (os error 206, CI run 42352913341). The same packages (every workspace
 # member: they are all the local packages), one rustfmt line each.

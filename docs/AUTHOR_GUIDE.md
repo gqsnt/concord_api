@@ -2099,6 +2099,13 @@ fn main() -> Result<(), concord::Error> {
 }
 ```
 
+Automatic logging needs no declaration words: the caller enables feature `tracing` and filters
+`concord=info` ([Logging](CALLER_GUIDE.md#logging)). Its six fields come from static operation
+metadata, status and timing; value bases contribute only authored segments to the route.
+`summary()` is available on `Prepared`, `Decoder`, `Received` and `Error<D>` with either feature
+setting. Prepared uses Debug's redaction; `query(..)` always withholds its whole query as
+`?<withheld>`. Other targets and followed URLs are withheld; provider documents never print.
+
 What this does **not** cover — the native request and response `Debug`, errors of requests you
 execute yourself, redirects, logs and proxies — is listed in the
 [caller guide](CALLER_GUIDE.md#8-what-concord-redacts-and-what-it-does-not).
