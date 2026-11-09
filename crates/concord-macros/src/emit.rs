@@ -2262,14 +2262,53 @@ fn next_impls(
             let at = steps
                 .last()
                 .map_or_else(Span::call_site, |s| s.field.span());
-            // `String` or `Option<String>`: std's own conversions to `Option<&String>`.
-            let text = quote_spanned!(at=> ::core::convert::From::from(&#place));
+            let path = steps
+                .iter()
+                .map(|s| format!("{}{}", plain(&s.field), if s.optional { "?" } else { "" }))
+                .collect::<Vec<_>>()
+                .join(".");
+            let message = LitStr::new(
+                &format!("`page next url` field `{path}` must be `String` or `Option<String>`"),
+                at,
+            );
+            let text_value = if steps.last().is_some_and(|s| s.optional) {
+                place
+            } else {
+                quote_spanned!(at=> &#place)
+            };
+            // Keep the check local to the declared field: std's `From` diagnostic lists impls
+            // from unrelated dependencies, so it changes with the enabled features. These two
+            // impls preserve the accepted types. Keep the trait inside the method body so it
+            // cannot shadow the caller's output type in the implementation's signature.
+            let text_trait = quote_spanned! {at=>
+                #[diagnostic::on_unimplemented(
+                    message = #message,
+                    label = "expected URL text (`String` or `Option<String>`)"
+                )]
+                trait UrlText {
+                    fn as_url_text(&self) -> ::core::option::Option<&::std::string::String>;
+                }
+                #[diagnostic::do_not_recommend]
+                impl UrlText for ::std::string::String {
+                    fn as_url_text(&self) -> ::core::option::Option<&::std::string::String> {
+                        ::core::option::Option::Some(self)
+                    }
+                }
+                #[diagnostic::do_not_recommend]
+                impl UrlText for ::core::option::Option<::std::string::String> {
+                    fn as_url_text(&self) -> ::core::option::Option<&::std::string::String> {
+                        self.as_ref()
+                    }
+                }
+            };
+            let text = located(quote!(UrlText::as_url_text(#text_value)), at);
             quote! {
                 impl #k::UrlContinuation<#out> for #ty {
                     #[inline] fn next_url(
                         #value: &#out,
                     ) -> ::core::result::Result<::core::option::Option<#k::NextUrl>, #k::NextUrlError> {
                         let __text: ::core::option::Option<&::std::string::String> = #label: {
+                            #text_trait
                             #lets
                             #text
                         };

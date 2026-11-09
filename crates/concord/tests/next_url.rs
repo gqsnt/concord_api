@@ -27,6 +27,14 @@ pub struct Links {
     pub next: Option<String>,
 }
 
+/// A required next URL field.
+// An output may use the same name as the expansion's local diagnostic trait.
+#[derive(Debug, Deserialize)]
+pub struct UrlText {
+    /// The next page's URL.
+    pub next: String,
+}
+
 concord::api! {
     pub client Plain(#[sensitive] header(AUTHORIZATION) token: String) {
         base "http://127.0.0.1";
@@ -40,6 +48,9 @@ concord::api! {
             limit 32;
             page next link;
         }
+        GET required() -> UrlText { page next url next; }
+        GET optional() -> Links { page next url next; }
+        GET optional_step() -> Links { page next url next?; }
     }
 }
 
@@ -180,6 +191,24 @@ fn a_present_next_url_must_be_absolute_and_absent_or_null_ends() {
     let next = PlainItems::next_url(&page(Some(&url))).unwrap().unwrap();
     assert_eq!(next.expose(), url);
     assert!(!format!("{next} {next:?}").contains(CANARY));
+}
+
+#[test]
+fn next_url_text_accepts_required_and_optional_strings() {
+    let url = "http://127.0.0.1/items?page=2";
+    let expected = Ok(Some(NextUrl::parse(url).unwrap()));
+    assert_eq!(
+        PlainRequired::next_url(&UrlText { next: url.into() }),
+        expected
+    );
+    let present = Links {
+        next: Some(url.into()),
+    };
+    assert_eq!(PlainOptional::next_url(&present), expected);
+    assert_eq!(PlainOptionalStep::next_url(&present), expected);
+    let absent = Links { next: None };
+    assert_eq!(PlainOptional::next_url(&absent), Ok(None));
+    assert_eq!(PlainOptionalStep::next_url(&absent), Ok(None));
 }
 
 struct LocalFormat;
