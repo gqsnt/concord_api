@@ -148,8 +148,9 @@ No branch was classified B (finishing work for this PR) or D (unknown). Nothing 
 
 ## Where the work continues
 
-The desirability loop (`v4/desirability/`, created from the merged `main`) takes the proposals,
+The desirability loop ([summary](../desirability/SUMMARY.md); records on the
+[archive branch](https://github.com/gqsnt/concord_api/tree/archive/desirability-loop-1/v4/desirability)) took the proposals,
 prototypes and open items above as hypotheses, each pre-registered with target metrics and kill
 conditions, measured across all 55 SDKs by automatic instruments, independently reviewed, and
-decided by a fixed rule. Its seed queue starts with the send result (H01), a shared result and
+decided by a fixed rule. Its seed queue started with the send result (H01), a shared result and
 error shape (H02), exact input inference (H03) and generated documentation (H04).

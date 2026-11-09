@@ -2,8 +2,8 @@
 
 ## Unreleased — desirability loop (candidate)
 
-Not released: the version is unchanged (4.2.0). Records: `v4/desirability/` (decisions in
-`v4/desirability/DECISIONS.md`; retrospective in `v4/desirability/FINAL.md`).
+Not released: the version is unchanged (4.2.0). Summary: [`v4/desirability/SUMMARY.md`](v4/desirability/SUMMARY.md); the loop's records are on the
+[archive branch](https://github.com/gqsnt/concord_api/tree/archive/desirability-loop-1/v4/desirability).
 
 **Version.** No major bump: the accepted changes to the versioned `concord-*` crates are additive
 (the opt-in `operations` enum and `SendOperation`, H08), fixes (T3) and documentation (H04,
@@ -21,7 +21,7 @@ replacement routes are in [MIGRATION](docs/MIGRATION.md).
   Kubernetes app — now states the path a caller writes for the position (the SDK's re-export, or
   `concord_pagination::Resume` with the `concord-pagination` dependency where the SDK has none) and its two
   constructors (`Resume::Start`, `Resume::At(key)` with where the key comes from). No API, behavior or
-  dependency change; the [impact table](v4/desirability/impact/H09c.md) lists every item.
+  dependency change; the [impact table](https://github.com/gqsnt/concord_api/blob/archive/desirability-loop-1/v4/desirability/impact/H09c.md) lists every item.
 - **An omitted operation classification fails the SDK build** (H08, candidate B). The opt-in
   client statement `operations Name;` generates `Name`, a `#[non_exhaustive]` enum with one variant
   per endpoint (the endpoint's path below the client in UpperCamelCase, `items.get` → `ItemsGet`;

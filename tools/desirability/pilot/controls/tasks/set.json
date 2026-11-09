@@ -1,7 +1,0 @@
-{
- "commit": "5832252747efb9f09ad1802be13528144143c32f",
- "description": "Instrument controls of the pilot harness (PLAN_AMENDMENT_A1 §6): seeded tasks that must pass or must fail, at the commit below. Public: they test the instrument, not a hypothesis.",
- "format": 1,
- "name": "pilot-controls",
- "reader_template": "reader/template.md"
-}
