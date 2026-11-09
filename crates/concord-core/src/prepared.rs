@@ -319,8 +319,9 @@ pub trait SendOperation<T, O> {
 /// ```
 ///
 /// The output is a type parameter, as in [`Endpoint`], so a public client may keep private
-/// output types. A client without a policy generates no `Sends`: its `send()` is
-/// `prepare()?.send()`, which generic code reaches through [`Endpoint`].
+/// output types. A client without a policy generates `Sends<Result<T, Error>>` (its `send()`,
+/// `prepare()?.send()`) only on an endpoint with `page next`; generic code reaches its other
+/// endpoints through [`Endpoint`].
 pub trait Sends<O>: Sized {
     /// The endpoint's generated `send()`.
     fn send(self) -> impl std::future::Future<Output = O> + Send;

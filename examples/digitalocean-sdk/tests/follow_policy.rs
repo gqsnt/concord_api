@@ -67,12 +67,14 @@ async fn followed_sdk_operation_keeps_provider_error_policy_and_identity() {
 
 #[tokio::test]
 async fn followed_url_on_another_origin_is_refused_unsent() {
-    let server = TestServer::start(|request: &Recorded| {
+    // A live foreign origin: if the origin check were missing, it would receive the request.
+    let foreign = TestServer::start(|_: &Recorded| Reply::json(200, r#"{"droplets":[]}"#)).await;
+    let foreign_origin = foreign.url();
+    let server = TestServer::start(move |_: &Recorded| {
         Reply::json(
             200,
             format!(
-                r#"{{"droplets":[],"links":{{"pages":{{"next":"http://localhost:1/v2/droplets?cursor={CANARY}&host={}"}}}}}}"#,
-                request.host,
+                r#"{{"droplets":[],"links":{{"pages":{{"next":"{foreign_origin}/v2/droplets?cursor={CANARY}"}}}}}}"#,
             ),
         )
     })
@@ -83,10 +85,21 @@ async fn followed_url_on_another_origin_is_refused_unsent() {
     let next = DigitalOceanDropletsList::next_url(&first.value)
         .unwrap()
         .unwrap();
+    // Sent directly, without the SDK's own validator: Concord's origin check refuses it.
     let error = endpoint.follow(next).send().await.unwrap_err();
     assert!(!format!("{error} {error:?}").contains(CANARY));
-    assert_eq!(server.requests().len(), 1, "the foreign URL is never sent");
+    let Error::Concord(error) = error else {
+        panic!("expected Concord's origin refusal, got {error:?}")
+    };
+    assert_eq!(error.kind(), concord::ErrorKind::Build);
+    assert!(format!("{error}").contains("another origin"), "{error}");
+    assert!(
+        foreign.requests().is_empty(),
+        "the foreign origin received a request"
+    );
+    assert_eq!(server.requests().len(), 1, "only the first page was sent");
     server.shutdown().await;
+    foreign.shutdown().await;
 }
 
 /// A page whose next URL is a body field.

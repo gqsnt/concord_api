@@ -134,7 +134,8 @@ pub struct Followed<E> {
 }
 
 impl<E> Followed<E> {
-    /// Sends through the endpoint's client send policy, exactly as its own `send()` does.
+    /// Sends exactly as the endpoint's own `send()` does: through the client's send policy, or,
+    /// without one, once with the endpoint's declared decoding (`Result<T, concord::Error>`).
     pub fn send<O>(self) -> impl Future<Output = O> + Send
     where
         E: Sends<O>,

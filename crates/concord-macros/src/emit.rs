@@ -2052,15 +2052,31 @@ fn emit_owner(
                 _ => (None, None),
             };
             // `Sends<O>` for an endpoint whose client names a send policy (its `send()` future is
-            // already `Send`); none otherwise.
+            // already `Send`); without a policy, only for an endpoint with `page next`, so that a
+            // followed page has the endpoint's own default send.
             let mut sends_impl = TokenStream::new();
             let send_fn = match policy {
-                None => quote! {
-                    #send_docs
-                    #[inline] pub async fn send(self) -> ::core::result::Result<#out, #k::Error> {
-                        self.prepare()?.send().await
+                None => {
+                    if next.is_some() {
+                        sends_impl = quote! {
+                            impl #k::Sends<::core::result::Result<#out, #k::Error>> for #ty {
+                                #[inline] fn send(self) -> impl ::core::future::Future<Output = ::core::result::Result<#out, #k::Error>> + ::core::marker::Send {
+                                    #ty::send(self)
+                                }
+                                #[inline] fn __send_followed(self, __target: #k::NextUrl) -> impl ::core::future::Future<Output = ::core::result::Result<#out, #k::Error>> + ::core::marker::Send {
+                                    let __followed = #k::__private::followed(self, __target);
+                                    async move { #k::Endpoint::prepare(__followed)?.send().await }
+                                }
+                            }
+                        };
                     }
-                },
+                    quote! {
+                        #send_docs
+                        #[inline] pub async fn send(self) -> ::core::result::Result<#out, #k::Error> {
+                            self.prepare()?.send().await
+                        }
+                    }
+                }
                 Some(policy) => {
                     // `send value;`: clone the client value; `send Type;`: `Type::default()`.
                     let (policy_ty, policy_init, shown) = match model.send_value() {
