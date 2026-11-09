@@ -225,3 +225,7 @@ Append-only: a row marked `running` is superseded by a later row (`↳ … resul
 | ↳ H03 measurement lane result | — | claude-opus-5-5 (subagent transcript; effort inherited, started before A3.2) | ~3h45m, ~240 tool uses | tooling committed 3f76ce74 (dz/h03-bank); corpus d63b6a19 frozen before first non-reference compile; witness gain +18.6 for A/B/A′/B′; audit: 0 accesses to work/dev/h03 |
 | H03b combined review (`h03b-combined-review-sol`): candidate + measurement + decision (proposed KEEP_CURRENT) | Codex gpt-6.1-sol, xhigh, read-only | (meta.json at completion) | running | — |
 | ↳ H03b combined review observed | — | gpt-6.1-sol / xhigh / read-only (rollout turn_context); 19:49:10Z–19:55:52Z | 6m42s | ACCEPT_WITH_FIXES; DECISION KEEP_CURRENT (+18.6 < 20); INPUT family closes |
+| H06 final confirmation review (`h06-final-review-sol`) on 6db75e22 (pilot scope, costs, CI) | Codex gpt-6.1-sol, xhigh, read-only | (meta.json at completion) | running | — |
+| T3 round 2 finish (dz/t3-cancel; after restart) — Codex lane in jail | Codex gpt-6.1-sol, xhigh, danger-full-access in codex_jail.sh | (meta.json at completion) | running | — |
+| ↳ T3 round 2 (Claude subagent) | — | interrupted by the machine restart (2026-11-09 ~01:10); uncommitted work handed to a Codex lane | — | — |
+| ↳ H06 final review observed | — | gpt-6.1-sol / xhigh / read-only (rollout turn_context); 00:15:20Z–00:19:41Z | 4m21s | ACCEPT (pilot scope; final on merged-commit CI) |
