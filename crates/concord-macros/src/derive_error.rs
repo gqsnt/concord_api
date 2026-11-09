@@ -2,8 +2,8 @@
 //! (`source()` from the fields marked `#[source]`), one `From` per single-field tuple variant, and
 //! the split of a declared error document's `concord::Error<D>` (`#[from(concord::Error<D>)]`).
 //! The expansion names only `core` items (the split calls `into_provider()` by method syntax), so
-//! it needs no path to Concord; its own bindings are hygienic (`Span::mixed_site`), so no field
-//! name can shadow them.
+//! it needs no path to Concord; its bindings use `Span::mixed_site` and function imports shield
+//! them from ambient constants, so authored names cannot capture them.
 
 use proc_macro2::{Span, TokenStream};
 use quote::{ToTokens, quote, quote_spanned};
@@ -138,16 +138,42 @@ pub fn expand(item: &Item) -> syn::Result<TokenStream> {
             }
         }
     });
-    Ok(quote! {
-        impl #impl_generics ::core::fmt::Display for #name #ty_generics #where_clause {
-            fn fmt(&self, #formatter: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
-                #body
+    // Mixed-site hygiene separates local bindings, but constants still resolve at the call site.
+    // Functions can be shadowed by bindings: these imports shield every generated local name.
+    let mut bindings = vec![
+        formatter.clone(),
+        Ident::new("__source", Span::mixed_site()),
+        Ident::new("cause", Span::mixed_site()),
+        Ident::new("value", Span::mixed_site()),
+        Ident::new("error", Span::mixed_site()),
+        Ident::new("failure", Span::mixed_site()),
+    ];
+    for variant in &input.variants {
+        for (index, field) in variant.fields.iter().enumerate() {
+            let key = field
+                .ident
+                .as_ref()
+                .map_or_else(|| format!("_{index}"), ToString::to_string);
+            let binding = alias(&key);
+            if !bindings.contains(&binding) {
+                bindings.push(binding);
             }
         }
-        impl #impl_generics ::core::error::Error for #name #ty_generics #where_clause {
-            #source
-        }
-        #(#froms)*
+    }
+    Ok(quote! {
+        const _: () = {
+            #[allow(unused_imports)]
+            use ::core::convert::{#(identity as #bindings),*};
+            impl #impl_generics ::core::fmt::Display for #name #ty_generics #where_clause {
+                fn fmt(&self, #formatter: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
+                    #body
+                }
+            }
+            impl #impl_generics ::core::error::Error for #name #ty_generics #where_clause {
+                #source
+            }
+            #(#froms)*
+        };
     })
 }
 
@@ -317,7 +343,8 @@ fn source_arm(variant: &Variant) -> syn::Result<Option<TokenStream>> {
         quote_spanned!(inner.span()=> ::core::option::Option::Some(&**#bound as #target))
     } else if let Some(inner) = option_inner(&field.ty) {
         let target = dyn_error(inner);
-        quote_spanned!(inner.span()=> #bound.as_ref().map(|cause| cause as #target))
+        let cause = Ident::new("cause", Span::mixed_site().located_at(inner.span()));
+        quote_spanned!(inner.span()=> #bound.as_ref().map(|#cause| #cause as #target))
     } else {
         let target = dyn_error(&field.ty);
         quote_spanned!(field.ty.span()=> ::core::option::Option::Some(#bound as #target))

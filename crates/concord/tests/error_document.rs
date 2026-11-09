@@ -327,10 +327,17 @@ async fn the_error_bound_survives_follow_into_parts_and_finish() {
 }
 
 /// An SDK's provider answer, built from the failure of the declared document.
-#[derive(Debug)]
 pub struct Refusal {
     status: u16,
     title: Option<String>,
+}
+
+impl std::fmt::Debug for Refusal {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Refusal")
+            .field("status", &self.status)
+            .finish_non_exhaustive()
+    }
 }
 
 impl From<concord::Failure<Problem>> for Refusal {
@@ -375,6 +382,15 @@ async fn the_derive_splits_the_provider_answer_from_other_failures() {
     assert_eq!(refusal.status, 409);
     assert_eq!(refusal.title.as_deref(), Some("SECRET-TITLE"));
     assert_eq!(error.to_string(), "refused with 409");
+    // SDK payloads that extract document fields must withhold them in their own formatting.
+    for rendered in [
+        format!("{error}"),
+        format!("{error:#}"),
+        format!("{error:?}"),
+        format!("{error:#?}"),
+    ] {
+        assert!(!rendered.contains("SECRET-TITLE"));
+    }
     assert!(error.source().is_none());
 
     // A 2xx body that does not decode is not the provider's answer: it stays Concord's error,

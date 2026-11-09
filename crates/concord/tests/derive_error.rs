@@ -228,12 +228,37 @@ fn generic_enums_and_concord_payloads_derive() {
 /// Field names cannot reach the derive's own bindings: a field named like the formatter, and a
 /// constant named like a field, format as the field.
 mod hygiene {
+    // Every generated local has an ambient constant of the same name, including field aliases.
     #[allow(non_upper_case_globals, dead_code)]
     const status: u16 = 7;
+    #[allow(non_upper_case_globals, dead_code)]
+    mod constants {
+        pub const cause: u8 = 0;
+        pub const __source: u8 = 0;
+        pub const __formatter: u8 = 0;
+        pub const __field__0: u8 = 0;
+        pub const __field__1: u8 = 0;
+        pub const __field_status: u8 = 0;
+        pub const __field___formatter: u8 = 0;
+        pub const __field___field___formatter: u8 = 0;
+        pub const value: u8 = 0;
+        pub const error: u8 = 0;
+        pub const failure: u8 = 0;
+    }
+    #[allow(unused_imports)]
+    use constants::*;
+
+    pub(super) struct Problem;
+
+    impl From<concord::Failure<Problem>> for super::Other {
+        fn from(answer: concord::Failure<Problem>) -> Self {
+            Self(answer.status().as_u16())
+        }
+    }
 
     #[derive(Debug, concord::derive::Error)]
     #[allow(non_snake_case)]
-    pub enum Shadowing {
+    pub(super) enum Shadowing {
         #[display("{__formatter}")]
         Alone { __formatter: &'static str },
         #[display("<{__formatter}> {__field___formatter}")]
@@ -245,6 +270,21 @@ mod hygiene {
         Status { status: u16 },
         #[display("[{0:$>6}] {0} {1:?}")]
         Fill(&'static str, u8),
+        #[display("{0}")]
+        Plain(#[source] super::Other),
+        #[display("{0}")]
+        #[from(skip)]
+        Boxed(#[source] Box<super::Other>),
+        #[display("optional")]
+        Maybe {
+            #[source]
+            cause: Option<super::Other>,
+        },
+        #[display("{0}")]
+        Concord(#[source] concord::Error),
+        #[display("{0}")]
+        #[from(concord::Error<Problem>)]
+        Api(Box<super::Other>),
     }
 }
 
@@ -262,6 +302,24 @@ fn field_names_never_shadow_the_generated_bindings() {
     assert_eq!(text.to_string(), "<a> b");
     assert_eq!(Shadowing::Status { status: 404 }.to_string(), "HTTP 404");
     assert_eq!(Shadowing::Fill("ab", 3).to_string(), "[$$$$ab] ab 3");
+}
+
+#[test]
+fn ambient_constants_never_shadow_the_generated_bindings() {
+    use hygiene::Shadowing;
+    let plain = Shadowing::from(Other(1));
+    assert_eq!(plain.to_string(), "other 1");
+    assert_eq!(plain.source().unwrap().to_string(), "other 1");
+    let boxed = Shadowing::Boxed(Box::new(Other(2)));
+    assert_eq!(boxed.source().unwrap().to_string(), "other 2");
+    let optional = Shadowing::Maybe {
+        cause: Some(Other(3)),
+    };
+    assert_eq!(optional.source().unwrap().to_string(), "other 3");
+    assert!(Shadowing::Maybe { cause: None }.source().is_none());
+    // Compiling the split conversion exercises both match bindings, including its fallback.
+    fn converts<T: From<concord::Error<hygiene::Problem>>>() {}
+    converts::<Shadowing>();
 }
 
 /// Field names are Rust identifiers, not only ASCII ones: delegation and composite strings.
