@@ -11,7 +11,9 @@
 use std::fmt;
 
 use concord::reqwest::{StatusCode, header::HeaderMap};
-use concord::{ErrorKind, Received};
+use concord::{Document, Failure};
+
+pub use crate::xml::ErrorDocument;
 
 use crate::types::{ETag, HttpDate};
 
@@ -205,12 +207,7 @@ pub enum ErrorBody {
 pub struct ApiError {
     operation: &'static str,
     meta: ResponseMeta,
-    body: ErrorBody,
-    code: Option<String>,
-    message: Option<String>,
-    resource: Option<String>,
-    document_request_id: Option<String>,
-    host_id: Option<String>,
+    failure: Failure<ErrorDocument>,
 }
 
 impl ApiError {
@@ -232,75 +229,56 @@ impl ApiError {
     /// The S3 error code (`NoSuchKey`, `PreconditionFailed`, `SignatureDoesNotMatch`); `None`
     /// without a parsed document (always for `HEAD`).
     pub fn code(&self) -> Option<&str> {
-        self.code.as_deref()
+        self.failure.document()?.code.as_deref()
     }
 
     /// S3's English message, **unredacted** (it may echo the request).
     pub fn message(&self) -> Option<&str> {
-        self.message.as_deref()
+        self.failure.document()?.message.as_deref()
     }
 
     /// The bucket or object S3 names, **unredacted**.
     pub fn resource(&self) -> Option<&str> {
-        self.resource.as_deref()
+        self.failure.document()?.resource.as_deref()
     }
 
     /// The document's `<RequestId>` (the head's `x-amz-request-id` is in [`meta`](Self::meta)).
     pub fn document_request_id(&self) -> Option<&str> {
-        self.document_request_id.as_deref()
+        self.failure.document()?.request_id.as_deref()
     }
 
     /// The document's `<HostId>`.
     pub fn host_id(&self) -> Option<&str> {
-        self.host_id.as_deref()
+        self.failure.document()?.host_id.as_deref()
     }
 
-    /// What became of the body.
+    /// What became of the body (the existing SDK classification).
     pub fn body(&self) -> ErrorBody {
-        self.body
+        match self.failure.state() {
+            Document::Read(_) => ErrorBody::Parsed,
+            Document::Empty => ErrorBody::Empty,
+            Document::Unrecognized(_) => ErrorBody::Unrecognized,
+            Document::TooLong { .. } => ErrorBody::TooLarge,
+            Document::Broken(_) => ErrorBody::ReadFailed,
+            _ => ErrorBody::Unrecognized,
+        }
     }
 
-    /// Reads the (bounded) body of an error response and parses it as an S3 `<Error>` document.
-    pub(crate) async fn read<T>(
+    /// The shared HTTP failure, including explicitly accessible bounded bytes.
+    pub fn failure(&self) -> &Failure<ErrorDocument> {
+        &self.failure
+    }
+
+    pub(crate) fn from_failure(
         operation: &'static str,
-        received: Received<T>,
         meta: ResponseMeta,
+        failure: Failure<ErrorDocument>,
     ) -> Self {
-        let mut error = Self {
+        Self {
             operation,
             meta,
-            body: ErrorBody::Empty,
-            code: None,
-            message: None,
-            resource: None,
-            document_request_id: None,
-            host_id: None,
-        };
-        let buffer = match received.bytes_limited(MAX_ERROR_BODY).await {
-            Ok(bytes) => bytes,
-            Err(e) => {
-                error.body = match e.kind() {
-                    ErrorKind::Limit => ErrorBody::TooLarge,
-                    _ => ErrorBody::ReadFailed,
-                };
-                return error;
-            }
-        };
-        if buffer.is_empty() {
-            return error;
+            failure,
         }
-        match crate::xml::parse_error_document(&buffer) {
-            Some(doc) => {
-                error.body = ErrorBody::Parsed;
-                error.code = doc.code;
-                error.message = doc.message;
-                error.resource = doc.resource;
-                error.document_request_id = doc.request_id;
-                error.host_id = doc.host_id;
-            }
-            None => error.body = ErrorBody::Unrecognized,
-        }
-        error
     }
 }
 
@@ -309,8 +287,8 @@ impl fmt::Debug for ApiError {
         f.debug_struct("ApiError")
             .field("operation", &self.operation)
             .field("meta", &self.meta)
-            .field("code", &self.code)
-            .field("body", &self.body)
+            .field("code", &self.code())
+            .field("body", &self.body())
             .finish_non_exhaustive()
     }
 }

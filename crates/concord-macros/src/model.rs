@@ -215,6 +215,8 @@ pub struct Owner {
     pub groups: Vec<Ident>,
     /// `limit EXPR;` declared here: the finite body bound for typed outputs at and below.
     pub limit: Option<syn::Expr>,
+    /// `error D in F;` declared here: the error document of non-2xx answers at and below.
+    pub error: Option<crate::syntax::ErrorDoc>,
 }
 
 impl Owner {
@@ -1794,6 +1796,18 @@ impl Model {
         None
     }
 
+    /// The `error D in F;` declared on `owner` or its nearest ancestor.
+    pub fn nearest_error(&self, owner: usize) -> Option<&crate::syntax::ErrorDoc> {
+        let mut cur = Some(owner);
+        while let Some(o) = cur {
+            if let Some(error) = &self.owners[o].error {
+                return Some(error);
+            }
+            cur = self.owners[o].parent;
+        }
+        None
+    }
+
     pub fn nearest_default(&self, owner: usize, request: bool) -> Option<usize> {
         nearest(&self.owners, Some(owner), request)
     }
@@ -2270,6 +2284,7 @@ fn flatten(
         }
         Some(expr)
     });
+    let error = owner.stmts.error.take();
     let kind = match owner.kind {
         OwnerKind::Client { vis, base } => match base {
             Some(base) => {
@@ -2440,6 +2455,7 @@ fn flatten(
         response,
         groups: owner.groups,
         limit,
+        error,
     });
     stmts.push(owner.stmts);
 

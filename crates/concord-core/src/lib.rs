@@ -18,6 +18,7 @@ pub use {bytes, reqwest};
 mod cancel;
 mod codec;
 mod error;
+mod failure;
 pub mod field;
 mod header;
 mod names;
@@ -33,6 +34,7 @@ pub use codec::{
     Incremental, Records, ResponseHead,
 };
 pub use error::{Delivery, Error, ErrorKind};
+pub use failure::{Document, Failure};
 pub use header::ToHeaderValue;
 pub use names::{HeaderNameError, HeaderNameErrors};
 pub use prepared::{Decoder, Endpoint, Prepared, SendOperation, SendWith, Sends};

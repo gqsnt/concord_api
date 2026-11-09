@@ -1,7 +1,9 @@
 //! `#[derive(concord::derive::Error)]` on an SDK's own error enum: `Display`, `std::error::Error`
-//! without a `source()` chain, and one `From` per single-field tuple variant. The expansion names
-//! only `core` items, so it needs no path to Concord; its own bindings are hygienic
-//! (`Span::mixed_site`), so no field name can shadow them.
+//! (`source()` from the fields marked `#[source]`), one `From` per single-field tuple variant, and
+//! the split of a declared error document's `concord::Error<D>` (`#[from(concord::Error<D>)]`).
+//! The expansion names only `core` items (the split calls `into_provider()` by method syntax), so
+//! it needs no path to Concord; its own bindings are hygienic (`Span::mixed_site`), so no field
+//! name can shadow them.
 
 use proc_macro2::{Span, TokenStream};
 use quote::{ToTokens, quote, quote_spanned};
@@ -34,6 +36,7 @@ pub fn expand(item: &Item) -> syn::Result<TokenStream> {
 
     let mut arms = Vec::new();
     let mut froms = Vec::new();
+    let mut causes = Vec::new();
     let mut sources: Vec<(String, &Ident)> = Vec::new();
     for variant in &input.variants {
         for attr in variant.fields.iter().flat_map(|field| &field.attrs) {
@@ -46,6 +49,9 @@ pub fn expand(item: &Item) -> syn::Result<TokenStream> {
                     format!("`#[{helper}]` belongs on the variant, not on one of its fields"),
                 ));
             }
+        }
+        if let Some(arm) = errors.keep(source_arm(variant)).flatten() {
+            causes.push(arm);
         }
         let Some(attrs) = errors.keep(VariantAttrs::parse(variant)) else {
             continue;
@@ -73,14 +79,23 @@ pub fn expand(item: &Item) -> syn::Result<TokenStream> {
             Fields::Unnamed(fields) if fields.unnamed.len() == 1 => fields.unnamed.first(),
             _ => None,
         };
-        match (field, attrs.skip) {
-            (Some(_), Some(_)) => {}
-            (None, Some(skip)) => errors.push(syn::Error::new(
+        match (field, attrs.from) {
+            (Some(_), Some(FromAttr::Skip(_))) => {}
+            (None, Some(FromAttr::Skip(skip))) => errors.push(syn::Error::new(
                 skip,
                 "`#[from(skip)]` belongs on a single-field tuple variant; this variant has no `From`",
             )),
-            (Some(field), None) => {
-                let (source, boxed) = conversion_source(&field.ty);
+            (None, Some(FromAttr::Provider(ty))) => errors.push(syn::Error::new(
+                ty.span(),
+                "`#[from(concord::Error<D>)]` belongs on a single-field tuple variant: its field is built from the provider's failure",
+            )),
+            (Some(field), from) => {
+                let (inner, boxed) = conversion_source(&field.ty);
+                let provider = match &from {
+                    Some(FromAttr::Provider(ty)) => Some(&**ty),
+                    _ => None,
+                };
+                let source = provider.unwrap_or(inner);
                 let key = source.to_token_stream().to_string().replace(" :: ", "::");
                 if let Some((_, first)) = sources.iter().find(|(k, _)| *k == key) {
                     errors.push(syn::Error::new(
@@ -92,7 +107,10 @@ pub fn expand(item: &Item) -> syn::Result<TokenStream> {
                     continue;
                 }
                 sources.push((key, &variant.ident));
-                froms.push(from_impl(input, variant, &field.ty, source, boxed));
+                froms.push(match provider {
+                    Some(provider) => provider_impl(input, variant, &field.ty, inner, provider, boxed),
+                    None => from_impl(input, variant, &field.ty, source, boxed),
+                });
             }
             (None, None) => {}
         }
@@ -110,13 +128,25 @@ pub fn expand(item: &Item) -> syn::Result<TokenStream> {
         None if input.variants.is_empty() => quote!(match *self {}),
         None => quote!(match self { #(#arms)* }),
     };
+    let source = (!causes.is_empty()).then(|| {
+        quote! {
+            fn source(&self) -> ::core::option::Option<&(dyn ::core::error::Error + 'static)> {
+                match self {
+                    #(#causes)*
+                    _ => ::core::option::Option::None,
+                }
+            }
+        }
+    });
     Ok(quote! {
         impl #impl_generics ::core::fmt::Display for #name #ty_generics #where_clause {
             fn fmt(&self, #formatter: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
                 #body
             }
         }
-        impl #impl_generics ::core::error::Error for #name #ty_generics #where_clause {}
+        impl #impl_generics ::core::error::Error for #name #ty_generics #where_clause {
+            #source
+        }
         #(#froms)*
     })
 }
@@ -160,7 +190,13 @@ fn enum_hook(attrs: &[Attribute]) -> syn::Result<Option<Path>> {
         if attr.path().is_ident("from") {
             return Err(syn::Error::new_spanned(
                 attr,
-                "`#[from(skip)]` belongs on a variant",
+                "`#[from(..)]` belongs on a variant",
+            ));
+        }
+        if attr.path().is_ident("source") {
+            return Err(syn::Error::new_spanned(
+                attr,
+                "`#[source]` belongs on the field that caused a variant's error",
             ));
         }
         if !attr.path().is_ident("display") {
@@ -186,17 +222,23 @@ fn enum_hook(attrs: &[Attribute]) -> syn::Result<Option<Path>> {
     Ok(hook)
 }
 
-/// A variant's `#[display("...")]` and `#[from(skip)]`.
+/// A variant's `#[from(..)]`: no conversion, or the provider's failure of a `concord::Error<D>`.
+enum FromAttr {
+    Skip(Span),
+    Provider(Box<Type>),
+}
+
+/// A variant's `#[display("...")]` and `#[from(..)]`.
 struct VariantAttrs {
     display: Option<LitStr>,
-    skip: Option<Span>,
+    from: Option<FromAttr>,
 }
 
 impl VariantAttrs {
     fn parse(variant: &Variant) -> syn::Result<Self> {
         let mut out = Self {
             display: None,
-            skip: None,
+            from: None,
         };
         for attr in &variant.attrs {
             if attr.path().is_ident("display") {
@@ -215,16 +257,86 @@ impl VariantAttrs {
                     ));
                 }
             } else if attr.path().is_ident("from") {
-                let word = attr.parse_args::<skip>()?;
-                if out.skip.replace(word.span).is_some() {
+                let from = attr.parse_args_with(|input: ParseStream<'_>| {
+                    if input.peek(skip) {
+                        return Ok(FromAttr::Skip(input.parse::<skip>()?.span));
+                    }
+                    Ok(FromAttr::Provider(Box::new(input.parse::<Type>()?)))
+                })?;
+                if out.from.replace(from).is_some() {
                     return Err(syn::Error::new_spanned(
                         attr,
                         "a second `#[from]` on this variant",
                     ));
                 }
+            } else if attr.path().is_ident("source") {
+                return Err(syn::Error::new_spanned(
+                    attr,
+                    "`#[source]` belongs on the field that caused this variant's error",
+                ));
             }
         }
         Ok(out)
+    }
+}
+
+/// The variant's `source()` arm: its field marked `#[source]` (at most one; a syntactic `Box<T>`
+/// is the `T`, an `Option<T>` is a source when present).
+fn source_arm(variant: &Variant) -> syn::Result<Option<TokenStream>> {
+    let mut marked = None;
+    for (index, field) in variant.fields.iter().enumerate() {
+        for attr in field.attrs.iter().filter(|a| a.path().is_ident("source")) {
+            if !matches!(attr.meta, syn::Meta::Path(_)) {
+                return Err(syn::Error::new_spanned(
+                    attr,
+                    "`#[source]` takes no arguments",
+                ));
+            }
+            if marked.replace((index, field)).is_some() {
+                return Err(syn::Error::new_spanned(
+                    attr,
+                    "a second `#[source]` in this variant: an error has one source",
+                ));
+            }
+        }
+    }
+    let Some((index, field)) = marked else {
+        return Ok(None);
+    };
+    let ident = &variant.ident;
+    // Hygienic, but located at the field: a field that is not an error is reported there.
+    let bound = Ident::new("__source", Span::mixed_site().located_at(field.ty.span()));
+    let member = match &field.ident {
+        Some(name) => quote!(#name),
+        None => syn::Index::from(index).into_token_stream(),
+    };
+    let dyn_error = |ty: &Type| quote_spanned!(ty.span()=> &(dyn ::core::error::Error + 'static));
+    let (inner, boxed) = conversion_source(&field.ty);
+    let cause = if boxed {
+        let target = dyn_error(inner);
+        quote_spanned!(inner.span()=> ::core::option::Option::Some(&**#bound as #target))
+    } else if let Some(inner) = option_inner(&field.ty) {
+        let target = dyn_error(inner);
+        quote_spanned!(inner.span()=> #bound.as_ref().map(|cause| cause as #target))
+    } else {
+        let target = dyn_error(&field.ty);
+        quote_spanned!(field.ty.span()=> ::core::option::Option::Some(#bound as #target))
+    };
+    Ok(Some(
+        quote!(Self::#ident { #member: #bound, .. } => #cause,),
+    ))
+}
+
+/// `T` of a syntactic `Option<T>`.
+fn option_inner(ty: &Type) -> Option<&Type> {
+    let Type::Path(path) = ty else { return None };
+    let last = path.path.segments.last()?;
+    let syn::PathArguments::AngleBracketed(args) = &last.arguments else {
+        return None;
+    };
+    match (last.ident == "Option", args.args.first()) {
+        (true, Some(syn::GenericArgument::Type(inner))) if args.args.len() == 1 => Some(inner),
+        _ => None,
     }
 }
 
@@ -371,8 +483,9 @@ fn scan(text: &str) -> Result<(Vec<FieldRef>, String), String> {
                 "`{{{inner}}}` names no field: write `{{0{spec}}}` or `{{field{spec}}}`"
             ));
         }
-        let word = arg.chars().all(|c| c.is_ascii_alphanumeric() || c == '_');
-        if !word {
+        // A field index, or a Rust identifier (Unicode `XID` rules, keywords excluded).
+        let index = arg.bytes().all(|b| b.is_ascii_digit());
+        if !index && syn::parse_str::<Ident>(arg).is_err() {
             return Err(format!("`{{{inner}}}`: `{arg}` is not a field name"));
         }
         if let Ok(index) = arg.parse::<usize>() {
@@ -418,6 +531,43 @@ fn conversion_source(ty: &Type) -> (&Type, bool) {
         }
     }
     (ty, false)
+}
+
+/// `From<concord::Error<D>>` for the variant marked `#[from(concord::Error<D>)]`: the provider's
+/// failure builds its field (`From<Failure<D>>`); every other failure goes through the enum's own
+/// `From<concord::Error>`.
+fn provider_impl(
+    input: &ItemEnum,
+    variant: &Variant,
+    field: &Type,
+    inner: &Type,
+    provider: &Type,
+    boxed: bool,
+) -> TokenStream {
+    let name = &input.ident;
+    let ident = &variant.ident;
+    let (impl_generics, ty_generics, where_clause) = input.generics.split_for_impl();
+    // Hygienic, but located where a missing conversion is the author's to add.
+    let error = Ident::new("error", Span::mixed_site().located_at(provider.span()));
+    let failure = Ident::new("failure", Span::mixed_site().located_at(inner.span()));
+    // The argument is a block at the field, so a missing `From<Failure<D>>` is reported there.
+    let value = quote_spanned!(inner.span()=> ::core::convert::From::from({ #failure }));
+    let built = if boxed {
+        quote_spanned!(field.span()=> <#field>::new(#value))
+    } else {
+        value
+    };
+    let rest = quote_spanned!(provider.span()=> <Self as ::core::convert::From<_>>::from(#error));
+    quote_spanned! {provider.span()=>
+        impl #impl_generics ::core::convert::From<#provider> for #name #ty_generics #where_clause {
+            fn from(#error: #provider) -> Self {
+                match #error.into_provider() {
+                    ::core::result::Result::Ok(#failure) => Self::#ident(#built),
+                    ::core::result::Result::Err(#error) => #rest,
+                }
+            }
+        }
+    }
 }
 
 fn from_impl(

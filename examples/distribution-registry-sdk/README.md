@@ -224,15 +224,16 @@ Every call returns `Result<_, RegistryError>`:
 |---|---|
 | `Input(InputError)` | an input refused before anything was sent |
 | `Request { error, meta }` | Concord's failure: build, transport (`error.kind()`), a 2xx body that does not decode, a size `Limit`; `meta` once a response arrived |
-| `Api(ApiError)` | a non-2xx answer: `status`, the error document (`errors()`, `has_code(..)`, `ErrorEntry::detail_digest`), the Bearer `challenge` of a `401`, `meta` |
+| `Api(ApiError)` | a non-2xx answer: `failure.status()`, the error document (`errors()`, `has_code(..)`, `ErrorEntry::detail_digest`), the Bearer `challenge` of a `401`, `meta` |
 | `Auth(AuthError)` | the token flow: `MalformedChallenge`, `UntrustedRealm`, `InvalidRealm`, `TokenTransport`, `TokenRefused` (with the status), `TokenResponse` |
 | `Protocol(ProtocolError)` | a 2xx that breaks the protocol (missing or foreign `Location`, unexpected `Range`, bad `Link`, an unaccepted media type, an unexpected success status), or a server URL refused before use |
 | `Integrity(IntegrityError)` | content that does not match its digest or size |
 
 `Display` names the operation (`GET Repository.manifest: registry answered HTTP 404 Not Found
 (MANIFEST_UNKNOWN)`) and never contains a token, a credential, a URL or a body text. Error bodies
-are read up to 64 KiB (`ErrorBody::TooLarge` beyond). The SDK re-exports `concord` for matching
-on `ErrorKind`.
+are read up to 64 KiB (`ErrorBody::TooLong` beyond). `api.failure.state()` records the
+document outcome; `api.failure.document()` and `api.failure.body()` expose the unredacted
+typed document and retained bytes. The SDK re-exports `concord` for matching on `ErrorKind`.
 
 ## Limitations
 

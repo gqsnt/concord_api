@@ -1,5 +1,6 @@
-//! `#[derive(concord::derive::Error)]`: formatting, conversions and the empty `source()` chain,
-//! compared with the hand-written implementations it replaces. Compile-fail cases are in
+//! `#[derive(concord::derive::Error)]`: formatting, conversions and `source()` chains, compared
+//! with the hand-written implementations it replaces. The split of a declared error document's
+//! `concord::Error<D>` is tested in `error_document.rs`; compile-fail cases are in
 //! `tests/ui_derive_error/*.rs`.
 
 use std::error::Error as _;
@@ -261,6 +262,66 @@ fn field_names_never_shadow_the_generated_bindings() {
     assert_eq!(text.to_string(), "<a> b");
     assert_eq!(Shadowing::Status { status: 404 }.to_string(), "HTTP 404");
     assert_eq!(Shadowing::Fill("ab", 3).to_string(), "[$$$$ab] ab 3");
+}
+
+/// Field names are Rust identifiers, not only ASCII ones: delegation and composite strings.
+#[derive(Debug, concord::derive::Error)]
+enum Unicode {
+    #[display("{détail}")]
+    Alone { détail: Padded },
+    #[display("échec {détail} ({コード})")]
+    Composite {
+        détail: &'static str, コード: u16
+    },
+}
+
+#[test]
+fn non_ascii_field_names_format() {
+    let alone = Unicode::Alone {
+        détail: Padded("ab"),
+    };
+    assert_eq!(format!("{alone:>4}"), "  ab");
+    let composite = Unicode::Composite {
+        détail: "quota",
+        コード: 429,
+    };
+    assert_eq!(composite.to_string(), "échec quota (429)");
+}
+
+/// `#[source]` on one field per variant: plain, boxed, optional and named fields.
+#[derive(Debug, concord::derive::Error)]
+enum Caused {
+    #[display("plain")]
+    Plain(#[source] Other),
+    #[display("boxed after {0} tries")]
+    Boxed(u8, #[source] Box<Other>),
+    #[display("maybe")]
+    Maybe {
+        #[source]
+        cause: Option<Other>,
+    },
+    #[display("{0}")]
+    #[from(skip)]
+    Uncaused(Other),
+}
+
+impl std::error::Error for Other {}
+
+#[test]
+fn marked_fields_are_the_source() {
+    let source = |e: &Caused| e.source().map(ToString::to_string);
+    assert_eq!(source(&Caused::Plain(Other(1))).as_deref(), Some("other 1"));
+    assert_eq!(
+        source(&Caused::Boxed(0, Box::new(Other(2)))).as_deref(),
+        Some("other 2")
+    );
+    let maybe = |cause| Caused::Maybe { cause };
+    assert_eq!(source(&maybe(Some(Other(3)))).as_deref(), Some("other 3"));
+    assert_eq!(source(&maybe(None)), None);
+    assert_eq!(source(&Caused::Uncaused(Other(4))), None);
+    // The boxed source is the payload itself: one level, not the box and then the payload.
+    let boxed = Caused::Boxed(0, Box::new(Other(5)));
+    assert!(boxed.source().unwrap().source().is_none());
 }
 
 /// Authored mistakes fail at the attribute, variant or field that was written.

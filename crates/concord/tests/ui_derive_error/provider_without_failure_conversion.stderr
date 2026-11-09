@@ -1,0 +1,11 @@
+error[E0277]: the trait bound `Answer: From<Failure<Doc>>` is not satisfied
+  --> tests/ui_derive_error/provider_without_failure_conversion.rs:20:13
+   |
+20 |     Api(Box<Answer>),
+   |             ^^^^^^ unsatisfied trait bound
+   |
+help: the trait `From<Failure<Doc>>` is not implemented for `Answer`
+  --> tests/ui_derive_error/provider_without_failure_conversion.rs:6:1
+   |
+ 6 | pub struct Answer;
+   | ^^^^^^^^^^^^^^^^^

@@ -56,7 +56,7 @@ use crate::SalesforceApiQuery;
 use crate::context::OrgContext;
 use crate::error::{ProtocolError, ProtocolErrorKind, SfError};
 use crate::ids::{BatchSize, QueryLocator, RecordId};
-use crate::model::{Account, Attributes, Contact, DynamicRecord, QueryResponse};
+use crate::model::{Account, ApiErrorBody, Attributes, Contact, DynamicRecord, QueryResponse};
 use crate::soql::Soql;
 use crate::transport::{ApiUsage, prepared, send_with_usage};
 
@@ -70,7 +70,7 @@ pub trait QueryRecord: DeserializeOwned + 'static {
     fn first(
         query: &SalesforceApiQuery,
         soql: Soql,
-    ) -> Result<Prepared<QueryResponse<Self>>, concord::Error>;
+    ) -> Result<Prepared<QueryResponse<Self>, ApiErrorBody>, concord::Error>;
 
     /// The batch at `locator` (`GET query/{locator}`).
     ///
@@ -80,7 +80,7 @@ pub trait QueryRecord: DeserializeOwned + 'static {
     fn more(
         query: &SalesforceApiQuery,
         locator: QueryLocator,
-    ) -> Result<Prepared<QueryResponse<Self>>, concord::Error>;
+    ) -> Result<Prepared<QueryResponse<Self>, ApiErrorBody>, concord::Error>;
 
     /// The record's `attributes`.
     fn attributes(&self) -> &Attributes;
@@ -93,13 +93,13 @@ impl QueryRecord for Account {
     fn first(
         q: &SalesforceApiQuery,
         soql: Soql,
-    ) -> Result<Prepared<QueryResponse<Self>>, concord::Error> {
+    ) -> Result<Prepared<QueryResponse<Self>, ApiErrorBody>, concord::Error> {
         q.accounts(soql).prepare()
     }
     fn more(
         q: &SalesforceApiQuery,
         l: QueryLocator,
-    ) -> Result<Prepared<QueryResponse<Self>>, concord::Error> {
+    ) -> Result<Prepared<QueryResponse<Self>, ApiErrorBody>, concord::Error> {
         q.more_accounts(l).prepare()
     }
     fn attributes(&self) -> &Attributes {
@@ -114,13 +114,13 @@ impl QueryRecord for Contact {
     fn first(
         q: &SalesforceApiQuery,
         soql: Soql,
-    ) -> Result<Prepared<QueryResponse<Self>>, concord::Error> {
+    ) -> Result<Prepared<QueryResponse<Self>, ApiErrorBody>, concord::Error> {
         q.contacts(soql).prepare()
     }
     fn more(
         q: &SalesforceApiQuery,
         l: QueryLocator,
-    ) -> Result<Prepared<QueryResponse<Self>>, concord::Error> {
+    ) -> Result<Prepared<QueryResponse<Self>, ApiErrorBody>, concord::Error> {
         q.more_contacts(l).prepare()
     }
     fn attributes(&self) -> &Attributes {
@@ -135,13 +135,13 @@ impl QueryRecord for DynamicRecord {
     fn first(
         q: &SalesforceApiQuery,
         soql: Soql,
-    ) -> Result<Prepared<QueryResponse<Self>>, concord::Error> {
+    ) -> Result<Prepared<QueryResponse<Self>, ApiErrorBody>, concord::Error> {
         q.dynamic(soql).prepare()
     }
     fn more(
         q: &SalesforceApiQuery,
         l: QueryLocator,
-    ) -> Result<Prepared<QueryResponse<Self>>, concord::Error> {
+    ) -> Result<Prepared<QueryResponse<Self>, ApiErrorBody>, concord::Error> {
         q.more_dynamic(l).prepare()
     }
     fn attributes(&self) -> &Attributes {

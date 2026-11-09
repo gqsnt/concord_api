@@ -40,15 +40,18 @@ pub fn api(input: TokenStream) -> TokenStream {
     }
 }
 
-/// Derives `Display`, `std::error::Error` (no `source()` chain) and `From` for an SDK's error enum,
-/// whose variants stay as written.
+/// Derives `Display`, `std::error::Error` and `From` for an SDK's error enum, whose variants stay
+/// as written.
 ///
 /// - `#[display("...")]` on each variant: a format string over its fields (`{0}`, `{name}`).
 ///   Exactly one field (`"{0}"`) formats as that field, with the caller's flags. Or
 ///   `#[display(with = path)]` on the enum: `fn(&Self, &mut Formatter<'_>) -> fmt::Result`.
 /// - Each single-field tuple variant converts `From` its field (`From<T>` for `Box<T>`);
-///   `#[from(skip)]` withholds one.
-#[proc_macro_derive(Error, attributes(display, from))]
+///   `#[from(skip)]` withholds one. `#[from(concord::Error<D>)]` makes the variant the provider's
+///   answer: its field is built `From` the `Failure<D>`, any other failure goes through
+///   `From<concord::Error>`.
+/// - `#[source]` on one field of a variant is its `source()`; there is none otherwise.
+#[proc_macro_derive(Error, attributes(display, from, source))]
 pub fn derive_error(input: TokenStream) -> TokenStream {
     let item = syn::parse_macro_input!(input as syn::Item);
     derive_error::expand(&item)

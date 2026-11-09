@@ -1,0 +1,17 @@
+error: `{a-b}`: `a-b` is not a field name
+ --> tests/ui_derive_error/not_a_field_name.rs:3:15
+  |
+3 |     #[display("{a-b} failed")]
+  |               ^^^^^^^^^^^^^^
+
+error: `{type}`: `type` is not a field name
+ --> tests/ui_derive_error/not_a_field_name.rs:5:15
+  |
+5 |     #[display("{type}")]
+  |               ^^^^^^^^
+
+error: `{1x}`: `1x` is not a field name
+ --> tests/ui_derive_error/not_a_field_name.rs:7:15
+  |
+7 |     #[display("{1x}")]
+  |               ^^^^^^

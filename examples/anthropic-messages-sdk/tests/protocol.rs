@@ -220,7 +220,7 @@ fn check_documented(errors: Vec<Error>) {
             api.message(),
             Some(format!("synthetic {error_type}").as_str())
         );
-        assert!(api.document_error().is_none());
+        assert!(api.failure().document().is_some());
     }
 }
 
@@ -338,18 +338,18 @@ async fn unreadable_error_documents_keep_the_status() {
     let server = TestServer::start(move |_| script.next()).await;
     let api = api(&server);
     let expected = [
-        (502, ErrorKind::Metadata),
-        (500, ErrorKind::Metadata),
-        (400, ErrorKind::Decode),
-        (400, ErrorKind::Decode),
-        (400, ErrorKind::Limit),
-        (500, ErrorKind::Transport),
+        (502, "Unrecognized"),
+        (500, "Unrecognized"),
+        (400, "Unrecognized"),
+        (400, "Unrecognized"),
+        (400, "TooLong"),
+        (500, "Broken"),
     ];
-    for (status, kind) in expected {
+    for (status, state) in expected {
         let error = api_error(api.messages().create(hello()).send().await.unwrap_err());
         assert_eq!(error.status(), status);
         assert_eq!(error.error_type(), None);
-        assert_eq!(error.document_error().map(concord::Error::kind), Some(kind));
+        assert!(format!("{:?}", error.failure().state()).starts_with(state));
         assert!(error.to_string().contains("unreadable"), "{error}");
     }
 }

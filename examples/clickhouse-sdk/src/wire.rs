@@ -13,7 +13,7 @@
 
 use concord::reqwest::header::HeaderValue;
 use concord::stream::Upload;
-use concord::{Encoded, Text};
+use concord::{Encoded, IgnoreContentType, Text};
 
 use crate::format::OutputFormat;
 use crate::query::{Identifier, QueryId};
@@ -34,6 +34,7 @@ concord::api! {
         query("quota_key") quota_key?: String,
     ) {
         base "http://localhost:8123";
+        error String in IgnoreContentType<Text>;
         headers { "x-clickhouse-database" = "{database}"; }
 
         /// A read-only query; the response format is the `X-ClickHouse-Format` header.

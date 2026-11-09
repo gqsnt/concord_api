@@ -10,35 +10,43 @@ use std::fmt;
 
 use concord::reqwest::StatusCode;
 use concord::stream::{Position, ReadError, ReadErrorKind};
+use concord::{Document, Failure};
 
 use crate::guard::BodyException;
 use crate::meta::ResponseMeta;
 use crate::query::RequestError;
 
 /// Every failure of the SDK's operations.
-#[derive(Debug)]
+#[derive(Debug, concord::derive::Error)]
 #[non_exhaustive]
 pub enum Error {
     /// Refused locally before anything was sent (an unbound placeholder, an invalid identifier
     /// or query ID).
+    #[display("request refused before sending: {0}")]
     Request(RequestError),
     /// Concord could not build or send the request, or the transport failed before a response
     /// head arrived or while reading an insert receipt body after the head (`kind()` is `Build`
     /// or `Transport`).
+    #[display("{0}")]
     Concord(concord::Error),
     /// The server answered a non-2xx status: an exception raised before the response started.
+    #[display("{0}")]
+    #[from(concord::Error<String>)]
     Server(Box<ServerException>),
     /// The status was 2xx, but the server reported an exception: in the response body after rows
     /// were sent (the exception block), or in the response head (`X-ClickHouse-Exception-Code` on
     /// a 2xx head). Rows already returned stay returned; the result is incomplete.
+    #[display("{0}")]
     LateException(Box<LateException>),
     /// The status was 2xx, but the head was refused before the body was read: another format
     /// than the one requested (`X-ClickHouse-Format`), or a `Content-Type` the reader does not
     /// accept.
+    #[display("{0}")]
     Response(Box<ResponseError>),
     /// Reading the body failed after it started: the transport broke (ClickHouse 24.11 and
     /// later break the HTTP framing after a late exception), a row is malformed, a row does not
     /// decode into the row type, or a limit was reached.
+    #[display("{0}")]
     Read(Box<ReadFailure>),
 }
 
@@ -78,33 +86,6 @@ impl Error {
     }
 }
 
-impl fmt::Display for Error {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::Request(e) => write!(f, "request refused before sending: {e}"),
-            Self::Concord(e) => fmt::Display::fmt(e, f),
-            Self::Server(e) => fmt::Display::fmt(e, f),
-            Self::LateException(e) => fmt::Display::fmt(e, f),
-            Self::Response(e) => fmt::Display::fmt(e, f),
-            Self::Read(e) => fmt::Display::fmt(e, f),
-        }
-    }
-}
-
-impl std::error::Error for Error {}
-
-impl From<RequestError> for Error {
-    fn from(error: RequestError) -> Self {
-        Self::Request(error)
-    }
-}
-
-impl From<concord::Error> for Error {
-    fn from(error: concord::Error) -> Self {
-        Self::Concord(error)
-    }
-}
-
 /// The `Code: N` prefix of a ClickHouse exception message (`Code: 62. DB::Exception: ...`, or the
 /// older `Code: 59, e.displayText() = ...`).
 pub(crate) fn code_of(message: &str) -> Option<i32> {
@@ -134,6 +115,30 @@ pub struct ServerException {
     pub(crate) name: Option<String>,
     pub(crate) message: Option<String>,
     pub(crate) meta: ResponseMeta,
+}
+
+/// The exception text of a non-2xx answer (bounded), its code and name.
+impl From<Failure<String>> for ServerException {
+    fn from(failure: Failure<String>) -> Self {
+        let operation = failure.operation().map_or("", |op| op.name());
+        let (meta, document, _) = failure.into_parts();
+        let meta = ResponseMeta::new(meta);
+        let message = match document {
+            Document::Read(text) => Some(text.trim_end().to_owned()),
+            _ => None,
+        }
+        .filter(|text| !text.is_empty());
+        Self {
+            operation,
+            status: meta.status(),
+            code: meta
+                .exception_code()
+                .or_else(|| message.as_deref().and_then(code_of)),
+            name: message.as_deref().and_then(name_of),
+            message,
+            meta,
+        }
+    }
 }
 
 impl ServerException {

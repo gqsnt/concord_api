@@ -107,7 +107,7 @@ from the latest event that carried it.
 | A key that cannot be a header value | `Error::Concord`, kind `Build`, `delivery() == NotSent`; the key is not echoed |
 | No response (connection refused, timeout, reset) | `Error::Concord`, kind `Transport`, `delivery() == Unknown`: a create may have been generated and billed; the SDK does not resend |
 | A non-2xx status (400, 401, 402, 403, 404, 409, 413, 429, 500, 504, 529, including counting and the streaming endpoint before its stream starts) | `Error::Api(ApiError)`: `status()`, `error_type()` (`ApiErrorType`, unknown types kept verbatim), `message()`, `request_id()` (header, else the document's `request_id`), `retry_after(now)` |
-| A non-2xx whose document is HTML, unlabelled, not JSON, not the documented shape, longer than 64 KiB or cut off | `Error::Api` with the status kept and `document_error()` saying why (Concord `Metadata`, `Decode`, `Limit`, `Transport`) |
+| A non-2xx whose document is HTML, unlabelled, not JSON, not the documented shape, longer than 64 KiB or cut off | `Error::Api` with the status kept and `failure().state()` saying why (`Unrecognized`, `TooLong`, `Broken`, `Empty`) |
 | A 2xx `create` / `count_tokens` that is not `application/json`, not the declared message / count, longer than 8 MiB or cut off | `Error::Concord` (`Metadata`, `Decode`, `Limit`, `Transport`), with the head (`error.status()`, `error.request_id()`) |
 | A 2xx `stream` response that is not `text/event-stream` (charset absent or UTF-8) | `Error::Concord`, kind `Metadata`, the response kept unread |
 | An `error` event after the 200 (`overloaded_error`, ...) | `Error::Incomplete`, cause `ErrorEvent` |

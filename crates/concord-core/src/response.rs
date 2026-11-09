@@ -157,13 +157,13 @@ impl fmt::Display for Operation {
 /// header for you. `Debug` prints the operation, the status, the version and the header names —
 /// never the URL or a header value.
 #[must_use = "a received response is consumed by `decode`, `into_incoming` or `into_response`"]
-pub struct Received<T> {
+pub struct Received<T, D = ()> {
     response: reqwest::Response,
-    decoder: Decoder<T>,
+    decoder: Decoder<T, D>,
 }
 
-impl<T> Received<T> {
-    pub(crate) fn new(response: reqwest::Response, decoder: Decoder<T>) -> Self {
+impl<T, D> Received<T, D> {
+    pub(crate) fn new(response: reqwest::Response, decoder: Decoder<T, D>) -> Self {
         Self { response, decoder }
     }
 
@@ -204,7 +204,8 @@ impl<T> Received<T> {
 
     /// Applies the operation's declared response handling, exactly as
     /// [`Prepared::send`](crate::Prepared::send) does after executing: a non-2xx status is
-    /// [`ErrorKind::Status`](crate::ErrorKind::Status) (response kept unread), then the format
+    /// [`ErrorKind::Status`](crate::ErrorKind::Status) (response kept unread, or read into
+    /// [`Error::provider`] with a declared error document), then the format
     /// checks the head ([`Metadata`](crate::ErrorKind::Metadata), unread) and the body is
     /// decoded (a finite `-> T`), drained (no `->`) or opened for incremental reading
     /// (`-> stream T`; nothing is read).
@@ -213,8 +214,30 @@ impl<T> Received<T> {
     ///
     /// `Status`, `Metadata`, `Transport` (reading the body) or `Decode`, each naming the
     /// operation.
-    pub async fn decode(self) -> Result<T, Error> {
+    pub async fn decode(self) -> Result<T, Error<D>> {
         self.decoder.decode(self.response).await
+    }
+
+    /// Reads the answer, **whatever its status**, as the declared error document (`error D in
+    /// F;`), bounded by `limit` bytes: for an SDK that decided, after examining the head, to
+    /// return it as a failure. The status stays authoritative; [`Failure::state`] says what
+    /// became of the document. Without an `error` statement a non-empty body is `Unrecognized`.
+    ///
+    /// [`Failure::state`]: crate::Failure::state
+    pub async fn failure(self, limit: usize) -> crate::Failure<D> {
+        self.decoder.failure(self.response, limit).await
+    }
+
+    /// [`failure`](Self::failure) with the error document `Doc` in the format `F`, for a response
+    /// that arrived outside a declared endpoint's handling (an unread refusal, say).
+    pub async fn failure_as<F, Doc>(self, limit: usize) -> crate::Failure<Doc>
+    where
+        F: crate::Decode<Doc> + 'static,
+        Doc: 'static,
+    {
+        let step = crate::prepared::head_step::<F, Doc>;
+        let operation = self.decoder.operation();
+        crate::failure::read(self.response, Some(step), limit, operation).await
     }
 
     /// The unread body for an incremental reader chosen at run time (a CSV dialect read from a
@@ -285,9 +308,9 @@ impl<T> Received<T> {
     /// the body is longer than `limit`, [`Transport`](crate::ErrorKind::Transport) when reading
     /// fails, [`Decode`](crate::ErrorKind::Decode) when it does not decode (the body is kept:
     /// [`Error::body_unredacted`]) — each naming the operation, with the head ([`Error::head`]).
-    pub async fn document<F, D>(self, limit: usize) -> (ResponseMeta, Result<D, Error>)
+    pub async fn document<F, Doc>(self, limit: usize) -> (ResponseMeta, Result<Doc, Error>)
     where
-        F: crate::Decode<D>,
+        F: crate::Decode<Doc>,
     {
         let operation = self.decoder.operation();
         let mut response = self.response;
@@ -319,7 +342,7 @@ impl<T> Received<T> {
     /// # Errors
     ///
     /// As [`decode`](Self::decode).
-    pub async fn decode_with_meta(self) -> Result<(T, ResponseMeta), Error> {
+    pub async fn decode_with_meta(self) -> Result<(T, ResponseMeta), Error<D>> {
         let limit = self.decoder.limit();
         self.decoder
             .decode_keeping(self.response, limit, true)
@@ -332,7 +355,10 @@ impl<T> Received<T> {
     /// # Errors
     ///
     /// As [`decode_limited`](Self::decode_limited).
-    pub async fn decode_limited_with_meta(self, limit: usize) -> Result<(T, ResponseMeta), Error> {
+    pub async fn decode_limited_with_meta(
+        self,
+        limit: usize,
+    ) -> Result<(T, ResponseMeta), Error<D>> {
         self.decoder
             .decode_keeping(self.response, Some(limit), true)
             .await
@@ -346,7 +372,7 @@ impl<T> Received<T> {
     /// # Errors
     ///
     /// As [`decode`](Self::decode), and `Limit`.
-    pub async fn decode_limited(self, limit: usize) -> Result<T, Error> {
+    pub async fn decode_limited(self, limit: usize) -> Result<T, Error<D>> {
         self.decoder.decode_within(self.response, Some(limit)).await
     }
 
@@ -359,12 +385,12 @@ impl<T> Received<T> {
 
     /// The native response (see [`into_response`](Self::into_response)) and the declared
     /// handling, to apply later with [`Decoder::decode`].
-    pub fn into_parts(self) -> (reqwest::Response, Decoder<T>) {
+    pub fn into_parts(self) -> (reqwest::Response, Decoder<T, D>) {
         (self.response, self.decoder)
     }
 }
 
-impl<T> fmt::Debug for Received<T> {
+impl<T, D> fmt::Debug for Received<T, D> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("Received")
             .field("operation", &self.operation())

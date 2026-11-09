@@ -1,0 +1,13 @@
+error[E0277]: the trait bound `Error: From<concord::Error>` is not satisfied
+ --> tests/ui_derive_error/provider_without_concord_variant.rs:7:12
+  |
+7 |     #[from(concord::Error<Doc>)]
+  |            ^^^^^^^ unsatisfied trait bound
+  |
+help: the trait `From<Error<()>>` is not implemented for `Error`
+      but trait `From<Error<Doc>>` is implemented for it
+ --> tests/ui_derive_error/provider_without_concord_variant.rs:7:12
+  |
+7 |     #[from(concord::Error<Doc>)]
+  |            ^^^^^^^
+  = help: for that trait implementation, expected `Doc`, found `()`

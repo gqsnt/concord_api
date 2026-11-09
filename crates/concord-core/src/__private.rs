@@ -300,6 +300,33 @@ impl<T> DecodeFormat<T> {
     }
 }
 
+/// A build error of an endpoint with a declared error document, as its `send()` returns it.
+pub fn widen<D>(error: Error) -> Error<D> {
+    error.widen()
+}
+
+/// An owner's declared error document (`error D in F;`): a `static` per endpoint, like
+/// [`DecodeFormat`]. Its format never contributes an `Accept`.
+pub struct ErrorFormat<D> {
+    head: HeadStep<D>,
+}
+
+impl<D: 'static> ErrorFormat<D> {
+    /// The format `F` for the error document `D`.
+    pub const fn new<F: Decode<D> + 'static>() -> Self {
+        Self {
+            head: head_step::<F, D>,
+        }
+    }
+}
+
+impl<D> ErrorFormat<D> {
+    /// The endpoint's response handling, with this error document.
+    pub fn attach<T>(&self, decoder: Decoder<T>) -> Decoder<T, D> {
+        decoder.with_error(self.head)
+    }
+}
+
 /// An endpoint's incremental response format (`-> stream I`): a `static` per endpoint, like
 /// [`DecodeFormat`]. `R` is the format's reader for `I`.
 pub struct OpenFormat<R> {
@@ -557,14 +584,14 @@ impl<'a> Parts<'a> {
     /// endpoint without typed output), sent only when no `accept` header was composed and the
     /// chain did not end by removing one. It is applied after the authored headers, so it never
     /// takes part in their composition (no conflict, no `remove` target).
-    pub fn finish<T>(
+    pub fn finish<T, D>(
         self,
         method: Method,
         client: &reqwest::Client,
         body: Option<BodyParts>,
-        decoder: Decoder<T>,
+        decoder: Decoder<T, D>,
         accept: Option<&HeaderValue>,
-    ) -> Result<Prepared<T>, Error> {
+    ) -> Result<Prepared<T, D>, Error> {
         let mut url = self.url;
         if !self.segments.is_empty() || self.trailing_slash {
             let mut path = self.base.prefix.clone();

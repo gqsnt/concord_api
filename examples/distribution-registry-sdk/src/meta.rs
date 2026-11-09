@@ -23,7 +23,7 @@ pub const UPLOAD_UUID_HEADER: &str = "docker-upload-uuid";
 pub struct ResponseMeta(concord::ResponseMeta);
 
 impl ResponseMeta {
-    pub(crate) fn capture<T>(received: &Received<T>) -> Self {
+    pub(crate) fn capture<T, D>(received: &Received<T, D>) -> Self {
         Self(received.meta())
     }
 

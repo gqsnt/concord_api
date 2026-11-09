@@ -17,10 +17,14 @@ use concord_check_canary::Canaries;
 use concord_example_testserver::{Body, Recorded, Reply, TestServer};
 use std::time::Duration;
 
-fn concord_error(c: &mut Canaries, error: &concord::Error) {
+fn concord_error<D: 'static>(c: &mut Canaries, error: &concord::Error<D>) {
     c.assert_debug_absent("concord::Error", error);
     c.assert_error_absent("concord::Error and sources", error);
     c.assert_debug_absent("error kind", &error.kind());
+    c.assert_debug_absent("provider failure", &error.provider());
+    if let Some(failure) = error.provider() {
+        c.assert_debug_absent("provider document state", failure.state());
+    }
     if let Some(meta) = error.head_meta() {
         c.assert_debug_absent("error response metadata", &meta);
     }

@@ -1276,7 +1276,11 @@ fn summary_parts(model: &Model, endpoint: usize, method: &Ident) -> Option<Summa
     let (result, result_short) = match policy {
         // The generated `send()` returns `Result<T, concord::Error>` for the prepared output `T`.
         None => {
-            let result = format!(" `send()` returns `Result<{prepared}, concord::Error>`.");
+            let error = error_doc_for_docs(model, endpoint).map_or_else(
+                || "concord::Error".to_owned(),
+                |d| format!("concord::Error<{d}>"),
+            );
+            let result = format!(" `send()` returns `Result<{prepared}, {error}>`.");
             (result.clone(), result)
         }
         Some(policy) => {
@@ -1296,7 +1300,8 @@ fn summary_parts(model: &Model, endpoint: usize, method: &Ident) -> Option<Summa
                 // No result template: the signature shows only the projection. Name it with this
                 // endpoint's output and say where its concrete type is written.
                 None => {
-                    let (policy_trait, trait_name) = policy_trait_for_docs(model, &prepared);
+                    let (policy_trait, trait_name) =
+                        policy_trait_for_docs(model, endpoint, &prepared);
                     let projection = format!(
                         "<{} as {policy_trait}>::Output",
                         type_text(&policy_ty_for_docs(model, policy))
@@ -2016,13 +2021,48 @@ fn emit_owner(
                 None if incoming => quote!(#k::Incoming),
                 None => quote!(()),
             };
+            // `error D in F;` (nearest owner): `D` joins the output in every generic surface.
+            let error_doc = model.nearest_error(index).map(|e| &e.ty);
+            let (out_args, error_ty) = match error_doc {
+                Some(d) => (quote!(#out, #d), quote!(#k::Error<#d>)),
+                None => (quote!(#out), quote!(#k::Error)),
+            };
+            let send_body = match error_doc {
+                Some(_) => quote! {
+                    match self.prepare() {
+                        ::core::result::Result::Ok(__p) => __p.send().await,
+                        ::core::result::Result::Err(__e) => ::core::result::Result::Err(#k::__private::widen(__e)),
+                    }
+                },
+                None => quote!(self.prepare()?.send().await),
+            };
+            // What a non-2xx becomes: kept unread, or read into the declared error document.
+            let status_docs = match (
+                error_doc,
+                incoming || output.as_ref().is_some_and(|o| o.stream),
+            ) {
+                (None, true) => quote! {
+                    /// `ErrorKind::Status` holding the unread response (`concord::Error::into_response`);
+                },
+                (Some(_), true) => quote! {
+                    /// `ErrorKind::Status` with the declared error document read, bounded (`concord::Error::provider`);
+                },
+                (None, false) => quote! {
+                    /// decodes a 2xx response. A non-2xx status is `ErrorKind::Status` holding the
+                    /// unread response (`concord::Error::into_response`); Concord never retries.
+                },
+                (Some(_), false) => quote! {
+                    /// decodes a 2xx response. A non-2xx status is `ErrorKind::Status` with the declared
+                    /// error document read, bounded (`concord::Error::provider`); Concord never retries.
+                },
+            };
             let send_docs = if incoming || output.as_ref().is_some_and(|o| o.stream) {
                 quote! {
                     /// Sends the request once (`prepare` then one `reqwest::Client::execute`) and,
                     /// for a 2xx response, returns the body **unread** for incremental reading
                     /// (the stream format's reader, or the `Incoming` body for a reader you
                     /// choose): nothing is drained or collected. A non-2xx status is
-                    /// `ErrorKind::Status` holding the unread response (`concord::Error::into_response`);
+                    #status_docs
                     /// Concord never retries. Dropping the result closes the response.
                     ///
                     /// # Errors
@@ -2034,8 +2074,7 @@ fn emit_owner(
             } else {
                 quote! {
                     /// Sends the request once (`prepare` then one `reqwest::Client::execute`) and
-                    /// decodes a 2xx response. A non-2xx status is `ErrorKind::Status` holding the
-                    /// unread response (`concord::Error::into_response`); Concord never retries.
+                    #status_docs
                     ///
                     /// # Errors
                     ///
@@ -2056,8 +2095,8 @@ fn emit_owner(
             let send_fn = match policy {
                 None => quote! {
                     #send_docs
-                    #[inline] pub async fn send(self) -> ::core::result::Result<#out, #k::Error> {
-                        self.prepare()?.send().await
+                    #[inline] pub async fn send(self) -> ::core::result::Result<#out, #error_ty> {
+                        #send_body
                     }
                 },
                 Some(policy) => {
@@ -2102,7 +2141,7 @@ fn emit_owner(
                         None => {
                             let prepared =
                                 type_text(&prepared_output_for_docs(output.as_ref(), incoming));
-                            let (policy_trait, _) = policy_trait_for_docs(model, &prepared);
+                            let (policy_trait, _) = policy_trait_for_docs(model, index, &prepared);
                             format!(
                                 " Returns `<{} as {policy_trait}>::Output` using the client's send policy {shown}: the `Output` type of the `{policy_trait}` implementation of {policy_name}, listed among the trait implementations of {policy_name}. {adds}",
                                 type_text(&policy_ty_for_docs(model, policy))
@@ -2117,11 +2156,14 @@ fn emit_owner(
                             let variant = model.operation_variant(index);
                             (
                                 "SendOperation",
-                                quote!(#out, #ops_name),
+                                match error_doc {
+                                    Some(d) => quote!(#out, #ops_name, #d),
+                                    None => quote!(#out, #ops_name),
+                                },
                                 quote!(#ops_name::#variant,),
                             )
                         }
-                        None => ("SendWith", quote!(#out), quote!()),
+                        None => ("SendWith", out_args.clone(), quote!()),
                     };
                     // Spanned at the `send` statement: a type that is no policy is reported there
                     // (with the generated `send()`'s own error), not inside Concord's trait.
@@ -2220,7 +2262,7 @@ fn emit_owner(
                     /// label, header value or body) or two native header names collide; nothing
                     /// is sent.
                     #prepare_note
-                    #[inline] pub fn prepare(self) -> ::core::result::Result<#k::Prepared<#out>, #k::Error> {
+                    #[inline] pub fn prepare(self) -> ::core::result::Result<#k::Prepared<#out_args>, #k::Error> {
                         #prepare
                     }
 
@@ -2229,8 +2271,8 @@ fn emit_owner(
 
                 #sends_impl
 
-                impl #k::Endpoint<#out> for #ty {
-                    #[inline] fn prepare(self) -> ::core::result::Result<#k::Prepared<#out>, #k::Error> {
+                impl #k::Endpoint<#out_args> for #ty {
+                    #[inline] fn prepare(self) -> ::core::result::Result<#k::Prepared<#out_args>, #k::Error> {
                         #ty::prepare(self)
                     }
                     #[inline] fn operation() -> #k::Operation {
@@ -2440,14 +2482,21 @@ fn policy_ty_for_docs(model: &Model, policy: &syn::Type) -> syn::Type {
 /// The trait the client's policy implements, with this endpoint's prepared output, for prose:
 /// `SendOperation<Out, Name>` under `operations Name;`, `SendWith<Out>` otherwise; and the trait's
 /// bare name.
-fn policy_trait_for_docs(model: &Model, prepared: &str) -> (String, &'static str) {
+fn policy_trait_for_docs(model: &Model, endpoint: usize, prepared: &str) -> (String, &'static str) {
+    // `error D in F;` (nearest owner): the trait's last argument.
+    let error = error_doc_for_docs(model, endpoint).map_or_else(String::new, |d| format!(", {d}"));
     match model.operations() {
         Some(ops) => (
-            format!("SendOperation<{prepared}, {}>", plain(&ops.name)),
+            format!("SendOperation<{prepared}, {}{error}>", plain(&ops.name)),
             "SendOperation",
         ),
-        None => (format!("SendWith<{prepared}>"), "SendWith"),
+        None => (format!("SendWith<{prepared}{error}>"), "SendWith"),
     }
+}
+
+/// The error document of an endpoint (`error D in F;` on it or its nearest owner), as code text.
+fn error_doc_for_docs(model: &Model, endpoint: usize) -> Option<String> {
+    model.nearest_error(endpoint).map(|e| type_text(&e.ty))
 }
 
 /// Visibility of a user-supplied policy is unknown; use code text, including for plain paths.
@@ -3288,6 +3337,22 @@ fn prepare_body(
         }
         None => quote!((#k::__private::drain(&__META), ::core::option::Option::None)),
     };
+    // `error D in F;`: the document's format, checked (`F: Decode<D>`) at the statement.
+    let error = match model.nearest_error(index) {
+        Some(e) => {
+            let d = &e.ty;
+            let f = format_type(&e.format);
+            let init = located(
+                quote!(#k::__private::ErrorFormat::<#d>::new::<#f>()),
+                e.format.span(),
+            );
+            quote! {
+                static __ERROR: #k::__private::ErrorFormat<#d> = #init;
+                let __decoder = __ERROR.attach(__decoder);
+            }
+        }
+        None => TokenStream::new(),
+    };
     quote! {
         static __META: #k::__private::EndpointMeta = #k::__private::EndpointMeta {
             name: #name,
@@ -3306,6 +3371,7 @@ fn prepare_body(
         let mut __p = #k::__private::Parts::new(&__META, &#root.__base);
         #code
         let (__decoder, __accept) = #decoder;
+        #error
         __p.finish(#k::reqwest::Method::#method, &#root.__http, __body, __decoder, __accept)
     }
 }

@@ -1,0 +1,11 @@
+error[E0277]: the trait bound `u32: std::error::Error` is not satisfied
+ --> tests/ui_derive_error/source_not_an_error.rs:4:25
+  |
+1 | #[derive(Debug, concord::derive::Error)]
+  |                 ---------------------- in this derive macro expansion
+...
+4 |     Exhausted(#[source] u32),
+  |                         ^^^ the trait `std::error::Error` is not implemented for `u32`
+  |
+  = note: required for the cast from `&u32` to `&(dyn std::error::Error + 'static)`
+  = note: this error originates in the derive macro `concord::derive::Error` (in Nightly builds, run with -Z macro-backtrace for more info)

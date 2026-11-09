@@ -286,14 +286,39 @@ pub(crate) fn parse_listing(
     })
 }
 
-/// The fields of an S3 REST `<Error>` document.
+/// The unredacted fields of an S3 REST `<Error>` document.
 #[derive(Debug, Default)]
-pub(crate) struct ErrorDocument {
-    pub(crate) code: Option<String>,
-    pub(crate) message: Option<String>,
-    pub(crate) resource: Option<String>,
-    pub(crate) request_id: Option<String>,
-    pub(crate) host_id: Option<String>,
+pub struct ErrorDocument {
+    /// `<Code>`.
+    pub code: Option<String>,
+    /// `<Message>`.
+    pub message: Option<String>,
+    /// `<Resource>`.
+    pub resource: Option<String>,
+    /// `<RequestId>`.
+    pub request_id: Option<String>,
+    /// `<HostId>`.
+    pub host_id: Option<String>,
+}
+
+/// S3's REST error document codec. The declaration explicitly accepts mislabeled bodies,
+/// matching the SDK's existing error reader; successful listings still require XML media.
+pub struct S3ErrorXml;
+
+impl Decode<ErrorDocument> for S3ErrorXml {
+    type Context = ();
+
+    fn check_content_type(head: &ResponseHead<'_>) -> Result<(), CodecError> {
+        check_xml_content_type(head)
+    }
+
+    fn context(_: &ResponseHead<'_>) -> Result<(), CodecError> {
+        Ok(())
+    }
+
+    fn decode_body((): (), body: Bytes) -> Result<ErrorDocument, CodecError> {
+        parse_error_document(&body).ok_or_else(|| CodecError::new("not an S3 Error document"))
+    }
 }
 
 /// Parses an `<Error>` document; `None` for anything else (invalid XML, another root).

@@ -1,0 +1,9 @@
+error[E0277]: `?` couldn't convert the error to `concord::Error`
+  --> tests/ui_json/error_document_question_mark.rs:16:28
+   |
+16 |     api.ping().send().await?;
+   |     -----------------------^ the trait `From<concord::Error<Problem>>` is not implemented for `concord::Error`
+   |     |
+   |     this can't be annotated with `?` because it has type `Result<_, concord::Error<Problem>>`
+   |
+   = note: the question mark operation (`?`) implicitly performs a conversion on the error value using the `From` trait
