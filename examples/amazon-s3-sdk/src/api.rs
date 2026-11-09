@@ -13,11 +13,11 @@
 //! (`{bucket}.s3.{region}.amazonaws.com`); the object key is the path. The declared base is a
 //! placeholder replaced by the client's endpoint.
 
-use concord::Binary;
 use concord::bytes::Bytes;
 use concord::reqwest::header::{
     CACHE_CONTROL, CONTENT_DISPOSITION, CONTENT_ENCODING, CONTENT_LANGUAGE, CONTENT_TYPE,
 };
+use concord::{Binary, IgnoreContentType};
 
 use crate::client::Signer;
 use crate::object::{Download, HeadFormat, ObjectHead, PutFormat, PutObjectOutput};
@@ -25,7 +25,7 @@ use crate::types::{
     AccountId, AnyObject, BucketName, ByteRange, ContentType, ContinuationToken, ETag, HttpDate,
     MaxKeys, ObjectKey, PartNumber, Requester, StorageClass, UrlEncoding, VersionId,
 };
-use crate::xml::{ListObjectsV2Output, ListXml};
+use crate::xml::{ErrorDocument, ListObjectsV2Output, ListXml, S3ErrorXml};
 
 concord::api! {
     /// Amazon S3, general-purpose buckets: `ListObjectsV2`, `HeadObject`, `GetObject` and
@@ -36,6 +36,7 @@ concord::api! {
     ) {
         base "https://s3.us-east-1.amazonaws.com";
         send signer;
+        error ErrorDocument in IgnoreContentType<S3ErrorXml>;
 
         /// One bucket, addressed as the leftmost host label.
         scope bucket(

@@ -5,6 +5,7 @@ use std::fmt;
 
 use crate::__private::EndpointMeta;
 use crate::codec::{CodecError, ResponseHead};
+use crate::failure::Failure;
 use crate::response::{Operation, ResponseMeta};
 
 /// Why a Concord call failed.
@@ -15,13 +16,17 @@ use crate::response::{Operation, ResponseMeta};
 /// are whatever numbers the format recorded (a line, a record, a version it read from a header):
 /// a format decides what it exposes there. The `concord` facade's crate documentation states the
 /// exact scope of this guarantee.
-pub struct Error {
-    inner: Box<Inner>,
+///
+/// `D` is the provider's declared error document (`error D in F;`, `()` without one): a non-2xx
+/// answer of such an endpoint is still [`ErrorKind::Status`], read into a [`Failure<D>`]
+/// ([`provider`](Self::provider)). Neither `Display` nor `Debug` prints the document or its bytes.
+pub struct Error<D = ()> {
+    inner: Box<Inner<D>>,
 }
 
-struct Inner {
+struct Inner<D> {
     operation: Option<Operation>,
-    repr: Repr,
+    repr: Repr<D>,
     /// The head of the response whose body was being read when the call failed (`Decode`,
     /// `Limit`, a mid-body `Transport`), moved out of the native response before its body was
     /// consumed. `Status` and `Metadata` errors keep the whole response in `repr` instead.
@@ -30,7 +35,7 @@ struct Inner {
     body: Option<bytes::Bytes>,
 }
 
-enum Repr {
+enum Repr<D> {
     Build {
         what: &'static str,
         reason: &'static str,
@@ -50,6 +55,8 @@ enum Repr {
     Decode(CodecError),
     /// A body read with a byte limit was longer.
     Limit(u64),
+    /// A non-2xx answer read as the declared error document; the response is consumed.
+    Provider(Failure<D>),
 }
 
 /// What a failed call says about whether the request reached the server: the fact an SDK needs
@@ -146,11 +153,25 @@ impl Error {
         Self::new(operation, Repr::Limit(limit))
     }
 
-    fn new(operation: Option<Operation>, repr: Repr) -> Self {
+    fn new(operation: Option<Operation>, repr: Repr<()>) -> Self {
         Self {
             inner: Box::new(Inner {
                 operation,
                 repr,
+                head: None,
+                body: None,
+            }),
+        }
+    }
+}
+
+impl<D> Error<D> {
+    /// A non-2xx answer read as the declared error document.
+    pub(crate) fn provider_failure(failure: Failure<D>) -> Self {
+        Self {
+            inner: Box::new(Inner {
+                operation: failure.operation(),
+                repr: Repr::Provider(failure),
                 head: None,
                 body: None,
             }),
@@ -174,7 +195,7 @@ impl Error {
         match self.inner.repr {
             Repr::Build { .. } | Repr::HeaderConflict { .. } | Repr::Encode(_) => ErrorKind::Build,
             Repr::Transport(_) => ErrorKind::Transport,
-            Repr::Status(_) => ErrorKind::Status,
+            Repr::Status(_) | Repr::Provider(_) => ErrorKind::Status,
             Repr::Metadata(..) => ErrorKind::Metadata,
             Repr::Decode(_) => ErrorKind::Decode,
             Repr::Limit(_) => ErrorKind::Limit,
@@ -204,6 +225,7 @@ impl Error {
     pub fn status(&self) -> Option<reqwest::StatusCode> {
         match &self.inner.repr {
             Repr::Status(response) => Some(response.status()),
+            Repr::Provider(failure) => Some(failure.status()),
             _ => None,
         }
     }
@@ -253,6 +275,7 @@ impl Error {
             Repr::Status(response) | Repr::Metadata(_, response) => {
                 Some(ResponseHead::of(response))
             }
+            Repr::Provider(failure) => Some(failure.meta().head()),
             _ => self.inner.head.as_ref().map(ResponseMeta::head),
         }
     }
@@ -295,7 +318,7 @@ impl Error {
     /// }
     /// # Ok(()) }
     /// ```
-    pub fn into_response(self) -> Result<reqwest::Response, Error> {
+    pub fn into_response(self) -> Result<reqwest::Response, Error<D>> {
         let Inner {
             operation,
             repr,
@@ -352,9 +375,11 @@ impl Error {
             // from a server that performed the request, and `is_connect()` searches the whole
             // source chain (a streamed body's own request). Review b23-review-sol, finding 1.
             Repr::Transport(_) => Delivery::Unknown,
-            Repr::Status(_) | Repr::Metadata(..) | Repr::Decode(_) | Repr::Limit(_) => {
-                Delivery::Answered
-            }
+            Repr::Status(_)
+            | Repr::Metadata(..)
+            | Repr::Decode(_)
+            | Repr::Limit(_)
+            | Repr::Provider(_) => Delivery::Answered,
         }
     }
 
@@ -377,9 +402,65 @@ impl Error {
             _ => None,
         }
     }
+
+    /// The provider's answer of a declared error document (`error D in F;`): its head, what
+    /// became of the document ([`Document`](crate::Document)) and the bounded bytes. `None` for
+    /// any other failure, and for a non-2xx of an endpoint without `error`, which keeps its
+    /// response unread ([`into_response`](Self::into_response)).
+    pub fn provider(&self) -> Option<&Failure<D>> {
+        match &self.inner.repr {
+            Repr::Provider(failure) => Some(failure),
+            _ => None,
+        }
+    }
+
+    /// The declared error document, when one was read: `provider()?.document()`. **Unredacted.**
+    pub fn document(&self) -> Option<&D> {
+        self.provider()?.document()
+    }
+
+    /// Moves the provider's failure out; any other failure is returned unchanged as an
+    /// ordinary [`Error`] (an unread response included).
+    pub fn into_provider(self) -> Result<Failure<D>, Error> {
+        match self.inner.repr {
+            Repr::Provider(failure) => Ok(failure),
+            _ => Err(self.widen()),
+        }
+    }
+
+    /// The same failure under another document type (a `Provider` failure keeps its head and
+    /// bytes; a read document becomes `Unrecognized`). Concord applies it to failures of the
+    /// stages before a status is read, which hold no document.
+    pub(crate) fn widen<E>(self) -> Error<E> {
+        let Inner {
+            operation,
+            repr,
+            head,
+            body,
+        } = *self.inner;
+        let repr = match repr {
+            Repr::Build { what, reason } => Repr::Build { what, reason },
+            Repr::HeaderConflict { what, earlier } => Repr::HeaderConflict { what, earlier },
+            Repr::Encode(e) => Repr::Encode(e),
+            Repr::Transport(e) => Repr::Transport(e),
+            Repr::Status(r) => Repr::Status(r),
+            Repr::Metadata(e, r) => Repr::Metadata(e, r),
+            Repr::Decode(e) => Repr::Decode(e),
+            Repr::Limit(l) => Repr::Limit(l),
+            Repr::Provider(f) => Repr::Provider(f.recast()),
+        };
+        Error {
+            inner: Box::new(Inner {
+                operation,
+                repr,
+                head,
+                body,
+            }),
+        }
+    }
 }
 
-impl fmt::Display for Error {
+impl<D> fmt::Display for Error<D> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         if let Some(operation) = self.inner.operation {
             write!(f, "{operation}: ")?;
@@ -413,8 +494,12 @@ impl fmt::Display for Error {
                     None => Ok(()),
                 }
             }
-            Repr::Status(response) => {
-                let status = response.status();
+            Repr::Status(_) | Repr::Provider(_) => {
+                let status = match &self.inner.repr {
+                    Repr::Provider(failure) => failure.status(),
+                    Repr::Status(response) => response.status(),
+                    _ => return Ok(()),
+                };
                 write!(f, "HTTP status {}", status.as_u16())?;
                 match status.canonical_reason() {
                     Some(reason) => write!(f, " {reason}"),
@@ -430,7 +515,7 @@ impl fmt::Display for Error {
     }
 }
 
-impl fmt::Debug for Error {
+impl<D> fmt::Debug for Error<D> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let mut s = f.debug_struct("Error");
         s.field("kind", &self.kind());
@@ -449,4 +534,4 @@ impl fmt::Debug for Error {
 /// under Concord's control: reqwest nests errors that keep URLs (a refused redirect keeps its
 /// target, which a server may build from any request value, headers included), TLS errors print
 /// host names and decoders quote response bodies.
-impl StdError for Error {}
+impl<D> StdError for Error<D> {}

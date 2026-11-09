@@ -1,0 +1,11 @@
+error: expected `in FORMAT`: the error document's format is written explicitly (`error ErrorDocument in Json;`)
+  --> tests/ui_json/error_document_missing_format.rs:10:22
+   |
+10 |         error Problem;
+   |                      ^
+
+error: duplicate `error` statement; each owner declares it at most once
+  --> tests/ui_json/error_document_missing_format.rs:18:9
+   |
+18 |         error Problem in concord::Json;
+   |         ^^^^^

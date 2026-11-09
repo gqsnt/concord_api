@@ -6,7 +6,7 @@ use std::fmt;
 
 use concord::reqwest::StatusCode;
 use concord::stream::{OpenError, OpenErrorKind, ReadError};
-use concord::{Decoder, ErrorKind, IgnoreContentType, Json};
+use concord::{Decoder, Document, ErrorKind, Failure, IgnoreContentType, Json};
 
 use crate::bulk::JobState;
 use crate::model::{ApiErrorBody, ApiErrorDoc};
@@ -43,18 +43,10 @@ pub enum SfError {
 }
 
 impl SfError {
-    /// Converts a Concord error: a `Status` error's unread response is read (at most
-    /// [`MAX_ERROR_BODY`] bytes) and decoded as a Salesforce error document; every other kind
-    /// is kept as is.
-    pub async fn from_concord(error: concord::Error) -> Self {
-        if error.kind() != ErrorKind::Status {
-            return SfError::Concord(error);
-        }
-        let operation = error.endpoint();
-        match error.into_response() {
-            Ok(response) => SfError::Api(Box::new(ApiFailure::read(operation, response).await)),
-            Err(error) => SfError::Concord(error),
-        }
+    /// Converts a Concord error: a non-2xx answer (its error document already read, at most
+    /// [`MAX_ERROR_BODY`] bytes) becomes [`SfError::Api`]; every other kind is kept as is.
+    pub async fn from_concord(error: concord::Error<ApiErrorBody>) -> Self {
+        error.into()
     }
 
     /// Converts a CSV open refusal: a non-2xx status is read as an error document
@@ -108,6 +100,15 @@ impl From<ProtocolError> for SfError {
 impl From<JobFailure> for SfError {
     fn from(e: JobFailure) -> Self {
         SfError::Job(Box::new(e))
+    }
+}
+
+impl From<concord::Error<ApiErrorBody>> for SfError {
+    fn from(error: concord::Error<ApiErrorBody>) -> Self {
+        match error.into_provider() {
+            Ok(failure) => SfError::Api(Box::new(ApiFailure::from_failure(failure))),
+            Err(error) => SfError::Concord(error),
+        }
     }
 }
 
@@ -205,6 +206,25 @@ pub enum ErrorBodyState {
 }
 
 impl ApiFailure {
+    fn from_failure(failure: Failure<ApiErrorBody>) -> Self {
+        let operation = failure.operation().map(|op| op.name());
+        let (meta, state, _) = failure.into_parts();
+        let (errors, body) = match state {
+            Document::Read(doc) => (doc.into_vec(), ErrorBodyState::Decoded),
+            Document::Empty => (Vec::new(), ErrorBodyState::Empty),
+            Document::Unrecognized(_) => (Vec::new(), ErrorBodyState::NotAnErrorDocument),
+            Document::TooLong { .. } => (Vec::new(), ErrorBodyState::TooLarge),
+            _ => (Vec::new(), ErrorBodyState::Unreadable),
+        };
+        Self {
+            operation,
+            status: meta.status(),
+            api_usage: ApiUsage::from_headers(meta.headers()),
+            errors,
+            body,
+        }
+    }
+
     async fn read(operation: Option<&'static str>, response: concord::reqwest::Response) -> Self {
         let (meta, document) = Decoder::drain()
             .receive(response)

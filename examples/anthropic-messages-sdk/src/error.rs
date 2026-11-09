@@ -13,7 +13,7 @@ use std::time::{Duration, SystemTime};
 use concord::reqwest::StatusCode;
 use concord::reqwest::header::HeaderMap;
 use concord::stream::ReadError;
-use concord::{ResponseMeta, field};
+use concord::{Document, Failure, ResponseMeta, field};
 use concord_retry::http::RetryAfterError;
 use serde::{Deserialize, Deserializer};
 
@@ -90,6 +90,15 @@ impl std::error::Error for Error {
 impl From<concord::Error> for Error {
     fn from(error: concord::Error) -> Self {
         Self::Concord(error)
+    }
+}
+
+impl From<concord::Error<ErrorDocument>> for Error {
+    fn from(error: concord::Error<ErrorDocument>) -> Self {
+        match error.into_provider() {
+            Ok(failure) => Self::Api(Box::new(ApiError { failure })),
+            Err(error) => Self::Concord(error),
+        }
     }
 }
 
@@ -218,29 +227,24 @@ impl fmt::Debug for ProviderError {
 
 /// The error document: `{"type": "error", "error": {...}, "request_id": "req_..."}`.
 #[derive(Clone, Deserialize)]
-pub(crate) struct ErrorDocument {
+pub struct ErrorDocument {
     error: ProviderError,
     #[serde(default)]
     request_id: Option<String>,
 }
 
 /// A non-2xx answer. The status is authoritative: it is kept whether the error document is
-/// typed, malformed, of another media type, truncated or too long ([`document_error`]).
+/// typed, malformed, of another media type, truncated or too long ([`failure`]).
 ///
-/// [`document_error`]: Self::document_error
+/// [`failure`]: Self::failure
 pub struct ApiError {
-    meta: ResponseMeta,
-    document: Result<ErrorDocument, concord::Error>,
+    failure: Failure<ErrorDocument>,
 }
 
 impl ApiError {
-    pub(crate) fn new(meta: ResponseMeta, document: Result<ErrorDocument, concord::Error>) -> Self {
-        Self { meta, document }
-    }
-
     /// The HTTP status.
     pub fn status(&self) -> StatusCode {
-        self.meta.status()
+        self.failure.status()
     }
 
     /// The document's `error.type`, when the document was read.
@@ -255,31 +259,30 @@ impl ApiError {
 
     /// The document's `error` object, when the document was read.
     pub fn provider_error(&self) -> Option<&ProviderError> {
-        self.document.as_ref().ok().map(|document| &document.error)
+        self.failure.document().map(|document| &document.error)
     }
 
     /// The `request-id` header, or else the document's `request_id` field.
     pub fn request_id(&self) -> Option<&str> {
-        request_id(self.meta.headers()).or_else(|| {
-            self.document
-                .as_ref()
-                .ok()
+        request_id(self.meta().headers()).or_else(|| {
+            self.failure
+                .document()
                 .and_then(|document| document.request_id.as_deref())
         })
     }
 
-    /// Why the error document could not be read: Concord's `Metadata` (not `application/json`),
-    /// `Decode` (not the documented shape), `Limit` (longer than [`ERROR_BODY_LIMIT`]) or
-    /// `Transport` (the body broke off). `None` when it was read.
+    /// The error document's outcome and bytes: `Unrecognized` (not `application/json`, or not
+    /// the documented shape), `TooLong` (longer than [`ERROR_BODY_LIMIT`]), `Broken` (the body
+    /// broke off) or `Empty`; `Read` when it was read.
     ///
     /// [`ERROR_BODY_LIMIT`]: crate::ERROR_BODY_LIMIT
-    pub fn document_error(&self) -> Option<&concord::Error> {
-        self.document.as_ref().err()
+    pub fn failure(&self) -> &Failure<ErrorDocument> {
+        &self.failure
     }
 
     /// The response head (status, headers, operation), as received.
     pub fn meta(&self) -> &ResponseMeta {
-        &self.meta
+        self.failure.meta()
     }
 
     /// The server's `retry-after` delay, judged at `now` (an HTTP date is relative to it):
@@ -291,7 +294,7 @@ impl ApiError {
     ///
     /// [`RetryAfterError`] for an invalid, repeated or overflowing field.
     pub fn retry_after(&self, now: SystemTime) -> Result<Option<Duration>, RetryAfterError> {
-        let lines = self.meta.headers().get_all("retry-after");
+        let lines = self.meta().headers().get_all("retry-after");
         concord_retry::http::retry_after(lines.iter().map(|value| value.as_bytes()), now)
     }
 }
@@ -299,9 +302,9 @@ impl ApiError {
 impl fmt::Display for ApiError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "the Anthropic API answered {}", self.status().as_u16())?;
-        match &self.document {
-            Ok(document) => write!(f, " ({})", document.error.error_type)?,
-            Err(error) => write!(f, " (error document unreadable: {:?})", error.kind())?,
+        match self.failure.state() {
+            Document::Read(document) => write!(f, " ({})", document.error.error_type)?,
+            state => write!(f, " (error document unreadable: {state:?})")?,
         }
         if let Some(id) = self.request_id() {
             write!(f, ", request {id}")?;
@@ -315,9 +318,9 @@ impl fmt::Debug for ApiError {
         f.debug_struct("ApiError")
             .field("status", &self.status().as_u16())
             .field("error", &self.provider_error())
-            .field("document_error", &self.document_error())
+            .field("document", self.failure.state())
             .field("request_id", &self.request_id())
-            .field("meta", &self.meta)
+            .field("meta", self.meta())
             .finish()
     }
 }

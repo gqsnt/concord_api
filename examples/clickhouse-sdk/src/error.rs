@@ -99,6 +99,18 @@ impl From<RequestError> for Error {
     }
 }
 
+impl From<concord::Error<String>> for Error {
+    fn from(error: concord::Error<String>) -> Self {
+        match error.into_provider() {
+            Ok(failure) => {
+                let operation = failure.operation().map_or("", |op| op.name());
+                crate::client::exception(operation, failure)
+            }
+            Err(error) => Self::Concord(error),
+        }
+    }
+}
+
 impl From<concord::Error> for Error {
     fn from(error: concord::Error) -> Self {
         Self::Concord(error)

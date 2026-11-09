@@ -1,0 +1,56 @@
+error[E0277]: the send policy `Policy` does not send a `()` output
+  --> tests/ui_json/error_document_policy_mismatch.rs:16:1
+   |
+16 | / concord::api! {
+17 | |     pub client Api {
+18 | |         base "http://x.test";
+19 | |         format Json;
+...  |
+24 | | }
+   | |_^ named by the client's `send` statement; it needs `Policy: SendWith<()>`
+   |
+   = note: a send policy implements `concord::SendWith<T>` for every output `T` its endpoints declare (usually generically: `impl<T: Send> SendWith<T> for Policy`)
+help: the trait `SendWith<(), Problem>` is not implemented for `Policy`
+      but trait `SendWith<(), ()>` is implemented for it
+  --> tests/ui_json/error_document_policy_mismatch.rs:10:1
+   |
+10 | impl<T: Send> SendWith<T> for Policy {
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   = help: for that trait implementation, expected `()`, found `Problem`
+   = note: this error originates in the macro `concord::api` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0277]: the send policy `Policy` does not send a `()` output
+  --> tests/ui_json/error_document_policy_mismatch.rs:16:1
+   |
+16 | / concord::api! {
+17 | |     pub client Api {
+18 | |         base "http://x.test";
+19 | |         format Json;
+...  |
+24 | | }
+   | |_^ named by the client's `send` statement; it needs `Policy: SendWith<()>`
+   |
+   = note: a send policy implements `concord::SendWith<T>` for every output `T` its endpoints declare (usually generically: `impl<T: Send> SendWith<T> for Policy`)
+help: the trait `SendWith<(), Problem>` is not implemented for `Policy`
+      but trait `SendWith<(), ()>` is implemented for it
+  --> tests/ui_json/error_document_policy_mismatch.rs:10:1
+   |
+10 | impl<T: Send> SendWith<T> for Policy {
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   = help: for that trait implementation, expected `()`, found `Problem`
+   = note: this error originates in the macro `concord::api` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0277]: the send policy `Policy` does not send a `()` output
+  --> tests/ui_json/error_document_policy_mismatch.rs:20:14
+   |
+20 |         send Policy;
+   |              ^^^^^^ named by the client's `send` statement; it needs `Policy: SendWith<()>`
+   |
+   = note: a send policy implements `concord::SendWith<T>` for every output `T` its endpoints declare (usually generically: `impl<T: Send> SendWith<T> for Policy`)
+help: the trait `SendWith<(), Problem>` is not implemented for `Policy`
+      but trait `SendWith<(), ()>` is implemented for it
+  --> tests/ui_json/error_document_policy_mismatch.rs:10:1
+   |
+10 | impl<T: Send> SendWith<T> for Policy {
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   = help: for that trait implementation, expected `()`, found `Problem`

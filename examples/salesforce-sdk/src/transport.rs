@@ -6,6 +6,7 @@ use concord::reqwest::header::HeaderMap;
 use concord::{Operation, Prepared};
 
 use crate::error::SfError;
+use crate::model::ApiErrorBody;
 
 /// The name of the declared endpoint that produced a body (`SalesforceApi.bulk_query.job.results`),
 /// for the SDK's own protocol errors about it. Generated endpoints always attach their identity;
@@ -46,28 +47,23 @@ impl ApiUsage {
 /// non-2xx status becomes [`SfError::Api`]; a transport failure (no response) stays
 /// [`SfError::Concord`].
 pub(crate) async fn send_with_usage<T>(
-    prepared: Prepared<T>,
+    prepared: Prepared<T, ApiErrorBody>,
 ) -> Result<(T, Option<ApiUsage>), SfError> {
     // `receive` fails only when no response arrived (a transport error naming the endpoint).
     let received = prepared.receive().await.map_err(SfError::from)?;
-    match received.decode_with_meta().await {
-        Ok((value, meta)) => Ok((value, ApiUsage::from_headers(meta.headers()))),
-        Err(error) => Err(SfError::from_concord(error).await),
-    }
+    let (value, meta) = received.decode_with_meta().await?;
+    Ok((value, ApiUsage::from_headers(meta.headers())))
 }
 
 /// Sends `prepared` once (`send()`), turning a non-2xx status into [`SfError::Api`].
-pub(crate) async fn send<T>(prepared: Prepared<T>) -> Result<T, SfError> {
-    match prepared.send().await {
-        Ok(value) => Ok(value),
-        Err(error) => Err(SfError::from_concord(error).await),
-    }
+pub(crate) async fn send<T>(prepared: Prepared<T, ApiErrorBody>) -> Result<T, SfError> {
+    Ok(prepared.send().await?)
 }
 
 /// Builds and sends a generated operation: `prepare()` errors are kept as Concord build errors.
 pub(crate) fn prepared<T>(
-    result: Result<Prepared<T>, concord::Error>,
-) -> Result<Prepared<T>, SfError> {
+    result: Result<Prepared<T, ApiErrorBody>, concord::Error>,
+) -> Result<Prepared<T, ApiErrorBody>, SfError> {
     result.map_err(SfError::from)
 }
 

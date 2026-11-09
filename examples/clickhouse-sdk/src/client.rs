@@ -6,7 +6,7 @@ use concord::csv::{CsvOptions, CsvReader, HeaderMode};
 use concord::jsonl::{JsonLinesOptions, JsonLinesReader};
 use concord::reqwest::{self, header::HeaderValue};
 use concord::stream::ByteSource;
-use concord::{Endpoint, IgnoreContentType, Incoming, Received, Text};
+use concord::{Document, Endpoint, Failure, Incoming, Received};
 use serde::Deserialize;
 use serde::de::DeserializeOwned;
 
@@ -260,13 +260,7 @@ impl ClickHouse {
     ///
     /// [`Error::Server`] for another status; [`Error::Concord`] for a transport failure.
     pub async fn ping(&self) -> Result<(), Error> {
-        let endpoint = self.api.ping();
-        let operation = endpoint_name::<String, _>(&endpoint);
-        let received = endpoint.prepare()?.receive().await?;
-        if !received.status().is_success() {
-            return Err(server_exception(received, operation).await);
-        }
-        received.decode().await?;
+        self.api.ping().send().await?;
         Ok(())
     }
 }
@@ -369,22 +363,28 @@ impl fmt::Debug for Select {
 }
 
 /// The declared name of an endpoint (`ClickHouseHttp.select`), without building a request.
-pub(crate) fn endpoint_name<T, E: Endpoint<T>>(_: &E) -> &'static str {
+pub(crate) fn endpoint_name<T, E: Endpoint<T, String>>(_: &E) -> &'static str {
     E::operation().name()
 }
 
 /// A non-2xx answer: the exception text (bounded), its code and name.
-pub(crate) async fn server_exception<T>(received: Received<T>, operation: &'static str) -> Error {
-    // Decode exception text as UTF-8 regardless of the advertised media or charset.
-    let (meta, document) = received
-        .document::<IgnoreContentType<Text>, String>(ERROR_BODY_LIMIT)
-        .await;
+pub(crate) async fn server_exception<T>(
+    received: Received<T, String>,
+    operation: &'static str,
+) -> Error {
+    exception(operation, received.failure(ERROR_BODY_LIMIT).await)
+}
+
+/// The exception of a non-2xx answer whose text was read.
+pub(crate) fn exception(operation: &'static str, failure: Failure<String>) -> Error {
+    let (meta, document, _) = failure.into_parts();
     let meta = ResponseMeta::new(meta);
     let status = meta.status();
-    let message = document
-        .ok()
-        .map(|text| text.trim_end().to_owned())
-        .filter(|text| !text.is_empty());
+    let message = match document {
+        Document::Read(text) => Some(text.trim_end().to_owned()),
+        _ => None,
+    }
+    .filter(|text| !text.is_empty());
     let code = meta
         .exception_code()
         .or_else(|| message.as_deref().and_then(code_of));
@@ -453,7 +453,7 @@ fn refused(operation: &'static str, problem: ResponseProblem, meta: ResponseMeta
 
 /// Status, format and head checks, then the rows reader over the guarded body.
 pub(crate) async fn open_rows<T: DeserializeOwned>(
-    received: Received<Incoming>,
+    received: Received<Incoming, String>,
     format: OutputFormat,
     operation: &'static str,
 ) -> Result<Rows<T>, Error> {

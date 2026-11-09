@@ -2016,6 +2016,29 @@ fn emit_owner(
                 None if incoming => quote!(#k::Incoming),
                 None => quote!(()),
             };
+            // `error D in F;` (nearest owner): `D` joins the output in every generic surface.
+            let error_doc = model.nearest_error(index).map(|e| &e.ty);
+            let (out_args, error_ty) = match error_doc {
+                Some(d) => (quote!(#out, #d), quote!(#k::Error<#d>)),
+                None => (quote!(#out), quote!(#k::Error)),
+            };
+            let send_body = match error_doc {
+                Some(_) => quote! {
+                    match self.prepare() {
+                        ::core::result::Result::Ok(__p) => __p.send().await,
+                        ::core::result::Result::Err(__e) => ::core::result::Result::Err(#k::__private::widen(__e)),
+                    }
+                },
+                None => quote!(self.prepare()?.send().await),
+            };
+            // With `error D in F;` the non-2xx body is read, not kept unread.
+            let error_docs = match error_doc {
+                Some(_) => quote! {
+                    #[doc = ""]
+                    #[doc = " This endpoint declares an error document (`error D in F;`): a non-2xx body is read once, bounded, into `concord::Error::provider` instead of being kept unread."]
+                },
+                None => TokenStream::new(),
+            };
             let send_docs = if incoming || output.as_ref().is_some_and(|o| o.stream) {
                 quote! {
                     /// Sends the request once (`prepare` then one `reqwest::Client::execute`) and,
@@ -2056,8 +2079,9 @@ fn emit_owner(
             let send_fn = match policy {
                 None => quote! {
                     #send_docs
-                    #[inline] pub async fn send(self) -> ::core::result::Result<#out, #k::Error> {
-                        self.prepare()?.send().await
+                    #error_docs
+                    #[inline] pub async fn send(self) -> ::core::result::Result<#out, #error_ty> {
+                        #send_body
                     }
                 },
                 Some(policy) => {
@@ -2117,11 +2141,14 @@ fn emit_owner(
                             let variant = model.operation_variant(index);
                             (
                                 "SendOperation",
-                                quote!(#out, #ops_name),
+                                match error_doc {
+                                    Some(d) => quote!(#out, #ops_name, #d),
+                                    None => quote!(#out, #ops_name),
+                                },
                                 quote!(#ops_name::#variant,),
                             )
                         }
-                        None => ("SendWith", quote!(#out), quote!()),
+                        None => ("SendWith", out_args.clone(), quote!()),
                     };
                     // Spanned at the `send` statement: a type that is no policy is reported there
                     // (with the generated `send()`'s own error), not inside Concord's trait.
@@ -2220,7 +2247,7 @@ fn emit_owner(
                     /// label, header value or body) or two native header names collide; nothing
                     /// is sent.
                     #prepare_note
-                    #[inline] pub fn prepare(self) -> ::core::result::Result<#k::Prepared<#out>, #k::Error> {
+                    #[inline] pub fn prepare(self) -> ::core::result::Result<#k::Prepared<#out_args>, #k::Error> {
                         #prepare
                     }
 
@@ -2229,8 +2256,8 @@ fn emit_owner(
 
                 #sends_impl
 
-                impl #k::Endpoint<#out> for #ty {
-                    #[inline] fn prepare(self) -> ::core::result::Result<#k::Prepared<#out>, #k::Error> {
+                impl #k::Endpoint<#out_args> for #ty {
+                    #[inline] fn prepare(self) -> ::core::result::Result<#k::Prepared<#out_args>, #k::Error> {
                         #ty::prepare(self)
                     }
                     #[inline] fn operation() -> #k::Operation {
@@ -3288,6 +3315,22 @@ fn prepare_body(
         }
         None => quote!((#k::__private::drain(&__META), ::core::option::Option::None)),
     };
+    // `error D in F;`: the document's format, checked (`F: Decode<D>`) at the statement.
+    let error = match model.nearest_error(index) {
+        Some(e) => {
+            let d = &e.ty;
+            let f = format_type(&e.format);
+            let init = located(
+                quote!(#k::__private::ErrorFormat::<#d>::new::<#f>()),
+                e.format.span(),
+            );
+            quote! {
+                static __ERROR: #k::__private::ErrorFormat<#d> = #init;
+                let __decoder = __ERROR.attach(__decoder);
+            }
+        }
+        None => TokenStream::new(),
+    };
     quote! {
         static __META: #k::__private::EndpointMeta = #k::__private::EndpointMeta {
             name: #name,
@@ -3306,6 +3349,7 @@ fn prepare_body(
         let mut __p = #k::__private::Parts::new(&__META, &#root.__base);
         #code
         let (__decoder, __accept) = #decoder;
+        #error
         __p.finish(#k::reqwest::Method::#method, &#root.__http, __body, __decoder, __accept)
     }
 }

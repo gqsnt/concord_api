@@ -168,10 +168,11 @@ fn error(c: &mut Canaries, e: &RegistryError) {
         RegistryError::Api(api) => {
             c.assert_debug_absent("ApiError", api);
             c.assert_display_absent("ApiError", api);
-            c.assert_debug_absent("ApiError body", &api.body);
+            c.assert_debug_absent("ApiError failure", &api.failure);
+            c.assert_debug_absent("ApiError document state", api.failure.state());
             c.assert_debug_absent("ApiError entries", api.errors());
             c.assert_debug_absent("ApiError metadata", &api.meta);
-            if let ErrorBody::Unreadable(e) = &api.body {
+            if let ErrorBody::Broken(e) = api.failure.state() {
                 concord_error(c, e);
             }
         }

@@ -301,8 +301,10 @@ impl fmt::Debug for ApiErrorDoc {
 /// A Salesforce error body: an array of [`ApiErrorDoc`] (the documented form), or one object.
 #[derive(Deserialize)]
 #[serde(untagged)]
-pub(crate) enum ApiErrorBody {
+pub enum ApiErrorBody {
+    /// The documented array.
     Many(Vec<ApiErrorDoc>),
+    /// One object.
     One(ApiErrorDoc),
 }
 

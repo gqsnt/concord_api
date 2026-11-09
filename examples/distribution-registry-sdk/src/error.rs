@@ -6,15 +6,14 @@
 //! breaks the protocol, or content that does not match its digest or size.
 //!
 //! `Display` never contains a token, a credential, a URL or a body text. `Debug` shows the
-//! registry's error codes and messages (short server texts) but never a header value, a token or
-//! a URL.
+//! registry's status and document state, but withholds its document and bytes; model accessors
+//! remain explicit access to unredacted provider data.
 
 use std::fmt;
 use std::sync::Arc;
 
-use concord::bytes::Bytes;
 use concord::reqwest::StatusCode;
-use concord::{ErrorKind, IgnoreContentType, Json, Operation, Received};
+use concord::{Document, ErrorKind, Failure, Received};
 use serde::Deserialize;
 
 use crate::auth::Challenge;
@@ -55,7 +54,7 @@ impl RegistryError {
     /// The HTTP status of an [`Api`](Self::Api) error.
     pub fn status(&self) -> Option<StatusCode> {
         match self {
-            Self::Api(api) => Some(api.status),
+            Self::Api(api) => Some(api.failure.status()),
             _ => None,
         }
     }
@@ -140,6 +139,15 @@ impl From<concord::Error> for RegistryError {
             .map(ResponseMeta::from_concord)
             .map(Box::new);
         Self::Request { error, meta }
+    }
+}
+
+impl From<concord::Error<ErrorDocument>> for RegistryError {
+    fn from(error: concord::Error<ErrorDocument>) -> Self {
+        match error.into_provider() {
+            Ok(failure) => Self::Api(Box::new(ApiError::new(failure))),
+            Err(error) => error.into(),
+        }
     }
 }
 
@@ -248,28 +256,37 @@ impl fmt::Display for InputError {
 
 impl std::error::Error for InputError {}
 
-/// A non-2xx answer of the registry.
+/// A non-2xx answer of the registry, with its bounded document and bytes.
 #[non_exhaustive]
 pub struct ApiError {
-    /// The operation (`GET Repository.manifest`).
-    pub operation: Option<Operation>,
-    /// The status.
-    pub status: StatusCode,
-    /// What the body held (a `HEAD` answer has none).
-    pub body: ErrorBody,
+    /// The HTTP failure; its status remains authoritative for every document state.
+    pub failure: Failure<ErrorDocument>,
     /// The Bearer challenge of a `401`, if one was sent.
     pub challenge: Option<Challenge>,
-    /// The response metadata.
+    /// Registry-specific header accessors over the failure's head.
     pub meta: ResponseMeta,
 }
 
 impl ApiError {
+    fn new(failure: Failure<ErrorDocument>) -> Self {
+        let challenge = if failure.status() == StatusCode::UNAUTHORIZED {
+            Challenge::bearer(failure.meta().headers()).ok().flatten()
+        } else {
+            None
+        };
+        let meta = ResponseMeta::from_concord(failure.meta().clone());
+        Self {
+            failure,
+            challenge,
+            meta,
+        }
+    }
+
     /// The registry's error entries (empty unless the body was an error document).
     pub fn errors(&self) -> &[ErrorEntry] {
-        match &self.body {
-            ErrorBody::Document(document) => &document.errors,
-            _ => &[],
-        }
+        self.failure
+            .document()
+            .map_or(&[], |document| document.errors.as_slice())
     }
 
     /// Whether an entry carries `code`.
@@ -280,12 +297,12 @@ impl ApiError {
 
 impl fmt::Display for ApiError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        if let Some(operation) = &self.operation {
+        if let Some(operation) = self.failure.operation() {
             write!(f, "{operation}: ")?;
         }
-        write!(f, "registry answered HTTP {}", self.status)?;
-        match &self.body {
-            ErrorBody::Document(document) => {
+        write!(f, "registry answered HTTP {}", self.failure.status())?;
+        match self.failure.state() {
+            Document::Read(document) => {
                 let mut codes = document.errors.iter().map(|entry| entry.code.label());
                 if let Some(first) = codes.next() {
                     write!(f, " ({first}")?;
@@ -296,57 +313,28 @@ impl fmt::Display for ApiError {
                 }
                 Ok(())
             }
-            ErrorBody::Empty => Ok(()),
-            ErrorBody::Unrecognized(_) => f.write_str(" with a body that is not an error document"),
-            ErrorBody::TooLarge { .. } => f.write_str(" with an error body over the SDK's limit"),
-            ErrorBody::Unreadable(_) => f.write_str("; its body could not be read"),
+            Document::Empty => Ok(()),
+            Document::Unrecognized(_) => f.write_str(" with a body that is not an error document"),
+            Document::TooLong { .. } => f.write_str(" with an error body over the SDK's limit"),
+            Document::Broken(_) => f.write_str("; its body could not be read"),
+            _ => f.write_str(" with an unavailable error document"),
         }
     }
 }
 
-/// `Debug`: the operation, the status, the error entries, the challenge and the metadata (header
-/// names only); an unrecognized body by its length.
+/// `Debug` withholds the document and body, even when the model implements `Debug`.
 impl fmt::Debug for ApiError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("ApiError")
-            .field("operation", &self.operation)
-            .field("status", &self.status.as_u16())
-            .field("body", &self.body)
+            .field("failure", &self.failure)
             .field("challenge", &self.challenge)
             .field("meta", &self.meta)
             .finish()
     }
 }
 
-/// The body of a non-2xx answer, read up to [`ERROR_BODY_LIMIT`] bytes.
-#[non_exhaustive]
-pub enum ErrorBody {
-    /// The documented error document, `{"errors": [...]}`.
-    Document(ErrorDocument),
-    /// No body (a `HEAD` answer, or an empty one).
-    Empty,
-    /// Something else (an HTML page from a proxy, other JSON), kept as bytes.
-    Unrecognized(Bytes),
-    /// Longer than the limit; the rest was not read.
-    TooLarge {
-        /// The limit, in bytes.
-        limit: usize,
-    },
-    /// Reading the body failed (Concord's `Transport` error).
-    Unreadable(concord::Error),
-}
-
-impl fmt::Debug for ErrorBody {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::Document(document) => f.debug_tuple("Document").field(document).finish(),
-            Self::Empty => f.write_str("Empty"),
-            Self::Unrecognized(bytes) => write!(f, "Unrecognized({} bytes)", bytes.len()),
-            Self::TooLarge { limit } => write!(f, "TooLarge {{ limit: {limit} }}"),
-            Self::Unreadable(error) => f.debug_tuple("Unreadable").field(&error.kind()).finish(),
-        }
-    }
-}
+/// The shared document states; inspect raw bytes through `ApiError::failure.body()`.
+pub type ErrorBody = Document<ErrorDocument>;
 
 /// The registry's error document: `{"errors": [{"code", "message", "detail"}, ...]}`.
 #[derive(Clone, Debug, PartialEq, Deserialize)]
@@ -744,51 +732,18 @@ impl fmt::Display for IntegrityProblem {
     }
 }
 
-/// A non-2xx response as [`RegistryError::Api`], its body read up to the limit.
-pub(crate) async fn api_error<T>(received: Received<T>) -> RegistryError {
-    let operation = received.operation();
-    let status = received.status();
-    let challenge = if status == StatusCode::UNAUTHORIZED {
-        Challenge::bearer(received.head().headers()).ok().flatten()
-    } else {
-        None
-    };
-    // Registries and proxies are decoded regardless of their media label; malformed bytes
-    // remain available as Unrecognized, including the distinct empty-body case.
-    let (meta, document) = received
-        .document::<IgnoreContentType<Json>, ErrorDocument>(ERROR_BODY_LIMIT)
-        .await;
-    let meta = ResponseMeta::from_concord(meta);
-    let body = match document {
-        Ok(document) => ErrorBody::Document(document),
-        Err(error) if error.kind() == ErrorKind::Decode => {
-            let bytes = error.body_unredacted().cloned().unwrap_or_default();
-            if bytes.is_empty() {
-                ErrorBody::Empty
-            } else {
-                ErrorBody::Unrecognized(bytes)
-            }
-        }
-        Err(error) if error.kind() == ErrorKind::Limit => ErrorBody::TooLarge {
-            limit: ERROR_BODY_LIMIT,
-        },
-        Err(error) => ErrorBody::Unreadable(error),
-    };
-    RegistryError::Api(Box::new(ApiError {
-        operation,
-        status,
-        body,
-        challenge,
-        meta,
-    }))
+/// Final HTTP refusal after the SDK's challenge/replay decisions have finished.
+pub(crate) async fn api_error<T>(received: Received<T, ErrorDocument>) -> RegistryError {
+    let failure = received.failure(ERROR_BODY_LIMIT).await;
+    RegistryError::Api(Box::new(ApiError::new(failure)))
 }
 
 /// Requires `expected`: a non-2xx answer is [`RegistryError::Api`], another 2xx is
 /// [`ProtocolProblem::UnexpectedStatus`] (its body drained).
 pub(crate) async fn expect_status<T>(
-    received: Received<T>,
+    received: Received<T, ErrorDocument>,
     expected: StatusCode,
-) -> Result<(Received<T>, ResponseMeta), RegistryError> {
+) -> Result<(Received<T, ErrorDocument>, ResponseMeta), RegistryError> {
     let status = received.status();
     if status == expected {
         let meta = ResponseMeta::capture(&received);

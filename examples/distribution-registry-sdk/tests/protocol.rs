@@ -71,7 +71,10 @@ async fn ping_404_means_v2_is_not_implemented() {
     let server = scripted([Reply::new(404)]).await;
     let error = registry(&server, None).ping().await.unwrap_err();
     assert_eq!(error.status().map(|s| s.as_u16()), Some(404));
-    assert!(matches!(error.api().unwrap().body, ErrorBody::Empty));
+    assert!(matches!(
+        error.api().unwrap().failure.state(),
+        ErrorBody::Empty
+    ));
 }
 
 #[tokio::test]
@@ -1498,12 +1501,15 @@ async fn error_bodies_unknown_codes_html_and_oversize() {
     );
     let error = registry.ping().await.unwrap_err();
     assert!(
-        matches!(&error.api().unwrap().body, ErrorBody::Unrecognized(bytes) if bytes.as_ref() == PROXY_ERROR)
+        matches!(
+            error.api().unwrap().failure.state(),
+            ErrorBody::Unrecognized(_)
+        ) && error.api().unwrap().failure.body().as_ref() == PROXY_ERROR
     );
     let error = registry.ping().await.unwrap_err();
     assert!(matches!(
-        error.api().unwrap().body,
-        ErrorBody::TooLarge { .. }
+        error.api().unwrap().failure.state(),
+        ErrorBody::TooLong { .. }
     ));
 }
 
