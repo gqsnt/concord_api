@@ -37,6 +37,8 @@ both! {
     pub struct Marker<T>(pub std::marker::PhantomData<T>);
     pub enum Shape<T> { Unit, Tuple(T, u8), Named { a: T, r#b: Option<bool> }, Empty {} }
     pub enum Never {}
+    pub struct Tail<T: ?Sized>(pub u8, pub T);
+    pub struct NamedTail<T: ?Sized> { pub id: u8, pub tail: T }
 }
 
 #[test]
@@ -83,6 +85,54 @@ fn unmarked_output_equals_std_in_both_modes() {
     same(
         std_derive::Shape::<u8>::Empty {},
         ours::Shape::<u8>::Empty {},
+    );
+}
+
+/// An unsized last field (`T: ?Sized`) is accepted, as by std, and formats the same.
+#[test]
+fn unsized_fields_are_accepted_and_match_std() {
+    fn same<A: fmt::Debug + ?Sized, B: fmt::Debug + ?Sized>(std: &A, ours: &B) {
+        assert_eq!(format!("{ours:?}"), format!("{std:?}"));
+        assert_eq!(format!("{ours:#?}"), format!("{std:#?}"));
+    }
+    let std_slice: &std_derive::Tail<[u8]> = &std_derive::Tail(1, [2, 3]);
+    let ours_slice: &ours::Tail<[u8]> = &ours::Tail(1, [2, 3]);
+    same(std_slice, ours_slice);
+    let std_dyn: &std_derive::NamedTail<dyn fmt::Debug> = &std_derive::NamedTail {
+        id: 4,
+        tail: "text",
+    };
+    let ours_dyn: &ours::NamedTail<dyn fmt::Debug> = &ours::NamedTail {
+        id: 4,
+        tail: "text",
+    };
+    same(std_dyn, ours_dyn);
+    let std_slice: &std_derive::NamedTail<[u8]> = &std_derive::NamedTail { id: 5, tail: [6] };
+    let ours_slice: &ours::NamedTail<[u8]> = &ours::NamedTail { id: 5, tail: [6] };
+    same(std_slice, ours_slice);
+
+    #[derive(concord::Debug)]
+    #[sensitive]
+    struct PublicTail<T: ?Sized> {
+        #[public]
+        tail: T,
+    }
+    let public: &PublicTail<[u8]> = &PublicTail { tail: [7, 8] };
+    assert_eq!(format!("{public:?}"), "PublicTail { tail: [7, 8], .. }");
+
+    #[derive(concord::Debug)]
+    struct SecretTail<T: ?Sized> {
+        id: u8,
+        #[sensitive]
+        tail: T,
+    }
+    let secret: &SecretTail<dyn Fn()> = &SecretTail {
+        id: 9,
+        tail: || panic!("formatted"),
+    };
+    assert_eq!(
+        format!("{secret:?}"),
+        "SecretTail { id: 9, tail: <redacted> }"
     );
 }
 

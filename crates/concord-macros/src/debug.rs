@@ -8,7 +8,7 @@
 //! - A withheld value is never formatted, so its type needs no `Debug`.
 
 use proc_macro2::{TokenStream, TokenTree};
-use quote::{ToTokens, format_ident, quote};
+use quote::{ToTokens, format_ident, quote, quote_spanned};
 use syn::ext::IdentExt;
 use syn::spanned::Spanned;
 use syn::visit_mut::VisitMut;
@@ -195,7 +195,12 @@ fn arm(
             }
             Mark::Shown | Mark::Public => {
                 shown.push(field.ty.clone());
-                quote!(#binding)
+                if index + 1 == fields.len() {
+                    // `&&T` for the last field, as std does: it may be unsized (`T: ?Sized`).
+                    quote_spanned!(field.ty.span()=> &#binding)
+                } else {
+                    quote!(#binding)
+                }
             }
             Mark::Sensitive if is_option(&field.ty) => quote! {
                 &::core::option::Option::map(

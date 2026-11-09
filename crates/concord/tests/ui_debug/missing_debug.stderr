@@ -4,7 +4,8 @@ error[E0277]: `Opaque` doesn't implement `Debug`
 8 |     payload: Opaque,
   |              ^^^^^^ the trait `Debug` is not implemented for `Opaque`
   |
-  = note: required for the cast from `&Opaque` to `&dyn Debug`
+  = note: required for `&Opaque` to implement `Debug`
+  = note: required for the cast from `&&Opaque` to `&dyn Debug`
 help: consider annotating `Opaque` with `#[derive(Debug)]`
   |
 3 + #[derive(Debug)]
