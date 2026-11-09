@@ -7,6 +7,12 @@ Not released: the version is unchanged (4.2.0). Records: `v4/desirability/` (dec
 
 ### Added
 
+- **Resume guidance at every resume method** (H09c, docs only): each public SDK method that takes a
+  `concord_pagination::Resume` — the `_from` traversal twins and 20 other inputs, 38 items in 27 SDKs and the
+  Kubernetes app — now states the path a caller writes for the position (the SDK's re-export, or
+  `concord_pagination::Resume` with the `concord-pagination` dependency where the SDK has none) and its two
+  constructors (`Resume::Start`, `Resume::At(key)` with where the key comes from). No API, behavior or
+  dependency change; the [impact table](v4/desirability/impact/H09c.md) lists every item.
 - **H06c broader `controls` adoption:** audited all 55 example SDKs; seven more SDKs adopt
   `controls` and two H06 pilots (Salesforce, Zendesk) extend theirs (11 adopters in all). Credentials and their rate/ledger state are replaced together in Discord,
   Sentry and Adyen; DigitalOcean, QuickBooks, Zendesk and USGS withhold destination changes;
