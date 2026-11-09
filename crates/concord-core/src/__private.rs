@@ -26,6 +26,8 @@ pub struct EndpointMeta {
     /// Whether the endpoint only reads: its method is GET, HEAD or OPTIONS, or it (or a scope
     /// above it) is declared `#[read]`.
     pub read: bool,
+    /// The base is a sensitive client value; withhold the complete URL in rendered output.
+    pub sensitive_base: bool,
     /// Number of generated host labels (they are the leftmost labels).
     pub labels: usize,
     /// Indices (from the left) of generated labels that contain a sensitive value.
@@ -66,61 +68,8 @@ pub fn text<T: Text + ?Sized>(value: &T) -> &T {
     value
 }
 
-/// A validated base URL: `http`/`https`, a host, an optional port and path, nothing else.
-#[derive(Clone)]
-pub struct Base {
-    url: Url,
-    /// The base path with at most one trailing slash removed; generated segments follow it.
-    prefix: String,
-}
-
-impl Base {
-    /// Validates a base URL supplied at runtime.
-    pub fn parse(input: &str) -> Result<Self, Error> {
-        let fail = |reason| Error::build(None, "base URL", reason);
-        let url = Url::parse(input).map_err(|_| fail("is not an absolute URL"))?;
-        if url.scheme() != "http" && url.scheme() != "https" {
-            return Err(fail("must use http or https"));
-        }
-        if url.host().is_none() {
-            return Err(fail("must have a host"));
-        }
-        if url.port() == Some(0) {
-            return Err(fail("must not use port 0"));
-        }
-        if !url.username().is_empty() || url.password().is_some() {
-            return Err(fail("must not contain user information"));
-        }
-        if url.query().is_some() {
-            return Err(fail("must not contain a query"));
-        }
-        if url.fragment().is_some() {
-            return Err(fail("must not contain a fragment"));
-        }
-        let path = url.path();
-        let prefix = path.strip_suffix('/').unwrap_or(path).to_owned();
-        Ok(Self { url, prefix })
-    }
-
-    /// The base declared in `api!`, already validated by the macro.
-    pub fn from_static(input: &'static str) -> Self {
-        match Self::parse(input) {
-            Ok(base) => base,
-            Err(e) => panic!("api! accepted an invalid base URL {input:?}: {e}"),
-        }
-    }
-
-    /// The validated URL.
-    pub fn url(&self) -> &Url {
-        &self.url
-    }
-}
-
-impl fmt::Debug for Base {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        fmt::Debug::fmt(self.url.as_str(), f)
-    }
-}
+/// The checked base URL; public as [`crate::BaseUrl`].
+pub use crate::base::BaseUrl as Base;
 
 /// Everything except RFC 3986 unreserved characters (`A-Z a-z 0-9 - . _ ~`).
 const PATH_VALUE: &AsciiSet = &NON_ALPHANUMERIC
@@ -371,7 +320,7 @@ impl<'a> Parts<'a> {
         Self {
             meta,
             base,
-            url: base.url.clone(),
+            url: base.url().clone(),
             labels: Vec::new(),
             segments: Vec::new(),
             trailing_slash: false,
@@ -664,6 +613,9 @@ impl<'a> Parts<'a> {
 /// Renders a URL built by `meta`'s endpoint with sensitive placements replaced by `<redacted>`.
 pub(crate) fn redacted_url(url: &Url, meta: &EndpointMeta) -> String {
     const REDACTED: &str = "<redacted>";
+    if meta.sensitive_base {
+        return REDACTED.to_owned();
+    }
     let mut out = String::new();
     out.push_str(url.scheme());
     out.push_str("://");

@@ -393,6 +393,7 @@ name = "concord"
 version = "4.2.0"
 dependencies = [
  "concord-codecs",
+ "concord-construction-fixture",
  "concord-core",
  "concord-macros",
  "rustls-pki-types",
@@ -620,6 +621,14 @@ dependencies = [
  "serde_json",
  "serde_urlencoded",
  "tokio",
+]
+
+[[package]]
+name = "concord-construction-fixture"
+version = "0.0.0"
+dependencies = [
+ "concord-core",
+ "concord-macros",
 ]
 
 [[package]]

@@ -6,8 +6,8 @@ use std::time::Duration;
 use concord_example_testserver::{Body, Gate, Recorded, Reply, TestServer, paused};
 use concord_sdk_datadog_events::concord::{Delivery, ErrorKind, reqwest};
 use concord_sdk_datadog_events::{
-    AlertType, AuthError, Credentials, DatadogApi, DatadogApiConfig, DatadogEvents, Error,
-    InputError, NewEvent, RESPONSE_LIMIT, Site,
+    AlertType, AuthError, Credentials, DatadogApi, DatadogApiConfig, DatadogEvents, Destination,
+    Error, InputError, NewEvent, RESPONSE_LIMIT, Site,
 };
 use serde_json::{Value, json};
 
@@ -16,9 +16,11 @@ const APP_KEY: &str = "synthetic-post-eu-app-secret";
 const ACCEPTED: &str = include_str!("../fixtures/post-202.doc.json");
 
 fn client(http: reqwest::Client, base: &str) -> DatadogEvents {
-    DatadogEvents::new(http, Site::Eu, Credentials::new(API_KEY, APP_KEY).unwrap())
-        .with_base_url(base)
-        .unwrap()
+    DatadogEvents::new(
+        http,
+        Destination::at(Site::Eu, base).unwrap(),
+        Credentials::new(API_KEY, APP_KEY).unwrap(),
+    )
 }
 
 fn event() -> NewEvent {
@@ -166,18 +168,47 @@ async fn wrong_region_and_missing_application_key_stay_redacted_authentication_e
     ));
     assert!(error.is_authentication());
     assert_error_redacted(&error);
-    // The low-level generated client deliberately skips Credentials validation. A rejected
-    // request build still proves nothing was sent and must not become an uncertain post.
+    // Direct generated construction checks both keys before a request exists.
+    let bad: Error = concord_sdk_datadog_events::ApiKey::new(format!("{API_KEY}\n"))
+        .unwrap_err()
+        .into();
+    assert!(matches!(
+        bad,
+        Error::Authentication(AuthError::MalformedKey(_))
+    ));
+    assert_error_redacted(&bad);
+    let (api_key, application_key) = Credentials::new(API_KEY, APP_KEY).unwrap().into_parts();
     let api = DatadogApi::new(
         DatadogEvents::http_client().unwrap(),
         DatadogApiConfig {
-            api_key: format!("{API_KEY}\n"),
-            application_key: APP_KEY.to_owned(),
+            destination: Destination::at(Site::Eu, unused.url()).unwrap(),
+            api_key,
+            application_key,
         },
-    )
-    .with_base_url(unused.url())
-    .unwrap();
-    let error = api.events().post(event()).send().await.unwrap_err();
+    );
+    assert!(api.events().post(event()).prepare().is_ok());
+
+    // Preparation failures still stay local under the posting policy.
+    concord::api! {
+        client Invalid(header("x-invalid") value: String) {
+            base "http://127.0.0.1";
+            POST post();
+        }
+    }
+    use concord::SendOperation as _;
+    let invalid = Invalid::new(
+        reqwest::Client::new(),
+        InvalidConfig {
+            value: "bad\nheader".into(),
+        },
+    );
+    let error = concord_sdk_datadog_events::SendPolicy
+        .send(
+            concord_sdk_datadog_events::DatadogApiOperation::EventsPost,
+            invalid.post(),
+        )
+        .await
+        .unwrap_err();
     let Error::Concord { source, .. } = &error else {
         panic!("{error:?}")
     };

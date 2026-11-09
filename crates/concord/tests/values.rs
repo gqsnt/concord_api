@@ -425,9 +425,9 @@ fn v10_request_clone_follows_the_data() {
 
 concord::api! {
     /// Key rotation through the setter of a required value.
-    pub client Rotating(#[sensitive] header("x-api-key") key: String) {
+    pub client Rotating(#[sensitive] header("x-api-key") mut key: String) {
         base "http://rotating.invalid";
-        scope tenant(tenant: String) {
+        scope tenant(mut tenant: String) {
             path "t/{tenant}";
             GET item(id: u32, body note: String) {
                 request Text;
@@ -437,7 +437,7 @@ concord::api! {
     }
 }
 
-/// D01 + fresh-use friction: every value has `set_x`, including required ones. Replacing the key
+/// D01 + fresh-use friction: every value has `set_x`, including required ones declared `mut`. Replacing the key
 /// keeps the runtime base URL and every other choice; handles and requests created before keep
 /// the old key (snapshots).
 #[tokio::test]

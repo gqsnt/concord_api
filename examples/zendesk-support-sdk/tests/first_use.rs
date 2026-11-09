@@ -30,10 +30,13 @@ fn local_api(server: &TestServer) -> Zendesk {
         .timeout(Duration::from_secs(5))
         .build()
         .unwrap();
-    Zendesk::connect(http, "acme", TOKEN)
-        .unwrap()
-        .with_base_url(format!("http://localhost:{}", server.addr().port()))
-        .unwrap()
+    Zendesk::for_fixture(
+        http,
+        "acme",
+        TOKEN,
+        &format!("http://localhost:{}", server.addr().port()),
+    )
+    .unwrap()
 }
 
 fn ticket(id: u64, status: &str, external_id: &str) -> Value {
@@ -631,7 +634,6 @@ async fn check_create_rejections_and_inputs() {
         panic!("invalid inputs must not send");
     })
     .await;
-    let api = local_api(&server);
     for size in [0, 101] {
         assert!(matches!(
             PageSize::new(size),
@@ -656,14 +658,20 @@ async fn check_create_rejections_and_inputs() {
             assert!(!format!("{error:?} {error}").contains(token));
         }
     }
-    let error = api
-        .set_subdomain("bad/name")
-        .tickets()
-        .list()
-        .send()
-        .await
-        .unwrap_err();
-    assert!(matches!(error, Error::Concord(ref inner) if inner.kind() == ErrorKind::Build));
+    // Account construction checks the subdomain before a client or request exists.
+    let error = Zendesk::for_fixture(
+        concord_sdk_zendesk_support::http_client().unwrap(),
+        "bad/name",
+        TOKEN,
+        &format!("http://localhost:{}", server.addr().port()),
+    )
+    .unwrap_err();
+    assert!(matches!(
+        error,
+        Error::InvalidInput {
+            what: "account subdomain"
+        }
+    ));
     assert_eq!(server.requests().len(), 0);
     server.shutdown().await;
 }

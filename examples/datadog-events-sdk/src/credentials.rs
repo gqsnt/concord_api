@@ -25,9 +25,9 @@ use crate::error::{AuthError, Key};
 #[derive(Clone, concord::Debug)]
 pub struct Credentials {
     #[sensitive]
-    pub(crate) api_key: String,
+    pub(crate) api_key: ApiKey,
     #[sensitive]
-    pub(crate) application_key: String,
+    pub(crate) application_key: ApplicationKey,
 }
 
 impl Credentials {
@@ -53,11 +53,58 @@ impl Credentials {
         check(&api_key, Key::Api)?;
         check(&application_key, Key::Application)?;
         Ok(Self {
-            api_key,
-            application_key,
+            api_key: ApiKey(api_key),
+            application_key: ApplicationKey(application_key),
         })
     }
 }
+
+impl Credentials {
+    /// The validated key pair, for direct generated-client construction.
+    pub fn into_parts(self) -> (ApiKey, ApplicationKey) {
+        (self.api_key, self.application_key)
+    }
+}
+
+macro_rules! checked_key {
+    ($name:ident, $key:expr, $doc:literal) => {
+        #[doc = $doc]
+        #[derive(Clone)]
+        pub struct $name(String);
+
+        impl $name {
+            /// Checks that the key is present and valid in an HTTP header.
+            pub fn new(value: impl Into<String>) -> Result<Self, AuthError> {
+                let value = value.into();
+                check(&value, $key)?;
+                Ok(Self(value))
+            }
+        }
+
+        impl fmt::Display for $name {
+            fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+                f.write_str(&self.0)
+            }
+        }
+
+        impl fmt::Debug for $name {
+            fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+                f.write_str(concat!(stringify!($name), "(<redacted>)"))
+            }
+        }
+    };
+}
+
+checked_key!(
+    ApiKey,
+    Key::Api,
+    "A checked Datadog API key. Its `Display` supplies wire text."
+);
+checked_key!(
+    ApplicationKey,
+    Key::Application,
+    "A checked Datadog application key. Its `Display` supplies wire text."
+);
 
 fn check(value: &str, key: Key) -> Result<(), AuthError> {
     if value.trim().is_empty() {

@@ -525,9 +525,9 @@ struct Inner {
 /// the realm ID, which the [`QuickBooks`](crate::QuickBooks) declaration places in every path.
 /// Its send policy also selects its environment's host when sending to either official HTTPS host;
 /// replacing a client's connection switches realm, credentials and environment together.
-/// Loopback fixture origins stay unchanged, and `prepare()` keeps the generated base snapshot.
+/// Its checked base also drives `prepare()`; [`Self::for_fixture`] selects a loopback origin.
 #[derive(Clone)]
-pub struct Connection(Arc<Inner>);
+pub struct Connection(Arc<Inner>, concord::BaseUrl);
 
 fn lock(grants: &Mutex<Grants>) -> MutexGuard<'_, Grants> {
     grants.lock().unwrap_or_else(PoisonError::into_inner)
@@ -535,18 +535,42 @@ fn lock(grants: &Mutex<Grants>) -> MutexGuard<'_, Grants> {
 
 impl Connection {
     fn new(app: OAuthApp, realm: RealmId, refresh_token: RefreshToken) -> Self {
-        Self(Arc::new(Inner {
-            app,
-            realm,
-            grants: Arc::new(Mutex::new(Grants {
-                refresh_token,
-                refresh_expires_at: None,
-                rejected: None,
-                seed: None,
-                epoch: 0,
-            })),
-            tokens: TokenCache::new(NonZeroUsize::MIN, REFRESH_MARGIN),
-        }))
+        let base = concord::BaseUrl::from_static(app.environment.base_url());
+        Self(
+            Arc::new(Inner {
+                app,
+                realm,
+                grants: Arc::new(Mutex::new(Grants {
+                    refresh_token,
+                    refresh_expires_at: None,
+                    rejected: None,
+                    seed: None,
+                    epoch: 0,
+                })),
+                tokens: TokenCache::new(NonZeroUsize::MIN, REFRESH_MARGIN),
+            }),
+            base,
+        )
+    }
+
+    /// Selects a loopback Accounting fixture for this connection. Its realm, tokens and policy
+    /// stay together; clones retain the destination selected when they were made.
+    pub fn for_fixture(mut self, base: &str) -> Result<Self, Error> {
+        let base = concord::BaseUrl::parse(base)?;
+        let host = base.url().host_str().unwrap_or_default();
+        let local = host == "localhost"
+            || host.ends_with(".localhost")
+            || host
+                .trim_matches(['[', ']'])
+                .parse::<std::net::IpAddr>()
+                .is_ok_and(|ip| ip.is_loopback());
+        if !local {
+            return Err(Error::InvalidInput {
+                what: "loopback Accounting fixture base",
+            });
+        }
+        self.1 = base;
+        Ok(self)
     }
 
     /// Installs freshly issued tokens, replacing whatever the connection held.
@@ -739,5 +763,11 @@ impl fmt::Debug for Connection {
             .field("environment", &self.0.app.environment)
             .field("tokens", &"<redacted>")
             .finish()
+    }
+}
+
+impl AsRef<concord::BaseUrl> for Connection {
+    fn as_ref(&self) -> &concord::BaseUrl {
+        &self.1
     }
 }

@@ -2,7 +2,9 @@
 //! Live provider calls: NOT_RUN. Values and responses below are synthetic fixtures.
 
 use concord_example_testserver::{Recorded, Reply, TestServer};
-use concord_sdk_datadog_events::{AlertType, Credentials, DatadogEvents, NewEvent, Site};
+use concord_sdk_datadog_events::{
+    AlertType, Credentials, DatadogEvents, Destination, NewEvent, Site,
+};
 use serde_json::{Value, json};
 
 #[tokio::test]
@@ -41,11 +43,9 @@ async fn caller_posts_an_event_and_receives_only_provider_acceptance() {
 
     let events = DatadogEvents::new(
         DatadogEvents::http_client().unwrap(),
-        Site::Eu,
+        Destination::at(Site::Eu, server.url()).unwrap(),
         Credentials::new("fixture-post-api", "fixture-post-app").unwrap(),
-    )
-    .with_base_url(server.url())
-    .unwrap();
+    );
     let event = NewEvent::new("Checkout deployed", "Version 42 is serving traffic.")
         .unwrap()
         .tags(["service:checkout", "env:prod"])

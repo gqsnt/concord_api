@@ -133,6 +133,35 @@ impl FromStr for ApiVersion {
     }
 }
 
+/// A version supporting every endpoint in this SDK slice (`ApiVersion::MINIMUM` and later).
+/// Request construction accepts this checked value; job documents retain [`ApiVersion`].
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct SupportedVersion(ApiVersion);
+
+impl SupportedVersion {
+    /// Checks the SDK's minimum supported version.
+    pub fn new(version: ApiVersion) -> Result<Self, InvalidValue> {
+        if version < ApiVersion::MINIMUM {
+            return Err(InvalidValue::new(
+                "API version",
+                "every SDK operation requires 58.0 or later",
+            ));
+        }
+        Ok(Self(version))
+    }
+
+    /// The checked API version.
+    pub fn version(self) -> ApiVersion {
+        self.0
+    }
+}
+
+impl fmt::Display for SupportedVersion {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        fmt::Display::fmt(&self.0, f)
+    }
+}
+
 /// The `apiVersion` of a job document. The Bulk API 2.0 tables type it as a string while every
 /// documented example sends a JSON number (`"apiVersion" : 46.0`); both are accepted.
 impl<'de> Deserialize<'de> for ApiVersion {
@@ -166,7 +195,7 @@ impl<'de> Deserialize<'de> for ApiVersion {
 /// `.localhost` names (test fixtures). No user information, path (other than `/`), query or
 /// fragment.
 #[derive(Clone, PartialEq, Eq)]
-pub struct InstanceUrl(Url);
+pub struct InstanceUrl(concord::BaseUrl);
 
 impl InstanceUrl {
     /// Parses and validates an instance URL.
@@ -177,7 +206,9 @@ impl InstanceUrl {
     /// `http`).
     pub fn parse(text: &str) -> Result<Self, InvalidValue> {
         const WHAT: &str = "instance URL";
-        let url = Url::parse(text).map_err(|_| InvalidValue::new(WHAT, "not a URL"))?;
+        let base = concord::BaseUrl::parse(text)
+            .map_err(|_| InvalidValue::new(WHAT, "not an HTTP(S) base URL"))?;
+        let url = base.url();
         let host = url
             .host_str()
             .ok_or(InvalidValue::new(WHAT, "no host"))?
@@ -193,34 +224,38 @@ impl InstanceUrl {
             "http" => return Err(InvalidValue::new(WHAT, "https is required")),
             _ => return Err(InvalidValue::new(WHAT, "unsupported scheme")),
         }
-        if !url.username().is_empty() || url.password().is_some() {
-            return Err(InvalidValue::new(WHAT, "user information is not allowed"));
-        }
-        if url.path() != "/" || url.query().is_some() || url.fragment().is_some() {
+        if url.path() != "/" {
             return Err(InvalidValue::new(
                 WHAT,
-                "an instance URL is an origin: no path, query or fragment",
+                "an instance URL is an origin: no path",
             ));
         }
-        Ok(Self(url))
+        Ok(Self(base))
     }
 
     /// The URL (with its trailing `/`).
     pub fn url(&self) -> &Url {
-        &self.0
+        self.0.url()
     }
 
     /// The URL text, without the trailing `/` (`https://acme.my.salesforce.com`).
     pub fn as_str(&self) -> &str {
-        self.0.as_str().trim_end_matches('/')
+        self.url().as_str().trim_end_matches('/')
     }
 
     /// Whether `other` has the same scheme, host and port.
     pub fn same_origin(&self, other: &Url) -> bool {
-        self.0.scheme() == other.scheme()
-            && self.0.host_str().map(str::to_ascii_lowercase)
+        self.url().scheme() == other.scheme()
+            && self.url().host_str().map(str::to_ascii_lowercase)
                 == other.host_str().map(str::to_ascii_lowercase)
-            && self.0.port_or_known_default() == other.port_or_known_default()
+            && self.url().port_or_known_default() == other.port_or_known_default()
+    }
+}
+
+/// The declaration's `base instance;`: every request starts at this origin.
+impl AsRef<concord::BaseUrl> for InstanceUrl {
+    fn as_ref(&self) -> &concord::BaseUrl {
+        &self.0
     }
 }
 

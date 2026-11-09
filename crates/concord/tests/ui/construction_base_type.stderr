@@ -1,0 +1,49 @@
+error[E0277]: the trait bound `String: AsRef<BaseUrl>` is not satisfied
+ --> tests/ui/construction_base_type.rs:3:30
+  |
+3 |     pub client Api(instance: String) {
+  |                              ^^^^^^ the trait `AsRef<BaseUrl>` is not implemented for `String`
+  |
+help: `String` implements trait `AsRef<T>`
+ --> $RUST/std/src/ffi/os_str.rs
+  |
+  | impl AsRef<OsStr> for String {
+  | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `AsRef<OsStr>`
+  |
+ ::: $RUST/std/src/path.rs
+  |
+  | impl AsRef<Path> for String {
+  | ^^^^^^^^^^^^^^^^^^^^^^^^^^^ `AsRef<Path>`
+  |
+ ::: $RUST/alloc/src/string.rs
+  |
+  | impl AsRef<str> for String {
+  | ^^^^^^^^^^^^^^^^^^^^^^^^^^ `AsRef<str>`
+...
+  | impl AsRef<[u8]> for String {
+  | ^^^^^^^^^^^^^^^^^^^^^^^^^^^ `AsRef<[u8]>`
+
+error[E0277]: the trait bound `String: AsRef<BaseUrl>` is not satisfied
+ --> tests/ui/construction_base_type.rs:4:14
+  |
+4 |         base instance;
+  |              ^^^^^^^^ the trait `AsRef<BaseUrl>` is not implemented for `String`
+  |
+help: `String` implements trait `AsRef<T>`
+ --> $RUST/std/src/ffi/os_str.rs
+  |
+  | impl AsRef<OsStr> for String {
+  | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `AsRef<OsStr>`
+  |
+ ::: $RUST/std/src/path.rs
+  |
+  | impl AsRef<Path> for String {
+  | ^^^^^^^^^^^^^^^^^^^^^^^^^^^ `AsRef<Path>`
+  |
+ ::: $RUST/alloc/src/string.rs
+  |
+  | impl AsRef<str> for String {
+  | ^^^^^^^^^^^^^^^^^^^^^^^^^^ `AsRef<str>`
+...
+  | impl AsRef<[u8]> for String {
+  | ^^^^^^^^^^^^^^^^^^^^^^^^^^^ `AsRef<[u8]>`

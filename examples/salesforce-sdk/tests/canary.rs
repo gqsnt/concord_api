@@ -207,8 +207,10 @@ async fn secrets_never_print() {
     let access = AccessToken::new(&token).unwrap();
     c.assert_debug_absent("AccessToken", &access);
     let config = SalesforceApiConfig {
+        instance: InstanceUrl::parse("https://canary.my.salesforce.test").unwrap(),
         token: token.clone(),
-        version: ApiVersion::PINNED,
+        version: concord_example_salesforce_sdk::ids::SupportedVersion::new(ApiVersion::PINNED)
+            .unwrap(),
     };
     c.assert_debug_absent("generated config", &config);
     let name = FieldPath::parse("Name").unwrap();

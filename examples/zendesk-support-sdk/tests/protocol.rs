@@ -201,15 +201,22 @@ async fn invalid_inputs_are_refused_before_anything_is_sent() {
 
     let server = serve(|| json_fixture(200, "ticket-103.json")).await;
     for subdomain in ["acme.evil", "", "-acme", "ac_me"] {
-        let api = Zendesk::connect(http(&server, Duration::from_secs(5)), subdomain, TOKEN)
-            .unwrap()
-            .with_base_url(format!("http://zendesk.test:{}", server.addr().port()))
-            .unwrap();
-        let error = api.ticket(1).show().send().await.unwrap_err();
-        let Error::Concord(error) = error else {
-            panic!("{subdomain:?}: {error:?}")
-        };
-        assert_eq!(error.kind(), ErrorKind::Build, "{subdomain:?}");
+        let error = Zendesk::for_fixture(
+            http(&server, Duration::from_secs(5)),
+            subdomain,
+            TOKEN,
+            &format!("http://zendesk.test:{}", server.addr().port()),
+        )
+        .unwrap_err();
+        assert!(
+            matches!(
+                error,
+                Error::InvalidInput {
+                    what: "account subdomain"
+                }
+            ),
+            "{subdomain:?}"
+        );
     }
     assert!(server.requests().is_empty());
     server.shutdown().await;
@@ -607,10 +614,8 @@ async fn a_refused_connection_on_a_create_is_uncertain() {
         .resolve("acme.zendesk.test", ([127, 0, 0, 1], port).into())
         .build()
         .unwrap();
-    let api = Zendesk::connect(http, "acme", TOKEN)
-        .unwrap()
-        .with_base_url(format!("http://zendesk.test:{port}"))
-        .unwrap();
+    let api =
+        Zendesk::for_fixture(http, "acme", TOKEN, &format!("http://zendesk.test:{port}")).unwrap();
     let error = api
         .tickets()
         .create(NewTicket::new("x"), key("k"))

@@ -15,6 +15,7 @@
 
 pub use {bytes, reqwest};
 
+mod base;
 mod cancel;
 mod codec;
 mod error;
@@ -29,6 +30,7 @@ mod value;
 #[doc(hidden)]
 pub mod __private;
 
+pub use base::BaseUrl;
 pub use codec::{
     CODEC_ERROR_CONTEXT, CodecError, ContentTypeField, Decode, Encode, EncodedBody, FieldError,
     Incremental, Records, ResponseHead,

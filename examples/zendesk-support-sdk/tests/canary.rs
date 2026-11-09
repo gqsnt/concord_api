@@ -62,11 +62,14 @@ fn api(address: SocketAddr, token: &str) -> Zendesk {
         .timeout(Duration::from_secs(2))
         .build()
         .unwrap();
-    Zendesk::connect(http, "acme", token)
-        .unwrap()
-        .set_policy(SendPolicy::default().read_attempts(NonZeroUsize::new(1).unwrap()))
-        .with_base_url(format!("http://localhost:{}", address.port()))
-        .unwrap()
+    Zendesk::for_fixture(
+        http,
+        "acme",
+        token,
+        &format!("http://localhost:{}", address.port()),
+    )
+    .unwrap()
+    .set_policy(SendPolicy::default().read_attempts(NonZeroUsize::new(1).unwrap()))
 }
 
 fn error(c: &mut Canaries, error: &Error) {
@@ -101,7 +104,7 @@ async fn secrets_never_print() {
         };
         let api = api(address, &token);
         let config = ZendeskConfig {
-            subdomain: "acme".into(),
+            subdomain: concord_sdk_zendesk_support::Account::new("acme").unwrap(),
             authorization: concord::reqwest::header::HeaderValue::from_str(&format!(
                 "Bearer {token}"
             ))

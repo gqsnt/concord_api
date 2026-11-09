@@ -60,9 +60,9 @@ async fn official_targets(initial: Environment, next: Environment, replace: bool
     };
 
     let read = api.customer(EntityId::new("29").unwrap()).read();
-    // Preparation stays token-free and retains the generated base snapshot.
+    // Preparation stays token-free and reads the replacement connection's base.
     let prepared = read.clone().prepare().unwrap();
-    let snapshot_environment = if replace { initial } else { next };
+    let snapshot_environment = next;
     assert_eq!(
         prepared.request().url().as_str(),
         format!(
@@ -167,18 +167,18 @@ async fn fixture_replacement_keeps_the_read_and_write_wire() {
             _ => json_fixture(200, "customer-read.json"),
         })
         .await;
-        let next_connection = stored(next, &server, REALM_B, "synthetic-refresh-next");
+        let next_connection = stored(next, &server, REALM_B, "synthetic-refresh-next")
+            .for_fixture(&server.url())
+            .unwrap();
         let http = http(Duration::from_secs(5));
         let api = QuickBooks::connect(
             http.clone(),
-            stored(initial, &server, REALM_A, "synthetic-refresh-old"),
+            stored(initial, &server, REALM_A, "synthetic-refresh-old")
+                .for_fixture(&server.url())
+                .unwrap(),
         )
-        .with_base_url(server.url())
-        .unwrap()
         .set_connection(next_connection.clone());
-        let direct = QuickBooks::connect(http, next_connection)
-            .with_base_url(server.url())
-            .unwrap();
+        let direct = QuickBooks::connect(http, next_connection);
         for client in [&api, &direct] {
             client
                 .customer(EntityId::new("29").unwrap())

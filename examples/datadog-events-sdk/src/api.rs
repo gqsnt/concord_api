@@ -3,6 +3,8 @@
 use concord::reqwest::header::HeaderName;
 use concord::{Endpoint, Json, SendWith};
 
+use crate::credentials::{ApiKey, ApplicationKey};
+use crate::destination::Destination;
 use crate::error::{AuthError, Error, ErrorBodyError, ErrorDocument, ProviderError, Rejected};
 use crate::model::EventsPage;
 use crate::post::{EventAcceptance, NewEvent, PostJson};
@@ -20,17 +22,43 @@ concord::api! {
     /// The Datadog Events v2 read API and v1 post of one site.
     ///
     /// Build it through [`DatadogEvents::new`](crate::DatadogEvents::new), which checks both
-    /// keys and installs the site's API host; constructing it directly skips those checks.
-    /// The declared base is the US1 host; a site's own host is installed with
-    /// `with_base_url`. Every generated `send()` returns `Result<_, `[`Error`](crate::Error)`>`
-    /// through [`SendPolicy`]; `prepare()` and `with_base_url` return [`concord::Error`].
+    /// keys. The checked destination supplies the base. Constructing the generated client
+    /// directly requires checked key values. Every generated `send()` returns
+    /// `Result<_, `[`Error`](crate::Error)`>` through [`SendPolicy`]; `prepare()` returns
+    /// [`concord::Error`].
+    ///
+    /// ```compile_fail,E0599
+    /// use concord_sdk_datadog_events::DatadogApi;
+    /// fn redirect(api: DatadogApi) {
+    ///     let _ = api.with_base_url("https://another.example");
+    /// }
+    /// ```
+    ///
+    /// The keys are fixed for the handle's life and readable only inside this crate.
+    ///
+    /// ```compile_fail,E0599
+    /// use concord_sdk_datadog_events::DatadogApi;
+    /// fn swap(api: DatadogApi) -> DatadogApi {
+    ///     api.set_api_key("other".to_owned())
+    /// }
+    /// ```
+    ///
+    /// ```compile_fail,E0624
+    /// use concord_sdk_datadog_events::DatadogApi;
+    /// fn read(api: &DatadogApi) -> String {
+    ///     api.application_key().clone()
+    /// }
+    /// ```
     pub client DatadogApi(
+        /// The site's API base, or an explicitly selected custom deployment.
+        destination: Destination,
         /// The API key, sent as `DD-API-KEY`.
-        #[sensitive] header(DD_API_KEY) api_key: String,
+        #[sensitive] api_key: ApiKey,
         /// The application key, sent as `DD-APPLICATION-KEY`: required for reads and kept on posts.
-        #[sensitive] header(DD_APPLICATION_KEY) application_key: String,
+        #[sensitive] application_key: ApplicationKey,
     ) {
-        base "https://api.datadoghq.com";
+        base destination;
+        headers { DD_API_KEY = "{api_key}"; DD_APPLICATION_KEY = "{application_key}"; }
         path "api";
         format Json;
         limit RESPONSE_LIMIT;
@@ -100,7 +128,7 @@ impl<T: Send> SendWith<T> for SendPolicy {
         let received = endpoint.prepare()?.receive().await.map_err(call_error)?;
         let status = received.status();
         // The host this answer came from: the site an authentication error names is the one
-        // actually called, whatever base URL the client was given.
+        // actually called, including an explicitly selected custom deployment.
         let host = received.url().host_str().unwrap_or_default().to_owned();
         if status.is_success() {
             if posting && status.as_u16() != 202 {
@@ -159,3 +187,29 @@ mod runtime_policy_tests {
         ));
     }
 }
+
+/// Config literals and direct construction carry checked keys.
+///
+/// ```compile_fail,E0308
+/// use concord_sdk_datadog_events::{ApplicationKey, DatadogApi, DatadogApiConfig, Site};
+/// let config = DatadogApiConfig {
+///     destination: Site::Eu.into(),
+///     api_key: "unchecked".to_owned(),
+///     application_key: ApplicationKey::new("application").unwrap(),
+/// };
+/// let _ = DatadogApi::new(concord::reqwest::Client::new(), config);
+/// ```
+#[cfg(doctest)]
+pub struct CheckedConstructionExamples;
+
+/// The application key receives the same construction checks.
+///
+/// ```compile_fail,E0308
+/// use concord_sdk_datadog_events::{ApiKey, DatadogApi, DatadogApiConfig, Site};
+/// let _ = DatadogApi::new(concord::reqwest::Client::new(), DatadogApiConfig {
+///     destination: Site::Eu.into(), api_key: ApiKey::new("api").unwrap(),
+///     application_key: "unchecked".to_owned(),
+/// });
+/// ```
+#[cfg(doctest)]
+pub struct CheckedApplicationKeyExamples;

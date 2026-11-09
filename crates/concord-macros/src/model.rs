@@ -119,7 +119,7 @@ pub enum Cond {
 pub enum Kind {
     Client {
         vis: Visibility,
-        base: LitStr,
+        base: Base,
         /// `send P;`: the send policy of every generated `send()`.
         send: Option<Type>,
         /// `send P -> Template;`: the declared result of every generated `send()`, with `_` for
@@ -136,6 +136,14 @@ pub enum Kind {
         /// `page next ...;`: where the provider issues the next page's URL.
         next: Option<syntax::NextSource>,
     },
+}
+
+/// The client's base URL.
+pub enum Base {
+    /// `base "https://…";`
+    Lit(LitStr),
+    /// `base x;`: the client value `x` (its index) yields the base (`AsRef<BaseUrl>`).
+    Value { name: Ident, index: usize },
 }
 
 /// Where a body's or output's format (or a body's media type) comes from.
@@ -243,6 +251,10 @@ pub struct Value {
     pub optional: bool,
     pub default: Option<Expr>,
     pub sensitive: bool,
+    /// `mut x: T`: a required client or scope value that keeps its setter.
+    pub mutable: bool,
+    /// Named by `base x;`: read as the base URL (`AsRef<BaseUrl>`).
+    pub base: bool,
     pub usage: Option<Usage>,
     /// Direct placement: family, explicit key, span, `each`.
     pub placement: Option<(Family, Option<syntax::Key>, Span, bool)>,
@@ -269,6 +281,13 @@ impl Value {
     /// Required and uninitialized: a positional argument.
     pub fn is_positional(&self) -> bool {
         !self.optional && self.default.is_none()
+    }
+
+    /// Whether a client or scope value has a setter: optional and initialized values do, a
+    /// required one only when declared `mut` (otherwise it is the handle's identity, fixed at
+    /// construction).
+    pub fn settable(&self) -> bool {
+        !self.is_positional() || self.mutable
     }
 }
 
@@ -1966,13 +1985,22 @@ impl Model {
                 }
             };
             add("clone".into(), None, "`Clone::clone`".into(), errors);
-            match owner.kind {
-                Kind::Client { .. } => {
+            match &owner.kind {
+                Kind::Client { base, .. } => {
                     add("new".into(), None, "the constructor".into(), errors);
+                    if let Base::Lit(_) = base {
+                        add(
+                            "with_base_url".into(),
+                            None,
+                            "the built-in `with_base_url`".into(),
+                            errors,
+                        );
+                    }
+                    add("http".into(), None, "the built-in `http`".into(), errors);
                     add(
-                        "with_base_url".into(),
+                        "base_url".into(),
                         None,
-                        "the built-in `with_base_url`".into(),
+                        "the built-in `base_url`".into(),
                         errors,
                     );
                     add(
@@ -1991,16 +2019,33 @@ impl Model {
                         errors,
                     );
                 }
-                Kind::Scope => {}
+                Kind::Scope => {
+                    add(
+                        "client".into(),
+                        None,
+                        "the built-in `client`".into(),
+                        errors,
+                    );
+                }
             }
             for value in &owner.values {
                 let name = plain(&value.name);
-                add(
-                    format!("set_{name}"),
-                    Some(value.name.span()),
-                    format!("the control for value `{name}`"),
-                    errors,
-                );
+                if !owner.is_endpoint() {
+                    add(
+                        name.clone(),
+                        Some(value.name.span()),
+                        format!("the getter for value `{name}`"),
+                        errors,
+                    );
+                }
+                if owner.is_endpoint() || value.settable() {
+                    add(
+                        format!("set_{name}"),
+                        Some(value.name.span()),
+                        format!("the control for value `{name}`"),
+                        errors,
+                    );
+                }
                 if value.optional {
                     add(
                         format!("maybe_{name}"),
@@ -2315,9 +2360,18 @@ fn flatten(
     let kind = match owner.kind {
         OwnerKind::Client { vis, base } => match base {
             Some(base) => {
-                if let Err(e) = validate_base(&base) {
-                    errors.push(e);
-                }
+                let base = match base {
+                    syntax::BaseDecl::Lit(lit) => {
+                        if let Err(e) = validate_base(&lit) {
+                            errors.push(e);
+                        }
+                        Base::Lit(lit)
+                    }
+                    syntax::BaseDecl::Value(name) => Base::Value {
+                        name,
+                        index: usize::MAX,
+                    },
+                };
                 let (send, send_output) = match owner.stmts.send.take() {
                     Some((ty, _, output)) => (Some(ty), output),
                     None => (None, None),
@@ -2336,7 +2390,7 @@ fn flatten(
                 ));
                 Kind::Client {
                     vis,
-                    base: LitStr::new("http://invalid", span),
+                    base: Base::Lit(LitStr::new("http://invalid", span)),
                     send: None,
                     send_output: None,
                 }
@@ -2440,6 +2494,22 @@ fn flatten(
                 ));
             }
         }
+        if let Some(at) = p.mutable {
+            if endpoint {
+                errors.push(syn::Error::new(
+                    at,
+                    "`mut` marks a client or scope value the provider lets change during a handle's life; a request's values are always set per request",
+                ));
+            } else if p.optional || p.default.is_some() {
+                errors.push(syn::Error::new(
+                    at,
+                    format!(
+                        "`{}` already has a setter: optional (`x?: T`) and initialized (`x: T = ..`) values can always be replaced; `mut` marks a required value that may change",
+                        plain(&p.name)
+                    ),
+                ));
+            }
+        }
         values.push(Value {
             pairs,
             placement,
@@ -2449,12 +2519,43 @@ fn flatten(
             optional: p.optional,
             default: p.default,
             sensitive: p.sensitive,
+            mutable: p.mutable.is_some(),
+            base: false,
             debug_sensitive: p.sensitive,
             debug_when: Vec::new(),
             usage: None,
             text: false,
             header: false,
         });
+    }
+    // `base x;`: `x` is one of the client's own values, always present.
+    let mut kind = kind;
+    if let Kind::Client {
+        base: Base::Value { name, index },
+        ..
+    } = &mut kind
+    {
+        match values.iter().position(|v: &Value| plain(&v.name) == plain(name)) {
+            None => errors.push(syn::Error::new(
+                name.span(),
+                format!(
+                    "`base {0};` names a client value, but the client declares no value `{0}`; declare it in the client's parameters (`client Api({0}: T)`), or write a literal base (`base \"https://..\";`)",
+                    plain(name)
+                ),
+            )),
+            Some(i) if values[i].optional => errors.push(syn::Error::new(
+                name.span(),
+                format!(
+                    "the base value `{}` must always be present: declare it required (`{0}: T`) or initialized (`{0}: T = ..`), not optional",
+                    plain(name)
+                ),
+            )),
+            Some(i) => {
+                *index = i;
+                values[i].usage.get_or_insert(Usage::Scalar);
+                values[i].base = true;
+            }
+        }
     }
     let mut cfgs: Vec<Attribute> = parent.map(|p| out[p.0].cfgs.clone()).unwrap_or_default();
     cfgs.extend(owner.cfgs.iter().cloned());

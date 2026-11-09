@@ -6,6 +6,7 @@
 //! [`ticket_pages`] walks a listing. See the package README for failure semantics and
 //! exclusions.
 
+mod account;
 mod codecs;
 mod error;
 mod models;
@@ -16,6 +17,7 @@ pub use concord;
 pub use concord_pagination;
 pub use concord_retry;
 
+pub use account::Account;
 pub use codecs::CreatedTicketFormat;
 pub use error::{
     Error, ErrorDocument, HttpError, PaginationError, Problem, UncertainCause, UncertainWrite,
@@ -41,17 +43,17 @@ pub const ERROR_BODY_LIMIT: usize = 64 * 1024;
 concord::api! {
     /// Zendesk Support, `https://{subdomain}.zendesk.com/api/v2`, with an OAuth access token.
     pub client Zendesk(
-        /// The account subdomain (`acme` for `acme.zendesk.com`).
-        subdomain: String,
+        /// The account subdomain (`acme` for `acme.zendesk.com`). Fixed: the token belongs to
+        /// this account.
+        subdomain: Account,
         /// `Bearer {access_token}`; build it with [`Zendesk::connect`] or
-        /// `concord_auth::bearer(token)`.
-        #[sensitive] header("authorization") authorization: HeaderValue,
+        /// `concord_auth::bearer(token)`. The account's token rotates.
+        #[sensitive] header("authorization") mut authorization: HeaderValue,
         /// How generated `send()` treats reads and writes.
-        policy: SendPolicy,
+        mut policy: SendPolicy,
     ) {
-        base "https://zendesk.com";
+        base subdomain;
         path "api/v2";
-        subdomain "{subdomain}";
         format Json;
         limit PAGE_BODY_LIMIT;
         send policy -> Result<_, Error>;
@@ -116,15 +118,34 @@ impl Zendesk {
         subdomain: impl Into<String>,
         oauth_token: &str,
     ) -> Result<Self, Error> {
+        Self::connect_account(http, Account::new(&subdomain.into())?, oauth_token)
+    }
+
+    /// Connects a checked account origin with its credential.
+    pub fn connect_account(
+        http: reqwest::Client,
+        account: Account,
+        oauth_token: &str,
+    ) -> Result<Self, Error> {
         let authorization = concord_auth::bearer(oauth_token).map_err(Error::Credential)?;
         Ok(Self::new(
             http,
             ZendeskConfig {
-                subdomain: subdomain.into(),
+                subdomain: account,
                 authorization,
                 policy: SendPolicy::default(),
             },
         ))
+    }
+
+    /// Connects an account on a reserved fixture domain, with the supplied transport.
+    pub fn for_fixture(
+        http: reqwest::Client,
+        subdomain: &str,
+        oauth_token: &str,
+        base: &str,
+    ) -> Result<Self, Error> {
+        Self::connect_account(http, Account::for_fixture(subdomain, base)?, oauth_token)
     }
 }
 
@@ -143,9 +164,39 @@ pub fn http_client() -> Result<reqwest::Client, reqwest::Error> {
         .build()
 }
 
+/// The account is fixed for the life of a client: its token cannot be sent to another
+/// subdomain (FM2). Build another client for another account.
+///
+/// ```compile_fail,E0599
+/// use concord_sdk_zendesk_support::Zendesk;
+/// fn move_account(api: Zendesk) -> Zendesk {
+///     api.set_subdomain("other")
+/// }
+/// ```
+///
+/// Same-account rotation and a new policy stay available.
+///
+/// ```
+/// use concord_sdk_zendesk_support::{SendPolicy, Zendesk, concord::reqwest::header::HeaderValue};
+/// fn rotate(api: Zendesk, fresh: HeaderValue) -> Zendesk {
+///     api.set_authorization(fresh).set_policy(SendPolicy::default())
+/// }
+/// ```
+#[cfg(doctest)]
+pub struct ConstructionExamples;
+
 /// Compiles the README examples without making provider requests.
 #[cfg(doctest)]
 #[doc = include_str!("../README.md")]
 pub struct ReadmeExamples;
 
 pub(crate) use __ZendeskOperation as ZendeskOperation;
+
+/// The account origin travels with the handle.
+///
+/// ```compile_fail,E0599
+/// use concord_sdk_zendesk_support::Zendesk;
+/// fn redirect(api: Zendesk) { let _ = api.with_base_url("https://evil.example"); }
+/// ```
+#[cfg(doctest)]
+pub struct AccountConstructionExamples;

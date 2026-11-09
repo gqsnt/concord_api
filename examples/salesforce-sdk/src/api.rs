@@ -26,18 +26,22 @@ use crate::bulk::{
     ResultPagesResponse,
 };
 use crate::ids::{
-    ApiVersion, BatchSize, FieldList, IngestJobId, MaxRecords, QueryJobId, QueryLocator, RecordId,
-    ResultLocator, SObjectName,
+    BatchSize, FieldList, IngestJobId, InstanceUrl, MaxRecords, QueryJobId, QueryLocator, RecordId,
+    ResultLocator, SObjectName, SupportedVersion,
 };
 use crate::model::{Account, Contact, DynamicRecord, QueryResponse, SObjectDescribe};
 use crate::soql::Soql;
 
 concord::api! {
     /// One Salesforce org at one pinned API version: REST (describe, records, SOQL) and Bulk API
-    /// 2.0 (query and ingest jobs). The base is replaced by the org's instance URL
-    /// ([`crate::OrgContext`] does it).
-    pub client SalesforceApi(#[sensitive] token: String, version: ApiVersion) {
-        base "https://instance.salesforce.invalid";
+    /// 2.0 (query and ingest jobs). Every request goes to the org's instance URL; the instance,
+    /// its token and the version are fixed for the handle's life.
+    pub client SalesforceApi(
+        instance: InstanceUrl,
+        #[sensitive] token: String,
+        version: SupportedVersion,
+    ) {
+        base instance;
         path "services/data/v{version}";
         headers { AUTHORIZATION = "Bearer {token}"; }
         format Json;
@@ -171,3 +175,64 @@ concord::api! {
         }
     }
 }
+
+/// A handle stays on its org's instance, with its token and version (FM3, FM4).
+///
+/// ```compile_fail,E0599
+/// use concord_example_salesforce_sdk::SalesforceApi;
+/// fn redirect(api: &SalesforceApi) {
+///     let _ = api.clone().with_base_url("https://another.example");
+/// }
+/// ```
+///
+/// ```compile_fail,E0599
+/// use concord_example_salesforce_sdk::{ids::ApiVersion, SalesforceApi};
+/// fn downgrade(api: SalesforceApi) -> SalesforceApi {
+///     api.set_version(ApiVersion::new(40, 0))
+/// }
+/// ```
+///
+/// ```compile_fail,E0599
+/// use concord_example_salesforce_sdk::{ids::InstanceUrl, SalesforceApi};
+/// fn move_org(api: SalesforceApi, other: InstanceUrl) -> SalesforceApi {
+///     api.set_instance(other)
+/// }
+/// ```
+///
+/// The token is readable only inside this crate.
+///
+/// ```compile_fail,E0624
+/// use concord_example_salesforce_sdk::SalesforceApi;
+/// fn steal(api: &SalesforceApi) -> String {
+///     api.token().clone()
+/// }
+/// ```
+///
+/// The instance and version are readable everywhere; a fixture is an instance the caller builds.
+///
+/// ```
+/// use concord_example_salesforce_sdk::{ids::{ApiVersion, InstanceUrl, SupportedVersion}, SalesforceApi, SalesforceApiConfig};
+/// let instance = InstanceUrl::parse("http://127.0.0.1:8080").unwrap();
+/// let api = SalesforceApi::new(
+///     concord::reqwest::Client::new(),
+///     SalesforceApiConfig { instance: instance.clone(), token: "t".into(), version: SupportedVersion::new(ApiVersion::PINNED).unwrap() },
+/// );
+/// assert_eq!(api.instance(), &instance);
+/// assert_eq!(api.base_url().as_str(), "http://127.0.0.1:8080/");
+/// ```
+#[cfg(doctest)]
+pub struct ConstructionExamples;
+
+/// Public construction uses the same checked version as [`crate::OrgContext`].
+///
+/// ```compile_fail,E0308
+/// use concord_example_salesforce_sdk::{ids::{ApiVersion, InstanceUrl}, SalesforceApi, SalesforceApiConfig};
+/// let config = SalesforceApiConfig {
+///     instance: InstanceUrl::parse("https://acme.my.salesforce.com").unwrap(),
+///     token: "t".into(),
+///     version: ApiVersion::new(40, 0),
+/// };
+/// let _ = SalesforceApi::new(concord::reqwest::Client::new(), config);
+/// ```
+#[cfg(doctest)]
+pub struct CheckedConstructionExamples;

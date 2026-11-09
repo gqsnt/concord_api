@@ -35,6 +35,7 @@ mod header_map_capacity {
         name: "Capacity.fill",
         method: "GET",
         read: true,
+        sensitive_base: false,
         labels: 0,
         sensitive_labels: &[],
         segments: 0,

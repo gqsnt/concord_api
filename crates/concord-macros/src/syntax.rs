@@ -66,7 +66,7 @@ pub struct Spread {
 pub enum OwnerKind {
     Client {
         vis: Visibility,
-        base: Option<LitStr>,
+        base: Option<BaseDecl>,
     },
     Scope,
     Endpoint {
@@ -74,6 +74,12 @@ pub enum OwnerKind {
         output: Option<Output>,
         body: Option<BodyParam>,
     },
+}
+
+/// `base "https://…";` (a literal URL) or `base x;` (the client value `x` holds the base).
+pub enum BaseDecl {
+    Lit(LitStr),
+    Value(Ident),
 }
 
 /// A body or output format: an ordinary Rust type path (`Json`, `codecs::Csv`,
@@ -625,6 +631,8 @@ pub struct Param {
     pub docs: Vec<Attribute>,
     pub sensitive: bool,
     pub placement: Option<Placement>,
+    /// `mut x: T`: the provider lets this value change during the handle's life.
+    pub mutable: Option<Span>,
     pub name: Ident,
     pub optional: bool,
     pub ty: Type,
@@ -984,7 +992,7 @@ fn docs_only(attrs: Vec<Attribute>) -> syn::Result<Vec<Attribute>> {
 
 fn parse_owner_body(
     input: ParseStream<'_>,
-    mut base: Option<&mut Option<LitStr>>,
+    mut base: Option<&mut Option<BaseDecl>>,
     mut groups: Option<&mut Vec<Group>>,
 ) -> syn::Result<(Stmts, Vec<Owner>)> {
     let mut stmts = Stmts::default();
@@ -1015,9 +1023,18 @@ fn parse_owner_body(
                     "`base` is only allowed on the client",
                 ));
             };
-            let lit: LitStr = input.parse()?;
+            let decl = if input.peek(Ident) {
+                BaseDecl::Value(input.parse()?)
+            } else {
+                BaseDecl::Lit(input.parse().map_err(|e| {
+                    syn::Error::new(
+                        e.span(),
+                        "expected the base URL (`base \"https://api.example.com\";`) or the client value that holds it (`base instance;`)",
+                    )
+                })?)
+            };
             input.parse::<Token![;]>()?;
-            set_once(slot, lit, kw.span, "base")?;
+            set_once(slot, decl, kw.span, "base")?;
             continue;
         }
         if input.peek(kw::send) {
@@ -1582,9 +1599,10 @@ fn parse_params(
         // `name: T` / `name?: T` is an ordinary value whatever its name (`json: T`, `body?: T`);
         // `Token![:]` also peeks the first half of `::`, which starts a format path instead.
         // A leading `::` (an absolute format path, `::c4::Text b: T`) is never a value name.
-        let named = content.peek(Ident::peek_any)
-            && ((content.peek2(Token![:]) && !content.peek2(Token![::]))
-                || content.peek2(Token![?]));
+        let named = content.peek(Token![mut])
+            || content.peek(Ident::peek_any)
+                && ((content.peek2(Token![:]) && !content.peek2(Token![::]))
+                    || content.peek2(Token![?]));
         let placement =
             (content.peek(kw::query) || content.peek(kw::header) || content.peek(kw::each))
                 && !content.peek2(Token![::]);
@@ -1673,6 +1691,11 @@ fn parse_params(
             });
         } else {
             let placement = parse_placement(&content)?;
+            let mutable = if content.peek(Token![mut]) {
+                Some(content.parse::<Token![mut]>()?.span)
+            } else {
+                None
+            };
             let name: Ident = content.parse()?;
             let optional = parse_question(&content)?;
             content.parse::<Token![:]>()?;
@@ -1716,6 +1739,7 @@ fn parse_params(
                 docs,
                 sensitive,
                 placement,
+                mutable,
                 name,
                 optional,
                 ty,

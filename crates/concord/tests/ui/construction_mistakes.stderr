@@ -1,0 +1,35 @@
+error: `base instance;` names a client value, but the client declares no value `instance`; declare it in the client's parameters (`client Api(instance: T)`), or write a literal base (`base "https://..";`)
+ --> tests/ui/construction_mistakes.rs:4:14
+  |
+4 |         base instance;
+  |              ^^^^^^^^
+
+error: the base value `instance` must always be present: declare it required (`instance: T`) or initialized (`instance: T = ..`), not optional
+  --> tests/ui/construction_mistakes.rs:12:14
+   |
+12 |         base instance;
+   |              ^^^^^^^^
+
+error: `mut` marks a client or scope value the provider lets change during a handle's life; a request's values are always set per request
+  --> tests/ui/construction_mistakes.rs:20:21
+   |
+20 |         GET a(query mut page: u32);
+   |                     ^^^
+
+error: `token` already has a setter: optional (`x?: T`) and initialized (`x: T = ..`) values can always be replaced; `mut` marks a required value that may change
+  --> tests/ui/construction_mistakes.rs:25:65
+   |
+25 |     pub client MutOptional(#[sensitive] header("authorization") mut token?: String) {
+   |                                                                 ^^^
+
+error: `GetterCollisionS` would have two methods named `items`: the navigation method for `GetterCollision.s.items` and the getter for value `items`; rename one of them
+  --> tests/ui/construction_mistakes.rs:35:17
+   |
+35 |             GET items();
+   |                 ^^^^^
+
+error: the getter for value `items` is declared here
+  --> tests/ui/construction_mistakes.rs:34:23
+   |
+34 |         scope s(query items: u32) {
+   |                       ^^^^^

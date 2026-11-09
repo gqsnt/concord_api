@@ -1,0 +1,12 @@
+[package]
+name = "concord-construction-fixture"
+version = "0.0.0"
+edition.workspace = true
+publish = false
+
+[dependencies]
+concord-core = { path = "../../../../concord-core" }
+concord-macros = { path = "../../../../concord-macros" }
+
+[lib]
+path = "lib.rs"

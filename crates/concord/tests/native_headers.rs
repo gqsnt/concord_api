@@ -77,8 +77,8 @@ impl fmt::Display for Region {
 concord::api! {
     /// Native header fixture.
     pub client Native(
-        /// H1: an owned native value supplied at construction.
-        header("x-owned") owned: HeaderValue,
+        /// H1: an owned native value supplied at construction (`mut`: it keeps a setter).
+        header("x-owned") mut owned: HeaderValue,
         /// H2: a static native value as an initializer, through an alias.
         header("accept") accept: Hv = ACCEPT_JSON.clone(),
         /// H3: optional, through a qualified path.
@@ -697,6 +697,7 @@ fn full_header_map_with_native_values() {
         name: "Native.fill",
         method: "GET",
         read: true,
+        sensitive_base: false,
         labels: 0,
         sensitive_labels: &[],
         segments: 0,

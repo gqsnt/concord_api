@@ -89,10 +89,11 @@ async fn example(oauth_token: &str) -> Result<(), Box<dyn std::error::Error>> {
 }
 ```
 
-`Zendesk::connect` validates the token with `concord_auth::bearer` (no whitespace, controls or
+`Zendesk::connect` checks the account subdomain and validates the token with `concord_auth::bearer` (no whitespace, controls or
 non-ASCII) and uses the default `SendPolicy`; `Zendesk::new(http, ZendeskConfig { subdomain,
-authorization, policy })` takes all three explicitly, and `set_policy` replaces the policy.
-Obtaining and refreshing the OAuth token is the application's.
+authorization, policy })` takes a checked `Account` and both other values explicitly, and `set_policy` replaces the policy.
+Fixtures use `Zendesk::for_fixture(http, "acme", token, "http://localhost:8080")?` with
+`acme.localhost` resolved to the fixture address. Obtaining and refreshing the OAuth token is the application's.
 
 `http_client()` builds a transport without reqwest-level retries or redirects and with a 30 s
 timeout per request. A caller-supplied client must also disable reqwest's retries and redirects:

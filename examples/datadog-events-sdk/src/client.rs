@@ -8,6 +8,7 @@ use crate::api::{
     DatadogApiEventsSearch,
 };
 use crate::credentials::Credentials;
+use crate::destination::Destination;
 use crate::error::{Error, ProtocolError};
 use crate::model::{Event, EventsPage, Warning};
 use crate::post::NewEvent;
@@ -48,11 +49,10 @@ pub struct PageInfo {
 #[derive(Clone, Debug)]
 pub struct DatadogEvents {
     api: DatadogApi,
-    site: Site,
 }
 
 impl DatadogEvents {
-    /// A client for `site`, sending both keys with every request.
+    /// A client for a site or a checked custom destination, sending both keys with every request.
     ///
     /// ```
     /// use concord_sdk_datadog_events::{Credentials, DatadogEvents, Site};
@@ -64,19 +64,24 @@ impl DatadogEvents {
     /// assert_eq!(prepared.request().url().as_str(), "https://api.datadoghq.eu/api/v2/events");
     /// assert!(!format!("{client:?}").contains("synthetic"));
     /// ```
-    pub fn new(http: reqwest::Client, site: Site, credentials: Credentials) -> Self {
+    pub fn new(
+        http: reqwest::Client,
+        destination: impl Into<Destination>,
+        credentials: Credentials,
+    ) -> Self {
+        let destination = destination.into();
         let Credentials {
             api_key,
             application_key,
         } = credentials;
         let config = DatadogApiConfig {
+            destination,
             api_key,
             application_key,
         };
-        let api = DatadogApi::new(http, config)
-            .with_base_url(site.api_base_url())
-            .expect("every listed site's API base is an https URL with a domain host");
-        Self { api, site }
+        Self {
+            api: DatadogApi::new(http, config),
+        }
     }
 
     /// A `reqwest::Client` suited to this SDK: no redirects (the keys are custom headers that
@@ -92,23 +97,9 @@ impl DatadogEvents {
             .build()
     }
 
-    /// The same client sending to `base` instead of the site's API host: for a proxy or a local
-    /// stand-in. `/api/v2/...` (reads) or `/api/v1/events` (post) is appended to `base`'s path.
-    /// Authentication errors name the host that answered; [`site`](Self::site) keeps the
-    /// configured site.
-    ///
-    /// # Errors
-    ///
-    /// [`concord::Error`] when `base` is not an `http`/`https` URL with a host (and without
-    /// user information, query or fragment).
-    pub fn with_base_url(mut self, base: impl AsRef<str>) -> Result<Self, concord::Error> {
-        self.api = self.api.with_base_url(base)?;
-        Ok(self)
-    }
-
     /// The site this client calls.
     pub fn site(&self) -> Site {
-        self.site
+        self.api.destination().site()
     }
 
     /// The generated client, for anything the named workflows do not cover.

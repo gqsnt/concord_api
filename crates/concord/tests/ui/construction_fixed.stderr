@@ -1,0 +1,77 @@
+error[E0599]: no method named `with_base_url` found for struct `Org` in the current scope
+  --> tests/ui/construction_fixed.rs:33:25
+   |
+12 | / concord::api! {
+13 | |     pub client Org(
+14 | |         instance: Instance,
+15 | |         #[sensitive] header("authorization") mut token: String,
+...  |
+25 | | }
+   | |_- method `with_base_url` not found for this struct
+...
+33 |       let _ = org.clone().with_base_url("https://evil.example");
+   |                           ^^^^^^^^^^^^^
+   |
+help: there is a method `base_url` with a similar name, but with different arguments
+  --> tests/ui/construction_fixed.rs:12:1
+   |
+12 | / concord::api! {
+13 | |     pub client Org(
+14 | |         instance: Instance,
+15 | |         #[sensitive] header("authorization") mut token: String,
+...  |
+25 | | }
+   | |_^
+   = note: this error originates in the macro `$crate::__macro::api` which comes from the expansion of the macro `concord::api` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0599]: no method named `set_version` found for struct `Org` in the current scope
+  --> tests/ui/construction_fixed.rs:34:25
+   |
+12 | / concord::api! {
+13 | |     pub client Org(
+14 | |         instance: Instance,
+15 | |         #[sensitive] header("authorization") mut token: String,
+...  |
+25 | | }
+   | |_- method `set_version` not found for this struct
+...
+34 |       let _ = org.clone().set_version(40);
+   |                           ^^^^^^^^^^^
+   |
+help: there is a method `version` with a similar name, but with different arguments
+  --> tests/ui/construction_fixed.rs:12:1
+   |
+12 | / concord::api! {
+13 | |     pub client Org(
+14 | |         instance: Instance,
+15 | |         #[sensitive] header("authorization") mut token: String,
+...  |
+25 | | }
+   | |_^
+   = note: this error originates in the macro `$crate::__macro::api` which comes from the expansion of the macro `concord::api` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0599]: no method named `set_shop` found for struct `OrgShop` in the current scope
+  --> tests/ui/construction_fixed.rs:35:38
+   |
+12 | / concord::api! {
+13 | |     pub client Org(
+14 | |         instance: Instance,
+15 | |         #[sensitive] header("authorization") mut token: String,
+...  |
+25 | | }
+   | |_- method `set_shop` not found for this struct
+...
+35 |       let _ = org.shop("a", "token-a").set_shop("b");
+   |                                        ^^^^^^^^
+   |
+help: there is a method `shop` with a similar name, but with different arguments
+  --> tests/ui/construction_fixed.rs:12:1
+   |
+12 | / concord::api! {
+13 | |     pub client Org(
+14 | |         instance: Instance,
+15 | |         #[sensitive] header("authorization") mut token: String,
+...  |
+25 | | }
+   | |_^
+   = note: this error originates in the macro `$crate::__macro::api` which comes from the expansion of the macro `concord::api` (in Nightly builds, run with -Z macro-backtrace for more info)
