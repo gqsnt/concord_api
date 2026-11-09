@@ -98,6 +98,8 @@ impl Sentry {
         Ok(Self::with_token(http, token, policy)?.with_base_url(base)?)
     }
 
+    /// Sends `authorization: Bearer <token>`, built by `concord_auth::bearer`.
+    ///
     /// Construct with a validated token. Clones of the policy share caller/endpoint quotas.
     pub fn with_token(
         http: reqwest::Client,

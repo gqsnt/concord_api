@@ -7,6 +7,9 @@ Not released: the version is unchanged (4.2.0). Records: `v4/desirability/` (dec
 
 ### Added
 
+- **Documentation (H16s):** generated endpoint docs now state query order, path-hole encoding
+  and header provenance. SDK-local notes record custom format constants and wrapper/policy
+  header sources across the 55 SDKs. No API or wire behavior changes.
 - **H06c broader `controls` adoption:** audited all 55 example SDKs; seven more SDKs adopt
   `controls` and two H06 pilots (Salesforce, Zendesk) extend theirs (11 adopters in all). Credentials and their rate/ledger state are replaced together in Discord,
   Sentry and Adyen; DigitalOcean, QuickBooks, Zendesk and USGS withhold destination changes;

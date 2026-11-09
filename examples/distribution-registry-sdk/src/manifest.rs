@@ -226,6 +226,9 @@ pub struct ManifestPushed {
 }
 
 impl Repository {
+    /// Sends `accept` as the supplied `ManifestMediaType::as_str()` values joined by `, `
+    /// in caller order, overriding the binary format's lack of an Accept suggestion.
+    ///
     /// `GET /v2/<name>/manifests/<reference>` with `Accept` listing `accept` in order.
     ///
     /// # Errors
@@ -321,6 +324,8 @@ impl Repository {
         })
     }
 
+    /// Binds `content-type` to `manifest.media_type().as_str()` through `EncodedBody`.
+    ///
     /// `PUT /v2/<name>/manifests/<reference>` with the upload's bytes and media type; `201
     /// Created` is required. A missing referenced blob is the registry's `400` with `BLOB_UNKNOWN`
     /// entries ([`ErrorEntry::detail_digest`](crate::ErrorEntry::detail_digest) names each).

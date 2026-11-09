@@ -140,6 +140,8 @@ concord::api! {
 }
 
 impl Cloudflare {
+    /// Sends `authorization: Bearer <api_token>`, built by `concord_auth::bearer`.
+    ///
     /// A client for `https://api.cloudflare.com/client/v4` with an API token (sent as
     /// `Authorization: Bearer {api_token}`) and the default [`SendPolicy`]. Creating, rolling
     /// and scoping tokens is the application's.

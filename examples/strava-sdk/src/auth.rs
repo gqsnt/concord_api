@@ -112,6 +112,9 @@ struct Inner {
     cache: TokenCache<(), Error>,
     limiter: Limiter<u8>,
 }
+/// The send policy sets `authorization: Bearer <access_token>` from its current token snapshot
+/// before each attempt; generated `prepare()` bypasses token acquisition and this edit.
+///
 /// A clone shares one athlete's tokens and this process's observed application quota.
 /// Share a session among clones; independent sessions do not coordinate application-wide usage.
 #[derive(Clone)]

@@ -83,6 +83,8 @@ impl Incremental<Event> for SseFormat {
     }
 }
 
+/// Its `Incremental::ACCEPT` delegates to `Ndjson`: `accept: application/x-ndjson`.
+///
 /// The format of `GET /<topic>/json` (subscription and poll): Concord's NDJSON reader
 /// (`application/x-ndjson` or `application/ndjson`, charset absent or UTF-8, blank lines skipped,
 /// a line at most [`MAX_EVENT_BYTES`]), wrapped as [`Events`] with the head's truncation flag.

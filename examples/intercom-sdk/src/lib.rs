@@ -102,6 +102,8 @@ concord::api! {
 }
 
 impl Intercom {
+    /// Sends `authorization: Bearer <token>`, built by `concord_auth::bearer`.
+    ///
     /// Construct with a raw bearer token, rejecting empty or unsafe header tokens.
     pub fn with_token(http: reqwest::Client, token: &str) -> Result<Self, CredentialError> {
         Ok(Self::new(

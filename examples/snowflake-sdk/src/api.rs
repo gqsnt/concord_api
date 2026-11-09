@@ -8,6 +8,8 @@ pub(crate) enum StatementBody {
     Pending(ServerMessage),
     Complete(ResultSet),
 }
+/// Its `Decode::ACCEPT` suggests `accept: application/json`.
+///
 pub(crate) struct StatementJson;
 impl Decode<StatementBody> for StatementJson {
     type Context = u16;

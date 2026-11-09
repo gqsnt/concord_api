@@ -286,6 +286,8 @@ mod limit_tests {
 /// Lazy page traversal, with per-page HTTP metadata. `items()` exposes item traversal and streaming.
 pub type RecordPages = Pages<Record, String, ResponseMeta, Error>;
 
+/// Sends `authorization: Bearer <token>` from the constructor's raw token.
+///
 /// Airtable client. The provided HTTP client controls timeouts and redirect policy.
 #[derive(Clone, Debug)]
 pub struct Client {

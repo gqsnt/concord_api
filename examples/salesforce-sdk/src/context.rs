@@ -34,6 +34,9 @@ use crate::ids::{
 };
 use crate::{SalesforceApi, SalesforceApiConfig};
 
+/// Sends `authorization: Bearer <token>` from the supplied `AccessToken` through
+/// the generated `SalesforceApi` declaration.
+///
 /// One org at one API version with one access token. Cheap to clone (an `Arc`); immutable.
 ///
 /// `Debug` shows the instance origin and the version, never the token.

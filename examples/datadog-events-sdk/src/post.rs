@@ -113,6 +113,8 @@ pub struct EventAcceptance {
     pub event: Option<Map<String, Value>>,
 }
 
+/// Its `Encode::CONTENT_TYPE` delegates to `Json`: `content-type: application/json`.
+///
 /// JSON encoded in a non-replayable reqwest body. Even a caller-supplied retry policy cannot
 /// clone this body to send the post again. This also applies to prepared requests.
 pub(crate) struct PostJson;

@@ -185,6 +185,8 @@ impl BlobUpload {
         self.uuid.as_deref()
     }
 
+    /// Sends `content-range: <offset>-<offset+chunk.len()-1>` (no `bytes` prefix).
+    ///
     /// `PATCH <Location>` with `chunk` at [`offset`](Self::offset): `Content-Range:
     /// <offset>-<offset + len - 1>`, `Content-Type: application/octet-stream`. `202 Accepted`
     /// with a `Location` and a `Range` acknowledging exactly this chunk is required; the session

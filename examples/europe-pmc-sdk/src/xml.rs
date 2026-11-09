@@ -4,10 +4,14 @@ use crate::{
 use concord::{CodecError, Decode, ResponseHead, bytes::Bytes};
 use roxmltree::{Document, Node, ParsingOptions};
 
+/// Its `Decode::ACCEPT` suggests `accept: application/xml`.
+///
 /// SDK XML search decoder. Shares Concord's strict media parser and buffers at most 256 KiB.
 /// UTF-8/US-ASCII only; external entities are never resolved and DTD entities are refused.
 pub struct SearchXml;
 
+/// Its `Decode::ACCEPT` suggests `accept: application/xml`.
+///
 /// SDK XML reference-list decoder, with exactly the media, size and parser rules of
 /// [`SearchXml`]. A missing `referenceList` reads as an empty list.
 pub struct ReferencesXml;

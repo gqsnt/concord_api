@@ -50,6 +50,10 @@ pub struct FolderPageMeta {
 /// Item traversal/streaming is available through `items()`; it discards per-page metadata.
 pub type FolderPages = Pages<Entry, Cursor, FolderPageMeta, Error>;
 
+/// Sends `authorization: Bearer <token>` from `ClientConfig::token`. Listing wrappers send
+/// `dropbox-api-select-user` from the operation's member ID and `dropbox-api-path-root`
+/// from `serde_json::to_string` of the selected `PathRoot`.
+///
 /// Shared transport and bearer credentials. Member/root selections are owned per operation.
 #[derive(Clone, Debug)]
 pub struct Client {

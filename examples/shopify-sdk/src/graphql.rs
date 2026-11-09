@@ -43,6 +43,8 @@ pub trait Operation: Serialize {
     type Data: DeserializeOwned;
 }
 
+/// `Encode::CONTENT_TYPE` sends `content-type: application/json` with the body.
+///
 /// The request format of the GraphQL endpoint: encodes an [`Operation`]'s variables into the
 /// standard GraphQL-over-HTTP JSON body, `application/json`.
 ///

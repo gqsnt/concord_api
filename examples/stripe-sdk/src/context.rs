@@ -40,6 +40,10 @@ use crate::{
 /// The base URL declared in the `Stripe` declaration.
 pub const DECLARED_BASE: &str = "https://api.stripe.com/v1";
 
+/// Sends `authorization: Bearer <key>` from the supplied `SecretKey`, `stripe-version`
+/// from the context's `ApiVersion::as_str()` (initially pinned), and `stripe-account`
+/// from the selected `AccountId`, when present. `OnAccount` documents per-request overrides.
+///
 /// A configured Stripe context. See the [module documentation](self).
 #[derive(Clone)]
 pub struct StripeContext {

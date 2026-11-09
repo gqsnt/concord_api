@@ -271,6 +271,10 @@ impl fmt::Debug for TextEmail {
     }
 }
 
+/// `Encode::CONTENT_TYPE` is `None`; `encode_body` binds
+/// `content-type: multipart/form-data; boundary=<boundary>` from Concord multipart
+/// for buffered parts, or from reqwest's `Form::boundary()` for a streamed attachment.
+///
 /// Provider field mapping over Concord multipart; reqwest frames lazy attachments.
 /// Both branches bind runtime Content-Type to the encoded body and use generated `send()`.
 pub struct MailgunMultipart;

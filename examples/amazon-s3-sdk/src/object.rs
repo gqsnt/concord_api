@@ -130,6 +130,8 @@ impl ObjectHead {
     }
 }
 
+/// Uses the default `Decode::ACCEPT = None`: no format-added `accept`.
+///
 /// The response format of `HeadObject`: parses the head; the (empty) body is ignored.
 pub struct HeadFormat;
 
@@ -145,6 +147,8 @@ impl Decode<ObjectHead> for HeadFormat {
     }
 }
 
+/// Uses the default `Incremental::ACCEPT = None`: no format-added `accept`.
+///
 /// The response format of `GetObject`: checks and parses the head, then hands the **unread**
 /// body to the caller in a [`GetObjectOutput`].
 ///
@@ -382,6 +386,8 @@ pub struct PutObjectOutput {
     pub meta: ResponseMeta,
 }
 
+/// Uses the default `Decode::ACCEPT = None`: no format-added `accept`.
+///
 /// The response format of `PutObject`: parses the head (S3 sends an empty body).
 pub struct PutFormat;
 

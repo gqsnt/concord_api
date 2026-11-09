@@ -15,6 +15,9 @@ use concord::reqwest::header::{HeaderName, HeaderValue};
 
 use crate::api::{Inventory, Item};
 
+/// Inserts `extra.1` verbatim under the caller-supplied name `extra.0`, replacing that name
+/// in the prepared request before execution.
+///
 /// Fetches one item with a per-request timeout and an extra header (for example a request id).
 ///
 /// Use it when a single call needs transport settings or headers the declaration does not

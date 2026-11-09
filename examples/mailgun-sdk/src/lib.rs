@@ -96,6 +96,9 @@ concord::api! {
 }
 
 impl Mailgun {
+    /// Sends `authorization: Basic <base64(api:key)>`, built by `concord_auth::basic`.
+    /// The `local` constructor uses the same credential header.
+    ///
     /// Build a regional client with a finite whole-request timeout, no redirects and no retries.
     /// A key with event-read permission is required for the connected workflow.
     pub fn connect(region: Region, key: &str, timeout: Duration) -> Result<Self, Error> {

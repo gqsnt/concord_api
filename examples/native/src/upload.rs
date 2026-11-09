@@ -135,6 +135,8 @@ impl Stream for OneShot {
     }
 }
 
+/// `Encode::CONTENT_TYPE` sends `content-type: application/octet-stream` with the body.
+///
 /// `application/octet-stream`, streamed: moves a [`OneShot`] into the request body unread.
 ///
 /// Name it like any format (`request upload::Streamed;`). The media type is fixed; the body

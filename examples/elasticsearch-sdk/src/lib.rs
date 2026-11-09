@@ -160,6 +160,8 @@ pub struct Elasticsearch {
 }
 
 impl Elasticsearch {
+    /// Sends `authorization: ApiKey <key>` from the supplied `ApiKey`.
+    ///
     /// A client for the deployment at `base_url` (scheme, host, port and any path prefix).
     pub fn new(http: reqwest::Client, base_url: &str, api_key: ApiKey) -> Result<Self, Error> {
         let api = ElasticsearchApi::new(

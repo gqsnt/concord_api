@@ -322,6 +322,9 @@ impl<T: Send> SendWith<T> for SendPolicy {
     }
 }
 
+/// Sends `authorization: Bearer <token>` from the constructor's raw token.
+/// Request and response format headers are documented on `OpenAiApi`'s operations.
+///
 /// Configured client. Use an application-supplied transport with timeouts and redirect policy.
 #[derive(Clone, Debug)]
 pub struct OpenAi {

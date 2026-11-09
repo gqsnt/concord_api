@@ -142,6 +142,8 @@ impl Mastodon {
         Self { api, instance }
     }
 
+    /// Sets `authorization: Bearer <token>` from `AccessToken`, built by `concord_auth::bearer`.
+    ///
     /// The same client sending `token` on every request, to this instance and to the streaming
     /// host it advertises. Request values created earlier keep their credentials.
     #[must_use]

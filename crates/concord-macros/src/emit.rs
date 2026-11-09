@@ -1352,14 +1352,15 @@ fn summary_parts(model: &Model, endpoint: usize, method: &Ident) -> Option<Summa
         Access::Crate => " The crate that declares the client chooses the base (its `with_base_url` is not public): construction may replace the declared base, including its path; declared paths are appended. A send policy may select or restrict the actual URL.",
         Access::Removed => " The client has no `with_base_url`: requests go to the declared base. A send policy may select or restrict the actual URL.",
     }.to_owned());
-    let mut sent = query_for_docs(model, endpoint, composed);
+    let mut sent = vec![" Request composition below describes `prepare()`, before transport defaults or send-policy edits. A send policy can transform the prepared URL, query or headers; see the SDK's policy and wrapper notes.".to_owned()];
+    sent.extend(query_for_docs(model, endpoint, composed));
     if composed.segments.iter().any(|&(o, i)| {
         model.owners[o].segments[i]
             .pieces
             .iter()
             .any(|p| matches!(p, Piece::Hole(_)))
     }) {
-        sent.push(" Each path hole's `Display` value is sent as one percent-encoded segment: every UTF-8 byte except RFC 3986 unreserved `A-Z a-z 0-9 - . _ ~` is escaped (`/` becomes `%2F`, `&` becomes `%26`, `=` becomes `%3D`, `%` becomes `%25`, space becomes `%20`). Literal template text stays verbatim, including text around a hole; a value cannot add a segment. A completed dynamic segment that is empty, `.` or `..` is a `Build` error.".to_owned());
+        sent.push(" Each path hole's `Display` value is prepared as one percent-encoded segment: every UTF-8 byte except RFC 3986 unreserved `A-Z a-z 0-9 - . _ ~` is escaped (`/` becomes `%2F`, `&` becomes `%26`, `=` becomes `%3D`, `%` becomes `%25`, space becomes `%20`). Literal template text stays verbatim, including text around a hole; a value cannot add a prepared segment. A completed dynamic segment that is empty, `.` or `..` is a `Build` error.".to_owned());
     }
     match &composed.headers {
         HeaderComposition::Static(slots) => {
@@ -3611,7 +3612,8 @@ mod tests {
             }
         });
         for expected in [
-            "Each path hole's `Display` value is sent as one percent-encoded segment",
+            "Request composition below describes `prepare()`, before transport defaults or send-policy edits",
+            "Each path hole's `Display` value is prepared as one percent-encoded segment",
             "every UTF-8 byte except RFC 3986 unreserved `A-Z a-z 0-9 - . _ ~` is escaped",
             "`&` becomes `%26`, `=` becomes `%3D`, `%` becomes `%25`, space becomes `%20`",
             "Literal template text stays verbatim, including text around a hole",

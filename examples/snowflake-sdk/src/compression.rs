@@ -11,6 +11,8 @@ pub(crate) struct PartitionBytes {
     gzip: bool,
 }
 
+/// Its `Decode::ACCEPT` suggests `accept: application/json`.
+///
 /// Keep the declared operation's media check, identity and bounded wire read. Inflation needs
 /// the client's runtime byte limit, so it follows the declared finite receive/decode step.
 pub(crate) struct PartitionWire;

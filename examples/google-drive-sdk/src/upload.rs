@@ -71,6 +71,10 @@ pub enum UploadStatus {
 }
 
 impl DriveClient {
+    /// The `Multipart` format binds `content-type: multipart/related; boundary=<boundary>`.
+    /// Its metadata part has `content-type: application/json; charset=UTF-8`;
+    /// the media part uses the supplied `media_type`.
+    ///
     /// Upload at most 5 MiB of media with metadata as multipart/related.
     /// The boundary is chosen by `concord::multipart` after scanning both parts, so
     /// boundary-like bytes survive exactly.
@@ -102,6 +106,9 @@ impl DriveClient {
         self.finish(self.receive(prepared).await?).await
     }
 
+    /// Sends `x-upload-content-type` from `media_type` and `x-upload-content-length`
+    /// as decimal `total`; the declared JSON request adds `content-type: application/json`.
+    ///
     /// Start a resumable create. The nonzero total is fixed for the life of the session.
     /// The returned Location must be an absolute URL at the same origin and upload path.
     pub async fn initiate_upload(
@@ -226,6 +233,9 @@ impl UploadSession {
         }
     }
 
+    /// Sends `content-range: bytes <acknowledged>-<end-1>/<total>` and binds
+    /// `content-type` to the session's validated media type through `EncodedBody`.
+    ///
     /// Send one bounded chunk beginning at the acknowledged position.
     /// Non-final lengths must be multiples of 256 KiB. No retry or automatic status request.
     /// The acknowledged offset itself need not be aligned; slice the original bytes at
