@@ -39,6 +39,7 @@ Every item carries `boundary`:
 | `pack.py` | materials → `<bank>/packed/<sdk>.{wire,rc}.md`, `<sdk>.meta.json` (question → item map, sizes, sources, leak scan) |
 | `generated_docs.py` | opt-in endpoint docs appendix, exact arm builds/provenance and exposure audit |
 | `generated_docs_selftest.py` | real doc-comment-only commit pair and negative exposure/provenance controls; no readers |
+| `boundary_selftest.py` | existing-truth wire positives/field-specific negatives and stated-boundary prompt/hash/composition checks; no readers |
 | `run.py` | readers (Claude, Codex) → `<out>/<provider>/<sdk>.<session>/` |
 | `score.py` | scorer: R2 identity checks and R3 answers compiled together in one bubblewrap compile sandbox, the R3 run sandbox, and `--selftest` (seeded controls with expected rates, sandbox and rule effect checks) → `score.json`, `score.md` |
 | `form-check/` | the probes' Rust parser: a small binary on `syn` 3.0.9 (`full`, `visit`, `parsing`, `printing`) and `quote` 1.0.47, not a workspace member (its own `[workspace]` table and `Cargo.lock`); default mode: the R3 answer contract; `--type` mode: R2 types as JSON trees (fix round 5), with a `judge` field (fix round 6: what the R2 rustc check cannot judge); `common.form_check_binary` builds it on first use (`score.py`, and `truth.py` for the R2 record) with `cargo build --offline --release` into `$CARGO_TARGET_DIR/release/concord-probe-form-check` |
@@ -202,6 +203,40 @@ client `path` statement, with no template and no `subdomain` on the chain.
   `.list().set_limit(20).set_offset(0).send()` (the `KeepHead` docs; items `pokeapi/c1`, `c2`);
   filtered, no endpoint call chain is left in any SDK's materials.
 - Concord's source, tests and records are never included.
+
+### Opt-in stated header boundary (`pack.py --stated-boundary`)
+
+`--stated-boundary` rewrites every wire question and its answer-key line at pack time so
+`headers`, `accept` and `content_type` share the truth's observation boundary: the SDK/Concord
+request built by `call.prepare()` for `prepared` items, or sent by `call.send().await`, including
+send-policy edits, for `operation` items. All three exclude headers the HTTP client adds on its
+own. `accept`/`content_type` are `null` when the SDK and Concord set no corresponding header at
+that boundary, even if the HTTP client later supplies a default. Wording is identical across
+SDKs and arms for each boundary; snippets, bank JSON, truth and scoring are unchanged.
+
+Without this flag, packed prompts retain the legacy wording byte for byte. It composes with
+`--generated-docs`; the appendix and its provenance/exposure audit still apply. Metadata records
+`stated_boundary` (boolean); opted-in wire sessions also record `question_text_sha256` by question
+number (exact UTF-8 question text, excluding the `### Qn` heading and surrounding blank lines)
+and `questions_text_sha256` (the complete question block including answer keys and headings).
+
+```sh
+python3 -I tools/desirability/probes/pack.py --bank BANK --stated-boundary --generated-docs --docs-commit COMMIT
+python3 -I tools/desirability/probes/boundary_selftest.py --out EVIDENCE_DIR --no-rustdoc-build
+# Also verify composition using an existing arm's provenance-checked generated rustdoc:
+python3 -I tools/desirability/probes/boundary_selftest.py --out DOCS_EVIDENCE_DIR --generated-docs --docs-commit COMMIT --no-rustdoc-build
+```
+
+The self-test uses existing main-bank truth (including missing Accept, SDK-set Accept and request
+bodies at both boundaries), asserts each negative fails exactly its intended R1 fields, and
+checks every wire question, question hash and full prompt. It neither generates truth nor runs
+readers; its input bank and truth remain unchanged.
+
+Known limit (instrument review `i3b-instrument-review-sol`, non-blocking): the operation-boundary truth
+filter (`truth.py` around line 1077) drops connection header names unconditionally and drops `accept: */*`
+whenever the prepared request had no Accept, so it would also drop an SDK send-policy edit that sets exactly
+those. No main-bank or H16r truth contains such a policy; add a distinguishing control before extending the
+bank to one.
 
 ### Opt-in generated endpoint docs (`pack.py --generated-docs`)
 
