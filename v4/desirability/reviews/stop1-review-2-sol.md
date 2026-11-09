@@ -1,0 +1,24 @@
+# stop1-review-2-sol (Codex gpt-6.1-sol xhigh, read-only; observed gpt-6.1-sol xhigh; 2026-11-09T05:32Z–05:37Z; independent session)
+
+VERDICT: STOP_1_APPLIES
+REASON: The controlled replay resolves H12’s recorded failure; none of the round-1 open rows retains a measured task deficit, so Stop 1 directs the loop to LF.
+
+STOP ROW MUST STATE:
+
+- **Stop 1 at `3eb6d250`: proceed to LF.** H06b, H02b, H09b, H10, H11’s other items, H05, H15, H07, H13, H14, H02a and H12 have no measured task deficit under their reviewed dispositions.
+- **H12 blocker resolved.** The identical saved edit, replayed sequentially on baseline `734991e9` against the unchanged sealed oracle using fresh private targets, passes 4/4 oracle tests and the SDK suite. Reference: 4/4 and suite pass; no-op: 1/4 and suite pass. No new agent ran. Corrected recorded baseline: 40/40 oracle passes and seven propagation-flag tasks; the other 39 edits were not replayed.
+- **H02b: “no measured task deficit; unmeasured.”** Preserve the seed counterexamples. H01/H11 measured narrower questions; H02b is neither disproved nor solved. Other unmeasured hypotheses retain their limits and owner prioritization.
+- **Scope limits remain.** Stop 2 is not established queue-wide. H16/H16r INCONCLUSIVE outcomes and H16s’s accept do not establish REQUEST closure. ClickHouse remains 0/5 per provider because its wrapper note was absent from packed materials. H09c scored resume tasks reach 70/70 per provider, while Codex’s PokeAPI simple-fresh control remains 1/5.
+- **Missed mid-loop holdout checkpoints remain a procedural gap.** LF must compare baseline/final on sealed validation I3 and I4 across all eight controls, using private I4 targets or sequential execution. Review regressions against noise bands; record overfitting and revert the responsible accept with a new commit, or the most recent accept if responsibility cannot be isolated, then remeasure.
+- **Final confirmation remains separate:** its own sealed bank, used once after the candidate freezes; if it drives changes, disclose that and obtain fresh confirmation.
+- **LF and acceptance verification remain outstanding.** Saved combined local gate: 66/66 on `2809d85d`. H16s/H09c remain accepted pending merged-head CI. Record exact commit IDs, Linux/Windows CI results and nightly status; complete final consolidation, exact-final-commit gates, FINAL.md and owner-queue reconciliation. Main merge and tags require a separate owner grant.
+
+FINDINGS:
+
+- [non-blocking] REQUEST closure remains overstated — [v4/desirability/DECISIONS.md:18](/home/canarit/projects/Concord_Desirability_Loop/work/wt/cd/v4/desirability/DECISIONS.md:18) — “Closes with this accept” does not satisfy Stop 2; residual ClickHouse and PokeAPI misses also prevent universal success claims. — Correct the closure clause and preserve the scoped results in the stop row.
+- [non-blocking] Acceptance finality remains pending — [v4/desirability/DECISIONS.md:24](/home/canarit/projects/Concord_Desirability_Loop/work/wt/cd/v4/desirability/DECISIONS.md:24) — H09c and H16s still lack recorded merged-head CI completion; planned LF checks cannot retroactively satisfy missed checkpoints. — Retain pending status and carry the verification, overfitting-response and owner obligations into the stop record.
+- [non-blocking] Replay’s broader assurance exceeds its evidence — [v4/desirability/measurements/H12-kubernetes-e1-replay.md:33](/home/canarit/projects/Concord_Desirability_Loop/work/wt/cd/v4/desirability/measurements/H12-kubernetes-e1-replay.md:33) — Shared-target contamination can also produce false passes; the other 39 passing records do not certify their independence. — Narrow this assurance to H12’s reconciliation and retain the baseline instrument limitation. This does not keep H12 open.
+
+CHECKED: Verified HEAD and clean worktree; compared the governing rule, round-1 open rows, queue changes and disposition records. Independently hashed the 141-file sealed I4 bank and oracle; verified byte-identical agent patches and equivalent control patches. Inspected runner source without executing it, target creation timestamps, sequential run times, oracle execution/listing logs and SDK-suite logs: agent/reference/no-op suites pass 33/32/32 tests respectively. Confirmed original overlapping Kubernetes runs, shared target, E0460 errors and matching no-op failure signature. H02b’s requested disposition is adequately recorded.
+
+NOT CHECKED: No writes, builds, tests, agents, runners, bwrap or network operations were performed. The exact historical artifact collision was not provenance-traced; its mechanism is strongly supported by the saved evidence. Other baseline edits were not replayed. LF validation, final confirmation, live CI and final-commit gates remain unverified; human preference and adoption remain unmeasured.

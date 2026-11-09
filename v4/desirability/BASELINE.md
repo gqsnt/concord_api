@@ -125,7 +125,8 @@ two at a time.
 > the oracle ran against base-tree artifacts. Replayed alone on a fresh private target, the agent's saved edit passes
 > the oracle 4/4 and the whole suite with no missed propagation (reference 4/4; a no-op control reproduces the 1/4).
 > Corrected: **oracle pass 40/40**, missed propagation **7** tasks (Kubernetes e1 removed). The table keeps the
-> numbers as originally recorded.
+> numbers as originally recorded. The other 39 runs were not replayed; shared-target contamination could also have
+> produced a false pass, so their independence is not certified (instrument limitation).
 
 - The one oracle failure is Kubernetes e1 (version/prefix): 1 of 4 oracle tests passed (the
   change reached some but not all request paths of the moved API group).

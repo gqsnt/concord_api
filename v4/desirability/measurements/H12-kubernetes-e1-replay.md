@@ -30,5 +30,6 @@ Consequences:
 - **H12 has no measured task deficit** (its survey: a client `path` already gives a shared prefix; the remaining
   propagation flags are stale test literals). "Not carded" stands, now with this disposition.
 - Instrument lesson, applied to the LF holdout: concurrent I4 runs must use private measure targets (or run one at a
-  time). The other 39 baseline runs passed; a stale shared artifact could at most mask a correct edit as failing in
-  the same way, and every other run's oracle passed.
+  time). This replay reconciles H12's one recorded failure only. Shared-target contamination can also produce false
+  passes; the other 39 baseline records were not replayed and their independence is not certified — a baseline
+  instrument limitation that stays recorded (stop review 2).
