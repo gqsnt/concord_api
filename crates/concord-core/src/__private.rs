@@ -23,6 +23,9 @@ pub struct EndpointMeta {
     pub name: &'static str,
     /// The HTTP method, as written.
     pub method: &'static str,
+    /// Whether the endpoint only reads: its method is GET, HEAD or OPTIONS, or it (or a scope
+    /// above it) is declared `#[read]`.
+    pub read: bool,
     /// Number of generated host labels (they are the leftmost labels).
     pub labels: usize,
     /// Indices (from the left) of generated labels that contain a sensitive value.
@@ -334,8 +337,8 @@ impl<R> OpenFormat<R> {
 }
 
 /// The identity of a declared endpoint, for its generated `Endpoint::operation()`.
-pub fn declared(name: &'static str, method: &'static str) -> crate::Operation {
-    crate::Operation::declared(name, method)
+pub fn declared(name: &'static str, method: &'static str, read: bool) -> crate::Operation {
+    crate::Operation::declared(name, method, read)
 }
 
 /// The response handling of an endpoint declared `-> stream` without an item: any 2xx, the body

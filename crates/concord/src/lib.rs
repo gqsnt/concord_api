@@ -133,6 +133,7 @@
 //!              no `->`: no typed output, any 2xx, the body is drained
 //! FORMAT:      a type path implementing Encode, Decode and/or Incremental: Json, Text, yours
 //! attributes:  /// docs  |  #[sensitive] (values)  |  #[cfg(..)], #[deprecated] (scopes, endpoints)
+//!              #[read] (scopes, endpoints: only reads, though the method is not GET/HEAD/OPTIONS)
 //! statements:  path "a/{x}";  subdomain "{x}";  query { .. }  headers { .. }
 //!              format FORMAT;  request FORMAT;  request FORMAT "media/type";  response FORMAT;
 //!              (on clients, scopes and endpoints; the nearest one wins)

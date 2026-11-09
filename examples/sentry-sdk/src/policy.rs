@@ -88,9 +88,6 @@ impl SendPolicy {
 /// Every Sentry rule the policy keys on the operation besides its admission bucket (one per
 /// operation).
 struct Class {
-    /// A write may have been applied when it got no answer or a 5xx: only its documented
-    /// rate-limit rejection (429) is repeated.
-    write: bool,
     /// A cursor listing: its `Link` header gives `Response::next_cursor`.
     paged: bool,
 }
@@ -100,18 +97,10 @@ impl Class {
     fn of(operation: SentryOperation) -> Self {
         use SentryOperation as Op;
         match operation {
-            Op::OrganizationIssues | Op::OrganizationIssueEvents => Self {
-                write: false,
-                paged: true,
-            },
-            Op::OrganizationIssueGet | Op::OrganizationIssueEvent => Self {
-                write: false,
-                paged: false,
-            },
-            Op::OrganizationIssueUpdateStatus => Self {
-                write: true,
-                paged: false,
-            },
+            Op::OrganizationIssues | Op::OrganizationIssueEvents => Self { paged: true },
+            Op::OrganizationIssueGet
+            | Op::OrganizationIssueEvent
+            | Op::OrganizationIssueUpdateStatus => Self { paged: false },
         }
     }
 }
@@ -129,7 +118,10 @@ impl<T: Send> SendOperation<T, SentryOperation> for SendPolicy {
         endpoint: E,
     ) -> Self::Output {
         let key = operation;
-        let Class { write, paged } = Class::of(operation);
+        let Class { paged } = Class::of(operation);
+        // A write may have been applied when it got no answer or a 5xx: only its documented
+        // rate-limit rejection (429) is repeated.
+        let write = !E::operation().is_read();
         let prepared = endpoint.prepare()?;
         let current = prepared.request().url().clone();
         let settings = self.settings;

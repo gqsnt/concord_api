@@ -128,8 +128,6 @@ impl Session {
 
 /// Every PayPal rule the policy keys on the operation.
 struct Class {
-    /// A write: sent within the write bounds, and possibly applied when unanswered.
-    write: bool,
     /// The endpoint's reference documents `PayPal-Request-Id`: the only writes that may be
     /// repeated, and only when the header is present.
     accepts_request_id: bool,
@@ -142,7 +140,6 @@ impl Class {
         use PayPalOperation as Op;
         match operation {
             Op::OrderGet | Op::OrderGetAuthorized | Op::CaptureGet => Self {
-                write: false,
                 accepts_request_id: false,
             },
             Op::OrdersCreate
@@ -150,7 +147,6 @@ impl Class {
             | Op::OrderCapture
             | Op::AuthorizationCapture
             | Op::AuthorizationVoid => Self {
-                write: true,
                 accepts_request_id: true,
             },
         }
@@ -200,10 +196,9 @@ impl<T: Send + 'static> SendOperation<T, PayPalOperation> for Session {
         operation: PayPalOperation,
         endpoint: E,
     ) -> Self::Output {
-        let Class {
-            write,
-            accepts_request_id,
-        } = Class::of(operation);
+        let Class { accepts_request_id } = Class::of(operation);
+        // A write: sent within the write bounds, and possibly applied when unanswered.
+        let write = !E::operation().is_read();
         let prepared = endpoint.prepare()?;
         if prepared.request().url().origin() != self.inner.base.origin() {
             return Err(Error::Destination);

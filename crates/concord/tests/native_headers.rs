@@ -696,6 +696,7 @@ fn full_header_map_with_native_values() {
     static META: EndpointMeta = EndpointMeta {
         name: "Native.fill",
         method: "GET",
+        read: true,
         labels: 0,
         sensitive_labels: &[],
         segments: 0,

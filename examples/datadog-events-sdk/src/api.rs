@@ -57,7 +57,7 @@ concord::api! {
 
             /// `POST /api/v2/events/search`: the events matching a filter; the next page is the
             /// same body with `page.cursor` set to the previous `meta.page.after`.
-            POST search(body request: SearchRequest) -> EventsPage { path "v2/events/search"; }
+            #[read] POST search(body request: SearchRequest) -> EventsPage { path "v2/events/search"; }
 
             /// `POST /api/v1/events`: the six-field legacy posting contract. Requires an
             /// organization that previously used v1 (the provider now deprecates it).
@@ -86,9 +86,9 @@ concord::api! {
 pub struct SendPolicy;
 
 /// Whether the operation is the legacy v1 post: success requires HTTP 202 and a failure after
-/// dispatch is uncertain. The method cannot tell (the search is a `POST` read). No wildcard arm:
-/// an endpoint added to the declaration without a decision here does not compile (E0004, naming
-/// its `DatadogApiOperation` variant).
+/// dispatch is uncertain. Narrower than `!Operation::is_read()`: another write need not answer
+/// 202. No wildcard arm: an endpoint added to the declaration without a decision here does not
+/// compile (E0004, naming its `DatadogApiOperation` variant).
 fn posting(operation: DatadogApiOperation) -> bool {
     match operation {
         DatadogApiOperation::EventsList | DatadogApiOperation::EventsSearch => false,

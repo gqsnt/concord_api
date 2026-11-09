@@ -160,8 +160,6 @@ fn classify_read<T>(outcome: &Result<Received<T>, concord::Error>, max: Duration
 
 /// Every Zendesk rule the policy keys on the operation.
 struct Class {
-    /// Safe to repeat after a `429` or a `503` with `Retry-After`.
-    read: bool,
     /// A `409` is [`Error::Collision`]: the ticket changed since the stamp the update carries.
     collision_on_conflict: bool,
 }
@@ -172,16 +170,10 @@ impl Class {
     fn of(operation: ZendeskOperation) -> Self {
         use ZendeskOperation as Op;
         match operation {
-            Op::TicketsList | Op::TicketShow => Self {
-                read: true,
-                collision_on_conflict: false,
-            },
-            Op::TicketsCreate => Self {
-                read: false,
+            Op::TicketsList | Op::TicketShow | Op::TicketsCreate => Self {
                 collision_on_conflict: false,
             },
             Op::TicketUpdate => Self {
-                read: false,
                 collision_on_conflict: true,
             },
         }
@@ -197,11 +189,11 @@ impl<T: Send + 'static> SendOperation<T, ZendeskOperation> for SendPolicy {
         endpoint: E,
     ) -> Self::Output {
         let Class {
-            read,
             collision_on_conflict,
         } = Class::of(operation);
         let prepared = endpoint.prepare()?;
-        if read {
+        // A read is safe to repeat after a `429` or a `503` with `Retry-After`.
+        if E::operation().is_read() {
             self.read(prepared).await
         } else {
             self.write(prepared, E::operation().name(), collision_on_conflict)

@@ -144,7 +144,11 @@ fn operations_enum(k: &TokenStream, model: &Model, vis: &syn::Visibility) -> Tok
             /// another client with the same dotted name and method (a client of the same name in
             /// another module or crate) is indistinguishable and maps to that variant.
             #[inline] pub fn from_operation(operation: #k::Operation) -> ::core::option::Option<Self> {
-                Self::ALL.iter().copied().find(|op| op.operation() == operation)
+                // Paths, not methods: the caller's module may have no prelude.
+                ::core::iter::Iterator::find(
+                    &mut ::core::iter::Iterator::copied(Self::ALL.iter()),
+                    |op| op.operation() == operation,
+                )
             }
         }
     }
@@ -1975,6 +1979,7 @@ fn emit_owner(
             let incoming = *incoming;
             let op_name = lit(&owner.dotted);
             let op_method = lit(&method.to_string());
+            let read = model.is_read(index);
             // The name and method spelled out, so a caller can match an `Operation` by name
             // without naming this type.
             let operation_doc = lit(&format!(
@@ -2237,7 +2242,7 @@ fn emit_owner(
 
                     #[doc = #operation_doc]
                     #[inline] pub fn operation() -> #k::Operation {
-                        #k::__private::declared(#op_name, #op_method)
+                        #k::__private::declared(#op_name, #op_method, #read)
                     }
 
                     /// Builds the native request without sending it.
@@ -3329,6 +3334,7 @@ fn prepare_body(
 
     let name = lit(&owner.dotted);
     let method_str = lit(&method.to_string());
+    let read = model.is_read(index);
     let label_count = composed.labels.len();
     let segment_count = composed.segments.len() + usize::from(composed.trailing_slash);
     let root = format_ident!("__o0");
@@ -3387,6 +3393,7 @@ fn prepare_body(
         static __META: #k::__private::EndpointMeta = #k::__private::EndpointMeta {
             name: #name,
             method: #method_str,
+            read: #read,
             labels: #label_count,
             sensitive_labels: &[#(#sensitive_labels),*],
             segments: #segment_count,
@@ -4299,7 +4306,7 @@ mod tests {
         );
         // The generated `operation()` returns that name and method.
         assert!(
-            docs.contains("declared (\"Api.repo.remove\" , \"DELETE\")"),
+            docs.contains("declared (\"Api.repo.remove\" , \"DELETE\" , false)"),
             "{docs}"
         );
     }
@@ -4799,5 +4806,45 @@ mod tests {
             .map(|item| quote!(#item).to_string())
             .collect();
         assert_eq!(rest, base);
+    }
+
+    /// The read fact is resolved at expansion: the method's default, `#[read]` on an endpoint or
+    /// an enclosing scope, written into both the endpoint's metadata and its `operation()`.
+    #[test]
+    fn read_facts_reach_both_operation_forms() {
+        let with = docs(quote! {
+            pub client Api {
+                base "http://x.test";
+                GET ping();
+                POST create();
+                #[read] POST search();
+                #[read]
+                scope account {
+                    POST balance();
+                    GET status();
+                }
+            }
+        });
+        let compact = with.replace(' ', "");
+        for (name, method, read) in [
+            ("Api.ping", "GET", true),
+            ("Api.create", "POST", false),
+            ("Api.search", "POST", true),
+            ("Api.account.balance", "POST", true),
+            ("Api.account.status", "GET", true),
+        ] {
+            assert!(
+                compact.contains(&format!(
+                    "declared(\"{name}\",\"{method}\",{read})"
+                )),
+                "{name}: {with}"
+            );
+            assert!(
+                compact.contains(&format!(
+                    "name:\"{name}\",method:\"{method}\",read:{read},"
+                )),
+                "{name}: {with}"
+            );
+        }
     }
 }

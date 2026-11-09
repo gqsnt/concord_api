@@ -48,6 +48,7 @@ concord::api! {
         }
 
         /// Private reads: API-Key and API-Sign plus a fresh form-body nonce.
+        #[read]
         scope account {
             path "private";
             request Form;
