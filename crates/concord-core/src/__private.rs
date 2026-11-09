@@ -22,6 +22,8 @@ pub struct EndpointMeta {
     pub name: &'static str,
     /// The HTTP method, as written.
     pub method: &'static str,
+    /// The base is a sensitive client value; withhold the complete URL in rendered output.
+    pub sensitive_base: bool,
     /// Number of generated host labels (they are the leftmost labels).
     pub labels: usize,
     /// Indices (from the left) of generated labels that contain a sensitive value.
@@ -64,31 +66,6 @@ pub fn text<T: Text + ?Sized>(value: &T) -> &T {
 
 /// The checked base URL; public as [`crate::BaseUrl`].
 pub use crate::base::BaseUrl as Base;
-
-/// The value named by `base x;`: its type yields the checked base URL. The trait only carries the
-/// diagnostic; every `AsRef<BaseUrl>` type implements it.
-#[diagnostic::on_unimplemented(
-    message = "`{Self}` is not a base URL",
-    label = "`base` names a value of this type",
-    note = "`base x;` reads the base URL from the client value `x`: its type implements `AsRef<concord::BaseUrl>`, checked once when the value is made (`concord::BaseUrl::parse`)"
-)]
-pub trait BaseValue {
-    /// The checked base URL.
-    fn base_url(&self) -> &Base;
-}
-
-impl<T: AsRef<Base> + ?Sized> BaseValue for T {
-    #[inline]
-    fn base_url(&self) -> &Base {
-        self.as_ref()
-    }
-}
-
-/// The base URL of the value named by `base x;`.
-#[inline]
-pub fn base_of<T: BaseValue + ?Sized>(value: &T) -> &Base {
-    value.base_url()
-}
 
 /// Everything except RFC 3986 unreserved characters (`A-Z a-z 0-9 - . _ ~`).
 const PATH_VALUE: &AsciiSet = &NON_ALPHANUMERIC
@@ -632,6 +609,9 @@ impl<'a> Parts<'a> {
 /// Renders a URL built by `meta`'s endpoint with sensitive placements replaced by `<redacted>`.
 pub(crate) fn redacted_url(url: &Url, meta: &EndpointMeta) -> String {
     const REDACTED: &str = "<redacted>";
+    if meta.sensitive_base {
+        return REDACTED.to_owned();
+    }
     let mut out = String::new();
     out.push_str(url.scheme());
     out.push_str("://");

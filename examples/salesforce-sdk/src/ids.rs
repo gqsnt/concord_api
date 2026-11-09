@@ -133,6 +133,35 @@ impl FromStr for ApiVersion {
     }
 }
 
+/// A version supporting every endpoint in this SDK slice (`ApiVersion::MINIMUM` and later).
+/// Request construction accepts this checked value; job documents retain [`ApiVersion`].
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct SupportedVersion(ApiVersion);
+
+impl SupportedVersion {
+    /// Checks the SDK's minimum supported version.
+    pub fn new(version: ApiVersion) -> Result<Self, InvalidValue> {
+        if version < ApiVersion::MINIMUM {
+            return Err(InvalidValue::new(
+                "API version",
+                "every SDK operation requires 58.0 or later",
+            ));
+        }
+        Ok(Self(version))
+    }
+
+    /// The checked API version.
+    pub fn version(self) -> ApiVersion {
+        self.0
+    }
+}
+
+impl fmt::Display for SupportedVersion {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        fmt::Display::fmt(&self.0, f)
+    }
+}
+
 /// The `apiVersion` of a job document. The Bulk API 2.0 tables type it as a string while every
 /// documented example sends a JSON number (`"apiVersion" : 46.0`); both are accepted.
 impl<'de> Deserialize<'de> for ApiVersion {

@@ -32,8 +32,8 @@ impl<T: Send + 'static> SendWith<T> for Connection {
     async fn send<E: Endpoint<T> + Send>(&self, endpoint: E) -> Self::Output {
         let operation = E::operation();
         let (client, mut request, decoder) = endpoint.prepare()?.into_parts();
-        // `set_connection` can change environments while the generated base is a snapshot.
-        // Select the matching official host before acquiring or applying the access token.
+        // The declared base comes from this connection. Keep the official-host selection
+        // for callers supplying an Endpoint through the native SendWith extension.
         self.select_environment(&mut request);
         if operation.method() == Some("GET") {
             self.read(&client, request, decoder).await
@@ -202,13 +202,13 @@ mod environment_tests {
 
     #[test]
     fn coordinated_replacement_keeps_the_validated_fixture_origin() {
-        let after = connection(Environment::Production, "222");
+        let after = connection(Environment::Production, "222")
+            .for_fixture("http://127.0.0.1:1234")
+            .unwrap();
         let api = QuickBooks::connect(
             reqwest::Client::new(),
             connection(Environment::Sandbox, "111"),
         )
-        .with_base_url("http://127.0.0.1:1234")
-        .unwrap()
         .set_connection(after);
         let prepared = api
             .customer(crate::EntityId::new("29").unwrap())

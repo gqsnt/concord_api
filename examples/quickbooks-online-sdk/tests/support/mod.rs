@@ -80,9 +80,10 @@ pub fn qbo(server: &TestServer, connection: Connection) -> QuickBooks {
 }
 
 pub fn qbo_with(server: &TestServer, connection: Connection, timeout: Duration) -> QuickBooks {
-    QuickBooks::connect(http(timeout), connection)
-        .with_base_url(server.url())
-        .unwrap()
+    QuickBooks::connect(
+        http(timeout),
+        connection.for_fixture(&server.url()).unwrap(),
+    )
 }
 
 /// The realm in an Accounting request path (`/v3/company/{realm}/..`).

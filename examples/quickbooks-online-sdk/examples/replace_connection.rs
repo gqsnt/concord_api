@@ -42,27 +42,22 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     assert_eq!(old.request().url(), old_scope.request().url());
     assert_eq!(
         fresh.request().url().as_str(),
-        "https://sandbox-quickbooks.api.intuit.com/v3/company/222/customer/29?minorversion=75"
+        "https://quickbooks.api.intuit.com/v3/company/222/customer/29?minorversion=75"
     );
     assert!(!fresh.request().headers().contains_key("authorization"));
 
-    // On send(), this fresh request instead targets quickbooks.api.intuit.com and uses
-    // the replacement connection's credentials. prepare() keeps the old base snapshot;
-    // C1 does not change that contract or add a value-backed base.
+    // The replacement connection supplies the base during preparation and the token on send.
 
     // The customer ID is a fixed scope value. Re-enter the scope to select another customer;
     // `client.customer(id).set_id(other)` is now E0599. Endpoint setters remain unchanged.
     let other = client.customer(EntityId::new("30")?).read().prepare()?;
     assert_eq!(other.request().url().path(), "/v3/company/222/customer/30");
 
-    // A fixture origin survives replacement, including an environment switch.
-    let fixture = client
-        .with_base_url("http://127.0.0.1:1234")?
-        .set_connection(stored(
-            Environment::Sandbox,
-            "333",
-            "synthetic-refresh-fixture",
-        )?);
+    // Fixture construction selects the destination on the replacement connection itself.
+    let fixture = client.set_connection(
+        stored(Environment::Sandbox, "333", "synthetic-refresh-fixture")?
+            .for_fixture("http://127.0.0.1:1234")?,
+    );
     let fixture_request = fixture.customer(EntityId::new("29")?).read().prepare()?;
     assert_eq!(
         fixture_request.request().url().as_str(),

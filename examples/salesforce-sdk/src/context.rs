@@ -80,9 +80,8 @@ impl OrgContext {
         version: ApiVersion,
         token: AccessToken,
     ) -> Result<Self, ContextError> {
-        if version < ApiVersion::MINIMUM {
-            return Err(ContextError::UnsupportedVersion(version));
-        }
+        let version = crate::ids::SupportedVersion::new(version)
+            .map_err(|_| ContextError::UnsupportedVersion(version))?;
         let config = SalesforceApiConfig {
             instance,
             token: token.expose().to_owned(),
@@ -110,7 +109,7 @@ impl OrgContext {
 
     /// The API version every request uses.
     pub fn version(&self) -> ApiVersion {
-        *self.api.version()
+        self.api.version().version()
     }
 
     /// Validates a REST query's `nextRecordsUrl` (`/services/data/v68.0/query/{locator}`) and

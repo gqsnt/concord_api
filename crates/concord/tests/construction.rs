@@ -113,3 +113,81 @@ fn getters_read_declared_values() {
     assert!(shown.contains("org.example.test"), "{shown}");
     assert!(!shown.contains("secret"), "{shown}");
 }
+
+concord::api! {
+    pub client SecretOrigin(#[sensitive] origin: BaseUrl) {
+        base origin;
+        scope nested { path "nested"; GET ping(); }
+        GET ping();
+    }
+}
+
+/// Sensitive base bytes reach the wire and stay withheld from every Concord rendering.
+#[tokio::test]
+async fn sensitive_base_canary() {
+    const CANARY: &str = "CONSTRUCTION_BASE_CANARY_7f31";
+    let server = support::Server::reply(support::Reply::new(400)).await;
+    let config = SecretOriginConfig {
+        origin: BaseUrl::parse(&format!("{}/{CANARY}", server.url())).unwrap(),
+    };
+    assert!(!format!("{config:?}").contains(CANARY));
+    let api = SecretOrigin::new(reqwest::Client::new(), config);
+    assert!(api.base_url().as_str().contains(CANARY));
+    assert!(api.origin().url().as_str().contains(CANARY));
+    let scope = api.nested();
+    let endpoint = scope.ping();
+    let prepared = endpoint.clone().prepare().unwrap();
+    for shown in [
+        format!("{api:?}"),
+        format!("{scope:?}"),
+        format!("{endpoint:?}"),
+        format!("{prepared:?}"),
+    ] {
+        assert!(!shown.contains(CANARY), "{shown}");
+    }
+    assert!(format!("{api:?}").contains("<redacted>"));
+    assert!(format!("{prepared:?}").contains("<redacted>"));
+    let received = prepared.receive().await.unwrap();
+    assert!(!format!("{received:?} {:?} {:?}", received.head(), received.meta()).contains(CANARY));
+    let error = received.decode().await.unwrap_err();
+    assert!(!format!("{error:?} {error}").contains(CANARY));
+    assert_eq!(server.requests()[0].target, format!("/{CANARY}/nested"));
+    let failed = SecretOrigin::new(
+        reqwest::Client::new(),
+        SecretOriginConfig {
+            origin: BaseUrl::parse(&format!("http://{}/{CANARY}", support::refused_addr()))
+                .unwrap(),
+        },
+    )
+    .ping()
+    .prepare()
+    .unwrap()
+    .send()
+    .await
+    .unwrap_err();
+    assert!(!format!("{failed:?} {failed}").contains(CANARY));
+    use std::error::Error as _;
+    if let Some(source) = failed.source() {
+        assert!(!format!("{source:?} {source}").contains(CANARY));
+    }
+}
+
+/// Native flags and native-key conditions withhold getters across the crate boundary (UI case).
+#[test]
+fn native_sensitive_values_keep_their_wire_flags() {
+    use concord::reqwest::header::HeaderValue;
+    use concord_construction_fixture::{Native, NativeConfig};
+    let mut owned = HeaderValue::from_static("NATIVE_GETTER_CANARY_81ab");
+    owned.set_sensitive(true);
+    let config = NativeConfig {
+        owned,
+        conditional: "CONDITIONAL_CANARY_21fe".into(),
+    };
+    let api = Native::new(reqwest::Client::new(), config);
+    let prepared = api.ping().prepare().unwrap();
+    for name in ["x-owned", "authorization"] {
+        assert!(prepared.request().headers()[name].is_sensitive());
+    }
+    let shown = format!("{api:?} {prepared:?}");
+    assert!(!shown.contains("CANARY"), "{shown}");
+}

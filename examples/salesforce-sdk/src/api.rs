@@ -26,8 +26,8 @@ use crate::bulk::{
     ResultPagesResponse,
 };
 use crate::ids::{
-    ApiVersion, BatchSize, FieldList, IngestJobId, InstanceUrl, MaxRecords, QueryJobId,
-    QueryLocator, RecordId, ResultLocator, SObjectName,
+    BatchSize, FieldList, IngestJobId, InstanceUrl, MaxRecords, QueryJobId, QueryLocator, RecordId,
+    ResultLocator, SObjectName, SupportedVersion,
 };
 use crate::model::{Account, Contact, DynamicRecord, QueryResponse, SObjectDescribe};
 use crate::soql::Soql;
@@ -39,7 +39,7 @@ concord::api! {
     pub client SalesforceApi(
         instance: InstanceUrl,
         #[sensitive] token: String,
-        version: ApiVersion,
+        version: SupportedVersion,
     ) {
         base instance;
         path "services/data/v{version}";
@@ -211,14 +211,28 @@ concord::api! {
 /// The instance and version are readable everywhere; a fixture is an instance the caller builds.
 ///
 /// ```
-/// use concord_example_salesforce_sdk::{ids::{ApiVersion, InstanceUrl}, SalesforceApi, SalesforceApiConfig};
+/// use concord_example_salesforce_sdk::{ids::{ApiVersion, InstanceUrl, SupportedVersion}, SalesforceApi, SalesforceApiConfig};
 /// let instance = InstanceUrl::parse("http://127.0.0.1:8080").unwrap();
 /// let api = SalesforceApi::new(
 ///     concord::reqwest::Client::new(),
-///     SalesforceApiConfig { instance: instance.clone(), token: "t".into(), version: ApiVersion::PINNED },
+///     SalesforceApiConfig { instance: instance.clone(), token: "t".into(), version: SupportedVersion::new(ApiVersion::PINNED).unwrap() },
 /// );
 /// assert_eq!(api.instance(), &instance);
 /// assert_eq!(api.base_url().as_str(), "http://127.0.0.1:8080/");
 /// ```
 #[cfg(doctest)]
 pub struct ConstructionExamples;
+
+/// Public construction uses the same checked version as [`crate::OrgContext`].
+///
+/// ```compile_fail,E0308
+/// use concord_example_salesforce_sdk::{ids::{ApiVersion, InstanceUrl}, SalesforceApi, SalesforceApiConfig};
+/// let config = SalesforceApiConfig {
+///     instance: InstanceUrl::parse("https://acme.my.salesforce.com").unwrap(),
+///     token: "t".into(),
+///     version: ApiVersion::new(40, 0),
+/// };
+/// let _ = SalesforceApi::new(concord::reqwest::Client::new(), config);
+/// ```
+#[cfg(doctest)]
+pub struct CheckedConstructionExamples;

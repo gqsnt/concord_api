@@ -16,7 +16,7 @@ pub use api::{
     SendPolicy,
 };
 pub use client::{DatadogEvents, PageInfo, SearchPages};
-pub use credentials::Credentials;
+pub use credentials::{ApiKey, ApplicationKey, Credentials};
 pub use destination::Destination;
 pub use error::{
     AuthError, Error, ErrorBodyError, ErrorDocument, Key, ProtocolError, ProviderError, Rejected,

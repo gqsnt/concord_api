@@ -46,11 +46,14 @@ pub fn api(server: &TestServer) -> Zendesk {
 
 /// [`api`] with a request timeout and a send policy.
 pub fn api_with(server: &TestServer, timeout: Duration, policy: SendPolicy) -> Zendesk {
-    Zendesk::connect(http(server, timeout), "acme", TOKEN)
-        .unwrap()
-        .set_policy(policy)
-        .with_base_url(format!("http://zendesk.test:{}", server.addr().port()))
-        .unwrap()
+    Zendesk::for_fixture(
+        http(server, timeout),
+        "acme",
+        TOKEN,
+        &format!("http://zendesk.test:{}", server.addr().port()),
+    )
+    .unwrap()
+    .set_policy(policy)
 }
 
 /// The arrival time of every request, for timing assertions.

@@ -961,12 +961,16 @@ fn controls(
 /// (the `base` statement), so a type that is not a base URL is reported there.
 fn base_read(k: &TokenStream, value: &Ident, state: &TokenStream, at: &Ident) -> TokenStream {
     let v = Ident::new("__base_value", at.span());
-    quote!({ let #v = &#state.#value; #k::__private::base_of(#v) })
+    quote_spanned!(at.span()=> {
+        let #v = &#state.#value;
+        ::core::convert::AsRef::<#k::BaseUrl>::as_ref(#v)
+    })
 }
 
 /// A read accessor per client or scope value, borrowing the handle's snapshot. A value Concord
 /// withholds (marked `#[sensitive]`, feeding a sensitive key, or the send policy) is readable in
-/// its own crate only.
+/// its own crate only. Whole header values also stay crate-only: their native sensitivity flag
+/// is carried by the runtime value, so a public borrowed getter would expose flagged bytes.
 fn getters(values: &[Value], state: &TokenStream) -> TokenStream {
     let mut out = TokenStream::new();
     for value in values {
@@ -974,7 +978,7 @@ fn getters(values: &[Value], state: &TokenStream) -> TokenStream {
         let ty = &value.ty;
         let docs = &value.docs;
         let line = lit(&format!(" Reads `{}`.", plain(name)));
-        let vis = if value.debug_sensitive || !value.debug_when.is_empty() {
+        let vis = if value.debug_sensitive || !value.debug_when.is_empty() || value.header {
             quote!(#[allow(dead_code)] pub(crate))
         } else {
             quote!(pub)
@@ -1808,7 +1812,10 @@ fn debug_fields<'a>(
         // header value), like a literal base.
         let shown = if value.base && !value.text && !value.header && !value.debug_sensitive {
             let v = Ident::new("__base_value", span);
-            quote!({ let #v = &#place; #k::__private::base_of(#v) })
+            quote_spanned!(span=> {
+                let #v = &#place;
+                ::core::convert::AsRef::<#k::BaseUrl>::as_ref(#v)
+            })
         } else {
             shown
         };
@@ -1863,6 +1870,16 @@ fn emit_owner(
                 true,
             );
             let getters = getters(&owner.values, &quote!(self.__s));
+            let base_vis = match base {
+                crate::model::Base::Value { index, .. }
+                    if owner.values[*index].debug_sensitive
+                        || !owner.values[*index].debug_when.is_empty()
+                        || owner.values[*index].header =>
+                {
+                    quote!(#[allow(dead_code)] pub(crate))
+                }
+                _ => quote!(pub),
+            };
             // `base "…";`: a stored base, replaceable with `with_base_url`. `base x;`: the base is
             // read from the value `x` (checked where `base` is written), and nothing replaces it
             // but a new value of `x`.
@@ -2012,7 +2029,7 @@ fn emit_owner(
                     }
 
                     /// The base URL requests start from (declared paths are appended to it).
-                    #[inline] pub fn base_url(&self) -> &#k::reqwest::Url {
+                    #[inline] #base_vis fn base_url(&self) -> &#k::reqwest::Url {
                         #k::BaseUrl::url(#base_read)
                     }
 
@@ -3364,6 +3381,10 @@ fn prepare_body(
     let label_count = composed.labels.len();
     let segment_count = composed.segments.len() + usize::from(composed.trailing_slash);
     let root = format_ident!("__o0");
+    let sensitive_base = matches!(&model.owners[0].kind,
+        Kind::Client { base: crate::model::Base::Value { index, .. }, .. }
+            if model.owners[0].values[*index].debug_sensitive
+                || !model.owners[0].values[*index].debug_when.is_empty());
     let base = match &model.owners[0].kind {
         Kind::Client {
             base: crate::model::Base::Value { name, index },
@@ -3431,6 +3452,7 @@ fn prepare_body(
         static __META: #k::__private::EndpointMeta = #k::__private::EndpointMeta {
             name: #name,
             method: #method_str,
+            sensitive_base: #sensitive_base,
             labels: #label_count,
             sensitive_labels: &[#(#sensitive_labels),*],
             segments: #segment_count,

@@ -1,0 +1,63 @@
+error[E0624]: method `base_url` is private
+ --> tests/ui/construction_sensitive_access.rs:3:40
+  |
+3 |   fn base(api: &Sensitive) { let _ = api.base_url(); }
+  |                                          ^^^^^^^^ private method
+  |
+ ::: tests/fixtures/construction-access/lib.rs
+  |
+  | / concord_macros::api! { concord_core;
+  | |     pub client Sensitive(#[sensitive] origin: concord_core::BaseUrl) {
+  | |         base origin;
+  | |         GET ping();
+  | |     }
+  | | }
+  | |_- private method defined here
+
+error[E0624]: method `origin` is private
+ --> tests/ui/construction_sensitive_access.rs:4:41
+  |
+4 |   fn value(api: &Sensitive) { let _ = api.origin(); }
+  |                                           ^^^^^^ private method
+  |
+ ::: tests/fixtures/construction-access/lib.rs
+  |
+  | / concord_macros::api! { concord_core;
+  | |     pub client Sensitive(#[sensitive] origin: concord_core::BaseUrl) {
+  | |         base origin;
+  | |         GET ping();
+  | |     }
+  | | }
+  | |_- private method defined here
+
+error[E0624]: method `owned` is private
+ --> tests/ui/construction_sensitive_access.rs:5:39
+  |
+5 |   fn native(api: &Native) { let _ = api.owned().as_bytes(); }
+  |                                         ^^^^^ private method
+  |
+ ::: tests/fixtures/construction-access/lib.rs
+  |
+  | / concord_macros::api! { concord_core;
+  | |     pub client Native(
+  | |         header("x-owned") owned: HeaderValue,
+  | |         header(KEY) conditional: String,
+... |
+  | | }
+  | |_- private method defined here
+
+error[E0624]: method `conditional` is private
+ --> tests/ui/construction_sensitive_access.rs:6:44
+  |
+6 |   fn conditional(api: &Native) { let _ = api.conditional(); }
+  |                                              ^^^^^^^^^^^ private method
+  |
+ ::: tests/fixtures/construction-access/lib.rs
+  |
+  | / concord_macros::api! { concord_core;
+  | |     pub client Native(
+  | |         header("x-owned") owned: HeaderValue,
+  | |         header(KEY) conditional: String,
+... |
+  | | }
+  | |_- private method defined here

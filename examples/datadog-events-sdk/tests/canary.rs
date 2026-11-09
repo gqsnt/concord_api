@@ -103,8 +103,8 @@ async fn secrets_never_print() {
     c.assert_debug_absent("credentials", &credentials);
     let config = DatadogApiConfig {
         destination: Site::Eu.into(),
-        api_key: key.clone(),
-        application_key: application_key.clone(),
+        api_key: concord_sdk_datadog_events::ApiKey::new(&key).unwrap(),
+        application_key: concord_sdk_datadog_events::ApplicationKey::new(&application_key).unwrap(),
     };
     c.assert_debug_absent("generated config", &config);
     for case in 0..7 {
