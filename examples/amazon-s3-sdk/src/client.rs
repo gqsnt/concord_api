@@ -18,7 +18,10 @@ use concord::{Decoder, Endpoint, Prepared, Received, SendWith};
 use concord_pagination::{Page, Pages, Resume};
 
 use crate::api::{S3Api, S3ApiBucket, S3ApiBucketListObjectsV2, S3ApiBucketPutObject, S3ApiConfig};
-use crate::error::{ApiError, InputError, NotModified, ProtocolErrorKind, ResponseMeta, S3Error};
+use crate::error::{
+    ApiError, ErrorDocument, InputError, MAX_ERROR_BODY, NotModified, ProtocolErrorKind,
+    ResponseMeta, S3Error,
+};
 use crate::object::{GetObjectOutput, ObjectHead, PutObjectOutput};
 use crate::sigv4::{Clock, Credentials, canonicalize_target, sign_request};
 use crate::types::{BucketName, ByteRange, ContinuationToken, Metadata, Region};
@@ -61,10 +64,13 @@ impl Signer {
     /// Takes the prepared request apart, applies `edit`, canonicalizes the target and signs it.
     fn sign<T>(
         &self,
-        prepared: Result<Prepared<T>, concord::Error>,
+        prepared: Result<Prepared<T, ErrorDocument>, concord::Error>,
         edit: impl FnOnce(&mut reqwest::Request) -> Result<(), S3Error>,
     ) -> Result<SignedRequest<T>, S3Error> {
-        let (client, mut request, decoder) = prepared.map_err(S3Error::Build)?.into_parts();
+        let (client, mut request, decoder) = prepared
+            .map_err(S3Error::Build)?
+            .error_body_limit(MAX_ERROR_BODY)
+            .into_parts();
         edit(&mut request)?;
         canonicalize_target(request.url_mut());
         // The requested range, read back from the built request: a `206` must answer it.
@@ -108,10 +114,10 @@ impl fmt::Debug for Signer {
 /// ([`SignedRequest::send`]).
 macro_rules! signed_send {
     ($($output:ty),* $(,)?) => {$(
-        impl SendWith<$output> for Signer {
+        impl SendWith<$output, ErrorDocument> for Signer {
             type Output = Result<$output, S3Error>;
 
-            async fn send<E: Endpoint<$output> + Send>(&self, endpoint: E) -> Self::Output {
+            async fn send<E: Endpoint<$output, ErrorDocument> + Send>(&self, endpoint: E) -> Self::Output {
                 self.sign(endpoint.prepare(), |_| Ok(()))?.send().await
             }
         }
@@ -274,7 +280,10 @@ impl S3Client {
     /// # Errors
     ///
     /// [`S3Error::Build`], [`S3Error::Input`] or [`S3Error::Signing`].
-    pub fn prepare<T, E: Endpoint<T>>(&self, operation: E) -> Result<SignedRequest<T>, S3Error> {
+    pub fn prepare<T, E: Endpoint<T, ErrorDocument>>(
+        &self,
+        operation: E,
+    ) -> Result<SignedRequest<T>, S3Error> {
         self.api.signer().sign(operation.prepare(), |_| Ok(()))
     }
 
@@ -318,7 +327,7 @@ impl fmt::Debug for S3Client {
 pub struct SignedRequest<T> {
     client: reqwest::Client,
     request: reqwest::Request,
-    decoder: Decoder<T>,
+    decoder: Decoder<T, ErrorDocument>,
     range: Option<ByteRange>,
 }
 
@@ -336,11 +345,11 @@ impl<T> SignedRequest<T> {
     /// The native exit: client, signed request and the operation's decoder. Any change to a
     /// signed part of the request (target, a header present when signing, the body) invalidates
     /// the signature; S3 then answers `403 SignatureDoesNotMatch`.
-    pub fn into_parts(self) -> (reqwest::Client, reqwest::Request, Decoder<T>) {
+    pub fn into_parts(self) -> (reqwest::Client, reqwest::Request, Decoder<T, ErrorDocument>) {
         (self.client, self.request, self.decoder)
     }
 
-    async fn receive(self) -> Result<(Received<T>, Option<ByteRange>), S3Error> {
+    async fn receive(self) -> Result<(Received<T, ErrorDocument>, Option<ByteRange>), S3Error> {
         let range = self.range;
         let received = self
             .decoder
@@ -376,25 +385,23 @@ fn operation_name(operation: Option<concord::Operation>) -> &'static str {
 
 /// The shared response mapping: 2xx → the declared handling; `304` → [`S3Error::NotModified`];
 /// any other status → [`S3Error::Api`] with the bounded `<Error>` document.
-async fn finish<T>(received: Received<T>) -> Result<(T, ResponseMeta), S3Error> {
+async fn finish<T>(received: Received<T, ErrorDocument>) -> Result<(T, ResponseMeta), S3Error> {
     let operation = operation_name(received.operation());
     let status = received.status();
     let meta = ResponseMeta::from_headers(status, received.head().headers());
-    if status.is_success() {
-        match received.decode().await {
-            Ok(value) => Ok((value, meta)),
-            Err(error) => Err(S3Error::Response {
+    if status == StatusCode::NOT_MODIFIED {
+        let not_modified = NotModified::from_headers(operation, meta, received.head().headers());
+        return Err(S3Error::NotModified(Box::new(not_modified)));
+    }
+    match received.decode().await {
+        Ok(value) => Ok((value, meta)),
+        Err(error) => Err(match error.into_provider() {
+            Ok(failure) => S3Error::Api(Box::new(ApiError::from_failure(operation, meta, failure))),
+            Err(error) => S3Error::Response {
                 error,
                 meta: Box::new(meta),
-            }),
-        }
-    } else if status == StatusCode::NOT_MODIFIED {
-        let not_modified = NotModified::from_headers(operation, meta, received.head().headers());
-        Err(S3Error::NotModified(Box::new(not_modified)))
-    } else {
-        Err(S3Error::Api(Box::new(
-            ApiError::read(operation, received, meta).await,
-        )))
+            },
+        }),
     }
 }
 
@@ -503,7 +510,7 @@ impl S3ApiBucketListObjectsV2 {
             Some(token) => Resume::At(token),
             None => Resume::Start,
         };
-        let operation = <Self as Endpoint<ListObjectsV2Output>>::operation().name();
+        let operation = <Self as Endpoint<ListObjectsV2Output, ErrorDocument>>::operation().name();
         let template = self;
         Pages::new(from, move |token: Option<ContinuationToken>| {
             let request = template.clone().maybe_continuation_token(token.clone());

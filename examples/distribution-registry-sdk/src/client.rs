@@ -17,8 +17,8 @@ use crate::api::{
 };
 use crate::auth::{Access, Challenge, TokenAuth};
 use crate::error::{
-    AuthError, AuthProblem, ERROR_BODY_LIMIT, InputError, ProtocolProblem, RegistryError,
-    expect_status,
+    AuthError, AuthProblem, ERROR_BODY_LIMIT, ErrorDocument, InputError, ProtocolProblem,
+    RegistryError, expect_status,
 };
 use crate::meta::ResponseMeta;
 use crate::reference::RepositoryName;
@@ -157,14 +157,16 @@ impl Registry {
         &self,
         access: &Access,
         build: F,
-    ) -> Result<Received<T>, RegistryError>
+    ) -> Result<Received<T, ErrorDocument>, RegistryError>
     where
-        F: Fn(Option<HeaderValue>) -> Result<Prepared<T>, concord::Error> + Send,
+        F: Fn(Option<HeaderValue>) -> Result<Prepared<T, ErrorDocument>, concord::Error> + Send,
         T: Send,
     {
         let used = self.tokens.get(access);
         let authorization = used.as_ref().map(|token| token.header().clone());
-        let (client, request, decoder) = build(authorization)?.into_parts();
+        let (client, request, decoder) = build(authorization)?
+            .error_body_limit(ERROR_BODY_LIMIT)
+            .into_parts();
         // The SDK permits one challenge replay for these operations. Byte recreation is a
         // separate requirement: never poll or buffer a one-shot body just to resend it.
         let replay = request.try_clone();
@@ -382,7 +384,7 @@ impl Repository {
 }
 
 /// Reads and drops a body the protocol documents as empty (bounded).
-pub(crate) async fn drain<T>(received: Received<T>) -> Result<(), RegistryError> {
+pub(crate) async fn drain<T, D>(received: Received<T, D>) -> Result<(), RegistryError> {
     received.bytes_limited(ERROR_BODY_LIMIT).await?;
     Ok(())
 }
@@ -390,10 +392,10 @@ pub(crate) async fn drain<T>(received: Received<T>) -> Result<(), RegistryError>
 /// The same request with its last path segment written verbatim: a digest's `:` (and `+`) are
 /// path characters the spec's URLs show unescaped, but Concord escapes every non-unreserved
 /// character of a path value (`sha256%3A...`).
-pub(crate) fn verbatim_last_segment<T>(
-    prepared: Prepared<T>,
+pub(crate) fn verbatim_last_segment<T, D>(
+    prepared: Prepared<T, D>,
     segment: &str,
-) -> Result<Prepared<T>, concord::Error> {
+) -> Result<Prepared<T, D>, concord::Error> {
     let mut url = prepared.request().url().clone();
     if let Ok(mut segments) = url.path_segments_mut() {
         segments.pop().push(segment);

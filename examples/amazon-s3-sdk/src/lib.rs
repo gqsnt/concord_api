@@ -80,8 +80,8 @@ pub use client::{
 /// The body type of [`PutObject`] (`concord::bytes::Bytes`).
 pub use concord::bytes::Bytes;
 pub use error::{
-    ApiError, BodyError, BodyErrorKind, ErrorBody, InputError, MAX_ERROR_BODY, NotModified,
-    ProtocolErrorKind, ResponseMeta, S3Error, SigningError,
+    ApiError, BodyError, BodyErrorKind, ErrorBody, ErrorDocument, InputError, MAX_ERROR_BODY,
+    NotModified, ProtocolErrorKind, ResponseMeta, S3Error, SigningError,
 };
 pub use object::{
     BodyCompletion, Download, GetObjectOutput, HeadFormat, ObjectBody, ObjectHead, PutFormat,
@@ -93,7 +93,7 @@ pub use types::{
     ETag, HttpDate, MaxKeys, Metadata, ObjectKey, PartNumber, Region, Requester, StorageClass,
     UrlEncoding, VersionId,
 };
-pub use xml::{ListObjectsV2Output, ListXml, ObjectSummary, Owner};
+pub use xml::{ListObjectsV2Output, ListXml, ObjectSummary, Owner, S3ErrorXml};
 
 /// The README's examples, compiled as doctests.
 #[cfg(doctest)]

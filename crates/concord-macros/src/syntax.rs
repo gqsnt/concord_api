@@ -33,6 +33,7 @@ mod kw {
     syn::custom_keyword!(next);
     syn::custom_keyword!(link);
     syn::custom_keyword!(url);
+    syn::custom_keyword!(error);
 }
 
 /// HTTP methods accepted as endpoint keywords.
@@ -604,6 +605,15 @@ pub struct Stmts {
     /// `page next link;` or `page next url a?.b;` on an endpoint: where the provider issues the
     /// next page's URL.
     pub next: Option<NextStmt>,
+    /// `error D in F;` on any owner: the provider's error document of the non-2xx answers at
+    /// and below, and its format.
+    pub error: Option<ErrorDoc>,
+}
+
+/// `error D in F;`.
+pub struct ErrorDoc {
+    pub ty: Type,
+    pub format: Format,
 }
 
 /// `page next ...;` on an endpoint.
@@ -1129,6 +1139,46 @@ fn parse_owner_body(
                 source,
             };
             set_once(&mut stmts.next, stmt, kw.span, "page next")?;
+            continue;
+        }
+        if input.peek(kw::error) && !input.peek2(Token![::]) {
+            let kw: kw::error = input.parse()?;
+            if let Some(first) = children.first() {
+                let first: &Owner = first;
+                return Err(syn::Error::new(
+                    kw.span,
+                    format!(
+                        "owner statements (`error`, `path`, `query`, ...) must precede child declarations (first child: `{}`)",
+                        first.name
+                    ),
+                ));
+            }
+            if input.peek(Token![;]) || input.peek(Token![in]) {
+                return Err(input.error(
+                    "expected the provider's error document type: `error ErrorDocument in Json;`",
+                ));
+            }
+            let ty = parse_type(input)?;
+            if !input.peek(Token![in]) {
+                return Err(input.error(
+                    "expected `in FORMAT`: the error document's format is written explicitly (`error ErrorDocument in Json;`)",
+                ));
+            }
+            input.parse::<Token![in]>()?;
+            if input.peek(Token![;]) {
+                return Err(input.error(
+                    "expected a format type after `in`: a path to a type implementing `Decode<D>` (`error ErrorDocument in Json;`)",
+                ));
+            }
+            let format = parse_format(input)?;
+            input.parse::<Token![;]>()?;
+            if stmts.error.is_some() {
+                return Err(syn::Error::new(
+                    kw.span,
+                    "duplicate `error` statement; each owner declares it at most once",
+                ));
+            }
+            stmts.error = Some(ErrorDoc { ty, format });
             continue;
         }
         if input.peek(kw::limit) && !input.peek2(Token![::]) {

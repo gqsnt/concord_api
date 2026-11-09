@@ -118,20 +118,31 @@ fn streamed(case: usize, prompt: &str, problem: &str, echo: &str) -> Reply {
     headers(response, echo)
 }
 
-async fn receive<T>(c: &mut Canaries, prepared: concord::Prepared<T>) -> Result<T, concord::Error> {
+/// The native path; a receive error has no document type, so each error is checked here.
+async fn receive<T, D: 'static>(
+    c: &mut Canaries,
+    prepared: concord::Prepared<T, D>,
+) -> Result<T, ()> {
     let result = prepared.receive().await;
     c.assert_debug_absent("Received Result", &result);
     match result {
         Ok(received) => {
             c.assert_debug_absent("response head", &received.head());
             c.assert_debug_absent("response metadata", &received.meta());
-            received.decode().await
+            let decoded = received.decode().await;
+            if let Err(e) = &decoded {
+                concord_error(c, e);
+            }
+            decoded.map_err(drop)
         }
-        Err(error) => Err(error),
+        Err(error) => {
+            concord_error(c, &error);
+            Err(())
+        }
     }
 }
 
-fn concord_error(c: &mut Canaries, error: &concord::Error) {
+fn concord_error<D: 'static>(c: &mut Canaries, error: &concord::Error<D>) {
     c.assert_debug_absent("concord::Error", error);
     c.assert_error_absent("concord::Error and sources", error);
     c.assert_debug_absent("error kind", &error.kind());
@@ -154,7 +165,8 @@ fn error(c: &mut Canaries, error: &Error) {
             c.assert_debug_absent("error type", &api.error_type());
             c.assert_debug_absent("API error metadata", api.meta());
             c.assert_debug_absent("retry-after", &api.retry_after(SystemTime::UNIX_EPOCH));
-            if let Some(e) = api.document_error() {
+            c.assert_debug_absent("API error failure", api.failure());
+            if let concord::Document::Broken(e) = api.failure().state() {
                 concord_error(c, e);
             }
         }
@@ -243,9 +255,6 @@ async fn secrets_never_print() {
         let native = receive(&mut c, prepared).await;
         c.assert_debug_absent("native Result", &native);
         assert_eq!(native.is_ok(), case == 0);
-        if let Err(e) = &native {
-            concord_error(&mut c, e);
-        }
 
         let result = read.send().await;
         c.assert_debug_absent("read Result", &result);

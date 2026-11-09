@@ -23,9 +23,10 @@
 
 use concord::bytes::Bytes;
 use concord::reqwest::header::{ACCEPT, AUTHORIZATION, CONTENT_RANGE, HeaderValue};
-use concord::{Binary, Encoded, EncodedBody, Json};
+use concord::{Binary, Encoded, EncodedBody, IgnoreContentType, Json};
 
 use crate::digest::Digest;
+use crate::error::ErrorDocument;
 use crate::model::{CatalogBody, TagsBody, TokenBody};
 use crate::reference::{PageSize, Reference};
 
@@ -37,6 +38,7 @@ concord::api! {
         #[sensitive] header(AUTHORIZATION) authorization?: HeaderValue,
     ) {
         base origin;
+        error ErrorDocument in IgnoreContentType<Json>;
 
         /// `GET /v2/`: API version check.
         GET ping() { path "v2/"; }
@@ -58,6 +60,7 @@ concord::api! {
         #[sensitive] header(AUTHORIZATION) authorization?: HeaderValue,
     ) {
         base origin;
+        error ErrorDocument in IgnoreContentType<Json>;
 
         /// `GET /v2/<name>/tags/list`: one page of tags.
         GET tags(query n?: PageSize, query last?: String) -> TagsBody {

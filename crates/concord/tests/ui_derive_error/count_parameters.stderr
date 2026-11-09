@@ -1,0 +1,17 @@
+error: `{value:width$}`: a width or precision argument (`name$`, `0$`, `.*`) is not supported; write the number, or format with the enum's `#[display(with = path)]`
+ --> tests/ui_derive_error/count_parameters.rs:3:15
+  |
+3 |     #[display("{value:width$}")]
+  |               ^^^^^^^^^^^^^^^^
+
+error: `{0:.1$}`: a width or precision argument (`name$`, `0$`, `.*`) is not supported; write the number, or format with the enum's `#[display(with = path)]`
+ --> tests/ui_derive_error/count_parameters.rs:5:15
+  |
+5 |     #[display("{0:.1$}")]
+  |               ^^^^^^^^^
+
+error: `{0:.*}`: a width or precision argument (`name$`, `0$`, `.*`) is not supported; write the number, or format with the enum's `#[display(with = path)]`
+ --> tests/ui_derive_error/count_parameters.rs:7:15
+  |
+7 |     #[display("{0:.*}")]
+  |               ^^^^^^^^

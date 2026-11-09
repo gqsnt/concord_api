@@ -126,7 +126,7 @@ async fn count_errors_use_the_existing_documents_and_ids_without_falling_back() 
             error.message(),
             Some(format!("synthetic refusal: {KEY}").as_str())
         );
-        assert!(error.document_error().is_none());
+        assert!(error.failure().document().is_some());
         assert_eq!(
             error.retry_after(SystemTime::now()).unwrap(),
             Some(Duration::from_secs(2))
@@ -156,7 +156,10 @@ async fn unreadable_count_errors_keep_status_and_request_id() {
         panic!("expected API error")
     };
     assert_eq!(error.error_type(), None);
-    assert_eq!(error.document_error().unwrap().kind(), ErrorKind::Metadata);
+    assert!(matches!(
+        error.failure().state(),
+        concord::Document::Unrecognized(_)
+    ));
     assert_no_second_request(&server).await;
     server.shutdown().await;
 }

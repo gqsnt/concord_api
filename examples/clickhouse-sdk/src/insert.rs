@@ -144,9 +144,9 @@ impl Insert {
             .insert(statement, upload)
             .maybe_query_id(self.query_id.clone());
         let operation = endpoint_name::<Incoming, _>(&endpoint);
-        let received: Received<Incoming> = endpoint.prepare()?.receive().await?;
+        let received: Received<Incoming, String> = endpoint.prepare()?.receive().await?;
         if !received.status().is_success() {
-            return Err(server_exception(received, operation).await);
+            return Err(server_exception(received).await);
         }
         let meta = ResponseMeta::new(received.meta());
         let incoming = received.into_incoming()?;

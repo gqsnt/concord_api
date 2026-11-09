@@ -224,6 +224,8 @@ pub struct Owner {
     pub limit: Option<syn::Expr>,
     /// `#[read]` written here (scopes and endpoints): every endpoint at and below only reads.
     pub read: Option<Attribute>,
+    /// `error D in F;` declared here: the error document of non-2xx answers at and below.
+    pub error: Option<crate::syntax::ErrorDoc>,
 }
 
 impl Owner {
@@ -1839,6 +1841,18 @@ impl Model {
         None
     }
 
+    /// The `error D in F;` declared on `owner` or its nearest ancestor.
+    pub fn nearest_error(&self, owner: usize) -> Option<&crate::syntax::ErrorDoc> {
+        let mut cur = Some(owner);
+        while let Some(o) = cur {
+            if let Some(error) = &self.owners[o].error {
+                return Some(error);
+            }
+            cur = self.owners[o].parent;
+        }
+        None
+    }
+
     pub fn nearest_default(&self, owner: usize, request: bool) -> Option<usize> {
         nearest(&self.owners, Some(owner), request)
     }
@@ -2357,6 +2371,7 @@ fn flatten(
         }
         Some(stmt.source)
     });
+    let error = owner.stmts.error.take();
     let kind = match owner.kind {
         OwnerKind::Client { vis, base } => match base {
             Some(base) => {
@@ -2583,6 +2598,7 @@ fn flatten(
         groups: owner.groups,
         limit,
         read: owner.read,
+        error,
     });
     stmts.push(owner.stmts);
 

@@ -1,0 +1,11 @@
+error[E0599]: no method named `into_provider` found for struct `String` in the current scope
+ --> tests/ui_derive_error/provider_not_a_concord_error.rs:9:12
+  |
+9 |     #[from(String)]
+  |            ^^^^^^
+  |
+help: there is a method `into_proxy` with a similar name
+  |
+9 -     #[from(String)]
+9 +     #[from(into_proxy)]
+  |

@@ -17,9 +17,9 @@
 //! then names the declared endpoint. Nothing is drained or buffered.
 
 use concord::Binary;
-use concord::Json;
 use concord::bytes::Bytes;
 use concord::reqwest::header::{ACCEPT, AUTHORIZATION};
+use concord::{IgnoreContentType, Json};
 
 use crate::bulk::{
     CreateIngestJob, CreateQueryJob, IngestJobInfo, JobStateChange, QueryJobInfo,
@@ -29,6 +29,7 @@ use crate::ids::{
     BatchSize, FieldList, IngestJobId, InstanceUrl, MaxRecords, QueryJobId, QueryLocator, RecordId,
     ResultLocator, SObjectName, SupportedVersion,
 };
+use crate::model::ApiErrorBody;
 use crate::model::{Account, Contact, DynamicRecord, QueryResponse, SObjectDescribe};
 use crate::soql::Soql;
 
@@ -45,6 +46,7 @@ concord::api! {
         path "services/data/v{version}";
         headers { AUTHORIZATION = "Bearer {token}"; }
         format Json;
+        error ApiErrorBody in IgnoreContentType<Json>;
 
         /// `sobjects/Account`: the typed Account resource.
         scope accounts {

@@ -99,8 +99,9 @@ impl fmt::Display for NextUrlError {
 impl std::error::Error for NextUrlError {}
 
 /// An endpoint whose declaration says where the provider issues its next page URL
-/// (`page next link;` or `page next url <path>;`).
-pub trait Follow<T>: Endpoint<T> {
+/// (`page next link;` or `page next url <path>;`). `D` is its declared error document,
+/// defaulting to `()` when none is declared.
+pub trait Follow<T, D = ()>: Endpoint<T, D> {
     /// The same endpoint sent to `target` instead of its own URL. Nothing is sent here.
     fn follow(self, target: NextUrl) -> Followed<Self> {
         Followed {
@@ -111,10 +112,10 @@ pub trait Follow<T>: Endpoint<T> {
 }
 
 /// `page next link;`: the next page is the response's `Link: <..>; rel="next"` target.
-pub trait LinkContinuation<T>: Follow<T> {}
+pub trait LinkContinuation<T, D = ()>: Follow<T, D> {}
 
 /// `page next url <path>;`: the next page is a URL field of the decoded output.
-pub trait UrlContinuation<T>: Follow<T> {
+pub trait UrlContinuation<T, D = ()>: Follow<T, D> {
     /// The declared field: `Ok(None)` when absent or null, an error when present but unusable.
     ///
     /// # Errors
@@ -135,7 +136,7 @@ pub struct Followed<E> {
 
 impl<E> Followed<E> {
     /// Sends exactly as the endpoint's own `send()` does: through the client's send policy, or,
-    /// without one, once with the endpoint's declared decoding (`Result<T, concord::Error>`).
+    /// without one, once with the endpoint's declared decoding (`Result<T, concord::Error<D>>`).
     pub fn send<O>(self) -> impl Future<Output = O> + Send
     where
         E: Sends<O>,
@@ -144,8 +145,8 @@ impl<E> Followed<E> {
     }
 }
 
-impl<T, E: Endpoint<T>> Endpoint<T> for Followed<E> {
-    fn prepare(self) -> Result<Prepared<T>, Error> {
+impl<T, D, E: Endpoint<T, D>> Endpoint<T, D> for Followed<E> {
+    fn prepare(self) -> Result<Prepared<T, D>, Error> {
         self.endpoint.prepare()?.follow_url(self.target.url)
     }
 
@@ -186,16 +187,19 @@ pub fn next_url(text: Option<&str>) -> Result<Option<NextUrl>, NextUrlError> {
 }
 
 /// `api!` support: a policy-less endpoint with declared continuation. The blanket implementation
-/// defers the thread-safety bound to use of `Sends`, so non-Send inputs can still be prepared.
+/// defers the thread-safety bounds to use of `Sends` (including `D: Send`), so non-Send inputs
+/// and error documents can still be prepared.
 #[doc(hidden)]
 pub trait DefaultSend: Sized {}
 
-impl<T, E: DefaultSend + Endpoint<T> + Send> Sends<Result<T, Error>> for E {
-    async fn send(self) -> Result<T, Error> {
-        self.prepare()?.send().await
+impl<T, D: Send, E: DefaultSend + Endpoint<T, D> + Send> Sends<Result<T, Error<D>>> for E {
+    async fn send(self) -> Result<T, Error<D>> {
+        let prepared = self.prepare().map_err(Error::widen)?;
+        prepared.send().await
     }
 
-    async fn __send_followed(self, target: NextUrl) -> Result<T, Error> {
-        followed(self, target).prepare()?.send().await
+    async fn __send_followed(self, target: NextUrl) -> Result<T, Error<D>> {
+        let prepared = followed(self, target).prepare().map_err(Error::widen)?;
+        prepared.send().await
     }
 }

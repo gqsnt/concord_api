@@ -1,0 +1,29 @@
+error: `#[source]` belongs on the field that caused this variant's error
+  --> tests/ui_derive_error/source_misplaced.rs:15:5
+   |
+15 |     #[source]
+   |     ^^^^^^^^^
+
+error: a second `#[source]` in this variant: an error has one source
+  --> tests/ui_derive_error/source_misplaced.rs:18:26
+   |
+18 |     Two(#[source] Cause, #[source] Cause),
+   |                          ^^^^^^^^^
+
+error: `#[source]` takes no arguments
+  --> tests/ui_derive_error/source_misplaced.rs:20:11
+   |
+20 |     Three(#[source(transparent)] Cause),
+   |           ^^^^^^^^^^^^^^^^^^^^^^
+
+error: `#[from(concord::Error<D>)]` belongs on a single-field tuple variant: its field is built from the provider's failure
+  --> tests/ui_derive_error/source_misplaced.rs:22:12
+   |
+22 |     #[from(concord::Error<Cause>)]
+   |            ^^^^^^^
+
+error: `#[source]` belongs on the field that caused a variant's error
+  --> tests/ui_derive_error/source_misplaced.rs:27:1
+   |
+27 | #[source]
+   | ^^^^^^^^^

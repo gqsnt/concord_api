@@ -74,6 +74,10 @@ name = "error_inspection"
 required-features = ["json"]
 
 [[test]]
+name = "error_document"
+required-features = ["json"]
+
+[[test]]
 name = "formats"
 required-features = ["json"]
 

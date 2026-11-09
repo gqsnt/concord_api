@@ -352,7 +352,7 @@ async fn missing_manifest_keeps_typed_provider_document_and_redacted_diagnostics
         api.errors()[0].detail.as_ref().unwrap()["reference"],
         "missing"
     );
-    assert!(api.operation.is_some());
+    assert!(api.failure.operation().is_some());
     assert!(
         !error
             .to_string()

@@ -104,6 +104,7 @@
 //! | Item | Role |
 //! |---|---|
 //! | [`api!`] | the declaration macro |
+//! | [`derive::Error`] | derives an SDK's own error enum: `Display`, `std::error::Error`, `From` per variant, the provider's answer of `Error<D>` |
 //! | [`Prepared<T>`](Prepared) | a built request, not yet sent: `request()`, `receive()`, `send()`, `send_raw()`, `into_parts()` |
 //! | [`Received<T>`](Received) | any-status response, body unread: `head()`, `meta()`, then `decode()`, `decode_limited()`, `bytes_limited()`, `into_incoming()` or a native exit |
 //! | [`Incoming`] | an unread 2xx body with its operation identity, for an incremental reader chosen at run time |
@@ -253,11 +254,12 @@ pub use concord_codecs::stream;
 pub use concord_codecs::{Binary, Encoded, IgnoreContentType, Text};
 pub use concord_core::field;
 pub use concord_core::{
-    BaseUrl, CODEC_ERROR_CONTEXT, CodecError, ContentTypeField, Decode, Decoder, Delivery, Encode,
-    EncodedBody, Endpoint, Error, ErrorKind, FieldError, Follow, Followed, HeaderNameError,
-    HeaderNameErrors, Incoming, Incremental, IntoValue, LinkContinuation, NextUrl, NextUrlError,
-    Operation, Prepared, QueryPairs, QueryPairsWriter, Received, Records, ResponseHead,
-    ResponseMeta, SendWith, Sends, ToHeaderValue, UrlContinuation, bytes, reqwest,
+    BaseUrl, CODEC_ERROR_CONTEXT, CodecError, ContentTypeField, Decode, Decoder, Delivery,
+    Document, Encode, EncodedBody, Endpoint, Error, ErrorKind, Failure, FieldError, Follow,
+    Followed, HeaderNameError, HeaderNameErrors, Incoming, Incremental, IntoValue,
+    LinkContinuation, NextUrl, NextUrlError, Operation, Prepared, QueryPairs, QueryPairsWriter,
+    Received, Records, ResponseHead, ResponseMeta, SendWith, Sends, ToHeaderValue, UrlContinuation,
+    bytes, reqwest,
 };
 
 /// Derives `std::fmt::Debug`, withholding the values marked `#[sensitive]`.
@@ -280,6 +282,12 @@ pub use concord_core::{
 ///   `#[public]` are printed before the `..`.
 /// - A withheld value is never formatted, so its type needs no `Debug`.
 pub use concord_macros::Debug;
+
+/// Derives for an SDK's own types.
+pub mod derive {
+    pub use concord_macros::Error;
+}
+
 /// Declares an HTTP API as a client → scopes → endpoints tree and generates its typed client.
 ///
 /// See the [crate documentation](crate) for the language.

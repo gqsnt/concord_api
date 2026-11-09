@@ -304,10 +304,10 @@ endpoint's decoder (`Decoder::execute`) and maps the response to `S3Error` (Exce
 ```rust,ignore
 macro_rules! signed_send {
     ($($output:ty),* $(,)?) => {$(
-        impl SendWith<$output> for Signer {
+        impl SendWith<$output, ErrorDocument> for Signer {
             type Output = Result<$output, S3Error>;
 
-            async fn send<E: Endpoint<$output> + Send>(&self, endpoint: E) -> Self::Output {
+            async fn send<E: Endpoint<$output, ErrorDocument> + Send>(&self, endpoint: E) -> Self::Output {
                 self.sign(endpoint.prepare(), |_| Ok(()))?.send().await
             }
         }

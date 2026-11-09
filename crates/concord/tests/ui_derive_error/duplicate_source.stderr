@@ -1,0 +1,5 @@
+error: variant `Protocol` already converts from `ProtocolError`; mark one of the two `#[from(skip)]`
+  --> tests/ui_derive_error/duplicate_source.rs:15:11
+   |
+15 |     Again(ProtocolError),
+   |           ^^^^^^^^^^^^^

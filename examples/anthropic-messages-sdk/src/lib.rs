@@ -46,7 +46,9 @@ use concord::reqwest::{self, redirect};
 use concord::{Endpoint, Json, ResponseMeta, SendWith};
 
 pub use concord;
-pub use error::{ApiError, ApiErrorType, Error, Incomplete, IncompleteCause, ProviderError};
+pub use error::{
+    ApiError, ApiErrorType, Error, ErrorDocument, Incomplete, IncompleteCause, ProviderError,
+};
 pub use model::{
     ContentBlock, CountTokensRequest, InputMessage, InvalidRequest, Message, MessageRequest,
     OtherBlock, Role, StopReason, StreamRequest, TokenCount, Usage,
@@ -83,6 +85,7 @@ concord::api! {
         base "https://api.anthropic.com";
         path "v1";
         format Json;
+        error ErrorDocument in Json;
         send SendPolicy -> Result<Response<_>, Error>;
 
         /// The Messages endpoints (`/v1/messages`).
@@ -149,19 +152,12 @@ impl<T> Response<T> {
 #[derive(Debug, Default)]
 pub struct SendPolicy;
 
-impl<T: Send> SendWith<T> for SendPolicy {
+impl<T: Send> SendWith<T, ErrorDocument> for SendPolicy {
     type Output = Result<Response<T>, Error>;
 
-    async fn send<E: Endpoint<T> + Send>(&self, endpoint: E) -> Self::Output {
-        let received = endpoint.prepare()?.receive().await?;
-        if !received.status().is_success() {
-            // The status is authoritative, whatever happens to the document.
-            let (meta, document) = received
-                .document::<Json, error::ErrorDocument>(ERROR_BODY_LIMIT)
-                .await;
-            return Err(Error::Api(Box::new(ApiError::new(meta, document))));
-        }
-        let (value, meta) = received.decode_with_meta().await?;
+    async fn send<E: Endpoint<T, ErrorDocument> + Send>(&self, endpoint: E) -> Self::Output {
+        let prepared = endpoint.prepare()?.error_body_limit(ERROR_BODY_LIMIT);
+        let (value, meta) = prepared.receive().await?.decode_with_meta().await?;
         Ok(Response { value, meta })
     }
 }

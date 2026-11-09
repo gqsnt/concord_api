@@ -1,0 +1,8 @@
+error[E0119]: conflicting implementations of trait `From<concord::Error>` for type `Error`
+ --> tests/ui_derive_error/kept_manual_from.rs:4:13
+  |
+4 |     Concord(concord::Error),
+  |             ^^^^^^^ conflicting implementation for `Error`
+...
+7 | impl From<concord::Error> for Error {
+  | ----------------------------------- first implementation here

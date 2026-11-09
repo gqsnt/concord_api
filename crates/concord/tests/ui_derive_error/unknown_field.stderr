@@ -1,0 +1,17 @@
+error: variant `Tuple` has no field `1`
+ --> tests/ui_derive_error/unknown_field.rs:3:15
+  |
+3 |     #[display("{1} failed")]
+  |               ^^^^^^^^^^^^
+
+error: variant `Named` has no field `statsu`
+ --> tests/ui_derive_error/unknown_field.rs:5:15
+  |
+5 |     #[display("{statsu} on {route}")]
+  |               ^^^^^^^^^^^^^^^^^^^^^
+
+error: `{}` names no field: write `{0}` or `{field}`
+ --> tests/ui_derive_error/unknown_field.rs:7:15
+  |
+7 |     #[display("HTTP {}")]
+  |               ^^^^^^^^^

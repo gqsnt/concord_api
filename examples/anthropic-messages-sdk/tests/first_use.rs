@@ -171,13 +171,16 @@ async fn create_text_message_and_inspect_blocks() {
                     api.retry_after(SystemTime::now()).unwrap(),
                     Some(Duration::from_secs(2))
                 );
-                assert!(api.document_error().is_none());
+                assert!(api.failure().document().is_some());
             }
             (Error::Api(api), "error_html") => {
                 assert_eq!(error.status().unwrap().as_u16(), 429);
                 assert_eq!(api.error_type(), None);
                 assert_eq!(api.message(), None);
-                assert_eq!(api.document_error().unwrap().kind(), ErrorKind::Metadata);
+                assert!(matches!(
+                    api.failure().state(),
+                    concord::Document::Unrecognized(_)
+                ));
             }
             (Error::Concord(inner), "bad_message" | "bad_media") => {
                 assert_eq!(error.status().unwrap().as_u16(), 200);
