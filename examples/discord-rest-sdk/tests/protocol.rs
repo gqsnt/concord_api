@@ -560,10 +560,7 @@ async fn writes_failing_after_the_head_or_without_one_are_ambiguous() {
 async fn a_refused_connection_on_a_write_is_ambiguous() {
     // Review b23-review2-sol finding 1: a performed write can be followed by a redirect whose
     // target refuses, so a connect error does not prove "not sent" with the caller's client.
-    let port = {
-        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
-        listener.local_addr().unwrap().port()
-    };
+    let port = concord_example_testserver::refused_addr().port();
     let discord = discord_with(
         http(),
         &format!("http://127.0.0.1:{port}"),

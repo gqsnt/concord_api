@@ -1,6 +1,6 @@
 //! Wire assertions authored from the provider contracts, using only loopback fixtures.
 mod support;
-use concord_example_testserver::{Body, Recorded, Reply, TestServer};
+use concord_example_testserver::{Body, Recorded, Reply, TestServer, paused};
 use concord_sdk_strava::{
     concord::{self, ErrorKind, reqwest},
     *,
@@ -674,7 +674,9 @@ fn api_for_url(url: &str) -> Strava {
     support::api(url)
 }
 
-#[tokio::test]
+// Paused clock: the 200 ms timeout fires only once the server holds the delayed PUT (case 0);
+// in the other cases no timeout can fire before the server's answer ends the call.
+#[tokio::test(start_paused = true)]
 async fn activity_update_failures_after_dispatch_are_uncertain_and_never_resent() {
     for case in 0..4 {
         let server = TestServer::start(move |r: &Recorded| {
@@ -687,13 +689,15 @@ async fn activity_update_failures_after_dispatch_are_uncertain_and_never_resent(
             }
         })
         .await;
-        let api = session(&server.url(), TOKENS, Duration::from_millis(200)).client();
-        let error = api
-            .activities()
-            .update(7, rename())
-            .send()
-            .await
-            .unwrap_err();
+        let timeout = Duration::from_millis(200);
+        let api = session(&server.url(), TOKENS, timeout).client();
+        let update = api.activities().update(7, rename()).send();
+        let error = if case == 0 {
+            paused::time_out(&server, |_| true, timeout, update).await
+        } else {
+            paused::drive(update).await
+        }
+        .unwrap_err();
         assert!(error.is_ambiguous(), "case {case}: {error:?}");
         safe_error(&error);
         match (&error, case) {

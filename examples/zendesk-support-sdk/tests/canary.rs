@@ -7,7 +7,7 @@
 
 use concord_check_canary::Canaries;
 use concord_example_testserver::{Body, Reply, TestServer};
-use std::{net::TcpListener, time::Duration};
+use std::time::Duration;
 
 // Echo credentials in headers and in diagnostics whose formatting is withheld.
 fn reply(case: usize, success: &str, problem: &str, echo: &str) -> Reply {
@@ -90,10 +90,7 @@ async fn secrets_never_print() {
         let server = TestServer::start(move |_| reply(case, include_str!("../fixtures/ticket-103.json"),
             &format!(r#"{{"error":"RecordInvalid","description":"{echo}","details":{{"base":[{{"description":"{echo}"}}]}}}}"#), &echo)).await;
         let address = if case == 6 {
-            let listener = TcpListener::bind("127.0.0.1:0").unwrap();
-            let address = listener.local_addr().unwrap();
-            drop(listener);
-            address
+            concord_example_testserver::refused_addr()
         } else {
             server.addr()
         };

@@ -8,7 +8,7 @@ use concord_sdk_usgs_earthquake_catalog::{
     concord::{ErrorKind, bytes::Bytes, reqwest},
     concord_codecs::stream::{Completion, ReadErrorKind},
 };
-use concord_testserver::{Body, Recorded, Reply, Script, TestServer};
+use concord_testserver::{Body, Recorded, Reply, Script, TestServer, paused};
 use std::{
     collections::BTreeSet,
     num::{NonZeroU64, NonZeroUsize},
@@ -342,13 +342,18 @@ async fn both_media_policies_reject_before_a_stalled_body_is_read() {
         let server = TestServer::start(move |_: &Recorded| script.next()).await;
         for _ in 0..3 {
             let query = client(&server).catalog().query(&filter(3));
-            let error = tokio::time::timeout(Duration::from_secs(1), async {
-                if is_csv {
-                    query.csv().send().await.unwrap_err()
-                } else {
-                    query.geojson().send().await.unwrap_err()
-                }
-            })
+            // Clock frozen while the call runs: the bound fails only a call that waits for something
+            // that never comes (then reported as stuck).
+            let error = tokio::time::timeout(
+                Duration::from_secs(1),
+                paused::frozen(async {
+                    if is_csv {
+                        query.csv().send().await.unwrap_err()
+                    } else {
+                        query.geojson().send().await.unwrap_err()
+                    }
+                }),
+            )
             .await
             .expect("head check must not await body");
             assert_eq!(concord_kind(&error), ErrorKind::Metadata);

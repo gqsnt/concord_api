@@ -31,7 +31,7 @@ use concord_sdk_backblaze_b2_native::{
 };
 use serde_json::json;
 use std::sync::atomic::{AtomicUsize, Ordering};
-use std::{net::TcpListener, num::NonZeroUsize, time::Duration};
+use std::{num::NonZeroUsize, time::Duration};
 
 const BUCKET: &str = "bucket-1";
 const NAME: &str = "reports/a.txt";
@@ -47,10 +47,7 @@ fn http() -> concord::reqwest::Client {
 }
 
 fn refused() -> String {
-    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
-    let url = format!("http://{}", listener.local_addr().unwrap());
-    drop(listener);
-    url
+    concord_example_testserver::refused_url()
 }
 
 fn reply(case: usize, success: Reply, echo: &str) -> Reply {

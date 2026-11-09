@@ -15,7 +15,7 @@ mod common; // only its independent SigV4 verifier is used here
 
 use concord_check_canary::Canaries;
 use concord_example_testserver::{Body, Recorded, Reply, TestServer};
-use std::{net::TcpListener, time::Duration};
+use std::time::Duration;
 
 fn concord_error(c: &mut Canaries, error: &concord::Error) {
     c.assert_debug_absent("concord::Error", error);
@@ -90,10 +90,7 @@ async fn secrets_never_print() {
             response.header("x-private", &echo).header("x-amz-request-id", "synthetic-id")
         }).await;
         let addr = if case == 6 {
-            let listener = TcpListener::bind("127.0.0.1:0").unwrap();
-            let addr = listener.local_addr().unwrap();
-            drop(listener);
-            addr
+            concord_example_testserver::refused_addr()
         } else {
             server.addr()
         };

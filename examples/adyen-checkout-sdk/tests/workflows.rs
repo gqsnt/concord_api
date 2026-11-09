@@ -1,7 +1,7 @@
 //! Connected local-only payment workflows and idempotency failure exercises.
 mod common;
 use common::*;
-use concord_example_testserver::{Gate, Recorded, Reply, TestServer};
+use concord_example_testserver::{Gate, Recorded, Reply, TestServer, paused};
 use concord_sdk_adyen_checkout::*;
 use std::{
     num::NonZeroUsize,
@@ -344,7 +344,9 @@ async fn exhausted_703_and_704_surface_reconciliation_without_removing_the_key()
     }
 }
 
-#[tokio::test]
+// Paused clock (the SDK's deadline is a Tokio timer): the 429 arrives while time stands still, so
+// the whole 50 ms budget remains when the policy weighs `Retry-After: 60` against it.
+#[tokio::test(start_paused = true)]
 async fn retry_after_minimum_above_budget_stops_without_early_retry_and_preserves_http_failure() {
     let server = TestServer::start(|_: &Recorded| {
         Reply::json(429, PROBLEM)
@@ -352,15 +354,13 @@ async fn retry_after_minimum_above_budget_stops_without_early_retry_and_preserve
             .header("retry-after", "60")
     })
     .await;
-    let error = api(
+    let checkout = api(
         &server,
         retry_policy(3, Duration::ZERO, Duration::from_millis(50)),
-    )
-    .v71()
-    .payments("key", payment())
-    .send()
-    .await
-    .unwrap_err();
+    );
+    let error = paused::drive(checkout.v71().payments("key", payment()).send())
+        .await
+        .unwrap_err();
     let evidence = error.reconciliation().unwrap();
     assert_eq!(evidence.reason, ReconciliationReason::Deadline);
     assert_eq!(
@@ -451,15 +451,16 @@ async fn stalled_attempt_hits_total_deadline_and_http_success_can_still_be_refus
         Reply::json(200, AUTHORISED).delay(Duration::from_secs(2))
     })
     .await;
-    let error = api(
-        &delayed,
-        retry_policy(2, Duration::ZERO, Duration::from_millis(20)),
-    )
-    .v71()
-    .payments("key", payment())
-    .send()
-    .await
-    .unwrap_err();
+    // Paused clock (the SDK's deadline is a Tokio timer): the 20 ms deadline fires only once the
+    // server holds the attempt.
+    let deadline = Duration::from_millis(20);
+    let checkout = api(&delayed, retry_policy(2, Duration::ZERO, deadline));
+    tokio::time::pause();
+    let send = checkout.v71().payments("key", payment()).send();
+    let error = paused::time_out(&delayed, |_| true, deadline, send)
+        .await
+        .unwrap_err();
+    tokio::time::resume();
     assert_eq!(
         error.reconciliation().unwrap().reason,
         ReconciliationReason::Deadline

@@ -1,0 +1,44 @@
+{
+ "call": "api.holidays(\"AT\", 2026).send().await",
+ "class": "must-fail",
+ "control": {
+  "expect": "fail",
+  "reason": "result not Ok"
+ },
+ "expect": {
+  "requests": [
+   {
+    "body": "",
+    "headers": [
+     [
+      "accept",
+      "application/json"
+     ]
+    ],
+    "method": "GET",
+    "target": "/api/v4/Holidays/AT/2026"
+   }
+  ]
+ },
+ "format": 1,
+ "id": "ctl/request/not-ok",
+ "imports": [
+  "use ::concord_sdk_nager_holidays::*;"
+ ],
+ "kind": "request",
+ "replies": [
+  {
+   "body": "bad request",
+   "headers": [
+    [
+     "content-type",
+     "text/plain"
+    ]
+   ],
+   "status": 400
+  }
+ ],
+ "role": "control",
+ "sdk": "nager-holidays",
+ "setup": "let api = NagerHolidays::new(::concord::reqwest::Client::new()).with_base_url(base.as_str())?;"
+}

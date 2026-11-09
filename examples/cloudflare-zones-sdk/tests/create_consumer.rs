@@ -10,7 +10,7 @@ use std::{
     time::Duration,
 };
 
-use concord_example_testserver::{Recorded, Reply, TestServer};
+use concord_example_testserver::{Recorded, Reply, TestServer, paused};
 use concord_sdk_cloudflare_zones::{
     AccountId, Cloudflare, Error, NewDnsRecord, RecordTtl, RecordType, SendPolicy, ZoneId,
     concord::reqwest, http_client,
@@ -147,7 +147,9 @@ async fn caller_handles_record_exists_as_a_provider_refusal() {
     server.shutdown().await;
 }
 
-#[tokio::test]
+// Paused clock: the 500 ms timeout fires only once the server holds the create (committed); the
+// reconciling list completes while virtual time stands still.
+#[tokio::test(start_paused = true)]
 async fn caller_reconciles_a_committed_but_timed_out_create_by_listing_every_page() {
     let committed = Arc::new(AtomicBool::new(false));
     let state = committed.clone();
@@ -177,10 +179,11 @@ async fn caller_reconciles_a_committed_but_timed_out_create_by_listing_every_pag
         )
     })
     .await;
+    let timeout = Duration::from_millis(500);
     let http = reqwest::Client::builder()
         .retry(reqwest::retry::never())
         .redirect(reqwest::redirect::Policy::none())
-        .timeout(Duration::from_millis(500))
+        .timeout(timeout)
         .build()
         .unwrap();
     let cf = Cloudflare::connect(http, "create-consumer-fixture-token")
@@ -191,24 +194,21 @@ async fn caller_reconciles_a_committed_but_timed_out_create_by_listing_every_pag
             SendPolicy::default()
                 .retry_rate_limited(NonZeroUsize::new(3).unwrap(), Duration::from_secs(1)),
         );
-    let error = cf
-        .zone(ZoneId::from(ZONE))
-        .dns_records()
-        .create(new_record())
-        .send()
+    let zone = cf.zone(ZoneId::from(ZONE));
+    let create = zone.dns_records().create(new_record()).send();
+    let late = |r: &Recorded| r.method == "POST";
+    let error = paused::time_out(&server, late, timeout, create)
         .await
         .unwrap_err();
     assert!(matches!(error, Error::CreateUncertain(_)), "{error:?}");
-    let records = cf
-        .zone(ZoneId::from(ZONE))
+    let list = zone
         .dns_records()
         .list()
         .set_record_type(RecordType::Aaaa)
         .pages()
         .items()
-        .collect_complete()
-        .await
-        .unwrap();
+        .collect_complete();
+    let records = paused::drive(list).await.unwrap();
     let matching: Vec<_> = records
         .iter()
         .filter(|record| {

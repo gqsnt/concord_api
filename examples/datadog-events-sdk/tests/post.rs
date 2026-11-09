@@ -3,7 +3,7 @@
 use std::error::Error as _;
 use std::time::Duration;
 
-use concord_example_testserver::{Body, Gate, Recorded, Reply, TestServer};
+use concord_example_testserver::{Body, Gate, Recorded, Reply, TestServer, paused};
 use concord_sdk_datadog_events::concord::{Delivery, ErrorKind, reqwest};
 use concord_sdk_datadog_events::{
     AlertType, AuthError, Credentials, DatadogEvents, Error, InputError, NewEvent, RESPONSE_LIMIT,
@@ -219,7 +219,9 @@ fn retrying_http(timeout: Option<Duration>) -> reqwest::Client {
     builder.build().unwrap()
 }
 
-#[tokio::test]
+// Paused clock: the 250 ms timeout fires only once the server holds the post, after writing its
+// head when it stalls the body, so it ends the body and never the wait for the head.
+#[tokio::test(start_paused = true)]
 async fn timeout_after_receipt_is_uncertain_and_never_replayed() {
     for after_head in [false, true] {
         let gate = Gate::new();
@@ -234,11 +236,15 @@ async fn timeout_after_receipt_is_uncertain_and_never_replayed() {
             }
         })
         .await;
-        let client = client(
-            retrying_http(Some(Duration::from_millis(250))),
-            &server.url(),
-        );
-        let error = client.post(event()).send().await.unwrap_err();
+        let timeout = Duration::from_millis(250);
+        let client = client(retrying_http(Some(timeout)), &server.url());
+        let post = client.post(event()).send();
+        let error = if after_head {
+            paused::time_out_in_body(&server, |_| true, timeout, post).await
+        } else {
+            paused::time_out(&server, |_| true, timeout, post).await
+        }
+        .unwrap_err();
         assert!(error.is_post_uncertain(), "{error:?}");
         let Error::PostUncertain {
             source: Some(ref source),

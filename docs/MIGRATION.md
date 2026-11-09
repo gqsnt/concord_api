@@ -1,9 +1,12 @@
 # Migration
 
-Eight paths, newest first: the interface consolidation (unreleased candidate), 4.1 to 4.2 (a
-maintenance release; summary in the [changelog](../CHANGELOG.md)), then the two parts of 4.1.0
-(the modular V4), then older ones:
+Nine paths, newest first: the H06 SDK controls (pilot and H06c), the interface consolidation (unreleased
+candidate), 4.1 to 4.2 (a maintenance release; summary in the [changelog](../CHANGELOG.md)), then
+the two parts of 4.1.0 (the modular V4), then older ones:
 
+- [To H06 pilot SDK controls](#to-h06-pilot-sdk-controls) — callers of withheld controls in the
+  pilot SDKs (Shopify, Zendesk, Salesforce) and, with H06c, nine more SDKs use the replacement
+  construction routes below.
 - [To the consolidated interface](#to-the-consolidated-interface) — additive: existing code
   compiles (one rare exception: a generated name, below); the new response, body, stream and
   pagination boundaries, declared limits and send results, parameter groups and `query(..)` values
@@ -31,15 +34,29 @@ Code blocks marked "does not compile" show the old form. Every other Rust block 
 compiled and run as a doctest of `examples/quickstart` (`cargo test --doc -p
 concord-example-quickstart`).
 
-## To the consolidated interface
+## To H06 pilot SDK controls
 
-Existing runtime entry points remain: `send`, `send_raw`, `into_parts`, `Decoder::{decode, finish}`,
-`decode_limited`, `bytes_limited`, `Error::meta()`, the reader `open`/`open_for` methods, the
-pagination engine and the `concord-extras` crate work as before. The paragraphs below say which SDK
-code can shrink and, where adopting a new form changes what an SDK's own callers observe, what
-changes for them.
+H06 (candidate B, `controls`) is accepted at pilot scope by the owner decision of 2026-11-08,
+at `d39ef1df`. Callers of these withheld controls in the example SDKs change as follows; the
+values are required, so there is no corresponding `maybe_x` setter.
 
-**H06c example SDK controls.** The opt-in `controls { pub(crate) name; remove name; }`
+- **shopify-sdk:** `ShopifyAdminShop::set_shop` is removed. Another shop requires a new
+  `shop(b, token_b)` entry, with that shop's own token, or another `ShopContext`. Same-shop
+  `set_access_token` rotation stays public.
+- **zendesk-support-sdk:** `Zendesk::set_subdomain` is removed. Use
+  `Zendesk::connect(http, other, token)` for another account with its own token. `set_policy` and
+  same-account `set_authorization` rotation stay public.
+- **salesforce-sdk:** `SalesforceApi::with_base_url` is crate-visible and `set_version` is
+  removed. Use `OrgContext::new(http, instance, version, token)`, with
+  `version >= ApiVersion::MINIMUM`, then `api()`. Another instance or version requires another
+  validated context.
+
+The [impact table](../v4/desirability/impact/H06.md) records all 55 SDK decisions. The broader
+adoption is H06c (below; impact table [H06c](../v4/desirability/impact/H06c.md)).
+
+### H06c: further example SDKs
+
+The opt-in `controls { pub(crate) name; remove name; }`
 statement changes only the selected SDK controls. Unlisted controls and all non-adopting SDKs
 keep their API. These example SDK changes are breaking for callers of a withheld control;
 required-value setters listed below have no `maybe_x` counterpart. Existing valid requests keep
@@ -56,6 +73,14 @@ their wire behavior. `prepare()` and native request access remain the documented
 - **shopify-sdk:** Pilot: `ShopifyAdminShop::set_shop` removed. Enter `shop(other_shop, token_for_other_shop)` again, or construct the other ShopContext. Same-shop `set_access_token` rotation stays public.
 - **usgs-earthquake-catalog-sdk:** `Usgs::new`, `with_base_url` crate-visible. Use `Usgs::for_fixture(http, origin)` with a bare HTTP origin on a literal loopback IP, without `/fdsnws/event/1`. The caller still configures transport timeouts and disables redirects/retries.
 - **zendesk-support-sdk:** `Zendesk::with_base_url` crate-visible; pilot `set_subdomain` removed. Use `Zendesk::connect(http, subdomain, token)` for another account. Fixtures use `Zendesk::for_fixture(http_builder, subdomain, token, loopback_socket_address)`: it resolves `{subdomain}.zendesk.test` to that address with proxies disabled. Keep caller retry/redirect/timeout settings in the builder. `set_policy` and same-account `set_authorization` rotation remain public.
+
+## To the consolidated interface
+
+Existing runtime entry points remain: `send`, `send_raw`, `into_parts`, `Decoder::{decode, finish}`,
+`decode_limited`, `bytes_limited`, `Error::meta()`, the reader `open`/`open_for` methods, the
+pagination engine and the `concord-extras` crate work as before. The paragraphs below say which SDK
+code can shrink and, where adopting a new form changes what an SDK's own callers observe, what
+changes for them.
 
 **One new generated name.** Every generated endpoint type now has an inherent
 `operation() -> concord::Operation` (its declared identity, without naming the output). Like

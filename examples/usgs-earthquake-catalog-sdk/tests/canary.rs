@@ -21,7 +21,6 @@ use concord_sdk_usgs_earthquake_catalog::{
 };
 use concord_testserver::{Body, Recorded, Reply, TestServer};
 use std::{
-    net::TcpListener,
     num::{NonZeroU64, NonZeroUsize},
     time::Duration,
 };
@@ -30,10 +29,7 @@ const EVENT: &str = r#"{"type":"Feature","id":"synthetic-a","properties":{"mag":
 const CSV: &str = "time,latitude,longitude,depth,mag,magType,nst,gap,dmin,rms,net,id,updated,place,type,horizontalError,depthError,magError,magNst,status,locationSource,magSource\n2014-01-01T01:00:00Z,37.5,-122.5,8.25,4.5,mw,10,40,0.1,0.2,xx,synthetic-a,2014-01-01T01:10:00Z,\"10 km west of Example\",earthquake,1,2,0.1,8,reviewed,xx,xx\n";
 
 fn refused() -> String {
-    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
-    let url = format!("http://{}", listener.local_addr().unwrap());
-    drop(listener);
-    url
+    concord_testserver::refused_url()
 }
 
 fn client(base: &str) -> Usgs {

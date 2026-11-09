@@ -4,7 +4,7 @@ mod support;
 
 use std::{num::NonZeroUsize, time::Duration};
 
-use concord_example_testserver::{Body, Recorded, Reply, TestServer};
+use concord_example_testserver::{Body, Recorded, Reply, TestServer, paused};
 use concord_sdk_cloudflare_zones::{
     Cloudflare, Error, NewDnsRecord, RecordInputError, RecordTtl, RecordType, RetryAfter,
     SendPolicy, ZoneId,
@@ -138,7 +138,9 @@ async fn even_a_retryable_429_never_replays_a_create() {
     server.shutdown().await;
 }
 
-#[tokio::test]
+// Paused clock: the 500 ms timeout fires only once the server holds the create, after writing its
+// head when it stalls the body, so it ends the body and never the wait for the head.
+#[tokio::test(start_paused = true)]
 async fn timeout_before_headers_or_during_success_body_is_uncertain_and_sent_once() {
     for after_headers in [false, true] {
         let server = TestServer::start(move |_: &Recorded| -> Reply {
@@ -151,10 +153,11 @@ async fn timeout_before_headers_or_during_success_body_is_uncertain_and_sent_onc
             }
         })
         .await;
+        let timeout = Duration::from_millis(500);
         let http = reqwest::Client::builder()
             .retry(reqwest::retry::never())
             .redirect(reqwest::redirect::Policy::none())
-            .timeout(Duration::from_millis(500))
+            .timeout(timeout)
             .build()
             .unwrap();
         let cf = Cloudflare::connect(http, TOKEN)
@@ -162,13 +165,15 @@ async fn timeout_before_headers_or_during_success_body_is_uncertain_and_sent_onc
             .with_base_url(server.url())
             .unwrap()
             .set_policy(retrying());
-        let error = cf
-            .zone(ZoneId::from(ZONE))
-            .dns_records()
-            .create(input())
-            .send()
-            .await
-            .unwrap_err();
+        let zone = cf.zone(ZoneId::from(ZONE));
+        let records = zone.dns_records();
+        let create = records.create(input()).send();
+        let error = if after_headers {
+            paused::time_out_in_body(&server, |_| true, timeout, create).await
+        } else {
+            paused::time_out(&server, |_| true, timeout, create).await
+        }
+        .unwrap_err();
         let Error::CreateUncertain(cause) = &error else {
             panic!("{error:?}");
         };

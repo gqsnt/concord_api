@@ -1,7 +1,7 @@
 //! Fresh-consumer workflows. Every request uses a loopback fixture and a fake token.
 
 use concord::ErrorKind;
-use concord_example_testserver::{Body, Recorded, Reply, TestServer};
+use concord_example_testserver::{Body, Recorded, Reply, TestServer, paused};
 use concord_sdk_postmark::{
     BatchResult, Email, Error, Message, Postmark, PostmarkConfig, http_client_builder,
 };
@@ -248,13 +248,16 @@ async fn send_transactional_email_then_inspect_returned_id() {
         json_reply(acceptance()).with_body(Body::Stall)
     })
     .await;
-    let api = client(&server, Duration::from_millis(150));
-    let error = api
-        .outbound()
-        .send_email(receipt())
-        .send()
+    let timeout = Duration::from_millis(150);
+    let api = client(&server, timeout);
+    // Paused clock: the 150 ms timeout fires only once the server has read the email and written
+    // the head, so it ends the stalled body, never the wait for the head.
+    tokio::time::pause();
+    let send = api.outbound().send_email(receipt()).send();
+    let error = paused::time_out_in_body(&server, |_| true, timeout, send)
         .await
         .unwrap_err();
+    tokio::time::resume();
     assert_redacted(&format!("{error:?} {error}"));
     match error {
         Error::UnknownOutcome(cause) => {
@@ -695,9 +698,20 @@ async fn send_receipts_in_one_batch_then_inspect_each_accepted_id() {
             }
         })
         .await;
-        let api = client(&server, Duration::from_millis(150));
+        let timeout = Duration::from_millis(150);
+        let api = client(&server, timeout);
         let receipts = vec![receipt(), order_receipt("NW-1043", "sam@example.net")];
-        let outcomes = send_receipts(&api, receipts).await.unwrap();
+        // Paused clock: the 150 ms timeout fires only once the server has read the batch and
+        // written the head (stall); otherwise no timeout can fire before the answer.
+        tokio::time::pause();
+        let send = send_receipts(&api, receipts);
+        let outcomes = if stall {
+            paused::time_out_in_body(&server, |_| true, timeout, send).await
+        } else {
+            paused::drive(send).await
+        }
+        .unwrap();
+        tokio::time::resume();
         assert_eq!(outcomes, [ReceiptOutcome::Unknown, ReceiptOutcome::Unknown]);
         assert!(
             !server

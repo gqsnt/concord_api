@@ -1,6 +1,6 @@
 //! Connected offline workflows.
 
-use concord_example_testserver::{Recorded, Reply, TestServer};
+use concord_example_testserver::{Recorded, Reply, TestServer, paused};
 use concord_sdk_postmark::{Email, Error, Postmark, PostmarkConfig};
 use std::time::Duration;
 
@@ -94,16 +94,17 @@ async fn send_then_inspect_and_list_then_inspect() {
     server.shutdown().await;
 }
 
-#[tokio::test]
+#[tokio::test(start_paused = true)]
 async fn timed_out_send_is_unknown_and_never_repeated() {
     let server = TestServer::start(|_: &Recorded| {
         Reply::json(200, include_str!("../fixtures/acceptance.json")).delay(Duration::from_secs(2))
     })
     .await;
-    let error = client(&server, Duration::from_millis(100))
-        .outbound()
-        .send_email(email())
-        .send()
+    let timeout = Duration::from_millis(100);
+    let postmark = client(&server, timeout);
+    // Paused clock: the 100 ms timeout fires only once the server holds the send.
+    let send = postmark.outbound().send_email(email()).send();
+    let error = paused::time_out(&server, |_| true, timeout, send)
         .await
         .unwrap_err();
     assert!(matches!(error, Error::UnknownOutcome(_)));
@@ -111,7 +112,8 @@ async fn timed_out_send_is_unknown_and_never_repeated() {
     server.shutdown().await;
 }
 
-#[tokio::test]
+// Paused clock: no timeout can fire, so the hang-up and the 307 are what end the send.
+#[tokio::test(start_paused = true)]
 async fn disconnect_and_redirect_never_resubmit_send() {
     for redirect in [false, true] {
         let server = TestServer::start(move |_: &Recorded| {
@@ -122,10 +124,8 @@ async fn disconnect_and_redirect_never_resubmit_send() {
             }
         })
         .await;
-        let error = client(&server, Duration::from_secs(1))
-            .outbound()
-            .send_email(email())
-            .send()
+        let postmark = client(&server, Duration::from_secs(1));
+        let error = paused::drive(postmark.outbound().send_email(email()).send())
             .await
             .unwrap_err();
         if redirect {
@@ -138,7 +138,8 @@ async fn disconnect_and_redirect_never_resubmit_send() {
     }
 }
 
-#[tokio::test]
+// Paused clock: no timeout can fire, so the unusable answer is what ends the send.
+#[tokio::test(start_paused = true)]
 async fn unusable_success_response_leaves_send_outcome_unknown() {
     for bad_media in [false, true] {
         let server = TestServer::start(move |_: &Recorded| {
@@ -149,10 +150,8 @@ async fn unusable_success_response_leaves_send_outcome_unknown() {
             }
         })
         .await;
-        let error = client(&server, Duration::from_secs(1))
-            .outbound()
-            .send_email(email())
-            .send()
+        let postmark = client(&server, Duration::from_secs(1));
+        let error = paused::drive(postmark.outbound().send_email(email()).send())
             .await
             .unwrap_err();
         assert!(matches!(error, Error::UnknownOutcome(_)));

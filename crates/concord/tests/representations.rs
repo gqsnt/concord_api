@@ -232,9 +232,12 @@ async fn m05_transport_failure_is_one_attempt() {
 /// A refused connection is a transport error with a static message and no URL.
 #[tokio::test]
 async fn transport_error_message() {
-    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
-    let addr = listener.local_addr().unwrap();
-    drop(listener);
+    // A port that is bound but never listens refuses every connection, and no other socket can
+    // bind it while it is held. (A port freed by dropping a listener can be taken by a concurrent
+    // test's server before the request connects, which then gets an answer or a hang-up instead.)
+    let reserved = tokio::net::TcpSocket::new_v4().unwrap();
+    reserved.bind(([127, 0, 0, 1], 0).into()).unwrap();
+    let addr = reserved.local_addr().unwrap();
     let api = Reps::new(reqwest::Client::new())
         .with_base_url(format!("http://{addr}"))
         .unwrap();
@@ -245,6 +248,7 @@ async fn transport_error_message() {
         error.to_string(),
         "GET Reps.text_out: transport error (connect)"
     );
+    drop(reserved);
 }
 
 /// ADV-7 / 8g: a format's invalid `CONTENT_TYPE` is a compile error wherever it may be sent

@@ -7,7 +7,7 @@
 //! Status/Account/InstanceInfo/ErrorDocument models. Private Api/config cannot be reached.
 use concord_check_canary::Canaries;
 use concord_example_testserver::{Body, Recorded, Reply, TestServer};
-use std::{net::TcpListener, time::Duration};
+use std::time::Duration;
 
 fn http() -> concord::reqwest::Client {
     concord::reqwest::Client::builder()
@@ -20,10 +20,7 @@ fn http() -> concord::reqwest::Client {
 }
 
 fn refused() -> String {
-    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
-    let url = format!("http://{}", listener.local_addr().unwrap());
-    drop(listener);
-    url
+    concord_example_testserver::refused_url()
 }
 
 // Echo only into withheld diagnostics, never clear success-model fields.

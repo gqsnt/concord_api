@@ -190,6 +190,11 @@ impl Server {
         format!("http://{}", self.addr)
     }
 
+    /// Requests being answered right now (recorded, reply not yet written: a delayed reply).
+    pub fn in_flight(&self) -> usize {
+        self.load.in_flight.load(Ordering::SeqCst)
+    }
+
     /// The largest number of requests that were being answered at the same time.
     pub fn peak_in_flight(&self) -> usize {
         self.load.peak.load(Ordering::SeqCst)
@@ -429,4 +434,24 @@ pub fn inventory_at(
     )
     .with_base_url(format!("http://{addr}/v1"))
     .unwrap()
+}
+
+/// A loopback address whose port refuses every TCP connection for the rest of the process: a
+/// socket is bound to it and never listens, so a connection is refused and no other socket can
+/// take the port meanwhile. (A port freed by dropping a listener can be given to a concurrent
+/// test's server before the request connects.) The same helper as
+/// `concord_example_testserver::refused_addr`, whose tests check these guarantees per platform.
+pub fn refused_addr() -> std::net::SocketAddr {
+    static REFUSED: std::sync::OnceLock<(tokio::net::TcpSocket, std::net::SocketAddr)> =
+        std::sync::OnceLock::new();
+    REFUSED
+        .get_or_init(|| {
+            let socket = tokio::net::TcpSocket::new_v4().expect("create a TCP socket");
+            socket
+                .bind(std::net::SocketAddr::from(([127, 0, 0, 1], 0)))
+                .expect("bind a loopback port");
+            let addr = socket.local_addr().expect("local addr");
+            (socket, addr)
+        })
+        .1
 }

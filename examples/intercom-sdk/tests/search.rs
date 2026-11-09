@@ -5,7 +5,7 @@ use std::{
     time::{Duration, SystemTime},
 };
 
-use concord_example_testserver::{Recorded, Reply, TestServer};
+use concord_example_testserver::{Recorded, Reply, TestServer, paused};
 use concord_sdk_intercom::{
     EmailSearch, Error, ErrorCode, HeaderNumber, Intercom, PageSize, http_client,
     pagination::{PagesError, Resume},
@@ -90,14 +90,18 @@ async fn headerless_search_429_keeps_prefix_and_failed_cursor_without_retry_or_r
         }
     })
     .await;
+    // Clock frozen while the call runs: the bound fails only a call that waits for something
+    // that never comes (then reported as stuck).
     let incomplete = tokio::time::timeout(
         Duration::from_millis(500),
-        api(&server)
-            .contacts()
-            .search(EmailSearch::new(EMAIL).with_per_page(PageSize::new(1).unwrap()))
-            .pages(Resume::Start, cap(20))
-            .items()
-            .collect_complete(),
+        paused::frozen(
+            api(&server)
+                .contacts()
+                .search(EmailSearch::new(EMAIL).with_per_page(PageSize::new(1).unwrap()))
+                .pages(Resume::Start, cap(20))
+                .items()
+                .collect_complete(),
+        ),
     )
     .await
     .expect("search must stop without waiting or looping")

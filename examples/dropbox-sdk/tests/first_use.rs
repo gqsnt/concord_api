@@ -15,7 +15,7 @@ use std::time::Duration;
 
 use concord::bytes::Bytes;
 use concord::reqwest;
-use concord_example_testserver::{Body, Generator, Recorded, Reply, TestServer};
+use concord_example_testserver::{Body, Generator, Recorded, Reply, TestServer, paused};
 use concord_sdk_dropbox::pagination::{PagesError, Resume};
 use concord_sdk_dropbox::{
     Client, ClientConfig, Entry, Error, InputError, ListFolderOptions, LookupError, PageSize,
@@ -1347,11 +1347,20 @@ async fn b_dropping_one_members_traversal_stops_only_that_member() {
 
     let a_pages = client.list_folder_pages(member_a(), ListFolderOptions::new("/Projects"));
     let mut b_pages = client.list_folder_pages(member_b(), ListFolderOptions::new("/Projects"));
-    let (a, b_was_pending) = tokio::join!(a_pages.items().collect_complete(), async {
-        tokio::time::timeout(Duration::from_millis(300), b_pages.next_page())
-            .await
-            .is_err()
-    });
+    // Paused clock: the application's 300 ms wait for B runs out only once the server has B's
+    // request (and A's pages complete while virtual time stands still).
+    let wait = Duration::from_millis(300);
+    let both = async {
+        tokio::join!(a_pages.items().collect_complete(), async {
+            tokio::time::timeout(wait, b_pages.next_page())
+                .await
+                .is_err()
+        })
+    };
+    let b_request = |r: &Recorded| r.header("dropbox-api-select-user") == Some(MEMBER_B);
+    tokio::time::pause();
+    let (a, b_was_pending) = paused::time_out(&server, b_request, wait, both).await;
+    tokio::time::resume();
     assert!(b_was_pending, "B's first page body never arrived");
     drop(b_pages); // the application gives up on B: this is not completion
 

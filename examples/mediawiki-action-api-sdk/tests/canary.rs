@@ -21,13 +21,10 @@ use concord_sdk_mediawiki_action_api::{
     Error, MediaWiki, MediaWikiConfig, PageIdLimit, PageIds, concord::reqwest,
 };
 use concord_testserver::{Body, Recorded, Reply, TestServer};
-use std::{net::TcpListener, num::NonZeroUsize, time::Duration};
+use std::{num::NonZeroUsize, time::Duration};
 
 fn refused() -> String {
-    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
-    let url = format!("http://{}", listener.local_addr().unwrap());
-    drop(listener);
-    url
+    concord_testserver::refused_url()
 }
 
 fn api(base: &str, user_agent: &str) -> MediaWiki {

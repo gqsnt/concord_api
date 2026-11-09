@@ -73,3 +73,43 @@ No new push, merge, tag, publication or deletion right.
 9. **Reporting.** Wall-clock time per hypothesis (card commit, or survey start where the survey
    precedes the card, to decision row) is reported after the next two hypotheses (H03b and H06),
    from `work/state/HYPOTHESIS_TIMES.md`.
+
+## Addendum A3.1 — lanes run on Codex (owner instruction, 2026-11-08 ~18:40 CET)
+
+Owner: "i have 57k credit that can be used (codex credit), i would like you to use them instead of
+me using a reset." Application:
+- Every new working lane — candidate implementation, measurement (task files, harness runs),
+  surveys, repairs and their fix rounds — runs as a Codex `gpt-6.1-sol` session through
+  `work/tools/codex_role.sh` (`workspace-write`, the lane's cargo target, evidence folder and
+  `~/.cargo` added with `--add-dir`, `CARGO_NET_OFFLINE=true`). Codex cannot commit (`.git` is
+  read-only in its sandbox); the Claude coordinator audits the lane (transcript audit, diff check)
+  and commits. Smoke test passed 2026-11-08 17:36Z.
+- Claude subagents are no longer started for working lanes. The five Claude lanes already deep in
+  their work when this arrived (H03 measurement, H03b B′, H06 B, T3 round 2, T3 sweep) finish their
+  current stage only; their next stages move to Codex.
+- Reviews stay Codex `gpt-6.1-sol` xhigh read-only (DECISION_RULE A9), in a separate session from
+  any Codex author. For Codex-authored work this review is **independent but same-provider**, not
+  cross-provider; records say so (CLAUDE.md rule 6).
+- **Sandbox finding (2026-11-08 ~19:00):** Codex's own `workspace-write` sandbox on this host blocks
+  every socket (tests need 127.0.0.1) and user namespaces; AppArmor also denies nested user
+  namespaces, so Codex's sandbox cannot run inside bubblewrap. Working lanes therefore run through
+  `work/tools/codex_jail.sh`: Codex `-s danger-full-access` inside an outer bubblewrap jail (root
+  read-only; writable only the worktree, the lane's cargo target and evidence folders, `~/.codex`;
+  `.git` read-only; `work/sealed`, `work/baseline`, `<worktree>/tools/desirability`, `~/.claude`
+  hidden; network shared) — the same confinement the I4 runner uses. Smoke test passed (local
+  sockets, socket tests 13/13, hidden dirs empty, `.git` and workspace state read-only). The pilot
+  harness itself needs bubblewrap, so measurement lanes author sealed task files in Codex and the
+  coordinator runs `pilot.py` (plain commands).
+
+## Addendum A3.2 — model mix and effort (owner instruction, 2026-11-08 ~19:15 CET)
+
+Owner: "use opus medium instead of xhigh for subagents / background tasks. try to use more codex less
+claude (75% codex, 25% claude)." Application:
+- Claude subagents are started with `effort: medium` (Agent tool), not the inherited xhigh. Lanes
+  already running keep the effort they started with (recorded in the model ledger).
+- Working lanes are split about 75% Codex / 25% Claude, counted by lanes started from now on
+  (`work/state/LANE_MIX.md`). Claude gets the lanes Codex cannot do on this host — those that must
+  run the pilot harness or another bubblewrap sandbox — and coordination-heavy work; everything else
+  (implementation, task-set authoring, repairs, surveys) goes to Codex in `codex_jail.sh`.
+- Unchanged: reviews are Codex `gpt-6.1-sol` xhigh read-only (DECISION_RULE A9, CLAUDE.md rule 6);
+  Codex working lanes keep xhigh unless the owner says otherwise.

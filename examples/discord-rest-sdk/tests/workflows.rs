@@ -10,7 +10,7 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use concord::ErrorKind;
-use concord_example_testserver::{Gate, Recorded, Reply, TestServer};
+use concord_example_testserver::{Gate, Recorded, Reply, TestServer, paused};
 use concord_sdk_discord_rest::pagination::Resume;
 use concord_sdk_discord_rest::{
     Anchor, ChannelId, CreateMessage, Error, ErrorClass, GateScope, JsonErrorCode, MessageId,
@@ -491,20 +491,21 @@ async fn a_timeout_after_create_is_ambiguous_and_never_resent() {
         ..Fake::seeded()
     };
     let server = fake.serve().await;
-    let http = http_builder()
-        .timeout(Duration::from_millis(300))
-        .build()
-        .unwrap();
+    let timeout = Duration::from_millis(300);
+    let http = http_builder().timeout(timeout).build().unwrap();
     let channel = discord_with(http, &server.url(), RateLimiter::new()).channel(GENERAL);
     let body = CreateMessage::text("deploy 43 finished")
         .unwrap()
         .with_nonce(Nonce::new("deploy-43").unwrap());
 
-    let error = channel
-        .create_message(body.clone())
-        .send()
+    // Paused clock: the 300 ms timeout fires only once the fake holds the create; the reconciling
+    // read and the deliberate resend below complete while virtual time stands still.
+    tokio::time::pause();
+    let create = channel.create_message(body.clone()).send();
+    let error = paused::time_out(&server, |r| r.method == "POST", timeout, create)
         .await
         .unwrap_err();
+    tokio::time::resume();
     let Error::AmbiguousWrite(write) = &error else {
         panic!("{error:?}")
     };
@@ -522,19 +523,25 @@ async fn a_timeout_after_create_is_ambiguous_and_never_resent() {
     assert!(!resent, "the SDK never resends a write");
 
     // Reconcile by reading what is newer than the last message the caller knew.
-    let newer = channel
-        .messages()
-        .anchor(Anchor::After(MessageId::new(NEWEST)))
-        .send()
-        .await
-        .unwrap();
+    tokio::time::pause();
+    let newer = paused::drive(
+        channel
+            .messages()
+            .anchor(Anchor::After(MessageId::new(NEWEST)))
+            .send(),
+    )
+    .await
+    .unwrap();
     let found = newer
         .iter()
         .find(|m| m.nonce.as_ref() == body.nonce())
         .expect("the ambiguous write happened");
 
     // A deliberate resend with the same nonce returns that message; no duplicate.
-    let again = channel.create_message(body).send().await.unwrap();
+    let again = paused::drive(channel.create_message(body).send())
+        .await
+        .unwrap();
+    tokio::time::resume();
     assert_eq!(again.id, found.id);
     assert_eq!(fake.stored(GENERAL), 6);
     let posts = server

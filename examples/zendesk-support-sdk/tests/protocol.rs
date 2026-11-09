@@ -6,7 +6,7 @@ mod support;
 use std::num::NonZeroUsize;
 use std::time::Duration;
 
-use concord_example_testserver::{Body, Recorded, Reply, TestServer};
+use concord_example_testserver::{Body, Recorded, Reply, TestServer, paused};
 use concord_sdk_zendesk_support::concord::{ErrorKind, bytes::Bytes};
 use concord_sdk_zendesk_support::{
     Error, IdempotencyKey, IdempotencyLookup, NewTicket, PageSize, Priority, Problem, SendPolicy,
@@ -562,21 +562,28 @@ async fn a_write_is_never_repeated() {
     }
 }
 
-#[tokio::test]
+// Paused clock: the 300 ms timeout fires only once the server holds the delayed create; the
+// hang-up ends the other create before any timeout can fire.
+#[tokio::test(start_paused = true)]
 async fn a_write_without_a_response_is_uncertain() {
     let cases: [Responder; 2] = [
         Box::new(|| json_fixture(201, "ticket-103.json").delay(Duration::from_secs(3))),
         Box::new(Reply::hang_up),
     ];
-    for reply in cases {
+    for (case, reply) in cases.into_iter().enumerate() {
         let server = serve(reply).await;
-        let api = api_with(&server, Duration::from_millis(300), SendPolicy::default());
-        let error = api
+        let timeout = Duration::from_millis(300);
+        let api = api_with(&server, timeout, SendPolicy::default());
+        let create = api
             .tickets()
             .create(NewTicket::new("x"), key("k-lost"))
-            .send()
-            .await
-            .unwrap_err();
+            .send();
+        let error = if case == 0 {
+            paused::time_out(&server, |_| true, timeout, create).await
+        } else {
+            paused::drive(create).await
+        }
+        .unwrap_err();
         let write = error.uncertain().unwrap_or_else(|| panic!("{error:?}"));
         assert_eq!(
             write.idempotency_key().map(IdempotencyKey::as_str),

@@ -738,6 +738,7 @@ name = "concord-example-native"
 version = "0.0.0"
 dependencies = [
  "concord",
+ "concord-example-testserver",
  "concord-ratelimit",
  "concord-retry",
  "futures-core",

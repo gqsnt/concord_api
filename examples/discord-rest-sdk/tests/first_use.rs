@@ -4,7 +4,7 @@ use std::num::NonZeroUsize;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use concord_example_testserver::{Recorded, Reply, TestServer};
+use concord_example_testserver::{Recorded, Reply, TestServer, paused};
 use concord_sdk_discord_rest::concord::ErrorKind;
 use concord_sdk_discord_rest::concord::reqwest;
 use concord_sdk_discord_rest::pagination::{Outcome, PagesError, Resume};
@@ -612,13 +612,18 @@ async fn reconcile_timed_out_creation() {
     .await;
     let discord = client(&server);
     let channel = discord.channel(ChannelId::new(SALES));
-    let error = channel
+    // Paused clock: the client's 2 s timeout fires only once the fixture holds the create; the
+    // reconciling reads complete while virtual time stands still.
+    tokio::time::pause();
+    let create = channel
         .create_message(
             CreateMessage::text("CRM case 427 resolved")
                 .unwrap()
                 .with_nonce(Nonce::new("crm-case-427-timeout").unwrap()),
         )
-        .send()
+        .send();
+    let late = |r: &Recorded| r.method == "POST";
+    let error = paused::time_out(&server, late, Duration::from_secs(2), create)
         .await
         .unwrap_err();
     assert_safe(&error);
@@ -643,17 +648,22 @@ async fn reconcile_timed_out_creation() {
     );
     assert_eq!(server.requests().len(), 1);
 
-    let recent = channel
-        .messages()
-        .set_limit(MessageLimit::new(10).unwrap())
-        .send()
-        .await
-        .unwrap();
+    let recent = paused::drive(
+        channel
+            .messages()
+            .set_limit(MessageLimit::new(10).unwrap())
+            .send(),
+    )
+    .await
+    .unwrap();
     let found = recent
         .iter()
         .find(|m| m.nonce.as_ref().map(Nonce::as_str) == Some("crm-case-427-timeout"))
         .unwrap();
-    let fetched = channel.message(found.id).send().await.unwrap();
+    let fetched = paused::drive(channel.message(found.id).send())
+        .await
+        .unwrap();
+    tokio::time::resume();
     assert_eq!(fetched.id, MessageId::new(NEWEST));
     assert_eq!(fetched.content, "CRM case 427 resolved");
     assert_eq!(fetched.channel_id, ChannelId::new(SALES));

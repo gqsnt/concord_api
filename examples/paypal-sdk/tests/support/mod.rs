@@ -6,9 +6,12 @@
 #![allow(dead_code)]
 
 use std::collections::VecDeque;
+use std::future::Future;
 use std::num::NonZeroUsize;
+use std::pin::{Pin, pin};
 use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
+use std::task::Poll;
 use std::time::{Duration, Instant};
 
 use concord_example_testserver::{Recorded, Reply, TestServer};
@@ -69,13 +72,106 @@ pub fn credentials() -> Credentials {
     Credentials::new(CLIENT_ID, CLIENT_SECRET).unwrap()
 }
 
+/// The longest backoff of [`fast`].
+pub const FAST_MAX_DELAY: Duration = Duration::from_millis(20);
+
 /// Bounds with `attempts` and a 10 ms backoff, so tests do not wait for the defaults.
 pub fn fast(attempts: usize) -> concord_sdk_paypal::concord_retry::Policy {
     concord_sdk_paypal::concord_retry::Policy {
         initial_delay: Duration::from_millis(10),
-        max_delay: Duration::from_millis(20),
+        max_delay: FAST_MAX_DELAY,
         ..concord_sdk_paypal::concord_retry::Policy::new(NonZeroUsize::new(attempts).unwrap())
     }
+}
+
+// ---------------------------------------------------------------------------------------------
+// Timeouts on a paused clock
+//
+// A test that makes a write time out gives the client a short request timeout and has the server
+// hold its answer. In real time that timeout also bounds everything else on the same client: the
+// token request made before the write, the delivery of the write itself, and later calls. On a
+// loaded machine any of them can run out first, and the test then fails with the wrong error.
+// Such tests run on Tokio's paused clock (`#[tokio::test(start_paused = true)]`) and drive their
+// calls with [`drive`] and [`time_out`]: the runtime is kept busy, so virtual time never jumps
+// ahead by itself while loopback I/O is in flight, and it moves only once the server has received
+// the attempt that is meant to time out.
+
+/// Real time a driven call may take before the test reports it as stuck (twice the 5-second
+/// client timeout the other tests allow a loopback exchange).
+const STUCK: Duration = Duration::from_secs(10);
+
+/// Timer deadlines are rounded up to the next millisecond.
+const TICK: Duration = Duration::from_millis(1);
+
+/// Polls `call` until it completes (`Some`) or `until()` holds (`None`), yielding between polls:
+/// loopback I/O and the server's tasks progress while virtual time stands still.
+async fn poll_until<F: Future>(
+    mut call: Pin<&mut F>,
+    until: impl Fn() -> bool,
+) -> Option<F::Output> {
+    let started = Instant::now();
+    loop {
+        if let Poll::Ready(output) = poll_once(call.as_mut()).await {
+            return Some(output);
+        }
+        if until() {
+            return None;
+        }
+        assert!(
+            started.elapsed() < STUCK,
+            "a driven call did not finish within {STUCK:?} of real time (an attempt the server \
+             holds that the test did not expect to time out?)"
+        );
+        tokio::task::yield_now().await;
+    }
+}
+
+async fn poll_once<F: Future>(mut call: Pin<&mut F>) -> Poll<F::Output> {
+    std::future::poll_fn(|cx| Poll::Ready(call.as_mut().poll(cx))).await
+}
+
+/// Runs `call` to completion while virtual time stands still: no client timeout can run out.
+pub async fn drive<F: Future>(call: F) -> F::Output {
+    let mut call = pin!(call);
+    poll_until(call.as_mut(), || false)
+        .await
+        .expect("only completion ends an unconditional drive")
+}
+
+/// Runs a write whose first `late` attempts the server answers after the client's `timeout`.
+/// Each time the server has received the next late attempt to `path`, virtual time moves past
+/// `timeout`, so that attempt times out after it reached the server, never before; if the session
+/// then backs off before repeating the write, time moves past [`FAST_MAX_DELAY`] too. Everything
+/// else (the token request, an attempt answered at once, the answers) completes while time stands
+/// still. A call that ends before the server received a late attempt is returned as it ended.
+pub async fn time_out<F: Future>(
+    server: &TestServer,
+    path: &str,
+    timeout: Duration,
+    late: usize,
+    call: F,
+) -> F::Output {
+    let mut call = pin!(call);
+    for attempt in 1..=late {
+        let received = || {
+            server
+                .requests()
+                .iter()
+                .filter(|r| r.path() == path)
+                .count()
+                >= attempt
+        };
+        if let Some(ended) = poll_until(call.as_mut(), received).await {
+            return ended;
+        }
+        tokio::time::advance(timeout + TICK).await;
+        // The next poll observes the timeout: the call ends, or the session backs off.
+        if let Poll::Ready(output) = poll_once(call.as_mut()).await {
+            return output;
+        }
+        tokio::time::advance(FAST_MAX_DELAY + TICK).await;
+    }
+    drive(call).await
 }
 
 /// A builder pointed at the server with fast bounds (3 read attempts, 2 write attempts) and a

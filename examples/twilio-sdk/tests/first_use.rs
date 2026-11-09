@@ -9,7 +9,7 @@
 
 use concord::reqwest;
 use concord::{ErrorKind, Operation};
-use concord_example_testserver::{Body, Recorded, Reply, TestServer};
+use concord_example_testserver::{Body, Recorded, Reply, TestServer, paused};
 use concord_sdk_twilio::{
     AuthError, BasicAuth, CreateMessage, Error, ErrorDocumentProblem, MAX_ERROR_BODY, Message,
     MessageStatus, ProviderError, Response, Twilio,
@@ -965,7 +965,9 @@ async fn b_absent_and_null_optional_fields_are_none() {
     );
 }
 
-#[tokio::test]
+// Paused clock: the 300 ms timeout fires only once the server has written the first head (ending
+// the stalled body, never the wait for the head) and once it holds the second request.
+#[tokio::test(start_paused = true)]
 async fn b_a_stalled_fetch_ends_with_the_client_timeout_and_keeps_the_head() {
     let fake = FakeTwilio::new(Vec::new());
     fake.push_override(
@@ -976,22 +978,21 @@ async fn b_a_stalled_fetch_ends_with_the_client_timeout_and_keeps_the_head() {
     // Head never arrives in time: no metadata.
     fake.push_override(Reply::text(200, JSON, "{}").delay(Duration::from_secs(3)));
     let server = fake.serve().await;
-    let client = Twilio::new(
-        http(Duration::from_millis(300)),
-        ACCOUNT,
-        BasicAuth::new(USER, PASS).unwrap(),
-    )
-    .with_base_url(server.url())
-    .unwrap();
+    let timeout = Duration::from_millis(300);
+    let client = Twilio::new(http(timeout), ACCOUNT, BasicAuth::new(USER, PASS).unwrap())
+        .with_base_url(server.url())
+        .unwrap();
 
-    let stalled = tokio::time::timeout(Duration::from_secs(5), client.get_message("SM_a"))
+    let stalled = paused::time_out_in_body(&server, |_| true, timeout, client.get_message("SM_a"));
+    let stalled = tokio::time::timeout(Duration::from_secs(5), stalled)
         .await
         .expect("the client timeout ends the call")
         .expect_err("stalled body");
     assert_eq!(concord_kind(&stalled), Some(ErrorKind::Transport));
     assert_eq!(stalled.meta().expect("head arrived").status().as_u16(), 200);
 
-    let late = tokio::time::timeout(Duration::from_secs(5), client.get_message("SM_b"))
+    let late = paused::time_out(&server, |_| true, timeout, client.get_message("SM_b"));
+    let late = tokio::time::timeout(Duration::from_secs(5), late)
         .await
         .expect("the client timeout ends the call")
         .expect_err("late head");

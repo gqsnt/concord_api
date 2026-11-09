@@ -165,9 +165,7 @@ fn s05_build_error_does_not_leak() {
 /// or the `source()` chain. (The raw reqwest error *would* show them — kept as a baseline.)
 #[tokio::test]
 async fn s05_transport_error_does_not_leak() {
-    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
-    let addr = listener.local_addr().unwrap();
-    drop(listener);
+    let addr = support::refused_addr();
     let api = vault(&format!("http://{addr}"));
 
     let error = api.clone().unmarked("x").send().await.unwrap_err();
@@ -248,9 +246,7 @@ concord::api! {
 /// whose host contains a sensitive label exposes no `source()` chain; `transport()` still does.
 #[tokio::test]
 async fn adv_1_sensitive_host_hides_transport_source() {
-    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
-    let port = listener.local_addr().unwrap().port();
-    drop(listener);
+    let port = support::refused_addr().port();
     let http = reqwest::Client::builder()
         .resolve(
             "t0psecret.hidden.example.test",

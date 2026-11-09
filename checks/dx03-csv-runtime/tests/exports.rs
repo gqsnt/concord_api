@@ -11,7 +11,7 @@ use concord::{
 use concord_check_dx03_csv_runtime::{
     ExportError, JobDescriptor, ReportRow, client, open_export, upload_export,
 };
-use concord_example_testserver::{Body, Reply, TestServer};
+use concord_example_testserver::{Body, Reply, TestServer, paused};
 
 fn job(header: bool, delimiter: &str, columns: &[&str]) -> JobDescriptor {
     JobDescriptor {
@@ -73,7 +73,9 @@ async fn runtime_reader_delivers_first_row_before_remaining_body_and_keeps_metad
     assert_eq!(export.metadata.status, StatusCode::OK);
     assert_eq!(export.metadata.export_id.as_ref().unwrap(), "exp-42");
     assert_eq!(export.metadata.request_id.as_ref().unwrap(), "req-7");
-    let first = tokio::time::timeout(Duration::from_secs(1), export.rows.next())
+    // Clock frozen while the call runs: the bound fails only a call that waits for something
+    // that never comes (then reported as stuck).
+    let first = tokio::time::timeout(Duration::from_secs(1), paused::frozen(export.rows.next()))
         .await
         .unwrap()
         .unwrap()

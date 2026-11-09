@@ -1,0 +1,15 @@
+{
+ "class": "compiles",
+ "code": "let api = NagerHolidays::new(::concord::reqwest::Client::new());\nlet _r: ::core::result::Result<HolidayResponse, Error> = api.holidays(\"AT\", 2026).send().await;",
+ "control": {
+  "expect": "pass"
+ },
+ "expect": {
+  "compiles": true
+ },
+ "format": 1,
+ "id": "ctl/compile/compiles",
+ "kind": "compile",
+ "role": "control",
+ "sdk": "nager-holidays"
+}

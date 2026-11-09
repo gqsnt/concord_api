@@ -1,0 +1,22 @@
+{
+ "class": "first-diagnostic",
+ "code": "let api = NagerHolidays::new(::concord::reqwest::Client::new());\nlet _r = api.holidays(2026, \"AT\").send().await;",
+ "control": {
+  "expect": "pass"
+ },
+ "expect": {
+  "compiles": false,
+  "first": {
+   "code": "E0277",
+   "in_snippet": true,
+   "mentions": [
+    "String"
+   ]
+  }
+ },
+ "format": 1,
+ "id": "ctl/compile/swapped-diagnostic",
+ "kind": "compile",
+ "role": "control",
+ "sdk": "nager-holidays"
+}

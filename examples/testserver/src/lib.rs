@@ -20,6 +20,9 @@
 //! Counters ([`TestServer::live_connections`], [`TestServer::active_bodies`],
 //! [`TestServer::peak_active_bodies`]) make the server's own resource use observable in tests,
 //! and [`TestServer::wait_until`] polls a condition with a bounded deadline (no fixed sleeps).
+//!
+//! A failed `accept` is skipped, never fatal: the listener and the open connections stay up
+//! ([`TestServer::accept_errors`]; [`TestServer::fail_next_accept`] injects one).
 
 #![allow(missing_docs)]
 
@@ -36,6 +39,8 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::{Notify, watch};
 use tokio::task::{JoinHandle, JoinSet};
+
+pub mod paused;
 
 /// One request as observed on the wire.
 #[derive(Debug, Clone)]
@@ -332,7 +337,13 @@ struct Shared {
     active_bodies: AtomicUsize,
     peak_active_bodies: AtomicUsize,
     body_bytes_sent: AtomicU64,
+    heads_sent: AtomicUsize,
+    held_replies: AtomicUsize,
     request_body_bytes: AtomicU64,
+    request_chunk_bytes: AtomicU64,
+    accept_errors: AtomicUsize,
+    injected_accept_errors: Mutex<VecDeque<std::io::ErrorKind>>,
+    injected: Notify,
     changed: Notify,
 }
 
@@ -433,9 +444,50 @@ impl TestServer {
         self.shared.body_bytes_sent.load(Ordering::SeqCst)
     }
 
-    /// Request body bytes received so far (also past the recording limit).
+    /// Response heads handed to the socket so far (a head held by a delay or a gate is not
+    /// counted until it is written).
+    pub fn heads_sent(&self) -> usize {
+        self.shared.heads_sent.load(Ordering::SeqCst)
+    }
+
+    /// Replies the server is holding right now: a head waiting for its [`Reply::delay`] or its
+    /// [`Reply::after`] gate, or a [`Body::Stall`] body after its head.
+    pub fn held_replies(&self) -> usize {
+        self.shared.held_replies.load(Ordering::SeqCst)
+    }
+
+    /// Request body bytes received so far (also past the recording limit), counted as they arrive:
+    /// it can stop inside a chunk, or be read while a chunk is still arriving.
     pub fn request_body_bytes(&self) -> u64 {
         self.shared.request_body_bytes.load(Ordering::SeqCst)
+    }
+
+    /// Data bytes of request-body chunks (`transfer-encoding: chunked`) received completely: a
+    /// chunk counts once its data and the CRLF that ends it have arrived. A chunk cut off by a
+    /// closed or reset connection is never counted, and the value never stops inside a chunk, so it
+    /// measures what the client finished sending as whole chunks. Bodies sent with
+    /// `content-length` are not counted.
+    pub fn request_chunk_bytes(&self) -> u64 {
+        self.shared.request_chunk_bytes.load(Ordering::SeqCst)
+    }
+
+    /// Accept attempts that failed so far. A failed accept is skipped: the listener and every
+    /// connection stay open and the server keeps accepting.
+    pub fn accept_errors(&self) -> usize {
+        self.shared.accept_errors.load(Ordering::SeqCst)
+    }
+
+    /// Fault injection: the server's next accept attempt fails with `kind` instead of taking a
+    /// connection, as an operating system's `accept` can fail while the listener stays usable (a
+    /// queued connection reset by its peer, a momentary shortage of buffers or descriptors).
+    /// Calls queue up; each one fails one attempt.
+    pub fn fail_next_accept(&self, kind: std::io::ErrorKind) {
+        self.shared
+            .injected_accept_errors
+            .lock()
+            .unwrap()
+            .push_back(kind);
+        self.shared.injected.notify_one();
     }
 
     /// Waits until `condition(self)` holds, re-checking whenever the server's counters change
@@ -488,12 +540,37 @@ async fn accept_loop(
     mut stopped: watch::Receiver<bool>,
 ) {
     let mut connections = JoinSet::new();
+    // Accept attempts that failed in a row, and the pause before the next attempt.
+    let mut failures: u32 = 0;
+    let mut pause = Duration::ZERO;
     loop {
+        if !pause.is_zero() {
+            tokio::select! {
+                biased;
+                _ = stopped.changed() => break,
+                () = tokio::time::sleep(pause) => {}
+            }
+        }
         tokio::select! {
             biased;
             _ = stopped.changed() => break,
-            accepted = listener.accept() => {
-                let Ok((stream, _)) = accepted else { break };
+            accepted = accept(&listener, &shared) => {
+                let stream = match accepted {
+                    Ok(stream) => stream,
+                    // A failed accept concerns one attempt (a connection reset while it was
+                    // queued, a momentary shortage of buffers or descriptors), not the listener:
+                    // skip it and keep serving every connection. Failures in a row are retried
+                    // after a growing pause, so a lasting condition cannot spin this loop.
+                    Err(_) => {
+                        shared.accept_errors.fetch_add(1, Ordering::SeqCst);
+                        shared.changed.notify_waiters();
+                        failures += 1;
+                        pause = accept_backoff(failures);
+                        continue;
+                    }
+                };
+                failures = 0;
+                pause = Duration::ZERO;
                 // The head and body are written separately: without TCP_NODELAY, Nagle's
                 // algorithm plus the client's delayed ACK adds ~40 ms to each response.
                 let _ = stream.set_nodelay(true);
@@ -513,6 +590,30 @@ async fn accept_loop(
     }
     drop(listener);
     connections.shutdown().await;
+}
+
+/// The next accepted connection, or the next failure queued by [`TestServer::fail_next_accept`].
+async fn accept(listener: &TcpListener, shared: &Shared) -> std::io::Result<TcpStream> {
+    loop {
+        if let Some(kind) = shared.injected_accept_errors.lock().unwrap().pop_front() {
+            return Err(std::io::Error::new(kind, "injected accept failure"));
+        }
+        tokio::select! {
+            biased;
+            () = shared.injected.notified() => {}
+            // `accept` is cancel-safe: no connection is lost when an injection wins.
+            accepted = listener.accept() => return accepted.map(|(stream, _)| stream),
+        }
+    }
+}
+
+/// The pause before the next accept after `failures` failed ones in a row: none after a single
+/// failure, then 1 ms, doubling up to 100 ms.
+fn accept_backoff(failures: u32) -> Duration {
+    if failures < 2 {
+        return Duration::ZERO;
+    }
+    Duration::from_millis((1u64 << (failures - 2).min(7)).min(100))
 }
 
 /// Decrements the live-connection counter when a connection task ends or is aborted.
@@ -540,6 +641,24 @@ impl<'a> BodyGuard<'a> {
 impl Drop for BodyGuard<'_> {
     fn drop(&mut self) {
         self.0.active_bodies.fetch_sub(1, Ordering::SeqCst);
+        self.0.changed.notify_waiters();
+    }
+}
+
+/// Counts a reply the server is holding: its head waits for a delay or a gate, or its body stalls.
+struct HeldGuard<'a>(&'a Shared);
+
+impl<'a> HeldGuard<'a> {
+    fn new(shared: &'a Shared) -> Self {
+        shared.held_replies.fetch_add(1, Ordering::SeqCst);
+        shared.changed.notify_waiters();
+        Self(shared)
+    }
+}
+
+impl Drop for HeldGuard<'_> {
+    fn drop(&mut self) {
+        self.0.held_replies.fetch_sub(1, Ordering::SeqCst);
         self.0.changed.notify_waiters();
     }
 }
@@ -621,9 +740,11 @@ async fn serve(
             return Ok(());
         }
         if let Some(delay) = reply.delay {
+            let _held = HeldGuard::new(shared);
             tokio::time::sleep(delay).await;
         }
         if let Some(gate) = &reply.after {
+            let _held = HeldGuard::new(shared);
             gate.wait().await;
         }
         let mut out = format!("HTTP/1.1 {} X\r\n", reply.status);
@@ -634,6 +755,7 @@ async fn serve(
             Body::Full(bytes) => {
                 out.push_str(&format!("content-length: {}\r\n\r\n", bytes.len()));
                 stream.write_all(out.as_bytes()).await?;
+                head_sent(shared);
                 let _active = BodyGuard::new(shared);
                 stream.write_all(&bytes).await?;
                 shared
@@ -643,10 +765,12 @@ async fn serve(
             Body::HeadOnly(declared) => {
                 out.push_str(&format!("content-length: {declared}\r\n\r\n"));
                 stream.write_all(out.as_bytes()).await?;
+                head_sent(shared);
             }
             body => {
                 out.push_str("transfer-encoding: chunked\r\n\r\n");
                 stream.write_all(out.as_bytes()).await?;
+                head_sent(shared);
                 let _active = BodyGuard::new(shared);
                 let complete = write_chunked(&mut stream, shared, body).await?;
                 if !complete {
@@ -656,6 +780,12 @@ async fn serve(
         }
         stream.flush().await?;
     }
+}
+
+/// Counts a response head handed to the socket.
+fn head_sent(shared: &Shared) {
+    shared.heads_sent.fetch_add(1, Ordering::SeqCst);
+    shared.changed.notify_waiters();
 }
 
 async fn write_frame(stream: &mut TcpStream, shared: &Shared, chunk: &[u8]) -> std::io::Result<()> {
@@ -707,6 +837,7 @@ async fn write_chunked(
         }
         Body::Stall => {
             stream.flush().await?;
+            let _held = HeldGuard::new(shared);
             std::future::pending::<()>().await;
         }
         Body::GenerateThenFail(mut next) => {
@@ -823,7 +954,15 @@ async fn read_chunked(
                 return Err(std::io::ErrorKind::UnexpectedEof.into());
             }
         }
+        // The chunk is complete only with the CRLF that ends its data.
+        if buf[..2] != *b"\r\n" {
+            return Err(std::io::ErrorKind::InvalidData.into());
+        }
         buf.drain(..2);
+        shared
+            .request_chunk_bytes
+            .fetch_add(size as u64, Ordering::SeqCst);
+        shared.changed.notify_waiters();
     }
 }
 
@@ -882,3 +1021,40 @@ pub fn generated_records(
 
 /// A boxed future, for responders that compute replies asynchronously in tests.
 pub type BoxFuture<T> = Pin<Box<dyn Future<Output = T> + Send>>;
+
+// ---------------------------------------------------------------------------------------------
+// A port that refuses connections
+
+/// A loopback address whose port refuses every TCP connection for the rest of the process.
+///
+/// A socket is bound to the port and never listens, so a connection attempt is refused
+/// (`ConnectionRefused`; Windows retries a refused attempt for about two seconds before reporting
+/// it), and the port stays in use: a listener bound with the standard library or Tokio gets
+/// `AddrInUse`, and the operating system does not hand the port out to a listener asking for port
+/// 0. A port freed by dropping a listener has neither guarantee: before the test connects, a
+/// concurrent test's server can be given it, and the request is then answered or hung up on
+/// instead of refused (on Linux the connecting socket can even be given the freed port as its own
+/// local port and connect to itself). `tests/refused.rs` checks refusal and `AddrInUse` on every
+/// platform the suite runs on.
+///
+/// One port serves the whole test process, so callers never manage its lifetime; refusing is
+/// stateless, so concurrent tests can share it.
+pub fn refused_addr() -> SocketAddr {
+    static REFUSED: std::sync::OnceLock<(tokio::net::TcpSocket, SocketAddr)> =
+        std::sync::OnceLock::new();
+    REFUSED
+        .get_or_init(|| {
+            let socket = tokio::net::TcpSocket::new_v4().expect("create a TCP socket");
+            socket
+                .bind(SocketAddr::from(([127, 0, 0, 1], 0)))
+                .expect("bind a loopback port");
+            let addr = socket.local_addr().expect("local addr");
+            (socket, addr)
+        })
+        .1
+}
+
+/// `http://127.0.0.1:<port>` of [`refused_addr`] (no trailing slash).
+pub fn refused_url() -> String {
+    format!("http://{}", refused_addr())
+}

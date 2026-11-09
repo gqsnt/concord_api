@@ -7,7 +7,7 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Duration;
 
-use concord_example_testserver::{Gate, Recorded, Reply, Script, TestServer};
+use concord_example_testserver::{Gate, Recorded, Reply, Script, TestServer, paused};
 use concord_retry::{Policy, StopReason};
 use concord_sdk_adyen_checkout::{
     Amount, Checkout, CheckoutV71, DetailsRequest, Error, HttpClass, MethodsRequest,
@@ -949,7 +949,9 @@ async fn workflow2_guarantee_expiring_during_backoff_stops_before_dispatch() {
     assert!(rec.provider.is_none() && rec.meta.is_none());
 }
 
-#[tokio::test]
+// Paused clock: the application's 100 ms wait runs out only once the server holds the first
+// attempt; the refusal and the replay complete while virtual time stands still.
+#[tokio::test(start_paused = true)]
 async fn workflow2_cancelled_call_keeps_the_binding_and_can_be_replayed() {
     let slow = Arc::new(AtomicUsize::new(1));
     let flag = slow.clone();
@@ -968,8 +970,9 @@ async fn workflow2_cancelled_call_keeps_the_binding_and_can_be_replayed() {
     .await;
     let checkout = checkout(&server, SendPolicy::default());
     let operation = checkout.details("details-cancelled", DetailsRequest::redirect("Y2FuY2Vs"));
-    let cancelled =
-        tokio::time::timeout(Duration::from_millis(100), operation.clone().send()).await;
+    let wait = Duration::from_millis(100);
+    let cancelled = tokio::time::timeout(wait, operation.clone().send());
+    let cancelled = paused::time_out(&server, |_| true, wait, cancelled).await;
     assert!(cancelled.is_err(), "the application gave up waiting");
     assert!(
         server
@@ -977,19 +980,20 @@ async fn workflow2_cancelled_call_keeps_the_binding_and_can_be_replayed() {
             .await
     );
 
-    let err = checkout
-        .details("details-cancelled", DetailsRequest::redirect("b3RoZXI"))
-        .send()
-        .await
-        .unwrap_err();
+    let err = paused::drive(
+        checkout
+            .details("details-cancelled", DetailsRequest::redirect("b3RoZXI"))
+            .send(),
+    )
+    .await
+    .unwrap_err();
     assert_eq!(
         err.reconciliation().unwrap().reason,
         ReconciliationReason::ChangedRequest
     );
 
     slow.store(0, Ordering::SeqCst);
-    let ok = operation
-        .send()
+    let ok = paused::drive(operation.send())
         .await
         .expect("identical replay after cancellation");
     assert_eq!(ok.value.state(), PaymentState::Authorised);

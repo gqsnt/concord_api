@@ -8,7 +8,7 @@ use concord_sdk_europe_pmc::{
     concord_pagination::Resume,
     concord_retry::http::RetryAfterError,
 };
-use concord_testserver::{Body, Recorded, Reply, TestServer};
+use concord_testserver::{Body, Recorded, Reply, TestServer, paused};
 use std::{
     num::NonZeroUsize,
     time::{Duration, UNIX_EPOCH},
@@ -144,7 +144,9 @@ async fn strict_media_types_missing_repeated_malformed_and_wrong_charset() {
                     search(&api).json().send().await
                 }
             };
-            let error = tokio::time::timeout(Duration::from_secs(1), call)
+            // Clock frozen while the call runs: the bound fails only a call that waits for something
+            // that never comes (then reported as stuck).
+            let error = tokio::time::timeout(Duration::from_secs(1), paused::frozen(call))
                 .await
                 .unwrap()
                 .unwrap_err();
