@@ -1,7 +1,7 @@
 //! The Events v2 reads and v1 post, and their shared send policy.
 
 use concord::reqwest::header::HeaderName;
-use concord::{Endpoint, Json, SendOperation};
+use concord::{Endpoint, Json, SendWith};
 
 use crate::error::{AuthError, Error, ErrorBodyError, ErrorDocument, ProviderError, Rejected};
 use crate::model::EventsPage;
@@ -34,9 +34,6 @@ concord::api! {
         format Json;
         limit RESPONSE_LIMIT;
         send SendPolicy -> Result<_, Error>;
-        /// Every operation of [`DatadogApi`], as [`SendPolicy`] classifies it (the legacy post or
-        /// a read: the method cannot tell, the search is a `POST` read).
-        operations DatadogApiOperation;
 
         /// Events.
         scope events {
@@ -57,7 +54,7 @@ concord::api! {
 
             /// `POST /api/v2/events/search`: the events matching a filter; the next page is the
             /// same body with `page.cursor` set to the previous `meta.page.after`.
-            POST search(body request: SearchRequest) -> EventsPage { path "v2/events/search"; }
+            #[read] POST search(body request: SearchRequest) -> EventsPage { path "v2/events/search"; }
 
             /// `POST /api/v1/events`: the six-field legacy posting contract. Requires an
             /// organization that previously used v1 (the provider now deprecates it).
@@ -85,26 +82,13 @@ concord::api! {
 #[derive(Clone, Copy, Debug, Default)]
 pub struct SendPolicy;
 
-/// Whether the operation is the legacy v1 post: success requires HTTP 202 and a failure after
-/// dispatch is uncertain. The method cannot tell (the search is a `POST` read). No wildcard arm:
-/// an endpoint added to the declaration without a decision here does not compile (E0004, naming
-/// its `DatadogApiOperation` variant).
-fn posting(operation: DatadogApiOperation) -> bool {
-    match operation {
-        DatadogApiOperation::EventsList | DatadogApiOperation::EventsSearch => false,
-        DatadogApiOperation::EventsPost => true,
-    }
-}
-
-impl<T: Send> SendOperation<T, DatadogApiOperation> for SendPolicy {
+impl<T: Send> SendWith<T> for SendPolicy {
     type Output = Result<T, Error>;
 
-    async fn send<E: Endpoint<T> + Send>(
-        &self,
-        operation: DatadogApiOperation,
-        endpoint: E,
-    ) -> Self::Output {
-        let posting = posting(operation);
+    async fn send<E: Endpoint<T> + Send>(&self, endpoint: E) -> Self::Output {
+        // The only write is the legacy v1 post: success requires HTTP 202 and a failure after
+        // dispatch is uncertain.
+        let posting = !E::operation().is_read();
         let call_error = |source| {
             if posting {
                 Error::post_uncertain(source)

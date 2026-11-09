@@ -565,6 +565,8 @@ pub struct Owner {
     /// `#[cfg(..)]` and `#[deprecated..]` on scopes and endpoints.
     pub cfgs: Vec<Attribute>,
     pub deprecated: Option<Attribute>,
+    /// `#[read]` on a scope or endpoint: it (every endpoint below it) only reads.
+    pub read: Option<Attribute>,
     pub name: Ident,
     pub params: Vec<Param>,
     pub stmts: Stmts,
@@ -738,6 +740,7 @@ impl Parse for Api {
                 docs,
                 cfgs: Vec::new(),
                 deprecated: None,
+                read: None,
                 name,
                 params,
                 stmts,
@@ -1355,15 +1358,31 @@ impl ParseAnyIdent for Ident {
     }
 }
 
-/// Children accept docs, `#[cfg(..)]` (whole subtree) and `#[deprecated..]`
-/// (navigation method only); every other attribute is still rejected.
-fn child_attrs(
-    attrs: Vec<Attribute>,
-) -> syn::Result<(Vec<Attribute>, Vec<Attribute>, Option<Attribute>)> {
-    let (mut docs, mut cfgs, mut deprecated) = (Vec::new(), Vec::new(), None);
+/// Children accept docs, `#[cfg(..)]` (whole subtree), `#[deprecated..]` (navigation method
+/// only) and `#[read]` (whole subtree); every other attribute is still rejected.
+type ChildAttrs = (
+    Vec<Attribute>,
+    Vec<Attribute>,
+    Option<Attribute>,
+    Option<Attribute>,
+);
+
+fn child_attrs(attrs: Vec<Attribute>) -> syn::Result<ChildAttrs> {
+    let (mut docs, mut cfgs, mut deprecated, mut read) = (Vec::new(), Vec::new(), None, None);
     for attr in attrs {
         if attr.path().is_ident("cfg") {
             cfgs.push(attr);
+        } else if attr.path().is_ident("read") {
+            if !matches!(attr.meta, syn::Meta::Path(_)) {
+                return Err(syn::Error::new(
+                    attr.span(),
+                    "`#[read]` takes no arguments: it states that every endpoint it covers only reads",
+                ));
+            }
+            if read.is_some() {
+                return Err(syn::Error::new(attr.span(), "duplicate `#[read]`"));
+            }
+            read = Some(attr);
         } else if attr.path().is_ident("deprecated") {
             if deprecated.is_some() {
                 return Err(syn::Error::new(attr.span(), "duplicate `#[deprecated]`"));
@@ -1374,16 +1393,16 @@ fn child_attrs(
         } else {
             return Err(syn::Error::new(
                 attr.span(),
-                "unsupported attribute on a scope or endpoint; documentation comments, `#[cfg(..)]` and `#[deprecated]` are accepted",
+                "unsupported attribute on a scope or endpoint; documentation comments, `#[cfg(..)]`, `#[deprecated]` and `#[read]` are accepted",
             ));
         }
     }
-    Ok((docs, cfgs, deprecated))
+    Ok((docs, cfgs, deprecated, read))
 }
 
 fn parse_child(input: ParseStream<'_>) -> syn::Result<Owner> {
     let attrs = input.call(Attribute::parse_outer)?;
-    let (docs, cfgs, deprecated) = child_attrs(attrs)?;
+    let (docs, cfgs, deprecated, read) = child_attrs(attrs)?;
     if input.peek(kw::scope) {
         input.parse::<kw::scope>()?;
         let name: Ident = input.parse()?;
@@ -1402,6 +1421,7 @@ fn parse_child(input: ParseStream<'_>) -> syn::Result<Owner> {
             docs,
             cfgs,
             deprecated,
+            read,
             name,
             params,
             stmts,
@@ -1473,6 +1493,7 @@ fn parse_child(input: ParseStream<'_>) -> syn::Result<Owner> {
         docs,
         cfgs,
         deprecated,
+        read,
         name,
         params,
         stmts,

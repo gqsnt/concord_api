@@ -256,27 +256,21 @@ fn unix_now() -> Result<u64, Error> {
         .map(|d| d.as_secs())
         .map_err(|_| Error::Invalid("clock before Unix epoch"))
 }
-/// Every Strava rule the send policy keys on the operation, in one place.
+/// Per-operation retry timing, quota and permission decisions.
 struct Class {
-    /// Replayable once after a transient failure: reads only.
-    read: bool,
-    /// Delay before that replay; a status poll keeps the one-second poll spacing.
+    /// Delay before a read replay; a status poll keeps the one-second poll spacing.
     retry_delay: Duration,
     /// Charged to the non-upload windows too. The rate-limits page exempts only activity
     /// creation, uploads and media uploads; of this SDK's operations, only `uploads.create`.
     non_upload: bool,
-    /// A write whose failure after dispatch cannot prove it was not applied.
-    uncertain: bool,
     /// Permission that granted scopes, when known, must include before anything is sent.
     scope: Option<&'static str>,
 }
 impl Class {
-    /// A plain read; every operation states what differs from it.
-    const READ: Self = Self {
-        read: true,
+    /// Default retry timing, quota and permission settings.
+    const DEFAULT: Self = Self {
         retry_delay: Duration::from_millis(25),
         non_upload: true,
-        uncertain: false,
         scope: None,
     };
 
@@ -285,23 +279,19 @@ impl Class {
     fn of(operation: StravaOperation) -> Self {
         use StravaOperation as Op;
         match operation {
-            Op::AthleteActivities | Op::ActivitiesGet => Self::READ,
+            Op::AthleteActivities | Op::ActivitiesGet => Self::DEFAULT,
             Op::UploadsStatus => Self {
                 retry_delay: Duration::from_secs(1),
-                ..Self::READ
+                ..Self::DEFAULT
             },
             Op::ActivitiesUpdate => Self {
-                read: false,
-                uncertain: true,
                 scope: Some("activity:write"),
-                ..Self::READ
+                ..Self::DEFAULT
             },
             // Uploads also need `activity:write`; they keep their pre-update behavior (sent).
             Op::UploadsCreate => Self {
-                read: false,
                 non_upload: false,
-                uncertain: true,
-                ..Self::READ
+                ..Self::DEFAULT
             },
         }
     }
@@ -320,11 +310,11 @@ impl<T: Send> SendOperation<T, StravaOperation> for Session {
         operation: StravaOperation,
         endpoint: E,
     ) -> Self::Output {
+        let read = E::operation().is_read();
+        let uncertain = !read;
         let Class {
-            read,
             retry_delay,
             non_upload,
-            uncertain,
             scope,
         } = Class::of(operation);
         if let Some(required) = scope {

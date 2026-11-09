@@ -1,0 +1,53 @@
+error: `#[read]` on `Redundant.get` is redundant: a `GET` endpoint already reads
+ --> tests/ui/read_errors.rs:7:9
+  |
+7 |         #[read] GET get();
+  |         ^
+
+error: `#[read]` on `Redundant.account.balance` is redundant: `Redundant.account` above it is already `#[read]`
+  --> tests/ui/read_errors.rs:10:13
+   |
+10 |             #[read] POST balance();
+   |             ^
+
+error: `#[read]` on `Redundant.account.nested` is redundant: `Redundant.account` above it is already `#[read]`
+  --> tests/ui/read_errors.rs:11:13
+   |
+11 |             #[read]
+   |             ^
+
+error: `#[read]` on `Redundant.reads` is redundant: every endpoint below it already reads by its method
+  --> tests/ui/read_errors.rs:14:9
+   |
+14 |         #[read]
+   |         ^
+
+error: `#[read]` takes no arguments: it states that every endpoint it covers only reads
+  --> tests/ui/read_errors.rs:21:9
+   |
+21 |         #[read(always)] POST search();
+   |         ^
+
+error: duplicate `#[read]`
+  --> tests/ui/read_errors.rs:28:9
+   |
+28 |         #[read]
+   |         ^
+
+error: the client's operation enum `ShopOperation` has the name of the type generated for `Shop.operation`; rename that owner
+  --> tests/ui/read_errors.rs:33:16
+   |
+33 |     pub client Shop {
+   |                ^^^^
+
+error: generated for this owner
+  --> tests/ui/read_errors.rs:35:13
+   |
+35 |         GET operation();
+   |             ^^^^^^^^^
+
+error: unsupported attribute here; only documentation comments are allowed
+  --> tests/ui/read_errors.rs:39:5
+   |
+39 |     #[read]
+   |     ^

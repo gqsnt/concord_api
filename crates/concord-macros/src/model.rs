@@ -125,8 +125,9 @@ pub enum Kind {
         /// `send P -> Template;`: the declared result of every generated `send()`, with `_` for
         /// the endpoint's output.
         send_output: Option<Type>,
-        /// `operations Name;`: the generated enum of the client's endpoints, whose variant every
-        /// generated `send()` passes to the policy (`SendOperation` instead of `SendWith`).
+        /// `operations Name;`: the name of the generated enum of the client's endpoints, and
+        /// every generated `send()` passes its variant to the policy (`SendOperation` instead of
+        /// `SendWith`). Without it the enum is `<Client>Operation` and the policy `SendWith`.
         operations: Option<syntax::Operations>,
     },
     Scope,
@@ -215,6 +216,8 @@ pub struct Owner {
     pub groups: Vec<Ident>,
     /// `limit EXPR;` declared here: the finite body bound for typed outputs at and below.
     pub limit: Option<syn::Expr>,
+    /// `#[read]` written here (scopes and endpoints): every endpoint at and below only reads.
+    pub read: Option<Attribute>,
 }
 
 impl Owner {
@@ -758,6 +761,40 @@ impl Model {
             Kind::Client { operations, .. } => operations.as_ref(),
             _ => None,
         }
+    }
+
+    /// The client's generated operation enum: the name `operations Name;` gives, else
+    /// `<Client>Operation` (spanned at the client's name).
+    pub fn operation_enum(&self) -> Ident {
+        match self.operations() {
+            Some(operations) => operations.name.clone(),
+            None => {
+                let client = &self.owners[0];
+                format_ident!("{}Operation", client.type_name, span = client.name.span())
+            }
+        }
+    }
+
+    /// Whether the endpoint `index` only reads: its method is `GET`, `HEAD` or `OPTIONS`, or it or
+    /// an enclosing scope is `#[read]`.
+    pub fn is_read(&self, index: usize) -> bool {
+        let read_method = match &self.owners[index].kind {
+            Kind::Endpoint { method, .. } => READ_METHODS.contains(&plain(method).as_str()),
+            _ => false,
+        };
+        read_method || self.read_owner(index).is_some()
+    }
+
+    /// The nearest owner from `index` (inclusive) up to the client written `#[read]`.
+    fn read_owner(&self, index: usize) -> Option<usize> {
+        let mut cur = Some(index);
+        while let Some(o) = cur {
+            if self.owners[o].read.is_some() {
+                return Some(o);
+            }
+            cur = self.owners[o].parent;
+        }
+        None
     }
 
     /// The variant of the generated operation enum for the endpoint `index`: the endpoint's path
@@ -1878,6 +1915,7 @@ impl Model {
 
     fn check_names(&self, errors: &mut Errors) {
         self.check_operations(errors);
+        self.check_reads(errors);
         // Generated type names.
         let mut types: BTreeMap<String, &Ident> = BTreeMap::new();
         let client = &self.owners[0];
@@ -2018,11 +2056,12 @@ impl Model {
     /// `operations Name;`: `Name` is a new type of the module (not one this declaration already
     /// generates, nor a parameter group's trait), and every endpoint's variant is a valid variant
     /// name that leaves the enum's own items (`ALL`, `operation`, `from_operation`) reachable.
+    /// Without the statement the same holds for the generated `<Client>Operation`, reported at
+    /// the client's name.
     fn check_operations(&self, errors: &mut Errors) {
-        let Some(operations) = self.operations() else {
-            return;
-        };
-        let name = plain(&operations.name);
+        let enum_name = self.operation_enum();
+        let name = plain(&enum_name);
+        let stated = self.operations().is_some();
         let client = &self.owners[0];
         let config = client
             .values
@@ -2032,11 +2071,18 @@ impl Model {
         let taken = self.owners.iter().find(|o| plain(&o.type_name) == name);
         if let Some(owner) = taken {
             let mut e = syn::Error::new(
-                operations.name.span(),
-                format!(
-                    "`operations {name};` names a type this declaration already generates (for `{}`); choose another name for the enum",
-                    owner.dotted
-                ),
+                enum_name.span(),
+                if stated {
+                    format!(
+                        "`operations {name};` names a type this declaration already generates (for `{}`); choose another name for the enum",
+                        owner.dotted
+                    )
+                } else {
+                    format!(
+                        "the client's operation enum `{name}` has the name of the type generated for `{}`; rename that owner",
+                        owner.dotted
+                    )
+                },
             );
             e.combine(syn::Error::new(
                 owner.name.span(),
@@ -2045,17 +2091,23 @@ impl Model {
             errors.push(e);
         } else if config.as_deref() == Some(name.as_str()) {
             errors.push(syn::Error::new(
-                operations.name.span(),
+                enum_name.span(),
                 format!(
                     "`operations {name};` names the struct of the client's required values; choose another name for the enum"
                 ),
             ));
         } else if let Some(group) = self.groups.iter().find(|g| plain(&g.name) == name) {
             let mut e = syn::Error::new(
-                operations.name.span(),
-                format!(
-                    "`operations {name};` names the parameter group `{name}`; choose another name for the enum"
-                ),
+                enum_name.span(),
+                if stated {
+                    format!(
+                        "`operations {name};` names the parameter group `{name}`; choose another name for the enum"
+                    )
+                } else {
+                    format!(
+                        "the client's operation enum `{name}` has the name of the parameter group `{name}`; rename the group"
+                    )
+                },
             );
             e.combine(syn::Error::new(
                 group.name.span(),
@@ -2079,7 +2131,56 @@ impl Model {
             }
         }
     }
+
+    /// `#[read]` states what the method does not: an endpoint whose method already reads, an
+    /// endpoint or scope below another `#[read]`, or a scope with no endpoint whose method writes
+    /// is an error at the attribute.
+    fn check_reads(&self, errors: &mut Errors) {
+        for (index, owner) in self.owners.iter().enumerate() {
+            let Some(attr) = &owner.read else {
+                continue;
+            };
+            let outer = owner.parent.and_then(|p| self.read_owner(p));
+            let message = if let Some(outer) = outer {
+                format!(
+                    "`#[read]` on `{}` is redundant: `{}` above it is already `#[read]`",
+                    owner.dotted, self.owners[outer].dotted
+                )
+            } else if let Kind::Endpoint { method, .. } = &owner.kind {
+                if !READ_METHODS.contains(&plain(method).as_str()) {
+                    continue;
+                }
+                format!(
+                    "`#[read]` on `{}` is redundant: a `{method}` endpoint already reads",
+                    owner.dotted
+                )
+            } else if self.has_write_method_below(index) {
+                continue;
+            } else {
+                format!(
+                    "`#[read]` on `{}` is redundant: every endpoint below it already reads by its method",
+                    owner.dotted
+                )
+            };
+            errors.push(syn::Error::new(attr.span(), message));
+        }
+    }
+
+    /// Whether an endpoint at or below `index` has a method other than `GET`, `HEAD`, `OPTIONS`.
+    fn has_write_method_below(&self, index: usize) -> bool {
+        let owner = &self.owners[index];
+        match &owner.kind {
+            Kind::Endpoint { method, .. } => !READ_METHODS.contains(&plain(method).as_str()),
+            _ => owner
+                .children
+                .iter()
+                .any(|&c| self.has_write_method_below(c)),
+        }
+    }
 }
+
+/// Methods that only read by default; any other method is not a read unless `#[read]` says so.
+const READ_METHODS: [&str; 3] = ["GET", "HEAD", "OPTIONS"];
 
 fn is_pchar(c: char) -> bool {
     c.is_ascii_alphanumeric() || "-._~!$&'()*+,;=:@".contains(c)
@@ -2440,6 +2541,7 @@ fn flatten(
         response,
         groups: owner.groups,
         limit,
+        read: owner.read,
     });
     stmts.push(owner.stmts);
 
