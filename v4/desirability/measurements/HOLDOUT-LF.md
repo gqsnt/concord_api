@@ -42,8 +42,8 @@ The statement is true (a base's own path is replaced; declared paths are appende
 "include the path prefix in the new base". It was introduced by **H04** (`4145921f`, accepted `070ae0ae`), later edited
 by H06 (`d39ef1df`); H16s builds on the same generated-doc structure. Codex is not affected.
 
-Rule: "Revert the responsible accepted change with a new commit and a decision row." **Pending owner decision on
-scope** (a full revert of H04 would also remove H16s's and H06's dependent doc text and the R1 gains above; a narrow
+Rule: "Revert the responsible accepted change with a new commit and a decision row." **Owner decision (2026-11-09):
+"Narrow revert"** — restore the baseline's base-URL wording only (lane `h04r-revert-codex`, branch `dz/h04-base-revert`). Options were (a full revert of H04 would also remove H16s's and H06's dependent doc text and the R1 gains above; a narrow
 revert would restore the baseline's base-URL wording only). The final confirmation bank is **not** used until the
 candidate is frozen again.
 
