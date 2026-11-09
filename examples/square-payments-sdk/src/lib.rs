@@ -1,7 +1,7 @@
 //! A bounded Square Payments slice: create, retrieve and cursor-page payments,
 //! plus delayed capture (authorize, then complete or cancel).
 //!
-//! Every generated `send()` makes one application attempt and returns [`Error`].
+//! Every generated `send()` makes one application attempt and returns [`Error`] on failure.
 //! Retain a clone of a create operation before sending: after a timeout, explicitly
 //! sending that unchanged clone reuses the caller's key and body. Never replace
 //! the key to resolve an unknown outcome. A complete or cancel whose outcome is

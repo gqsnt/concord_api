@@ -11,7 +11,7 @@
 //!
 //! CSV endpoints (`results`, `successful_results`, ...) are declared `-> stream` without an item:
 //! their dialect is chosen per job at run time, which a static format type cannot express, so
-//! their `send()` returns the unread 2xx body ([`concord::Incoming`]; a non-2xx status is a
+//! their `send().await?` returns the unread 2xx body ([`concord::Incoming`]; a non-2xx status is a
 //! `Status` error) with the endpoint's identity, and the SDK opens it with a runtime
 //! [`concord::csv::CsvReader`] built from the job's dialect ([`crate::csv`]). Every reader error
 //! then names the declared endpoint. Nothing is drained or buffered.

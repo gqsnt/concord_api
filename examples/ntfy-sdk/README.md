@@ -45,7 +45,7 @@ fn alerts() -> Result<NtfyTopic, Box<dyn std::error::Error>> {
 
 ## Workflow A: subscribe until cancelled
 
-`subscribe_sse().send()` returns the open `Events` reader as soon as the response head is
+`subscribe_sse().send().await?` returns the open `Events` reader as soon as the response head is
 accepted (`text/event-stream`, charset absent or UTF-8), without reading the body. `next()`
 returns every event — `open`, `message`, `keepalive`, and kinds the SDK does not know
 (`EventKind::Other`) — and is **cancel-safe**, so cancellation is an ordinary `select!`. Dropping
@@ -141,7 +141,7 @@ async fn catch_up(
 
 `poll()` reads `GET /<topic>/json?poll=1` with Concord's NDJSON reader (`application/x-ndjson`,
 blank lines skipped, chunk boundaries anywhere). `subscribe_json()` is the same reader on a live
-subscription. Both return the same `Events` type as SSE.
+subscription. Both yield the same `Events` type as SSE after `.send().await?`.
 
 ## Errors
 

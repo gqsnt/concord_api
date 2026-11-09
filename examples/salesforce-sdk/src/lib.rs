@@ -19,7 +19,7 @@
 //!
 //! The declared operations stay ordinary generated operations: callers keep their setters,
 //! `prepare()`, `send()`, `receive()` and `into_parts()`. The CSV result endpoints are declared
-//! `-> stream`: their `send()` returns the unread body ([`concord::Incoming`]) for a reader of the
+//! `-> stream`: their `send().await?` returns the unread body ([`concord::Incoming`]) for a reader of the
 //! job's dialect.
 //!
 //! ```no_run

@@ -33,7 +33,7 @@ The API key is in the request URL. Avoid logging native requests, URLs, server l
 
 ## Reported quota
 
-api.nasa.gov returns `X-RateLimit-Limit` and `X-RateLimit-Remaining` on every response ("Web Service Rate Limits" and "How Do I See My Current Usage?", <https://api.nasa.gov/>). Every result of this SDK carries them as a `RateLimit`: a failure in `Error::rate_limit` (from `send()` and `send_metered()` alike, a key or quota refusal and failures after the head included), a success through `send_metered()`, which every endpoint has once `SendMetered` is imported (`send()` still returns the bare value). Each header is `Reported::Value(n)`, `Reported::Absent` (no such header, or no response arrived: `status` is `None`) or `Reported::Unparsable` (present but not a single header field of ASCII decimal digits that fits in a `u64`). No header text is kept.
+api.nasa.gov returns `X-RateLimit-Limit` and `X-RateLimit-Remaining` on every response ("Web Service Rate Limits" and "How Do I See My Current Usage?", <https://api.nasa.gov/>). Every result of this SDK carries them as a `RateLimit`: a failure in `Error::rate_limit` (from `send()` and `send_metered()` alike, a key or quota refusal and failures after the head included), a success through `send_metered()`, which every endpoint has once `SendMetered` is imported (`send().await?` still returns the bare value). Each header is `Reported::Value(n)`, `Reported::Absent` (no such header, or no response arrived: `status` is `None`) or `Reported::Unparsable` (present but not a single header field of ASCII decimal digits that fits in a `u64`). No header text is kept.
 
 ```rust,no_run
 use concord_sdk_nasa_neows::{NeoWs, Reported, SendMetered};
