@@ -1,0 +1,47 @@
+error[E0609]: no field `nxt` on type `&Pages`
+  --> tests/ui_json/next_path_errors.rs:22:54
+   |
+22 |         GET unknown() -> Page { page next url links?.nxt; }
+   |                                                      ^^^ unknown field
+   |
+help: a field with a similar name exists
+   |
+22 |         GET unknown() -> Page { page next url links?.next; }
+   |                                                       +
+
+error[E0308]: mismatched types
+  --> tests/ui_json/next_path_errors.rs:23:50
+   |
+23 |         GET not_option() -> Page { page next url pages?.next; }
+   |                                                  ^^^^^
+   |                                                  |
+   |                                                  expected `&Option<_>`, found `&Pages`
+   |                                                  arguments to this function are incorrect
+   |
+   = note: expected reference `&std::option::Option<_>`
+              found reference `&Pages`
+note: method defined here
+  --> $RUST/core/src/option.rs
+   |
+   |     pub const fn as_ref(&self) -> Option<&T> {
+   |                  ^^^^^^
+
+error[E0277]: the trait bound `std::option::Option<&String>: From<&u64>` is not satisfied
+  --> tests/ui_json/next_path_errors.rs:24:48
+   |
+24 |         GET not_text() -> Page { page next url links?.count; }
+   |                                                ^^^^^^^-----
+   |                                                |      |
+   |                                                |      required by a bound introduced by this call
+   |                                                the trait `From<&u64>` is not implemented for `std::option::Option<&String>`
+   |
+   = help: the following other types implement trait `From<T>`:
+             `std::option::Option<&T>` implements `From<&std::option::Option<T>>`
+             `std::option::Option<&mut T>` implements `From<&mut std::option::Option<T>>`
+             `std::option::Option<&tracing_core::metadata::Metadata<'_>>` implements `From<&tracing_core::span::Current>`
+             `std::option::Option<&tracing_core::span::Id>` implements `From<&tracing::span::EnteredSpan>`
+             `std::option::Option<&tracing_core::span::Id>` implements `From<&tracing::span::Span>`
+             `std::option::Option<&tracing_core::span::Id>` implements `From<&tracing_core::span::Current>`
+             `std::option::Option<T>` implements `From<T>`
+             `std::option::Option<T>` implements `From<subtle::CtOption<T>>`
+           and $N others

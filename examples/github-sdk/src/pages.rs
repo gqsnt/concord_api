@@ -47,7 +47,7 @@ use crate::paging::{LinkPages, operation};
 impl RepoContext {
     /// Pages of `GET .../issues` (pull requests included).
     pub fn issue_pages(&self, op: GitHubRepoIssues) -> LinkPages<GitHubRepoIssues, Vec<IssueItem>> {
-        LinkPages::new(self, operation::ISSUES, None, op, GitHubRepoIssues::prepare)
+        LinkPages::new(self, operation::ISSUES, None, op)
     }
 
     /// Pages of `GET .../issues/{number}/comments`; `configure` sets the operation's optional values.
@@ -61,7 +61,6 @@ impl RepoContext {
             operation::ISSUE_COMMENTS,
             Some(number.get()),
             configure(self.handle().issue_comments(number)),
-            GitHubRepoIssueComments::prepare,
         )
     }
 
@@ -70,18 +69,12 @@ impl RepoContext {
         &self,
         op: GitHubRepoRepoComments,
     ) -> LinkPages<GitHubRepoRepoComments, Vec<IssueComment>> {
-        LinkPages::new(
-            self,
-            operation::REPO_COMMENTS,
-            None,
-            op,
-            GitHubRepoRepoComments::prepare,
-        )
+        LinkPages::new(self, operation::REPO_COMMENTS, None, op)
     }
 
     /// Pages of `GET .../labels`.
     pub fn label_pages(&self, op: GitHubRepoLabels) -> LinkPages<GitHubRepoLabels, Vec<Label>> {
-        LinkPages::new(self, operation::LABELS, None, op, GitHubRepoLabels::prepare)
+        LinkPages::new(self, operation::LABELS, None, op)
     }
 
     /// Pages of `GET .../pulls`.
@@ -89,7 +82,7 @@ impl RepoContext {
         &self,
         op: GitHubRepoPulls,
     ) -> LinkPages<GitHubRepoPulls, Vec<PullRequestSummary>> {
-        LinkPages::new(self, operation::PULLS, None, op, GitHubRepoPulls::prepare)
+        LinkPages::new(self, operation::PULLS, None, op)
     }
 
     /// Pages of `GET .../pulls/{number}/reviews`; `configure` sets the operation's optional values.
@@ -103,7 +96,6 @@ impl RepoContext {
             operation::PULL_REVIEWS,
             Some(number.get()),
             configure(self.handle().pull_reviews(number)),
-            GitHubRepoPullReviews::prepare,
         )
     }
 
@@ -118,7 +110,6 @@ impl RepoContext {
             operation::PULL_FILES,
             Some(number.get()),
             configure(self.handle().pull_files(number)),
-            GitHubRepoPullFiles::prepare,
         )
     }
 
@@ -127,13 +118,7 @@ impl RepoContext {
         &self,
         op: GitHubRepoActionsWorkflows,
     ) -> LinkPages<GitHubRepoActionsWorkflows, WorkflowList> {
-        LinkPages::new(
-            self,
-            operation::WORKFLOWS,
-            None,
-            op,
-            GitHubRepoActionsWorkflows::prepare,
-        )
+        LinkPages::new(self, operation::WORKFLOWS, None, op)
     }
 
     /// Pages of `GET .../actions/runs` (items moved out of `workflow_runs`).
@@ -141,13 +126,7 @@ impl RepoContext {
         &self,
         op: GitHubRepoActionsRuns,
     ) -> LinkPages<GitHubRepoActionsRuns, WorkflowRunList> {
-        LinkPages::new(
-            self,
-            operation::RUNS,
-            None,
-            op,
-            GitHubRepoActionsRuns::prepare,
-        )
+        LinkPages::new(self, operation::RUNS, None, op)
     }
 
     /// Pages of `GET .../actions/runs/{run_id}/jobs` (items moved out of `jobs`); `configure` sets
@@ -162,7 +141,6 @@ impl RepoContext {
             operation::RUN_JOBS,
             Some(run.get()),
             configure(self.actions().run_jobs(run)),
-            GitHubRepoActionsRunJobs::prepare,
         )
     }
 
@@ -178,7 +156,6 @@ impl RepoContext {
             operation::RUN_ARTIFACTS,
             Some(run.get()),
             configure(self.actions().run_artifacts(run)),
-            GitHubRepoActionsRunArtifacts::prepare,
         )
     }
 
@@ -187,13 +164,7 @@ impl RepoContext {
         &self,
         op: GitHubRepoActionsArtifacts,
     ) -> LinkPages<GitHubRepoActionsArtifacts, ArtifactList> {
-        LinkPages::new(
-            self,
-            operation::ARTIFACTS,
-            None,
-            op,
-            GitHubRepoActionsArtifacts::prepare,
-        )
+        LinkPages::new(self, operation::ARTIFACTS, None, op)
     }
 }
 

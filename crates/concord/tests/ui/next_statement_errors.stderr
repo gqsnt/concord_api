@@ -1,0 +1,29 @@
+error: `page next` is declared on a `GET` endpoint without a body: a followed page repeats the request at the provider's URL
+ --> tests/ui/next_statement_errors.rs:5:99
+  |
+5 |         POST create(body text: String) -> String { request concord::Text; response concord::Text; page next link; }
+  |                                                                                                   ^^^^
+
+error: `page next` is an endpoint statement: it says where one endpoint's response names its next page
+  --> tests/ui/next_statement_errors.rs:11:19
+   |
+11 |         scope s { page next link; GET one(); }
+   |                   ^^^^
+
+error: duplicate `page next` statement; each owner declares it at most once
+  --> tests/ui/next_statement_errors.rs:17:72
+   |
+17 |         GET list() -> String { response concord::Text; page next link; page next url next; }
+   |                                                                        ^^^^
+
+error: expected `page next link;` or `page next url <field path>;`
+  --> tests/ui/next_statement_errors.rs:23:66
+   |
+23 |         GET list() -> String { response concord::Text; page next links; }
+   |                                                                  ^^^^^
+
+error: `page next url` names a field of the typed output: declare `-> T`
+  --> tests/ui/next_statement_errors.rs:29:22
+   |
+29 |         GET list() { page next url next; }
+   |                      ^^^^

@@ -1,6 +1,6 @@
-use crate::{Error, InputError, LinkError, MailgunDomainEvents, MessageId, Metadata, SendPolicy};
+use crate::{Error, InputError, LinkError, MailgunDomainEvents, MessageId, Metadata};
 use concord::{
-    QueryPairs, QueryPairsWriter,
+    Follow, NextUrl, QueryPairs, QueryPairsWriter, UrlContinuation,
     reqwest::{Url, header::HeaderValue},
 };
 use concord_pagination::{Page, Pages, Resume};
@@ -239,7 +239,7 @@ pub fn delivery_status(id: &MessageId, recipient: &str, events: &[Event]) -> Del
 /// Opaque, redacted continuation bound to the original request and credential.
 #[derive(Clone)]
 pub struct EventCursor {
-    url: String,
+    url: NextUrl,
     original: Url,
     credential: Option<HeaderValue>,
 }
@@ -276,7 +276,7 @@ impl MailgunDomainEvents {
             let credential = credential.clone();
             let target = cursor
                 .as_ref()
-                .map_or_else(|| original.to_string(), |c| c.url.clone());
+                .map_or_else(|| original.to_string(), |c| c.url.expose().to_owned());
             let fresh = seen.insert(target.clone());
             async move {
                 if !fresh {
@@ -284,24 +284,25 @@ impl MailgunDomainEvents {
                 }
                 let response = match cursor {
                     None => op.send().await?,
-                    Some(_) => {
+                    Some(cursor) => {
                         trusted_link(&original, &target)?;
-                        SendPolicy::execute(op.prepare()?.follow(&target)?).await?
+                        op.follow(cursor.url).send().await?
                     }
                 };
-                let EventPage { items, paging } = response.value;
-                let next = if items.is_empty() {
+                let next = if response.value.items.is_empty() {
                     None
                 } else {
-                    let url = trusted_link(&original, &paging.next)?;
+                    let next = Self::next_url(&response.value).ok().flatten();
+                    let next = next.ok_or(Error::Link(LinkError::Untrusted))?;
+                    let url = trusted_link(&original, next.expose())?;
                     Some(EventCursor {
-                        url: url.to_string(),
+                        url: NextUrl::from_url(url),
                         original,
                         credential,
                     })
                 };
                 Ok(Page {
-                    items,
+                    items: response.value.items,
                     next,
                     meta: response.meta,
                 })

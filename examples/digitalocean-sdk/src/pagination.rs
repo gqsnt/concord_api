@@ -1,15 +1,15 @@
 use crate::{
-    Action, Actions, DigitalOcean, Droplet, Droplets, Error, Links, PageSize, Policy, Response,
-    ResponseMeta, Snapshot, Snapshots, TagName,
+    Action, Actions, DigitalOcean, Droplet, Droplets, Error, PageSize, Response, ResponseMeta,
+    Snapshot, Snapshots, TagName,
 };
-use concord::{Endpoint, Sends, reqwest::Url};
+use concord::{NextUrl, Sends, UrlContinuation, reqwest::Url};
 use concord_pagination::{Page, Pages, Resume};
 use std::{borrow::Cow, fmt, num::NonZeroUsize};
 
 /// A validated opaque continuation. Debug never displays its URL.
 /// It belongs to the original client, collection and query plan.
 #[derive(Clone)]
-pub struct NextLink(String);
+pub struct NextLink(NextUrl);
 impl fmt::Debug for NextLink {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str("NextLink(<redacted>)")
@@ -111,31 +111,31 @@ impl DigitalOcean {
 
 trait Listing: Send + 'static {
     type Item: Send + 'static;
-    fn split(self) -> (Vec<Self::Item>, Option<Links>);
+    fn items(self) -> Vec<Self::Item>;
 }
 impl Listing for Droplets {
     type Item = Droplet;
-    fn split(self) -> (Vec<Droplet>, Option<Links>) {
-        (self.droplets, self.links)
+    fn items(self) -> Vec<Droplet> {
+        self.droplets
     }
 }
 impl Listing for Actions {
     type Item = Action;
-    fn split(self) -> (Vec<Action>, Option<Links>) {
-        (self.actions, self.links)
+    fn items(self) -> Vec<Action> {
+        self.actions
     }
 }
 impl Listing for Snapshots {
     type Item = Snapshot;
-    fn split(self) -> (Vec<Snapshot>, Option<Links>) {
-        (self.snapshots, self.links)
+    fn items(self) -> Vec<Snapshot> {
+        self.snapshots
     }
 }
 
 fn pages<L, E>(template: E, from: Resume<NextLink>, max_pages: NonZeroUsize) -> Traversal<L::Item>
 where
     L: Listing,
-    E: Endpoint<L> + Sends<Result<Response<L>, Error>> + Clone + Send + 'static,
+    E: UrlContinuation<L> + Sends<Result<Response<L>, Error>> + Clone + Send + 'static,
 {
     Pages::new(from, move |cursor: Option<NextLink>| {
         let endpoint = template.clone();
@@ -146,18 +146,18 @@ where
                 None => endpoint.send().await?,
                 Some(cursor) => {
                     // Revalidate against this template, even for an already validated key.
-                    validate(&collection, &cursor.0)?;
-                    Policy::finish(prepared.follow(&cursor.0)?.receive().await?).await?
+                    validate(&collection, cursor.0.expose())?;
+                    endpoint.follow(cursor.0).send().await?
                 }
             };
-            let (items, links) = response.value.split();
-            let next = links
-                .and_then(|links| links.pages)
-                .and_then(|pages| pages.next)
-                .map(|next| validate(&collection, &next))
+            // The declared continuation, read once the policy accepted the page: an invalid one
+            // refuses this whole page before its items escape.
+            let next = E::next_url(&response.value).map_err(|_| Error::UnsafeNext)?;
+            let next = next
+                .map(|next| validate(&collection, next.expose()))
                 .transpose()?;
             Ok(Page {
-                items,
+                items: response.value.items(),
                 next,
                 meta: response.meta,
             })
@@ -183,7 +183,7 @@ fn validate(collection: &Url, target: &str) -> Result<NextLink, Error> {
     {
         return Err(Error::UnsafeNext);
     }
-    Ok(NextLink(url.into()))
+    Ok(NextLink(NextUrl::from_url(url)))
 }
 
 /// Decoded values of one query key, in order, so `env%3Aprod` and `env:prod` compare equal.

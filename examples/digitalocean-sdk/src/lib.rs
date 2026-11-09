@@ -36,7 +36,9 @@ concord::api! {
             path "droplets";
             /// List one page; absent pagination links mean completion.
             /// `set_tag_name` lists only the droplets carrying that tag.
-            GET list(..Paging, query tag_name?: TagName) -> Droplets;
+            GET list(..Paging, query tag_name?: TagName) -> Droplets {
+                page next url links?.pages?.next;
+            }
         }
         /// One selected droplet, its action history and its snapshots.
         scope droplet(id: u64) {
@@ -44,11 +46,17 @@ concord::api! {
             /// Retrieve this droplet.
             GET get() -> DropletDocument;
             /// List one page of this droplet's actions.
-            GET actions(..Paging) -> Actions { path "actions"; }
+            GET actions(..Paging) -> Actions {
+                path "actions";
+                page next url links?.pages?.next;
+            }
             /// Retrieve one action belonging to this droplet.
             GET action(action_id: u64) -> ActionDocument { path "actions/{action_id}"; }
             /// List one page of this droplet's snapshots and backups.
-            GET snapshots(..Paging) -> Snapshots { path "snapshots"; }
+            GET snapshots(..Paging) -> Snapshots {
+                path "snapshots";
+                page next url links?.pages?.next;
+            }
         }
     }
 }

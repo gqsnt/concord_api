@@ -13,6 +13,7 @@ use crate::header::ToHeaderValue;
 use crate::prepared::{Decoder, HeadStep, OpenHeadStep, Prepared, head_step, open_step};
 use crate::response::Incoming;
 
+pub use crate::next::{followed, next_url};
 pub use crate::value::IntoValue;
 
 /// Static facts about one endpoint, produced by the macro.

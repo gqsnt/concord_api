@@ -9,7 +9,8 @@
 //! What the declaration deliberately does not do:
 //!
 //! - **No `page` parameter.** GitHub's pagination guide says to follow the `Link` header rather
-//!   than build page queries; [`crate::paging`] follows `rel="next"` URLs exactly as sent.
+//!   than build page queries; `page next link` identifies its continuation source.
+//!   [`crate::paging`] validates and follows those URLs through the same metadata policy.
 //! - **No typed output on the artifact download.** `GET .../artifacts/{id}/zip` answers `302`
 //!   with a `Location`; it is handled at the native boundary by [`crate::download`], never decoded
 //!   as JSON.
@@ -64,7 +65,7 @@ concord::api! {
         }
         format Json;
         /// Every declared operation: [`paging::operation::listing_id`](crate::paging::operation)
-        /// decides, per operation, which are Link-paged listings and their GitHub operation ids.
+        /// retains the provider operation ids used by stored listing bindings.
         operations GitHubOperation;
 
         /// One repository: `repos/{owner}/{repo}`.
@@ -78,7 +79,10 @@ concord::api! {
             }
 
             /// `GET /repos/{owner}/{repo}/labels` (`issues/list-labels-for-repo`).
-            GET labels(query per_page?: PerPage) -> Vec<Label> { path "labels"; }
+            GET labels(query per_page?: PerPage) -> Vec<Label> {
+                path "labels";
+                page next link;
+            }
 
             /// `GET /repos/{owner}/{repo}/issues` (`issues/list-for-repo`). Includes pull
             /// requests ([`IssueItem::PullRequest`]). Every filter is optional; GitHub's defaults
@@ -109,6 +113,7 @@ concord::api! {
                 query per_page?: PerPage,
             ) -> Vec<IssueItem> {
                 path "issues";
+                page next link;
             }
 
             /// `GET /repos/{owner}/{repo}/issues/{number}` (`issues/get`). A pull request's number
@@ -128,6 +133,7 @@ concord::api! {
                 query per_page?: PerPage,
             ) -> Vec<IssueComment> {
                 path "issues/{number}/comments";
+                page next link;
             }
 
             /// `GET /repos/{owner}/{repo}/issues/comments` (`issues/list-comments-for-repo`).
@@ -142,6 +148,7 @@ concord::api! {
                 query per_page?: PerPage,
             ) -> Vec<IssueComment> {
                 path "issues/comments";
+                page next link;
             }
 
             /// `GET /repos/{owner}/{repo}/issues/comments/{comment_id}` (`issues/get-comment`).
@@ -165,6 +172,7 @@ concord::api! {
                 query per_page?: PerPage,
             ) -> Vec<PullRequestSummary> {
                 path "pulls";
+                page next link;
             }
 
             /// `GET /repos/{owner}/{repo}/pulls/{number}` (`pulls/get`). With `if_none_match`, a
@@ -182,6 +190,7 @@ concord::api! {
                 query per_page?: PerPage,
             ) -> Vec<Review> {
                 path "pulls/{number}/reviews";
+                page next link;
             }
 
             /// `GET /repos/{owner}/{repo}/pulls/{number}/reviews/{review_id}` (`pulls/get-review`).
@@ -197,6 +206,7 @@ concord::api! {
                 query per_page?: PerPage,
             ) -> Vec<PullRequestFile> {
                 path "pulls/{number}/files";
+                page next link;
             }
 
             /// GitHub Actions: `repos/{owner}/{repo}/actions`.
@@ -204,7 +214,10 @@ concord::api! {
                 path "actions";
 
                 /// `GET .../actions/workflows` (`actions/list-repo-workflows`).
-                GET workflows(query per_page?: PerPage) -> WorkflowList { path "workflows"; }
+                GET workflows(query per_page?: PerPage) -> WorkflowList {
+                    path "workflows";
+                    page next link;
+                }
 
                 /// `GET .../actions/runs` (`actions/list-workflow-runs-for-repo`).
                 GET runs(
@@ -228,6 +241,7 @@ concord::api! {
                     query per_page?: PerPage,
                 ) -> WorkflowRunList {
                     path "runs";
+                    page next link;
                 }
 
                 /// `GET .../actions/workflows/{workflow}/runs` (`actions/list-workflow-runs`).
@@ -249,6 +263,7 @@ concord::api! {
                     query per_page?: PerPage,
                 ) -> WorkflowRunList {
                     path "workflows/{workflow}/runs";
+                    page next link;
                 }
 
                 /// `GET .../actions/runs/{run_id}` (`actions/get-workflow-run`).
@@ -265,6 +280,7 @@ concord::api! {
                     query per_page?: PerPage,
                 ) -> JobList {
                     path "runs/{run_id}/jobs";
+                    page next link;
                 }
 
                 /// `GET .../actions/jobs/{job_id}` (`actions/get-job-for-workflow-run`).
@@ -278,6 +294,7 @@ concord::api! {
                     query per_page?: PerPage,
                 ) -> ArtifactList {
                     path "artifacts";
+                    page next link;
                 }
 
                 /// `GET .../actions/runs/{run_id}/artifacts`
@@ -292,6 +309,7 @@ concord::api! {
                     query per_page?: PerPage,
                 ) -> ArtifactList {
                     path "runs/{run_id}/artifacts";
+                    page next link;
                 }
 
                 /// `GET .../actions/artifacts/{artifact_id}` (`actions/get-artifact`).

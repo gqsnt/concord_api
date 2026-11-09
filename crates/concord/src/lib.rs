@@ -106,6 +106,7 @@
 //! | [`Incoming`] | an unread 2xx body with its operation identity, for an incremental reader chosen at run time |
 //! | [`Decoder<T>`](Decoder) | a response handling (an endpoint's, or [`Decoder::new`] for a format of your choice), for a response you obtained natively: `decode`, `finish` |
 //! | [`Endpoint<T>`](Endpoint), [`SendWith<T>`](SendWith) | generated operations implement `Endpoint`; a client's `send policy;` delegates generated `send()` to the policy's `SendWith::send`, returning its `Output` |
+//! | [`Follow<T>`](Follow), [`Followed<E>`](Followed), [`NextUrl`] | an endpoint with `page next link;` or `page next url a?.b;`: `follow(next)` is the same endpoint at the provider's URL (same origin only), sent through the client's send policy |
 //! | [`SendOperation<T, O>`](SendOperation) | under `operations Name;`, the policy's trait instead of `SendWith`: generated `send()` also passes its endpoint's variant of the generated enum `Name`, for a `match` without a wildcard arm |
 //! | [`Error`], [`ErrorKind`] | Concord's error type: `kind`, `endpoint`, `status`, `response`, `into_response`, `codec_error`, `transport` |
 //! | [`Encode<T>`](Encode), [`Decode<T>`](Decode) | the open format traits, implemented by `Json` (feature `json`), `Text`, `Binary`, `IgnoreContentType<F>` (feature `extras`), `Form` (feature `form`) and by your own types; a statement names a format by its type path (`format Json;`) |
@@ -138,6 +139,7 @@
 //!              send policy;  (client only: a policy value or a stateless policy type)
 //!              operations Name;  (client only: the enum `Name` of its endpoints; with `send`,
 //!                                 each `send()` passes its variant to `SendOperation<T, Name>`)
+//!              page next link;  page next url a?.b;  (bodyless GET: where the next page's URL is)
 //!
 //! query / headers blocks (a header key is a literal or a native constant):
 //!     KEY = v;                        set a key no enclosing owner sets
@@ -247,10 +249,10 @@ pub use concord_codecs::{Binary, Encoded, IgnoreContentType, Text};
 pub use concord_core::field;
 pub use concord_core::{
     CODEC_ERROR_CONTEXT, CodecError, ContentTypeField, Decode, Decoder, Delivery, Encode,
-    EncodedBody, Endpoint, Error, ErrorKind, FieldError, HeaderNameError, HeaderNameErrors,
-    Incoming, Incremental, IntoValue, Operation, Prepared, QueryPairs, QueryPairsWriter, Received,
-    Records, ResponseHead, ResponseMeta, SendOperation, SendWith, Sends, ToHeaderValue, bytes,
-    reqwest,
+    EncodedBody, Endpoint, Error, ErrorKind, FieldError, Follow, Followed, HeaderNameError,
+    HeaderNameErrors, Incoming, Incremental, IntoValue, LinkContinuation, NextUrl, NextUrlError,
+    Operation, Prepared, QueryPairs, QueryPairsWriter, Received, Records, ResponseHead,
+    ResponseMeta, SendOperation, SendWith, Sends, ToHeaderValue, UrlContinuation, bytes, reqwest,
 };
 
 /// Declares an HTTP API as a client → scopes → endpoints tree and generates its typed client.

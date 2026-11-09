@@ -48,7 +48,7 @@ pub(crate) async fn finish<T: 'static>(received: Received<T>) -> Result<Response
 }
 
 /// The declared decoding of a 2xx response, keeping `meta` with the value or the error.
-pub(crate) async fn decode<T: 'static>(
+async fn decode<T: 'static>(
     received: Received<T>,
     meta: ResponseMeta,
 ) -> Result<Response<T>, GitLabError> {
@@ -63,7 +63,7 @@ pub(crate) async fn decode<T: 'static>(
 
 /// A non-2xx response as [`GitLabError::Api`], its body read up to the limit. GitLab's documents
 /// are read whatever their `Content-Type` (a proxy page is kept raw as `Unrecognized`).
-pub(crate) async fn api_error<T>(received: Received<T>, meta: ResponseMeta) -> GitLabError {
+async fn api_error<T>(received: Received<T>, meta: ResponseMeta) -> GitLabError {
     let operation = received.operation();
     let status = received.status();
     let (_, document) = received

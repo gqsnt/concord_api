@@ -59,10 +59,16 @@ impl<T> Prepared<T> {
     ///
     /// [`ErrorKind::Build`](crate::ErrorKind::Build) if `url` does not parse or has another origin;
     /// nothing is sent.
-    pub fn follow(mut self, url: &str) -> Result<Self, Error> {
+    pub fn follow(self, url: &str) -> Result<Self, Error> {
         let meta = self.decoder.operation.and_then(|op| op.meta());
         let parsed = reqwest::Url::parse(url)
             .map_err(|_| Error::build(meta, "followed URL", "does not parse"))?;
+        self.follow_url(parsed)
+    }
+
+    /// [`follow`](Self::follow) with a parsed URL.
+    pub(crate) fn follow_url(mut self, parsed: reqwest::Url) -> Result<Self, Error> {
+        let meta = self.decoder.operation.and_then(|op| op.meta());
         if parsed.origin() != self.request.url().origin() {
             return Err(Error::build(
                 meta,
@@ -318,6 +324,11 @@ pub trait SendOperation<T, O> {
 pub trait Sends<O>: Sized {
     /// The endpoint's generated `send()`.
     fn send(self) -> impl std::future::Future<Output = O> + Send;
+
+    /// The same policy sending this endpoint followed to `target` ([`Followed`](crate::Followed)).
+    #[doc(hidden)]
+    fn __send_followed(self, target: crate::NextUrl)
+    -> impl std::future::Future<Output = O> + Send;
 }
 
 impl<T> fmt::Debug for Prepared<T> {

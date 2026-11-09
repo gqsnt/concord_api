@@ -136,6 +136,8 @@ pub enum Kind {
         /// `-> stream` without an item: `send()` returns the unread `Incoming` body.
         incoming: bool,
         body: Option<Body>,
+        /// `page next ...;`: where the provider issues the next page's URL.
+        next: Option<syntax::NextSource>,
     },
 }
 
@@ -2270,6 +2272,38 @@ fn flatten(
         }
         Some(expr)
     });
+    let next = owner.stmts.next.take().and_then(|stmt| {
+        let OwnerKind::Endpoint {
+            method,
+            output,
+            body,
+        } = &owner.kind
+        else {
+            errors.push(syn::Error::new(
+                stmt.span,
+                "`page next` is an endpoint statement: it says where one endpoint's response names its next page",
+            ));
+            return None;
+        };
+        if method != "GET" || body.is_some() {
+            errors.push(syn::Error::new(
+                stmt.span,
+                "`page next` is declared on a `GET` endpoint without a body: a followed page repeats the request at the provider's URL",
+            ));
+            return None;
+        }
+        if matches!(stmt.source, syntax::NextSource::Url(_)) {
+            let finite = output.as_ref().is_some_and(|o| o.ty.is_some() && o.stream.is_none());
+            if !finite {
+                errors.push(syn::Error::new(
+                    stmt.span,
+                    "`page next url` names a field of the typed output: declare `-> T`",
+                ));
+                return None;
+            }
+        }
+        Some(stmt.source)
+    });
     let kind = match owner.kind {
         OwnerKind::Client { vis, base } => match base {
             Some(base) => {
@@ -2349,6 +2383,7 @@ fn flatten(
             Kind::Endpoint {
                 method,
                 incoming,
+                next,
                 body: body.and_then(|b| {
                     endpoint_body(
                         b,

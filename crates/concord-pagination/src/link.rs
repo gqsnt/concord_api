@@ -2,8 +2,9 @@
 //!
 //! [`parse`] returns links in field/value order, resolving every target against the response
 //! URL. [`relation`] distinguishes absence, one link and several links, even when their targets
-//! are equal. Which relations to follow, duplicate-target policy, origin/path checks, and
-//! `anchor` interpretation belong to the caller. Parameters retain their original spelling and
+//! are equal. [`parse_page_links`] projects the four pagination relations (`next`, `prev`,
+//! `first`, `last`), refusing two different targets for one relation. Which relations to follow,
+//! origin/path checks, and `anchor` interpretation belong to the caller. Parameters retain their original spelling and
 //! raw values; unknown names are accepted, including parameters without a value.
 //!
 //! Empty fields, whitespace-only fields and empty comma-separated list elements are ignored.
@@ -348,6 +349,159 @@ fn unquote(raw: &str) -> String {
         });
     }
     value
+}
+
+/// The four pagination relations (`next`, `prev`, `first`, `last`) of one response, as
+/// [`parse_page_links`] projects them. `Debug` says which are present, never their targets.
+#[derive(Clone, Default, PartialEq, Eq)]
+pub struct PageLinks {
+    next: Option<Url>,
+    prev: Option<Url>,
+    first: Option<Url>,
+    last: Option<Url>,
+}
+
+impl PageLinks {
+    /// `rel="next"`: the page to fetch after this one. `None` on the last page.
+    pub fn next(&self) -> Option<&Url> {
+        self.next.as_ref()
+    }
+
+    /// `rel="prev"`.
+    pub fn prev(&self) -> Option<&Url> {
+        self.prev.as_ref()
+    }
+
+    /// `rel="first"`.
+    pub fn first(&self) -> Option<&Url> {
+        self.first.as_ref()
+    }
+
+    /// `rel="last"`; a provider may omit it when it cannot be calculated.
+    pub fn last(&self) -> Option<&Url> {
+        self.last.as_ref()
+    }
+
+    /// Whether no pagination relation was present.
+    pub fn is_empty(&self) -> bool {
+        self.next.is_none() && self.prev.is_none() && self.first.is_none() && self.last.is_none()
+    }
+}
+
+impl fmt::Debug for PageLinks {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("PageLinks")
+            .field("next", &self.next.is_some())
+            .field("prev", &self.prev.is_some())
+            .field("first", &self.first.is_some())
+            .field("last", &self.last.is_some())
+            .finish()
+    }
+}
+
+/// Why the pagination relations could not be read. `Display`/`Debug` never contain the field.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum PageLinkError {
+    /// The field value is not visible ASCII text.
+    NotText,
+    /// A link-value does not start with `<` (byte offset within the combined value).
+    ExpectedTarget {
+        /// Byte offset.
+        at: usize,
+    },
+    /// A `<...>` target or a quoted string is not terminated.
+    Unterminated {
+        /// Byte offset where it started.
+        at: usize,
+    },
+    /// A parameter is not `name` or `name=value`.
+    Parameter {
+        /// Byte offset.
+        at: usize,
+    },
+    /// The target does not resolve to a URL.
+    Url,
+    /// The same relation is given two different URLs.
+    Conflict {
+        /// The relation.
+        rel: &'static str,
+    },
+}
+
+impl fmt::Display for PageLinkError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str("Link header not understood: ")?;
+        match self {
+            Self::NotText => f.write_str("not visible ASCII text"),
+            Self::ExpectedTarget { at } => write!(f, "expected `<` at byte {at}"),
+            Self::Unterminated { at } => write!(f, "unterminated target or string at byte {at}"),
+            Self::Parameter { at } => write!(f, "malformed parameter at byte {at}"),
+            Self::Url => f.write_str("a target is not a valid URL reference"),
+            Self::Conflict { rel } => write!(f, "two different `{rel}` targets"),
+        }
+    }
+}
+
+impl std::error::Error for PageLinkError {}
+
+impl From<LinkError> for PageLinkError {
+    fn from(error: LinkError) -> Self {
+        match error {
+            LinkError::NotText { .. } => Self::NotText,
+            LinkError::ExpectedTarget { at } => Self::ExpectedTarget { at },
+            LinkError::Unterminated { at } => Self::Unterminated { at },
+            LinkError::Parameter { at } => Self::Parameter { at },
+            LinkError::Url { .. } => Self::Url,
+        }
+    }
+}
+
+/// Parses every `Link` field value of one response (in order) and projects the four pagination
+/// relations, resolving relative targets against `response_url`. Two **different** targets for
+/// one relation are a conflict; identical duplicates are one.
+///
+/// # Errors
+///
+/// A [`PageLinkError`] for malformed syntax or a conflict.
+pub fn parse_page_links<V: AsRef<[u8]>>(
+    values: impl IntoIterator<Item = V>,
+    response_url: &Url,
+) -> Result<PageLinks, PageLinkError> {
+    let values: Vec<V> = values.into_iter().collect();
+    project(parse(values.iter().map(AsRef::as_ref), response_url)?)
+}
+
+/// [`parse_page_links`] of one (combined) field value.
+///
+/// # Errors
+///
+/// A [`PageLinkError`].
+pub fn parse_page_links_str(text: &str, response_url: &Url) -> Result<PageLinks, PageLinkError> {
+    project(parse([text.as_bytes()], response_url)?)
+}
+
+fn project(parsed: Vec<Link>) -> Result<PageLinks, PageLinkError> {
+    let mut links = PageLinks::default();
+    for link in parsed {
+        for (rel, slot) in [
+            ("next", &mut links.next),
+            ("prev", &mut links.prev),
+            ("first", &mut links.first),
+            ("last", &mut links.last),
+        ] {
+            if link.has_relation(rel) {
+                match slot {
+                    Some(existing) if *existing != link.target => {
+                        return Err(PageLinkError::Conflict { rel });
+                    }
+                    Some(_) => {}
+                    None => *slot = Some(link.target.clone()),
+                }
+            }
+        }
+    }
+    Ok(links)
 }
 
 #[cfg(test)]

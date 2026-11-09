@@ -30,6 +30,10 @@ mod kw {
     syn::custom_keyword!(params);
     syn::custom_keyword!(limit);
     syn::custom_keyword!(operations);
+    syn::custom_keyword!(page);
+    syn::custom_keyword!(next);
+    syn::custom_keyword!(link);
+    syn::custom_keyword!(url);
 }
 
 /// HTTP methods accepted as endpoint keywords.
@@ -593,6 +597,29 @@ pub struct Stmts {
     /// `/// docs` `operations Name;` on the client: the generated enum of its endpoints, whose
     /// variant each generated `send()` passes to the send policy.
     pub operations: Option<Operations>,
+    /// `page next link;` or `page next url a?.b;` on an endpoint: where the provider issues the
+    /// next page's URL.
+    pub next: Option<NextStmt>,
+}
+
+/// `page next ...;` on an endpoint.
+pub struct NextStmt {
+    pub span: Span,
+    pub source: NextSource,
+}
+
+/// Where the provider issues the next page's URL.
+pub enum NextSource {
+    /// `page next link;`: the `Link` header's `rel="next"` target.
+    Link,
+    /// `page next url a?.b;`: a field of the decoded output, `?` stepping into an `Option`.
+    Url(Vec<NextStep>),
+}
+
+/// One field of a `page next url` path.
+pub struct NextStep {
+    pub field: Ident,
+    pub optional: bool,
 }
 
 /// `/// docs` `operations Name;` on the client.
@@ -1077,6 +1104,58 @@ fn parse_owner_body(
                 ));
             }
             stmts.send = Some((ty, kw.span, output));
+            continue;
+        }
+        if input.peek(kw::page) && !input.peek2(Token![::]) {
+            let kw: kw::page = input.parse()?;
+            if let Some(first) = children.first() {
+                let first: &Owner = first;
+                return Err(syn::Error::new(
+                    kw.span,
+                    format!(
+                        "owner statements (`page`, `path`, `query`, ...) must precede child declarations (first child: `{}`)",
+                        first.name
+                    ),
+                ));
+            }
+            let expected = "expected `page next link;` or `page next url <field path>;`";
+            if !input.peek(kw::next) {
+                return Err(input.error(expected));
+            }
+            input.parse::<kw::next>()?;
+            let source = if input.peek(kw::link) {
+                input.parse::<kw::link>()?;
+                NextSource::Link
+            } else if input.peek(kw::url) {
+                input.parse::<kw::url>()?;
+                let mut steps = Vec::new();
+                loop {
+                    if !input.peek(Ident::peek_any) {
+                        return Err(input.error(
+                            "expected a field of the output: `page next url links?.pages?.next;`",
+                        ));
+                    }
+                    let field = Ident::parse_any(input)?;
+                    let optional = input.peek(Token![?]);
+                    if optional {
+                        input.parse::<Token![?]>()?;
+                    }
+                    steps.push(NextStep { field, optional });
+                    if !input.peek(Token![.]) {
+                        break;
+                    }
+                    input.parse::<Token![.]>()?;
+                }
+                NextSource::Url(steps)
+            } else {
+                return Err(input.error(expected));
+            };
+            input.parse::<Token![;]>()?;
+            let stmt = NextStmt {
+                span: kw.span,
+                source,
+            };
+            set_once(&mut stmts.next, stmt, kw.span, "page next")?;
             continue;
         }
         if input.peek(kw::limit) && !input.peek2(Token![::]) {
