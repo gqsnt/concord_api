@@ -235,3 +235,34 @@ Append-only: a row marked `running` is superseded by a later row (`↳ … resul
 | ↳ T3 round 2 Codex observed | — | gpt-6.1-sol / xhigh / danger-full-access in codex_jail.sh (rollout turn_context); 00:16:11Z–00:35:46Z | 19m35s | committed 63533ee2 (dz/t3-cancel, pushed); found and restored a leftover C3 control mutation |
 | T3 re-review (`t3-cancel-review-2-sol`) on 63533ee2 | Codex gpt-6.1-sol, xhigh, read-only | (meta.json at completion) | running | — |
 | ↳ T3 re-review observed | — | gpt-6.1-sol / xhigh / read-only (rollout turn_context); 00:36:55Z–00:40:34Z | 3m39s | ACCEPT (no findings) |
+| T5 docs-truth (dz/t5-docs) — Codex lane in jail | Codex gpt-6.1-sol, xhigh, danger-full-access in codex_jail.sh | (meta.json at completion) | running | — |
+| T4 QuickBooks env-host repair (dz/t4-quickbooks) — Codex lane in jail | Codex gpt-6.1-sol, xhigh, danger-full-access in codex_jail.sh | (meta.json at completion) | running | — |
+| H02a design survey (wt/h02s @ f921b002) — Codex read-only | Codex gpt-6.1-sol, xhigh, read-only | (meta.json at completion) | running | — |
+| ↳ T5 observed | — | gpt-6.1-sol / xhigh / danger-full-access in codex_jail.sh; 00:44:24Z–00:54:33Z | 10m09s | committed on dz/t5-docs (pushed); 33 corrections, 25 files |
+| ↳ T4 observed | — | gpt-6.1-sol / xhigh / danger-full-access in codex_jail.sh; 00:44:24Z–00:55:24Z | 11m00s | committed on dz/t4-quickbooks (pushed); reproduced + fixed |
+| T5 review (`t5-review-sol`) on 4235233b + H01 disposition | Codex gpt-6.1-sol, xhigh, read-only | (meta.json at completion) | running | — |
+| T4 review (`t4-review-sol`) on a613d276 | Codex gpt-6.1-sol, xhigh, read-only | (meta.json at completion) | running | — |
+| ↳ T5 review observed | — | gpt-6.1-sol / xhigh / read-only; 00:56:31Z–01:00:13Z | 3m42s | ACCEPT_WITH_FIXES (1 blocking doc fix a8a548c4); H01 disposition SOUND |
+| ↳ T4 review observed | — | gpt-6.1-sol / xhigh / read-only; 00:56:31Z–00:59:05Z | 2m34s | ACCEPT_WITH_FIXES (1 non-blocking doc fix 9f7a3336) |
+| T5 confirmation review (`t5-review-2-sol`) on a8a548c4 | Codex gpt-6.1-sol, high, read-only | (meta.json at completion) | running | — |
+| ↳ T5 confirmation review at effort high — STOPPED by the coordinator before completion (A9 requires xhigh); relaunched as `t5-review-2x-sol` | — | — | — | not a verdict |
+| T5 confirmation review (`t5-review-2x-sol`) on a8a548c4 | Codex gpt-6.1-sol, xhigh, read-only | (meta.json at completion) | running | — |
+| H16 design survey (wt/h16s) — Codex read-only | Codex gpt-6.1-sol, xhigh, read-only | (meta.json at completion) | running | — |
+| H12 design survey (wt/h12s) — Codex read-only | Codex gpt-6.1-sol, xhigh, read-only | (meta.json at completion) | running | — |
+| ↳ T5 confirmation review observed | — | gpt-6.1-sol / xhigh / read-only; 01:03:08Z–01:04:09Z | 1m01s | ACCEPT (no findings) |
+| ↳ H02a survey observed | — | gpt-6.1-sol / xhigh / read-only; 00:44:24Z–00:55:56Z | 11m32s | recorded reviews/h02a-design-survey.md; modest maintenance case, no task deficit -> deprioritised |
+| ↳ H16 survey observed | — | gpt-6.1-sol / xhigh / read-only; 01:06:04Z–01:14:02Z | 7m58s | recorded reviews/h16-design-survey.md; docs-only recommended |
+| ↳ H12 survey observed | — | gpt-6.1-sol / xhigh / read-only; 01:06:04Z–01:14:57Z | 8m53s | recorded; weak deficit, not carded |
+| H16 deficit check: I3 R1 readers on the current head (work/tools/h16_deficit_check.sh) | Codex gpt-6.1-sol xhigh x2 runs; Claude claude-opus-5-5 effort medium x1 run (owner A3.2) | (per-session metadata at completion) | running | — |
+| Queue triage (remaining hypotheses: measured deficits?) — Codex read-only | Codex gpt-6.1-sol, xhigh, read-only | (meta.json at completion) | running | — |
+| H16 candidate A (dz/h16; docs only) — Codex lane in jail | Codex gpt-6.1-sol, xhigh, danger-full-access in codex_jail.sh | (meta.json at completion) | running | — |
+| ↳ H16 deficit check observed | — | Codex gpt-6.1-sol xhigh x2, Claude claude-opus-5-5 medium x1 (I3 runner; per-session metadata in work/dev/h16/i3-current) | — | deficit persists (witness R1.exact 18/15/12 of 23); controls correct -> H16 carded eca54706 |
+| ↳ Queue triage observed | — | gpt-6.1-sol / xhigh / read-only; 01:17:36Z–01:24:23Z | 6m47s | none of 10 ready (no measured task deficit); measure baselines first: H11, H09a, narrow H06b, H09b, H05, H10; retire H13/H14; park H15 |
+| H09a baseline task-set author (dz/h09a-bank) — Codex lane in jail (SHOW_TOOLS) | Codex gpt-6.1-sol, xhigh, danger-full-access in codex_jail.sh | (meta.json at completion) | running | — |
+| H11 baseline edit-task author (dz/h11-bank) — Codex lane in jail (SHOW_TOOLS) | Codex gpt-6.1-sol, xhigh, danger-full-access in codex_jail.sh | (meta.json at completion) | running | — |
+| ↳ H16 candidate observed | — | gpt-6.1-sol / xhigh / danger-full-access in codex_jail.sh; 01:22:43Z–01:49:35Z | 26m52s | committed 02bc13b6 (dz/h16, pushed); docs-only proven by the lane |
+| H16 pilot measurement: I3 R1 wire, base eca54706 vs cand 02bc13b6, 3 reps/provider/arm (work/tools/h16_measure.sh) | Codex gpt-6.1-sol xhigh; Claude claude-opus-5-5 effort medium (owner A3.2) | (per-session metadata in work/sealed/h16-runs) | running | — |
+| ↳ H11 baseline author observed | — | gpt-6.1-sol / xhigh / danger-full-access in codex_jail.sh; 01:34:45Z–01:52:34Z | 17m49s | bank h11-bank bf390e09 (6 tasks validated); finding: all four wrappers already map Error::kind() (no adoption gap in the narrow slice) |
+| H11 baseline agent runs (I4 run.py via h11-bank/run-coordinator.sh: probe, replays, 6 tasks x 3 reps) | Codex gpt-6.1-sol xhigh inside the I4 runner bwrap | (per-run result.json + rollout) | running | — |
+| H16 combined review (`h16-combined-review-sol`) on 02bc13b6 + measurement (proposed INCONCLUSIVE) | Codex gpt-6.1-sol, xhigh, read-only | (meta.json at completion) | running | — |
+| ↳ H16 pilot measurement observed | — | Codex gpt-6.1-sol xhigh; Claude claude-opus-5-5 medium (I3 runner, per-session metadata) | — | W Codex 53->53, Claude 40->43 (pooled +3); prompts identical between arms for 8/10 SDKs (I3 packs source, not generated rustdoc); attributable gain FRED/OpenAI only |
