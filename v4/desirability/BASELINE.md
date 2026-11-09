@@ -120,6 +120,13 @@ two at a time.
 | e5 document field | 8 | 8 | 8 | 8 | 0 |
 | **all** | 40 | 40 | 39 | 37 | 8 |
 
+> **Erratum (2026-11-09, `measurements/H12-kubernetes-e1-replay.md`):** the Kubernetes e1 oracle failure below was an
+> instrument artifact — that run overlapped Kubernetes e2 on the shared measure target `work/targets/i4-measure`, and
+> the oracle ran against base-tree artifacts. Replayed alone on a fresh private target, the agent's saved edit passes
+> the oracle 4/4 and the whole suite with no missed propagation (reference 4/4; a no-op control reproduces the 1/4).
+> Corrected: **oracle pass 40/40**, missed propagation **7** tasks (Kubernetes e1 removed). The table keeps the
+> numbers as originally recorded.
+
 - The one oracle failure is Kubernetes e1 (version/prefix): 1 of 4 oracle tests passed (the
   change reached some but not all request paths of the moved API group).
 - e4 classification: 7/7 applicable tasks classified at the reference site with the oracle
