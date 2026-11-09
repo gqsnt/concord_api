@@ -105,7 +105,7 @@ impl DatadogEvents {
         Ok(self)
     }
 
-    /// The site this client calls.
+    /// The configured site, retained when a proxy or fixture overrides the base.
     pub fn site(&self) -> Site {
         self.site
     }

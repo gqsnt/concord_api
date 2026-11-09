@@ -30,13 +30,17 @@ pub fn json_fixture(status: u16, name: &str) -> Reply {
 
 /// A transport like the SDK's `http_client()`, resolving the account host to the server.
 pub fn http(server: &TestServer, timeout: Duration) -> reqwest::Client {
-    reqwest::Client::builder()
+    http_builder(timeout)
         .resolve("acme.zendesk.test", server.addr())
+        .build()
+        .unwrap()
+}
+
+pub fn http_builder(timeout: Duration) -> reqwest::ClientBuilder {
+    reqwest::Client::builder()
         .retry(reqwest::retry::never())
         .redirect(reqwest::redirect::Policy::none())
         .timeout(timeout)
-        .build()
-        .unwrap()
 }
 
 /// `Zendesk` for subdomain `acme`, pointed at the server (`http://acme.zendesk.test:<port>`).
@@ -46,11 +50,9 @@ pub fn api(server: &TestServer) -> Zendesk {
 
 /// [`api`] with a request timeout and a send policy.
 pub fn api_with(server: &TestServer, timeout: Duration, policy: SendPolicy) -> Zendesk {
-    Zendesk::connect(http(server, timeout), "acme", TOKEN)
+    Zendesk::for_fixture(http_builder(timeout), "acme", TOKEN, server.addr())
         .unwrap()
         .set_policy(policy)
-        .with_base_url(format!("http://zendesk.test:{}", server.addr().port()))
-        .unwrap()
 }
 
 /// The arrival time of every request, for timing assertions.

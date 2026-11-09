@@ -159,3 +159,45 @@ fn fault_in(error: &concord::Error) -> Option<ProviderError> {
         .0;
     Some(ProviderError::in_success(error.head_meta()?, fault.clone()))
 }
+
+#[cfg(test)]
+mod controls_tests {
+    use super::*;
+    use crate::{Environment, OAuthApp, QuickBooks, RealmId, RefreshToken};
+
+    fn connection(environment: Environment, realm: &str) -> Connection {
+        OAuthApp::new(
+            environment,
+            "synthetic-client",
+            "synthetic-secret",
+            "https://app.example.test/callback",
+        )
+        .unwrap()
+        .connection(
+            RealmId::new(realm).unwrap(),
+            RefreshToken::new("synthetic-refresh").unwrap(),
+        )
+    }
+
+    #[test]
+    fn coordinated_replacement_keeps_the_validated_fixture_origin() {
+        let after = connection(Environment::Production, "222");
+        let api = QuickBooks::for_fixture(
+            reqwest::Client::new(),
+            connection(Environment::Sandbox, "111"),
+            "http://127.0.0.1:1234",
+        )
+        .unwrap()
+        .set_connection(after);
+        let prepared = api
+            .customer(crate::EntityId::new("29").unwrap())
+            .read()
+            .prepare()
+            .unwrap();
+        let (_, request, _) = prepared.into_parts();
+        assert_eq!(
+            request.url().as_str(),
+            "http://127.0.0.1:1234/v3/company/222/customer/29?minorversion=75"
+        );
+    }
+}

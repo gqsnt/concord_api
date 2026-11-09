@@ -769,3 +769,30 @@ async fn no_secret_reaches_debug_or_display() {
         }
     }
 }
+
+#[test]
+fn fixture_constructor_preserves_the_environment_boundary() {
+    let app = OAuthApp::new(Environment::Sandbox, CLIENT_ID, CLIENT_SECRET, REDIRECT).unwrap();
+    let connection = app.connection(realm(REALM_A), RefreshToken::new(STORED_REFRESH).unwrap());
+    for bad in [
+        "https://127.0.0.1:1234",
+        "http://192.0.2.1:1234",
+        "http://localhost:1234",
+        "http://127.0.0.1:1234/path",
+        "http://127.0.0.1:1234?x=1",
+    ] {
+        assert!(
+            QuickBooks::for_fixture(http(Duration::from_secs(1)), connection.clone(), bad).is_err()
+        );
+    }
+    for good in ["http://127.0.0.1:1234", "http://[::1]:1234"] {
+        let api = QuickBooks::for_fixture(http(Duration::from_secs(1)), connection.clone(), good)
+            .unwrap();
+        let prepared = api.customer(customer_29()).read().prepare().unwrap();
+        assert_eq!(
+            prepared.request().url().host_str(),
+            reqwest::Url::parse(good).unwrap().host_str()
+        );
+        assert!(!prepared.request().headers().contains_key("authorization"));
+    }
+}

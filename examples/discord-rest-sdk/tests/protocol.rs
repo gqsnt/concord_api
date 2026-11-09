@@ -10,9 +10,9 @@ use concord::ErrorKind;
 use concord::reqwest::StatusCode;
 use concord_example_testserver::{Body, Reply, TestServer};
 use concord_sdk_discord_rest::{
-    Anchor, ChannelId, ChannelType, CreateMessage, Error, ErrorClass, GateScope, JsonErrorCode,
-    MessageId, MessageLimit, Nonce, RateLimitScope, RateLimiter, Resource, SUCCESS_BODY_LIMIT,
-    concord,
+    Anchor, ChannelId, ChannelType, CreateMessage, Discord, DiscordConfig, Error, ErrorClass,
+    GateScope, JsonErrorCode, MessageId, MessageLimit, Nonce, RateLimitScope, RateLimiter,
+    Resource, SUCCESS_BODY_LIMIT, concord,
 };
 use support::{
     CATEGORY, EXAMPLE_CHANNEL, EXAMPLE_MESSAGE, GENERAL, GUILD, ManualClock, TOKEN, assert_common,
@@ -625,7 +625,15 @@ async fn secrets_and_provider_text_are_never_printed() {
     );
 
     // A token that cannot be a header value fails before any I/O, without being printed.
-    let bad = discord.set_token("synthetic\nsecret-token");
+    let bad = Discord::new(
+        http(),
+        DiscordConfig {
+            token: "synthetic\nsecret-token".into(),
+            limiter: RateLimiter::new(),
+        },
+    )
+    .with_base_url(format!("{}/api/v10", server.url()))
+    .unwrap();
     let error = bad.channel(GENERAL).messages().send().await.unwrap_err();
     let Error::Concord { error: concord, .. } = &error else {
         panic!("{error:?}")

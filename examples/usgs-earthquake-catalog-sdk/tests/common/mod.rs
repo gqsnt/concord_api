@@ -22,7 +22,7 @@ pub fn client(server: &TestServer) -> Usgs {
         .timeout(Duration::from_secs(5))
         .build()
         .unwrap();
-    Usgs::new(http).with_base_url(server.url()).unwrap()
+    Usgs::for_fixture(http, &server.url()).unwrap()
 }
 
 pub fn filter(size: u16) -> Window {

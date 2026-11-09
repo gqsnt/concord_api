@@ -35,6 +35,8 @@ concord::api! {
         format Json;
         limit RESPONSE_LIMIT;
         send policy -> Result<Response<_>, Error>;
+        // A credential and its company's shared ledger are chosen together at construction.
+        controls { remove set_api_key; remove set_policy; }
 
         /// Checkout API version 71; replacing the base does not remove the version.
         scope v71 {

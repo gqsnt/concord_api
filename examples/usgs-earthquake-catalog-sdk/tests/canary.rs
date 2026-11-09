@@ -40,7 +40,7 @@ fn client(base: &str) -> Usgs {
         .timeout(Duration::from_secs(2))
         .build()
         .unwrap();
-    Usgs::new(http).with_base_url(base).unwrap()
+    Usgs::for_fixture(http, base).unwrap()
 }
 
 // Echo the event ID in headers and in provider text whose formatting is withheld.

@@ -1,5 +1,7 @@
 # First use of `concord-sdk-sentry` (fresh consumer)
 
+H06 migration: historical `with_base_url` calls below now use `Sentry::for_deployment(http, base, token, policy)`. Token rotation reconstructs with the same caller/deployment policy; `set_authorization` and `set_policy` are withheld.
+
 Role: fresh consumer, workflows run only against `examples/testserver` (live provider calls:
 **NOT_RUN**). Written before reading any of `src/`, `tests/`, `FRICTION.md`, `PROVENANCE.md`.
 

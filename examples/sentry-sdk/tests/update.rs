@@ -214,13 +214,12 @@ async fn an_update_without_an_answer_is_uncertain_and_never_retried() {
         .no_proxy()
         .build()
         .unwrap();
-    let error = Sentry::with_token(
+    let error = Sentry::for_deployment(
         http,
+        server.url(),
         "synthetic-bearer-secret",
         SendPolicy::new(retry_settings()).unwrap(),
     )
-    .unwrap()
-    .with_base_url(server.url())
     .unwrap()
     .organization("acme")
     .issue("202")

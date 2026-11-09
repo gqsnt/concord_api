@@ -24,6 +24,10 @@ const MIDDLE: u64 = NEWEST - 1;
 const OLDEST: u64 = NEWEST - 2;
 
 fn client(server: &TestServer) -> Discord {
+    client_with_token(server, TOKEN)
+}
+
+fn client_with_token(server: &TestServer, token: &str) -> Discord {
     Discord::new(
         reqwest::Client::builder()
             .no_proxy()
@@ -31,7 +35,7 @@ fn client(server: &TestServer) -> Discord {
             .build()
             .unwrap(),
         DiscordConfig {
-            token: TOKEN.to_owned(),
+            token: token.to_owned(),
             limiter: RateLimiter::new(),
         },
     )
@@ -708,8 +712,7 @@ async fn unreadable_creation_and_local_validation() {
     assert!(MessageLimit::new(0).is_err());
     assert!(MessageLimit::new(101).is_err());
     let bad_token = "fixture-private-token\r\ninvalid";
-    let error = discord
-        .set_token(bad_token.to_owned())
+    let error = client_with_token(&server, bad_token)
         .channel(ChannelId::new(SALES))
         .messages()
         .send()
