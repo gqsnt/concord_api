@@ -63,6 +63,13 @@ Not released: the version is unchanged (4.2.0). Records: `v4/desirability/` (dec
 
 ### Fixes
 
+- **QuickBooks connection replacement selects the matching environment.** After
+  `connect(sandbox).set_connection(production)` (or the reverse), `send()` now selects the
+  replacement connection's official HTTPS host before acquiring or applying its token, instead
+  of sending the new realm and credentials to the old environment. Same-environment requests
+  and loopback fixture origins keep their wire behavior. `prepare()` stays token-free and
+  retains the generated base snapshot. No caller code change is required; see
+  [migration notes](docs/MIGRATION.md#quickbooks-environment-replacement-t4).
 - **A dropped send stops polling its streamed body.** reqwest's HTTP/1 connection (hyper) polls a
   request body from its own task and notices a dropped call only between write passes, so a
   `send()` dropped while the receiver kept up went on polling the upload source: thousands of

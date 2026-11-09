@@ -31,6 +31,9 @@ const TOKEN_BASE: &str = "https://oauth.platform.intuit.com";
 const REFRESH_MARGIN: Duration = Duration::from_secs(60);
 
 /// Which QuickBooks Online environment an app's keys and its companies belong to.
+/// The connection's send policy selects this environment's host for either official HTTPS host,
+/// including after [`QuickBooks::set_connection`](crate::QuickBooks::set_connection).
+/// Loopback fixture origins are kept.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Environment {
     /// Development keys and sandbox companies: `https://sandbox-quickbooks.api.intuit.com`.
@@ -545,6 +548,9 @@ struct Inner {
 /// Clones share all three; the access token is refreshed once for every request waiting on it
 /// (single flight). A connection never uses or changes another realm's tokens. Its `Display` is
 /// the realm ID, which the [`QuickBooks`](crate::QuickBooks) declaration places in every path.
+/// Its send policy also selects its environment's host when sending to either official HTTPS host;
+/// replacing a client's connection switches realm, credentials and environment together.
+/// Loopback fixture origins stay unchanged, and `prepare()` keeps the generated base snapshot.
 #[derive(Clone)]
 pub struct Connection(Arc<Inner>);
 
