@@ -118,8 +118,8 @@ impl fmt::Debug for PointInTime {
 
 /// One sort clause: `{"<field>": "asc"}`, `{"<field>": "desc"}`, or a one-field object of the
 /// caller's (`{"@timestamp": {"order": "asc", "format": ..}}`).
-#[derive(Clone)]
-pub struct Sort(Value);
+#[derive(Clone, concord::Debug)]
+pub struct Sort(#[sensitive] Value);
 
 impl Sort {
     /// `{"<field>": "asc"}`.
@@ -152,12 +152,6 @@ impl Sort {
 impl Serialize for Sort {
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         self.0.serialize(serializer)
-    }
-}
-
-impl fmt::Debug for Sort {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str("Sort(..)")
     }
 }
 
@@ -269,26 +263,18 @@ impl<'de> Deserialize<'de> for SortValues {
 }
 
 /// The body of a PIT search request (the generated `search` endpoint's input).
-#[derive(Serialize)]
+#[derive(Serialize, concord::Debug)]
 pub struct SearchBody {
     size: u32,
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[sensitive]
     query: Option<Value>,
     pit: PitRef,
+    #[sensitive]
     sort: Vec<Sort>,
     #[serde(skip_serializing_if = "Option::is_none")]
     search_after: Option<SortValues>,
     track_total_hits: bool,
-}
-
-impl fmt::Debug for SearchBody {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("SearchBody")
-            .field("size", &self.size)
-            .field("pit", &self.pit)
-            .field("search_after", &self.search_after)
-            .finish_non_exhaustive()
-    }
 }
 
 #[derive(Debug, Serialize)]
@@ -372,7 +358,7 @@ pub struct Hits {
 }
 
 /// One hit. `Debug` shows its index, id and score, never its source or sort values.
-#[derive(Deserialize)]
+#[derive(Deserialize, concord::Debug)]
 pub struct Hit {
     #[serde(rename = "_index")]
     index: String,
@@ -381,8 +367,10 @@ pub struct Hit {
     #[serde(rename = "_score", default)]
     score: Option<f64>,
     #[serde(rename = "_source", default)]
+    #[sensitive]
     source: Option<Box<RawValue>>,
     #[serde(default)]
+    #[sensitive]
     sort: Option<SortValues>,
 }
 
@@ -417,16 +405,6 @@ impl Hit {
     /// The hit's `sort` values.
     pub fn sort(&self) -> Option<&SortValues> {
         self.sort.as_ref()
-    }
-}
-
-impl fmt::Debug for Hit {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("Hit")
-            .field("index", &self.index)
-            .field("id", &self.id)
-            .field("score", &self.score)
-            .finish_non_exhaustive()
     }
 }
 

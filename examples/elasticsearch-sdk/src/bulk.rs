@@ -70,7 +70,7 @@ impl Default for BulkLimits {
 }
 
 /// A bulk action.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize, Serialize, concord::WireDisplay)]
 #[serde(rename_all = "lowercase")]
 pub enum Action {
     /// Add or replace a document.
@@ -81,17 +81,6 @@ pub enum Action {
     Update,
     /// Remove a document.
     Delete,
-}
-
-impl fmt::Display for Action {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(match self {
-            Action::Index => "index",
-            Action::Create => "create",
-            Action::Update => "update",
-            Action::Delete => "delete",
-        })
-    }
 }
 
 /// One NDJSON line of a bulk body: compact JSON text, without its line feed (the `Ndjson`
@@ -545,9 +534,11 @@ impl BulkItem {
 /// at least one failure it comes back inside [`Error::PartialBulk`]. It keeps the submitted
 /// operations, so that [`resubmit`](Self::resubmit) can build a request of failed operations
 /// only: an applied operation can never be selected.
+#[derive(concord::Debug)]
 pub struct BulkReport {
     took: u64,
     items: Vec<BulkItem>,
+    #[sensitive]
     operations: Vec<Operation>,
     limits: BulkLimits,
     refresh: Option<Refresh>,
@@ -599,15 +590,6 @@ impl BulkReport {
     /// [`resubmit`](Self::resubmit) the rejected (`429`) operations only.
     pub fn resubmit_rejected(&self) -> Option<BulkRequest> {
         self.resubmit(BulkItem::is_rejected)
-    }
-}
-
-impl fmt::Debug for BulkReport {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("BulkReport")
-            .field("took", &self.took)
-            .field("items", &self.items)
-            .finish_non_exhaustive()
     }
 }
 

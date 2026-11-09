@@ -189,6 +189,10 @@
 //! unread response of a status or metadata error through [`Error::response`]; none of them is
 //! redacted. A format's [`CodecError`] label is static text by construction, not a secrecy proof.
 //!
+//! For an SDK's own types, `#[derive(concord::Debug)]` follows the same rule: a field, variant or
+//! type marked `#[sensitive]` prints `<redacted>` (or `Name { .. }`) and is never formatted; see
+//! [`Debug`].
+//!
 //! **Not covered:** the native `reqwest::Request`, `Url` and `Response` `Debug` output (it prints
 //! full URLs), reqwest errors from requests you execute yourself, redirects (reqwest forwards
 //! custom headers and a `Referer` with the query), tracing, middleware, proxies, server logs and
@@ -253,6 +257,41 @@ pub use concord_core::{
     reqwest,
 };
 
+/// Derives `std::fmt::Debug`, withholding the values marked `#[sensitive]`.
+///
+/// ```
+/// #[derive(concord::Debug)]
+/// pub struct Message {
+///     pub sid: String,
+///     #[sensitive]
+///     pub body: Option<String>,
+/// }
+/// let message = Message { sid: "SM1".into(), body: Some("hi".into()) };
+/// assert_eq!(format!("{message:?}"), r#"Message { sid: "SM1", body: Some(<redacted>) }"#);
+/// ```
+///
+/// - An unmarked field is formatted as by `#[derive(Debug)]`.
+/// - A `#[sensitive]` field prints `<redacted>`; a field written `Option<T>` prints `None` or
+///   `Some(<redacted>)`.
+/// - A `#[sensitive]` type or variant prints `Name { .. }`; inside it, the named fields marked
+///   `#[public]` are printed before the `..`.
+/// - A withheld value is never formatted, so its type needs no `Debug`.
+pub use concord_macros::Debug;
+/// Derives `Display` as the value's wire text, read from its serde spelling.
+/// With a renamed dependency, use `#[wire_display(crate = concord4)]`.
+///
+/// ```
+/// # #[cfg(feature = "json")] {
+/// #[derive(serde::Serialize, concord::WireDisplay)]
+/// #[serde(rename_all = "kebab-case")]
+/// pub enum Sort { Created, LongRunning }
+///
+/// assert_eq!(Sort::LongRunning.to_string(), "long-running");
+/// # }
+/// ```
+#[cfg(any(feature = "json", feature = "form", feature = "csv", feature = "jsonl"))]
+pub use concord_macros::WireDisplay;
+
 /// Declares an HTTP API as a client → scopes → endpoints tree and generates its typed client.
 ///
 /// See the [crate documentation](crate) for the language.
@@ -271,6 +310,8 @@ macro_rules! api {
 /// Not a public API.
 #[doc(hidden)]
 pub mod __macro {
+    #[cfg(any(feature = "json", feature = "form", feature = "csv", feature = "jsonl"))]
+    pub use concord_codecs::__wire::{Serialize, Serializer, wire_text};
     pub use concord_core;
     pub use concord_macros::api;
 }

@@ -200,8 +200,9 @@ impl fmt::Debug for Binding {
 
 /// A page GitHub linked to (`rel="next"`): the key of the next fetch and the restart point of an
 /// interrupted traversal. `Debug` withholds the URL.
-#[derive(Clone, PartialEq, Eq, Hash)]
+#[derive(Clone, PartialEq, Eq, Hash, concord::Debug)]
 pub struct NextLink {
+    #[sensitive]
     url: Url,
     binding: Binding,
 }
@@ -268,15 +269,6 @@ fn parse_stored(stored: &str) -> Option<(&str, RepoRef, Option<u64>, Url)> {
         parent,
         Url::parse(url).ok()?,
     ))
-}
-
-impl fmt::Debug for NextLink {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("NextLink")
-            .field("binding", &self.binding)
-            .field("url", &format_args!("<withheld>"))
-            .finish()
-    }
 }
 
 /// A list response: either a bare JSON array or an envelope `{ total_count, <items> }`. The

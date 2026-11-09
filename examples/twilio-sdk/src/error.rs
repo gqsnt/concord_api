@@ -37,25 +37,18 @@ impl<T: fmt::Debug> fmt::Debug for Response<T> {
 }
 
 /// Twilio's JSON exception document on an unsuccessful HTTP request.
-#[derive(Clone, PartialEq, Eq, Deserialize)]
+#[derive(Clone, PartialEq, Eq, Deserialize, concord::Debug)]
 pub struct ProviderError {
     /// Status claimed by the body; [`ResponseMeta::status`] remains authoritative.
     pub status: u16,
     /// Twilio-specific code, when present.
     pub code: Option<i64>,
     /// Unredacted provider explanation, which can quote submitted data.
+    #[sensitive]
     pub message: String,
     /// Optional documentation link, retained as data and never fetched by this SDK.
+    #[sensitive]
     pub more_info: Option<String>,
-}
-
-impl fmt::Debug for ProviderError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("ProviderError")
-            .field("status", &self.status)
-            .field("code", &self.code)
-            .finish_non_exhaustive()
-    }
 }
 
 /// Why an HTTP failure did not yield a typed provider document.

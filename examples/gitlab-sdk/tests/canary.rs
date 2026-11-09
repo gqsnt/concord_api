@@ -1,5 +1,6 @@
-//! Secret: PrivateToken / GitLabConfig.token -> PRIVATE-TOKEN header (one canary).
-//! Read-only slice: issue listing covers 2xx, documented message-shaped 4xx/5xx,
+//! Secrets: PrivateToken / GitLabConfig.token -> PRIVATE-TOKEN header,
+//! and NextPage's URL -> continuation request query.
+//! Single-request coverage: issue listing covers 2xx, documented message-shaped 4xx/5xx,
 //! malformed JSON, wrong media, truncated body and refused connection, including native sends.
 //! Excludes native reqwest, explicit unredacted accessors, and provider messages/models,
 //! which the SDK explicitly documents as printed/returned in clear. Response header values
@@ -9,7 +10,7 @@
 //! the caller's inputs and of fields it promises to withhold). No wire exemptions.
 
 use concord_check_canary::Canaries;
-use concord_example_testserver::{Body, Reply, TestServer};
+use concord_example_testserver::{Body, Reply, Script, TestServer};
 use std::time::Duration;
 
 fn http() -> concord::reqwest::Client {
@@ -130,4 +131,35 @@ async fn secrets_never_print() {
         "gitlab: {} renderings; positive control passed",
         c.checked()
     );
+}
+
+#[tokio::test]
+async fn continuation_debug_withholds_the_link_in_both_modes() {
+    use concord_sdk_gitlab::{GitLab, PrivateToken, ProjectRef};
+
+    let mut c = Canaries::new("gitlab-next-page");
+    let cursor = c.issue();
+    let script = Script::new([]);
+    let responder = script.clone();
+    let server = TestServer::start(move |_| responder.next()).await;
+    let next_url = format!("{}/projects/1/issues?page=2&cursor={cursor}", server.url());
+    script.push(Reply::json(200, "[]").header("link", format!("<{next_url}>; rel=\"next\"")));
+    script.push(Reply::json(200, "[]"));
+    let api = GitLab::with_token(
+        http(),
+        PrivateToken::new("synthetic-fixture-token").unwrap(),
+    )
+    .with_base_url(server.url())
+    .unwrap();
+    let mut pages = api.project(ProjectRef::id(1).unwrap()).issues().pages();
+    let first = pages.next_page().await.unwrap().expect("first page");
+    let next = first.next.as_ref().expect("continuation from Link header");
+    assert_eq!(next.raw_url().as_str(), next_url);
+    c.assert_debug_absent("NextPage", next);
+
+    let last = pages.next_page().await.unwrap().expect("linked page");
+    assert!(last.next.is_none());
+    assert_eq!(server.requests().len(), 2);
+    c.assert_on_wire(&server.requests());
+    server.shutdown().await;
 }

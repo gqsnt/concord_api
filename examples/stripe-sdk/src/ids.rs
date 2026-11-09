@@ -23,7 +23,7 @@
 use std::fmt;
 use std::str::FromStr;
 
-use serde::{Deserialize, Deserializer, Serialize, Serializer};
+use serde::{Deserialize, Deserializer, Serialize};
 
 /// An identifier that cannot be constructed from the given text. `Display` names the expected
 /// family and the rule, never the text.
@@ -103,10 +103,12 @@ fn check(text: &str, family: &'static str, prefix: Option<&'static str>) -> Resu
 }
 
 macro_rules! stripe_id {
-    ($(#[$doc:meta])* $name:ident, $family:literal, $prefix:expr) => {
+    ($(#[$doc:meta])* $name:ident, $family:literal, $prefix:expr $(, $sensitive:meta)?) => {
         $(#[$doc])*
         #[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-        pub struct $name(String);
+        #[derive(Serialize, concord::Debug, concord::WireDisplay)]
+        #[serde(transparent)]
+        pub struct $name($(#[$sensitive])? String);
 
         impl $name {
             /// The family's documented prefix, if it has one.
@@ -138,18 +140,6 @@ macro_rules! stripe_id {
             }
         }
 
-        impl fmt::Display for $name {
-            fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-                f.write_str(&self.0)
-            }
-        }
-
-        impl Serialize for $name {
-            fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-                serializer.serialize_str(&self.0)
-            }
-        }
-
         impl<'de> Deserialize<'de> for $name {
             fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
                 let text = String::deserialize(deserializer)?;
@@ -160,76 +150,50 @@ macro_rules! stripe_id {
     };
 }
 
-macro_rules! public_debug {
-    ($name:ident) => {
-        impl fmt::Debug for $name {
-            fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-                f.debug_tuple(stringify!($name)).field(&self.0).finish()
-            }
-        }
-    };
-}
-
 stripe_id!(
     /// A customer id, `cus_...`.
     CustomerId, "customer", Some("cus_")
 );
-public_debug!(CustomerId);
 stripe_id!(
     /// A subscription id, `sub_...`.
     SubscriptionId, "subscription", Some("sub_")
 );
-public_debug!(SubscriptionId);
 stripe_id!(
     /// A subscription item id, `si_...`.
     SubscriptionItemId, "subscription item", Some("si_")
 );
-public_debug!(SubscriptionItemId);
 stripe_id!(
     /// An invoice id, `in_...`.
     InvoiceId, "invoice", Some("in_")
 );
-public_debug!(InvoiceId);
 stripe_id!(
     /// An invoice line item id, `il_...` (the documentation's examples also show `il_tmp_...`).
     InvoiceLineItemId, "invoice line item", Some("il_")
 );
-public_debug!(InvoiceLineItemId);
 stripe_id!(
     /// A product id. Usually `prod_...`, but a product may be created with a caller-chosen id,
     /// so no prefix is required.
     ProductId, "product", None
 );
-public_debug!(ProductId);
 stripe_id!(
     /// A price id, `price_...`.
     PriceId, "price", Some("price_")
 );
-public_debug!(PriceId);
 stripe_id!(
     /// A balance transaction id, `txn_...`.
     BalanceTransactionId, "balance transaction", Some("txn_")
 );
-public_debug!(BalanceTransactionId);
 stripe_id!(
     /// A tax rate id, `txr_...`.
     TaxRateId, "tax rate", Some("txr_")
 );
-public_debug!(TaxRateId);
 stripe_id!(
     /// A payment method id, `pm_...`. Legacy `card_`/`src_` ids are not accepted where Stripe
     /// expects a PaymentMethod id (see `PROVIDER.md`), so the prefix is required here.
     PaymentMethodId, "payment method", Some("pm_")
 );
-public_debug!(PaymentMethodId);
 stripe_id!(
     /// A connected account id, `acct_...`. `Debug` is redacted; the text is reachable through
     /// [`AccountId::as_str`] and `Display`.
-    AccountId, "account", Some("acct_")
+    AccountId, "account", Some("acct_"), sensitive
 );
-
-impl fmt::Debug for AccountId {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str("AccountId(<redacted>)")
-    }
-}

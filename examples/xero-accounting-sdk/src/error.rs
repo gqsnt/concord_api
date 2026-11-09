@@ -44,7 +44,8 @@ impl Class {
 }
 
 /// A bounded JSON error document. Fields are disclosed only by deliberate access.
-#[derive(Deserialize)]
+#[derive(Deserialize, concord::Debug)]
+#[sensitive]
 pub struct Problem {
     /// Accounting error number, if supplied.
     #[serde(rename = "ErrorNumber")]
@@ -62,11 +63,6 @@ pub struct Problem {
     /// Per-resource validation data, deliberately unformatted.
     #[serde(rename = "Elements")]
     pub elements: Option<serde_json::Value>,
-}
-impl fmt::Debug for Problem {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str("Problem(<withheld>)")
-    }
 }
 
 /// The HTTP failure remains authoritative even when its body cannot be decoded.

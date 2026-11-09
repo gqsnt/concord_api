@@ -5,10 +5,12 @@
 use proc_macro::TokenStream;
 use proc_macro2::{TokenStream as TokenStream2, TokenTree};
 
+mod debug;
 mod emit;
 mod model;
 mod syntax;
 mod template;
+mod wire_display;
 
 /// Implementation of `concord::api!`; not meant to be invoked directly.
 #[proc_macro]
@@ -35,6 +37,25 @@ pub fn api(input: TokenStream) -> TokenStream {
             }
             out.into()
         }
+        Err(error) => error.to_compile_error().into(),
+    }
+}
+
+/// Implementation of `#[derive(concord::Debug)]`; use it through `concord::Debug`.
+#[proc_macro_derive(Debug, attributes(sensitive, public))]
+pub fn derive_debug(input: TokenStream) -> TokenStream {
+    debug::derive(input.into()).into()
+}
+
+/// The text is the value's serde representation when that is one scalar: a string as written (a
+/// placement encodes it), a number or boolean in decimal, a unit variant as its serde name
+/// (`rename`, `rename_all`), a newtype or `untagged` newtype variant as its content. Any other
+/// shape fails to format, and a request that places it fails to build, naming the placement.
+/// Use `#[wire_display(crate = path)]` when the Concord dependency has another name.
+#[proc_macro_derive(WireDisplay, attributes(wire_display))]
+pub fn wire_display(input: TokenStream) -> TokenStream {
+    match syn::parse::<syn::DeriveInput>(input).and_then(wire_display::derive) {
+        Ok(output) => output.into(),
         Err(error) => error.to_compile_error().into(),
     }
 }

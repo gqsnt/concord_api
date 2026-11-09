@@ -14,7 +14,6 @@ use concord::{
 use concord_auth::{RefreshError, Snapshot, Token, TokenCache};
 use serde::Deserialize;
 use std::{
-    fmt,
     num::NonZeroUsize,
     sync::{Arc, Mutex},
     time::Duration,
@@ -47,18 +46,14 @@ concord::api! {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, concord::Debug)]
+#[sensitive]
 pub(crate) struct Auth {
     pub store: FileStore,
     cache: Arc<TokenCache<(), Error>>,
     force: Arc<Mutex<bool>>,
     oauth: OAuth,
     scopes: Vec<String>,
-}
-impl fmt::Debug for Auth {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str("Auth(<redacted>)")
-    }
 }
 impl Auth {
     pub fn new(

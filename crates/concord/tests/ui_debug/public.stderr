@@ -1,0 +1,23 @@
+error: `#[public]` marks a field of a `#[sensitive]` type or variant; unmarked fields are already shown
+ --> tests/ui_debug/public.rs:5:5
+  |
+5 |     #[public]
+  |     ^^^^^^^^^
+
+error: `#[public]` marks a named field
+  --> tests/ui_debug/public.rs:11:16
+   |
+11 | struct Unnamed(#[public] String, String);
+   |                ^^^^^^^^^
+
+error: `#[public]` marks a field of a `#[sensitive]` type or variant
+  --> tests/ui_debug/public.rs:14:1
+   |
+14 | #[public]
+   | ^^^^^^^^^
+
+error: `#[public]` marks a field of a `#[sensitive]` type or variant
+  --> tests/ui_debug/public.rs:21:5
+   |
+21 |     #[public]
+   |     ^^^^^^^^^

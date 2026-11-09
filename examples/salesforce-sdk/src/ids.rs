@@ -233,8 +233,8 @@ impl fmt::Debug for InstanceUrl {
 
 /// An OAuth access token (sent as `Authorization: Bearer ...`). `Debug` is redacted and there is
 /// no `Display`.
-#[derive(Clone)]
-pub struct AccessToken(String);
+#[derive(Clone, concord::Debug)]
+pub struct AccessToken(#[sensitive] String);
 
 impl AccessToken {
     /// Wraps a token. An empty token is refused; other validation is the server's.
@@ -262,12 +262,6 @@ impl AccessToken {
 
     pub(crate) fn expose(&self) -> &str {
         &self.0
-    }
-}
-
-impl fmt::Debug for AccessToken {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str("AccessToken(<redacted>)")
     }
 }
 
@@ -515,8 +509,8 @@ impl fmt::Debug for FieldList {
 macro_rules! locator_type {
     ($(#[$doc:meta])* $name:ident, $what:literal, $max:literal, $extra:expr) => {
         $(#[$doc])*
-        #[derive(Clone, PartialEq, Eq, Hash)]
-        pub struct $name(String);
+        #[derive(Clone, PartialEq, Eq, Hash, concord::Debug)]
+        pub struct $name(#[sensitive] String);
 
         impl $name {
             /// Validates the locator text (a conservative character set: an unexpected
@@ -557,11 +551,6 @@ macro_rules! locator_type {
             }
         }
 
-        impl fmt::Debug for $name {
-            fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-                f.write_str(concat!(stringify!($name), "(..)"))
-            }
-        }
     };
 }
 
@@ -701,7 +690,7 @@ mod tests {
     #[test]
     fn locators_are_redacted_in_debug() {
         let q = QueryLocator::new("01gD0000002HU6KIAW-2000").unwrap();
-        assert_eq!(format!("{q:?}"), "QueryLocator(..)");
+        assert_eq!(format!("{q:?}"), "QueryLocator(<redacted>)");
         assert_eq!(q.to_string(), "01gD0000002HU6KIAW-2000");
         assert!(QueryLocator::new("a/b").is_err());
         assert!(ResultLocator::new("MTAwMDA").is_ok());

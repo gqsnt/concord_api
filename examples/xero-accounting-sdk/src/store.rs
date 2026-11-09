@@ -2,7 +2,6 @@
 use crate::{Error, ErrorKind, TenantId};
 use serde::{Deserialize, Serialize};
 use std::{
-    fmt,
     fs::{self, File, OpenOptions},
     io::{Read, Write},
     path::{Path, PathBuf},
@@ -32,7 +31,8 @@ struct Record {
 
 /// An already-authorized authorization-code grant. This SDK does not run browser consent.
 /// The application must obtain the tenant from its authorized connections, not from token claims.
-pub struct Grant(Record);
+#[derive(concord::Debug)]
+pub struct Grant(#[sensitive] Record);
 impl Grant {
     /// Validate a tenant-bound credential pair and scopes, ready for durable initialization.
     /// `offline_access` and invoice read or write access are required. Expiry may be in the past.
@@ -76,11 +76,6 @@ impl Grant {
         }))
     }
 }
-impl fmt::Debug for Grant {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str("Grant(<redacted>)")
-    }
-}
 pub(crate) fn scope(scopes: &[String], value: &str) -> bool {
     scopes.iter().any(|s| s == value)
 }
@@ -122,16 +117,12 @@ fn recovery() -> Error {
 /// exchange fails closed. See the README for the unavoidable remote/local crash boundary.
 /// The directory must be application-private, on a local filesystem honoring rename/fsync.
 /// On Windows the directory itself is not synced (see `sync_directory`).
-#[derive(Clone)]
+#[derive(Clone, concord::Debug)]
+#[sensitive]
 pub struct FileStore {
     directory: PathBuf,
     tenant: TenantId,
     client_id: String,
-}
-impl fmt::Debug for FileStore {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str("FileStore(<redacted>)")
-    }
 }
 impl FileStore {
     /// Create a new private directory and durably save the initial pair together.

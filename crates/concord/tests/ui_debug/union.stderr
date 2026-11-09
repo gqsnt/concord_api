@@ -1,0 +1,5 @@
+error: `concord::Debug` supports structs and enums
+ --> tests/ui_debug/union.rs:2:1
+  |
+2 | union Bits {
+  | ^^^^^

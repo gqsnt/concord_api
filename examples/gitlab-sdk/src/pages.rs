@@ -36,7 +36,6 @@
 //! between offset pages (duplicated or skipped). A traversal is a best-effort enumeration, not a
 //! snapshot.
 
-use std::fmt;
 use std::future::Future;
 use std::sync::Arc;
 
@@ -52,7 +51,8 @@ use crate::send::{api_error, decode};
 
 /// The page GitLab linked to (`rel="next"`): the key of the next request, and where an interrupted
 /// traversal resumes. `Debug` withholds the URL.
-#[derive(Clone, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq, concord::Debug)]
+#[sensitive]
 pub struct NextPage {
     url: Url,
     /// The path of the first-page request of the listing that produced this link.
@@ -64,12 +64,6 @@ impl NextPage {
     /// filters.
     pub fn raw_url(&self) -> &Url {
         &self.url
-    }
-}
-
-impl fmt::Debug for NextPage {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str("NextPage(<withheld>)")
     }
 }
 

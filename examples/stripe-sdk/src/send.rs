@@ -171,7 +171,7 @@ impl ApiErrorType {
 }
 
 /// Stripe's error object (the `error` member of an error response).
-#[derive(Clone, PartialEq, Eq, Deserialize)]
+#[derive(Clone, PartialEq, Eq, Deserialize, concord::Debug)]
 pub struct ApiError {
     /// The error type.
     #[serde(rename = "type")]
@@ -180,11 +180,14 @@ pub struct ApiError {
     #[serde(default)]
     pub code: Option<String>,
     #[serde(default)]
+    #[sensitive]
     message: Option<String>,
     #[serde(default)]
+    #[sensitive]
     param: Option<String>,
     /// Link to the code's documentation.
     #[serde(default)]
+    #[sensitive]
     pub doc_url: Option<String>,
 }
 
@@ -197,17 +200,6 @@ impl ApiError {
     /// The parameter the error concerns, **unredacted**.
     pub fn param(&self) -> Option<&str> {
         self.param.as_deref()
-    }
-}
-
-impl fmt::Debug for ApiError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("ApiError")
-            .field("kind", &self.kind)
-            .field("code", &self.code)
-            .field("message", &self.message.as_ref().map(|_| "<withheld>"))
-            .field("param", &self.param.as_ref().map(|_| "<withheld>"))
-            .finish()
     }
 }
 

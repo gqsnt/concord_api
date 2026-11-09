@@ -10,8 +10,9 @@ use crate::error::{InputError, Violation};
 
 /// An application key: the key ID and the key, held only as the sensitive Basic credential
 /// `b2_authorize_account` takes. `Debug` prints neither.
-#[derive(Clone)]
+#[derive(Clone, concord::Debug)]
 pub struct ApplicationKey {
+    #[sensitive]
     credentials: HeaderValue,
 }
 
@@ -33,12 +34,6 @@ impl ApplicationKey {
 
     pub(crate) fn credentials(&self) -> &HeaderValue {
         &self.credentials
-    }
-}
-
-impl fmt::Debug for ApplicationKey {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str("ApplicationKey(<redacted>)")
     }
 }
 
@@ -278,7 +273,7 @@ impl fmt::Debug for AccountInfo {
 
 /// A stored file version, as `b2_upload_file` returned it (the fields this slice reads).
 /// `Debug` withholds the account ID.
-#[derive(Clone, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq, concord::Debug)]
 pub struct FileVersion {
     /// `fileId`.
     pub file_id: FileId,
@@ -287,6 +282,7 @@ pub struct FileVersion {
     /// `bucketId`.
     pub bucket_id: BucketId,
     /// `accountId`.
+    #[sensitive]
     pub account_id: String,
     /// `action` (`upload` for a stored upload).
     pub action: String,
@@ -302,24 +298,6 @@ pub struct FileVersion {
     pub file_info: BTreeMap<String, String>,
     /// `uploadTimestamp` (milliseconds since the epoch).
     pub upload_timestamp: u64,
-}
-
-impl fmt::Debug for FileVersion {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("FileVersion")
-            .field("file_id", &self.file_id)
-            .field("file_name", &self.file_name)
-            .field("bucket_id", &self.bucket_id)
-            .field("account_id", &"<redacted>")
-            .field("action", &self.action)
-            .field("content_length", &self.content_length)
-            .field("content_sha1", &self.content_sha1)
-            .field("content_md5", &self.content_md5)
-            .field("content_type", &self.content_type)
-            .field("file_info", &self.file_info)
-            .field("upload_timestamp", &self.upload_timestamp)
-            .finish()
-    }
 }
 
 /// A token B2 issued; never printed.
@@ -361,8 +339,10 @@ impl UploadUrl {
 /// and the next upload first obtains a new one. A new URL says nothing about earlier attempts.
 /// One target serves one upload at a time (`&mut`): B2 refuses a token already in use
 /// (`auth_token_limit`). `Debug` withholds the URL and the token.
+#[derive(concord::Debug)]
 pub struct UploadTarget {
     pub(crate) bucket: BucketId,
+    #[sensitive]
     pub(crate) current: Option<UploadUrl>,
 }
 
@@ -380,16 +360,6 @@ impl UploadTarget {
     /// The issued upload URL, **unredacted**, while usable.
     pub fn upload_url(&self) -> Option<&Url> {
         self.current.as_ref().map(|current| &current.url)
-    }
-}
-
-impl fmt::Debug for UploadTarget {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("UploadTarget")
-            .field("bucket", &self.bucket)
-            .field("upload_url", &self.current.as_ref().map(|_| "<withheld>"))
-            .field("token", &self.current.as_ref().map(|_| "<redacted>"))
-            .finish()
     }
 }
 

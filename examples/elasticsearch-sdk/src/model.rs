@@ -15,7 +15,7 @@ use crate::error::{Error, Invalid};
 /// such as `_bulk` and `_pit`), and `,`, `*`, `/`, `\`, whitespace and control characters
 /// (multi-target expressions and wildcards are outside the slice). Elasticsearch applies its own
 /// naming rules on top.
-#[derive(Clone, PartialEq, Eq, Hash)]
+#[derive(Clone, PartialEq, Eq, Hash, concord::WireDisplay)]
 pub struct IndexName(Arc<str>);
 
 impl IndexName {
@@ -38,12 +38,6 @@ impl IndexName {
     }
 }
 
-impl fmt::Display for IndexName {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(&self.0)
-    }
-}
-
 impl fmt::Debug for IndexName {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "IndexName({:?})", &*self.0)
@@ -57,7 +51,7 @@ impl Serialize for IndexName {
 }
 
 /// A document `_id` chosen by the caller (non-empty).
-#[derive(Clone, PartialEq, Eq, Hash)]
+#[derive(Clone, PartialEq, Eq, Hash, concord::WireDisplay)]
 pub struct DocumentId(Arc<str>);
 
 impl DocumentId {
@@ -81,12 +75,6 @@ impl fmt::Debug for DocumentId {
     }
 }
 
-impl fmt::Display for DocumentId {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(&self.0)
-    }
-}
-
 impl Serialize for DocumentId {
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         serializer.serialize_str(&self.0)
@@ -96,8 +84,8 @@ impl Serialize for DocumentId {
 /// An Elasticsearch API key, sent as `Authorization: ApiKey <key>` (the form the bulk API
 /// reference's curl example uses). Pass the encoded key Elasticsearch issued; the SDK does not
 /// encode it again. `Debug` never prints it.
-#[derive(Clone)]
-pub struct ApiKey(HeaderValue);
+#[derive(Clone, concord::Debug)]
+pub struct ApiKey(#[sensitive] HeaderValue);
 
 impl ApiKey {
     /// Validates the key (non-empty visible ASCII) and builds the sensitive header value with
@@ -113,14 +101,9 @@ impl ApiKey {
     }
 }
 
-impl fmt::Debug for ApiKey {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str("ApiKey(<redacted>)")
-    }
-}
-
 /// The bulk API's `refresh` query parameter.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, concord::WireDisplay)]
+#[serde(rename_all = "snake_case")]
 pub enum Refresh {
     /// `true`: refresh the affected shards.
     True,
@@ -128,16 +111,6 @@ pub enum Refresh {
     False,
     /// `wait_for`: wait for a refresh to make the operations visible to search.
     WaitFor,
-}
-
-impl fmt::Display for Refresh {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(match self {
-            Refresh::True => "true",
-            Refresh::False => "false",
-            Refresh::WaitFor => "wait_for",
-        })
-    }
 }
 
 /// How long a point in time stays open after each request that names it, in whole minutes

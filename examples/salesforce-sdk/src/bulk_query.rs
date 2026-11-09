@@ -247,24 +247,14 @@ impl fmt::Debug for BulkQueryJob {
 }
 
 /// What a result set's `Sforce-Locator` said about the next set.
-#[derive(Clone, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq, concord::Debug)]
 pub enum NextResultSet {
     /// `Sforce-Locator: null`: this is the last set.
     Last,
     /// The next set's locator.
-    At(ResultLocator),
+    At(#[sensitive] ResultLocator),
     /// No header (a parallel result URL's response need not be read for it).
     Unknown,
-}
-
-impl fmt::Debug for NextResultSet {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(match self {
-            NextResultSet::Last => "Last",
-            NextResultSet::At(_) => "At(..)",
-            NextResultSet::Unknown => "Unknown",
-        })
-    }
 }
 
 /// The validated reader of one job's result parts, typed `T`: the job's dialect, the selected
@@ -579,20 +569,13 @@ impl fmt::Debug for ResultPart {
 
 /// The key of a result-pages manifest after the first: the next link's locator and the ordinal
 /// its first part gets.
-#[derive(Clone, PartialEq, Eq, Hash)]
+#[derive(Clone, PartialEq, Eq, Hash, concord::Debug)]
 pub struct ManifestCursor {
     /// The manifest's `locator`.
+    #[sensitive]
     pub locator: ResultLocator,
     /// The ordinal of its first descriptor.
     pub next_ordinal: u64,
-}
-
-impl fmt::Debug for ManifestCursor {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("ManifestCursor")
-            .field("next_ordinal", &self.next_ordinal)
-            .finish_non_exhaustive()
-    }
 }
 
 /// The discovery factory of one job's parallel result pages.

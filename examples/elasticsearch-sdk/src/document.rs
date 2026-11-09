@@ -126,10 +126,12 @@ pub enum GetDocument {
 }
 
 /// A retrieved document. `Debug` never prints its source.
+#[derive(concord::Debug)]
 pub struct Document {
     index: String,
     id: String,
     version: DocumentVersion,
+    #[sensitive]
     source: Option<Box<RawValue>>,
 }
 
@@ -157,16 +159,6 @@ impl Document {
     /// Decodes the source as `T`. A serde error may quote source content.
     pub fn source<T: de::DeserializeOwned>(&self) -> Option<Result<T, serde_json::Error>> {
         self.source_json().map(serde_json::from_str)
-    }
-}
-
-impl fmt::Debug for Document {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("Document")
-            .field("index", &self.index)
-            .field("id", &self.id)
-            .field("version", &self.version)
-            .finish_non_exhaustive()
     }
 }
 

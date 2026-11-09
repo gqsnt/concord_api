@@ -383,13 +383,14 @@ impl fmt::Debug for ErrorField {
 
 /// An Elasticsearch error cause: the `error` of a failed bulk item or of an error document.
 ///
-/// `Debug` shows the type only: the `reason` can quote document content (the bulk API's
+/// `Debug` withholds the `reason`: it can quote document content (the bulk API's
 /// `include_source_on_error` defaults to `true`); read it deliberately with [`reason`](Self::reason).
-#[derive(Clone, Deserialize)]
+#[derive(Clone, Deserialize, concord::Debug)]
 pub struct ErrorCause {
     #[serde(rename = "type")]
     kind: String,
     #[serde(default)]
+    #[sensitive]
     reason: Option<String>,
     #[serde(default)]
     root_cause: Vec<ErrorCause>,
@@ -416,22 +417,5 @@ impl ErrorCause {
     /// The nested cause, if any.
     pub fn caused_by(&self) -> Option<&ErrorCause> {
         self.caused_by.as_deref()
-    }
-}
-
-impl fmt::Debug for ErrorCause {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("ErrorCause")
-            .field("type", &self.kind)
-            .field("reason", &self.reason.as_ref().map(|_| Withheld))
-            .finish_non_exhaustive()
-    }
-}
-
-struct Withheld;
-
-impl fmt::Debug for Withheld {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str("<withheld>")
     }
 }
