@@ -3,9 +3,7 @@
 //! `Option`; a field the SDK relies on (identifiers, title, state, URLs) is required, so a response
 //! without it is a decode error rather than a default.
 
-use std::fmt;
-
-use serde::{Deserialize, Deserializer};
+use serde::{Deserialize, Deserializer, Serialize};
 
 use crate::params::{IssueId, IssueIid, ProjectId};
 
@@ -64,13 +62,15 @@ pub struct Issue {
 }
 
 /// `state` of an issue. A value this SDK does not know is kept as sent.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, concord::WireDisplay)]
+#[serde(rename_all = "snake_case")]
 pub enum IssueStatus {
     /// `opened`
     Opened,
     /// `closed`
     Closed,
     /// Another value, as sent.
+    #[serde(untagged)]
     Other(String),
 }
 
@@ -81,16 +81,6 @@ impl<'de> Deserialize<'de> for IssueStatus {
             "opened" => Self::Opened,
             "closed" => Self::Closed,
             _ => Self::Other(state),
-        })
-    }
-}
-
-impl fmt::Display for IssueStatus {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(match self {
-            Self::Opened => "opened",
-            Self::Closed => "closed",
-            Self::Other(state) => state,
         })
     }
 }

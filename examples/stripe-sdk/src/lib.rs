@@ -54,7 +54,7 @@ pub mod params;
 pub mod send;
 pub mod types;
 
-use std::fmt;
+use serde::Serialize;
 
 use concord::Json;
 use concord::reqwest::header::{AUTHORIZATION, HeaderValue};
@@ -83,7 +83,8 @@ use params::{
 };
 
 /// The `status` filter of `GET /v1/subscriptions` (adds `all` and `ended` to the statuses).
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, concord::WireDisplay)]
+#[serde(rename_all = "snake_case")]
 pub enum SubscriptionStatusFilter {
     /// `active`.
     Active,
@@ -107,60 +108,14 @@ pub enum SubscriptionStatusFilter {
     Unpaid,
 }
 
-impl fmt::Display for SubscriptionStatusFilter {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(match self {
-            Self::Active => "active",
-            Self::All => "all",
-            Self::Canceled => "canceled",
-            Self::Ended => "ended",
-            Self::Incomplete => "incomplete",
-            Self::IncompleteExpired => "incomplete_expired",
-            Self::PastDue => "past_due",
-            Self::Paused => "paused",
-            Self::Trialing => "trialing",
-            Self::Unpaid => "unpaid",
-        })
-    }
-}
-
 /// The `type` filter of `GET /v1/prices`.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, concord::WireDisplay)]
+#[serde(rename_all = "snake_case")]
 pub enum PriceTypeFilter {
     /// `one_time`.
     OneTime,
     /// `recurring`.
     Recurring,
-}
-
-impl fmt::Display for PriceTypeFilter {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(match self {
-            Self::OneTime => "one_time",
-            Self::Recurring => "recurring",
-        })
-    }
-}
-
-impl fmt::Display for CollectionMethod {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(match self {
-            Self::ChargeAutomatically => "charge_automatically",
-            Self::SendInvoice => "send_invoice",
-        })
-    }
-}
-
-impl fmt::Display for InvoiceStatus {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(match self {
-            Self::Draft => "draft",
-            Self::Open => "open",
-            Self::Paid => "paid",
-            Self::Uncollectible => "uncollectible",
-            Self::Void => "void",
-        })
-    }
 }
 
 concord::api! {

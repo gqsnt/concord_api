@@ -1,0 +1,17 @@
+error: expected `crate = path`
+ --> tests/ui_json/wire_display_attribute.rs:2:16
+  |
+2 | #[wire_display(runtime = concord)]
+  |                ^^^^^^^
+
+error: duplicate `crate` path
+ --> tests/ui_json/wire_display_attribute.rs:7:16
+  |
+7 | #[wire_display(crate = concord)]
+  |                ^^^^^
+
+error: expected identifier
+  --> tests/ui_json/wire_display_attribute.rs:11:24
+   |
+11 | #[wire_display(crate = "concord")]
+   |                        ^^^^^^^^^

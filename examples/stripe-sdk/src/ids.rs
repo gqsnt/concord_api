@@ -23,7 +23,7 @@
 use std::fmt;
 use std::str::FromStr;
 
-use serde::{Deserialize, Deserializer, Serialize, Serializer};
+use serde::{Deserialize, Deserializer, Serialize};
 
 /// An identifier that cannot be constructed from the given text. `Display` names the expected
 /// family and the rule, never the text.
@@ -106,6 +106,8 @@ macro_rules! stripe_id {
     ($(#[$doc:meta])* $name:ident, $family:literal, $prefix:expr) => {
         $(#[$doc])*
         #[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+        #[derive(Serialize, concord::WireDisplay)]
+        #[serde(transparent)]
         pub struct $name(String);
 
         impl $name {
@@ -135,18 +137,6 @@ macro_rules! stripe_id {
             type Err = IdError;
             fn from_str(text: &str) -> Result<Self, IdError> {
                 Self::new(text)
-            }
-        }
-
-        impl fmt::Display for $name {
-            fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-                f.write_str(&self.0)
-            }
-        }
-
-        impl Serialize for $name {
-            fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-                serializer.serialize_str(&self.0)
             }
         }
 

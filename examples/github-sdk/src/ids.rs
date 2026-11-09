@@ -14,6 +14,7 @@ macro_rules! numeric_id {
     ($(#[$doc:meta])* $name:ident) => {
         $(#[$doc])*
         #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+        #[derive(concord::WireDisplay)]
         #[serde(transparent)]
         pub struct $name(pub u64);
 
@@ -21,12 +22,6 @@ macro_rules! numeric_id {
             /// The provider's integer.
             pub fn get(self) -> u64 {
                 self.0
-            }
-        }
-
-        impl fmt::Display for $name {
-            fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-                fmt::Display::fmt(&self.0, f)
             }
         }
     };
@@ -113,6 +108,7 @@ macro_rules! text_id {
     ($(#[$doc:meta])* $name:ident) => {
         $(#[$doc])*
         #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+        #[derive(concord::WireDisplay)]
         #[serde(transparent)]
         pub struct $name(String);
 
@@ -126,12 +122,6 @@ macro_rules! text_id {
             /// The text.
             pub fn as_str(&self) -> &str {
                 &self.0
-            }
-        }
-
-        impl fmt::Display for $name {
-            fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-                f.write_str(&self.0)
             }
         }
 
@@ -187,19 +177,11 @@ impl fmt::Display for RepoRef {
 
 /// The `workflow_id` path value of `GET .../actions/workflows/{workflow_id}/runs`: GitHub accepts
 /// the numeric id or the workflow file name (`main.yaml`).
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, concord::WireDisplay)]
+#[serde(untagged)]
 pub enum WorkflowRef {
     /// The workflow's numeric id.
     Id(WorkflowId),
     /// The workflow file name, such as `ci.yml` (sent as one segment).
     File(String),
-}
-
-impl fmt::Display for WorkflowRef {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::Id(id) => fmt::Display::fmt(id, f),
-            Self::File(file) => f.write_str(file),
-        }
-    }
 }

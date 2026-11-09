@@ -83,7 +83,9 @@ fn check_dns1123_subdomain(name: &str) -> Result<(), NameError> {
 }
 
 /// A namespace name (an RFC 1123 label, as Kubernetes requires for namespaces).
-#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[derive(
+    Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize, concord::WireDisplay,
+)]
 #[serde(transparent)]
 pub struct NamespaceName(String);
 
@@ -105,16 +107,12 @@ impl NamespaceName {
     }
 }
 
-impl fmt::Display for NamespaceName {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(&self.0)
-    }
-}
-
 /// The name of a namespaced or cluster-scoped object (an RFC 1123 subdomain, the general
 /// Kubernetes object-name rule; some kinds, such as Services, are stricter and the server
 /// enforces that).
-#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[derive(
+    Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize, concord::WireDisplay,
+)]
 #[serde(transparent)]
 pub struct ObjectName(String);
 
@@ -136,15 +134,9 @@ impl ObjectName {
     }
 }
 
-impl fmt::Display for ObjectName {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(&self.0)
-    }
-}
-
 /// An object's or a collection's `resourceVersion`: opaque, passed back unmodified, compared
 /// only for equality (never ordered or parsed as a number).
-#[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, concord::WireDisplay)]
 #[serde(transparent)]
 pub struct ResourceVersion(String);
 
@@ -165,12 +157,6 @@ impl ResourceVersion {
     }
 }
 
-impl fmt::Display for ResourceVersion {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(&self.0)
-    }
-}
-
 /// An object's `metadata.uid`.
 #[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(transparent)]
@@ -187,7 +173,7 @@ impl Uid {
 /// few minutes. Its `Debug` is redacted; the declared `continue` query value is `#[sensitive]`, so
 /// Concord's own `Debug` and error output withhold it too. `Display` is the raw token (it is what
 /// goes on the wire) and is therefore only used by the request builder.
-#[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, PartialEq, Eq, Serialize, Deserialize, concord::WireDisplay)]
 #[serde(transparent)]
 pub struct ContinueToken(String);
 
@@ -207,12 +193,6 @@ impl ContinueToken {
 impl fmt::Debug for ContinueToken {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str("ContinueToken(<redacted>)")
-    }
-}
-
-impl fmt::Display for ContinueToken {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(&self.0)
     }
 }
 

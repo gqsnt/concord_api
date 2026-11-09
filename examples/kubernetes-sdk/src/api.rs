@@ -8,8 +8,6 @@
 //! `-> stream WatchEvent<T>` read with `JsonStream` (see [`crate::watch`] for why its defaults
 //! fit).
 
-use std::fmt;
-
 use concord::Json;
 use concord::jsonl::JsonStream;
 use concord::reqwest::header::{ACCEPT, AUTHORIZATION, HeaderValue};
@@ -24,21 +22,12 @@ use crate::watch::WatchEvent;
 
 /// `resourceVersionMatch` of a list or watch request. Streaming lists require
 /// [`NotOlderThan`](Self::NotOlderThan).
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, concord::WireDisplay)]
 pub enum ResourceVersionMatch {
     /// `NotOlderThan`: data at least as new as `resourceVersion`.
     NotOlderThan,
     /// `Exact`: data at exactly `resourceVersion` (`410 Gone` when unavailable).
     Exact,
-}
-
-impl fmt::Display for ResourceVersionMatch {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(match self {
-            Self::NotOlderThan => "NotOlderThan",
-            Self::Exact => "Exact",
-        })
-    }
 }
 
 concord::api! {

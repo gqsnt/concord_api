@@ -5,9 +5,7 @@
 //! optional so that a field Cloudflare omits or nulls does not make a zone or record unreadable.
 //! Unknown fields are ignored. Timestamps are kept as the RFC 3339 text Cloudflare sends.
 
-use std::fmt;
-
-use serde::{Deserialize, Deserializer};
+use serde::{Deserialize, Deserializer, Serialize};
 
 macro_rules! identifier {
     ($(#[$meta:meta])* $name:ident) => {
@@ -16,6 +14,7 @@ macro_rules! identifier {
         /// Cloudflare documents identifiers as opaque strings of at most 32 characters; the SDK
         /// passes the value through unchanged (Concord encodes it as exactly one path segment).
         #[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Deserialize)]
+        #[derive(Serialize, concord::WireDisplay)]
         #[serde(transparent)]
         pub struct $name(String);
 
@@ -23,12 +22,6 @@ macro_rules! identifier {
             /// The identifier as sent and received.
             pub fn as_str(&self) -> &str {
                 &self.0
-            }
-        }
-
-        impl fmt::Display for $name {
-            fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-                f.write_str(&self.0)
             }
         }
 
@@ -65,10 +58,12 @@ macro_rules! provider_enum {
     ($(#[$meta:meta])* $name:ident { $($(#[$vmeta:meta])* $variant:ident = $wire:literal,)* }) => {
         $(#[$meta])*
         #[derive(Clone, Debug, PartialEq, Eq, Hash)]
+        #[derive(Serialize, concord::WireDisplay)]
         #[non_exhaustive]
         pub enum $name {
-            $($(#[$vmeta])* $variant,)*
+            $($(#[$vmeta])* #[serde(rename = $wire)] $variant,)*
             /// A value not documented on the pages this SDK cites, kept as sent.
+            #[serde(untagged)]
             Other(String),
         }
 
@@ -79,12 +74,6 @@ macro_rules! provider_enum {
                     $(Self::$variant => $wire,)*
                     Self::Other(value) => value,
                 }
-            }
-        }
-
-        impl fmt::Display for $name {
-            fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-                f.write_str(self.as_str())
             }
         }
 
@@ -110,16 +99,9 @@ macro_rules! request_enum {
     ($(#[$meta:meta])* $name:ident { $($(#[$vmeta:meta])* $variant:ident = $wire:literal,)* }) => {
         $(#[$meta])*
         #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+        #[derive(Serialize, concord::WireDisplay)]
         pub enum $name {
-            $($(#[$vmeta])* $variant,)*
-        }
-
-        impl fmt::Display for $name {
-            fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-                f.write_str(match self {
-                    $(Self::$variant => $wire,)*
-                })
-            }
+            $($(#[$vmeta])* #[serde(rename = $wire)] $variant,)*
         }
     };
 }
@@ -243,7 +225,8 @@ request_enum!(
 );
 
 /// List Zones `per_page`: documented as 5 to 50.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, concord::WireDisplay)]
+#[serde(transparent)]
 pub struct ZonesPerPage(u8);
 
 impl ZonesPerPage {
@@ -261,15 +244,10 @@ impl ZonesPerPage {
     }
 }
 
-impl fmt::Display for ZonesPerPage {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        self.0.fmt(f)
-    }
-}
-
 /// List DNS Records `per_page`: documented as 1 to 5,000,000. A large page must still fit in
 /// [`SUCCESS_BODY_LIMIT`](crate::SUCCESS_BODY_LIMIT).
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, concord::WireDisplay)]
+#[serde(transparent)]
 pub struct RecordsPerPage(u32);
 
 impl RecordsPerPage {
@@ -284,12 +262,6 @@ impl RecordsPerPage {
     /// The number sent.
     pub fn get(self) -> u32 {
         self.0
-    }
-}
-
-impl fmt::Display for RecordsPerPage {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        self.0.fmt(f)
     }
 }
 

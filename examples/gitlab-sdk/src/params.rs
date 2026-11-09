@@ -7,8 +7,9 @@
 use std::fmt;
 use std::num::NonZeroU64;
 
+use concord::WireDisplay;
 use concord::reqwest::header::HeaderValue;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 /// Why an input was refused before any request was built. `Display` names the rule, never the
 /// value (a token or a project path can be private).
@@ -64,7 +65,9 @@ impl fmt::Display for InputError {
 impl std::error::Error for InputError {}
 
 /// A project's global ID (`id` of a project, `project_id` of an issue).
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Deserialize)]
+#[derive(
+    Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Deserialize, Serialize, WireDisplay,
+)]
 #[serde(transparent)]
 pub struct ProjectId(pub NonZeroU64);
 
@@ -84,15 +87,11 @@ impl ProjectId {
     }
 }
 
-impl fmt::Display for ProjectId {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        fmt::Display::fmt(&self.0, f)
-    }
-}
-
 /// An issue's project-scoped number (`iid`): the `#7` of `group/project#7`, and the number in
 /// `GET /projects/:id/issues/:issue_iid`. Not the global [`IssueId`].
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Deserialize)]
+#[derive(
+    Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Deserialize, Serialize, WireDisplay,
+)]
 #[serde(transparent)]
 pub struct IssueIid(pub NonZeroU64);
 
@@ -112,14 +111,10 @@ impl IssueIid {
     }
 }
 
-impl fmt::Display for IssueIid {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        fmt::Display::fmt(&self.0, f)
-    }
-}
-
 /// An issue's global ID (`id`). No endpoint of this slice is addressed by it.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Deserialize)]
+#[derive(
+    Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Deserialize, Serialize, WireDisplay,
+)]
 #[serde(transparent)]
 pub struct IssueId(pub NonZeroU64);
 
@@ -130,18 +125,13 @@ impl IssueId {
     }
 }
 
-impl fmt::Display for IssueId {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        fmt::Display::fmt(&self.0, f)
-    }
-}
-
 /// The `:id` of `/projects/:id/...`: "the ID or URL-encoded path of the project".
 ///
 /// A path is kept as GitLab writes it (`group/subgroup/project`) and is written into the request
 /// as **one** path segment, so every `/` is sent as `%2F`
 /// (`/projects/group%2Fsubgroup%2Fproject/issues`) — Concord encodes each path value exactly once.
-#[derive(Clone, PartialEq, Eq, Hash)]
+#[derive(Clone, PartialEq, Eq, Hash, Serialize, WireDisplay)]
+#[serde(untagged)]
 pub enum ProjectRef {
     /// A project ID: `/projects/42`.
     Id(ProjectId),
@@ -195,16 +185,6 @@ impl From<ProjectId> for ProjectRef {
     }
 }
 
-/// The wire spelling before encoding: the ID, or the path with its `/`.
-impl fmt::Display for ProjectRef {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::Id(id) => fmt::Display::fmt(id, f),
-            Self::Path(path) => f.write_str(path),
-        }
-    }
-}
-
 impl fmt::Debug for ProjectRef {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
@@ -251,7 +231,8 @@ impl fmt::Debug for PrivateToken {
 }
 
 /// `state`: which issues to list.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, WireDisplay)]
+#[serde(rename_all = "snake_case")]
 pub enum IssueState {
     /// `opened`
     Opened,
@@ -261,20 +242,11 @@ pub enum IssueState {
     All,
 }
 
-impl fmt::Display for IssueState {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(match self {
-            Self::Opened => "opened",
-            Self::Closed => "closed",
-            Self::All => "all",
-        })
-    }
-}
-
 /// `order_by` for the **offset-paginated** project issue listing, the strategy this SDK pins
 /// (GitLab's default `created_at`). `title` and `id` are documented for keyset pagination only
 /// and are deliberately absent.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, WireDisplay)]
+#[serde(rename_all = "snake_case")]
 pub enum IssueOrder {
     /// `created_at` (GitLab's default)
     CreatedAt,
@@ -296,24 +268,9 @@ pub enum IssueOrder {
     Weight,
 }
 
-impl fmt::Display for IssueOrder {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(match self {
-            Self::CreatedAt => "created_at",
-            Self::UpdatedAt => "updated_at",
-            Self::Priority => "priority",
-            Self::DueDate => "due_date",
-            Self::RelativePosition => "relative_position",
-            Self::LabelPriority => "label_priority",
-            Self::MilestoneDue => "milestone_due",
-            Self::Popularity => "popularity",
-            Self::Weight => "weight",
-        })
-    }
-}
-
 /// `sort`: `asc` or `desc` (GitLab's default `desc`).
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, WireDisplay)]
+#[serde(rename_all = "snake_case")]
 pub enum SortOrder {
     /// `asc`
     Asc,
@@ -321,18 +278,10 @@ pub enum SortOrder {
     Desc,
 }
 
-impl fmt::Display for SortOrder {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(match self {
-            Self::Asc => "asc",
-            Self::Desc => "desc",
-        })
-    }
-}
-
 /// `per_page`: 1 to 100 (GitLab's default 20). It sets the size of the **first** page; later
 /// pages are requested with GitLab's `Link` URLs exactly as sent.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, WireDisplay)]
+#[serde(transparent)]
 pub struct PerPage(u8);
 
 impl PerPage {
@@ -355,12 +304,6 @@ impl PerPage {
     /// The number.
     pub fn get(self) -> u8 {
         self.0
-    }
-}
-
-impl fmt::Display for PerPage {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        fmt::Display::fmt(&self.0, f)
     }
 }
 

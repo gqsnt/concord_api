@@ -302,7 +302,9 @@ pub enum SubscriptionStatus {
 }
 
 /// How invoices are collected.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize, serde::Serialize)]
+#[derive(
+    Clone, Copy, Debug, PartialEq, Eq, Deserialize, serde::Serialize, concord::WireDisplay,
+)]
 #[serde(rename_all = "snake_case")]
 pub enum CollectionMethod {
     /// Charge the default payment method automatically.
@@ -386,7 +388,9 @@ impl Object for Subscription {
 }
 
 /// An invoice's status.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize, serde::Serialize)]
+#[derive(
+    Clone, Copy, Debug, PartialEq, Eq, Deserialize, serde::Serialize, concord::WireDisplay,
+)]
 #[serde(rename_all = "snake_case")]
 pub enum InvoiceStatus {
     /// `draft`.
