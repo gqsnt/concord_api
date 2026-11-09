@@ -1,7 +1,7 @@
 """I3 materials packer (docs-assisted prediction): fills `prompts/probe_reader.md` per SDK bank.
 
     python3 -I tools/desirability/probes/pack.py --bank tools/desirability/probes/bank [--sdk SHORT ..]
-        [--prompt PATH] [--no-rustdoc-build] [--generated-docs [--docs-commit COMMIT]]
+        [--prompt PATH] [--no-rustdoc-build] [--generated-docs [--docs-commit COMMIT]] [--stated-boundary]
 
 Per SDK it writes `<bank>/packed/<sdk>.wire.md` (R1 questions: cheat sheet, the SDK's `api!`
 blocks and the Rust items they name, call snippets) and `<bank>/packed/<sdk>.rc.md` (R2/R3
@@ -15,6 +15,8 @@ never the SDK's tests. Run Python with `-I`.
 Opt-in `--generated-docs` adds raw endpoint request-type and navigation-method docs to both
 sessions (examples retained and reported in `generated_docs_exposure` in the metadata). It builds
 an exact arm commit archive in an isolated, provenance-checked target; see generated_docs.py.
+Opt-in `--stated-boundary` aligns all three header fields in wire questions with the truth's
+observation boundary, without changing the bank, truth or scorer.
 """
 import argparse
 import hashlib
@@ -439,6 +441,33 @@ def build_rustdoc(pkgs, log):
 
 # ---------------------------------------------------------------- prompt assembly
 
+WIRE_KEYS = "Answer each question with `method`, `url`, `headers`, `body`, `content_type`, `accept`."
+WIRE_HEADER_BOUNDARY = (
+    "For `headers`, `accept` and `content_type`, include only headers the SDK and Concord set at "
+    "the stated observation boundary, excluding headers the HTTP client adds on its own. "
+    "Use `null` for `accept` or `content_type` when the SDK and Concord set no corresponding "
+    "header at that boundary, even if the HTTP client later adds a default."
+)
+
+
+def stated_wire_question(it):
+    """Replace only the stored wire preamble; keep the bank's call snippet. No truth lookup."""
+    asks = {
+        "operation": "What request does `call.send().await` send, including send-policy edits?",
+        "prepared": "What request does `call.prepare()` build, before any send-policy edits?",
+    }
+    boundary = it.get("boundary")
+    if boundary not in asks:
+        raise SystemExit(f"{it['id']}: --stated-boundary needs an operation or prepared boundary")
+    _, fence, snippet = it["question"].partition("\n\n```rust\n")
+    if not fence:
+        raise SystemExit(f"{it['id']}: --stated-boundary needs a stored wire call snippet")
+    question = (asks[boundary] + " Give `method`, `url`, `headers` (secret values as `<secret>`), "
+                "`body`, `content_type` and `accept`. " + WIRE_HEADER_BOUNDARY + fence + snippet)
+    # Match fill's whitespace normalization so the metadata hashes the exact packed question.
+    return re.sub(r"\n{3,}", "\n\n", question).strip()
+
+
 def fill(template, cheatsheet, decl_types, docs, questions, with_docs):
     body = template.split("\n---\n", 1)[1].lstrip("\n") if "\n---\n" in template else template
     body = body.replace("{for R2/R3 banks: the SDK's generated documentation, as text}",
@@ -451,7 +480,7 @@ def fill(template, cheatsheet, decl_types, docs, questions, with_docs):
     return re.sub(r"\n{3,}", "\n\n", body).strip() + "\n"
 
 
-def questions_text(bank, session):
+def questions_text(bank, session, stated_boundary=False):
     items = [it for it in bank["items"] if it["session"] == session]
     parts = []
     if session == "rc":
@@ -464,17 +493,22 @@ def questions_text(bank, session):
                 "`<T as Trait>::Name` projections; "
                 "a call question with `code`, one expression ending in `.send().await`.")
     else:
-        keys = "Answer each question with `method`, `url`, `headers`, `body`, `content_type`, `accept`."
+        keys = WIRE_KEYS
+        if stated_boundary:
+            keys += " Use the observation boundary stated in each question. " + WIRE_HEADER_BOUNDARY
     parts.append(keys + " Every answer object carries its `q` number and a `confidence`.")
     for it in items:
-        parts.append(f"### Q{it['q']}\n\n{question_of(bank, it)}")
+        parts.append(f"### Q{it['q']}\n\n{question_of(bank, it, stated_boundary)}")
     return "\n\n".join(parts)
 
 
-def question_of(bank, it):
-    """An item's question text. Call questions are worded here with the current R3 answer
+def question_of(bank, it, stated_boundary=False):
+    """An item's question text. Opt-in wire wording states the truth's header boundary.
+    Call questions are worded here with the current R3 answer
     contract (`generate.call_question_text`) from the stored `intent`, so banks generated before
     the contract changed (generator v1) show the contract the scorer applies."""
+    if it["kind"] == "wire" and stated_boundary:
+        return stated_wire_question(it)
     if it["kind"] != "call":
         return it["question"]
     intent = it.get("intent")
@@ -534,6 +568,9 @@ def main():
                     help="append raw endpoint request-type/navigation docs to every session; "
                          "build the arm commit in a provenance-checked isolated target")
     ap.add_argument("--docs-commit", help="arm commit for --generated-docs (default: --repo HEAD; exact git archive)")
+    ap.add_argument("--stated-boundary", action="store_true",
+                    help="state one SDK/Concord header boundary for headers, accept and content_type "
+                         "in wire questions (exclude HTTP-client defaults)")
     a = ap.parse_args()
     if a.docs_commit and not a.generated_docs:
         ap.error("--docs-commit requires --generated-docs")
@@ -584,18 +621,20 @@ def main():
             rd_meta = {"source": "missing", "path": rd_path}
         meta = {"sdk": b["short"], "prompt_sha256": hashlib.sha256(template.encode()).hexdigest(),
                 "cheatsheet_sha256": hashlib.sha256(cheat.encode()).hexdigest(), "rustdoc": rd_meta,
+                "stated_boundary": a.stated_boundary,
                 "named_items": [it["name"] for it in items], "named_items_cut": cut, "sessions": {}}
         truth_path = os.path.join(bank_dir, "truth", f"{b['short']}.json")
         truth = C.read_json(truth_path)["items"] if os.path.isfile(truth_path) else None
         for session, with_docs in (("wire", a.wire_docs), ("rc", True)):
-            text = fill(template, cheat, decl, docs, questions_text(b, session), with_docs)
+            questions = questions_text(b, session, a.stated_boundary)
+            text = fill(template, cheat, decl, docs, questions, with_docs)
             if a.generated_docs:
                 text = text.replace("(no generated documentation in this bank)",
                                     "the endpoint documentation appended in section 5")
             materials = text.split("## 4. Questions", 1)[0].split("## 2. Declaration", 1)[-1]
             meta.setdefault("leak_scan", {})[session] = leak_scan(b, session, materials, truth, navs, cheat)
             # the same scan without the call-chain filter: what the filter removed (validation)
-            unf = fill(template, cheat, decl_unf, docs_unf, questions_text(b, session), with_docs)
+            unf = fill(template, cheat, decl_unf, docs_unf, questions, with_docs)
             unf = unf.split("## 4. Questions", 1)[0].split("## 2. Declaration", 1)[-1]
             ls = leak_scan(b, session, unf, truth, navs)
             meta.setdefault("leak_scan_unfiltered", {})[session] = {k: ls[k] for k in ("call_chain", "call_chain_text", "endpoint_chains")}
@@ -613,6 +652,12 @@ def main():
             meta["sessions"][session] = {"file": os.path.basename(path), "chars": len(text),
                                          "sha256": hashlib.sha256(text.encode()).hexdigest(),
                                          "questions": {str(it["q"]): it["id"] for it in b["items"] if it["session"] == session}}
+            if a.stated_boundary and session == "wire":
+                meta["sessions"][session]["questions_text_sha256"] = hashlib.sha256(questions.encode()).hexdigest()
+                meta["sessions"][session]["question_text_sha256"] = {
+                    str(it["q"]): hashlib.sha256(question_of(b, it, True).encode()).hexdigest()
+                    for it in b["items"] if it["session"] == session
+                }
         C.write_json(os.path.join(out_dir, f"{b['short']}.meta.json"), meta)
         print(f"{b['short']}: wire {meta['sessions']['wire']['chars']} chars, rc {meta['sessions']['rc']['chars']} chars, "
               f"named items {len(items)} (cut {cut}), rustdoc {rd_meta.get('source', '?')[:12]}")
