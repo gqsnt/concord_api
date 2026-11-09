@@ -8,7 +8,8 @@ Not released: the version is unchanged (4.2.0). Records: `v4/desirability/` (dec
 **Version.** No major bump: the accepted changes to the versioned `concord-*` crates are additive
 (the opt-in `controls { … }` statement, H06; the opt-in `operations` enum and `SendOperation`, H08),
 fixes (T3) and documentation (H04, H16s). The public API removals (H06, H06c) are in the example
-SDK crates, which are not published (version 0.0.0); their replacement routes are in
+SDK crates, which are not published (0.0.0, or 0.1.0 for Adyen, arXiv, Sentry and Strava), as are six SDKs'
+policy types moving from `SendWith` to `SendOperation` (H08); their replacement routes are in
 [MIGRATION](docs/MIGRATION.md).
 
 ### Added

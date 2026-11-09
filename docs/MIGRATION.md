@@ -90,6 +90,33 @@ their wire behavior. `prepare()` and native request access remain the documented
 - **usgs-earthquake-catalog-sdk:** `Usgs::new`, `with_base_url` crate-visible. Use `Usgs::for_fixture(http, origin)` with a bare HTTP origin on a literal loopback IP, without `/fdsnws/event/1`. The caller still configures transport timeouts and disables redirects/retries.
 - **zendesk-support-sdk:** `Zendesk::with_base_url` crate-visible; pilot `set_subdomain` removed. Use `Zendesk::connect(http, subdomain, token)` for another account. Fixtures use `Zendesk::for_fixture(http_builder, subdomain, token, loopback_socket_address)`: it resolves `{subdomain}.zendesk.test` to that address with proxies disabled. Keep caller retry/redirect/timeout settings in the builder. `set_policy` and same-account `set_authorization` rotation remain public.
 
+## SDK send policies take the endpoint's operation (H08)
+
+Six example SDKs now declare `operations Name;` on their client, so each generated `send()` passes the endpoint's
+variant of a generated operation enum to the send policy, and the policy classifies it with an exhaustive `match` (an
+endpoint left out is a build error, not a run-time refusal). Their public policy types therefore implement
+`concord::SendOperation<T, Name>` instead of `concord::SendWith<T>`:
+
+| SDK | Public policy type | Operation enum |
+|---|---|---|
+| Kraken Spot REST | `Policy` | `KrakenOperation` |
+| PayPal | `Session` | `PayPalOperation` |
+| Sentry | `SendPolicy` | `SentryOperation` |
+| Square Payments | `SquarePolicy` | `SquareOperation` |
+| Strava | `Session` | `StravaOperation` |
+| Zendesk Support | `SendPolicy` | `ZendeskOperation` |
+
+(Datadog Events also adopted, but its policy type is private; GitHub adopted without a send policy.)
+
+- **Ordinary calls are unchanged:** `api.endpoint(..).send().await` and `prepare()` keep their syntax and results.
+- **Code that names the trait** breaks: a generic bound `P: SendWith<T>` on one of these policies becomes
+  `P: SendOperation<T, Name>`, and a direct `SendWith::send(&policy, endpoint)` becomes
+  `SendOperation::send(&policy, Name::Variant, endpoint)` with the endpoint's own variant (the generated enum has one
+  variant per endpoint).
+- An SDK author adopting `operations` writes `impl<T> SendOperation<T, Name> for Policy` with a `match operation { .. }`
+  without a wildcard arm; see `AUTHOR_GUIDE.md` and the `SendOperation` rustdoc. A client without `operations` keeps
+  `SendWith`.
+
 ## To the consolidated interface
 
 Existing runtime entry points remain: `send`, `send_raw`, `into_parts`, `Decoder::{decode, finish}`,

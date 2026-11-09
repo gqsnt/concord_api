@@ -4,12 +4,12 @@ Branch `concord-desirability` (draft PR #6, never merged by the loop). Baseline 
 F = `6ab300c1` (gate 66/66; CI: {{CI}}). Charter (owner, A2): the fixed core is using the `api!` DSL — client → scope → endpoint — on
 reqwest; everything else is challengeable. Decisions follow `contracts/DECISION_RULE.md` as amended by A1 (outcomes
 WIN / LOSS / KEEP_CURRENT / INCONCLUSIVE, pilot then migrate) and A3 (speed-up). Every decision had an independent Codex
-`gpt-6.1-sol` xhigh read-only review (same provider as the Codex-authored lanes; never labelled cross-provider). The loop
+`gpt-6.1-sol` xhigh read-only review (same-provider where the lane was Codex-authored; see Instrument limits). The loop
 stopped by **Stop 1** (`DECISIONS.md` STOP row): no queued hypothesis has a measured deficit behind it.
 
 **Version.** Unchanged (4.2.0), no tag: the versioned `concord-*` crates changed additively (`controls`, `operations` /
-`SendOperation`), by fixes (T3) and in documentation; the API removals are in the unpublished example SDKs (0.0.0),
-with replacement routes in `docs/MIGRATION.md`.
+`SendOperation`), by fixes (T3) and in documentation; the API removals and the policy-trait changes are in the unpublished example SDKs (0.0.0, or 0.1.0 for
+Adyen, arXiv, Sentry and Strava), with replacement routes in `docs/MIGRATION.md`.
 
 Readers and editors are models, not people: every outcome below is evidence about how predictable and editable the
 contract is for model callers, not about human preference or adoption, which stay unmeasured.
@@ -47,7 +47,11 @@ wrapper and policy headers).
 **Decision.** **ACCEPTED (WIN)**: 6/6 seeded omissions in Strava, Sentry, Kraken move to an SDK build error (E0004
 naming the endpoint), baseline: run-time refusal or wrong behaviour; I4 e4 9/9 vs 9/9 (ceiling); full migration (PayPal,
 Zendesk, Datadog, Square, GitHub).
-**Public changes.** One DSL statement and one core trait (`SendOperation`), both opt-in and additive.
+**Public changes.** One DSL statement and one core trait (`SendOperation`), both opt-in and additive in the Concord
+crates. In six example SDKs the public policy type now implements `SendOperation<T, Name>` instead of `SendWith<T>`
+(Kraken `Policy`, PayPal `Session`, Sentry `SendPolicy`, Square `SquarePolicy`, Strava `Session`, Zendesk `SendPolicy`):
+ordinary `send()` calls are unchanged; code that names `SendWith` on these policies breaks (`docs/MIGRATION.md`,
+"SDK send policies take the endpoint's operation"). Datadog adopted with a private policy; GitHub without a policy.
 **Costs.** Compile cost < 5 %; one concept.
 
 ## 3. Inputs — what a caller may pass (INPUT; family closed)
@@ -63,7 +67,7 @@ documented invariant); H06b (scope representation) and H07 (facade residue) were
 **Decisions.** H06 **ACCEPTED (WIN; pilot scope by owner decision O7)**: FM1–FM4 unavailable at caller compile (baseline
 sends each forbidden request), 16 valid moves and 3 controls pass. H06c **ACCEPTED (WIN)**: 23 withheld controls each fail
 outside the SDK crate; valid moves (rotation, `set_connection`, `set_policy`) compile; 17 removals + 4 constructors.
-**Public and caller changes.** Breaking in 11 example SDKs (unpublished, version 0.0.0): removed or crate-visible
+**Public and caller changes.** Breaking in 11 example SDKs (unpublished): removed or crate-visible
 setters/`with_base_url`, replacement routes in `docs/MIGRATION.md`. Concord crates: one additive DSL statement.
 **Repair split out.** T4 (QuickBooks sends to the current connection's environment).
 
@@ -90,7 +94,12 @@ Cloudflare diagnostics on success, S3/B2 XML errors, Snowflake 202, Kraken envel
 T2 **ACCEPTED** (test server accept loop and chunk accounting; paused-clock and held-socket tests), T3 sweep **ACCEPTED**
 (64 bind-then-drop sites, ~41 timeout tests, 12 stalled-body cases on the paused clock), T3 cancellation **ACCEPTED**
 (a dropped `send()` stops polling its streamed upload body: 262,144 polls / 32 MiB after the drop before the fix),
-T4 **ACCEPTED** (QuickBooks environment after `set_connection`). Proposals left: SDK deadlines on `std::time::Instant`
+T4 **ACCEPTED** (QuickBooks environment after `set_connection`). **Costs and limits of the T3 guard** (CHANGELOG "A
+dropped send stops polling its streamed body", `work/dev/t3/evidence/EVIDENCE.md`): dropping the call waits
+synchronously for a poll active on another thread, so a blocking body source can hold the drop indefinitely, or
+deadlock if it waits on the dropping thread; frames the transport accepted before cancellation cannot be recalled (the
+request can still complete if the transport has the whole body); results checked after cancellation are discarded;
+buffered bodies are not wrapped; `concord-core` names `http-body` directly. Proposals left: SDK deadlines on `std::time::Instant`
 (Sentry, PayPal, B2/concord-retry, Zendesk, Spotify …).
 
 ## 8. Charter and scope
@@ -152,7 +161,13 @@ retroactively satisfy them.
 - I4 shared measurement targets contaminated one baseline run (Kubernetes e1); LF used private targets. The other 39
   baseline records were not replayed. At LF the runner's own export crossed git's auto-gc threshold and invalidated all 40
   agent runs; the saved edits were re-scored by replay with the fixed runner (no new agents).
-- Every review is same-provider (Codex reviewing Codex-authored lanes): independent sessions, not cross-provider.
+- Reviews: every review ran in an independent Codex `gpt-6.1-sol` xhigh read-only session. Where the lane was
+  Codex-authored (most hypotheses after A3.1) the review is same-provider and labelled so; the H03b candidates, H06's
+  alternative B and the T3 sweep were Claude-authored and their Codex reviews are cross-provider, as their review
+  records state.
+- Not measured (A1 §8): comparisons with hand-written reqwest clients or OpenAPI generators (the comparator was
+  current Concord; a comparative product claim needs a separate matched study), and the rendered visual layout of the
+  documentation (the probes measure content and hierarchy as text; rustdoc builds and link checks run in the gate).
 
 ## Owner queue
 - **O3 — merging the draft PR into `main`, any tag or release:** not granted; the loop stops here.

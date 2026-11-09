@@ -55,11 +55,12 @@ B, two sequential queues with private measure targets (the baseline's shared-tar
 
 **Validation at F: 24 of 40 tasks kept.** The bank is pinned to B's code; accepted changes drifted 16 tasks: 12 reference
 patches no longer apply (files edited by H06c, H08, H09c, H16s, T5 …); Sentry e1/e3/e5 oracles no longer compile
-(E0624: `with_base_url` is private — H06c withheld it); Strava e1's oracle fails after its reference. These 16 are not
+(E0624: `with_base_url` is private — H06c withheld it); Strava e1's reference passes all three oracle tests but its existing workflow suite fails. These 16 are not
 scored (no valid reference at F) — a limit of an edit bank tied to the baseline.
 
 **Agent runs: all 40 invalid by the runner's tamper check — a runner artifact.** Every flag is `.git` housekeeping only
-(1,960 identical removed loose objects and `gc.pid` per run; no SDK-tree, cargo or symlink signal): the runner exports
+(each run records 5,435 removed loose objects — the result lists the first 50 names, identical across runs — and
+`gc.pid`; no SDK-tree, cargo or symlink signal): the runner exports
 each task as a fresh one-commit repo, and at F (5,373 files vs 5,199 at B) its own export commit crosses git's
 auto-gc threshold (≈ 6,700 loose objects), starting a detached `gc --auto` that packs objects during the session.
 Fix (instrument, branch `dz/i4-gcauto` `1f952284`): `gc.auto=0` in the export's config and the trusted git prefix.
@@ -78,8 +79,8 @@ old field name). One run per task; no noise band beyond the counts. **No overfit
 
 ## Final confirmation bank (`work/sealed/final`, used once after the candidate froze)
 Candidate frozen at F′ = `6ab300c1` (F + the H04 narrow revert `597cc8fc` + the I4 runner fix `f837cf03`; gate 66/66).
-Same method as the validation bank (`holdout_i3.sh`, both arms on the sealed final bank, B then F′; 28 SDKs, 65 scored
-items per session type, 64 for R2 result items; outputs `work/sealed/holdout/final-{B,F}/`).
+Same method as the validation bank (`holdout_i3.sh`, both arms on the sealed final bank, B then F′; 28 SDKs with wire items
+(65 scored), 29 for result and call items (64 result items, 65 call items); outputs `work/sealed/holdout/final-{B,F}/`).
 
 | arm | reader | run | R1.critical | R1.exact | R2.send_returns | R2.error_type | R2.base_url | R3.pass |
 |---|---|---|---|---|---|---|---|---|
