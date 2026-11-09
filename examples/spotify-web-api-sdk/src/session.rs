@@ -201,6 +201,10 @@ struct Inner {
     deadline: Option<Duration>,
 }
 
+/// Before each attempt, including the replay after a read's `401`, the send policy replaces
+/// `authorization` with the current token snapshot (`Bearer <access_token>`).
+/// Generated `prepare()` bypasses token acquisition and these edits.
+///
 /// One user's authorization, and the send policy of [`crate::WebApi`]. Cheap to clone; clones
 /// share the token cache and the refresh token.
 #[derive(Clone)]

@@ -75,6 +75,8 @@ impl<'a> Storage<'a> {
 
     /// Creates a traversal with at most `page_cap` requests. No request is sent yet.
     /// Each `next_page` sends once; errors are never retried automatically.
+    /// Each GET sends the account token as `authorization` and the declared `Json` output's
+    /// `accept: application/json`; no body means no format-added `content-type`.
     pub fn list_file_names(
         &self,
         query: FileNameQuery,
@@ -90,6 +92,8 @@ impl<'a> Storage<'a> {
 
     /// Deletes exactly the specified name/ID pair with one POST, using the account token
     /// (`deleteFiles` capability). Never retries or reauthorizes automatically.
+    /// Sends the account token as `authorization`; the declared `Json` request/output formats
+    /// add `content-type: application/json` and `accept: application/json`.
     ///
     /// # Errors
     ///

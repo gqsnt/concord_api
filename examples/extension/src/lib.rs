@@ -108,6 +108,8 @@ where
         .map_err(|e| ExtensionError::call(EXPORT_OPERATION, e))
 }
 
+/// Sets `accept: text/csv`; service headers come from `TenantContext::request`.
+///
 /// The export as native parts, for a caller that executes it itself — to read a response
 /// header (`x-export-id`) before decoding, say: the client, the request (with
 /// `Accept: text/csv`) and the [`Csv`] decoder.

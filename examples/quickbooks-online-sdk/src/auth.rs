@@ -188,6 +188,9 @@ impl AuthorizationCallback {
     }
 }
 
+/// Token exchange and refresh send `authorization: Basic <base64(client_id:client_secret)>`,
+/// constructed by `concord_auth::basic` from this app's credentials.
+///
 /// An app registered with Intuit: its client ID and secret (development keys for the sandbox,
 /// production keys otherwise) and its redirect URI.
 #[derive(Clone)]
@@ -543,6 +546,9 @@ struct Inner {
     tokens: TokenCache<RealmId, TokenFailure>,
 }
 
+/// As the Accounting send policy, replaces `authorization` immediately before each attempt
+/// with the current access-token snapshot (`Bearer <access_token>`); `prepare()` is token-free.
+///
 /// One connected company: its realm, its latest refresh token and its cached access token.
 ///
 /// Clones share all three; the access token is refreshed once for every request waiting on it

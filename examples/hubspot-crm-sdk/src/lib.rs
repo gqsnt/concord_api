@@ -387,6 +387,9 @@ struct Inner {
     secrets: Arc<Mutex<Secrets>>,
     cache: TokenCache<(), RefreshFailure>,
 }
+/// CRM wrappers send `authorization: Bearer <access_token>` from the current OAuth token
+/// snapshot, acquired before constructing each CRM operation.
+///
 /// One HubSpot installation. Clones coordinate refresh in this process.
 #[derive(Clone)]
 pub struct HubSpot {

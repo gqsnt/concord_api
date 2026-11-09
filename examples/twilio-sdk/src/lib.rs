@@ -46,6 +46,8 @@ mod wire {
     }
 }
 
+/// Sends `authorization: Basic <base64(username:password)>` from the supplied `BasicAuth`.
+///
 /// Configured client for this Messaging slice; cloning preserves its account and auth context.
 ///
 /// The caller supplies the transport (timeouts, redirect policy, proxy and TLS). Use

@@ -6,6 +6,8 @@ use concord_codecs::{Charset, check_content_type};
 
 use crate::{CreatedTicket, IdempotencyLookup, Problem, TicketResponse};
 
+/// Its `Decode::ACCEPT` suggests `accept: application/json`.
+///
 /// The response format of Create Ticket: strict [`Json`] for `{"ticket": ..}`, plus the
 /// `x-idempotency-lookup` header read from the head before the body.
 ///
@@ -46,6 +48,9 @@ impl Decode<CreatedTicket> for CreatedTicketFormat {
     }
 }
 
+/// Uses the default `Decode::ACCEPT = None`: no format-added `accept`.
+/// This format reads error responses rather than declaring a success output.
+///
 /// Error bodies: business-level JSON documents, `null`, or API-level `text/plain`.
 pub(crate) struct ProblemFormat;
 

@@ -6,6 +6,8 @@ const ATOM: &str = "http://www.w3.org/2005/Atom";
 const ARXIV: &str = "http://arxiv.org/schemas/atom";
 const OPEN: &str = "http://a9.com/-/spec/opensearch/1.1/";
 
+/// Its `Decode::ACCEPT` suggests `accept: application/atom+xml`.
+///
 /// Namespace-aware UTF-8 Atom format, with strict media checks and bounded XML nodes.
 pub struct Atom;
 impl Decode<Feed> for Atom {

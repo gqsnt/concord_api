@@ -55,6 +55,8 @@ impl fmt::Debug for AuthContext {
     }
 }
 
+/// Sends `authorization: Bearer <token>` from the constructor's caller-obtained token.
+///
 /// A Graph v1.0 client with a fixed credential destination and redirects disabled.
 ///
 /// It obtains no tokens, retries no requests and follows no HTTP redirects. Production uses

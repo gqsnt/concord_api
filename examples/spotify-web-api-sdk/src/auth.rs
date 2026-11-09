@@ -64,6 +64,9 @@ secret! {
     State
 }
 
+/// OAuth token requests send `authorization: Basic <base64(client_id:secret)>`,
+/// constructed by `concord_auth::basic` from these credentials.
+///
 /// The app's credentials, sent as HTTP Basic to the token endpoint.
 #[derive(Clone)]
 pub struct AppCredentials {

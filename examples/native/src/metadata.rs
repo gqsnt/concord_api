@@ -307,6 +307,8 @@ pub async fn send_with_meta<T>(
 /// The headers [`item_with_meta`] keeps: the entity tag and the server's request id.
 pub static ITEM_META: [HeaderName; 2] = [ETAG, HeaderName::from_static("x-request-id")];
 
+/// Sets `x-request-id` to the supplied `request_id` verbatim before execution.
+///
 /// One item with its `ETag` and the server's `x-request-id`, sending the caller's request id.
 ///
 /// Use it when a caller needs a response header (a validator for a later conditional request, a

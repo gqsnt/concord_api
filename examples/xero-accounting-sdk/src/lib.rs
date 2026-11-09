@@ -56,6 +56,10 @@ mod wire {
     }
 }
 
+/// The send policy sets `authorization: Bearer <access_token>` from the current token snapshot
+/// on each Accounting attempt. Token refresh sends `authorization: Basic <base64(client_id:client_secret)>`.
+/// Tenant operations send `xero-tenant-id` from the selected store-bound tenant ID.
+///
 /// Tenant-bound Accounting client. Clones share auth flights, concurrency and cooldown state.
 #[derive(Clone)]
 pub struct Xero {

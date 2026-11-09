@@ -242,6 +242,11 @@ fn host_value(url: &Url) -> Result<HeaderValue, SigningError> {
         .map_err(|e| SigningError::new("the host is not a header value").with_source(e))
 }
 
+/// Sets `host` from the request URL (including a non-default port). The AWS SigV4
+/// signer supplies `authorization` (AWS4-HMAC-SHA256 credentials, signed headers and signature),
+/// `x-amz-date` from `time`, `x-amz-content-sha256` from the body's SHA-256, and
+/// `x-amz-security-token` when the supplied credentials have a session token.
+///
 /// Signs `request` in place for `region` and the `s3` service at `time`: sets `host`,
 /// `x-amz-date`, `x-amz-content-sha256`, `x-amz-security-token` (temporary credentials) and
 /// `authorization` (the last two flagged sensitive). The target and headers are signed as they

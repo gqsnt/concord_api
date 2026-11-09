@@ -64,6 +64,10 @@ pub struct Reply<T> {
     pub meta: ResponseMeta,
 }
 
+/// Sends `authorization: Bearer <token>` from the constructor token and `user-agent` from
+/// `ClientOptions::user_agent`. `x-snowflake-authorization-token-type` is `OAUTH`,
+/// `KEYPAIR_JWT` or `PROGRAMMATIC_ACCESS_TOKEN`, according to `TokenType`.
+///
 /// An account-bound client. Clones share the HTTP connection pool.
 #[derive(Clone)]
 pub struct Client {

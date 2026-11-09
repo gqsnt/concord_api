@@ -99,6 +99,8 @@ pub struct UsersPageMeta {
 /// keep the collected prefix if traversal fails. Cursors are only for prompt in-memory use.
 pub type Users = Pages<User, Cursor, UsersPageMeta, Error>;
 
+/// Sends `authorization: Bearer <token>` from `ClientConfig::token`.
+///
 /// Configured Slack client. The token is a raw bearer token, without `Bearer `.
 ///
 /// ```

@@ -45,6 +45,10 @@ struct Context {
     clock: Clock,
 }
 
+/// Each send applies the headers documented by `crate::sigv4::sign_request`: `host`,
+/// `authorization`, `x-amz-date`, `x-amz-content-sha256`, and optional `x-amz-security-token`.
+/// Generated `prepare()` bypasses signing.
+///
 /// A client's SigV4 context — Region, credentials, clock — and the **send policy** of every
 /// operation: each generated `send()` hands its request to it (`send signer;` in the
 /// declaration), and it signs the built request, sends it once and maps the response to
@@ -561,6 +565,9 @@ impl S3ApiBucketPutObject {
     }
 }
 
+/// Appends each supplied metadata value verbatim under `x-amz-meta-<name>` before signing;
+/// the signing headers follow `crate::sigv4::sign_request`.
+///
 /// A [`PutObject`](crate::PutObject) with user-defined metadata (`x-amz-meta-*`), from
 /// [`PutObject::metadata`](crate::PutObject::metadata). Sent with the client:
 /// `put.metadata(m).send(&s3)`.

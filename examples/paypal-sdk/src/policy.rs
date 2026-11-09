@@ -33,6 +33,9 @@ pub(crate) fn default_writes() -> concord_retry::Policy {
     }
 }
 
+/// Before each attempt, the send policy replaces `authorization` with the current token
+/// snapshot (`Bearer <access_token>`). Generated `prepare()` does not acquire or apply this token.
+///
 /// The policy behind every generated `send()` of [`PayPal`](crate::PayPal).
 ///
 /// - **Token.** Before each attempt it takes the cached access token, or obtains one with the

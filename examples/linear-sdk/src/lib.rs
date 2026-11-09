@@ -22,6 +22,8 @@ pub struct GraphqlRequest<V> {
     operation_name: &'static str,
     variables: V,
 }
+/// `Encode::CONTENT_TYPE` sends `content-type: application/json` with the body.
+///
 /// Encodes a fixed query and variables as JSON.
 pub struct Graphql;
 impl<V: Serialize> Encode<GraphqlRequest<V>> for Graphql {

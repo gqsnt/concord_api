@@ -64,6 +64,9 @@ impl OpenMeteo {
         Ok(self)
     }
 
+    /// Sends `accept: application/json` for `ResponseFormat::Json` or
+    /// `accept: text/csv` for `ResponseFormat::Csv`, from `ResponseFormat::accept()`.
+    ///
     /// Retrieve one location's hourly forecast, selecting JSON or CSV at runtime.
     ///
     /// Both choices use the same declared GET operation and one execution. The chosen

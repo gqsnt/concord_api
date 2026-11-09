@@ -56,6 +56,8 @@ concord::api! {
 }
 
 impl DigitalOcean {
+    /// Sends `authorization: Bearer <token>`, built by `concord_auth::bearer`.
+    ///
     /// Construct for the API host. This performs no provider call.
     pub fn connect(token: &str) -> Result<Self, Error> {
         Ok(Self::new(

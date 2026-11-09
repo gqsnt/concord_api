@@ -85,6 +85,8 @@ impl ShopifyContext {
     }
 
     /// The context of one shop, with its token.
+    /// Sends `x-shopify-access-token` with `AccessToken::expose()` verbatim
+    /// on this shop's API requests; signed result downloads use `result_download` instead.
     pub fn shop(&self, shop: ShopDomain, token: &AccessToken) -> ShopContext {
         ShopContext {
             admin: self.admin.shop(shop.clone(), token.expose()),
@@ -183,6 +185,8 @@ impl ShopContext {
         }
     }
 
+    /// Sets `accept: application/jsonl, */*;q=0.1` on the bulk download request.
+    ///
     /// The native `GET` of a signed bulk-result URL (`url` or `partialDataUrl`), to execute with
     /// [`http`](Self::http) and open with [`open_result`](crate::bulk_export::open_result) and a
     /// [`result_reader`](crate::bulk_export::result_reader).

@@ -26,6 +26,9 @@ pub type QueryPages = Pages<QueryResult, String, ResponseMeta, Error>;
 /// Lazy block-child pages. Each traversal covers one parent, never its descendants.
 pub type BlockPages = Pages<Block, String, ResponseMeta, Error>;
 
+/// Sends `authorization: Bearer <token>` from the raw constructor token and `notion-version`
+/// from `NOTION_VERSION`; `with_version` replaces that header with its argument verbatim.
+///
 /// Read-only Notion client. The caller supplies a transport and bearer token.
 ///
 /// Transport timeout/proxy/TLS settings belong to the supplied reqwest client. Disable

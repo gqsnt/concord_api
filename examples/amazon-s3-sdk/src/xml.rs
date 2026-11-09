@@ -17,6 +17,8 @@ use roxmltree::{Document, Node};
 use crate::error::ResponseMeta;
 use crate::types::{ContinuationToken, ETag, StorageClass};
 
+/// Uses the default `Decode::ACCEPT = None`: no format-added `accept`.
+///
 /// The response format of `ListObjectsV2`: requires an XML `Content-Type` (`application/xml` or
 /// `text/xml`, parameters allowed) before the body is read, then parses `<ListBucketResult>`.
 ///

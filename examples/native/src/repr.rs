@@ -13,6 +13,9 @@ use concord::{CodecError, Decode, Encode, ResponseHead, reqwest};
 use serde::Serialize;
 use serde::de::DeserializeOwned;
 
+/// `Encode::CONTENT_TYPE` sends `content-type: application/x-ndjson` with the body.
+/// The separate `Decode` implementation uses the default `ACCEPT = None`.
+///
 /// Newline-delimited JSON (`application/x-ndjson`): a `Vec<T>` is one JSON object per line.
 ///
 /// Use it for line-oriented bulk endpoints. Encoding writes a trailing `\n` after every record;
@@ -63,6 +66,8 @@ impl<T: DeserializeOwned> Decode<Vec<T>> for Ndjson {
     }
 }
 
+/// `Encode::CONTENT_TYPE` sends `content-type: application/x-www-form-urlencoded` with the body.
+///
 /// `application/x-www-form-urlencoded` request bodies from ordered `(name, value)` pairs.
 ///
 /// Concord's `Form` (feature `form`, through serde) encodes the same pairs; this encoder shows the

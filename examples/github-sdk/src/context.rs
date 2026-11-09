@@ -91,6 +91,10 @@ pub(crate) fn same_origin(a: &Url, b: &Url) -> bool {
         && a.port_or_known_default() == b.port_or_known_default()
 }
 
+/// Generated and native requests use `authorization: Bearer <token>`,
+/// `accept: application/vnd.github+json`, `x-github-api-version` from `ApiVersion::as_str()`,
+/// and `user-agent` from the context (initially `DEFAULT_USER_AGENT`).
+///
 /// The GitHub configuration shared by the generated handles and native requests. See the
 /// [module documentation](self).
 #[derive(Clone)]

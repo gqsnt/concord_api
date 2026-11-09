@@ -37,6 +37,9 @@ impl Default for ClientConfig {
     }
 }
 
+/// Sends `authorization: Bearer <token>` from the constructor's raw bearer token.
+/// Upload-specific header sources are documented on the upload wrappers.
+///
 /// Public developer entry point. OAuth tokens are injected; no token minting or refreshing.
 ///
 /// The client builds a transport with redirects and automatic retries disabled. Credentials

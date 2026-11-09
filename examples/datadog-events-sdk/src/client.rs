@@ -38,6 +38,9 @@ pub struct PageInfo {
     pub warnings: Vec<Warning>,
 }
 
+/// Sends `dd-api-key` and `dd-application-key` from the two supplied `Credentials` values
+/// verbatim through the generated declaration.
+///
 /// A Datadog Events client for one site and one pair of keys.
 ///
 /// Cheap to clone; clones share the `reqwest::Client`'s connection pool. Transport settings

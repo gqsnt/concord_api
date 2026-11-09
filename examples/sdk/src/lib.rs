@@ -132,6 +132,8 @@ impl Attachment {
     }
 }
 
+/// `Encode::CONTENT_TYPE` sends `content-type: application/octet-stream` with the body.
+///
 /// `application/octet-stream` for an [`Attachment`]: moves the bytes into the body.
 pub struct Octets;
 

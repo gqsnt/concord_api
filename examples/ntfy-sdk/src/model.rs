@@ -172,6 +172,8 @@ impl fmt::Display for MessageTooLong {
 
 impl std::error::Error for MessageTooLong {}
 
+/// `Encode::CONTENT_TYPE` sends `content-type: text/plain; charset=utf-8` with the body.
+///
 /// The request format of a published message: the [`MessageText`] bytes as
 /// `text/plain; charset=utf-8` (Concord's `Text` encodes only `String`).
 pub struct PlainText(());

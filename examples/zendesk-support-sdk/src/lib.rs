@@ -136,6 +136,8 @@ impl Zendesk {
             .with_base_url(format!("http://zendesk.test:{}", address.port()))?)
     }
 
+    /// Sends `authorization: Bearer <oauth_token>`, built by `concord_auth::bearer`.
+    ///
     /// A client for `https://{subdomain}.zendesk.com/api/v2` with an OAuth access token and the
     /// default [`SendPolicy`]. Obtaining and refreshing the token is the application's.
     ///

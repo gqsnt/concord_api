@@ -52,6 +52,8 @@ impl CsvProfile for CatalogCsvProfile {
 
 type WireCsv = Csv<HasHeader, Comma, CatalogCsvProfile>;
 
+/// Its `Incremental::ACCEPT` suggests `accept: text/csv`.
+///
 /// Shared CSV framing plus a provider header-presence check, including empty exports.
 /// No native HTTP escape and no custom CSV parsing are involved.
 pub struct CatalogCsv;

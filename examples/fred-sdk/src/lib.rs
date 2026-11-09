@@ -75,6 +75,11 @@ pub fn http_client() -> Result<concord::reqwest::Client, concord::reqwest::Error
 
 concord::api! {
     /// FRED v1 public data, authenticated with a query API key.
+    ///
+    /// The declared `Xml` response default has `Decode::ACCEPT = Some("text/xml")`:
+    /// XML operations prepare `accept: text/xml`. JSON exceptions use `concord::Json`
+    /// (`accept: application/json`); `ZippedCsv` uses `accept: application/zip`.
+    /// These GET operations have no body and add no `content-type` header.
     pub client Fred(#[sensitive] query api_key: String) {
         base "https://api.stlouisfed.org";
         path "fred";
@@ -95,6 +100,7 @@ concord::api! {
         );
 
         /// Search series using FRED's default XML representation.
+        /// The declared `Xml` format suggests `accept: text/xml`.
         GET search(query search_text: String, query limit: SearchLimit = SearchLimit::default(), ..OffsetOptions) -> SearchPage {
             path "series/search";
         }
@@ -109,6 +115,7 @@ concord::api! {
         scope series(query series_id: String) {
             path "series";
             /// Retrieve the series metadata as XML.
+            /// The declared `Xml` format suggests `accept: text/xml`.
             GET metadata() -> Metadata;
             /// Retrieve the series metadata as JSON.
             GET metadata_json() -> Metadata {
@@ -116,6 +123,7 @@ concord::api! {
                 response concord::Json;
             }
             /// Read observations as XML (no file_type parameter means XML).
+            /// The declared `Xml` format suggests `accept: text/xml`.
             GET observations(query limit: ObservationLimit = ObservationLimit::default(), ..OffsetOptions, ..ObservationOptions) -> Observations {
                 path "observations";
             }
@@ -128,6 +136,7 @@ concord::api! {
             /// Export a ZIP with one CSV and an optional text README, without CSV coercion.
             /// Observation controls are forwarded; FRED documents frequency
             /// aggregation only for XML/JSON, not for CSV exports.
+            /// The declared `ZippedCsv` format suggests `accept: application/zip`.
             GET export_csv(query limit: ObservationLimit = ObservationLimit::default(), ..OffsetOptions, ..ObservationOptions) -> CsvExport {
                 path "observations";
                 query { "file_type" = "csv"; }

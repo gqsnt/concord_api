@@ -10,6 +10,8 @@ use serde::de::DeserializeOwned;
 
 use crate::Fault;
 
+/// Its `Decode::ACCEPT` suggests `accept: application/json`.
+///
 /// The response format of every Accounting endpoint: `Json`'s head check (exactly one
 /// `application/json` `Content-Type`) and decoding, after looking for a `Fault` in the body. A
 /// 2xx body that is a fault is a `Decode` error whose source is [`FaultInSuccess`]; the client's

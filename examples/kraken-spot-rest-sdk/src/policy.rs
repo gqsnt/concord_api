@@ -27,6 +27,10 @@ impl<T> fmt::Debug for Response<T> {
     }
 }
 
+/// For private operations, sets `api-key` to the configured credentials' key and
+/// `api-sign` to `Credentials::signature(path, nonce, payload)` (Base64 HMAC-SHA512).
+/// Public operations add neither header. Generated `prepare()` bypasses these edits.
+///
 /// Cheaply cloned signing state. Public requests send no credentials and use no nonce.
 #[derive(Clone)]
 pub struct Policy {

@@ -25,6 +25,10 @@ pub const TOKEN_BODY_LIMIT: usize = 64 * 1024;
 /// A token's lifetime when the token service sends no `expires_in` (the spec's default).
 const DEFAULT_TOKEN_LIFETIME: Duration = Duration::from_secs(60);
 
+/// Registry operations use `authorization: Bearer <token>` from the access-scoped cache,
+/// when available; a replay after a Bearer challenge replaces it with the acquired token.
+/// Token-service Basic credentials, when configured, come from `TokenAuth::basic`.
+///
 /// A client for one registry.
 ///
 /// Construct it with [`Registry::new`] over your `reqwest::Client` (timeouts, proxies, TLS and

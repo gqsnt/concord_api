@@ -7,6 +7,9 @@ Not released: the version is unchanged (4.2.0). Records: `v4/desirability/` (dec
 
 ### Added
 
+- **Documentation (H16s):** generated endpoint docs now state query order, path-hole encoding
+  and header provenance. SDK-local notes record custom format constants and wrapper/policy
+  header sources across the 55 SDKs. No API or wire behavior changes.
 - **Resume guidance at every resume method** (H09c, docs only): each public SDK method that takes a
   `concord_pagination::Resume` — the `_from` traversal twins and 20 other inputs, 38 items in 27 SDKs and the
   Kubernetes app — now states the path a caller writes for the position (the SDK's re-export, or
