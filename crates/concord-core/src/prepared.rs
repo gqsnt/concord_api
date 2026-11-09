@@ -518,15 +518,28 @@ impl<T> Decoder<T> {
     /// # Cancellation
     ///
     /// Dropping the returned future before the response arrives (a timeout, a `select!` branch)
-    /// ends a **streamed** body (one that is not buffered bytes: a lazy upload such as
-    /// `StreamRecords`/`StreamRows`, a `reqwest::Body::wrap_stream`): once the drop returns, the
-    /// body and the one-shot source behind it are never polled again, and a body that had not
-    /// ended fails instead of ending: the transport abandons the request, so the receiver never
-    /// sees it complete. The drop waits for a poll of the body already in progress on the connection's task.
-    /// (reqwest's own HTTP/1 connection would go on polling the body after the drop while the
-    /// socket accepts bytes.) Once the response has arrived, a body still being sent is left to the
-    /// transport. [`Prepared::send`] and [`Prepared::receive`] execute through this method; a
-    /// request executed with `reqwest::Client::execute` directly gets reqwest's behaviour.
+    /// cancels a **streamed** body (one that is not buffered bytes: a lazy upload such as
+    /// `StreamRecords`/`StreamRows`, a `reqwest::Body::wrap_stream`). Once the drop returns:
+    ///
+    /// - no new poll reaches the body or its one-shot source;
+    /// - cancellation and the checks before and after each body poll are ordered under one lock.
+    ///   If cancellation precedes the post-poll check, the result (including final data, trailers
+    ///   or end) is discarded and the body reports an error instead. After cancellation the body
+    ///   reports no end and advertises no length;
+    /// - results accepted by the check before cancellation cannot be recalled, even if delivered
+    ///   later. If the transport has the whole body (its end, or every byte of a declared length),
+    ///   the request can still complete without another poll.
+    ///
+    /// The drop waits, on the dropping thread, for a poll of the body in progress on the
+    /// connection's task, which has returned when the drop returns. A source that blocks inside
+    /// its poll holds the drop (and that thread) as long, and one that blocks until the dropping
+    /// thread releases something deadlocks. A
+    /// body that drops the call from inside its own poll does not deadlock: that drop returns at
+    /// once, the rest of the poll still runs, and its result is discarded. (reqwest's own HTTP/1
+    /// connection would go on polling the body after the drop while the socket accepts bytes.)
+    /// Once the response has arrived, a body still being sent is left to the transport.
+    /// [`Prepared::send`] and [`Prepared::receive`] execute through this method; a request
+    /// executed with `reqwest::Client::execute` directly gets reqwest's behaviour.
     ///
     /// # Errors
     ///

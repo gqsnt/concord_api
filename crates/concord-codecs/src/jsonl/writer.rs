@@ -20,7 +20,10 @@ use crate::stream::{RecordBody, RecordEncoder, Upload};
 /// record that cannot be serialized fails the transfer at that point, after the earlier records
 /// were sent (reqwest reports a body error that wraps an
 /// [`UploadError`](crate::stream::UploadError)); nothing is replayed or retried. A send dropped
-/// before the response arrives never polls the source again once the drop returns
+/// before the response arrives admits no new source poll once the drop returns. A body poll's
+/// result checked after cancellation is discarded; an earlier accepted result cannot be recalled,
+/// and a whole body already accepted can still complete. The drop synchronously waits for an
+/// active poll on another thread; blocking and reentrant sources have the caveats described in
 /// ([`Decoder::execute`](concord_core::Decoder::execute), "Cancellation").
 pub struct StreamRecords<S> {
     source: S,
