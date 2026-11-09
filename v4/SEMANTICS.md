@@ -297,6 +297,22 @@ Each key has one **slot**, positioned at the key's first appearance on the chain
 - Concord performs no retries, no authentication, no rate limiting, no pagination and has no
   transport settings. One `send` is one `Client::execute` call; redirects, proxies, timeouts,
   compression and default headers are whatever the reqwest client does.
+- Cancellation of a streamed body. `send()`, `receive()` and `Decoder::execute` tie a streamed
+  request body (any body that is not buffered bytes: `StreamRecords`, `StreamRows`, a
+  `wrap_stream` body) to the call. Once a call dropped before the response arrives has finished
+  dropping, no new poll reaches the body or its one-shot source. Cancellation and the checks
+  before and after each body poll are ordered under one lock. If cancellation precedes the
+  post-poll check, its result (including final data, trailers or end) is discarded in favour of
+  an error. After cancellation the body reports no end and advertises no length. Results
+  accepted before cancellation cannot be recalled, even if delivered later: if the transport
+  has the whole body (its end, or every byte of a declared length), the request can still
+  complete without another poll. The drop synchronously waits for a poll in progress on another
+  thread, so that poll has returned when the drop returns. A source that blocks inside its poll
+  holds the drop as long; one waiting on the dropping thread can deadlock. A body that drops the
+  call from inside its own poll avoids that wait: the rest of the poll can run after the drop
+  returns, but its result is discarded. reqwest's HTTP/1 connection alone would go on polling the body
+  after the drop while the socket accepts bytes. After the response has arrived, a body still
+  being sent is the transport's; a request executed with reqwest directly is not guarded.
 - Order of build checks: body encoding (the media type is a compile-time constant), then
   subdomain labels and the assembled host (IP base, 253-byte limit), path segments, query and
   headers; the first failure is returned and later values are not formatted.

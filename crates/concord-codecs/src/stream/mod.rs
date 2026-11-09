@@ -30,8 +30,16 @@
 //! into a lazily produced `reqwest::Body` that serializes records as the transport asks for
 //! bytes. Preparing the request polls the source **zero** times; sending polls it as needed, in
 //! one pass. A source or serialization failure after bytes were sent fails the transfer; nothing
-//! is replayed or rolled back. [`Upload`] pairs a runtime-configured body with the `Content-Type`
-//! that describes it.
+//! is replayed or rolled back. Dropping the send before the response arrives stops the polling:
+//! once the drop returns, no new poll reaches the source. A body poll's result checked after
+//! cancellation is discarded in favour of an error; results accepted before cancellation cannot
+//! be recalled, and a whole body already accepted can still complete. The drop waits for an
+//! active poll on another thread; a blocking source can hold it indefinitely or deadlock if it
+//! waits on the dropping thread. A drop from inside the poll itself returns immediately; the
+//! rest of that poll can run, but its result is discarded
+//! ([`Decoder::execute`](concord_core::Decoder::execute), "Cancellation"). [`Upload`] pairs a
+//! runtime-configured body with the `Content-Type` that
+//! describes it.
 //!
 //! Diagnostics follow Concord's policy: `Display`/`Debug` show static labels, numeric positions,
 //! the operation name the SDK supplied (never derived from a URL) and status codes; underlying

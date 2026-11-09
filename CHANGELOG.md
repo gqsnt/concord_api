@@ -61,6 +61,28 @@ Not released: the version is unchanged (4.2.0). Records: `v4/desirability/` (dec
   method rule); Microsoft Graph and the distribution registry classify with data the enum cannot
   carry; the rest do not classify operations.
 
+### Fixes
+
+- **A dropped send stops polling its streamed body.** reqwest's HTTP/1 connection (hyper) polls a
+  request body from its own task and notices a dropped call only between write passes, so a
+  `send()` dropped while the receiver kept up went on polling the upload source: thousands of
+  records under CPU load, and 262,144 records (32 MiB) with a fast receiver before it stopped.
+  `Decoder::execute` (and so `send()`/`receive()`) now wraps a streamed body. Once the drop of
+  the call returns, no new poll reaches the body or source. Cancellation and the checks before
+  and after each body poll are ordered under one lock: a result (including final data, trailers
+  or end) checked after cancellation is discarded in favour of an error. The cancelled body
+  reports no end and advertises no length. Results accepted before cancellation cannot be
+  recalled, even if delivered later; the request can still complete if the transport has the
+  whole body, including every byte of a declared length. The drop synchronously waits for an
+  active poll on another thread: a blocking source can hold the drop indefinitely, or deadlock
+  if it waits on the dropping thread. A body dropping the call inside its own poll avoids that
+  wait; the poll can keep running after the drop returns, but its result is discarded.
+  Buffered bodies are not wrapped. `concord-core` names `http-body`
+  (already reqwest's dependency) as a direct dependency. Tests: the guard's deterministic unit
+  tests (`crates/concord-core/src/cancel.rs`), transport coverage in
+  `checks/stream-stress/tests/upload_cancel.rs`, and the smoke test
+  `jsonl_upload_cancellation_stops_polling_the_source`, unchanged.
+
 ### Documentation
 
 - **Generated documentation states the actual contract first** (H04). The docs `api!` generates

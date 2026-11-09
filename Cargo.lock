@@ -626,6 +626,7 @@ name = "concord-core"
 version = "4.2.0"
 dependencies = [
  "bytes",
+ "http-body",
  "percent-encoding",
  "reqwest",
  "tokio",
