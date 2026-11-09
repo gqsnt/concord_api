@@ -68,6 +68,10 @@ verified); the recounts above; the exclusion of `h09a/notion/02`; the five Codex
 path. Non-blocking finding applied: `prepare_linked.py` parses the task files (SDK identities, commit) and the
 unchanged H04 navigation filter reads SDK source as in v1; no task, key or source content supplies the additions.
 
-Observation kept for the record: 9 of the 12 twin SDKs neither re-export `Resume` nor the `concord_pagination`
-crate (Cloudflare, DigitalOcean and Spotify re-export the crate), so their resume callers name a second crate;
-one provider guessed a `concord::pagination` module instead.
+Observation kept for the record (corrected 2026-11-09 from the H09c candidate's census; my first count used a
+grep that missed `pub use concord_pagination as pagination;`): **8 of the 12 twin SDKs re-export the
+`concord_pagination` crate** (Cloudflare, DigitalOcean, Spotify as `concord_pagination`; Datadog, Discord,
+Mailgun, Microsoft Graph, Notion as `pagination`); **4 do not** (Distribution Registry, GitHub, GitLab, Stripe),
+so their resume callers name a second crate. All six Codex `concord::pagination` failures are in three of
+those four (GitLab 3, Distribution Registry 2, Stripe 1); GitHub's resume task passed 3/3 for both providers.
+The review's description of this census ("9/12") came from my wrong count; it treated the census as context only.
