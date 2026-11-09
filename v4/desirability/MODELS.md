@@ -267,3 +267,7 @@ Append-only: a row marked `running` is superseded by a later row (`↳ … resul
 | H16 combined review (`h16-combined-review-sol`) on 02bc13b6 + measurement (proposed INCONCLUSIVE) | Codex gpt-6.1-sol, xhigh, read-only | (meta.json at completion) | running | — |
 | ↳ H16 pilot measurement observed | — | Codex gpt-6.1-sol xhigh; Claude claude-opus-5-5 medium (I3 runner, per-session metadata) | — | W Codex 53->53, Claude 40->43 (pooled +3); prompts identical between arms for 8/10 SDKs (I3 packs source, not generated rustdoc); attributable gain FRED/OpenAI only |
 | ↳ H16 combined review observed | — | gpt-6.1-sol / xhigh / read-only; 02:06:45Z–02:13:27Z | 6m42s | ACCEPT_WITH_FIXES; DECISION INCONCLUSIVE (instrument did not expose generated docs) |
+| I3 generated-docs packing mode (dz/i3-gendocs; for H16r) — Codex lane in jail (SHOW_TOOLS) | Codex gpt-6.1-sol, xhigh, danger-full-access in codex_jail.sh | (meta.json at completion) | running | — |
+| ↳ I3 generated-docs lane observed | — | gpt-6.1-sol / xhigh / danger-full-access in codex_jail.sh; 02:15:16Z–02:28:42Z | 13m26s | committed on dz/i3-gendocs (local) |
+| I3 generated-docs instrument review 1 (`i3g-instrument-review-sol`) | Codex gpt-6.1-sol, xhigh, read-only | (meta.json at completion) | running | — |
+| ↳ I3 instrument review observed | — | gpt-6.1-sol / xhigh / read-only; 02:29:46Z–02:35:22Z | 5m36s | ACCEPT_WITH_FIXES (1 non-blocking -> claim limited to endpoint docs) |

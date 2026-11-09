@@ -31,7 +31,7 @@ a card (`cards/HNN.md`) is committed before any implementation.
 | 16 | H13 | RESTRAINT | Remove unused surface with compatibility evidence | concept cost | — — triage 2026-11-09: retired as formulated (no deficit / already reconciled) |
 | 17 | H14 | CAPABILITY | Capability-crate status (records reconciliation) | records truth | largely done in v4/sdk50/CLOSING.md — triage 2026-11-09: retired as formulated (no deficit / already reconciled) |
 | — | H16 | REQUEST | Request composition predictable from the docs — **INCONCLUSIVE** (instrument did not expose the generated docs; see DECISIONS) | discover the contract | candidate `02bc13b6` kept |
-| next | H16r | REQUEST | H16 re-pilot with corrected materials (each arm's generated docs in the reader prompt), freshly pre-registered | discover the contract (I3 R1) | deficit still measured; candidate exists (chronology to disclose) |
+| 1 | H16r | REQUEST | H16 re-pilot with generated docs in the reader materials (claim: endpoint documentation) | discover the contract (I3 R1) | card `cards/H16r.md` (pre-registered); candidate `02bc13b6` predates the card (disclosed) |
 | — | T2 | CORRECTNESS | Intermittent CI test failures (PayPal, Snowflake, stream-stress late source error, concord `transport_error_message`) — **ACCEPTED (merged 45528ffd)** | correctness repair (A1 §3 path 1) | see DECISIONS |
 | — | T3 | CORRECTNESS | Flake sweep and the stream-stress cancellation defect — **both ACCEPTED (merged fb477c47, dc48fc56)** | correctness repair (A1 §3 path 1) | see DECISIONS |
 | — | T1 | DOCS-TRUTH | `v4/PRODUCT.md` "What Concord is not" states the fixed core and current scope (A2) | records truth | docs-truth path (A1 §3) |
