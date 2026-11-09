@@ -81,7 +81,8 @@ never by its Rust type:
 
 | Declaration | Starts as | Supplied / changed with |
 |---|---|---|
-| `x: T` | required | client: a field of `{Client}Config`; scope or endpoint: a positional argument; then `set_x(v)` |
+| `x: T` | required | client: a field of `{Client}Config`; scope or endpoint: a positional argument; then `set_x(v)` on endpoints only |
+| `mut x: T` | required | as `x: T`, then `set_x(v)`: the provider lets this client or scope value change (a token rotates) |
 | `x: T = expr` | `expr` | `set_x(v)` |
 | `x?: T` | absent | `set_x(v)` (present), `maybe_x(o: Option<T>)` (exactly `o`) |
 | `x?: T = expr` | present, `expr` | `set_x(v)`, `maybe_x(o)` |
@@ -262,6 +263,10 @@ hosts and a percent-escaped path, whose escapes are kept as written (`https://ex
 `with_base_url` replaces the **whole** base, path included: a version prefix that must survive
 (`/v1` for a test server at `http://127.0.0.1:port`) belongs in the client's `path "v1";`, not in
 `base`.
+
+When the host is the caller's (an instance, a region), write `base instance;`: the client value
+`instance` holds the base, its type implements `AsRef<concord::BaseUrl>`, and the client has no
+`with_base_url`. A test builds that value with the fixture's origin.
 
 **Credentials and redirects.** reqwest drops `Authorization`, `Cookie`, `Cookie2`,
 `Proxy-Authorization` and `WWW-Authenticate` when a redirect changes the host, port or scheme, but
@@ -2147,10 +2152,10 @@ fn main() {
 | `scope repo` under `Forge` | `ForgeRepo`, reached with `forge.repo(..)` |
 | `GET list_issues` under `scope repo` | `ForgeRepoListIssues`, reached with `repo.list_issues(..)` |
 | `operations ForgeOperation;` on the client | the enum `ForgeOperation`; `GET list_issues` under `scope repo` is its variant `RepoListIssues` (§5.14) |
-| value `x` | `set_x`; `maybe_x` when optional |
+| value `x` | `set_x` (client or scope: only if optional, initialized or `mut`); `maybe_x` when optional; `x()` on a client or scope |
 
-- Within one generated type, navigation methods, value controls and the built-ins (`new`,
-  `with_base_url`, `send`, `prepare`, `clone`) must not collide; a collision is a compile error
+- Within one generated type, navigation methods, value controls, getters and the built-ins (`new`,
+  `with_base_url`, `http`, `base_url`, `client`, `send`, `prepare`, `clone`) must not collide; a collision is a compile error
   naming both origins. Rename the endpoint or the value.
 - Value and body names may not start with `__`; a client value may not be named `http`; a scope
   may not be named `client`; template holes cannot be `self`, `Self`, `super`, `crate` or `_`.

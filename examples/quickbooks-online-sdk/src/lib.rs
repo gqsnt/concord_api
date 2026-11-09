@@ -69,7 +69,7 @@ concord::api! {
         /// `set_connection` replaces realm, credential source and send policy together. Sending
         /// to either official HTTPS host selects this connection's environment, even after a
         /// sandbox/production switch; fixture origins and existing handles keep their snapshots.
-        connection: Connection,
+        mut connection: Connection,
     ) {
         base "https://quickbooks.api.intuit.com";
         path "v3/company/{connection}";
@@ -186,6 +186,49 @@ pub fn http_client() -> Result<reqwest::Client, reqwest::Error> {
 #[cfg(doctest)]
 #[doc = include_str!("../README.md")]
 pub struct ReadmeExamples;
+
+/// A replacement connection remains required and replaces the whole value on a new snapshot.
+///
+/// ```
+/// use concord_sdk_quickbooks_online::{Connection, QuickBooks, QuickBooksConfig};
+///
+/// fn config(connection: Connection) -> QuickBooksConfig {
+///     QuickBooksConfig { connection }
+/// }
+///
+/// fn replace(client: QuickBooks, connection: Connection) -> QuickBooks {
+///     client.set_connection(connection)
+/// }
+/// ```
+///
+/// `mut` does not give a required send-policy value a default.
+///
+/// ```compile_fail,E0063
+/// use concord_sdk_quickbooks_online::QuickBooksConfig;
+/// let config = QuickBooksConfig {};
+/// ```
+///
+/// A required scope ID identifies the selected customer; select another scope to change it.
+///
+/// ```compile_fail,E0599
+/// use concord_sdk_quickbooks_online::{EntityId, QuickBooks};
+///
+/// fn change_customer(client: &QuickBooks, id: EntityId, other: EntityId) {
+///     client.customer(id).set_id(other);
+/// }
+/// ```
+///
+/// The invoice scope has the same rule.
+///
+/// ```compile_fail,E0599
+/// use concord_sdk_quickbooks_online::{EntityId, QuickBooks};
+///
+/// fn change_invoice(client: &QuickBooks, id: EntityId, other: EntityId) {
+///     client.invoice(id).set_id(other);
+/// }
+/// ```
+#[cfg(doctest)]
+pub struct ConstructionExamples;
 
 #[cfg(test)]
 mod tests {

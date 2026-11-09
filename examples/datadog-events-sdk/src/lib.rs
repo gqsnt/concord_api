@@ -3,6 +3,7 @@
 mod api;
 mod client;
 mod credentials;
+mod destination;
 mod error;
 mod model;
 mod post;
@@ -16,6 +17,7 @@ pub use api::{
 };
 pub use client::{DatadogEvents, PageInfo, SearchPages};
 pub use credentials::Credentials;
+pub use destination::Destination;
 pub use error::{
     AuthError, Error, ErrorBodyError, ErrorDocument, Key, ProtocolError, ProviderError, Rejected,
 };

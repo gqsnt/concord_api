@@ -631,7 +631,6 @@ async fn check_create_rejections_and_inputs() {
         panic!("invalid inputs must not send");
     })
     .await;
-    let api = local_api(&server);
     for size in [0, 101] {
         assert!(matches!(
             PageSize::new(size),
@@ -656,13 +655,16 @@ async fn check_create_rejections_and_inputs() {
             assert!(!format!("{error:?} {error}").contains(token));
         }
     }
-    let error = api
-        .set_subdomain("bad/name")
-        .tickets()
-        .list()
-        .send()
-        .await
-        .unwrap_err();
+    // The subdomain is fixed for a client's life: an invalid one is a new client's.
+    let bad = Zendesk::connect(
+        concord_sdk_zendesk_support::http_client().unwrap(),
+        "bad/name",
+        TOKEN,
+    )
+    .unwrap()
+    .with_base_url(format!("http://localhost:{}", server.addr().port()))
+    .unwrap();
+    let error = bad.tickets().list().send().await.unwrap_err();
     assert!(matches!(error, Error::Concord(ref inner) if inner.kind() == ErrorKind::Build));
     assert_eq!(server.requests().len(), 0);
     server.shutdown().await;

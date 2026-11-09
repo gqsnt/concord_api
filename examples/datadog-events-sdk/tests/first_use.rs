@@ -7,8 +7,8 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 
 use concord_example_testserver::{Recorded, Reply, TestServer};
 use concord_sdk_datadog_events::{
-    AuthError, Credentials, DatadogEvents, Error, PageLimit, ProtocolError, SearchRequest, Site,
-    Sort, TimeRange, concord::ErrorKind, pagination::PagesError,
+    AuthError, Credentials, DatadogEvents, Destination, Error, PageLimit, ProtocolError,
+    SearchRequest, Site, Sort, TimeRange, concord::ErrorKind, pagination::PagesError,
 };
 use serde_json::{Value, json};
 
@@ -26,11 +26,9 @@ fn range() -> TimeRange {
 fn client(server: &TestServer) -> DatadogEvents {
     DatadogEvents::new(
         DatadogEvents::http_client().unwrap(),
-        Site::Eu,
+        Destination::at(Site::Eu, server.url()).unwrap(),
         Credentials::new(API_KEY, APP_KEY).unwrap(),
     )
-    .with_base_url(server.url())
-    .unwrap()
 }
 
 fn page(ids: &[&str], after: Option<&str>, warning: bool) -> Value {
@@ -258,7 +256,7 @@ async fn caller_lists_bounded_events_and_inspects_one() {
         .await;
         // Fixture convention: these synthetic keys belong to EU, while this client
         // selects US1. Inspect that production host without contacting it, then route
-        // the same configured client to the local authentication stand-in.
+        // a new client with the same region and keys to the local authentication stand-in.
         let wrong_region = DatadogEvents::new(
             DatadogEvents::http_client().unwrap(),
             Site::from_dd_site("datadoghq.com").unwrap(),
@@ -270,7 +268,11 @@ async fn caller_lists_bounded_events_and_inspects_one() {
             Some("api.datadoghq.com")
         );
         drop(prepared);
-        let wrong_region = wrong_region.with_base_url(rejected.url()).unwrap();
+        let wrong_region = DatadogEvents::new(
+            DatadogEvents::http_client().unwrap(),
+            Destination::at(wrong_region.site(), rejected.url()).unwrap(),
+            Credentials::new(API_KEY, APP_KEY).unwrap(),
+        );
         assert_eq!(
             wrong_region.site(),
             Site::from_dd_site("datadoghq.com").unwrap()

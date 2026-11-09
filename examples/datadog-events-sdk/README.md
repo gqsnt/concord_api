@@ -186,8 +186,8 @@ the same search body without a cursor; `Resume::At(key)` takes the `Cursor` proj
 
 ## Failure semantics
 
-Every generated `send()` returns `Result<_, `[`Error`]`>`; `prepare()` and `with_base_url`
-return `concord::Error` (re-exported as [`concord`]).
+Every generated `send()` returns `Result<_, `[`Error`]`>`; `prepare()`
+returns `concord::Error` (re-exported as [`concord`]).
 
 | What happened | Error | Was anything sent? |
 |---|---|---|

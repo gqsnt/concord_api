@@ -11,8 +11,8 @@ use concord_example_testserver::{Recorded, Reply, Script, TestServer};
 use concord_sdk_datadog_events::concord::reqwest;
 use concord_sdk_datadog_events::pagination::{PagesError, Resume};
 use concord_sdk_datadog_events::{
-    AuthError, Credentials, Cursor, DatadogEvents, Error, PageLimit, SearchRequest, Site, Sort,
-    TimeRange,
+    AuthError, Credentials, Cursor, DatadogEvents, Destination, Error, PageLimit, SearchRequest,
+    Site, Sort, TimeRange,
 };
 use serde_json::{Value, json};
 
@@ -42,9 +42,11 @@ fn http(server: &TestServer) -> reqwest::Client {
 
 /// A client for `site` whose requests reach the stand-in at the documented API host `host`.
 fn client(server: &TestServer, site: Site, host: &str, credentials: Credentials) -> DatadogEvents {
-    DatadogEvents::new(http(server), site, credentials)
-        .with_base_url(format!("http://{host}:{}", server.addr().port()))
-        .unwrap()
+    DatadogEvents::new(
+        http(server),
+        Destination::at(site, format!("http://{host}:{}", server.addr().port())).unwrap(),
+        credentials,
+    )
 }
 
 fn eu_credentials() -> Credentials {

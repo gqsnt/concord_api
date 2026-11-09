@@ -270,7 +270,7 @@ impl std::error::Error for ProtocolError {}
 
 /// Every failure of a request sent through this SDK (each generated `send()` returns it).
 ///
-/// `prepare()` and `with_base_url` return [`concord::Error`] instead; `?` converts it into
+/// `prepare()` returns [`concord::Error`] instead; `?` converts it into
 /// [`Error::Concord`].
 #[derive(Debug)]
 #[non_exhaustive]

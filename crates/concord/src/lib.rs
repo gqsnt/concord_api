@@ -86,12 +86,14 @@
 //!
 //! | Declared | Generated | Main methods |
 //! |---|---|---|
-//! | `client Forge(..)` | `Forge`, a cheap-to-clone handle | `Forge::new(http, ForgeConfig { .. })` (`Forge::new(http)` without required values), `with_base_url`, `set_*`/`maybe_*`, `repo(..)` |
+//! | `client Forge(..)` | `Forge`, a cheap-to-clone handle | `Forge::new(http, ForgeConfig { .. })` (`Forge::new(http)` without required values), `with_base_url` (literal base only), `http()`, `base_url()`, value getters, `set_*`/`maybe_*`, `repo(..)` |
 //! | its required values | `ForgeConfig`, one public field per value | — |
-//! | `scope repo(..)` | `ForgeRepo`, a handle | `set_*`/`maybe_*`, `issues()`, `create_issue(..)` |
+//! | `scope repo(..)` | `ForgeRepo`, a handle | `client()`, value getters, `set_*`/`maybe_*`, `issues()`, `create_issue(..)` |
 //! | `GET issues(..)` | `ForgeRepoIssues`, a request value | `set_*`/`maybe_*`, `prepare()`, `send()` |
 //!
 //! Each value `x` gets `set_x(v)`; an optional value (`x?: T`) also gets `maybe_x(Option<T>)`.
+//! A required client or scope value is fixed for the handle's life unless declared `mut x: T`.
+//! Client and scope values are read with `x()` (crate-only when sensitive).
 //! Required scope and endpoint values are positional arguments of the navigation method, in
 //! declaration order. Generated items carry documentation: which values are required, the initial
 //! value of each and what absence means.
@@ -246,7 +248,7 @@ pub use concord_codecs::stream;
 pub use concord_codecs::{Binary, Encoded, IgnoreContentType, Text};
 pub use concord_core::field;
 pub use concord_core::{
-    CODEC_ERROR_CONTEXT, CodecError, ContentTypeField, Decode, Decoder, Delivery, Encode,
+    BaseUrl, CODEC_ERROR_CONTEXT, CodecError, ContentTypeField, Decode, Decoder, Delivery, Encode,
     EncodedBody, Endpoint, Error, ErrorKind, FieldError, HeaderNameError, HeaderNameErrors,
     Incoming, Incremental, IntoValue, Operation, Prepared, QueryPairs, QueryPairsWriter, Received,
     Records, ResponseHead, ResponseMeta, SendOperation, SendWith, Sends, ToHeaderValue, bytes,

@@ -41,13 +41,14 @@ pub const ERROR_BODY_LIMIT: usize = 64 * 1024;
 concord::api! {
     /// Zendesk Support, `https://{subdomain}.zendesk.com/api/v2`, with an OAuth access token.
     pub client Zendesk(
-        /// The account subdomain (`acme` for `acme.zendesk.com`).
+        /// The account subdomain (`acme` for `acme.zendesk.com`). Fixed: the token belongs to
+        /// this account.
         subdomain: String,
         /// `Bearer {access_token}`; build it with [`Zendesk::connect`] or
-        /// `concord_auth::bearer(token)`.
-        #[sensitive] header("authorization") authorization: HeaderValue,
+        /// `concord_auth::bearer(token)`. The account's token rotates.
+        #[sensitive] header("authorization") mut authorization: HeaderValue,
         /// How generated `send()` treats reads and writes.
-        policy: SendPolicy,
+        mut policy: SendPolicy,
     ) {
         base "https://zendesk.com";
         path "api/v2";
@@ -145,6 +146,27 @@ pub fn http_client() -> Result<reqwest::Client, reqwest::Error> {
         .timeout(std::time::Duration::from_secs(30))
         .build()
 }
+
+/// The account is fixed for the life of a client: its token cannot be sent to another
+/// subdomain (FM2). Build another client for another account.
+///
+/// ```compile_fail,E0599
+/// use concord_sdk_zendesk_support::Zendesk;
+/// fn move_account(api: Zendesk) -> Zendesk {
+///     api.set_subdomain("other")
+/// }
+/// ```
+///
+/// Same-account rotation and a new policy stay available.
+///
+/// ```
+/// use concord_sdk_zendesk_support::{SendPolicy, Zendesk, concord::reqwest::header::HeaderValue};
+/// fn rotate(api: Zendesk, fresh: HeaderValue) -> Zendesk {
+///     api.set_authorization(fresh).set_policy(SendPolicy::default())
+/// }
+/// ```
+#[cfg(doctest)]
+pub struct ConstructionExamples;
 
 /// Compiles the README examples without making provider requests.
 #[cfg(doctest)]

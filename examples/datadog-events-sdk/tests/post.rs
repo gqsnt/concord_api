@@ -6,8 +6,8 @@ use std::time::Duration;
 use concord_example_testserver::{Body, Gate, Recorded, Reply, TestServer, paused};
 use concord_sdk_datadog_events::concord::{Delivery, ErrorKind, reqwest};
 use concord_sdk_datadog_events::{
-    AlertType, AuthError, Credentials, DatadogApi, DatadogApiConfig, DatadogEvents, Error,
-    InputError, NewEvent, RESPONSE_LIMIT, Site,
+    AlertType, AuthError, Credentials, DatadogApi, DatadogApiConfig, DatadogEvents, Destination,
+    Error, InputError, NewEvent, RESPONSE_LIMIT, Site,
 };
 use serde_json::{Value, json};
 
@@ -16,9 +16,11 @@ const APP_KEY: &str = "synthetic-post-eu-app-secret";
 const ACCEPTED: &str = include_str!("../fixtures/post-202.doc.json");
 
 fn client(http: reqwest::Client, base: &str) -> DatadogEvents {
-    DatadogEvents::new(http, Site::Eu, Credentials::new(API_KEY, APP_KEY).unwrap())
-        .with_base_url(base)
-        .unwrap()
+    DatadogEvents::new(
+        http,
+        Destination::at(Site::Eu, base).unwrap(),
+        Credentials::new(API_KEY, APP_KEY).unwrap(),
+    )
 }
 
 fn event() -> NewEvent {
@@ -171,12 +173,11 @@ async fn wrong_region_and_missing_application_key_stay_redacted_authentication_e
     let api = DatadogApi::new(
         DatadogEvents::http_client().unwrap(),
         DatadogApiConfig {
+            destination: Destination::at(Site::Eu, unused.url()).unwrap(),
             api_key: format!("{API_KEY}\n"),
             application_key: APP_KEY.to_owned(),
         },
-    )
-    .with_base_url(unused.url())
-    .unwrap();
+    );
     let error = api.events().post(event()).send().await.unwrap_err();
     let Error::Concord { source, .. } = &error else {
         panic!("{error:?}")

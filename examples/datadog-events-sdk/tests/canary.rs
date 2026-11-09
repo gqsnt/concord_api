@@ -62,7 +62,7 @@ fn concord_error(c: &mut Canaries, error: &concord::Error) {
 }
 
 use concord_sdk_datadog_events::{
-    Credentials, DatadogApiConfig, DatadogEvents, Error, NewEvent, SearchRequest, Site,
+    Credentials, DatadogApiConfig, DatadogEvents, Destination, Error, NewEvent, SearchRequest, Site,
 };
 
 fn error(c: &mut Canaries, error: &Error) {
@@ -102,6 +102,7 @@ async fn secrets_never_print() {
     let credentials = Credentials::new(&key, &application_key).unwrap();
     c.assert_debug_absent("credentials", &credentials);
     let config = DatadogApiConfig {
+        destination: Site::Eu.into(),
         api_key: key.clone(),
         application_key: application_key.clone(),
     };
@@ -124,9 +125,9 @@ async fn secrets_never_print() {
             )
         })
         .await;
-        let api = DatadogEvents::new(http(), Site::Eu, credentials.clone())
-            .with_base_url(if case == 6 { refused() } else { server.url() })
-            .unwrap();
+        let destination =
+            Destination::at(Site::Eu, if case == 6 { refused() } else { server.url() }).unwrap();
+        let api = DatadogEvents::new(http(), destination, credentials.clone());
         let scope = api.events();
         let read = scope.list();
         let event = NewEvent::new("Canary test", "Synthetic event").unwrap();

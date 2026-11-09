@@ -9,9 +9,9 @@ use concord_example_testserver::{Body, Reply, TestServer};
 use concord_sdk_datadog_events::concord::ErrorKind;
 use concord_sdk_datadog_events::concord::reqwest;
 use concord_sdk_datadog_events::{
-    AuthError, Credentials, DatadogApi, DatadogEvents, ERROR_BODY_LIMIT, Error, ErrorBodyError,
-    InputError, Key, PageLimit, ProtocolError, RESPONSE_LIMIT, SearchRequest, Site, Sort,
-    TimeRange,
+    AuthError, Credentials, DatadogApi, DatadogEvents, Destination, ERROR_BODY_LIMIT, Error,
+    ErrorBodyError, InputError, Key, PageLimit, ProtocolError, RESPONSE_LIMIT, SearchRequest, Site,
+    Sort, TimeRange,
 };
 use serde_json::Value;
 
@@ -45,15 +45,19 @@ fn http(server: &TestServer, hosts: &[&str]) -> reqwest::Client {
 
 /// A client for `site` whose requests reach the loopback server at the API host `host`.
 fn at_host(server: &TestServer, site: Site, host: &str) -> DatadogEvents {
-    DatadogEvents::new(http(server, &[host]), site, credentials())
-        .with_base_url(format!("http://{host}:{}", server.addr().port()))
-        .unwrap()
+    DatadogEvents::new(
+        http(server, &[host]),
+        Destination::at(site, format!("http://{host}:{}", server.addr().port())).unwrap(),
+        credentials(),
+    )
 }
 
 fn local(server: &TestServer) -> DatadogEvents {
-    DatadogEvents::new(http(server, &[]), Site::Us1, credentials())
-        .with_base_url(server.url())
-        .unwrap()
+    DatadogEvents::new(
+        http(server, &[]),
+        Destination::at(Site::Us1, server.url()).unwrap(),
+        credentials(),
+    )
 }
 
 fn range() -> TimeRange {
@@ -384,11 +388,9 @@ async fn a_redirect_is_not_followed_and_the_keys_stay_home() {
     // The SDK's own transport.
     let client = DatadogEvents::new(
         DatadogEvents::http_client().unwrap(),
-        Site::Us1,
+        Destination::at(Site::Us1, server.url()).unwrap(),
         credentials(),
-    )
-    .with_base_url(server.url())
-    .unwrap();
+    );
     let error = client.list(range()).send().await.unwrap_err();
     assert!(matches!(error, Error::Provider(_)), "{error:?}");
     assert_eq!(error.status().map(|s| s.as_u16()), Some(302));

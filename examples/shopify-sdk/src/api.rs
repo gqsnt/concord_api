@@ -34,10 +34,10 @@ concord::api! {
         response Json;
 
         /// One shop and its access token. Tokens are per shop (per app installation), so the
-        /// token belongs to this scope, not to the client.
+        /// token belongs to this scope, not to the client. The shop is fixed; its token rotates.
         scope shop(
             shop: ShopDomain,
-            #[sensitive] header(X_SHOPIFY_ACCESS_TOKEN) access_token: String,
+            #[sensitive] header(X_SHOPIFY_ACCESS_TOKEN) mut access_token: String,
         ) {
             subdomain "{shop}";
             path "admin/api/{client.version}/graphql.json";
@@ -71,3 +71,26 @@ concord::api! {
         }
     }
 }
+
+/// A shop scope is bound to its shop: its token cannot be sent to another shop (FM1).
+///
+/// ```compile_fail,E0599
+/// use concord_example_shopify_sdk::{ShopDomain, ShopifyAdminShop};
+/// fn move_token(shop: ShopifyAdminShop, other: ShopDomain) -> ShopifyAdminShop {
+///     shop.set_shop(other)
+/// }
+/// ```
+///
+/// The same shop's token rotates; another shop is entered with its own token.
+///
+/// ```
+/// use concord_example_shopify_sdk::{ShopDomain, ShopifyAdmin, ShopifyAdminShop};
+/// fn rotate(shop: ShopifyAdminShop, fresh: String) -> ShopifyAdminShop {
+///     shop.set_access_token(fresh)
+/// }
+/// fn other(admin: &ShopifyAdmin, b: ShopDomain, token_b: String) -> ShopifyAdminShop {
+///     admin.shop(b, token_b)
+/// }
+/// ```
+#[cfg(doctest)]
+pub struct ConstructionExamples;

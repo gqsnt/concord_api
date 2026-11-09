@@ -3,6 +3,7 @@
 use concord::reqwest::header::HeaderName;
 use concord::{Endpoint, Json, SendOperation};
 
+use crate::destination::Destination;
 use crate::error::{AuthError, Error, ErrorBodyError, ErrorDocument, ProviderError, Rejected};
 use crate::model::EventsPage;
 use crate::post::{EventAcceptance, NewEvent, PostJson};
@@ -19,17 +20,42 @@ concord::api! {
     /// The Datadog Events v2 read API and v1 post of one site.
     ///
     /// Build it through [`DatadogEvents::new`](crate::DatadogEvents::new), which checks both
-    /// keys and installs the site's API host; constructing it directly skips those checks.
-    /// The declared base is the US1 host; a site's own host is installed with
-    /// `with_base_url`. Every generated `send()` returns `Result<_, `[`Error`](crate::Error)`>`
-    /// through [`SendPolicy`]; `prepare()` and `with_base_url` return [`concord::Error`].
+    /// keys. The checked destination supplies the base. Constructing the generated client
+    /// directly still skips key validation. Every generated `send()` returns
+    /// `Result<_, `[`Error`](crate::Error)`>` through [`SendPolicy`]; `prepare()` returns
+    /// [`concord::Error`].
+    ///
+    /// ```compile_fail,E0599
+    /// use concord_sdk_datadog_events::DatadogApi;
+    /// fn redirect(api: DatadogApi) {
+    ///     let _ = api.with_base_url("https://another.example");
+    /// }
+    /// ```
+    ///
+    /// The keys are fixed for the handle's life and readable only inside this crate.
+    ///
+    /// ```compile_fail,E0599
+    /// use concord_sdk_datadog_events::DatadogApi;
+    /// fn swap(api: DatadogApi) -> DatadogApi {
+    ///     api.set_api_key("other".to_owned())
+    /// }
+    /// ```
+    ///
+    /// ```compile_fail,E0624
+    /// use concord_sdk_datadog_events::DatadogApi;
+    /// fn read(api: &DatadogApi) -> String {
+    ///     api.application_key().clone()
+    /// }
+    /// ```
     pub client DatadogApi(
+        /// The site's API base, or an explicitly selected custom deployment.
+        destination: Destination,
         /// The API key, sent as `DD-API-KEY`.
         #[sensitive] header(DD_API_KEY) api_key: String,
         /// The application key, sent as `DD-APPLICATION-KEY`: required for reads and kept on posts.
         #[sensitive] header(DD_APPLICATION_KEY) application_key: String,
     ) {
-        base "https://api.datadoghq.com";
+        base destination;
         path "api";
         format Json;
         limit RESPONSE_LIMIT;
@@ -115,7 +141,7 @@ impl<T: Send> SendOperation<T, DatadogApiOperation> for SendPolicy {
         let received = endpoint.prepare()?.receive().await.map_err(call_error)?;
         let status = received.status();
         // The host this answer came from: the site an authentication error names is the one
-        // actually called, whatever base URL the client was given.
+        // actually called, including an explicitly selected custom deployment.
         let host = received.url().host_str().unwrap_or_default().to_owned();
         if status.is_success() {
             if posting && status.as_u16() != 202 {

@@ -62,60 +62,32 @@ pub fn text<T: Text + ?Sized>(value: &T) -> &T {
     value
 }
 
-/// A validated base URL: `http`/`https`, a host, an optional port and path, nothing else.
-#[derive(Clone)]
-pub struct Base {
-    url: Url,
-    /// The base path with at most one trailing slash removed; generated segments follow it.
-    prefix: String,
+/// The checked base URL; public as [`crate::BaseUrl`].
+pub use crate::base::BaseUrl as Base;
+
+/// The value named by `base x;`: its type yields the checked base URL. The trait only carries the
+/// diagnostic; every `AsRef<BaseUrl>` type implements it.
+#[diagnostic::on_unimplemented(
+    message = "`{Self}` is not a base URL",
+    label = "`base` names a value of this type",
+    note = "`base x;` reads the base URL from the client value `x`: its type implements `AsRef<concord::BaseUrl>`, checked once when the value is made (`concord::BaseUrl::parse`)"
+)]
+pub trait BaseValue {
+    /// The checked base URL.
+    fn base_url(&self) -> &Base;
 }
 
-impl Base {
-    /// Validates a base URL supplied at runtime.
-    pub fn parse(input: &str) -> Result<Self, Error> {
-        let fail = |reason| Error::build(None, "base URL", reason);
-        let url = Url::parse(input).map_err(|_| fail("is not an absolute URL"))?;
-        if url.scheme() != "http" && url.scheme() != "https" {
-            return Err(fail("must use http or https"));
-        }
-        if url.host().is_none() {
-            return Err(fail("must have a host"));
-        }
-        if url.port() == Some(0) {
-            return Err(fail("must not use port 0"));
-        }
-        if !url.username().is_empty() || url.password().is_some() {
-            return Err(fail("must not contain user information"));
-        }
-        if url.query().is_some() {
-            return Err(fail("must not contain a query"));
-        }
-        if url.fragment().is_some() {
-            return Err(fail("must not contain a fragment"));
-        }
-        let path = url.path();
-        let prefix = path.strip_suffix('/').unwrap_or(path).to_owned();
-        Ok(Self { url, prefix })
-    }
-
-    /// The base declared in `api!`, already validated by the macro.
-    pub fn from_static(input: &'static str) -> Self {
-        match Self::parse(input) {
-            Ok(base) => base,
-            Err(e) => panic!("api! accepted an invalid base URL {input:?}: {e}"),
-        }
-    }
-
-    /// The validated URL.
-    pub fn url(&self) -> &Url {
-        &self.url
+impl<T: AsRef<Base> + ?Sized> BaseValue for T {
+    #[inline]
+    fn base_url(&self) -> &Base {
+        self.as_ref()
     }
 }
 
-impl fmt::Debug for Base {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        fmt::Debug::fmt(self.url.as_str(), f)
-    }
+/// The base URL of the value named by `base x;`.
+#[inline]
+pub fn base_of<T: BaseValue + ?Sized>(value: &T) -> &Base {
+    value.base_url()
 }
 
 /// Everything except RFC 3986 unreserved characters (`A-Z a-z 0-9 - . _ ~`).
@@ -367,7 +339,7 @@ impl<'a> Parts<'a> {
         Self {
             meta,
             base,
-            url: base.url.clone(),
+            url: base.url().clone(),
             labels: Vec::new(),
             segments: Vec::new(),
             trailing_slash: false,

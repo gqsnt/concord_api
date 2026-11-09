@@ -9,7 +9,8 @@ use std::str::FromStr;
 ///
 /// The table is the one the cited Events reference pages print for every endpoint (sites,
 /// selector labels and API hosts, read 2026-11-07). A site Datadog adds later is reached with
-/// [`DatadogEvents::with_base_url`](crate::DatadogEvents::with_base_url) until it is listed here.
+/// [`Destination::at`](crate::Destination::at) until it is listed here; that destination keeps
+/// the caller's selected site label, while authentication errors name the host that answered.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 #[non_exhaustive]
 pub enum Site {

@@ -28,9 +28,7 @@ pub const X_SHOPIFY_API_VERSION: &str = "x-shopify-api-version";
 /// The SDK configuration shared by every shop.
 #[derive(Clone)]
 pub struct ShopifyContext {
-    http: reqwest::Client,
     admin: ShopifyAdmin,
-    version: ApiVersion,
 }
 
 impl ShopifyContext {
@@ -43,9 +41,7 @@ impl ShopifyContext {
     /// `Cookie` and similar standard credentials).
     pub fn new(http: reqwest::Client) -> Self {
         Self {
-            admin: ShopifyAdmin::new(http.clone()),
-            http,
-            version: ApiVersion::PINNED,
+            admin: ShopifyAdmin::new(http),
         }
     }
 
@@ -65,13 +61,12 @@ impl ShopifyContext {
     #[must_use]
     pub fn with_version(mut self, version: ApiVersion) -> Self {
         self.admin = self.admin.set_version(version);
-        self.version = version;
         self
     }
 
     /// The API version requests use.
     pub fn version(&self) -> ApiVersion {
-        self.version
+        *self.admin.version()
     }
 
     /// The generated client handle.
@@ -81,7 +76,7 @@ impl ShopifyContext {
 
     /// The HTTP client.
     pub fn http(&self) -> &reqwest::Client {
-        &self.http
+        self.admin.http()
     }
 
     /// The context of one shop, with its token.
@@ -89,10 +84,7 @@ impl ShopifyContext {
     /// on this shop's API requests; signed result downloads use `result_download` instead.
     pub fn shop(&self, shop: ShopDomain, token: &AccessToken) -> ShopContext {
         ShopContext {
-            admin: self.admin.shop(shop.clone(), token.expose()),
-            http: self.http.clone(),
-            version: self.version,
-            shop,
+            admin: self.admin.shop(shop, token.expose()),
         }
     }
 }
@@ -101,7 +93,7 @@ impl fmt::Debug for ShopifyContext {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("ShopifyContext")
             .field("admin", &self.admin)
-            .field("version", &self.version)
+            .field("version", self.admin.version())
             .finish()
     }
 }
@@ -111,9 +103,6 @@ impl fmt::Debug for ShopifyContext {
 #[derive(Clone)]
 pub struct ShopContext {
     admin: ShopifyAdminShop,
-    http: reqwest::Client,
-    version: ApiVersion,
-    shop: ShopDomain,
 }
 
 impl ShopContext {
@@ -125,17 +114,17 @@ impl ShopContext {
 
     /// The shop.
     pub fn shop(&self) -> &ShopDomain {
-        &self.shop
+        self.admin.shop()
     }
 
     /// The API version requests use.
     pub fn version(&self) -> ApiVersion {
-        self.version
+        *self.admin.client().version()
     }
 
     /// The HTTP client.
     pub fn http(&self) -> &reqwest::Client {
-        &self.http
+        self.admin.client().http()
     }
 
     /// Executes a prepared operation once and decodes its envelope after checking the served
@@ -177,9 +166,9 @@ impl ShopContext {
             .map(|v| v.to_str().ok().and_then(|v| v.parse::<ApiVersion>().ok()));
         match served {
             None => Err(RequestError::VersionUnconfirmed),
-            Some(Some(served)) if served == self.version => Ok(()),
+            Some(Some(served)) if served == self.version() => Ok(()),
             Some(served) => Err(RequestError::VersionMismatch {
-                requested: self.version,
+                requested: self.version(),
                 served,
             }),
         }
@@ -209,7 +198,7 @@ impl fmt::Debug for ShopContext {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("ShopContext")
             .field("admin", &self.admin)
-            .field("version", &self.version)
+            .field("version", self.admin.client().version())
             .finish()
     }
 }

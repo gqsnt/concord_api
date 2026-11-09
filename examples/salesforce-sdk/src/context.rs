@@ -23,7 +23,6 @@
 //! `/services/data/v68.0/...` and, for `contentUrl`, `services/data/v68.0/...` (no leading slash).
 
 use std::fmt;
-use std::sync::Arc;
 
 use concord::reqwest::{self, Url};
 
@@ -42,13 +41,6 @@ use crate::{SalesforceApi, SalesforceApiConfig};
 /// `Debug` shows the instance origin and the version, never the token.
 #[derive(Clone)]
 pub struct OrgContext {
-    inner: Arc<Inner>,
-}
-
-struct Inner {
-    http: reqwest::Client,
-    instance: InstanceUrl,
-    version: ApiVersion,
     api: SalesforceApi,
 }
 
@@ -58,8 +50,6 @@ struct Inner {
 pub enum ContextError {
     /// The version is older than [`ApiVersion::MINIMUM`].
     UnsupportedVersion(ApiVersion),
-    /// Concord refused the instance URL as a base.
-    Base(concord::Error),
 }
 
 impl fmt::Display for ContextError {
@@ -70,7 +60,6 @@ impl fmt::Display for ContextError {
                 "API version {v} is older than {} (the oldest version with every operation of this SDK)",
                 ApiVersion::MINIMUM
             ),
-            ContextError::Base(e) => write!(f, "instance URL refused: {e}"),
         }
     }
 }
@@ -83,8 +72,8 @@ impl OrgContext {
     ///
     /// # Errors
     ///
-    /// [`ContextError`] for a version older than [`ApiVersion::MINIMUM`], or an instance URL
-    /// Concord refuses as a base.
+    /// [`ContextError`] for a version older than [`ApiVersion::MINIMUM`]. The instance URL was
+    /// already checked by [`InstanceUrl::parse`].
     pub fn new(
         http: reqwest::Client,
         instance: InstanceUrl,
@@ -95,40 +84,33 @@ impl OrgContext {
             return Err(ContextError::UnsupportedVersion(version));
         }
         let config = SalesforceApiConfig {
+            instance,
             token: token.expose().to_owned(),
             version,
         };
-        let api = SalesforceApi::new(http.clone(), config)
-            .with_base_url(instance.as_str())
-            .map_err(ContextError::Base)?;
         Ok(Self {
-            inner: Arc::new(Inner {
-                http,
-                instance,
-                version,
-                api,
-            }),
+            api: SalesforceApi::new(http, config),
         })
     }
 
     /// The generated handle, configured with this context's values.
     pub fn api(&self) -> &SalesforceApi {
-        &self.inner.api
+        &self.api
     }
 
     /// The `reqwest::Client`.
     pub fn http(&self) -> &reqwest::Client {
-        &self.inner.http
+        self.api.http()
     }
 
     /// The instance origin.
     pub fn instance(&self) -> &InstanceUrl {
-        &self.inner.instance
+        self.api.instance()
     }
 
     /// The API version every request uses.
     pub fn version(&self) -> ApiVersion {
-        self.inner.version
+        *self.api.version()
     }
 
     /// Validates a REST query's `nextRecordsUrl` (`/services/data/v68.0/query/{locator}`) and
@@ -292,8 +274,7 @@ impl OrgContext {
         let url: Url = if absolute {
             Url::parse(raw).map_err(|_| err(LinkErrorKind::Malformed))?
         } else {
-            self.inner
-                .instance
+            self.instance()
                 .url()
                 .join(raw)
                 .map_err(|_| err(LinkErrorKind::Malformed))?
@@ -301,7 +282,7 @@ impl OrgContext {
         if !url.username().is_empty() || url.password().is_some() {
             return Err(err(LinkErrorKind::UserInfo));
         }
-        if !self.inner.instance.same_origin(&url) {
+        if !self.instance().same_origin(&url) {
             return Err(err(LinkErrorKind::ForeignOrigin));
         }
         if raw.contains('#') {
@@ -335,7 +316,7 @@ impl OrgContext {
         }
         match segments.as_slice() {
             ["services", "data", version, rest @ ..] => {
-                if *version != self.inner.version.segment() {
+                if *version != self.version().segment() {
                     return Err(err(LinkErrorKind::VersionMismatch));
                 }
                 Ok(ParsedLink {
@@ -392,8 +373,8 @@ fn query_params<'a>(
 impl fmt::Debug for OrgContext {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("OrgContext")
-            .field("instance", &self.inner.instance)
-            .field("version", &self.inner.version)
+            .field("instance", self.instance())
+            .field("version", &self.version())
             .finish_non_exhaustive()
     }
 }

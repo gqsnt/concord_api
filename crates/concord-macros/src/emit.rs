@@ -847,7 +847,8 @@ fn initially(value: &Value, owner: &str) -> String {
 }
 
 /// `set_x` for every value and body; `maybe_x` for optional ones. `owner` names the receiver in
-/// docs ("the client", "this scope", "this request").
+/// docs ("the client", "this scope", "this request"). On a client or scope (`handle`), a
+/// required value has a setter only when declared `mut`: otherwise it is fixed at construction.
 fn controls(
     k: &TokenStream,
     values: &[Value],
@@ -855,9 +856,13 @@ fn controls(
     target: &TokenStream,
     owner: &str,
     notes: &[Vec<String>],
+    handle: bool,
 ) -> TokenStream {
     let mut out = TokenStream::new();
     for (value, notes) in values.iter().zip(notes) {
+        if handle && !value.settable() {
+            continue;
+        }
         let notes: Vec<LitStr> = notes.iter().map(|n| lit(n)).collect();
         let name = &value.name;
         let ty = &value.ty;
@@ -948,6 +953,48 @@ fn controls(
                 }
             });
         }
+    }
+    out
+}
+
+/// The base URL read from the value named by `base x;`, as a block: an argument spanned at `at`
+/// (the `base` statement), so a type that is not a base URL is reported there.
+fn base_read(k: &TokenStream, value: &Ident, state: &TokenStream, at: &Ident) -> TokenStream {
+    let v = Ident::new("__base_value", at.span());
+    quote!({ let #v = &#state.#value; #k::__private::base_of(#v) })
+}
+
+/// A read accessor per client or scope value, borrowing the handle's snapshot. A value Concord
+/// withholds (marked `#[sensitive]`, feeding a sensitive key, or the send policy) is readable in
+/// its own crate only.
+fn getters(values: &[Value], state: &TokenStream) -> TokenStream {
+    let mut out = TokenStream::new();
+    for value in values {
+        let name = &value.name;
+        let ty = &value.ty;
+        let docs = &value.docs;
+        let line = lit(&format!(" Reads `{}`.", plain(name)));
+        let vis = if value.debug_sensitive || !value.debug_when.is_empty() {
+            quote!(#[allow(dead_code)] pub(crate))
+        } else {
+            quote!(pub)
+        };
+        let (ret, read) = if value.optional {
+            (
+                quote!(::core::option::Option<&#ty>),
+                quote!(#state.#name.as_ref()),
+            )
+        } else {
+            (quote!(&#ty), quote!(&#state.#name))
+        };
+        out.extend(quote! {
+            #(#docs)*
+            #[doc = ""]
+            #[doc = #line]
+            #[inline] #vis fn #name(&self) -> #ret {
+                #read
+            }
+        });
     }
     out
 }
@@ -1214,8 +1261,18 @@ fn query_for_docs(model: &Model, endpoint: usize, composed: &Composed) -> Vec<St
 
 fn summary_parts(model: &Model, endpoint: usize, method: &Ident) -> Option<Summary> {
     let composed = model.owners[endpoint].composed.as_ref()?;
-    let base = match &model.owners[0].kind {
-        Kind::Client { base, .. } => base.value(),
+    let (base, value_base) = match &model.owners[0].kind {
+        Kind::Client {
+            base: crate::model::Base::Lit(base),
+            ..
+        } => (base.value(), None),
+        Kind::Client {
+            base: crate::model::Base::Value { index, .. },
+            ..
+        } => {
+            let name = plain(&model.owners[0].values[*index].name);
+            (format!("{{{name}}}"), Some(name))
+        }
         _ => return None,
     };
     let Kind::Endpoint {
@@ -1238,7 +1295,11 @@ fn summary_parts(model: &Model, endpoint: usize, method: &Ident) -> Option<Summa
         labels.push_str(&model.owners[o].labels[i].text);
         labels.push('.');
     }
-    let mut url = format!("{scheme}://{labels}");
+    let mut url = if value_base.is_some() {
+        labels.clone()
+    } else {
+        format!("{scheme}://{labels}")
+    };
     url.push_str(host);
     if composed.segments.is_empty() && !composed.trailing_slash {
         url.push_str(base_path);
@@ -1313,8 +1374,15 @@ fn summary_parts(model: &Model, endpoint: usize, method: &Ident) -> Option<Summa
             }
         }
     };
+    let value_note;
     let (base_note, actual_url) = (
-        "the declared base URL; the client's `with_base_url` replaces it",
+        match &value_base {
+            None => "the declared base URL; the client's `with_base_url` replaces it",
+            Some(name) => {
+                value_note = format!("the base URL of the client value `{name}`");
+                value_note.as_str()
+            }
+        },
         " Construction or a send policy may select or restrict the actual URL.",
     );
     let mut url_lines = vec![actual_url.to_owned()];
@@ -1736,6 +1804,14 @@ fn debug_fields<'a>(
                 quote_spanned!(span=> &#place.as_ref().map(#k::__private::#scalar))
             }
         };
+        // A value read only as the base URL is shown as that URL (its type need not be text or a
+        // header value), like a literal base.
+        let shown = if value.base && !value.text && !value.header && !value.debug_sensitive {
+            let v = Ident::new("__base_value", span);
+            quote!({ let #v = &#place; #k::__private::base_of(#v) })
+        } else {
+            shown
+        };
         // A classification that depends on native header names is decided when rendering.
         let shown = if value.debug_sensitive || value.debug_when.is_empty() || value.usage.is_none()
         {
@@ -1784,7 +1860,44 @@ fn emit_owner(
                 &quote!(::std::sync::Arc::make_mut(&mut self.__s)),
                 "the client",
                 notes,
+                true,
             );
+            let getters = getters(&owner.values, &quote!(self.__s));
+            // `base "…";`: a stored base, replaceable with `with_base_url`. `base x;`: the base is
+            // read from the value `x` (checked where `base` is written), and nothing replaces it
+            // but a new value of `x`.
+            // A value-backed base is shown as that value.
+            let base_debug = match base {
+                crate::model::Base::Lit(_) => quote!(__d.field("base", &__s.__base);),
+                crate::model::Base::Value { .. } => quote!(),
+            };
+            let (base_field, base_init, base_read, with_base_url) = match base {
+                crate::model::Base::Lit(lit) => (
+                    quote!(__base: #k::__private::Base,),
+                    quote!(__base: #k::__private::Base::from_static(#lit),),
+                    quote!(&self.__s.__base),
+                    quote! {
+                        /// Replaces the declared base URL (for example with a staging server or a
+                        /// local test server). It must be an `http`/`https` URL with a
+                        /// host, no port 0 and no user information, query or fragment; otherwise
+                        /// returns `concord::Error`.
+                        /// Declared paths are appended to its path. With `subdomain` labels the host
+                        /// must be a domain name: to reach a local server, keep a domain and map it
+                        /// with `reqwest::ClientBuilder::resolve`. Returns a new handle: scopes and
+                        /// requests created from the old one keep the old base. A send policy may
+                        /// further restrict which URLs it accepts.
+                        #[inline] pub fn with_base_url(mut self, url: impl ::core::convert::AsRef<str>) -> ::core::result::Result<Self, #k::Error> {
+                            let base = #k::__private::Base::parse(url.as_ref())?;
+                            ::std::sync::Arc::make_mut(&mut self.__s).__base = base;
+                            ::core::result::Result::Ok(self)
+                        }
+                    },
+                ),
+                crate::model::Base::Value { name, index } => {
+                    let read = base_read(k, &owner.values[*index].name, &quote!(self.__s), name);
+                    (quote!(), quote!(), read, quote!())
+                }
+            };
             let debug = debug_fields(k, model, &owner.values, &quote!(__s));
             let required: Vec<&Value> = owner.values.iter().filter(|v| v.is_positional()).collect();
             let (config_item, config_param, config_bind) = if required.is_empty() {
@@ -1871,7 +1984,7 @@ fn emit_owner(
                 #[allow(non_camel_case_types)]
                 struct #state {
                     __http: #k::reqwest::Client,
-                    __base: #k::__private::Base,
+                    #base_field
                     #(#fields)*
                 }
 
@@ -1885,27 +1998,25 @@ fn emit_owner(
                         Self {
                             __s: ::std::sync::Arc::new(#state {
                                 __http: http,
-                                __base: #k::__private::Base::from_static(#base),
+                                #base_init
                                 #inits
                             }),
                         }
                     }
 
-                    /// Replaces the declared base URL (for example with a staging server or a
-                    /// local test server). It must be an `http`/`https` URL with a
-                    /// host, no port 0 and no user information, query or fragment; otherwise
-                    /// returns `concord::Error`.
-                    /// Declared paths are appended to its path. With `subdomain` labels the host
-                    /// must be a domain name: to reach a local server, keep a domain and map it
-                    /// with `reqwest::ClientBuilder::resolve`. Returns a new handle: scopes and
-                    /// requests created from the old one keep the old base. A send policy may
-                    /// further restrict which URLs it accepts.
-                    #[inline] pub fn with_base_url(mut self, url: impl ::core::convert::AsRef<str>) -> ::core::result::Result<Self, #k::Error> {
-                        let base = #k::__private::Base::parse(url.as_ref())?;
-                        ::std::sync::Arc::make_mut(&mut self.__s).__base = base;
-                        ::core::result::Result::Ok(self)
+                    #with_base_url
+
+                    /// The `reqwest::Client` every request of this client is sent with.
+                    #[inline] pub fn http(&self) -> &#k::reqwest::Client {
+                        &self.__s.__http
                     }
 
+                    /// The base URL requests start from (declared paths are appended to it).
+                    #[inline] pub fn base_url(&self) -> &#k::reqwest::Url {
+                        #k::BaseUrl::url(#base_read)
+                    }
+
+                    #getters
                     #controls
                     #nav
                 }
@@ -1914,7 +2025,7 @@ fn emit_owner(
                     #[inline] fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
                         let __s = &*self.__s;
                         let mut __d = f.debug_struct(#type_label);
-                        __d.field("base", &__s.__base);
+                        #base_debug
                         #debug
                         __d.finish()
                     }
@@ -1930,7 +2041,16 @@ fn emit_owner(
                 &quote!(::std::sync::Arc::make_mut(&mut self.__s)),
                 "this scope",
                 notes,
+                true,
             );
+            let getters = getters(&owner.values, &quote!(self.__s));
+            let root_ty = &model.owners[0].type_name;
+            let mut root = quote!(self.__s.__parent);
+            let mut at = owner.parent.unwrap();
+            while at != 0 {
+                root = quote!(#root.__s.__parent);
+                at = model.owners[at].parent.unwrap();
+            }
             let debug = debug_fields(k, model, &owner.values, &quote!(__s));
             quote! {
                 #docs
@@ -1951,6 +2071,12 @@ fn emit_owner(
                 }
 
                 impl #ty {
+                    /// The client this scope was created from (its values, base and transport).
+                    #[inline] pub fn client(&self) -> &#root_ty {
+                        &#root
+                    }
+
+                    #getters
                     #controls
                     #nav
                 }
@@ -1988,6 +2114,7 @@ fn emit_owner(
                 &quote!(self),
                 "this request",
                 notes,
+                false,
             );
             let mut debug = debug_fields(k, model, &owner.values, &quote!(self));
             let body_field = body.as_ref().map(|b| {
@@ -3237,6 +3364,18 @@ fn prepare_body(
     let label_count = composed.labels.len();
     let segment_count = composed.segments.len() + usize::from(composed.trailing_slash);
     let root = format_ident!("__o0");
+    let base = match &model.owners[0].kind {
+        Kind::Client {
+            base: crate::model::Base::Value { name, index },
+            ..
+        } => base_read(
+            k,
+            &model.owners[0].values[*index].name,
+            &quote!(#root),
+            name,
+        ),
+        _ => quote!(&#root.__base),
+    };
     // No `->`: drained, whatever the defaults (a `response` default never applies). `-> stream`
     // without an item: the unread body, likewise without a format.
     let decoder = match output {
@@ -3303,7 +3442,7 @@ fn prepare_body(
         };
         let __body = #body_code;
         #bindings
-        let mut __p = #k::__private::Parts::new(&__META, &#root.__base);
+        let mut __p = #k::__private::Parts::new(&__META, #base);
         #code
         let (__decoder, __accept) = #decoder;
         __p.finish(#k::reqwest::Method::#method, &#root.__http, __body, __decoder, __accept)
@@ -4286,7 +4425,7 @@ mod tests {
     #[test]
     fn sensitive_value_notes_keep_wire_placements_separate() {
         let api: Api = syn::parse2(quote! {
-            pub client Api(#[sensitive] policy: Policy, #[sensitive] connection: Connection) {
+            pub client Api(#[sensitive] policy: Policy, #[sensitive] mut connection: Connection) {
                 base "http://x.test";
                 path "{connection}";
                 send policy;
@@ -4308,7 +4447,8 @@ mod tests {
         );
         let emitted = emit(&model, quote!(::concord)).to_string();
         assert!(!emitted.contains("sent normally"), "{emitted}");
-        // Both the setter and the required-values configuration field keep the path-placement note.
+        // Both the setter (`mut`) and the required-values configuration field keep the
+        // path-placement note.
         assert_eq!(
             emitted
                 .matches("Sent as: path segment `{connection}`.")
