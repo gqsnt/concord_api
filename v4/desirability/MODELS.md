@@ -234,3 +234,4 @@ Append-only: a row marked `running` is superseded by a later row (`↳ … resul
 | ↳ H06c combined review observed | — | gpt-6.1-sol / xhigh / read-only (rollout turn_context); 00:30:04Z–00:34:37Z | 4m33s | ACCEPT_WITH_FIXES; WIN pending 2 doc fixes (applied) + gate + CI on merged commit |
 | ↳ T3 round 2 Codex observed | — | gpt-6.1-sol / xhigh / danger-full-access in codex_jail.sh (rollout turn_context); 00:16:11Z–00:35:46Z | 19m35s | committed 63533ee2 (dz/t3-cancel, pushed); found and restored a leftover C3 control mutation |
 | T3 re-review (`t3-cancel-review-2-sol`) on 63533ee2 | Codex gpt-6.1-sol, xhigh, read-only | (meta.json at completion) | running | — |
+| ↳ T3 re-review observed | — | gpt-6.1-sol / xhigh / read-only (rollout turn_context); 00:36:55Z–00:40:34Z | 3m39s | ACCEPT (no findings) |
