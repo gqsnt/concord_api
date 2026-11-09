@@ -1,4 +1,4 @@
-#[derive(Debug, concord::Error)]
+#[derive(Debug, concord::derive::Error)]
 #[display(with = fmt_error)]
 pub enum Error {
     Gated(Box<u32>),

@@ -445,7 +445,7 @@ impl fmt::Debug for ChecksumError {
 }
 
 /// An SDK failure.
-#[derive(Debug, concord::Error)]
+#[derive(Debug, concord::derive::Error)]
 #[display(with = fmt_error)]
 #[non_exhaustive]
 pub enum Error {

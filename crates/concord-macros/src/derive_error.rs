@@ -1,11 +1,10 @@
-//! `#[derive(concord::Error)]` on an SDK's own error enum: `Display`, `std::error::Error` without a
-//! `source()` chain, and one `From` per single-field tuple variant. The expansion names only
-//! `core` items, so it needs no path to Concord.
-
-use std::collections::HashSet;
+//! `#[derive(concord::derive::Error)]` on an SDK's own error enum: `Display`, `std::error::Error`
+//! without a `source()` chain, and one `From` per single-field tuple variant. The expansion names
+//! only `core` items, so it needs no path to Concord; its own bindings are hygienic
+//! (`Span::mixed_site`), so no field name can shadow them.
 
 use proc_macro2::{Span, TokenStream};
-use quote::{ToTokens, format_ident, quote, quote_spanned};
+use quote::{ToTokens, quote, quote_spanned};
 use syn::parse::ParseStream;
 use syn::spanned::Spanned;
 use syn::{Attribute, Fields, Ident, Item, ItemEnum, LitStr, Path, Token, Type, Variant};
@@ -20,13 +19,13 @@ pub fn expand(item: &Item) -> syn::Result<TokenStream> {
         Item::Struct(syn::ItemStruct { ident, .. }) | Item::Union(syn::ItemUnion { ident, .. }) => {
             return Err(syn::Error::new(
                 ident.span(),
-                "`concord::Error` is derived for an enum (the SDK's error variants)",
+                "`concord::derive::Error` is derived for an enum (the SDK's error variants)",
             ));
         }
         other => {
             return Err(syn::Error::new(
                 other.span(),
-                "`concord::Error` is derived for an enum",
+                "`concord::derive::Error` is derived for an enum",
             ));
         }
     };
@@ -37,6 +36,17 @@ pub fn expand(item: &Item) -> syn::Result<TokenStream> {
     let mut froms = Vec::new();
     let mut sources: Vec<(String, &Ident)> = Vec::new();
     for variant in &input.variants {
+        for attr in variant.fields.iter().flat_map(|field| &field.attrs) {
+            let helper = ["from", "display"]
+                .into_iter()
+                .find(|h| attr.path().is_ident(h));
+            if let Some(helper) = helper {
+                errors.push(syn::Error::new_spanned(
+                    attr,
+                    format!("`#[{helper}]` belongs on the variant, not on one of its fields"),
+                ));
+            }
+        }
         let Some(attrs) = errors.keep(VariantAttrs::parse(variant)) else {
             continue;
         };
@@ -111,9 +121,15 @@ pub fn expand(item: &Item) -> syn::Result<TokenStream> {
     })
 }
 
-/// The `Display::fmt` formatter parameter, at the derive's call site.
+/// The `Display::fmt` formatter parameter; hygienic, so no field binding can shadow it.
 fn formatter() -> Ident {
-    Ident::new("__formatter", Span::call_site())
+    Ident::new("__formatter", Span::mixed_site())
+}
+
+/// The hygienic binding of a referenced field (`_0`, `status`); the format string reaches it
+/// through an explicit named argument, never by capture.
+fn alias(key: &str) -> Ident {
+    Ident::new(&format!("__field_{key}"), Span::mixed_site())
 }
 
 /// Collects every authored mistake, so one build reports all of them.
@@ -142,8 +158,8 @@ fn enum_hook(attrs: &[Attribute]) -> syn::Result<Option<Path>> {
     let mut hook = None;
     for attr in attrs {
         if attr.path().is_ident("from") {
-            return Err(syn::Error::new(
-                attr.span(),
+            return Err(syn::Error::new_spanned(
+                attr,
                 "`#[from(skip)]` belongs on a variant",
             ));
         }
@@ -161,8 +177,8 @@ fn enum_hook(attrs: &[Attribute]) -> syn::Result<Option<Path>> {
             input.parse::<Path>()
         })?;
         if hook.replace(path).is_some() {
-            return Err(syn::Error::new(
-                attr.span(),
+            return Err(syn::Error::new_spanned(
+                attr,
                 "a second `#[display]` on the enum",
             ));
         }
@@ -193,16 +209,16 @@ impl VariantAttrs {
                     input.parse::<LitStr>()
                 })?;
                 if out.display.replace(lit).is_some() {
-                    return Err(syn::Error::new(
-                        attr.span(),
+                    return Err(syn::Error::new_spanned(
+                        attr,
                         "a second `#[display]` on this variant",
                     ));
                 }
             } else if attr.path().is_ident("from") {
                 let word = attr.parse_args::<skip>()?;
                 if out.skip.replace(word.span).is_some() {
-                    return Err(syn::Error::new(
-                        attr.span(),
+                    return Err(syn::Error::new_spanned(
+                        attr,
                         "a second `#[from]` on this variant",
                     ));
                 }
@@ -220,48 +236,49 @@ enum FieldRef {
 
 /// One `match` arm. A string that is exactly one field (`"{0}"`, `"{error}"`) delegates to that
 /// field's `Display` with the caller's formatter (flags, width and precision pass through); any
-/// other string is written with `write!`.
+/// other string is written with `write!`, each referenced field passed as a named argument.
 fn display_arm(variant: &Variant, lit: &LitStr) -> syn::Result<TokenStream> {
     let text = lit.value();
     let (refs, rewritten) = scan(&text).map_err(|message| syn::Error::new(lit.span(), message))?;
     let ident = &variant.ident;
-    let binding = |name: &str| Ident::new(name, lit.span());
-    let mut used = HashSet::new();
+    let error = |message: String| Err(syn::Error::new(lit.span(), message));
+    // Each referenced field once, in first-use order, by its name in the rewritten string.
+    let mut keys: Vec<String> = Vec::new();
+    for r in &refs {
+        let key = match r {
+            FieldRef::Index(i) => format!("_{i}"),
+            FieldRef::Name(name) => name.clone(),
+        };
+        if !keys.contains(&key) {
+            keys.push(key);
+        }
+    }
+    let used = |key: &str| keys.iter().any(|k| k == key);
     let pattern = match &variant.fields {
         Fields::Unit => {
             if !refs.is_empty() {
-                return Err(syn::Error::new(
-                    lit.span(),
-                    "this variant has no fields to format",
-                ));
+                return error("this variant has no fields to format".into());
             }
             quote!(Self::#ident)
         }
         Fields::Unnamed(fields) => {
             for r in &refs {
                 match r {
-                    FieldRef::Index(i) if *i < fields.unnamed.len() => {
-                        used.insert(i.to_string());
-                    }
+                    FieldRef::Index(i) if *i < fields.unnamed.len() => {}
                     FieldRef::Index(i) => {
-                        return Err(syn::Error::new(
-                            lit.span(),
-                            format!("variant `{ident}` has no field `{i}`"),
-                        ));
+                        return error(format!("variant `{ident}` has no field `{i}`"));
                     }
                     FieldRef::Name(name) => {
-                        return Err(syn::Error::new(
-                            lit.span(),
-                            format!(
-                                "`{{{name}}}`: a tuple variant's fields are `{{0}}`, `{{1}}`, ..."
-                            ),
+                        return error(format!(
+                            "`{{{name}}}`: a tuple variant's fields are `{{0}}`, `{{1}}`, ..."
                         ));
                     }
                 }
             }
             let parts = (0..fields.unnamed.len()).map(|i| {
-                if used.contains(&i.to_string()) {
-                    binding(&format!("_{i}")).into_token_stream()
+                let key = format!("_{i}");
+                if used(&key) {
+                    alias(&key).into_token_stream()
                 } else {
                     quote!(_)
                 }
@@ -276,27 +293,19 @@ fn display_arm(variant: &Variant, lit: &LitStr) -> syn::Result<TokenStream> {
                 .collect();
             for r in &refs {
                 match r {
-                    FieldRef::Name(name) if names.iter().any(|n| *n == name) => {
-                        used.insert(name.clone());
-                    }
+                    FieldRef::Name(name) if names.iter().any(|n| *n == name) => {}
                     FieldRef::Name(name) => {
-                        return Err(syn::Error::new(
-                            lit.span(),
-                            format!("variant `{ident}` has no field `{name}`"),
-                        ));
+                        return error(format!("variant `{ident}` has no field `{name}`"));
                     }
                     FieldRef::Index(i) => {
-                        return Err(syn::Error::new(
-                            lit.span(),
-                            format!("`{{{i}}}`: name the field of variant `{ident}`"),
-                        ));
+                        return error(format!("`{{{i}}}`: name the field of variant `{ident}`"));
                     }
                 }
             }
-            let parts = names
-                .iter()
-                .filter(|n| used.contains(&n.to_string()))
-                .map(|n| binding(&n.to_string()));
+            let parts = names.iter().filter(|n| used(&n.to_string())).map(|n| {
+                let alias = alias(&n.to_string());
+                quote!(#n: #alias)
+            });
             quote!(Self::#ident { #(#parts,)* .. })
         }
     };
@@ -304,19 +313,24 @@ fn display_arm(variant: &Variant, lit: &LitStr) -> syn::Result<TokenStream> {
     let whole = text.strip_prefix('{').and_then(|t| t.strip_suffix('}'));
     let body = match whole {
         Some(inner) if refs.len() == 1 && !inner.contains([':', '{', '}']) => {
-            let field = binding(&rewritten[1..rewritten.len() - 1]);
+            let field = alias(&keys[0]);
             quote_spanned!(lit.span()=> ::core::fmt::Display::fmt(#field, #formatter))
         }
         _ => {
             let rewritten = LitStr::new(&rewritten, lit.span());
-            quote_spanned!(lit.span()=> ::core::write!(#formatter, #rewritten))
+            let args = keys.iter().map(|key| {
+                let name = Ident::new(key, lit.span());
+                let alias = alias(key);
+                quote!(, #name = #alias)
+            });
+            quote_spanned!(lit.span()=> ::core::write!(#formatter, #rewritten #(#args)*))
         }
     };
     Ok(quote!(#pattern => #body,))
 }
 
-/// The field references of a format string, and the string with `{N` rewritten to `{_N` so the
-/// arm's bindings are captured by name.
+/// The field references of a format string, and the string with `{N` rewritten to `{_N`, the
+/// name of the named argument that carries field `N`.
 fn scan(text: &str) -> Result<(Vec<FieldRef>, String), String> {
     let mut refs = Vec::new();
     let mut out = String::with_capacity(text.len() + 4);
@@ -340,10 +354,26 @@ fn scan(text: &str) -> Result<(Vec<FieldRef>, String), String> {
         let inner = &tail[1..end];
         let (arg, spec) = inner.split_at(inner.find(':').unwrap_or(inner.len()));
         let arg = arg.trim();
+        // A fill character may be `$`; after it, `$` and `.*` only name width/precision arguments.
+        let flags = spec.get(1..).unwrap_or("");
+        let flags = match flags.chars().nth(1) {
+            Some('<' | '^' | '>') => &flags[flags.chars().next().map_or(0, char::len_utf8)..],
+            _ => flags,
+        };
+        if flags.contains('$') || flags.contains(".*") {
+            return Err(format!(
+                "`{{{inner}}}`: a width or precision argument (`name$`, `0$`, `.*`) is not supported; \
+                 write the number, or format with the enum's `#[display(with = path)]`"
+            ));
+        }
         if arg.is_empty() {
             return Err(format!(
                 "`{{{inner}}}` names no field: write `{{0{spec}}}` or `{{field{spec}}}`"
             ));
+        }
+        let word = arg.chars().all(|c| c.is_ascii_alphanumeric() || c == '_');
+        if !word {
+            return Err(format!("`{{{inner}}}`: `{arg}` is not a field name"));
         }
         if let Ok(index) = arg.parse::<usize>() {
             refs.push(FieldRef::Index(index));
@@ -400,7 +430,7 @@ fn from_impl(
     let name = &input.ident;
     let ident = &variant.ident;
     let (impl_generics, ty_generics, where_clause) = input.generics.split_for_impl();
-    let value = format_ident!("value");
+    let value = Ident::new("value", Span::mixed_site());
     let built = if boxed {
         quote_spanned!(field.span()=> <#field>::new(#value))
     } else {

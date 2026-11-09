@@ -1,4 +1,4 @@
-#[derive(Debug, concord::Error)]
+#[derive(Debug, concord::derive::Error)]
 pub enum Error {
     #[display("{1} failed")]
     Tuple(u16),

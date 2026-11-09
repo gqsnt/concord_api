@@ -19,7 +19,7 @@ pub const MAX_ERROR_BODY: usize = 64 * 1024;
 ///
 /// `From<concord::Error>` keeps its unread response; [`SfError::from_concord`] reads a
 /// non-2xx error document. There is no `source()` chain; inspect the variants deliberately.
-#[derive(Debug, concord::Error)]
+#[derive(Debug, concord::derive::Error)]
 #[non_exhaustive]
 pub enum SfError {
     /// A declared operation failed inside Concord: the request could not be built, the transport

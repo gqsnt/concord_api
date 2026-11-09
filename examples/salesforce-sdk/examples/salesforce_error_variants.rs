@@ -1,4 +1,4 @@
-//! The SDK error variants a caller matches, after `derive(concord::Error)` (needs `SF_INSTANCE_URL`, `SF_ACCESS_TOKEN`).
+//! The SDK error variants a caller matches (needs `SF_INSTANCE_URL` and `SF_ACCESS_TOKEN`).
 
 use std::time::Duration;
 

@@ -7,7 +7,7 @@ impl std::fmt::Display for ProtocolError {
     }
 }
 
-#[derive(Debug, concord::Error)]
+#[derive(Debug, concord::derive::Error)]
 pub enum Error {
     #[display("{0}")]
     Protocol(Box<ProtocolError>),

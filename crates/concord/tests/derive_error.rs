@@ -1,5 +1,5 @@
-//! `#[derive(concord::Error)]`: formatting, conversions and the empty `source()` chain, compared
-//! with the hand-written implementations it replaces. Compile-fail cases are in
+//! `#[derive(concord::derive::Error)]`: formatting, conversions and the empty `source()` chain,
+//! compared with the hand-written implementations it replaces. Compile-fail cases are in
 //! `tests/ui_derive_error/*.rs`.
 
 use std::error::Error as _;
@@ -28,7 +28,7 @@ impl fmt::Display for Other {
 }
 
 /// The derived enum: the shape of Salesforce's `SfError` (plain, boxed and skipped payloads).
-#[derive(Debug, concord::Error)]
+#[derive(Debug, concord::derive::Error)]
 enum Derived {
     #[display("{0}")]
     Plain(Padded),
@@ -168,7 +168,7 @@ fn single_field_variants_convert_and_boxes_are_built() {
 }
 
 /// Discord's shape: one enum-wide formatter, a named-field variant, conversions withheld.
-#[derive(Debug, concord::Error)]
+#[derive(Debug, concord::derive::Error)]
 #[display(with = fmt_hooked)]
 enum Hooked {
     #[from(skip)]
@@ -207,7 +207,7 @@ fn an_enum_wide_formatter_formats_every_variant() {
 }
 
 /// `concord::Error` the type and `concord::Error` the derive in one enum, generic too.
-#[derive(Debug, concord::Error)]
+#[derive(Debug, concord::derive::Error)]
 enum Generic<T: fmt::Debug + fmt::Display> {
     #[display("{0}")]
     Concord(concord::Error),
@@ -222,6 +222,45 @@ fn generic_enums_and_concord_payloads_derive() {
     assert_eq!(e.to_string(), "model: other 9");
     fn converts<E: From<concord::Error> + std::error::Error>() {}
     converts::<Generic<Other>>();
+}
+
+/// Field names cannot reach the derive's own bindings: a field named like the formatter, and a
+/// constant named like a field, format as the field.
+mod hygiene {
+    #[allow(non_upper_case_globals, dead_code)]
+    const status: u16 = 7;
+
+    #[derive(Debug, concord::derive::Error)]
+    #[allow(non_snake_case)]
+    pub enum Shadowing {
+        #[display("{__formatter}")]
+        Alone { __formatter: &'static str },
+        #[display("<{__formatter}> {__field___formatter}")]
+        Text {
+            __formatter: &'static str,
+            __field___formatter: &'static str,
+        },
+        #[display("HTTP {status}")]
+        Status { status: u16 },
+        #[display("[{0:$>6}] {0} {1:?}")]
+        Fill(&'static str, u8),
+    }
+}
+
+#[test]
+fn field_names_never_shadow_the_generated_bindings() {
+    use hygiene::Shadowing;
+    let alone = Shadowing::Alone {
+        __formatter: "field",
+    };
+    assert_eq!(format!("{alone:>7}"), "  field");
+    let text = Shadowing::Text {
+        __formatter: "a",
+        __field___formatter: "b",
+    };
+    assert_eq!(text.to_string(), "<a> b");
+    assert_eq!(Shadowing::Status { status: 404 }.to_string(), "HTTP 404");
+    assert_eq!(Shadowing::Fill("ab", 3).to_string(), "[$$$$ab] ab 3");
 }
 
 /// Authored mistakes fail at the attribute, variant or field that was written.

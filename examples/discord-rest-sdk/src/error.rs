@@ -276,7 +276,7 @@ pub struct ProtocolError {
 
 /// Every failure of a generated `send()` (and of the [`history`](crate::DiscordChannel::history)
 /// traversal).
-#[derive(Debug, concord::Error)]
+#[derive(Debug, concord::derive::Error)]
 #[display(with = fmt_error)]
 pub enum Error {
     /// Refused locally before any I/O by the rate limiter.

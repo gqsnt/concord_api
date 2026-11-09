@@ -1,4 +1,4 @@
-//! The SDK error variants a caller matches, after `derive(concord::Error)` (needs `DISCORD_BOT_TOKEN`, `DISCORD_CHANNEL_ID`).
+//! The SDK error variants a caller matches (needs `DISCORD_BOT_TOKEN` and `DISCORD_CHANNEL_ID`).
 
 use std::time::Duration;
 

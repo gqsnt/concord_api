@@ -101,14 +101,14 @@
 //! | Item | Role |
 //! |---|---|
 //! | [`api!`] | the declaration macro |
-//! | [`derive(Error)`](derive@Error) | an SDK's own error enum: `Display`, `std::error::Error`, `From` per variant |
+//! | [`derive::Error`] | derives an SDK's own error enum: `Display`, `std::error::Error`, `From` per variant |
 //! | [`Prepared<T>`](Prepared) | a built request, not yet sent: `request()`, `receive()`, `send()`, `send_raw()`, `into_parts()` |
 //! | [`Received<T>`](Received) | any-status response, body unread: `head()`, `meta()`, then `decode()`, `decode_limited()`, `bytes_limited()`, `into_incoming()` or a native exit |
 //! | [`Incoming`] | an unread 2xx body with its operation identity, for an incremental reader chosen at run time |
 //! | [`Decoder<T>`](Decoder) | a response handling (an endpoint's, or [`Decoder::new`] for a format of your choice), for a response you obtained natively: `decode`, `finish` |
 //! | [`Endpoint<T>`](Endpoint), [`SendWith<T>`](SendWith) | generated operations implement `Endpoint`; a client's `send policy;` delegates generated `send()` to the policy's `SendWith::send`, returning its `Output` |
 //! | [`SendOperation<T, O>`](SendOperation) | under `operations Name;`, the policy's trait instead of `SendWith`: generated `send()` also passes its endpoint's variant of the generated enum `Name`, for a `match` without a wildcard arm |
-//! | [`Error`](struct@Error), [`ErrorKind`] | Concord's error type: `kind`, `endpoint`, `status`, `response`, `into_response`, `codec_error`, `transport` |
+//! | [`Error`], [`ErrorKind`] | Concord's error type: `kind`, `endpoint`, `status`, `response`, `into_response`, `codec_error`, `transport` |
 //! | [`Encode<T>`](Encode), [`Decode<T>`](Decode) | the open format traits, implemented by `Json` (feature `json`), `Text`, `Binary`, `IgnoreContentType<F>` (feature `extras`), `Form` (feature `form`) and by your own types; a statement names a format by its type path (`format Json;`) |
 //! | [`Incremental<T>`](Incremental) | the open format contract for `-> stream T`: checks the head, then opens its reader over an unread `Incoming` |
 //! | [`ResponseHead`], [`ContentTypeField`] | what a [`Decode`] or [`Incremental`] implementation reads before the body: status, version, header fields |
@@ -182,10 +182,9 @@
 //! `#[sensitive]` marks a value. It is sent as is, but Concord withholds it — and every key, path
 //! segment or host label it feeds — from the output **Concord itself produces**: the generated
 //! `Debug` of clients, config structs, scopes and requests, [`Prepared`]'s `Debug`, and
-//! [`Error`](struct@Error)'s `Display` and `Debug`. Keys named `authorization`, `cookie`,
-//! `x-api-key`, `token`, `password` and a few more are treated as sensitive without the marker. A
-//! native `HeaderValue` whose own sensitivity flag is set stays flagged and is withheld the same
-//! way, marker or not.
+//! [`Error`]'s `Display` and `Debug`. Keys named `authorization`, `cookie`, `x-api-key`, `token`,
+//! `password` and a few more are treated as sensitive without the marker. A native `HeaderValue`
+//! whose own sensitivity flag is set stays flagged and is withheld the same way, marker or not.
 //! `Error` has no `source()` chain: the underlying reqwest or format error is reachable only through
 //! [`Error::transport`] and [`CodecError::source_unredacted`] (from [`Error::codec_error`]), and the
 //! unread response of a status or metadata error through [`Error::response`]; none of them is
@@ -254,7 +253,11 @@ pub use concord_core::{
     Records, ResponseHead, ResponseMeta, SendOperation, SendWith, Sends, ToHeaderValue, bytes,
     reqwest,
 };
-pub use concord_macros::Error;
+
+/// Derives for an SDK's own types.
+pub mod derive {
+    pub use concord_macros::Error;
+}
 
 /// Declares an HTTP API as a client → scopes → endpoints tree and generates its typed client.
 ///

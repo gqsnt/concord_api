@@ -1,7 +1,7 @@
 // Salesforce's `Api` payload is read asynchronously by `from_concord`: no `From` is generated.
 pub struct ApiFailure;
 
-#[derive(Debug, concord::Error)]
+#[derive(Debug, concord::derive::Error)]
 pub enum SfError {
     #[display("{0}")]
     Concord(concord::Error),

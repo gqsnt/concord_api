@@ -1,0 +1,11 @@
+error: `#[from]` belongs on the variant, not on one of its fields
+ --> tests/ui_derive_error/field_attributes.rs:7:13
+  |
+7 |     Skipped(#[from(skip)] Payload),
+  |             ^^^^^^^^^^^^^
+
+error: `#[display]` belongs on the variant, not on one of its fields
+  --> tests/ui_derive_error/field_attributes.rs:10:9
+   |
+10 |         #[display("{status}")]
+   |         ^^^^^^^^^^^^^^^^^^^^^^

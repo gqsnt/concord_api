@@ -28,7 +28,7 @@ pub enum EnvelopeProblem {
 }
 
 /// An error of this SDK.
-#[derive(concord::Error)]
+#[derive(concord::derive::Error)]
 #[display(with = fmt_error)]
 #[non_exhaustive]
 pub enum GitHubError {

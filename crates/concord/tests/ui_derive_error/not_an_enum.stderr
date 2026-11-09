@@ -1,4 +1,4 @@
-error: `concord::Error` is derived for an enum (the SDK's error variants)
+error: `concord::derive::Error` is derived for an enum (the SDK's error variants)
  --> tests/ui_derive_error/not_an_enum.rs:2:12
   |
 2 | pub struct Error {
