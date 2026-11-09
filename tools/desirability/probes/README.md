@@ -1072,3 +1072,8 @@ without an `answers` list is malformed and scores 0 for its items.
 - Parsing of the SDK source (`decl.py`, Rust items, declaration types) is heuristic. Whatever it
   gets wrong is caught by the compile steps and recorded as a drop; it is never silently scored.
   R2 answer and truth types are parsed by `syn` (fix round 5), not by the heuristic parser.
+
+Known limit of `--generated-docs` (instrument review `i3g-instrument-review-sol`): only the generated docs of
+the request types and navigation methods a session asks about are appended; linked pages, setter docs and
+hand-written public wrapper notes outside the declaration (e.g. ClickHouse's ping and B2's download notes)
+are not exposed. A hypothesis measured with this mode claims endpoint documentation only.
