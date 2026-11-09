@@ -7,8 +7,9 @@
 //! `qbo.customers().query(..)`, `qbo.customer(id).read()`, `qbo.invoices().create(..)`,
 //! `qbo.invoice(id).read()`, `qbo.payments().create(..)`, each sent with the generated `send()`
 //! through the client's [`Connection`], which supplies the realm of every path, its access token
-//! and the official HTTPS environment host. [`QuickBooks::set_connection`] replaces all three
-//! together at send time; loopback fixture origins stay unchanged.
+//! and the official HTTPS environment host. [`QuickBooks::set_connection`] replaces the
+//! connection at once (`prepare()` already uses its realm); the environment host and the token are
+//! selected when the request is sent; loopback fixture origins stay unchanged.
 //! [`customer_pages`] walks a query. See the package README for failure semantics and
 //! exclusions.
 
