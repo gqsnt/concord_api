@@ -253,6 +253,20 @@ pub use concord_core::{
     reqwest,
 };
 
+/// Derives `Display` as the value's wire text, read from its serde spelling.
+///
+/// ```
+/// # #[cfg(feature = "json")] {
+/// #[derive(serde::Serialize, concord::WireDisplay)]
+/// #[serde(rename_all = "kebab-case")]
+/// pub enum Sort { Created, LongRunning }
+///
+/// assert_eq!(Sort::LongRunning.to_string(), "long-running");
+/// # }
+/// ```
+#[cfg(any(feature = "json", feature = "form", feature = "csv", feature = "jsonl"))]
+pub use concord_macros::WireDisplay;
+
 /// Declares an HTTP API as a client → scopes → endpoints tree and generates its typed client.
 ///
 /// See the [crate documentation](crate) for the language.
@@ -271,6 +285,8 @@ macro_rules! api {
 /// Not a public API.
 #[doc(hidden)]
 pub mod __macro {
+    #[cfg(any(feature = "json", feature = "form", feature = "csv", feature = "jsonl"))]
+    pub use concord_codecs::__wire::{Serialize, wire_text};
     pub use concord_core;
     pub use concord_macros::api;
 }

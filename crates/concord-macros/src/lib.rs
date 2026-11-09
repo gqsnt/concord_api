@@ -9,6 +9,7 @@ mod emit;
 mod model;
 mod syntax;
 mod template;
+mod wire_display;
 
 /// Implementation of `concord::api!`; not meant to be invoked directly.
 #[proc_macro]
@@ -35,6 +36,18 @@ pub fn api(input: TokenStream) -> TokenStream {
             }
             out.into()
         }
+        Err(error) => error.to_compile_error().into(),
+    }
+}
+
+/// The text is the value's serde representation when that is one scalar: a string as written (a
+/// placement encodes it), a number or boolean in decimal, a unit variant as its serde name
+/// (`rename`, `rename_all`), a newtype or `untagged` newtype variant as its content. Any other
+/// shape fails to format, and a request that places it fails to build, naming the placement.
+#[proc_macro_derive(WireDisplay)]
+pub fn wire_display(input: TokenStream) -> TokenStream {
+    match syn::parse::<syn::DeriveInput>(input) {
+        Ok(input) => wire_display::derive(input).into(),
         Err(error) => error.to_compile_error().into(),
     }
 }

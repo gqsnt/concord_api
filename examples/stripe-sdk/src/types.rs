@@ -4,7 +4,8 @@ use std::collections::BTreeMap;
 use std::fmt;
 use std::str::FromStr;
 
-use serde::{Deserialize, Deserializer, Serialize, Serializer};
+use concord::WireDisplay;
+use serde::{Deserialize, Deserializer, Serialize};
 
 /// The Stripe API version this SDK implements, sent as `Stripe-Version` on every request unless
 /// the context sets another one. Recorded with its sources in `PROVIDER.md`.
@@ -49,7 +50,8 @@ impl std::error::Error for ValueError {}
 
 /// A three-letter ISO currency code in lowercase, as Stripe writes it (`usd`, `eur`). Totals are
 /// kept per currency; amounts in different currencies are never added.
-#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, WireDisplay)]
+#[serde(transparent)]
 pub struct Currency(String);
 
 impl Currency {
@@ -80,18 +82,6 @@ impl FromStr for Currency {
     }
 }
 
-impl fmt::Display for Currency {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(&self.0)
-    }
-}
-
-impl Serialize for Currency {
-    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        serializer.serialize_str(&self.0)
-    }
-}
-
 impl<'de> Deserialize<'de> for Currency {
     fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
         let code = String::deserialize(deserializer)?;
@@ -100,18 +90,15 @@ impl<'de> Deserialize<'de> for Currency {
 }
 
 /// A Unix timestamp in seconds, as Stripe writes every time (`created`, `period_start`).
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[derive(
+    Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize, WireDisplay,
+)]
 #[serde(transparent)]
 pub struct Timestamp(pub i64);
 
-impl fmt::Display for Timestamp {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", self.0)
-    }
-}
-
 /// A list page size, 1–100 (Stripe's default is 10 when `limit` is absent).
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, WireDisplay)]
+#[serde(transparent)]
 pub struct Limit(u8);
 
 impl Limit {
@@ -134,15 +121,10 @@ impl Limit {
     }
 }
 
-impl fmt::Display for Limit {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", self.0)
-    }
-}
-
 /// One `expand[]` entry: a dot-separated path such as `customer`, `data.customer` (on a list) or
 /// `parent.subscription_details.subscription`. Stripe documents a maximum depth of four levels.
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, WireDisplay)]
+#[serde(transparent)]
 pub struct ExpandPath(String);
 
 impl ExpandPath {
@@ -175,20 +157,9 @@ impl ExpandPath {
     }
 }
 
-impl fmt::Display for ExpandPath {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(&self.0)
-    }
-}
-
-impl Serialize for ExpandPath {
-    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        serializer.serialize_str(&self.0)
-    }
-}
-
 /// A Stripe API version, such as [`PINNED_API_VERSION`].
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, WireDisplay)]
+#[serde(transparent)]
 pub struct ApiVersion(String);
 
 impl ApiVersion {
@@ -214,12 +185,6 @@ impl ApiVersion {
     /// The version text.
     pub fn as_str(&self) -> &str {
         &self.0
-    }
-}
-
-impl fmt::Display for ApiVersion {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(&self.0)
     }
 }
 

@@ -6,9 +6,7 @@
 //! with an `Unknown(String)` variant that keeps a value added later by GitHub instead of failing
 //! the whole page. Timestamps are kept as the text GitHub sent ([`Timestamp`]).
 
-use std::fmt;
-
-use serde::{Deserialize, Deserializer};
+use serde::{Deserialize, Deserializer, Serialize};
 
 use crate::ids::{
     ArtifactId, CommentId, CommitSha, IssueId, IssueNumber, JobId, LabelId, Login, MilestoneNumber,
@@ -21,9 +19,11 @@ macro_rules! provider_enum {
     ($(#[$doc:meta])* $name:ident { $($(#[$vdoc:meta])* $variant:ident = $wire:literal),+ $(,)? }) => {
         $(#[$doc])*
         #[derive(Clone, Debug, PartialEq, Eq, Hash)]
+        #[derive(Serialize, concord::WireDisplay)]
         pub enum $name {
-            $($(#[$vdoc])* $variant,)+
+            $($(#[$vdoc])* #[serde(rename = $wire)] $variant,)+
             /// A value outside the enumeration documented for the pinned version, kept as sent.
+            #[serde(untagged)]
             Unknown(String),
         }
 
@@ -34,12 +34,6 @@ macro_rules! provider_enum {
                     $(Self::$variant => $wire,)+
                     Self::Unknown(other) => other,
                 }
-            }
-        }
-
-        impl fmt::Display for $name {
-            fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-                f.write_str(self.as_str())
             }
         }
 

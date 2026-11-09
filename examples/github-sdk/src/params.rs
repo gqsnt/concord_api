@@ -41,8 +41,9 @@ macro_rules! wire_enum {
     ($(#[$doc:meta])* $name:ident { $($(#[$vdoc:meta])* $variant:ident = $wire:literal),+ $(,)? }) => {
         $(#[$doc])*
         #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+        #[derive(Serialize, concord::WireDisplay)]
         pub enum $name {
-            $($(#[$vdoc])* $variant),+
+            $($(#[$vdoc])* #[serde(rename = $wire)] $variant),+
         }
 
         impl $name {
@@ -51,12 +52,6 @@ macro_rules! wire_enum {
                 match self {
                     $(Self::$variant => $wire),+
                 }
-            }
-        }
-
-        impl fmt::Display for $name {
-            fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-                f.write_str(self.as_str())
             }
         }
     };
@@ -174,7 +169,8 @@ wire_enum!(
 );
 
 /// `per_page`: 1 through 100.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, concord::WireDisplay)]
+#[serde(transparent)]
 pub struct PerPage(u8);
 
 impl PerPage {
@@ -200,17 +196,13 @@ impl PerPage {
     }
 }
 
-impl fmt::Display for PerPage {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        fmt::Display::fmt(&self.0, f)
-    }
-}
-
 /// An ISO 8601 UTC timestamp, `YYYY-MM-DDTHH:MM:SSZ`, as GitHub's `since` parameters document
 /// and as its resources report `created_at`/`updated_at`. Kept as text: this SDK has no date
 /// arithmetic, it only validates the shape and the field ranges (no leap-second or
 /// days-per-month check beyond 1–31).
-#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[derive(
+    Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize, concord::WireDisplay,
+)]
 #[serde(transparent)]
 pub struct Timestamp(String);
 
@@ -270,12 +262,6 @@ impl Timestamp {
     }
 }
 
-impl fmt::Display for Timestamp {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(&self.0)
-    }
-}
-
 /// `labels`: a non-empty list of label names, sent comma-separated (`bug,ui,@high`) as GitHub
 /// documents. An issue matches when it has **all** of them.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
@@ -322,7 +308,8 @@ impl fmt::Display for Labels {
 /// were checked against (see `PROVIDER.md`); GitHub answers `410 Gone` for an unsupported
 /// version and uses `2022-11-28` when the header is missing, which is why the SDK always sends
 /// one.
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, concord::WireDisplay)]
+#[serde(transparent)]
 pub struct ApiVersion(String);
 
 impl ApiVersion {
@@ -366,15 +353,10 @@ impl Default for ApiVersion {
     }
 }
 
-impl fmt::Display for ApiVersion {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(&self.0)
-    }
-}
-
 /// An entity tag exactly as GitHub returned it in `ETag` (quotes and a `W/` prefix included),
 /// sent back unchanged in `If-None-Match`.
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, concord::WireDisplay)]
+#[serde(transparent)]
 pub struct ETag(String);
 
 impl ETag {
@@ -386,11 +368,5 @@ impl ETag {
     /// The text, unchanged.
     pub fn as_str(&self) -> &str {
         &self.0
-    }
-}
-
-impl fmt::Display for ETag {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(&self.0)
     }
 }
