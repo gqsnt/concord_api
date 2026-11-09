@@ -409,3 +409,34 @@ async fn both_receive_adapters_keep_the_declared_document_decoder_and_bound() {
     assert_eq!(server.requests().len(), 2);
     server.shutdown().await;
 }
+
+#[tokio::test]
+async fn receive_adapter_keeps_an_exceeded_custom_error_body_bound() {
+    let server = TestServer::start(|_| Reply::new(409).body("provider-document")).await;
+    let api = Typed::new(reqwest::Client::new())
+        .with_base_url(server.url())
+        .unwrap();
+    let received = retry(1)
+        .receive(
+            api.item().prepare().unwrap().error_body_limit(4),
+            ReplayMode::BestEffort,
+            |_, _| {},
+            |_| Decision::Done,
+            || Duration::ZERO,
+            |_| ready(()),
+            |_, ceiling| ceiling,
+        )
+        .await
+        .outcome
+        .unwrap()
+        .unwrap();
+    let error: concord_core::Error<Problem> = received.decode().await.unwrap_err();
+    assert!(matches!(
+        error.provider().unwrap().state(),
+        concord_core::Document::TooLong { limit: 4 }
+    ));
+    assert_eq!(error.provider().unwrap().body().as_ref(), b"prov");
+    assert_eq!(error.operation().unwrap().name(), "Typed.item");
+    assert_eq!(server.requests().len(), 1);
+    server.shutdown().await;
+}

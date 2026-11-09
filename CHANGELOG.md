@@ -21,6 +21,15 @@ are on the [archive branch](https://github.com/gqsnt/concord_api/tree/archive/de
 - Added `Failure::into_document`, `Received::error_document`/`into_success` and public `Error::widen` for native
   adapters; retry and incremental-reader adapters preserve declared document types. Execution
   rustdoc names the resolved `Error<D>` without increasing endpoint prose.
+- **Breaking — Distribution Registry:** `ApiError.operation/status/body` fields become
+  `failure.operation()` / `failure.status()` / `failure.state()`. `ErrorBody` aliases
+  `Document<ErrorDocument>`: `Document(D)` → `Read(D)`, `TooLarge { limit }` →
+  `TooLong { limit }`, `Unreadable(concord::Error)` → `Broken(concord::Error)`;
+  `Empty` stays unchanged. `Unrecognized(Bytes)` → `Unrecognized(CodecError)` with raw bytes
+  now at `failure.body()`. See the [migration mappings](docs/MIGRATION.md#provider-error-facts-p44).
+- **Breaking — registry auth sources:** `RegistryError::Auth.source()` exposes `AuthError`
+  instead of its optional nested Concord error; downcast to `AuthError` first and follow
+  `source()` or `source_error()` for that optional cause.
 
 ### Construction facts (P4.3)
 

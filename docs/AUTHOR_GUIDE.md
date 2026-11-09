@@ -1527,17 +1527,18 @@ status, and the SDK then consumes the body once. Three facts make the ordinary p
   returned head is moved out of the response when the document is read; a failure's error also
   carries a copy of it (`Error::head`), so a failed document costs one header-map clone.
 
-A policy that returns a value with its metadata, or the provider's declared error document (the error enum derives the provider split)
+A policy that returns a value with its metadata, or the provider's typed error document
 (Excerpt of `examples/frankfurter-sdk/src/lib.rs`):
 
 ```rust,ignore
-async fn send<E: Endpoint<Rate, crate::Problem> + Send>(&self, endpoint: E) -> Self::Output {
-    let received = endpoint
-        .prepare()?
-        .error_body_limit(crate::ERROR_BODY_LIMIT)
-        .receive()
-        .await?;
-
+async fn send<E: Endpoint<Rate> + Send>(&self, endpoint: E) -> Self::Output {
+    let received = endpoint.prepare()?.receive().await?;
+    if !received.status().is_success() {
+        // Status is authoritative even when the document is absent, invalid or inconsistent.
+        let (meta, document) = received.document::<Json, Problem>(ERROR_BODY_LIMIT).await;
+        let document = document.map_err(ErrorBodyError::from);
+        return Err(Error::Provider(Box::new(ProviderError { meta, document })));
+    }
     // A success-body failure keeps the head in the Concord error (`Error::head_meta`).
     let (rate, meta) = received.decode_with_meta().await?;
     Ok(RateResponse { rate, meta })

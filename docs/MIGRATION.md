@@ -44,9 +44,37 @@ Native prepared non-2xx responses are consumed into `Failure<Problem>`; inspect 
 state and bounded bytes instead of taking an unread response.
 
 SDK enums derive `concord::derive::Error`. Its boxed/shared sources expose the inner error:
-Frankfurter, Open-Meteo and REST Countries now return `ProviderError` rather than
+Open-Meteo and REST Countries now return `ProviderError` rather than
 `Box<ProviderError>` from `source()`. Adjust source downcasts accordingly. Anthropic's
 `ApiError::document_error()` is replaced by inspecting `failure().state()`.
+
+Nager Holidays, PokeAPI and Frankfurter remain preserved controls; their source and SDK
+contracts have not migrated to declared error documents or derived error enums.
+
+**Distribution Registry (breaking):** `ApiError` now owns a public
+`failure: concord::Failure<ErrorDocument>` in place of its `operation`, `status` and `body`
+fields. Migrate field reads and body matches as follows; `challenge`, `meta`, `errors()` and
+`has_code()` remain available.
+
+| Previous access or pattern | Replacement |
+|---|---|
+| `api.operation` | `api.failure.operation()` |
+| `api.status` | `api.failure.status()` |
+| `api.body` | `api.failure.state()` (borrowed `ErrorBody`, now an alias of `concord::Document<ErrorDocument>`) |
+| `ErrorBody::Document(document)` | `ErrorBody::Read(document)` |
+| `ErrorBody::Empty` | `ErrorBody::Empty` |
+| `ErrorBody::Unrecognized(bytes)` | `ErrorBody::Unrecognized(codec_error)`; the payload is now `concord::CodecError`; read bytes from `api.failure.body()` |
+| `ErrorBody::TooLarge { limit }` | `ErrorBody::TooLong { limit }` (same `usize` limit) |
+| `ErrorBody::Unreadable(error)` | `ErrorBody::Broken(error)` (same `concord::Error` payload) |
+
+The shared document enum is non-exhaustive, so retain a fallback match arm. Raw bytes, including
+bounded prefixes for oversized or interrupted bodies, live on `failure.body()` rather than in
+a document-state payload.
+
+`RegistryError::Auth.source()` now returns the inner `AuthError`, including when there is no
+nested Concord error. Previously it returned that nested `concord::Error` directly, or `None`.
+Downcast the first source to `AuthError`, then call its `source()` or `source_error()` for the
+optional Concord error; source-chain traversal gains this intermediate error.
 
 ## SDK-owned formatting
 
