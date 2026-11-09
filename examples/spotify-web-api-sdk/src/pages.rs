@@ -63,7 +63,7 @@ where
 }
 
 /// Walks a listing from `from`: `Resume::At(offset)` requests that offset first (a resume point
-/// of a failed traversal, or a playlist's [`Paging::next_offset`]).
+/// of a failed traversal, or a playlist's [`Paging::next_offset`]). Use `concord_sdk_spotify_web_api::concord_pagination::Resume` for the position. `Resume::Start` repeats `first` unchanged, including its configured offset and limit; `Resume::At(key)` takes the `u32` result offset in a returned page's `next` or `Paging::next_offset()`.
 pub fn pages_from<E, R>(first: E, from: Resume<u32>) -> Listed<R::Item>
 where
     E: PageParams + Sends<Result<R, Error>> + Clone + Send + 'static,

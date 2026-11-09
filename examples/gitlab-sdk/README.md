@@ -224,6 +224,10 @@ match project.issue(IssueIid::new(2)?).send().await {
 - Workflow B returns the issue in `ContextError::Project` and `ContextError::Mismatch`; with
   `ContextError::Issue` nothing else was requested.
 
+Add `concord-pagination` as a direct dependency and use `concord_pagination::Resume`.
+`Resume::Start` repeats the original issues request, including its configured filters and page;
+`Resume::At(key)` takes this listing's `NextPage` from a returned page's `next`.
+
 ## Limitations
 
 - **Live listing.** Offset pages of a changing project can skip or repeat issues; a traversal is

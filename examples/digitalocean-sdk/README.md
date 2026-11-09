@@ -151,6 +151,11 @@ moved between pages. After `UnsafeNext` the reported position is the page that c
 refused link (its records are not in the prefix); resuming fetches that page again, and
 the same link fails the same way, so do not retry it in a loop.
 
+For all four `*_from` walkers, use `concord_sdk_digitalocean::concord_pagination::Resume` for
+the position. `Resume::Start` repeats the matching collection's first request with `size` and
+its tag or droplet ID; `Resume::At(key)` takes the `NextLink` from `links.pages.next` in a
+returned page's `next`.
+
 ## Failures and diagnostics
 
 Every generated `send()` returns `Result<Response<T>, Error>`. Success bodies are strict

@@ -148,6 +148,10 @@ until it is classified there.
   `IdempotencyKey` (visible ASCII, no spaces), the bearer token (`Error::Credential`), an
   invalid subdomain label (`Error::Concord` of kind `Build`).
 
+Use `concord_sdk_zendesk_support::concord_pagination::Resume` for the position. `Resume::Start`
+repeats the tickets listing without `page[after]`, replacing the template cursor;
+`Resume::At(key)` takes the `String` from `meta.after_cursor` in a returned page's `next`.
+
 No `Debug` or `Display` of the client, a prepared request or an error prints the token. Error
 descriptions, details and text bodies can echo submitted content: they are withheld from
 formatting and reached with `*_unredacted()` accessors. Ticket models derive `Debug` and

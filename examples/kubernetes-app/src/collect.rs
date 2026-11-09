@@ -136,7 +136,7 @@ pub struct Collected<T> {
 /// Reads the collection `template` lists (with its selectors) in chunks, from `from`.
 ///
 /// Resuming (`Resume::At(key)`) continues a chain that an earlier call reported as
-/// [`ListOutcome::Bounded`]; the snapshot check still applies.
+/// [`ListOutcome::Bounded`]; the snapshot check still applies. Add `concord-pagination` as a direct dependency and use `concord_pagination::Resume`. `Resume::Start` repeats the collection's first chunk with the template selectors/resource version and policy chunk size, clearing its continue token; `Resume::At(key)` takes the SDK's `concord_example_kubernetes_sdk::list::Continuation` from a prior `ListOutcome::Bounded` or `ListOutcome::Failed` resume position's `key().cloned()`.
 pub async fn collect_list<O: ListOperation>(
     template: O,
     policy: ListPolicy,

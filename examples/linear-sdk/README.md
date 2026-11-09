@@ -44,6 +44,10 @@ A successful HTTP response is decoded as an envelope, **not** automatically decl
 
 `Pages::next_page()` returns `Ok(None)` only on provider exhaustion. Caps and failed pages yield `PagesError`, retaining the resume point; `collect_complete()` retains pages already collected if incomplete. Do not use the item-flattening adapter when page diagnostics matter: it discards page metadata. An immediate non-advancing cursor and a missing next cursor are rejected. Longer cursor cycles are not detected; set a page cap. A resume cursor must belong to the same collection and page-size context. Linear's pagination can change as issues change, so traversal is not a snapshot.
 
+Add `concord-pagination` as a direct dependency and use `concord_pagination::Resume`.
+`Resume::Start` repeats the issues query with `first` and no `after`; `Resume::At(key)` takes
+the `String` end cursor from `pageInfo.endCursor` in a returned page's `next`.
+
 `Error::Http` retains the status, headers, raw bounded error body and any parsed GraphQL errors; `Error::Response` retains metadata and a Concord error for body, format or decoding failures. Pre-response failures are `Error::Concord`. Successful JSON bodies are limited to 1 MiB and non-2xx bodies to 64 KiB; exceeding a limit is a response error, not truncated success. No retries are performed. `first` is restricted by this SDK to 1–250; this is an SDK policy, not a claim about the current provider maximum. Missing `data` and `data: null` are both represented as `None`.
 
 All fixtures are hand-authored synthetic examples derived from documentation shapes; they are not provider conformance tests. No live provider or credentials are used. See [PROVENANCE.md](PROVENANCE.md), [FRICTION.md](FRICTION.md) and [MAINTENANCE.md](MAINTENANCE.md).

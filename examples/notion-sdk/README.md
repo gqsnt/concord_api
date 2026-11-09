@@ -186,6 +186,11 @@ async fn inspect(notion: &NotionClient) -> Result<(), Box<dyn std::error::Error>
   `next_page` future leaves the request attached to the traversal. Nothing is spawned.
   Early abandonment is partial work, never a successful collection.
 
+For `query_pages_from` and `children_from`, use `concord_sdk_notion::pagination::Resume` for the
+position. `Resume::Start` repeats the data-source query or parent block's first children page
+without `start_cursor`; `Resume::At(key)` takes the `String` from
+`next_cursor` in a returned page's `next`.
+
 Successful JSON bodies are limited to 8 MiB and provider errors to 64 KiB, counted
 after transport decompression. Each JSON page is buffered; complete collections can
 grow with the number of items. Cursor cycle detection keeps one key per attempted

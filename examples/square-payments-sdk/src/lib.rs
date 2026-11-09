@@ -138,7 +138,7 @@ impl SquarePaymentsList {
     /// The position replaces any cursor on this template. Keep the same account,
     /// base URL and limit when resuming. Empty pages with a cursor continue;
     /// an absent or empty cursor completes. A cap or failed page is an error,
-    /// preserving the continuation through [`PagesError`]. Nothing is retried.
+    /// preserving the continuation through [`PagesError`]. Nothing is retried. Use `concord_sdk_square_payments::Resume` for the position. `Resume::Start` repeats the payments listing without `cursor`, replacing the template cursor; `Resume::At(key)` takes the `String` response cursor in a returned page's `next`.
     pub fn pages(
         self,
         from: Resume<String>,

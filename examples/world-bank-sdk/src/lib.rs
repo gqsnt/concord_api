@@ -293,7 +293,7 @@ impl WorldBank {
 
     /// Traverse the inclusive year range using provider-indicated page counts.
     /// `per_page` must be nonzero. Use `.max_pages(...)` to cap requests, or
-    /// `concord_pagination::Resume::At(n)` to resume the same query at page `n`.
+    /// `concord_pagination::Resume::At(n)` to resume the same query at page `n`. Use `concord_sdk_world_bank::concord_pagination::Resume` for the position. `Resume::Start` repeats page 1 of the same country, indicator and year range with `per_page`; `Resume::At(key)` takes the `u32` page number in a returned page's `next`.
     pub fn range(
         &self,
         country: &str,

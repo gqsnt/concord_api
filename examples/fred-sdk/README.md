@@ -114,6 +114,10 @@ Advanced real-time/vintage selectors are outside this slice; it does not promise
 consistent multi-page snapshot. CSV exports do not supply a pagination envelope;
 use their generated limit/offset setters explicitly.
 
+Use `concord_sdk_fred::concord_pagination::Resume` for the position. `Resume::Start` repeats the
+template's query at offset 0, replacing its offset; `Resume::At(key)` takes the `u64` record
+offset in a returned page's `next`.
+
 ## Failure semantics and limits
 
 Generated `send()` makes one logical attempt. `http_client()` disables redirects,

@@ -95,7 +95,7 @@ impl ArxivPapersSearch {
     /// `Resume::Start` begins at this request's own `start` (0 unless set); `Resume::At(n)`
     /// replaces it. `from` belongs to this term and page size. The provider's 30,000-result
     /// boundary produces an explicit error if further results remain. Listings are not
-    /// snapshots.
+    /// snapshots. Use `concord_sdk_arxiv::concord_pagination::Resume` for the position. `Resume::Start` repeats this search request, including its `start` (0 unless set); `Resume::At(key)` takes the `u32` result offset in a returned page's `next`.
     pub fn pages(self, from: Resume<u32>, max_pages: NonZeroUsize) -> Pages<Paper, u32, (), Error> {
         offset_pages(self, from, max_pages)
     }
@@ -103,7 +103,7 @@ impl ArxivPapersSearch {
 
 impl ArxivPapersQuery {
     /// Traverse exactly as [`ArxivPapersSearch::pages`] does. `from` belongs to this query,
-    /// sort and page size; every page repeats them.
+    /// sort and page size; every page repeats them. Use `concord_sdk_arxiv::concord_pagination::Resume` for the position. `Resume::Start` repeats this query request, including its `start` (0 unless set); `Resume::At(key)` takes the `u32` result offset in a returned page's `next`.
     pub fn pages(self, from: Resume<u32>, max_pages: NonZeroUsize) -> Pages<Paper, u32, (), Error> {
         offset_pages(self, from, max_pages)
     }

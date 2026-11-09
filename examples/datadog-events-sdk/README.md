@@ -186,6 +186,10 @@ cursor to continue with [`DatadogEvents::search_pages_from`]. `items().collect_c
 returns every event or an `Incomplete` holding the events collected so far and the error; note
 that `items()` drops page metadata, warnings included.
 
+Use `concord_sdk_datadog_events::pagination::Resume` for the position. `Resume::Start` repeats
+the same search body without a cursor; `Resume::At(key)` takes the `Cursor` projected from
+`meta.page.after` into a returned page's `next`.
+
 ## Failure semantics
 
 Every generated `send()` returns `Result<_, `[`Error`]`>`; `prepare()` and `with_base_url`

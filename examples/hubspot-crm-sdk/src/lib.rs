@@ -611,7 +611,7 @@ impl HubSpot {
             meta: response.total,
         })
     }
-    /// Traverse search results with explicit completion, errors, and optional page cap.
+    /// Traverse search results with explicit completion, errors, and optional page cap. Add `concord-pagination` as a direct dependency and use `concord_pagination::Resume`. `Resume::Start` repeats the search body without `after`, replacing `request.after`; `Resume::At(key)` takes the `String` from `paging.next.after` in a returned page's `next`.
     pub fn search(
         &self,
         request: SearchRequest,

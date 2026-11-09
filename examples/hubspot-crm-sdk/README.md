@@ -65,6 +65,10 @@ the same query, installation and page parameters. Empty or immediately repeated 
 choose a finite cap to contain longer provider cursor cycles. Search `total` is page metadata, not
 a guarantee of a stable snapshot as data changes.
 
+Add `concord-pagination` as a direct dependency and use `concord_pagination::Resume`.
+`Resume::Start` repeats the search body without `after`, replacing `request.after`;
+`Resume::At(key)` takes the `String` from `paging.next.after` in a returned page's `next`.
+
 `batch_read` reads 1..=`BATCH_READ_MAX` (100, HubSpot's documented batch size) distinct contact
 record IDs in one request; invalid input is refused before any request. A `200` or `207
 Multi-Status` answer gives every requested ID, in request order, its contact or an `ItemError`:

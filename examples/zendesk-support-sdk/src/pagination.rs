@@ -19,7 +19,7 @@ use crate::{Error, PaginationError, Ticket, TicketPage, ZendeskTicketsList};
 /// The listing ends exactly when a page says `meta.has_more: false`. More than `max_pages`
 /// requests while the provider still has pages is `PagesError::Bounded` with the cursor to resume
 /// from, never a silently shortened list. A page that says it has more but gives no usable
-/// cursor, or the cursor that produced it, is [`Error::Pagination`].
+/// cursor, or the cursor that produced it, is [`Error::Pagination`]. Use `concord_sdk_zendesk_support::concord_pagination::Resume` for the position. `Resume::Start` repeats the tickets listing without `page[after]`, replacing the template cursor; `Resume::At(key)` takes the `String` from `meta.after_cursor` in a returned page's `next`.
 pub fn ticket_pages(
     template: ZendeskTicketsList,
     from: Resume<String>,

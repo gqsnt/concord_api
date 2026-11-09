@@ -247,6 +247,10 @@ contract change was necessary.
   model values, `session_url()`, and serialized checkpoints are explicitly
   accessible and unredacted. Do not log those values indiscriminately.
 
+For `DriveClient::files`, use `concord_sdk_google_drive::pagination::Resume` for the position.
+`Resume::Start` repeats the files listing with `options` and no page token; `Resume::At(key)`
+takes the `PageToken` from `nextPageToken` in a returned page's `next`.
+
 Finite responses are buffered within the configured byte bound. Each upload
 chunk is copied once into an owned HTTP body; there is no file-reader abstraction
 or unbounded lazy upload. Multipart framing adds metadata bytes beyond its 5 MiB

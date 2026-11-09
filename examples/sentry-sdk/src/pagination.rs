@@ -16,7 +16,7 @@ macro_rules! listing {
     ($operation:ty, $item:ty) => {
         impl $operation {
             /// Walk from an explicit cursor position with a mandatory logical page cap.
-            /// Existing query filters and page size remain fixed on every generated send.
+            /// Existing query filters and page size remain fixed on every generated send. Use `concord_sdk_sentry::Resume` for the position. `Resume::Start` repeats the operation's first page without `cursor`, replacing its cursor; `Resume::At(key)` takes the `String` cursor parsed from the next Link into a returned page's `next`.
             pub fn pages(self, from: Resume<String>, max_pages: NonZeroUsize) -> Listing<$item> {
                 Pages::new(from, move |cursor| {
                     let operation = self.clone().maybe_cursor(cursor);

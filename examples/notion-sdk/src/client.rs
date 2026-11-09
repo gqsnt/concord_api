@@ -136,7 +136,7 @@ impl NotionClient {
     }
 
     /// Resumes a query at a page checkpoint. The caller must reuse the same data source,
-    /// version, authorization, filter and page size. A checkpoint does not imply a snapshot.
+    /// version, authorization, filter and page size. A checkpoint does not imply a snapshot. Use `concord_sdk_notion::pagination::Resume` for the position. `Resume::Start` repeats the data-source query without `start_cursor`; `Resume::At(key)` takes the `String` from `next_cursor` in a returned page's `next`.
     pub fn query_pages_from(
         &self,
         data_source_id: impl Into<String>,
@@ -166,7 +166,7 @@ impl NotionClient {
     }
 
     /// Resumes children at a page checkpoint with the same parent, version, authorization
-    /// and page size. Item checkpoints also contain an offset; use a page checkpoint here.
+    /// and page size. Item checkpoints also contain an offset; use a page checkpoint here. Use `concord_sdk_notion::pagination::Resume` for the position. `Resume::Start` repeats the parent block's first children page without `start_cursor`; `Resume::At(key)` takes the `String` from `next_cursor` in a returned page's `next`.
     pub fn children_from(
         &self,
         block_id: impl Into<String>,
