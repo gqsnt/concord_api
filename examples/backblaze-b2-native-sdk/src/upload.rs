@@ -750,7 +750,12 @@ impl Session {
         meta: &Meta,
         body: reqwest::Body,
     ) -> Result<Prepared<FileVersionWire>, Error> {
-        let api = self.wire.clone().with_base_url(url.origin())?;
+        let api = crate::wire::B2Wire::new(
+            self.wire.http().clone(),
+            crate::wire::B2WireConfig {
+                origin: concord::BaseUrl::parse(&url.origin())?,
+            },
+        );
         let prepared = api
             .upload(url.token.expose())
             .upload_file(

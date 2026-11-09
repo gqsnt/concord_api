@@ -1,26 +1,21 @@
-//! The declaration. The generated client stays private to the crate: its `with_base_url` keeps
-//! every client value, the access token included, so a caller holding it could point a token at
-//! another host. [`Mastodon`](crate::Mastodon) holds it, binds it to one instance and hands out
-//! the generated endpoint values, whose setters, `prepare()` and `send()` are the ordinary ones.
+//! REST and streaming use separate handles, each bound to its declared runtime origin.
 
 use concord::Json;
 use concord::reqwest::header::{AUTHORIZATION, HeaderValue};
 
 use crate::error::{Error, MastodonPolicy};
-use crate::model::{Hashtag, InstanceInfo, Status, StatusId, TimelineLimit};
-use crate::streaming::{PublicStreamFormat, StreamEvent};
+use crate::model::{Hashtag, InstanceInfo, InstanceUrl, Status, StatusId, TimelineLimit};
+use crate::streaming::{PublicStreamFormat, StreamEvent, StreamingHost};
 
 concord::api! {
-    /// One Mastodon instance's REST API, or its streaming host (the same declaration, another
-    /// base). Every `send()` returns `Result<_, Error>`.
+    /// One Mastodon instance's REST API. Every `send()` returns `Result<_, Error>`.
     pub client Api(
+        #[sensitive] origin: InstanceUrl,
         /// `Authorization: Bearer <token>`, set by [`Mastodon::with_token`](crate::Mastodon::with_token);
         /// absent for anonymous calls.
         #[sensitive] header(AUTHORIZATION) authorization?: HeaderValue,
     ) {
-        // A placeholder: the instance is chosen at run time and `Mastodon::new` always replaces
-        // it (`.invalid` is reserved and never resolves).
-        base "https://mastodon.invalid";
+        base origin;
         send MastodonPolicy -> Result<_, Error>;
         format Json;
         // Every finite document below (a timeline page of at most 40 statuses, one status, the
@@ -78,26 +73,49 @@ concord::api! {
             path "api/v2/instance";
         }
 
-        /// The public (federated) timeline as server-sent events:
-        /// `GET /api/v1/streaming/public` on the streaming host.
-        GET public_stream(
-            /// `only_media`: only statuses with media attachments.
-            query only_media?: bool,
-        ) -> stream StreamEvent {
-            path "api/v1/streaming/public";
-            response PublicStreamFormat;
-        }
+    }
+}
 
-        /// The `hashtag` category as HTTP SSE (user token + `read:statuses` required).
-        GET hashtag_stream(query tag: Hashtag) -> stream StreamEvent {
-            path "api/v1/streaming/hashtag";
-            response PublicStreamFormat;
-        }
+// Both modules use the provider's established operation prefix `Api`, preserving diagnostics.
+mod streaming_api {
+    use super::*;
 
-        /// The `hashtag:local` category as HTTP SSE: only statuses originating here.
-        GET local_hashtag_stream(query tag: Hashtag) -> stream StreamEvent {
-            path "api/v1/streaming/hashtag/local";
-            response PublicStreamFormat;
+    concord::api! {
+        /// One advertised streaming origin, with the announcing instance's credential.
+        pub client Api(
+            #[sensitive] origin: StreamingHost,
+            #[sensitive] header(AUTHORIZATION) authorization?: HeaderValue,
+        ) {
+            base origin;
+            send MastodonPolicy -> Result<_, Error>;
+            /// The public (federated) timeline as server-sent events:
+            /// `GET /api/v1/streaming/public` on the streaming host.
+            GET public_stream(
+                /// `only_media`: only statuses with media attachments.
+                query only_media?: bool,
+            ) -> stream StreamEvent {
+                path "api/v1/streaming/public";
+                response PublicStreamFormat;
+            }
+
+            /// The `hashtag` category as HTTP SSE (user token + `read:statuses` required).
+            GET hashtag_stream(query tag: Hashtag) -> stream StreamEvent {
+                path "api/v1/streaming/hashtag";
+                response PublicStreamFormat;
+            }
+
+            /// The `hashtag:local` category as HTTP SSE: only statuses originating here.
+            GET local_hashtag_stream(query tag: Hashtag) -> stream StreamEvent {
+                path "api/v1/streaming/hashtag/local";
+                response PublicStreamFormat;
+            }
         }
     }
 }
+
+pub use streaming_api::{
+    Api as StreamingApi, ApiConfig as StreamingApiConfig,
+    ApiHashtagStream as StreamingApiHashtagStream,
+    ApiLocalHashtagStream as StreamingApiLocalHashtagStream,
+    ApiPublicStream as StreamingApiPublicStream,
+};

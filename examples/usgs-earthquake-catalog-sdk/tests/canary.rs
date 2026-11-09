@@ -40,7 +40,14 @@ fn client(base: &str) -> Usgs {
         .timeout(Duration::from_secs(2))
         .build()
         .unwrap();
-    Usgs::new(http).with_base_url(base).unwrap()
+    concord_sdk_usgs_earthquake_catalog::FixtureOrigin::parse(base)
+        .map(|origin| {
+            Usgs::new(
+                http,
+                concord_sdk_usgs_earthquake_catalog::UsgsConfig { origin },
+            )
+        })
+        .unwrap()
 }
 
 // Echo the event ID in headers and in provider text whose formatting is withheld.

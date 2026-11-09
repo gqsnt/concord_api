@@ -347,6 +347,7 @@ async fn redaction_covers_clients_operations_payloads_responses_and_errors() {
     let request = scope.send_message(payload).prepare().unwrap();
     assert!(request.request().headers()["authorization"].is_sensitive());
     let config = MailgunConfig {
+        origin: concord::BaseUrl::from_static("https://api.mailgun.net"),
         authorization: request.request().headers()["authorization"].clone(),
     };
     assert!(!format!("{config:?}").contains("YXBpOnN5bnRoZXRpYy1zZWNyZXQ="));

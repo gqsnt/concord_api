@@ -182,7 +182,9 @@ async fn secrets_never_print() {
         c.assert_debug_absent("latest persisted tokens", &session.latest_tokens().await);
         let grant = TokenRequest::authorization_code(&credentials, code.clone()).unwrap();
         c.assert_debug_absent("OAuth grant", &grant);
-        let oauth = OAuth::new(http()).with_base_url(&base).unwrap();
+        let oauth = concord::BaseUrl::parse(base.as_ref())
+            .map(|origin| OAuth::new(http(), concord_sdk_strava::OAuthConfig { origin }))
+            .unwrap();
         let scope = oauth.oauth();
         c.assert_debug_absent("OAuth client", &oauth);
         c.assert_debug_absent("OAuth scope", &scope);

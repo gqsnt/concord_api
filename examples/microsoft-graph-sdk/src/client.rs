@@ -64,7 +64,6 @@ pub struct GraphClient {
     api: GraphApi,
     #[public]
     context: AuthContext,
-    base: String,
     #[public]
     pub(crate) success_limit: usize,
     #[public]
@@ -152,11 +151,16 @@ impl GraphClient {
         let http = builder
             .build()
             .map_err(|_| GraphError::Configuration(ConfigurationProblem::Transport))?;
-        let api = GraphApi::new(http, GraphApiConfig { authorization }).with_base_url(base)?;
+        let api = GraphApi::new(
+            http,
+            GraphApiConfig {
+                origin: concord::BaseUrl::parse(base)?,
+                authorization,
+            },
+        );
         Ok(Self {
             api,
             context,
-            base: base.into(),
             success_limit: 4 * 1024 * 1024,
             error_limit: 64 * 1024,
         })
@@ -278,7 +282,12 @@ impl GraphClient {
     ) -> crate::links::Binding {
         crate::links::Binding {
             context: self.context.clone(),
-            base: self.base.clone(),
+            base: self
+                .api
+                .base_url()
+                .as_str()
+                .trim_end_matches('/')
+                .to_owned(),
             collection,
             select,
             path,

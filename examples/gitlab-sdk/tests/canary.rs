@@ -79,12 +79,14 @@ async fn secrets_never_print() {
         let token = PrivateToken::new(&secret).unwrap();
         c.assert_debug_absent("PrivateToken", &token);
         let config = GitLabConfig {
+            origin: concord::BaseUrl::from_static("https://gitlab.com/api/v4"),
             token: token.clone().into_header_value(),
         };
         c.assert_debug_absent("config", &config);
-        let api = GitLab::with_token(http(), token)
-            .with_base_url(if case == 6 { refused() } else { server.url() })
-            .unwrap();
+        let api =
+            concord::BaseUrl::parse((if case == 6 { refused() } else { server.url() }).as_ref())
+                .map(|origin| GitLab::at(http(), origin, token))
+                .unwrap();
         let scope = api.project(ProjectRef::id(1).unwrap());
         let op = scope.issues();
         c.assert_debug_absent("client", &api);
@@ -145,12 +147,15 @@ async fn continuation_debug_withholds_the_link_in_both_modes() {
     let next_url = format!("{}/projects/1/issues?page=2&cursor={cursor}", server.url());
     script.push(Reply::json(200, "[]").header("link", format!("<{next_url}>; rel=\"next\"")));
     script.push(Reply::json(200, "[]"));
-    let api = GitLab::with_token(
-        http(),
-        PrivateToken::new("synthetic-fixture-token").unwrap(),
-    )
-    .with_base_url(server.url())
-    .unwrap();
+    let api = concord::BaseUrl::parse((server.url()).as_ref())
+        .map(|origin| {
+            GitLab::at(
+                http(),
+                origin,
+                PrivateToken::new("synthetic-fixture-token").unwrap(),
+            )
+        })
+        .unwrap();
     let mut pages = api.project(ProjectRef::id(1).unwrap()).issues().pages();
     let first = pages.next_page().await.unwrap().expect("first page");
     let next = first.next.as_ref().expect("continuation from Link header");

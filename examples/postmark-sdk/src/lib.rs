@@ -281,7 +281,7 @@ impl<T: Send + Reply> SendWith<T> for PostmarkPolicy {
 
 concord::api! {
     /// Postmark server-scoped client. Use a server token, not an account token.
-    pub client Postmark(#[sensitive] token: String) {
+    pub client Postmark(#[sensitive] mut token: String) {
         base "https://api.postmarkapp.com";
         headers { "X-Postmark-Server-Token" = "{token}"; }
         format Json;

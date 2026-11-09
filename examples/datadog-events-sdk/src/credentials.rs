@@ -2,6 +2,8 @@
 
 use concord::reqwest::header::HeaderValue;
 
+use std::fmt;
+
 use crate::error::{AuthError, Key};
 
 /// An API key and an application key, checked before any request exists.

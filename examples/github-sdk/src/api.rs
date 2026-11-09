@@ -49,6 +49,7 @@ fn default_user_agent() -> String {
 concord::api! {
     /// A bounded slice of the GitHub REST API (version pinned by [`ApiVersion::pinned`]).
     pub client GitHub(
+        origin: concord::BaseUrl,
         /// A personal access token, GitHub App installation token or `GITHUB_TOKEN`, sent as
         /// `Authorization: Bearer <token>`. Never printed by Concord.
         #[sensitive] token: String,
@@ -57,7 +58,7 @@ concord::api! {
         /// The `User-Agent`; GitHub requires one.
         header(USER_AGENT) user_agent: String = default_user_agent(),
     ) {
-        base "https://api.github.com";
+        base origin;
         headers {
             AUTHORIZATION = "Bearer {token}";
             ACCEPT = "application/vnd.github+json";

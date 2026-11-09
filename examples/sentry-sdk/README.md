@@ -12,7 +12,7 @@ use std::num::NonZeroUsize;
 
 # async fn example() -> Result<(), Box<dyn std::error::Error>> {
 let api = Sentry::with_token(http_client()?, "your-token", SendPolicy::default())?;
-// Tests always add .with_base_url(server.url()) pointing at a local fixture.
+// Fixtures use Sentry::at(http, Deployment::parse(&server.url())?, token, policy).
 let organization = api.organization("acme");
 let cap = NonZeroUsize::new(20).unwrap();
 let mut issues = organization.issues().set_query("").pages(Resume::Start, cap);
@@ -158,3 +158,20 @@ Concord adaptation costs are in `FRICTION.md`; the status-update maintenance rec
 ### Operations and paging (Concord Next)
 
 The two listings declare `page next link;`. Traversal retains String cursor keys: it must validate the Link `results` flag, cursor parameter and unchanged filters before accepting items. Rebuilding from that validated cursor preserves the existing resume contract; using a bare next-link projection would miss those provider checks.
+
+A deployment and caller admission state stay bound on the handle:
+
+```compile_fail
+use concord_sdk_sentry::Sentry;
+fn move_token(api: Sentry) { let _ = api.with_base_url("https://evil.example"); }
+```
+
+```compile_fail
+use concord_sdk_sentry::{Deployment, Sentry};
+fn replace_deployment(api: Sentry, deployment: Deployment) { let _ = api.set_deployment(deployment); }
+```
+
+```compile_fail
+use concord_sdk_sentry::Sentry;
+fn read_credential(api: Sentry) { let _ = api.authorization(); }
+```

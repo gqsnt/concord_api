@@ -1,5 +1,7 @@
 # SDK30 HubSpot CRM — fresh consumer
 
+Historical author notes. P4.3 now fixes required handle values and declares checked runtime bases; see the current README and `docs/MIGRATION.md`.
+
 Date: 2026-11-07. Frozen HEAD: `a5e03c44173ca3f4ee44248fb6152938c3d94f42`.
 Live provider calls: **NOT_RUN**. All executable requests use `TestServer::start` on loopback.
 This record contains observable actions and decisions, not private reasoning.

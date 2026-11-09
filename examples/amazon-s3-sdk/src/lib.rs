@@ -15,7 +15,7 @@
 //! - [`Bucket`] — [`list_objects_v2`](Bucket::list_objects_v2),
 //!   [`head_object`](Bucket::head_object), [`get_object`](Bucket::get_object),
 //!   [`put_object`](Bucket::put_object). Each returns the operation's generated builder:
-//!   `set_*`/`maybe_*` for every value, `send()` (one signed request) and `prepare()` (the
+//!   `set_*`/`maybe_*` for endpoint and optional values, `send()` (one signed request) and `prepare()` (the
 //!   **unsigned** request; [`S3Client::prepare`] signs one without sending it).
 //! - [`Signer`] — the client's SigV4 context and the send policy every `send()` goes through.
 //! - [`ListObjectsV2::pages`] — the listing as a `concord_pagination::Pages` chain;

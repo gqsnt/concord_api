@@ -10,7 +10,11 @@ use concord::reqwest::{self, StatusCode, Url};
 use concord::{Prepared, Received};
 use concord_auth::{RefreshError, Token, TokenCache};
 
-use crate::api::{Registry as RootApi, Repository as RepoApi, TokenService as TokenApi};
+use crate::api::{
+    Registry as RootApi, RegistryConfig as RootApiConfig, Repository as RepoApi,
+    RepositoryConfig as RepoApiConfig, TokenService as TokenApi,
+    TokenServiceConfig as TokenApiConfig,
+};
 use crate::auth::{Access, Challenge, TokenAuth};
 use crate::error::{
     AuthError, AuthProblem, ERROR_BODY_LIMIT, InputError, ProtocolProblem, RegistryError,
@@ -52,8 +56,6 @@ const DEFAULT_TOKEN_LIFETIME: Duration = Duration::from_secs(60);
 /// ```
 #[derive(Clone)]
 pub struct Registry {
-    http: reqwest::Client,
-    base: Arc<Url>,
     root: RootApi,
     auth: Option<Arc<TokenAuth>>,
     // This instance fixes registry destination and principal/auth policy. Access supplies the
@@ -84,10 +86,9 @@ impl Registry {
         }
         let path = base.path().trim_end_matches('/').to_owned();
         base.set_path(&path);
-        let root = RootApi::new(http.clone()).with_base_url(base.as_str())?;
+        let root = concord::BaseUrl::parse(base.as_str())
+            .map(|origin| RootApi::new(http.clone(), RootApiConfig { origin }))?;
         Ok(Self {
-            http,
-            base: Arc::new(base),
             root,
             auth: None,
             tokens: new_token_cache(),
@@ -104,7 +105,7 @@ impl Registry {
 
     /// The registry's base URL.
     pub fn base_url(&self) -> &Url {
-        &self.base
+        self.root.base_url()
     }
 
     /// One repository. Sends nothing.
@@ -114,8 +115,12 @@ impl Registry {
     /// Concord's `Build` error if the repository's base URL cannot be formed (not expected for a
     /// validated name).
     pub fn repository(&self, name: &RepositoryName) -> Result<Repository, RegistryError> {
-        let base = format!("{}/v2/{name}", self.base.as_str().trim_end_matches('/'));
-        let api = RepoApi::new(self.http.clone()).with_base_url(base)?;
+        let base = format!(
+            "{}/v2/{name}",
+            self.root.base_url().as_str().trim_end_matches('/')
+        );
+        let api = concord::BaseUrl::parse((base).as_ref())
+            .map(|origin| RepoApi::new(self.root.http().clone(), RepoApiConfig { origin }))?;
         Ok(Repository {
             registry: self.clone(),
             name: name.clone(),
@@ -188,12 +193,12 @@ impl Registry {
         // Validate every challenge, including a stale 401 received after a newer token was
         // cached. Reusing that token never grants permission to trust a different realm.
         let realm = auth
-            .check_realm(&challenge.realm, &self.base)
+            .check_realm(&challenge.realm, self.root.base_url())
             .map_err(|problem| AuthError::new(problem).with_meta(meta.clone()))?;
         // The 401 body is read bounded and dropped; token calls are separate from the two
         // application attempts. A token acquisition contains no application retry loop.
         let _ = received.bytes_limited(ERROR_BODY_LIMIT).await;
-        let http = self.http.clone();
+        let http = self.root.http().clone();
         let acquisition_access = access.clone();
         let token = self
             .tokens
@@ -236,8 +241,8 @@ impl Registry {
         } else {
             challenge.scopes.clone()
         };
-        let api = TokenApi::new(http)
-            .with_base_url(realm.as_str())
+        let api = concord::BaseUrl::parse(realm.as_str())
+            .map(|origin| TokenApi::new(http, TokenApiConfig { origin }))
             .map_err(|error| AuthError::new(AuthProblem::InvalidRealm).with_source(error))?
             .maybe_credentials(auth.credentials());
         let request = api
@@ -300,7 +305,7 @@ impl Registry {
         let url = received_url
             .join(text.trim())
             .map_err(|_| protocol(ProtocolProblem::MalformedLocation))?;
-        if url.origin() != self.base.origin()
+        if url.origin() != self.root.base_url().origin()
             || !url.username().is_empty()
             || url.password().is_some()
         {
@@ -323,7 +328,7 @@ fn new_token_cache() -> Arc<TokenCache<Access, Box<AuthError>>> {
 impl fmt::Debug for Registry {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("Registry")
-            .field("base", &self.base.as_str())
+            .field("base", &self.root.base_url().as_str())
             .field("auth", &self.auth)
             .finish_non_exhaustive()
     }

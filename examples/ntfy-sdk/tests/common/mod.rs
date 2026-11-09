@@ -38,8 +38,13 @@ pub fn token() -> AccessToken {
 }
 
 pub fn client(server: &TestServer) -> Ntfy {
-    Ntfy::new(reqwest::Client::new())
-        .with_base_url(server.url())
+    concord::BaseUrl::parse((server.url()).as_ref())
+        .map(|origin| {
+            Ntfy::new(
+                reqwest::Client::new(),
+                concord_sdk_ntfy::NtfyConfig { origin },
+            )
+        })
         .unwrap()
 }
 

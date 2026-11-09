@@ -1,5 +1,7 @@
 # FIRST_USE — fresh consumer of `concord-sdk-xero-accounting` (SDK35)
 
+Historical author notes. P4.3 now fixes required handle values and declares checked runtime bases; see the current README and `docs/MIGRATION.md`.
+
 Role: fresh consumer (Claude Opus 5.5 subagent; harness-reported model id `claude-opus-5-5`; requested effort
 not visible to me in harness metadata — recorded as *not observed*). Date: 2026-11-07.
 

@@ -72,7 +72,7 @@ Excerpt of [`examples/quickstart/src/lib.rs`](../examples/quickstart/src/lib.rs)
 ```rust
 concord::api! {
     /// A small task-tracking API.
-    pub client Tasks(#[sensitive] token: String) {
+    pub client Tasks(#[sensitive] mut token: String) {
         base "https://tasks.example.com/api";
         headers { AUTHORIZATION = "Bearer {token}"; }
         format Json;
@@ -93,8 +93,9 @@ concord::api! {
 
 Read it top-down:
 
-- `pub client Tasks(#[sensitive] token: String)` — the client and its one **required** value. You
-  supply it through the generated `TasksConfig { token }` when creating the client. Only required
+- `pub client Tasks(#[sensitive] mut token: String)` — the client and its one **required** value. You
+  supply it through the generated `TasksConfig { token }` when creating the client; `mut` allows
+  credential rotation with `set_token`. Required client and scope values without `mut` are fixed. Only required
   client values become config fields; a client without any has no config struct and is created
   with `Client::new(http)` alone.
   `#[sensitive]` keeps it out of Concord's `Debug` output and error messages; it is still sent.

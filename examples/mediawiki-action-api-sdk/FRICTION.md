@@ -1,5 +1,7 @@
 # Friction and capability decisions
 
+Historical author notes. P4.3 now fixes required handle values and declares checked runtime bases; see the current README and `docs/MIGRATION.md`.
+
 This is example-assisted; the complete direct example-file ledger is below. Costs are
 observable implementation work, separated from provider rules. No shared code was changed.
 

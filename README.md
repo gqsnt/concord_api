@@ -66,7 +66,7 @@ pub struct Problem {
 
 concord::api! {
     /// A small task-tracking API.
-    pub client Tasks(#[sensitive] token: String) {
+    pub client Tasks(#[sensitive] mut token: String) {
         base "https://tasks.example.com/api";
         headers { AUTHORIZATION = "Bearer {token}"; }
         format Json;

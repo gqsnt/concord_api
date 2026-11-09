@@ -1,5 +1,7 @@
 # FIRST_USE — fresh consumer of `concord-sdk-digitalocean` (SDK41)
 
+Historical author notes. P4.3 now fixes required handle values and declares checked runtime bases; see the current README and `docs/MIGRATION.md`.
+
 Role: fresh consumer (did not write the SDK). Date: 2026-11-07.
 Live provider calls: **NOT_RUN**. Every call below runs against `concord-example-testserver`
 on loopback (`127.0.0.1`).

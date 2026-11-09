@@ -205,8 +205,8 @@ impl PrivateToken {
         Ok(Self(value))
     }
 
-    /// The header value (flagged sensitive), for [`GitLab::set_token`](crate::GitLab::set_token)
-    /// when rotating a token on an existing client.
+    /// The header value (flagged sensitive), for [`GitLabConfig`](crate::GitLabConfig)
+    /// when constructing a new client for a replacement token.
     pub fn into_header_value(self) -> HeaderValue {
         self.0
     }

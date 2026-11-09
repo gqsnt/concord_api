@@ -107,6 +107,7 @@ fn labels_keep_their_comma_joiner_and_values_are_encoded_once() {
     let github = GitHub::new(
         reqwest::Client::new(),
         GitHubConfig {
+            origin: concord::BaseUrl::from_static("https://api.github.com"),
             token: "synthetic".into(),
         },
     );

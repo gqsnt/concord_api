@@ -5,8 +5,8 @@ use concord::reqwest::header::{AUTHORIZATION, HeaderValue};
 use crate::model::{DirectoryObject, Envelope, Group, UserDelta};
 
 concord::api! {
-    pub client GraphApi(#[sensitive] header(AUTHORIZATION) authorization: HeaderValue) {
-        base "https://graph.microsoft.com/v1.0";
+    pub client GraphApi(origin: concord::BaseUrl, #[sensitive] header(AUTHORIZATION) authorization: HeaderValue) {
+        base origin;
         format Json;
 
         GET users_delta(query("$select") select?: String) -> Envelope<UserDelta> {

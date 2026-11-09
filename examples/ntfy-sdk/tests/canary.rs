@@ -117,7 +117,13 @@ async fn secrets_never_print() {
     let token = c.issue();
     let credential = AccessToken::new(&token).unwrap();
     c.assert_debug_absent("access token", &credential);
-    let configured = Ntfy::new(http()).set_authorization(
+    let configured = Ntfy::new(
+        http(),
+        concord_sdk_ntfy::NtfyConfig {
+            origin: concord::BaseUrl::from_static("https://ntfy.sh"),
+        },
+    )
+    .set_authorization(
         concord::reqwest::header::HeaderValue::from_str(&format!("Bearer {token}")).unwrap(),
     );
     c.assert_debug_absent("client from unflagged header", &configured);
@@ -139,10 +145,13 @@ async fn secrets_never_print() {
                 reply(case, 200, event, &problem, &echo)
             }
         }).await;
-        let api = Ntfy::new(http())
-            .with_token(&credential)
-            .with_base_url(if case == 6 { refused() } else { server.url() })
-            .unwrap();
+        let api =
+            concord::BaseUrl::parse((if case == 6 { refused() } else { server.url() }).as_ref())
+                .map(|origin| {
+                    Ntfy::new(http(), concord_sdk_ntfy::NtfyConfig { origin })
+                        .with_token(&credential)
+                })
+                .unwrap();
         let topic = api.topic(Topic::new("alerts").unwrap());
         let read = topic.poll();
         let write = topic.publish(MessageText::new("hello").unwrap());

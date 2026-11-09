@@ -67,6 +67,7 @@ fn github(api: &TestServer, download: &TestServer, policy: redirect::Policy) -> 
     GitHubContext::new(
         http_with(api.addr(), Some(download.addr()), policy),
         GitHubConfig {
+            origin: concord::BaseUrl::from_static("https://api.github.com"),
             token: TOKEN_A.into(),
         },
     )

@@ -39,9 +39,8 @@ let http = concord::reqwest::Client::builder()
     .timeout(std::time::Duration::from_secs(30))
     .build()?;
 let token = PrivateToken::new(std::env::var("GITLAB_TOKEN")?)?; // refused if empty or padded
-let gitlab = GitLab::with_token(http, token); // https://gitlab.com/api/v4
-// A self-managed instance:
-let gitlab = gitlab.with_base_url("https://gitlab.example.com/api/v4")?;
+let gitlab = GitLab::at(http, concord::BaseUrl::parse("https://gitlab.example.com/api/v4")?, token);
+// GitLab::with_token(http, token) selects https://gitlab.com/api/v4 instead.
 # let _ = gitlab; Ok(()) }
 ```
 
@@ -54,7 +53,7 @@ let gitlab = gitlab.with_base_url("https://gitlab.example.com/api/v4")?;
   `control_the_default_redirect_policy_forwards_the_token` shows it). Build your client with
   `redirect_policy()` (same-origin redirects only; a cross-origin one is returned as a `3xx`
   error) or with `redirect::Policy::none()`.
-- `GitLab::new(http, GitLabConfig { token })` and `set_token` are the generated equivalents and
+- `GitLab::new(http, GitLabConfig { origin: concord::BaseUrl::from_static("https://gitlab.com/api/v4"), origin: concord::BaseUrl::from_static("https://gitlab.com/api/v4"), token })` and `set_token` are the generated equivalents and
   take a `HeaderValue`; `PrivateToken::into_header_value()` produces one for a token rotation.
 
 ## Workflow A: page through a project's issues

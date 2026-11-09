@@ -86,7 +86,7 @@ fn main() -> Result<(), concord::Error> {
 | `pub client Name(..) { base ".."; .. }` | one API; its required values form `NameConfig` | [§1](AUTHOR_GUIDE.md#1-model-the-api-as-a-tree) |
 | `scope name(..) { .. }` | a level the caller navigates: shared path, subdomain, keys, values | [§1](AUTHOR_GUIDE.md#1-model-the-api-as-a-tree) |
 | `GET name(..) -> T { .. }` | an endpoint (`GET POST PUT PATCH DELETE HEAD OPTIONS`); no `->`: no typed output | [§5.5](AUTHOR_GUIDE.md#55-no-output-versus---) |
-| `x: T`, `x: T = e`, `x?: T`, `x?: T = e` | required, initialized, optional, optional and initially present | [§2](AUTHOR_GUIDE.md#2-values-required-optional-initialized) |
+| `x: T`, `mut x: T`, `x: T = e`, `x?: T` | required and fixed on handles, required and replaceable on handles, initialized, optional | [§2](AUTHOR_GUIDE.md#2-values-required-optional-initialized) |
 | `params Name(x?: T, ..);` (client), `GET op(..Name)` | a parameter group: optional/initialized values written once, spliced where `..Name` is written; trait `Name` holds their setters for every including endpoint | [§2.1](AUTHOR_GUIDE.md#21-parameter-groups-one-fact-many-endpoints) |
 | `path "a/{x}"`, `subdomain "{x}"` | templates; `{client.x}` or `{scope.x}` reads an enclosing owner's value | [§3](AUTHOR_GUIDE.md#3-base-paths-and-subdomains) |
 | `query x`, `query("k") x`, `header("k") x`, `header(KEY) x`, `body x` | placements in the parameter list; `each` sends one occurrence per item | [§4.1](AUTHOR_GUIDE.md#41-placing-a-value) |
@@ -114,7 +114,9 @@ then children.
 |---|---|
 | `Docs::new(http, DocsConfig { .. })` | builds the client; initializers run once here |
 | `Docs::validate_header_names()` | in a unit test: every endpoint's header names checked without building anything ([§4.9](AUTHOR_GUIDE.md#49-checking-header-names-in-a-test)) |
-| `.set_x(v)`, `.maybe_x(Some(v) / None)` | return the updated handle (`#[must_use]`); handles are cheap snapshots |
+| `.set_x(v)`, `.maybe_x(Some(v) / None)` | endpoints, optional/initialized values and required `mut` values; return snapshot handles |
+| `.x()`, `.http()`, `.base_url()`, `scope.client()` | borrowed facts; sensitive values and whole headers have crate-only getters |
+| `base origin;` | a checked client value implementing `AsRef<concord::BaseUrl>`; select fixtures in that value at construction |
 | `docs.folder(7)`, `folder.rename(3, change)` | navigation: required values are positional, in declaration order |
 | `.send().await` (no client send policy) | `prepare`, one `execute`, require 2xx, then declared handling: finite decode, drain or open an unread stream; no Concord retry or extra request (also true of `Prepared::send`) |
 | `.prepare()?` → `Prepared` | `receive()` (below), `send()`, the native `reqwest::Request` (`request()`), `send_raw()`, `into_parts()` |

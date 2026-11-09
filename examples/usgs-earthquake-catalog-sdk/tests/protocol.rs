@@ -5,7 +5,7 @@ use common::*;
 use concord_sdk_usgs_earthquake_catalog::{
     CSV_BODY_LIMIT, CSV_RECORD_LIMIT, ERROR_BODY_LIMIT, Error, EventId, HttpKind, Magnitude,
     PageSize, SUCCESS_BODY_LIMIT, Timestamp, Usgs, Window,
-    concord::{ErrorKind, bytes::Bytes, reqwest},
+    concord::{ErrorKind, bytes::Bytes},
     concord_codecs::stream::{Completion, ReadErrorKind},
 };
 use concord_testserver::{Body, Recorded, Reply, Script, TestServer, paused};
@@ -170,10 +170,10 @@ async fn input_guards_and_scope_setters_fail_before_io() {
     assert!(NonZeroU64::new(0).is_none());
     Usgs::validate_header_names().unwrap();
     let server = TestServer::start(|_: &Recorded| panic!("invalid inputs must not send")).await;
-    let scope = client(&server)
-        .catalog()
-        .query(&filter(3))
-        .set_endtime(Timestamp::parse("2013-12-31T00:00:00Z").unwrap());
+    let scope = client(&server).catalog().window(
+        filter(3).start(),
+        Timestamp::parse("2013-12-31T00:00:00Z").unwrap(),
+    );
     assert!(matches!(
         scope.geojson().send().await,
         Err(Error::InvalidInput(_))
@@ -183,9 +183,7 @@ async fn input_guards_and_scope_setters_fail_before_io() {
         Err(Error::InvalidInput(_))
     ));
     assert!(server.requests().is_empty());
-    let error = Usgs::new(reqwest::Client::new())
-        .with_base_url("http://user:secret-base@localhost/")
-        .unwrap_err();
+    let error = concord::BaseUrl::parse("http://user:secret-base@localhost/").unwrap_err();
     assert_eq!(error.kind(), ErrorKind::Build);
     assert!(!format!("{error:?} {error}").contains("secret-base"));
     server.shutdown().await;

@@ -1,5 +1,7 @@
 # First use of `concord-sdk-sentry` (fresh consumer)
 
+Historical author notes. P4.3 now fixes required handle values and declares checked runtime bases; see the current README and `docs/MIGRATION.md`.
+
 Role: fresh consumer, workflows run only against `examples/testserver` (live provider calls:
 **NOT_RUN**). Written before reading any of `src/`, `tests/`, `FRICTION.md`, `PROVENANCE.md`.
 

@@ -1142,7 +1142,7 @@ fn query_items_for_docs(model: &Model, items: &[Item]) -> String {
                     if fixed {
                         "fixed"
                     } else {
-                        "template; sent when all its values are present"
+                        "template; needs all values"
                     },
                     owner,
                 )
@@ -1341,9 +1341,9 @@ fn summary_parts(model: &Model, endpoint: usize, method: &Ident) -> Option<Summa
     let value_note;
     let (base_note, actual_url) = (
         match &value_base {
-            None => "the declared base URL; the client's `with_base_url` replaces it",
+            None => "literal base; `with_base_url` replaces it",
             Some(name) => {
-                value_note = format!("the base URL of the client value `{name}`");
+                value_note = format!("client value `{name}`");
                 value_note.as_str()
             }
         },
@@ -3649,7 +3649,7 @@ mod tests {
                 .unwrap_or_else(|| panic!("{needle} missing in {docs}"))
         };
         let request = at(
-            "Default request: `POST http://x.test/items` (the declared base URL; the client's `with_base_url` replaces it).",
+            "Default request: `POST http://x.test/items` (literal base; `with_base_url` replaces it).",
         );
         let query = at("Query in wire order");
         let headers = at("Headers (when present): `x-trace`.");
@@ -3940,11 +3940,11 @@ mod tests {
         // its navigation entry; the actual-URL caveat is on the request type only.
         for (expected, count) in [
             (
-                "Default request: `GET https://x.test/api/` (the declared base URL; the client's `with_base_url` replaces it).",
+                "Default request: `GET https://x.test/api/` (literal base; `with_base_url` replaces it).",
                 2,
             ),
             (
-                "Default request: `GET https://x.test/api/v1/items/` (the declared base URL; the client's `with_base_url` replaces it).",
+                "Default request: `GET https://x.test/api/v1/items/` (literal base; `with_base_url` replaces it).",
                 2,
             ),
             (
@@ -3978,7 +3978,7 @@ mod tests {
                 1,
             ),
             (
-                "Default request: `GET https://s{n}.{region}.api.example.test/api/objects/{key}` (the declared base URL; the client's `with_base_url` replaces it).",
+                "Default request: `GET https://s{n}.{region}.api.example.test/api/objects/{key}` (literal base; `with_base_url` replaces it).",
                 2,
             ),
         ] {
@@ -4331,7 +4331,7 @@ mod tests {
             "Create one item.",
             "`POST` endpoint `Api.items.create`.",
             result,
-            "Default request: `POST https://x.test/api/items` (the declared base URL; the client's `with_base_url` replaces it).",
+            "Default request: `POST https://x.test/api/items` (literal base; `with_base_url` replaces it).",
             "1. `dry_run` from caller value `Api.items.create.dry_run` (optional).",
             "Headers (when present): `x-trace`.",
             "Base URL, body and response handling: `ApiItemsCreate`.",
@@ -4350,7 +4350,7 @@ mod tests {
         // The request type keeps the full description, its result first.
         for expected in [
             result,
-            "Default request: `POST https://x.test/api/items` (the declared base URL; the client's `with_base_url` replaces it).",
+            "Default request: `POST https://x.test/api/items` (literal base; `with_base_url` replaces it).",
             "Construction or a send policy may select or restrict the actual URL.",
             "Body (`item`): `Item`",
             "Prepared execution: `Item`",

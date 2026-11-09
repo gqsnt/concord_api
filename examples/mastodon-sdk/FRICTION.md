@@ -1,5 +1,7 @@
 # Friction log — Mastodon SDK (author)
 
+Historical author notes. P4.3 now fixes required handle values and declares checked runtime bases; see the current README and `docs/MIGRATION.md`.
+
 Concord frozen at `c3fd4f1e`; toolchain 1.99.1. No shared crate was edited; each item names the
 smallest Concord change that would remove the cost instead. `file:line` references are to this
 crate's working tree as delivered. Cause labels: **Concord**, **docs**, **SDK**, **provider**.

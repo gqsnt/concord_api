@@ -134,6 +134,7 @@ async fn secrets_never_print() {
     let signature = c.issue();
     let cursor = c.issue();
     let config = GitHubConfig {
+        origin: concord::BaseUrl::from_static("https://api.github.com"),
         token: token.clone(),
     };
     c.assert_debug_absent("config", &config);

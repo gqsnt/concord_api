@@ -12,9 +12,9 @@
 //! - `Repository`: everything under `/v2/<name>/`. A repository name spans several path segments
 //!   (`acme/tools/app`), and a Concord path value is always exactly one segment (`/` would be
 //!   sent as `%2F`), so each repository handle is this client with the base URL
-//!   `<registry>/v2/<name>` (`with_base_url`), the name validated by
+//!   `<registry>/v2/<name>` (`base origin;`), the name validated by
 //!   [`RepositoryName`](crate::RepositoryName) first.
-//! - `TokenService`: the token service, at the `realm` URL a challenge names (`with_base_url`).
+//! - `TokenService`: the token service, at the `realm` URL a challenge names (`base origin;`).
 //!
 //! The upload endpoints (`upload_chunk`, `upload_status`, `complete_upload`) declare the upload
 //! collection as a placeholder path: every request of an upload session is sent to the latest
@@ -32,10 +32,11 @@ use crate::reference::{PageSize, Reference};
 concord::api! {
     /// The registry root, at the registry's base URL.
     pub(crate) client Registry(
+        origin: concord::BaseUrl,
         /// `Authorization: Bearer <token>` once a challenge was answered.
         #[sensitive] header(AUTHORIZATION) authorization?: HeaderValue,
     ) {
-        base "https://registry.invalid";
+        base origin;
 
         /// `GET /v2/`: API version check.
         GET ping() { path "v2/"; }
@@ -52,10 +53,11 @@ concord::api! {
 concord::api! {
     /// One repository, at the base URL `<registry>/v2/<name>`.
     pub(crate) client Repository(
+        origin: concord::BaseUrl,
         /// `Authorization: Bearer <token>` once a challenge was answered.
         #[sensitive] header(AUTHORIZATION) authorization?: HeaderValue,
     ) {
-        base "https://registry.invalid/v2/repository";
+        base origin;
 
         /// `GET /v2/<name>/tags/list`: one page of tags.
         GET tags(query n?: PageSize, query last?: String) -> TagsBody {
@@ -110,10 +112,11 @@ concord::api! {
 concord::api! {
     /// The token service, at a challenge's `realm`.
     pub(crate) client TokenService(
+        origin: concord::BaseUrl,
         /// `Authorization: Basic ...` for the token service, when configured.
         #[sensitive] header(AUTHORIZATION) credentials?: HeaderValue,
     ) {
-        base "https://auth.invalid/token";
+        base origin;
         limit crate::client::TOKEN_BODY_LIMIT;
 
         /// `GET <realm>?service=..&scope=..`: a Bearer token.
@@ -146,14 +149,17 @@ mod tests {
             Reply::new(200).body(vec![b' '; crate::manifest::MANIFEST_LIMIT + 1])
         })
         .await;
-        let api = Repository::new(
-            concord::reqwest::Client::builder()
-                .no_proxy()
-                .build()
-                .unwrap(),
-        )
-        .with_base_url(server.url())
-        .unwrap();
+        let api = concord::BaseUrl::parse((server.url()).as_ref())
+            .map(|origin| {
+                Repository::new(
+                    concord::reqwest::Client::builder()
+                        .no_proxy()
+                        .build()
+                        .unwrap(),
+                    RepositoryConfig { origin },
+                )
+            })
+            .unwrap();
         let error = api
             .manifest(
                 Reference::tag("latest").unwrap(),
@@ -177,14 +183,17 @@ mod tests {
             Reply::json(200, vec![b' '; crate::client::TOKEN_BODY_LIMIT + 1])
         })
         .await;
-        let api = TokenService::new(
-            concord::reqwest::Client::builder()
-                .no_proxy()
-                .build()
-                .unwrap(),
-        )
-        .with_base_url(server.url())
-        .unwrap();
+        let api = concord::BaseUrl::parse((server.url()).as_ref())
+            .map(|origin| {
+                TokenService::new(
+                    concord::reqwest::Client::builder()
+                        .no_proxy()
+                        .build()
+                        .unwrap(),
+                    TokenServiceConfig { origin },
+                )
+            })
+            .unwrap();
         let Err(error) = api.token(Vec::new()).prepare().unwrap().send().await else {
             panic!("native send must reject an oversized token body");
         };

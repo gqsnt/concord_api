@@ -1,6 +1,6 @@
 //! Public MediaWiki queries through generated Concord operations.
 //!
-//! Set an identifying User-Agent and the complete script URL with `with_base_url`.
+//! Supply the identifying User-Agent and checked complete script URL in `MediaWikiConfig`.
 //! Generated `send()` applies the SDK's envelope policy; `prepare()?.send()` applies only
 //! Concord's HTTP/JSON handling. All tests use loopback fixtures. See the package README.
 
@@ -33,8 +33,8 @@ pub const BATCH_BODY_LIMIT: usize = 16 * 1024 * 1024;
 
 concord::api! {
     /// A single wiki's public Action API. The caller supplies its identifying User-Agent.
-    pub client MediaWiki(#[sensitive] header(USER_AGENT) user_agent: String) {
-        base "https://en.wikipedia.org/w/api.php";
+    pub client MediaWiki(origin: concord::BaseUrl, #[sensitive] header(USER_AGENT) user_agent: String) {
+        base origin;
         response Json;
         limit BODY_LIMIT;
         send QueryPolicy;

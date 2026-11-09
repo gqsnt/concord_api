@@ -1,11 +1,13 @@
 #![doc = include_str!("../README.md")]
 
+mod destination;
 mod error;
 mod models;
 mod pagination;
 
 pub use concord;
 pub use concord_pagination;
+pub use destination::Destination;
 pub use error::{Error, HttpClass, Problem, ProviderError};
 pub use models::*;
 pub use pagination::{NextLink, Traversal};
@@ -21,8 +23,8 @@ pub const ERROR_BODY_LIMIT: usize = 16 * 1024;
 
 concord::api! {
     /// Generated client. Prefer `connect` or `for_fixture` to configure safe transport.
-    pub client DigitalOcean(#[sensitive] header(AUTHORIZATION) authorization: reqwest::header::HeaderValue) {
-        base "https://api.digitalocean.com";
+    pub client DigitalOcean(destination: Destination, #[sensitive] header(AUTHORIZATION) mut authorization: reqwest::header::HeaderValue) {
+        base destination;
         path "v2";
         format Json;
         limit SUCCESS_BODY_LIMIT;
@@ -69,6 +71,7 @@ impl DigitalOcean {
         Ok(Self::new(
             transport()?,
             DigitalOceanConfig {
+                destination: Destination::production(),
                 authorization: concord_auth::bearer(token).map_err(|_| Error::Credential)?,
             },
         ))
@@ -79,28 +82,13 @@ impl DigitalOcean {
     /// Links are trusted only within this exact origin and endpoint collection.
     /// Production hosts cannot be selected through this constructor.
     pub fn for_fixture(token: &str, origin: &str) -> Result<Self, Error> {
-        let url = reqwest::Url::parse(origin).map_err(|_| Error::FixtureOrigin)?;
-        let loopback = url
-            .host_str()
-            .and_then(|host| {
-                host.trim_matches(['[', ']'])
-                    .parse::<std::net::IpAddr>()
-                    .ok()
-            })
-            .is_some_and(|ip| ip.is_loopback());
-        if url.scheme() != "http"
-            || !loopback
-            || url.path() != "/"
-            || !url.username().is_empty()
-            || url.password().is_some()
-            || url.query().is_some()
-            || url.fragment().is_some()
-        {
-            return Err(Error::FixtureOrigin);
-        }
-        Self::connect(token)?
-            .with_base_url(origin)
-            .map_err(Error::from)
+        Ok(Self::new(
+            transport()?,
+            DigitalOceanConfig {
+                destination: Destination::for_fixture(origin)?,
+                authorization: concord_auth::bearer(token).map_err(|_| Error::Credential)?,
+            },
+        ))
     }
 }
 

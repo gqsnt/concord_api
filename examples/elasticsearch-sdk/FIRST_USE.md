@@ -1,5 +1,7 @@
 # Fresh consumer: SDK48 Elasticsearch
 
+Historical author notes. P4.3 now fixes required handle values and declares checked runtime bases; see the current README and `docs/MIGRATION.md`.
+
 Date: 2026-11-07. Live provider calls: **NOT_RUN**. Every SDK request in this
 exercise must target `examples/testserver` on loopback.
 

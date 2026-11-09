@@ -31,6 +31,7 @@ fn repo(server: &TestServer, token: &str, name: &str) -> RepoContext {
     GitHubContext::new(
         http,
         GitHubConfig {
+            origin: concord::BaseUrl::from_static("https://api.github.com"),
             token: token.to_owned(),
         },
     )

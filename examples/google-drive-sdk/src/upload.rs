@@ -170,7 +170,7 @@ impl DriveClient {
     fn session_url(&self, location: &str) -> Result<Url, Error> {
         let url = Url::parse(location)
             .map_err(|_| Error::protocol("session Location must be absolute", None))?;
-        if url.origin() != self.origin.origin()
+        if url.origin() != self.api.base_url().origin()
             || !url.username().is_empty()
             || url.password().is_some()
             || url.fragment().is_some()

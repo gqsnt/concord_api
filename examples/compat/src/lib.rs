@@ -179,7 +179,7 @@ concord::api! {
 }
 concord::api! {
     /// Root refresh creates a new snapshot.
-    pub client Refresh(#[sensitive] header("authorization") token: String) {
+    pub client Refresh(#[sensitive] header("authorization") mut token: String) {
         base "http://compat.invalid";
         scope account {
             path "account";

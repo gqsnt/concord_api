@@ -1,5 +1,7 @@
 # Friction log — ntfy SDK (author)
 
+Historical author notes. P4.3 now fixes required handle values and declares checked runtime bases; see the current README and `docs/MIGRATION.md`.
+
 Concord frozen at `6d6d66aa`; toolchain 1.99.1. Entries are ordered by how much SDK code they
 cost or saved. Each has a reproduction (`file:line` at the commit that adds this file) and the
 cause as I judge it: **Concord**, **docs**, **SDK**, **provider** or **application**.

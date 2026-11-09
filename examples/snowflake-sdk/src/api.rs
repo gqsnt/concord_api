@@ -33,11 +33,12 @@ impl Decode<StatementBody> for StatementJson {
 
 concord::api! {
     pub(crate) client SqlApi(
+        origin: concord::BaseUrl,
         #[sensitive] header(AUTHORIZATION) authorization: HeaderValue,
         header("X-Snowflake-Authorization-Token-Type") token_type: String,
         header(USER_AGENT) user_agent: HeaderValue,
     ) {
-        base "https://account.snowflake.invalid";
+        base origin;
         path "api/v2/statements";
         headers { "Content-Type" = "application/json"; }
         format Json;

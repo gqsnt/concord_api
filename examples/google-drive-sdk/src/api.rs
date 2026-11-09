@@ -7,8 +7,8 @@ use concord::{Encoded, EncodedBody, Json};
 use crate::{ChangesPage, File, FilesPage, NewFile, StartPageToken};
 
 concord::api! {
-    pub(crate) client DriveApi(#[sensitive] token: String) {
-        base "https://www.googleapis.com";
+    pub(crate) client DriveApi(origin: concord::BaseUrl, #[sensitive] token: String) {
+        base origin;
         headers { AUTHORIZATION = "Bearer {token}"; }
         format Json;
 

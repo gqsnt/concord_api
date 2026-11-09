@@ -32,8 +32,13 @@ fn http() -> reqwest::Client {
 }
 
 fn connect(server: &TestServer) -> UsgsCatalog {
-    Usgs::new(http())
-        .with_base_url(server.url())
+    concord_sdk_usgs_earthquake_catalog::FixtureOrigin::parse((server.url()).as_ref())
+        .map(|origin| {
+            Usgs::new(
+                http(),
+                concord_sdk_usgs_earthquake_catalog::UsgsConfig { origin },
+            )
+        })
         .expect("loopback base")
         .catalog()
 }
@@ -909,11 +914,12 @@ async fn invalid_inputs_are_refused_before_io() {
         Err(Error::InvalidInput(_))
     ));
 
-    // A generated scope setter that breaks the window is caught at send time, before I/O.
+    // Direct construction of an invalid window is caught at send time, before I/O.
     let window = march_first();
-    let scope = catalog
-        .query(&window)
-        .set_endtime(Timestamp::parse("2024-02-01T00:00:00Z").unwrap());
+    let scope = catalog.window(
+        window.start(),
+        Timestamp::parse("2024-02-01T00:00:00Z").unwrap(),
+    );
     let err = scope.geojson().send().await.expect_err("end before start");
     assert!(matches!(err, Error::InvalidInput(_)), "{err:?}");
     let err = scope.csv().send().await.expect_err("end before start");

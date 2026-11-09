@@ -120,6 +120,7 @@ async fn foreign_next_link_is_refused() {
     let github = GitHubContext::new(
         http,
         GitHubConfig {
+            origin: concord::BaseUrl::from_static("https://api.github.com"),
             token: TOKEN_A.into(),
         },
     )
@@ -163,6 +164,7 @@ async fn link_outside_the_base_path_is_refused() {
     let github = GitHubContext::new(
         http(server.addr(), None),
         GitHubConfig {
+            origin: concord::BaseUrl::from_static("https://api.github.com"),
             token: TOKEN_A.into(),
         },
     )
@@ -454,6 +456,7 @@ async fn persisted_continuation_of_another_collection_is_refused() {
     let enterprise = GitHubContext::new(
         http(server.addr(), None),
         GitHubConfig {
+            origin: concord::BaseUrl::from_static("https://api.github.com"),
             token: TOKEN_A.into(),
         },
     )
@@ -842,6 +845,7 @@ async fn a_foreign_next_link_is_an_error_not_an_end() {
     let github = GitHubContext::new(
         http,
         GitHubConfig {
+            origin: concord::BaseUrl::from_static("https://api.github.com"),
             token: TOKEN_A.into(),
         },
     )

@@ -61,8 +61,8 @@ concord::api! {
     ///
     /// Prefer `connect` or `local` for a transport that never retries or follows redirects.
     /// Advanced `new` callers must supply an equivalent transport.
-    pub client Mailgun(#[sensitive] header(AUTHORIZATION) authorization: HeaderValue) {
-        base "https://api.mailgun.net";
+    pub client Mailgun(origin: concord::BaseUrl, #[sensitive] header(AUTHORIZATION) authorization: HeaderValue) {
+        base origin;
         path "v3";
         response Json;
         limit EVENT_BODY_LIMIT;
@@ -139,6 +139,12 @@ impl Mailgun {
         let http = builder
             .build()
             .map_err(|_| Error::Input(InputError::TransportConfig))?;
-        Ok(Self::new(http, MailgunConfig { authorization }).with_base_url(base)?)
+        Ok(Self::new(
+            http,
+            MailgunConfig {
+                origin: concord::BaseUrl::parse(base)?,
+                authorization,
+            },
+        ))
     }
 }

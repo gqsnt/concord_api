@@ -125,7 +125,8 @@ Tokens come from `POST /v1/oauth2/token` with HTTP Basic client ID and secret an
 - A `401` on an API call discards the token that call used; see below for whether the call is
   repeated.
 - The token and every API request go to the origin given at construction. A client moved with
-  the generated `with_base_url` sends nothing and fails with `Error::Destination`.
+  the generated client takes its base from the session. Native policy calls with a different
+  origin send nothing and fail with `Error::Destination`.
 
 ## Failure semantics
 
@@ -183,3 +184,10 @@ authorization detail retrieval, order updates (`PATCH`), payment sources and vau
 partner headers (`PayPal-Partner-Attribution-Id`, `PayPal-Auth-Assertion`), `Prefer:
 return=minimal` on typed writes (void consumes only the acknowledgement), and blanket idempotency: no
 other endpoint is treated as accepting `PayPal-Request-Id`.
+
+The credential session supplies the destination; a handle cannot select another base:
+
+```compile_fail
+use concord_sdk_paypal::PayPal;
+fn redirect(api: PayPal) { let _ = api.with_base_url("https://evil.example"); }
+```

@@ -31,8 +31,8 @@ fn client(server: &TestServer) -> GitLab {
         .timeout(Duration::from_secs(5))
         .build()
         .unwrap();
-    GitLab::with_token(http, PrivateToken::new(TOKEN).unwrap())
-        .with_base_url(format!("{}/api/v4", server.url()))
+    concord::BaseUrl::parse((format!("{}/api/v4", server.url())).as_ref())
+        .map(|origin| GitLab::at(http, origin, PrivateToken::new(TOKEN).unwrap()))
         .unwrap()
 }
 

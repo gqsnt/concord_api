@@ -11,7 +11,7 @@
 //! # Construction
 //!
 //! [`Ntfy::new`] takes your `reqwest::Client` (timeouts, proxies and TLS are configured there).
-//! The base URL is `https://ntfy.sh`; [`Ntfy::with_base_url`] points the client at a self-hosted
+//! The base URL is `https://ntfy.sh`; a checked Config origin points the client at a self-hosted
 //! server. Protected topics need an [`AccessToken`] ([`Ntfy::with_token`], sent as
 //! `Authorization: Bearer …`, flagged sensitive and withheld from every `Debug`).
 //!
@@ -20,8 +20,7 @@
 //! use concord_sdk_ntfy::{AccessToken, Ntfy, Since, Topic};
 //!
 //! # fn main() -> Result<(), Box<dyn std::error::Error>> {
-//! let ntfy = Ntfy::new(reqwest::Client::new())
-//!     .with_base_url("https://ntfy.example.test")?
+//! let ntfy = Ntfy::new(reqwest::Client::new(), concord_sdk_ntfy::NtfyConfig { origin: concord::BaseUrl::parse("https://ntfy.example.test")? })
 //!     .with_token(&AccessToken::new("synthetic-token-not-real")?);
 //! let alerts = ntfy.topic(Topic::new("alerts")?);
 //!
@@ -99,13 +98,13 @@ pub use model::{
 pub const DOCUMENTED_VERSION: &str = "v2.37.2";
 
 concord::api! {
-    /// An ntfy server: `https://ntfy.sh` unless [`with_base_url`](Ntfy::with_base_url) points it
-    /// at a self-hosted one. Every `send()` returns `Result<_, NtfyError>`.
+    /// An ntfy server, selected before attaching its credential. Every `send()` returns `Result<_, NtfyError>`.
     pub client Ntfy(
+        origin: concord::BaseUrl,
         /// `Authorization`: absent for open topics; [`Ntfy::with_token`] sets a bearer token.
         #[sensitive] header(AUTHORIZATION) authorization?: HeaderValue,
     ) {
-        base "https://ntfy.sh";
+        base origin;
         send NtfyPolicy -> Result<_, NtfyError>;
 
         /// One topic (`/<topic>`).

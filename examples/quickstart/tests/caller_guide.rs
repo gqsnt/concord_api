@@ -35,7 +35,7 @@ concord::api! {
     /// A product catalog.
     pub client Catalog(
         /// The API key.
-        #[sensitive] header("x-api-key") key: String,
+        #[sensitive] header("x-api-key") mut key: String,
         /// The preferred language of product names.
         header("accept-language") lang?: String = "en",
     ) {
@@ -275,7 +275,7 @@ fn the_documented_signatures() {
     let _: fn(Catalog, String) -> Catalog = Catalog::set_lang;
     let _: fn(Catalog, Option<String>) -> Catalog = Catalog::maybe_lang;
     let _: fn(&Catalog, String) -> CatalogShop = Catalog::shop;
-    let _: fn(CatalogShop, String) -> CatalogShop = CatalogShop::set_shop;
+    let _: fn(&CatalogShop) -> &String = CatalogShop::shop;
     let _: fn(&CatalogShop) -> Products = CatalogShop::products;
     let _: fn(&CatalogShop, u64) -> CatalogShopProduct = CatalogShop::product;
     let _: fn(&CatalogShop, u64, Rename) -> CatalogShopRename = CatalogShop::rename;

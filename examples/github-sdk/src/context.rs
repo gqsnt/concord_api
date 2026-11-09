@@ -15,7 +15,7 @@
 //! use concord::reqwest::{self, Method};
 //!
 //! # fn main() -> Result<(), Box<dyn std::error::Error>> {
-//! let github = GitHubContext::new(reqwest::Client::new(), GitHubConfig { token: "t-1".into() });
+//! let github = GitHubContext::new(reqwest::Client::new(), GitHubConfig { origin: concord::BaseUrl::from_static("https://api.github.com"), token: "t-1".into() });
 //! let repo = github.repo(RepoRef::new("octo-org", "hello-world"));
 //!
 //! // A declared operation, through the generated handle (setters, prepare, send stay available):
@@ -49,7 +49,6 @@
 //! refuses the already-followed response ([`crate::download::LocateError::RedirectFollowed`]).
 
 use std::fmt;
-use std::sync::Arc;
 
 use concord::reqwest::header::{ACCEPT, AUTHORIZATION, HeaderMap, HeaderValue, USER_AGENT};
 use concord::reqwest::{self, Method, Url, redirect};
@@ -61,9 +60,6 @@ use crate::api::{
 use crate::filters::{IssueFilter, RunFilter};
 use crate::ids::RepoRef;
 use crate::params::ApiVersion;
-
-/// The declared base (`base "https://api.github.com"`), until [`GitHubContext::with_base_url`].
-const DECLARED_BASE: &str = "https://api.github.com";
 
 /// A redirect policy for the `reqwest::Client` given to a [`GitHubContext`]: follow at most 10
 /// redirects that stay on the origin (scheme, host, port) of the original request, and stop at
@@ -99,87 +95,63 @@ pub(crate) fn same_origin(a: &Url, b: &Url) -> bool {
 /// [module documentation](self).
 #[derive(Clone)]
 pub struct GitHubContext {
-    inner: Arc<Inner>,
-}
-
-#[derive(Clone)]
-struct Inner {
-    http: reqwest::Client,
-    base: Url,
-    token: String,
-    api_version: ApiVersion,
-    user_agent: String,
     client: GitHub,
 }
 
 impl GitHubContext {
-    /// The context of `http` and the token, against `https://api.github.com`, with the pinned API
+    /// The context of `http`, the checked destination and token in `config`, with the pinned API
     /// version and the default `User-Agent` — the same arguments as [`GitHub::new`].
     pub fn new(http: reqwest::Client, config: GitHubConfig) -> Self {
-        // Exhaustive on purpose: a required client value added to the declaration must be
-        // mirrored here, or this stops compiling.
-        let GitHubConfig { token } = &config;
-        let token = token.clone();
-        let client = GitHub::new(http.clone(), config);
         Self {
-            inner: Arc::new(Inner {
-                http,
-                base: Url::parse(DECLARED_BASE).expect("the declared base is a valid URL"),
-                token,
-                api_version: ApiVersion::pinned(),
-                user_agent: crate::api::DEFAULT_USER_AGENT.to_owned(),
-                client,
-            }),
+            client: GitHub::new(http, config),
         }
     }
 
     /// Replaces the base URL (GitHub Enterprise Server's `https://HOST/api/v3`, a test server).
-    /// Validated by Concord's own [`GitHub::with_base_url`]; its path is kept as a prefix.
+    /// Validated by Concord's own [`concord::BaseUrl::parse`]; its path is kept as a prefix.
     ///
     /// # Errors
     ///
-    /// The Concord `Build` error of [`GitHub::with_base_url`].
+    /// The Concord `Build` error of [`concord::BaseUrl::parse`].
     pub fn with_base_url(mut self, url: impl AsRef<str>) -> Result<Self, concord::Error> {
         let url = url.as_ref();
-        let inner = Arc::make_mut(&mut self.inner);
-        inner.client = inner.client.clone().with_base_url(url)?;
-        inner.base = Url::parse(url).expect("a base URL Concord accepted parses");
+        self.client = GitHub::new(
+            self.client.http().clone(),
+            GitHubConfig {
+                origin: concord::BaseUrl::parse(url)?,
+                token: self.client.token().clone(),
+            },
+        )
+        .set_api_version(self.client.api_version().clone())
+        .set_user_agent(self.client.user_agent().clone());
         Ok(self)
     }
 
     /// Sends another `X-GitHub-Api-Version`. The models were checked against
     /// [`ApiVersion::pinned`] only.
     pub fn set_api_version(mut self, version: ApiVersion) -> Self {
-        let inner = Arc::make_mut(&mut self.inner);
-        inner.client = inner.client.clone().set_api_version(version.clone());
-        inner.api_version = version;
+        self.client = self.client.clone().set_api_version(version.clone());
         self
     }
 
     /// Sends another `User-Agent` (GitHub asks for the application's name or the user's login).
     pub fn set_user_agent(mut self, user_agent: impl Into<String>) -> Self {
         let user_agent = user_agent.into();
-        let inner = Arc::make_mut(&mut self.inner);
-        inner.client = inner.client.clone().set_user_agent(user_agent.as_str());
-        inner.user_agent = user_agent;
+        self.client = self.client.clone().set_user_agent(user_agent.as_str());
         self
     }
 
     /// The generated client handle.
     pub fn client(&self) -> &GitHub {
-        &self.inner.client
+        &self.client
     }
 
     /// The context of one repository.
     pub fn repo(&self, repo: RepoRef) -> RepoContext {
-        let handle = self
-            .inner
-            .client
-            .repo(repo.owner.clone(), repo.name.clone());
+        let handle = self.client.repo(repo.owner, repo.name);
         let actions = handle.actions();
         RepoContext {
             context: self.clone(),
-            repo,
             handle,
             actions,
         }
@@ -187,23 +159,23 @@ impl GitHubContext {
 
     /// The `reqwest::Client`.
     pub fn http(&self) -> &reqwest::Client {
-        &self.inner.http
+        self.client.http()
     }
 
     /// The base URL.
     pub fn base_url(&self) -> &Url {
-        &self.inner.base
+        self.client.base_url()
     }
 
     /// The API version sent.
     pub fn api_version(&self) -> &ApiVersion {
-        &self.inner.api_version
+        self.client.api_version()
     }
 
     /// Whether `url` belongs to this API: the base's origin, and a path under the base path. Only
     /// such URLs receive the token (pagination links are checked with it).
     pub fn is_api_url(&self, url: &Url) -> bool {
-        let base = &self.inner.base;
+        let base = self.client.base_url();
         if !same_origin(base, url) {
             return false;
         }
@@ -228,20 +200,19 @@ impl GitHubContext {
     fn build(
         &self,
         method: Method,
-        repo: Option<&RepoRef>,
+        repo: Option<(&str, &str)>,
         segments: &[&str],
     ) -> Result<reqwest::Request, ContextError> {
-        let inner = &*self.inner;
-        let mut url = inner.base.clone();
-        let base_path = inner.base.path();
+        let mut url = self.client.base_url().clone();
+        let base_path = self.client.base_url().path();
         let mut path = base_path.strip_suffix('/').unwrap_or(base_path).to_owned();
-        if let Some(repo) = repo {
-            if is_dot_or_empty(repo.owner.as_str()) || is_dot_or_empty(repo.name.as_str()) {
+        if let Some((owner, name)) = repo {
+            if is_dot_or_empty(owner) || is_dot_or_empty(name) {
                 return Err(ContextError::Repository);
             }
             push_segment(&mut path, "repos");
-            push_segment(&mut path, repo.owner.as_str());
-            push_segment(&mut path, repo.name.as_str());
+            push_segment(&mut path, owner);
+            push_segment(&mut path, name);
         }
         for (index, segment) in segments.iter().enumerate() {
             if is_dot_or_empty(segment) {
@@ -253,12 +224,10 @@ impl GitHubContext {
             url.set_path(&path);
         }
         let mut headers = HeaderMap::new();
-        let mut authorization =
-            HeaderValue::from_str(&format!("Bearer {}", inner.token)).map_err(|_| {
-                ContextError::HeaderValue {
-                    name: "authorization",
-                }
-            })?;
+        let mut authorization = HeaderValue::from_str(&format!("Bearer {}", self.client.token()))
+            .map_err(|_| ContextError::HeaderValue {
+            name: "authorization",
+        })?;
         authorization.set_sensitive(true);
         headers.insert(AUTHORIZATION, authorization);
         headers.insert(
@@ -267,7 +236,7 @@ impl GitHubContext {
         );
         headers.insert(
             X_GITHUB_API_VERSION,
-            HeaderValue::from_str(inner.api_version.as_str()).map_err(|_| {
+            HeaderValue::from_str(self.client.api_version().as_str()).map_err(|_| {
                 ContextError::HeaderValue {
                     name: "x-github-api-version",
                 }
@@ -275,7 +244,7 @@ impl GitHubContext {
         );
         headers.insert(
             USER_AGENT,
-            HeaderValue::from_str(&inner.user_agent)
+            HeaderValue::from_str(self.client.user_agent())
                 .map_err(|_| ContextError::HeaderValue { name: "user-agent" })?,
         );
         let mut request = reqwest::Request::new(method, url);
@@ -287,10 +256,10 @@ impl GitHubContext {
 impl fmt::Debug for GitHubContext {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("GitHubContext")
-            .field("base", &self.inner.base.as_str())
+            .field("base", &self.client.base_url().as_str())
             .field("token", &format_args!("<redacted>"))
-            .field("api_version", &self.inner.api_version.as_str())
-            .field("user_agent", &self.inner.user_agent)
+            .field("api_version", &self.client.api_version().as_str())
+            .field("user_agent", self.client.user_agent())
             .finish()
     }
 }
@@ -299,15 +268,17 @@ impl fmt::Debug for GitHubContext {
 #[derive(Clone)]
 pub struct RepoContext {
     context: GitHubContext,
-    repo: RepoRef,
     handle: GitHubRepo,
     actions: GitHubRepoActions,
 }
 
 impl RepoContext {
-    /// The repository.
-    pub fn repo(&self) -> &RepoRef {
-        &self.repo
+    /// The repository identity, assembled from the scope's borrowed facts.
+    pub fn repo(&self) -> RepoRef {
+        RepoRef {
+            owner: self.handle.owner().clone(),
+            name: self.handle.name().clone(),
+        }
     }
 
     /// The context it was created from.
@@ -394,14 +365,21 @@ impl RepoContext {
         method: Method,
         segments: &[&str],
     ) -> Result<reqwest::Request, ContextError> {
-        self.context.build(method, Some(&self.repo), segments)
+        self.context.build(
+            method,
+            Some((self.handle.owner().as_str(), self.handle.name().as_str())),
+            segments,
+        )
     }
 }
 
 impl fmt::Debug for RepoContext {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("RepoContext")
-            .field("repo", &format_args!("{}", self.repo))
+            .field(
+                "repo",
+                &format_args!("{}/{}", self.handle.owner(), self.handle.name()),
+            )
             .field("context", &self.context)
             .finish()
     }

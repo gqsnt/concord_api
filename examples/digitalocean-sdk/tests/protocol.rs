@@ -405,7 +405,10 @@ async fn quota_fields_distinguish_absence_invalid_repeated_and_overflow() {
 #[tokio::test]
 async fn credentials_documents_headers_and_followed_urls_stay_out_of_formatting() {
     let authorization = concord_auth::bearer(TOKEN).unwrap();
-    let config = DigitalOceanConfig { authorization };
+    let config = DigitalOceanConfig {
+        destination: concord_sdk_digitalocean::Destination::production(),
+        authorization,
+    };
     assert!(!format!("{config:?}").contains(TOKEN));
     let server = TestServer::start(|_: &Recorded| {
         Reply::json(403, include_str!("../fixtures/error-secret.json")).header("set-cookie", TOKEN)
@@ -437,10 +440,7 @@ async fn credentials_documents_headers_and_followed_urls_stay_out_of_formatting(
     let document = provider.document.unwrap();
     assert_eq!(document.message, TOKEN); // Deliberate unredacted field access still works.
     assert!(!format!("{document:?}").contains(TOKEN));
-    let build = DigitalOcean::connect(TOKEN)
-        .unwrap()
-        .with_base_url(TOKEN)
-        .unwrap_err();
+    let build = concord::BaseUrl::parse(TOKEN).unwrap_err();
     assert_eq!(build.kind(), ErrorKind::Build);
     assert_redacted(&Error::from(build));
     for error in [

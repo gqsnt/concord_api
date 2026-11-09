@@ -1,5 +1,7 @@
 # Concord observations — example-assisted
 
+Historical author notes. P4.3 now fixes required handle values and declares checked runtime bases; see the current README and `docs/MIGRATION.md`.
+
 No shared crates were changed. These are bounded observations and proposals, not claims that a
 provider rule belongs in Concord. The declaration retains client → scope → endpoint. JSON, form,
 path encoding, sensitive headers and generated `send()` cover the ordinary wire work. The SDK

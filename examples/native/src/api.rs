@@ -42,7 +42,7 @@ pub struct StockRow {
 
 concord::api! {
     /// A small inventory API. `key` is the full `Authorization` value (e.g. `Bearer ...`).
-    pub client Inventory(#[sensitive] header("authorization") key: String) {
+    pub client Inventory(#[sensitive] header("authorization") mut key: String) {
         base "http://inventory.invalid/v1";
         request Json;
         response Json;

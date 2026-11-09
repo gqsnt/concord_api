@@ -1,5 +1,7 @@
 # Independent first use
 
+Historical author notes. P4.3 now fixes required handle values and declares checked runtime bases; see the current README and `docs/MIGRATION.md`.
+
 ## Predictions recorded before implementation
 
 ### A. Subscribe to SSE through cancellation

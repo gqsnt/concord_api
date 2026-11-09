@@ -1,5 +1,7 @@
 # First use — SDK27 Mailgun (fresh consumer)
 
+Historical author notes. P4.3 now fixes required handle values and declares checked runtime bases; see the current README and `docs/MIGRATION.md`.
+
 Role: fresh consumer of `concord-sdk-mailgun` at commit
 `80cd6cf47744ebcb4b43d6a72f4314e6ff080d21`. Live provider calls: **NOT_RUN**. Every
 call below ran against `concord-example-testserver` on 127.0.0.1.

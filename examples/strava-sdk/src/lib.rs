@@ -69,7 +69,7 @@ pub struct Response<T> {
 concord::api! {
     /// Strava client. Construct with [`Strava::connect`] to enforce transport policy.
     pub client Strava(policy: Session) {
-        base "https://www.strava.com";
+        base policy;
         path "api/v3";
         response Json;
         limit BODY_LIMIT;
@@ -112,8 +112,8 @@ concord::api! {
 
 concord::api! {
     /// OAuth token service, separate from authenticated API traffic.
-    pub client OAuth {
-        base "https://www.strava.com";
+    pub client OAuth(origin: concord::BaseUrl) {
+        base origin;
         response Json;
         limit ERROR_LIMIT;
         send TokenPolicy -> Result<Response<_>, Error>;

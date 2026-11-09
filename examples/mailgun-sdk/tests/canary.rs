@@ -166,6 +166,7 @@ async fn secrets_never_print() {
         .await;
         let base = if case == 6 { refused() } else { server.url() };
         let config = MailgunConfig {
+            origin: concord::BaseUrl::from_static("https://api.mailgun.net"),
             authorization: HeaderValue::from_str(&format!("Basic {key}")).unwrap(),
         };
         c.assert_debug_absent("config (value not flagged)", &config);

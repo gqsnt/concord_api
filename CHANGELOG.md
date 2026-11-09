@@ -8,6 +8,19 @@ in generated documentation, and by retiring the experimental scalar-display deri
 example SDK crates are not published (`publish = false`). What the loop tried and decided: [`v4/desirability/SUMMARY.md`](v4/desirability/SUMMARY.md); its records
 are on the [archive branch](https://github.com/gqsnt/concord_api/tree/archive/desirability-loop-1/v4/desirability).
 
+### Construction facts (P4.3)
+
+- Required client and scope values are fixed unless declared `mut`; optional/initialized values
+  and endpoint inputs retain setters. Credential rotation and replaceable policies/signers opt in.
+- `base origin;` binds a handle to a checked client value implementing `AsRef<BaseUrl>`, replacing
+  fictitious/runtime base literals across applicable SDKs. DigitalOcean and Sentry require checked
+  destinations; Mastodon has separate REST and advertised streaming handles. The USGS capsule
+  requires a checked loopback `FixtureOrigin`.
+- Borrowed value, `http`, `base_url` and scope `client` getters remove copied wrapper facts.
+  Sensitive bases and whole-header values have crate-only getters and redacted Debug.
+- QuickBooks preparation shows the connection's current host. Fixture destinations belong to each
+  replacement connection. Salesforce versions and Datadog credentials require checked types.
+
 ### SDK-owned formatting (P4.1)
 
 - `concord::Debug` replaces field-only SDK formatters across applicable SDKs and examples;

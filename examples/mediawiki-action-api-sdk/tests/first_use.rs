@@ -25,14 +25,17 @@ fn client(server: &TestServer) -> MediaWiki {
         .timeout(Duration::from_secs(10))
         .build()
         .unwrap();
-    MediaWiki::new(
-        http,
-        MediaWikiConfig {
-            user_agent: UA.into(),
-        },
-    )
-    .with_base_url(format!("{}/w/api.php", server.url()))
-    .unwrap()
+    concord::BaseUrl::parse((format!("{}/w/api.php", server.url())).as_ref())
+        .map(|origin| {
+            MediaWiki::new(
+                http,
+                MediaWikiConfig {
+                    origin,
+                    user_agent: UA.into(),
+                },
+            )
+        })
+        .unwrap()
 }
 
 fn pairs(req: &Recorded) -> Vec<(String, String)> {

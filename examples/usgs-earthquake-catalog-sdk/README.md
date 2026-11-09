@@ -24,7 +24,7 @@ let http = reqwest::Client::builder()
     .retry(reqwest::retry::never())
     .build()?;
 // Supply the TestServer URL, without /fdsnws/event/1 (the declaration owns it).
-let api = Usgs::new(http).with_base_url(local_base)?;
+let api = concord_sdk_usgs_earthquake_catalog::FixtureOrigin::parse((local_base).as_ref()).map(|origin| Usgs::new(http, concord_sdk_usgs_earthquake_catalog::UsgsConfig { origin: origin }))?;
 let catalog = api.catalog();
 let filter = Window::new("2014-01-01T00:00:00Z", "2014-01-02T00:00:00Z")?
     .min_magnitude(Magnitude::new(4.0)?)

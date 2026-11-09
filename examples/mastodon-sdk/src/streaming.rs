@@ -56,7 +56,7 @@ pub const MAX_EVENT_BYTES: usize = DEFAULT_MAX_EVENT_BYTES;
 #[derive(Clone, PartialEq, Eq)]
 pub struct StreamingHost {
     instance: InstanceUrl,
-    base: Url,
+    base: concord::BaseUrl,
 }
 
 impl StreamingHost {
@@ -97,7 +97,8 @@ impl StreamingHost {
         }
         Ok(Self {
             instance: instance.clone(),
-            base: url,
+            base: concord::BaseUrl::parse(url.as_str())
+                .map_err(|_| DiscoveryError::Unsupported("is not a base URL"))?,
         })
     }
 
@@ -106,13 +107,13 @@ impl StreamingHost {
     pub fn instance_host(instance: &InstanceUrl) -> Self {
         Self {
             instance: instance.clone(),
-            base: instance.url().clone(),
+            base: instance.as_ref().clone(),
         }
     }
 
     /// The streaming origin, as the SDK connects to it (`https://streaming.example.social/`).
     pub fn url(&self) -> &str {
-        self.base.as_str()
+        self.base.url().as_str()
     }
 
     /// The instance that advertised it.
@@ -122,7 +123,13 @@ impl StreamingHost {
 
     /// Whether streaming is served by the instance's own origin.
     pub fn is_instance_host(&self) -> bool {
-        self.base.origin() == self.instance.url().origin()
+        self.base.url().origin() == self.instance.url().origin()
+    }
+}
+
+impl AsRef<concord::BaseUrl> for StreamingHost {
+    fn as_ref(&self) -> &concord::BaseUrl {
+        &self.base
     }
 }
 
@@ -130,7 +137,7 @@ impl fmt::Debug for StreamingHost {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("StreamingHost")
             .field("instance", &self.instance.as_str())
-            .field("url", &self.base.as_str())
+            .field("url", &self.base.url().as_str())
             .finish()
     }
 }

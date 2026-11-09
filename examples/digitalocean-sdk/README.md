@@ -95,8 +95,8 @@ async fn production_backups(origin: &str) -> Result<usize, Box<dyn std::error::E
 Its bearer token must already have the required read permissions. Token acquisition,
 refresh and persistence belong to the caller. `for_fixture` accepts only a bare HTTP
 origin using a literal loopback IP. Both constructors disable redirects, native retries,
-Referer and proxies, and set a 30-second request timeout. Generated `new`, credential
-setters, `with_base_url`, `prepare` and native exits remain available for advanced users;
+Referer and proxies, and set a 30-second request timeout. Generated `new` requires a checked
+`Destination`; `mut authorization` permits same-account rotation. `prepare` and native exits remain available;
 when supplying a transport yourself, preserve those transport and destination rules.
 
 List operations support `set_page(PageNumber::new(n)?)` and
@@ -198,3 +198,20 @@ CARGO_BUILD_JOBS=4 RUSTDOCFLAGS="-D warnings" cargo doc --locked --offline -p co
 
 See [FRICTION.md](FRICTION.md) for Concord costs and shared-capability decisions, and
 [PROVENANCE.md](PROVENANCE.md) for the example-assisted source/fixture inventory.
+
+A destination is fixed on a handle; select it before supplying its credential:
+
+```compile_fail
+use concord_sdk_digitalocean::DigitalOcean;
+fn move_token(api: DigitalOcean) { let _ = api.with_base_url("https://evil.example"); }
+```
+
+```compile_fail
+use concord_sdk_digitalocean::{Destination, DigitalOcean};
+fn replace_destination(api: DigitalOcean, destination: Destination) { let _ = api.set_destination(destination); }
+```
+
+```compile_fail
+use concord_sdk_digitalocean::DigitalOcean;
+fn read_credential(api: DigitalOcean) { let _ = api.authorization(); }
+```

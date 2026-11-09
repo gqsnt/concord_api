@@ -55,6 +55,13 @@ impl Default for ClientOptions {
     }
 }
 
+// Transport configuration is consumed at construction; only body bounds remain at runtime.
+#[derive(Debug)]
+pub(crate) struct BodyLimits {
+    pub(crate) max_response_bytes: usize,
+    pub(crate) max_error_bytes: usize,
+}
+
 /// Successful response value together with its original response metadata.
 #[derive(Clone, Debug)]
 pub struct Reply<T> {
@@ -73,7 +80,7 @@ pub struct Reply<T> {
 #[sensitive]
 pub struct Client {
     pub(crate) api: SqlApi,
-    pub(crate) options: Arc<ClientOptions>,
+    pub(crate) options: Arc<BodyLimits>,
 }
 
 impl Client {
@@ -136,15 +143,18 @@ impl Client {
         let api = SqlApi::new(
             http,
             SqlApiConfig {
+                origin: concord::BaseUrl::parse(base)?,
                 authorization,
                 token_type: token_type.wire().into(),
                 user_agent,
             },
-        )
-        .with_base_url(base)?;
+        );
         Ok(Self {
             api,
-            options: Arc::new(options),
+            options: Arc::new(BodyLimits {
+                max_response_bytes: options.max_response_bytes,
+                max_error_bytes: options.max_error_bytes,
+            }),
         })
     }
 

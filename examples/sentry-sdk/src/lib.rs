@@ -1,5 +1,6 @@
 #![doc = include_str!("../README.md")]
 
+mod deployment;
 mod error;
 mod model;
 mod pagination;
@@ -9,6 +10,7 @@ mod update;
 
 pub use concord;
 pub use concord_pagination::{PagesError, Resume};
+pub use deployment::Deployment;
 pub use error::{Error, HttpClass, Problem, ProviderError};
 pub use model::{Event, Issue, Response};
 pub use pagination::Listing;
@@ -33,12 +35,14 @@ concord::api! {
     /// Sentry issue and event reads and issue status updates. Prefer [`Sentry::with_token`]
     /// for validated bearer auth.
     pub client Sentry(
+        /// The deployment owning this caller and its admission state.
+        deployment: Deployment,
         /// Sensitive, complete Authorization header; `with_token` constructs this safely.
         #[sensitive] header(AUTHORIZATION) authorization: HeaderValue,
         /// Shared admission and bounded read retries, scoped to one caller identity.
         policy: SendPolicy,
     ) {
-        base "https://sentry.io";
+        base deployment;
         path "api/0";
         format Json;
         limit BODY_LIMIT;
@@ -85,10 +89,21 @@ impl Sentry {
         token: &str,
         policy: SendPolicy,
     ) -> Result<Self, Error> {
+        Self::at(http, Deployment::hosted(), token, policy)
+    }
+
+    /// Construct for one checked hosted or self-hosted deployment and caller identity.
+    pub fn at(
+        http: reqwest::Client,
+        deployment: Deployment,
+        token: &str,
+        policy: SendPolicy,
+    ) -> Result<Self, Error> {
         let authorization = concord_auth::bearer(token).map_err(|_| Error::Credential)?;
         Ok(Self::new(
             http,
             SentryConfig {
+                deployment,
                 authorization,
                 policy,
             },

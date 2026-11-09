@@ -1,5 +1,7 @@
 # Author observations, in order
 
+Historical author notes. P4.3 now fixes required handle values and declares checked runtime bases; see the current README and `docs/MIGRATION.md`.
+
 Frozen library: `e04236ca`. Reading material besides the docs and rustdoc: the GitHub SDK
 (`examples/github-sdk/src/{api,paging,link,context}.rs`), and from wave 1 only the PokéAPI
 `FRICTION.md`/`PROVENANCE.md` headings and Twilio's `tests/support/mod.rs` (for the file layout
@@ -72,7 +74,7 @@ Attribution keys: **Concord**, **SDK**, **provider**, **application**, **docs**,
    `ToHeaderValue` is sealed and a credential newtype must not go through `Display` (W1-15), so
    the declaration takes a `HeaderValue` and the SDK adds `PrivateToken` plus an inherent
    `GitLab::with_token` on the generated type (`src/api.rs:88-112`, `src/params.rs:229`). The
-   generated `GitLab::new(http, GitLabConfig { token })` and `set_token` stay public and accept
+   generated `GitLab::new(http, GitLabConfig { origin: concord::BaseUrl::from_static("https://gitlab.com/api/v4"), token })` and `set_token` stay public and accept
    any `HeaderValue`, including an empty one, so the validation can be bypassed. Adding inherent
    methods to generated types (`impl GitLab` in `src/api.rs:88`, `src/context.rs:84`;
    `impl GitLabProjectIssues` in `src/pages.rs:84`) works in the declaring crate, but the guides

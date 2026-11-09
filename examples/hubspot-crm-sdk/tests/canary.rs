@@ -91,7 +91,12 @@ async fn secrets_never_print() {
     );
     let decoded: RefreshResponse = serde_json::from_str(&oauth_body).unwrap();
     c.assert_debug_absent("decoded RefreshResponse", &decoded);
-    let oauth = concord_sdk_hubspot_crm::OAuthApi::new(http());
+    let oauth = concord_sdk_hubspot_crm::OAuthApi::new(
+        http(),
+        concord_sdk_hubspot_crm::OAuthApiConfig {
+            origin: concord::BaseUrl::from_static("https://api.hubspot.com"),
+        },
+    );
     c.assert_debug_absent("OAuth client", &oauth);
     c.assert_debug_absent("OAuth scope", &oauth.oauth());
     for oauth_failure in [false, true] {
@@ -164,13 +169,14 @@ async fn secrets_never_print() {
             if !oauth_failure {
                 // Use an unflagged HeaderValue: #[sensitive] must protect the config itself.
                 let config = CrmApiConfig {
+                    origin: concord::BaseUrl::parse(&base).unwrap(),
                     authorization: concord::reqwest::header::HeaderValue::from_str(&format!(
                         "Bearer {access}"
                     ))
                     .unwrap(),
                 };
                 c.assert_debug_absent("CrmApiConfig", &config);
-                let api = CrmApi::new(http(), config).with_base_url(&base).unwrap();
+                let api = CrmApi::new(http(), config);
                 let scope = api.contacts();
                 let get = scope.get("one");
                 let create = scope.create(CreateContact::default());

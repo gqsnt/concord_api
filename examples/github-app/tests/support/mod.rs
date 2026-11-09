@@ -47,6 +47,7 @@ pub fn github(api: SocketAddr, download: Option<SocketAddr>, token: &str) -> Git
     GitHubContext::new(
         http(api, download),
         GitHubConfig {
+            origin: concord::BaseUrl::from_static("https://api.github.com"),
             token: token.to_owned(),
         },
     )

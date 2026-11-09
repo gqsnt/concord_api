@@ -24,7 +24,7 @@ build on.
 | U30, R12 | `policies::collect_items` | finite cursor loop with an application bound; exact query strings asserted; the unused cursor is returned | `policies.rs` |
 | U30, R11, R12 | `policies::retry_bounded`, `policies::item_with_retry` | bounded retry around a request **factory** for a read-only GET; status/decode errors and timeouts are not retried; one `send()` is one execute | `policies.rs` |
 | U31, R10, R12 | `policies::items_admitted` | build (no I/O) → `Semaphore` permit → `send`; peak in flight ≤ permits (with a wide-semaphore control) | `policies.rs` |
-| U31, R12 | `policies::Session` | caller-updated authorization via the generated `set_key(..)`; requests and handles created earlier keep the old key | `policies.rs` |
+| U31, R12 | `policies::Session` | caller-updated authorization declared `mut key`, via generated `set_key(..)`; requests and handles created earlier keep the old key | `policies.rs` |
 
 ## Assumptions the recipes state, not Concord
 

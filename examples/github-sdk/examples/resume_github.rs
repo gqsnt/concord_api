@@ -16,6 +16,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let github = GitHubContext::new(
         http,
         GitHubConfig {
+            origin: concord::BaseUrl::from_static("https://api.github.com"),
             token: std::env::var("GITHUB_TOKEN")?,
         },
     );

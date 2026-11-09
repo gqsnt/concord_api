@@ -164,7 +164,12 @@ impl ClickHouse {
     /// A client of the server at `http://localhost:8123` (the documented default port) using
     /// `http` for every request; change the address with [`with_base_url`](Self::with_base_url).
     pub fn new(http: reqwest::Client, credentials: Credentials) -> Self {
-        let api = ClickHouseHttp::new(http);
+        let api = ClickHouseHttp::new(
+            http,
+            crate::wire::ClickHouseHttpConfig {
+                origin: concord::BaseUrl::from_static("http://localhost:8123"),
+            },
+        );
         let api = match credentials.0 {
             Auth::None => api,
             Auth::Basic(value) => api.set_authorization(value),
@@ -192,7 +197,17 @@ impl ClickHouse {
     /// Concord's `Build` error for a URL that is not `http`/`https` with a host.
     pub fn with_base_url(self, url: &str) -> Result<Self, Error> {
         Ok(Self {
-            api: self.api.with_base_url(url)?,
+            api: ClickHouseHttp::new(
+                self.api.http().clone(),
+                crate::wire::ClickHouseHttpConfig {
+                    origin: concord::BaseUrl::parse(url)?,
+                },
+            )
+            .maybe_authorization(self.api.authorization().cloned())
+            .maybe_user(self.api.user().cloned())
+            .maybe_key(self.api.key().cloned())
+            .maybe_database(self.api.database().cloned())
+            .maybe_quota_key(self.api.quota_key().cloned()),
         })
     }
 

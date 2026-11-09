@@ -1,5 +1,7 @@
 # FIRST_USE — fresh consumer of `concord-sdk-mediawiki-action-api` (SDK39)
 
+Historical author notes. P4.3 now fixes required handle values and declares checked runtime bases; see the current README and `docs/MIGRATION.md`.
+
 Role: fresh consumer (Claude, Agent-tool subagent). Requested/observed model and effort are
 recorded by the coordinator from harness metadata, not here. Date: 2026-11-07.
 Live provider calls: **NOT_RUN** — every call in `tests/first_use.rs` goes to
@@ -43,8 +45,7 @@ Written before `tests/first_use.rs` existed. Setup I expect for both workflows:
 
 ```rust
 let http = reqwest::Client::builder().redirect(Policy::none()).retry(retry::never()).timeout(..).build()?;
-let api = MediaWiki::new(http, MediaWikiConfig { user_agent: "...".into() })
-    .with_base_url(format!("{}/w/api.php", server.url()))?;
+let api = concord::BaseUrl::parse((format!("{}/w/api.php", server.url())).as_ref()).map(|origin| MediaWiki::new(http, MediaWikiConfig { origin: origin, user_agent: "...".into() }))?;
 let query = api.query();
 ```
 
@@ -139,8 +140,8 @@ early (silent truncation). The SDK path over the same fixture returns every memb
 ## First working call
 
 The first version of `tests/first_use.rs` was 30 lines: a fixture replying with one search
-hit, the README's transport configuration copied as-is, `MediaWiki::new(..).with_base_url(
-format!("{}/w/api.php", server.url()))`, then `api.query().search("General relativity").send()`.
+hit, the README's transport configuration copied as-is, `concord::BaseUrl::parse((
+format!("{}/w/api.php", server.url())).as_ref()).map(|origin| MediaWiki::new(.., MediaWikiConfig { origin: origin }))`, then `api.query().search("General relativity").send()`.
 Imports: `MediaWiki`, `MediaWikiConfig`, `concord::reqwest`, plus the testserver's
 `Recorded`, `Reply`, `TestServer`. It compiled and passed **on the first attempt**
 (`cargo test --locked --offline -p concord-sdk-mediawiki-action-api --test first_use`). The

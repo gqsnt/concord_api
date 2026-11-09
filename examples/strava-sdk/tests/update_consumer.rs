@@ -91,7 +91,12 @@ async fn edit_a_listed_activity_and_use_the_returned_activity() -> Res {
         _ => Reply::json(404, r#"{"message":"Record Not Found","errors":[]}"#),
     })
     .await;
-    let oauth = OAuth::new(transport(Duration::from_secs(5))?).with_base_url(server.url())?;
+    let oauth = OAuth::new(
+        transport(Duration::from_secs(5))?,
+        concord_sdk_strava::OAuthConfig {
+            origin: concord::BaseUrl::parse(&server.url())?,
+        },
+    );
     let tokens = oauth
         .oauth()
         .token(TokenRequest::authorization_code(
@@ -255,7 +260,12 @@ async fn athlete_who_did_not_grant_write_gets_a_typed_error_and_reads_still_work
     })
     .await;
     // The athlete unchecked activity:write on the consent screen; the exchange reports it.
-    let oauth = OAuth::new(transport(Duration::from_secs(5))?).with_base_url(server.url())?;
+    let oauth = OAuth::new(
+        transport(Duration::from_secs(5))?,
+        concord_sdk_strava::OAuthConfig {
+            origin: concord::BaseUrl::parse(&server.url())?,
+        },
+    );
     let tokens = oauth
         .oauth()
         .token(TokenRequest::authorization_code(

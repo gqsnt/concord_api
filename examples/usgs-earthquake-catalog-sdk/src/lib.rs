@@ -5,6 +5,7 @@ mod error;
 mod export;
 mod input;
 mod models;
+mod origin;
 mod policy;
 
 pub use concord;
@@ -16,6 +17,7 @@ pub use error::{Error, HttpFailure, HttpKind};
 pub use export::CsvExport;
 pub use input::{EventId, Magnitude, OrderBy, PageSize, Timestamp, Window};
 pub use models::{CsvRow, Feature, FeatureCollection, Metadata, Point, Properties};
+pub use origin::FixtureOrigin;
 pub use policy::{ERROR_BODY_LIMIT, Policy, Response, SUCCESS_BODY_LIMIT};
 
 use concord_codecs::Json;
@@ -27,8 +29,8 @@ pub type CatalogPages = Pages<Feature, NonZeroU64, (), Error>;
 
 concord::api! {
     /// Public earthquake catalog client. Always use a local base for this fixture-only capsule.
-    pub client Usgs {
-        base "https://earthquake.usgs.gov";
+    pub client Usgs(origin: FixtureOrigin) {
+        base origin;
         path "fdsnws/event/1";
         query { "nodata" = "404"; }
         response Json;

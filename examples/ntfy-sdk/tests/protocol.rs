@@ -122,7 +122,12 @@ async fn publish_without_options_sends_no_optional_header() {
 
 #[test]
 fn subscribe_and_poll_targets_and_accept() {
-    let ntfy = concord_sdk_ntfy::Ntfy::new(concord::reqwest::Client::new());
+    let ntfy = concord_sdk_ntfy::Ntfy::new(
+        concord::reqwest::Client::new(),
+        concord_sdk_ntfy::NtfyConfig {
+            origin: concord::BaseUrl::from_static("https://ntfy.sh"),
+        },
+    );
     let alerts = ntfy.topic(Topic::new("alerts").unwrap());
     let url = |p: &concord::reqwest::Request| p.url().as_str().to_owned();
 
@@ -189,7 +194,13 @@ fn domain_values_are_checked_before_any_request() {
 
 #[test]
 fn the_token_is_withheld_from_every_debug() {
-    let ntfy = concord_sdk_ntfy::Ntfy::new(concord::reqwest::Client::new()).with_token(&token());
+    let ntfy = concord_sdk_ntfy::Ntfy::new(
+        concord::reqwest::Client::new(),
+        concord_sdk_ntfy::NtfyConfig {
+            origin: concord::BaseUrl::from_static("https://ntfy.sh"),
+        },
+    )
+    .with_token(&token());
     let alerts = ntfy.topic(Topic::new("alerts").unwrap());
     let publish = alerts.publish(MessageText::new("hi").unwrap());
     let prepared = publish.clone().prepare().unwrap();

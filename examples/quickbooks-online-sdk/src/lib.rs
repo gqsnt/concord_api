@@ -139,9 +139,10 @@ concord::api! {
     /// Intuit's OAuth 2.0 token endpoint: both grants, client credentials in Basic
     /// authentication, a form body (secrets never in the URL).
     pub(crate) client TokenEndpoint(
+        origin: concord::BaseUrl,
         #[sensitive] header(concord::reqwest::header::AUTHORIZATION) client_credentials: concord::reqwest::header::HeaderValue,
     ) {
-        base "https://oauth.platform.intuit.com";
+        base origin;
         path "oauth2/v1/tokens";
         request concord::Form;
         response Json;

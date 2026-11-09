@@ -2,8 +2,8 @@
 //! of the JSON operations.
 //!
 //! B2 issues the hosts at run time (`apiUrl`, `downloadUrl` from `b2_authorize_account`, an
-//! opaque `uploadUrl` from `b2_get_upload_url`). The declared base is the documented account host;
-//! the SDK binds each role's scope handle to the URL B2 issued for it (`with_base_url`), and the
+//! opaque `uploadUrl` from `b2_get_upload_url`). Each handle declares its checked `origin` value;
+//! the SDK constructs each role's scope from the URL B2 issued for it, and the
 //! upload request moves to the issued upload URL with `Prepared::follow`.
 
 use std::collections::BTreeMap;
@@ -17,8 +17,8 @@ use crate::error::{Error, ProviderError, WireErrorDocument};
 
 concord::api! {
     /// Backblaze B2 Native API v4: the operations of this slice.
-    pub client B2Wire {
-        base "https://api.backblazeb2.com";
+    pub client B2Wire(origin: concord::BaseUrl) {
+        base origin;
         path "b2api/v4";
         format Json;
         limit crate::JSON_BODY_LIMIT;
@@ -220,14 +220,13 @@ mod tests {
     }
 
     /// Why the upload request is moved with `follow` instead of binding the issued URL as the
-    /// base: the documented query form of `uploadUrl` is not a base `with_base_url` accepts.
+    /// base: the documented query form of `uploadUrl` is not a `BaseUrl` accepts.
     #[test]
     fn the_documented_query_form_upload_url_is_not_a_base() {
         let issued = "https://pod-000-1005-03.backblaze.com/b2api/v4/b2_upload_file?cvt=c001_v0001005_t0027&bucket=4a48fe8875c6214145260818";
-        let wire = B2Wire::new(concord::reqwest::Client::new());
-        let error = wire.clone().with_base_url(issued).unwrap_err();
+        let error = concord::BaseUrl::parse(issued).unwrap_err();
         assert_eq!(error.kind(), concord::ErrorKind::Build);
         let path_form = "https://pod-000-1007-13.backblaze.com/b2api/v4/b2_upload_file/4a48fe8875c6214145260818/c001_v0001007_t0042";
-        assert!(wire.with_base_url(path_form).is_ok());
+        assert!(concord::BaseUrl::parse(path_form).is_ok());
     }
 }

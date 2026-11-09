@@ -29,9 +29,9 @@ async fn browse_fixture(script_url: &str) -> Result<(), Box<dyn std::error::Erro
         .retry(reqwest::retry::never())
         .timeout(Duration::from_secs(30))
         .build()?;
-    let api = MediaWiki::new(http, MediaWikiConfig {
+    let api = concord::BaseUrl::parse((script_url).as_ref()).map(|origin| MediaWiki::new(http, MediaWikiConfig { origin: origin,
         user_agent: "MyWikiReader/1.0 (contact: maintainer@example.invalid)".into(),
-    }).with_base_url(script_url)?;
+    }))?;
     let query = api.query();
 
     let found = query.search("Rust programming language").set_srlimit(10).send().await?;

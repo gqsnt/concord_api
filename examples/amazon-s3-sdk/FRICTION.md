@@ -1,5 +1,7 @@
 # Friction log: the Amazon S3 SDK on Concord 4.2.0 (candidate `94d13527`)
 
+Historical author notes. P4.3 now fixes required handle values and declares checked runtime bases; see the current README and `docs/MIGRATION.md`.
+
 Written while implementing `examples/amazon-s3-sdk` from scratch against the public API of
 `concord` (DSL, `Prepared`, `Decoder`, `Received`, `Encode`/`Decode`/`Incremental`, `Operation`)
 and `concord-pagination` (`Pages`). Nothing in `crates/`, `docs/`, `scripts/`, `checks/` or other

@@ -129,12 +129,13 @@ concord::api! {
         #[sensitive] header(AUTHORIZATION) authorization: HeaderValue,
         /// `Stripe-Version`, sent on every request so that the account's default version is
         /// never followed silently.
-        header("stripe-version") version: String = PINNED_API_VERSION,
+        version: ApiVersion = ApiVersion::pinned(),
         /// `Stripe-Account`: the connected account requests act on. Absent: the platform's own
         /// account.
-        #[sensitive] header("stripe-account") account?: HeaderValue,
+        #[sensitive] account?: AccountId,
     ) {
         base "https://api.stripe.com/v1";
+        headers { "stripe-version" = "{version}"; "stripe-account" = "{account}"; }
         request StripeForm;
         response Json;
 

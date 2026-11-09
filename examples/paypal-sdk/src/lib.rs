@@ -64,7 +64,7 @@ concord::api! {
         /// Credentials, token cache and repetition rules; [`PayPal::builder`] creates it.
         session: Session,
     ) {
-        base "https://api-m.sandbox.paypal.com";
+        base session;
         format Json;
         limit BODY_LIMIT;
         send session -> Result<_, Error>;
@@ -269,7 +269,7 @@ impl Builder {
             self.clock,
         )?;
         let api = PayPal::new(self.http, PayPalConfig { session });
-        Ok(api.with_base_url(&base)?)
+        Ok(api)
     }
 }
 

@@ -22,7 +22,14 @@ pub fn client(server: &TestServer) -> Usgs {
         .timeout(Duration::from_secs(5))
         .build()
         .unwrap();
-    Usgs::new(http).with_base_url(server.url()).unwrap()
+    concord_sdk_usgs_earthquake_catalog::FixtureOrigin::parse((server.url()).as_ref())
+        .map(|origin| {
+            Usgs::new(
+                http,
+                concord_sdk_usgs_earthquake_catalog::UsgsConfig { origin },
+            )
+        })
+        .unwrap()
 }
 
 pub fn filter(size: u16) -> Window {

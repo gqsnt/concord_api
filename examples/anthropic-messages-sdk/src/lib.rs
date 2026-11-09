@@ -76,7 +76,7 @@ concord::api! {
     /// header reqwest does not drop when a redirect changes the host.
     pub client Anthropic(
         /// The API key, sent as `x-api-key`; never printed by Concord.
-        #[sensitive] header("x-api-key") api_key: String,
+        #[sensitive] header("x-api-key") mut api_key: String,
         /// The `anthropic-version` header ([`API_VERSION`] by default).
         header("anthropic-version") anthropic_version: String = API_VERSION,
     ) {

@@ -1,12 +1,12 @@
 # Migration
 
-Migration paths, newest first: runtime operations and paging, SDK-owned formatting, the QuickBooks environment repair (T4), the interface consolidation (unreleased candidate), 4.1 to 4.2 (a maintenance release; summary in the [changelog](../CHANGELOG.md)), then
+Migration paths, newest first: construction facts, runtime operations and paging, SDK-owned formatting, the QuickBooks environment repair (T4), the interface consolidation (unreleased candidate), 4.1 to 4.2 (a maintenance release; summary in the [changelog](../CHANGELOG.md)), then
 the two parts of 4.1.0 (the modular V4), then older ones:
 
+- [Construction facts (P4.3)](#construction-facts-p43) — fixed handle values, checked runtime bases and borrowed getters.
 - [Runtime operations and paging (P4.2)](#runtime-operations-and-paging-p42) — one send trait and private inventories.
 - [SDK-owned formatting](#sdk-owned-formatting) — declarative Debug redaction and scalar serde Display.
-- [QuickBooks environment replacement (T4)](#quickbooks-environment-replacement-t4) — no source
-  change; a replacement connection selects its environment's official HTTPS host on send.
+- [QuickBooks environment replacement (T4)](#quickbooks-environment-replacement-t4) — the connection selects its destination during preparation; fixtures select it on each connection.
 - [To the consolidated interface](#to-the-consolidated-interface) — additive: existing code
   compiles (one rare exception: a generated name, below); the new response, body, stream and
   pagination boundaries, declared limits and send results, parameter groups and `query(..)` values
@@ -49,18 +49,44 @@ and ignores outer formatter flags. Unlike `WireDisplay`, it panics when the type
 as a scalar (serde_plain's documented contract); Concord does not catch the panic, so a test that
 places each such type once finds the mistake.
 
+## Construction facts (P4.3)
+
+**Breaking:** required client and scope values are fixed. Declare `mut` only for values that
+can change during a handle's lifetime, such as same-account credential rotation, a replaceable
+send policy or a signer. Otherwise construct a new client or re-enter the scope. Optional and
+initialized values and endpoint arguments retain their setters.
+
+`base origin;` reads a checked `AsRef<concord::BaseUrl>` client value. Such a client has no
+`with_base_url`; supply the destination before attaching credentials. Every value has a borrowed
+getter, with crate-only access for sensitive values, send policies and whole-header values.
+Sensitive bases also withhold `base_url()` outside the crate and remain redacted in Debug.
+
+Runtime destinations are now required Config values in GitHub, GitLab, Kubernetes, ClickHouse,
+MediaWiki, ntfy, Mailgun, S3, registry, B2, Drive, Graph, Snowflake, Elasticsearch, HubSpot, Xero
+and the fixture-only USGS capsule (`FixtureOrigin` restricts it to loopback). PayPal and Strava take their destination from the session.
+Their convenience constructors retain documented defaults. DigitalOcean Config requires a checked
+`Destination`; Sentry Config requires a checked `Deployment`, with `Sentry::at` for self-hosted
+installations and fixtures. Neither exposes destination replacement on a credential-bearing handle.
+Mastodon uses a separate advertised streaming handle and keeps its instance-binding checks.
+Salesforce requires `instance` and `SupportedVersion`; Datadog Config requires `destination` and
+checked keys; Zendesk requires a checked `Account`; QuickBooks derives its base from `Connection`.
+Stripe's version and account values now use `ApiVersion` and `AccountId` directly.
+GitHub `RepoContext::repo()` returns an owned `RepoRef` assembled from scope getters; callers
+that previously cloned the borrowed result can use it directly.
+
 ## QuickBooks environment replacement (T4)
 
 In `quickbooks-online-sdk`, `QuickBooks::connect(http, sandbox_connection)` followed by
 `set_connection(production_connection)` now sends to `quickbooks.api.intuit.com`; the reverse
 switch sends to `sandbox-quickbooks.api.intuit.com`. Previously the generated base snapshot kept
-the old environment's host while the realm and token source changed. Call sites need no change.
+the old environment's host while the realm and token source changed. `prepare()` now shows the replacement connection's host.
 
-The connection's send policy reselects only the host of requests to either official HTTPS host,
-before token acquisition. Same-environment calls and loopback fixture origins keep their wire
-behavior. `prepare()` remains token-free and shows the generated base snapshot; native execution
-of that request bypasses this policy. Scopes and requests already created keep their original
-connection and destination.
+`base connection;` binds the destination to the whole connection: realm, credential source and
+policy rotate together through `mut connection`. `prepare()` remains token-free. Fixture callers
+construct each replacement with `Connection::for_fixture` so its loopback destination is explicit;
+the client has no `with_base_url`. Scopes and requests already created keep their original
+connection and destination. The native `SendWith` extension retains its official-host rewrite
+for hand-written endpoints.
 
 ## Runtime operations and paging (P4.2)
 
@@ -855,7 +881,7 @@ statements, which replaced the intermediate `T via R` and in-place spellings):
 | `override "k" = optional;` | `override "k" = optional else inherit;` | required when the source can be absent |
 | `"k" = v; remove "k";` in one owner | compile error | `remove` acts first now; delete both statements |
 | `error.into_response() -> Option<Response>` | `-> Result<Response, Error>` | `let response = error.into_response()?;` |
-| no setter for required values | `set_x` for every value | rename an endpoint that is called `set_<value>` |
+| required handle values | fixed unless declared `mut` | endpoint values retain setters; mark actual handle rotation explicitly |
 
 Additions that need no change: `#[cfg(..)]` and `#[deprecated(..)]` on scopes and endpoints,
 `Decoder::finish`, the format error implements `std::error::Error` (then `BodyError`, now
@@ -879,7 +905,7 @@ Refined:
 use concord::reqwest;
 
 concord::api! {
-    pub client Search(header("x-app-id") app_id: String, #[sensitive] header("x-api-key") key: String) {
+    pub client Search(header("x-app-id") app_id: String, #[sensitive] header("x-api-key") mut key: String) {
         base "https://search.example.com";
         GET health() { path "health"; }
     }
@@ -889,7 +915,7 @@ fn main() {
     let config = SearchConfig { app_id: "app-1".into(), key: "secret".into() };
     let api = Search::new(reqwest::Client::new(), config);
 
-    // Every value now has a setter, so rotating a key keeps `with_base_url` and the other values.
+    // `mut key` permits credential rotation; app_id remains fixed.
     let _rotated = api.set_key("new-secret");
 }
 ```
@@ -1210,12 +1236,12 @@ There is no converter; declarations are short enough to rewrite by hand. V3 is p
 
 | V3 | V4 |
 |---|---|
-| `credentials { ... }`, `auth { ... }`, `SecretString`, token refresh | a `#[sensitive]` header or query value: `#[sensitive] header("authorization") token: String`. Refresh by calling `set_token(..)` on the client handle (requests created earlier keep the old value). |
+| `credentials { ... }`, `auth { ... }`, `SecretString`, token refresh | a `#[sensitive]` header or query value: `#[sensitive] header("authorization") mut token: String`. Refresh by calling `set_token(..)` on the client handle (requests created earlier keep the old value). |
 | `rate_limits`, `rate_limit` | outside Concord (e.g. a semaphore around `send()`; see the [recipes](RECIPES.md)). |
 | retry policies, `effect` | application code around `send()`; whether a request may be replayed is your decision ([recipes](RECIPES.md)). |
 | `paginate`, `.pages()`, `.collect_all()` | call the endpoint again with the next cursor (`maybe_cursor(next)`). |
 | `configure_http`, `configure_runtime`, `timeout` | configure the `reqwest::Client` you pass to `new`; per request: `prepare()?.into_parts()` + `timeout_mut()`. |
-| built-in base URL only | `base "..."` plus `with_base_url(..)` at runtime. |
+| built-in base URL only | `base "..."` for fixed origins; `base origin;` with a checked client value for runtime origins. |
 | `Client::builder()...build()?` | `Client::new(http, ClientConfig { .. })` — required values are fields of the generated config struct, checked by the compiler. |
 | `.await` on a request | `.send().await` (explicit verb). |
 | `response Json;` defaults, `via Json` | `format Json;` (or `request Json;` / `response Json;`, with `use concord::Json;`) on the client, a scope or an endpoint, the nearest one winning; payloads name types only (`body b: T`, `-> T`). Without `->` nothing is decoded. |

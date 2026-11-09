@@ -33,7 +33,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .redirect(redirect_policy())
         .timeout(std::time::Duration::from_secs(120))
         .build()?;
-    let github = GitHubContext::new(http, GitHubConfig { token });
+    let github = GitHubContext::new(
+        http,
+        GitHubConfig {
+            origin: concord::BaseUrl::from_static("https://api.github.com"),
+            token,
+        },
+    );
     let repo = github.repo(RepoRef::new(owner, name));
     let limit = 64 * 1024 * 1024;
     let two = NonZeroUsize::new(2).expect("2 > 0");

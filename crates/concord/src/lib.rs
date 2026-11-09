@@ -91,7 +91,7 @@
 //! | `scope repo(..)` | `ForgeRepo`, a handle | `client()`, value getters, `set_*`/`maybe_*`, `issues()`, `create_issue(..)` |
 //! | `GET issues(..)` | `ForgeRepoIssues`, a request value | `set_*`/`maybe_*`, `prepare()`, `send()` |
 //!
-//! Each value `x` gets `set_x(v)`; an optional value (`x?: T`) also gets `maybe_x(Option<T>)`.
+//! Each settable value `x` gets `set_x(v)`; an optional value (`x?: T`) also gets `maybe_x(Option<T>)`.
 //! A required client or scope value is fixed for the handle's life unless declared `mut x: T`.
 //! Client and scope values are read with `x()` (crate-only for sensitive values and whole header
 //! values). A sensitive value-backed base also makes `base_url()` crate-only and withholds rendered URLs.

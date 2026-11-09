@@ -9,6 +9,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let github = GitHub::new(
         reqwest::Client::new(),
         GitHubConfig {
+            origin: concord::BaseUrl::from_static("https://api.github.com"),
             token: "synthetic-example-token".into(),
         },
     );

@@ -198,8 +198,13 @@ async fn secrets_never_print() {
             .unwrap();
         let mut raw_header = HeaderValue::from_str(&format!("Bearer {raw_token}")).unwrap();
         raw_header.set_sensitive(false);
-        let raw = Kube::new(http())
-            .with_base_url(&url)
+        let raw = concord::BaseUrl::parse(url.as_ref())
+            .map(|origin| {
+                Kube::new(
+                    http(),
+                    concord_example_kubernetes_sdk::KubeConfig { origin },
+                )
+            })
             .unwrap()
             .set_authorization(raw_header);
         let ns = kube.namespace(NamespaceName::new("team-a").unwrap());

@@ -710,13 +710,20 @@ async fn unreadable_creation_and_local_validation() {
     assert!(MessageLimit::new(0).is_err());
     assert!(MessageLimit::new(101).is_err());
     let bad_token = "fixture-private-token\r\ninvalid";
-    let error = discord
-        .set_token(bad_token.to_owned())
-        .channel(ChannelId::new(SALES))
-        .messages()
-        .send()
-        .await
-        .unwrap_err();
+    let error = concord_sdk_discord_rest::Discord::new(
+        discord.http().clone(),
+        concord_sdk_discord_rest::DiscordConfig {
+            token: bad_token.to_owned(),
+            limiter: RateLimiter::new(),
+        },
+    )
+    .with_base_url(discord.base_url().as_str())
+    .unwrap()
+    .channel(ChannelId::new(SALES))
+    .messages()
+    .send()
+    .await
+    .unwrap_err();
     assert_safe(&error);
     assert!(!format!("{error:?}; {error}").contains("fixture-private-token"));
     assert!(matches!(error, Error::Concord { error, .. } if error.kind() == ErrorKind::Build));

@@ -592,8 +592,8 @@ async fn control_the_default_redirect_policy_forwards_the_token() {
         .retry(concord::reqwest::retry::never())
         .build()
         .unwrap();
-    let gitlab = GitLab::with_token(http, PrivateToken::new(TOKEN).unwrap())
-        .with_base_url(base(&server))
+    let gitlab = concord::BaseUrl::parse((base(&server)).as_ref())
+        .map(|origin| GitLab::at(http, origin, PrivateToken::new(TOKEN).unwrap()))
         .unwrap();
     gitlab
         .project(widgets())

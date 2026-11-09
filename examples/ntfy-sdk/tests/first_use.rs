@@ -30,8 +30,8 @@ fn alerts(server: &TestServer) -> NtfyTopic {
         .connect_timeout(DEADLINE)
         .build()
         .unwrap();
-    Ntfy::new(http)
-        .with_base_url(server.url())
+    concord::BaseUrl::parse((server.url()).as_ref())
+        .map(|origin| Ntfy::new(http, concord_sdk_ntfy::NtfyConfig { origin }))
         .unwrap()
         .with_token(&AccessToken::new(TOKEN).unwrap())
         .topic(Topic::new("first-use").unwrap())

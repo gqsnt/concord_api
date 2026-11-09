@@ -293,8 +293,8 @@ pub enum Error {
     Http(Box<HttpError>),
     /// A create, authorize, capture or void may have been applied.
     Uncertain(Box<Uncertain>),
-    /// The request's origin is not the one the session's credentials are bound to (the client
-    /// was moved with `with_base_url`); nothing was sent and no token was requested.
+    /// The request's origin is not the one the session's credentials are bound to (a native policy call
+    /// supplied an endpoint for another destination); nothing was sent and no token was requested.
     Destination,
     /// The overall read deadline elapsed before any attempt completed.
     Deadline,

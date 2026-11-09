@@ -33,8 +33,8 @@ mod wire {
     use super::*;
     use crate::policy::Policy;
     concord::api! {
-        pub client Accounting(policy:Policy) {
-            base "https://api.xero.com";
+        pub client Accounting(origin: concord::BaseUrl, policy:Policy) {
+            base origin;
             path "api.xro/2.0";
             format concord::Json;
             limit BODY_LIMIT;
@@ -98,10 +98,10 @@ impl Xero {
         let api = wire::Accounting::new(
             http,
             wire::AccountingConfig {
+                origin: concord::BaseUrl::parse(accounting)?,
                 policy: policy::Policy::new(auth),
             },
-        )
-        .with_base_url(accounting)?;
+        );
         Ok(Self { api, tenant })
     }
     /// Enter only the tenant authorized for this credential journal.

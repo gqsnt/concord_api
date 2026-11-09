@@ -40,7 +40,7 @@ Written before any test code. "Wire" = what `examples/testserver`'s `Recorded` w
 
 - Caller builds `reqwest::Client` (via `concord_sdk_usgs_earthquake_catalog::concord::reqwest`)
   with a timeout, `redirect::Policy::none()`, `retry::never()`, then
-  `Usgs::new(http).with_base_url(server.url())?` (base without `/fdsnws/event/1`) and
+  `concord::BaseUrl::parse((server.url()).as_ref()).map(|origin| Usgs::new(http, concord_sdk_usgs_earthquake_catalog::UsgsConfig { origin: origin }))?` (base without `/fdsnws/event/1`) and
   `api.catalog()`. No I/O until a `send()`/`next_page()`/`next()`.
 - Filter: `Window::new(start, end)?.min_magnitude(Magnitude::new(2.5)?).with_page_size(PageSize::new(2)?)`.
   Start given as `2024-03-01T02:00:00+02:00` should normalize to UTC on the wire.
@@ -124,7 +124,7 @@ Failures:
 `tests/first_use.rs`, an initial `first_call` test (since replaced by the full file): a
 `TestServer` answering every request with one hand-written FeatureCollection, a reqwest client
 with `redirect::Policy::none()` and `retry::never()` (copied from the README), then
-`Usgs::new(http).with_base_url(server.url())?.catalog().query(&Window::new(..)?).geojson().send().await?`.
+`concord::BaseUrl::parse((server.url()).as_ref()).map(|origin| Usgs::new(http, concord_sdk_usgs_earthquake_catalog::UsgsConfig { origin: origin }))?.catalog().query(&Window::new(..)?).geojson().send().await?`.
 
 - It compiled and passed on the **first attempt**; no source lookup and no extra imports beyond
   `{concord::reqwest, Usgs, Window}` and `concord_testserver::{Reply, TestServer}`.

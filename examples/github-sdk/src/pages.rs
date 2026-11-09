@@ -16,7 +16,7 @@
 //! use concord_example_github_sdk::params::PerPage;
 //!
 //! # async fn run() -> Result<(), Box<dyn std::error::Error>> {
-//! let github = GitHubContext::new(Default::default(), GitHubConfig { token: "t".into() });
+//! let github = GitHubContext::new(Default::default(), GitHubConfig { origin: concord::BaseUrl::from_static("https://api.github.com"), token: "t".into() });
 //! let repo = github.repo(RepoRef::new("octo-org", "hello-world"));
 //! let per_page = PerPage::new(50)?;
 //! let comments = repo.issue_comment_pages(IssueNumber(7), |op| op.set_per_page(per_page));
@@ -184,7 +184,13 @@ mod tests {
     /// `listing_id` gives the endpoint they prepare.
     #[test]
     fn every_factory_binds_the_listing_id_of_its_endpoint() {
-        let github = GitHubContext::new(Default::default(), GitHubConfig { token: "t".into() });
+        let github = GitHubContext::new(
+            Default::default(),
+            GitHubConfig {
+                origin: concord::BaseUrl::from_static("https://api.github.com"),
+                token: "t".into(),
+            },
+        );
         let repo = github.repo(RepoRef::new("octo-org", "hello-world"));
         let id = |operation: concord::Operation| {
             GitHubOperation::from_operation(operation).and_then(listing_id)

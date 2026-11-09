@@ -75,6 +75,7 @@ pub fn context(api: SocketAddr, token: &str) -> GitHubContext {
     GitHubContext::new(
         http(api, None),
         GitHubConfig {
+            origin: concord::BaseUrl::from_static("https://api.github.com"),
             token: token.to_owned(),
         },
     )

@@ -36,8 +36,8 @@ impl<T: Send> SendWith<T> for TokenPolicy {
     }
 }
 concord::api! {
-    client OAuth(#[sensitive] header(AUTHORIZATION) credential:HeaderValue) {
-        base "https://identity.xero.com";
+    client OAuth(origin: concord::BaseUrl, #[sensitive] header(AUTHORIZATION) credential:HeaderValue) {
+        base origin;
         request concord::Form;
         response concord::Json;
         limit 64*1024;
@@ -65,7 +65,13 @@ impl Auth {
         let (scopes, _) = store.info()?;
         let credential = concord_auth::basic(store.client_id(), secret)
             .map_err(|_| Error::input("invalid OAuth client credentials"))?;
-        let oauth = OAuth::new(http, OAuthConfig { credential }).with_base_url(token_base)?;
+        let oauth = OAuth::new(
+            http,
+            OAuthConfig {
+                origin: concord::BaseUrl::parse(token_base)?,
+                credential,
+            },
+        );
         Ok(Self {
             store,
             scopes,

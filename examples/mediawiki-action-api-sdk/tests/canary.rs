@@ -36,11 +36,16 @@ fn api(base: &str, user_agent: &str) -> MediaWiki {
         .build()
         .unwrap();
     let config = MediaWikiConfig {
+        origin: concord::BaseUrl::from_static("https://en.wikipedia.org/w/api.php"),
         user_agent: user_agent.into(),
     };
-    MediaWiki::new(http, config)
-        .with_base_url(format!("{base}/w/api.php"))
-        .unwrap()
+    MediaWiki::new(
+        http,
+        MediaWikiConfig {
+            origin: concord::BaseUrl::parse(&format!("{base}/w/api.php")).unwrap(),
+            ..config
+        },
+    )
 }
 
 fn param(r: &Recorded, name: &str) -> Option<String> {
@@ -136,6 +141,7 @@ async fn secrets_never_print() {
     let category_next = c.issue();
     let problem = format!(r#"{{"error":{{"code":"{code}","info":"{info}"}}}}"#);
     let config = MediaWikiConfig {
+        origin: concord::BaseUrl::from_static("https://en.wikipedia.org/w/api.php"),
         user_agent: user_agent.clone(),
     };
     c.assert_debug_absent("config", &config);

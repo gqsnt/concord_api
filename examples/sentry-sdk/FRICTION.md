@@ -1,5 +1,7 @@
 # Concord adaptation costs
 
+Historical author notes. P4.3 now fixes required handle values and declares checked runtime bases; see the current README and `docs/MIGRATION.md`.
+
 Baseline remains frozen; **no shared crate changes were made**. This is an
 **example-assisted** result. Evidence below consists of source/API contracts read, code written
 in this package and fixture observations, not private reasoning transcripts.

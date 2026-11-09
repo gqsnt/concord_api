@@ -43,12 +43,13 @@ concord::api! {
     /// returns the open [`crate::watch::WatchStream`] without reading the body;
     /// [`crate::watch::open`] opens the same declared operation with a caller-configured reader.
     pub client Kube(
+        origin: concord::BaseUrl,
         /// `Authorization: Bearer <token>` (see [`crate::BearerToken::header_value`]). Absent:
         /// no `Authorization` header (an authenticating proxy such as `kubectl proxy`, or a
         /// transport that authenticates with client certificates).
         #[sensitive] header(AUTHORIZATION) authorization?: HeaderValue,
     ) {
-        base "https://kubernetes.default.svc";
+        base origin;
         format Json;
 
         /// The parameters every list endpoint (`GET .../{plural}`) shares.

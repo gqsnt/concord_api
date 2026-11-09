@@ -26,8 +26,7 @@ fn alerts() -> Result<NtfyTopic, Box<dyn std::error::Error>> {
     let http = reqwest::Client::builder()
         .connect_timeout(std::time::Duration::from_secs(10))
         .build()?;
-    let ntfy = Ntfy::new(http)                            // https://ntfy.sh
-        .with_base_url("https://ntfy.example.test")?      // or a self-hosted server
+    let ntfy = Ntfy::new(http, concord_sdk_ntfy::NtfyConfig { origin: concord::BaseUrl::parse("https://ntfy.example.test")? }) // this server
         .with_token(&AccessToken::new("synthetic-token-not-real")?); // optional
     Ok(ntfy.topic(Topic::new("alerts")?))
 }

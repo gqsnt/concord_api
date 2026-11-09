@@ -88,9 +88,13 @@ async fn four_wire_shapes_encode_segments_and_keep_trailing_slashes() {
 #[tokio::test]
 async fn default_queries_and_retained_base_prefix() {
     let server = TestServer::start(|_: &Recorded| Reply::json(200, "[]")).await;
-    let api = support::api(&server, support::settings())
-        .with_base_url(format!("{}/proxy", server.url()))
-        .unwrap();
+    let api = Sentry::at(
+        http_client().unwrap(),
+        concord_sdk_sentry::Deployment::parse(format!("{}/proxy", server.url())).unwrap(),
+        "synthetic-bearer-secret",
+        SendPolicy::new(support::settings()).unwrap(),
+    )
+    .unwrap();
     api.organization("acme").issues().send().await.unwrap();
     api.organization("acme")
         .issue("202")
@@ -123,13 +127,12 @@ async fn credentials_build_errors_and_debug_do_not_print_secrets() {
     let mut authorization = HeaderValue::from_static("Bearer synthetic-bearer-secret");
     authorization.set_sensitive(true);
     let config = SentryConfig {
+        deployment: concord_sdk_sentry::Deployment::parse(server.url()).unwrap(),
         authorization,
         policy,
     };
     assert_redacted(&format!("{config:?}"));
-    let api = Sentry::new(http_client().unwrap(), config)
-        .with_base_url(server.url())
-        .unwrap();
+    let api = Sentry::new(http_client().unwrap(), config);
     let org = api.organization("acme");
     let op = org
         .issues()

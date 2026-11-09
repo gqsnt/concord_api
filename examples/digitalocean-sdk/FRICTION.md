@@ -1,5 +1,7 @@
 # Concord costs and decisions
 
+Historical author notes. P4.3 now fixes required handle values and declares checked runtime bases; see the current README and `docs/MIGRATION.md`.
+
 Baseline `c3fd4f1ee30c1727e26b285270f2cc8d8b694e77`; no shared changes made.
 Example assistance and exact files/snippets consulted are inventoried in
 [PROVENANCE.md](PROVENANCE.md). Observable diagnostics and decisions follow; no private

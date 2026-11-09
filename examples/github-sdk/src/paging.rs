@@ -405,7 +405,7 @@ impl<Op: LinkContinuation<R> + Clone + Send, R: Listing + Send> LinkPages<Op, R>
     ) -> Self {
         Self {
             context: repo.context().clone(),
-            binding: Binding::new(operation_id, repo.repo().clone(), parent),
+            binding: Binding::new(operation_id, repo.repo(), parent),
             operation,
             output: PhantomData,
         }

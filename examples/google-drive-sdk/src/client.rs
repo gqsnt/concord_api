@@ -37,6 +37,14 @@ impl Default for ClientConfig {
     }
 }
 
+// Runtime bounds are behavior; the destination is held only by DriveApi.
+#[derive(Clone, Debug)]
+pub(crate) struct Limits {
+    pub(crate) max_response_bytes: usize,
+    pub(crate) max_error_bytes: usize,
+    pub(crate) max_chunk_bytes: usize,
+}
+
 /// Sends `authorization: Bearer <token>` from the constructor's raw bearer token.
 /// Upload-specific header sources are documented on the upload wrappers.
 ///
@@ -49,8 +57,7 @@ impl Default for ClientConfig {
 pub struct DriveClient {
     #[public]
     pub(crate) api: DriveApi,
-    pub(crate) origin: Url,
-    pub(crate) config: ClientConfig,
+    pub(crate) config: Limits,
 }
 
 /// File-page traversal. Bounds and failures retain resumable positions and accepted prefixes.
@@ -112,11 +119,20 @@ impl DriveClient {
             .timeout(config.timeout)
             .build()
             .map_err(|_| Error::invalid("could not construct HTTP transport"))?;
-        let api = DriveApi::new(http, DriveApiConfig { token }).with_base_url(origin.as_str())?;
+        let api = DriveApi::new(
+            http,
+            DriveApiConfig {
+                origin: concord::BaseUrl::parse(origin.as_str())?,
+                token,
+            },
+        );
         Ok(Self {
             api,
-            origin,
-            config,
+            config: Limits {
+                max_response_bytes: config.max_response_bytes,
+                max_error_bytes: config.max_error_bytes,
+                max_chunk_bytes: config.max_chunk_bytes,
+            },
         })
     }
 

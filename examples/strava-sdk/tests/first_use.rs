@@ -236,7 +236,12 @@ async fn w1_authorize_page_activities_then_get_one() -> Res {
 
     // 1. The application validated `state` and the accepted `scope` on the callback; exchange the code.
     let credentials = credentials();
-    let oauth = OAuth::new(transport(Duration::from_secs(5))?).with_base_url(server.url())?;
+    let oauth = OAuth::new(
+        transport(Duration::from_secs(5))?,
+        concord_sdk_strava::OAuthConfig {
+            origin: concord::BaseUrl::parse(&server.url())?,
+        },
+    );
     let grant =
         TokenRequest::authorization_code(&credentials, "c0de-from-validated-callback".into())?;
     let exchanged = oauth.oauth().token(grant).send().await?;

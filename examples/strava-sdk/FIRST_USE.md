@@ -51,7 +51,7 @@ Common set-up for both workflows (my plan, from the README):
 
 ### OAuth (prerequisite)
 
-- `OAuth::new(transport(timeout)?).with_base_url(server.url())?.oauth().token(TokenRequest::authorization_code(&credentials, code)?).send().await?`
+- `concord::BaseUrl::parse((server.url()).as_ref()).map(|origin| OAuth::new(transport(timeout)?, concord_sdk_strava::OAuthConfig { origin: origin }))?.oauth().token(TokenRequest::authorization_code(&credentials, code)?).send().await?`
 - Wire: `POST /oauth/token`, no query, `content-type: application/x-www-form-urlencoded`, body pairs
   `client_id=…&client_secret=…&code=…&grant_type=authorization_code` (order unknown), no `authorization`
   header. Returns `Response<Tokens>`; `attempts == 1`.
@@ -222,8 +222,7 @@ Results (observed, local, 2026-11-07):
 2. **`OAuthOauth` / `OAuthOauthToken` and `oauth.oauth().token(..)`.** The generated scope type names stutter
    (client `OAuth`, scope `oauth`). Not imported, but they head the rustdoc struct list and the call chain
    reads oddly. Harmless.
-3. **Two ways to point OAuth at a server.** The exchange uses the generated `OAuth::new(transport(..)?)
-   .with_base_url(url)?`, while the session takes `oauth_origin` as a `connect` argument. The README shows
+3. **Two ways to point OAuth at a server.** The exchange uses the generated `concord::BaseUrl::parse((url).as_ref()).map(|origin| OAuth::new(transport(..)?, concord_sdk_strava::OAuthConfig { origin: origin }))?`, while the session takes `oauth_origin` as a `connect` argument. The README shows
    the production form only; I worked it out from `with_base_url`'s doc. `Session::connect`'s doc does not
    say that `/api/v3` is appended to `origin` (I inferred it from the endpoint docs; it was right).
 4. **`Tokens` for a reloaded row.** No constructor; the struct literal forces `token_type`, `expires_in`,

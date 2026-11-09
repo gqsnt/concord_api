@@ -27,7 +27,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .redirect(redirect_policy())
         .timeout(std::time::Duration::from_secs(30))
         .build()?;
-    let github = GitHubContext::new(http, GitHubConfig { token });
+    let github = GitHubContext::new(
+        http,
+        GitHubConfig {
+            origin: concord::BaseUrl::from_static("https://api.github.com"),
+            token,
+        },
+    );
     let repo = github.repo(RepoRef::new(owner, name));
     let one = NonZeroUsize::MIN;
     let report = activity_audit(

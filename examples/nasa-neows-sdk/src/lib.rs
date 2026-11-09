@@ -58,7 +58,7 @@ pub struct PageInfo {
 
 concord::api! {
     /// NASA NeoWs client. Supply your API key in [`NeoWsConfig`].
-    pub client NeoWs(#[sensitive] api_key: String) {
+    pub client NeoWs(#[sensitive] mut api_key: String) {
         base "https://api.nasa.gov/neo/rest/v1";
         query { "api_key" = api_key; }
         format Json;

@@ -289,10 +289,11 @@ optional or defaulted value is refused at compile time. Amazon S3 (Excerpt of
 `examples/amazon-s3-sdk/src/api.rs`):
 ```rust,ignore
 pub client S3Api(
+    origin: concord::BaseUrl,
     /// The SigV4 context and send policy of every operation.
-    signer: Signer,
+    mut signer: Signer,
 ) {
-    base "https://s3.us-east-1.amazonaws.com";
+    base origin;
     send signer;
 ```
 

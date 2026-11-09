@@ -14,7 +14,7 @@ use serde::Deserialize;
 /// dropped. The text is never echoed in an error (it could carry user information).
 #[derive(Clone, PartialEq, Eq)]
 pub struct InstanceUrl {
-    url: Url,
+    base: concord::BaseUrl,
 }
 
 impl InstanceUrl {
@@ -29,16 +29,25 @@ impl InstanceUrl {
             return Err(InvalidInstanceUrl("must use http or https"));
         }
         check_origin(&url).map_err(InvalidInstanceUrl)?;
-        Ok(Self { url })
+        Ok(Self {
+            base: concord::BaseUrl::parse(url.as_str())
+                .map_err(|_| InvalidInstanceUrl("is not a base URL"))?,
+        })
     }
 
     /// The normalized URL (`https://mastodon.social/`).
     pub fn as_str(&self) -> &str {
-        self.url.as_str()
+        self.base.url().as_str()
     }
 
     pub(crate) fn url(&self) -> &Url {
-        &self.url
+        self.base.url()
+    }
+}
+
+impl AsRef<concord::BaseUrl> for InstanceUrl {
+    fn as_ref(&self) -> &concord::BaseUrl {
+        &self.base
     }
 }
 
@@ -68,15 +77,13 @@ pub(crate) fn check_origin(url: &Url) -> Result<(), &'static str> {
 
 impl fmt::Debug for InstanceUrl {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_tuple("InstanceUrl")
-            .field(&self.url.as_str())
-            .finish()
+        f.debug_tuple("InstanceUrl").field(&self.as_str()).finish()
     }
 }
 
 impl fmt::Display for InstanceUrl {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(self.url.as_str())
+        f.write_str(self.as_str())
     }
 }
 

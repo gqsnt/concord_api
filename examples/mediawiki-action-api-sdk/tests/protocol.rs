@@ -135,7 +135,7 @@ async fn all_three_endpoints_have_documented_query_shapes_and_identifying_header
 async fn build_errors_and_client_request_diagnostics_withhold_user_agent() {
     MediaWiki::validate_header_names().unwrap();
     let server = TestServer::start(|_: &Recorded| panic!("invalid header must not send")).await;
-    let client = api(&server.url()).set_user_agent(SECRET);
+    let client = api_with_user_agent(&server.url(), SECRET);
     let scope = client.query();
     let operation = scope.search("Rust");
     let prepared = operation.clone().prepare().unwrap();
@@ -148,8 +148,7 @@ async fn build_errors_and_client_request_diagnostics_withhold_user_agent() {
         assert!(!shown.contains(SECRET));
     }
     assert!(prepared.request().headers()["user-agent"].is_sensitive());
-    let error = client
-        .set_user_agent(format!("{SECRET}\n"))
+    let error = api_with_user_agent(&server.url(), &format!("{SECRET}\n"))
         .query()
         .search("Rust")
         .send()

@@ -332,7 +332,7 @@ their assumptions stated; none is a recommended default for every API. All are i
 | `collect_items` | walk a cursor-paginated listing | the application bounds the pages; the unused cursor is returned, nothing is silently dropped; each page is a fresh request (`maybe_cursor(cursor)`) |
 | `retry_bounded`, `item_with_retry` | retry a read-only `GET` after a connection failure | the operation is safe to replay (a read-only `GET`); only failures without a response are retried (connect/request errors, not timeouts, statuses or decode errors); attempts and backoff are bounded. Do not reuse the predicate for writes: whether a write may be replayed depends on the API (idempotency keys, conditional requests) |
 | `items_admitted` | at most N requests in flight | requests are built first (no I/O), then each waits for a `Semaphore` permit and holds it until decoded |
-| `Session` | the application rotates a credential | the application obtains the new value; `set_key(..)` produces a new handle, and requests created earlier keep the old key |
+| `Session` | the application rotates a credential | the application obtains the new value; a required `mut key` permits `set_key(..)` to produce a new handle, and requests created earlier keep the old key |
 
 A request value's `Clone` (available when its values and body are `Clone`) only means it can be
 copied. The retry recipe deliberately takes a request **factory** instead.
@@ -459,7 +459,7 @@ synthetic; a fake server proves nothing about the real service.
 | JSON or nothing (`200` with a document, `204` without) | a format of your own implementing `Decode<Option<T>>` that decides on the status: a `204` needs no `Content-Type` and is `None`; any other 2xx must pass `Json`'s head check (`Json` stays strict; an empty `200` is a decode error) | `tests/json_or_empty.rs` |
 | JSON under another media type (Kubernetes server-side apply) | `request Json "application/apply-patch+yaml";` on the endpoint | `tests/apply.rs` |
 | A fresh value per request (an idempotency key) | an initialized value on the endpoint; a `.clone()` of the request handle repeats it (a deliberate retry); a client initializer runs once, in `new` | `tests/idempotency.rs` |
-| A new base URL or credential | `with_base_url` and setters return new handles; scopes created earlier keep the old values | `tests/refresh.rs` |
+| A new base URL or credential | literal bases keep `with_base_url`; value bases select the destination at construction; credential rotation requires `mut`; earlier scopes keep their snapshot | `tests/refresh.rs` |
 | Header aliases, `Content-Type` and secrets | native constants, re-exports and shadowed names compose and classify by resolved name | `tests/headers.rs` |
 
 ## Running them

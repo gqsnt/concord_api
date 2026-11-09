@@ -57,10 +57,9 @@ concord::api! {
     /// `Result<T, Error>` through [`SendPolicy`]; [`Elasticsearch`] adds response correlation and
     /// the point-in-time workflow.
     ///
-    /// The declared base is the bulk reference's `localhost:9200`; a deployment's URL is given
-    /// to [`Elasticsearch::new`] (or `with_base_url`).
-    pub client ElasticsearchApi(#[sensitive] header(AUTHORIZATION) authorization: HeaderValue) {
-        base "http://localhost:9200";
+    /// The deployment is selected at construction through a checked base URL.
+    pub client ElasticsearchApi(origin: concord::BaseUrl, #[sensitive] header(AUTHORIZATION) authorization: HeaderValue) {
+        base origin;
         send SendPolicy -> Result<_, Error>;
         format Json;
         limit RESPONSE_LIMIT;
@@ -167,10 +166,10 @@ impl Elasticsearch {
         let api = ElasticsearchApi::new(
             http,
             ElasticsearchApiConfig {
+                origin: concord::BaseUrl::parse(base_url)?,
                 authorization: api_key.into_header(),
             },
-        )
-        .with_base_url(base_url)?;
+        );
         Ok(Self { api })
     }
 

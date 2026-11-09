@@ -114,7 +114,7 @@ fn main() -> Result<(), concord::Error> {
     // take `impl IntoValue<T>`: the exact `T`, `&str`/`&String` where `T` is `String`, or
     // `&HeaderValue` where `T` is `HeaderValue`.
     let _: fn(reqwest::Client, ShopConfig) -> Shop = Shop::new;
-    let _: fn(Shop, String) -> Shop = Shop::set_key;
+    let _: fn(&Shop) -> &String = Shop::key;
     let _: fn(Shop, String) -> Shop = Shop::set_lang;
     let _: fn(Shop, Option<String>) -> Shop = Shop::maybe_lang;
     let _: fn(&Shop, String) -> ShopSearch = Shop::search;
@@ -266,7 +266,10 @@ hosts and a percent-escaped path, whose escapes are kept as written (`https://ex
 
 When the host is the caller's (an instance, a region), write `base instance;`: the client value
 `instance` holds the base, its type implements `AsRef<concord::BaseUrl>`, and the client has no
-`with_base_url`. A test builds that value with the fixture's origin.
+`with_base_url`. A test builds that value with the fixture's origin. Keep host-bound credentials and checked
+destinations together: DigitalOcean uses `Destination`, Sentry uses `Deployment`, and Mastodon
+constructs separate REST and streaming handles. Wrappers read declared values through getters
+instead of storing another copy. A literal base remains appropriate for a fixed public API.
 
 **Credentials and redirects.** reqwest drops `Authorization`, `Cookie`, `Cookie2`,
 `Proxy-Authorization` and `WWW-Authenticate` when a redirect changes the host, port or scheme, but

@@ -201,6 +201,7 @@ fn plan_scaling(c: &mut Criterion) {
         read: true,
         labels: 0,
         sensitive_labels: &[],
+        sensitive_base: false,
         segments: 0,
         sensitive_segments: &[],
         sensitive_query: &[],

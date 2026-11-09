@@ -6,7 +6,7 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use concord::reqwest::header::AUTHORIZATION;
-use concord::reqwest::{self, StatusCode, Url};
+use concord::reqwest::{self, StatusCode};
 use concord::{Endpoint, Received, SendWith};
 use concord_auth::{Generation, RefreshError, Snapshot, TokenCache};
 use concord_retry::{Decision, Replay, Retry, concord::ReplayMode};
@@ -62,17 +62,25 @@ pub struct Session {
 
 struct Inner {
     oauth: OAuth,
-    base: Url,
     cache: TokenCache<(), TokenError>,
     margin: Duration,
     reads: concord_retry::Policy,
     writes: concord_retry::Policy,
 }
 
+impl AsRef<concord::BaseUrl> for Session {
+    fn as_ref(&self) -> &concord::BaseUrl {
+        self.inner.oauth.origin()
+    }
+}
+
 impl fmt::Debug for Session {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("Session")
-            .field("origin", &self.inner.base.origin().ascii_serialization())
+            .field(
+                "origin",
+                &self.inner.oauth.base_url().origin().ascii_serialization(),
+            )
             .field("credentials", &"<redacted>")
             .field("reads", &self.inner.reads)
             .field("writes", &self.inner.writes)
@@ -91,7 +99,6 @@ impl Session {
         clock: Option<Box<dyn Fn() -> Instant + Send + Sync + 'static>>,
     ) -> Result<Self, Error> {
         let oauth = OAuth::for_base(http, credentials, base)?;
-        let base = Url::parse(base).map_err(|_| Error::Invalid("base URL is not a URL"))?;
         let capacity = NonZeroUsize::new(1).expect("nonzero");
         let cache = match clock {
             Some(clock) => TokenCache::with_clock(capacity, margin, clock),
@@ -100,7 +107,6 @@ impl Session {
         Ok(Self {
             inner: Arc::new(Inner {
                 oauth,
-                base,
                 cache,
                 margin,
                 reads,
@@ -198,7 +204,7 @@ impl<T: Send + 'static> SendWith<T> for Session {
         // A write: sent within the write bounds, and possibly applied when unanswered.
         let write = !E::operation().is_read();
         let prepared = endpoint.prepare()?;
-        if prepared.request().url().origin() != self.inner.base.origin() {
+        if prepared.request().url().origin() != self.inner.oauth.base_url().origin() {
             return Err(Error::Destination);
         }
         let request_id = prepared
@@ -297,5 +303,44 @@ impl<T: Send + 'static> SendWith<T> for Session {
                 }
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod construction_tests {
+    use super::*;
+    use crate::{PayPal, http_client};
+    use concord_example_testserver::{Reply, TestServer};
+
+    /// The same guard covers a hand-written SendWith call carrying another endpoint's origin.
+    #[tokio::test]
+    async fn a_client_moved_to_another_origin_sends_nothing() {
+        let home = TestServer::start(|_| Reply::new(204)).await;
+        let elsewhere = TestServer::start(|_| Reply::new(204)).await;
+        let client = |base: String| {
+            PayPal::builder(
+                http_client().unwrap(),
+                Credentials::new("id", "secret").unwrap(),
+            )
+            .base_url(base)
+            .build()
+            .unwrap()
+        };
+        let bound = client(home.url());
+        let foreign = client(elsewhere.url());
+        let error = bound
+            .session()
+            .send(
+                foreign
+                    .order(crate::OrderId::new("ORDER123").unwrap())
+                    .get(),
+            )
+            .await
+            .unwrap_err();
+        assert!(matches!(error, Error::Destination), "{error:?}");
+        assert!(home.requests().is_empty());
+        assert!(elsewhere.requests().is_empty());
+        home.shutdown().await;
+        elsewhere.shutdown().await;
     }
 }

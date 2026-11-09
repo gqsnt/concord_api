@@ -21,6 +21,7 @@ use crate::query::{Identifier, QueryId};
 concord::api! {
     /// The ClickHouse HTTP interface of one server.
     pub client ClickHouseHttp(
+        origin: concord::BaseUrl,
         /// `Authorization: Basic ..` (HTTP Basic authentication), flagged sensitive.
         #[sensitive] header("authorization") authorization?: HeaderValue,
         /// `X-ClickHouse-User` (header authentication); a credential like the key, so sensitive
@@ -33,7 +34,7 @@ concord::api! {
         /// The quota key (`quota_key`, "any string").
         query("quota_key") quota_key?: String,
     ) {
-        base "http://localhost:8123";
+        base origin;
         headers { "x-clickhouse-database" = "{database}"; }
 
         /// A read-only query; the response format is the `X-ClickHouse-Format` header.
@@ -82,9 +83,14 @@ mod tests {
 
     #[test]
     fn dynamic_parameters_are_hidden_by_endpoint_debug_but_shown_by_prepared_debug() {
-        let endpoint = ClickHouseHttp::new(concord::reqwest::Client::new())
-            .select("SELECT {x:String}".to_owned(), OutputFormat::JsonEachRow)
-            .set_params(vec![("param_x".to_owned(), "fixture-value".to_owned())]);
+        let endpoint = ClickHouseHttp::new(
+            concord::reqwest::Client::new(),
+            crate::wire::ClickHouseHttpConfig {
+                origin: concord::BaseUrl::from_static("http://localhost:8123"),
+            },
+        )
+        .select("SELECT {x:String}".to_owned(), OutputFormat::JsonEachRow)
+        .set_params(vec![("param_x".to_owned(), "fixture-value".to_owned())]);
         assert!(!format!("{endpoint:?}").contains("fixture-value"));
         let prepared = endpoint.prepare().unwrap();
         assert!(format!("{prepared:?}").contains("param_x=fixture-value"));

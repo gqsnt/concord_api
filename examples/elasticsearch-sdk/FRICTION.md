@@ -1,5 +1,7 @@
 # Friction
 
+Historical author notes. P4.3 now fixes required handle values and declares checked runtime bases; see the current README and `docs/MIGRATION.md`.
+
 What building this slice on the frozen Concord baseline (`c3fd4f1e`) cost, with the evidence,
 what was written by hand, whether the cost is provider semantics or generic mechanics, and the
 smallest Concord change that would remove it. No shared crate was edited.

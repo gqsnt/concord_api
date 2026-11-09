@@ -22,7 +22,6 @@
 //! | `Account(id)` | `id`, for this request only |
 
 use std::fmt;
-use std::sync::Arc;
 
 use concord::reqwest::{self, header::HeaderValue};
 
@@ -47,15 +46,7 @@ pub const DECLARED_BASE: &str = "https://api.stripe.com/v1";
 /// A configured Stripe context. See the [module documentation](self).
 #[derive(Clone)]
 pub struct StripeContext {
-    inner: Arc<Inner>,
-}
-
-#[derive(Clone)]
-struct Inner {
     api: Stripe,
-    base: String,
-    version: ApiVersion,
-    account: Option<AccountId>,
 }
 
 impl StripeContext {
@@ -65,15 +56,8 @@ impl StripeContext {
         let mut authorization = HeaderValue::from_str(&format!("Bearer {}", key.expose()))
             .expect("a validated secret key is visible ASCII");
         authorization.set_sensitive(true);
-        let version = ApiVersion::pinned();
-        let api = Stripe::new(http, StripeConfig { authorization }).set_version(version.as_str());
         Self {
-            inner: Arc::new(Inner {
-                api,
-                base: DECLARED_BASE.to_owned(),
-                version,
-                account: None,
-            }),
+            api: Stripe::new(http, StripeConfig { authorization }),
         }
     }
 
@@ -84,66 +68,53 @@ impl StripeContext {
     ///
     /// Concord's `Build` error for a URL it does not accept as a base.
     pub fn with_base_url(mut self, url: impl AsRef<str>) -> Result<Self, concord::Error> {
-        let inner = Arc::make_mut(&mut self.inner);
-        inner.api = inner.api.clone().with_base_url(url.as_ref())?;
-        inner.base = url.as_ref().to_owned();
+        self.api = self.api.clone().with_base_url(url.as_ref())?;
         Ok(self)
     }
 
     /// Sends `version` as `Stripe-Version` instead of the pinned one.
     pub fn with_version(mut self, version: ApiVersion) -> Self {
-        let inner = Arc::make_mut(&mut self.inner);
-        inner.api = inner.api.clone().set_version(version.as_str());
-        inner.version = version;
+        self.api = self.api.clone().set_version(version);
         self
     }
 
     /// Acts on `account` (`Some`: every request sends `Stripe-Account`) or on the platform's own
     /// account (`None`).
     pub fn with_account(mut self, account: Option<AccountId>) -> Self {
-        let inner = Arc::make_mut(&mut self.inner);
-        inner.api = inner
-            .api
-            .clone()
-            .maybe_account(account.as_ref().map(account_header));
-        inner.account = account;
+        self.api = self.api.clone().maybe_account(account);
         self
     }
 
     /// The generated client handle, configured with this context's values.
     pub fn api(&self) -> &Stripe {
-        &self.inner.api
+        &self.api
     }
 
     /// The API version sent.
     pub fn version(&self) -> &ApiVersion {
-        &self.inner.version
+        self.api.version()
     }
 
     /// The connected account, if any.
     pub fn account(&self) -> Option<&AccountId> {
-        self.inner.account.as_ref()
+        self.api.account()
     }
 
     /// The base URL.
     pub fn base_url(&self) -> &str {
-        &self.inner.base
+        self.api.base_url().as_str()
     }
 }
 
 impl fmt::Debug for StripeContext {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("StripeContext")
-            .field("base", &self.inner.base)
-            .field("version", &self.inner.version.as_str())
+            .field("base", &self.api.base_url().as_str())
+            .field("version", &self.api.version().as_str())
             .field("key", &format_args!("<redacted>"))
             .field(
                 "account",
-                &self
-                    .inner
-                    .account
-                    .as_ref()
-                    .map(|_| format_args!("<redacted>")),
+                &self.api.account().map(|_| format_args!("<redacted>")),
             )
             .finish()
     }

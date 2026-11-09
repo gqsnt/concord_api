@@ -57,8 +57,8 @@ pub(crate) struct AccessToken {
 
 concord::api! {
     /// The token endpoint. Its `Basic` credential is the only header this client sets.
-    pub client OAuth(#[sensitive] header(AUTHORIZATION) basic: HeaderValue) {
-        base "https://api-m.sandbox.paypal.com";
+    pub client OAuth(origin: concord::BaseUrl, #[sensitive] header(AUTHORIZATION) basic: HeaderValue) {
+        base origin;
         response Json;
         limit TOKEN_BODY_LIMIT;
 
@@ -75,13 +75,13 @@ impl OAuth {
         credentials: Credentials,
         base: &str,
     ) -> Result<Self, concord::Error> {
-        Self::new(
+        Ok(Self::new(
             http,
             OAuthConfig {
+                origin: concord::BaseUrl::parse(base)?,
                 basic: credentials.basic,
             },
-        )
-        .with_base_url(base)
+        ))
     }
 }
 

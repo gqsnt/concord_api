@@ -20,14 +20,17 @@ fn http() -> reqwest::Client {
         .unwrap()
 }
 fn api(url: &str) -> CrmApi {
-    CrmApi::new(
-        http(),
-        CrmApiConfig {
-            authorization: HeaderValue::from_static("Bearer synthetic-secret"),
-        },
-    )
-    .with_base_url(url)
-    .unwrap()
+    concord::BaseUrl::parse(url)
+        .map(|origin| {
+            CrmApi::new(
+                http(),
+                CrmApiConfig {
+                    origin,
+                    authorization: HeaderValue::from_static("Bearer synthetic-secret"),
+                },
+            )
+        })
+        .unwrap()
 }
 
 #[tokio::test]

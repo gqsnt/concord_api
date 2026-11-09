@@ -28,7 +28,7 @@ async fn wire_encoding_singletons_headers_and_scoped_snapshots() {
         Query::new("TITLE:\"café + tea\" & year:2020").unwrap(),
         PageSize::new(2).unwrap(),
     );
-    let changed = original.clone().set_query(Query::new("malaria").unwrap());
+    let changed = api.search(Query::new("malaria").unwrap(), PageSize::new(2).unwrap());
     original
         .json()
         .set_cursor(Cursor::new("a+/=?&").unwrap())

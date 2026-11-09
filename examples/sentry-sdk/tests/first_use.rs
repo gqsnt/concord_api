@@ -22,10 +22,13 @@ const QUERY: &str = "is:unresolved assigned:me";
 // ---------------------------------------------------------------- fixture helpers
 
 fn api(server: &TestServer, policy: SendPolicy) -> Sentry {
-    Sentry::with_token(http_client().expect("transport"), TOKEN, policy)
-        .expect("valid token")
-        .with_base_url(server.url())
-        .expect("loopback base url")
+    Sentry::at(
+        http_client().expect("transport"),
+        concord_sdk_sentry::Deployment::parse(server.url()).unwrap(),
+        TOKEN,
+        policy,
+    )
+    .expect("loopback base url")
 }
 
 fn epoch_secs() -> u64 {

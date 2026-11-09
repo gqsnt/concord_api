@@ -91,8 +91,7 @@ impl TokenRequest {
 }
 
 struct Inner {
-    http: reqwest::Client,
-    origin: reqwest::Url,
+    origin: concord::BaseUrl,
     oauth: OAuth,
     credentials: Credentials,
     // Shared with the acquisition future the cache stores, which must not own `Inner`.
@@ -107,6 +106,12 @@ struct Inner {
 /// Share a session among clones; independent sessions do not coordinate application-wide usage.
 #[derive(Clone, concord::Debug)]
 pub struct Session(#[sensitive] Arc<Inner>);
+
+impl AsRef<concord::BaseUrl> for Session {
+    fn as_ref(&self) -> &concord::BaseUrl {
+        &self.0.origin
+    }
+}
 
 impl Session {
     /// Create a shared session using the SDK's strict transport. Retain a clone for token persistence.
@@ -128,13 +133,11 @@ impl Session {
     /// Build a generated client sharing this session and its strict transport.
     pub fn client(&self) -> Strava {
         Strava::new(
-            self.0.http.clone(),
+            self.0.oauth.http().clone(),
             StravaConfig {
                 policy: self.clone(),
             },
         )
-        .with_base_url(self.0.origin.as_str())
-        .expect("validated origin")
     }
     pub(crate) fn new(
         http: reqwest::Client,
@@ -143,15 +146,19 @@ impl Session {
         credentials: Credentials,
         tokens: Tokens,
     ) -> Result<Self, Error> {
-        let origin = validate_origin(origin)?;
+        let origin = concord::BaseUrl::parse(validate_origin(origin)?.as_str())?;
         validate_origin(oauth_origin)?;
         if tokens.refresh_token.is_empty() {
             return Err(Error::Invalid("empty refresh token"));
         }
         Ok(Self(Arc::new(Inner {
-            http: http.clone(),
             origin,
-            oauth: OAuth::new(http).with_base_url(oauth_origin)?,
+            oauth: OAuth::new(
+                http,
+                crate::OAuthConfig {
+                    origin: concord::BaseUrl::parse(oauth_origin)?,
+                },
+            ),
             credentials,
             tokens: Arc::new(Mutex::new(tokens)),
             cache: TokenCache::new(NonZeroUsize::new(1).unwrap(), Duration::from_secs(30)),
@@ -313,7 +320,7 @@ impl<T: Send> SendWith<T> for Session {
             .prepare()
             .map_err(|e| Error::from_call(e, uncertain))?
             .into_parts();
-        if request.url().origin() != self.0.origin.origin() {
+        if request.url().origin() != self.0.origin.url().origin() {
             return Err(Error::Invalid("credential destination changed"));
         }
         let template = if read { request.try_clone() } else { None };

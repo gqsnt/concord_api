@@ -160,8 +160,13 @@ async fn authorization_code_form_and_redacted_diagnostics() {
     safe(&grant);
     safe(credentials());
     safe(tokens(TOKENS));
-    let oauth = OAuth::new(transport(Duration::from_secs(2)).unwrap())
-        .with_base_url(server.url())
+    let oauth = concord::BaseUrl::parse((server.url()).as_ref())
+        .map(|origin| {
+            OAuth::new(
+                transport(Duration::from_secs(2)).unwrap(),
+                concord_sdk_strava::OAuthConfig { origin },
+            )
+        })
         .unwrap();
     let op = oauth.oauth().token(grant);
     safe(&op);
@@ -360,14 +365,26 @@ async fn input_build_and_destination_refusals_do_not_dispatch() {
             )
             .is_err()
     );
-    let error = api
-        .with_base_url("http://127.0.0.1:1")
-        .unwrap()
-        .activities()
-        .get(1)
-        .send()
-        .await
-        .unwrap_err();
+    // A native policy call still refuses an endpoint prepared for another origin.
+    use concord::SendWith as _;
+    let session = Session::connect(
+        &server.url(),
+        &server.url(),
+        credentials(),
+        tokens(TOKENS),
+        Duration::from_secs(1),
+    )
+    .unwrap();
+    let foreign = Session::connect(
+        "http://127.0.0.1:1",
+        &server.url(),
+        credentials(),
+        tokens(TOKENS),
+        Duration::from_secs(1),
+    )
+    .unwrap()
+    .client();
+    let error = session.send(foreign.activities().get(1)).await.unwrap_err();
     assert!(matches!(error, Error::Invalid(_)));
     safe_error(&error);
     let bad = tokens(TOKENS);
@@ -401,8 +418,13 @@ async fn input_build_and_destination_refusals_do_not_dispatch() {
     safe_error(&error);
     assert!(server.requests().is_empty());
     server.shutdown().await;
-    let error = OAuth::new(transport(Duration::from_secs(1)).unwrap())
-        .with_base_url("http://127.0.0.1:0")
+    let error = concord::BaseUrl::parse("http://127.0.0.1:0")
+        .map(|origin| {
+            OAuth::new(
+                transport(Duration::from_secs(1)).unwrap(),
+                concord_sdk_strava::OAuthConfig { origin },
+            )
+        })
         .unwrap_err();
     assert_eq!(error.kind(), ErrorKind::Build);
     safe(error);

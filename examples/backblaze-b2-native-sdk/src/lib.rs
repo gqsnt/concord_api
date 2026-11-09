@@ -53,15 +53,18 @@ pub fn http_client_builder() -> reqwest::ClientBuilder {
 #[derive(Clone, Debug)]
 pub struct Client {
     wire: B2Wire,
-    authorize_base: Url,
 }
 
 impl Client {
     /// Uses `http` for every request (see [`http_client_builder`]).
     pub fn new(http: reqwest::Client) -> Self {
         Self {
-            wire: B2Wire::new(http),
-            authorize_base: Url::parse(AUTHORIZE_BASE).expect("the documented host parses"),
+            wire: B2Wire::new(
+                http,
+                crate::wire::B2WireConfig {
+                    origin: concord::BaseUrl::from_static(AUTHORIZE_BASE),
+                },
+            ),
         }
     }
 
@@ -73,14 +76,13 @@ impl Client {
     /// [`InputError::BaseUrl`] for anything but an `http`/`https` URL without credentials,
     /// query or fragment.
     pub fn with_base_url(self, base: &str) -> Result<Self, Error> {
-        let authorize_base = base_url(base).ok_or(InputError::BaseUrl)?;
-        let wire = self
-            .wire
-            .with_base_url(base)
-            .map_err(|_| InputError::BaseUrl)?;
+        base_url(base).ok_or(InputError::BaseUrl)?;
+        let origin = concord::BaseUrl::parse(base).map_err(|_| InputError::BaseUrl)?;
         Ok(Self {
-            wire,
-            authorize_base,
+            wire: B2Wire::new(
+                self.wire.http().clone(),
+                crate::wire::B2WireConfig { origin },
+            ),
         })
     }
 
@@ -108,9 +110,9 @@ impl Client {
             .await?;
         let storage = wire.api_info.storage_api;
         let contract = |violation| Error::contract(violation, Some(meta.clone()));
-        let api_url = issued_url(&self.authorize_base, &storage.api_url, true).map_err(contract)?;
+        let api_url = issued_url(self.wire.base_url(), &storage.api_url, true).map_err(contract)?;
         let download_url =
-            issued_url(&self.authorize_base, &storage.download_url, true).map_err(contract)?;
+            issued_url(self.wire.base_url(), &storage.download_url, true).map_err(contract)?;
         let token = Token::issued(wire.authorization_token).map_err(contract)?;
         let mut buckets = Vec::with_capacity(storage.allowed.buckets.len());
         for bucket in storage.allowed.buckets {
@@ -131,7 +133,14 @@ impl Client {
             },
             key_expiration: wire.application_key_expiration_timestamp,
         };
-        let bind = |url: &Url| self.wire.clone().with_base_url(url.as_str());
+        let bind = |url: &Url| {
+            concord::BaseUrl::parse(url.as_str()).map(|origin| {
+                B2Wire::new(
+                    self.wire.http().clone(),
+                    crate::wire::B2WireConfig { origin },
+                )
+            })
+        };
         Ok(Session {
             storage: bind(&account.api_url)?.storage(token.expose()),
             download: bind(&account.download_url)?.download(token.expose()),

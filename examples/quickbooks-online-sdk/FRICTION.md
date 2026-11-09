@@ -1,5 +1,7 @@
 # Friction
 
+Historical author notes. P4.3 now fixes required handle values and declares checked runtime bases; see the current README and `docs/MIGRATION.md`.
+
 What this SDK cost against the frozen baseline (`14b9e1e0`), with the evidence observed, what was
 written by hand, which part is QuickBooks semantics and which generic mechanics, and the smallest
 Concord change that would remove it. No shared crate was edited.

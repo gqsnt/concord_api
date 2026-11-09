@@ -1,5 +1,7 @@
 # SDK27 Concord friction
 
+Historical author notes. P4.3 now fixes required handle values and declares checked runtime bases; see the current README and `docs/MIGRATION.md`.
+
 Baseline: `8c27cd1a509c4cac4edde44f60c3d3ca13e2b46f`. Example-assisted author result;
 the complete example-file inventory and what each contributed are in
 [PROVENANCE.md](PROVENANCE.md#local-reading-and-example-assistance).

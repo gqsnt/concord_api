@@ -63,7 +63,7 @@ concord::api! {
         /// `concord_auth::bearer(token)` (sensitive, validated).
         #[sensitive] header(AUTHORIZATION) authorization: HeaderValue,
         /// What generated `send()` does; [`SendPolicy::default`] sends each request once.
-        policy: SendPolicy,
+        mut policy: SendPolicy,
     ) {
         base "https://api.cloudflare.com";
         path "client/v4";

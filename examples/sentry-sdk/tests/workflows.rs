@@ -618,15 +618,21 @@ async fn reconstructed_token_rotation_retains_caller_admission_state() {
         ..support::settings()
     })
     .unwrap();
-    let first = Sentry::with_token(http_client().unwrap(), "old-token", policy.clone())
-        .unwrap()
-        .with_base_url(server.url())
-        .unwrap();
+    let first = Sentry::at(
+        http_client().unwrap(),
+        concord_sdk_sentry::Deployment::parse(server.url()).unwrap(),
+        "old-token",
+        policy.clone(),
+    )
+    .unwrap();
     first.organization("acme").issues().send().await.unwrap();
-    let rotated = Sentry::with_token(http_client().unwrap(), "new-token", policy)
-        .unwrap()
-        .with_base_url(server.url())
-        .unwrap();
+    let rotated = Sentry::at(
+        http_client().unwrap(),
+        concord_sdk_sentry::Deployment::parse(server.url()).unwrap(),
+        "new-token",
+        policy,
+    )
+    .unwrap();
     assert_eq!(
         rotated
             .organization("acme")

@@ -14,7 +14,7 @@ concord::api! {
     /// A product catalog.
     pub client Catalog(
         /// The API key.
-        #[sensitive] header("x-api-key") key: String,
+        #[sensitive] header("x-api-key") mut key: String,
         /// The preferred language of product names.
         header("accept-language") lang?: String = "en",
     ) {
@@ -63,7 +63,7 @@ Catalog::set_lang(self, value: impl IntoValue<String>) -> Catalog
 Catalog::maybe_lang(self, value: Option<String>) -> Catalog
 Catalog::shop(&self, shop: impl IntoValue<String>) -> CatalogShop
 
-CatalogShop::set_shop(self, value: impl IntoValue<String>) -> CatalogShop
+CatalogShop::shop(&self) -> &String
 CatalogShop::products(&self) -> CatalogShopProducts
 CatalogShop::product(&self, id: impl IntoValue<u64>) -> CatalogShopProduct
 CatalogShop::rename(&self, id: impl IntoValue<u64>, change: impl IntoValue<Rename>) -> CatalogShopRename
@@ -91,7 +91,9 @@ are the other way round: they take exactly `T`, so a string literal needs `.into
 ## 1. Creating a client
 
 `Client::new` takes your `reqwest::Client` and, when the client has required values, the
-generated `{Client}Config` struct. Only the client's required values are its fields: a client
+generated `{Client}Config` struct. Required client and scope values are fixed unless declared `mut`;
+endpoints retain their setters. Borrowed getters read declared values; sensitive values and whole
+headers have crate-only getters. Only the client's required values are its fields: a client
 without any has no config struct (`Client::new(http)`), and optional or initialized client values
 are changed after `new` with `set_*`. Config fields take exactly the declared type (`.into()` for
 a string literal). `with_base_url` replaces the declared base and returns an error for anything

@@ -20,8 +20,9 @@ fake; they show that the SDK does what AWS's documentation describes, **not** th
 Bucket-wide on a `Bucket` handle: `x-amz-expected-bucket-owner`, `x-amz-request-payer: requester`.
 
 The bucket handle and the operation builders are generated from the Concord declaration
-(`src/api.rs`): every value has a `set_*` setter (and `maybe_*` for optional ones, taking an
-`Option`), documented with the S3 parameter it sends. The client's SigV4 context is the
+(`src/api.rs`): endpoint and optional values have a `set_*` setter (`maybe_*` takes an
+`Option`), documented with the S3 parameter it sends. Required bucket identity is fixed;
+`mut signer` permits credential and clock replacement. The endpoint and signer are read through getters. The client's SigV4 context is the
 declaration's **send policy** (`send signer;`), so each builder's `send()` is signed after the
 request is built. `prepare()` is the declared request **unsigned**; `S3Client::prepare(op)` signs
 one without sending it.

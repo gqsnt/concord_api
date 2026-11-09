@@ -118,6 +118,7 @@ async fn secrets_never_print() {
     c.assert_debug_absent("search", &search);
     // The generated config, with a value the caller did not flag sensitive.
     let config = ElasticsearchApiConfig {
+        origin: concord::BaseUrl::from_static("http://localhost:9200"),
         authorization: HeaderValue::from_str(&format!("ApiKey {key}")).unwrap(),
     };
     c.assert_debug_absent("generated config (value not flagged)", &config);

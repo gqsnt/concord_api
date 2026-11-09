@@ -188,7 +188,7 @@ pub struct OAuthApp {
     #[sensitive]
     credentials: HeaderValue,
     redirect_uri: String,
-    token_base: String,
+    token_base: concord::BaseUrl,
 }
 
 impl OAuthApp {
@@ -224,7 +224,7 @@ impl OAuthApp {
             client_id: client_id.to_owned(),
             credentials,
             redirect_uri: redirect_uri.to_owned(),
-            token_base: TOKEN_BASE.to_owned(),
+            token_base: concord::BaseUrl::from_static(TOKEN_BASE),
         })
     }
 
@@ -235,15 +235,9 @@ impl OAuthApp {
     ///
     /// [`Error::InvalidInput`] unless `url` is an `http`/`https` URL.
     pub fn with_token_base_url(mut self, url: &str) -> Result<Self, Error> {
-        let parsed = reqwest::Url::parse(url).map_err(|_| Error::InvalidInput {
+        self.token_base = concord::BaseUrl::parse(url).map_err(|_| Error::InvalidInput {
             what: "token endpoint URL",
         })?;
-        if !matches!(parsed.scheme(), "http" | "https") {
-            return Err(Error::InvalidInput {
-                what: "token endpoint URL",
-            });
-        }
-        url.clone_into(&mut self.token_base);
         Ok(self)
     }
 
@@ -414,11 +408,12 @@ async fn request_tokens(
     grant: Grant,
 ) -> Result<Issued, TokenFailure> {
     let config = TokenEndpointConfig {
+        origin: app.token_base.clone(),
         client_credentials: app.credentials.clone(),
     };
     let prepared = TokenEndpoint::new(http.clone(), config)
-        .with_base_url(&app.token_base)
-        .and_then(|endpoint| endpoint.bearer(grant).prepare())
+        .bearer(grant)
+        .prepare()
         .map_err(|e| TokenFailure::local(AuthorizationKind::TokenServiceUnavailable, e))?;
     let received = prepared
         .receive()

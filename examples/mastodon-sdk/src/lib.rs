@@ -95,10 +95,11 @@ use concord::reqwest;
 pub use concord;
 
 pub use api::{
-    ApiHashtagStream as HashtagStreamRequest, ApiHashtagTimeline as HashtagTimelineRequest,
-    ApiInstance as InstanceRequest, ApiLocalHashtagStream as LocalHashtagStreamRequest,
-    ApiPublicStream as PublicStreamRequest, ApiPublicTimeline as PublicTimelineRequest,
-    ApiStatus as StatusRequest,
+    ApiHashtagTimeline as HashtagTimelineRequest, ApiInstance as InstanceRequest,
+    ApiPublicTimeline as PublicTimelineRequest, ApiStatus as StatusRequest,
+    StreamingApiHashtagStream as HashtagStreamRequest,
+    StreamingApiLocalHashtagStream as LocalHashtagStreamRequest,
+    StreamingApiPublicStream as PublicStreamRequest,
 };
 pub use error::{ApiError, ERROR_BODY_LIMIT, Error, MastodonPolicy};
 pub use model::{
@@ -123,8 +124,6 @@ struct ReadmeDoctests;
 #[derive(Clone, concord::Debug)]
 pub struct Mastodon {
     api: api::Api,
-    #[sensitive]
-    instance: InstanceUrl,
 }
 
 impl Mastodon {
@@ -132,12 +131,9 @@ impl Mastodon {
     /// timeouts, proxies and TLS on it. reqwest's default redirect policy drops `Authorization`
     /// when a redirect leaves the origin; a policy of yours must keep that rule.
     pub fn new(http: reqwest::Client, instance: InstanceUrl) -> Self {
-        let api = match api::Api::new(http).with_base_url(instance.as_str()) {
-            Ok(api) => api,
-            // `InstanceUrl::parse` applies every rule of `with_base_url` and more.
-            Err(_) => unreachable!("an InstanceUrl is a valid base URL"),
-        };
-        Self { api, instance }
+        Self {
+            api: api::Api::new(http, api::ApiConfig { origin: instance }),
+        }
     }
 
     /// Sets `authorization: Bearer <token>` from `AccessToken`, built by `concord_auth::bearer`.
@@ -152,7 +148,7 @@ impl Mastodon {
 
     /// The instance.
     pub fn instance_url(&self) -> &InstanceUrl {
-        &self.instance
+        self.api.origin()
     }
 
     /// A page of the public timeline (`GET /api/v1/timelines/public`).
@@ -187,7 +183,10 @@ impl Mastodon {
     pub async fn discover_streaming(&self) -> Result<StreamingHost, Error> {
         let info = self.instance().send().await?;
         let advertised = info.streaming_url().ok_or(DiscoveryError::NotAdvertised)?;
-        Ok(StreamingHost::advertised_by(&self.instance, advertised)?)
+        Ok(StreamingHost::advertised_by(
+            self.instance_url(),
+            advertised,
+        )?)
     }
 
     /// The public timeline stream on `host` (`GET /api/v1/streaming/public`), with this client's
@@ -232,10 +231,65 @@ impl Mastodon {
         Ok(self.streaming_api(host)?.local_hashtag_stream(tag))
     }
 
-    fn streaming_api(&self, host: &StreamingHost) -> Result<api::Api, Error> {
-        if host.instance() != &self.instance {
+    fn streaming_api(&self, host: &StreamingHost) -> Result<api::StreamingApi, Error> {
+        if host.instance() != self.instance_url() {
             return Err(DiscoveryError::OtherInstance.into());
         }
-        Ok(self.api.clone().with_base_url(host.url())?)
+        Ok(api::StreamingApi::new(
+            self.api.http().clone(),
+            api::StreamingApiConfig {
+                origin: host.clone(),
+            },
+        )
+        .maybe_authorization(self.api.authorization().cloned()))
+    }
+}
+
+#[cfg(test)]
+mod construction_tests {
+    use super::*;
+    use concord_example_testserver::{Reply, TestServer};
+
+    #[tokio::test]
+    async fn separate_origins_keep_credentials_and_request_snapshots() {
+        let rest = TestServer::start(|_| Reply::new(204)).await;
+        let stream = TestServer::start(|_| Reply::new(204)).await;
+        let instance = InstanceUrl::parse(&rest.url()).unwrap();
+        let host = StreamingHost::advertised_by(&instance, &stream.url()).unwrap();
+        let api = Mastodon::new(reqwest::Client::new(), instance.clone())
+            .with_token(&AccessToken::new("old").unwrap());
+        let earlier = api.public_timeline();
+        let rotated = api.with_token(&AccessToken::new("fresh").unwrap());
+        let streaming = rotated.streaming_api(&host).unwrap();
+        assert_eq!(rotated.api.origin(), &instance);
+        assert_eq!(streaming.origin(), &host);
+        assert_eq!(rotated.api.base_url().origin(), instance.url().origin());
+        assert_eq!(streaming.base_url().as_str(), host.url());
+        earlier.prepare().unwrap().send_raw().await.unwrap();
+        streaming
+            .public_stream()
+            .prepare()
+            .unwrap()
+            .send_raw()
+            .await
+            .unwrap();
+        let wire = rest.requests();
+        assert_eq!(wire.len(), 1);
+        assert_eq!(wire[0].target, "/api/v1/timelines/public");
+        assert_eq!(wire[0].header("authorization"), Some("Bearer old"));
+        let wire = stream.requests();
+        assert_eq!(wire.len(), 1);
+        assert_eq!(wire[0].target, "/api/v1/streaming/public");
+        assert_eq!(wire[0].header("authorization"), Some("Bearer fresh"));
+        let other = Mastodon::new(
+            reqwest::Client::new(),
+            InstanceUrl::parse(&stream.url()).unwrap(),
+        );
+        assert!(matches!(
+            other.public_stream(&host),
+            Err(Error::Discovery(DiscoveryError::OtherInstance))
+        ));
+        rest.shutdown().await;
+        stream.shutdown().await;
     }
 }

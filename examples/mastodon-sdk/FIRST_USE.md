@@ -1,5 +1,7 @@
 # Fresh consumer: SDK38 Mastodon
 
+Historical author notes. P4.3 now fixes required handle values and declares checked runtime bases; see the current README and `docs/MIGRATION.md`.
+
 ## Evidence boundary
 
 Date: 2026-11-07. Live provider calls: **NOT_RUN**. All application traffic will use

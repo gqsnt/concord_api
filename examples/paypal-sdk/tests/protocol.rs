@@ -725,18 +725,8 @@ async fn unknown_values_are_kept_as_sent() {
 // ---------------------------------------------------------------------------------------------
 // Transport, destination and deadlines
 
-/// The session's credentials belong to one origin: a client moved elsewhere sends nothing, not
-/// even a token request.
-#[tokio::test]
-async fn a_client_moved_to_another_origin_sends_nothing() {
-    let home = FakePayPal::new().start().await;
-    let elsewhere = serve(|_| json_fixture(200, "order-created.json")).await;
-    let moved = api(&home).with_base_url(elsewhere.url()).unwrap();
-    let error = get_order(&moved).await.unwrap_err();
-    assert!(matches!(error, Error::Destination), "{error:?}");
-    assert!(home.requests().is_empty());
-    assert!(elsewhere.requests().is_empty());
-}
+// The destination guard assertions moved to policy::construction_tests: value-backed generated
+// clients no longer offer the retargeting method. The unit test exercises SendWith's native exit.
 
 /// `http_client()` follows no redirect: a `302` is the answer.
 #[tokio::test]

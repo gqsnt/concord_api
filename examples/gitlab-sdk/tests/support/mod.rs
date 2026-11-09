@@ -47,8 +47,8 @@ pub fn base(server: &TestServer) -> String {
 }
 
 pub fn client(server: &TestServer) -> GitLab {
-    GitLab::with_token(http(), PrivateToken::new(TOKEN).unwrap())
-        .with_base_url(base(server))
+    concord::BaseUrl::parse((base(server)).as_ref())
+        .map(|origin| GitLab::at(http(), origin, PrivateToken::new(TOKEN).unwrap()))
         .unwrap()
 }
 

@@ -113,7 +113,7 @@ impl IssueEventPages {
             repo: repo.clone(),
             number,
             per_page: None,
-            binding: Binding::new(OPERATION, repo.repo().clone(), Some(number.get())),
+            binding: Binding::new(OPERATION, repo.repo(), Some(number.get())),
         }
     }
 

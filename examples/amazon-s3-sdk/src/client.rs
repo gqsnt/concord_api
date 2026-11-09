@@ -150,8 +150,6 @@ signed_send!(
 #[derive(Clone)]
 pub struct S3Client {
     api: S3Api,
-    endpoint: Url,
-    signer: Signer,
 }
 
 impl S3Client {
@@ -174,13 +172,7 @@ impl S3Client {
             credentials,
             clock: Clock::system(),
         }));
-        let api = S3Api::new(
-            http,
-            S3ApiConfig {
-                signer: signer.clone(),
-            },
-        );
-        Self::at(api, signer, &endpoint)
+        Self::at(http, signer, &endpoint)
     }
 
     /// Replaces the endpoint (another partition, a FIPS or dual-stack endpoint, an S3-compatible
@@ -193,10 +185,10 @@ impl S3Client {
     /// need one) and no path, query, fragment or user information; [`S3Error::Build`] if
     /// Concord refuses it.
     pub fn with_endpoint(self, url: &str) -> Result<Self, S3Error> {
-        Self::at(self.api, self.signer, url)
+        Self::at(self.api.http().clone(), self.api.signer().clone(), url)
     }
 
-    fn at(api: S3Api, signer: Signer, url: &str) -> Result<Self, S3Error> {
+    fn at(http: reqwest::Client, signer: Signer, url: &str) -> Result<Self, S3Error> {
         let parsed = Url::parse(url).map_err(|_| InputError::new("endpoint", "is not a URL"))?;
         if !matches!(parsed.scheme(), "http" | "https") {
             return Err(InputError::new("endpoint", "must be an http or https URL").into());
@@ -221,21 +213,23 @@ impl S3Client {
             )
             .into());
         }
-        let api = api.with_base_url(parsed.as_str()).map_err(S3Error::Build)?;
-        Ok(Self {
-            api,
-            endpoint: parsed,
-            signer,
-        })
+        let api = S3Api::new(
+            http,
+            S3ApiConfig {
+                origin: concord::BaseUrl::parse(parsed.as_str()).map_err(S3Error::Build)?,
+                signer,
+            },
+        );
+        Ok(Self { api })
     }
 
     /// The same client signing with other credentials (rotated or refreshed by the application,
     /// or the credentials of one request: `s3.clone().with_credentials(c).bucket(..)`).
     pub fn with_credentials(self, credentials: Credentials) -> Self {
         let context = Context {
-            region: self.signer.0.region.clone(),
+            region: self.api.signer().0.region.clone(),
             credentials,
-            clock: self.signer.0.clock.clone(),
+            clock: self.api.signer().0.clock.clone(),
         };
         self.with_context(context)
     }
@@ -243,8 +237,8 @@ impl S3Client {
     /// The same client signing with another clock (a fixed time in tests).
     pub fn with_clock(self, clock: Clock) -> Self {
         let context = Context {
-            region: self.signer.0.region.clone(),
-            credentials: self.signer.0.credentials.clone(),
+            region: self.api.signer().0.region.clone(),
+            credentials: self.api.signer().0.credentials.clone(),
             clock,
         };
         self.with_context(context)
@@ -254,19 +248,17 @@ impl S3Client {
         let signer = Signer(Arc::new(context));
         Self {
             api: self.api.set_signer(signer.clone()),
-            signer,
-            ..self
         }
     }
 
     /// The Region of the credential scope.
     pub fn region(&self) -> &Region {
-        &self.signer.0.region
+        &self.api.signer().0.region
     }
 
     /// The endpoint.
     pub fn endpoint(&self) -> &Url {
-        &self.endpoint
+        self.api.base_url()
     }
 
     /// A bucket handle: [`Bucket`](crate::Bucket), the generated scope (`set_expected_owner`,
@@ -283,7 +275,7 @@ impl S3Client {
     ///
     /// [`S3Error::Build`], [`S3Error::Input`] or [`S3Error::Signing`].
     pub fn prepare<T, E: Endpoint<T>>(&self, operation: E) -> Result<SignedRequest<T>, S3Error> {
-        self.signer.sign(operation.prepare(), |_| Ok(()))
+        self.api.signer().sign(operation.prepare(), |_| Ok(()))
     }
 
     /// Signs a native request you built for an S3 operation this SDK does not declare, with this
@@ -294,7 +286,7 @@ impl S3Client {
     ///
     /// [`S3Error::Signing`].
     pub fn sign(&self, request: &mut reqwest::Request) -> Result<(), S3Error> {
-        let context = &*self.signer.0;
+        let context = &*self.api.signer().0;
         sign_request(
             request,
             &context.credentials,
@@ -307,9 +299,9 @@ impl S3Client {
 
 impl fmt::Debug for S3Client {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let context = &*self.signer.0;
+        let context = &*self.api.signer().0;
         f.debug_struct("S3Client")
-            .field("endpoint", &self.endpoint.as_str())
+            .field("endpoint", &self.api.base_url().as_str())
             .field("region", &context.region)
             .field("credentials", &context.credentials)
             .field("clock", &context.clock)
@@ -589,16 +581,19 @@ impl PutObjectWithMetadata {
     /// name or value) or [`S3Error::Signing`].
     pub fn prepare(self, client: &S3Client) -> Result<SignedRequest<PutObjectOutput>, S3Error> {
         let metadata = self.metadata;
-        client.signer.sign(self.request.prepare(), move |request| {
-            for (name, value) in metadata.iter() {
-                let name = HeaderName::from_bytes(format!("x-amz-meta-{name}").as_bytes())
-                    .map_err(|_| InputError::new("metadata name", "is not a header name"))?;
-                let value = HeaderValue::from_str(value)
-                    .map_err(|_| InputError::new("metadata value", "is not a header value"))?;
-                request.headers_mut().append(name, value);
-            }
-            Ok(())
-        })
+        client
+            .api
+            .signer()
+            .sign(self.request.prepare(), move |request| {
+                for (name, value) in metadata.iter() {
+                    let name = HeaderName::from_bytes(format!("x-amz-meta-{name}").as_bytes())
+                        .map_err(|_| InputError::new("metadata name", "is not a header name"))?;
+                    let value = HeaderValue::from_str(value)
+                        .map_err(|_| InputError::new("metadata value", "is not a header value"))?;
+                    request.headers_mut().append(name, value);
+                }
+                Ok(())
+            })
     }
 
     /// Sends the request once, signed with `client`'s context (the one the request was created

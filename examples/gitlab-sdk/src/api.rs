@@ -31,24 +31,25 @@ use crate::send::SendPolicy;
 pub const PRIVATE_TOKEN: HeaderName = HeaderName::from_static("private-token");
 
 /// GitLab.com's REST API v4 base. A self-managed instance is `https://<host>/api/v4`, set with
-/// [`GitLab::with_base_url`].
+/// [`concord::BaseUrl::parse`].
 pub const GITLAB_COM: &str = "https://gitlab.com/api/v4";
 
 concord::api! {
     /// A slice of the GitLab REST API v4: project issues and the project itself.
     ///
     /// Construct it with [`GitLab::with_token`]; a self-managed instance with
-    /// `.with_base_url("https://gitlab.example.com/api/v4")?`.
+    /// `GitLab::at(http, concord::BaseUrl::parse("https://gitlab.example.com/api/v4")?, token)`.
     ///
     /// Every operation's `send()` returns `Result<`[`Response<T>`](crate::Response)`, `
-    /// [`GitLabError`](crate::GitLabError)`>` ([`SendPolicy`]). `with_base_url` and `prepare()`
+    /// [`GitLabError`](crate::GitLabError)`>` ([`SendPolicy`]). Base parsing and `prepare()`
     /// return `concord::Error` (no request is sent).
     pub client GitLab(
+        origin: concord::BaseUrl,
         /// A personal, project or group access token, sent as `PRIVATE-TOKEN`. Never printed by
         /// Concord. Build it with [`PrivateToken`].
         #[sensitive] header(PRIVATE_TOKEN) token: HeaderValue,
     ) {
-        base "https://gitlab.com/api/v4";
+        base origin;
         send SendPolicy -> Result<crate::Response<_>, crate::GitLabError>;
         format Json;
 
@@ -105,14 +106,20 @@ impl GitLab {
     ///     .redirect(concord_sdk_gitlab::redirect_policy())
     ///     .build()?;
     /// let token = PrivateToken::new("synthetic-token-for-docs")?;
-    /// let gitlab = GitLab::with_token(http, token).with_base_url("https://gitlab.example.com/api/v4")?;
+    /// let gitlab = concord::BaseUrl::parse(("https://gitlab.example.com/api/v4").as_ref()).map(|origin| GitLab::at(http, origin, token))?;
     /// assert!(!format!("{gitlab:?}").contains("synthetic-token-for-docs"));
     /// # Ok(()) }
     /// ```
     pub fn with_token(http: reqwest::Client, token: PrivateToken) -> Self {
+        Self::at(http, concord::BaseUrl::from_static(GITLAB_COM), token)
+    }
+
+    /// Construct for a checked self-managed instance before attaching its token.
+    pub fn at(http: reqwest::Client, origin: concord::BaseUrl, token: PrivateToken) -> Self {
         Self::new(
             http,
             GitLabConfig {
+                origin,
                 token: token.into_header_value(),
             },
         )

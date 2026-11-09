@@ -155,6 +155,7 @@ async fn secrets_never_print() {
     let token = c.issue();
     let continuation = c.issue();
     let config = DigitalOceanConfig {
+        destination: concord_sdk_digitalocean::Destination::production(),
         authorization: HeaderValue::from_str(&format!("Bearer {token}")).unwrap(),
     };
     c.assert_debug_absent("generated config (value not flagged)", &config);

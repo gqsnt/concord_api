@@ -22,7 +22,7 @@ use std::time::Duration;
 
 async fn connect(code_from_validated_callback: String) -> Result<Session, Error> {
     let credentials = Credentials::new(123, "application-secret".into())?;
-    let oauth = OAuth::new(transport(Duration::from_secs(30))?);
+    let oauth = OAuth::new(transport(Duration::from_secs(30))?, concord_sdk_strava::OAuthConfig { origin: concord::BaseUrl::from_static("https://www.strava.com") });
     let tokens = oauth.oauth().token(TokenRequest::authorization_code(
         &credentials, code_from_validated_callback,
     )?).send().await?.value;
@@ -200,3 +200,10 @@ RUSTDOCFLAGS="-D warnings" cargo doc --locked -p concord-sdk-strava --no-deps
 ```
 
 Run the offline operation-effect example with `cargo run --locked --offline -p concord-sdk-strava --example strava_operation_effect`.
+
+The credential session supplies the destination; a handle cannot select another base:
+
+```compile_fail
+use concord_sdk_strava::Strava;
+fn redirect(api: Strava) { let _ = api.with_base_url("https://evil.example"); }
+```

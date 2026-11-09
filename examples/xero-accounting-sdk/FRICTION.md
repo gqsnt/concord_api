@@ -1,5 +1,7 @@
 # Concord friction — SDK35
 
+Historical author notes. P4.3 now fixes required handle values and declares checked runtime bases; see the current README and `docs/MIGRATION.md`.
+
 Baseline `14b9e1e0a89775dbe5cbb9f7837bde677ea5878e`; author date 2026-11-07. All proposed shared changes below are records only. No shared crate was edited. The SDK is example-assisted; the complete consultation ledger is in [PROVENANCE.md](PROVENANCE.md).
 
 ## F1 — durable rotated pairs are outside a header cache

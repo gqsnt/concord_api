@@ -29,7 +29,12 @@ impl KubeContext {
     /// name) without credentials.
     pub fn new(http: reqwest::Client) -> Self {
         Self {
-            client: Kube::new(http),
+            client: Kube::new(
+                http,
+                crate::api::KubeConfig {
+                    origin: concord::BaseUrl::from_static("https://kubernetes.default.svc"),
+                },
+            ),
         }
     }
 
@@ -42,7 +47,13 @@ impl KubeContext {
     /// host (and no user information, query or fragment).
     pub fn with_base_url(self, url: impl AsRef<str>) -> Result<Self, concord::Error> {
         Ok(Self {
-            client: self.client.with_base_url(url)?,
+            client: Kube::new(
+                self.client.http().clone(),
+                crate::api::KubeConfig {
+                    origin: concord::BaseUrl::parse(url.as_ref())?,
+                },
+            )
+            .maybe_authorization(self.client.authorization().cloned()),
         })
     }
 
@@ -90,7 +101,6 @@ impl KubeContext {
             apps: self.client.apps_v1().namespaced(namespace.clone()),
             batch: self.client.batch_v1().namespaced(namespace.clone()),
             networking: self.client.networking_v1().namespaced(namespace.clone()),
-            namespace,
         }
     }
 }
@@ -99,8 +109,6 @@ impl KubeContext {
 #[derive(Clone, concord::Debug)]
 #[sensitive]
 pub struct NamespaceContext {
-    #[public]
-    namespace: NamespaceName,
     core: KubeCoreV1Namespaced,
     apps: KubeAppsV1Namespaced,
     batch: KubeBatchV1Namespaced,
@@ -110,7 +118,7 @@ pub struct NamespaceContext {
 impl NamespaceContext {
     /// The namespace.
     pub fn namespace(&self) -> &NamespaceName {
-        &self.namespace
+        self.core.namespace()
     }
 
     /// `core/v1` in this namespace (Pods, Services, ConfigMaps).

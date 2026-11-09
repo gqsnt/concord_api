@@ -21,8 +21,8 @@ const BODY_LIMIT: usize = 1024 * 1024;
 
 concord::api! {
     /// The CRM wire declaration. Prefer [`HubSpot`] for coordinated refresh and error semantics.
-    pub client CrmApi(#[sensitive] header(AUTHORIZATION) authorization: HeaderValue) {
-        base "https://api.hubapi.com";
+    pub client CrmApi(origin: concord::BaseUrl, #[sensitive] header(AUTHORIZATION) authorization: HeaderValue) {
+        base origin;
         format Json;
         limit BODY_LIMIT;
         scope contacts {
@@ -42,8 +42,8 @@ concord::api! {
 }
 concord::api! {
     /// OAuth wire declaration. Refresh credentials are form body values, never URL parameters.
-    pub client OAuthApi {
-        base "https://api.hubspot.com";
+    pub client OAuthApi(origin: concord::BaseUrl) {
+        base origin;
         response Json;
         limit BODY_LIMIT;
         scope oauth {
@@ -374,9 +374,8 @@ struct Secrets {
     uncertain: bool,
 }
 struct Inner {
-    http: reqwest::Client,
-    crm_base: String,
-    oauth_base: String,
+    oauth: OAuthApi,
+    crm_origin: concord::BaseUrl,
     // Shared with the acquisition future the cache stores, which must not own `Inner`.
     secrets: Arc<Mutex<Secrets>>,
     cache: TokenCache<(), RefreshFailure>,
@@ -405,9 +404,13 @@ impl HubSpot {
         }
         Ok(Self {
             inner: Arc::new(Inner {
-                http,
-                crm_base: "https://api.hubapi.com".into(),
-                oauth_base: "https://api.hubspot.com".into(),
+                oauth: OAuthApi::new(
+                    http,
+                    OAuthApiConfig {
+                        origin: concord::BaseUrl::from_static("https://api.hubspot.com"),
+                    },
+                ),
+                crm_origin: concord::BaseUrl::from_static("https://api.hubapi.com"),
                 secrets: Arc::new(Mutex::new(Secrets {
                     client_id,
                     client_secret,
@@ -425,9 +428,14 @@ impl HubSpot {
     pub fn with_base_url(mut self, url: &str) -> Result<Self, Error> {
         let inner = Arc::get_mut(&mut self.inner)
             .ok_or(Error::Invalid("base cannot change after cloning"))?;
-        OAuthApi::new(inner.http.clone()).with_base_url(url)?;
-        inner.crm_base = url.to_owned();
-        inner.oauth_base = url.to_owned();
+        let origin = concord::BaseUrl::parse(url)?;
+        inner.oauth = OAuthApi::new(
+            inner.oauth.http().clone(),
+            OAuthApiConfig {
+                origin: origin.clone(),
+            },
+        );
+        inner.crm_origin = origin;
         Ok(self)
     }
     /// Return the latest known refresh token for secure persistence. It is secret material.
@@ -442,8 +450,7 @@ impl HubSpot {
     async fn token(&self) -> Result<HeaderValue, Error> {
         // The cache keeps this future while it is in flight: capture its inputs, not `Inner`.
         let secrets = self.inner.secrets.clone();
-        let http = self.inner.http.clone();
-        let oauth_base = self.inner.oauth_base.clone();
+        let api = self.inner.oauth.clone();
         let snapshot = self
             .inner
             .cache
@@ -464,12 +471,6 @@ impl HubSpot {
                         refresh_token: s.refresh_token.clone(),
                     }
                 };
-                let api = OAuthApi::new(http)
-                    .with_base_url(&oauth_base)
-                    .map_err(|_| RefreshFailure {
-                        status: None,
-                        uncertain: true,
-                    })?;
                 let result = api.oauth().refresh(request).send().await;
                 match result {
                     Ok(response) => {
@@ -525,10 +526,13 @@ impl HubSpot {
     }
     async fn api(&self) -> Result<CrmApi, Error> {
         let authorization = self.token().await?;
-        Ok(
-            CrmApi::new(self.inner.http.clone(), CrmApiConfig { authorization })
-                .with_base_url(&self.inner.crm_base)?,
-        )
+        Ok(CrmApi::new(
+            self.inner.oauth.http().clone(),
+            CrmApiConfig {
+                origin: self.inner.crm_origin.clone(),
+                authorization,
+            },
+        ))
     }
     /// Retrieve a contact by ID.
     pub async fn get(&self, id: &str) -> Result<Contact, Error> {
@@ -666,11 +670,16 @@ mod tests {
             client_secret: "secret".into(),
             refresh_token: "refresh".into(),
         };
-        let prepared = OAuthApi::new(reqwest::Client::new())
-            .oauth()
-            .refresh(request)
-            .prepare()
-            .unwrap();
+        let prepared = OAuthApi::new(
+            reqwest::Client::new(),
+            OAuthApiConfig {
+                origin: concord::BaseUrl::from_static("https://api.hubspot.com"),
+            },
+        )
+        .oauth()
+        .refresh(request)
+        .prepare()
+        .unwrap();
         assert_eq!(
             prepared.request().url().as_str(),
             "https://api.hubspot.com/oauth/2026-09/token"
@@ -685,6 +694,7 @@ mod tests {
         let prepared = CrmApi::new(
             reqwest::Client::new(),
             CrmApiConfig {
+                origin: concord::BaseUrl::from_static("https://api.hubapi.com"),
                 authorization: HeaderValue::from_static("Bearer t"),
             },
         )

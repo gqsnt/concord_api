@@ -31,10 +31,11 @@ concord::api! {
     /// Amazon S3, general-purpose buckets: `ListObjectsV2`, `HeadObject`, `GetObject` and
     /// single-request `PutObject`. Every `send()` is signed by the client's [`Signer`].
     pub client S3Api(
+        origin: concord::BaseUrl,
         /// The SigV4 context and send policy of every operation.
-        signer: Signer,
+        mut signer: Signer,
     ) {
-        base "https://s3.us-east-1.amazonaws.com";
+        base origin;
         send signer;
 
         /// One bucket, addressed as the leftmost host label.

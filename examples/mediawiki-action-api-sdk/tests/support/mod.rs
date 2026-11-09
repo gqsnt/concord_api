@@ -16,20 +16,27 @@ pub const API_ERROR: &str = include_str!("../../fixtures/api-error.json");
 pub const UA: &str = "SDK39-Fixture/1.0 (contact: fixture@example.invalid)";
 
 pub fn api(url: &str) -> MediaWiki {
-    MediaWiki::new(
-        reqwest::Client::builder()
-            .no_proxy()
-            .redirect(reqwest::redirect::Policy::none())
-            .retry(reqwest::retry::never())
-            .timeout(Duration::from_secs(5))
-            .build()
-            .unwrap(),
-        MediaWikiConfig {
-            user_agent: UA.into(),
-        },
-    )
-    .with_base_url(format!("{url}/w/api.php"))
-    .unwrap()
+    api_with_user_agent(url, UA)
+}
+
+pub fn api_with_user_agent(url: &str, user_agent: &str) -> MediaWiki {
+    concord::BaseUrl::parse((format!("{url}/w/api.php")).as_ref())
+        .map(|origin| {
+            MediaWiki::new(
+                reqwest::Client::builder()
+                    .no_proxy()
+                    .redirect(reqwest::redirect::Policy::none())
+                    .retry(reqwest::retry::never())
+                    .timeout(Duration::from_secs(5))
+                    .build()
+                    .unwrap(),
+                MediaWikiConfig {
+                    origin,
+                    user_agent: user_agent.into(),
+                },
+            )
+        })
+        .unwrap()
 }
 
 pub fn param(request: &Recorded, name: &str) -> Option<String> {

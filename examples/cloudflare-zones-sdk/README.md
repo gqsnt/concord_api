@@ -189,6 +189,7 @@ to the same requests. The SDK does not throttle on its own and assumes no client
   only, never of the call.
 - A 429 is `Error::RateLimited` with its `Retry-After`. The default `SendPolicy` sends each request
   once. Opt in to waiting with
+  The declared `mut policy` permits
   `cf.set_policy(SendPolicy::default().retry_rate_limited(attempts, max_retry_after))`: a `GET`
   answered 429 with a valid `Retry-After` of at most `max_retry_after` is sent again after exactly
   that delay, at most `attempts` times in all. Nothing else is repeated (no 5xx, no transport

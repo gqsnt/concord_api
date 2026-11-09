@@ -195,7 +195,16 @@ async fn wrong_region_and_missing_application_key_stay_redacted_authentication_e
             POST post();
         }
     }
-    use concord::SendOperation as _;
+    use concord::SendWith as _;
+    struct Posting(InvalidPost);
+    impl concord::Endpoint<()> for Posting {
+        fn prepare(self) -> Result<concord::Prepared<()>, concord::Error> {
+            self.0.prepare()
+        }
+        fn operation() -> concord::Operation {
+            concord_sdk_datadog_events::DatadogApiEventsPost::operation()
+        }
+    }
     let invalid = Invalid::new(
         reqwest::Client::new(),
         InvalidConfig {
@@ -203,10 +212,7 @@ async fn wrong_region_and_missing_application_key_stay_redacted_authentication_e
         },
     );
     let error = concord_sdk_datadog_events::SendPolicy
-        .send(
-            concord_sdk_datadog_events::DatadogApiOperation::EventsPost,
-            invalid.post(),
-        )
+        .send(Posting(invalid.post()))
         .await
         .unwrap_err();
     let Error::Concord { source, .. } = &error else {

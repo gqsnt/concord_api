@@ -447,7 +447,7 @@ struct ChildFailure {
 pub async fn activity_audit(repo: &RepoContext, input: AuditInput) -> ActivityReport {
     let log = RequestLog::default();
     let mut report = ActivityReport {
-        repo: repo.repo().clone(),
+        repo: repo.repo(),
         repository: None,
         entries: Vec::new(),
         requests: Vec::new(),
