@@ -34,20 +34,8 @@ error: duplicate `#[read]`
 28 |         #[read]
    |         ^
 
-error: the client's operation enum `ShopOperation` has the name of the type generated for `Shop.operation`; rename that owner
-  --> tests/ui/read_errors.rs:33:16
-   |
-33 |     pub client Shop {
-   |                ^^^^
-
-error: generated for this owner
-  --> tests/ui/read_errors.rs:35:13
-   |
-35 |         GET operation();
-   |             ^^^^^^^^^
-
 error: unsupported attribute here; only documentation comments are allowed
-  --> tests/ui/read_errors.rs:39:5
+  --> tests/ui/read_errors.rs:33:5
    |
-39 |     #[read]
+33 |     #[read]
    |     ^

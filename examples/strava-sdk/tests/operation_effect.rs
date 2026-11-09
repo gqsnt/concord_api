@@ -2,7 +2,7 @@
 mod support;
 use concord_example_testserver::{Recorded, Reply, TestServer};
 use concord_sdk_strava::{
-    ActivityUpdate, OAuthOperation, StravaOperation,
+    ActivityUpdate, StravaOperation,
     concord::{Endpoint, ErrorKind, Operation},
 };
 
@@ -22,9 +22,8 @@ fn every_generated_strava_identity_has_its_declared_effect() {
         assert_eq!(operation.is_read(), read);
         assert_eq!(Op::from_operation(operation), Some(identity));
     }
-    // OAuth uses the SendWith adapter and also gets an enum, without an opt-in.
-    assert_eq!(OAuthOperation::ALL, &[OAuthOperation::OauthToken]);
-    assert!(!OAuthOperation::OauthToken.operation().is_read());
+    // OAuth's token grant (a `SendWith` client, no enum) is a POST: not a read.
+    assert!(!concord_sdk_strava::OAuthOauthToken::operation().is_read());
     assert!(!Operation::label("native transfer").is_read());
 }
 

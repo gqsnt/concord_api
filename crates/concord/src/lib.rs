@@ -137,9 +137,8 @@
 //!              format FORMAT;  request FORMAT;  request FORMAT "media/type";  response FORMAT;
 //!              (on clients, scopes and endpoints; the nearest one wins)
 //!              send policy;  (client only: a policy value or a stateless policy type)
-//!              operations Name;  (client only: names the enum of its endpoints, else
-//!                                 `<Client>Operation`; with `send`, each `send()` passes its
-//!                                 variant to `SendOperation<T, Name>`)
+//!              operations Name;  (client only: the enum `Name` of its endpoints; with `send`,
+//!                                 each `send()` passes its variant to `SendOperation<T, Name>`)
 //!
 //! query / headers blocks (a header key is a literal or a native constant):
 //!     KEY = v;                        set a key no enclosing owner sets

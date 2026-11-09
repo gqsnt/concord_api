@@ -2,8 +2,7 @@
 //! `OPTIONS` read; other methods do not, unless the endpoint or an enclosing scope is `#[read]`.
 //! The fact is on both forms of a declared identity (the type's `operation()` and the endpoint
 //! metadata every carrier holds) and survives `Prepared`, `Decoder`, `Received`, `Incoming`,
-//! `ResponseMeta` and errors. Every client generates `<Client>Operation` (named by `operations
-//! Name;` where present, which also makes `send()` pass the variant to `SendOperation`).
+//! `ResponseMeta` and errors, and policies of either kind read it.
 
 mod support;
 
@@ -15,6 +14,7 @@ use support::{Reply, Server};
 concord::api! {
     pub client Shop {
         base "http://shop.invalid";
+        operations ShopOperation;
         GET get();
         HEAD head();
         OPTIONS options();
@@ -159,7 +159,7 @@ async fn the_fact_survives_receiving_metadata_and_errors() {
 }
 
 // A `SendWith` policy (here not `Sync`) reads the fact from `E::operation()`; a client with
-// `operations Name;` passes the variant to its `SendOperation` policy.
+// `operations Name;` passes the variant to its `SendOperation` policy, which reads it too.
 
 /// Not `Sync` (a `Cell`): nothing new is required of a policy.
 #[derive(Default)]
@@ -221,23 +221,18 @@ concord::api! {
 }
 
 #[tokio::test]
-async fn policies_read_the_fact_and_every_client_has_its_enum() {
+async fn policies_of_either_kind_read_the_fact() {
     let simple = Simple::new(reqwest::Client::new());
     assert_eq!(simple.one().send().await, (true, "Simple.one"));
     assert_eq!(simple.two().send().await, (true, "Simple.two"));
     assert_eq!(simple.three().send().await, (false, "Simple.three"));
-    assert_eq!(
-        SimpleOperation::ALL,
-        &[SimpleOperation::One, SimpleOperation::Two, SimpleOperation::Three]
-    );
 
     let tagged = Tagged::new(reqwest::Client::new());
     assert_eq!(tagged.one().send().await, (TaggedOperation::One, true));
     assert_eq!(tagged.two().send().await, (TaggedOperation::Two, false));
 
-    // Without a send policy the enum is still generated; `send()` is one ordinary execution.
-    assert_eq!(BareOperation::ALL, &[BareOperation::One]);
-    assert!(BareOperation::One.operation().is_read());
+    // Without a send policy `send()` is one ordinary execution; the fact is on the type.
+    assert!(BareOne::operation().is_read());
     let server = Server::reply(Reply::new(204)).await;
     let bare = Bare::new(reqwest::Client::new())
         .with_base_url(server.url())

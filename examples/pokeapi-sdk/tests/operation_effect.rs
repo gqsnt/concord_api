@@ -1,19 +1,16 @@
-//! N3 must adapt the unchanged KeepHead SendWith policy without caller changes.
-use concord::reqwest;
+//! The unchanged declaration and KeepHead SendWith policy: both GETs read, no caller changes.
+use concord::{Endpoint, reqwest};
 use concord_example_testserver::{Recorded, Reply, TestServer};
-use concord_sdk_pokeapi::{Client, PokeApiOperation, Pokemon, Response};
+use concord_sdk_pokeapi::{Client, PokeApiList, PokeApiPokemon, Pokemon, PokemonPage, Response};
 
 #[test]
-fn an_unannotated_client_gets_read_descriptors_and_an_operation_enum() {
-    assert_eq!(
-        PokeApiOperation::ALL,
-        &[PokeApiOperation::Pokemon, PokeApiOperation::List,]
-    );
-    for identity in PokeApiOperation::ALL {
-        let operation = identity.operation();
+fn an_unannotated_client_gets_read_descriptors() {
+    for operation in [
+        <PokeApiPokemon as Endpoint<Pokemon>>::operation(),
+        <PokeApiList as Endpoint<PokemonPage>>::operation(),
+    ] {
         assert_eq!(operation.method(), Some("GET"));
         assert!(operation.is_read());
-        assert_eq!(PokeApiOperation::from_operation(operation), Some(*identity));
     }
 }
 

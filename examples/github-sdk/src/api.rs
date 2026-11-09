@@ -63,6 +63,9 @@ concord::api! {
             X_GITHUB_API_VERSION = "{api_version}";
         }
         format Json;
+        /// Every declared operation: [`paging::operation::listing_id`](crate::paging::operation)
+        /// decides, per operation, which are Link-paged listings and their GitHub operation ids.
+        operations GitHubOperation;
 
         /// One repository: `repos/{owner}/{repo}`.
         scope repo(owner: Owner, name: RepoName) {
