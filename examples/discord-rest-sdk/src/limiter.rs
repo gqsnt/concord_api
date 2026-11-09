@@ -76,9 +76,9 @@ impl Route {
         }
     }
 
-    /// Anything but `GET`/`HEAD` changes state on Discord.
+    /// Use the declaration's read effect to distinguish uncertain writes from failed reads.
     fn is_write(&self) -> bool {
-        !matches!(self.operation.method(), Some("GET" | "HEAD"))
+        !self.operation.is_read()
     }
 
     /// A transport failure before a response head. For a write it is ambiguous, a refused

@@ -74,12 +74,20 @@ bounds and direct policy calls use `SendWith` again. Unknown operation identitie
 before dispatch by SDK policies that require their own endpoints; lookup compares name/method
 textually and cannot authenticate an arbitrary user-written Endpoint.
 
+**Reserved module name (breaking):** every `client Client` declaration now introduces the
+doc-hidden, crate-private `__ClientOperation` in its surrounding module, including clients
+without a send policy. For another client name, the reservation is `__<ClientName>Operation`.
+Rename any existing item with that name, or rename the client declaration to avoid the collision.
+
 `#[read]` marks provider reads whose method is not GET, HEAD or OPTIONS (including GraphQL
 queries, signed private reads and body searches). It does not grant replay permission.
 `page next link;` / `page next url field?.next;` add `Follow` and the corresponding continuation
 trait. Followed sends keep the original operation, policy, headers and decoder and enforce the
 same origin. Default continuation dispatch now defers input Send bounds until use; a local
 input can still be built or prepared; the original endpoint's local `send()` future remains available.
+The eight SDKs declare 26 continuations: GitHub 13, GitLab 1, DigitalOcean 3, Mailgun 1,
+Graph 3, Registry 2, Sentry 2 and Snowflake 1. DigitalOcean's three declared endpoints serve
+four traversal factories; filtered and unfiltered droplet traversals share one endpoint.
 
 **Breaking paging changes inherited from the direction:** `Sends` implementations provide the
 hidden `__send_followed` method. GitHub `LinkPages::new` drops its prepare callback and requires

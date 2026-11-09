@@ -23,9 +23,14 @@ are on the [archive branch](https://github.com/gqsnt/concord_api/tree/archive/de
 - Removed `operations Name;`, `SendOperation` and public SDK operation enums (breaking).
   Every policy uses `SendWith<T>` and runtime `E::operation()`; automatic crate-private
   inventories preserve exhaustive SDK matches and E0004 for unclassified endpoints.
+- Reserved `__<ClientName>Operation` in every client's surrounding module (breaking), even
+  without a send policy (`__ClientOperation` for `client Client`). Rename an existing colliding
+  item or the client declaration.
 - Added provider read facts (`#[read]`, `Operation::is_read()`), next-link/URL declarations and
   policy-preserving followed dispatch. Graph and Registry now follow declared endpoints.
   Default continuation Send bounds apply at use, preserving local non-Send inputs/outputs.
+  Eight SDKs have 26 continuation declarations; DigitalOcean's three declared endpoints serve
+  four traversal factories, with filtered and unfiltered droplets sharing one endpoint.
 - Shared page starts and repeated-key refusal replace paging twins and Datadog/Notion cycle
   errors. Factories validate every replacement start. Mailgun keeps eager `pages_from` checks.
 - Prefixed the three operation-effect example targets with their SDK names.

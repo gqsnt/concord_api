@@ -149,6 +149,7 @@ fn classify<T>(outcome: &Result<Received<T>, concord::Error>, max: Duration) -> 
     }
 }
 
+// Replay is deliberately GET/HEAD-only; a declared POST read or OPTIONS remains single-shot.
 fn is_read<E: Endpoint<T>, T>() -> bool {
     matches!(E::operation().method(), Some("GET" | "HEAD"))
 }

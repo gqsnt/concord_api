@@ -43,6 +43,7 @@ impl<T: Send> SendWith<T> for Policy {
         {
             return Err(Error::new(ErrorKind::TenantMismatch));
         }
+        // Replay and read-scope eligibility require an actual GET; a declared read fact grants neither.
         let read = request.method() == Method::GET;
         self.auth.require(!read)?;
         let mut retry = RetryPolicy::new(NonZeroUsize::new(if read { 2 } else { 1 }).unwrap());
