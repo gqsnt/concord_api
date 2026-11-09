@@ -29,7 +29,6 @@ mod kw {
     syn::custom_keyword!(send);
     syn::custom_keyword!(params);
     syn::custom_keyword!(limit);
-    syn::custom_keyword!(operations);
     syn::custom_keyword!(page);
     syn::custom_keyword!(next);
     syn::custom_keyword!(link);
@@ -596,9 +595,6 @@ pub struct Stmts {
     pub send: Option<(Type, Span, Option<Type>)>,
     /// `limit EXPR;` on any owner: the bound, in bytes, of a finite typed output's body.
     pub limit: Option<(Expr, Span)>,
-    /// `/// docs` `operations Name;` on the client: the generated enum of its endpoints, whose
-    /// variant each generated `send()` passes to the send policy.
-    pub operations: Option<Operations>,
     /// `page next link;` or `page next url a?.b;` on an endpoint: where the provider issues the
     /// next page's URL.
     pub next: Option<NextStmt>,
@@ -622,12 +618,6 @@ pub enum NextSource {
 pub struct NextStep {
     pub field: Ident,
     pub optional: bool,
-}
-
-/// `/// docs` `operations Name;` on the client.
-pub struct Operations {
-    pub docs: Vec<Attribute>,
-    pub name: Ident,
 }
 
 #[derive(Clone)]
@@ -1015,43 +1005,6 @@ fn parse_owner_body(
                     ));
                 }
             }
-            continue;
-        }
-        // `/// docs` `operations Name;`: the client's operation enum.
-        if ahead.peek(kw::operations) && !ahead.peek2(Token![::]) {
-            let attrs = input.call(Attribute::parse_outer)?;
-            let docs = docs_only(attrs)?;
-            let kw: kw::operations = input.parse()?;
-            if base.is_none() {
-                return Err(syn::Error::new(
-                    kw.span,
-                    "`operations` is only allowed on the client: it enumerates every endpoint of the client",
-                ));
-            }
-            if let Some(first) = children.first() {
-                let first: &Owner = first;
-                return Err(syn::Error::new(
-                    kw.span,
-                    format!(
-                        "owner statements (`operations`, `send`, `path`, ...) must precede child declarations (first child: `{}`)",
-                        first.name
-                    ),
-                ));
-            }
-            if !input.peek(Ident) {
-                return Err(input.error(
-                    "expected the name of the enum to generate: `operations ApiOperation;`",
-                ));
-            }
-            let name: Ident = input.parse()?;
-            input.parse::<Token![;]>()?;
-            if stmts.operations.is_some() {
-                return Err(syn::Error::new(
-                    kw.span,
-                    "`operations` is set twice on the client",
-                ));
-            }
-            stmts.operations = Some(Operations { docs, name });
             continue;
         }
         if input.peek(kw::base) {

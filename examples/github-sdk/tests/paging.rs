@@ -902,11 +902,7 @@ async fn a_guarded_link_walk_refuses_a_longer_cycle_with_its_binding_and_prefix(
             .await
             .unwrap_err();
         assert_eq!(
-            partial
-                .collected
-                .iter()
-                .flat_map(ids)
-                .collect::<Vec<_>>(),
+            partial.collected.iter().flat_map(ids).collect::<Vec<_>>(),
             [1, 2, 3]
         );
         assert!(matches!(partial.error, PagesError::Repeated { .. }));

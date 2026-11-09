@@ -243,19 +243,22 @@ impl std::error::Error for AuthError {
     }
 }
 
-/// A 2xx page that breaks the documented pagination contract.
+/// A page or endpoint that breaks the SDK protocol contract.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum ProtocolError {
     /// `meta.page.after` is present but empty: sending it back would not continue the
     /// listing.
     EmptyCursor,
+    /// The send policy was given an endpoint outside this SDK. Nothing was sent.
+    UndeclaredOperation,
 }
 
 impl fmt::Display for ProtocolError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str(match self {
             Self::EmptyCursor => "the page's `meta.page.after` cursor is empty",
+            Self::UndeclaredOperation => "the operation is not declared by this SDK",
         })
     }
 }
@@ -279,7 +282,7 @@ pub enum Error {
     /// Any other non-2xx status (including a redirect, which the SDK's transport does not
     /// follow).
     Provider(Box<ProviderError>),
-    /// A 2xx page broke the pagination contract.
+    /// A page or endpoint broke the SDK protocol contract.
     Protocol(ProtocolError),
     /// A post may have reached Datadog, but its documented acceptance could not be read.
     /// The event may exist. No automatic retry was made; an aggregation key cannot deduplicate

@@ -114,7 +114,7 @@ async fn server(
         }
     });
     let api = Ledger::new(reqwest::Client::new())
-        .with_base_url(&format!("http://{addr}"))
+        .with_base_url(format!("http://{addr}"))
         .unwrap();
     (api, rx, task)
 }
@@ -340,7 +340,8 @@ async fn invoices_exhaustion_and_cap_resume() {
     };
     assert_eq!(resume.key().map(String::as_str), Some("next"));
     assert_eq!(
-        invoices_from(api, resume, None)
+        all_invoices(api, None)
+            .starting_at(resume)
             .items()
             .collect_complete()
             .await

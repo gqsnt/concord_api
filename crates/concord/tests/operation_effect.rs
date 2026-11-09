@@ -8,13 +8,12 @@ mod support;
 
 use std::cell::Cell;
 
-use concord::{Endpoint, ErrorKind, Operation, SendOperation, SendWith, reqwest};
+use concord::{Endpoint, ErrorKind, Operation, SendWith, reqwest};
 use support::{Reply, Server};
 
 concord::api! {
     pub client Shop {
         base "http://shop.invalid";
-        operations ShopOperation;
         GET get();
         HEAD head();
         OPTIONS options();
@@ -52,7 +51,7 @@ fn reads<E: Endpoint<T>, T>(_: &E) -> bool {
 
 #[test]
 fn methods_give_the_default_and_read_marks_the_rest() {
-    use ShopOperation as Op;
+    use __ShopOperation as Op;
     let expected = [
         (Op::Get, true),
         (Op::Head, true),
@@ -130,7 +129,14 @@ async fn the_fact_survives_receiving_metadata_and_errors() {
         .unwrap();
 
     // A read POST: received, its owned metadata, its unread body.
-    let received = shop.account().balance().prepare().unwrap().receive().await.unwrap();
+    let received = shop
+        .account()
+        .balance()
+        .prepare()
+        .unwrap()
+        .receive()
+        .await
+        .unwrap();
     assert!(received.operation().unwrap().is_read());
     assert!(received.meta().operation().unwrap().is_read());
     let incoming = received.into_incoming().unwrap();
@@ -153,13 +159,19 @@ async fn the_fact_survives_receiving_metadata_and_errors() {
     let refused = Shop::new(reqwest::Client::new())
         .with_base_url(format!("http://{}", support::refused_addr()))
         .unwrap();
-    let error = refused.account().history().trades().send().await.unwrap_err();
+    let error = refused
+        .account()
+        .history()
+        .trades()
+        .send()
+        .await
+        .unwrap_err();
     assert_eq!(error.kind(), ErrorKind::Transport);
     assert!(error.operation().unwrap().is_read());
 }
 
-// A `SendWith` policy (here not `Sync`) reads the fact from `E::operation()`; a client with
-// `operations Name;` passes the variant to its `SendOperation` policy, which reads it too.
+// A `SendWith` policy (here not `Sync`) reads the fact from `E::operation()`; the private
+// inventory lets another policy classify it exhaustively.
 
 /// Not `Sync` (a `Cell`): nothing new is required of a policy.
 #[derive(Default)]
@@ -188,26 +200,22 @@ concord::api! {
     }
 }
 
-/// Classifies by the variant it is handed.
+/// Classifies the runtime endpoint identity.
 #[derive(Default)]
-pub struct Classifying;
+struct Classifying;
 
-impl<T: Send> SendOperation<T, TaggedOperation> for Classifying {
-    type Output = (TaggedOperation, bool);
-    async fn send<E: Endpoint<T> + Send>(
-        &self,
-        operation: TaggedOperation,
-        _endpoint: E,
-    ) -> Self::Output {
+impl<T: Send> SendWith<T> for Classifying {
+    type Output = (__TaggedOperation, bool);
+    async fn send<E: Endpoint<T> + Send>(&self, _endpoint: E) -> Self::Output {
+        let operation = __TaggedOperation::from_operation(E::operation()).unwrap();
         (operation, E::operation().is_read())
     }
 }
 
 concord::api! {
-    pub client Tagged {
+    client Tagged {
         base "http://tagged.invalid";
         send Classifying;
-        operations TaggedOperation;
         GET one();
         POST two();
     }
@@ -221,15 +229,15 @@ concord::api! {
 }
 
 #[tokio::test]
-async fn policies_of_either_kind_read_the_fact() {
+async fn both_runtime_policy_styles_read_the_fact() {
     let simple = Simple::new(reqwest::Client::new());
     assert_eq!(simple.one().send().await, (true, "Simple.one"));
     assert_eq!(simple.two().send().await, (true, "Simple.two"));
     assert_eq!(simple.three().send().await, (false, "Simple.three"));
 
     let tagged = Tagged::new(reqwest::Client::new());
-    assert_eq!(tagged.one().send().await, (TaggedOperation::One, true));
-    assert_eq!(tagged.two().send().await, (TaggedOperation::Two, false));
+    assert_eq!(tagged.one().send().await, (__TaggedOperation::One, true));
+    assert_eq!(tagged.two().send().await, (__TaggedOperation::Two, false));
 
     // Without a send policy `send()` is one ordinary execution; the fact is on the type.
     assert!(BareOne::operation().is_read());

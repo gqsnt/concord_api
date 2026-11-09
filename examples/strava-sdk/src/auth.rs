@@ -1,7 +1,7 @@
 //! OAuth rotation and the single owner of application retries.
 use crate::{Error, OAuth, RateLimits, Response, Strava, StravaConfig, StravaOperation, finish};
 use concord::{
-    Endpoint, SendOperation,
+    Endpoint, SendWith,
     reqwest::{self, header::AUTHORIZATION},
 };
 use concord_auth::{Token, TokenCache};
@@ -287,13 +287,11 @@ fn granted(scopes: &str, required: &str) -> bool {
         .any(|scope| scope == required)
 }
 
-impl<T: Send> SendOperation<T, StravaOperation> for Session {
+impl<T: Send> SendWith<T> for Session {
     type Output = Result<Response<T>, Error>;
-    async fn send<E: Endpoint<T> + Send>(
-        &self,
-        operation: StravaOperation,
-        endpoint: E,
-    ) -> Self::Output {
+    async fn send<E: Endpoint<T> + Send>(&self, endpoint: E) -> Self::Output {
+        let operation = StravaOperation::from_operation(E::operation())
+            .ok_or(Error::Invalid("operation is not declared by this SDK"))?;
         let read = E::operation().is_read();
         let uncertain = !read;
         let Class {

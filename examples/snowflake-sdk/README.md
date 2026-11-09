@@ -276,3 +276,7 @@ calls Snowflake. `tests/first_use.rs` is reserved for the independent consumer.
 a gated cancel/completion race with both accepted and rejected cancel replies. It
 also checks opaque link bytes, cloned-plan updates and handle/link failures. See
 [MAINTENANCE.md](MAINTENANCE.md) for the change evidence and compatibility adjustment.
+
+### Operations and paging (Concord Next)
+
+Partition retrieval declares `page next link;` and prepares followed endpoints. The partition plan validates next/prev/first/last links and allows out-of-order fetches. Status URLs retain a hand follower because they poll one remote statement across HTTP 200/202 rather than continue a page chain.

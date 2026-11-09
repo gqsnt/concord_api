@@ -55,9 +55,9 @@ concord::api! {
         response Json;
         limit BODY_LIMIT;
         /// A page of issues.
-        POST issues(body request: GraphqlRequest<ListVariables>) -> Envelope<IssuesData>;
+        #[read] POST issues(body request: GraphqlRequest<ListVariables>) -> Envelope<IssuesData>;
         /// One issue.
-        POST issue(body request: GraphqlRequest<IssueVariables>) -> Envelope<IssueData>;
+        #[read] POST issue(body request: GraphqlRequest<IssueVariables>) -> Envelope<IssueData>;
     }
 }
 
@@ -414,5 +414,17 @@ mod tests {
         assert_eq!(error.kind(), concord::ErrorKind::Limit);
         assert_eq!(error.head().unwrap().status().as_u16(), 200);
         server.shutdown().await;
+    }
+}
+
+#[cfg(test)]
+mod read_operation_tests {
+    use super::*;
+    #[test]
+    fn declared_post_reads_keep_their_method_and_effect() {
+        for operation in [LinearApiIssues::operation(), LinearApiIssue::operation()] {
+            assert_eq!(operation.method(), Some("POST"));
+            assert!(operation.is_read(), "{}", operation.name());
+        }
     }
 }

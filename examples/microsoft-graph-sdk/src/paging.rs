@@ -1,7 +1,9 @@
 //! Finite JSON page traversal with explicit completion and resumable partial outcomes.
 use std::{num::NonZeroUsize, sync::Arc};
 
-use concord::{ErrorKind, IgnoreContentType, Json, Prepared, ResponseMeta};
+use concord::{
+    Endpoint, ErrorKind, Follow, IgnoreContentType, Json, NextUrl, Prepared, ResponseMeta,
+};
 use concord_pagination::{Page, Pages, Resume};
 
 use crate::{
@@ -25,7 +27,8 @@ pub type GraphPage<T> = Page<T, NextLink, PageMeta>;
 /// Owned traversal. Use `next_page` for delta so the final metadata is retained.
 pub type GraphPages<T> = Pages<T, NextLink, PageMeta, GraphError>;
 
-type Factory<T> = Arc<dyn Fn() -> Result<Prepared<Envelope<T>>, concord::Error> + Send + Sync>;
+type Factory<T> =
+    Arc<dyn Fn(Option<NextUrl>) -> Result<Prepared<Envelope<T>>, concord::Error> + Send + Sync>;
 
 /// A reusable request factory bound to one authorization context, collection and selection.
 /// Creation performs no HTTP I/O. Every fetch uses the Concord-declared operation once.
@@ -54,16 +57,23 @@ impl<T> Clone for Listing<T> {
 }
 
 impl<T: Send + 'static> Listing<T> {
-    pub(crate) fn new(
+    pub(crate) fn new<E>(
         client: &GraphClient,
         collection: Collection,
         select: String,
         start: Option<DeltaLink>,
-        prepare: impl Fn() -> Result<Prepared<Envelope<T>>, concord::Error> + Send + Sync + 'static,
+        endpoint: E,
         valid: fn(&T) -> bool,
-    ) -> Result<Self, GraphError> {
+    ) -> Result<Self, GraphError>
+    where
+        E: Follow<Envelope<T>> + Clone + Send + Sync + 'static,
+    {
+        let prepare = move |target: Option<NextUrl>| match target {
+            Some(target) => endpoint.clone().follow(target).prepare(),
+            None => endpoint.clone().prepare(),
+        };
         // The collection path comes from the generated operation, including encoded group ids.
-        let request = prepare()?;
+        let request = prepare(None)?;
         let binding = client.binding(
             collection,
             select,
@@ -90,7 +100,6 @@ impl<T: Send + 'static> Listing<T> {
     /// Empty pages retain their next link; only a delta link completes a users-delta round.
     /// Unsafe links and invalid envelopes fail before emitting the affected page's items.
     pub async fn fetch(&self, next: Option<&NextLink>) -> Result<GraphPage<T>, GraphError> {
-        let mut prepared = (self.prepare)()?;
         let link = if let Some(next) = next {
             next.0.check(&self.binding, LinkKind::Next)?;
             Some(&next.0)
@@ -100,9 +109,11 @@ impl<T: Send + 'static> Listing<T> {
         } else {
             None
         };
-        if let Some(link) = link {
-            prepared = prepared.follow(&link.url)?;
-        }
+        let prepared = (self.prepare)(link.map(|link| {
+            NextUrl::from_url(
+                concord::reqwest::Url::parse(&link.url).expect("validated stored link"),
+            )
+        }))?;
         let requested = prepared.request().url().clone();
         let received = prepared.receive().await?;
         if !received.status().is_success() {

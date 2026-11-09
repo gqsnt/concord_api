@@ -1,5 +1,7 @@
 # First use: concord-sdk-microsoft-graph (independent consumer)
 
+Current API note (P4.2): this evidence records the earlier API. Paging `_from` twins now use the base factory followed by `.starting_at(Resume::At(key))`; Datadog/Notion traversal cycles use `PagesError::Repeated`. See [migration](../../docs/MIGRATION.md#runtime-operations-and-paging-p42).
+
 Runner: Claude Opus subagent (requested in the capsule: "Claude Opus subagent"; the harness
 reported the model as `claude-opus-5-5`). Held-out wave, first pass against the library frozen
 at `47a25fbf` plus the SDK author commit `e80ef9e3`. I did not write this SDK and did not read its

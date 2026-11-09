@@ -20,7 +20,7 @@ concord::api! {
         limit crate::RESPONSE_LIMIT;
 
         /// Query a data source. Its cursor belongs in the JSON body.
-        POST query(data_source_id: String, body query: QueryBody) -> List<QueryResult> {
+        #[read] POST query(data_source_id: String, body query: QueryBody) -> List<QueryResult> {
             path "data_sources/{data_source_id}/query";
         }
         /// Retrieve properties and metadata; this does not retrieve page content.
@@ -29,5 +29,16 @@ concord::api! {
         GET children(block_id: String, query page_size: u8, query start_cursor?: String) -> List<Block> {
             path "blocks/{block_id}/children";
         }
+    }
+}
+
+#[cfg(test)]
+mod read_operation_tests {
+    use super::*;
+    #[test]
+    fn declared_post_reads_keep_their_method_and_effect() {
+        let operation = NotionQuery::operation();
+        assert_eq!(operation.method(), Some("POST"));
+        assert!(operation.is_read(), "{}", operation.name());
     }
 }

@@ -256,15 +256,7 @@ pub fn all_invoices(
     api: Ledger,
     max_pages: Option<NonZeroUsize>,
 ) -> Pages<Invoice, String, (), concord::Error> {
-    invoices_from(api, Resume::Start, max_pages)
-}
-
-pub fn invoices_from(
-    api: Ledger,
-    from: Resume<String>,
-    max_pages: Option<NonZeroUsize>,
-) -> Pages<Invoice, String, (), concord::Error> {
-    let pages = Pages::new(from, move |cursor: Option<String>| {
+    let pages = Pages::new(Resume::Start, move |cursor: Option<String>| {
         let api = api.clone();
         async move {
             let page = api.invoices().maybe_cursor(cursor).send().await?;

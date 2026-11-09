@@ -125,9 +125,6 @@ pub enum Kind {
         /// `send P -> Template;`: the declared result of every generated `send()`, with `_` for
         /// the endpoint's output.
         send_output: Option<Type>,
-        /// `operations Name;`: the generated enum of the client's endpoints, whose variant every
-        /// generated `send()` passes to the policy (`SendOperation` instead of `SendWith`).
-        operations: Option<syntax::Operations>,
     },
     Scope,
     Endpoint {
@@ -756,12 +753,9 @@ impl Model {
         }
     }
 
-    /// The client's `operations Name;` statement, if any.
-    pub fn operations(&self) -> Option<&syntax::Operations> {
-        match &self.owners[0].kind {
-            Kind::Client { operations, .. } => operations.as_ref(),
-            _ => None,
-        }
+    /// Internal operation inventory, distinct from every generated public owner type.
+    pub fn operations_name(&self) -> Ident {
+        format_ident!("__{}Operation", plain(&self.owners[0].type_name))
     }
 
     /// Whether the endpoint `index` only reads: its method is `GET`, `HEAD` or `OPTIONS`, or it or
@@ -794,7 +788,13 @@ impl Model {
         let client = plain(&self.owners[0].type_name);
         let full = plain(&owner.type_name);
         let name = full.strip_prefix(client.as_str()).unwrap_or(&full);
-        Ident::new(name, owner.name.span())
+        // Private inventory generation must not reject an otherwise valid endpoint name.
+        // Pascal names contain no underscores, so a suffix cannot collide with another variant.
+        if matches!(name, "Self" | "ALL") {
+            format_ident!("{name}_", span = owner.name.span())
+        } else {
+            Ident::new(name, owner.name.span())
+        }
     }
 
     /// The client value a `send value;` statement names (a single identifier equal to a client
@@ -1903,7 +1903,6 @@ impl Model {
     }
 
     fn check_names(&self, errors: &mut Errors) {
-        self.check_operations(errors);
         self.check_reads(errors);
         // Generated type names.
         let mut types: BTreeMap<String, &Ident> = BTreeMap::new();
@@ -2042,71 +2041,6 @@ impl Model {
 }
 
 impl Model {
-    /// `operations Name;`: `Name` is a new type of the module (not one this declaration already
-    /// generates, nor a parameter group's trait), and every endpoint's variant is a valid variant
-    /// name that leaves the enum's own items (`ALL`, `operation`, `from_operation`) reachable.
-    fn check_operations(&self, errors: &mut Errors) {
-        let Some(operations) = self.operations() else {
-            return;
-        };
-        let name = plain(&operations.name);
-        let client = &self.owners[0];
-        let config = client
-            .values
-            .iter()
-            .any(Value::is_positional)
-            .then(|| plain(&client.config_name()));
-        let taken = self.owners.iter().find(|o| plain(&o.type_name) == name);
-        if let Some(owner) = taken {
-            let mut e = syn::Error::new(
-                operations.name.span(),
-                format!(
-                    "`operations {name};` names a type this declaration already generates (for `{}`); choose another name for the enum",
-                    owner.dotted
-                ),
-            );
-            e.combine(syn::Error::new(
-                owner.name.span(),
-                "generated for this owner",
-            ));
-            errors.push(e);
-        } else if config.as_deref() == Some(name.as_str()) {
-            errors.push(syn::Error::new(
-                operations.name.span(),
-                format!(
-                    "`operations {name};` names the struct of the client's required values; choose another name for the enum"
-                ),
-            ));
-        } else if let Some(group) = self.groups.iter().find(|g| plain(&g.name) == name) {
-            let mut e = syn::Error::new(
-                operations.name.span(),
-                format!(
-                    "`operations {name};` names the parameter group `{name}`; choose another name for the enum"
-                ),
-            );
-            e.combine(syn::Error::new(
-                group.name.span(),
-                "the group is declared here",
-            ));
-            errors.push(e);
-        }
-        for (index, owner) in self.owners.iter().enumerate() {
-            if !owner.is_endpoint() {
-                continue;
-            }
-            let variant = plain(&self.operation_variant(index));
-            if variant == "Self" || variant == "ALL" {
-                errors.push(syn::Error::new(
-                    owner.name.span(),
-                    format!(
-                        "the operation variant of `{}` would be `{variant}`, which the enum `{name}` cannot have; rename the endpoint",
-                        owner.dotted
-                    ),
-                ));
-            }
-        }
-    }
-
     /// `#[read]` states what the method does not: an endpoint whose method already reads, an
     /// endpoint or scope below another `#[read]`, or a scope with no endpoint whose method writes
     /// is an error at the attribute.
@@ -2393,7 +2327,6 @@ fn flatten(
                     base,
                     send,
                     send_output,
-                    operations: owner.stmts.operations.take(),
                 }
             }
             None => {
@@ -2406,7 +2339,6 @@ fn flatten(
                     base: LitStr::new("http://invalid", span),
                     send: None,
                     send_output: None,
-                    operations: None,
                 }
             }
         },

@@ -1,4 +1,10 @@
 # E1-operation-effect — E operation facts — Carry explicit read effects on operation identities
+
+P4.2 update (2026-11-09): the owner chose runtime lookup. The implementation removes
+`operations Name;`/`SendOperation`, uses one `SendWith` trait and automatic private inventories,
+keeps all eight exhaustive classifications, defers default continuation Send bounds, and tests
+Datadog's production posting match with a seeded future write. The snapshot evidence and limits
+below describe the earlier direction; see [current migration](../../../docs/MIGRATION.md#runtime-operations-and-paging-p42).
 Branch / commit: spike/E-operation-effect at 3ea19eb9 (base ba10189b)
 Targets (3 files): witness `examples/strava-sdk/src/auth.rs`; counterexample `examples/kraken-spot-rest-sdk/src/lib.rs`; simple control `examples/pokeapi-sdk/src/lib.rs` (byte-identical).
 C1: no — `#[read]` is a provider fact, but retained `operations Name;` still selects Concord's policy-dispatch trait.

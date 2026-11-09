@@ -74,9 +74,6 @@ concord::api! {
         response Json;
         limit BODY_LIMIT;
         send policy -> Result<Response<_>, Error>;
-        /// Every Strava operation, as the send policy classifies it (scope, quota windows,
-        /// retries, uncertainty).
-        operations StravaOperation;
 
         /// The authorized athlete (no arbitrary athlete identifier).
         scope athlete {
@@ -261,5 +258,32 @@ impl StravaAthlete {
             }
         })
         .max_pages(max_pages))
+    }
+}
+
+pub(crate) use __StravaOperation as StravaOperation;
+
+#[cfg(test)]
+mod operation_inventory_tests {
+    use super::*;
+    #[test]
+    fn every_generated_strava_identity_has_its_declared_effect() {
+        use StravaOperation as Op;
+        let expected = [
+            (Op::AthleteActivities, true),
+            (Op::ActivitiesGet, true),
+            (Op::ActivitiesUpdate, false),
+            (Op::UploadsCreate, false),
+            (Op::UploadsStatus, true),
+        ];
+        assert_eq!(Op::ALL.len(), expected.len());
+        for (identity, read) in expected {
+            let operation = identity.operation();
+            assert_eq!(operation.is_read(), read);
+            assert_eq!(Op::from_operation(operation), Some(identity));
+        }
+        // OAuth's token grant is a POST: not a read.
+        assert!(!OAuthOauthToken::operation().is_read());
+        assert!(!concord::Operation::label("native transfer").is_read());
     }
 }

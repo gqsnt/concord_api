@@ -181,3 +181,49 @@ fn a_present_next_url_must_be_absolute_and_absent_or_null_ends() {
     assert_eq!(next.expose(), url);
     assert!(!format!("{next} {next:?}").contains(CANARY));
 }
+
+struct LocalFormat;
+impl concord::Decode<std::rc::Rc<String>> for LocalFormat {
+    type Context = ();
+    fn context(_: &concord::ResponseHead<'_>) -> Result<(), concord::CodecError> {
+        Ok(())
+    }
+    fn decode_body(
+        _: (),
+        body: concord::bytes::Bytes,
+    ) -> Result<std::rc::Rc<String>, concord::CodecError> {
+        Ok(std::rc::Rc::new(String::from_utf8(body.to_vec()).unwrap()))
+    }
+}
+concord::api! {
+    client Local {
+        base "http://127.0.0.1";
+        GET value() -> std::rc::Rc<String> { response LocalFormat; page next link; }
+        GET raw() -> stream { page next link; }
+    }
+}
+#[tokio::test]
+async fn default_follow_supports_a_local_output_and_an_unread_stream() {
+    let server = Server::reply(Reply::text(200, "local body")).await;
+    let api = Local::new(reqwest::Client::new())
+        .with_base_url(server.url())
+        .unwrap();
+    let target = || {
+        NextUrl::parse(&format!(
+            "{}/opaque?next=1",
+            server.url().trim_end_matches('/')
+        ))
+        .unwrap()
+    };
+    let value = api.value().follow(target()).send().await.unwrap();
+    assert_eq!(value.as_str(), "local body");
+    let mut incoming = api.raw().follow(target()).send().await.unwrap();
+    assert_eq!(incoming.operation(), Some(LocalRaw::operation()));
+    assert!(incoming.operation().unwrap().is_read());
+    assert_eq!(incoming.chunk().await.unwrap().unwrap(), "local body");
+    assert!(incoming.chunk().await.unwrap().is_none());
+    assert_eq!(server.requests().len(), 2);
+    for request in server.requests() {
+        assert_eq!(request.target, "/opaque?next=1");
+    }
+}

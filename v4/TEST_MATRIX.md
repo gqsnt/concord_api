@@ -232,3 +232,14 @@ in `formats.rs` unless stated; `ui/`, `ui_json/`, `ui_features/` are trybuild ca
 | R6 | required | Data Dragon: credential-free host, JSON and PNG bytes, never the key | `examples/riot/tests/wire.rs::data_dragon_is_credential_free_json_and_bytes` | final |
 | R7 | required | bounded read workflow on routed hosts; history capped; tournament codes workflow | `examples/riot/tests/workflows.rs::player_summary_reads_a_bounded_history`, `history_is_capped_whatever_the_caller_asks`, `tournament_codes_workflow` | final |
 | R8 | required | non-200 JSON/empty/HTML bodies kept unread; 429 stops with `Retry-After`, no retry; malformed 200 is a decode error; key and access token withheld, positive control on the wire | `examples/riot/tests/errors.rs::non_success_bodies_are_kept_unread`, `a_429_stops_the_workflow_with_retry_after`, `a_429_without_retry_after_still_stops`, `malformed_success_body_is_a_decode_error`, `the_key_and_access_tokens_are_withheld_from_debug` | final |
+
+## Concord Next operations and paging (P4.2)
+
+| Guarantee | Executable evidence |
+|---|---|
+| Single policy trait and private exhaustive runtime inventory | concord operations.rs, operation_effect.rs; UI operations_policy_unclassified / operations_private / send_operation_removed; pass operations_policy_send_with |
+| Future Datadog write requires its HTTP-202 decision | UI datadog_posting_unclassified includes the production SDK posting.rs |
+| Local inputs remain usable; threaded/default-follow dispatch retains Send | pass next_non_send; UI next_non_send_dispatch / next_non_send_spawn; next_url local-output/unread-stream wire test |
+| Public Link follow preserves Sentry policy/identity/literal target and hides cursors | sentry-sdk workflows::declared_link_endpoints_keep_policy_identity_and_literal_target |
+| Every replacement start retains SDK validation | mailgun/strava workflows starting_at tests; xero modified_since starting_at test; concord-pagination starting_at suite |
+| POST reads preserve the HTTP method | read_operation_tests in eight newly migrated SDKs; Kraken inventory effect loop and Datadog paged-search protocol |

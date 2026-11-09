@@ -1,6 +1,8 @@
 //! Offline caller: the same activity read, with optional operation inspection.
 use concord_example_testserver::{Recorded, Reply, TestServer};
-use concord_sdk_strava::{Credentials, Session, StravaOperation, Tokens};
+use concord_sdk_strava::{
+    Credentials, Session, StravaActivitiesGet, StravaActivitiesUpdate, Tokens,
+};
 use std::time::Duration;
 
 #[tokio::main]
@@ -23,8 +25,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let api = session.client();
 
     // Inspection is optional; the usual caller still just navigates and sends.
-    assert!(StravaOperation::ActivitiesGet.operation().is_read());
-    assert!(!StravaOperation::ActivitiesUpdate.operation().is_read());
+    assert!(StravaActivitiesGet::operation().is_read());
+    assert!(!StravaActivitiesUpdate::operation().is_read());
     let activity = api.activities().get(9007199254740999).send().await?;
     println!("{}: {}", activity.value.id, activity.value.name);
 

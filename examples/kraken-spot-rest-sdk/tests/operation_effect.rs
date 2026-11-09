@@ -1,28 +1,9 @@
-//! Design acceptance tests for inherited POST-read facts; not compiled in this lane.
+//! Signed POST-read effects survive dispatch.
 use concord_sdk_kraken_spot_rest::{
-    BalanceOptions, Credentials, Error, Kraken, KrakenConfig, KrakenOperation, Nonces, Policy,
-    concord::ErrorKind, transport,
+    BalanceOptions, Credentials, Error, Kraken, KrakenConfig, Nonces, Policy, concord::ErrorKind,
+    transport,
 };
 use concord_testserver::{Recorded, Reply, TestServer};
-
-#[test]
-fn the_account_scope_marks_all_three_posts_as_reads() {
-    use KrakenOperation as Op;
-    let expected = [
-        (Op::PublicPairs, "GET"),
-        (Op::PublicTicker, "GET"),
-        (Op::AccountBalances, "POST"),
-        (Op::AccountOpenOrders, "POST"),
-        (Op::AccountTradesHistory, "POST"),
-    ];
-    assert_eq!(Op::ALL.len(), expected.len());
-    for (identity, method) in expected {
-        let operation = identity.operation();
-        assert_eq!(operation.method(), Some(method));
-        assert!(operation.is_read());
-        assert_eq!(Op::from_operation(operation), Some(identity));
-    }
-}
 
 #[tokio::test]
 async fn a_post_read_stays_signed_and_is_dispatched_once_even_without_a_response() {

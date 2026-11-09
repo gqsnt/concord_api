@@ -1,6 +1,7 @@
 //! Offline caller: a read can be a signed POST without becoming replayable.
 use concord_sdk_kraken_spot_rest::{
-    BalanceOptions, Credentials, Kraken, KrakenConfig, KrakenOperation, Nonces, Policy, transport,
+    BalanceOptions, Credentials, Kraken, KrakenAccountBalances, KrakenConfig, Nonces, Policy,
+    transport,
 };
 use concord_testserver::{Recorded, Reply, TestServer};
 
@@ -21,7 +22,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     );
     let api = Kraken::new(transport()?, KrakenConfig { policy }).with_base_url(server.url())?;
 
-    let operation = KrakenOperation::AccountBalances.operation();
+    let operation = KrakenAccountBalances::operation();
     assert_eq!(operation.method(), Some("POST"));
     assert!(operation.is_read());
     let balances = api

@@ -1,5 +1,7 @@
 # Friction
 
+Current API note (P4.2): this evidence records the earlier API. Paging `_from` twins now use the base factory followed by `.starting_at(Resume::At(key))`; Datadog/Notion traversal cycles use `PagesError::Repeated`. See [migration](../../docs/MIGRATION.md#runtime-operations-and-paging-p42).
+
 What building this SDK on Concord cost, with evidence from this package. Line numbers refer to
 the files as delivered. "Provider" marks a Spotify rule that belongs in the SDK; "generic" marks
 mechanics every SDK of the same kind would rewrite.

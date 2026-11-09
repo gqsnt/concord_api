@@ -99,11 +99,13 @@ fn main() -> Result<(), concord::Error> {
 | `ACCEPT = ".."`, `remove ACCEPT` | an authored `Accept` always wins over the format's suggestion; a chain ending in `remove` sends none from Concord | [§5.8](AUTHOR_GUIDE.md#58-what-goes-on-the-wire-accept-and-content-type) |
 | `#[sensitive]` | never printed by Concord; also every key, segment and label it feeds | [§7](AUTHOR_GUIDE.md#7-sensitive-values) |
 | `limit N;` | bounds every finite typed output's body at and below this owner (nearest wins): `ErrorKind::Limit` beyond, on `send()`, `decode()` and `prepare()?.send()` | [§5.10a](AUTHOR_GUIDE.md#510a-bounding-finite-bodies-limit) |
-| `operations Name;` (client) | generates the enum `Name`, one variant per endpoint (`items.get` → `ItemsGet`, `#[cfg]` carried), `ALL`, `operation()`, `from_operation()`; with `send`, each `send()` passes its variant to the policy (`SendOperation<T, Name>`): classify with a `match` without a wildcard arm and a forgotten endpoint is E0004 | [§5.14](AUTHOR_GUIDE.md#514-classifying-every-operation-operations-name) |
+| `#[read]` (scope or endpoint) | a provider read whose method does not already imply one; GET, HEAD and OPTIONS read by default | [§5.14](AUTHOR_GUIDE.md#514-classifying-every-operation-at-runtime) |
+| `page next link;`, `page next url links?.next;` | next-page URL source on a bodyless GET; followed requests keep its policy and identity | [§5.15](AUTHOR_GUIDE.md#515-declared-continuation-and-traversal-starts) |
+| Runtime operation classification | `E::operation()` gives name, method and `is_read()`; map through the crate-private `__ClientOperation::from_operation` and match exhaustively for E0004 on an omitted endpoint | [§5.14](AUTHOR_GUIDE.md#514-classifying-every-operation-at-runtime) |
 | `#[cfg(..)]`, `#[deprecated]`, `///` on scopes and endpoints | applied to the subtree or the navigation method; names are checked as if every `cfg` were on, so cfg-exclusive siblings need distinct names | [§8](AUTHOR_GUIDE.md#8-attributes) |
 
 Usual order inside an owner: `base` (client), `path`, `subdomain`, `query { }`, `headers { }`,
-format statements, `send` and `operations` (client), parameter groups `params Name(..);` (client),
+format statements, `send` (client), parameter groups `params Name(..);` (client),
 then children.
 
 ## Calling
@@ -122,7 +124,6 @@ then children.
 | `prepared.follow(url)?` | the same request at a server-returned URL (same origin only; `Debug` withholds it) |
 | `send policy;` (client value or stateless type) | generated `send()` calls `SendWith<T>::send` and returns the SDK's `Output`; the policy may sign, make sub-requests or repeat requests |
 | `send policy -> Result<_, Error>;` | the same, and every generated `send()` declares that result (`_` = the endpoint's output) instead of `<P as SendWith<T>>::Output`; a mismatch is a compile error at the template ([§5.13](AUTHOR_GUIDE.md#513-the-sdks-own-send-send-policy)) |
-| `send policy;` + `operations Name;` | generated `send()` calls `SendOperation<T, Name>::send(variant, endpoint)` instead; the policy implements `SendOperation`, not `SendWith` ([§5.14](AUTHOR_GUIDE.md#514-classifying-every-operation-operations-name)) |
 | `concord::Endpoint<T>` | implemented by every generated endpoint for its output `T` (`prepare`, `operation()`): write one SDK adapter for all operations |
 | `GeneratedEndpoint::operation()` | the endpoint's declared identity without naming its output: compare with `error.operation()` |
 | `into_parts()` → `(Client, Request, Decoder)` | execute it yourself, then `decoder.finish(result)` or `decoder.decode(response)` |
@@ -162,3 +163,9 @@ SDK-owned values: derive `concord::Debug`, marking secret fields `#[sensitive]` 
 fields are shown). For Display that matches scalar serde spelling, use
 `serde_plain::derive_display_from_serialize!(Type);` with `serde_plain = "1.0.2"`;
 keep computed formatting in Rust. See [wire formatting](AUTHOR_GUIDE.md#6-wire-formatting-display-and-newtypes).
+
+`page next link;` and `page next url links?.next;` declare provider continuation URLs on bodyless
+GET endpoints. `endpoint.follow(next).send()` preserves the policy, decoding and operation; the
+URL must share the original origin. Non-Send inputs remain constructible and preparable;
+thread-crossing sends require Send. `Pages::starting_at(Resume::At(key))` replaces a traversal's
+start before polling; `.refuse_repeated_keys()` refuses repeated admitted keys before dispatch.

@@ -35,8 +35,6 @@ concord::api! {
         response Json;
         limit RESPONSE_LIMIT;
         send policy;
-        /// Every Kraken operation, as the send policy classifies it (signed or public).
-        operations KrakenOperation;
 
         /// Public market data; never decorates requests with account credentials.
         scope public {
@@ -151,5 +149,30 @@ impl Kraken {
             .send()
             .await?;
         Ok(AccountSnapshot { balances, orders })
+    }
+}
+
+pub(crate) use __KrakenOperation as KrakenOperation;
+
+#[cfg(test)]
+mod operation_inventory_tests {
+    use super::*;
+    #[test]
+    fn the_account_scope_marks_all_three_posts_as_reads() {
+        use KrakenOperation as Op;
+        let expected = [
+            (Op::PublicPairs, "GET"),
+            (Op::PublicTicker, "GET"),
+            (Op::AccountBalances, "POST"),
+            (Op::AccountOpenOrders, "POST"),
+            (Op::AccountTradesHistory, "POST"),
+        ];
+        assert_eq!(Op::ALL.len(), expected.len());
+        for (identity, method) in expected {
+            let operation = identity.operation();
+            assert_eq!(operation.method(), Some(method));
+            assert!(operation.is_read());
+            assert_eq!(Op::from_operation(operation), Some(identity));
+        }
     }
 }

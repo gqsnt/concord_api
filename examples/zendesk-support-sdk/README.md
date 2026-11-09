@@ -164,3 +164,7 @@ refresh, rate-limit admission or cooldown shared across calls, and blanket autom
 - `src/pagination.rs`: `ticket_pages` over `concord-pagination`.
 - `src/models.rs`, `src/error.rs`: provider models, inputs and the error type.
 - `tests/protocol.rs`, `tests/workflows.rs`, `fixtures/`: see `PROVENANCE.md`.
+
+### Operations and paging (Concord Next)
+
+Tickets continue from `meta.after_cursor` while `meta.has_more` is true. `links.next` is optional corroboration and must agree with that cursor; it is never followed. Keeping cursor requests preserves completion when the provider omits the URL and keeps the existing String resume keys.

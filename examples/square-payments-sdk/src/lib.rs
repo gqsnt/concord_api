@@ -13,7 +13,7 @@
 use std::{num::NonZeroUsize, time::Duration};
 
 pub use concord;
-use concord::{Endpoint, Json, SendOperation, SendWith, reqwest};
+use concord::{Endpoint, Json, SendWith, reqwest};
 pub use concord_auth::{CredentialError, bearer};
 pub use concord_pagination::{Pages, PagesError, Resume};
 use reqwest::header::{AUTHORIZATION, HeaderValue};
@@ -54,9 +54,6 @@ concord::api! {
         format Json;
         limit SUCCESS_BODY_LIMIT;
         send SquarePolicy -> Result<_, Error>;
-        /// Every Square operation; [`Error::create_outcome_unknown`] decides per operation
-        /// whether a replay rule written for create applies.
-        operations SquareOperation;
 
         /// Payments belonging to the account identified by the Bearer token.
         scope payments {
@@ -117,21 +114,6 @@ impl<T: Send> SendWith<T> for SquarePolicy {
     }
 }
 
-/// The client declares `operations SquareOperation;`, so each generated `send()` hands its
-/// variant to the policy; this policy treats every operation alike and sends as
-/// [`SendWith`].
-impl<T: Send> SendOperation<T, SquareOperation> for SquarePolicy {
-    type Output = <Self as SendWith<T>>::Output;
-
-    fn send<E: Endpoint<T> + Send>(
-        &self,
-        _operation: SquareOperation,
-        endpoint: E,
-    ) -> impl Future<Output = Self::Output> + Send {
-        SendWith::send(self, endpoint)
-    }
-}
-
 impl SquarePaymentsList {
     /// Walks the listing with a mandatory page bound and explicit start/resume position.
     ///
@@ -157,3 +139,5 @@ impl SquarePaymentsList {
         .max_pages(max_pages)
     }
 }
+
+pub(crate) use __SquareOperation as SquareOperation;

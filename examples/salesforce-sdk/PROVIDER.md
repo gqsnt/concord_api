@@ -160,3 +160,7 @@ refused (FRICTION F5).
 | SF-A live | `NOT_RUN` | `cargo run -p concord-example-salesforce-app --bin sf_a` prints `NOT_RUN` without `SF_INSTANCE_URL`/`SF_ACCESS_TOKEN` |
 | SF-B export + ingest | `OFFLINE_VERIFIED` | `--test sf_b_bulk_csv_round_trip`, `--test sf_b_ingest_round_trip` |
 | SF-B live | `NOT_RUN` | `--bin sf_b`: needs credentials plus `SF_SANDBOX_JOBS=1` (query job creation) and `SF_SANDBOX_MUTATIONS=1` (ingest writes) |
+
+### Operations and paging (Concord Next)
+
+SOQL nextRecordsUrl is validated into a typed locator and sent with a separately declared query-more operation; it may be relative. Bulk manifests similarly validate job/version/locator; result URLs use a per-job CSV dialect. An absolute same-endpoint next-URL declaration would lose distinct operation identities and runtime body contracts.

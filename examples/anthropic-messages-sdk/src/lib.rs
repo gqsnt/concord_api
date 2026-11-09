@@ -97,7 +97,7 @@ concord::api! {
             /// Counts input tokens without generating (`POST /v1/messages/count_tokens`). Use
             /// [`MessageRequest::count_tokens`] to reuse a request's inputs. The result has the
             /// same response metadata and API errors as creation; no fallback or retry occurs.
-            POST count_tokens(body request: CountTokensRequest) -> TokenCount {
+            #[read] POST count_tokens(body request: CountTokensRequest) -> TokenCount {
                 path "count_tokens";
                 limit MAX_MESSAGE_BYTES;
             }
@@ -179,4 +179,15 @@ pub fn http_client() -> reqwest::Result<reqwest::Client> {
         .redirect(redirect::Policy::none())
         .retry(reqwest::retry::never())
         .build()
+}
+
+#[cfg(test)]
+mod read_operation_tests {
+    use super::*;
+    #[test]
+    fn declared_post_reads_keep_their_method_and_effect() {
+        let operation = AnthropicMessagesCountTokens::operation();
+        assert_eq!(operation.method(), Some("POST"));
+        assert!(operation.is_read(), "{}", operation.name());
+    }
 }

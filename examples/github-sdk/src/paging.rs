@@ -69,7 +69,7 @@ use crate::models::{
 
 /// GitHub operation ids, used as the operation part of a [`Binding`]. Which declared operation is
 /// a listing, and with which id, is decided in one place: an exhaustive `match` over
-/// [`GitHubOperation`](crate::api::GitHubOperation), so a new endpoint does not compile until it
+/// `GitHubOperation`, so a new endpoint does not compile until it
 /// is classified.
 pub mod operation {
     use crate::api::GitHubOperation;

@@ -1,0 +1,15 @@
+error[E0365]: `__StoreOperation` is only public within the crate, and cannot be re-exported outside
+ --> tests/ui/operations_private.rs:9:9
+  |
+9 | pub use sdk::__StoreOperation;
+  |         ^^^^^^^^^^^^^^^^^^^^^ re-export of crate public `__StoreOperation`
+  |
+  = note: consider declaring type or module `__StoreOperation` with `pub`
+
+warning: unused import: `sdk::__StoreOperation`
+ --> tests/ui/operations_private.rs:9:9
+  |
+9 | pub use sdk::__StoreOperation;
+  |         ^^^^^^^^^^^^^^^^^^^^^
+  |
+  = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default

@@ -28,13 +28,13 @@ concord::api! {
         scope contacts {
             path "crm/v3/objects/contacts";
             /// Search one page.
-            POST search(body request: SearchRequest) -> SearchResponse { path "search"; }
+            #[read] POST search(body request: SearchRequest) -> SearchResponse { path "search"; }
             /// Create a contact once.
             POST create(body request: CreateContact) -> Contact;
             /// Get a contact by ID.
             GET get(id: String) -> Contact { path "{id}"; }
             /// Read several contacts by record ID; a `200` or `207 Multi-Status` body.
-            POST batch_read(body request: BatchReadRequest) -> BatchReadResponse {
+            #[read] POST batch_read(body request: BatchReadRequest) -> BatchReadResponse {
                 path "batch/read";
             }
         }
@@ -724,5 +724,20 @@ mod sdk_type_canaries {
                 .contains(&request.client_secret)
         );
         canaries.assert_debug_absent("RefreshRequest", &request);
+    }
+}
+
+#[cfg(test)]
+mod read_operation_tests {
+    use super::*;
+    #[test]
+    fn declared_post_reads_keep_their_method_and_effect() {
+        for operation in [
+            CrmApiContactsSearch::operation(),
+            CrmApiContactsBatchRead::operation(),
+        ] {
+            assert_eq!(operation.method(), Some("POST"));
+            assert!(operation.is_read(), "{}", operation.name());
+        }
     }
 }

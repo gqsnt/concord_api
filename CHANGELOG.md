@@ -3,7 +3,7 @@
 ## Unreleased — after the desirability loop (candidate)
 
 Not released: the version stays 4.2.0 and nothing is published. The `concord-*` crates change
-additively (`operations`, `SendOperation`, `Debug`), by fixes (T3, request formatting),
+through runtime operation lookup, declared continuations and `Debug`, by fixes (T3, request formatting),
 in generated documentation, and by retiring the experimental scalar-display derive. The
 example SDK crates are not published (`publish = false`). What the loop tried and decided: [`v4/desirability/SUMMARY.md`](v4/desirability/SUMMARY.md); its records
 are on the [archive branch](https://github.com/gqsnt/concord_api/tree/archive/desirability-loop-1/v4/desirability).
@@ -18,14 +18,20 @@ are on the [archive branch](https://github.com/gqsnt/concord_api/tree/archive/de
   experimental `WireDisplay` derive, helper, hidden codec bridge and exclusive UI fixtures.
   `serde_plain`'s derive panics when a type does not serialize as a scalar; Concord does not catch it.
 
+### Operations and paging (P4.2)
+
+- Removed `operations Name;`, `SendOperation` and public SDK operation enums (breaking).
+  Every policy uses `SendWith<T>` and runtime `E::operation()`; automatic crate-private
+  inventories preserve exhaustive SDK matches and E0004 for unclassified endpoints.
+- Added provider read facts (`#[read]`, `Operation::is_read()`), next-link/URL declarations and
+  policy-preserving followed dispatch. Graph and Registry now follow declared endpoints.
+  Default continuation Send bounds apply at use, preserving local non-Send inputs/outputs.
+- Shared page starts and repeated-key refusal replace paging twins and Datadog/Notion cycle
+  errors. Factories validate every replacement start. Mailgun keeps eager `pages_from` checks.
+- Prefixed the three operation-effect example targets with their SDK names.
+
 ### Added
 
-- **`operations Name;` and `concord::SendOperation<T, Name>`** (H08): an opt-in client statement
-  generates an enum with one variant per endpoint, and each generated `send()` passes its variant
-  to the policy, so an exhaustive `match` fails to build (E0004) when an endpoint is added.
-- **H08 adopters:** Strava, Sentry, Kraken, PayPal, Zendesk, Square and Datadog classify through
-  the enum, GitHub without a policy; five public policies now implement `SendOperation` instead of
-  `SendWith` ([migration](docs/MIGRATION.md#sdk-send-policies-take-the-endpoints-operation-h08)).
 - **Secret canaries in all 55 SDKs** (`checks/canary`, `examples/*/tests/canary.rs`): planted
   secrets must not appear in `Debug`, `Display` or error chains of reachable public values.
 - **`tools/glue`**: static counters of SDK glue (forwarders, wrapper structs, redaction impls,

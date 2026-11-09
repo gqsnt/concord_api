@@ -1,5 +1,7 @@
 # First-use consumer report
 
+P4.2 migration: the consumer now resumes with `all_invoices(api, cap).starting_at(resume)`; its `invoices_from` twin was removed. The original nine wire/stream/prefix tests and all their assertions are retained. Evidence below describes the earlier consumer API.
+
 ## 1. Account summary — prediction before implementation
 
 `GET /accounts/{id}/summary`, `Accept: application/json`, no body. I expect a decoded summary and both diagnostic headers on success, and an error carrying both headers on malformed JSON, wrong media type, or non-2xx; the latter should also expose the typed error document.

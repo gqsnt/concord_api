@@ -43,9 +43,6 @@ concord::api! {
         format Json;
         limit BODY_LIMIT;
         send policy -> Result<Response<_>, Error>;
-        /// Every Sentry operation, as the send policy classifies it (admission bucket, writes,
-        /// paging).
-        operations SentryOperation;
 
         /// Organization id or slug, encoded as one segment.
         scope organization(organization: String) {
@@ -56,7 +53,7 @@ concord::api! {
                 query limit: u32 = 100,
                 #[sensitive] query cursor?: String,
                 #[sensitive] query query?: String,
-            ) -> Vec<Issue> { path "issues/"; }
+            ) -> Vec<Issue> { path "issues/"; page next link; }
 
             /// One issue within this organization.
             scope issue(issue: String) {
@@ -68,7 +65,7 @@ concord::api! {
                     query per_page: u32 = 100,
                     #[sensitive] query cursor?: String,
                     #[sensitive] query query?: String,
-                ) -> Vec<Event> { path "{issue.issue}/events/"; }
+                ) -> Vec<Event> { path "{issue.issue}/events/"; page next link; }
                 /// Retrieve an event by eventID (also accepts latest/oldest/recommended).
                 GET event(event: String) -> Event { path "{issue.issue}/events/{event}/"; }
                 /// Change this issue's status; returns the updated issue. Only 429 is retried:
@@ -109,3 +106,5 @@ pub fn http_client() -> reqwest::Result<reqwest::Client> {
         .no_proxy()
         .build()
 }
+
+pub(crate) use __SentryOperation as SentryOperation;

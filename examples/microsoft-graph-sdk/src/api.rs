@@ -11,9 +11,11 @@ concord::api! {
 
         GET users_delta(query("$select") select?: String) -> Envelope<UserDelta> {
             path "users/delta";
+            page next url next;
         }
         GET groups(query("$select") select?: String) -> Envelope<Group> {
             path "groups";
+            page next url next;
         }
         GET direct_members(
             group: String,
@@ -22,6 +24,7 @@ concord::api! {
             header("consistencylevel") consistency?: String,
         ) -> Envelope<DirectoryObject> {
             path "groups/{group}/members";
+            page next url next;
         }
     }
 }

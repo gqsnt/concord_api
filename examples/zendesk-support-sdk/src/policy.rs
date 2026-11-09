@@ -5,7 +5,7 @@ use std::time::{Duration, Instant, SystemTime};
 
 use concord::reqwest::StatusCode;
 use concord::reqwest::header::RETRY_AFTER;
-use concord::{Endpoint, Prepared, Received, SendOperation};
+use concord::{Endpoint, Prepared, Received, SendWith};
 use concord_retry::concord::ReplayMode;
 use concord_retry::{Decision, Replay, Retry};
 
@@ -180,14 +180,14 @@ impl Class {
     }
 }
 
-impl<T: Send + 'static> SendOperation<T, ZendeskOperation> for SendPolicy {
+impl<T: Send + 'static> SendWith<T> for SendPolicy {
     type Output = Result<T, Error>;
 
-    async fn send<E: Endpoint<T> + Send>(
-        &self,
-        operation: ZendeskOperation,
-        endpoint: E,
-    ) -> Self::Output {
+    async fn send<E: Endpoint<T> + Send>(&self, endpoint: E) -> Self::Output {
+        let operation =
+            ZendeskOperation::from_operation(E::operation()).ok_or(Error::InvalidInput {
+                what: "operation is not declared by this SDK",
+            })?;
         let Class {
             collision_on_conflict,
         } = Class::of(operation);

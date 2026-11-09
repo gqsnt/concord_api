@@ -1,14 +1,12 @@
 # Migration
 
-Eleven paths, newest first: SDK-owned formatting, the QuickBooks environment repair (T4) and the SDK send policies that
-take an operation (H08), the interface consolidation (unreleased candidate), 4.1 to 4.2 (a maintenance release; summary in the [changelog](../CHANGELOG.md)), then
+Migration paths, newest first: runtime operations and paging, SDK-owned formatting, the QuickBooks environment repair (T4), the interface consolidation (unreleased candidate), 4.1 to 4.2 (a maintenance release; summary in the [changelog](../CHANGELOG.md)), then
 the two parts of 4.1.0 (the modular V4), then older ones:
 
+- [Runtime operations and paging (P4.2)](#runtime-operations-and-paging-p42) — one send trait and private inventories.
 - [SDK-owned formatting](#sdk-owned-formatting) — declarative Debug redaction and scalar serde Display.
 - [QuickBooks environment replacement (T4)](#quickbooks-environment-replacement-t4) — no source
   change; a replacement connection selects its environment's official HTTPS host on send.
-- [SDK send policies take the endpoint's operation (H08)](#sdk-send-policies-take-the-endpoints-operation-h08)
-  — calls are unchanged; code that names `SendWith` on five SDK policies names `SendOperation`.
 - [To the consolidated interface](#to-the-consolidated-interface) — additive: existing code
   compiles (one rare exception: a generated name, below); the new response, body, stream and
   pagination boundaries, declared limits and send results, parameter groups and `query(..)` values
@@ -64,34 +62,43 @@ behavior. `prepare()` remains token-free and shows the generated base snapshot; 
 of that request bypasses this policy. Scopes and requests already created keep their original
 connection and destination.
 
-## SDK send policies take the endpoint's operation (H08)
+## Runtime operations and paging (P4.2)
 
-Six example SDKs now declare `operations Name;` on their client, so each generated `send()` passes the endpoint's
-variant of a generated operation enum to the send policy, and the policy classifies it with an exhaustive `match` (an
-endpoint left out is a build error, not a run-time refusal). Their public policy types therefore implement
-`concord::SendOperation<T, Name>`; all but Square's no longer implement `concord::SendWith<T>`:
+**Breaking:** remove every `operations Name;` statement and replace `SendOperation<T, Name>`
+with `SendWith<T>`. Its `send` method takes only the endpoint; read `E::operation()` for its
+name, method and read effect. Generated `send()` always uses this one trait. The eight SDKs'
+public operation enums are removed: Strava, Sentry, Kraken, PayPal, Zendesk, Square, Datadog and
+GitHub retain crate-private inventories named `__ClientOperation` for exhaustive internal
+classification. SDK callers inspect the public endpoint type's `operation()` instead. Generic
+bounds and direct policy calls use `SendWith` again. Unknown operation identities are refused
+before dispatch by SDK policies that require their own endpoints; lookup compares name/method
+textually and cannot authenticate an arbitrary user-written Endpoint.
 
-| SDK | Public policy type | Operation enum |
-|---|---|---|
-| Kraken Spot REST | `Policy` | `KrakenOperation` |
-| PayPal | `Session` | `PayPalOperation` |
-| Sentry | `SendPolicy` | `SentryOperation` |
-| Square Payments | `SquarePolicy` | `SquareOperation` |
-| Strava | `Session` | `StravaOperation` |
-| Zendesk Support | `SendPolicy` | `ZendeskOperation` |
+`#[read]` marks provider reads whose method is not GET, HEAD or OPTIONS (including GraphQL
+queries, signed private reads and body searches). It does not grant replay permission.
+`page next link;` / `page next url field?.next;` add `Follow` and the corresponding continuation
+trait. Followed sends keep the original operation, policy, headers and decoder and enforce the
+same origin. Default continuation dispatch now defers input Send bounds until use; a local
+input can still be built or prepared; the original endpoint's local `send()` future remains available.
 
-(`SquarePolicy` ignores the variant: it keeps `SendWith` and forwards `SendOperation` to it, so code naming `SendWith`
-on it still compiles. Datadog Events also adopted, but its policy type is private; GitHub adopted without a send
-policy.)
+**Breaking paging changes inherited from the direction:** `Sends` implementations provide the
+hidden `__send_followed` method. GitHub `LinkPages::new` drops its prepare callback and requires
+`LinkContinuation` plus Send bounds; GitHub and GitLab use shared `PageLinks` / `PageLinkError`
+(the Debug name and GitLab's `NotText` message change). GitLab decodes before validating Link.
+Exhaustive `PagesError` matches must add `Repeated`; the already non-exhaustive `Outcome`
+also gains `Repeated`.
+`Pages::refuse_repeated_keys()` replaces Datadog/Notion's SDK cursor-cycle errors, removing
+Datadog `ProtocolError::RepeatedCursor` and Notion `Error::CursorCycle`.
+Paging `_from` twins are removed in favor of `pages(...).starting_at(Resume::At(key))` in
+GitHub, Discord, Cloudflare, DigitalOcean, GitLab, Datadog, Registry, Graph, Notion, Stripe and
+Spotify. Mailgun keeps `pages_from` because it eagerly validates a saved cursor's binding.
+The standalone Phase A consumer also replaces `invoices_from` with
+`all_invoices(api, cap).starting_at(from)`. Every factory retains its start checks. See the SDK READMEs for each
+start/key type and the exact removed names in the lane result.
 
-- **Ordinary calls are unchanged:** `api.endpoint(..).send().await` and `prepare()` keep their syntax and results.
-- **Code that names the trait** breaks: a generic bound `P: SendWith<T>` on one of these policies becomes
-  `P: SendOperation<T, Name>`, and a direct `SendWith::send(&policy, endpoint)` becomes
-  `SendOperation::send(&policy, Name::Variant, endpoint)` with the endpoint's own variant (the generated enum has one
-  variant per endpoint).
-- An SDK author adopting `operations` writes `impl<T> SendOperation<T, Name> for Policy` with a `match operation { .. }`
-  without a wildcard arm; see `AUTHOR_GUIDE.md` and the `SendOperation` rustdoc. A client without `operations` keeps
-  `SendWith`.
+The three example targets are now `pokeapi_operation_effect`, `kraken_spot_rest_operation_effect`
+and `strava_operation_effect`. Nager, PokeAPI and Frankfurter retain their public items and docs.
+
 
 ## To the consolidated interface
 

@@ -120,7 +120,7 @@ Complete and cancel carry no idempotency key. A timeout, unreadable success,
 `CANCELED`). The SDK sends each complete/cancel once and never resends it.
 `create_outcome_unknown()` stays true only for create, so a replay rule written
 for create does not fire for complete/cancel. Which operation that is comes from
-an exhaustive `match` over the generated `SquareOperation` (`src/error.rs`): an
+an exhaustive `match` over the crate-private generated `SquareOperation` (`src/error.rs`): an
 endpoint added to the declaration does not compile until it is classified there.
 
 ```no_run

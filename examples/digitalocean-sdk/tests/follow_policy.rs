@@ -1,5 +1,5 @@
 //! F3 regressions: a followed endpoint is sent through its client's own send policy.
-use concord::{Endpoint, Follow, SendOperation, UrlContinuation, reqwest};
+use concord::{Endpoint, Follow, SendWith, UrlContinuation, reqwest};
 use concord_sdk_digitalocean::{
     DigitalOcean, DigitalOceanDropletsList, Error, HttpClass, Policy, Response,
 };
@@ -111,15 +111,12 @@ pub struct ProbePage {
 
 /// Records each operation it sends, then sends through the SDK policy.
 #[derive(Clone)]
-pub struct CountingPolicy(Arc<Mutex<Vec<ProbeOperation>>>);
+pub struct CountingPolicy(Arc<Mutex<Vec<__ProbeOperation>>>);
 
-impl<T: Send> SendOperation<T, ProbeOperation> for CountingPolicy {
+impl<T: Send> SendWith<T> for CountingPolicy {
     type Output = Result<Response<T>, Error>;
-    async fn send<E: Endpoint<T> + Send>(
-        &self,
-        operation: ProbeOperation,
-        endpoint: E,
-    ) -> Self::Output {
+    async fn send<E: Endpoint<T> + Send>(&self, endpoint: E) -> Self::Output {
+        let operation = __ProbeOperation::from_operation(E::operation()).unwrap();
         assert!(operation.operation().is_read());
         assert!(E::operation().is_read());
         self.0.lock().unwrap().push(operation);
@@ -132,7 +129,6 @@ concord::api! {
         base "http://127.0.0.1";
         format concord::Json;
         send policy -> Result<Response<_>, Error>;
-        operations ProbeOperation;
         GET list(query per_page: u32 = 7) -> ProbePage {
             path "items";
             page next url next;
@@ -175,7 +171,7 @@ async fn followed_operation_uses_the_same_stateful_operation_aware_policy() {
     assert!(ProbeList::next_url(&second.value).unwrap().is_none());
     assert_eq!(
         *seen.lock().unwrap(),
-        [ProbeOperation::List, ProbeOperation::List]
+        [__ProbeOperation::List, __ProbeOperation::List]
     );
     assert_eq!(second.meta.operation().unwrap(), ProbeList::operation());
     assert!(second.meta.operation().unwrap().is_read());

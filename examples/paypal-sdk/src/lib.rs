@@ -68,9 +68,6 @@ concord::api! {
         format Json;
         limit BODY_LIMIT;
         send session -> Result<_, Error>;
-        /// Every PayPal operation, as the [`Session`] classifies it (read or write, and whether a
-        /// write may be repeated with its `PayPal-Request-Id`).
-        operations PayPalOperation;
 
         /// Orders v2 collection.
         scope orders {
@@ -291,6 +288,8 @@ pub fn http_client() -> Result<reqwest::Client, reqwest::Error> {
         .timeout(Duration::from_secs(30))
         .build()
 }
+
+pub(crate) use __PayPalOperation as PayPalOperation;
 
 #[cfg(test)]
 mod tests {

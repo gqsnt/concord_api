@@ -85,7 +85,7 @@ concord::api! {
             ) -> ContactList;
 
             /// Search by exact email with JSON-body pagination. Default size 50.
-            POST search(body search: EmailSearch) -> ContactList { path "search"; }
+            #[read] POST search(body search: EmailSearch) -> ContactList { path "search"; }
 
             /// Retrieve one contact using its Intercom ID (one encoded path segment).
             GET get(#[sensitive] id: String) -> Contact { path "{id}"; }
@@ -118,4 +118,15 @@ pub fn http_client() -> reqwest::Result<reqwest::Client> {
         .retry(reqwest::retry::never())
         .redirect(reqwest::redirect::Policy::none())
         .build()
+}
+
+#[cfg(test)]
+mod read_operation_tests {
+    use super::*;
+    #[test]
+    fn declared_post_reads_keep_their_method_and_effect() {
+        let operation = IntercomContactsSearch::operation();
+        assert_eq!(operation.method(), Some("POST"));
+        assert!(operation.is_read(), "{}", operation.name());
+    }
 }

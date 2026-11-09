@@ -242,3 +242,7 @@ versions are documented in `PROVENANCE.md`; author observations are in
 empty delta pages, caps and failed continuations, and limited/unknown member types.
 The maintenance scope and change counts are recorded in `MAINTENANCE.md`.
 The README's Rust examples are compiled as crate documentation tests.
+
+### Operations and paging (Concord Next)
+
+All three wire listings declare `page next url next;` for `@odata.nextLink`. The erased factory now prepares a followed declared endpoint. Delta cardinality, selected-field/credential binding, item validation, response-head errors and checkpoint reuse remain SDK behavior; delta checkpoints are separate from next-page discovery.

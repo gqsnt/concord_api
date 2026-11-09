@@ -79,3 +79,9 @@ redirect policy is separate: configure it to prohibit cross-origin redirects if
 that restriction matters. Query strings are passed through URL parsing and are
 not regenerated from `limit` or `offset`. Applications should bound traversals
 or detect repeated URLs if needed; this SDK does not detect cycles or retry.
+
+### Operations and paging (Concord Next)
+
+The public `follow(&str)` retains list-path validation and exact URL/query order. Adding continuation traits to the generated public endpoint would change this simple control’s public items and docs (C3), so this compatibility wrapper remains. `pokemon_url` follows an object URL, not a page.
+
+Run the offline operation-effect example with `cargo run --locked --offline -p concord-sdk-pokeapi --example pokeapi_operation_effect`.

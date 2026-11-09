@@ -97,3 +97,7 @@ field Stripe sends is ignored.
 Two connected accounts (`acct_ALPHA`, `acct_BETA`; also `acct_TARGET`, `acct_DEFAULT`) and the
 platform (no `Stripe-Account`), all synthetic. Secret keys are synthetic `sk_test_SYNTHETIC...`
 strings. Request ids are synthetic `req_...` values produced by the fakes.
+
+### Operations and paging (Concord Next)
+
+List `url` identifies the collection, rather than a next request. Pagination uses `has_more` and the last object ID (`starting_after`); following `url` would repeat the first page.

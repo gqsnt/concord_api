@@ -1,5 +1,7 @@
 # SDK24 Discord REST — fresh consumer
 
+Current API note (P4.2): this evidence records the earlier API. Paging `_from` twins now use the base factory followed by `.starting_at(Resume::At(key))`; Datadog/Notion traversal cycles use `PagesError::Repeated`. See [migration](../../docs/MIGRATION.md#runtime-operations-and-paging-p42).
+
 Date: 2026-11-07. Live provider calls: **NOT_RUN**. All application calls use
 `examples/testserver` on loopback, with synthetic bot credentials. SDK implementation,
 existing SDK tests, `FRICTION.md`, and `PROVENANCE.md` have not been read.

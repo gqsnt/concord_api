@@ -11,8 +11,7 @@ mod site;
 
 pub use api::{
     DD_API_KEY, DD_APPLICATION_KEY, DatadogApi, DatadogApiConfig, DatadogApiEvents,
-    DatadogApiEventsList, DatadogApiEventsPost, DatadogApiEventsSearch, DatadogApiOperation,
-    SendPolicy,
+    DatadogApiEventsList, DatadogApiEventsPost, DatadogApiEventsSearch, SendPolicy,
 };
 pub use client::{DatadogEvents, PageInfo, SearchPages};
 pub use credentials::Credentials;
@@ -35,3 +34,5 @@ pub const RESPONSE_LIMIT: usize = 8 * 1024 * 1024;
 
 /// The most bytes read from a non-2xx error document (64 KiB).
 pub const ERROR_BODY_LIMIT: usize = 64 * 1024;
+
+mod posting;

@@ -111,9 +111,9 @@ write them in ordinary Rust, reading the declared facts, optionally with the cap
   and connection pooling are configured on the `reqwest::Client` the application provides.
 - **Contract export and inspection tooling.**
 
-The seams an SDK uses for these jobs: a send policy (`SendWith`, `SendOperation`, `Sends`),
-operation identity (`Operation`, `Endpoint`, inherent `operation()`, the opt-in `operations`
-enum), prepared requests and unread responses (`Prepared`, `Received`), and the native request
+The seams an SDK uses for these jobs: a send policy (`SendWith`, `Sends`),
+operation identity (`Operation`, `Endpoint`, inherent `operation()`, the automatic crate-private
+operation inventory), prepared requests and unread responses (`Prepared`, `Received`), and the native request
 and response exits.
 
 ## What "pro and solid" means

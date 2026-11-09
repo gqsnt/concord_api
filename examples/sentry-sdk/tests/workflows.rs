@@ -652,3 +652,74 @@ async fn reconstructed_token_rotation_retains_caller_admission_state() {
     assert_eq!(server.requests().len(), 1);
     server.shutdown().await;
 }
+
+#[tokio::test]
+async fn declared_link_endpoints_keep_policy_identity_and_literal_target() {
+    use concord_sdk_sentry::concord::{Follow, LinkContinuation, NextUrl};
+    fn declared<T, E: LinkContinuation<Vec<T>>>(_: &E) {}
+    let server = TestServer::start(|request: &Recorded| {
+        assert_eq!(
+            request.header("authorization"),
+            Some("Bearer synthetic-bearer-secret")
+        );
+        if request.path().ends_with("events/") {
+            Reply::json(200, EVENTS_1)
+        } else {
+            Reply::json(200, ISSUES_1)
+        }
+    })
+    .await;
+    let org = support::api(&server, support::settings()).organization("acme");
+    let issues = org.issues().set_query("synthetic-query-secret");
+    let events = org
+        .issue("202")
+        .events()
+        .set_query("synthetic-query-secret");
+    declared(&issues);
+    declared(&events);
+    let issue_target = "/api/0/organizations/acme/issues/?cursor=synthetic-cursor-secret&limit=1&query=synthetic-query-secret";
+    let event_target = "/api/0/organizations/acme/issues/202/events/?cursor=synthetic-cursor-secret&per_page=1&query=synthetic-query-secret";
+    let issue_call = issues.follow(
+        NextUrl::parse(&format!(
+            "{}{}",
+            server.url().trim_end_matches('/'),
+            issue_target
+        ))
+        .unwrap(),
+    );
+    let shown = format!("{issue_call:?}");
+    assert!(!shown.contains("synthetic-cursor-secret"));
+    assert!(!shown.contains("synthetic-query-secret"));
+    let response = issue_call.send().await.unwrap();
+    assert_eq!(response.value[0].id, "101");
+    assert_eq!(
+        response.meta.operation().unwrap().name(),
+        "Sentry.organization.issues"
+    );
+    assert!(response.meta.operation().unwrap().is_read());
+    assert!(response.next_cursor.is_none());
+    let response = events
+        .follow(
+            NextUrl::parse(&format!(
+                "{}{}",
+                server.url().trim_end_matches('/'),
+                event_target
+            ))
+            .unwrap(),
+        )
+        .send()
+        .await
+        .unwrap();
+    assert!(!response.value.is_empty());
+    assert_eq!(
+        response.meta.operation().unwrap().name(),
+        "Sentry.organization.issue.events"
+    );
+    assert!(response.meta.operation().unwrap().is_read());
+    assert!(response.next_cursor.is_none());
+    let requests = server.requests();
+    assert_eq!(requests.len(), 2);
+    assert_eq!(requests[0].target, issue_target);
+    assert_eq!(requests[1].target, event_target);
+    server.shutdown().await;
+}

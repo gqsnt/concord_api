@@ -1,0 +1,26 @@
+error[E0004]: non-exhaustive patterns: `__DatadogApiOperation::EventsFutureWrite` not covered
+  --> tests/ui/../../../../examples/datadog-events-sdk/src/posting.rs
+   |
+   |     match operation {
+   |           ^^^^^^^^^ pattern `__DatadogApiOperation::EventsFutureWrite` not covered
+   |
+note: `__DatadogApiOperation` defined here
+  --> tests/ui/datadog_posting_unclassified.rs:4:5
+   |
+ 4 | /     concord::api! {
+ 5 | |         client DatadogApi {
+ 6 | |             base "http://127.0.0.1";
+ 7 | |             scope events {
+...  |
+11 | |                 POST future_write();
+   | |                      ------------ not covered
+...  |
+14 | |     }
+   | |_____^
+   = note: the matched value is of type `__DatadogApiOperation`
+   = note: this error originates in the macro `$crate::__macro::api` which comes from the expansion of the macro `concord::api` (in Nightly builds, run with -Z macro-backtrace for more info)
+help: ensure that all possible cases are being handled by adding a match arm with a wildcard pattern or an explicit pattern as shown
+   |
+10 ~         DatadogApiOperation::EventsPost => true,
+11 ~         __DatadogApiOperation::EventsFutureWrite => todo!(),
+   |

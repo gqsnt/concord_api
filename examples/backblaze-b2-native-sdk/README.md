@@ -268,3 +268,7 @@ truncated / oversized / wrong-media bodies, documented-rule violations and redac
 `tests/storage_consumer.rs` exercises discovery → resume → delete → list again using the public
 scope. Their synthetic fixtures are in `tests/storage_support/mod.rs`. The unchanged
 `tests/first_use.rs` remains the first consumer's compatibility test.
+
+### Operations and paging (Concord Next)
+
+The retained followed URL is an upload capability bound to an upload token, not a page continuation; paging uses provider-issued file-name/ID pairs.

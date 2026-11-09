@@ -1,0 +1,23 @@
+error: future cannot be sent between threads safely
+  --> tests/ui/next_non_send_spawn.rs:11:20
+   |
+11 |     across_threads(endpoint.send());
+   |                    ^^^^^^^^^^^^^^^ future returned by `send` is not `Send`
+   |
+   = help: within `impl Future<Output = Result<(), concord::Error>>`, the trait `Send` is not implemented for `Rc<String>`
+note: captured value is not `Send`
+  --> tests/ui/next_non_send_spawn.rs:2:1
+   |
+ 2 | / concord::api! {
+ 3 | |     client Api {
+ 4 | |         base "http://127.0.0.1";
+ 5 | |         GET page(query value: Rc<String>) { page next link; }
+ 6 | |     }
+ 7 | | }
+   | |_^ has type `ApiPage` which is not `Send`
+note: required by a bound in `across_threads`
+  --> tests/ui/next_non_send_spawn.rs:8:36
+   |
+ 8 | fn across_threads(_: impl Future + Send) {}
+   |                                    ^^^^ required by this bound in `across_threads`
+   = note: this error originates in the macro `concord::api` (in Nightly builds, run with -Z macro-backtrace for more info)

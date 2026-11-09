@@ -285,3 +285,7 @@ CARGO_BUILD_JOBS=5 CARGO_TARGET_DIR=/home/canarit/projects/Concord_Consolidation
 
 Optional live verification requires a separately authorized, scoped test Drive
 and an injected OAuth token; it is not part of this package's offline tests.
+
+### Operations and paging (Concord Next)
+
+The retained followed URLs belong to resumable uploads and require offset/status recovery. Listings use pageToken rather than URL continuation.

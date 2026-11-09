@@ -713,66 +713,15 @@ error: the client is declared here
 **Fix:** rename the scope. Collisions *between* two `api!` invocations in one module are reported
 by rustc as `E0428` ("the name ... is defined multiple times"); give each client its own module.
 
-## Operations (`operations Name;`)
+## Runtime operation classification
 
-### An endpoint the policy does not classify
+Every send policy implements `SendWith<T>`. An SDK can map `E::operation()` to its generated
+crate-private `__ClientOperation` and match exhaustively. Adding an endpoint without an arm
+produces E0004 naming the new variant; add its classification at that match.
+The fixture [`operations_policy_unclassified.rs`](../crates/concord/tests/ui/operations_policy_unclassified.rs)
+pins this diagnostic. The removed `operations Name;` statement is rejected as an unexpected
+owner statement; delete it and use runtime lookup in ordinary Rust.
 
-With `operations StoreOperation;` the send policy receives each endpoint's variant; a `match`
-without a wildcard arm makes a forgotten endpoint a compile error of the SDK. Here `DELETE remove`
-was added after the policy was written. Excerpt of
-[`operations_policy_unclassified.stderr`](../crates/concord/tests/ui/operations_policy_unclassified.stderr):
-
-```text
-error[E0004]: non-exhaustive patterns: `StoreOperation::ItemsRemove` not covered
-  --> tests/ui/operations_policy_unclassified.rs:16:28
-   |
-16 |         let _write = match operation {
-   |                            ^^^^^^^^^ pattern `StoreOperation::ItemsRemove` not covered
-   |
-note: `StoreOperation` defined here
-  --> tests/ui/operations_policy_unclassified.rs:28:20
-   |
-28 |         operations StoreOperation;
-   |                    ^^^^^^^^^^^^^^
-...
-34 |             DELETE remove(id: u64) { path "{id}"; }
-   |                    ------ not covered
-```
-
-**Fix:** add an arm for the new variant that states what the operation is (the help's
-`todo!()` arm compiles but panics at run time). Do not add a wildcard arm: it would silence the
-next omission too.
-
-### A policy that implements `SendWith` only
-
-Excerpt of [`operations_policy_send_with.stderr`](../crates/concord/tests/ui/operations_policy_send_with.stderr):
-
-```text
-error[E0277]: the send policy `Policy` does not send a `()` output identified by `StoreOperation`
-  --> tests/ui/operations_policy_send_with.rs:19:14
-   |
-19 |         send Policy;
-   |              ^^^^^^ the client declares `operations` and `send`: it needs `Policy: SendOperation<(), StoreOperation>`
-```
-
-**Fix:** implement `concord::SendOperation<T, StoreOperation>` (it receives the variant before the
-endpoint) instead of `SendWith<T>`, or remove the `operations` statement.
-
-### The statement itself
-
-Excerpt of [`operations_errors.stderr`](../crates/concord/tests/ui/operations_errors.stderr):
-
-```text
-error: `operations ShopItems;` names a type this declaration already generates (for `Shop.items`); choose another name for the enum
-  --> tests/ui/operations_errors.rs:34:20
-   |
-34 |         operations ShopItems;
-   |                    ^^^^^^^^^
-```
-
-**Fix:** `operations` is written once, on the client, before its children, with the name of a new
-type: not a generated type, the client's config struct or a parameter group. An endpoint whose
-variant would be `Self` or `ALL` is renamed.
 
 ## Attributes
 

@@ -154,3 +154,7 @@ schema. All protocol/workflow tests use `examples/testserver`, without provider 
 Sources, synthetic fixture derivations and the consulted example are in `PROVENANCE.md`;
 Concord adaptation costs are in `FRICTION.md`; the status-update maintenance record is in
 `MAINTENANCE.md`.
+
+### Operations and paging (Concord Next)
+
+The two listings declare `page next link;`. Traversal retains String cursor keys: it must validate the Link `results` flag, cursor parameter and unchanged filters before accepting items. Rebuilding from that validated cursor preserves the existing resume contract; using a bare next-link projection would miss those provider checks.

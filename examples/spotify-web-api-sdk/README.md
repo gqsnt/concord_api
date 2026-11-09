@@ -189,3 +189,7 @@ position, refresh retention across writes, no 401/429/403/5xx replay, session/tr
 before the head and during the body, pre-dispatch deadlines, and lost/unreadable results.
 `tests/add_items_consumer.rs`: public consumer selects an owned playlist, adds a track, receives
 the new snapshot and reads the changed playlist. Maintenance findings: [`MAINTENANCE.md`](MAINTENANCE.md).
+
+### Operations and paging (Concord Next)
+
+The existing traversal uses checked numeric offsets and reads `next` only as a presence flag; it never follows that URL. Keeping this behavior preserves offset resume keys and the response-offset checks, including providers returning a next URL with a different spelling.

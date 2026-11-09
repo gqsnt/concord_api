@@ -1,5 +1,7 @@
 # Fresh consumer: SDK36 Spotify Web API
 
+Current API note (P4.2): this evidence records the earlier API. Paging `_from` twins now use the base factory followed by `.starting_at(Resume::At(key))`; Datadog/Notion traversal cycles use `PagesError::Repeated`. See [migration](../../docs/MIGRATION.md#runtime-operations-and-paging-p42).
+
 Date: 2026-11-07. Live provider calls: **NOT_RUN**. All application traffic must use
 `examples/testserver` on loopback. No SDK implementation, existing SDK tests,
 `FRICTION.md`, or `PROVENANCE.md` was read before these predictions.

@@ -1,5 +1,11 @@
 # Direction: ops-paging — operation facts, continuation policy and traversal setup (F3 + E1 + F1)
 
+P4.2 update (2026-11-09): the owner chose runtime lookup. The implementation removes
+`operations Name;`/`SendOperation`, uses one `SendWith` trait and automatic private inventories,
+keeps all eight exhaustive classifications, defers default continuation Send bounds, and tests
+Datadog's production posting match with a seeded future write. The snapshot evidence and limits
+below describe the earlier direction; see [current migration](../../../docs/MIGRATION.md#runtime-operations-and-paging-p42).
+
 Condensed from the [direction source](/home/canarit/projects/Concord_Next/work/design/directions/ops-paging.md), [fix result](/home/canarit/projects/Concord_Next/work/lanes/ops-paging-fix-r1/result.md) and reviews below. Direction and fix lanes: Codex `gpt-6.1-sol` xhigh, confirmed by [direction metadata](/home/canarit/projects/Concord_Next/work/lanes/dir-ops-paging/meta.json) and [fix metadata](/home/canarit/projects/Concord_Next/work/lanes/ops-paging-fix-r1/meta.json). Reviews: independent session, same provider.
 Branch `direction/ops-paging` at `46f66793`, pushed as `spike/dir-ops-paging`; base `ba10189b` at `/home/canarit/projects/Concord_Next/work/wt/rv-p1`; F3+E1 merge `6d943873`; F1 snapshot `60374269`. Worktree: `/home/canarit/projects/Concord_Next/work/wt/dir-ops-paging`. The reviewed commit supersedes the lanes' uncommitted-tree notes.
 

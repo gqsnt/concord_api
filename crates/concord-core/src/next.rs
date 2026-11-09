@@ -184,3 +184,18 @@ pub fn followed<E>(endpoint: E, target: NextUrl) -> Followed<E> {
 pub fn next_url(text: Option<&str>) -> Result<Option<NextUrl>, NextUrlError> {
     text.map(NextUrl::parse).transpose()
 }
+
+/// `api!` support: a policy-less endpoint with declared continuation. The blanket implementation
+/// defers the thread-safety bound to use of `Sends`, so non-Send inputs can still be prepared.
+#[doc(hidden)]
+pub trait DefaultSend: Sized {}
+
+impl<T, E: DefaultSend + Endpoint<T> + Send> Sends<Result<T, Error>> for E {
+    async fn send(self) -> Result<T, Error> {
+        self.prepare()?.send().await
+    }
+
+    async fn __send_followed(self, target: NextUrl) -> Result<T, Error> {
+        followed(self, target).prepare()?.send().await
+    }
+}

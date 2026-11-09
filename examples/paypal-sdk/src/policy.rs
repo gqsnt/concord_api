@@ -7,7 +7,7 @@ use std::time::{Duration, Instant};
 
 use concord::reqwest::header::AUTHORIZATION;
 use concord::reqwest::{self, StatusCode, Url};
-use concord::{Endpoint, Received, SendOperation};
+use concord::{Endpoint, Received, SendWith};
 use concord_auth::{Generation, RefreshError, Snapshot, TokenCache};
 use concord_retry::{Decision, Replay, Retry, concord::ReplayMode};
 
@@ -188,14 +188,12 @@ fn classify<T>(
     }
 }
 
-impl<T: Send + 'static> SendOperation<T, PayPalOperation> for Session {
+impl<T: Send + 'static> SendWith<T> for Session {
     type Output = Result<T, Error>;
 
-    async fn send<E: Endpoint<T> + Send>(
-        &self,
-        operation: PayPalOperation,
-        endpoint: E,
-    ) -> Self::Output {
+    async fn send<E: Endpoint<T> + Send>(&self, endpoint: E) -> Self::Output {
+        let operation = PayPalOperation::from_operation(E::operation())
+            .ok_or(Error::Invalid("operation is not declared by this SDK"))?;
         let Class { accepts_request_id } = Class::of(operation);
         // A write: sent within the write bounds, and possibly applied when unanswered.
         let write = !E::operation().is_read();

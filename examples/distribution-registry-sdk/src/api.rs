@@ -43,6 +43,7 @@ concord::api! {
         /// `GET /v2/_catalog`: one page of repository names.
         GET catalog(query n?: PageSize, query last?: String) -> CatalogBody {
             path "v2/_catalog";
+            page next link;
             response Json;
         }
     }
@@ -59,6 +60,7 @@ concord::api! {
         /// `GET /v2/<name>/tags/list`: one page of tags.
         GET tags(query n?: PageSize, query last?: String) -> TagsBody {
             path "tags/list";
+            page next link;
             response Json;
         }
 

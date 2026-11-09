@@ -41,7 +41,7 @@ concord::api! {
             path "v71";
 
             /// Lists available methods for a transaction; one complete response, no pagination.
-            POST payment_methods(
+            #[read] POST payment_methods(
                 #[sensitive] header("idempotency-key") key: String,
                 body request: MethodsRequest,
             ) -> MethodsResponse { path "paymentMethods"; }
@@ -95,5 +95,16 @@ impl Checkout {
             .build()
             .map_err(|_| Error::InvalidInput("HTTP client construction failed"))?;
         Ok(Self::new(http, CheckoutConfig { api_key, policy }))
+    }
+}
+
+#[cfg(test)]
+mod read_operation_tests {
+    use super::*;
+    #[test]
+    fn declared_post_reads_keep_their_method_and_effect() {
+        let operation = CheckoutV71PaymentMethods::operation();
+        assert_eq!(operation.method(), Some("POST"));
+        assert!(operation.is_read(), "{}", operation.name());
     }
 }

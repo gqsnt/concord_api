@@ -27,6 +27,7 @@ use std::sync::Arc;
 
 use concord::reqwest::Url;
 use concord::reqwest::header::{HeaderMap, LINK};
+use concord::{Endpoint, Follow, NextUrl};
 use concord_pagination::{Page, Pages, Resume, link};
 
 use crate::auth::Access;
@@ -117,16 +118,15 @@ async fn catalog_page(
     let root = registry.root().clone();
     let received = registry
         .execute(&Access::Catalog, |auth| {
-            let prepared = root
+            let endpoint = root
                 .clone()
                 .maybe_authorization(auth)
                 .catalog()
                 .maybe_n(options.page_size)
-                .maybe_last(options.last.clone())
-                .prepare()?;
+                .maybe_last(options.last.clone());
             match &link {
-                Some(url) => prepared.follow(url.as_str()),
-                None => Ok(prepared),
+                Some(url) => endpoint.follow(NextUrl::from_url(url.clone())).prepare(),
+                None => endpoint.prepare(),
             }
         })
         .await?;
@@ -159,16 +159,15 @@ async fn tag_page(
     let api = repository.api.clone();
     let received = registry
         .execute(&repository.pull(), |auth| {
-            let prepared = api
+            let endpoint = api
                 .clone()
                 .maybe_authorization(auth)
                 .tags()
                 .maybe_n(options.page_size)
-                .maybe_last(options.last.clone())
-                .prepare()?;
+                .maybe_last(options.last.clone());
             match &link {
-                Some(url) => prepared.follow(url.as_str()),
-                None => Ok(prepared),
+                Some(url) => endpoint.follow(NextUrl::from_url(url.clone())).prepare(),
+                None => endpoint.prepare(),
             }
         })
         .await?;

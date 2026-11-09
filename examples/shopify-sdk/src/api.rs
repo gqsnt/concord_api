@@ -43,31 +43,53 @@ concord::api! {
             path "admin/api/{client.version}/graphql.json";
 
             /// `ShopIdentity`: which shop answered.
-            POST shop_info(body variables: ShopQuery) -> Answer<ShopQuery>;
+            #[read] POST shop_info(body variables: ShopQuery) -> Answer<ShopQuery>;
             /// `CatalogProducts`: a page of products with their first variants.
-            POST products(body variables: ProductsQuery) -> Answer<ProductsQuery>;
+            #[read] POST products(body variables: ProductsQuery) -> Answer<ProductsQuery>;
             /// `CatalogProduct`: one product by id.
-            POST product(body variables: ProductQuery) -> Answer<ProductQuery>;
+            #[read] POST product(body variables: ProductQuery) -> Answer<ProductQuery>;
             /// `ProductVariants`: a page of one product's variants.
-            POST product_variants(body variables: ProductVariantsQuery)
+            #[read] POST product_variants(body variables: ProductVariantsQuery)
                 -> Answer<ProductVariantsQuery>;
             /// `CatalogCollections`: a page of collections with their first member products.
-            POST collections(body variables: CollectionsQuery) -> Answer<CollectionsQuery>;
+            #[read] POST collections(body variables: CollectionsQuery) -> Answer<CollectionsQuery>;
             /// `CollectionProducts`: a page of one collection's member products.
-            POST collection_products(body variables: CollectionProductsQuery)
+            #[read] POST collection_products(body variables: CollectionProductsQuery)
                 -> Answer<CollectionProductsQuery>;
             /// `Locations`: a page of locations.
-            POST locations(body variables: LocationsQuery) -> Answer<LocationsQuery>;
+            #[read] POST locations(body variables: LocationsQuery) -> Answer<LocationsQuery>;
             /// `LocationInventory`: a page of one location's inventory levels.
-            POST location_inventory(body variables: LocationInventoryQuery)
+            #[read] POST location_inventory(body variables: LocationInventoryQuery)
                 -> Answer<LocationInventoryQuery>;
             /// `BulkRunQuery` (**mutation**: creates a bulk job on the shop).
             POST run_bulk_query(body variables: RunBulkQuery) -> Answer<RunBulkQuery>;
             /// `BulkOperationStatus`: one bulk operation by id.
-            POST bulk_operation(body variables: BulkOperationQuery) -> Answer<BulkOperationQuery>;
+            #[read] POST bulk_operation(body variables: BulkOperationQuery) -> Answer<BulkOperationQuery>;
             /// `BulkOperationCancel` (**mutation**: starts canceling a bulk job).
             POST cancel_bulk_operation(body variables: CancelBulkOperation)
                 -> Answer<CancelBulkOperation>;
+        }
+    }
+}
+
+#[cfg(test)]
+mod read_operation_tests {
+    use super::*;
+    #[test]
+    fn declared_post_reads_keep_their_method_and_effect() {
+        for operation in [
+            ShopifyAdminShopShopInfo::operation(),
+            ShopifyAdminShopProducts::operation(),
+            ShopifyAdminShopProduct::operation(),
+            ShopifyAdminShopProductVariants::operation(),
+            ShopifyAdminShopCollections::operation(),
+            ShopifyAdminShopCollectionProducts::operation(),
+            ShopifyAdminShopLocations::operation(),
+            ShopifyAdminShopLocationInventory::operation(),
+            ShopifyAdminShopBulkOperation::operation(),
+        ] {
+            assert_eq!(operation.method(), Some("POST"));
+            assert!(operation.is_read(), "{}", operation.name());
         }
     }
 }

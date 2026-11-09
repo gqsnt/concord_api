@@ -1,5 +1,7 @@
 # Independent first use
 
+Current API note (P4.2): this evidence records the earlier API. Paging `_from` twins now use the base factory followed by `.starting_at(Resume::At(key))`; Datadog/Notion traversal cycles use `PagesError::Repeated`. See [migration](../../docs/MIGRATION.md#runtime-operations-and-paging-p42).
+
 Scope: an application consumer of `concord-sdk-gitlab`, at HEAD `debaefb7`, with
 Concord frozen at `e04236ca`. All requests below target loopback testservers and
 use `synthetic-first-use-token`. No provider calls or credentials are used.

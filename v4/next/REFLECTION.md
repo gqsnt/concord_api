@@ -1,5 +1,11 @@
 # Reflection (P3.5)
 
+P4.2 update (2026-11-09): the owner chose runtime lookup. The implementation removes
+`operations Name;`/`SendOperation`, uses one `SendWith` trait and automatic private inventories,
+keeps all eight exhaustive classifications, defers default continuation Send bounds, and tests
+Datadog's production posting match with a seeded future write. The snapshot evidence and limits
+below describe the earlier direction; see [current migration](../../docs/MIGRATION.md#runtime-operations-and-paging-p42).
+
 ## What the campaigns taught
 
 **SDK20 and SDK50** proved the core holds: 55 SDKs, from a one-endpoint holiday API to Kubernetes,

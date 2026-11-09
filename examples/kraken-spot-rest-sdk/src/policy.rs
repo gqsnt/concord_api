@@ -3,7 +3,7 @@
 use crate::{
     ApiFailure, Credentials, Envelope, Error, HttpFailure, KrakenOperation, LocalError, Nonces,
 };
-use concord::{Decoder, Endpoint, Json, ResponseMeta, SendOperation, reqwest};
+use concord::{Decoder, Endpoint, Json, ResponseMeta, SendWith, reqwest};
 use std::fmt;
 
 /// Maximum successful response body, in bytes. Oversized reads fail explicitly.
@@ -157,13 +157,11 @@ impl<T> Signed<T> {
     }
 }
 
-impl<T: Send> SendOperation<Envelope<T>, KrakenOperation> for Policy {
+impl<T: Send> SendWith<Envelope<T>> for Policy {
     type Output = Result<Response<T>, Error>;
-    async fn send<E: Endpoint<Envelope<T>> + Send>(
-        &self,
-        operation: KrakenOperation,
-        endpoint: E,
-    ) -> Self::Output {
+    async fn send<E: Endpoint<Envelope<T>> + Send>(&self, endpoint: E) -> Self::Output {
+        let operation =
+            KrakenOperation::from_operation(E::operation()).ok_or(LocalError::SigningInput)?;
         self.sign(operation, endpoint)?.send().await
     }
 }

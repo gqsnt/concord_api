@@ -188,7 +188,7 @@ impl GraphClient {
             Collection::UsersDelta,
             select,
             start,
-            move || api.users_delta().maybe_select(query.clone()).prepare(),
+            api.users_delta().maybe_select(query),
             |user| !user.id.is_empty(),
         )
     }
@@ -239,7 +239,7 @@ impl GraphClient {
             Collection::Groups,
             select,
             None,
-            move || api.groups().maybe_select(query.clone()).prepare(),
+            api.groups().maybe_select(query),
             |group| !group.id.is_empty(),
         )
     }
@@ -262,13 +262,10 @@ impl GraphClient {
             Collection::Members(id.clone()),
             select,
             None,
-            move || {
-                api.direct_members(id.clone())
-                    .maybe_select(query.clone())
-                    .maybe_count(advanced.then_some(true))
-                    .maybe_consistency(advanced.then(|| "eventual".into()))
-                    .prepare()
-            },
+            api.direct_members(id)
+                .maybe_select(query)
+                .maybe_count(advanced.then_some(true))
+                .maybe_consistency(advanced.then(|| "eventual".into())),
             |member| !member.id.is_empty() && !member.object_type.is_empty(),
         )
     }

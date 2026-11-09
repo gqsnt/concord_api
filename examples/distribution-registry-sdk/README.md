@@ -259,3 +259,7 @@ registry and the realm are different origins). The fixtures under `fixtures/` ar
 from the official pages (`PROVENANCE.md`); the fake registry implements the documented behaviour
 this SDK relies on. **Neither is vendor conformance:** no Distribution server, public registry or
 real token service was contacted.
+
+### Operations and paging (Concord Next)
+
+Catalog and tags declare `page next link;` and prepare followed declared endpoints inside the bearer-challenge executor. This keeps challenge retries rebuilding the request with the current token; collection binding and malformed/self-link checks still precede item acceptance. Upload Location and blob redirects are separate protocols.

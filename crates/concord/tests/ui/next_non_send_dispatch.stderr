@@ -1,0 +1,26 @@
+error[E0277]: `Rc<String>` cannot be sent between threads safely
+  --> tests/ui/next_non_send_dispatch.rs:11:85
+   |
+11 |     let _future = endpoint.follow(NextUrl::parse("http://127.0.0.1/page").unwrap()).send();
+   |                                                                                     ^^^^ `Rc<String>` cannot be sent between threads safely
+   |
+   = help: within `ApiPage`, the trait `Send` is not implemented for `Rc<String>`
+help: the trait `Sends<O>` is implemented for `Followed<E>`
+  --> $WORKSPACE/crates/concord-core/src/next.rs
+   |
+   | impl<O, E: Sends<O>> Sends<O> for Followed<E> {
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+note: required because it appears within the type `ApiPage`
+  --> tests/ui/next_non_send_dispatch.rs:6:13
+   |
+ 6 |         GET page(query value: Rc<String>) { page next link; }
+   |             ^^^^
+   = note: required for `ApiPage` to implement `Sends<Result<(), concord::Error>>`
+note: required by a bound in `Followed::<E>::send`
+  --> $WORKSPACE/crates/concord-core/src/next.rs
+   |
+   |     pub fn send<O>(self) -> impl Future<Output = O> + Send
+   |            ---- required by a bound in this associated function
+   |     where
+   |         E: Sends<O>,
+   |            ^^^^^^^^ required by this bound in `Followed::<E>::send`

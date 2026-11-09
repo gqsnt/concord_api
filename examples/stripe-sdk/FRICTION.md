@@ -1,5 +1,7 @@
 # Friction log — Stripe v1 SDK slice on Concord
 
+Current API note (P4.2): this evidence records the earlier API. Paging `_from` twins now use the base factory followed by `.starting_at(Resume::At(key))`; Datadog/Notion traversal cycles use `PagesError::Repeated`. See [migration](../../docs/MIGRATION.md#runtime-operations-and-paging-p42).
+
 Written while implementing the SDK (`examples/stripe-sdk`) and its caller
 (`examples/stripe-app`) as an author who did not design Concord or `concord-pagination`. Each
 entry: the provider contract, the public Concord path used, the extra code, and whether it is

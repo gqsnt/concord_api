@@ -1,5 +1,7 @@
 # SDK24 Discord REST — author observations
 
+Current API note (P4.2): this evidence records the earlier API. Paging `_from` twins now use the base factory followed by `.starting_at(Resume::At(key))`; Datadog/Notion traversal cycles use `PagesError::Repeated`. See [migration](../../docs/MIGRATION.md#runtime-operations-and-paging-p42).
+
 Baseline: Concord `56a16ee3` (worktree `w1-sdk24-discord-rest`), Rust 1.99.1, edition 2024.
 Changes: `examples/discord-rest-sdk/` and its root `Cargo.toml` member entry / `Cargo.lock`
 package entry only. No shared crate, check, script or other example was edited. No live Discord

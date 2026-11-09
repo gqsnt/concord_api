@@ -1,5 +1,7 @@
 # Maintenance — tag-filtered droplets, droplet snapshots, resumable traversals
 
+Current API note (P4.2): this evidence records the earlier API. Paging `_from` twins now use the base factory followed by `.starting_at(Resume::At(key))`; Datadog/Notion traversal cycles use `PagesError::Repeated`. See [migration](../../docs/MIGRATION.md#runtime-operations-and-paging-p42).
+
 Role: independent maintainer, after the first consumer (`tests/first_use.rs`). The SDK
 author and the consumer were other roles. Date: 2026-11-07. Baseline:
 `c3fd4f1ee30c1727e26b285270f2cc8d8b694e77` plus the author's and consumer's commits

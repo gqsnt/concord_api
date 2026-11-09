@@ -1,5 +1,5 @@
-// `operations Name;` is a client statement, set once, before children, naming a new type; every
-// endpoint's variant must be a name the enum can have.
+// The removed statement is rejected at every former spelling and placement.
+// These retain all original H08 syntax-error cases.
 concord::api! {
     pub client Scoped {
         base "http://x.test";

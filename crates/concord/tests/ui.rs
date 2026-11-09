@@ -6,6 +6,7 @@
 fn ui() {
     let t = trybuild::TestCases::new();
     t.compile_fail("tests/ui/*.rs");
+    t.pass("tests/pass/*.rs");
 }
 
 /// Format row 9 with the `json` feature: serde's own bound error, at the declaration.

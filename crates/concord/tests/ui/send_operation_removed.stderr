@@ -1,0 +1,13 @@
+error[E0432]: unresolved import `concord::SendOperation`
+ --> tests/ui/send_operation_removed.rs:1:5
+  |
+1 | use concord::SendOperation;
+  |     ^^^^^^^^^-------------
+  |              |
+  |              no `SendOperation` in the root
+  |
+help: a similar name exists in the module
+  |
+1 - use concord::SendOperation;
+1 + use concord::Operation;
+  |

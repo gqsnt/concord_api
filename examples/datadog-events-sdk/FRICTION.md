@@ -1,5 +1,7 @@
 # Friction
 
+Current API note (P4.2): this evidence records the earlier API. Paging `_from` twins now use the base factory followed by `.starting_at(Resume::At(key))`; Datadog/Notion traversal cycles use `PagesError::Repeated`. See [migration](../../docs/MIGRATION.md#runtime-operations-and-paging-p42).
+
 What building this SDK cost on top of Concord, with the evidence, what was written by hand,
 which part is Datadog's semantics and which is generic mechanics, and the smallest Concord
 change that would remove the cost. No shared crate was edited (frozen baseline

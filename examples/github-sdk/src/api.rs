@@ -64,9 +64,6 @@ concord::api! {
             X_GITHUB_API_VERSION = "{api_version}";
         }
         format Json;
-        /// Every declared operation: [`paging::operation::listing_id`](crate::paging::operation)
-        /// retains the provider operation ids used by stored listing bindings.
-        operations GitHubOperation;
 
         /// One repository: `repos/{owner}/{repo}`.
         scope repo(owner: Owner, name: RepoName) {
@@ -330,3 +327,5 @@ concord::api! {
         }
     }
 }
+
+pub(crate) use __GitHubOperation as GitHubOperation;

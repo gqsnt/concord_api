@@ -3,6 +3,7 @@ use crate::links::PartitionLinks;
 use crate::model::PartitionBody;
 use crate::{Error, ProtocolError, Query, Reply, ResultMetadata, ResultSet, Row};
 use concord::ResponseMeta;
+use concord::{Endpoint, Follow, NextUrl};
 use concord_pagination::{Independent, IndependentReport, Options, independent};
 use std::{
     future::Future,
@@ -131,17 +132,17 @@ impl PartitionPlan {
         if index == 0 || index >= self.metadata.partition_info.len() {
             return Err(Error::protocol(ProtocolError::InvalidPartition, None));
         }
-        let mut prepared = self
+        let endpoint = self
             .query
             .client
             .api
             .statement(self.query.handle.clone())
-            .partition(index)
-            .prepare()?;
+            .partition(index);
         let target = self.links.lock().unwrap().0.get(&index).cloned();
-        if let Some(url) = target {
-            prepared = prepared.follow(url.as_str())?;
-        }
+        let prepared = match target {
+            Some(url) => endpoint.follow(NextUrl::from_url(url)).prepare()?,
+            None => endpoint.prepare()?,
+        };
         let url = prepared.request().url().clone();
         let response = self
             .query

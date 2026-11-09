@@ -55,9 +55,6 @@ concord::api! {
         format Json;
         limit PAGE_BODY_LIMIT;
         send policy -> Result<_, Error>;
-        /// Every Zendesk operation, as the [`SendPolicy`] classifies it (read or write, and
-        /// whether a `409` is a collision).
-        operations ZendeskOperation;
 
         /// The ticket collection.
         scope tickets {
@@ -150,3 +147,5 @@ pub fn http_client() -> Result<reqwest::Client, reqwest::Error> {
 #[cfg(doctest)]
 #[doc = include_str!("../README.md")]
 pub struct ReadmeExamples;
+
+pub(crate) use __ZendeskOperation as ZendeskOperation;

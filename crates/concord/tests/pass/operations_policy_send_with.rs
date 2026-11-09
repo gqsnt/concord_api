@@ -1,6 +1,4 @@
-// `operations Name;` with `send`: the policy receives each endpoint's variant through
-// `SendOperation<T, Name>`; a policy that only implements `SendWith<T>` is reported at the
-// `send` statement with Concord's message.
+// Every client dispatches through SendWith.
 use concord::{Endpoint, SendWith};
 
 #[derive(Default)]
@@ -17,7 +15,6 @@ concord::api! {
     pub client Store {
         base "http://x.test";
         send Policy;
-        operations StoreOperation;
         GET ping();
     }
 }

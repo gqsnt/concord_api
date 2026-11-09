@@ -52,6 +52,7 @@ concord::api! {
             GET partition(query partition: usize) -> PartitionBytes {
                 headers { "Accept-Encoding" = "gzip"; }
                 response PartitionWire;
+                page next link;
             }
             POST cancel(query("requestId") request_id: RequestId) -> ServerMessage { path "cancel"; }
         }

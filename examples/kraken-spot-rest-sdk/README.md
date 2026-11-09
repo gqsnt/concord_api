@@ -154,7 +154,7 @@ HMAC-SHA512 signs `URI path || hash` with the decoded secret and Base64 encodes 
 result. It sets sensitive `API-Key` and `API-Sign` headers. The query and origin
 are not included in the signature. The exact path comes from the prepared URL,
 a base URL's path prefix included. Whether a request is signed is decided per
-declared operation (an exhaustive `match` over the generated `KrakenOperation`),
+declared operation (an exhaustive `match` over the crate-private generated `KrakenOperation`),
 not by its URL, so a base URL with a path prefix is followed by public and signed
 calls alike. Signing the exact outgoing path is right only when the verifier sees
 that same path (Kraken itself, or a gateway that forwards the path unchanged). A
@@ -251,3 +251,5 @@ CARGO_BUILD_JOBS=4 RUSTDOCFLAGS="-D warnings" cargo doc --locked -p concord-sdk-
 
 See `PROVENANCE.md` for exact sources, fixture derivation and validation, and
 `FRICTION.md` for Concord costs and capability decisions.
+
+Run the offline operation-effect example with `cargo run --locked --offline -p concord-sdk-kraken-spot-rest --example kraken_spot_rest_operation_effect`.

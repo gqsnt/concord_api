@@ -198,3 +198,5 @@ cargo test --locked -p concord-sdk-strava
 cargo clippy --locked -p concord-sdk-strava --all-targets -- -D warnings
 RUSTDOCFLAGS="-D warnings" cargo doc --locked -p concord-sdk-strava --no-deps
 ```
+
+Run the offline operation-effect example with `cargo run --locked --offline -p concord-sdk-strava --example strava_operation_effect`.

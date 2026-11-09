@@ -9,7 +9,7 @@ executable evidence is listed in `TEST_MATRIX.md`.
 api!       := doc* vis "client" Name params? "{" "base" STRING ";" stmt* child* "}"
 child      := cattr* "scope" name params? "{" stmt* child* "}"
             | cattr* METHOD name params ("->" Type)? (";" | "{" stmt* "}")
-cattr      := doc | "#[cfg(..)]" | "#[deprecated..]"
+cattr      := doc | "#[cfg(..)]" | "#[deprecated..]" | "#[read]"
 METHOD     := GET | POST | PUT | PATCH | DELETE | HEAD | OPTIONS
 params     := "(" (param ("," param)* ","?)? ")"
 param      := attr* placement? name "?"? ":" Type ("=" Expr)?
@@ -20,6 +20,7 @@ attr       := doc | "#[sensitive]"
 stmt       := "path" STRING ";" | "subdomain" STRING ";"
             | "query" "{" entry* "}" | "headers" "{" entry* "}"
             | "format" fmt ";" | "request" fmt STRING? ";" | "response" fmt ";"
+            | "page" "next" ("link" | "url" field ("?"? "." field)*) ";"
 fmt        := "json" | "text" | "bytes" | "form" | TypePath
 entry      := op? key "=" rhs ("else" "inherit")? ";" | "remove" key ";"
 op         := "append" | "override"
@@ -34,7 +35,8 @@ reference  := name | owner "." name       (owner = `client` or an enclosing scop
 - Attributes: documentation everywhere; `#[sensitive]` on values; on scopes and endpoints also
   `#[cfg(..)]` (applied to every generated item of that owner and its descendants, and to the
   parent's navigation method) and `#[deprecated..]` (applied to the navigation method, so the
-  warning appears where callers navigate). Other attributes are rejected. Generated names are
+  warning appears where callers navigate); `#[read]` declares a reading operation whose method
+  does not already imply one (inherited by descendants of a scope). Other attributes are rejected. Generated names are
   still checked as if every `cfg` were enabled: two cfg-exclusive endpoints cannot share a name.
 - Templates (`path`, `subdomain`, quoted query/header values) contain literal text and holes
   `{name}` / `{owner.name}`; `{{` and `}}` are literal braces (with or without holes).
@@ -263,18 +265,26 @@ Each key has one **slot**, positioned at the key's first appearance on the chain
 - `send P;` on the client (once, before children) makes every generated `send()` return
   `<P as SendWith<T>>::Output` by calling `P::send(endpoint)`; the policy owns execution, errors and
   metadata (it usually calls `prepare()` and `receive()`). Without it, `send()` is `prepare()?.send()`.
-- `doc* operations Name;` on the client (once, before children) generates `Name`, a
-  `#[non_exhaustive]` enum at the client's visibility with one variant per endpoint, in declaration
-  order, under the endpoint's own and inherited `#[cfg]`s; a variant is the endpoint's path below the
-  client in UpperCamelCase (its type name without the client's: `items.get` is `ItemsGet`). `Name`
-  has `ALL`, `operation(self) -> Operation` and `from_operation(Operation) -> Option<Name>` (by
-  `Operation`'s `==`: endpoint, dotted name and method; a same-named client elsewhere is
-  indistinguishable). With
-  `send P;`, every generated `send()` instead requires `P: SendOperation<T, Name>` and calls
-  `P::send(variant, endpoint)`, returning its `Output`; a policy `match` over `Name` without a
-  wildcard arm therefore fails to compile (E0004) when an endpoint is added and not classified.
-  `Name` must not be a generated type, the config struct or a parameter group; a variant `Self` or
-  `ALL` is an error. Without the statement nothing is generated.
+- Every client emits a doc-hidden crate-private `__ClientOperation` inventory: one variant per
+  compiled endpoint in declaration order, with its own and inherited cfg attributes. Endpoint
+  paths below the client become UpperCamelCase variants; Self/ALL receive a trailing underscore.
+  ALL, operation() and from_operation(Operation) expose the declared identity textually (endpoint,
+  dotted name and method; a same-named client elsewhere is indistinguishable). A SendWith policy
+  reads E::operation(), maps it to this inventory and matches exhaustively; an unclassified added
+  endpoint fails with E0004. No DSL statement selects this inventory or another dispatch trait.
+- Operation::is_read() is true for GET, HEAD and OPTIONS or an inherited #[read] fact, false for
+  other methods and native labels. It is carried through prepared/received/decoder/error metadata;
+  read classification alone does not grant replay permission.
+- A bodyless GET can declare page next link; or page next url field?.next;. Follow::follow
+  replaces only its URL with a NextUrl, preserving operation, policy, headers and decoder. Preparing
+  a followed endpoint refuses another origin. LinkContinuation/UrlContinuation expose the source;
+  URL projection rejects present empty/relative/malformed URLs. Default Sends dispatch requires a
+  Send endpoint only when used; local non-Send inputs can still construct/follow/prepare, and the
+  original local send future remains available. The output need not be Send.
+- concord-pagination::Pages::starting_at replaces the initial Resume before polling;
+  refuse_repeated_keys optionally rejects an already admitted At(key) before the factory runs,
+  preserving prefix/resume as PagesError::Repeated and Outcome::Repeated. Factory validation runs
+  on every start. Both builders panic at the caller after first poll; budgets precede key admission.
 - Every generated endpoint type implements the public `Endpoint<T>` trait for its output `T` (the
   generated `prepare()`, `operation()` — the declared identity without building a request); it adds
   nothing to the generated namespace. `Received::bytes_limited(n)` reads the body of any status up

@@ -1,31 +1,10 @@
-//! Design acceptance tests for E1 + N3; intentionally not compiled in this lane.
+//! Operation effects survive the public carriers.
 mod support;
 use concord_example_testserver::{Recorded, Reply, TestServer};
 use concord_sdk_strava::{
-    ActivityUpdate, StravaOperation,
-    concord::{Endpoint, ErrorKind, Operation},
+    ActivityUpdate,
+    concord::{Endpoint, ErrorKind},
 };
-
-#[test]
-fn every_generated_strava_identity_has_its_declared_effect() {
-    use StravaOperation as Op;
-    let expected = [
-        (Op::AthleteActivities, true),
-        (Op::ActivitiesGet, true),
-        (Op::ActivitiesUpdate, false),
-        (Op::UploadsCreate, false),
-        (Op::UploadsStatus, true),
-    ];
-    assert_eq!(Op::ALL.len(), expected.len());
-    for (identity, read) in expected {
-        let operation = identity.operation();
-        assert_eq!(operation.is_read(), read);
-        assert_eq!(Op::from_operation(operation), Some(identity));
-    }
-    // OAuth's token grant (a `SendWith` client, no enum) is a POST: not a read.
-    assert!(!concord_sdk_strava::OAuthOauthToken::operation().is_read());
-    assert!(!Operation::label("native transfer").is_read());
-}
 
 fn prepared_effect<T, E: Endpoint<T>>(endpoint: E, expected: bool) {
     let declared = E::operation();
