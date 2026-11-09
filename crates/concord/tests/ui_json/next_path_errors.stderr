@@ -26,22 +26,13 @@ note: method defined here
    |     pub const fn as_ref(&self) -> Option<&T> {
    |                  ^^^^^^
 
-error[E0277]: the trait bound `std::option::Option<&String>: From<&u64>` is not satisfied
-  --> tests/ui_json/next_path_errors.rs:24:48
+error[E0277]: `page next url` field `links?.count` must be `String` or `Option<String>`
+  --> tests/ui_json/next_path_errors.rs:24:55
    |
 24 |         GET not_text() -> Page { page next url links?.count; }
-   |                                                ^^^^^^^-----
-   |                                                |      |
-   |                                                |      required by a bound introduced by this call
-   |                                                the trait `From<&u64>` is not implemented for `std::option::Option<&String>`
+   |                                                       ^^^^^
+   |                                                       |
+   |                                                       expected URL text (`String` or `Option<String>`)
+   |                                                       required by a bound introduced by this call
    |
-   = help: the following other types implement trait `From<T>`:
-             `std::option::Option<&T>` implements `From<&std::option::Option<T>>`
-             `std::option::Option<&mut T>` implements `From<&mut std::option::Option<T>>`
-             `std::option::Option<&tracing_core::metadata::Metadata<'_>>` implements `From<&tracing_core::span::Current>`
-             `std::option::Option<&tracing_core::span::Id>` implements `From<&tracing::span::EnteredSpan>`
-             `std::option::Option<&tracing_core::span::Id>` implements `From<&tracing::span::Span>`
-             `std::option::Option<&tracing_core::span::Id>` implements `From<&tracing_core::span::Current>`
-             `std::option::Option<T>` implements `From<T>`
-             `std::option::Option<T>` implements `From<subtle::CtOption<T>>`
-           and $N others
+   = help: the trait `<PathsNotText as UrlContinuation<Page>>::next_url::UrlText` is not implemented for `u64`
