@@ -232,6 +232,12 @@ bodies at both boundaries), asserts each negative fails exactly its intended R1 
 checks every wire question, question hash and full prompt. It neither generates truth nor runs
 readers; its input bank and truth remain unchanged.
 
+Known limit (instrument review `i3b-instrument-review-sol`, non-blocking): the operation-boundary truth
+filter (`truth.py` around line 1077) drops connection header names unconditionally and drops `accept: */*`
+whenever the prepared request had no Accept, so it would also drop an SDK send-policy edit that sets exactly
+those. No main-bank or H16r truth contains such a policy; add a distinguishing control before extending the
+bank to one.
+
 ### Opt-in generated endpoint docs (`pack.py --generated-docs`)
 
 H16's R1 pilot did not expose the generated-doc intervention. For prospectively registered
