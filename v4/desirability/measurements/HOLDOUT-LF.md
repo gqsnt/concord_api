@@ -75,3 +75,25 @@ valid and passing, a no-op change failing the oracle (as designed).
 
 No regression on I4 (Nager e1's flag cleared; Nager e5 gained one test-expectation flag: a test document still uses the
 old field name). One run per task; no noise band beyond the counts. **No overfitting finding on I4.**
+
+## Final confirmation bank (`work/sealed/final`, used once after the candidate froze)
+Candidate frozen at F′ = `6ab300c1` (F + the H04 narrow revert `597cc8fc` + the I4 runner fix `f837cf03`; gate 66/66).
+Same method as the validation bank (`holdout_i3.sh`, both arms on the sealed final bank, B then F′; 28 SDKs, 65 scored
+items per session type, 64 for R2 result items; outputs `work/sealed/holdout/final-{B,F}/`).
+
+| arm | reader | run | R1.critical | R1.exact | R2.send_returns | R2.error_type | R2.base_url | R3.pass |
+|---|---|---|---|---|---|---|---|---|
+| B | Claude | 1 | 55/65 | 51/65 | 61/64 | 64/64 | 17/17 | 65/65 |
+| B | Claude | 2 | 61/65 | 57/65 | 64/64 | 64/64 | 17/17 | 65/65 |
+| B | Codex | 1 | 61/65 | 55/65 | 61/64 | 64/64 | 17/17 | 65/65 |
+| B | Codex | 2 | 65/65 | 60/65 | 64/64 | 64/64 | 17/17 | 65/65 |
+| F′ | Claude | 1 | 55/65 | 54/65 | 64/64 | 64/64 | 17/17 | 65/65 |
+| F′ | Claude | 2 | 57/65 | 56/65 | 64/64 | 64/64 | 17/17 | 65/65 |
+| F′ | Codex | 1 | 65/65 | 63/65 | 64/64 | 64/64 | 17/17 | 65/65 |
+| F′ | Codex | 2 | 65/65 | 63/65 | 64/64 | 64/64 | 17/17 | 65/65 |
+
+No metric falls below the baseline's two-run spread: Claude R1.critical 55/57 against 55/61 (band 6 items) and R1.exact
+54/56 against 51/57 stay inside it; Codex R1.exact 63/63 against 55/60 and R1.critical 65/65 rise; R2.send_returns
+reaches 64/64 for both; R2.base_url stays 17/17 for both providers in both arms (no path doubling after the narrow
+revert); R3 65/65 everywhere. **No overfitting finding; the bank drove no change.** Readers: requested Codex
+`gpt-6.1-sol` xhigh — observed; Claude `claude-opus-5-5` effort medium — observed model, effort not visible.
