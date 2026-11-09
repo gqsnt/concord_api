@@ -50,11 +50,24 @@ Remaining misses in round 2:
   not state (Codex 2/3, Claude 0/3 in round 2); it is excluded from the counts above and recorded as a known
   limit. A corrected bank would need a new name and full revalidation (runbook).
 
-## Proposed disposition (for review)
-With the materials a docs.rs reader sees, resuming from a saved position succeeds about as often as starting
-fresh: Claude 42/42 vs 33/33; Codex 37/42 vs 33/33, its five misses all one invented module path. No
-measured ordinary-use deficit of the size or kind H09a's candidate (`Pages::starting_at`, removing 18 twins:
-breaks existing callers; moves Mailgun's eager validation) would address at bounded cost. **H09a is not
-carded.** Observation kept for the record, not a hypothesis: 9 of the 12 twin SDKs neither re-export `Resume` nor the
-`concord_pagination` crate (Cloudflare, DigitalOcean and Spotify re-export the crate), so their resume callers
-name a second crate; one provider guessed a `concord::pagination` module instead.
+## Disposition (h09a-baseline-review-sol: REJECT of "not carded" → narrow card)
+My proposal was "not carded". The independent review (Codex `gpt-6.1-sol` xhigh, read-only) **rejected** it
+(blocking): Codex resume 37/42 against fresh 33/33, with failures in all three GitLab repetitions, are measured
+ordinary-use failures; provider disagreement limits generalization, and the re-export census is context, not an
+independent defect. The evidence **does not support** H09a's candidate (`Pages::starting_at`, removing the twins);
+it supports a **bounded import-discovery card**: does explicit, qualified `Resume` guidance at the resume
+methods reduce the observed resume compile failures? Smallest comparator: the current `_from` API with today's
+docs versus the same API with that guidance (docs first; SDK re-exports only if needed). → **H09c** (card
+`cards/H09c.md`). H09a as formulated (`Pages::starting_at`) is not carded.
+
+The review also confirmed: every round-1 resume failure is a compile failure consistent with the omitted
+`Resume` definition (verdict-changing, A3); round 2 is a legitimate correction within the two-round cap
+(appended content reproduces exactly from same-commit public rustdoc; all 39 files keep their v1 prefix;
+CHEATSHEET and PokeAPI identical; packs, template, seed, schedule, set hash and the 122/122 validation
+verified); the recounts above; the exclusion of `h09a/notion/02`; the five Codex misses all being the invented
+path. Non-blocking finding applied: `prepare_linked.py` parses the task files (SDK identities, commit) and the
+unchanged H04 navigation filter reads SDK source as in v1; no task, key or source content supplies the additions.
+
+Observation kept for the record: 9 of the 12 twin SDKs neither re-export `Resume` nor the `concord_pagination`
+crate (Cloudflare, DigitalOcean and Spotify re-export the crate), so their resume callers name a second crate;
+one provider guessed a `concord::pagination` module instead.
