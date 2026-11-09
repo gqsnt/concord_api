@@ -115,14 +115,16 @@ SDK crates, which are not published (version 0.0.0); their replacement routes ar
   fixed core (the `api!` DSL, client → scope → endpoint, on reqwest) and treats the former
   exclusions as current scope rather than permanent non-goals.
 - **Generated documentation states the actual contract first** (H04). The docs `api!` generates
-  show, on every request type, the declared base, the declared path and the composed default
-  request separately, and that `with_base_url` replaces the whole base including its path; the
+  show, on every request type, the composed default request with the baseline's declared-base
+  parenthetical, adapted to whether `with_base_url` is public, crate-visible or removed; the
   declared `send()` result first (for a policy without a result template, the `SendWith`
   implementation that defines it); `concord::Error` named fully; the `Accept` outcome the
   declaration already decides; the operation name and method. Navigation methods on client and
   scope pages carry a short entry pointing to the request type instead of repeating its summary
   (client and scope pages are about half as long). Policy wording no longer assumes every policy
   signs. No public API, behaviour or version change: only emitted doc attributes changed.
+  The base-URL wording was narrowed back to the baseline's after the LF holdout (readers doubled the
+  declared path prefix).
 
 ### Maintenance
 
