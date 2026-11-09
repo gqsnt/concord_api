@@ -1,11 +1,9 @@
 # concord-sdk-quickbooks-online
 
 Construct with `QuickBooks::connect(http, connection)` to select the connection's environment.
-Generated `new` and `with_base_url` are crate-visible. Offline callers use
-`QuickBooks::for_fixture(http, connection, origin)` with a bare HTTP origin on a literal
-loopback IP. `set_connection` replaces realm, credential source and policy together. On `send()`,
-the connection selects its environment's host for requests to either official HTTPS host, including
-after a sandbox/production switch. Loopback fixtures keep their origin. `prepare()` remains
+`set_connection` replaces realm, credential source and policy together. On `send()`, the
+connection selects its environment's host for requests to either official HTTPS host, including
+after a sandbox/production switch. Other origins (fixtures, proxies) are kept. `prepare()` remains
 token-free and shows the generated base snapshot; host selection and authentication happen in
 the send policy, which native execution of a prepared request bypasses. Existing scopes and
 requests keep their original connection.

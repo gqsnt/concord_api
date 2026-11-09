@@ -41,8 +41,7 @@ pub const ERROR_BODY_LIMIT: usize = 64 * 1024;
 concord::api! {
     /// Zendesk Support, `https://{subdomain}.zendesk.com/api/v2`, with an OAuth access token.
     pub client Zendesk(
-        /// The account subdomain (`acme` for `acme.zendesk.com`). Fixed for the client: another
-        /// account is another client ([`Zendesk::connect`]) with its own token.
+        /// The account subdomain (`acme` for `acme.zendesk.com`).
         subdomain: String,
         /// `Bearer {access_token}`; build it with [`Zendesk::connect`] or
         /// `concord_auth::bearer(token)`.
@@ -59,8 +58,6 @@ concord::api! {
         /// Every Zendesk operation, as the [`SendPolicy`] classifies it (read or write, and
         /// whether a `409` is a collision).
         operations ZendeskOperation;
-        // The token belongs to one account: a client keeps its subdomain.
-        controls { remove set_subdomain; pub(crate) with_base_url; }
 
         /// The ticket collection.
         scope tickets {
@@ -109,33 +106,6 @@ concord::api! {
 }
 
 impl Zendesk {
-    /// Construct for a synthetic account at `http://{subdomain}.zendesk.test:<port>`.
-    /// The address must be loopback. The builder preserves caller transport settings;
-    /// this constructor disables proxies and resolves the fixture host to that address.
-    /// Configure redirects and retries as for [`Self::connect`].
-    pub fn for_fixture(
-        http: reqwest::ClientBuilder,
-        subdomain: impl Into<String>,
-        oauth_token: &str,
-        address: std::net::SocketAddr,
-    ) -> Result<Self, Error> {
-        if !address.ip().is_loopback() || address.port() == 0 {
-            return Err(Error::InvalidInput {
-                what: "fixture address",
-            });
-        }
-        let subdomain = subdomain.into();
-        let http = http
-            .no_proxy()
-            .resolve(&format!("{subdomain}.zendesk.test"), address)
-            .build()
-            .map_err(|_| Error::InvalidInput {
-                what: "fixture transport",
-            })?;
-        Ok(Self::connect(http, subdomain, oauth_token)?
-            .with_base_url(format!("http://zendesk.test:{}", address.port()))?)
-    }
-
     /// Sends `authorization: Bearer <oauth_token>`, built by `concord_auth::bearer`.
     ///
     /// A client for `https://{subdomain}.zendesk.com/api/v2` with an OAuth access token and the

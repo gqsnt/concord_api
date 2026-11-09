@@ -1,14 +1,11 @@
 # Migration
 
-Ten paths, newest first: the QuickBooks environment repair (T4), the H06 SDK controls (pilot and H06c), the interface consolidation (unreleased
-candidate), 4.1 to 4.2 (a maintenance release; summary in the [changelog](../CHANGELOG.md)), then
+Nine paths, newest first: the QuickBooks environment repair (T4), the interface consolidation
+(unreleased candidate), 4.1 to 4.2 (a maintenance release; summary in the [changelog](../CHANGELOG.md)), then
 the two parts of 4.1.0 (the modular V4), then older ones:
 
 - [QuickBooks environment replacement (T4)](#quickbooks-environment-replacement-t4) — no source
   change; a replacement connection selects its environment's official HTTPS host on send.
-- [To H06 pilot SDK controls](#to-h06-pilot-sdk-controls) — callers of withheld controls in the
-  pilot SDKs (Shopify, Zendesk, Salesforce) and, with H06c, seven more SDKs plus two pilot extensions use the replacement
-  construction routes below.
 - [To the consolidated interface](#to-the-consolidated-interface) — additive: existing code
   compiles (one rare exception: a generated name, below); the new response, body, stream and
   pagination boundaries, declared limits and send results, parameter groups and `query(..)` values
@@ -42,53 +39,12 @@ In `quickbooks-online-sdk`, `QuickBooks::connect(http, sandbox_connection)` foll
 `set_connection(production_connection)` now sends to `quickbooks.api.intuit.com`; the reverse
 switch sends to `sandbox-quickbooks.api.intuit.com`. Previously the generated base snapshot kept
 the old environment's host while the realm and token source changed. Call sites need no change.
-This is a separate correctness repair from H06c's control visibility changes below.
 
 The connection's send policy reselects only the host of requests to either official HTTPS host,
 before token acquisition. Same-environment calls and loopback fixture origins keep their wire
 behavior. `prepare()` remains token-free and shows the generated base snapshot; native execution
 of that request bypasses this policy. Scopes and requests already created keep their original
 connection and destination.
-
-## To H06 pilot SDK controls
-
-H06 (candidate B, `controls`) is accepted at pilot scope by the owner decision of 2026-11-08,
-at `d39ef1df`. Callers of these withheld controls in the example SDKs change as follows; the
-values are required, so there is no corresponding `maybe_x` setter.
-
-- **shopify-sdk:** `ShopifyAdminShop::set_shop` is removed. Another shop requires a new
-  `shop(b, token_b)` entry, with that shop's own token, or another `ShopContext`. Same-shop
-  `set_access_token` rotation stays public.
-- **zendesk-support-sdk:** `Zendesk::set_subdomain` is removed. Use
-  `Zendesk::connect(http, other, token)` for another account with its own token. `set_policy` and
-  same-account `set_authorization` rotation stay public.
-- **salesforce-sdk:** `SalesforceApi::with_base_url` is crate-visible and `set_version` is
-  removed. Use `OrgContext::new(http, instance, version, token)`, with
-  `version >= ApiVersion::MINIMUM`, then `api()`. Another instance or version requires another
-  validated context.
-
-The [impact table](../v4/desirability/impact/H06.md) records all 55 SDK decisions. The broader
-adoption is H06c (below; impact table [H06c](../v4/desirability/impact/H06c.md)).
-
-### H06c: further example SDKs
-
-The opt-in `controls { pub(crate) name; remove name; }`
-statement changes only the selected SDK controls. Unlisted controls and all non-adopting SDKs
-keep their API. These example SDK changes are breaking for callers of a withheld control;
-required-value setters listed below have no `maybe_x` counterpart. Existing valid requests keep
-their wire behavior. `prepare()` and native request access remain the documented escape boundary.
-
-- **adyen-checkout-sdk:** `Checkout::set_api_key`, `set_policy` removed. Construct `Checkout::sandbox(new_key, shared_company_policy.clone())` or `Checkout::new(http, CheckoutConfig { api_key, policy })`. Preserve the ledger when rotating keys for the same company; another company uses its own shared policy.
-- **datadog-events-sdk:** `DatadogApi::new` crate-visible; `set_api_key`, `set_application_key` removed. Use `DatadogEvents::new(http, site, Credentials::new(api_key, application_key)?)` and `api()`. Replace keys by constructing another facade. Proxy/fixture `with_base_url` remains public; `site()` retains the configured site.
-- **digitalocean-sdk:** `DigitalOcean::with_base_url` crate-visible. Use `DigitalOcean::connect(token)` for production or `DigitalOcean::for_fixture(token, origin)` for a bare HTTP literal-loopback origin. Native `new` at production and credential setters remain public.
-- **discord-rest-sdk:** `Discord::set_token`, `set_limiter` removed. Construct `Discord::new(http, DiscordConfig { token, limiter })` with that bot token and its shared limiter together. Base replacement and other setters remain public.
-- **mastodon-sdk:** Pilot: `Api::new`, `with_base_url` crate-visible. Use `Mastodon::new(http, instance)` and `api()`; rotate through `with_token`. Generated Api remains publicly nameable; advertised streaming-host validation stays in the facade.
-- **quickbooks-online-sdk:** `QuickBooks::new`, `with_base_url` crate-visible. Use `QuickBooks::connect(http, connection)` so the connection selects sandbox or production, or `QuickBooks::for_fixture(http, connection, origin)` for bare HTTP on a literal loopback IP. `set_connection` still replaces realm, credential source and policy together. Refresh-token replacement is unchanged.
-- **salesforce-sdk:** `SalesforceApi::new`, `with_base_url` crate-visible; pilot `set_version` removed. Use `OrgContext::new(http, instance, version, token)` with `version >= ApiVersion::MINIMUM`, then `api()`. Another instance or version requires another validated context.
-- **sentry-sdk:** `Sentry::with_base_url` crate-visible; `set_authorization`, `set_policy` removed. Use `Sentry::with_token(http, token, policy)` or `Sentry::for_deployment(http, base, token, policy)` for self-hosting/fixtures. Rotate same-caller tokens with a clone of the same caller/deployment policy; different callers/deployments need their own policies. Native `new` still accepts the complete header and policy together.
-- **shopify-sdk:** Pilot: `ShopifyAdminShop::set_shop` removed. Enter `shop(other_shop, token_for_other_shop)` again, or construct the other ShopContext. Same-shop `set_access_token` rotation stays public.
-- **usgs-earthquake-catalog-sdk:** `Usgs::new`, `with_base_url` crate-visible. Use `Usgs::for_fixture(http, origin)` with a bare HTTP origin on a literal loopback IP, without `/fdsnws/event/1`. The caller still configures transport timeouts and disables redirects/retries.
-- **zendesk-support-sdk:** `Zendesk::with_base_url` crate-visible; pilot `set_subdomain` removed. Use `Zendesk::connect(http, subdomain, token)` for another account. Fixtures use `Zendesk::for_fixture(http_builder, subdomain, token, loopback_socket_address)`: it resolves `{subdomain}.zendesk.test` to that address with proxies disabled. Keep caller retry/redirect/timeout settings in the builder. `set_policy` and same-account `set_authorization` rotation remain public.
 
 ## SDK send policies take the endpoint's operation (H08)
 
@@ -119,7 +75,7 @@ endpoint left out is a build error, not a run-time refusal). Their public policy
 
 ## To the consolidated interface
 
-Existing runtime entry points remain: `send`, `send_raw`, `into_parts`, `Decoder::{decode, finish}`,
+Nothing is removed: `send`, `send_raw`, `into_parts`, `Decoder::{decode, finish}`,
 `decode_limited`, `bytes_limited`, `Error::meta()`, the reader `open`/`open_for` methods, the
 pagination engine and the `concord-extras` crate work as before. The paragraphs below say which SDK
 code can shrink and, where adopting a new form changes what an SDK's own callers observe, what

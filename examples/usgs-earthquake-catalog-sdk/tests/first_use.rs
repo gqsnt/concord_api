@@ -32,7 +32,8 @@ fn http() -> reqwest::Client {
 }
 
 fn connect(server: &TestServer) -> UsgsCatalog {
-    Usgs::for_fixture(http(), &server.url())
+    Usgs::new(http())
+        .with_base_url(server.url())
         .expect("loopback base")
         .catalog()
 }

@@ -23,8 +23,6 @@ concord::api! {
     /// Generated client. Prefer `connect` or `for_fixture` to configure safe transport.
     pub client DigitalOcean(#[sensitive] header(AUTHORIZATION) authorization: reqwest::header::HeaderValue) {
         base "https://api.digitalocean.com";
-        // Only `for_fixture` may choose a destination other than the API host.
-        controls { pub(crate) with_base_url; }
         path "v2";
         format Json;
         limit SUCCESS_BODY_LIMIT;
@@ -244,25 +242,5 @@ impl TagName {
 impl fmt::Display for TagName {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str(&self.0)
-    }
-}
-
-#[cfg(test)]
-mod controls_tests {
-    use super::*;
-
-    #[test]
-    fn malformed_fixture_base_stays_redacted() {
-        const TOKEN: &str = "SYNTHETIC_SECRET";
-        let build = DigitalOcean::connect(TOKEN)
-            .unwrap()
-            .with_base_url(TOKEN)
-            .unwrap_err();
-        assert_eq!(build.kind(), concord::ErrorKind::Build);
-        let error = Error::from(build);
-        for shown in [format!("{error}"), format!("{error:?}")] {
-            assert!(!shown.contains(TOKEN));
-        }
-        assert!(std::error::Error::source(&error).is_none());
     }
 }

@@ -105,7 +105,9 @@ async fn authorized(server: &TestServer) -> (QuickBooks, Connection) {
         .exchange_code(&http, callback, "fixture-state")
         .await
         .unwrap();
-    let qbo = QuickBooks::for_fixture(http, connection.clone(), &server.url()).unwrap();
+    let qbo = QuickBooks::connect(http, connection.clone())
+        .with_base_url(server.url())
+        .unwrap();
     (qbo, connection)
 }
 
@@ -506,9 +508,13 @@ async fn rejected_refresh_recovers_without_crossing_realms() {
         RealmId::new(OTHER_REALM).unwrap(),
         RefreshToken::new("fixture-refresh-b").unwrap(),
     );
-    let qbo = QuickBooks::for_fixture(http_client().unwrap(), a.clone(), &server.url()).unwrap();
+    let qbo = QuickBooks::connect(http_client().unwrap(), a.clone())
+        .with_base_url(server.url())
+        .unwrap();
     let clone = qbo.clone();
-    let other = QuickBooks::for_fixture(http_client().unwrap(), b.clone(), &server.url()).unwrap();
+    let other = QuickBooks::connect(http_client().unwrap(), b.clone())
+        .with_base_url(server.url())
+        .unwrap();
     let error = qbo.customers().query(query()).send().await.unwrap_err();
     let auth = error.authorization().unwrap();
     assert_eq!(auth.kind(), AuthorizationKind::GrantRejected);

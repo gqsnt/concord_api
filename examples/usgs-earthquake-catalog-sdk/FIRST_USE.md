@@ -1,7 +1,5 @@
 # First use — USGS Earthquake Catalog SDK (fresh consumer)
 
-H06 migration: historical `Usgs::new(http).with_base_url(origin)` calls below now use `Usgs::for_fixture(http, origin)` (bare HTTP on a literal loopback IP). Both generated controls are crate-visible.
-
 Role: fresh consumer (wave 1, SDK23), Claude session. Worktree
 `work/w1-sdk23-usgs-earthquake-catalog`, HEAD `17aaf0e1` (the author commit), clean tree at start.
 Live provider calls: **NOT_RUN** — every call below goes to `examples/testserver` on loopback.

@@ -169,14 +169,16 @@ async fn fixture_replacement_keeps_the_read_and_write_wire() {
         .await;
         let next_connection = stored(next, &server, REALM_B, "synthetic-refresh-next");
         let http = http(Duration::from_secs(5));
-        let api = QuickBooks::for_fixture(
+        let api = QuickBooks::connect(
             http.clone(),
             stored(initial, &server, REALM_A, "synthetic-refresh-old"),
-            &server.url(),
         )
+        .with_base_url(server.url())
         .unwrap()
         .set_connection(next_connection.clone());
-        let direct = QuickBooks::for_fixture(http, next_connection, &server.url()).unwrap();
+        let direct = QuickBooks::connect(http, next_connection)
+            .with_base_url(server.url())
+            .unwrap();
         for client in [&api, &direct] {
             client
                 .customer(EntityId::new("29").unwrap())

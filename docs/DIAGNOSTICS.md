@@ -774,57 +774,6 @@ error: `operations ShopItems;` names a type this declaration already generates (
 type: not a generated type, the client's config struct or a parameter group. An endpoint whose
 variant would be `Self` or `ALL` is renamed.
 
-## Controls (`controls { .. }`)
-
-### A withheld control
-
-A control listed as `remove name;` is not generated, so a call is rustc's "no method" error; one
-listed as `pub(crate) name;` gives the same error in another crate (`E0624`, private method).
-Excerpt of [`controls_removed.stderr`](../crates/concord/tests/ui/controls_removed.stderr):
-
-```text
-error[E0599]: no method named `set_subdomain` found for struct `Api` in the current scope
-  --> tests/ui/controls_removed.rs:19:25
-```
-
-**Fix (caller):** use the route the SDK documents instead: a new client or scope entry with its
-own values, or the SDK's constructor.
-
-### A name that is not a control of the owner
-
-Excerpt of [`controls_unknown.stderr`](../crates/concord/tests/ui/controls_unknown.stderr):
-
-```text
-error: `with_base_url` is not a generated control of `Api.shop`; its controls are `set_shop` (`with_base_url` belongs to the client: restrict it in the client's `controls`)
- --> tests/ui/controls_unknown.rs:9:35
-  |
-9 |             controls { pub(crate) with_base_url; }
-  |                                   ^^^^^^^^^^^^^
-```
-
-**Fix:** list the generated method of the owner that generates it: `new` and `with_base_url` on
-the client, `set_x` / `maybe_x` on the client or scope declaring `x`. A misspelling gets a "did you
-mean".
-
-### What a block cannot say
-
-Excerpt of [`controls_misuse.stderr`](../crates/concord/tests/ui/controls_misuse.stderr):
-
-```text
-error: `set_token` and `maybe_token` both set `token` (`maybe_token(Some(v))` is `set_token(v)`): give them the same access, `pub(crate) set_token; pub(crate) maybe_token;`
- --> tests/ui/controls_misuse.rs:9:24
-  |
-9 |             pub(crate) set_token;
-  |                        ^^^^^^^^^
-```
-
-**Fix:** restrict both controls of an optional value alike. The same file shows the other rules:
-`new` cannot be removed (`pub(crate) new;` keeps it for the SDK's constructor), a control is listed
-once, an optional value without an initializer keeps crate-visible setters, and an endpoint has no
-`controls`. An entry is `pub(crate) name;` or `remove name;`: `pub` is the default and any other
-visibility is refused (`controls_public`, `controls_visibility`, `controls_entry`); the statement
-comes once, before the owner's children (`controls_twice`, `controls_order`).
-
 ## Attributes
 
 ### An unsupported attribute
@@ -871,7 +820,6 @@ error: use of deprecated method `Api::list`: use `items`
 | Query and headers | `invalid_header_name`, `header_literal_value`, `header_name_exceeds_native_limit`, `reserved_header`, `reserved_headers_all`, `duplicate_header_case`, `duplicate_inherited_key`, `override_without_target`, `override_needs_else_inherit`, `else_inherit_needs_optional_source`, `override_after_remove`, `remove_without_target`, `remove_acts_on_inherited`, `each_and_scalar` |
 | Wire formatting | `option_has_no_wire_spelling`, `vec_needs_each` |
 | Operations | `operations_policy_unclassified`, `operations_policy_send_with`, `operations_errors` |
-| Controls | `controls_removed`, `controls_unknown`, `controls_misuse`, `controls_public`, `controls_visibility`, `controls_entry`, `controls_twice`, `controls_order` |
 | Formats | `representation_missing_via`, `representation_unsupported_payload`, `representation_alpha_spelling`, `format_via_removed`, `format_endpoint_statement`, `format_output_media_type`, `format_header_media_conflict`, `format_media_type_invalid`, `format_invalid_content_type`, `format_inherited_unsupported`, `format_type_paths`, `format_unknown_type`, `format_swapped_order`; with `json`: `ui_json/format_serde_bound`, `ui_json/format_missing_import`; with `json` and `form` off: `ui_features/feature_disabled_formats` |
 
 Known rough edges (compiler-origin): an over-long literal header name is rejected by the native

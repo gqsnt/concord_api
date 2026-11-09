@@ -1,11 +1,5 @@
 # concord-sdk-datadog-events
 
-The generated `DatadogApi::new` is crate-visible and its `set_api_key` /
-`set_application_key` are withheld. Construct or replace keys through
-`DatadogEvents::new(http, site, Credentials::new(api_key, application_key)?)` so both keys
-are checked. `with_base_url` remains available for proxies and fixtures; `site()` retains
-the configured site, and authentication errors identify the host that actually answered.
-
 A bounded SDK for Datadog Events reads (v2) and posting (v1), built on
 [Concord](../../README.md): list the events of a time range and inspect one, and search events
 with a filter following the documented cursor pagination, on any Datadog site. Post a validated

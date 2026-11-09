@@ -34,18 +34,13 @@ use crate::soql::Soql;
 
 concord::api! {
     /// One Salesforce org at one pinned API version: REST (describe, records, SOQL) and Bulk API
-    /// 2.0 (query and ingest jobs). [`crate::OrgContext::new`] creates the handle you use: it
-    /// checks the version against [`ApiVersion::MINIMUM`] and replaces the base with the org's
-    /// instance URL. Neither can be replaced on the handle afterwards (no `with_base_url`, no
-    /// `set_version` for callers): another org or version is another `OrgContext`.
-    /// The generated `new` is crate-visible too, so callers cannot bypass that validation.
+    /// 2.0 (query and ingest jobs). The base is replaced by the org's instance URL
+    /// ([`crate::OrgContext`] does it).
     pub client SalesforceApi(#[sensitive] token: String, version: ApiVersion) {
         base "https://instance.salesforce.invalid";
         path "services/data/v{version}";
         headers { AUTHORIZATION = "Bearer {token}"; }
         format Json;
-        // The token belongs to one instance, and the version was checked by `OrgContext::new`.
-        controls { pub(crate) new; pub(crate) with_base_url; remove set_version; }
 
         /// `sobjects/Account`: the typed Account resource.
         scope accounts {

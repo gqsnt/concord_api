@@ -1,10 +1,5 @@
 # Adyen Checkout SDK31
 
-Credentials and their company's ledger are chosen together. `set_api_key` and `set_policy`
-are withheld. Construct another `Checkout::sandbox(key, policy.clone())` (or `Checkout::new`
-with `CheckoutConfig`) to rotate a key for the same company while retaining its ledger;
-use that other company's shared policy when changing companies. Existing handles keep their values.
-
 `concord-sdk-adyen-checkout` implements Checkout **v71** at
 `https://checkout-test.adyen.com`: available payment methods, sandbox payment submission,
 `/payments/details` continuation and manual capture request. All verification uses local fixtures.

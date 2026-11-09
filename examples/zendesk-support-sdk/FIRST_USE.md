@@ -1,7 +1,5 @@
 # SDK28 fresh consumer: Zendesk Support
 
-H06 migration: historical `with_base_url`/DNS-override descriptions below now use `Zendesk::for_fixture(http_builder, subdomain, token, loopback_address)`, which installs the fixture resolution. Production and account replacement use `connect`; `set_policy` stays public.
-
 Date: 2026-11-07. Frozen baseline: `a3764fdf5ee51600c04e952b7781c5ab14d657e1`.
 Live provider calls: **NOT_RUN**. All application requests will use loopback fixtures.
 

@@ -1,7 +1,5 @@
 # SDK34 QuickBooks Online — fresh consumer
 
-H06 migration: historical `QuickBooks::with_base_url` calls below now use `QuickBooks::for_fixture(http, connection, origin)` (bare HTTP on a literal loopback IP). Production uses `connect`; generated `new` is crate-visible and `set_connection` remains public.
-
 Date: 2026-11-07. Live provider calls: **NOT_RUN**. All token and Accounting API
 traffic in this capsule must use `concord-example-testserver` loopback fixtures.
 

@@ -19,10 +19,9 @@ concord::api! {
     /// The Datadog Events v2 read API and v1 post of one site.
     ///
     /// Build it through [`DatadogEvents::new`](crate::DatadogEvents::new), which checks both
-    /// keys and installs the site's API host. The generated constructor is crate-visible;
-    /// replacing keys also requires a new facade with validated [`crate::Credentials`].
-    /// `with_base_url` remains available for a proxy or fixture.
-    /// Every generated `send()` returns `Result<_, `[`Error`](crate::Error)`>`
+    /// keys and installs the site's API host; constructing it directly skips those checks.
+    /// The declared base is the US1 host; a site's own host is installed with
+    /// `with_base_url`. Every generated `send()` returns `Result<_, `[`Error`](crate::Error)`>`
     /// through [`SendPolicy`]; `prepare()` and `with_base_url` return [`concord::Error`].
     pub client DatadogApi(
         /// The API key, sent as `DD-API-KEY`.
@@ -31,8 +30,6 @@ concord::api! {
         #[sensitive] header(DD_APPLICATION_KEY) application_key: String,
     ) {
         base "https://api.datadoghq.com";
-        // The facade constructs this client from a validated pair of keys.
-        controls { pub(crate) new; remove set_api_key; remove set_application_key; }
         path "api";
         format Json;
         limit RESPONSE_LIMIT;
@@ -151,62 +148,5 @@ async fn rejection<T>(received: concord::Received<T>, host: String) -> Error {
         400 => Error::BadRequest(Box::new(provider)),
         429 => Error::RateLimited(Box::new(provider)),
         _ => Error::Provider(Box::new(provider)),
-    }
-}
-
-#[cfg(test)]
-mod controls_tests {
-    use super::*;
-    use crate::{DatadogEvents, NewEvent};
-    use concord::{Delivery, ErrorKind};
-    use concord_example_testserver::{Recorded, Reply, TestServer};
-
-    #[tokio::test]
-    async fn unchecked_malformed_keys_fail_before_dispatch() {
-        const API_KEY: &str = "synthetic-post-eu-api-secret";
-        const APP_KEY: &str = "synthetic-post-eu-app-secret";
-        let unused = TestServer::start(|_: &Recorded| -> Reply { Reply::new(500) }).await;
-        // The low-level generated client deliberately skips Credentials validation. A rejected
-        // request build still proves nothing was sent and must not become an uncertain post.
-        let api = DatadogApi::new(
-            DatadogEvents::http_client().unwrap(),
-            DatadogApiConfig {
-                api_key: format!("{API_KEY}\n"),
-                application_key: APP_KEY.to_owned(),
-            },
-        )
-        .with_base_url(unused.url())
-        .unwrap();
-        let error = api
-            .events()
-            .post(
-                NewEvent::new("Example-Event", "A text message.")
-                    .unwrap()
-                    .tags(["test:ExampleEvent"]),
-            )
-            .send()
-            .await
-            .unwrap_err();
-        let Error::Concord { source, .. } = &error else {
-            panic!("{error:?}")
-        };
-        assert_eq!(source.kind(), ErrorKind::Build);
-        assert_eq!(source.delivery(), Delivery::NotSent);
-        assert!(!error.is_post_uncertain());
-        assert!(error.status().is_none());
-        for shown in [format!("{error}"), format!("{error:?}")] {
-            assert!(!shown.contains(API_KEY));
-            assert!(!shown.contains(APP_KEY));
-        }
-        let mut source = std::error::Error::source(&error);
-        while let Some(error) = source {
-            for shown in [format!("{error}"), format!("{error:?}")] {
-                assert!(!shown.contains(API_KEY));
-                assert!(!shown.contains(APP_KEY));
-            }
-            source = error.source();
-        }
-        assert!(unused.requests().is_empty());
-        unused.shutdown().await;
     }
 }

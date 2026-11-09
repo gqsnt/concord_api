@@ -1,9 +1,5 @@
 # USGS Earthquake Catalog SDK
 
-This capsule's generated `new` and `with_base_url` are crate-visible. Construct with
-`Usgs::for_fixture(http, origin)`: only a bare HTTP origin on a literal loopback IP is
-accepted. The `/fdsnws/event/1` prefix stays declared on the client.
-
 A bounded slice of the public FDSN event service: query earthquakes as GeoJSON,
 retrieve a selected event, and export the same filter as incremental CSV across
 bounded pages. **Live provider calls: NOT_RUN.** Every executed workflow uses
@@ -28,7 +24,7 @@ let http = reqwest::Client::builder()
     .retry(reqwest::retry::never())
     .build()?;
 // Supply the TestServer URL, without /fdsnws/event/1 (the declaration owns it).
-let api = Usgs::for_fixture(http, local_base)?;
+let api = Usgs::new(http).with_base_url(local_base)?;
 let catalog = api.catalog();
 let filter = Window::new("2014-01-01T00:00:00Z", "2014-01-02T00:00:00Z")?
     .min_magnitude(Magnitude::new(4.0)?)

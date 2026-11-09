@@ -1,5 +1,0 @@
-error: expected `pub(crate) name;` (crate-visible) or `remove name;` (not generated): a control not listed stays public
- --> tests/ui/controls_entry.rs:5:20
-  |
-5 |         controls { set_key; }
-  |                    ^^^^^^^

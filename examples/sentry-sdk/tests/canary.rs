@@ -125,13 +125,10 @@ async fn secrets_never_print() {
         };
         c.assert_debug_absent("config", &config);
         c.assert_debug_absent("policy", &config.policy);
-        let api = Sentry::for_deployment(
-            http(),
-            if case == 6 { refused() } else { server.url() },
-            &token,
-            policy(),
-        )
-        .unwrap();
+        let api = Sentry::with_token(http(), &token, policy())
+            .unwrap()
+            .with_base_url(if case == 6 { refused() } else { server.url() })
+            .unwrap();
         let org = api.organization("acme");
         let issue = org.issue("1");
         let read = org.issues().set_cursor(&cursor).set_query(&query);

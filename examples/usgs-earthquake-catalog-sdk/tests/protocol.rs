@@ -183,9 +183,10 @@ async fn input_guards_and_scope_setters_fail_before_io() {
         Err(Error::InvalidInput(_))
     ));
     assert!(server.requests().is_empty());
-    let error = Usgs::for_fixture(reqwest::Client::new(), "http://user:secret-base@localhost/")
+    let error = Usgs::new(reqwest::Client::new())
+        .with_base_url("http://user:secret-base@localhost/")
         .unwrap_err();
-    assert!(matches!(&error, Error::Concord(source) if source.kind() == ErrorKind::Build));
+    assert_eq!(error.kind(), ErrorKind::Build);
     assert!(!format!("{error:?} {error}").contains("secret-base"));
     server.shutdown().await;
 }
@@ -609,30 +610,5 @@ async fn inconsistent_pages_and_offset_overflow_are_explicit() {
         assert!(matches!(error.provider_error(), Some(Error::Protocol(_))));
         assert_eq!(server.requests().len(), 1);
         server.shutdown().await;
-    }
-}
-
-#[test]
-fn fixture_constructor_refuses_nonloopback_destinations() {
-    for bad in [
-        "https://127.0.0.1:1234",
-        "http://192.0.2.1:1234",
-        "http://localhost:1234",
-        "http://127.0.0.1:1234/path",
-        "http://127.0.0.1:1234?x=1",
-    ] {
-        assert!(Usgs::for_fixture(reqwest::Client::new(), bad).is_err());
-    }
-    for good in ["http://127.0.0.1:1234", "http://[::1]:1234"] {
-        let api = Usgs::for_fixture(reqwest::Client::new(), good).unwrap();
-        let prepared = api
-            .catalog()
-            .event(EventId::new("synthetic-event").unwrap())
-            .prepare()
-            .unwrap();
-        assert_eq!(
-            prepared.request().url().host_str(),
-            reqwest::Url::parse(good).unwrap().host_str()
-        );
     }
 }

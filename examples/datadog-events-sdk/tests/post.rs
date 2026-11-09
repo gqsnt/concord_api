@@ -6,8 +6,8 @@ use std::time::Duration;
 use concord_example_testserver::{Body, Gate, Recorded, Reply, TestServer, paused};
 use concord_sdk_datadog_events::concord::{Delivery, ErrorKind, reqwest};
 use concord_sdk_datadog_events::{
-    AlertType, AuthError, Credentials, DatadogEvents, Error, InputError, NewEvent, RESPONSE_LIMIT,
-    Site,
+    AlertType, AuthError, Credentials, DatadogApi, DatadogApiConfig, DatadogEvents, Error,
+    InputError, NewEvent, RESPONSE_LIMIT, Site,
 };
 use serde_json::{Value, json};
 
@@ -158,6 +158,7 @@ fn all_documented_alert_types_have_their_wire_spelling() {
 
 #[tokio::test]
 async fn wrong_region_and_missing_application_key_stay_redacted_authentication_errors() {
+    let unused = TestServer::start(|_: &Recorded| -> Reply { Reply::new(500) }).await;
     let error: Error = Credentials::new(API_KEY, "").unwrap_err().into();
     assert!(matches!(
         error,
@@ -165,6 +166,28 @@ async fn wrong_region_and_missing_application_key_stay_redacted_authentication_e
     ));
     assert!(error.is_authentication());
     assert_error_redacted(&error);
+    // The low-level generated client deliberately skips Credentials validation. A rejected
+    // request build still proves nothing was sent and must not become an uncertain post.
+    let api = DatadogApi::new(
+        DatadogEvents::http_client().unwrap(),
+        DatadogApiConfig {
+            api_key: format!("{API_KEY}\n"),
+            application_key: APP_KEY.to_owned(),
+        },
+    )
+    .with_base_url(unused.url())
+    .unwrap();
+    let error = api.events().post(event()).send().await.unwrap_err();
+    let Error::Concord { source, .. } = &error else {
+        panic!("{error:?}")
+    };
+    assert_eq!(source.kind(), ErrorKind::Build);
+    assert_eq!(source.delivery(), Delivery::NotSent);
+    assert!(!error.is_post_uncertain());
+    assert!(error.status().is_none());
+    assert_error_redacted(&error);
+    assert!(unused.requests().is_empty());
+    unused.shutdown().await;
 
     for status in [401, 403] {
         let server = TestServer::start(move |_: &Recorded| -> Reply {

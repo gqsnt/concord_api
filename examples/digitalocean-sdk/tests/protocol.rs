@@ -437,6 +437,12 @@ async fn credentials_documents_headers_and_followed_urls_stay_out_of_formatting(
     let document = provider.document.unwrap();
     assert_eq!(document.message, TOKEN); // Deliberate unredacted field access still works.
     assert!(!format!("{document:?}").contains(TOKEN));
+    let build = DigitalOcean::connect(TOKEN)
+        .unwrap()
+        .with_base_url(TOKEN)
+        .unwrap_err();
+    assert_eq!(build.kind(), ErrorKind::Build);
+    assert_redacted(&Error::from(build));
     for error in [
         Error::Credential,
         Error::FixtureOrigin,

@@ -29,8 +29,6 @@ concord::api! {
     /// Public earthquake catalog client. Always use a local base for this fixture-only capsule.
     pub client Usgs {
         base "https://earthquake.usgs.gov";
-        // This capsule executes only against local fixtures.
-        controls { pub(crate) new; pub(crate) with_base_url; }
         path "fdsnws/event/1";
         query { "nodata" = "404"; }
         response Json;
@@ -71,29 +69,6 @@ concord::api! {
                 query { "format" = "geojson"; }
             }
         }
-    }
-}
-
-impl Usgs {
-    /// Construct for a bare HTTP origin on a literal loopback IP.
-    /// The caller supplies the transport, with redirects and retries disabled.
-    pub fn for_fixture(http: concord::reqwest::Client, origin: &str) -> Result<Self, Error> {
-        let client = Self::new(http).with_base_url(origin)?;
-        let url = concord::reqwest::Url::parse(origin).expect("the base URL was validated");
-        let loopback = url
-            .host_str()
-            .and_then(|host| {
-                host.trim_matches(['[', ']'])
-                    .parse::<std::net::IpAddr>()
-                    .ok()
-            })
-            .is_some_and(|ip| ip.is_loopback());
-        if url.scheme() != "http" || !loopback || url.path() != "/" {
-            return Err(Error::InvalidInput(
-                "fixture origin must be bare HTTP on a loopback IP",
-            ));
-        }
-        Ok(client)
     }
 }
 

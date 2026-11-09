@@ -1,5 +1,0 @@
-error: duplicate `controls` statement; each owner declares it at most once
- --> tests/ui/controls_twice.rs:5:9
-  |
-5 |         controls { pub(crate) with_base_url; }
-  |         ^^^^^^^^

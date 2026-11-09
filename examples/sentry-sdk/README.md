@@ -12,7 +12,7 @@ use std::num::NonZeroUsize;
 
 # async fn example() -> Result<(), Box<dyn std::error::Error>> {
 let api = Sentry::with_token(http_client()?, "your-token", SendPolicy::default())?;
-// Fixtures use Sentry::for_deployment(http, server.url(), token, policy).
+// Tests always add .with_base_url(server.url()) pointing at a local fixture.
 let organization = api.organization("acme");
 let cap = NonZeroUsize::new(20).unwrap();
 let mut issues = organization.issues().set_query("").pages(Resume::Start, cap);
@@ -102,12 +102,7 @@ was not applied either. A deadline during 429 backoff is `Error::RetryStopped` w
 change was applied.
 
 All calls use a sensitive bearer header. `with_token` validates token syntax; direct generated
-`Sentry::new` accepts a complete native header in `SentryConfig`.
-`set_authorization` and `set_policy` are withheld so callers choose the identity and its shared
-state together. Rotate tokens for the same caller with `with_token(http, new_token, policy.clone())`;
-retain the shared policy. A different caller needs its own policy. `with_base_url` is crate-visible:
-choose the deployment, token and its policy together with
-`Sentry::for_deployment(http, base, token, policy)`, including for fixtures and self-hosting.
+`Sentry::new`/setters are lower-level interfaces accepting a complete native header.
 For exact request accounting use `http_client()`: redirects and reqwest retries are disabled.
 A caller-supplied transport must do likewise; it owns TLS, proxies and timeouts. `prepare()`
 builds the declared request but bypasses the send policy if you execute it yourself.

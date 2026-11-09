@@ -13,7 +13,7 @@ use concord_sdk_zendesk_support::{
     SortField, Status, TicketSort, TicketType, UncertainCause, Zendesk,
 };
 use serde_json::json;
-use support::{TOKEN, api, api_with, fixture, http_builder, json_fixture};
+use support::{TOKEN, api, api_with, fixture, http, json_fixture};
 
 /// A scripted reply, for tables of cases.
 type Responder = Box<dyn Fn() -> Reply + Send + Sync>;
@@ -201,13 +201,10 @@ async fn invalid_inputs_are_refused_before_anything_is_sent() {
 
     let server = serve(|| json_fixture(200, "ticket-103.json")).await;
     for subdomain in ["acme.evil", "", "-acme", "ac_me"] {
-        let api = Zendesk::for_fixture(
-            http_builder(Duration::from_secs(5)),
-            subdomain,
-            TOKEN,
-            server.addr(),
-        )
-        .unwrap();
+        let api = Zendesk::connect(http(&server, Duration::from_secs(5)), subdomain, TOKEN)
+            .unwrap()
+            .with_base_url(format!("http://zendesk.test:{}", server.addr().port()))
+            .unwrap();
         let error = api.ticket(1).show().send().await.unwrap_err();
         let Error::Concord(error) = error else {
             panic!("{subdomain:?}: {error:?}")
@@ -606,8 +603,14 @@ async fn a_refused_connection_on_a_create_is_uncertain() {
     let reserved = tokio::net::TcpSocket::new_v4().unwrap();
     reserved.bind(([127, 0, 0, 1], 0).into()).unwrap();
     let port = reserved.local_addr().unwrap().port();
-    let http = concord_sdk_zendesk_support::concord::reqwest::Client::builder();
-    let api = Zendesk::for_fixture(http, "acme", TOKEN, ([127, 0, 0, 1], port).into()).unwrap();
+    let http = concord_sdk_zendesk_support::concord::reqwest::Client::builder()
+        .resolve("acme.zendesk.test", ([127, 0, 0, 1], port).into())
+        .build()
+        .unwrap();
+    let api = Zendesk::connect(http, "acme", TOKEN)
+        .unwrap()
+        .with_base_url(format!("http://zendesk.test:{port}"))
+        .unwrap();
     let error = api
         .tickets()
         .create(NewTicket::new("x"), key("k"))
@@ -731,22 +734,5 @@ async fn the_token_and_provider_text_are_never_formatted() {
     for text in &shown {
         assert!(!text.contains(TOKEN), "{text}");
         assert!(!text.contains("is invalid"), "{text}");
-    }
-}
-
-#[test]
-fn fixture_constructor_requires_a_loopback_socket() {
-    for bad in ["192.0.2.1:1234", "127.0.0.1:0", "[2001:db8::1]:1234"] {
-        assert!(matches!(
-            Zendesk::for_fixture(
-                concord_sdk_zendesk_support::concord::reqwest::Client::builder(),
-                "acme",
-                TOKEN,
-                bad.parse().unwrap(),
-            ),
-            Err(Error::InvalidInput {
-                what: "fixture address"
-            })
-        ));
     }
 }

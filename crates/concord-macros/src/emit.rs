@@ -8,8 +8,8 @@ use syn::spanned::Spanned;
 use syn::{Ident, LitStr};
 
 use crate::model::{
-    Access, Body, Composed, Cond, ContribId, HeaderComposition, Item, KeyName, Kind, Model, Origin,
-    Output, Owner, OwnerDefault, Piece, Slot, Source, Usage, Value, ValueRef,
+    Body, Composed, Cond, ContribId, HeaderComposition, Item, KeyName, Kind, Model, Origin, Output,
+    Owner, OwnerDefault, Piece, Slot, Source, Usage, Value, ValueRef,
 };
 use crate::syntax::{Family, Format, expr_text, type_text};
 
@@ -846,18 +846,8 @@ fn initially(value: &Value, owner: &str) -> String {
     }
 }
 
-/// The visibility of a generated control (`controls { .. }`), or `None` when it is not generated.
-fn access_vis(access: Access) -> Option<TokenStream> {
-    match access {
-        Access::Public => Some(quote!(pub)),
-        Access::Crate => Some(quote!(pub(crate))),
-        Access::Removed => None,
-    }
-}
-
-/// `set_x` for every value and body; `maybe_x` for optional ones, each at the visibility its
-/// owner's `controls` gives it (public by default). `owner` names the receiver in docs ("the
-/// client", "this scope", "this request").
+/// `set_x` for every value and body; `maybe_x` for optional ones. `owner` names the receiver in
+/// docs ("the client", "this scope", "this request").
 fn controls(
     k: &TokenStream,
     values: &[Value],
@@ -880,8 +870,6 @@ fn controls(
             format!(" Replaces `{shown}`.")
         });
         let initially = lit(&initially(value, owner));
-        let set_vis = access_vis(value.set);
-        let maybe_vis = access_vis(value.maybe);
         let assign = if value.optional {
             quote!(::core::option::Option::Some(
                 #k::IntoValue::into_value(value)
@@ -889,21 +877,19 @@ fn controls(
         } else {
             quote!(#k::IntoValue::into_value(value))
         };
-        if let Some(set_vis) = set_vis {
-            out.extend(quote! {
-                #(#docs)*
-                #[doc = ""]
-                #[doc = #set_doc]
-                #[doc = #initially]
-                #(#[doc = #notes])*
-                #[must_use = "a setter returns the updated handle; discarding it discards the change"]
-                #[inline] #set_vis fn #set(mut self, value: impl #k::IntoValue<#ty>) -> Self {
-                    #target.#name = #assign;
-                    self
-                }
-            });
-        }
-        if let (true, Some(maybe_vis)) = (value.optional, maybe_vis) {
+        out.extend(quote! {
+            #(#docs)*
+            #[doc = ""]
+            #[doc = #set_doc]
+            #[doc = #initially]
+            #(#[doc = #notes])*
+            #[must_use = "a setter returns the updated handle; discarding it discards the change"]
+            #[inline] pub fn #set(mut self, value: impl #k::IntoValue<#ty>) -> Self {
+                #target.#name = #assign;
+                self
+            }
+        });
+        if value.optional {
             let maybe = format_ident!("maybe_{}", shown);
             let maybe_doc = lit(&format!(
                 " Sets whether `{shown}` is present: `Some(v)` is `set_{shown}(v)`; `None` makes it \
@@ -921,7 +907,7 @@ fn controls(
                 #[doc = #initially]
                 #(#[doc = #notes])*
                 #[must_use = "a setter returns the updated handle; discarding it discards the change"]
-                #[inline] #maybe_vis fn #maybe(mut self, value: ::core::option::Option<#ty>) -> Self {
+                #[inline] pub fn #maybe(mut self, value: ::core::option::Option<#ty>) -> Self {
                     #target.#name = value;
                     self
                 }
@@ -1327,21 +1313,10 @@ fn summary_parts(model: &Model, endpoint: usize, method: &Ident) -> Option<Summa
             }
         }
     };
-    // What a caller can do with the base: `controls` may withhold `with_base_url`.
-    let (base_note, actual_url) = match model.owners[0].with_base_url {
-        Access::Public => (
-            "the declared base URL; the client's `with_base_url` replaces it",
-            " Construction or a send policy may select or restrict the actual URL.",
-        ),
-        Access::Crate => (
-            "the declared base URL; the crate that declares the client chooses the base: its `with_base_url` is not public",
-            " A send policy may select or restrict the actual URL.",
-        ),
-        Access::Removed => (
-            "the declared base URL; the client has no `with_base_url`",
-            " A send policy may select or restrict the actual URL.",
-        ),
-    };
+    let (base_note, actual_url) = (
+        "the declared base URL; the client's `with_base_url` replaces it",
+        " Construction or a send policy may select or restrict the actual URL.",
+    );
     let mut url_lines = vec![actual_url.to_owned()];
     if !labels.is_empty() {
         url_lines.push(format!(
@@ -1836,16 +1811,12 @@ fn emit_owner(
                         let notes: Vec<LitStr> = notes.iter().map(|n| lit(n)).collect();
                         quote!(#docs #[doc = ""] #(#[doc = #notes])* pub #name: #fty,)
                     });
-                // Only the controls a caller has (`controls` may restrict them).
                 let later = match (
+                    owner.values.iter().any(|v| v.optional),
                     owner
                         .values
                         .iter()
-                        .any(|v| v.optional && v.set == Access::Public),
-                    owner
-                        .values
-                        .iter()
-                        .any(|v| !v.optional && v.default.is_some() && v.set == Access::Public),
+                        .any(|v| !v.optional && v.default.is_some()),
                 ) {
                     (true, true) => {
                         " Optional and initialized values are set afterwards with the client's `set_*` and `maybe_*` methods."
@@ -1883,26 +1854,6 @@ fn emit_owner(
                     quote!(let #config { #(#names),* } = config;),
                 )
             };
-            // `new` is never removed (the model refuses it); `with_base_url` may be.
-            let new_vis = access_vis(owner.new).unwrap_or_else(|| quote!(pub));
-            let with_base_url = access_vis(owner.with_base_url).map(|base_vis| {
-                quote! {
-                    /// Replaces the declared base URL (for example with a staging server or a
-                    /// local test server). It must be an `http`/`https` URL with a
-                    /// host, no port 0 and no user information, query or fragment; otherwise
-                    /// returns `concord::Error`.
-                    /// Declared paths are appended to its path. With `subdomain` labels the host
-                    /// must be a domain name: to reach a local server, keep a domain and map it
-                    /// with `reqwest::ClientBuilder::resolve`. Returns a new handle: scopes and
-                    /// requests created from the old one keep the old base. A send policy may
-                    /// further restrict which URLs it accepts.
-                    #[inline] #base_vis fn with_base_url(mut self, url: impl ::core::convert::AsRef<str>) -> ::core::result::Result<Self, #k::Error> {
-                        let base = #k::__private::Base::parse(url.as_ref())?;
-                        ::std::sync::Arc::make_mut(&mut self.__s).__base = base;
-                        ::core::result::Result::Ok(self)
-                    }
-                }
-            });
             quote! {
                 #config_item
 
@@ -1928,7 +1879,7 @@ fn emit_owner(
                     /// Creates the client. `http` is used for every request; configure timeouts,
                     /// redirects, proxies, TLS and default headers on it. Builds no connection.
                     /// Initializers of the client's values are evaluated here, once.
-                    #[inline] #new_vis fn new(http: #k::reqwest::Client #config_param) -> Self {
+                    #[inline] pub fn new(http: #k::reqwest::Client #config_param) -> Self {
                         #config_bind
                         #default_fns
                         Self {
@@ -1940,7 +1891,20 @@ fn emit_owner(
                         }
                     }
 
-                    #with_base_url
+                    /// Replaces the declared base URL (for example with a staging server or a
+                    /// local test server). It must be an `http`/`https` URL with a
+                    /// host, no port 0 and no user information, query or fragment; otherwise
+                    /// returns `concord::Error`.
+                    /// Declared paths are appended to its path. With `subdomain` labels the host
+                    /// must be a domain name: to reach a local server, keep a domain and map it
+                    /// with `reqwest::ClientBuilder::resolve`. Returns a new handle: scopes and
+                    /// requests created from the old one keep the old base. A send policy may
+                    /// further restrict which URLs it accepts.
+                    #[inline] pub fn with_base_url(mut self, url: impl ::core::convert::AsRef<str>) -> ::core::result::Result<Self, #k::Error> {
+                        let base = #k::__private::Base::parse(url.as_ref())?;
+                        ::std::sync::Arc::make_mut(&mut self.__s).__base = base;
+                        ::core::result::Result::Ok(self)
+                    }
 
                     #controls
                     #nav
@@ -4740,195 +4704,5 @@ mod tests {
             .map(|item| quote!(#item).to_string())
             .collect();
         assert_eq!(rest, base);
-    }
-
-    /// Every inherent method of the expansion, as `Type::method` -> its visibility as written.
-    fn methods(file: &syn::File) -> std::collections::BTreeMap<String, String> {
-        let mut out = std::collections::BTreeMap::new();
-        for item in &file.items {
-            if let syn::Item::Impl(item) = item
-                && item.trait_.is_none()
-                && let syn::Type::Path(ty) = &*item.self_ty
-            {
-                let ty = ty.path.segments.last().unwrap().ident.to_string();
-                for member in &item.items {
-                    if let syn::ImplItem::Fn(method) = member {
-                        let vis = &method.vis;
-                        out.insert(
-                            format!("{ty}::{}", method.sig.ident),
-                            quote!(#vis).to_string().replace(' ', ""),
-                        );
-                    }
-                }
-            }
-        }
-        out
-    }
-
-    /// H06 (`controls`): each listed control is generated at the access the owner's block gives
-    /// it (`pub(crate)`) or not at all (`remove`); every control not listed, and every control of
-    /// an endpoint, stays `pub`.
-    #[test]
-    fn controls_set_the_visibility_of_each_generated_control() {
-        let file: syn::File = syn::parse_str(&docs(quote! {
-            pub client Api(
-                subdomain: String,
-                #[sensitive] header("x-token") token: String,
-                region?: String,
-                trace?: String = "on",
-            ) {
-                base "http://x.test";
-                controls {
-                    pub(crate) new;
-                    remove with_base_url;
-                    remove set_subdomain;
-                    pub(crate) set_region;
-                    pub(crate) maybe_region;
-                }
-                subdomain "{subdomain}";
-                headers { "x-region" = region; "x-trace" = trace; }
-                scope shop(shop: String, key?: String) {
-                    controls { pub(crate) set_shop; }
-                    path "{shop}";
-                    headers { "x-key" = key; }
-                    GET get(query q?: String);
-                }
-            }
-        }))
-        .unwrap();
-        let methods = methods(&file);
-        let vis = |name: &str| methods.get(name).map(String::as_str);
-        assert_eq!(vis("Api::new"), Some("pub(crate)"));
-        assert_eq!(vis("Api::with_base_url"), None);
-        assert_eq!(vis("Api::set_subdomain"), None);
-        assert_eq!(vis("Api::set_token"), Some("pub"));
-        assert_eq!(vis("Api::set_region"), Some("pub(crate)"));
-        assert_eq!(vis("Api::maybe_region"), Some("pub(crate)"));
-        assert_eq!(vis("Api::set_trace"), Some("pub"));
-        assert_eq!(vis("Api::maybe_trace"), Some("pub"));
-        assert_eq!(vis("Api::shop"), Some("pub"));
-        assert_eq!(vis("ApiShop::set_shop"), Some("pub(crate)"));
-        assert_eq!(vis("ApiShop::set_key"), Some("pub"));
-        assert_eq!(vis("ApiShop::maybe_key"), Some("pub"));
-        assert_eq!(vis("ApiShopGet::set_q"), Some("pub"));
-        assert_eq!(vis("ApiShopGet::maybe_q"), Some("pub"));
-        // The required values are still supplied at construction and entry.
-        assert!(file.items.iter().any(|item| matches!(
-            item,
-            syn::Item::Struct(s) if s.ident == "ApiConfig" && s.fields.len() == 2
-        )));
-    }
-
-    /// The default is unchanged: an empty `controls` block expands exactly as no block, and
-    /// every control is `pub`.
-    #[test]
-    fn controls_default_to_public_and_an_empty_block_changes_nothing() {
-        let declaration = |block: proc_macro2::TokenStream| {
-            docs(quote! {
-                pub client Api(key: String, region?: String) {
-                    base "http://x.test";
-                    #block
-                    headers { "x-key" = key; "x-region" = region; }
-                    scope s(id: u32) { #block path "{id}"; GET get(); }
-                }
-            })
-        };
-        let plain = declaration(quote!());
-        assert_eq!(declaration(quote!(controls {})), plain);
-        let file: syn::File = syn::parse_str(&plain).unwrap();
-        let methods = methods(&file);
-        for name in [
-            "Api::new",
-            "Api::with_base_url",
-            "Api::set_key",
-            "Api::set_region",
-            "Api::maybe_region",
-            "ApiS::set_id",
-        ] {
-            assert_eq!(methods.get(name).map(String::as_str), Some("pub"), "{name}");
-        }
-    }
-
-    /// What the generated documentation tells a caller about the base follows the access of
-    /// `with_base_url`; the config struct names only the setters a caller has.
-    #[test]
-    fn controls_docs_follow_what_a_caller_can_call() {
-        let summary = |block: proc_macro2::TokenStream| {
-            let file: syn::File = syn::parse_str(&docs(quote! {
-                pub client Api(key: String, region?: String) {
-                    base "http://x.test";
-                    #block
-                    headers { "x-key" = key; "x-region" = region; }
-                    GET get();
-                }
-            }))
-            .unwrap();
-            let text = |name: &str| {
-                file.items
-                    .iter()
-                    .find_map(|item| match item {
-                        syn::Item::Struct(s) if s.ident == name => Some(doc_text(&s.attrs)),
-                        _ => None,
-                    })
-                    .unwrap()
-            };
-            (text("ApiGet"), text("ApiConfig"))
-        };
-        let (public, config) = summary(quote!());
-        assert!(public.contains("Default request: `GET http://x.test` (the declared base URL; the client's `with_base_url` replaces it)."));
-        assert!(config.contains(
-            "Optional values are set afterwards with the client's `set_*` and `maybe_*` methods."
-        ));
-        let (crate_only, config) = summary(quote!(controls {
-            pub(crate) with_base_url;
-            pub(crate) set_region;
-            pub(crate) maybe_region;
-        }));
-        assert!(crate_only.contains(
-            "Default request: `GET http://x.test` (the declared base URL; the crate that declares the client chooses the base: its `with_base_url` is not public)."
-        ));
-        assert!(!crate_only.contains("`with_base_url` replaces"));
-        assert!(!config.contains("set afterwards"), "{config}");
-        let (removed, _) = summary(quote!(controls { remove with_base_url; }));
-        assert!(
-            removed
-                .contains("Default request: `GET http://x.test` (the declared base URL; the client has no `with_base_url`).")
-        );
-    }
-
-    /// The model records each entry on the control it names; the client's `new` and
-    /// `with_base_url` on the client owner.
-    #[test]
-    fn controls_are_recorded_on_the_values_they_name() {
-        use crate::model::Access;
-        let api: Api = syn::parse2(quote! {
-            pub client Api(a: String, b?: String) {
-                base "http://x.test";
-                controls { pub(crate) new; pub(crate) with_base_url; remove set_a; }
-                headers { "x-a" = a; "x-b" = b; }
-                scope s(c: u32) { controls { remove set_c; } path "{c}"; GET get(); }
-            }
-        })
-        .unwrap();
-        let (model, _) = Model::build(api).unwrap_or_else(|e| panic!("model: {e}"));
-        let client = &model.owners[0];
-        assert_eq!(
-            (client.new, client.with_base_url),
-            (Access::Crate, Access::Crate)
-        );
-        let access: Vec<_> = client.values.iter().map(|v| (v.set, v.maybe)).collect();
-        assert_eq!(
-            access,
-            [
-                (Access::Removed, Access::Public),
-                (Access::Public, Access::Public)
-            ]
-        );
-        let scope = &model.owners[1];
-        assert_eq!(scope.values[0].set, Access::Removed);
-        assert_eq!(
-            (scope.new, scope.with_base_url),
-            (Access::Public, Access::Public)
-        );
     }
 }

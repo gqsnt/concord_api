@@ -182,7 +182,7 @@ fn fault_in(error: &concord::Error) -> Option<ProviderError> {
 }
 
 #[cfg(test)]
-mod controls_tests {
+mod environment_tests {
     use super::*;
     use crate::{Environment, OAuthApp, QuickBooks, RealmId, RefreshToken};
 
@@ -203,11 +203,11 @@ mod controls_tests {
     #[test]
     fn coordinated_replacement_keeps_the_validated_fixture_origin() {
         let after = connection(Environment::Production, "222");
-        let api = QuickBooks::for_fixture(
+        let api = QuickBooks::connect(
             reqwest::Client::new(),
             connection(Environment::Sandbox, "111"),
-            "http://127.0.0.1:1234",
         )
+        .with_base_url("http://127.0.0.1:1234")
         .unwrap()
         .set_connection(after);
         let prepared = api

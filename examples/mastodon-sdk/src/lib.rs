@@ -13,9 +13,7 @@
 //! `reqwest::Client` (timeouts, proxies, TLS) and an [`InstanceUrl`]. [`Mastodon::with_token`]
 //! adds a user [`AccessToken`] (`Authorization: Bearer …`, flagged sensitive, withheld from every
 //! `Debug`). A client is bound to its instance: there is no way to point it, and its token, at
-//! another host, except the streaming host that instance advertises. The generated client,
-//! [`Api`], is reached with [`Mastodon::api`]; it is bound the same way (its constructor and
-//! `with_base_url` are this crate's).
+//! another host, except the streaming host that instance advertises.
 //!
 //! ```
 //! use concord::reqwest;
@@ -96,7 +94,6 @@ use concord::reqwest;
 
 pub use concord;
 
-pub use api::Api;
 pub use api::{
     ApiHashtagStream as HashtagStreamRequest, ApiHashtagTimeline as HashtagTimelineRequest,
     ApiInstance as InstanceRequest, ApiLocalHashtagStream as LocalHashtagStreamRequest,
@@ -155,13 +152,6 @@ impl Mastodon {
     /// The instance.
     pub fn instance_url(&self) -> &InstanceUrl {
         &self.instance
-    }
-
-    /// The generated client, bound to this instance with this client's token: the endpoint
-    /// methods below are its own (`mastodon.api().status(id)` is `mastodon.status(id)`). It
-    /// cannot be pointed at another host.
-    pub fn api(&self) -> &Api {
-        &self.api
     }
 
     /// A page of the public timeline (`GET /api/v1/timelines/public`).
