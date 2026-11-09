@@ -1,0 +1,19 @@
+# h16s-combined-review-sol (Codex gpt-6.1-sol xhigh, read-only; observed gpt-6.1-sol xhigh; 2026-11-09T04:12Z–04:22Z; independent session, same provider as the Codex-authored candidate and migration lanes)
+
+VERDICT: ACCEPT_WITH_FIXES
+DECISION: WIN — Codex 100→110, Claude 95→110; pooled +25, controls/contrary 20→20 per provider, no witness SDK falls.
+DECIDING ITEM: FRED contributes +20 pooled and Claude Nager +5; LOSS and INCONCLUSIVE do not apply before the card’s WIN clause.
+CONFIRMATION RUN NEEDED: no — This is a source-supported truth correction within the same documentation mechanism. The witness policies do not transform the measured requests; their prepared and operation facts remain unchanged. S3 was outside the pilot, and no measured benefit is claimed for its migration notes.
+FINDINGS:
+
+- [blocking] Migration record describes a reverted fixture edit — [v4/desirability/impact/H16s.md:99](/home/canarit/projects/Concord_Desirability_Loop/work/wt/h16m/v4/desirability/impact/H16s.md:99) — The record says the frozen Stripe link was changed and its strict-rustdoc exception removed. The fixture is byte-identical at baseline, merge parent and `24f714e8`. The lane’s successful unrestricted workspace-rustdoc capture included that subsequently reverted edit; its source manifest consequently mismatches the committed fixture. — Correct the impact/evidence narrative to distinguish the lane snapshot from the committed head, record the retained exception, and attach the exact-head gate results.
+
+CHECKED: Read the governing rules, frozen H16s card and requested predecessors. Reviewed every migration hunk and the combined A-plus-migration diff. Independently summed the score files and recomputed all 540 wire item-runs from answers and truth: zero discrepancies. Verified 200 session metadata records, alternating arms, observed models, sealed prompt hashes, both source-archive hashes and 108 exposed rustdoc blocks. The exposure check passes for all ten SDKs; question boundaries match, truths match apart from commit identity, and no complete scored request leakage was found.
+
+Cross-checked the 76 added notes and census against source: 35 custom format types, 36 implementation sites, 28 explicit constants and eight default-None cases; no uncensused format implementation found. Checked wrapper/policy header sources across all 55 SDKs, including runtime multipart media, token replacement, signing and authored headers.
+
+Reparsed all 377 endpoint docs/preparations: query sequences, preparation boundaries and dynamic-path checks agree. Sampled groups, `query(..)`, encoding and header provenance against emitter/core and unchanged SDK wire tests. Independently compared 82 saved expansions and 116 rustdoc graphs: zero non-doc differences, including three ID-canonicalized graphs. Only expected documentation assertions change; no API, wire behavior or behavioral-test weakening found.
+
+A5 P1–P9 remain intact. A7 adds no concept or required ceremony; the change exposes existing rules. A8 covers all 55 SDKs/72 example packages without unknown rows; CHANGELOG is present, and unchanged caller API/wire behavior needs no MIGRATION entry.
+
+NOT CHECKED: No builds, tests, readers, agents, runners, bwrap or writes were executed. The exact-head gate currently shows 40 PASS entries through `feature-isolation`, no failure and no final result. [CI run 42560481555](https://github.com/gqsnt/concord_api/actions/runs/42560481555) has nightly-clone green; Linux and Windows verify remain running. Before ACCEPT, apply the record correction and obtain green full-gate/CI results on the commit actually merged; acceptance becomes final only after merged-head CI passes. Claude effort is unobservable. Final-wording reader effects, human preference/adoption and visual documentation layout remain unmeasured.
