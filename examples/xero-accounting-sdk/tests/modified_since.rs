@@ -220,6 +220,69 @@ async fn a_continuation_resumes_only_the_listing_that_produced_it() {
 }
 
 #[tokio::test]
+async fn starting_at_refuses_a_cursor_with_different_tenant_size_or_sync_point_before_io() {
+    let server = TestServer::start(|_: &Recorded| Reply::json(200, LEGACY)).await;
+    let temp_a = Temp::new();
+    let (api_a, _) = client(&temp_a, &server, A, false);
+    let a = api_a.tenant(&id(A)).unwrap();
+    let temp_b = Temp::new();
+    let (api_b, _) = client(&temp_b, &server, B, false);
+    let b = api_b.tenant(&id(B)).unwrap();
+    let since = doc_example(&a);
+    let later = a
+        .modified_since(since.at() + Duration::from_secs(1))
+        .unwrap();
+    let plain = a.list(1, 2).unwrap().send().await.unwrap().next.unwrap();
+    let filtered = a
+        .list_modified_since(&since, 1, 2)
+        .unwrap()
+        .send()
+        .await
+        .unwrap()
+        .next
+        .unwrap();
+    assert_eq!(server.requests().len(), 2);
+    let cases = [
+        (b.pages(None, 2, cap(3)).unwrap(), plain.clone(), "tenant"),
+        (a.pages(None, 1, cap(3)).unwrap(), plain.clone(), "size"),
+        (a.pages(None, 2, cap(3)).unwrap(), filtered.clone(), "since"),
+        (
+            a.pages_modified_since(&since, None, 2, cap(3)).unwrap(),
+            plain.clone(),
+            "since",
+        ),
+        (
+            a.pages_modified_since(&later, None, 2, cap(3)).unwrap(),
+            filtered,
+            "since",
+        ),
+    ];
+    for (pages, cursor, mismatch) in cases {
+        let mut pages = pages.starting_at(Resume::At(cursor));
+        let error = pages.next_page().await.unwrap_err();
+        assert!(matches!(error, PagesError::Provider { .. }));
+        let kind = error.provider_error().unwrap().kind();
+        assert!(match mismatch {
+            "tenant" => matches!(kind, ErrorKind::TenantMismatch),
+            "size" => matches!(kind, ErrorKind::Input("continuation page size mismatch")),
+            "since" => matches!(
+                kind,
+                ErrorKind::Input("continuation modified-since mismatch")
+            ),
+            _ => unreachable!(),
+        });
+        assert_eq!(server.requests().len(), 2);
+    }
+    let mut resumed = a
+        .pages(None, 2, cap(3))
+        .unwrap()
+        .starting_at(Resume::At(plain));
+    assert_eq!(resumed.next_page().await.unwrap().unwrap().items.len(), 1);
+    assert_eq!(server.requests().len(), 3);
+    server.shutdown().await;
+}
+
+#[tokio::test]
 async fn a_sync_point_is_never_sent_to_another_tenant() {
     let server = TestServer::start(|_: &Recorded| Reply::json(200, LEGACY)).await;
     let t1 = Temp::new();

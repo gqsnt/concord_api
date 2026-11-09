@@ -274,13 +274,7 @@ impl Tenant {
     ) -> Result<InvoicePages, Error> {
         self.list_filtered(1, page_size, since)?;
         if let Some(key) = &from {
-            self.check(&key.tenant)?;
-            if key.page_size != page_size {
-                return Err(Error::input("continuation page size mismatch"));
-            }
-            if key.since != since {
-                return Err(Error::input("continuation modified-since mismatch"));
-            }
+            self.check_cursor(key, page_size, since)?;
         }
         let tenant = self.clone();
         Ok(Pages::new(
@@ -288,6 +282,9 @@ impl Tenant {
             move |key: Option<PageCursor>| {
                 let tenant = tenant.clone();
                 async move {
+                    if let Some(key) = &key {
+                        tenant.check_cursor(key, page_size, since)?;
+                    }
                     let page = key.map_or(1, |key| key.page);
                     let fetched = tenant.list_filtered(page, page_size, since)?.send().await?;
                     Ok(Page {
@@ -299,6 +296,21 @@ impl Tenant {
             },
         )
         .max_pages(max_pages))
+    }
+    fn check_cursor(
+        &self,
+        key: &PageCursor,
+        page_size: u32,
+        since: Option<Utc>,
+    ) -> Result<(), Error> {
+        self.check(&key.tenant)?;
+        if key.page_size != page_size {
+            return Err(Error::input("continuation page size mismatch"));
+        }
+        if key.since != since {
+            return Err(Error::input("continuation modified-since mismatch"));
+        }
+        Ok(())
     }
 }
 

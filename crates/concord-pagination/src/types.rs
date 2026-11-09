@@ -117,9 +117,11 @@ pub enum OnError {
 /// failures cannot bypass the budget. It counts *logical* calls: a factory that retries, refreshes
 /// credentials or sends subrequests internally makes more HTTP attempts than its budget.
 ///
-/// The crate does not compare keys, so the budget is the only guard against a key chain that
-/// cycles through more than one page (A → B → A). An adapter should refuse a key that does not
-/// advance (a next key equal to the one just requested) with its own error.
+/// Without an admission guard, the engine does not compare keys, so the budget is its only
+/// protection against a key chain that cycles through more than one page (A → B → A).
+/// [`Pages::refuse_repeated_keys`](crate::Pages::refuse_repeated_keys) adds a shared guard that
+/// refuses any repeated key before invoking the factory. An adapter can also refuse a key that
+/// does not advance (a next key equal to the one just requested) with its own error.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct Budget(NonZeroUsize);
 

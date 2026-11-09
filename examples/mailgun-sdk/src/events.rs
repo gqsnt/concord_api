@@ -243,6 +243,14 @@ pub struct EventCursor {
     original: Url,
     credential: Option<HeaderValue>,
 }
+impl EventCursor {
+    fn check_context(&self, original: &Url, credential: &Option<HeaderValue>) -> Result<(), Error> {
+        if self.original != *original || self.credential != *credential {
+            return Err(Error::Link(LinkError::Context));
+        }
+        Ok(())
+    }
+}
 
 /// Bounded event chain using the shared pagination engine; failed/bounded reads keep their prefix.
 pub type EventPages = Pages<Event, EventCursor, Metadata, Error>;
@@ -263,11 +271,8 @@ impl MailgunDomainEvents {
         let prepared = self.clone().prepare()?;
         let original = prepared.request().url().clone();
         let credential = prepared.request().headers().get("authorization").cloned();
-        if from
-            .key()
-            .is_some_and(|key| key.original != original || key.credential != credential)
-        {
-            return Err(Error::Link(LinkError::Context));
+        if let Some(key) = from.key() {
+            key.check_context(&original, &credential)?;
         }
         let mut seen = HashSet::new();
         Ok(Pages::new(from, move |cursor: Option<EventCursor>| {
@@ -279,6 +284,9 @@ impl MailgunDomainEvents {
                 .map_or_else(|| original.to_string(), |c| c.url.expose().to_owned());
             let fresh = seen.insert(target.clone());
             async move {
+                if let Some(cursor) = &cursor {
+                    cursor.check_context(&original, &credential)?;
+                }
                 if !fresh {
                     return Err(Error::Link(LinkError::Cycle));
                 }

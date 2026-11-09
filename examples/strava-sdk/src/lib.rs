@@ -227,6 +227,9 @@ impl StravaAthlete {
             let scope = scope.clone();
             async move {
                 let page = page.unwrap_or(1);
+                if page == 0 {
+                    return Err(Error::Invalid("page size or starting page"));
+                }
                 let response = scope
                     .activities()
                     .set_page(page)

@@ -154,6 +154,35 @@ fn api_for(server: &TestServer) -> Strava {
 }
 
 #[tokio::test]
+async fn starting_at_refuses_page_zero_before_io() {
+    let server = TestServer::start(|_: &Recorded| Reply::json(200, EMPTY)).await;
+    let athlete = api(&server.url()).athlete();
+    assert!(matches!(
+        athlete.pages(2, Resume::At(0), nz(3)),
+        Err(Error::Invalid("page size or starting page"))
+    ));
+    let mut pages = athlete
+        .pages(2, Resume::Start, nz(3))
+        .unwrap()
+        .starting_at(Resume::At(0));
+    let error = pages.next_page().await.unwrap_err();
+    assert!(matches!(error, PagesError::Provider { .. }));
+    assert!(matches!(
+        error.provider_error(),
+        Some(Error::Invalid("page size or starting page"))
+    ));
+    assert!(server.requests().is_empty());
+    let mut resumed = athlete
+        .pages(2, Resume::Start, nz(3))
+        .unwrap()
+        .starting_at(Resume::At(2));
+    assert!(resumed.next_page().await.unwrap().unwrap().items.is_empty());
+    assert_eq!(server.requests().len(), 1);
+    assert_eq!(server.single().query_all("page"), ["2"]);
+    server.shutdown().await;
+}
+
+#[tokio::test]
 async fn upload_file_then_poll_its_id_until_activity_exists() {
     let steps = Arc::new(AtomicUsize::new(0));
     let seen = steps.clone();

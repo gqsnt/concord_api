@@ -275,8 +275,8 @@ impl<K, T, M, E, F, Fut> fmt::Debug for Sequential<K, T, M, E, F, Fut> {
 /// How a sequential chain ended ([`Sequential::finish`]).
 ///
 /// Outcomes: [`Outcome::Exhausted`] (the last page had no next key), [`Outcome::Bounded`] (the
-/// budget was used while a next key existed), [`Outcome::Failed`] (a page failed) or
-/// [`Outcome::Stopped`] (finished early).
+/// budget was used while a next key existed), [`Outcome::Repeated`] (the admission guard refused
+/// a repeated key), [`Outcome::Failed`] (a page failed) or [`Outcome::Stopped`] (finished early).
 #[non_exhaustive]
 pub struct SequentialReport<K> {
     /// How the chain ended.
