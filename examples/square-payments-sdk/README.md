@@ -166,6 +166,10 @@ not snapshots; changing records can cause duplicates or gaps. This slice leaves
 Square's time-range and main-location defaults in effect and exposes only cursor
 and limit. Square's default/max page size is 100; larger limits use its default.
 
+Use `concord_sdk_square_payments::Resume` for the position. `Resume::Start` repeats the payments
+listing without `cursor`, replacing the template cursor; `Resume::At(key)` takes the `String`
+response cursor in a returned page's `next`.
+
 ## Diagnostics and scope
 
 Debug/Display hide the Bearer token, create and complete bodies (including the

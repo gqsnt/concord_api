@@ -138,6 +138,10 @@ position, not that page's items. Do not treat a bounded/failed prefix as complet
 Resumption is explicit and does not promise a stable snapshot, deduplication, or
 an event-retention period. Persisted checkpoints and polling are outside scope.
 
+Use `concord_sdk_mailgun::pagination::Resume` for the position. `Resume::Start` repeats the
+exact original events search request; `Resume::At(key)` takes the context-bound `EventCursor`
+from `paging.next` in a returned page's `next`.
+
 `delivery_status` checks the message ID (allowing surrounding angle brackets),
 recipient and latest delivery-relevant timestamp. `Accepted` means queued;
 `Delivered` means the recipient mail server accepted it, not inbox placement or

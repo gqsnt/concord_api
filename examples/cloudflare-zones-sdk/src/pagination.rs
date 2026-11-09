@@ -58,7 +58,7 @@ impl CloudflareZonesList {
         walk(self, Resume::Start)
     }
 
-    /// The pages from `from` on (the `failed` or `resume` position of a `PagesError`).
+    /// The pages from `from` on (the `failed` or `resume` position of a `PagesError`). Use `concord_sdk_cloudflare_zones::concord_pagination::Resume` for the position. `Resume::Start` repeats page 1 of the zones listing, replacing the template's page; `Resume::At(key)` takes the `NonZeroU32` page number in a returned page's `next`.
     pub fn pages_from(self, from: Resume<NonZeroU32>) -> ZonePages {
         walk(self, from)
     }
@@ -70,7 +70,7 @@ impl CloudflareZoneDnsRecordsList {
         walk(self, Resume::Start)
     }
 
-    /// The pages from `from` on (the `failed` or `resume` position of a `PagesError`).
+    /// The pages from `from` on (the `failed` or `resume` position of a `PagesError`). Use `concord_sdk_cloudflare_zones::concord_pagination::Resume` for the position. `Resume::Start` repeats page 1 of the DNS records listing, replacing the template's page; `Resume::At(key)` takes the `NonZeroU32` page number in a returned page's `next`.
     pub fn pages_from(self, from: Resume<NonZeroU32>) -> RecordPages {
         walk(self, from)
     }

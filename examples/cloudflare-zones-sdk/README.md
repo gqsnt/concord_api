@@ -172,6 +172,11 @@ documented as the count *without* search parameters and is never used to decide 
 Without `max_pages` there is no cap; a cap reached while pages remain is `PagesError::Bounded`,
 never a complete result. A listing that changes between requests can repeat or skip items.
 
+For both `pages_from` methods, use `concord_sdk_cloudflare_zones::concord_pagination::Resume`
+for the position. `Resume::Start` repeats page 1 of the zones or DNS records listing, replacing
+the template's page; `Resume::At(key)` takes the `NonZeroU32` page number in a returned page's
+`next`.
+
 ## Rate limits
 
 Cloudflare applies a global limit (per user or account token, and per IP) and per-service limits

@@ -13,6 +13,12 @@ The reusable consistent-list reader is `collect::collect_list(template, ListPoli
 SDK's chunk factory (`list::ListPager::fetch`) driven by `concord_pagination::sequential`, with an
 explicit `OnExpired` policy.
 
+For `collect::collect_list`, add `concord-pagination` as a direct dependency and use
+`concord_pagination::Resume`. `Resume::Start` repeats the collection's first chunk with the
+template selectors/resource version and policy chunk size, clearing its continue token;
+`Resume::At(key)` takes the SDK's `concord_example_kubernetes_sdk::list::Continuation` from a
+prior `ListOutcome::Bounded` or `ListOutcome::Failed` resume position's `key().cloned()`.
+
 ## Commands
 
 Offline (default gate; loopback test server, no credentials):

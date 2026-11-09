@@ -105,7 +105,7 @@ impl GitLabProjectIssues {
     /// [`pages`](Self::pages) from `from`: `Resume::Start`, or a [`NextPage`] of this same listing
     /// (a `PagesError`'s `resume()`). A continuation of another project or collection is refused
     /// before anything is sent ([`PaginationProblem::ContinuationMismatch`]). The link's own query
-    /// carries GitLab's filters; the listing's setters only decide the first page.
+    /// carries GitLab's filters; the listing's setters only decide the first page. Add `concord-pagination` as a direct dependency and use `concord_pagination::Resume`. `Resume::Start` repeats the original issues request, including its configured filters and page; `Resume::At(key)` takes this listing's `NextPage` from a returned page's `next`.
     pub fn pages_from(self, from: Resume<NextPage>) -> IssuePages {
         Pages::new(from, move |key| fetch(self.clone(), key))
     }

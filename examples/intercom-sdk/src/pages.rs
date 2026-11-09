@@ -20,7 +20,7 @@ impl IntercomContactsList {
     /// Traverse from the selected resume point, preserving this operation's page size.
     /// `from` replaces any `starting_after` on the template. A nonzero cap is mandatory.
     /// Resume points belong to the same credentials, base, version and page size.
-    /// Empty pages continue when `pages.next` exists. No page is retried automatically.
+    /// Empty pages continue when `pages.next` exists. No page is retried automatically. Use `concord_sdk_intercom::pagination::Resume` for the position. `Resume::Start` repeats the contacts list without `starting_after`, replacing the template cursor; `Resume::At(key)` takes the `String` from `pages.next.starting_after` in a returned page's `next`.
     pub fn pages(self, from: Resume<String>, max_pages: NonZeroUsize) -> ContactPages {
         contact_pages(from, max_pages, move |cursor| {
             self.clone().maybe_starting_after(cursor).send()
@@ -32,7 +32,7 @@ impl IntercomContactsSearch {
     /// Traverse exact-email matches, preserving this operation's email and page size.
     /// `from` replaces the template body's cursor. A nonzero cap is mandatory.
     /// Resume points belong to the same email, credentials, base, version and page size.
-    /// Empty pages continue when `pages.next` exists. No page is retried automatically.
+    /// Empty pages continue when `pages.next` exists. No page is retried automatically. Use `concord_sdk_intercom::pagination::Resume` for the position. `Resume::Start` repeats the email search without `starting_after`, replacing the body cursor; `Resume::At(key)` takes the `String` from `pages.next.starting_after` in a returned page's `next`.
     pub fn pages(self, from: Resume<String>, max_pages: NonZeroUsize) -> ContactPages {
         contact_pages(from, max_pages, move |cursor| {
             let mut op = self.clone();

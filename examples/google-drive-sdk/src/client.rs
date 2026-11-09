@@ -168,7 +168,7 @@ impl DriveClient {
     }
 
     /// Traverse files within a required page budget. An incomplete search is a typed error,
-    /// rather than successful exhaustion. Options and origin must match a restored cursor.
+    /// rather than successful exhaustion. Options and origin must match a restored cursor. Use `concord_sdk_google_drive::pagination::Resume` for the position. `Resume::Start` repeats the files listing with `options` and no page token; `Resume::At(key)` takes the `PageToken` from `nextPageToken` in a returned page's `next`.
     pub fn files(
         &self,
         options: ListOptions,

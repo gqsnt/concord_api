@@ -254,7 +254,7 @@ impl MailgunDomainEvents {
     }
 
     /// Resume only the exact original search (origin, domain, query and credential).
-    /// The provider dataset may change between requests; no snapshot or deduplication is claimed.
+    /// The provider dataset may change between requests; no snapshot or deduplication is claimed. Use `concord_sdk_mailgun::pagination::Resume` for the position. `Resume::Start` repeats the exact original events search request; `Resume::At(key)` takes the context-bound `EventCursor` from `paging.next` in a returned page's `next`.
     pub fn pages_from(
         self,
         from: Resume<EventCursor>,

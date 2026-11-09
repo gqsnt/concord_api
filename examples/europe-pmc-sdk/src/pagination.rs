@@ -45,7 +45,7 @@ impl EuropePmcSearch {
     /// Builds a lazy traversal with a mandatory 1..=20 page cap. Calls generated send per page.
     /// The exact same query, page size and format must be used when resuming a checkpoint.
     /// Every repeated cursor (including a multi-page cycle) fails before its page is emitted.
-    /// A short or empty page with a fresh cursor continues. No cursor means exhaustion.
+    /// A short or empty page with a fresh cursor continues. No cursor means exhaustion. Use `concord_sdk_europe_pmc::concord_pagination::Resume` for the position. `Resume::Start` repeats the search's first page with `cursorMark=*`; `Resume::At(key)` takes the `Cursor` from `nextCursorMark` in a returned page's `next`.
     pub fn pages(
         &self,
         format: SearchFormat,
@@ -99,7 +99,7 @@ impl EuropePmcPublicationReferences {
     ///
     /// Resume with the same publication, page size and format: a page number addresses
     /// `(n - 1) * page size` records, which the SDK cannot check against an earlier run.
-    /// A resumed traversal's first page re-establishes the hit count.
+    /// A resumed traversal's first page re-establishes the hit count. Use `concord_sdk_europe_pmc::concord_pagination::Resume` for the position. `Resume::Start` repeats page 1 of this publication's references; `Resume::At(key)` takes the `PageNumber` in a returned page's `next`.
     pub fn pages(
         &self,
         format: SearchFormat,

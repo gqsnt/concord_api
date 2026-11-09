@@ -32,7 +32,7 @@ impl DigitalOcean {
     /// Continue a droplet walk from the position a previous one reported (`PagesError::resume`).
     ///
     /// `size` applies to `Resume::Start`; a resumed link keeps the page size it was issued with.
-    /// The link is checked again, before any request, against this collection and its filter.
+    /// The link is checked again, before any request, against this collection and its filter. Use `concord_sdk_digitalocean::concord_pagination::Resume` for the position. `Resume::Start` repeats the first droplets request with `size`; `Resume::At(key)` takes the `NextLink` from `links.pages.next` in a returned page's `next`.
     pub fn droplet_pages_from(
         &self,
         size: PageSize,
@@ -52,7 +52,7 @@ impl DigitalOcean {
         self.tagged_droplet_pages_from(tag, size, max_pages, Resume::Start)
     }
 
-    /// Continue a tagged droplet walk; a link without exactly this tag is refused unsent.
+    /// Continue a tagged droplet walk; a link without exactly this tag is refused unsent. Use `concord_sdk_digitalocean::concord_pagination::Resume` for the position. `Resume::Start` repeats the first droplets request with `tag` and `size`; `Resume::At(key)` takes the `NextLink` from `links.pages.next` in a returned page's `next`.
     pub fn tagged_droplet_pages_from(
         &self,
         tag: &TagName,
@@ -74,7 +74,7 @@ impl DigitalOcean {
         self.action_pages_from(droplet_id, size, max_pages, Resume::Start)
     }
 
-    /// Continue an action walk of the same droplet.
+    /// Continue an action walk of the same droplet. Use `concord_sdk_digitalocean::concord_pagination::Resume` for the position. `Resume::Start` repeats the droplet's first actions request with `size`; `Resume::At(key)` takes the `NextLink` from `links.pages.next` in a returned page's `next`.
     pub fn action_pages_from(
         &self,
         droplet_id: u64,
@@ -96,7 +96,7 @@ impl DigitalOcean {
         self.snapshot_pages_from(droplet_id, size, max_pages, Resume::Start)
     }
 
-    /// Continue a snapshot walk of the same droplet.
+    /// Continue a snapshot walk of the same droplet. Use `concord_sdk_digitalocean::concord_pagination::Resume` for the position. `Resume::Start` repeats the droplet's first snapshots request with `size`; `Resume::At(key)` takes the `NextLink` from `links.pages.next` in a returned page's `next`.
     pub fn snapshot_pages_from(
         &self,
         droplet_id: u64,

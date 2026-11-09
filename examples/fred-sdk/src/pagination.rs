@@ -28,7 +28,7 @@ impl OffsetEnvelope<Observation> for Observations {
 /// snapshot. Offset 0 is used for `Resume::Start`; the template's offset is replaced.
 /// The response must make progress and match its requested offset. A bounded stop is
 /// a `concord_pagination::PagesError::Bounded`, never a silently complete prefix.
-/// Counts can change when the provider data changes; use a stable provider snapshot when needed.
+/// Counts can change when the provider data changes; use a stable provider snapshot when needed. Use `concord_sdk_fred::concord_pagination::Resume` for the position. `Resume::Start` repeats the template's query at offset 0, replacing its offset; `Resume::At(key)` takes the `u64` record offset in a returned page's `next`.
 pub fn pages<E, R, T>(
     template: E,
     from: Resume<u64>,

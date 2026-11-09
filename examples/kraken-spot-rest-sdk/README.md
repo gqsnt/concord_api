@@ -85,6 +85,10 @@ belongs to the filters it came from. Kraken returns newest trades first, so
 without a fixed `end` a trade arriving during the walk shifts later offsets and
 an older trade can appear twice: merge by trade id, as below.
 
+Use `concord_sdk_kraken_spot_rest::Resume` for the position. `Resume::Start` repeats trade
+history from offset 0 with `ofs` omitted, replacing `options.ofs`; `Resume::At(key)` takes the
+`u64` trade offset in a returned page's `next`.
+
 ```rust
 use concord_sdk_kraken_spot_rest::{
     Credentials, Kraken, KrakenConfig, Nonces, Policy, Resume, TradeBound, TradesHistoryOptions,

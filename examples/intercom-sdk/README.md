@@ -70,6 +70,11 @@ size; changing those invalidates that context. A listing that changes during
 pagination is not a stable snapshot. Streaming pages/items avoids retaining an
 entire listing; collecting uses memory proportional to all yielded contacts.
 
+For both contacts `pages` methods, use `concord_sdk_intercom::pagination::Resume` for the
+position. `Resume::Start` repeats the list or email search without `starting_after`, replacing
+the template cursor; `Resume::At(key)` takes the `String` from `pages.next.starting_after` in a
+returned page's `next`.
+
 ## Exact-email search
 
 `contacts().search(EmailSearch::new(email)).send().await?` returns one

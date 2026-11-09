@@ -82,6 +82,10 @@ offset. `items().collect_complete()` retains the collected prefix on either fail
 Resume only against the same query and page size. A changing index can cause duplicates
 or gaps; a short page continues when the total indicates remaining records.
 
+For both `pages` methods, use `concord_sdk_arxiv::concord_pagination::Resume` for the position.
+`Resume::Start` repeats the search or query request, including its `start` (0 unless set);
+`Resume::At(key)` takes the `u32` result offset in a returned page's `next`.
+
 The policy admits one request per three seconds and holds a single concurrency lease
 through decoding. Reuse a client or clone a `Policy` into multiple `ArxivConfig`s to
 share that budget. Independent policies and processes require external coordination.

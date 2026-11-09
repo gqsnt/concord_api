@@ -212,7 +212,7 @@ pub type ActivityPages = pagination::Pages<Activity, u32, PageMeta, Error>;
 
 impl StravaAthlete {
     /// Page until an empty page, with an explicit logical-page cap and resume position.
-    /// Keep the same filters and page size on resume; changing activities can cause gaps.
+    /// Keep the same filters and page size on resume; changing activities can cause gaps. Use `concord_sdk_strava::pagination::Resume` for the position. `Resume::Start` repeats page 1 of the athlete's activities with `per_page`; `Resume::At(key)` takes the `u32` page number in a returned page's `next`.
     pub fn pages(
         &self,
         per_page: u16,

@@ -346,7 +346,7 @@ impl Client {
             .await
     }
     /// Traverse lazily from the start or a saved offset, under a required page cap.
-    /// Resume only with the same base, table, options, credentials and origin.
+    /// Resume only with the same base, table, options, credentials and origin. Use `concord_sdk_airtable::pagination::Resume` for the position. `Resume::Start` repeats the table listing without an offset; `Resume::At(key)` takes the opaque `String` offset in a returned page's `next`.
     pub fn list_pages(
         &self,
         base: impl Into<String>,

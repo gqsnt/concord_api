@@ -76,6 +76,10 @@ checked to start at the requested offset. It reads nothing until polled, has no 
 you set `max_pages`, and a failed page ends it with `PagesError::Provider { failed, .. }`:
 `pages_from(first, failed)` resumes there.
 
+Use `concord_sdk_spotify_web_api::concord_pagination::Resume` for the position. `Resume::Start`
+repeats `first` unchanged, including its configured offset and limit; `Resume::At(key)` takes
+the `u32` result offset in a returned page's `next` or `Paging::next_offset()`.
+
 Inputs are typed: `SpotifyId::new` accepts 1–64 ASCII letters and digits (a `spotify:` URI or
 a URL is refused before any request), `Market::country("SE")` / `Market::from_token()`.
 
