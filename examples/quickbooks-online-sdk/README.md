@@ -3,8 +3,12 @@
 Construct with `QuickBooks::connect(http, connection)` to select the connection's environment.
 Generated `new` and `with_base_url` are crate-visible. Offline callers use
 `QuickBooks::for_fixture(http, connection, origin)` with a bare HTTP origin on a literal
-loopback IP. `set_connection` still replaces realm, credential source and policy together;
-after replacement the client keeps its construction-time base (use another `connect` to select another environment), and loopback fixtures keep their origin. `prepare()` remains token-free and shows the generated base snapshot.
+loopback IP. `set_connection` replaces realm, credential source and policy together. On `send()`,
+the connection selects its environment's host for requests to either official HTTPS host, including
+after a sandbox/production switch. Loopback fixtures keep their origin. `prepare()` remains
+token-free and shows the generated base snapshot; host selection and authentication happen in
+the send policy, which native execution of a prepared request bypasses. Existing scopes and
+requests keep their original connection.
 
 A bounded QuickBooks Online Accounting API SDK built on Concord: realm-bound OAuth 2.0
 connections (authorization code and refresh token), customer query and read, invoice create and

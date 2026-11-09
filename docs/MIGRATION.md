@@ -1,9 +1,11 @@
 # Migration
 
-Nine paths, newest first: the H06 SDK controls (pilot and H06c), the interface consolidation (unreleased
+Ten paths, newest first: the QuickBooks environment repair (T4), the H06 SDK controls (pilot and H06c), the interface consolidation (unreleased
 candidate), 4.1 to 4.2 (a maintenance release; summary in the [changelog](../CHANGELOG.md)), then
 the two parts of 4.1.0 (the modular V4), then older ones:
 
+- [QuickBooks environment replacement (T4)](#quickbooks-environment-replacement-t4) — no source
+  change; a replacement connection selects its environment's official HTTPS host on send.
 - [To H06 pilot SDK controls](#to-h06-pilot-sdk-controls) — callers of withheld controls in the
   pilot SDKs (Shopify, Zendesk, Salesforce) and, with H06c, seven more SDKs plus two pilot extensions use the replacement
   construction routes below.
@@ -33,6 +35,20 @@ the two parts of 4.1.0 (the modular V4), then older ones:
 Code blocks marked "does not compile" show the old form. Every other Rust block in this file is
 compiled and run as a doctest of `examples/quickstart` (`cargo test --doc -p
 concord-example-quickstart`).
+
+## QuickBooks environment replacement (T4)
+
+In `quickbooks-online-sdk`, `QuickBooks::connect(http, sandbox_connection)` followed by
+`set_connection(production_connection)` now sends to `quickbooks.api.intuit.com`; the reverse
+switch sends to `sandbox-quickbooks.api.intuit.com`. Previously the generated base snapshot kept
+the old environment's host while the realm and token source changed. Call sites need no change.
+This is a separate correctness repair from H06c's control visibility changes below.
+
+The connection's send policy reselects only the host of requests to either official HTTPS host,
+before token acquisition. Same-environment calls and loopback fixture origins keep their wire
+behavior. `prepare()` remains token-free and shows the generated base snapshot; native execution
+of that request bypasses this policy. Scopes and requests already created keep their original
+connection and destination.
 
 ## To H06 pilot SDK controls
 

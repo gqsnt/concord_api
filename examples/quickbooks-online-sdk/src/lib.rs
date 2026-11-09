@@ -6,7 +6,9 @@
 //! The declared client is [`QuickBooks`], one per connected company (realm):
 //! `qbo.customers().query(..)`, `qbo.customer(id).read()`, `qbo.invoices().create(..)`,
 //! `qbo.invoice(id).read()`, `qbo.payments().create(..)`, each sent with the generated `send()`
-//! through the client's [`Connection`], which supplies the realm of every path and its access token.
+//! through the client's [`Connection`], which supplies the realm of every path, its access token
+//! and the official HTTPS environment host. [`QuickBooks::set_connection`] replaces all three
+//! together at send time; loopback fixture origins stay unchanged.
 //! [`customer_pages`] walks a query. See the package README for failure semantics and
 //! exclusions.
 
@@ -58,11 +60,14 @@ concord::api! {
     /// source of its access token, so a request and its credential cannot name different realms.
     /// Build it with [`QuickBooks::connect`].
     ///
-    /// `prepare()` builds the declared request **without** `Authorization`: only `send()` (the
-    /// connection's policy) adds the access token.
+    /// `prepare()` builds the declared request **without** `Authorization`, keeping the generated
+    /// base snapshot. `send()` (the connection's policy) selects the connection's environment host
+    /// for either official HTTPS host and adds the access token. Fixture origins are kept.
     pub client QuickBooks(
         /// The realm-bound OAuth connection (its `Display` is the realm ID).
-        /// `set_connection` replaces realm and credential source together.
+        /// `set_connection` replaces realm, credential source and send policy together. Sending
+        /// to either official HTTPS host selects this connection's environment, even after a
+        /// sandbox/production switch; fixture origins and existing handles keep their snapshots.
         connection: Connection,
     ) {
         base "https://quickbooks.api.intuit.com";
@@ -178,6 +183,8 @@ impl QuickBooks {
 
     /// A client for `connection`'s company, at its environment's base URL
     /// (`https://sandbox-quickbooks.api.intuit.com` or `https://quickbooks.api.intuit.com`).
+    /// After [`Self::set_connection`], `send()` selects the replacement's environment;
+    /// `prepare()` retains the generated base snapshot and does not apply authentication.
     pub fn connect(http: reqwest::Client, connection: Connection) -> Self {
         let base = connection.environment().base_url();
         Self::new(http, QuickBooksConfig { connection })
