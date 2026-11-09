@@ -37,6 +37,8 @@ Every item carries `boundary`:
 | `generate.py` | question generator → `<out>/index.json`, `<out>/<sdk>.json` |
 | `truth.py` | ground truth → `<bank>/truth/<sdk>.json`, `<bank>/truth/drops.json`; generated harness modules (main bank: `checks/probe-truth/main/*.rs`) |
 | `pack.py` | materials → `<bank>/packed/<sdk>.{wire,rc}.md`, `<sdk>.meta.json` (question → item map, sizes, sources, leak scan) |
+| `generated_docs.py` | opt-in endpoint docs appendix, exact arm builds/provenance and exposure audit |
+| `generated_docs_selftest.py` | real doc-comment-only commit pair and negative exposure/provenance controls; no readers |
 | `run.py` | readers (Claude, Codex) → `<out>/<provider>/<sdk>.<session>/` |
 | `score.py` | scorer: R2 identity checks and R3 answers compiled together in one bubblewrap compile sandbox, the R3 run sandbox, and `--selftest` (seeded controls with expected rates, sandbox and rule effect checks) → `score.json`, `score.md` |
 | `form-check/` | the probes' Rust parser: a small binary on `syn` 3.0.9 (`full`, `visit`, `parsing`, `printing`) and `quote` 1.0.47, not a workspace member (its own `[workspace]` table and `Cargo.lock`); default mode: the R3 answer contract; `--type` mode: R2 types as JSON trees (fix round 5), with a `judge` field (fix round 6: what the R2 rustc check cannot judge); `common.form_check_binary` builds it on first use (`score.py`, and `truth.py` for the R2 record) with `cargo build --offline --release` into `$CARGO_TARGET_DIR/release/concord-probe-form-check` |
@@ -175,7 +177,7 @@ client `path` statement, with no template and no `subdomain` on the chain.
   impls, then the trait impls of the SDK types the declaration names (for example
   `impl SendWith<Paged<R>> for SendPolicy { type Output = .. }`). The nightly version and the JSON
   hash are recorded in `<sdk>.meta.json`.
-- **No worked examples**: fenced code blocks inside SDK doc comments and in the rendered docs are
+- **No worked examples (legacy sections)**: fenced code blocks inside SDK doc comments and in the rendered docs are
   replaced by "(code example omitted from the probe materials)". Then every call chain on the SDK's
   generated client, scopes and endpoints is removed from comment lines (declaration, named items)
   and from the rendered docs: a code span holding one becomes "(call example omitted from the probe
@@ -200,6 +202,67 @@ client `path` statement, with no template and no `subdomain` on the chain.
   `.list().set_limit(20).set_offset(0).send()` (the `KeepHead` docs; items `pokeapi/c1`, `c2`);
   filtered, no endpoint call chain is left in any SDK's materials.
 - Concord's source, tests and records are never included.
+
+### Opt-in generated endpoint docs (`pack.py --generated-docs`)
+
+H16's R1 pilot did not expose the generated-doc intervention. For prospectively registered
+follow-ups, `--generated-docs` appends section 5 to **each** SDK/session prompt (`wire` and `rc`):
+the raw rustdoc Markdown `docs` fields of every requested endpoint's request type and navigation
+method, once per item path. It resolves the client in its declaration module and follows the
+actual scope/endpoint return-type IDs in rustdoc JSON; generated type names are not guessed.
+Only identity headings and documentation are added: no generated Rust signatures, implementation,
+bank values, truth or expected requests. Examples already in these docs are retained verbatim.
+The preamble's R1 "no generated documentation" line points to the appendix in this mode.
+
+```sh
+export CARGO_TARGET_DIR=/home/canarit/projects/Concord_Desirability_Loop/work/targets/lane-m CARGO_BUILD_JOBS=6
+python3 -I tools/desirability/probes/pack.py --bank BANK --repo ARM_WORKTREE --generated-docs
+# or select an existing commit explicitly, without checking it out:
+python3 -I tools/desirability/probes/pack.py --bank BANK --generated-docs --docs-commit COMMIT
+python3 -I tools/desirability/probes/generated_docs_selftest.py --out EVIDENCE_DIR
+```
+
+The arm is `--repo`'s **HEAD commit**, or `--docs-commit` resolved in that repository. The source,
+declaration, named items and cheat sheet come from that commit's exact `git archive`, rather than
+uncommitted changes. The prompt template remains the selected instrument's `--prompt`. Source
+archives live under `$CARGO_TARGET_DIR/i3-generated-docs-src/<full-sha>/`. Reusing `pilot/arms.py`,
+each build has its own `$CARGO_TARGET_DIR/pilot/<sha12>-i3-generated-docs/` and
+`PILOT_PROVENANCE.json` (full SHA and use), checked before cargo. Rustdoc runs on the host target
+with `cargo +nightly doc --locked --offline --no-deps --lib`, JSON output,
+`--document-private-items` (as in legacy I3), and `--crate-version i3-tree-<full-sha>`; every
+selected JSON must name that marker. `--no-rustdoc-build` still requires matching target and
+JSON provenance. Missing, ambiguous, hidden or undocumented requested items stop packing.
+`pack_log.json` records the archive hash, command, target, flags, toolchain and build output.
+Run packs for a given arm serially: its extracted source is recreated on each invocation.
+
+Exposure audit: `<sdk>.meta.json` → `generated_docs_exposure.<wire|rc>` has format
+`i3-generated-docs-exposure-v1`, full commit and JSON provenance/hash, the base prompt, appendix
+and final prompt SHA-256, and `blocks[]`. Each block lists its kind (`request_type` or
+`navigation_method`), rustdoc path/ID/visibility, covered bank item IDs, **raw UTF-8 `docs` hash
+and byte length**, rendered-block hash, and `example_request_candidates[]` with verbatim
+excerpts, rule and associated bank items. Nothing from the audit enters reader prompts.
+The scan reads docs and bank identities only, never truth. It conservatively flags literal HTTP
+targets, URLs, code fences and endpoint call chains against the entire SDK bank, including
+other-session items. Declared default requests, templates and documentation links can be flagged
+as well: these are review candidates, not claims of an exact scored-answer match. Inspect the
+flagged excerpts and the hashed doc blocks when freezing materials; natural-language examples
+outside these lexical forms need manual review. The legacy `leak_scan` fields continue to cover
+the legacy materials, while this separate audit covers the appendix.
+
+The selftest uses existing commits `a8a548c4^` and `a8a548c4`: it first checks that their only
+source difference is one Anthropic endpoint doc comment, packs a small exposure fixture for both,
+then asserts both full prompts and both appended blocks differ exactly in that comment. Packing
+A after B must reproduce A byte for byte. It also checks retained examples/audit flags, return-ID
+selection, and refusals for missing docs/JSON and wrong or unknown provenance. It creates no
+commits and runs no readers or scoring. The fixture is not a new scored bank.
+
+Without `--generated-docs`, existing filtering, session contents, answer contracts, metadata and
+build behavior are unchanged; `--wire-docs` remains the legacy filtered-renderer option. `rc`
+still includes its legacy documentation section in opt-in mode, so some appendix docs repeat it.
+The appendix covers the endpoint's own two doc blocks, not all linked pages, setter methods,
+crate READMEs or wrapper documentation. Crate-visible generated clients remain supported as in
+legacy I3; their visibility is explicit in the audit. Truth/scoring are unchanged. Fresh reader
+runs and a prospective scoring/noise freeze remain the coordinator's responsibility.
 
 ## Truth (`truth.py`)
 
@@ -1009,3 +1072,8 @@ without an `answers` list is malformed and scores 0 for its items.
 - Parsing of the SDK source (`decl.py`, Rust items, declaration types) is heuristic. Whatever it
   gets wrong is caught by the compile steps and recorded as a drop; it is never silently scored.
   R2 answer and truth types are parsed by `syn` (fix round 5), not by the heuristic parser.
+
+Known limit of `--generated-docs` (instrument review `i3g-instrument-review-sol`): only the generated docs of
+the request types and navigation methods a session asks about are appended; linked pages, setter docs and
+hand-written public wrapper notes outside the declaration (e.g. ClickHouse's ping and B2's download notes)
+are not exposed. A hypothesis measured with this mode claims endpoint documentation only.
