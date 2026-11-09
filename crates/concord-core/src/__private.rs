@@ -28,6 +28,13 @@ pub struct EndpointMeta {
     pub read: bool,
     /// The base is a sensitive client value; withhold the complete URL in rendered output.
     pub sensitive_base: bool,
+    /// The authored path template (`repos/{owner}/{name}/issues`): the declared base path and
+    /// every generated segment, holes as written, no leading slash, no host and no query. Kept
+    /// only with feature `tracing`, its one reader ([`route`]).
+    pub route: Route,
+    /// Whether the endpoint declares a `query(..)` value: its keys and values are only known at
+    /// run time, so Concord's renderings withhold the whole query string.
+    pub query_pairs: bool,
     /// Number of generated host labels (they are the leftmost labels).
     pub labels: usize,
     /// Indices (from the left) of generated labels that contain a sensitive value.
@@ -49,6 +56,25 @@ pub struct EndpointMeta {
     /// chain decides it in [`HeaderPlan`]): the format's suggestion is then not sent.
     pub accept_removed: bool,
 }
+
+/// [`EndpointMeta::route`]: the template with feature `tracing`, nothing without it.
+#[cfg(feature = "tracing")]
+pub type Route = &'static str;
+/// [`EndpointMeta::route`]: the template with feature `tracing`, nothing without it.
+#[cfg(not(feature = "tracing"))]
+pub type Route = ();
+
+/// Stores an endpoint's authored route (a compile-time constant; without feature `tracing` the
+/// literal is dropped during constant evaluation).
+#[cfg(feature = "tracing")]
+pub const fn route(template: &'static str) -> Route {
+    template
+}
+
+/// Stores an endpoint's authored route (a compile-time constant; without feature `tracing` the
+/// literal is dropped during constant evaluation).
+#[cfg(not(feature = "tracing"))]
+pub const fn route(_template: &'static str) -> Route {}
 
 /// A value written as text: path segments, subdomain labels, query values and template holes
 /// (`Display`). The trait only carries the diagnostic; every `Display` type implements it.
@@ -635,7 +661,8 @@ impl<'a> Parts<'a> {
     }
 }
 
-/// Renders a URL built by `meta`'s endpoint with sensitive placements replaced by `<redacted>`.
+/// Renders a URL built by `meta`'s endpoint with sensitive placements replaced by `<redacted>`
+/// and, for an endpoint with a `query(..)` value (run-time keys), the query withheld whole.
 pub(crate) fn redacted_url(url: &Url, meta: &EndpointMeta) -> String {
     const REDACTED: &str = "<redacted>";
     if meta.sensitive_base {
@@ -679,7 +706,9 @@ pub(crate) fn redacted_url(url: &Url, meta: &EndpointMeta) -> String {
             out.push_str(if hide { REDACTED } else { piece });
         }
     }
-    if let Some(query) = url.query() {
+    if meta.query_pairs && url.query().is_some() {
+        out.push_str("?<withheld>");
+    } else if let Some(query) = url.query() {
         out.push('?');
         for (i, pair) in query.split('&').enumerate() {
             if i > 0 {

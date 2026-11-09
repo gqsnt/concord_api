@@ -197,8 +197,9 @@ fn a_well_known_secret_key_is_redacted_in_prepared_debug() {
     let shown = format!("{prepared:?}");
     assert!(!shown.contains("s3cr3t"), "{shown}");
     assert!(!shown.contains("t0k3n"), "{shown}");
-    assert!(shown.contains("API_Key=<redacted>"), "{shown}");
-    assert!(shown.contains("param_x=1"), "{shown}");
+    // J3: the query of a `query(..)` endpoint is withheld whole (ordinary pairs included).
+    assert!(shown.contains("?<withheld>"), "{shown}");
+    assert!(!shown.contains("param_x=1"), "{shown}");
     // The wire is unchanged.
     let query = prepared.request().url().query().unwrap().to_owned();
     assert!(query.ends_with("API_Key=s3cr3t&Token=t0k3n"), "{query}");

@@ -1,0 +1,22 @@
+[package]
+name = "concord-j1-nager-caller"
+description = "J1 spike: logging belongs to this new caller; the Nager SDK and all its existing tests are unchanged."
+version = "0.0.0"
+edition = "2024"
+rust-version.workspace = true
+license.workspace = true
+publish = false
+
+[dependencies]
+concord-sdk-nager-holidays = { path = ".." }
+concord = { path = "../../../crates/concord", features = ["tracing"] }
+tracing-subscriber = { version = "0.3.23", default-features = false, features = ["fmt"] }
+tokio = { workspace = true, features = ["macros", "rt", "time"] }
+
+[dev-dependencies]
+tracing = { version = "0.1.44", default-features = false, features = ["std"] }
+concord-check-canary = { path = "../../../checks/canary" }
+concord-example-testserver = { path = "../../testserver" }
+
+[lints]
+workspace = true

@@ -202,10 +202,13 @@
 //! type marked `#[sensitive]` prints `<redacted>` (or `Name { .. }`) and is never formatted; see
 //! [`Debug`].
 //!
+//! With feature `tracing`, Concord's own `concord.call` event carries no value at all (static
+//! identity, status and timing only), and [`Summary`] lines follow the rules above.
+//!
 //! **Not covered:** the native `reqwest::Request`, `Url` and `Response` `Debug` output (it prints
 //! full URLs), reqwest errors from requests you execute yourself, redirects (reqwest forwards
-//! custom headers and a `Referer` with the query), tracing, middleware, proxies, server logs and
-//! the base URL itself.
+//! custom headers and a `Referer` with the query), other crates' tracing (reqwest's stack logs the
+//! host at `DEBUG`/`TRACE`), middleware, proxies, server logs and the base URL itself.
 //!
 //! # Guides
 //!
@@ -240,6 +243,9 @@
 //!   feature stays off).
 //! - `reqwest-defaults` (default): reqwest's default features (TLS, HTTP/2, system proxy).
 //!   Disable it to choose reqwest's features in your own `Cargo.toml`.
+//! - `tracing`: Concord emits one static call event at the response head or transport failure
+//!   (target `concord`: operation, method, route template, status, elapsed time, delivery; never a
+//!   value). `summary()` is an opt-in redacted line; native targets are withheld.
 
 #[cfg(feature = "form")]
 pub use concord_codecs::Form;
@@ -263,8 +269,8 @@ pub use concord_core::{
     Document, Encode, EncodedBody, Endpoint, Error, ErrorKind, Failure, FieldError, Follow,
     Followed, HeaderNameError, HeaderNameErrors, Incoming, Incremental, IntoValue,
     LinkContinuation, NextUrl, NextUrlError, Operation, Prepared, QueryPairs, QueryPairsWriter,
-    Received, Records, ResponseHead, ResponseMeta, SendWith, Sends, ToHeaderValue, UrlContinuation,
-    bytes, reqwest,
+    Received, Records, ResponseHead, ResponseMeta, SendWith, Sends, Summary, ToHeaderValue,
+    UrlContinuation, bytes, reqwest,
 };
 
 /// Derives `std::fmt::Debug`, withholding the values marked `#[sensitive]`.

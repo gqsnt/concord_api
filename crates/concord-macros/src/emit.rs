@@ -3534,6 +3534,8 @@ fn prepare_body(
     let name = lit(&owner.dotted);
     let method_str = lit(&method.to_string());
     let read = model.is_read(index);
+    let route = lit(&route_template(model, places.chain[0], composed));
+    let query_pairs = owner.values.iter().any(|value| value.pairs.is_some());
     let label_count = composed.labels.len();
     let segment_count = composed.segments.len() + usize::from(composed.trailing_slash);
     let root = format_ident!("__o0");
@@ -3626,6 +3628,8 @@ fn prepare_body(
             method: #method_str,
             read: #read,
             sensitive_base: #sensitive_base,
+            route: #k::__private::route(#route),
+            query_pairs: #query_pairs,
             labels: #label_count,
             sensitive_labels: &[#(#sensitive_labels),*],
             segments: #segment_count,
@@ -3643,6 +3647,43 @@ fn prepare_body(
         #error
         __p.finish(#k::reqwest::Method::#method, &#root.__http, __body, __decoder, __accept)
     }
+}
+
+/// The authored path template of an endpoint, holes kept as written, without the leading slash,
+/// host or query: a static identity for diagnostics, never a URL. It has the shape of the path
+/// `Parts::finish` sends: without generated segments the declared base path unchanged (a trailing
+/// slash included); otherwise that path minus at most one trailing slash, then each segment and
+/// the endpoint's trailing slash.
+fn route_template(model: &Model, root: usize, composed: &Composed) -> String {
+    let mut path = String::new();
+    // A value base (`base x;`) is known only at run time: the route then holds the authored
+    // segments alone, never the value's host or path.
+    if let Kind::Client {
+        base: crate::model::Base::Lit(base),
+        ..
+    } = &model.owners[root].kind
+    {
+        let base = base.value();
+        let after_scheme = base
+            .split_once("://")
+            .map_or(base.as_str(), |(_, rest)| rest);
+        if let Some(at) = after_scheme.find('/') {
+            path.push_str(&after_scheme[at..]);
+        }
+    }
+    if !composed.segments.is_empty() || composed.trailing_slash {
+        if path.ends_with('/') {
+            path.pop();
+        }
+        for &(o, si) in &composed.segments {
+            path.push('/');
+            path.push_str(&model.owners[o].segments[si].text);
+        }
+        if composed.trailing_slash {
+            path.push('/');
+        }
+    }
+    path.strip_prefix('/').unwrap_or(&path).to_owned()
 }
 
 #[cfg(test)]

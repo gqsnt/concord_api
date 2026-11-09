@@ -199,6 +199,8 @@ fn plan_scaling(c: &mut Criterion) {
         name: "Bench.plan",
         method: "GET",
         read: true,
+        route: concord_core::__private::route(""),
+        query_pairs: false,
         labels: 0,
         sensitive_labels: &[],
         sensitive_base: false,

@@ -36,6 +36,8 @@ mod header_map_capacity {
         method: "GET",
         read: true,
         sensitive_base: false,
+        route: concord_core::__private::route(""),
+        query_pairs: false,
         labels: 0,
         sensitive_labels: &[],
         segments: 0,

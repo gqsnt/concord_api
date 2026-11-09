@@ -40,6 +40,8 @@ sse = ["stream", "concord-codecs/sse"]
 ## Enables reqwest's own default features (TLS, HTTP/2, charset, system proxy).
 ## Disable it to choose reqwest features yourself in your own Cargo.toml.
 reqwest-defaults = ["concord-core/reqwest-defaults"]
+## One `concord.call` event per execution, for the application's own `tracing` subscriber.
+tracing = ["concord-core/tracing"]
 
 [dependencies]
 # The facade, the runtime and the macro are released together: the macro's expansion uses the

@@ -9,12 +9,14 @@ use crate::cancel::SendGuard;
 use crate::codec::{CodecError, Decode, Incremental, ResponseHead};
 use crate::error::Error;
 use crate::response::{Incoming, Operation, Received, ResponseMeta};
+use crate::summary::Summary;
 
 /// A request built by an endpoint, not yet sent. `T` is the endpoint's output type (`()` when it
 /// declares none).
 ///
 /// Building performs no I/O. `Debug` renders the method, URL and headers with every sensitive
-/// placement replaced by `<redacted>`.
+/// placement replaced by `<redacted>` (the query of an endpoint with a `query(..)` value is
+/// withheld whole); [`summary`](Self::summary) is the same URL on one line.
 ///
 /// To change the request natively (extra headers, a per-request timeout, a streaming body), take
 /// it apart with [`into_parts`](Self::into_parts). That is a one-way door: Concord's redaction
@@ -84,6 +86,18 @@ impl<T, D> Prepared<T, D> {
     /// The identity of the endpoint that built this request.
     pub fn operation(&self) -> Option<Operation> {
         self.decoder.operation
+    }
+
+    /// One redacted line, `OPERATION: METHOD URL`: the URL as `Debug` renders it, a followed URL
+    /// withheld. Ordinary values print; it is for a log line the application chooses to write.
+    pub fn summary(&self) -> Summary<'_> {
+        let meta = self.decoder.operation.and_then(|op| op.meta());
+        Summary::request(
+            self.decoder.operation,
+            self.request.method().as_str(),
+            meta.filter(|_| !self.followed)
+                .map(|meta| (self.request.url(), meta)),
+        )
     }
 
     /// The native request, for inspection. Its `Debug` output is **not** Concord's: it prints the full
@@ -622,6 +636,12 @@ impl<T, D> Decoder<T, D> {
         }
     }
 
+    /// One line, `OPERATION: METHOD <withheld>`: the declared operation and method, never the
+    /// native request (its URL, method or headers may have been changed after `into_parts`).
+    pub fn summary(&self) -> Summary<'static> {
+        Summary::operation(self.operation)
+    }
+
     /// The identity of the endpoint this handling belongs to (`None` for [`Decoder::new`],
     /// [`Decoder::open`], [`Decoder::incoming`] and [`Decoder::drain`]).
     pub fn operation(&self) -> Option<Operation> {
@@ -665,6 +685,13 @@ impl<T, D> Decoder<T, D> {
     /// [`Prepared::send`] and [`Prepared::receive`] execute through this method; a request
     /// executed with `reqwest::Client::execute` directly gets reqwest's behaviour.
     ///
+    /// # Logging
+    ///
+    /// With feature `tracing` and an interested subscriber, each execution emits one INFO event
+    /// `concord.call` (target `concord`) at the response head or the transport failure, with
+    /// static fields only: `operation`, `method`, `route` (the authored path template), `status`
+    /// or `transport="failed"`, `elapsed_ms`, `delivery`. A cancelled call emits nothing.
+    ///
     /// # Errors
     ///
     /// [`ErrorKind::Transport`](crate::ErrorKind::Transport) only, naming the endpoint.
@@ -674,9 +701,13 @@ impl<T, D> Decoder<T, D> {
         mut request: reqwest::Request,
     ) -> Result<Received<T, D>, Error> {
         frame_empty_body(&mut request);
+        #[cfg(feature = "tracing")]
+        let call = crate::log::Call::start(self.operation);
         let guard = SendGuard::attach(&mut request);
         let sent = client.execute(request).await;
         guard.finish();
+        #[cfg(feature = "tracing")]
+        call.end(sent.as_ref().ok().map(reqwest::Response::status));
         match sent {
             Ok(response) => Ok(Received::new(response, self)),
             Err(e) => Err(self.transport_error(e)),

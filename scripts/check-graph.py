@@ -18,7 +18,8 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 # Allowed direct normal dependencies of each production package.
 ALLOWED = {
     # http-body comes with reqwest: it adds no package (the send path wraps streamed bodies).
-    "concord-core": {"bytes", "http-body", "percent-encoding", "reqwest", "url"},
+    # tracing (feature `tracing` only) is already in reqwest's graph (hyper-util).
+    "concord-core": {"bytes", "http-body", "percent-encoding", "reqwest", "tracing", "url"},
     "concord-codecs": {"concord-core", "csv", "csv-core", "futures-core", "http-body", "mime", "serde",
                        "serde_json", "serde_urlencoded"},
     "concord-extras": {"concord-codecs"},
@@ -83,6 +84,10 @@ def main():
         extra = normal - allowed
         if extra:
             problems.append(f"{name}: unexpected direct dependencies {sorted(extra)}")
+        if name == "concord-core":
+            dependencies = {d["name"]: d for d in packages[name]["dependencies"] if d["kind"] is None}
+            if not dependencies["tracing"]["optional"] or packages[name]["features"].get("tracing") != ["dep:tracing"]:
+                problems.append("concord-core: tracing must be optional and feature-gated")
         if name == "concord-ratelimit":
             dependencies = {d["name"]: d for d in packages[name]["dependencies"] if d["kind"] is None}
             if not dependencies["tokio"]["optional"] or packages[name]["features"].get("tokio") != ["dep:tokio"]:
