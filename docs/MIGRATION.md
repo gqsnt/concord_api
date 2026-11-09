@@ -1,11 +1,13 @@
 # Migration
 
-Nine paths, newest first: the QuickBooks environment repair (T4), the interface consolidation
-(unreleased candidate), 4.1 to 4.2 (a maintenance release; summary in the [changelog](../CHANGELOG.md)), then
+Ten paths, newest first: the QuickBooks environment repair (T4) and the SDK send policies that
+take an operation (H08), the interface consolidation (unreleased candidate), 4.1 to 4.2 (a maintenance release; summary in the [changelog](../CHANGELOG.md)), then
 the two parts of 4.1.0 (the modular V4), then older ones:
 
 - [QuickBooks environment replacement (T4)](#quickbooks-environment-replacement-t4) — no source
   change; a replacement connection selects its environment's official HTTPS host on send.
+- [SDK send policies take the endpoint's operation (H08)](#sdk-send-policies-take-the-endpoints-operation-h08)
+  — calls are unchanged; code that names `SendWith` on five SDK policies names `SendOperation`.
 - [To the consolidated interface](#to-the-consolidated-interface) — additive: existing code
   compiles (one rare exception: a generated name, below); the new response, body, stream and
   pagination boundaries, declared limits and send results, parameter groups and `query(..)` values
@@ -51,7 +53,7 @@ connection and destination.
 Six example SDKs now declare `operations Name;` on their client, so each generated `send()` passes the endpoint's
 variant of a generated operation enum to the send policy, and the policy classifies it with an exhaustive `match` (an
 endpoint left out is a build error, not a run-time refusal). Their public policy types therefore implement
-`concord::SendOperation<T, Name>` instead of `concord::SendWith<T>`:
+`concord::SendOperation<T, Name>`; all but Square's no longer implement `concord::SendWith<T>`:
 
 | SDK | Public policy type | Operation enum |
 |---|---|---|
@@ -62,7 +64,9 @@ endpoint left out is a build error, not a run-time refusal). Their public policy
 | Strava | `Session` | `StravaOperation` |
 | Zendesk Support | `SendPolicy` | `ZendeskOperation` |
 
-(Datadog Events also adopted, but its policy type is private; GitHub adopted without a send policy.)
+(`SquarePolicy` ignores the variant: it keeps `SendWith` and forwards `SendOperation` to it, so code naming `SendWith`
+on it still compiles. Datadog Events also adopted, but its policy type is private; GitHub adopted without a send
+policy.)
 
 - **Ordinary calls are unchanged:** `api.endpoint(..).send().await` and `prepare()` keep their syntax and results.
 - **Code that names the trait** breaks: a generic bound `P: SendWith<T>` on one of these policies becomes

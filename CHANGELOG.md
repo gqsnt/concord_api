@@ -1,112 +1,57 @@
 # Changelog
 
-## Unreleased — desirability loop (candidate)
+## Unreleased — after the desirability loop (candidate)
 
-Not released: the version is unchanged (4.2.0). Summary: [`v4/desirability/SUMMARY.md`](v4/desirability/SUMMARY.md); the loop's records are on the
-[archive branch](https://github.com/gqsnt/concord_api/tree/archive/desirability-loop-1/v4/desirability).
-
-**Version.** No major bump: the accepted changes to the versioned `concord-*` crates are additive
-(the opt-in `operations` enum and `SendOperation`, H08), fixes (T3) and documentation (H04,
-H16s). Six SDKs' policy types move from `SendWith` to `SendOperation` (H08) in the example SDK
-crates, which are not published (0.0.0, or 0.1.0 for Adyen, arXiv, Sentry and Strava); their
-replacement routes are in [MIGRATION](docs/MIGRATION.md).
+Not released: the version stays 4.2.0 and nothing is published. The `concord-*` crates change
+additively (`operations`, `SendOperation`), by one fix (T3) and in generated documentation. The
+example SDK crates are not published (`publish = false`). What the loop tried and decided: [`v4/desirability/SUMMARY.md`](v4/desirability/SUMMARY.md); its records
+are on the [archive branch](https://github.com/gqsnt/concord_api/tree/archive/desirability-loop-1/v4/desirability).
 
 ### Added
 
-- **Documentation (H16s):** generated endpoint docs now state query order, path-hole encoding
-  and header provenance. SDK-local notes record custom format constants and wrapper/policy
-  header sources across the 55 SDKs. No API or wire behavior changes.
-- **Resume guidance at every resume method** (H09c, docs only): each public SDK method that takes a
-  `concord_pagination::Resume` — the `_from` traversal twins and 20 other inputs, 38 items in 27 SDKs and the
-  Kubernetes app — now states the path a caller writes for the position (the SDK's re-export, or
-  `concord_pagination::Resume` with the `concord-pagination` dependency where the SDK has none) and its two
-  constructors (`Resume::Start`, `Resume::At(key)` with where the key comes from). No API, behavior or
-  dependency change; the [impact table](https://github.com/gqsnt/concord_api/blob/archive/desirability-loop-1/v4/desirability/impact/H09c.md) lists every item.
-- **An omitted operation classification fails the SDK build** (H08, candidate B). The opt-in
-  client statement `operations Name;` generates `Name`, a `#[non_exhaustive]` enum with one variant
-  per endpoint (the endpoint's path below the client in UpperCamelCase, `items.get` → `ItemsGet`;
-  `#[cfg]`s carried over), with `ALL`, `operation()` and `from_operation()`. With `send`, every
-  generated `send()` passes its endpoint's variant to the policy through the new
-  `concord::SendOperation<T, Name>` (the sibling of `SendWith<T>`, which is unchanged), so a policy
-  that classifies with a `match` without a wildcard arm stops compiling (E0004, naming the variant)
-  when an endpoint is added and not classified. Clients without the statement generate exactly
-  what they did. Adopted by the Strava (`Class::of`, the uncertain-outcome wording), Sentry
-  (admission buckets, the read/write split and the paging flag; the run-time
-  `Configuration("unsupported operation")` refusal is gone) and Kraken (signed or public per
-  operation, no longer per URL path, so a base URL with a path prefix is followed instead of every
-  call being refused as `SigningInput`) SDKs; their policies implement `SendOperation` instead of
-  `SendWith`. Author guide §5.14.
-- **Full migration** (H08): every other SDK whose policy or paging classified operations by name,
-  path or table adopts it. PayPal (read/write and `PayPal-Request-Id` replay per operation, the
-  method rule folded in), Zendesk (read/write and the update's `409` collision; the string
-  literal `"Zendesk.ticket.update"` is gone), Datadog (the legacy v1 post told apart from the
-  `POST` search), Square (`Error::create_outcome_unknown`; `SquarePolicy` keeps `SendWith` and
-  gains a forwarding `SendOperation` impl, since it ignores the variant) and GitHub (no send
-  policy: the enum only, and one exhaustive table from operation to listing id from which the
-  recognized ids are derived; ids and `LinkPages::new` unchanged). The other SDKs do not adopt
-  it: Discord, Cloudflare, Xero, Mailgun, QuickBooks and Spotify decide by HTTP method or URL with
-  no per-operation exception; Kubernetes, S3, Adyen, Elasticsearch, Postmark and Europe PMC
-  classify through traits that the compiler already checks (Postmark also applies a uniform
-  method rule); Microsoft Graph and the distribution registry classify with data the enum cannot
-  carry; the rest do not classify operations.
+- **`operations Name;` and `concord::SendOperation<T, Name>`** (H08): an opt-in client statement
+  generates an enum with one variant per endpoint, and each generated `send()` passes its variant
+  to the policy, so an exhaustive `match` fails to build (E0004) when an endpoint is added.
+- **H08 adopters:** Strava, Sentry, Kraken, PayPal, Zendesk, Square and Datadog classify through
+  the enum, GitHub without a policy; five public policies now implement `SendOperation` instead of
+  `SendWith` ([migration](docs/MIGRATION.md#sdk-send-policies-take-the-endpoints-operation-h08)).
+- **Secret canaries in all 55 SDKs** (`checks/canary`, `examples/*/tests/canary.rs`): planted
+  secrets must not appear in `Debug`, `Display` or error chains of reachable public values.
+- **`tools/glue`**: static counters of SDK glue (forwarders, wrapper structs, redaction impls,
+  declaration lines per endpoint).
 
-### Fixes
+### Changed
 
-- **QuickBooks connection replacement selects the matching environment** (T4). After
-  `connect(sandbox).set_connection(production)` (or the reverse), `send()` now selects the
-  replacement connection's official HTTPS host before acquiring or applying its token, instead
-  of sending the new realm and credentials to the old environment. Same-environment requests
-  and loopback fixture origins keep their wire behavior. `prepare()` stays token-free and
-  retains the generated base snapshot. No caller code change is required; see
-  [migration notes](docs/MIGRATION.md#quickbooks-environment-replacement-t4).
-- **A dropped send stops polling its streamed body** (T3). reqwest's HTTP/1 connection (hyper) polls a
-  request body from its own task and notices a dropped call only between write passes, so a
-  `send()` dropped while the receiver kept up went on polling the upload source: thousands of
-  records under CPU load, and 262,144 records (32 MiB) with a fast receiver before it stopped.
-  `Decoder::execute` (and so `send()`/`receive()`) now wraps a streamed body. Once the drop of
-  the call returns, no new poll reaches the body or source. Cancellation and the checks before
-  and after each body poll are ordered under one lock: a result (including final data, trailers
-  or end) checked after cancellation is discarded in favour of an error. The cancelled body
-  reports no end and advertises no length. Results accepted before cancellation cannot be
-  recalled, even if delivered later; the request can still complete if the transport has the
-  whole body, including every byte of a declared length. The drop synchronously waits for an
-  active poll on another thread: a blocking source can hold the drop indefinitely, or deadlock
-  if it waits on the dropping thread. A body dropping the call inside its own poll avoids that
-  wait; the poll can keep running after the drop returns, but its result is discarded.
-  Buffered bodies are not wrapped. `concord-core` names `http-body`
-  (already reqwest's dependency) as a direct dependency. Tests: the guard's deterministic unit
-  tests (`crates/concord-core/src/cancel.rs`), transport coverage in
-  `checks/stream-stress/tests/upload_cancel.rs`, and the smoke test
-  `jsonl_upload_cancellation_stops_polling_the_source`, unchanged.
+- **Charter** (`v4/PRODUCT.md`): what Concord is, rules C1–C9, and glue as the measured deficit;
+  the current-scope list of behaviors core does not implement is kept.
+- **Generated docs state the contract first** (H04): the composed default request, the declared
+  `send()` result and the operation on every request type; the base-URL wording is the
+  baseline's again (H04r).
+- **Generated docs state request composition** (H16s): query order, path-hole encoding and header
+  provenance; 76 SDK-local notes name custom format constants and wrapper or policy headers.
+- **Resume guidance** (H09c): 38 public `Resume`-taking items in 27 SDKs and the Kubernetes app
+  state their import path and `Resume::Start` / `Resume::At(key)`.
 
-### Documentation
+### Fixed
 
-- **Send-result statements corrected against source** (T5): 33 statements in 25 files (Adyen,
-  Anthropic, the core `SendWith` example, Intercom, Kubernetes, Mastodon, ntfy, NASA NeoWs, Notion,
-  REST Countries, Salesforce, GitHub, Stripe; error-owner wording in Elasticsearch, Spotify, Square)
-  now state what the generated `send()` and each SDK's policy actually return. No code change.
-- **The charter states the fixed core** (T1): `v4/PRODUCT.md` "What Concord is not" now names the
-  fixed core (the `api!` DSL, client → scope → endpoint, on reqwest) and treats the former
-  exclusions as current scope rather than permanent non-goals.
-- **Generated documentation states the actual contract first** (H04). The docs `api!` generates
-  show, on every request type, the composed default request with the baseline's declared-base
-  parenthetical; the
-  declared `send()` result first (for a policy without a result template, the `SendWith`
-  implementation that defines it); `concord::Error` named fully; the `Accept` outcome the
-  declaration already decides; the operation name and method. Navigation methods on client and
-  scope pages carry a short entry pointing to the request type instead of repeating its summary
-  (client and scope pages are about half as long). Policy wording no longer assumes every policy
-  signs. No public API, behaviour or version change: only emitted doc attributes changed.
-  The base-URL wording was narrowed back to the baseline's after the LF holdout (readers doubled the
-  declared path prefix).
+- **Seven SDK secret leaks found by the canaries:** Dropbox `NamespaceId` and `PathRoot` `Debug`,
+  Airtable `ListOptions` `Debug`, Shopify `ProductsQuery` `Debug`, USGS `EventId` `Debug`, the
+  ClickHouse header-auth user in `Credentials` `Debug`, and Salesforce SOQL text (now
+  `#[sensitive]`).
+- **A dropped `send()` stops polling its streamed upload body** (T3): `concord-core` guards
+  streamed bodies (it names `http-body` directly); the drop waits for a poll active on another
+  thread, so a blocking body source can hold it.
+- **QuickBooks sends to the current connection's environment after `set_connection`** (T4)
+  ([migration](docs/MIGRATION.md#quickbooks-environment-replacement-t4)).
+- **33 send-result statements in 25 files corrected against the source** (T5).
 
 ### Maintenance
 
-- **Intermittent test failures repaired** (T2, T3): the test server keeps accepting after a failed
-  accept (bounded backoff) and counts chunk terminators exactly; tests that assert a refused
-  connection hold a bound, never-listening socket instead of binding and dropping (64 sites); timeout
-  and stalled-body tests run on tokio's paused clock (shared helpers in
-  `examples/testserver/src/paused.rs`). Test-only; no library change.
+- **Intermittent test failures repaired** (T2, T3 sweep): the test server keeps accepting after a
+  failed accept; 64 "refused" sites hold a never-listening socket; timeout and stalled-body tests
+  run on tokio's paused clock. Test-only.
+- **CI caches compiled dependencies** (`Swatinem/rust-cache` v2.9.3) and drops restored gate
+  outputs before the gate.
 
 ## Unreleased — interface consolidation (candidate)
 
