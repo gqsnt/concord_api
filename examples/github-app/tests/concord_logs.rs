@@ -80,6 +80,13 @@ async fn seven_cases_have_one_static_event_and_no_secret() {
         let result = match prepared.receive().await {
             Ok(received) => {
                 canaries.assert_display_absent("received summary", &received.summary());
+                let expected_summary = match case {
+                    1 => "GitHub.repo.issues: GET <withheld> -> 401",
+                    2 => "GitHub.repo.issues: GET <withheld> -> 503",
+                    _ => "GitHub.repo.issues: GET <withheld> -> 200",
+                };
+                assert_eq!(received.summary().to_string(), expected_summary);
+                assert_eq!(format!("{:?}", received.summary()), expected_summary);
                 capture.assert_call(
                     "GitHub.repo.issues",
                     "GET",
