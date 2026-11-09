@@ -39,7 +39,7 @@
 //!
 //! On a topic handle ([`Ntfy::topic`]):
 //!
-//! | Operation | Request | `send()` returns |
+//! | Operation | Request | Success value |
 //! |---|---|---|
 //! | `publish(text)` + `set_title`, `set_priority`, `set_tags`, `set_cache` | `POST /<topic>`, the text as body | the published [`Event`] |
 //! | `subscribe_sse()` + `set_since` | `GET /<topic>/sse` | open [`Events`] (SSE) |

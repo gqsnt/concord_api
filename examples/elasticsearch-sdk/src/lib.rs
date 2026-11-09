@@ -15,7 +15,7 @@
 //!   write as [`Error::VersionConflict`]. An uncertain write is never retried by this SDK.
 //!
 //! The wire declaration is [`ElasticsearchApi`]; its generated `send()` returns this crate's
-//! [`Error`] through [`SendPolicy`]. See the crate README for the contract, failure semantics
+//! [`Error`] on failure through [`SendPolicy`]. See the crate README for the contract, failure semantics
 //! and what is excluded.
 
 pub mod bulk;

@@ -11,7 +11,7 @@
 //! Authorization is the authorization-code flow with refresh ([`OAuth`], [`Session`]). The
 //! session is the client's send policy: every generated `send()` obtains an access token
 //! (shared single-flight refresh), applies it, replays reads once after a 401, and returns this
-//! crate's [`Error`]. Writes are sent once; [`Error::UncertainWrite`] requires re-reading the
+//! crate's [`Error`] on failure. Writes are sent once; [`Error::UncertainWrite`] requires re-reading the
 //! playlist before deciding what to do next. `prepare()` builds the declared request
 //! **without** `Authorization`.
 //!

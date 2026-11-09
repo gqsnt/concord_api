@@ -84,7 +84,8 @@ async fn capture_part(checkout: &CheckoutV71, psp_reference: String) -> Result<(
 optional reference with an `Idempotency-Key`; Adyen answers `201` with `status: received`
 ([captures reference](https://docs.adyen.com/api-explorer/Checkout/71/post/payments/(paymentPspReference)/captures),
 [capture guide](https://docs.adyen.com/online-payments/capture), both read 2026-11-07).
-`send()` returns `CaptureReceived` — the capture's own `psp_reference`, the
+`send().await` returns `Result<Response<CaptureReceived>, concord_sdk_adyen_checkout::Error>`,
+with `CaptureReceived` — the capture's own `psp_reference`, the
 `payment_psp_reference`, the `requested` amount, merchant account and reference — only when the
 document says `received` and echoes exactly what was sent: the path's payment reference,
 merchant account, amount and reference (absent when none was sent). It has no state or

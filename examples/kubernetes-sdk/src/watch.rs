@@ -29,7 +29,7 @@
 //! # Opening a watch
 //!
 //! The six watch endpoints are declared `-> stream WatchEvent<T>` with `response JsonStream;`, so
-//! the generated `send()` sends the request once and returns the open [`WatchStream`] as soon as
+//! the generated `send().await?` sends the request once and returns the open [`WatchStream`] as soon as
 //! the response head is accepted, **without reading the body**:
 //!
 //! ```no_run
@@ -81,7 +81,7 @@
 //! therefore has no provider limit of its own to impose. An application that wants a tighter
 //! bound per event (its own memory policy) passes its configured `JsonValuesReader` to [`open`],
 //! which sends the **same declared operation** with `Prepared::receive` and opens it with that
-//! reader; both routes return a [`WatchStream`] whose errors name the endpoint from the
+//! reader; on success both routes return a [`WatchStream`] whose errors name the endpoint from the
 //! declaration.
 
 use serde::Deserialize;
@@ -222,7 +222,7 @@ pub trait WatchOperation: WatchOptions + Clone + Send + Sync + 'static {
     fn with_timeout_seconds(self, seconds: Option<u32>) -> Self {
         self.maybe_timeout_seconds(seconds)
     }
-    /// The generated `prepare()`: the request with its declared stream handling (`send()` on
+    /// The generated `prepare()`: the request with its declared stream handling (`send().await?` on
     /// the result returns the [`WatchStream`]).
     fn prepare_watch(self) -> Result<concord::Prepared<WatchStream<Self::Item>>, concord::Error>;
 }
@@ -276,7 +276,7 @@ impl fmt::Display for WatchOpenError {
 impl std::error::Error for WatchOpenError {}
 
 /// One open watch connection: typed events decoded incrementally from the response body. It is
-/// what a watch endpoint's generated `send()` returns, and what [`open`] returns.
+/// the success value of a watch endpoint's generated `send()` and of [`open`].
 ///
 /// It **is** Concord's consecutive-JSON-values reader of [`WatchEvent<T>`] (the output type the
 /// declaration `-> stream WatchEvent<T>` with `response JsonStream;` generates), so it has the

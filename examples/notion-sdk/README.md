@@ -136,7 +136,7 @@ async fn render_tree(notion: &NotionClient, page_id: &str)
 
 ## Errors, completion and partial outcomes
 
-Single operations return `Response<T>` with decoded content and Concord's owned
+Successful single operations return `Response<T>` with decoded content and Concord's owned
 `ResponseMeta`. `Error::Provider` retains a typed `ErrorCode`, message, body request ID,
 additional_data, and actual response metadata. Unknown error codes keep their spelling.
 Headers such as `Retry-After`, `x-request-id` and `Notion-Version` are available unchanged

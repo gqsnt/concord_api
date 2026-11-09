@@ -223,7 +223,7 @@ pub trait Endpoint<T>: Sized {
 ///     }
 /// }
 /// // declaration: `pub client Api { base "…"; send Policy; … }`
-/// // caller: `api.items().get(7).send().await?` returns `Result<WithMeta<Item>, SdkError>`
+/// // caller: `api.items().get(7).send().await?` returns `WithMeta<Item>`
 /// ```
 ///
 /// Without `send`, the generated `send()` is `prepare()?.send()` (Concord's `Error`). `prepare()`

@@ -47,7 +47,7 @@ async fn workflows(base_url: &str, token: &str) -> Result<(), Box<dyn std::error
 }
 ```
 
-`list().send()` returns one `Response<ContactList>`; `get` and `create` return
+On success, `list().send()` returns one `Response<ContactList>`; `get` and `create` return
 `Response<Contact>`. Each response holds `.value` and `.meta`. The generated
 setters and `prepare()` remain available. List page sizes default to 10 and are
 validated locally as 1..=150. The SDK preserves the provider's default identity
@@ -72,7 +72,7 @@ entire listing; collecting uses memory proportional to all yielded contacts.
 
 ## Exact-email search
 
-`contacts().search(EmailSearch::new(email)).send()` returns one
+`contacts().search(EmailSearch::new(email)).send().await?` returns one
 `Response<ContactList>`. The typed input fixes the query to `field: "email"`,
 `operator: "="`, and the supplied email as `value`. It sends the email verbatim;
 equality and email validation belong to Intercom. Search defaults to **50** per

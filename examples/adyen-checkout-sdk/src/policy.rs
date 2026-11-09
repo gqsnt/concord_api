@@ -36,7 +36,7 @@ impl<T> fmt::Debug for Response<T> {
 
 /// A decoded success document checked against the exact request the policy sent.
 ///
-/// Every output of the generated `send()` implements this. `false` means the document does
+/// Every successful response's `value` from the generated `send()` implements this. `false` means the document does
 /// not describe that request (for example, the same key was used elsewhere in the company for a
 /// different capture): the policy revokes the key and reports
 /// [`GuaranteeNotConfirmed`](crate::ReconciliationReason::GuaranteeNotConfirmed).
