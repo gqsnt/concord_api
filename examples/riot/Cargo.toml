@@ -8,6 +8,7 @@ license.workspace = true
 publish = false
 
 [dependencies]
+serde_plain.workspace = true
 concord-ratelimit = { path = "../../crates/concord-ratelimit", features = ["tokio"] }
 concord-retry = { path = "../../crates/concord-retry" }
 concord = { path = "../../crates/concord" }

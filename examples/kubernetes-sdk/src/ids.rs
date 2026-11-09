@@ -83,11 +83,10 @@ fn check_dns1123_subdomain(name: &str) -> Result<(), NameError> {
 }
 
 /// A namespace name (an RFC 1123 label, as Kubernetes requires for namespaces).
-#[derive(
-    Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize, concord::WireDisplay,
-)]
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 #[serde(transparent)]
 pub struct NamespaceName(String);
+serde_plain::derive_display_from_serialize!(NamespaceName);
 
 impl NamespaceName {
     /// Validates `name` as an RFC 1123 label (`team-a`, `kube-system`).
@@ -110,11 +109,10 @@ impl NamespaceName {
 /// The name of a namespaced or cluster-scoped object (an RFC 1123 subdomain, the general
 /// Kubernetes object-name rule; some kinds, such as Services, are stricter and the server
 /// enforces that).
-#[derive(
-    Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize, concord::WireDisplay,
-)]
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 #[serde(transparent)]
 pub struct ObjectName(String);
+serde_plain::derive_display_from_serialize!(ObjectName);
 
 impl ObjectName {
     /// Validates `name` as an RFC 1123 subdomain (`web-7d4f`, `app.config`).
@@ -136,9 +134,10 @@ impl ObjectName {
 
 /// An object's or a collection's `resourceVersion`: opaque, passed back unmodified, compared
 /// only for equality (never ordered or parsed as a number).
-#[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, concord::WireDisplay)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(transparent)]
 pub struct ResourceVersion(String);
+serde_plain::derive_display_from_serialize!(ResourceVersion);
 
 impl ResourceVersion {
     /// A resource version as received (from a list, an object or a bookmark).
@@ -173,9 +172,11 @@ impl Uid {
 /// few minutes. Its `Debug` is redacted; the declared `continue` query value is `#[sensitive]`, so
 /// Concord's own `Debug` and error output withhold it too. `Display` is the raw token (it is what
 /// goes on the wire) and is therefore only used by the request builder.
-#[derive(Clone, PartialEq, Eq, Serialize, Deserialize, concord::WireDisplay)]
+#[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(transparent)]
-pub struct ContinueToken(String);
+#[derive(concord::Debug)]
+pub struct ContinueToken(#[sensitive] String);
+serde_plain::derive_display_from_serialize!(ContinueToken);
 
 impl ContinueToken {
     /// A token as received from `metadata.continue`. This SDK never fabricates one: tokens come
@@ -190,17 +191,11 @@ impl ContinueToken {
     }
 }
 
-impl fmt::Debug for ContinueToken {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str("ContinueToken(<redacted>)")
-    }
-}
-
 /// A bearer token for `Authorization: Bearer <token>` (a service-account token, an OIDC ID
 /// token). `Debug` is redacted and there is no `Display`; the header value it produces carries
 /// the native sensitivity flag.
-#[derive(Clone)]
-pub struct BearerToken(String);
+#[derive(Clone, concord::Debug)]
+pub struct BearerToken(#[sensitive] String);
 
 impl BearerToken {
     /// Wraps a token.
@@ -222,12 +217,6 @@ impl BearerToken {
             HeaderValue::from_str(&format!("Bearer {}", self.0)).map_err(|_| InvalidToken)?;
         value.set_sensitive(true);
         Ok(value)
-    }
-}
-
-impl fmt::Debug for BearerToken {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str("BearerToken(<redacted>)")
     }
 }
 

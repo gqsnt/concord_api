@@ -12,7 +12,6 @@
 //! is sent ([`IntegrityProblem::UnsupportedAlgorithm`](crate::IntegrityProblem)), never accepted
 //! unverified.
 
-use std::fmt;
 use std::str::FromStr;
 
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
@@ -22,9 +21,10 @@ use crate::error::InputError;
 
 /// A content digest such as `sha256:2cf24dba…`. `Display` and `Debug` show it as written: a
 /// digest identifies public content, it is not a secret.
-#[derive(Clone, PartialEq, Eq, Hash)]
+#[derive(Clone, PartialEq, Eq, Hash, concord::Debug)]
 pub struct Digest {
     text: String,
+    #[sensitive]
     split: usize,
 }
 
@@ -132,17 +132,7 @@ impl Digest {
     }
 }
 
-impl fmt::Display for Digest {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(&self.text)
-    }
-}
-
-impl fmt::Debug for Digest {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "Digest({})", self.text)
-    }
-}
+serde_plain::derive_display_from_serialize!(Digest);
 
 impl FromStr for Digest {
     type Err = InputError;

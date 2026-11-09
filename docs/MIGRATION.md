@@ -1,9 +1,10 @@
 # Migration
 
-Ten paths, newest first: the QuickBooks environment repair (T4) and the SDK send policies that
+Eleven paths, newest first: SDK-owned formatting, the QuickBooks environment repair (T4) and the SDK send policies that
 take an operation (H08), the interface consolidation (unreleased candidate), 4.1 to 4.2 (a maintenance release; summary in the [changelog](../CHANGELOG.md)), then
 the two parts of 4.1.0 (the modular V4), then older ones:
 
+- [SDK-owned formatting](#sdk-owned-formatting) — declarative Debug redaction and scalar serde Display.
 - [QuickBooks environment replacement (T4)](#quickbooks-environment-replacement-t4) — no source
   change; a replacement connection selects its environment's official HTTPS host on send.
 - [SDK send policies take the endpoint's operation (H08)](#sdk-send-policies-take-the-endpoints-operation-h08)
@@ -34,6 +35,21 @@ the two parts of 4.1.0 (the modular V4), then older ones:
 Code blocks marked "does not compile" show the old form. Every other Rust block in this file is
 compiled and run as a doctest of `examples/quickstart` (`cargo test --doc -p
 concord-example-quickstart`).
+
+## SDK-owned formatting
+
+Replace field-only manual Debug with `#[derive(concord::Debug)]` and `#[sensitive]` on withheld
+fields. Compact sensitive tuples keep `Type(<redacted>)`; pretty tuples expand. Named and enum
+output follows declared fields and variant names, with unquoted redaction markers and visible
+optional presence. Existing SDK diagnostic snapshots can therefore change; request bytes stay fixed.
+Computed summaries and generic formatters preserving bound-free Debug remain ordinary Rust.
+
+The experimental `concord::WireDisplay` derive, helper attribute and hidden serde bridge are
+removed. Use `serde_plain::derive_display_from_serialize!(Type);` with a direct `serde_plain =
+"1.0.2"` dependency and the type's existing scalar `Serialize`. It preserves ordinary wire text
+and ignores outer formatter flags. Unlike `WireDisplay`, it panics when the type does not serialize
+as a scalar (serde_plain's documented contract); Concord does not catch the panic, so a test that
+places each such type once finds the mistake.
 
 ## QuickBooks environment replacement (T4)
 

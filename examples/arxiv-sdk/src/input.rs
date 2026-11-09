@@ -12,8 +12,8 @@ pub(crate) fn valid_phrase(phrase: &str) -> bool {
 }
 
 /// A literal term; `Display` supplies the provider's `all:` phrase syntax.
-#[derive(Clone)]
-pub struct SearchTerm(String);
+#[derive(Clone, concord::Debug)]
+pub struct SearchTerm(#[sensitive] String);
 impl SearchTerm {
     /// Accept 1–512 UTF-8 bytes, without quotes, backslashes or controls.
     pub fn new(term: impl Into<String>) -> Result<Self, Error> {
@@ -29,15 +29,10 @@ impl fmt::Display for SearchTerm {
         write!(f, "{}:\"{}\"", Field::All.prefix(), self.0)
     }
 }
-impl fmt::Debug for SearchTerm {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str("SearchTerm(<redacted>)")
-    }
-}
 
 /// A delimiter-safe list of 1–50 bare arXiv identifiers. The service validates ID grammar.
-#[derive(Clone)]
-pub struct IdList(String);
+#[derive(Clone, concord::Debug)]
+pub struct IdList(#[sensitive] String);
 impl IdList {
     /// Accept modern or legacy IDs (and version suffixes), without URLs or separators.
     pub fn new(ids: &[&str]) -> Result<Self, Error> {
@@ -59,11 +54,6 @@ impl IdList {
 impl fmt::Display for IdList {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str(&self.0)
-    }
-}
-impl fmt::Debug for IdList {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str("IdList(<redacted>)")
     }
 }
 

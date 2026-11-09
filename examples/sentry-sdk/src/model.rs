@@ -7,6 +7,8 @@ use std::fmt;
 /// The stable issue fields used by this slice; extra provider fields are ignored.
 #[derive(Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[derive(concord::Debug)]
+#[sensitive]
 pub struct Issue {
     /// Issue identifier for subsequent reads.
     pub id: String,
@@ -19,7 +21,8 @@ pub struct Issue {
 }
 
 /// Event summary or detail. `entries` is present on full event details.
-#[derive(Clone, Deserialize)]
+#[derive(Clone, Deserialize, concord::Debug)]
+#[sensitive]
 pub struct Event {
     /// Storage identifier; use `event_id` to retrieve the event.
     pub id: String,
@@ -58,16 +61,5 @@ impl<T> fmt::Debug for Response<T> {
             .field("rates", &self.rates)
             .field("retry", &self.retry)
             .finish_non_exhaustive()
-    }
-}
-
-impl fmt::Debug for Issue {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str("Issue { <withheld> }")
-    }
-}
-impl fmt::Debug for Event {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str("Event { <withheld> }")
     }
 }

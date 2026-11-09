@@ -1,20 +1,12 @@
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use std::{collections::BTreeMap, fmt};
+use std::collections::BTreeMap;
 
 // Provider-controlled strings can include secrets; Debug never delegates to them.
-macro_rules! redacted_debug {
-    ($($ty:ty),+ $(,)?) => {$ (
-        impl fmt::Debug for $ty {
-            fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-                f.write_str(concat!(stringify!($ty), "(<redacted>)"))
-            }
-        }
-    )+};
-}
 
 /// Amount in minor units, without floating-point conversion.
-#[derive(Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Clone, Serialize, Deserialize, PartialEq, Eq, concord::Debug)]
+#[sensitive]
 pub struct Amount {
     /// Three-letter ISO currency code; provider validates currency availability.
     pub currency: String,
@@ -25,6 +17,8 @@ pub struct Amount {
 /// Transaction context for the non-paginated methods list.
 #[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
+#[derive(concord::Debug)]
+#[sensitive]
 pub struct MethodsRequest {
     /// Merchant account used by the sandbox credential.
     pub merchant_account: String,
@@ -48,7 +42,8 @@ pub enum Web {
 }
 
 /// An available method; unknown provider metadata is preserved.
-#[derive(Clone, Deserialize)]
+#[derive(Clone, Deserialize, concord::Debug)]
+#[sensitive]
 pub struct AvailableMethod {
     /// Provider's method code (for example `scheme` or `ideal`).
     #[serde(rename = "type")]
@@ -63,6 +58,8 @@ pub struct AvailableMethod {
 /// A single methods response. Stored/recurring methods are deliberately excluded.
 #[derive(Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[derive(concord::Debug)]
+#[sensitive]
 pub struct MethodsResponse {
     /// Available methods (the provider may omit the list when none are available).
     #[serde(default)]
@@ -72,6 +69,8 @@ pub struct MethodsResponse {
 /// Bounded sandbox inputs. Raw PAN/CVC, stored methods and recurring payments are not modeled.
 #[derive(Clone, Serialize)]
 #[serde(tag = "type")]
+#[derive(concord::Debug)]
+#[sensitive]
 pub enum SandboxMethod {
     /// iDEAL sandbox issuer choice. Select the issuer using the methods response.
     #[serde(rename = "ideal")]
@@ -100,7 +99,8 @@ pub enum SandboxMethod {
 /// A sandbox-only encrypted card token, constructed through [`SandboxMethod::test_card`].
 #[derive(Clone, Serialize)]
 #[serde(transparent)]
-pub struct TestToken(String);
+#[derive(concord::Debug)]
+pub struct TestToken(#[sensitive] String);
 
 impl SandboxMethod {
     /// Accepts only nonempty `test_` prefixed values; never accepts raw card data.
@@ -130,6 +130,8 @@ impl SandboxMethod {
 /// A sandbox payment submission. The API key and idempotency key are headers, never body fields.
 #[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
+#[derive(concord::Debug)]
+#[sensitive]
 pub struct PaymentRequest {
     /// Merchant account.
     pub merchant_account: String,
@@ -148,6 +150,8 @@ pub struct PaymentRequest {
 /// Caller-obtained continuation details; strings retain provider wire keys without interpretation.
 #[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
+#[derive(concord::Debug)]
+#[sensitive]
 pub struct DetailsRequest {
     /// For a redirect: `redirectResult` from the return URL, decoded by the application once.
     pub details: BTreeMap<String, String>,
@@ -169,6 +173,8 @@ impl DetailsRequest {
 /// A next action. Extra fields preserve unfamiliar action variants for the caller.
 #[derive(Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[derive(concord::Debug)]
+#[sensitive]
 pub struct Action {
     /// Action discriminator, such as `redirect`, `threeDS2` or `qrCode`.
     #[serde(rename = "type")]
@@ -198,6 +204,8 @@ pub enum PaymentState {
 /// Shared response for `/payments` and `/payments/details`.
 #[derive(Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[derive(concord::Debug)]
+#[sensitive]
 pub struct PaymentResponse {
     /// Provider result code, retained exactly even if unknown.
     pub result_code: String,
@@ -235,6 +243,8 @@ impl PaymentResponse {
 /// currency; Adyen validates both. Line items, splits and platform fields are not modeled.
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[derive(concord::Debug)]
+#[sensitive]
 pub struct CaptureRequest {
     /// Merchant account that processed the payment.
     pub merchant_account: String,
@@ -253,6 +263,8 @@ pub struct CaptureRequest {
 /// request it sent: the payment reference in the path, merchant account, amount and reference.
 #[derive(Clone, Deserialize)]
 #[serde(try_from = "CaptureDocument")]
+#[derive(concord::Debug)]
+#[sensitive]
 pub struct CaptureReceived {
     /// Adyen's reference for this capture request (distinct from the payment's).
     pub psp_reference: String,
@@ -300,18 +312,3 @@ impl TryFrom<CaptureDocument> for CaptureReceived {
         })
     }
 }
-
-redacted_debug!(
-    Amount,
-    MethodsRequest,
-    AvailableMethod,
-    MethodsResponse,
-    SandboxMethod,
-    TestToken,
-    PaymentRequest,
-    DetailsRequest,
-    Action,
-    PaymentResponse,
-    CaptureRequest,
-    CaptureReceived
-);

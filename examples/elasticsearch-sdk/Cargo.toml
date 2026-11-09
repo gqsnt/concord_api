@@ -8,6 +8,7 @@ license.workspace = true
 publish = false
 
 [dependencies]
+serde_plain.workspace = true
 # `jsonl`: the shared `Ndjson` request format for the bulk body. The default `json` feature
 # decodes every response and error document.
 concord = { path = "../../crates/concord", features = ["jsonl"] }

@@ -84,19 +84,13 @@ pub struct MessagePage {
 /// may contain user data, such as recipient addresses; it is omitted from Debug.
 #[derive(Deserialize)]
 #[serde(rename_all = "PascalCase")]
+#[derive(concord::Debug)]
 pub struct ErrorDocument {
     /// Postmark's numeric error code.
     pub error_code: u32,
     /// Provider-supplied detail; treat as potentially sensitive.
+    #[sensitive]
     pub message: String,
-}
-impl fmt::Debug for ErrorDocument {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("ErrorDocument")
-            .field("error_code", &self.error_code)
-            .field("message", &"<redacted>")
-            .finish()
-    }
 }
 
 /// Postmark's verdict on one message of a batch send. A successful batch response holds one per

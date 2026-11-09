@@ -26,6 +26,7 @@ fn bounded_text(s: &str, max: usize) -> bool {
 /// sent it.
 #[derive(Clone, PartialEq, Eq, Hash, Deserialize)]
 #[serde(transparent)]
+#[derive(concord::Debug, serde::Serialize)]
 pub struct OrderId(String);
 
 impl OrderId {
@@ -53,22 +54,13 @@ impl OrderId {
     }
 }
 
-impl fmt::Display for OrderId {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(&self.0)
-    }
-}
-
-impl fmt::Debug for OrderId {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "OrderId({})", self.0)
-    }
-}
+serde_plain::derive_display_from_serialize!(OrderId);
 
 /// A Payments v2 capture ID. PayPal documents no pattern; the SDK requires 1 to 64 visible ASCII
 /// characters so that the value is an unambiguous path segment.
 #[derive(Clone, PartialEq, Eq, Hash, Deserialize)]
 #[serde(transparent)]
+#[derive(concord::Debug, serde::Serialize)]
 pub struct CaptureId(String);
 
 impl CaptureId {
@@ -92,22 +84,13 @@ impl CaptureId {
     }
 }
 
-impl fmt::Display for CaptureId {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(&self.0)
-    }
-}
-
-impl fmt::Debug for CaptureId {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "CaptureId({})", self.0)
-    }
-}
+serde_plain::derive_display_from_serialize!(CaptureId);
 
 /// A Payments v2 authorization ID. Like [`CaptureId`], the SDK requires 1 to 64 visible
 /// ASCII characters; Concord percent-encodes it as one path segment.
 #[derive(Clone, PartialEq, Eq, Hash, Deserialize)]
 #[serde(transparent)]
+#[derive(concord::Debug, serde::Serialize)]
 pub struct AuthorizationId(String);
 
 impl AuthorizationId {
@@ -131,17 +114,7 @@ impl AuthorizationId {
     }
 }
 
-impl fmt::Display for AuthorizationId {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(&self.0)
-    }
-}
-
-impl fmt::Debug for AuthorizationId {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "AuthorizationId({})", self.0)
-    }
-}
+serde_plain::derive_display_from_serialize!(AuthorizationId);
 
 /// A `PayPal-Request-Id`: the caller's unique ID for one logical supported write.
 ///
@@ -151,7 +124,7 @@ impl fmt::Debug for AuthorizationId {
 /// repeats a supported write only when it carries one. PayPal allows 1 to 10000 characters;
 /// the SDK also requires visible ASCII (no spaces) so the header is sent
 /// byte for byte. Choose a fresh ID per logical operation and keep it until its outcome is known.
-#[derive(Clone, PartialEq, Eq, Hash)]
+#[derive(Clone, PartialEq, Eq, Hash, concord::Debug)]
 pub struct RequestId(String);
 
 impl RequestId {
@@ -178,12 +151,6 @@ impl RequestId {
 impl fmt::Display for RequestId {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str(&self.0)
-    }
-}
-
-impl fmt::Debug for RequestId {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "RequestId({})", self.0)
     }
 }
 

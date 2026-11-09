@@ -18,7 +18,7 @@ use crate::error::InputError;
 /// SDK's scope). Names with dots are valid S3 names but are refused here: AWS documents that the
 /// virtual-hosted wildcard TLS certificate does not match them, and this SDK does not implement
 /// path-style addressing.
-#[derive(Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[derive(Clone, PartialEq, Eq, Hash, PartialOrd, Ord, concord::Debug)]
 pub struct BucketName(String);
 
 impl BucketName {
@@ -82,12 +82,6 @@ impl fmt::Display for BucketName {
     }
 }
 
-impl fmt::Debug for BucketName {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        fmt::Debug::fmt(&self.0, f)
-    }
-}
-
 /// An object key: any UTF-8 text of 1 to 1,024 bytes, without a period-only path segment.
 ///
 /// `/` is part of the key and is sent unencoded, as AWS's SigV4 rules for S3 require
@@ -95,7 +89,7 @@ impl fmt::Debug for BucketName {
 /// `A-Z a-z 0-9 - . _ ~` is percent-encoded once. Keys with a `.` or `..` segment
 /// (`a/../b`) are refused: AWS recommends against them, and URL parsers (reqwest's included)
 /// remove such segments from a request path, which would address another object.
-#[derive(Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[derive(Clone, PartialEq, Eq, Hash, PartialOrd, Ord, concord::Debug)]
 pub struct ObjectKey(String);
 
 impl ObjectKey {
@@ -136,19 +130,13 @@ impl fmt::Display for ObjectKey {
     }
 }
 
-impl fmt::Debug for ObjectKey {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        fmt::Debug::fmt(&self.0, f)
-    }
-}
-
 /// An entity tag exactly as S3 sent it, quotes included (`"fba9dede5f27731c9771645a39863328"`).
 ///
 /// It is an **opaque validator**: compare it for equality, or send it back in `If-Match` /
 /// `If-None-Match`. It is not a content checksum — S3 documents that it is the MD5 of the data
 /// only for some objects (not for multipart uploads, SSE-KMS or directory buckets) — so this
 /// type offers no digest accessor.
-#[derive(Clone, PartialEq, Eq, Hash)]
+#[derive(Clone, PartialEq, Eq, Hash, concord::Debug)]
 pub struct ETag(String);
 
 impl ETag {
@@ -191,12 +179,6 @@ impl ETag {
 impl fmt::Display for ETag {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str(&self.0)
-    }
-}
-
-impl fmt::Debug for ETag {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "ETag({})", self.0)
     }
 }
 

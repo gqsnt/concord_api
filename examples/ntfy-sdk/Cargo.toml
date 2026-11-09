@@ -8,6 +8,7 @@ license.workspace = true
 publish = false
 
 [dependencies]
+serde_plain.workspace = true
 # `json`: the publish response and the error document; `jsonl`: the NDJSON reader behind the
 # JSON stream and poll endpoints; `sse`: the server-sent events reader behind the SSE endpoint.
 concord = { path = "../../crates/concord", features = ["json", "jsonl", "sse"] }

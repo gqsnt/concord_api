@@ -2,7 +2,6 @@
 
 use crate::{InputError, RequestContext};
 use serde::{Deserialize, Serialize};
-use std::fmt;
 
 /// Approximate provider page size, in the documented range 1–2000.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
@@ -137,7 +136,8 @@ impl Entry {
 
 /// An opaque continuation bound to the member/root that produced it.
 /// Only successful responses create cursors. Do not persist or log the raw value.
-#[derive(Clone, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq, concord::Debug)]
+#[sensitive]
 pub struct Cursor {
     pub(crate) value: String,
     pub(crate) context: RequestContext,
@@ -152,12 +152,6 @@ impl Cursor {
     /// Context that every continuation request will reuse.
     pub fn context(&self) -> &RequestContext {
         &self.context
-    }
-}
-
-impl fmt::Debug for Cursor {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str("Cursor(<redacted>)")
     }
 }
 

@@ -87,7 +87,8 @@ impl fmt::Display for PageSize {
 }
 
 /// An events response; unknown additive fields are tolerated.
-#[derive(Deserialize)]
+#[derive(Deserialize, concord::Debug)]
+#[sensitive]
 pub struct EventPage {
     /// Records returned on this page.
     pub items: Vec<Event>,
@@ -95,7 +96,8 @@ pub struct EventPage {
     pub paging: Paging,
 }
 /// Provider page URLs; Debug never renders them.
-#[derive(Deserialize)]
+#[derive(Deserialize, concord::Debug)]
+#[sensitive]
 pub struct Paging {
     /// Next page URL, opaque to the caller.
     pub next: String,
@@ -103,7 +105,8 @@ pub struct Paging {
     pub previous: String,
 }
 /// Common Mailgun event fields. Event kinds and severities remain forward compatible strings.
-#[derive(Deserialize)]
+#[derive(Deserialize, concord::Debug)]
+#[sensitive]
 pub struct Event {
     /// Event ID (unique within a day, not globally).
     pub id: String,
@@ -127,44 +130,28 @@ pub struct Event {
     pub user_variables: BTreeMap<String, serde_json::Value>,
 }
 /// Flags relevant to interpreting delivery evidence.
-#[derive(Deserialize)]
+#[derive(Deserialize, concord::Debug)]
+#[sensitive]
 pub struct EventFlags {
     /// A simulated delivery that stopped before sending to the recipient's provider.
     #[serde(rename = "is-test-mode")]
     pub is_test_mode: Option<bool>,
 }
 /// Message fields needed to correlate an event.
-#[derive(Deserialize)]
+#[derive(Deserialize, concord::Debug)]
+#[sensitive]
 pub struct EventMessage {
     /// Headers may be absent for event types unrelated to a sent message.
     pub headers: Option<MessageHeaders>,
 }
 /// Message ID from the event's message headers.
-#[derive(Deserialize)]
+#[derive(Deserialize, concord::Debug)]
+#[sensitive]
 pub struct MessageHeaders {
     /// Provider message identifier, often without surrounding angle brackets.
     #[serde(rename = "message-id")]
     pub message_id: Option<String>,
 }
-
-macro_rules! redacted_debug {
-    ($($name:ident),+ $(,)?) => { $(
-        impl fmt::Debug for $name {
-            fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-                f.write_str(concat!(stringify!($name), "(<redacted>)"))
-            }
-        }
-    )+ };
-}
-redacted_debug!(
-    EventPage,
-    Paging,
-    Event,
-    EventFlags,
-    EventMessage,
-    MessageHeaders,
-    EventCursor
-);
 
 /// Latest delivery-relevant observation for one message and one recipient in the searched window.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -237,7 +224,8 @@ pub fn delivery_status(id: &MessageId, recipient: &str, events: &[Event]) -> Del
 }
 
 /// Opaque, redacted continuation bound to the original request and credential.
-#[derive(Clone)]
+#[derive(Clone, concord::Debug)]
+#[sensitive]
 pub struct EventCursor {
     url: String,
     original: Url,
@@ -335,4 +323,26 @@ fn trusted_link(original: &Url, text: &str) -> Result<Url, Error> {
         return Err(refuse());
     }
     Ok(url)
+}
+
+#[cfg(test)]
+mod sdk_type_canaries {
+    use super::*;
+
+    #[test]
+    fn nested_message_headers_withhold_the_provider_identifier() {
+        let mut c = concord_check_canary::Canaries::new("mailgun-headers");
+        let secret = c.issue();
+        let message = EventMessage {
+            headers: Some(MessageHeaders {
+                message_id: Some(secret.clone()),
+            }),
+        };
+        assert_eq!(
+            message.headers.as_ref().unwrap().message_id.as_deref(),
+            Some(secret.as_str())
+        );
+        c.assert_debug_absent("MessageHeaders", message.headers.as_ref().unwrap());
+        c.assert_debug_absent("EventMessage", &message);
+    }
 }

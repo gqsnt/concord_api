@@ -43,6 +43,8 @@ impl HttpClass {
 /// Bounded provider error document. Its strings are untrusted and explicitly accessible only.
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[derive(concord::Debug)]
+#[sensitive]
 pub struct Problem {
     /// Provider's reported HTTP status (actual metadata remains authoritative).
     pub status: u16,
@@ -54,12 +56,6 @@ pub struct Problem {
     pub message: String,
     /// Reference for reconciliation, if available.
     pub psp_reference: Option<String>,
-}
-
-impl fmt::Debug for Problem {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str("Problem(<redacted>)")
-    }
 }
 
 impl fmt::Display for Problem {

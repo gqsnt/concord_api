@@ -8,6 +8,7 @@ license.workspace = true
 publish = false
 
 [dependencies]
+serde_plain.workspace = true
 # `json`: the timeline, status, instance and error documents; `sse`: Concord's server-sent events
 # reader behind the public and hashtag streams.
 concord = { path = "../../crates/concord", features = ["json", "sse"] }

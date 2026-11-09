@@ -14,10 +14,12 @@ use crate::codecs::ProblemFormat;
 use crate::{ERROR_BODY_LIMIT, IdempotencyKey};
 
 /// A business-level error document: `{"error": .., "description": .., "details": ..}`.
-#[derive(Clone, Deserialize, PartialEq)]
+#[derive(Clone, Deserialize, PartialEq, concord::Debug)]
 pub struct ErrorDocument {
     error: String,
+    #[sensitive]
     description: Option<String>,
+    #[sensitive]
     details: Option<serde_json::Value>,
 }
 
@@ -36,19 +38,6 @@ impl ErrorDocument {
     /// `RecordInvalid`). They can quote submitted values, so they are never formatted.
     pub fn details_unredacted(&self) -> Option<&serde_json::Value> {
         self.details.as_ref()
-    }
-}
-
-impl fmt::Debug for ErrorDocument {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("ErrorDocument")
-            .field("error", &self.error)
-            .field(
-                "description",
-                &self.description.as_ref().map(|_| "<withheld>"),
-            )
-            .field("details", &self.details.as_ref().map(|_| "<withheld>"))
-            .finish()
     }
 }
 

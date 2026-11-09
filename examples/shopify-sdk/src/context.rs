@@ -26,8 +26,9 @@ use crate::scalars::{AccessToken, ApiVersion, ShopDomain, SignedUrl};
 pub const X_SHOPIFY_API_VERSION: &str = "x-shopify-api-version";
 
 /// The SDK configuration shared by every shop.
-#[derive(Clone)]
+#[derive(Clone, concord::Debug)]
 pub struct ShopifyContext {
+    #[sensitive]
     http: reqwest::Client,
     admin: ShopifyAdmin,
     version: ApiVersion,
@@ -97,22 +98,15 @@ impl ShopifyContext {
     }
 }
 
-impl fmt::Debug for ShopifyContext {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("ShopifyContext")
-            .field("admin", &self.admin)
-            .field("version", &self.version)
-            .finish()
-    }
-}
-
 /// One shop: the generated operations under `{shop}.myshopify.com` with its token, and the
 /// helpers that need the same configuration.
-#[derive(Clone)]
+#[derive(Clone, concord::Debug)]
 pub struct ShopContext {
     admin: ShopifyAdminShop,
+    #[sensitive]
     http: reqwest::Client,
     version: ApiVersion,
+    #[sensitive]
     shop: ShopDomain,
 }
 
@@ -205,19 +199,11 @@ impl ShopContext {
     }
 }
 
-impl fmt::Debug for ShopContext {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("ShopContext")
-            .field("admin", &self.admin)
-            .field("version", &self.version)
-            .finish()
-    }
-}
-
 /// A GraphQL request that produced no envelope.
 ///
 /// `Display`/`Debug` follow Concord's policy (endpoint, stage, status code; never the token, a
 /// variable or the body).
+#[derive(concord::Debug)]
 pub enum RequestError {
     /// Concord's error: build, transport, status (unread response kept), metadata or decode.
     Concord(concord::Error),
@@ -261,20 +247,6 @@ impl fmt::Display for RequestError {
                 )
             }
             Self::VersionUnconfirmed => f.write_str("the response does not state its API version"),
-        }
-    }
-}
-
-impl fmt::Debug for RequestError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::Concord(e) => f.debug_tuple("Concord").field(e).finish(),
-            Self::VersionMismatch { requested, served } => f
-                .debug_struct("VersionMismatch")
-                .field("requested", requested)
-                .field("served", served)
-                .finish(),
-            Self::VersionUnconfirmed => f.write_str("VersionUnconfirmed"),
         }
     }
 }

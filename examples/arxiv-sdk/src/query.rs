@@ -46,7 +46,8 @@ impl Field {
 /// documented Boolean operators `AND`, `OR` and `ANDNOT`. A combined operand is always
 /// parenthesized, so the expression's grouping is the order in which it was built.
 /// Operator words, colons and parentheses inside a phrase are phrase text.
-#[derive(Clone)]
+#[derive(Clone, concord::Debug)]
+#[sensitive]
 pub struct Query {
     wire: String,
     compound: bool,
@@ -105,11 +106,6 @@ impl Query {
 impl fmt::Display for Query {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str(&self.wire)
-    }
-}
-impl fmt::Debug for Query {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str("Query(<redacted>)")
     }
 }
 

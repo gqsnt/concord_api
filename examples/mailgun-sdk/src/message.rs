@@ -9,7 +9,6 @@ use futures_util::{Stream, StreamExt};
 use serde::Deserialize;
 use std::{
     collections::BTreeMap,
-    fmt,
     io::{self, Read},
     path::Path,
 };
@@ -22,7 +21,8 @@ pub const MAX_TEXT_BYTES: usize = 1024 * 1024;
 /// A retained Mailgun identifier. Debug is redacted; access the exact wire value explicitly.
 #[derive(Clone, Eq, PartialEq, Deserialize)]
 #[serde(try_from = "String")]
-pub struct MessageId(String);
+#[derive(concord::Debug, serde::Serialize)]
+pub struct MessageId(#[sensitive] String);
 
 impl MessageId {
     /// Validate a nonempty identifier, without changing the provider's angle brackets.
@@ -63,29 +63,16 @@ impl TryFrom<String> for MessageId {
 }
 
 // Display is the query wire spelling. Concord marks its query placement sensitive.
-impl fmt::Display for MessageId {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(&self.0)
-    }
-}
-impl fmt::Debug for MessageId {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str("MessageId(<redacted>)")
-    }
-}
+serde_plain::derive_display_from_serialize!(MessageId);
 
 /// Successful submission, not a delivery receipt.
-#[derive(Deserialize)]
+#[derive(Deserialize, concord::Debug)]
+#[sensitive]
 pub struct Accepted {
     /// Persist this identifier to correlate later events.
     pub id: MessageId,
     /// Provider acknowledgement text; not interpreted as delivery evidence.
     pub message: String,
-}
-impl fmt::Debug for Accepted {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str("Accepted(<redacted>)")
-    }
 }
 
 enum Source {
@@ -94,6 +81,8 @@ enum Source {
 }
 
 /// One file attachment. Deliberately not Clone, including the buffered case.
+#[derive(concord::Debug)]
+#[sensitive]
 pub struct Attachment {
     filename: String,
     media: String,
@@ -173,14 +162,10 @@ impl Attachment {
     }
 }
 
-impl fmt::Debug for Attachment {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str("Attachment(<redacted>)")
-    }
-}
-
 /// Text email with exactly one attachment and 1–100 recipients.
 /// Header line breaks are refused; full mailbox syntax validation belongs to Mailgun.
+#[derive(concord::Debug)]
+#[sensitive]
 pub struct TextEmail {
     from: String,
     to: Vec<String>,
@@ -265,11 +250,6 @@ impl TextEmail {
         Ok(self)
     }
 }
-impl fmt::Debug for TextEmail {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str("TextEmail(<redacted>)")
-    }
-}
 
 /// `Encode::CONTENT_TYPE` is `None`; `encode_body` binds
 /// `content-type: multipart/form-data; boundary=<boundary>` from Concord multipart
@@ -345,5 +325,20 @@ impl Encode<TextEmail> for MailgunMultipart {
                 ))
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod sdk_type_canaries {
+    use super::*;
+
+    #[test]
+    fn attachments_withhold_filename_and_body() {
+        let mut c = concord_check_canary::Canaries::new("mailgun-attachment");
+        let filename = c.issue();
+        let content = c.issue();
+        let attachment = Attachment::bytes(&filename, "text/plain", content.into_bytes()).unwrap();
+        assert_eq!(attachment.filename, filename);
+        c.assert_debug_absent("Attachment", &attachment);
     }
 }

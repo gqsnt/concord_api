@@ -341,10 +341,13 @@ impl fmt::Debug for IngestResultRow {
 }
 
 /// The rows of one result file, read incrementally.
+#[derive(concord::Debug)]
 pub struct IngestResultRows {
     file: ResultFile,
+    #[sensitive]
     operation: &'static str,
     records: CsvRecords<RawRecord>,
+    #[sensitive]
     layout: Option<Layout>,
 }
 
@@ -447,11 +450,46 @@ impl IngestResultRows {
     }
 }
 
-impl fmt::Debug for IngestResultRows {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("IngestResultRows")
-            .field("file", &self.file)
-            .field("records", &self.records)
-            .finish()
+#[cfg(test)]
+mod sdk_type_canaries {
+    use super::*;
+
+    #[tokio::test]
+    async fn ingest_result_reader_withholds_header_layout_after_reading() {
+        use concord_example_testserver::{Reply, TestServer};
+        let mut c = concord_check_canary::Canaries::new("sf-ingest-rows");
+        let header = c.issue();
+        let value = c.issue();
+        let csv = format!("{header}\n{value}\n");
+        let server = TestServer::start(move |_: &concord_example_testserver::Recorded| {
+            Reply::text(200, "text/csv", &csv)
+        })
+        .await;
+        let response = concord::reqwest::Client::builder()
+            .no_proxy()
+            .build()
+            .unwrap()
+            .get(server.url())
+            .send()
+            .await
+            .unwrap();
+        let body = Incoming::new(response, None).unwrap();
+        let records = SalesforceCsv::new(BulkDialect::default())
+            .raw_reader()
+            .unwrap()
+            .open_raw(body)
+            .unwrap();
+        let mut rows = IngestResultRows {
+            file: ResultFile::Unprocessed,
+            operation: "test",
+            records,
+            layout: None,
+        };
+        c.assert_debug_absent("unread IngestResultRows", &rows);
+        let row = rows.next().await.unwrap().unwrap();
+        assert_eq!(row.field(&header), Some(value.as_str()));
+        assert_eq!(rows.layout.as_ref().unwrap().names, [header]);
+        c.assert_debug_absent("IngestResultRows with secret layout", &rows);
+        server.shutdown().await;
     }
 }

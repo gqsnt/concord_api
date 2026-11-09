@@ -8,7 +8,8 @@ use std::{
 
 /// Shared, serial dispatch with at least three seconds between admissions; no retry.
 /// Clones share pacing. Independent policies do not coordinate across clients or processes.
-#[derive(Clone)]
+#[derive(Clone, concord::Debug)]
+#[sensitive]
 pub struct Policy(Limiter<()>);
 impl Default for Policy {
     fn default() -> Self {
@@ -35,11 +36,7 @@ impl Policy {
         Self(limiter)
     }
 }
-impl std::fmt::Debug for Policy {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str("Policy(three-second pacing)")
-    }
-}
+
 impl SendWith<Feed> for Policy {
     type Output = Result<Feed, Error>;
     async fn send<E: Endpoint<Feed> + Send>(&self, endpoint: E) -> Self::Output {

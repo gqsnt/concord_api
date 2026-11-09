@@ -140,6 +140,7 @@ impl ReconcileRequest {
 }
 
 /// Why a page of a traversal failed.
+#[derive(concord::Debug)]
 pub enum SyncFailure {
     /// The adapter's failure (request, no connection, inconsistent `pageInfo`).
     Page(PageError),
@@ -190,19 +191,6 @@ impl fmt::Display for SyncFailure {
             Self::PartialRejected { errors, .. } => {
                 write!(f, "page refused: data with {} error(s)", errors.len())
             }
-        }
-    }
-}
-
-impl fmt::Debug for SyncFailure {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::Page(e) => f.debug_tuple("Page").field(e).finish(),
-            Self::PartialRejected { errors, cost } => f
-                .debug_struct("PartialRejected")
-                .field("errors", errors)
-                .field("cost", cost)
-                .finish(),
         }
     }
 }

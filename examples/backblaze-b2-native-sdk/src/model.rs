@@ -120,7 +120,7 @@ impl FileName {
 }
 
 /// The `Content-Type` of an upload: a media type, or [`ContentType::auto`] (`b2/x-auto`).
-#[derive(Clone, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq, concord::Debug)]
 pub struct ContentType(HeaderValue);
 
 impl ContentType {
@@ -150,12 +150,6 @@ impl ContentType {
 
     pub(crate) fn header(&self) -> HeaderValue {
         self.0.clone()
-    }
-}
-
-impl fmt::Debug for ContentType {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_tuple("ContentType").field(&self.as_str()).finish()
     }
 }
 

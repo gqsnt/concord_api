@@ -15,7 +15,7 @@ use crate::wire::{ErrorEnvelope, ResponseInfo};
 /// `Debug` prints the status, the HTTP version, the header **names** and the operation, never a
 /// header value (Cloudflare sets cookies). Values are read deliberately through
 /// [`headers`](Self::headers).
-#[derive(Clone)]
+#[derive(Clone, concord::Debug)]
 pub struct ResponseMeta(concord::ResponseMeta);
 
 impl ResponseMeta {
@@ -58,12 +58,6 @@ impl ResponseMeta {
 impl From<concord::ResponseMeta> for ResponseMeta {
     fn from(meta: concord::ResponseMeta) -> Self {
         Self(meta)
-    }
-}
-
-impl fmt::Debug for ResponseMeta {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        fmt::Debug::fmt(&self.0, f)
     }
 }
 

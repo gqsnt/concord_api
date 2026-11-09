@@ -6,7 +6,8 @@ use serde::Deserialize;
 use serde_json::Value;
 
 /// A Graph error document. Values are available explicitly but omitted from `Debug`.
-#[derive(Clone, Deserialize)]
+#[derive(Clone, Deserialize, concord::Debug)]
+#[sensitive]
 pub struct ProviderError {
     /// Machine-readable provider code, including unknown codes.
     pub code: String,
@@ -24,7 +25,8 @@ pub struct ProviderError {
 }
 
 /// Recursive error detail; some inner objects contain only request-id/date metadata.
-#[derive(Clone, Deserialize)]
+#[derive(Clone, Deserialize, concord::Debug)]
+#[sensitive]
 pub struct ErrorDetail {
     /// More specific provider code, when supplied.
     pub code: Option<String>,
@@ -56,17 +58,6 @@ impl ProviderError {
             inner = detail.inner_error.as_deref();
         }
         false
-    }
-}
-
-impl fmt::Debug for ProviderError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str("ProviderError(<redacted>)")
-    }
-}
-impl fmt::Debug for ErrorDetail {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str("ErrorDetail(<redacted>)")
     }
 }
 

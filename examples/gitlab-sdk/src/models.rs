@@ -62,7 +62,7 @@ pub struct Issue {
 }
 
 /// `state` of an issue. A value this SDK does not know is kept as sent.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, concord::WireDisplay)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum IssueStatus {
     /// `opened`
@@ -73,6 +73,7 @@ pub enum IssueStatus {
     #[serde(untagged)]
     Other(String),
 }
+serde_plain::derive_display_from_serialize!(IssueStatus);
 
 impl<'de> Deserialize<'de> for IssueStatus {
     fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {

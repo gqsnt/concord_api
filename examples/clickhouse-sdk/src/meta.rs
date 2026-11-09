@@ -31,7 +31,7 @@ pub const EXCEPTION_TAG: &str = "x-clickhouse-exception-tag";
 /// the documented `X-ClickHouse-*` headers.
 ///
 /// `Debug` prints the status, the operation and the header **names**, never a value.
-#[derive(Clone)]
+#[derive(Clone, concord::Debug)]
 pub struct ResponseMeta(concord::ResponseMeta);
 
 impl ResponseMeta {
@@ -116,12 +116,6 @@ impl ResponseMeta {
             .iter()
             .map(|value| Counters::parse(value.as_bytes(), PROGRESS))
             .collect()
-    }
-}
-
-impl fmt::Debug for ResponseMeta {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        fmt::Debug::fmt(&self.0, f)
     }
 }
 

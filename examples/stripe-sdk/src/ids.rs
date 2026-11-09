@@ -106,9 +106,10 @@ macro_rules! stripe_id {
     ($(#[$doc:meta])* $name:ident, $family:literal, $prefix:expr $(, $sensitive:meta)?) => {
         $(#[$doc])*
         #[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-        #[derive(Serialize, concord::Debug, concord::WireDisplay)]
+        #[derive(Serialize, concord::Debug)]
         #[serde(transparent)]
         pub struct $name($(#[$sensitive])? String);
+serde_plain::derive_display_from_serialize!($name);
 
         impl $name {
             /// The family's documented prefix, if it has one.

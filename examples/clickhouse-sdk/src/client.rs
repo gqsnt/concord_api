@@ -155,7 +155,7 @@ impl CallContext {
 /// assert!(!format!("{clickhouse:?}").contains("fixture-password"));
 /// # Ok::<(), Box<dyn std::error::Error>>(())
 /// ```
-#[derive(Clone)]
+#[derive(Clone, concord::Debug)]
 pub struct ClickHouse {
     api: ClickHouseHttp,
 }
@@ -271,12 +271,6 @@ impl ClickHouse {
     }
 }
 
-impl fmt::Debug for ClickHouse {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_tuple("ClickHouse").field(&self.api).finish()
-    }
-}
-
 /// One row of `KILL QUERY`'s answer.
 #[derive(Clone, Debug, PartialEq, Eq, Deserialize)]
 #[non_exhaustive]
@@ -290,7 +284,9 @@ pub struct KillStatus {
 /// A prepared `SELECT`: options, then [`rows`](Self::rows).
 #[derive(Clone)]
 #[must_use = "a select does nothing until `rows()` is awaited"]
+#[derive(concord::Debug)]
 pub struct Select {
+    #[sensitive]
     api: ClickHouseHttp,
     query: Query,
     format: OutputFormat,
@@ -353,18 +349,6 @@ impl Select {
         let operation = endpoint_name::<Incoming, _>(&endpoint);
         let received = endpoint.prepare()?.receive().await?;
         open_rows(received, self.format, operation).await
-    }
-}
-
-impl fmt::Debug for Select {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("Select")
-            .field("query", &self.query)
-            .field("format", &self.format)
-            .field("query_id", &self.query_id)
-            .field("wait_end_of_query", &self.wait_end_of_query)
-            .field("progress", &self.progress)
-            .finish()
     }
 }
 

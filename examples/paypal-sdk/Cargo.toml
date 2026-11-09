@@ -8,6 +8,7 @@ publish = false
 description = "A bounded PayPal REST slice (sandbox): client credentials, order create/show/authorize/capture, authorization capture/void and capture retrieval, tested offline"
 
 [dependencies]
+serde_plain.workspace = true
 concord = { path = "../../crates/concord", features = ["form"] }
 concord-auth = { path = "../../crates/concord-auth" }
 concord-retry = { path = "../../crates/concord-retry", features = ["concord"] }

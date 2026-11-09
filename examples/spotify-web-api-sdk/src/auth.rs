@@ -24,7 +24,8 @@ macro_rules! secret {
     ($(#[$doc:meta])* $name:ident) => {
         $(#[$doc])*
         #[derive(Clone, PartialEq, Eq)]
-        pub struct $name(String);
+#[derive(concord::Debug)]
+        pub struct $name(#[sensitive] String);
 
         impl $name {
             /// Wraps the secret text.
@@ -38,11 +39,7 @@ macro_rules! secret {
             }
         }
 
-        impl fmt::Debug for $name {
-            fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-                f.write_str(concat!(stringify!($name), "(<redacted>)"))
-            }
-        }
+
     };
 }
 
@@ -68,9 +65,10 @@ secret! {
 /// constructed by `concord_auth::basic` from these credentials.
 ///
 /// The app's credentials, sent as HTTP Basic to the token endpoint.
-#[derive(Clone)]
+#[derive(Clone, concord::Debug)]
 pub struct AppCredentials {
     client_id: String,
+    #[sensitive]
     basic: HeaderValue,
 }
 
@@ -98,17 +96,8 @@ impl AppCredentials {
     }
 }
 
-impl fmt::Debug for AppCredentials {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("AppCredentials")
-            .field("client_id", &self.client_id)
-            .field("secret", &"<redacted>")
-            .finish()
-    }
-}
-
 /// The parameters of one authorization request (the user's browser is sent there).
-#[derive(Clone)]
+#[derive(Clone, concord::Debug)]
 pub struct AuthorizeRequest {
     /// The redirect URI registered for the app.
     pub redirect_uri: String,
@@ -118,17 +107,6 @@ pub struct AuthorizeRequest {
     pub state: State,
     /// Ask the user to approve again even if they already did (`show_dialog=true`).
     pub show_dialog: bool,
-}
-
-impl fmt::Debug for AuthorizeRequest {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("AuthorizeRequest")
-            .field("redirect_uri", &self.redirect_uri)
-            .field("scopes", &self.scopes)
-            .field("state", &self.state)
-            .field("show_dialog", &self.show_dialog)
-            .finish()
-    }
 }
 
 /// Space-separated scopes, one query value.
@@ -197,10 +175,12 @@ concord::api! {
 }
 
 /// A token grant: what the code exchange (or a refresh) returned.
-#[derive(Clone)]
+#[derive(Clone, concord::Debug)]
 pub struct Grant {
+    #[sensitive]
     pub(crate) access: HeaderValue,
     pub(crate) expires_in: Duration,
+    #[sensitive]
     pub(crate) refresh: Option<RefreshToken>,
     pub(crate) scope: Option<String>,
 }
@@ -222,34 +202,11 @@ impl Grant {
     }
 }
 
-impl fmt::Debug for Grant {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("Grant")
-            .field("access_token", &"<redacted>")
-            .field("expires_in", &self.expires_in)
-            .field(
-                "refresh_token",
-                &self.refresh.as_ref().map(|_| "<redacted>"),
-            )
-            .field("scope", &self.scope)
-            .finish()
-    }
-}
-
 /// The accounts service client of one app.
-#[derive(Clone)]
+#[derive(Clone, concord::Debug)]
 pub struct OAuth {
     accounts: Accounts,
     app: AppCredentials,
-}
-
-impl fmt::Debug for OAuth {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("OAuth")
-            .field("accounts", &self.accounts)
-            .field("app", &self.app)
-            .finish()
-    }
 }
 
 impl OAuth {

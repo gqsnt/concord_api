@@ -243,17 +243,6 @@ impl<E> fmt::Display for RetrievalError<E> {
     }
 }
 
-impl<E> fmt::Debug for RetrievalError<E> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::GitHub(error) => f.debug_tuple("GitHub").field(error).finish(),
-            Self::Locate(error) => f.debug_tuple("Locate").field(error).finish(),
-            Self::Stream(error) => f.debug_tuple("Stream").field(error).finish(),
-            Self::Commit(_) => f.write_str("Commit(<sink error>)"),
-        }
-    }
-}
-
 impl<E> std::error::Error for RetrievalError<E> {}
 
 /// What a retrieval had established before it stopped.
@@ -628,6 +617,17 @@ async fn fetch<T>(
         Err(error) => {
             log.error(operation, &error);
             Err(error)
+        }
+    }
+}
+
+impl<E> fmt::Debug for RetrievalError<E> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::GitHub(error) => f.debug_tuple("GitHub").field(error).finish(),
+            Self::Locate(error) => f.debug_tuple("Locate").field(error).finish(),
+            Self::Stream(error) => f.debug_tuple("Stream").field(error).finish(),
+            Self::Commit(_) => f.write_str("Commit(<sink error>)"),
         }
     }
 }

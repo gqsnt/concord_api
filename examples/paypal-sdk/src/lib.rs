@@ -198,25 +198,20 @@ impl PayPal {
 type Clock = Box<dyn Fn() -> Instant + Send + Sync + 'static>;
 
 /// Configures a [`PayPal`] client and its [`Session`].
+#[derive(concord::Debug)]
+#[sensitive]
 pub struct Builder {
     http: reqwest::Client,
     credentials: Credentials,
+    #[public]
     base: Option<String>,
+    #[public]
     reads: concord_retry::Policy,
+    #[public]
     writes: concord_retry::Policy,
+    #[public]
     margin: Duration,
     clock: Option<Clock>,
-}
-
-impl std::fmt::Debug for Builder {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("Builder")
-            .field("base", &self.base)
-            .field("reads", &self.reads)
-            .field("writes", &self.writes)
-            .field("margin", &self.margin)
-            .finish_non_exhaustive()
-    }
 }
 
 impl Builder {

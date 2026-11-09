@@ -354,6 +354,7 @@ pub enum Violation {
 }
 
 /// A documented response rule that was broken, with the response head.
+#[derive(concord::Debug)]
 pub struct ContractError {
     violation: Violation,
     meta: Option<ResponseMeta>,
@@ -372,15 +373,6 @@ impl ContractError {
     /// The head of the response that broke it.
     pub fn meta(&self) -> Option<&ResponseMeta> {
         self.meta.as_ref()
-    }
-}
-
-impl fmt::Debug for ContractError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("ContractError")
-            .field("violation", &self.violation)
-            .field("meta", &self.meta)
-            .finish()
     }
 }
 
@@ -405,6 +397,7 @@ pub enum ChecksumFailure {
 
 /// A download whose bytes were received but not verified. The bytes are withheld from the
 /// caller.
+#[derive(concord::Debug)]
 pub struct ChecksumError {
     failure: ChecksumFailure,
     meta: ResponseMeta,
@@ -423,15 +416,6 @@ impl ChecksumError {
     /// The download's response head.
     pub fn meta(&self) -> &ResponseMeta {
         &self.meta
-    }
-}
-
-impl fmt::Debug for ChecksumError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("ChecksumError")
-            .field("failure", &self.failure)
-            .field("meta", &self.meta)
-            .finish()
     }
 }
 

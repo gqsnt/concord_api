@@ -14,9 +14,10 @@ macro_rules! numeric_id {
     ($(#[$doc:meta])* $name:ident) => {
         $(#[$doc])*
         #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
-        #[derive(concord::WireDisplay)]
+
         #[serde(transparent)]
         pub struct $name(pub u64);
+serde_plain::derive_display_from_serialize!($name);
 
         impl $name {
             /// The provider's integer.
@@ -108,9 +109,10 @@ macro_rules! text_id {
     ($(#[$doc:meta])* $name:ident) => {
         $(#[$doc])*
         #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
-        #[derive(concord::WireDisplay)]
+
         #[serde(transparent)]
         pub struct $name(String);
+serde_plain::derive_display_from_serialize!($name);
 
         impl $name {
             /// Wraps the provider's text as given. Concord sends it as one percent-encoded path
@@ -177,7 +179,7 @@ impl fmt::Display for RepoRef {
 
 /// The `workflow_id` path value of `GET .../actions/workflows/{workflow_id}/runs`: GitHub accepts
 /// the numeric id or the workflow file name (`main.yaml`).
-#[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, concord::WireDisplay)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize)]
 #[serde(untagged)]
 pub enum WorkflowRef {
     /// The workflow's numeric id.
@@ -185,3 +187,4 @@ pub enum WorkflowRef {
     /// The workflow file name, such as `ci.yml` (sent as one segment).
     File(String),
 }
+serde_plain::derive_display_from_serialize!(WorkflowRef);

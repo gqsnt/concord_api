@@ -8,6 +8,7 @@ license.workspace = true
 publish = false
 
 [dependencies]
+serde_plain.workspace = true
 concord = { path = "../../crates/concord", features = ["json", "jsonl"] }
 concord-pagination = { path = "../../crates/concord-pagination" }
 serde = { workspace = true, features = ["derive"] }

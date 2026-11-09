@@ -16,7 +16,8 @@ use crate::Error;
 /// a URL passed by mistake is refused before any request is built. The same rule applies when an
 /// identifier is decoded from a response. User identifiers are not `SpotifyId`s (they are free
 /// text); see [`Owner::id`].
-#[derive(Clone, PartialEq, Eq, Hash)]
+#[derive(Clone, PartialEq, Eq, Hash, concord::Debug, serde::Serialize)]
+#[serde(transparent)]
 pub struct SpotifyId(String);
 
 impl SpotifyId {
@@ -42,17 +43,7 @@ impl SpotifyId {
     }
 }
 
-impl fmt::Display for SpotifyId {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(&self.0)
-    }
-}
-
-impl fmt::Debug for SpotifyId {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "SpotifyId({:?})", self.0)
-    }
-}
+serde_plain::derive_display_from_serialize!(SpotifyId);
 
 impl<'de> Deserialize<'de> for SpotifyId {
     fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {

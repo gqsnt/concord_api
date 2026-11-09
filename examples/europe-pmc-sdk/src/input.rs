@@ -7,7 +7,8 @@ macro_rules! text_value {
         #[doc = $doc]
         #[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Deserialize)]
         #[serde(try_from = "String")]
-        pub struct $name(String);
+        #[derive(concord::Debug, serde::Serialize)]
+        pub struct $name(#[sensitive] String);
 
         impl $name {
             /// Validates provider text without changing or pre-encoding it.
@@ -32,17 +33,7 @@ macro_rules! text_value {
             }
         }
 
-        impl fmt::Display for $name {
-            fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-                f.write_str(&self.0)
-            }
-        }
-
-        impl fmt::Debug for $name {
-            fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-                f.write_str(concat!(stringify!($name), "(<redacted>)"))
-            }
-        }
+        serde_plain::derive_display_from_serialize!($name);
     };
 }
 

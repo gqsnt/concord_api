@@ -83,7 +83,7 @@ use params::{
 };
 
 /// The `status` filter of `GET /v1/subscriptions` (adds `all` and `ended` to the statuses).
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, concord::WireDisplay)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum SubscriptionStatusFilter {
     /// `active`.
@@ -107,9 +107,10 @@ pub enum SubscriptionStatusFilter {
     /// `unpaid`.
     Unpaid,
 }
+serde_plain::derive_display_from_serialize!(SubscriptionStatusFilter);
 
 /// The `type` filter of `GET /v1/prices`.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, concord::WireDisplay)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum PriceTypeFilter {
     /// `one_time`.
@@ -117,6 +118,7 @@ pub enum PriceTypeFilter {
     /// `recurring`.
     Recurring,
 }
+serde_plain::derive_display_from_serialize!(PriceTypeFilter);
 
 concord::api! {
     /// Stripe API v1, a bounded slice (see `PROVIDER.md`). Create it through [`StripeContext`],

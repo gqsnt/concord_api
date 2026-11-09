@@ -584,5 +584,5 @@ async fn an_earlier_allocation_sent_during_a_walk_is_refused_and_the_walk_contin
 fn trade_history_options_debug_withholds_values() {
     let mut options = walk_options();
     options.otp = Some("otp-secret-echo".into());
-    assert_eq!(format!("{options:?}"), "TradesHistoryOptions(<withheld>)");
+    assert_eq!(format!("{options:?}"), "TradesHistoryOptions { .. }");
 }

@@ -179,7 +179,7 @@ impl<'de, T: Deserialize<'de>> Deserialize<'de> for Included<T> {
 /// The `data` member of a response, with the distinction GraphQL makes: absent when the request
 /// failed before execution (a parse, validation, cost or throttling error), `null` when an error
 /// propagated to the root, otherwise the (possibly partial) data.
-#[derive(Clone, Default, PartialEq)]
+#[derive(Clone, Default, PartialEq, concord::Debug)]
 pub enum Data<D> {
     /// No `data` member.
     #[default]
@@ -187,7 +187,7 @@ pub enum Data<D> {
     /// `"data": null`.
     Null,
     /// The data; fields an error nulled are `None` where the schema allows it.
-    Present(D),
+    Present(#[sensitive] D),
 }
 
 impl<D> Data<D> {
@@ -205,16 +205,6 @@ impl<D> Data<D> {
             Self::Present(data) => Some(data),
             _ => None,
         }
-    }
-}
-
-impl<D> fmt::Debug for Data<D> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(match self {
-            Self::Absent => "Absent",
-            Self::Null => "Null",
-            Self::Present(_) => "Present(..)",
-        })
     }
 }
 
@@ -478,11 +468,12 @@ impl ErrorCode {
     }
 }
 
-impl fmt::Display for ErrorCode {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(self.as_str())
+impl ::serde::Serialize for ErrorCode {
+    fn serialize<S: ::serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.serialize_str(self.as_str())
     }
 }
+serde_plain::derive_display_from_serialize!(ErrorCode);
 
 impl<'de> Deserialize<'de> for ErrorCode {
     fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {

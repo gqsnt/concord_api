@@ -11,7 +11,7 @@ use crate::error::InputError;
 /// The API spec's rule: one or more path components separated by `/`, each matching
 /// `[a-z0-9]+(?:[._-][a-z0-9]+)*`, the whole name shorter than 256 characters. The name is sent
 /// as **several** path segments (`/v2/acme/tools/app/...`), exactly as written.
-#[derive(Clone, PartialEq, Eq, Hash)]
+#[derive(Clone, PartialEq, Eq, Hash, concord::Debug)]
 pub struct RepositoryName(String);
 
 impl RepositoryName {
@@ -52,18 +52,12 @@ impl fmt::Display for RepositoryName {
     }
 }
 
-impl fmt::Debug for RepositoryName {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "RepositoryName({})", self.0)
-    }
-}
-
 /// A tag such as `latest` or `v1.2.3`.
 ///
 /// The API page gives no tag grammar. This SDK applies the Distribution reference grammar's tag
 /// rule, `[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}`: it keeps a tag a single, unreserved path segment
 /// that cannot be mistaken for a digest (no `:`).
-#[derive(Clone, PartialEq, Eq, Hash)]
+#[derive(Clone, PartialEq, Eq, Hash, concord::Debug)]
 pub struct Tag(String);
 
 impl Tag {
@@ -93,12 +87,6 @@ impl Tag {
 impl fmt::Display for Tag {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str(&self.0)
-    }
-}
-
-impl fmt::Debug for Tag {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "Tag({})", self.0)
     }
 }
 

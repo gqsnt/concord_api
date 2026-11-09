@@ -4,7 +4,7 @@
 //! Written as a downstream application would write it, from the SDK's rustdoc and `PROVIDER.md`
 //! only: request bodies are filled through their public fields (`..Default::default()` for the
 //! rest), operations come from [`StripeContext::api`], and every call goes through the SDK's
-//! [`send`] so the `Request-Id` is kept. Frozen at stage 1 of the exercise: do not edit.
+//! [`send()`] so the `Request-Id` is kept. Frozen at stage 1 of the exercise: do not edit.
 
 use concord_example_stripe_sdk::models::Address;
 use concord_example_stripe_sdk::params::{CustomerCreate, CustomerUpdate};

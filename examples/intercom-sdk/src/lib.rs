@@ -31,19 +31,14 @@ pub const SUCCESS_BODY_LIMIT: usize = 2 * 1024 * 1024;
 pub const ERROR_BODY_LIMIT: usize = 64 * 1024;
 
 /// One successful response, with explicit access to its value and unredacted head.
+#[derive(concord::Debug)]
+#[sensitive]
 pub struct Response<T> {
     /// The decoded provider value.
     pub value: T,
     /// Status, operation and headers; header access is unredacted.
+    #[public]
     pub meta: concord::ResponseMeta,
-}
-
-impl<T> std::fmt::Debug for Response<T> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("Response")
-            .field("meta", &self.meta)
-            .finish_non_exhaustive()
-    }
 }
 
 /// Single-execution policy: bounded success decoding and typed non-success documents.

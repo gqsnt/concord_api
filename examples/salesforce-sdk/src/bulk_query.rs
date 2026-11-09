@@ -263,9 +263,11 @@ pub enum NextResultSet {
 ///
 /// Build it once per job and open each part with [`open`](Self::open). Cheap to clone (the CSV
 /// configuration is shared).
+#[derive(concord::Debug)]
 pub struct ResultPartReader<T> {
     job: BulkQueryJob,
     reader: CsvReader,
+    #[sensitive]
     _rows: PhantomData<fn() -> T>,
 }
 
@@ -276,15 +278,6 @@ impl<T> Clone for ResultPartReader<T> {
             reader: self.reader.clone(),
             _rows: PhantomData,
         }
-    }
-}
-
-impl<T> fmt::Debug for ResultPartReader<T> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("ResultPartReader")
-            .field("job", &self.job)
-            .field("reader", &self.reader)
-            .finish()
     }
 }
 
@@ -550,21 +543,12 @@ impl<T> fmt::Debug for ResultPartRows<T> {
 
 /// A discovered result URL: its discovery ordinal (0-based, stable across resumed discovery) and
 /// the validated link. `Debug` never shows the locator.
-#[derive(Clone, PartialEq, Eq, Hash)]
+#[derive(Clone, PartialEq, Eq, Hash, concord::Debug)]
 pub struct ResultPart {
     /// Position in discovery order.
     pub ordinal: u64,
     /// The validated link.
     pub link: ResultLink,
-}
-
-impl fmt::Debug for ResultPart {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("ResultPart")
-            .field("ordinal", &self.ordinal)
-            .field("link", &self.link)
-            .finish()
-    }
 }
 
 /// The key of a result-pages manifest after the first: the next link's locator and the ordinal

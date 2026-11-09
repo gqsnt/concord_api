@@ -1,5 +1,3 @@
-use std::fmt;
-
 use concord::multipart::{MultipartBody, Part};
 use concord::reqwest::{
     StatusCode, Url,
@@ -16,44 +14,33 @@ const MULTIPART_LIMIT: usize = 5 * 1024 * 1024;
 
 /// Persistable upload state. Contains the session URL (a sensitive capability), no bearer token.
 /// Use protected storage. Restoring always requires a status probe before sending bytes.
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, concord::Debug)]
+#[sensitive]
 pub struct UploadCheckpoint {
     url: String,
+    #[public]
     total: u64,
     media_type: String,
+    #[public]
     acknowledged: u64,
-}
-
-impl fmt::Debug for UploadCheckpoint {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("UploadCheckpoint")
-            .field("total", &self.total)
-            .field("acknowledged", &self.acknowledged)
-            .finish_non_exhaustive()
-    }
 }
 
 /// A resumable session bound to one client origin and one source length/media type.
 /// Not Clone: share through application synchronization if necessary.
+#[derive(concord::Debug)]
+#[sensitive]
 pub struct UploadSession {
     client: DriveClient,
     url: Url,
+    #[public]
     total: u64,
     media_type: HeaderValue,
+    #[public]
     acknowledged: u64,
+    #[public]
     needs_probe: bool,
+    #[public]
     complete: bool,
-}
-
-impl fmt::Debug for UploadSession {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("UploadSession")
-            .field("total", &self.total)
-            .field("acknowledged", &self.acknowledged)
-            .field("needs_probe", &self.needs_probe)
-            .field("complete", &self.complete)
-            .finish_non_exhaustive()
-    }
 }
 
 /// An acknowledged byte prefix, or completed metadata. HTTP 308 is successful progress here.

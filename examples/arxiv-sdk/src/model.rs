@@ -70,15 +70,11 @@ pub struct Link {
     pub media_type: Option<String>,
 }
 /// An arXiv Atom error entry. Explicit fields may contain request text.
-#[derive(Clone)]
+#[derive(Clone, concord::Debug)]
+#[sensitive]
 pub struct Problem {
     /// Error identifier URI.
     pub id: String,
     /// Provider's explanation, intentionally absent from error formatting.
     pub summary: String,
-}
-impl std::fmt::Debug for Problem {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str("Problem(<redacted>)")
-    }
 }

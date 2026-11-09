@@ -105,7 +105,7 @@ impl std::error::Error for InvalidValue {}
 /// of the Admin API host `https://{shop}.myshopify.com`.
 ///
 /// `Display` is the handle: it is the declaration's `subdomain "{shop}"` value.
-#[derive(Clone, PartialEq, Eq, Hash)]
+#[derive(Clone, PartialEq, Eq, Hash, concord::Debug)]
 pub struct ShopDomain(String);
 
 impl ShopDomain {
@@ -149,16 +149,10 @@ impl fmt::Display for ShopDomain {
     }
 }
 
-impl fmt::Debug for ShopDomain {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "ShopDomain({})", self.0)
-    }
-}
-
 /// An Admin API access token (sent as `X-Shopify-Access-Token`). No `Display`; `Debug` is
 /// redacted. [`expose`](Self::expose) is the one deliberate way to read it.
-#[derive(Clone, PartialEq, Eq)]
-pub struct AccessToken(String);
+#[derive(Clone, PartialEq, Eq, concord::Debug)]
+pub struct AccessToken(#[sensitive] String);
 
 impl AccessToken {
     /// The token.
@@ -181,17 +175,12 @@ impl AccessToken {
     }
 }
 
-impl fmt::Debug for AccessToken {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str("AccessToken(<redacted>)")
-    }
-}
-
 /// An opaque connection cursor (`pageInfo.endCursor`). Passed back verbatim as `after`; never
-/// printed (`Debug` is `Cursor(..)`).
+/// printed (`Debug` is `Cursor(<redacted>)`).
 #[derive(Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(transparent)]
-pub struct Cursor(String);
+#[derive(concord::Debug)]
+pub struct Cursor(#[sensitive] String);
 
 impl Cursor {
     /// A cursor obtained elsewhere (a stored checkpoint).
@@ -202,12 +191,6 @@ impl Cursor {
     /// The opaque value. Do not log it.
     pub fn expose(&self) -> &str {
         &self.0
-    }
-}
-
-impl fmt::Debug for Cursor {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str("Cursor(..)")
     }
 }
 
@@ -263,6 +246,7 @@ impl<'de> Deserialize<'de> for SignedUrl {
 /// string (`"29.99"`). Kept as its exact text; this SDK does no arithmetic on money.
 #[derive(Clone, PartialEq, Eq, Hash, Serialize)]
 #[serde(transparent)]
+#[derive(concord::Debug)]
 pub struct Decimal(String);
 
 impl Decimal {
@@ -293,34 +277,19 @@ impl<'de> Deserialize<'de> for Decimal {
     }
 }
 
-impl fmt::Display for Decimal {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(&self.0)
-    }
-}
-
-impl fmt::Debug for Decimal {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "Decimal({})", self.0)
-    }
-}
+serde_plain::derive_display_from_serialize!(Decimal);
 
 /// The GraphQL `DateTime` scalar (ISO 8601 text such as `2026-10-01T12:00:00Z`), kept as text:
 /// the SDK compares and reports it, it does no calendar arithmetic.
 #[derive(Clone, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(transparent)]
+#[derive(concord::Debug)]
 pub struct DateTime(String);
 
 impl DateTime {
     /// The timestamp text.
     pub fn as_str(&self) -> &str {
         &self.0
-    }
-}
-
-impl fmt::Debug for DateTime {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "DateTime({})", self.0)
     }
 }
 
@@ -363,8 +332,10 @@ pub trait GidKind {
 /// A Shopify global id, `gid://shopify/{Type}/{id}`, checked to designate a `K` when it is parsed
 /// or deserialized. The remainder after the type is opaque (an `InventoryLevel` id carries a
 /// query, `.../InventoryLevel/1?inventory_item_id=2`).
+#[derive(concord::Debug)]
 pub struct Gid<K> {
     raw: String,
+    #[sensitive]
     kind: PhantomData<fn() -> K>,
 }
 
@@ -440,12 +411,6 @@ impl<K> Ord for Gid<K> {
 impl<K> fmt::Display for Gid<K> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str(&self.raw)
-    }
-}
-
-impl<K> fmt::Debug for Gid<K> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{:?}", self.raw)
     }
 }
 

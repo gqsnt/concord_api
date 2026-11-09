@@ -4,17 +4,12 @@ use crate::{
 };
 use concord::{Endpoint, Sends, reqwest::Url};
 use concord_pagination::{Page, Pages, Resume};
-use std::{borrow::Cow, fmt, num::NonZeroUsize};
+use std::{borrow::Cow, num::NonZeroUsize};
 
 /// A validated opaque continuation. Debug never displays its URL.
 /// It belongs to the original client, collection and query plan.
-#[derive(Clone)]
-pub struct NextLink(String);
-impl fmt::Debug for NextLink {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str("NextLink(<redacted>)")
-    }
-}
+#[derive(Clone, concord::Debug)]
+pub struct NextLink(#[sensitive] String);
 
 /// Bounded pages with explicit provider exhaustion, failure and incomplete outcomes.
 pub type Traversal<T> = Pages<T, NextLink, ResponseMeta, Error>;

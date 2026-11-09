@@ -1,7 +1,5 @@
 //! The two Datadog keys every SDK request carries.
 
-use std::fmt;
-
 use concord::reqwest::header::HeaderValue;
 
 use crate::error::{AuthError, Key};
@@ -24,9 +22,11 @@ use crate::error::{AuthError, Key};
 /// let error = Credentials::new("synthetic-api-key", "").unwrap_err();
 /// assert_eq!(error, AuthError::MissingApplicationKey);
 /// ```
-#[derive(Clone)]
+#[derive(Clone, concord::Debug)]
 pub struct Credentials {
+    #[sensitive]
     pub(crate) api_key: String,
+    #[sensitive]
     pub(crate) application_key: String,
 }
 
@@ -70,13 +70,4 @@ fn check(value: &str, key: Key) -> Result<(), AuthError> {
     // request, made here so that a bad key is an authentication error, not a build error.
     HeaderValue::from_str(value).map_err(|_| AuthError::MalformedKey(key))?;
     Ok(())
-}
-
-impl fmt::Debug for Credentials {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("Credentials")
-            .field("api_key", &format_args!("<redacted>"))
-            .field("application_key", &format_args!("<redacted>"))
-            .finish()
-    }
 }

@@ -10,7 +10,7 @@
 
 #![doc = include_str!("../README.md")]
 
-use std::{fmt, num::NonZeroUsize, time::Duration};
+use std::{num::NonZeroUsize, time::Duration};
 
 pub use concord;
 use concord::{Endpoint, Json, SendOperation, SendWith, reqwest};

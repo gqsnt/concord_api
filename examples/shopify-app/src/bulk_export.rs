@@ -287,49 +287,6 @@ impl ExportOutcome {
     }
 }
 
-impl fmt::Debug for ExportOutcome {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::Complete => f.write_str("Complete"),
-            Self::EmptyCompleted => f.write_str("EmptyCompleted"),
-            Self::Partial { error_code } => f
-                .debug_struct("Partial")
-                .field("error_code", error_code)
-                .finish(),
-            Self::FailedWithoutData { error_code } => f
-                .debug_struct("FailedWithoutData")
-                .field("error_code", error_code)
-                .finish(),
-            Self::Canceled => f.write_str("Canceled"),
-            Self::Expired => f.write_str("Expired"),
-            Self::StillRunning => f.write_str("StillRunning"),
-            Self::Rejected { user_errors } => f
-                .debug_struct("Rejected")
-                .field("user_errors", user_errors)
-                .finish(),
-            Self::NotFound => f.write_str("NotFound"),
-            Self::RequestFailed { stage, failure } => f
-                .debug_struct("RequestFailed")
-                .field("stage", stage)
-                .field("failure", failure)
-                .finish(),
-            Self::DownloadRefused { error } => f
-                .debug_struct("DownloadRefused")
-                .field("error", error)
-                .finish(),
-            Self::DownloadFailed { error } => f
-                .debug_struct("DownloadFailed")
-                .field("timeout", &error.is_timeout())
-                .field("connect", &error.is_connect())
-                .finish(),
-            Self::Interrupted { error } => {
-                f.debug_struct("Interrupted").field("error", error).finish()
-            }
-            Self::SinkStopped => f.write_str("SinkStopped"),
-        }
-    }
-}
-
 /// Which GraphQL request failed.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum RequestStage {
@@ -340,6 +297,7 @@ pub enum RequestStage {
 }
 
 /// A GraphQL request that gave no usable answer.
+#[derive(concord::Debug)]
 pub enum RequestFailure {
     /// No envelope (Concord's error or a version mismatch).
     Request(RequestError),
@@ -354,15 +312,6 @@ impl RequestFailure {
     /// Whether the answer was `THROTTLED`.
     pub fn is_throttled(&self) -> bool {
         matches!(self, Self::NoData { errors } if errors.iter().any(|e| e.code() == Some(&concord_example_shopify_sdk::ErrorCode::Throttled)))
-    }
-}
-
-impl fmt::Debug for RequestFailure {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::Request(e) => f.debug_tuple("Request").field(e).finish(),
-            Self::NoData { errors } => f.debug_struct("NoData").field("errors", errors).finish(),
-        }
     }
 }
 
@@ -667,4 +616,47 @@ async fn download<S: RecordSink + ?Sized>(
 /// revoked signature (`403`) rather than a missing object (`404`) or a server error.
 pub fn signature_refused(error: &OpenError) -> bool {
     error.status_code() == StatusCode::FORBIDDEN
+}
+
+impl fmt::Debug for ExportOutcome {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Complete => f.write_str("Complete"),
+            Self::EmptyCompleted => f.write_str("EmptyCompleted"),
+            Self::Partial { error_code } => f
+                .debug_struct("Partial")
+                .field("error_code", error_code)
+                .finish(),
+            Self::FailedWithoutData { error_code } => f
+                .debug_struct("FailedWithoutData")
+                .field("error_code", error_code)
+                .finish(),
+            Self::Canceled => f.write_str("Canceled"),
+            Self::Expired => f.write_str("Expired"),
+            Self::StillRunning => f.write_str("StillRunning"),
+            Self::Rejected { user_errors } => f
+                .debug_struct("Rejected")
+                .field("user_errors", user_errors)
+                .finish(),
+            Self::NotFound => f.write_str("NotFound"),
+            Self::RequestFailed { stage, failure } => f
+                .debug_struct("RequestFailed")
+                .field("stage", stage)
+                .field("failure", failure)
+                .finish(),
+            Self::DownloadRefused { error } => f
+                .debug_struct("DownloadRefused")
+                .field("error", error)
+                .finish(),
+            Self::DownloadFailed { error } => f
+                .debug_struct("DownloadFailed")
+                .field("timeout", &error.is_timeout())
+                .field("connect", &error.is_connect())
+                .finish(),
+            Self::Interrupted { error } => {
+                f.debug_struct("Interrupted").field("error", error).finish()
+            }
+            Self::SinkStopped => f.write_str("SinkStopped"),
+        }
+    }
 }

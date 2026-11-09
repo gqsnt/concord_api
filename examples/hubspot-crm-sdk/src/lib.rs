@@ -299,31 +299,25 @@ fn attribute(ids: &[String], response: BatchReadResponse) -> Result<BatchRead, E
 }
 
 /// OAuth form. Its debug output never contains credentials.
-#[derive(Clone, Serialize)]
+#[derive(Clone, Serialize, concord::Debug)]
+#[sensitive]
 pub struct RefreshRequest {
     grant_type: &'static str,
     client_id: String,
     client_secret: String,
     refresh_token: String,
 }
-impl fmt::Debug for RefreshRequest {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str("RefreshRequest(<redacted>)")
-    }
-}
+
 /// OAuth response, whose debug output is redacted.
-#[derive(Deserialize)]
+#[derive(Deserialize, concord::Debug)]
+#[sensitive]
 pub struct RefreshResponse {
     access_token: String,
     refresh_token: Option<String>,
     expires_in: u64,
     token_type: String,
 }
-impl fmt::Debug for RefreshResponse {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str("RefreshResponse(<redacted>)")
-    }
-}
+
 /// An SDK failure. Formatting never includes request values or response bodies.
 #[derive(Debug)]
 pub enum Error {
@@ -391,15 +385,12 @@ struct Inner {
 /// snapshot, acquired before constructing each CRM operation.
 ///
 /// One HubSpot installation. Clones coordinate refresh in this process.
-#[derive(Clone)]
+#[derive(Clone, concord::Debug)]
+#[sensitive]
 pub struct HubSpot {
     inner: Arc<Inner>,
 }
-impl fmt::Debug for HubSpot {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str("HubSpot(<redacted>)")
-    }
-}
+
 impl HubSpot {
     /// Construct one installation. The supplied HTTP client must disable redirects and automatic
     /// retries, and use a finite timeout. Store and coordinate refresh tokens externally if needed.
@@ -711,5 +702,27 @@ mod tests {
             serde_json::json!({"inputs": [{"id": "1"}, {"id": "2"}],
                 "properties": ["email"], "propertiesWithHistory": []})
         );
+    }
+}
+
+#[cfg(test)]
+mod sdk_type_canaries {
+    use super::*;
+
+    #[test]
+    fn oauth_request_withholds_credentials_in_both_debug_modes() {
+        let mut canaries = concord_check_canary::Canaries::new("hubspot-request");
+        let request = RefreshRequest {
+            grant_type: "refresh_token",
+            client_id: canaries.issue(),
+            client_secret: canaries.issue(),
+            refresh_token: canaries.issue(),
+        };
+        assert!(
+            serde_json::to_string(&request)
+                .unwrap()
+                .contains(&request.client_secret)
+        );
+        canaries.assert_debug_absent("RefreshRequest", &request);
     }
 }

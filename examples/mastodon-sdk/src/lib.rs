@@ -120,9 +120,10 @@ struct ReadmeDoctests;
 ///
 /// Its methods return the generated request values: chain their setters, then `send()` (or
 /// `prepare()` for the native request). Handles are cheap to clone and share.
-#[derive(Clone)]
+#[derive(Clone, concord::Debug)]
 pub struct Mastodon {
     api: api::Api,
+    #[sensitive]
     instance: InstanceUrl,
 }
 
@@ -236,12 +237,5 @@ impl Mastodon {
             return Err(DiscoveryError::OtherInstance.into());
         }
         Ok(self.api.clone().with_base_url(host.url())?)
-    }
-}
-
-impl std::fmt::Debug for Mastodon {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        // The generated client's `Debug` shows the base and withholds the token.
-        f.debug_struct("Mastodon").field("api", &self.api).finish()
     }
 }

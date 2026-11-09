@@ -102,7 +102,9 @@ which only sees the endpoint. **By hand:** nothing; the 16 MiB limit is document
 is `ErrorKind::Limit`; lower the page size). **Split:** generic. **Smallest change:** a per-request
 limit override on generated requests that the send policy's `decode()` honours.
 
-## 8. Provider data that quotes content needs hand-written `Debug`
+## 8. Provider data that quotes content needs declared secrecy
+
+P4.1: field-only formatting now derives `concord::Debug` with `#[sensitive]`; computed byte-count and diagnostic projections stay manual. The following observations describe the earlier formatter work.
 
 **Evidence.** Concord redacts values and never renders bodies, but Elasticsearch error `reason`s
 can quote document content (`include_source_on_error` defaults to `true`), and hits, sort values

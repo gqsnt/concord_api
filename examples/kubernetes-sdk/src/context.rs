@@ -8,8 +8,6 @@
 //! **generated** handles: callers keep the operations' setters, `prepare()` and `send()`. Like
 //! Concord's handles, contexts are immutable snapshots and cheap to clone.
 
-use std::fmt;
-
 use concord::reqwest;
 
 use crate::error::KubeError;
@@ -21,7 +19,7 @@ use crate::{
 
 /// The configured Kubernetes client: base URL, credentials and the `reqwest::Client` (whose TLS
 /// configuration — cluster CA, client certificates — is the caller's).
-#[derive(Clone)]
+#[derive(Clone, concord::Debug)]
 pub struct KubeContext {
     client: Kube,
 }
@@ -97,18 +95,11 @@ impl KubeContext {
     }
 }
 
-impl fmt::Debug for KubeContext {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        // The generated client's Debug withholds the sensitive `authorization` value.
-        f.debug_struct("KubeContext")
-            .field("client", &self.client)
-            .finish()
-    }
-}
-
 /// One namespace bound across `core/v1`, `apps/v1`, `batch/v1` and `networking.k8s.io/v1`.
-#[derive(Clone)]
+#[derive(Clone, concord::Debug)]
+#[sensitive]
 pub struct NamespaceContext {
+    #[public]
     namespace: NamespaceName,
     core: KubeCoreV1Namespaced,
     apps: KubeAppsV1Namespaced,
@@ -140,13 +131,5 @@ impl NamespaceContext {
     /// `networking.k8s.io/v1` in this namespace (Ingresses).
     pub fn networking(&self) -> &KubeNetworkingV1Namespaced {
         &self.networking
-    }
-}
-
-impl fmt::Debug for NamespaceContext {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("NamespaceContext")
-            .field("namespace", &self.namespace)
-            .finish_non_exhaustive()
     }
 }

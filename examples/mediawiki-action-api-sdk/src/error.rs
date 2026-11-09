@@ -4,18 +4,13 @@ use concord::ResponseMeta;
 use serde::Deserialize;
 
 /// MediaWiki's application error. Fields are explicit, unredacted provider data.
-#[derive(Deserialize)]
+#[derive(Deserialize, concord::Debug)]
+#[sensitive]
 pub struct ApiProblem {
     /// Machine-readable provider code (open-ended).
     pub code: String,
     /// Human-readable provider detail; may echo request data.
     pub info: String,
-}
-
-impl fmt::Debug for ApiProblem {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str("ApiProblem(<redacted>)")
-    }
 }
 
 /// The expected error envelope on a non-success HTTP response.

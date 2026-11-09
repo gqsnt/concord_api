@@ -1,5 +1,5 @@
 //! Finite JSON page traversal with explicit completion and resumable partial outcomes.
-use std::{fmt, num::NonZeroUsize, sync::Arc};
+use std::{num::NonZeroUsize, sync::Arc};
 
 use concord::{ErrorKind, IgnoreContentType, Json, Prepared, ResponseMeta};
 use concord_pagination::{Page, Pages, Resume};
@@ -29,6 +29,8 @@ type Factory<T> = Arc<dyn Fn() -> Result<Prepared<Envelope<T>>, concord::Error> 
 
 /// A reusable request factory bound to one authorization context, collection and selection.
 /// Creation performs no HTTP I/O. Every fetch uses the Concord-declared operation once.
+#[derive(concord::Debug)]
+#[sensitive]
 pub struct Listing<T> {
     pub(crate) binding: Binding,
     prepare: Factory<T>,
@@ -48,11 +50,6 @@ impl<T> Clone for Listing<T> {
             success_limit: self.success_limit,
             error_limit: self.error_limit,
         }
-    }
-}
-impl<T> fmt::Debug for Listing<T> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("Listing").finish_non_exhaustive()
     }
 }
 

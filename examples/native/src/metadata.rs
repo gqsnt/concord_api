@@ -128,27 +128,23 @@ impl fmt::Debug for Meta {
 }
 
 /// A decoded value with the metadata of the response it came from.
+#[derive(concord::Debug)]
 pub struct WithMeta<T> {
     /// The endpoint's typed output, decoded by its declared format.
+    #[sensitive]
     pub value: T,
     /// The selected response-head metadata.
     pub meta: Meta,
 }
 
-impl<T> fmt::Debug for WithMeta<T> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("WithMeta")
-            .field("value", &format_args!("<withheld>"))
-            .field("meta", &self.meta)
-            .finish()
-    }
-}
-
 /// A response whose head was received and captured, its body still unread, with the endpoint's
 /// decoder.
+#[derive(concord::Debug)]
 pub struct Received<T> {
     meta: Meta,
+    #[sensitive]
     response: reqwest::Response,
+    #[sensitive]
     decoder: Decoder<T>,
 }
 
@@ -181,16 +177,8 @@ impl<T> Received<T> {
     }
 }
 
-impl<T> fmt::Debug for Received<T> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("Received")
-            .field("meta", &self.meta)
-            .field("body", &format_args!("<unread>"))
-            .finish()
-    }
-}
-
 /// A failed call: the Concord error, and the metadata of the response head if one arrived.
+#[derive(concord::Debug)]
 pub struct MetaError {
     error: concord::Error,
     // Boxed, like `concord::Error`'s own state: the `Err` variant stays two pointers wide.
@@ -234,15 +222,6 @@ impl From<concord::Error> for MetaError {
 impl fmt::Display for MetaError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         fmt::Display::fmt(&self.error, f)
-    }
-}
-
-impl fmt::Debug for MetaError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("MetaError")
-            .field("error", &self.error)
-            .field("meta", &self.meta)
-            .finish()
     }
 }
 

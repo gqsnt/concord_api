@@ -7,6 +7,7 @@ license.workspace = true
 publish = false
 
 [dependencies]
+serde_plain.workspace = true
 concord = { path = "../../crates/concord" }
 concord-codecs = { path = "../../crates/concord-codecs" }
 concord-pagination = { path = "../../crates/concord-pagination" }

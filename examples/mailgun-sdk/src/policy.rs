@@ -1,9 +1,6 @@
 use crate::{Error, ProviderError, RetryAfterError, SMALL_BODY_LIMIT, error::Problem};
 use concord::{Endpoint, Json, Prepared, SendWith, reqwest::StatusCode};
-use std::{
-    fmt,
-    time::{Duration, SystemTime},
-};
+use std::time::{Duration, SystemTime};
 
 /// A strict numeric header observation; invalid and absent remain distinct.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -63,19 +60,14 @@ impl Metadata {
 }
 
 /// Typed response with its retained head. Debug withholds the payload.
+#[derive(concord::Debug)]
+#[sensitive]
 pub struct Response<T> {
     /// Provider data; a send response establishes acceptance only.
     pub value: T,
     /// HTTP status, operation identity and headers.
+    #[public]
     pub meta: Metadata,
-}
-
-impl<T> fmt::Debug for Response<T> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("Response")
-            .field("meta", &self.meta)
-            .finish_non_exhaustive()
-    }
 }
 
 /// One execution, bounded decoding, no retry or auth-refresh loop.

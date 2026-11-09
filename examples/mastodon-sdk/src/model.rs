@@ -104,8 +104,8 @@ impl std::error::Error for InvalidInstanceUrl {}
 /// Built with `concord_auth::bearer`: the token must be non-empty visible ASCII without spaces;
 /// the header value is flagged sensitive. `Debug` never shows it, and the SDK sends it only to
 /// the instance it was given to and to the streaming host that instance advertises.
-#[derive(Clone)]
-pub struct AccessToken(HeaderValue);
+#[derive(Clone, concord::Debug)]
+pub struct AccessToken(#[sensitive] HeaderValue);
 
 impl AccessToken {
     /// Validates a token.
@@ -121,12 +121,6 @@ impl AccessToken {
 
     pub(crate) fn header(&self) -> &HeaderValue {
         &self.0
-    }
-}
-
-impl fmt::Debug for AccessToken {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str("AccessToken(<redacted>)")
     }
 }
 
@@ -146,6 +140,7 @@ impl std::error::Error for InvalidToken {}
 /// and free of whitespace and control characters; it never compares ids as numbers.
 #[derive(Clone, PartialEq, Eq, Hash, Deserialize)]
 #[serde(try_from = "String")]
+#[derive(concord::Debug, serde::Serialize)]
 pub struct StatusId(String);
 
 impl StatusId {
@@ -176,17 +171,7 @@ impl TryFrom<String> for StatusId {
     }
 }
 
-impl fmt::Display for StatusId {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(&self.0)
-    }
-}
-
-impl fmt::Debug for StatusId {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_tuple("StatusId").field(&self.0).finish()
-    }
-}
+serde_plain::derive_display_from_serialize!(StatusId);
 
 /// [`StatusId::new`] refused its input.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

@@ -26,8 +26,6 @@ pub use upload::{
     AttemptRecord, Evidence, UploadError, UploadFile, UploadPolicy, UploadReport, Uploaded,
 };
 
-use std::fmt;
-
 use concord::reqwest::{self, Url};
 
 use model::{Token, UploadUrl, base_url, issued_url};
@@ -145,12 +143,15 @@ impl Client {
 
 /// An authorized account: the issued URLs and the account token, bound to their operations.
 /// `Debug` withholds the token and the account ID.
-#[derive(Clone)]
+#[derive(Clone, concord::Debug)]
 pub struct Session {
     account: AccountInfo,
+    #[sensitive]
     storage: B2WireStorage,
+    #[sensitive]
     download: B2WireDownload,
     /// The unbound client, for binding an upload scope to each issued upload URL.
+    #[sensitive]
     wire: B2Wire,
 }
 
@@ -192,14 +193,5 @@ impl Session {
         let url = issued_url(&self.account.api_url, &wire.upload_url, false).map_err(contract)?;
         let token = Token::issued(wire.authorization_token).map_err(contract)?;
         Ok(UploadUrl { url, token })
-    }
-}
-
-impl fmt::Debug for Session {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("Session")
-            .field("account", &self.account)
-            .field("token", &"<redacted>")
-            .finish()
     }
 }

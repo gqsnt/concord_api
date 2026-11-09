@@ -17,7 +17,7 @@ pub use upload::{DataType, PollPolicy, StreamMultipart, UploadFile, UploadStatus
 
 use concord::{Endpoint, Form, Json, Received, SendWith, reqwest};
 use serde::Deserialize;
-use std::{fmt, num::NonZeroUsize, time::Duration};
+use std::{num::NonZeroUsize, time::Duration};
 
 /// Maximum finite success body (1 MiB).
 pub const BODY_LIMIT: usize = 1024 * 1024;
@@ -50,24 +50,20 @@ pub struct Activity {
 }
 
 /// A typed value and safe response metadata. Debug withholds the value.
+#[derive(concord::Debug)]
+#[sensitive]
 pub struct Response<T> {
     /// Decoded document, available deliberately.
     pub value: T,
     /// Original HTTP head; Debug prints header names only.
+    #[public]
     pub meta: concord::ResponseMeta,
     /// Independently parsed quota observations.
+    #[public]
     pub rates: RateLimits,
     /// Application executions (OAuth calls counted separately).
+    #[public]
     pub attempts: usize,
-}
-impl<T> fmt::Debug for Response<T> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("Response")
-            .field("meta", &self.meta)
-            .field("rates", &self.rates)
-            .field("attempts", &self.attempts)
-            .finish_non_exhaustive()
-    }
 }
 
 concord::api! {

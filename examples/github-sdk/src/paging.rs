@@ -332,8 +332,11 @@ pub type GitHubItems<T> = PageItems<T, NextLink, GitHubError>;
 
 /// A page factory for one list operation of one repository. See the
 /// [module documentation](self).
+#[derive(concord::Debug)]
+#[sensitive]
 pub struct LinkPages<Op, R> {
     context: GitHubContext,
+    #[public]
     binding: Binding,
     operation: Op,
     prepare: fn(Op) -> Result<Prepared<R>, concord::Error>,
@@ -567,14 +570,6 @@ fn repo_part<'a, 'b>(segments: &'b [&'a str]) -> Option<(RepoPart<'a>, &'b [&'a 
             Some((RepoPart::Id, rest))
         }
         _ => None,
-    }
-}
-
-impl<Op, R> fmt::Debug for LinkPages<Op, R> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("LinkPages")
-            .field("binding", &self.binding)
-            .finish_non_exhaustive()
     }
 }
 

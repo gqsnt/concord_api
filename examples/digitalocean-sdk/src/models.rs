@@ -1,5 +1,4 @@
 use serde::Deserialize;
-use std::fmt;
 
 /// Selected infrastructure fields of a droplet; unmodeled provider fields are ignored.
 #[derive(Debug, Deserialize)]
@@ -122,27 +121,19 @@ pub struct CollectionMeta {
 }
 
 /// Body links. Debug withholds the server-supplied URLs.
-#[derive(Default, Deserialize)]
+#[derive(Default, Deserialize, concord::Debug)]
+#[sensitive]
 pub struct Links {
     /// Missing pages means there is no continuation.
     pub pages: Option<PageLinks>,
 }
-impl fmt::Debug for Links {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str("Links(<redacted>)")
-    }
-}
 
 /// Only `next` controls traversal; other relations are ignored.
-#[derive(Default, Deserialize)]
+#[derive(Default, Deserialize, concord::Debug)]
+#[sensitive]
 pub struct PageLinks {
     /// Absent or null means completion. A present empty/invalid URL is an error.
     pub next: Option<String>,
-}
-impl fmt::Debug for PageLinks {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str("PageLinks(<redacted>)")
-    }
 }
 
 /// A page of droplets.
@@ -196,4 +187,20 @@ pub struct Snapshots {
     pub links: Option<Links>,
     /// Optional provider collection totals.
     pub meta: Option<CollectionMeta>,
+}
+
+#[cfg(test)]
+mod sdk_type_canaries {
+    use super::*;
+
+    #[test]
+    fn page_links_withhold_the_stored_url() {
+        let mut c = concord_check_canary::Canaries::new("do-page-links");
+        let secret = c.issue();
+        let links = PageLinks {
+            next: Some(secret.clone()),
+        };
+        assert_eq!(links.next.as_deref(), Some(secret.as_str()));
+        c.assert_debug_absent("PageLinks", &links);
+    }
 }

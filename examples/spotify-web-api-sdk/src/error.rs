@@ -161,6 +161,7 @@ impl fmt::Debug for TokenFailure {
 
 /// Why an access token could not be obtained.
 #[non_exhaustive]
+#[derive(concord::Debug)]
 pub enum AuthError {
     /// The token endpoint answered `invalid_grant`: the refresh token (or authorization code) is
     /// expired, revoked or otherwise invalid. The session stops using that refresh token; send the
@@ -201,20 +202,6 @@ impl AuthError {
     }
 }
 
-impl fmt::Debug for AuthError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::InvalidGrant(t) => f.debug_tuple("InvalidGrant").field(t).finish(),
-            Self::Refused(t) => f.debug_tuple("Refused").field(t).finish(),
-            Self::ReauthorizationRequired => f.write_str("ReauthorizationRequired"),
-            Self::NoRefreshToken => f.write_str("NoRefreshToken"),
-            Self::Protocol(m) => f.debug_tuple("Protocol").field(m).finish(),
-            Self::Concord(e) => f.debug_tuple("Concord").field(e).finish(),
-            Self::Cache(m) => f.debug_tuple("Cache").field(m).finish(),
-        }
-    }
-}
-
 impl fmt::Display for AuthError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
@@ -250,6 +237,7 @@ impl std::error::Error for AuthError {
 
 /// The SDK's error.
 #[non_exhaustive]
+#[derive(concord::Debug)]
 pub enum Error {
     /// A value the SDK refused before building any request.
     InvalidInput(&'static str),
@@ -343,20 +331,6 @@ impl From<concord::Error> for Error {
 impl From<AuthError> for Error {
     fn from(e: AuthError) -> Self {
         Self::Auth(Arc::new(e))
-    }
-}
-
-impl fmt::Debug for Error {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::InvalidInput(m) => f.debug_tuple("InvalidInput").field(m).finish(),
-            Self::Api(a) => f.debug_tuple("Api").field(a).finish(),
-            Self::Auth(a) => f.debug_tuple("Auth").field(a).finish(),
-            Self::Protocol(m) => f.debug_tuple("Protocol").field(m).finish(),
-            Self::Concord(e) => f.debug_tuple("Concord").field(e).finish(),
-            Self::Deadline => f.write_str("Deadline"),
-            Self::UncertainWrite(cause) => f.debug_tuple("UncertainWrite").field(cause).finish(),
-        }
     }
 }
 

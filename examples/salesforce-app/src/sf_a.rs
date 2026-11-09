@@ -91,11 +91,14 @@ pub struct ExtractionResume {
 
 /// Where a section resumes: bound to its org, API version and SOQL statement. `Debug` shows
 /// neither the statement nor the locator.
-#[derive(Clone, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq, concord::Debug)]
+#[sensitive]
 pub struct QueryResume {
     instance: String,
+    #[public]
     version: ApiVersion,
     soql: String,
+    #[public]
     at: Resume<QueryLocator>,
 }
 
@@ -103,15 +106,6 @@ impl QueryResume {
     /// The resume position (`Start` or the locator of the first batch not received).
     pub fn position(&self) -> &Resume<QueryLocator> {
         &self.at
-    }
-}
-
-impl fmt::Debug for QueryResume {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("QueryResume")
-            .field("version", &self.version)
-            .field("at", &self.at)
-            .finish_non_exhaustive()
     }
 }
 

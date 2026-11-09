@@ -290,6 +290,7 @@ impl fmt::Display for Protocol {
 }
 
 /// A non-2xx answer: its head and the error document, if one could be read.
+#[derive(concord::Debug)]
 pub struct ProviderError {
     meta: ResponseMeta,
     document: Result<ErrorDocument, concord::Error>,
@@ -338,15 +339,6 @@ impl fmt::Display for ProviderError {
             write!(f, " ({kind})")?;
         }
         Ok(())
-    }
-}
-
-impl fmt::Debug for ProviderError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("ProviderError")
-            .field("meta", &self.meta)
-            .field("document", &self.document)
-            .finish()
     }
 }
 

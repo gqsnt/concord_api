@@ -213,13 +213,8 @@ impl Window {
 /// shows it, for deliberate use.
 #[derive(Clone, PartialEq, Eq, Deserialize)]
 #[serde(try_from = "String")]
-pub struct EventId(String);
-
-impl std::fmt::Debug for EventId {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str("EventId(<redacted>)")
-    }
-}
+#[derive(concord::Debug)]
+pub struct EventId(#[sensitive] String);
 
 impl EventId {
     /// Accept a nonempty identifier of at most 256 bytes without control characters.

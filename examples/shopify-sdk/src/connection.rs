@@ -114,6 +114,7 @@ impl fmt::Display for Protocol {
 /// Why a connection page is not a page.
 ///
 /// `Display`/`Debug` name the failure, error codes and counts, never cursors or contents.
+#[derive(concord::Debug)]
 pub enum PageError {
     /// The request failed or the envelope did not decode (Concord's error, unread response kept
     /// for a status error), or the served API version was not the pinned one.
@@ -187,30 +188,6 @@ impl fmt::Display for PageError {
                 }
             }
             Self::Protocol { violation, .. } => write!(f, "connection page: {violation}"),
-        }
-    }
-}
-
-impl fmt::Debug for PageError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::Request(e) => f.debug_tuple("Request").field(e).finish(),
-            Self::NoConnection { data, errors, cost } => f
-                .debug_struct("NoConnection")
-                .field("data", data)
-                .field("errors", errors)
-                .field("cost", cost)
-                .finish(),
-            Self::Protocol {
-                violation,
-                errors,
-                cost,
-            } => f
-                .debug_struct("Protocol")
-                .field("violation", violation)
-                .field("errors", errors)
-                .field("cost", cost)
-                .finish(),
         }
     }
 }

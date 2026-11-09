@@ -21,11 +21,7 @@ macro_rules! text_id {
         #[serde(transparent)]
         pub struct $name(pub String);
 
-        impl fmt::Display for $name {
-            fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-                f.write_str(&self.0)
-            }
-        }
+        serde_plain::derive_display_from_serialize!($name);
 
         impl From<&str> for $name {
             fn from(s: &str) -> Self {

@@ -1980,10 +1980,16 @@ Consequences:
 - A foreign type, or a type whose `Display` is meant for humans, gets a newtype with the wire
   spelling.
 - A `Display` that returns `fmt::Error` makes the request a build error naming the placement;
-  nothing partial is sent.
+  nothing partial is sent. A `Display` that panics panics the caller.
 - Concord's generated `Debug` also shows values through `Display`, so a `u32` appears as `"20"`;
   a value placed only as a header is shown as its header value (`"caf\xe9"` for bytes that are
   not text, `<redacted>` for a natively sensitive one).
+
+When a type already serializes as its wire scalar, use
+`serde_plain::derive_display_from_serialize!(Type);` with `serde_plain = "1.0.2"`.
+Serde's names and transparent wrappers supply the spelling. Composite serialization cannot
+supply scalar text: the adapter then panics (its documented contract), so place each such type
+once in a test.
 
 ```rust
 use std::fmt;
@@ -1991,20 +1997,14 @@ use std::fmt;
 use concord::reqwest;
 
 /// Sort order; `Display` is the wire spelling.
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, serde::Serialize)]
+#[serde(rename_all = "snake_case")]
 pub enum Sort {
     Newest,
     PriceAsc,
 }
 
-impl fmt::Display for Sort {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(match self {
-            Sort::Newest => "newest",
-            Sort::PriceAsc => "price_asc",
-        })
-    }
-}
+serde_plain::derive_display_from_serialize!(Sort);
 
 /// A comma-separated list in one query value.
 #[derive(Clone)]
@@ -2042,6 +2042,12 @@ fn main() -> Result<(), concord::Error> {
 ```
 
 ## 7. Sensitive values
+
+For SDK-owned types, derive `concord::Debug` and mark withheld fields `#[sensitive]`;
+optional fields show `None` or `Some(<redacted>)`, without formatting their contents.
+Fields, including newly added fields, are shown by default unless marked `#[sensitive]`.
+A sensitive type or variant withholds its fields as `Name { .. }`, with `#[public]` selecting
+visible named fields; secrecy affects Debug, while explicit serialization and Display keep their wire values.
 
 Mark a value `#[sensitive]` when Concord should never print it. It is still sent. Concord then
 withholds it — and every query or header key, path segment and host label it feeds — from the

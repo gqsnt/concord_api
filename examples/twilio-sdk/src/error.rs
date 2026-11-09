@@ -17,23 +17,15 @@ pub const MAX_ERROR_BODY: usize = 64 * 1024;
 pub use concord::ResponseMeta;
 
 /// One complete resource and the response metadata that accompanied it.
-#[derive(Clone)]
+///
+/// Shows the value through its own `Debug` (for [`crate::Message`]: SID, status and error code,
+/// without addresses, text or explanations) and the metadata.
+#[derive(Clone, concord::Debug)]
 pub struct Response<T> {
     /// The decoded resource; its fields can contain personal data.
     pub value: T,
     /// Metadata of the successful HTTP response.
     pub meta: ResponseMeta,
-}
-
-/// Shows the value through its own `Debug` (for [`crate::Message`]: SID, status and error code,
-/// without addresses, text or explanations) and the metadata.
-impl<T: fmt::Debug> fmt::Debug for Response<T> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("Response")
-            .field("value", &self.value)
-            .field("meta", &self.meta)
-            .finish()
-    }
 }
 
 /// Twilio's JSON exception document on an unsuccessful HTTP request.

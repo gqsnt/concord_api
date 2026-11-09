@@ -36,10 +36,12 @@ pub const SERVICE: &str = "s3";
 /// `Debug` shows the access key id (it is printed in every `Authorization` header) and never the
 /// secret or the token. Obtaining and refreshing credentials is the application's: a new value
 /// is passed to [`crate::S3Client::with_credentials`] (for one request too: a client snapshot).
-#[derive(Clone)]
+#[derive(Clone, concord::Debug)]
 pub struct Credentials {
     access_key_id: Arc<str>,
+    #[sensitive]
     secret_access_key: Arc<str>,
+    #[sensitive]
     session_token: Option<Arc<str>>,
 }
 
@@ -113,19 +115,6 @@ impl Credentials {
             None,
             "concord-sdk-amazon-s3",
         )
-    }
-}
-
-impl fmt::Debug for Credentials {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("Credentials")
-            .field("access_key_id", &&*self.access_key_id)
-            .field("secret_access_key", &"<redacted>")
-            .field(
-                "session_token",
-                &self.session_token.as_ref().map(|_| "<redacted>"),
-            )
-            .finish()
     }
 }
 

@@ -1,7 +1,6 @@
 //! Streamed inserts: rows serialized while the request body is sent.
 
 use std::error::Error as StdError;
-use std::fmt;
 
 use concord::csv::{CsvOptions, CsvWriter, HeaderMode, LineEnding, QuoteStyle, StreamRows};
 use concord::jsonl::{JsonLinesOptions, JsonLinesWriter, StreamRecords};
@@ -32,7 +31,9 @@ use crate::wire::ClickHouseHttp;
 /// the rows may already be stored; such errors report
 /// [`is_outcome_unknown`](Error::is_outcome_unknown). Nothing is retried or rolled back.
 #[must_use = "an insert does nothing until a body method is awaited"]
+#[derive(concord::Debug)]
 pub struct Insert {
+    #[sensitive]
     api: ClickHouseHttp,
     table: Table,
     columns: Vec<Identifier>,
@@ -185,16 +186,6 @@ impl Insert {
             body_bytes: bytes,
             meta,
         })
-    }
-}
-
-impl fmt::Debug for Insert {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("Insert")
-            .field("table", &self.table)
-            .field("columns", &self.columns)
-            .field("query_id", &self.query_id)
-            .finish()
     }
 }
 

@@ -107,7 +107,6 @@
 //! returns pages of newer objects, each page still newest first. Stripe lists are live: objects
 //! created during a traversal can appear or not; a traversal is not a snapshot.
 
-use std::fmt;
 use std::future::Future;
 use std::hash::{DefaultHasher, Hash, Hasher};
 
@@ -203,10 +202,12 @@ pub enum Direction {
 
 /// Where a traversal continues: an object id, its direction and the binding of the list it came
 /// from. `Debug` shows the direction only.
-#[derive(Clone, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq, concord::Debug)]
 pub struct Cursor<I> {
     direction: Direction,
+    #[sensitive]
     id: I,
+    #[sensitive]
     binding: u64,
 }
 
@@ -242,15 +243,6 @@ impl<I> Cursor<I> {
     }
 }
 
-impl<I> fmt::Debug for Cursor<I> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("Cursor")
-            .field("direction", &self.direction)
-            .field("id", &format_args!("<withheld>"))
-            .finish()
-    }
-}
-
 /// One projected page: `concord_pagination`'s page with Stripe cursors and response metadata.
 pub type StripePage<T> = Page<T, Cursor<<T as Object>::Id>, ResponseMeta>;
 
@@ -262,9 +254,11 @@ pub type StripePages<T> = Pages<T, Cursor<<T as Object>::Id>, ResponseMeta, Erro
 pub type StripeItems<T> = PageItems<T, Cursor<<T as Object>::Id>, Error>;
 
 /// One list request and a direction. See the [module documentation](self).
-#[derive(Clone)]
+#[derive(Clone, concord::Debug)]
+#[sensitive]
 pub struct CursorList<R: ListRequest> {
     template: R,
+    #[public]
     direction: Direction,
     binding: u64,
 }
@@ -436,14 +430,6 @@ where
     /// [`pages`](Self::pages)); the same end rules.
     pub fn items(&self) -> StripeItems<R::Item> {
         self.pages().items()
-    }
-}
-
-impl<R: ListRequest> fmt::Debug for CursorList<R> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("CursorList")
-            .field("direction", &self.direction)
-            .finish_non_exhaustive()
     }
 }
 

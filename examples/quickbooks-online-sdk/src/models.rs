@@ -22,7 +22,7 @@ fn decimal_digits(value: &str) -> bool {
 
 /// A QuickBooks Online company ("realm") ID: ASCII digits, as in the `realmId` callback parameter
 /// and every Accounting URL (`/v3/company/{realmId}/...`).
-#[derive(Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[derive(Clone, PartialEq, Eq, Hash, PartialOrd, Ord, concord::Debug)]
 pub struct RealmId(String);
 
 impl RealmId {
@@ -52,15 +52,9 @@ impl fmt::Display for RealmId {
     }
 }
 
-impl fmt::Debug for RealmId {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "RealmId({})", self.0)
-    }
-}
-
 /// The ID of one entity (a customer, an invoice) within a realm: ASCII digits, sent as one path
 /// segment. QuickBooks documents IDs as strings that must be valid numbers (error 2030).
-#[derive(Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[derive(Clone, PartialEq, Eq, Hash, PartialOrd, Ord, concord::Debug)]
 pub struct EntityId(String);
 
 impl EntityId {
@@ -84,17 +78,7 @@ impl EntityId {
     }
 }
 
-impl fmt::Display for EntityId {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(&self.0)
-    }
-}
-
-impl fmt::Debug for EntityId {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "EntityId({})", self.0)
-    }
-}
+serde_plain::derive_display_from_serialize!(EntityId);
 
 impl<'de> Deserialize<'de> for EntityId {
     fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
@@ -112,7 +96,7 @@ impl Serialize for EntityId {
 /// The `requestid` query parameter of a write: QuickBooks answers a repeated request with the same
 /// ID with the original response instead of performing it again. Unique per realm, at most 50
 /// characters; this SDK accepts ASCII letters, digits, `-` and `_`.
-#[derive(Clone, PartialEq, Eq, Hash)]
+#[derive(Clone, PartialEq, Eq, Hash, concord::Debug)]
 pub struct RequestId(String);
 
 impl RequestId {
@@ -173,15 +157,9 @@ impl fmt::Display for RequestId {
     }
 }
 
-impl fmt::Debug for RequestId {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "RequestId({})", self.0)
-    }
-}
-
 /// A decimal number kept exactly as QuickBooks writes it (`100.0`, `362.07`, `9.5`): amounts,
 /// balances, quantities and unit prices are never converted through `f64`.
-#[derive(Clone, PartialEq, Eq, Hash)]
+#[derive(Clone, PartialEq, Eq, Hash, concord::Debug)]
 pub struct Decimal(String);
 
 impl Decimal {
@@ -222,12 +200,6 @@ impl Decimal {
 impl fmt::Display for Decimal {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str(&self.0)
-    }
-}
-
-impl fmt::Debug for Decimal {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "Decimal({})", self.0)
     }
 }
 

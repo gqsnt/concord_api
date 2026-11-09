@@ -210,13 +210,16 @@ pub enum LateSource {
 }
 
 /// An exception the server reported after it had answered 2xx.
+#[derive(concord::Debug)]
 pub struct LateException {
     pub(crate) operation: &'static str,
     pub(crate) code: Option<i32>,
     pub(crate) name: Option<String>,
+    #[sensitive]
     pub(crate) message: String,
     pub(crate) source: LateSource,
     pub(crate) rows_before: u64,
+    #[sensitive]
     pub(crate) meta: ResponseMeta,
 }
 
@@ -289,19 +292,6 @@ impl fmt::Display for LateException {
     }
 }
 
-impl fmt::Debug for LateException {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("LateException")
-            .field("operation", &self.operation)
-            .field("code", &self.code)
-            .field("name", &self.name)
-            .field("message", &"<withheld>")
-            .field("source", &self.source)
-            .field("rows_before", &self.rows_before)
-            .finish()
-    }
-}
-
 /// Why a 2xx head was refused before its body was read.
 #[derive(Clone, Debug, PartialEq, Eq)]
 #[non_exhaustive]
@@ -361,9 +351,15 @@ impl fmt::Display for ResponseError {
 }
 
 /// A failure while reading rows (after the body started), with the response head.
+#[derive(concord::Debug)]
 pub struct ReadFailure {
+    #[expect(
+        dead_code,
+        reason = "retained for the derived diagnostic representation"
+    )]
     pub(crate) operation: &'static str,
     pub(crate) error: ReadError,
+    #[sensitive]
     pub(crate) meta: ResponseMeta,
 }
 
@@ -396,15 +392,6 @@ impl fmt::Display for ReadFailure {
     }
 }
 
-impl fmt::Debug for ReadFailure {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("ReadFailure")
-            .field("operation", &self.operation)
-            .field("error", &self.error)
-            .finish()
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -429,5 +416,73 @@ mod tests {
         );
         assert_eq!(name_of("Code: 1. no name (version 1)"), None);
         assert_eq!(name_of("Code: 1. lower (abc) (version 1)"), None);
+    }
+}
+
+#[cfg(test)]
+mod sdk_type_canaries {
+    use super::*;
+
+    #[test]
+    fn late_exception_and_body_block_withhold_provider_content() {
+        let mut c = concord_check_canary::Canaries::new("clickhouse-late");
+        let message = c.issue();
+        let header = c.issue();
+        let mut headers = concord::reqwest::header::HeaderMap::new();
+        headers.insert(
+            "x-echo",
+            concord::reqwest::header::HeaderValue::from_str(&header).unwrap(),
+        );
+        let meta = ResponseMeta::new(concord::ResponseMeta::new(
+            concord::ResponseHead::new(
+                concord::reqwest::StatusCode::OK,
+                concord::reqwest::Version::HTTP_11,
+                &headers,
+            ),
+            None,
+        ));
+        let block = BodyException {
+            message: message.clone(),
+            declared_length: Some(message.len()),
+            complete: true,
+        };
+        assert_eq!(block.message(), message);
+        c.assert_debug_absent("BodyException", &block);
+        let late = LateException::from_block("test", &block, 1, meta);
+        assert_eq!(late.message(), message);
+        c.assert_debug_absent("LateException", &late);
+    }
+
+    #[tokio::test]
+    async fn read_failures_withhold_secret_response_metadata() {
+        use concord::csv::{CsvOptions, CsvReader, HeaderMode};
+        let mut c = concord_check_canary::Canaries::new("clickhouse-read-failure");
+        let secret = c.issue();
+        let source =
+            concord::stream::Chunks::new([concord::bytes::Bytes::from_static(b"not-a-number\n")]);
+        let mut records = CsvReader::new(CsvOptions::new(HeaderMode::Absent, b','))
+            .unwrap()
+            .read::<(u64,), _>(source);
+        let error = records.next().await.unwrap().unwrap_err();
+        let mut headers = concord::reqwest::header::HeaderMap::new();
+        headers.insert(
+            "x-echo",
+            concord::reqwest::header::HeaderValue::from_str(&secret).unwrap(),
+        );
+        let meta = ResponseMeta::new(concord::ResponseMeta::new(
+            concord::ResponseHead::new(
+                concord::reqwest::StatusCode::OK,
+                concord::reqwest::Version::HTTP_11,
+                &headers,
+            ),
+            None,
+        ));
+        let failure = ReadFailure {
+            operation: "test",
+            error,
+            meta,
+        };
+        assert_eq!(failure.meta.headers()["x-echo"].to_str().unwrap(), secret);
+        c.assert_debug_absent("ReadFailure", &failure);
     }
 }

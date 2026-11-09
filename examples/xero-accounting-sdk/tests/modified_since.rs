@@ -94,7 +94,7 @@ fn instants_outside_the_four_digit_utc_range_are_refused_before_io() {
     let since = doc_example(&tenant);
     assert_eq!(
         format!("{since:?}"),
-        format!("ModifiedSince({DOC_EXAMPLE})")
+        format!("ModifiedSince {{ tenant: <redacted>, at: {DOC_EXAMPLE} }}")
     );
     no_secrets(&since);
     no_secrets(tenant.list_modified_since(&since, 1, 1).unwrap());

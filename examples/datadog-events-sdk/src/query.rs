@@ -66,11 +66,7 @@ impl Sort {
     }
 }
 
-impl fmt::Display for Sort {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(self.wire())
-    }
-}
+serde_plain::derive_display_from_serialize!(Sort);
 
 impl Serialize for Sort {
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
@@ -127,11 +123,7 @@ impl Cursor {
     }
 }
 
-impl fmt::Display for Cursor {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(&self.0)
-    }
-}
+serde_plain::derive_display_from_serialize!(Cursor);
 
 /// The body of `POST /api/v2/events/search`: a filter, options, page settings and a sort.
 ///

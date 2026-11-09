@@ -281,10 +281,11 @@ impl fmt::Debug for CatalogContext {
 /// One tenant of a [`CatalogContext`]: native requests under `tenants/{tenant}`, and the
 /// generated [`CatalogTenant`] handle for the same tenant. Created by
 /// [`CatalogContext::tenant`]; an immutable snapshot of that context.
-#[derive(Clone)]
+#[derive(Clone, concord::Debug)]
 pub struct TenantContext {
     context: CatalogContext,
     tenant: String,
+    #[sensitive]
     handle: CatalogTenant,
 }
 
@@ -324,15 +325,6 @@ impl TenantContext {
         segments: &[&str],
     ) -> Result<reqwest::Request, ContextError> {
         self.context.build(method, Some(&self.tenant), segments)
-    }
-}
-
-impl fmt::Debug for TenantContext {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("TenantContext")
-            .field("tenant", &self.tenant)
-            .field("context", &self.context)
-            .finish()
     }
 }
 

@@ -1,5 +1,10 @@
 # Direction: SDK types — secrecy and wire spelling declared on SDK-owned values (D1 + I1)
 
+Historical experiment: owner decision 7 (P4.1) replaces the scalar-display derive described here
+with `serde_plain::derive_display_from_serialize!`. The implementation and hidden serde bridge
+have been removed; see `docs/MIGRATION.md#sdk-owned-formatting` for the current contract.
+
+
 Condensed from the [direction source](/home/canarit/projects/Concord_Next/work/design/directions/sdk-types.md), [fix result](/home/canarit/projects/Concord_Next/work/lanes/sdk-types-fix-r1/result.md) and reviews below. Lane: Codex `gpt-6.1-sol` xhigh, confirmed by [observed metadata](/home/canarit/projects/Concord_Next/work/lanes/dir-sdk-types/meta.json); this supersedes the source's earlier claim that model/effort metadata was unavailable. Reviews: independent session, same provider.
 Branch `direction/sdk-types` at `6eb75e68`, pushed as `spike/dir-sdk-types`; base `ba10189b` at `/home/canarit/projects/Concord_Next/work/wt/rv-p1`; starting D1/I1 merge `6b5a60ce`; round-1 tree `b40523e5`. Worktree: `/home/canarit/projects/Concord_Next/work/wt/dir-sdk-types`. The later reviewed commit supersedes the lanes' uncommitted-tree notes.
 

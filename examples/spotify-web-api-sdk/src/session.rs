@@ -36,12 +36,13 @@ type Clock = Arc<dyn Fn() -> Instant + Send + Sync>;
 
 /// How a [`Session`] refreshes and repeats requests. Build it with [`SessionOptions::new`] and
 /// the setters; every field has a default.
-#[derive(Clone)]
+#[derive(Clone, concord::Debug)]
 pub struct SessionOptions {
     refresh_margin: Duration,
     rate_limit_retries: u8,
     max_retry_wait: Duration,
     deadline: Option<Duration>,
+    #[sensitive]
     clock: Option<Clock>,
 }
 
@@ -54,18 +55,6 @@ impl Default for SessionOptions {
             deadline: None,
             clock: None,
         }
-    }
-}
-
-impl fmt::Debug for SessionOptions {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("SessionOptions")
-            .field("refresh_margin", &self.refresh_margin)
-            .field("rate_limit_retries", &self.rate_limit_retries)
-            .field("max_retry_wait", &self.max_retry_wait)
-            .field("deadline", &self.deadline)
-            .field("clock", &self.clock.as_ref().map(|_| "<injected>"))
-            .finish()
     }
 }
 

@@ -1,4 +1,9 @@
 # I1-wire-display — I values — Derive Display from a value's scalar serde spelling
+
+Historical experiment: owner decision 7 (P4.1) replaces the scalar-display derive described here
+with `serde_plain::derive_display_from_serialize!`. The implementation and hidden serde bridge
+have been removed; see `docs/MIGRATION.md#sdk-owned-formatting` for the current contract.
+
 Branch / commit: spike/I-wire-display at bf05f387 (base ba10189b)
 Targets (3 files): witness `examples/github-sdk/src/params.rs`; counterexample `examples/stripe-sdk/src/lib.rs`; simple control `examples/frankfurter-sdk/src/lib.rs` (byte-identical).
 C1: yes — declarations remain unchanged; no generator controls added.

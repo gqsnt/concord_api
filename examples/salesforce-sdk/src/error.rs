@@ -17,6 +17,7 @@ pub const MAX_ERROR_BODY: usize = 64 * 1024;
 
 /// A failure of an SDK operation.
 #[non_exhaustive]
+#[derive(concord::Debug)]
 pub enum SfError {
     /// A declared operation failed inside Concord: the request could not be built, the transport
     /// failed, a 2xx head was refused (`Metadata`) or a 2xx body did not decode. (Non-2xx
@@ -155,22 +156,6 @@ impl fmt::Display for SfError {
             SfError::Incomplete(e) => fmt::Display::fmt(e, f),
             SfError::Job(e) => fmt::Display::fmt(e, f),
             SfError::Csv(e) => fmt::Display::fmt(e, f),
-        }
-    }
-}
-
-impl fmt::Debug for SfError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            SfError::Concord(e) => f.debug_tuple("Concord").field(e).finish(),
-            SfError::Api(e) => f.debug_tuple("Api").field(e).finish(),
-            SfError::Protocol(e) => f.debug_tuple("Protocol").field(e).finish(),
-            SfError::Link(e) => f.debug_tuple("Link").field(e).finish(),
-            SfError::Open(e) => f.debug_tuple("Open").field(e).finish(),
-            SfError::Read(e) => f.debug_tuple("Read").field(e).finish(),
-            SfError::Incomplete(e) => f.debug_tuple("Incomplete").field(e).finish(),
-            SfError::Job(e) => f.debug_tuple("Job").field(e).finish(),
-            SfError::Csv(e) => f.debug_tuple("Csv").field(e).finish(),
         }
     }
 }

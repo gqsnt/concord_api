@@ -398,6 +398,7 @@ dependencies = [
  "rustls-pki-types",
  "serde",
  "serde_json",
+ "serde_plain",
  "tokio",
  "tokio-rustls",
  "trybuild",
@@ -696,6 +697,7 @@ dependencies = [
  "concord-pagination",
  "serde",
  "serde_json",
+ "serde_plain",
  "tokio",
 ]
 
@@ -721,6 +723,7 @@ dependencies = [
  "concord-pagination",
  "serde",
  "serde_json",
+ "serde_plain",
  "tokio",
 ]
 
@@ -757,6 +760,7 @@ dependencies = [
  "concord",
  "serde",
  "serde_json",
+ "serde_plain",
  "tokio",
 ]
 
@@ -777,6 +781,7 @@ dependencies = [
  "concord-retry",
  "serde",
  "serde_json",
+ "serde_plain",
  "tokio",
 ]
 
@@ -805,6 +810,7 @@ dependencies = [
  "futures-core",
  "serde",
  "serde_json",
+ "serde_plain",
  "tokio",
 ]
 
@@ -850,6 +856,7 @@ dependencies = [
  "concord-pagination",
  "serde",
  "serde_json",
+ "serde_plain",
  "tokio",
 ]
 
@@ -875,6 +882,7 @@ dependencies = [
  "concord-pagination",
  "serde",
  "serde_json",
+ "serde_plain",
  "tokio",
 ]
 
@@ -1026,6 +1034,7 @@ dependencies = [
  "concord-retry",
  "serde",
  "serde_json",
+ "serde_plain",
  "tokio",
 ]
 
@@ -1089,6 +1098,7 @@ dependencies = [
  "percent-encoding",
  "serde",
  "serde_json",
+ "serde_plain",
  "tokio",
 ]
 
@@ -1102,6 +1112,7 @@ dependencies = [
  "concord-pagination",
  "serde",
  "serde_json",
+ "serde_plain",
  "tokio",
 ]
 
@@ -1144,6 +1155,7 @@ dependencies = [
  "concord-pagination",
  "serde",
  "serde_json",
+ "serde_plain",
  "sha2",
  "tokio",
 ]
@@ -1173,6 +1185,7 @@ dependencies = [
  "concord-pagination",
  "serde",
  "serde_json",
+ "serde_plain",
  "tokio",
 ]
 
@@ -1188,6 +1201,7 @@ dependencies = [
  "concord-retry",
  "roxmltree",
  "serde",
+ "serde_plain",
  "tokio",
 ]
 
@@ -1233,6 +1247,7 @@ dependencies = [
  "concord-pagination",
  "serde",
  "serde_json",
+ "serde_plain",
  "tokio",
 ]
 
@@ -1326,6 +1341,7 @@ dependencies = [
  "reqwest",
  "serde",
  "serde_json",
+ "serde_plain",
  "tokio",
 ]
 
@@ -1339,6 +1355,7 @@ dependencies = [
  "concord-example-testserver",
  "serde",
  "serde_json",
+ "serde_plain",
  "tokio",
 ]
 
@@ -1415,6 +1432,7 @@ dependencies = [
  "concord-example-testserver",
  "serde",
  "serde_json",
+ "serde_plain",
  "tokio",
 ]
 
@@ -1464,6 +1482,7 @@ dependencies = [
  "concord-retry",
  "serde",
  "serde_json",
+ "serde_plain",
  "tokio",
 ]
 
@@ -1502,6 +1521,7 @@ dependencies = [
  "concord-pagination",
  "serde",
  "serde_json",
+ "serde_plain",
  "tokio",
 ]
 
@@ -1575,6 +1595,7 @@ dependencies = [
  "concord-retry",
  "serde",
  "serde_json",
+ "serde_plain",
  "tokio",
 ]
 
@@ -2954,6 +2975,15 @@ dependencies = [
  "serde",
  "serde_core",
  "zmij",
+]
+
+[[package]]
+name = "serde_plain"
+version = "1.0.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9ce1fc6db65a611022b23a0dec6975d63fb80a302cb3388835ff02c097258d50"
+dependencies = [
+ "serde",
 ]
 
 [[package]]

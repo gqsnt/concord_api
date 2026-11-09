@@ -1,5 +1,5 @@
 //! Client construction and the three scoped domain operations.
-use std::{fmt, net::IpAddr, num::NonZeroUsize, time::Duration};
+use std::{net::IpAddr, num::NonZeroUsize, time::Duration};
 
 use concord::reqwest::{self, Url, header::HeaderValue};
 use serde::{Deserialize, Serialize};
@@ -15,6 +15,8 @@ use crate::{
 /// plus permission-profile/version identifier. These labels do not authenticate the token.
 #[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
+#[derive(concord::Debug)]
+#[sensitive]
 pub struct AuthContext {
     tenant: String,
     principal: String,
@@ -49,11 +51,6 @@ impl AuthContext {
         &self.principal
     }
 }
-impl fmt::Debug for AuthContext {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str("AuthContext(<redacted>)")
-    }
-}
 
 /// Sends `authorization: Bearer <token>` from the constructor's caller-obtained token.
 ///
@@ -61,23 +58,17 @@ impl fmt::Debug for AuthContext {
 ///
 /// It obtains no tokens, retries no requests and follows no HTTP redirects. Production uses
 /// the global Graph origin only. The explicit loopback constructor is for synthetic tests.
-#[derive(Clone)]
+#[derive(Clone, concord::Debug)]
+#[sensitive]
 pub struct GraphClient {
     api: GraphApi,
+    #[public]
     context: AuthContext,
     base: String,
+    #[public]
     pub(crate) success_limit: usize,
+    #[public]
     pub(crate) error_limit: usize,
-}
-
-impl fmt::Debug for GraphClient {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("GraphClient")
-            .field("context", &self.context)
-            .field("success_limit", &self.success_limit)
-            .field("error_limit", &self.error_limit)
-            .finish_non_exhaustive()
-    }
 }
 
 impl GraphClient {

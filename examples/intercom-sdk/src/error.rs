@@ -52,6 +52,8 @@ fn number(headers: &HeaderMap, name: &str) -> HeaderNumber {
 /// Intercom normally sends a string code; some validation errors send an integer.
 #[derive(Deserialize, PartialEq, Eq)]
 #[serde(untagged)]
+#[derive(concord::Debug)]
+#[sensitive]
 pub enum ErrorCode {
     /// Known or future provider code, available explicitly without logging it by default.
     Text(String),
@@ -60,7 +62,8 @@ pub enum ErrorCode {
 }
 
 /// One provider error. All fields are unredacted explicit access; Debug withholds content.
-#[derive(Deserialize)]
+#[derive(Deserialize, concord::Debug)]
+#[sensitive]
 pub struct ErrorItem {
     /// Provider code (unknown strings are preserved).
     pub code: ErrorCode,
@@ -77,7 +80,8 @@ enum ErrorType {
 }
 
 /// Typed Intercom error envelope. Request IDs are optional in the provider contract.
-#[derive(Deserialize)]
+#[derive(Deserialize, concord::Debug)]
+#[sensitive]
 pub struct ErrorDocument {
     #[serde(rename = "type")]
     _kind: ErrorType,
@@ -176,14 +180,3 @@ impl fmt::Display for Error {
 }
 
 impl std::error::Error for Error {}
-
-macro_rules! redacted_debug {
-    ($($ty:ty),+ $(,)?) => {$(
-        impl fmt::Debug for $ty {
-            fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-                f.write_str(concat!(stringify!($ty), " { <redacted> }"))
-            }
-        }
-    )+};
-}
-redacted_debug!(ErrorCode, ErrorItem, ErrorDocument);

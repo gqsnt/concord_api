@@ -347,9 +347,11 @@ impl ApiVersion {
 
 /// One repository of a [`Registry`]: tags, manifests, blobs and uploads under `/v2/<name>/`.
 /// Cloning is cheap.
-#[derive(Clone)]
+#[derive(Clone, concord::Debug)]
+#[sensitive]
 pub struct Repository {
     pub(crate) registry: Registry,
+    #[public]
     name: RepositoryName,
     pub(crate) api: RepoApi,
 }
@@ -371,14 +373,6 @@ impl Repository {
 
     pub(crate) fn push(&self) -> Access {
         Access::Push(self.name.clone())
-    }
-}
-
-impl fmt::Debug for Repository {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("Repository")
-            .field("name", &self.name)
-            .finish_non_exhaustive()
     }
 }
 

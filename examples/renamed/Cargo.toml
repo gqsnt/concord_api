@@ -7,10 +7,6 @@ rust-version.workspace = true
 license.workspace = true
 publish = false
 
-[features]
-# Run the scalar-serde derive check separately, keeping the default extras-only check intact.
-wire-display = ["concord4/json"]
-
 [dependencies]
 # Defaults off, and exactly the feature this crate uses: `extras` (`Text`, `Binary`). Tested alone
 # (`cargo test -p concord-example-renamed`), so another member cannot supply it.
@@ -20,7 +16,3 @@ reqwest013 = { package = "reqwest", version = "0.13.4", default-features = false
 
 [lints]
 workspace = true
-
-[[test]]
-name = "wire_display"
-required-features = ["wire-display"]

@@ -8,6 +8,7 @@ license.workspace = true
 publish = false
 
 [dependencies]
+serde_plain.workspace = true
 # `sse` (implies `stream`) for Concord's `text/event-stream` reader; `json` is a default feature.
 concord = { path = "../../crates/concord", features = ["sse"] }
 # Only `http::retry_after` (no default features, no runtime): the strict `retry-after` parser.

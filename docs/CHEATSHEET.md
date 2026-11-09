@@ -157,3 +157,8 @@ then children.
   its own (`*/*`). The response `Content-Type` is checked by the format and never compared with
   `Accept`. reqwest also adds `content-length` and `host` when it executes the request.
 - The list of well-known secret names is a safety net; mark every secret `#[sensitive]`.
+
+SDK-owned values: derive `concord::Debug`, marking secret fields `#[sensitive]` (unmarked
+fields are shown). For Display that matches scalar serde spelling, use
+`serde_plain::derive_display_from_serialize!(Type);` with `serde_plain = "1.0.2"`;
+keep computed formatting in Rust. See [wire formatting](AUTHOR_GUIDE.md#6-wire-formatting-display-and-newtypes).

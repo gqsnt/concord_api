@@ -1,5 +1,3 @@
-use std::fmt;
-
 use serde::{Deserialize, Serialize};
 
 use crate::{Error, ResponseMeta};
@@ -121,7 +119,8 @@ impl Default for FileFields {
 /// Opaque files/changes cursor. Debug output withholds the value.
 #[derive(Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(try_from = "String", into = "String")]
-pub struct PageToken(String);
+#[derive(concord::Debug)]
+pub struct PageToken(#[sensitive] String);
 
 impl PageToken {
     /// Wrap a nonempty token without interpreting or normalizing its bytes.
@@ -149,12 +148,6 @@ impl TryFrom<String> for PageToken {
 impl From<PageToken> for String {
     fn from(value: PageToken) -> Self {
         value.0
-    }
-}
-
-impl fmt::Debug for PageToken {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str("PageToken(<redacted>)")
     }
 }
 

@@ -12,19 +12,13 @@ pub const RESPONSE_LIMIT: usize = 1024 * 1024;
 pub const ERROR_LIMIT: usize = 16 * 1024;
 
 /// A decoded provider result together with its HTTP metadata.
+#[derive(concord::Debug)]
 pub struct Response<T> {
     /// Provider data, with envelope errors already checked.
+    #[sensitive]
     pub value: T,
     /// Head and endpoint identity.
     pub meta: ResponseMeta,
-}
-impl<T> fmt::Debug for Response<T> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("Response")
-            .field("meta", &self.meta)
-            .field("value", &"<withheld>")
-            .finish()
-    }
 }
 
 /// For private operations, sets `api-key` to the configured credentials' key and
@@ -32,7 +26,8 @@ impl<T> fmt::Debug for Response<T> {
 /// Public operations add neither header. Generated `prepare()` bypasses these edits.
 ///
 /// Cheaply cloned signing state. Public requests send no credentials and use no nonce.
-#[derive(Clone)]
+#[derive(Clone, concord::Debug)]
+#[sensitive]
 pub struct Policy {
     credentials: Option<Credentials>,
     nonces: Nonces,
@@ -115,11 +110,6 @@ impl Policy {
             request,
             decoder,
         })
-    }
-}
-impl fmt::Debug for Policy {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str("Policy(<withheld>)")
     }
 }
 

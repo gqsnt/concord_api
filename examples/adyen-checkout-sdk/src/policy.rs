@@ -7,7 +7,6 @@ use concord::{Endpoint, Json, Received, SendWith, field, reqwest};
 use concord_retry::{Decision, Policy, Replay, Report, Retry, StopReason};
 use std::{
     collections::BTreeMap,
-    fmt,
     num::NonZeroUsize,
     sync::{Arc, Mutex},
     time::{Duration, SystemTime},
@@ -15,23 +14,15 @@ use std::{
 use tokio::time::Instant;
 
 /// Successful document with its authoritative response head and application attempt count.
+#[derive(concord::Debug)]
 pub struct Response<T> {
     /// Typed provider document; HTTP success alone is not authorisation.
+    #[sensitive]
     pub value: T,
     /// Response metadata; header values require explicit access.
     pub meta: concord::ResponseMeta,
     /// Application attempts and backoff accounting.
     pub retry: Report,
-}
-
-impl<T> fmt::Debug for Response<T> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("Response")
-            .field("value", &"<redacted>")
-            .field("meta", &self.meta)
-            .field("retry", &self.retry)
-            .finish()
-    }
 }
 
 /// A decoded success document checked against the exact request the policy sent.
@@ -101,18 +92,13 @@ type Ledger = Arc<Mutex<BTreeMap<String, Entry>>>;
 /// No entry is evicted, including expired entries. Persist original keys and requests in the
 /// application; creating a new policy or restarting the process cannot detect earlier use.
 /// Share this instance across credentials in one company, and keep one regional destination.
-#[derive(Clone)]
+#[derive(Clone, concord::Debug)]
+#[sensitive]
 pub struct SendPolicy {
     ledger: Ledger,
     capacity: NonZeroUsize,
     retry: Policy,
     window: Duration,
-}
-
-impl fmt::Debug for SendPolicy {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str("SendPolicy(<redacted>)")
-    }
 }
 
 impl Default for SendPolicy {

@@ -137,19 +137,14 @@ impl Policy {
 }
 
 /// A decoded value and its response metadata. Debug withholds the value.
+#[derive(concord::Debug)]
+#[sensitive]
 pub struct Response<T> {
     /// The provider's typed document.
     pub value: T,
     /// Status, operation identity and strictly parsed quota headers.
+    #[public]
     pub meta: ResponseMeta,
-}
-
-impl<T> fmt::Debug for Response<T> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("Response")
-            .field("meta", &self.meta)
-            .finish_non_exhaustive()
-    }
 }
 
 /// Response metadata; formatting never includes header values.

@@ -65,7 +65,7 @@ let pages = api.papers().query(q)
 - With these rules a caller cannot build a syntactically invalid `search_query`. Fields
   come from the enum, operators from the methods, phrases are always closed, and every
   group is balanced.
-- `Query`'s `Debug` prints `Query(<redacted>)`, and the endpoint marks `search_query`
+- `Query`'s `Debug` prints `Query { .. }`, and the endpoint marks `search_query`
   `#[sensitive]`, as term search does.
 - `papers().query(q)` is a new endpoint on the same route. It has `set_start`/`set_size`
   (the same types and defaults as search), optional `set_sort_by(SortBy)`/`set_sort_order(SortOrder)`

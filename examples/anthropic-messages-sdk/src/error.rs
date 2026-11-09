@@ -181,11 +181,12 @@ impl<'de> Deserialize<'de> for ApiErrorType {
     }
 }
 
-impl fmt::Display for ApiErrorType {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(self.as_str())
+impl ::serde::Serialize for ApiErrorType {
+    fn serialize<S: ::serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.serialize_str(self.as_str())
     }
 }
+serde_plain::derive_display_from_serialize!(ApiErrorType);
 
 /// The `error` object of an error document or of a stream `error` event: `type` and `message`.
 #[derive(Clone, PartialEq, Eq, Deserialize)]
@@ -325,6 +326,7 @@ impl fmt::Debug for ApiError {
 /// Why a stream ended before `message_stop`. `Debug` withholds the parser's error of
 /// [`InvalidEvent`](Self::InvalidEvent), which may quote the data.
 #[non_exhaustive]
+#[derive(concord::Debug)]
 pub enum IncompleteCause {
     /// The API sent an `error` event (an `overloaded_error`, say) after the 200 response.
     ErrorEvent(ProviderError),
@@ -345,6 +347,7 @@ pub enum IncompleteCause {
         /// The SSE event name.
         event: String,
         /// The parser's error (may quote the data).
+        #[sensitive]
         source: serde_json::Error,
     },
     /// The events break the documented flow (a delta before its block started, an SSE event name
@@ -371,28 +374,10 @@ impl IncompleteCause {
     }
 }
 
-impl fmt::Debug for IncompleteCause {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::ErrorEvent(error) => f.debug_tuple("ErrorEvent").field(error).finish(),
-            Self::EndOfStream => f.write_str("EndOfStream"),
-            Self::Transport(error) => f.debug_tuple("Transport").field(error).finish(),
-            Self::MalformedStream(read) => f.debug_tuple("MalformedStream").field(read).finish(),
-            Self::EventTooLarge(read) => f.debug_tuple("EventTooLarge").field(read).finish(),
-            Self::InvalidEvent { event, .. } => f
-                .debug_struct("InvalidEvent")
-                .field("event", event)
-                .field("source", &format_args!("<withheld>"))
-                .finish(),
-            Self::Protocol(rule) => f.debug_tuple("Protocol").field(rule).finish(),
-            Self::AlreadyFailed => f.write_str("AlreadyFailed"),
-        }
-    }
-}
-
 /// A stream that did not reach `message_stop`. It holds what arrived before
 /// ([`partial`](Self::partial)), which is **not** a final message, and nothing was re-sent: a
 /// continuation (the streaming page's "Error recovery") is a new request the application builds.
+#[derive(concord::Debug)]
 pub struct Incomplete {
     cause: IncompleteCause,
     partial: PartialMessage,
@@ -471,16 +456,5 @@ impl fmt::Display for Incomplete {
             write!(f, ", request {id}")?;
         }
         Ok(())
-    }
-}
-
-impl fmt::Debug for Incomplete {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("Incomplete")
-            .field("cause", &self.cause)
-            .field("partial", &self.partial)
-            .field("events", &self.events)
-            .field("request_id", &self.request_id)
-            .finish()
     }
 }

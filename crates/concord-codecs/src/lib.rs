@@ -41,8 +41,6 @@ pub mod sse;
 #[cfg(feature = "stream")]
 pub mod stream;
 mod text;
-#[cfg(any(feature = "json", feature = "form", feature = "csv", feature = "jsonl"))]
-mod wire_text;
 
 pub use binary::Binary;
 pub use encoded::Encoded;
@@ -53,11 +51,3 @@ pub use ignore::IgnoreContentType;
 pub use json::Json;
 pub use media::{Charset, check_content_type};
 pub use text::Text;
-
-/// Support for `concord::WireDisplay`; not a public API.
-#[doc(hidden)]
-#[cfg(any(feature = "json", feature = "form", feature = "csv", feature = "jsonl"))]
-pub mod __wire {
-    pub use crate::wire_text::wire_text;
-    pub use serde::{Serialize, Serializer};
-}

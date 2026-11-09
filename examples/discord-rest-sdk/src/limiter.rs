@@ -28,19 +28,13 @@ use crate::model::{ChannelId, GuildId};
 
 /// A Discord rate-limit bucket hash (`X-RateLimit-Bucket`), which excludes the top-level
 /// resource.
-#[derive(Clone, PartialEq, Eq, Hash)]
+#[derive(Clone, PartialEq, Eq, Hash, concord::Debug)]
 pub struct BucketHash(Arc<str>);
 
 impl BucketHash {
     /// The hash as sent.
     pub fn as_str(&self) -> &str {
         &self.0
-    }
-}
-
-impl fmt::Debug for BucketHash {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "BucketHash({})", self.0)
     }
 }
 
@@ -51,7 +45,7 @@ impl fmt::Display for BucketHash {
 }
 
 /// A request's declared operation and top-level resource: what every [`Error`] reports.
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, PartialEq, Eq, concord::Debug)]
 pub struct Route {
     operation: Operation,
     resource: Option<Resource>,
@@ -100,15 +94,6 @@ impl Route {
         } else {
             Error::concord(error, self.resource)
         }
-    }
-}
-
-impl fmt::Debug for Route {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("Route")
-            .field("operation", &self.operation)
-            .field("resource", &self.resource)
-            .finish()
     }
 }
 

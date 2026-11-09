@@ -144,7 +144,7 @@ fn query_syntax_uses_documented_prefixes_operators_quotes_and_explicit_grouping(
     );
     assert_eq!(
         format!("{:?}", term(Field::Author, "private-sentinel")),
-        "Query(<redacted>)"
+        "Query { .. }"
     );
 }
 

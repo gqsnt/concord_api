@@ -1,10 +1,11 @@
 use std::fmt;
 
 /// A FRED error document. Its message may echo the key and is never formatted.
-#[derive(serde::Deserialize)]
+#[derive(serde::Deserialize, concord::Debug)]
 pub struct Problem {
     /// Provider document code; the HTTP status remains authoritative.
     pub error_code: u16,
+    #[sensitive]
     pub(crate) error_message: String,
 }
 
@@ -12,15 +13,6 @@ impl Problem {
     /// Explicit access to provider text, which can contain credentials.
     pub fn message_unredacted(&self) -> &str {
         &self.error_message
-    }
-}
-
-impl fmt::Debug for Problem {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("Problem")
-            .field("error_code", &self.error_code)
-            .field("message", &"<redacted>")
-            .finish()
     }
 }
 

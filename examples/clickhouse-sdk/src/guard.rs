@@ -38,9 +38,10 @@ pub(crate) const MAX_BLOCK_BYTES: usize = 16 * 1024;
 const MARKER: &[u8] = b"__exception__";
 
 /// The exception block found in a started body.
-#[derive(Clone, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq, concord::Debug)]
 pub struct BodyException {
     /// The message bytes, decoded lossily, trailing CR/LF removed.
+    #[sensitive]
     pub(crate) message: String,
     /// The `<message_length>` the trailer declared.
     pub(crate) declared_length: Option<usize>,
@@ -51,16 +52,6 @@ pub struct BodyException {
 impl BodyException {
     pub(crate) fn message(&self) -> &str {
         &self.message
-    }
-}
-
-impl fmt::Debug for BodyException {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("BodyException")
-            .field("message", &"<withheld>")
-            .field("declared_length", &self.declared_length)
-            .field("complete", &self.complete)
-            .finish()
     }
 }
 

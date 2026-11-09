@@ -2,7 +2,6 @@ use crate::input::validate_magnitude_bounds;
 use crate::{Error, HttpFailure, HttpKind, Magnitude, Timestamp, Window};
 use concord::{Endpoint, SendWith};
 use concord_codecs::Text;
-use std::fmt;
 
 /// Finite GeoJSON response limit (8 MiB). Streaming CSV has its own independent limits.
 pub const SUCCESS_BODY_LIMIT: usize = 8 * 1024 * 1024;
@@ -10,19 +9,14 @@ pub const SUCCESS_BODY_LIMIT: usize = 8 * 1024 * 1024;
 pub const ERROR_BODY_LIMIT: usize = 16 * 1024;
 
 /// A successful typed result together with its response head.
+#[derive(concord::Debug)]
+#[sensitive]
 pub struct Response<T> {
     /// The GeoJSON value or unread incremental CSV reader.
     pub data: T,
     /// Status and headers; Debug withholds values.
+    #[public]
     pub meta: concord::ResponseMeta,
-}
-
-impl<T> fmt::Debug for Response<T> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("Response")
-            .field("meta", &self.meta)
-            .finish_non_exhaustive()
-    }
 }
 
 /// `send()` returns `Result<Response<T>, Error>`: one attempt, bounded bodies, preserved status.

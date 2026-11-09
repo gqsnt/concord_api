@@ -369,7 +369,7 @@ struct RawRow;
 /// `Relationship.Field` paths, distinct
 /// (case-insensitively), none with the results' reserved `sf__` prefix, at most
 /// [`MAX_HEADER_CHARS`] characters with delimiters.
-#[derive(Clone, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq, concord::Debug)]
 pub struct FieldColumns(Vec<String>);
 
 impl FieldColumns {
@@ -420,12 +420,6 @@ impl FieldColumns {
     /// The names, in order.
     pub fn names(&self) -> &[String] {
         &self.0
-    }
-}
-
-impl fmt::Debug for FieldColumns {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_tuple("FieldColumns").field(&self.0).finish()
     }
 }
 

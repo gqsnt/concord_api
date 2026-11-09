@@ -13,7 +13,7 @@ use serde::Deserialize;
 /// The name is one path segment (`/<topic>`, `/<topic>/sse`, `/<topic>/json`); a name with `/`,
 /// `,` (a multi-topic subscription, out of scope) or anything outside the pattern is refused here,
 /// before any request exists.
-#[derive(Clone, PartialEq, Eq, Hash)]
+#[derive(Clone, PartialEq, Eq, Hash, concord::Debug)]
 pub struct Topic(String);
 
 impl Topic {
@@ -51,12 +51,6 @@ impl fmt::Display for Topic {
     }
 }
 
-impl fmt::Debug for Topic {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "Topic({:?})", self.0)
-    }
-}
-
 /// A refused topic name (the name itself is not repeated).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct InvalidTopic;
@@ -74,8 +68,8 @@ impl std::error::Error for InvalidTopic {}
 /// It has no `Display`: the only way out is [`AccessToken::header_value`], a header value flagged
 /// sensitive. `Debug` prints `AccessToken(<redacted>)`. The token is checked to be a non-empty run
 /// of visible ASCII; its `tk_` prefix and length are the server's business, not checked here.
-#[derive(Clone, PartialEq, Eq)]
-pub struct AccessToken(String);
+#[derive(Clone, PartialEq, Eq, concord::Debug)]
+pub struct AccessToken(#[sensitive] String);
 
 impl AccessToken {
     /// A checked token.
@@ -98,12 +92,6 @@ impl AccessToken {
             .expect("visible ASCII is a valid header value");
         value.set_sensitive(true);
         value
-    }
-}
-
-impl fmt::Debug for AccessToken {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str("AccessToken(<redacted>)")
     }
 }
 
@@ -231,11 +219,12 @@ impl TryFrom<u8> for Priority {
     }
 }
 
-impl fmt::Display for Priority {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", self.number())
+impl ::serde::Serialize for Priority {
+    fn serialize<S: ::serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.serialize_u8(self.number())
     }
 }
+serde_plain::derive_display_from_serialize!(Priority);
 
 /// Tags of a published message (`X-Tags`), sent comma-separated in the given order.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -317,6 +306,7 @@ impl fmt::Display for Cache {
 /// ([`ReplayCursor`](crate::ReplayCursor) applies that rule).
 #[derive(Clone, PartialEq, Eq, Hash, PartialOrd, Ord, Deserialize)]
 #[serde(transparent)]
+#[derive(concord::Debug, serde::Serialize)]
 pub struct EventId(String);
 
 impl EventId {
@@ -344,17 +334,7 @@ impl EventId {
     }
 }
 
-impl fmt::Display for EventId {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(&self.0)
-    }
-}
-
-impl fmt::Debug for EventId {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "EventId({:?})", self.0)
-    }
-}
+serde_plain::derive_display_from_serialize!(EventId);
 
 /// A refused message id.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

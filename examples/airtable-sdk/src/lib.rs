@@ -45,9 +45,10 @@ fn present_offset<'de, D: serde::Deserializer<'de>>(
 /// List options applied unchanged to every page. Formula evaluation is Airtable's responsibility.
 ///
 /// `Debug` withholds the formula, which the declaration sends as a `#[sensitive]` query value.
-#[derive(Clone, Default)]
+#[derive(Clone, Default, concord::Debug)]
 pub struct ListOptions {
     /// Optional filter expression passed verbatim as `filterByFormula`.
+    #[sensitive]
     pub filter_by_formula: Option<String>,
     /// Selected field names or field IDs, repeated as `fields[]`; empty means no selection
     /// parameter. Response keys are field names either way.
@@ -58,21 +59,6 @@ pub struct ListOptions {
     pub max_records: Option<u32>,
     /// Optional view name or ID.
     pub view: Option<String>,
-}
-
-impl fmt::Debug for ListOptions {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("ListOptions")
-            .field(
-                "filter_by_formula",
-                &self.filter_by_formula.as_ref().map(|_| "<redacted>"),
-            )
-            .field("fields", &self.fields)
-            .field("page_size", &self.page_size)
-            .field("max_records", &self.max_records)
-            .field("view", &self.view)
-            .finish()
-    }
 }
 
 /// Successful value and the response head, including status, headers and operation identity.
@@ -87,6 +73,8 @@ pub struct Response<T> {
 /// Error payload supplied by Airtable. Unknown error type strings are retained.
 #[derive(Clone, Deserialize, PartialEq, Eq)]
 #[serde(untagged)]
+#[derive(concord::Debug)]
+#[sensitive]
 pub enum ProviderError {
     /// Structured form, including optional message.
     Object {
@@ -99,11 +87,7 @@ pub enum ProviderError {
     /// The documented string form.
     String(String),
 }
-impl fmt::Debug for ProviderError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str("ProviderError(<withheld>)")
-    }
-}
+
 #[derive(Deserialize)]
 struct Envelope {
     error: ProviderError,

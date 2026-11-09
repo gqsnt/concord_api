@@ -30,13 +30,8 @@ impl std::error::Error for InputError {}
 /// `Debug` withholds it (as Concord withholds the header); [`as_str`](Self::as_str) returns it.
 #[derive(Clone, PartialEq, Eq, Serialize)]
 #[serde(transparent)]
-pub struct NamespaceId(String);
-
-impl fmt::Debug for NamespaceId {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str("NamespaceId(<redacted>)")
-    }
-}
+#[derive(concord::Debug)]
+pub struct NamespaceId(#[sensitive] String);
 
 impl NamespaceId {
     /// Validate Dropbox's `[-_0-9a-zA-Z:]+` schema without normalizing the value.
@@ -103,7 +98,8 @@ impl PathRoot {
 /// An owned member/root snapshot. No client-wide selected user or root exists.
 /// Derive a new selection with [`Self::with_member`] and [`Self::with_path_root`].
 /// Previously created requests, traversals and cursors retain their own snapshots.
-#[derive(Clone, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq, concord::Debug)]
+#[sensitive]
 pub struct RequestContext {
     member: String,
     root: PathRoot,
@@ -146,11 +142,5 @@ impl RequestContext {
     /// Selected root mode.
     pub fn path_root(&self) -> &PathRoot {
         &self.root
-    }
-}
-
-impl fmt::Debug for RequestContext {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str("RequestContext { member: <redacted>, root: <redacted> }")
     }
 }

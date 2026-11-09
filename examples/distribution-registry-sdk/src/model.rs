@@ -1,7 +1,5 @@
 //! Response bodies of the listing and token endpoints, as sent on the wire.
 
-use std::fmt;
-
 use serde::Deserialize;
 
 /// `GET /v2/_catalog`: `{"repositories": [<name>, ...]}`. A `null` list reads as empty.
@@ -23,25 +21,33 @@ pub(crate) struct TagsBody {
 /// The token service's answer: `token` (or its OAuth 2.0 alias `access_token`; at least one is
 /// present), `expires_in` (seconds, 60 when absent), `issued_at` (not read). A `refresh_token` is
 /// never requested and is ignored. `Debug` withholds the token.
-#[derive(Deserialize)]
+#[derive(Deserialize, concord::Debug)]
 pub(crate) struct TokenBody {
     #[serde(default)]
+    #[sensitive]
     pub(crate) token: Option<String>,
     #[serde(default)]
+    #[sensitive]
     pub(crate) access_token: Option<String>,
     #[serde(default)]
     pub(crate) expires_in: Option<u64>,
 }
 
-impl fmt::Debug for TokenBody {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("TokenBody")
-            .field("token", &self.token.as_ref().map(|_| "<redacted>"))
-            .field(
-                "access_token",
-                &self.access_token.as_ref().map(|_| "<redacted>"),
-            )
-            .field("expires_in", &self.expires_in)
-            .finish()
+#[cfg(test)]
+mod sdk_type_canaries {
+    use super::*;
+
+    #[test]
+    fn token_service_aliases_are_withheld_in_both_debug_modes() {
+        let mut c = concord_check_canary::Canaries::new("registry-token-body");
+        let token = c.issue();
+        let alias = c.issue();
+        let body: TokenBody = serde_json::from_value(serde_json::json!({
+            "token": token, "access_token": alias, "expires_in": 60
+        }))
+        .unwrap();
+        assert_eq!(body.token.as_deref(), Some(token.as_str()));
+        assert_eq!(body.access_token.as_deref(), Some(alias.as_str()));
+        c.assert_debug_absent("TokenBody", &body);
     }
 }

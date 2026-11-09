@@ -317,6 +317,7 @@ pub enum FailedAt {
 
 /// Why an audit stopped early.
 #[non_exhaustive]
+#[derive(concord::Debug)]
 pub enum AuditError {
     /// A GitHub request failed (Concord's error and response metadata, unchanged).
     GitHub(GitHubError),
@@ -348,19 +349,6 @@ impl fmt::Display for AuditError {
                 f,
                 "activity audit: continuation expected issue {expected}, the listing now has {found}"
             ),
-        }
-    }
-}
-
-impl fmt::Debug for AuditError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::GitHub(error) => f.debug_tuple("GitHub").field(error).finish(),
-            Self::StaleContinuation { expected, found } => f
-                .debug_struct("StaleContinuation")
-                .field("expected", expected)
-                .field("found", found)
-                .finish(),
         }
     }
 }

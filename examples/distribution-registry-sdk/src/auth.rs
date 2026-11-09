@@ -145,8 +145,8 @@ impl fmt::Debug for TokenAuth {
 
 /// HTTP Basic credentials for the token service (`Authorization: Basic base64(user:password)`,
 /// RFC 7617). Never printed; the header value is flagged sensitive.
-#[derive(Clone)]
-pub struct BasicCredentials(HeaderValue);
+#[derive(Clone, concord::Debug)]
+pub struct BasicCredentials(#[sensitive] HeaderValue);
 
 impl BasicCredentials {
     /// Encodes `username` and `password`.
@@ -159,12 +159,6 @@ impl BasicCredentials {
         concord_auth::basic(username, password)
             .map(Self)
             .map_err(|_| InputError::Credentials)
-    }
-}
-
-impl fmt::Debug for BasicCredentials {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str("BasicCredentials(<redacted>)")
     }
 }
 

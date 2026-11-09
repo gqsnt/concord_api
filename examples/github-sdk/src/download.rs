@@ -303,6 +303,7 @@ impl fmt::Debug for StreamReceipt {
 
 /// Why a transfer did not complete. Bytes already written to the sink stay written: the sink
 /// decides what a partial write means (delete, keep for inspection).
+#[derive(concord::Debug)]
 pub enum StreamError<E> {
     /// The download host could not be reached, or answered a non-2xx status (Concord's error,
     /// URL removed; a status error keeps the unread response). Unlabeled: no endpoint name.
@@ -328,6 +329,7 @@ pub enum StreamError<E> {
         /// Bytes accepted by the sink before the refused chunk.
         written: u64,
         /// The sink's error.
+        #[sensitive]
         error: E,
     },
 }
@@ -369,34 +371,6 @@ impl<E> fmt::Display for StreamError<E> {
             Self::Sink { written, .. } => {
                 write!(f, "artifact download: sink stopped after {written} bytes")
             }
-        }
-    }
-}
-
-impl<E> fmt::Debug for StreamError<E> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::Request(error) => f.debug_tuple("Request").field(error).finish(),
-            Self::TooLarge {
-                declared,
-                written,
-                limit,
-            } => f
-                .debug_struct("TooLarge")
-                .field("declared", declared)
-                .field("written", written)
-                .field("limit", limit)
-                .finish(),
-            Self::Read { received, error } => f
-                .debug_struct("Read")
-                .field("received", received)
-                .field("error", error)
-                .finish(),
-            Self::Sink { written, .. } => f
-                .debug_struct("Sink")
-                .field("written", written)
-                .field("error", &format_args!("<sink error>"))
-                .finish(),
         }
     }
 }

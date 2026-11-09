@@ -23,7 +23,6 @@
 //! - Each page goes through the client's Bearer challenge handling (`registry:catalog:*` for the
 //!   catalog, `repository:<name>:pull` for tags).
 
-use std::fmt;
 use std::sync::Arc;
 
 use concord::reqwest::Url;
@@ -38,7 +37,8 @@ use crate::reference::PageSize;
 
 /// The page the registry linked to (`rel="next"`): the key of the next request, and where an
 /// interrupted listing resumes. `Debug` withholds the URL.
-#[derive(Clone, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq, concord::Debug)]
+#[sensitive]
 pub struct NextLink {
     url: Url,
     collection: Arc<str>,
@@ -48,12 +48,6 @@ impl NextLink {
     /// The URL as the registry sent it (resolved, fragment removed).
     pub fn url(&self) -> &Url {
         &self.url
-    }
-}
-
-impl fmt::Debug for NextLink {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str("NextLink(<withheld>)")
     }
 }
 

@@ -38,15 +38,11 @@ impl HttpClass {
 }
 
 /// Small provider error document. Its text is available explicitly, withheld from formatting.
-#[derive(Deserialize)]
+#[derive(Deserialize, concord::Debug)]
+#[sensitive]
 pub struct Problem {
     /// Provider explanation, possibly containing sensitive request content.
     pub detail: String,
-}
-impl fmt::Debug for Problem {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str("Problem { <withheld> }")
-    }
 }
 
 /// HTTP failure with a typed or unreadable bounded document.

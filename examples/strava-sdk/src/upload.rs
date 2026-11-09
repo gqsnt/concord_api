@@ -36,6 +36,8 @@ impl DataType {
     }
 }
 /// A non-cloneable multipart activity submission. The source is moved and never buffered for replay.
+#[derive(concord::Debug)]
+#[sensitive]
 pub struct UploadFile {
     form: reqwest::multipart::Form,
 }
@@ -74,11 +76,7 @@ impl UploadFile {
         self
     }
 }
-impl fmt::Debug for UploadFile {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str("UploadFile(<one-shot>)")
-    }
-}
+
 /// `Encode::CONTENT_TYPE` is `None`; `encode_body` binds
 /// `content-type: multipart/form-data; boundary=<boundary>` from reqwest's `Form::boundary()`.
 ///

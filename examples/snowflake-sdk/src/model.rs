@@ -136,12 +136,16 @@ pub type Row = Vec<Option<String>>;
 /// Server message used for pending, cancellation and error documents.
 #[derive(Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[derive(concord::Debug)]
+#[sensitive]
 pub struct ServerMessage {
     /// Provider-specific code (kept as a string, including leading zeroes).
+    #[public]
     pub code: String,
     /// Provider text; inspect deliberately, as it may echo SQL.
     pub message: String,
     /// SQLSTATE, when provided.
+    #[public]
     pub sql_state: Option<String>,
     /// Server identity, when provided (generic HTTP errors may omit it).
     pub statement_handle: Option<StatementHandle>,
@@ -150,14 +154,6 @@ pub struct ServerMessage {
     /// Additional server fields, without loss.
     #[serde(flatten)]
     pub extra: BTreeMap<String, serde_json::Value>,
-}
-impl std::fmt::Debug for ServerMessage {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("ServerMessage")
-            .field("code", &self.code)
-            .field("sql_state", &self.sql_state)
-            .finish_non_exhaustive()
-    }
 }
 
 /// A server-determined partition descriptor. Array position is its request index.

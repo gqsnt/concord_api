@@ -2,7 +2,6 @@ use crate::{CsvRow, CsvRows, Error, PageSize, Response, UsgsCatalogWindow};
 use concord_codecs::stream::Completion;
 use concord_pagination::{OffsetError, next_offset};
 use std::{
-    fmt,
     future::Future,
     num::{NonZeroU64, NonZeroUsize},
     pin::Pin,
@@ -12,16 +11,21 @@ type Opening = Pin<Box<dyn Future<Output = Result<Response<CsvRows>, Error>> + S
 
 /// A bounded sequence of incremental CSV responses. Owns at most one response reader;
 /// rows belong to the caller as soon as returned. No tasks or prefetch are started.
+#[derive(concord::Debug)]
+#[sensitive]
 pub struct CsvExport {
     query: UsgsCatalogWindow,
     size: u16,
     offset: NonZeroU64,
     budget: usize,
+    #[public]
     pages: usize,
     rows_in_page: u64,
+    #[public]
     delivered: u64,
     reader: Option<CsvRows>,
     opening: Option<Opening>,
+    #[public]
     completion: Completion,
 }
 
@@ -140,15 +144,5 @@ impl CsvExport {
     /// Logical page requests admitted; no retry is performed by this SDK.
     pub fn pages_requested(&self) -> usize {
         self.pages
-    }
-}
-
-impl fmt::Debug for CsvExport {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("CsvExport")
-            .field("pages", &self.pages)
-            .field("rows_delivered", &self.delivered)
-            .field("completion", &self.completion)
-            .finish_non_exhaustive()
     }
 }

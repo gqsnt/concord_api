@@ -1,5 +1,4 @@
 //! Opaque links bound to their tenant, principal, query and collection.
-use std::fmt;
 
 use concord::reqwest::Url;
 use serde::{Deserialize, Serialize};
@@ -62,13 +61,13 @@ impl StoredLink {
 }
 
 /// The next page within one enumeration, never an incremental-sync checkpoint.
-#[derive(Clone, PartialEq, Eq)]
-pub struct NextLink(pub(crate) StoredLink);
+#[derive(Clone, PartialEq, Eq, concord::Debug)]
+pub struct NextLink(#[sensitive] pub(crate) StoredLink);
 
 /// A completed users-delta round's checkpoint. Persist only after committing its changes.
 /// Serialization contains the opaque URL and context, but never the bearer token.
-#[derive(Clone, PartialEq, Eq)]
-pub struct DeltaLink(pub(crate) StoredLink);
+#[derive(Clone, PartialEq, Eq, concord::Debug)]
+pub struct DeltaLink(#[sensitive] pub(crate) StoredLink);
 
 macro_rules! link_methods {
     ($name:ident) => {
@@ -83,11 +82,6 @@ macro_rules! link_methods {
             /// Exact unredacted URL returned by Graph. Do not log it or rebuild its query.
             pub fn url(&self) -> &str {
                 &self.0.url
-            }
-        }
-        impl fmt::Debug for $name {
-            fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-                f.write_str(concat!(stringify!($name), "(<redacted>)"))
             }
         }
     };

@@ -3,7 +3,8 @@ use serde::Deserialize;
 use std::fmt;
 
 /// An error document. Explicit field access discloses untrusted provider text.
-#[derive(Deserialize)]
+#[derive(Deserialize, concord::Debug)]
+#[sensitive]
 pub struct Problem {
     /// Provider error identifier; HTTP status remains authoritative.
     pub id: String,
@@ -11,11 +12,6 @@ pub struct Problem {
     pub message: String,
     /// Optional diagnostic request identifier.
     pub request_id: Option<String>,
-}
-impl fmt::Debug for Problem {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str("Problem(<redacted>)")
-    }
 }
 
 /// Classification by HTTP status, independent of document contents.

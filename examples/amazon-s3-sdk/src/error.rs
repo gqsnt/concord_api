@@ -19,7 +19,7 @@ use crate::types::{ETag, HttpDate};
 pub const MAX_ERROR_BODY: usize = 64 * 1024;
 
 /// A value refused before any request was built.
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, PartialEq, Eq, concord::Debug)]
 pub struct InputError {
     what: &'static str,
     rule: &'static str,
@@ -47,21 +47,14 @@ impl fmt::Display for InputError {
     }
 }
 
-impl fmt::Debug for InputError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("InputError")
-            .field("what", &self.what)
-            .field("rule", &self.rule)
-            .finish()
-    }
-}
-
 impl std::error::Error for InputError {}
 
 /// The request could not be signed (nothing was sent).
+#[derive(concord::Debug)]
 pub struct SigningError {
     reason: &'static str,
     header: Option<String>,
+    #[sensitive]
     source: Option<Box<dyn std::error::Error + Send + Sync>>,
 }
 
@@ -112,16 +105,6 @@ impl fmt::Display for SigningError {
             write!(f, " (header `{name}`)")?;
         }
         Ok(())
-    }
-}
-
-impl fmt::Debug for SigningError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("SigningError")
-            .field("reason", &self.reason)
-            .field("header", &self.header)
-            .field("source", &self.source.as_ref().map(|_| "<withheld>"))
-            .finish()
     }
 }
 
@@ -202,10 +185,16 @@ pub enum ErrorBody {
 
 /// A non-2xx S3 response (other than `304 Not Modified`), with its `<Error>` document when one
 /// was sent.
+#[derive(concord::Debug)]
+#[sensitive]
 pub struct ApiError {
+    #[public]
     operation: &'static str,
+    #[public]
     meta: ResponseMeta,
+    #[public]
     body: ErrorBody,
+    #[public]
     code: Option<String>,
     message: Option<String>,
     resource: Option<String>,
@@ -304,20 +293,9 @@ impl ApiError {
     }
 }
 
-impl fmt::Debug for ApiError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("ApiError")
-            .field("operation", &self.operation)
-            .field("meta", &self.meta)
-            .field("code", &self.code)
-            .field("body", &self.body)
-            .finish_non_exhaustive()
-    }
-}
-
 /// `304 Not Modified`: an `If-None-Match` or `If-Modified-Since` condition said the copy the
 /// caller holds is current. No body; the validators S3 returned are kept.
-#[derive(Clone)]
+#[derive(Clone, concord::Debug)]
 pub struct NotModified {
     operation: &'static str,
     meta: ResponseMeta,
@@ -358,17 +336,6 @@ impl NotModified {
     /// The current `Last-Modified`, when S3 sent it.
     pub fn last_modified(&self) -> Option<HttpDate> {
         self.last_modified
-    }
-}
-
-impl fmt::Debug for NotModified {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("NotModified")
-            .field("operation", &self.operation)
-            .field("meta", &self.meta)
-            .field("etag", &self.etag)
-            .field("last_modified", &self.last_modified)
-            .finish()
     }
 }
 
@@ -419,12 +386,14 @@ pub enum BodyErrorKind {
 }
 
 /// A failure while reading an object body, after a successful response head.
+#[derive(concord::Debug)]
 pub struct BodyError {
     operation: &'static str,
     kind: BodyErrorKind,
     received: u64,
     expected: Option<u64>,
     meta: ResponseMeta,
+    #[sensitive]
     transport: Option<concord::Error>,
 }
 
@@ -473,20 +442,9 @@ impl BodyError {
     }
 }
 
-impl fmt::Debug for BodyError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("BodyError")
-            .field("operation", &self.operation)
-            .field("kind", &self.kind)
-            .field("received", &self.received)
-            .field("expected", &self.expected)
-            .field("meta", &self.meta)
-            .finish()
-    }
-}
-
 /// An S3 call that did not produce its result.
 #[non_exhaustive]
+#[derive(concord::Debug)]
 pub enum S3Error {
     /// An SDK input was refused; nothing was sent.
     Input(InputError),
@@ -624,35 +582,6 @@ impl fmt::Display for S3Error {
     }
 }
 
-impl fmt::Debug for S3Error {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::Input(e) => f.debug_tuple("Input").field(e).finish(),
-            Self::Build(e) => f.debug_tuple("Build").field(e).finish(),
-            Self::Signing(e) => f.debug_tuple("Signing").field(e).finish(),
-            Self::Transport(e) => f.debug_tuple("Transport").field(e).finish(),
-            Self::Api(e) => f.debug_tuple("Api").field(e).finish(),
-            Self::NotModified(e) => f.debug_tuple("NotModified").field(e).finish(),
-            Self::Response { error, meta } => f
-                .debug_struct("Response")
-                .field("error", error)
-                .field("meta", meta)
-                .finish(),
-            Self::Protocol {
-                operation,
-                kind,
-                meta,
-            } => f
-                .debug_struct("Protocol")
-                .field("operation", operation)
-                .field("kind", kind)
-                .field("meta", meta)
-                .finish(),
-            Self::Body(e) => f.debug_tuple("Body").field(e).finish(),
-        }
-    }
-}
-
 impl std::error::Error for S3Error {}
 
 impl From<InputError> for S3Error {
@@ -664,5 +593,23 @@ impl From<InputError> for S3Error {
 impl From<SigningError> for S3Error {
     fn from(error: SigningError) -> Self {
         Self::Signing(error)
+    }
+}
+
+#[cfg(test)]
+mod sdk_type_canaries {
+    use super::*;
+
+    #[test]
+    fn signing_sources_are_kept_for_explicit_access_and_withheld_from_debug() {
+        let mut canaries = concord_check_canary::Canaries::new("s3-signing-source");
+        let secret = canaries.issue();
+        let error = SigningError {
+            reason: "signing failed",
+            header: None,
+            source: Some(Box::new(std::io::Error::other(secret.clone()))),
+        };
+        assert_eq!(error.source_unredacted().unwrap().to_string(), secret);
+        canaries.assert_debug_absent("SigningError", &error);
     }
 }

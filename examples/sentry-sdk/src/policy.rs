@@ -6,7 +6,6 @@ use concord::{Endpoint, Json, SendOperation};
 use concord_ratelimit::{Budget, Lease, Limiter, Mode, Observation, TokioClock};
 use concord_retry::{Decision, Policy, Replay, Retry, StopReason, concord::ReplayMode};
 use std::{
-    fmt,
     num::{NonZeroU32, NonZeroUsize},
     time::{Duration, Instant, SystemTime},
 };
@@ -46,16 +45,13 @@ impl Default for Settings {
 /// A cheap clone sharing five endpoint buckets (four reads, the status update) for one
 /// provider caller identity.
 /// Reuse across tokens for the same caller; construct separately for different callers.
-#[derive(Clone)]
+#[derive(Clone, concord::Debug)]
+#[sensitive]
 pub struct SendPolicy {
     limiter: Limiter<SentryOperation>,
     settings: Settings,
 }
-impl fmt::Debug for SendPolicy {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str("SendPolicy { <shared> }")
-    }
-}
+
 impl Default for SendPolicy {
     fn default() -> Self {
         Self::new(Settings::default()).expect("valid default settings")

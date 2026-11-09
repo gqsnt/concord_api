@@ -1,4 +1,4 @@
-//! Proposed I1 regression tests. These target the future derive and have not been run.
+//! Scalar serde spellings and request-build failures.
 
 use std::fmt::Display;
 
@@ -123,10 +123,11 @@ fn labels_keep_their_comma_joiner_and_values_are_encoded_once() {
     );
 }
 
-// A derive can only discover this shape when Serialize runs. This is the C5 limitation.
-#[derive(Clone, Serialize, concord::WireDisplay)]
+// The scalar adapter discovers an unsupported shape when Serialize runs.
+#[derive(Clone, Serialize)]
 #[serde(transparent)]
 struct Sequence(Vec<String>);
+serde_plain::derive_display_from_serialize!(Sequence);
 
 concord::api! {
     client ScalarOnly {
@@ -139,7 +140,12 @@ concord::api! {
 fn a_sequence_is_a_build_error_naming_the_placement_without_its_contents() {
     let value = Sequence(vec!["WIRE_DISPLAY_CANARY".into()]);
     let mut buffer = String::new();
-    assert!(std::fmt::write(&mut buffer, format_args!("{value}")).is_err());
+    assert!(
+        std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            std::fmt::write(&mut buffer, format_args!("{value}"))
+        }))
+        .is_err()
+    );
     let error = ScalarOnly::new(reqwest::Client::new())
         .read(value)
         .prepare()

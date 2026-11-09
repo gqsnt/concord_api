@@ -65,16 +65,11 @@ pub enum HttpClass {
 }
 
 /// Mailgun's JSON error document. Inspect its untrusted message explicitly.
-#[derive(serde::Deserialize)]
+#[derive(serde::Deserialize, concord::Debug)]
+#[sensitive]
 pub struct Problem {
     /// Provider text; excluded from Debug and Display.
     pub message: String,
-}
-
-impl fmt::Debug for Problem {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str("Problem(<redacted>)")
-    }
 }
 
 /// A non-success status survives every error-document decoding failure.

@@ -69,13 +69,16 @@ impl fmt::Debug for ApiError {
 }
 
 /// One entry of an error document's `details`.
-#[derive(Clone, PartialEq, Eq, Deserialize)]
+#[derive(Clone, PartialEq, Eq, Deserialize, concord::Debug)]
+#[sensitive]
 pub struct ErrorDetail {
     #[serde(default)]
+    #[public]
     issue: Option<String>,
     #[serde(default)]
     field: Option<String>,
     #[serde(default)]
+    #[public]
     location: Option<String>,
     #[serde(default)]
     value: Option<String>,
@@ -107,15 +110,6 @@ impl ErrorDetail {
     /// The human description. Never formatted by this SDK.
     pub fn description_unredacted(&self) -> Option<&str> {
         self.description.as_deref()
-    }
-}
-
-impl fmt::Debug for ErrorDetail {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("ErrorDetail")
-            .field("issue", &self.issue)
-            .field("location", &self.location)
-            .finish_non_exhaustive()
     }
 }
 

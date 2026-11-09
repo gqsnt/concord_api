@@ -9,7 +9,6 @@ use concord_ratelimit::{Limiter, Mode, TokioClock};
 use concord_retry::{Decision, Policy, Replay, Retry};
 use serde::{Deserialize, Serialize};
 use std::{
-    fmt,
     num::NonZeroUsize,
     sync::Arc,
     time::{Duration, SystemTime, UNIX_EPOCH},
@@ -17,7 +16,8 @@ use std::{
 use tokio::sync::Mutex;
 
 /// Application credentials. Debug withholds client ID and secret.
-#[derive(Clone)]
+#[derive(Clone, concord::Debug)]
+#[sensitive]
 pub struct Credentials {
     client_id: u64,
     client_secret: String,
@@ -34,14 +34,10 @@ impl Credentials {
         })
     }
 }
-impl fmt::Debug for Credentials {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str("Credentials(<redacted>)")
-    }
-}
 
 /// OAuth tokens. Persist the latest refresh token after each successful rotation.
-#[derive(Clone, Deserialize)]
+#[derive(Clone, Deserialize, concord::Debug)]
+#[sensitive]
 pub struct Tokens {
     /// Expected to be Bearer.
     pub token_type: String,
@@ -56,13 +52,10 @@ pub struct Tokens {
     /// Granted scopes, when supplied by the provider.
     pub scope: Option<String>,
 }
-impl fmt::Debug for Tokens {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str("Tokens(<redacted>)")
-    }
-}
+
 /// A single-use OAuth grant, sent in a URL-encoded body, never in the URL.
-#[derive(Serialize)]
+#[derive(Serialize, concord::Debug)]
+#[sensitive]
 pub struct TokenRequest {
     client_id: u64,
     client_secret: String,
@@ -96,11 +89,6 @@ impl TokenRequest {
         }
     }
 }
-impl fmt::Debug for TokenRequest {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str("TokenRequest(<redacted>)")
-    }
-}
 
 struct Inner {
     http: reqwest::Client,
@@ -117,13 +105,9 @@ struct Inner {
 ///
 /// A clone shares one athlete's tokens and this process's observed application quota.
 /// Share a session among clones; independent sessions do not coordinate application-wide usage.
-#[derive(Clone)]
-pub struct Session(Arc<Inner>);
-impl fmt::Debug for Session {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str("Session(<redacted>)")
-    }
-}
+#[derive(Clone, concord::Debug)]
+pub struct Session(#[sensitive] Arc<Inner>);
+
 impl Session {
     /// Create a shared session using the SDK's strict transport. Retain a clone for token persistence.
     pub fn connect(

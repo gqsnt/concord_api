@@ -29,6 +29,7 @@ pub enum EnvelopeProblem {
 
 /// An error of this SDK.
 #[non_exhaustive]
+#[derive(concord::Debug)]
 pub enum GitHubError {
     /// A Concord error: build, transport, non-2xx status, refused head or undecodable body.
     Api {
@@ -171,42 +172,6 @@ impl fmt::Display for GitHubError {
                 ),
             },
             Self::Context(error) => fmt::Display::fmt(error, f),
-        }
-    }
-}
-
-impl fmt::Debug for GitHubError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::Api { error, meta } => f
-                .debug_struct("Api")
-                .field("error", error)
-                .field("meta", meta)
-                .finish(),
-            Self::Link { error, meta } => f
-                .debug_struct("Link")
-                .field("error", error)
-                .field("meta", meta)
-                .finish(),
-            Self::ForeignLink { meta } => {
-                f.debug_struct("ForeignLink").field("meta", meta).finish()
-            }
-            Self::LinkDidNotAdvance { meta } => f
-                .debug_struct("LinkDidNotAdvance")
-                .field("meta", meta)
-                .finish(),
-            Self::MalformedStoredLink => f.write_str("MalformedStoredLink"),
-            Self::ContinuationMismatch { expected, found } => f
-                .debug_struct("ContinuationMismatch")
-                .field("expected", expected)
-                .field("found", found)
-                .finish(),
-            Self::Envelope { problem, meta } => f
-                .debug_struct("Envelope")
-                .field("problem", problem)
-                .field("meta", meta)
-                .finish(),
-            Self::Context(error) => f.debug_tuple("Context").field(error).finish(),
         }
     }
 }

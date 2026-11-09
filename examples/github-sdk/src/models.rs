@@ -19,13 +19,14 @@ macro_rules! provider_enum {
     ($(#[$doc:meta])* $name:ident { $($(#[$vdoc:meta])* $variant:ident = $wire:literal),+ $(,)? }) => {
         $(#[$doc])*
         #[derive(Clone, Debug, PartialEq, Eq, Hash)]
-        #[derive(Serialize, concord::WireDisplay)]
+        #[derive(Serialize)]
         pub enum $name {
             $($(#[$vdoc])* #[serde(rename = $wire)] $variant,)+
             /// A value outside the enumeration documented for the pinned version, kept as sent.
             #[serde(untagged)]
             Unknown(String),
         }
+serde_plain::derive_display_from_serialize!($name);
 
         impl $name {
             /// The wire text.

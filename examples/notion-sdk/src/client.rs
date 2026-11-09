@@ -4,21 +4,16 @@ use crate::{ERROR_LIMIT, EnvelopeProblem, Error, PageSize, ProviderError, Query}
 use concord::{Prepared, ResponseMeta, reqwest};
 use concord_pagination::{Page as TraversalPage, Pages, Resume};
 use std::collections::HashSet;
-use std::fmt;
 
 /// A decoded value and the actual response metadata. Debug omits the value.
+#[derive(concord::Debug)]
+#[sensitive]
 pub struct Response<T> {
     /// Decoded provider payload.
     pub value: T,
     /// HTTP status, version, headers and generated operation identity.
+    #[public]
     pub meta: ResponseMeta,
-}
-impl<T> fmt::Debug for Response<T> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("Response")
-            .field("meta", &self.meta)
-            .finish_non_exhaustive()
-    }
 }
 
 /// Lazy query pages; `.items()` and `.into_stream()` retain typed incomplete outcomes.

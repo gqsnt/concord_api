@@ -221,6 +221,7 @@ pub enum DocumentProblem {
 }
 
 /// A non-2xx response from Stripe.
+#[derive(concord::Debug)]
 pub struct ApiFailure {
     endpoint: Option<&'static str>,
     meta: ResponseMeta,
@@ -246,16 +247,6 @@ impl ApiFailure {
     /// Stripe's error object, or why it could not be read.
     pub fn error(&self) -> Result<&ApiError, DocumentProblem> {
         self.error.as_ref().map_err(|p| *p)
-    }
-}
-
-impl fmt::Debug for ApiFailure {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("ApiFailure")
-            .field("endpoint", &self.endpoint)
-            .field("meta", &self.meta)
-            .field("error", &self.error)
-            .finish()
     }
 }
 
@@ -299,6 +290,7 @@ impl fmt::Display for ProtocolError {
 
 /// An SDK error. See the [module documentation](self) for what its output shows.
 #[non_exhaustive]
+#[derive(concord::Debug)]
 pub enum Error {
     /// Stripe answered with a non-2xx status.
     Api(Box<ApiFailure>),
@@ -420,24 +412,6 @@ impl fmt::Display for Error {
                 }
                 Ok(())
             }
-        }
-    }
-}
-
-impl fmt::Debug for Error {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::Api(failure) => f.debug_tuple("Api").field(failure).finish(),
-            Self::Concord { error, meta } => f
-                .debug_struct("Concord")
-                .field("error", error)
-                .field("meta", meta)
-                .finish(),
-            Self::Protocol { problem, meta } => f
-                .debug_struct("Protocol")
-                .field("problem", problem)
-                .field("meta", meta)
-                .finish(),
         }
     }
 }

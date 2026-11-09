@@ -1,4 +1,5 @@
 use super::*;
+use std::fmt;
 
 /// Money in the smallest denomination of the indicated currency; never a float.
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
@@ -14,7 +15,8 @@ pub struct Money {
 ///
 /// Clone this body or the generated operation for an exact replay. This slice does
 /// not accept cash/external payments or card-on-file inputs requiring other fields.
-#[derive(Clone, Serialize)]
+#[derive(Clone, Serialize, concord::Debug)]
+#[sensitive]
 pub struct CreatePayment {
     source_id: String,
     idempotency_key: String,
@@ -87,12 +89,6 @@ impl CreatePayment {
             amount_money,
             autocomplete,
         })
-    }
-}
-
-impl fmt::Debug for CreatePayment {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str("CreatePayment(<redacted>)")
     }
 }
 

@@ -1,4 +1,9 @@
 I1-wire-display: complete SDK overlays against rv-p1 ba10189b; no Concord implementation or compilation.
+
+Historical experiment: owner decision 7 (P4.1) replaces the scalar-display derive described here
+with `serde_plain::derive_display_from_serialize!`. The implementation and hidden serde bridge
+have been removed; see `docs/MIGRATION.md#sdk-owned-formatting` for the current contract.
+
 Manual spelling glue removed: github 48 lines (35 net src lines); stripe 88 (71 net); frankfurter 0; classifier glue-category delta is 0 (REVIEW.md explains).
 New concepts: one opt-in concord::WireDisplay derive; existing serde attributes supply its scalar text; no api! syntax or dependency changes.
 C1: api! bodies are identical; serde spells provider values, with no generator controls.

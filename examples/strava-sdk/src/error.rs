@@ -4,7 +4,8 @@ use serde::Deserialize;
 use std::fmt;
 
 /// A provider error document. Debug withholds every untrusted string.
-#[derive(Deserialize)]
+#[derive(Deserialize, concord::Debug)]
+#[sensitive]
 pub struct Problem {
     /// Human-readable provider message; may contain HTML or sensitive content.
     pub message: String,
@@ -13,7 +14,8 @@ pub struct Problem {
     pub errors: Vec<ProblemField>,
 }
 /// One field failure from a provider error document.
-#[derive(Deserialize)]
+#[derive(Deserialize, concord::Debug)]
+#[sensitive]
 pub struct ProblemField {
     /// Provider resource name.
     pub resource: String,
@@ -21,16 +23,6 @@ pub struct ProblemField {
     pub field: String,
     /// Provider error code.
     pub code: String,
-}
-impl fmt::Debug for Problem {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str("Problem(<withheld>)")
-    }
-}
-impl fmt::Debug for ProblemField {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str("ProblemField(<withheld>)")
-    }
 }
 
 /// Error schemas documented for general API failures and activity uploads.
@@ -137,3 +129,20 @@ impl fmt::Display for Error {
 }
 // Untrusted errors are deliberately reachable only through explicit variants/accessors.
 impl std::error::Error for Error {}
+
+#[cfg(test)]
+mod sdk_type_canaries {
+    use super::*;
+
+    #[test]
+    fn nested_problem_fields_withhold_each_provider_string() {
+        let mut c = concord_check_canary::Canaries::new("strava-problem-field");
+        let field = ProblemField {
+            resource: c.issue(),
+            field: c.issue(),
+            code: c.issue(),
+        };
+        assert!(field.resource.starts_with("CANARY"));
+        c.assert_debug_absent("ProblemField", &field);
+    }
+}

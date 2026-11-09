@@ -41,10 +41,11 @@ macro_rules! wire_enum {
     ($(#[$doc:meta])* $name:ident { $($(#[$vdoc:meta])* $variant:ident = $wire:literal),+ $(,)? }) => {
         $(#[$doc])*
         #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-        #[derive(Serialize, concord::WireDisplay)]
+        #[derive(Serialize)]
         pub enum $name {
             $($(#[$vdoc])* #[serde(rename = $wire)] $variant),+
         }
+serde_plain::derive_display_from_serialize!($name);
 
         impl $name {
             /// The wire text.
@@ -169,9 +170,10 @@ wire_enum!(
 );
 
 /// `per_page`: 1 through 100.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, concord::WireDisplay)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize)]
 #[serde(transparent)]
 pub struct PerPage(u8);
+serde_plain::derive_display_from_serialize!(PerPage);
 
 impl PerPage {
     /// GitHub's maximum.
@@ -200,11 +202,10 @@ impl PerPage {
 /// and as its resources report `created_at`/`updated_at`. Kept as text: this SDK has no date
 /// arithmetic, it only validates the shape and the field ranges (no leap-second or
 /// days-per-month check beyond 1–31).
-#[derive(
-    Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize, concord::WireDisplay,
-)]
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 #[serde(transparent)]
 pub struct Timestamp(String);
+serde_plain::derive_display_from_serialize!(Timestamp);
 
 impl Timestamp {
     /// Parses `YYYY-MM-DDTHH:MM:SSZ`.
@@ -308,9 +309,10 @@ impl fmt::Display for Labels {
 /// were checked against (see `PROVIDER.md`); GitHub answers `410 Gone` for an unsupported
 /// version and uses `2022-11-28` when the header is missing, which is why the SDK always sends
 /// one.
-#[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, concord::WireDisplay)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize)]
 #[serde(transparent)]
 pub struct ApiVersion(String);
+serde_plain::derive_display_from_serialize!(ApiVersion);
 
 impl ApiVersion {
     /// The pinned version text.
@@ -355,9 +357,10 @@ impl Default for ApiVersion {
 
 /// An entity tag exactly as GitHub returned it in `ETag` (quotes and a `W/` prefix included),
 /// sent back unchanged in `If-None-Match`.
-#[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, concord::WireDisplay)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize)]
 #[serde(transparent)]
 pub struct ETag(String);
+serde_plain::derive_display_from_serialize!(ETag);
 
 impl ETag {
     /// An entity tag received earlier (for example one an application stored).

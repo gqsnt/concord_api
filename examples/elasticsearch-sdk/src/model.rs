@@ -15,8 +15,9 @@ use crate::error::{Error, Invalid};
 /// such as `_bulk` and `_pit`), and `,`, `*`, `/`, `\`, whitespace and control characters
 /// (multi-target expressions and wildcards are outside the slice). Elasticsearch applies its own
 /// naming rules on top.
-#[derive(Clone, PartialEq, Eq, Hash, concord::WireDisplay)]
+#[derive(Clone, PartialEq, Eq, Hash, concord::Debug)]
 pub struct IndexName(Arc<str>);
+serde_plain::derive_display_from_serialize!(IndexName);
 
 impl IndexName {
     /// Validates `name`.
@@ -38,12 +39,6 @@ impl IndexName {
     }
 }
 
-impl fmt::Debug for IndexName {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "IndexName({:?})", &*self.0)
-    }
-}
-
 impl Serialize for IndexName {
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         serializer.serialize_str(&self.0)
@@ -51,8 +46,9 @@ impl Serialize for IndexName {
 }
 
 /// A document `_id` chosen by the caller (non-empty).
-#[derive(Clone, PartialEq, Eq, Hash, concord::WireDisplay)]
+#[derive(Clone, PartialEq, Eq, Hash, concord::Debug)]
 pub struct DocumentId(Arc<str>);
+serde_plain::derive_display_from_serialize!(DocumentId);
 
 impl DocumentId {
     /// Validates `id`.
@@ -66,12 +62,6 @@ impl DocumentId {
     /// The id.
     pub fn as_str(&self) -> &str {
         &self.0
-    }
-}
-
-impl fmt::Debug for DocumentId {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "DocumentId({:?})", &*self.0)
     }
 }
 
@@ -102,7 +92,7 @@ impl ApiKey {
 }
 
 /// The bulk API's `refresh` query parameter.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, concord::WireDisplay)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Refresh {
     /// `true`: refresh the affected shards.
@@ -112,6 +102,7 @@ pub enum Refresh {
     /// `wait_for`: wait for a refresh to make the operations visible to search.
     WaitFor,
 }
+serde_plain::derive_display_from_serialize!(Refresh);
 
 /// How long a point in time stays open after each request that names it, in whole minutes
 /// (`1m` is the form the pagination guide uses).

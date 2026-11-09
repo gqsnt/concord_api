@@ -22,13 +22,14 @@ use crate::watch::WatchEvent;
 
 /// `resourceVersionMatch` of a list or watch request. Streaming lists require
 /// [`NotOlderThan`](Self::NotOlderThan).
-#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, concord::WireDisplay)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize)]
 pub enum ResourceVersionMatch {
     /// `NotOlderThan`: data at least as new as `resourceVersion`.
     NotOlderThan,
     /// `Exact`: data at exactly `resourceVersion` (`410 Gone` when unavailable).
     Exact,
 }
+serde_plain::derive_display_from_serialize!(ResourceVersionMatch);
 
 concord::api! {
     /// A read-only slice of the Kubernetes API: get/list of Namespaces, Pods, Services,

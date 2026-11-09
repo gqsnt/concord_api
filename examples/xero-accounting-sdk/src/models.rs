@@ -106,12 +106,14 @@ impl fmt::Debug for Utc {
 }
 
 /// A tenant's incremental-sync point: list invoices created or modified since this UTC second.
+/// Shows the UTC wire text; the tenant is withheld.
 /// Xero does not document whether the bound is inclusive; expect overlap and upsert by ID.
 ///
 /// Like every tenant-bound value it is refused by another tenant before I/O, so one tenant's
 /// sync progress can never filter (and silently truncate) another tenant's listing.
-#[derive(Clone, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq, concord::Debug)]
 pub struct ModifiedSince {
+    #[sensitive]
     pub(crate) tenant: TenantId,
     pub(crate) at: Utc,
 }
@@ -132,13 +134,6 @@ impl ModifiedSince {
         &self.tenant
     }
 }
-/// Shows the UTC wire text; the tenant is withheld.
-impl fmt::Debug for ModifiedSince {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_tuple("ModifiedSince").field(&self.at).finish()
-    }
-}
-
 /// A pre-existing contact chosen within one tenant (no Contacts endpoint is implemented).
 #[derive(Clone, concord::Debug)]
 #[sensitive]

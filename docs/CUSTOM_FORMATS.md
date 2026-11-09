@@ -11,6 +11,10 @@ This page is for the person who writes a format. How a declaration chooses forma
 `Content-Type` header does on the wire is in its
 [reference table](AUTHOR_GUIDE.md#58-what-goes-on-the-wire-accept-and-content-type).
 
+Text placements use `Display` independently of body formats. For a scalar serde spelling,
+use `serde_plain::derive_display_from_serialize!(Type);`; structured bodies keep their format's
+`Encode` implementation. See [wire formatting](AUTHOR_GUIDE.md#6-wire-formatting-display-and-newtypes).
+
 Every Rust block below is an excerpt of a file of this repository that is compiled and tested;
 `cargo test -p concord-example-quickstart` fails when an excerpt stops matching its source. Each
 label names the file; its tests run the code.

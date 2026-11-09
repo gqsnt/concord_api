@@ -19,8 +19,8 @@ use std::{
 /// This establishes allocation order only, never network arrival order. Share one
 /// source per key; persist its high-water mark across restarts and coordinate other
 /// processes yourself. Cancellation consumes an allocation. Exhaustion never wraps.
-#[derive(Clone)]
-pub struct Nonces(Arc<AtomicU64>);
+#[derive(Clone, concord::Debug)]
+pub struct Nonces(#[sensitive] Arc<AtomicU64>);
 
 impl Nonces {
     /// Seeds the counter; the first allocation is `last_used + 1`.
@@ -37,16 +37,10 @@ impl Nonces {
     }
 }
 
-impl fmt::Debug for Nonces {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str("Nonces(<shared>)")
-    }
-}
-
 /// Validated API key and decoded secret. Cloning shares the secret allocation.
 /// Debug and Display withhold both values; memory is not zeroized.
-#[derive(Clone)]
-pub struct Credentials(Arc<Keys>);
+#[derive(Clone, concord::Debug)]
+pub struct Credentials(#[sensitive] Arc<Keys>);
 struct Keys {
     key: HeaderValue,
     secret: Vec<u8>,
@@ -93,11 +87,6 @@ impl Credentials {
     }
 }
 
-impl fmt::Debug for Credentials {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str("Credentials(<redacted>)")
-    }
-}
 impl fmt::Display for Credentials {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         fmt::Debug::fmt(self, f)

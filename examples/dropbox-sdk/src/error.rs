@@ -8,7 +8,7 @@ use std::{fmt, ops::Deref, time::Duration};
 /// [`concord::ResponseMeta`] (actual status, never synthesized; HTTP version; all headers,
 /// including request ID and raw Retry-After; the declared operation identity), reached through
 /// `Deref`, plus Dropbox's header readings. `Debug` prints header names only.
-#[derive(Clone)]
+#[derive(Clone, concord::Debug)]
 pub struct ResponseMeta(pub concord::ResponseMeta);
 
 impl Deref for ResponseMeta {
@@ -32,12 +32,6 @@ impl ResponseMeta {
             Ok(None) => RetryAfter::Missing,
             Err(_) => RetryAfter::Invalid,
         }
-    }
-}
-
-impl fmt::Debug for ResponseMeta {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        fmt::Debug::fmt(&self.0, f)
     }
 }
 

@@ -70,7 +70,7 @@ impl Default for BulkLimits {
 }
 
 /// A bulk action.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize, Serialize, concord::WireDisplay)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Action {
     /// Add or replace a document.
@@ -82,6 +82,7 @@ pub enum Action {
     /// Remove a document.
     Delete,
 }
+serde_plain::derive_display_from_serialize!(Action);
 
 /// One NDJSON line of a bulk body: compact JSON text, without its line feed (the `Ndjson`
 /// format writes one after every line, the last included). `Debug` shows its length only.

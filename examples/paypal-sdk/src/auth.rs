@@ -15,7 +15,8 @@ use crate::{ERROR_BODY_LIMIT, Error, TOKEN_BODY_LIMIT};
 
 /// A REST app's client ID and secret. Only their `Basic` header is kept, flagged sensitive;
 /// `Debug` shows neither.
-#[derive(Clone)]
+#[derive(Clone, concord::Debug)]
+#[sensitive]
 pub struct Credentials {
     basic: HeaderValue,
 }
@@ -35,12 +36,6 @@ impl Credentials {
     }
 }
 
-impl fmt::Debug for Credentials {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str("Credentials(<redacted>)")
-    }
-}
-
 /// The form body `grant_type=client_credentials`.
 #[derive(Clone, Copy, Serialize)]
 pub(crate) struct ClientCredentials {
@@ -52,17 +47,12 @@ const CLIENT_CREDENTIALS: ClientCredentials = ClientCredentials {
 };
 
 /// The token document. Only what the SDK uses is decoded; `Debug` is redacted.
-#[derive(Deserialize)]
+#[derive(Deserialize, concord::Debug)]
+#[sensitive]
 pub(crate) struct AccessToken {
     access_token: String,
     token_type: String,
     expires_in: u64,
-}
-
-impl fmt::Debug for AccessToken {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str("AccessToken(<redacted>)")
-    }
 }
 
 concord::api! {
@@ -96,10 +86,11 @@ impl OAuth {
 }
 
 /// The identity error document of the token endpoint: `{"error": .., "error_description": ..}`.
-#[derive(Clone, PartialEq, Eq, Deserialize)]
+#[derive(Clone, PartialEq, Eq, Deserialize, concord::Debug)]
 pub struct IdentityError {
     error: String,
     #[serde(default)]
+    #[sensitive]
     error_description: Option<String>,
 }
 
@@ -112,18 +103,6 @@ impl IdentityError {
     /// The provider's description. Never formatted by this SDK.
     pub fn description_unredacted(&self) -> Option<&str> {
         self.error_description.as_deref()
-    }
-}
-
-impl fmt::Debug for IdentityError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("IdentityError")
-            .field("error", &self.error)
-            .field(
-                "error_description",
-                &self.error_description.as_ref().map(|_| "<withheld>"),
-            )
-            .finish()
     }
 }
 
@@ -201,4 +180,23 @@ pub(crate) async fn fetch_token(oauth: OAuth, margin: Duration) -> Result<Token,
         ));
     }
     Ok(Token::new(header, lifetime))
+}
+
+#[cfg(test)]
+mod sdk_type_canaries {
+    use super::*;
+
+    #[test]
+    fn decoded_oauth_token_is_withheld_in_both_debug_modes() {
+        let mut c = concord_check_canary::Canaries::new("paypal-token-body");
+        let token = c.issue();
+        let kind = c.issue();
+        let body: AccessToken = serde_json::from_value(serde_json::json!({
+            "access_token": token, "token_type": kind, "expires_in": 3600
+        }))
+        .unwrap();
+        assert_eq!(body.access_token, token);
+        assert_eq!(body.token_type, kind);
+        c.assert_debug_absent("AccessToken", &body);
+    }
 }

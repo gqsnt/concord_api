@@ -573,6 +573,7 @@ impl S3ApiBucketPutObject {
 /// `put.metadata(m).send(&s3)`.
 #[derive(Clone)]
 #[must_use = "an operation does nothing until it is sent"]
+#[derive(concord::Debug)]
 pub struct PutObjectWithMetadata {
     request: S3ApiBucketPutObject,
     metadata: Metadata,
@@ -608,14 +609,5 @@ impl PutObjectWithMetadata {
     /// [`S3Error`]; a failed `If-Match` / `If-None-Match: *` is a `412` [`S3Error::Api`].
     pub async fn send(self, client: &S3Client) -> Result<PutObjectOutput, S3Error> {
         self.prepare(client)?.send().await
-    }
-}
-
-impl fmt::Debug for PutObjectWithMetadata {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("PutObjectWithMetadata")
-            .field("request", &self.request)
-            .field("metadata", &self.metadata)
-            .finish()
     }
 }

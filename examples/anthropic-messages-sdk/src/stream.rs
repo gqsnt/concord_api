@@ -179,11 +179,17 @@ pub enum StreamState {
 /// the server then stops generating is not stated on the cited pages.
 ///
 /// `Debug` shows the state and counts, never content.
+#[derive(concord::Debug)]
+#[sensitive]
 pub struct MessageStream {
+    #[public]
     events: SseEvents<Incoming>,
+    #[public]
     request_id: Option<String>,
+    #[public]
     state: StreamState,
     partial: PartialMessage,
+    #[public]
     received: u64,
 }
 
@@ -272,17 +278,6 @@ impl MessageStream {
             self.received,
             self.request_id.clone(),
         )))
-    }
-}
-
-impl fmt::Debug for MessageStream {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("MessageStream")
-            .field("state", &self.state)
-            .field("events_received", &self.received)
-            .field("request_id", &self.request_id)
-            .field("reader", &self.events)
-            .finish_non_exhaustive()
     }
 }
 

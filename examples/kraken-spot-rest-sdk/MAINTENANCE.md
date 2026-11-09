@@ -101,7 +101,7 @@ Facts that had to be written in several places:
 2. **The wallet query.** `#[sensitive] query account_id?: String` now appears on three endpoints, and
    the traversal takes it as a separate argument. It is one fact written four times.
 3. **Shared option fields.** `otp` and `rebase_multiplier`, with identical serde attributes, plus a
-   hand-written redacted `Debug`, are repeated in `BalanceOptions`, `OpenOrdersOptions` and
+   declarative redaction with `concord::Debug`, are repeated in `BalanceOptions`, `OpenOrdersOptions` and
    `TradesHistoryOptions`.
 4. **The page size.** "50" is the `TRADES_PAGE_SIZE` constant, the endpoint doc and the README.
 5. **The new error stage.** `Error::Page` needed arms in `status()` and `Display`.
@@ -145,7 +145,7 @@ the owner's.
   each page. To keep `ofs` SDK-owned, it is a `pub(crate)` field, which means the generated
   single-page call can only read the first page. Callers who want a specific offset use
   `trade_history(.., Resume::At(k), ..).max_pages(1)`.
-- Fact 3: three option records each carry a hand-written `Debug` and the same `otp` and
+- Fact 3: three option records each derive `concord::Debug` with `#[sensitive]` and the same `otp` and
   `rebase_multiplier` fields.
 
 ## Provider-specific responsibilities (stay in the SDK)

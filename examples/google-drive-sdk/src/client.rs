@@ -1,4 +1,4 @@
-use std::{fmt, num::NonZeroUsize, time::Duration};
+use std::{num::NonZeroUsize, time::Duration};
 
 use concord::reqwest::{self, Url, header::HeaderValue};
 use concord::{Prepared, Received};
@@ -44,8 +44,10 @@ impl Default for ClientConfig {
 ///
 /// The client builds a transport with redirects and automatic retries disabled. Credentials
 /// are bound to the configured origin. Clone to share the connection pool.
-#[derive(Clone)]
+#[derive(Clone, concord::Debug)]
+#[sensitive]
 pub struct DriveClient {
+    #[public]
     pub(crate) api: DriveApi,
     pub(crate) origin: Url,
     pub(crate) config: ClientConfig,
@@ -55,14 +57,6 @@ pub struct DriveClient {
 pub type FilePages = Pages<File, PageToken, ResponseMeta, Error>;
 /// Change-page traversal; final-page metadata retains the next polling interval's token.
 pub type ChangesPages = Pages<crate::Change, PageToken, ChangesPageMeta, Error>;
-
-impl fmt::Debug for DriveClient {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("DriveClient")
-            .field("api", &self.api)
-            .finish_non_exhaustive()
-    }
-}
 
 impl DriveClient {
     /// Construct for Google with bounded default transport settings.

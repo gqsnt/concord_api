@@ -90,7 +90,7 @@ impl std::error::Error for RequestError {}
 /// Deliberately narrower than ClickHouse's identifier grammar: such a name needs no quoting, so
 /// the SDK can write it into an `INSERT` statement (backquoted) and bind it to an
 /// `{name:Identifier}` placeholder without an escaping rule of its own.
-#[derive(Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[derive(Clone, PartialEq, Eq, Hash, PartialOrd, Ord, concord::Debug)]
 pub struct Identifier(String);
 
 impl Identifier {
@@ -117,12 +117,6 @@ impl Identifier {
 impl fmt::Display for Identifier {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str(&self.0)
-    }
-}
-
-impl fmt::Debug for Identifier {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "Identifier({:?})", self.0)
     }
 }
 
@@ -181,7 +175,7 @@ impl Table {
 ///
 /// Without one, the server assigns an ID and reports it in `X-ClickHouse-Query-Id` when it sends
 /// that header.
-#[derive(Clone, PartialEq, Eq, Hash)]
+#[derive(Clone, PartialEq, Eq, Hash, concord::Debug)]
 pub struct QueryId(String);
 
 impl QueryId {
@@ -211,12 +205,6 @@ impl fmt::Display for QueryId {
     }
 }
 
-impl fmt::Debug for QueryId {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "QueryId({:?})", self.0)
-    }
-}
-
 pub(crate) fn is_token(value: &str) -> bool {
     !value.is_empty() && !value.chars().any(char::is_control)
 }
@@ -227,7 +215,8 @@ pub(crate) fn is_token(value: &str) -> bool {
 /// (escaped), [`Identifier`], and `Option<T>` of these (`None` is `\N`, NULL, for a `Nullable`
 /// placeholder). The server parses the text with the placeholder's declared type: binding `"x"`
 /// to `{n:UInt8}` is the server's `BAD_QUERY_PARAMETER` exception, not a local check.
-#[derive(Clone, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq, concord::Debug)]
+#[sensitive]
 pub struct Param {
     text: String,
     non_finite: bool,
@@ -249,13 +238,6 @@ impl Param {
     /// NULL (`\N`).
     pub fn null() -> Self {
         Self::raw("\\N".to_owned())
-    }
-}
-
-impl fmt::Debug for Param {
-    /// The bound value is not printed: it may be application data.
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str("Param(<withheld>)")
     }
 }
 

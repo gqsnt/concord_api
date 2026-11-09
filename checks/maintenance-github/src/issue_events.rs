@@ -27,7 +27,6 @@
 //! `node_id`, `url`, `actor`, `event`, `commit_id`, `commit_url`, `created_at` and
 //! `performed_via_github_app`. Pagination follows `Link: rel="next"` like every GitHub listing.
 
-use std::fmt;
 use std::future::Future;
 
 use concord::reqwest::{self, Method, Url};
@@ -80,8 +79,9 @@ pub struct EventLabel {
 }
 
 /// A page GitHub linked to (`rel="next"`). `Debug` withholds the URL.
-#[derive(Clone, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq, concord::Debug)]
 pub struct EventsLink {
+    #[sensitive]
     url: Url,
     binding: Binding,
 }
@@ -90,15 +90,6 @@ impl EventsLink {
     /// What it belongs to (operation, repository, issue number).
     pub fn binding(&self) -> &Binding {
         &self.binding
-    }
-}
-
-impl fmt::Debug for EventsLink {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("EventsLink")
-            .field("binding", &self.binding)
-            .field("url", &format_args!("<withheld>"))
-            .finish()
     }
 }
 

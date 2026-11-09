@@ -1,4 +1,5 @@
 use super::*;
+use std::fmt;
 
 /// SDK call failure. Provider strings and response header values are withheld from diagnostics.
 #[derive(Debug)]
@@ -122,7 +123,8 @@ pub struct ErrorDocument {
 }
 
 /// A provider error. Debug withholds all strings, including code/category, which are untrusted.
-#[derive(Deserialize)]
+#[derive(Deserialize, concord::Debug)]
+#[sensitive]
 pub struct SquareError {
     /// Provider error category; no exhaustive SDK enum.
     pub category: String,
@@ -132,10 +134,4 @@ pub struct SquareError {
     pub detail: Option<String>,
     /// Provider field name, possibly echoing request values.
     pub field: Option<String>,
-}
-
-impl fmt::Debug for SquareError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str("SquareError(<redacted>)")
-    }
 }

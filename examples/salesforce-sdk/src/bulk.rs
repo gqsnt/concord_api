@@ -232,8 +232,11 @@ impl fmt::Debug for CreateQueryJob {
 /// A query job document (create, get, abort).
 #[derive(Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[derive(concord::Debug)]
+#[sensitive]
 pub struct QueryJobInfo {
     /// `id`.
+    #[public]
     pub id: QueryJobId,
     /// `operation`.
     pub operation: QueryOperation,
@@ -241,20 +244,25 @@ pub struct QueryJobInfo {
     #[serde(default)]
     pub object: Option<String>,
     /// `state`.
+    #[public]
     pub state: JobState,
     /// `apiVersion` (number or string on the wire).
+    #[public]
     pub api_version: ApiVersion,
     /// `contentType`.
     #[serde(default)]
     pub content_type: Option<JobContentType>,
     /// `columnDelimiter`; documents that omit it (the abort example) leave it `None`.
     #[serde(default)]
+    #[public]
     pub column_delimiter: Option<ColumnDelimiter>,
     /// `lineEnding`; `None` when omitted.
     #[serde(default)]
+    #[public]
     pub line_ending: Option<LineEnding>,
     /// `numberRecordsProcessed`.
     #[serde(default)]
+    #[public]
     pub number_records_processed: Option<u64>,
     /// `retries`.
     #[serde(default)]
@@ -278,19 +286,6 @@ impl QueryJobInfo {
     /// The job's `errorMessage`, **unredacted** (it can quote query text or values).
     pub fn error_message_unredacted(&self) -> Option<&str> {
         self.error_message.as_deref()
-    }
-}
-
-impl fmt::Debug for QueryJobInfo {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("QueryJobInfo")
-            .field("id", &self.id)
-            .field("state", &self.state)
-            .field("api_version", &self.api_version)
-            .field("column_delimiter", &self.column_delimiter)
-            .field("line_ending", &self.line_ending)
-            .field("number_records_processed", &self.number_records_processed)
-            .finish_non_exhaustive()
     }
 }
 
@@ -352,8 +347,11 @@ impl CreateIngestJob {
 /// An ingest job document (create, get, close, abort).
 #[derive(Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[derive(concord::Debug)]
+#[sensitive]
 pub struct IngestJobInfo {
     /// `id`.
+    #[public]
     pub id: IngestJobId,
     /// `operation`.
     pub operation: IngestOperation,
@@ -361,14 +359,18 @@ pub struct IngestJobInfo {
     #[serde(default)]
     pub object: Option<String>,
     /// `state`.
+    #[public]
     pub state: JobState,
     /// `apiVersion`.
+    #[public]
     pub api_version: ApiVersion,
     /// `columnDelimiter`.
     #[serde(default)]
+    #[public]
     pub column_delimiter: Option<ColumnDelimiter>,
     /// `lineEnding`.
     #[serde(default)]
+    #[public]
     pub line_ending: Option<LineEnding>,
     /// `contentUrl`: the upload URL while the job is `Open` (a returned link; the documented
     /// example is relative without a leading slash: `services/data/v68.0/jobs/ingest/{id}/batches`).
@@ -376,9 +378,11 @@ pub struct IngestJobInfo {
     pub content_url: Option<String>,
     /// `numberRecordsProcessed`.
     #[serde(default)]
+    #[public]
     pub number_records_processed: Option<u64>,
     /// `numberRecordsFailed`.
     #[serde(default)]
+    #[public]
     pub number_records_failed: Option<u64>,
     /// `errorMessage`.
     #[serde(default)]
@@ -392,20 +396,6 @@ impl IngestJobInfo {
     /// The job's `errorMessage`, **unredacted**.
     pub fn error_message_unredacted(&self) -> Option<&str> {
         self.error_message.as_deref()
-    }
-}
-
-impl fmt::Debug for IngestJobInfo {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("IngestJobInfo")
-            .field("id", &self.id)
-            .field("state", &self.state)
-            .field("api_version", &self.api_version)
-            .field("column_delimiter", &self.column_delimiter)
-            .field("line_ending", &self.line_ending)
-            .field("processed", &self.number_records_processed)
-            .field("failed", &self.number_records_failed)
-            .finish_non_exhaustive()
     }
 }
 
@@ -535,5 +525,29 @@ mod tests {
         assert_eq!(both.next_link(), NextLink::Ambiguous);
         let none = parse(r#"{"resultPages":[],"nextRecordsUrl":null,"done":true}"#);
         assert_eq!(none.next_link(), NextLink::Absent);
+    }
+}
+
+#[cfg(test)]
+mod sdk_type_canaries {
+    use super::*;
+
+    #[test]
+    fn ingest_job_documents_withhold_provider_strings() {
+        let mut c = concord_check_canary::Canaries::new("sf-ingest-info");
+        let object = c.issue();
+        let url = c.issue();
+        let message = c.issue();
+        let extra = c.issue();
+        let info: IngestJobInfo = serde_json::from_value(serde_json::json!({
+            "id": "750A00000000002AAA", "operation": "insert", "object": object,
+            "state": "Open", "apiVersion": 68.0, "contentUrl": url,
+            "errorMessage": message, "providerExtra": extra
+        }))
+        .unwrap();
+        assert_eq!(info.object.as_deref(), Some(object.as_str()));
+        assert_eq!(info.content_url.as_deref(), Some(url.as_str()));
+        assert_eq!(info.error_message.as_deref(), Some(message.as_str()));
+        c.assert_debug_absent("IngestJobInfo", &info);
     }
 }

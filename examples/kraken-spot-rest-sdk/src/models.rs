@@ -75,6 +75,8 @@ pub struct Ticker {
 /// Options for balances. The policy injects the nonce at dispatch preparation.
 #[derive(Clone, Default, Serialize)]
 #[non_exhaustive]
+#[derive(concord::Debug)]
+#[sensitive]
 pub struct BalanceOptions {
     /// One-time password if API 2FA is configured; withheld from diagnostics.
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -82,11 +84,6 @@ pub struct BalanceOptions {
     /// Optional xStocks display convention.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub rebase_multiplier: Option<Rebase>,
-}
-impl fmt::Debug for BalanceOptions {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str("BalanceOptions(<withheld>)")
-    }
 }
 
 /// xStocks balance and price representation.
@@ -103,6 +100,8 @@ pub enum Rebase {
 /// Construct with `Default`, then assign the public option fields.
 #[derive(Clone, Default, Serialize)]
 #[non_exhaustive]
+#[derive(concord::Debug)]
+#[sensitive]
 pub struct OpenOrdersOptions {
     /// One-time password if required.
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -122,11 +121,6 @@ pub struct OpenOrdersOptions {
     /// Optional xStocks display convention.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub rebase_multiplier: Option<Rebase>,
-}
-impl fmt::Debug for OpenOrdersOptions {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str("OpenOrdersOptions(<withheld>)")
-    }
 }
 
 /// All returned open orders. No pagination parameters are sent by this slice.
@@ -185,6 +179,8 @@ pub struct OpenOrder {
 /// traversal needs the provider's `count` and its default page size.
 #[derive(Clone, Default, Serialize)]
 #[non_exhaustive]
+#[derive(concord::Debug)]
+#[sensitive]
 pub struct TradesHistoryOptions {
     /// One-time password if required; sent on every page, never refreshed.
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -216,11 +212,6 @@ pub struct TradesHistoryOptions {
     /// Restrict to one trading pair.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub pair: Option<String>,
-}
-impl fmt::Debug for TradesHistoryOptions {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str("TradesHistoryOptions(<withheld>)")
-    }
 }
 
 /// A `start`/`end` bound: Kraken accepts either form in the same field.

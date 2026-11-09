@@ -21,6 +21,8 @@ pub struct Response<T> {
 /// One reason in Drive's error document. Values may quote submitted data.
 #[derive(Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[derive(concord::Debug)]
+#[sensitive]
 pub struct ProviderReason {
     /// Error domain.
     pub domain: Option<String>,
@@ -57,12 +59,6 @@ impl fmt::Debug for ProviderError {
     }
 }
 
-impl fmt::Debug for ProviderReason {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str("ProviderReason(<withheld>)")
-    }
-}
-
 /// Why a non-success response had no usable Drive error document.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum DocumentProblem {
@@ -91,11 +87,17 @@ pub enum ErrorKind {
 }
 
 /// A typed failure retaining operation identity, metadata, and provider details where available.
+#[derive(concord::Debug)]
+#[sensitive]
 pub struct Error {
+    #[public]
     kind: ErrorKind,
+    #[public]
     meta: Option<Box<ResponseMeta>>,
+    #[public]
     operation: Option<Operation>,
     provider: Option<Box<ProviderError>>,
+    #[public]
     document_problem: Option<DocumentProblem>,
     source: Option<concord::Error>,
 }
@@ -194,17 +196,6 @@ impl From<concord::Error> for Error {
         error.meta = source.head_meta().map(Box::new);
         error.source = Some(source);
         error
-    }
-}
-
-impl fmt::Debug for Error {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("DriveError")
-            .field("kind", &self.kind)
-            .field("operation", &self.operation)
-            .field("meta", &self.meta)
-            .field("document_problem", &self.document_problem)
-            .finish_non_exhaustive()
     }
 }
 

@@ -1,6 +1,6 @@
 //! Slack objects and short-lived pagination cursors.
 
-use std::{collections::BTreeMap, fmt};
+use std::collections::BTreeMap;
 
 use serde::{Deserialize, Deserializer};
 
@@ -8,19 +8,13 @@ use serde::{Deserialize, Deserializer};
 ///
 /// No serialization or persistent store is supplied: Slack says cursors expire and must not
 /// be saved for hours or days. `Debug` redacts it; [`Self::as_str`] is an explicit raw access.
-#[derive(Clone, PartialEq, Eq)]
-pub struct Cursor(String);
+#[derive(Clone, PartialEq, Eq, concord::Debug)]
+pub struct Cursor(#[sensitive] String);
 
 impl Cursor {
     /// The exact provider string, without trimming, decoding, or pre-encoding.
     pub fn as_str(&self) -> &str {
         &self.0
-    }
-}
-
-impl fmt::Debug for Cursor {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str("Cursor(<redacted>)")
     }
 }
 

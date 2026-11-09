@@ -4,7 +4,6 @@ use std::collections::BTreeMap;
 use std::fmt;
 use std::str::FromStr;
 
-use concord::WireDisplay;
 use serde::{Deserialize, Deserializer, Serialize};
 
 /// The Stripe API version this SDK implements, sent as `Stripe-Version` on every request unless
@@ -50,9 +49,10 @@ impl std::error::Error for ValueError {}
 
 /// A three-letter ISO currency code in lowercase, as Stripe writes it (`usd`, `eur`). Totals are
 /// kept per currency; amounts in different currencies are never added.
-#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, WireDisplay)]
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize)]
 #[serde(transparent)]
 pub struct Currency(String);
+serde_plain::derive_display_from_serialize!(Currency);
 
 impl Currency {
     /// Validates a currency code.
@@ -90,16 +90,16 @@ impl<'de> Deserialize<'de> for Currency {
 }
 
 /// A Unix timestamp in seconds, as Stripe writes every time (`created`, `period_start`).
-#[derive(
-    Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize, WireDisplay,
-)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 #[serde(transparent)]
 pub struct Timestamp(pub i64);
+serde_plain::derive_display_from_serialize!(Timestamp);
 
 /// A list page size, 1–100 (Stripe's default is 10 when `limit` is absent).
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, WireDisplay)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
 #[serde(transparent)]
 pub struct Limit(u8);
+serde_plain::derive_display_from_serialize!(Limit);
 
 impl Limit {
     /// Validates a page size.
@@ -123,9 +123,10 @@ impl Limit {
 
 /// One `expand[]` entry: a dot-separated path such as `customer`, `data.customer` (on a list) or
 /// `parent.subscription_details.subscription`. Stripe documents a maximum depth of four levels.
-#[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, WireDisplay)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize)]
 #[serde(transparent)]
 pub struct ExpandPath(String);
+serde_plain::derive_display_from_serialize!(ExpandPath);
 
 impl ExpandPath {
     /// Validates an expansion path.
@@ -158,9 +159,10 @@ impl ExpandPath {
 }
 
 /// A Stripe API version, such as [`PINNED_API_VERSION`].
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, WireDisplay)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
 #[serde(transparent)]
 pub struct ApiVersion(String);
+serde_plain::derive_display_from_serialize!(ApiVersion);
 
 impl ApiVersion {
     /// The version this SDK implements ([`PINNED_API_VERSION`]).
@@ -225,9 +227,10 @@ impl SecretKey {
 /// An application-supplied `Idempotency-Key`. The SDK never generates one: the application owns
 /// the key policy (which operation a key names, when a repeat is safe). `Debug` is redacted;
 /// `Display` is the key text, which the declaration places in a header marked sensitive.
-#[derive(Clone, PartialEq, Eq, Hash, Serialize, concord::Debug, WireDisplay)]
+#[derive(Clone, PartialEq, Eq, Hash, Serialize, concord::Debug)]
 #[serde(transparent)]
 pub struct IdempotencyKey(#[sensitive] String);
+serde_plain::derive_display_from_serialize!(IdempotencyKey);
 
 impl IdempotencyKey {
     /// Validates a key: 1–255 visible ASCII characters (Stripe documents keys up to 255

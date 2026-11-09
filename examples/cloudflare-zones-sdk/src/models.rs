@@ -14,9 +14,10 @@ macro_rules! identifier {
         /// Cloudflare documents identifiers as opaque strings of at most 32 characters; the SDK
         /// passes the value through unchanged (Concord encodes it as exactly one path segment).
         #[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Deserialize)]
-        #[derive(Serialize, concord::WireDisplay)]
+        #[derive(Serialize)]
         #[serde(transparent)]
         pub struct $name(String);
+serde_plain::derive_display_from_serialize!($name);
 
         impl $name {
             /// The identifier as sent and received.
@@ -58,7 +59,7 @@ macro_rules! provider_enum {
     ($(#[$meta:meta])* $name:ident { $($(#[$vmeta:meta])* $variant:ident = $wire:literal,)* }) => {
         $(#[$meta])*
         #[derive(Clone, Debug, PartialEq, Eq, Hash)]
-        #[derive(Serialize, concord::WireDisplay)]
+        #[derive(Serialize)]
         #[non_exhaustive]
         pub enum $name {
             $($(#[$vmeta])* #[serde(rename = $wire)] $variant,)*
@@ -66,6 +67,7 @@ macro_rules! provider_enum {
             #[serde(untagged)]
             Other(String),
         }
+serde_plain::derive_display_from_serialize!($name);
 
         impl $name {
             /// The wire spelling.
@@ -99,10 +101,11 @@ macro_rules! request_enum {
     ($(#[$meta:meta])* $name:ident { $($(#[$vmeta:meta])* $variant:ident = $wire:literal,)* }) => {
         $(#[$meta])*
         #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-        #[derive(Serialize, concord::WireDisplay)]
+        #[derive(Serialize)]
         pub enum $name {
             $($(#[$vmeta])* #[serde(rename = $wire)] $variant,)*
         }
+serde_plain::derive_display_from_serialize!($name);
     };
 }
 
@@ -225,9 +228,10 @@ request_enum!(
 );
 
 /// List Zones `per_page`: documented as 5 to 50.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, concord::WireDisplay)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize)]
 #[serde(transparent)]
 pub struct ZonesPerPage(u8);
+serde_plain::derive_display_from_serialize!(ZonesPerPage);
 
 impl ZonesPerPage {
     /// The documented maximum, 50.
@@ -246,9 +250,10 @@ impl ZonesPerPage {
 
 /// List DNS Records `per_page`: documented as 1 to 5,000,000. A large page must still fit in
 /// [`SUCCESS_BODY_LIMIT`](crate::SUCCESS_BODY_LIMIT).
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, concord::WireDisplay)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize)]
 #[serde(transparent)]
 pub struct RecordsPerPage(u32);
+serde_plain::derive_display_from_serialize!(RecordsPerPage);
 
 impl RecordsPerPage {
     /// The documented maximum, 5,000,000.

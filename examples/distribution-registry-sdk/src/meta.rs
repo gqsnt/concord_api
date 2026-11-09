@@ -1,7 +1,5 @@
 //! Response metadata kept with results and errors.
 
-use std::fmt;
-
 use concord::reqwest::StatusCode;
 use concord::reqwest::header::{CONTENT_LENGTH, HeaderMap};
 use concord::{Operation, Received};
@@ -19,7 +17,7 @@ pub const UPLOAD_UUID_HEADER: &str = "docker-upload-uuid";
 /// The head of a registry response: status, operation and header fields, owned. `Debug` prints
 /// the status, the header **names** and the operation, never a value (a `Location` can be an
 /// upload capability).
-#[derive(Clone)]
+#[derive(Clone, concord::Debug)]
 pub struct ResponseMeta(concord::ResponseMeta);
 
 impl ResponseMeta {
@@ -93,10 +91,4 @@ fn text<'a>(headers: &'a HeaderMap, name: &str) -> Option<&'a str> {
         .get(name)
         .and_then(|value| value.to_str().ok())
         .map(str::trim)
-}
-
-impl fmt::Debug for ResponseMeta {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        fmt::Debug::fmt(&self.0, f)
-    }
 }

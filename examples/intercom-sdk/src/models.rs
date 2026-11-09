@@ -1,6 +1,5 @@
-use std::fmt;
-
 use serde::{Deserialize, Serialize};
+use std::fmt;
 
 use crate::Error;
 
@@ -34,7 +33,8 @@ impl fmt::Display for PageSize {
 
 /// Exact-email search input, including pagination in the JSON body.
 /// Intercom validates the email; it is sent verbatim with the `=` operator.
-#[derive(Clone, Serialize)]
+#[derive(Clone, Serialize, concord::Debug)]
+#[sensitive]
 pub struct EmailSearch {
     query: EmailQuery,
     pagination: SearchPagination,
@@ -95,7 +95,8 @@ pub enum Role {
 }
 
 /// Email-based create input. Other create modes and custom attributes are outside this slice.
-#[derive(Clone, Serialize)]
+#[derive(Clone, Serialize, concord::Debug)]
+#[sensitive]
 pub struct NewContact {
     /// Provider-validated email address.
     pub email: String,
@@ -130,7 +131,8 @@ enum ListType {
 }
 
 /// Selected contact fields; unknown provider fields are ignored for forward compatibility.
-#[derive(Deserialize)]
+#[derive(Deserialize, concord::Debug)]
+#[sensitive]
 pub struct Contact {
     #[serde(rename = "type")]
     _kind: ContactType,
@@ -147,7 +149,8 @@ pub struct Contact {
 }
 
 /// Provider list envelope. Missing `pages` is an error, while explicit null is accepted.
-#[derive(Deserialize)]
+#[derive(Deserialize, concord::Debug)]
+#[sensitive]
 pub struct ContactList {
     #[serde(rename = "type")]
     _kind: ListType,
@@ -161,33 +164,36 @@ pub struct ContactList {
 }
 
 /// Only `next` determines pagination; numeric page counts are deliberately ignored.
-#[derive(Deserialize)]
+#[derive(Deserialize, concord::Debug)]
+#[sensitive]
 pub struct CursorPages {
     /// Absent or null on the last page.
     pub next: Option<CursorNext>,
 }
 
 /// The next cursor, used verbatim in a list query or search JSON body, never as a URL.
-#[derive(Deserialize)]
+#[derive(Deserialize, concord::Debug)]
+#[sensitive]
 pub struct CursorNext {
     /// Opaque provider cursor. The traversal refuses an empty or immediately repeated cursor.
     pub starting_after: String,
 }
 
-macro_rules! redacted_debug {
-    ($($ty:ty),+ $(,)?) => {$(
-        impl fmt::Debug for $ty {
-            fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-                f.write_str(concat!(stringify!($ty), " { <redacted> }"))
-            }
-        }
-    )+};
+#[cfg(test)]
+mod sdk_type_canaries {
+    use super::*;
+
+    #[test]
+    fn nested_cursor_models_withhold_the_stored_cursor() {
+        let mut c = concord_check_canary::Canaries::new("intercom-cursor");
+        let secret = c.issue();
+        let pages = CursorPages {
+            next: Some(CursorNext {
+                starting_after: secret.clone(),
+            }),
+        };
+        assert_eq!(pages.next.as_ref().unwrap().starting_after, secret);
+        c.assert_debug_absent("CursorNext", pages.next.as_ref().unwrap());
+        c.assert_debug_absent("CursorPages", &pages);
+    }
 }
-redacted_debug!(
-    Contact,
-    ContactList,
-    CursorPages,
-    CursorNext,
-    NewContact,
-    EmailSearch
-);

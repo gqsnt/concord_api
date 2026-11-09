@@ -6,23 +6,32 @@ use std::fmt;
 /// Unknown provider fields are intentionally tolerated; identity is mandatory.
 #[derive(Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[derive(concord::Debug)]
 pub struct Publication {
     /// External publication identifier.
+    #[sensitive]
     pub id: PublicationId,
     /// Source to use together with the identifier.
+    #[sensitive]
     pub source: Source,
     /// Publication title when supplied by the result type.
+    #[sensitive]
     pub title: Option<String>,
     /// Provider-formatted author string.
+    #[sensitive]
     pub author_string: Option<String>,
     /// Journal title, if present.
+    #[sensitive]
     pub journal_title: Option<String>,
     /// Publication year as provider text.
+    #[sensitive]
     pub pub_year: Option<String>,
     /// DOI, if present.
+    #[sensitive]
     pub doi: Option<String>,
     /// Abstract from a core result, if available.
     #[serde(rename = "abstractText")]
+    #[sensitive]
     pub abstract_text: Option<String>,
 }
 
@@ -33,14 +42,6 @@ impl Publication {
             source: self.source.clone(),
             id: self.id.clone(),
         }
-    }
-}
-
-impl fmt::Debug for Publication {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("Publication")
-            .field("content", &"<redacted>")
-            .finish()
     }
 }
 

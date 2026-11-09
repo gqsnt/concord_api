@@ -287,6 +287,7 @@ macro_rules! id_type {
         $(#[$doc])*
         #[derive(Clone, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize)]
         #[serde(transparent)]
+#[derive(concord::Debug)]
         pub struct $name(String);
 
         impl $name {
@@ -307,17 +308,9 @@ macro_rules! id_type {
             }
         }
 
-        impl fmt::Display for $name {
-            fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-                f.write_str(&self.0)
-            }
-        }
+        serde_plain::derive_display_from_serialize!($name);
 
-        impl fmt::Debug for $name {
-            fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-                write!(f, "{}({})", stringify!($name), self.0)
-            }
-        }
+
 
         impl FromStr for $name {
             type Err = InvalidValue;
@@ -388,6 +381,7 @@ macro_rules! name_type {
         $(#[$doc])*
         #[derive(Clone, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize)]
         #[serde(transparent)]
+#[derive(concord::Debug)]
         pub struct $name(String);
 
         impl $name {
@@ -413,17 +407,9 @@ macro_rules! name_type {
             }
         }
 
-        impl fmt::Display for $name {
-            fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-                f.write_str(&self.0)
-            }
-        }
+        serde_plain::derive_display_from_serialize!($name);
 
-        impl fmt::Debug for $name {
-            fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-                write!(f, "{}({})", stringify!($name), self.0)
-            }
-        }
+
 
         impl FromStr for $name {
             type Err = InvalidValue;

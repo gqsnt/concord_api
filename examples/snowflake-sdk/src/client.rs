@@ -69,16 +69,13 @@ pub struct Reply<T> {
 /// `KEYPAIR_JWT` or `PROGRAMMATIC_ACCESS_TOKEN`, according to `TokenType`.
 ///
 /// An account-bound client. Clones share the HTTP connection pool.
-#[derive(Clone)]
+#[derive(Clone, concord::Debug)]
+#[sensitive]
 pub struct Client {
     pub(crate) api: SqlApi,
     pub(crate) options: Arc<ClientOptions>,
 }
-impl std::fmt::Debug for Client {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str("SnowflakeClient { .. }")
-    }
-}
+
 impl Client {
     /// Constructs a client for an HTTPS account origin, or an HTTP loopback origin for tests.
     /// The token is marked sensitive; Debug never includes it. No network request occurs here.
@@ -253,21 +250,17 @@ pub enum StatementState {
 }
 
 /// Identity and submission context retained across polling, cancellation and result retrieval.
-#[derive(Clone)]
+#[derive(Clone, concord::Debug)]
+#[sensitive]
 pub struct Query {
     pub(crate) client: Client,
+    #[public]
     pub(crate) handle: StatementHandle,
+    #[public]
     pub(crate) context: Arc<RequestContext>,
     status_url: Arc<Mutex<Option<Url>>>,
 }
-impl std::fmt::Debug for Query {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("Query")
-            .field("handle", &self.handle)
-            .field("context", &self.context)
-            .finish_non_exhaustive()
-    }
-}
+
 impl Query {
     /// Server statement identity.
     pub fn handle(&self) -> &StatementHandle {

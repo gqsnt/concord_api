@@ -3,9 +3,20 @@
 ## Unreleased — after the desirability loop (candidate)
 
 Not released: the version stays 4.2.0 and nothing is published. The `concord-*` crates change
-additively (`operations`, `SendOperation`), by one fix (T3) and in generated documentation. The
+additively (`operations`, `SendOperation`, `Debug`), by fixes (T3, request formatting),
+in generated documentation, and by retiring the experimental scalar-display derive. The
 example SDK crates are not published (`publish = false`). What the loop tried and decided: [`v4/desirability/SUMMARY.md`](v4/desirability/SUMMARY.md); its records
 are on the [archive branch](https://github.com/gqsnt/concord_api/tree/archive/desirability-loop-1/v4/desirability).
+
+### SDK-owned formatting (P4.1)
+
+- `concord::Debug` replaces field-only SDK formatters across applicable SDKs and examples;
+  `#[sensitive]` withholds fields without formatting their payloads or requiring their Debug.
+  New fields are visible by default. Debug text can change with declared shapes, unquoted markers,
+  optional presence and pretty tuple expansion; computed summaries retain manual formatting.
+- Scalar wire Display uses `serde_plain` 1.0.2 and the existing serde spelling. Removed the
+  experimental `WireDisplay` derive, helper, hidden codec bridge and exclusive UI fixtures.
+  `serde_plain`'s derive panics when a type does not serialize as a scalar; Concord does not catch it.
 
 ### Added
 
