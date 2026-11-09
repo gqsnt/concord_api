@@ -576,17 +576,17 @@ async fn an_empty_cursor_ends_the_traversal_as_a_protocol_error() {
 async fn a_repeated_cursor_ends_the_traversal_before_a_loop() {
     // Every page names `synthetic-cursor-1` as the next one.
     let server = TestServer::start(|_| Reply::json(200, PAGE_1)).await;
+    assert!(concord_sdk_datadog_events::DatadogApiEventsSearch::operation().is_read());
     let mut pages = local(&server).search_pages(SearchRequest::new());
     assert_eq!(pages.next_page().await.unwrap().unwrap().items.len(), 2);
     assert_eq!(pages.next_page().await.unwrap().unwrap().items.len(), 2);
     let error = pages.next_page().await.unwrap_err();
     assert!(
-        matches!(
-            error.provider_error(),
-            Some(Error::Protocol(ProtocolError::RepeatedCursor))
-        ),
+        matches!(error, concord_pagination::PagesError::Repeated { .. }),
         "{error:?}"
     );
+    assert!(error.provider_error().is_none());
+    assert_eq!((error.progress().admitted, error.progress().failed), (2, 0));
     // The third request was never sent.
     assert_eq!(server.requests().len(), 2);
     server.shutdown().await;

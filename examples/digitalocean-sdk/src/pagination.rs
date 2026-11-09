@@ -26,20 +26,7 @@ const FILTERS: [&str; 1] = ["tag_name"];
 impl DigitalOcean {
     /// Walk droplets using `links.pages.next`. A cap with more pages is an error.
     pub fn droplet_pages(&self, size: PageSize, max_pages: NonZeroUsize) -> Traversal<Droplet> {
-        self.droplet_pages_from(size, max_pages, Resume::Start)
-    }
-
-    /// Continue a droplet walk from the position a previous one reported (`PagesError::resume`).
-    ///
-    /// `size` applies to `Resume::Start`; a resumed link keeps the page size it was issued with.
-    /// The link is checked again, before any request, against this collection and its filter. Use `concord_sdk_digitalocean::concord_pagination::Resume` for the position. `Resume::Start` repeats the first droplets request with `size`; `Resume::At(key)` takes the `NextLink` from `links.pages.next` in a returned page's `next`.
-    pub fn droplet_pages_from(
-        &self,
-        size: PageSize,
-        max_pages: NonZeroUsize,
-        from: Resume<NextLink>,
-    ) -> Traversal<Droplet> {
-        pages(self.droplets().list().set_per_page(size), from, max_pages)
+        pages(self.droplets().list().set_per_page(size), max_pages)
     }
 
     /// Walk only the droplets carrying `tag`. Every followed or resumed link must keep the tag.
@@ -49,19 +36,8 @@ impl DigitalOcean {
         size: PageSize,
         max_pages: NonZeroUsize,
     ) -> Traversal<Droplet> {
-        self.tagged_droplet_pages_from(tag, size, max_pages, Resume::Start)
-    }
-
-    /// Continue a tagged droplet walk; a link without exactly this tag is refused unsent. Use `concord_sdk_digitalocean::concord_pagination::Resume` for the position. `Resume::Start` repeats the first droplets request with `tag` and `size`; `Resume::At(key)` takes the `NextLink` from `links.pages.next` in a returned page's `next`.
-    pub fn tagged_droplet_pages_from(
-        &self,
-        tag: &TagName,
-        size: PageSize,
-        max_pages: NonZeroUsize,
-        from: Resume<NextLink>,
-    ) -> Traversal<Droplet> {
         let list = self.droplets().list().set_per_page(size);
-        pages(list.set_tag_name(tag.clone()), from, max_pages)
+        pages(list.set_tag_name(tag.clone()), max_pages)
     }
 
     /// Walk the selected droplet's actions with the same trust and completion rules.
@@ -71,19 +47,8 @@ impl DigitalOcean {
         size: PageSize,
         max_pages: NonZeroUsize,
     ) -> Traversal<Action> {
-        self.action_pages_from(droplet_id, size, max_pages, Resume::Start)
-    }
-
-    /// Continue an action walk of the same droplet. Use `concord_sdk_digitalocean::concord_pagination::Resume` for the position. `Resume::Start` repeats the droplet's first actions request with `size`; `Resume::At(key)` takes the `NextLink` from `links.pages.next` in a returned page's `next`.
-    pub fn action_pages_from(
-        &self,
-        droplet_id: u64,
-        size: PageSize,
-        max_pages: NonZeroUsize,
-        from: Resume<NextLink>,
-    ) -> Traversal<Action> {
         let list = self.droplet(droplet_id).actions().set_per_page(size);
-        pages(list, from, max_pages)
+        pages(list, max_pages)
     }
 
     /// Walk the selected droplet's snapshots and backups with the same rules.
@@ -93,19 +58,8 @@ impl DigitalOcean {
         size: PageSize,
         max_pages: NonZeroUsize,
     ) -> Traversal<Snapshot> {
-        self.snapshot_pages_from(droplet_id, size, max_pages, Resume::Start)
-    }
-
-    /// Continue a snapshot walk of the same droplet. Use `concord_sdk_digitalocean::concord_pagination::Resume` for the position. `Resume::Start` repeats the droplet's first snapshots request with `size`; `Resume::At(key)` takes the `NextLink` from `links.pages.next` in a returned page's `next`.
-    pub fn snapshot_pages_from(
-        &self,
-        droplet_id: u64,
-        size: PageSize,
-        max_pages: NonZeroUsize,
-        from: Resume<NextLink>,
-    ) -> Traversal<Snapshot> {
         let list = self.droplet(droplet_id).snapshots().set_per_page(size);
-        pages(list, from, max_pages)
+        pages(list, max_pages)
     }
 }
 
@@ -132,12 +86,12 @@ impl Listing for Snapshots {
     }
 }
 
-fn pages<L, E>(template: E, from: Resume<NextLink>, max_pages: NonZeroUsize) -> Traversal<L::Item>
+fn pages<L, E>(template: E, max_pages: NonZeroUsize) -> Traversal<L::Item>
 where
     L: Listing,
     E: UrlContinuation<L> + Sends<Result<Response<L>, Error>> + Clone + Send + 'static,
 {
-    Pages::new(from, move |cursor: Option<NextLink>| {
+    Pages::new(Resume::Start, move |cursor: Option<NextLink>| {
         let endpoint = template.clone();
         async move {
             let prepared = endpoint.clone().prepare()?;

@@ -1,6 +1,6 @@
 # concord-sdk-discord-rest
 
-For `DiscordChannel::history_from`, use `concord_sdk_discord_rest::pagination::Resume` for the
+For `channel.history(limit).starting_at(from)`, use `concord_sdk_discord_rest::pagination::Resume` for the
 position. `Resume::Start` repeats the channel's newest-message page with `limit`;
 `Resume::At(key)` takes the `MessageId` in a returned page's `next` (its oldest message),
 listing messages before that ID.
@@ -94,7 +94,7 @@ async fn browse(discord: &Discord, guild: GuildId) -> Result<(), Error> {
     match walked {
         Ok(messages) => println!("{} messages", messages.len()),
         Err(incomplete) => {
-            // The prefix read so far, and where to continue (`history_from(resume, limit)`),
+            // The prefix read so far, and where to continue (`history(limit).starting_at(resume)`),
             // e.g. after the delay of a rate limit (`incomplete.error.provider_error()`).
             println!("stopped after {}: {}", incomplete.collected.len(), incomplete.error);
         }

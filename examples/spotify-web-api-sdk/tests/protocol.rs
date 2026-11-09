@@ -14,7 +14,6 @@ use concord_sdk_spotify_web_api::concord_pagination::Resume;
 use concord_sdk_spotify_web_api::{
     ApiClass, AppCredentials, AuthError, AuthorizationCode, AuthorizeRequest, ClientSecret, Error,
     Market, OAuth, RefreshToken, SessionOptions, SpotifyId, State, WebApi, WebApiConfig, pages,
-    pages_from,
 };
 use concord_testserver::{Body, Recorded, Reply, TestServer};
 
@@ -717,7 +716,8 @@ async fn pages_that_break_the_paging_contract_are_refused() {
     let server = TestServer::start(with_grant(move |_: &Recorded| json(200, &stuck))).await;
     let (_oauth, _grant, session) = granted(&server, &clock).await;
     let stuck_api = common::api(&server, &session);
-    let error = pages_from(stuck_api.me().playlists(), Resume::Start)
+    let error = pages(stuck_api.me().playlists())
+        .starting_at(Resume::Start)
         .next_page()
         .await
         .unwrap_err();

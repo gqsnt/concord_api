@@ -176,9 +176,10 @@ async fn agent_restarts(events: &DatadogEvents) -> Result<(), Box<dyn std::error
 Each page is the same body with `page.cursor` set to the previous page's `meta.page.after`,
 which is what the documentation prescribes. A cap reached while pages remain is
 `PagesError::Bounded`, never a silent end; `PagesError::resume()` (or `checkpoint()`) gives the
-cursor to continue with [`DatadogEvents::search_pages_from`]. `items().collect_complete()`
+cursor to continue with `events.search_pages(request).starting_at(resume)`. `items().collect_complete()`
 returns every event or an `Incomplete` holding the events collected so far and the error; note
-that `items()` drops page metadata, warnings included.
+that `items()` drops page metadata, warnings included. Repeated cursors return
+`PagesError::Repeated` before another request; empty cursors remain `Error::Protocol`.
 
 Use `concord_sdk_datadog_events::pagination::Resume` for the position. `Resume::Start` repeats
 the same search body without a cursor; `Resume::At(key)` takes the `Cursor` projected from

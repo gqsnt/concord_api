@@ -19,11 +19,20 @@ explicit:
   is `Err(PagesError::Bounded { resume, .. })`; a cap reached exactly on the last page is
   exhaustion.
 - A failed page is `Err(PagesError::Provider { error, failed, .. })` with the factory's own error,
-  moved. Every call after a `Bounded` or `Provider` error is `Err(PagesError::Ended { .. })`, never
-  `Ok(None)`.
+  moved. Every call after an error is `Err(PagesError::Ended { .. })`.
 - `collect_complete()` returns everything or an `Incomplete` with the collected prefix and the
   error. The stream yields the typed `Err` before it ends, so a `None` after an `Err` is not
   completeness.
+
+Select a page checkpoint before reading with `listing.pages().starting_at(Resume::At(key))`.
+`Resume::Start` selects the original request; the key belongs to the same listing and options.
+Both `starting_at` and `refuse_repeated_keys` apply before the first poll (including `Pending`);
+using them afterward panics at the caller. Set them before converting to items or events.
+
+`refuse_repeated_keys()` remembers requested keys using `Eq + Hash + Clone`. A duplicate ends
+with `PagesError::Repeated` and `Outcome::Repeated` before factory admission, retaining the
+accepted prefix and refused position. A cap takes precedence. Storage grows with distinct keys,
+bounded by `max_pages` when supplied. Each traversal owns its set; the initial `Start` has no key.
 
 The factory and its futures must be `Send + 'static` (the facade erases their types); each page
 request costs one allocation for its future.

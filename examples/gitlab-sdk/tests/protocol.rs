@@ -464,7 +464,8 @@ async fn a_continuation_of_another_listing_is_refused_before_sending() {
         .project(ProjectRef::path("acme/gadgets").unwrap())
         .issues();
     let result = other
-        .pages_from(Resume::At(key))
+        .pages()
+        .starting_at(Resume::At(key))
         .next_page()
         .await
         .map(|_| ());

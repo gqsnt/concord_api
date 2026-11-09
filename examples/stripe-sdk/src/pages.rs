@@ -40,7 +40,7 @@
 //! ```
 //!
 //! A bounded or failed traversal names the page to continue from (`PagesError::resume`); pass
-//! it to [`CursorList::pages_from`] over the same list. [`CursorList`] is also the way to page
+//! it to [`Pages::starting_at`] over the same list. [`CursorList`] is also the way to page
 //! [`Direction::Backward`] or to continue a first page obtained another way
 //! ([`CursorList::after_embedded`]).
 //!
@@ -417,19 +417,8 @@ where
     /// reached while Stripe has more, or a failed page, is an error that names the page to
     /// continue from. Nothing is sent until the first `next_page()`.
     pub fn pages(&self) -> StripePages<R::Item> {
-        self.pages_from(Resume::Start)
-    }
-
-    /// [`pages`](Self::pages) from `from`: a cursor of this list (a bounded or failed
-    /// traversal's `PagesError::resume`, [`continue_from`](Self::continue_from),
-    /// [`after_embedded`](Self::after_embedded)), or `Resume::Start`. A cursor of another list
-    /// or direction is refused by the first page's request, before anything is sent. Add `concord-pagination` as a direct dependency and use `concord_pagination::Resume`. `Resume::Start` repeats the original cursor-free list request in this list's direction; `Resume::At(key)` takes this list's `Cursor<<R::Item as Object>::Id>` from a returned page's `next`, `continue_from` or `after_embedded`.
-    pub fn pages_from(
-        &self,
-        from: Resume<Cursor<<R::Item as Object>::Id>>,
-    ) -> StripePages<R::Item> {
         let list = self.clone();
-        Pages::new(from, move |cursor| list.fetch(cursor))
+        Pages::new(Resume::Start, move |cursor| list.fetch(cursor))
     }
 
     /// The objects of this list from its first page, one at a time ([`PageItems`] over

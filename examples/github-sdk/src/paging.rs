@@ -388,16 +388,8 @@ where
     /// # let _ = all; Ok(()) }
     /// ```
     pub fn pages(&self) -> GitHubPages<R::Item> {
-        self.pages_from(Resume::Start)
-    }
-
-    /// [`pages`](Self::pages) from `from`: a link of this listing (a bounded or failed
-    /// traversal's `PagesError::resume`, a [`restore`](Self::restore)d continuation), or
-    /// `Resume::Start`. A link of another listing or origin is refused by the first page's
-    /// request, before anything is sent. Add `concord-pagination` as a direct dependency and use `concord_pagination::Resume`. `Resume::Start` repeats the original list request with its configured query parameters; `Resume::At(key)` takes this listing's `NextLink` from a returned page's `next` or `restore`.
-    pub fn pages_from(&self, from: Resume<NextLink>) -> GitHubPages<R::Item> {
         let factory = self.clone();
-        Pages::new(from, move |key| factory.fetch(key))
+        Pages::new(Resume::Start, move |key| factory.fetch(key))
     }
 
     /// The items of this listing from its first page, one at a time ([`PageItems`] over

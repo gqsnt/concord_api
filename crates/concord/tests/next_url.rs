@@ -5,7 +5,7 @@
 mod support;
 
 use concord::reqwest::header::AUTHORIZATION;
-use concord::{ErrorKind, Follow, Json, NextUrl, NextUrlError, UrlContinuation, reqwest};
+use concord::{Endpoint, ErrorKind, Follow, Json, NextUrl, NextUrlError, UrlContinuation, reqwest};
 use serde::Deserialize;
 use support::{Reply, Server};
 
@@ -74,6 +74,17 @@ async fn a_followed_page_is_the_same_endpoint_sent_once_with_its_default_send() 
     assert_eq!(first.items, [1, 2]);
     let next = PlainItems::next_url(&first).unwrap().unwrap();
     let followed = endpoint.follow(next);
+    assert!(PlainItems::operation().is_read());
+    assert!(<concord::Followed<PlainItems> as Endpoint<ItemPage>>::operation().is_read());
+    assert!(
+        followed
+            .clone()
+            .prepare()
+            .unwrap()
+            .operation()
+            .unwrap()
+            .is_read()
+    );
     let shown = format!(
         "{followed:?} {:?}",
         concord::Endpoint::prepare(followed.clone()).unwrap()
@@ -112,6 +123,7 @@ async fn a_followed_page_keeps_the_declared_limit_and_identity() {
     let next = NextUrl::parse(&format!("{}/small?cursor={CANARY}", server.url())).unwrap();
     let error = api.small().follow(next).send().await.unwrap_err();
     assert_eq!(error.kind(), ErrorKind::Limit);
+    assert!(error.operation().unwrap().is_read());
     assert_eq!(
         error.operation().map(|o| o.name()),
         Some(PlainSmall::operation().name())

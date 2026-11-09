@@ -56,7 +56,9 @@ impl TaggedListing {
         let size = PageSize::new(2).expect("valid size");
         let budget = NonZeroUsize::new(budget).expect("nonzero budget");
         let from = std::mem::replace(&mut self.from, Resume::Start);
-        let pages = api.tagged_droplet_pages_from(&self.tag, size, budget, from);
+        let pages = api
+            .tagged_droplet_pages(&self.tag, size, budget)
+            .starting_at(from);
         match pages.items().collect_complete().await {
             Ok(rest) => {
                 self.droplets.extend(rest);
@@ -410,8 +412,10 @@ async fn a_saved_position_is_only_good_for_its_own_listing() {
     let size = PageSize::new(2).unwrap();
     let cap = NonZeroUsize::new(5).unwrap();
     for mut other in [
-        api.tagged_droplet_pages_from(&staging, size, cap, Resume::At(position.clone())),
-        api.droplet_pages_from(size, cap, Resume::At(position)),
+        api.tagged_droplet_pages(&staging, size, cap)
+            .starting_at(Resume::At(position.clone())),
+        api.droplet_pages(size, cap)
+            .starting_at(Resume::At(position)),
     ] {
         let error = other.next_page().await.unwrap_err();
         assert!(matches!(error.provider_error(), Some(Error::UnsafeNext)));

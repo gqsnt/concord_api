@@ -436,7 +436,8 @@ async fn resumed_tagged_traversal_keeps_the_tag_and_refuses_foreign_keys() {
     assert!(matches!(tagged_key, Resume::At(_)));
 
     let rest = api
-        .tagged_droplet_pages_from(&prod(), size(), cap(1), tagged_key.clone())
+        .tagged_droplet_pages(&prod(), size(), cap(1))
+        .starting_at(tagged_key.clone())
         .items()
         .collect_complete()
         .await
@@ -444,7 +445,8 @@ async fn resumed_tagged_traversal_keeps_the_tag_and_refuses_foreign_keys() {
     assert_eq!(rest[0].id, 3164446);
     // A resumed start sends the tag too.
     let again = api
-        .tagged_droplet_pages_from(&prod(), size(), cap(2), Resume::Start)
+        .tagged_droplet_pages(&prod(), size(), cap(2))
+        .starting_at(Resume::Start)
         .items()
         .collect_complete()
         .await
@@ -464,9 +466,12 @@ async fn resumed_tagged_traversal_keeps_the_tag_and_refuses_foreign_keys() {
     let sent = server.requests().len();
     let dev = TagName::new("env:dev").unwrap();
     for mut foreign in [
-        api.droplet_pages_from(size(), cap(2), tagged_key.clone()),
-        api.tagged_droplet_pages_from(&dev, size(), cap(2), tagged_key.clone()),
-        api.tagged_droplet_pages_from(&prod(), size(), cap(2), untagged_key),
+        api.droplet_pages(size(), cap(2))
+            .starting_at(tagged_key.clone()),
+        api.tagged_droplet_pages(&dev, size(), cap(2))
+            .starting_at(tagged_key.clone()),
+        api.tagged_droplet_pages(&prod(), size(), cap(2))
+            .starting_at(untagged_key),
     ] {
         let error = foreign.next_page().await.unwrap_err();
         assert!(matches!(error.provider_error(), Some(Error::UnsafeNext)));
@@ -479,7 +484,8 @@ async fn resumed_tagged_traversal_keeps_the_tag_and_refuses_foreign_keys() {
         ));
     }
     let error = api
-        .snapshot_pages_from(3164444, size(), cap(2), tagged_key)
+        .snapshot_pages(3164444, size(), cap(2))
+        .starting_at(tagged_key)
         .next_page()
         .await
         .unwrap_err();
@@ -525,7 +531,8 @@ async fn failed_tagged_page_is_retried_from_its_reported_position() {
     let (error, failed, _) = incomplete.error.into_provider_error().unwrap();
     assert!(matches!(error, Error::Provider(_)));
     let rest = api
-        .tagged_droplet_pages_from(&prod(), size(), cap(3), failed)
+        .tagged_droplet_pages(&prod(), size(), cap(3))
+        .starting_at(failed)
         .items()
         .collect_complete()
         .await
@@ -589,12 +596,8 @@ async fn snapshot_traversal_shares_completion_cap_and_trust_rules() {
     assert!(bounded.collected.is_empty());
     assert!(matches!(bounded.error, PagesError::Bounded { .. }));
     let resumed = api
-        .snapshot_pages_from(
-            3164444,
-            size(),
-            cap(1),
-            bounded.error.resume().cloned().unwrap(),
-        )
+        .snapshot_pages(3164444, size(), cap(1))
+        .starting_at(bounded.error.resume().cloned().unwrap())
         .items()
         .collect_complete()
         .await
@@ -613,7 +616,8 @@ async fn snapshot_traversal_shares_completion_cap_and_trust_rules() {
         .unwrap();
     let sent = server.requests().len();
     let error = api
-        .snapshot_pages_from(42, size(), cap(1), key)
+        .snapshot_pages(42, size(), cap(1))
+        .starting_at(key)
         .next_page()
         .await
         .unwrap_err();

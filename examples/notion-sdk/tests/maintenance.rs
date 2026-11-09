@@ -291,7 +291,8 @@ async fn cap_retains_exact_cursor_and_resume_includes_the_new_unknown_block() {
     ));
     assert_eq!(server.requests().len(), 1);
     let mut resumed = api
-        .children_from("pinned", size(), bounded.resume().unwrap().clone())
+        .children("pinned", size())
+        .starting_at(bounded.resume().unwrap().clone())
         .max_pages(NonZeroUsize::new(1).unwrap());
     let second = resumed.next_page().await.unwrap().unwrap();
     assert!(resumed.next_page().await.unwrap().is_none());

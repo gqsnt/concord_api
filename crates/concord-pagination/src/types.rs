@@ -266,6 +266,8 @@ pub enum Outcome {
     /// An observed failure stopped the traversal ([`OnError::Stop`], or any failure of a
     /// sequential chain).
     Failed,
+    /// A guarded dependent chain reached a key it had already requested.
+    Repeated,
     /// [`OnError::Continue`] reached its [`Options::failure_limit`].
     FailureLimit,
     /// The caller ended the traversal with `finish` while work remained.
@@ -299,6 +301,7 @@ impl fmt::Display for Outcome {
             Self::ExhaustedWithFailures => "exhausted with failures",
             Self::Bounded => "bounded by the budget",
             Self::Failed => "stopped by a failure",
+            Self::Repeated => "stopped at a repeated page key",
             Self::FailureLimit => "stopped by the failure limit",
             Self::Stopped => "stopped by the caller",
             Self::DiscoveryFailed => "discovery failed: remaining work unknown",

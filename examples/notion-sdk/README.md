@@ -179,14 +179,14 @@ async fn inspect(notion: &NotionClient) -> Result<(), Box<dyn std::error::Error>
   not incrementally decode a JSON response. An error is yielded before stream termination.
   A stream's final `None` after an error does not imply success.
 - Page metadata is available from `next_page()`; flattening to items discards page metadata.
-  A page checkpoint or `PagesError::resume()` can be passed to `query_pages_from` or
-  `children_from`. Reuse the same operation, parent, auth/version, filter and page size.
+  A page checkpoint or `PagesError::resume()` can be passed to `.starting_at(from)` on
+  `query_pages(id, query)` or `children(id, size)`. Reuse the same operation, parent, auth/version, filter and page size.
   Item checkpoints include an offset and cannot be passed directly to these methods.
 - Dropping a traversal cancels its owned in-flight future. Dropping only a pending
   `next_page` future leaves the request attached to the traversal. Nothing is spawned.
   Early abandonment is partial work, never a successful collection.
 
-For `query_pages_from` and `children_from`, use `concord_sdk_notion::pagination::Resume` for the
+For `.starting_at(from)` on query or child traversals, use `concord_sdk_notion::pagination::Resume` for the
 position. `Resume::Start` repeats the data-source query or parent block's first children page
 without `start_cursor`; `Resume::At(key)` takes the `String` from
 `next_cursor` in a returned page's `next`.
@@ -229,3 +229,6 @@ CARGO_BUILD_JOBS=5 CARGO_TARGET_DIR=/home/canarit/projects/Concord_Consolidation
 CARGO_BUILD_JOBS=5 CARGO_TARGET_DIR=/home/canarit/projects/Concord_Consolidation_SDK20_Handoff/work/target-b cargo clippy --locked -p concord-sdk-notion --all-targets -- -D warnings
 CARGO_BUILD_JOBS=5 CARGO_TARGET_DIR=/home/canarit/projects/Concord_Consolidation_SDK20_Handoff/work/target-b cargo fmt -p concord-sdk-notion
 ```
+
+A repeated traversal key returns `PagesError::Repeated` before factory admission. Direct page
+validation still returns `Error::Envelope` for an immediately repeated response cursor.

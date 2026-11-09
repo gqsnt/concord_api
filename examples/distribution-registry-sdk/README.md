@@ -7,7 +7,7 @@ Bearer token challenges answered. It targets the protocol as the Distribution sp
 that is not a claim that every registry deployment implements every optional feature the same
 way.
 
-For `catalog_from` and `tags_from`, add `concord-pagination` as a direct dependency and use
+For `catalog(options).starting_at(from)` and `tags(options).starting_at(from)`, add `concord-pagination` as a direct dependency and use
 `concord_pagination::Resume`. `Resume::Start` repeats the first catalog or tags request with
 `options`, including `last` if set; `Resume::At(key)` takes the same collection's `NextLink`
 from `Link: rel="next"` in a returned page's `next`.

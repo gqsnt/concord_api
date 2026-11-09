@@ -120,6 +120,8 @@ impl<T: Send> SendOperation<T, ProbeOperation> for CountingPolicy {
         operation: ProbeOperation,
         endpoint: E,
     ) -> Self::Output {
+        assert!(operation.operation().is_read());
+        assert!(E::operation().is_read());
         self.0.lock().unwrap().push(operation);
         concord::SendWith::send(&Policy, endpoint).await
     }
@@ -176,6 +178,7 @@ async fn followed_operation_uses_the_same_stateful_operation_aware_policy() {
         [ProbeOperation::List, ProbeOperation::List]
     );
     assert_eq!(second.meta.operation().unwrap(), ProbeList::operation());
+    assert!(second.meta.operation().unwrap().is_read());
     assert_eq!(server.requests().len(), 2);
     server.shutdown().await;
 }

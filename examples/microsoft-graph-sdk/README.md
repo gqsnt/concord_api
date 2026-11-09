@@ -198,7 +198,7 @@ Each listing has a default 1000-page cap, adjustable with
 page returns `Provider`, and subsequent calls after either error return `Ended`.
 `collect_complete()` retains the emitted prefix in `Incomplete.collected` on
 failure. Its error retains the failed or unread `Resume<NextLink>`, which can be
-passed to the same listing's `pages_from`. `NextLink::to_json()` and
+passed to the same listing's `pages().starting_at`. `NextLink::to_json()` and
 `listing.restore_next()` support durable page-boundary resume; preserve the
 associated staged prefix too. These bindings prevent accidental context/selection
 mixing, not malicious modification or mixing application staging from separate

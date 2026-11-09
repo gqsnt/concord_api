@@ -216,7 +216,8 @@ async fn changed_link_query_survives_cap_and_failed_retry() {
 
     let incomplete = listing
         .clone()
-        .pages_from(resume)
+        .pages()
+        .starting_at(resume)
         .items()
         .collect_complete()
         .await
@@ -239,7 +240,8 @@ async fn changed_link_query_survives_cap_and_failed_retry() {
         format!("{}{target}", server.url())
     );
     let rest = listing
-        .pages_from(Resume::At(retry))
+        .pages()
+        .starting_at(Resume::At(retry))
         .items()
         .collect_complete()
         .await
@@ -306,7 +308,8 @@ async fn a_keeps_the_prefix_and_resumes_after_a_failed_page() {
     );
 
     let rest = listing
-        .pages_from(Resume::At(retry))
+        .pages()
+        .starting_at(Resume::At(retry))
         .items()
         .collect_complete()
         .await

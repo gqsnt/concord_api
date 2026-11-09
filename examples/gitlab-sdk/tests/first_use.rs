@@ -223,7 +223,8 @@ async fn a_failed_page_preserves_prefix_document_metadata_and_retry_position() {
     // Retry deliberately, using the SDK's returned continuation, without replaying page 1.
     script.push(one_issue(ISSUE_32));
     let rest = listing
-        .pages_from(resume)
+        .pages()
+        .starting_at(resume)
         .items()
         .collect_complete()
         .await
@@ -255,7 +256,8 @@ async fn a_page_cap_is_incomplete_and_can_resume() {
     assert_eq!(server.requests().len(), 1);
     script.push(one_issue(ISSUE_32));
     let remaining = listing
-        .pages_from(resume)
+        .pages()
+        .starting_at(resume)
         .items()
         .collect_complete()
         .await
@@ -407,7 +409,8 @@ async fn a_continuation_from_another_project_is_refused_without_io() {
     let incomplete = gitlab
         .project(ProjectRef::id(74).unwrap())
         .issues()
-        .pages_from(resume)
+        .pages()
+        .starting_at(resume)
         .items()
         .collect_complete()
         .await

@@ -415,7 +415,8 @@ async fn account_zones_then_selected_zone() {
     assert_eq!(progress.succeeded, 1);
     assert_eq!(progress.failed, 1);
     let recovered = listing
-        .pages_from(failed)
+        .pages()
+        .starting_at(failed)
         .items()
         .collect_complete()
         .await
@@ -617,7 +618,8 @@ async fn selected_zone_records_then_selected_record() {
     assert_eq!(progress.succeeded, 1);
     assert_eq!(progress.failed, 1);
     let recovered = listing
-        .pages_from(failed)
+        .pages()
+        .starting_at(failed)
         .items()
         .collect_complete()
         .await

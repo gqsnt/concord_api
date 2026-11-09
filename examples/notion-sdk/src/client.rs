@@ -3,7 +3,6 @@ use crate::models::{Block, List, Page, QueryResult};
 use crate::{ERROR_LIMIT, EnvelopeProblem, Error, PageSize, ProviderError, Query};
 use concord::{Prepared, ResponseMeta, reqwest};
 use concord_pagination::{Page as TraversalPage, Pages, Resume};
-use std::collections::HashSet;
 use std::fmt;
 
 /// A decoded value and the actual response metadata. Debug omits the value.
@@ -135,61 +134,31 @@ impl NotionClient {
     /// Starts a lazy query traversal. The query is owned so each page reuses the same filter.
     /// Set `.max_pages(NonZeroUsize)` to bound it; a cap is an error, not exhaustion.
     pub fn query_pages(&self, data_source_id: impl Into<String>, query: Query) -> QueryPages {
-        self.query_pages_from(data_source_id, query, Resume::Start)
-    }
-
-    /// Resumes a query at a page checkpoint. The caller must reuse the same data source,
-    /// version, authorization, filter and page size. A checkpoint does not imply a snapshot. Use `concord_sdk_notion::pagination::Resume` for the position. `Resume::Start` repeats the data-source query without `start_cursor`; `Resume::At(key)` takes the `String` from `next_cursor` in a returned page's `next`.
-    pub fn query_pages_from(
-        &self,
-        data_source_id: impl Into<String>,
-        query: Query,
-        from: Resume<String>,
-    ) -> QueryPages {
         let client = self.clone();
         let id = data_source_id.into();
-        let mut seen = HashSet::new();
-        Pages::new(from, move |cursor: Option<String>| {
-            let repeated = cursor.as_ref().is_some_and(|key| !seen.insert(key.clone()));
+        Pages::new(Resume::Start, move |cursor: Option<String>| {
             let (client, id, query) = (client.clone(), id.clone(), query.clone());
             async move {
-                if repeated {
-                    return Err(Error::CursorCycle);
-                }
                 let response = client.query_data_source(id, &query, cursor).await?;
                 Ok(project(response))
             }
         })
+        .refuse_repeated_keys()
     }
 
     /// Starts a lazy traversal of all children at one tree level. Empty pages with cursors
     /// continue. Unknown block types remain items and can themselves have children.
     pub fn children(&self, block_id: impl Into<String>, size: PageSize) -> BlockPages {
-        self.children_from(block_id, size, Resume::Start)
-    }
-
-    /// Resumes children at a page checkpoint with the same parent, version, authorization
-    /// and page size. Item checkpoints also contain an offset; use a page checkpoint here. Use `concord_sdk_notion::pagination::Resume` for the position. `Resume::Start` repeats the parent block's first children page without `start_cursor`; `Resume::At(key)` takes the `String` from `next_cursor` in a returned page's `next`.
-    pub fn children_from(
-        &self,
-        block_id: impl Into<String>,
-        size: PageSize,
-        from: Resume<String>,
-    ) -> BlockPages {
         let client = self.clone();
         let id = block_id.into();
-        let mut seen = HashSet::new();
-        Pages::new(from, move |cursor: Option<String>| {
-            let repeated = cursor.as_ref().is_some_and(|key| !seen.insert(key.clone()));
+        Pages::new(Resume::Start, move |cursor: Option<String>| {
             let (client, id) = (client.clone(), id.clone());
             async move {
-                if repeated {
-                    return Err(Error::CursorCycle);
-                }
                 let response = client.list_block_children(id, size, cursor).await?;
                 Ok(project(response))
             }
         })
+        .refuse_repeated_keys()
     }
 }
 

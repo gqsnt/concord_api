@@ -92,13 +92,8 @@ impl Registry {
     /// `GET /v2/_catalog`, every page, one request at a time (see the [module documentation](self)).
     /// Nothing is sent until the first `next_page()`.
     pub fn catalog(&self, options: ListOptions) -> CatalogPages {
-        self.catalog_from(options, Resume::Start)
-    }
-
-    /// [`catalog`](Self::catalog) resumed at `from` (a `PagesError`'s `resume()`). Add `concord-pagination` as a direct dependency and use `concord_pagination::Resume`. `Resume::Start` repeats the first catalog request with `options`, including `last` if set; `Resume::At(key)` takes the catalog's `NextLink` from `Link: rel="next"` in a returned page's `next`.
-    pub fn catalog_from(&self, options: ListOptions, from: Resume<NextLink>) -> CatalogPages {
         let registry = self.clone();
-        Pages::new(from, move |key| {
+        Pages::new(Resume::Start, move |key| {
             catalog_page(registry.clone(), options.clone(), key)
         })
     }
@@ -107,13 +102,8 @@ impl Registry {
 impl Repository {
     /// `GET /v2/<name>/tags/list`, every page (see the [module documentation](self)).
     pub fn tags(&self, options: ListOptions) -> TagPages {
-        self.tags_from(options, Resume::Start)
-    }
-
-    /// [`tags`](Self::tags) resumed at `from`. Add `concord-pagination` as a direct dependency and use `concord_pagination::Resume`. `Resume::Start` repeats the first tags request with `options`, including `last` if set; `Resume::At(key)` takes the repository's `NextLink` from `Link: rel="next"` in a returned page's `next`.
-    pub fn tags_from(&self, options: ListOptions, from: Resume<NextLink>) -> TagPages {
         let repository = self.clone();
-        Pages::new(from, move |key| {
+        Pages::new(Resume::Start, move |key| {
             tag_page(repository.clone(), options.clone(), key)
         })
     }

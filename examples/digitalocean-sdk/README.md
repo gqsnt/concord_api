@@ -20,10 +20,10 @@ the same pagination contract.
 
 | Traversal (`Traversal<T>`) | Resume from a reported position | Pages of |
 | --- | --- | --- |
-| `droplet_pages(size, cap)` | `droplet_pages_from(size, cap, from)` | `Droplet` |
-| `tagged_droplet_pages(&tag, size, cap)` | `tagged_droplet_pages_from(&tag, size, cap, from)` | `Droplet` |
-| `action_pages(id, size, cap)` | `action_pages_from(id, size, cap, from)` | `Action` |
-| `snapshot_pages(id, size, cap)` | `snapshot_pages_from(id, size, cap, from)` | `Snapshot` |
+| `droplet_pages(size, cap)` | `droplet_pages(size, cap).starting_at(from)` | `Droplet` |
+| `tagged_droplet_pages(&tag, size, cap)` | `tagged_droplet_pages(&tag, size, cap).starting_at(from)` | `Droplet` |
+| `action_pages(id, size, cap)` | `action_pages(id, size, cap).starting_at(from)` | `Action` |
+| `snapshot_pages(id, size, cap)` | `snapshot_pages(id, size, cap).starting_at(from)` | `Snapshot` |
 
 The models expose selected infrastructure, network and action fields. Additional JSON
 fields are ignored; timestamps and status/type values retain their provider strings.
@@ -77,7 +77,7 @@ async fn production_backups(origin: &str) -> Result<usize, Box<dyn std::error::E
             Err(stop) if matches!(stop.error, PagesError::Bounded { .. }) => {
                 droplets.extend(stop.collected);
                 let from = stop.error.resume().cloned().expect("a bound reports its position");
-                pages = api.tagged_droplet_pages_from(&tag, size, cap, from).items();
+                pages = api.tagged_droplet_pages(&tag, size, cap).starting_at(from).items();
             }
             Err(stop) => return Err(stop.into()),
         }

@@ -124,16 +124,11 @@ impl DiscordChannel {
     /// ends after a page shorter than `limit` (an empty one included). A page out of order, or
     /// longer than `limit`, is [`Error::Protocol`]. A failed page ends the walk with
     /// [`PagesError::Provider`](concord_pagination::PagesError::Provider): its `failed`
-    /// position resumes it with [`history_from`](Self::history_from) (after a
+    /// position resumes it with [`starting_at`](Pages::starting_at) (after a
     /// [`Error::Gated`] delay, for example). Nothing is retried.
     pub fn history(&self, limit: MessageLimit) -> MessageHistory {
-        self.history_from(Resume::Start, limit)
-    }
-
-    /// [`history`](Self::history) from a position: `Resume::At(id)` lists messages before `id`. Use `concord_sdk_discord_rest::pagination::Resume` for the position. `Resume::Start` repeats the channel's newest-message page with `limit`; `Resume::At(key)` takes the `MessageId` in a returned page's `next` (its oldest message), listing messages before that ID.
-    pub fn history_from(&self, from: Resume<MessageId>, limit: MessageLimit) -> MessageHistory {
         let channel = self.clone();
-        Pages::new(from, move |before: Option<MessageId>| {
+        Pages::new(Resume::Start, move |before: Option<MessageId>| {
             let request = channel
                 .messages()
                 .maybe_anchor(before.map(Anchor::Before))

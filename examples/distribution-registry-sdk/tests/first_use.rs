@@ -266,7 +266,8 @@ async fn failed_catalog_preserves_prefix_and_can_resume_at_the_failed_page() {
         "the SDK does not retry a refused page"
     );
     let rest = registry
-        .catalog_from(ListOptions::default(), resume)
+        .catalog(ListOptions::default())
+        .starting_at(resume)
         .items()
         .collect_complete()
         .await

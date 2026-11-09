@@ -369,7 +369,8 @@ async fn bounded_delta_retains_prefix_and_next_checkpoint_but_no_final_delta() {
     let resume = incomplete.error.resume().unwrap().key().unwrap();
     let restored = listing.restore_next(&resume.to_json()).unwrap();
     let remaining = listing
-        .pages_from(Resume::At(restored))
+        .pages()
+        .starting_at(Resume::At(restored))
         .collect_complete()
         .await
         .unwrap();
@@ -413,7 +414,9 @@ async fn member_page_failure_keeps_prefix_and_typed_error_and_ends_failed() {
         }
         _ => panic!("expected failed provider page"),
     }
-    let mut failed = listing.pages_from(incomplete.error.resume().unwrap().clone());
+    let mut failed = listing
+        .pages()
+        .starting_at(incomplete.error.resume().unwrap().clone());
     assert!(matches!(
         failed.next_page().await,
         Err(PagesError::Provider { .. })

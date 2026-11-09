@@ -209,11 +209,8 @@ async fn cap_is_distinct_from_exhaustion_and_preserves_a_resume_key() {
         Err(PagesError::Ended { .. })
     ));
     let remaining = api
-        .children_from(
-            "page",
-            PageSize::default(),
-            bounded.resume().unwrap().clone(),
-        )
+        .children("page", PageSize::default())
+        .starting_at(bounded.resume().unwrap().clone())
         .max_pages(NonZeroUsize::new(1).unwrap())
         .items()
         .collect_complete()
@@ -391,13 +388,14 @@ async fn repeated_and_cyclic_cursors_stop_without_duplicate_requests() {
         .await
         .unwrap_err();
     assert_eq!(partial.collected.len(), 3);
-    assert!(matches!(
-        partial.error,
-        PagesError::Provider {
-            error: Error::CursorCycle,
-            ..
-        }
-    ));
+    assert_eq!(
+        (
+            partial.error.progress().admitted,
+            partial.error.progress().failed
+        ),
+        (3, 0)
+    );
+    assert!(matches!(partial.error, PagesError::Repeated { .. }));
     assert_eq!(server.requests().len(), 3);
     server.shutdown().await;
 }

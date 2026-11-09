@@ -125,8 +125,6 @@ pub enum Error {
         /// Entire current response, including this page's un-emitted results and status.
         response: Box<Response<List<QueryResult>>>,
     },
-    /// A cursor appeared twice in one automatic traversal. No duplicate request was sent.
-    CursorCycle,
 }
 
 impl Error {
@@ -145,7 +143,6 @@ impl Error {
             | Self::InvalidErrorBody { meta, .. }
             | Self::Envelope { meta, .. } => Some(meta),
             Self::IncompleteQuery { response } => Some(&response.meta),
-            Self::CursorCycle => None,
         }
     }
 
@@ -192,7 +189,6 @@ impl fmt::Debug for Error {
                 .field("meta", &response.meta)
                 .field("items", &response.value.results.len())
                 .finish(),
-            Self::CursorCycle => f.write_str("CursorCycle"),
         }
     }
 }
@@ -207,7 +203,6 @@ impl fmt::Display for Error {
             Self::IncompleteQuery { .. } => {
                 f.write_str("Notion query completeness was not confirmed")
             }
-            Self::CursorCycle => f.write_str("repeated Notion pagination cursor"),
         }
     }
 }

@@ -12,7 +12,7 @@ use std::time::Duration;
 use common::{BASIC, ManualClock, api, at, form, granted, json, resumed};
 use concord_sdk_spotify_web_api::concord_pagination::{PagesError, Resume};
 use concord_sdk_spotify_web_api::{
-    ApiClass, AuthError, Error, Market, Playable, SessionOptions, pages, pages_from,
+    ApiClass, AuthError, Error, Market, Playable, SessionOptions, pages,
 };
 use concord_testserver::{Gate, Recorded, Reply, Script, TestServer};
 
@@ -144,12 +144,12 @@ async fn list_user_playlists_then_fetch_the_selected_playlist_across_refreshes()
 
     // Expire again, then read the rest of the playlist's items.
     clock.advance(Duration::from_secs(3600));
-    let rest = pages_from(
+    let rest = pages(
         api.playlist(playlist.id.clone())
             .items()
             .set_limit(playlist.tracks.limit),
-        Resume::At(next.unwrap()),
     )
+    .starting_at(Resume::At(next.unwrap()))
     .items()
     .collect_complete()
     .await
@@ -562,7 +562,8 @@ async fn a_429_during_pagination_resumes_from_the_failed_page() {
     assert_eq!(error.retry_after(), Some(Duration::from_secs(7)));
 
     // The caller waits as told (not here), then resumes at the failed page.
-    let rest = pages_from(listing, resume)
+    let rest = pages(listing)
+        .starting_at(resume)
         .items()
         .collect_complete()
         .await

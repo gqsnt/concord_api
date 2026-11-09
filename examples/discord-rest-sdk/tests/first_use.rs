@@ -162,7 +162,9 @@ async fn browse_guild_history_and_fetch_message() {
     assert_eq!(incomplete.error.progress().failed, 0);
     let resume = incomplete.error.resume().unwrap().clone();
     assert_eq!(resume, Resume::At(MessageId::new(MIDDLE)));
-    let mut resumed = channel.history_from(resume, MessageLimit::new(2).unwrap());
+    let mut resumed = channel
+        .history(MessageLimit::new(2).unwrap())
+        .starting_at(resume);
     let last = resumed.next_page().await.unwrap().unwrap();
     assert_eq!(last.items[0].id.get(), OLDEST);
     assert!(last.next.is_none());
@@ -724,4 +726,65 @@ async fn unreadable_creation_and_local_validation() {
         "invalid values never reach the wire"
     );
     assert_eq!(server.shutdown().await.open_after, 0);
+}
+
+#[tokio::test]
+async fn starting_at_keeps_strict_history_order_and_accepts_only_valid_resumed_pages() {
+    for ids in [vec![19, 18], vec![19, 21], vec![19, 19], vec![20]] {
+        let valid = ids == [19, 18];
+        let server = TestServer::start(move |request: &Recorded| {
+            assert_common_wire(request);
+            assert_eq!(request.query_all("limit"), ["2"]);
+            match request.query_all("before").first().map(String::as_str) {
+                Some("20") => reply(
+                    200,
+                    Value::Array(
+                        ids.iter()
+                            .map(|&id| message(id, SALES, "resumed", None))
+                            .collect(),
+                    ),
+                ),
+                Some("18") => reply(200, json!([message(17, SALES, "last", None)])),
+                other => panic!("unexpected anchor: {other:?}"),
+            }
+        })
+        .await;
+        let channel = client(&server).channel(ChannelId::new(SALES));
+        let mut pages = channel
+            .history(MessageLimit::new(2).unwrap())
+            .starting_at(Resume::At(MessageId::new(20)));
+        if valid {
+            assert_eq!(
+                pages
+                    .next_page()
+                    .await
+                    .unwrap()
+                    .unwrap()
+                    .items
+                    .iter()
+                    .map(|m| m.id.get())
+                    .collect::<Vec<_>>(),
+                [19, 18]
+            );
+            assert_eq!(
+                pages.next_page().await.unwrap().unwrap().items[0].id.get(),
+                17
+            );
+            assert!(pages.next_page().await.unwrap().is_none());
+            assert_eq!(server.requests().len(), 2);
+        } else {
+            let error = pages.next_page().await.unwrap_err();
+            assert_eq!(error.resume(), Some(&Resume::At(MessageId::new(20))));
+            let Error::Protocol(protocol) = error.provider_error().unwrap() else {
+                panic!("expected order refusal")
+            };
+            assert_eq!(protocol.problem, ProtocolProblem::UnorderedPage);
+            assert_eq!(
+                (error.progress().admitted, error.progress().succeeded),
+                (1, 0)
+            );
+            assert_eq!(server.requests().len(), 1);
+        }
+        server.shutdown().await;
+    }
 }
