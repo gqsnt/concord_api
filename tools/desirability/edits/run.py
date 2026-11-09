@@ -362,7 +362,7 @@ def trusted_git(home):
            "GIT_OPTIONAL_LOCKS": "0"}
     argv = ["git", "-c", "core.fsmonitor=false", "-c", "diff.external=", "-c", "core.hooksPath=/dev/null",
             "-c", "user.name=i4-runner", "-c", "user.email=i4-runner@localhost",
-            "-c", "commit.gpgsign=false", "-c", "core.quotepath=false"]
+            "-c", "commit.gpgsign=false", "-c", "core.quotepath=false", "-c", "gc.auto=0"]
     return argv, env
 
 
@@ -383,7 +383,10 @@ def export_source(repo, sha, baseline, src, git_home):
     os.makedirs(git_home, exist_ok=True)
     git, env = trusted_git(git_home)
     env["GIT_CEILING_DIRECTORIES"] = os.path.dirname(src)
-    for cmd in (["init", "-q", "-b", "base"], ["add", "-A"],
+    # gc.auto=0 in the export's own config: a tree past git's loose-object threshold (≈ 6,700) made the export
+    # commit start a detached `gc --auto` that packed objects during the agent's session, which the tamper check
+    # then reported as removed `.git` objects (LF holdout, all 40 runs at f178e63d). No other git behaviour changes.
+    for cmd in (["init", "-q", "-b", "base"], ["config", "gc.auto", "0"], ["add", "-A"],
                 ["commit", "-q", "-m", f"I4 base: export of {sha[:12]} without tools/desirability"]):
         code, out = sh(git + ["-C", src] + cmd, env=env)
         if code:
