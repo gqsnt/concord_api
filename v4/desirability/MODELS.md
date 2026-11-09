@@ -229,3 +229,8 @@ Append-only: a row marked `running` is superseded by a later row (`↳ … resul
 | T3 round 2 finish (dz/t3-cancel; after restart) — Codex lane in jail | Codex gpt-6.1-sol, xhigh, danger-full-access in codex_jail.sh | (meta.json at completion) | running | — |
 | ↳ T3 round 2 (Claude subagent) | — | interrupted by the machine restart (2026-11-09 ~01:10); uncommitted work handed to a Codex lane | — | — |
 | ↳ H06 final review observed | — | gpt-6.1-sol / xhigh / read-only (rollout turn_context); 00:15:20Z–00:19:41Z | 4m21s | ACCEPT (pilot scope; final on merged-commit CI) |
+| H06c combined review (`h06c-combined-review-sol`) on a6ab7c22 | Codex gpt-6.1-sol, xhigh, read-only | (meta.json at completion) | running | — |
+| H01 design survey (wt/h01s @ 34dfc3ff) — Codex read-only | Codex gpt-6.1-sol, xhigh, read-only | (meta.json at completion) | running | — |
+| ↳ H06c combined review observed | — | gpt-6.1-sol / xhigh / read-only (rollout turn_context); 00:30:04Z–00:34:37Z | 4m33s | ACCEPT_WITH_FIXES; WIN pending 2 doc fixes (applied) + gate + CI on merged commit |
+| ↳ T3 round 2 Codex observed | — | gpt-6.1-sol / xhigh / danger-full-access in codex_jail.sh (rollout turn_context); 00:16:11Z–00:35:46Z | 19m35s | committed 63533ee2 (dz/t3-cancel, pushed); found and restored a leftover C3 control mutation |
+| T3 re-review (`t3-cancel-review-2-sol`) on 63533ee2 | Codex gpt-6.1-sol, xhigh, read-only | (meta.json at completion) | running | — |
