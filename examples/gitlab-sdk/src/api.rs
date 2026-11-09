@@ -81,6 +81,7 @@ concord::api! {
                 query per_page?: PerPage,
             ) -> Vec<Issue> {
                 path "issues";
+                page next link;
             }
 
             /// `GET /projects/:id/issues/:issue_iid` (Issues API, "Retrieve a project issue"): by

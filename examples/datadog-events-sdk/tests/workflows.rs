@@ -264,7 +264,8 @@ async fn a_page_cap_is_not_the_end_and_the_search_resumes() {
 
     // Later: continue from the checkpoint with the same request.
     let rest = events
-        .search_pages_from(search_request(), resume.clone())
+        .search_pages(search_request())
+        .starting_at(resume.clone())
         .items()
         .collect_complete()
         .await

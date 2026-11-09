@@ -240,7 +240,7 @@ async fn secrets_never_print() {
             c.assert_debug_absent("bounded traversal", &bounded);
             c.assert_display_absent("bounded traversal", &bounded);
             let from = bounded.resume().cloned().unwrap();
-            let resumed = api.droplet_pages_from(size, cap, from);
+            let resumed = api.droplet_pages(size, cap).starting_at(from);
             assert_eq!(traverse(&mut c, resumed).await.0, 1);
             let (read, at) = traverse(&mut c, api.action_pages(7, size, cap)).await;
             assert_eq!(read, 0);

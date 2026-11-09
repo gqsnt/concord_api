@@ -250,18 +250,12 @@ pub enum ProtocolError {
     /// `meta.page.after` is present but empty: sending it back would not continue the
     /// listing.
     EmptyCursor,
-    /// `meta.page.after` names a cursor this traversal already requested: following it
-    /// would loop.
-    RepeatedCursor,
 }
 
 impl fmt::Display for ProtocolError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str(match self {
             Self::EmptyCursor => "the page's `meta.page.after` cursor is empty",
-            Self::RepeatedCursor => {
-                "the page's `meta.page.after` cursor was already requested by this traversal"
-            }
         })
     }
 }

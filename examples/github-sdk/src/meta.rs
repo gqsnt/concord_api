@@ -22,7 +22,7 @@ use std::fmt;
 
 use concord::reqwest::header::{ETAG, HeaderMap, HeaderName, LAST_MODIFIED, LINK, RETRY_AFTER};
 use concord::reqwest::{self, StatusCode, Url};
-use concord::{Prepared, Received, field};
+use concord::{Endpoint, Prepared, Received, SendWith, field};
 
 use crate::error::GitHubError;
 use crate::link::{self, LinkError, Links};
@@ -205,6 +205,19 @@ impl<T> fmt::Debug for Conditional<T> {
             }
             Self::Modified(with) => f.debug_tuple("Modified").field(with).finish(),
         }
+    }
+}
+
+/// The explicit send policy of contextual GitHub traversals, on first and followed pages.
+/// Ordinary generated `send()` continues to return the declared value with Concord's error.
+#[derive(Default)]
+pub struct KeepMeta;
+
+impl<T: Send> SendWith<T> for KeepMeta {
+    type Output = Result<WithMeta<T>, GitHubError>;
+
+    async fn send<E: Endpoint<T> + Send>(&self, endpoint: E) -> Self::Output {
+        send_with_meta(endpoint.prepare()?).await
     }
 }
 

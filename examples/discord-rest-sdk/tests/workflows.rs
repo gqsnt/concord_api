@@ -462,7 +462,8 @@ async fn a_rate_limited_history_page_resumes_from_its_failed_position() {
 
     clock.advance(Duration::from_secs(65));
     let rest = channel
-        .history_from(failed, limit)
+        .history(limit)
+        .starting_at(failed)
         .items()
         .collect_complete()
         .await

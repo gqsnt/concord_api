@@ -167,12 +167,12 @@ their typed error classes for create as well.
 
 A page walk stops at the first failed page with `PagesError::Provider { error, failed, .. }`;
 `collect_complete()` returns the pages read before it (`Incomplete::collected`), and
-`list.pages_from(failed)` resumes. The walk continues while `page < total_pages`; `total_count` is
+`list.pages().starting_at(failed)` resumes. The walk continues while `page < total_pages`; `total_count` is
 documented as the count *without* search parameters and is never used to decide completeness.
 Without `max_pages` there is no cap; a cap reached while pages remain is `PagesError::Bounded`,
 never a complete result. A listing that changes between requests can repeat or skip items.
 
-For both `pages_from` methods, use `concord_sdk_cloudflare_zones::concord_pagination::Resume`
+For `.pages().starting_at(from)` on either listing, use `concord_sdk_cloudflare_zones::concord_pagination::Resume`
 for the position. `Resume::Start` repeats page 1 of the zones or DNS records listing, replacing
 the template's page; `Resume::At(key)` takes the `NonZeroU32` page number in a returned page's
 `next`.

@@ -14,7 +14,7 @@
 //!
 //! A failed page — `success: false` included — ends the walk with
 //! `PagesError::Provider { error, failed, .. }`: the pages already returned stay with the caller
-//! and `failed` is the page to resume from with `pages_from`. A listing that changes between
+//! and `failed` is the page to resume from with `pages().starting_at(failed)`. A listing that changes between
 //! requests can repeat or skip items; Cloudflare offers no snapshot on these endpoints.
 
 use std::num::NonZeroU32;
@@ -55,33 +55,23 @@ pub type RecordPages = Pages<DnsRecord, NonZeroU32, PageMeta, Error>;
 impl CloudflareZonesList {
     /// Every page of this listing, from page 1, with its filters and `per_page`.
     pub fn pages(self) -> ZonePages {
-        walk(self, Resume::Start)
-    }
-
-    /// The pages from `from` on (the `failed` or `resume` position of a `PagesError`). Use `concord_sdk_cloudflare_zones::concord_pagination::Resume` for the position. `Resume::Start` repeats page 1 of the zones listing, replacing the template's page; `Resume::At(key)` takes the `NonZeroU32` page number in a returned page's `next`.
-    pub fn pages_from(self, from: Resume<NonZeroU32>) -> ZonePages {
-        walk(self, from)
+        walk(self)
     }
 }
 
 impl CloudflareZoneDnsRecordsList {
     /// Every page of this listing, from page 1, with its filters and `per_page`.
     pub fn pages(self) -> RecordPages {
-        walk(self, Resume::Start)
-    }
-
-    /// The pages from `from` on (the `failed` or `resume` position of a `PagesError`). Use `concord_sdk_cloudflare_zones::concord_pagination::Resume` for the position. `Resume::Start` repeats page 1 of the DNS records listing, replacing the template's page; `Resume::At(key)` takes the `NonZeroU32` page number in a returned page's `next`.
-    pub fn pages_from(self, from: Resume<NonZeroU32>) -> RecordPages {
-        walk(self, from)
+        walk(self)
     }
 }
 
-fn walk<E, T>(template: E, from: Resume<NonZeroU32>) -> Pages<T, NonZeroU32, PageMeta, Error>
+fn walk<E, T>(template: E) -> Pages<T, NonZeroU32, PageMeta, Error>
 where
     E: Sends<Result<PageResponse<T>, Error>> + Paging + Clone + Send + 'static,
     T: Send + 'static,
 {
-    Pages::new(from, move |page: Option<NonZeroU32>| {
+    Pages::new(Resume::Start, move |page: Option<NonZeroU32>| {
         let requested = page.unwrap_or(NonZeroU32::MIN);
         let request = template.clone().set_page(requested);
         async move { next(requested, request.send().await?) }

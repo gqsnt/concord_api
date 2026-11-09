@@ -225,7 +225,7 @@ pub enum PaginationProblem {
     /// No `rel="next"`, but `x-next-page` names a next page: ending here could drop issues.
     MissingNextLink,
     /// A continuation from another listing (another project or collection) was passed to
-    /// [`pages_from`](crate::api::GitLabProjectIssues::pages_from).
+    /// [`Pages::starting_at`](concord_pagination::Pages::starting_at).
     ContinuationMismatch,
 }
 

@@ -86,7 +86,7 @@ loop {
         Ok(None) => break, // the last page: GitLab sent no rel="next"
         Err(PagesError::Bounded { resume, .. }) => {
             // 20 pages read and GitLab links on: continue later from `resume`.
-            let rest = listing.clone().pages_from(resume).items().collect_complete().await?;
+            let rest = listing.clone().pages().starting_at(resume).items().collect_complete().await?;
             println!("{} more", rest.len());
             break;
         }
@@ -101,7 +101,7 @@ match listing.clone().items().collect_complete().await {
         // A prefix and the reason; `resume()` is the page to retry.
         println!("{} read before: {}", incomplete.collected.len(), incomplete.error);
         if let Some(Resume::At(page)) = incomplete.error.resume().cloned() {
-            let _retry = listing.pages_from(Resume::At(page));
+            let _retry = listing.pages().starting_at(Resume::At(page));
         }
     }
 }
@@ -218,7 +218,7 @@ match project.issue(IssueIid::new(2)?).send().await {
   `PagesError::Provider { error, failed }` with the `GitLabError` and the page to retry;
   `collect_complete()` returns `Incomplete { collected, error }`. A `None` after an `Err` from an
   item stream is not completion.
-- `pages_from(resume)` continues a listing from a `NextPage` of **that** listing (same project
+- `pages().starting_at(resume)` continues a listing from a `NextPage` of **that** listing (same project
   reference and collection); one from another listing is refused before anything is sent. The
   link's own query carries GitLab's filters; it is not compared with the listing's setters.
 - Workflow B returns the issue in `ContextError::Project` and `ContextError::Mismatch`; with

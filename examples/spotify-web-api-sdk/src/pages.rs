@@ -38,7 +38,7 @@ impl Listing for ArtistSearch {
 
 /// The traversal of a listing, keyed by offset. `Ok(None)` from it means the provider's last
 /// page was read; a failed page is `PagesError::Provider` with that page's offset to resume
-/// from ([`pages_from`]).
+/// from ([`Pages::starting_at`]).
 pub type Listed<T> = Pages<T, u32, (), Error>;
 
 /// Walks a listing from the request as given (its own `limit` and `offset`, if set).
@@ -59,17 +59,7 @@ where
     E: PageParams + Sends<Result<R, Error>> + Clone + Send + 'static,
     R: Listing,
 {
-    pages_from(first, Resume::Start)
-}
-
-/// Walks a listing from `from`: `Resume::At(offset)` requests that offset first (a resume point
-/// of a failed traversal, or a playlist's [`Paging::next_offset`]). Use `concord_sdk_spotify_web_api::concord_pagination::Resume` for the position. `Resume::Start` repeats `first` unchanged, including its configured offset and limit; `Resume::At(key)` takes the `u32` result offset in a returned page's `next` or `Paging::next_offset()`.
-pub fn pages_from<E, R>(first: E, from: Resume<u32>) -> Listed<R::Item>
-where
-    E: PageParams + Sends<Result<R, Error>> + Clone + Send + 'static,
-    R: Listing,
-{
-    Pages::new(from, move |offset: Option<u32>| {
+    Pages::new(Resume::Start, move |offset: Option<u32>| {
         let request = match offset {
             Some(offset) => first.clone().set_offset(offset),
             None => first.clone(),

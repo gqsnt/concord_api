@@ -117,9 +117,11 @@ pub enum OnError {
 /// failures cannot bypass the budget. It counts *logical* calls: a factory that retries, refreshes
 /// credentials or sends subrequests internally makes more HTTP attempts than its budget.
 ///
-/// The crate does not compare keys, so the budget is the only guard against a key chain that
-/// cycles through more than one page (A → B → A). An adapter should refuse a key that does not
-/// advance (a next key equal to the one just requested) with its own error.
+/// Without an admission guard, the engine does not compare keys, so the budget is its only
+/// protection against a key chain that cycles through more than one page (A → B → A).
+/// [`Pages::refuse_repeated_keys`](crate::Pages::refuse_repeated_keys) adds a shared guard that
+/// refuses any repeated key before invoking the factory. An adapter can also refuse a key that
+/// does not advance (a next key equal to the one just requested) with its own error.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct Budget(NonZeroUsize);
 
@@ -266,6 +268,8 @@ pub enum Outcome {
     /// An observed failure stopped the traversal ([`OnError::Stop`], or any failure of a
     /// sequential chain).
     Failed,
+    /// A guarded dependent chain reached a key it had already requested.
+    Repeated,
     /// [`OnError::Continue`] reached its [`Options::failure_limit`].
     FailureLimit,
     /// The caller ended the traversal with `finish` while work remained.
@@ -299,6 +303,7 @@ impl fmt::Display for Outcome {
             Self::ExhaustedWithFailures => "exhausted with failures",
             Self::Bounded => "bounded by the budget",
             Self::Failed => "stopped by a failure",
+            Self::Repeated => "stopped at a repeated page key",
             Self::FailureLimit => "stopped by the failure limit",
             Self::Stopped => "stopped by the caller",
             Self::DiscoveryFailed => "discovery failed: remaining work unknown",

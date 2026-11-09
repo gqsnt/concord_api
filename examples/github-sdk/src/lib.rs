@@ -18,7 +18,7 @@
 //!   for undeclared operations, native requests with the same headers.
 //! - [`meta`]: request id, rate limit, `ETag` and `Link` kept with typed values; conditional
 //!   requests (`304`).
-//! - [`link`], [`paging`], [`pages`]: the `Link` header parser and every listing's ordinary
+//! - [`link`], [`paging`], [`pages`]: the shared `Link` relation projection and every listing's ordinary
 //!   traversal (`repo.issue_pages(op).items()`, `.pages()`: `Ok(None)` only at the end, a cap or
 //!   a failed page is an error), whose page factory also serves `concord-pagination`'s engine.
 //! - [`download`]: the artifact download (`302` at the native boundary, streamed to a sink, no

@@ -153,6 +153,57 @@ async fn bounded_search_keeps_prefix_and_resumes_only_its_original_context() {
 }
 
 #[tokio::test]
+async fn starting_at_refuses_a_cursor_from_another_search_or_credential_before_io() {
+    let server = TestServer::start(workflow).await;
+    let api = client(&server);
+    let query = domain(&api)
+        .events(range())
+        .set_recipient("alice@example.test");
+    let next = query
+        .clone()
+        .pages(cap(3))
+        .unwrap()
+        .next_page()
+        .await
+        .unwrap()
+        .unwrap()
+        .next
+        .unwrap();
+    assert_eq!(server.requests().len(), 1);
+    let different_key =
+        Mailgun::local(&server.url(), "another-key", Duration::from_secs(1)).unwrap();
+    for other in [
+        query.clone().set_recipient("bob@example.test"),
+        domain(&different_key)
+            .events(range())
+            .set_recipient("alice@example.test"),
+        api.domain(Domain::new("other.example.test").unwrap())
+            .events(range())
+            .set_recipient("alice@example.test"),
+    ] {
+        assert!(matches!(
+            other.clone().pages_from(Resume::At(next.clone()), cap(3)),
+            Err(Error::Link(LinkError::Context))
+        ));
+        let mut pages = other
+            .pages(cap(3))
+            .unwrap()
+            .starting_at(Resume::At(next.clone()));
+        let error = pages.next_page().await.unwrap_err();
+        assert!(matches!(error, PagesError::Provider { .. }));
+        assert!(matches!(
+            error.provider_error(),
+            Some(Error::Link(LinkError::Context))
+        ));
+        assert_eq!(server.requests().len(), 1);
+    }
+    let mut resumed = query.pages(cap(3)).unwrap().starting_at(Resume::At(next));
+    assert_eq!(resumed.next_page().await.unwrap().unwrap().items.len(), 2);
+    assert_eq!(server.requests().len(), 2);
+    server.shutdown().await;
+}
+
+#[tokio::test]
 async fn failed_page_keeps_prefix_and_cannot_report_completion() {
     let server = TestServer::start(|request: &Recorded| {
         if request.path().ends_with("/events") {

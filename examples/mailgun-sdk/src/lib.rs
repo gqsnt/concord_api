@@ -90,6 +90,7 @@ concord::api! {
                 #[sensitive] query tags?: String,
             ) -> EventPage {
                 path "events";
+                page next url paging.next;
             }
         }
     }

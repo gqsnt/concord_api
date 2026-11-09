@@ -14,8 +14,8 @@
 //!   page a previous response named. The next request cannot be built before its key exists,
 //!   and no page number is ever computed (not from `last`, not from a count).
 //! - **Same endpoint, provider URL.** A linked page is the same endpoint (same headers, same
-//!   decoder, same Concord endpoint name in errors) sent to the URL GitHub gave: the operation is
-//!   prepared, then its native URL is replaced by the link (`Prepared::into_parts`). The link must
+//!   decoder, same Concord endpoint name in errors) sent to the URL GitHub gave. `Followed<Op>`
+//!   enters the same `KeepMeta` policy as the first page. The link must
 //!   be on the configured API origin and under its base path ([`GitHubContext::is_api_url`]);
 //!   otherwise nothing is sent ([`GitHubError::ForeignLink`]), so the token never leaves the API.
 //! - **Binding.** A [`NextLink`] remembers the operation, repository and parent resource it came
@@ -54,14 +54,15 @@
 use std::fmt;
 use std::future::Future;
 
-use concord::Prepared;
 use concord::reqwest::Url;
+use concord::{LinkContinuation, NextUrl, SendWith};
 use concord_pagination::{Page, PageItems, Pages, Resume};
+use std::marker::PhantomData;
 
 use crate::context::{GitHubContext, RepoContext};
 use crate::error::{EnvelopeProblem, GitHubError};
 use crate::ids::RepoRef;
-use crate::meta::{ResponseMeta, WithMeta, send_edited};
+use crate::meta::{KeepMeta, ResponseMeta, WithMeta};
 use crate::models::{
     Artifact, ArtifactList, Job, JobList, Workflow, WorkflowList, WorkflowRun, WorkflowRunList,
 };
@@ -339,7 +340,7 @@ pub struct LinkPages<Op, R> {
     #[public]
     binding: Binding,
     operation: Op,
-    prepare: fn(Op) -> Result<Prepared<R>, concord::Error>,
+    output: PhantomData<fn() -> R>,
 }
 
 impl<Op: Clone, R> Clone for LinkPages<Op, R> {
@@ -348,14 +349,14 @@ impl<Op: Clone, R> Clone for LinkPages<Op, R> {
             context: self.context.clone(),
             binding: self.binding.clone(),
             operation: self.operation.clone(),
-            prepare: self.prepare,
+            output: PhantomData,
         }
     }
 }
 
 impl<Op, R> LinkPages<Op, R>
 where
-    Op: Clone + Send + 'static,
+    Op: LinkContinuation<R> + Clone + Send + 'static,
     R: Listing + Send + 'static,
     R::Item: Send + 'static,
 {
@@ -382,16 +383,8 @@ where
     /// # let _ = all; Ok(()) }
     /// ```
     pub fn pages(&self) -> GitHubPages<R::Item> {
-        self.pages_from(Resume::Start)
-    }
-
-    /// [`pages`](Self::pages) from `from`: a link of this listing (a bounded or failed
-    /// traversal's `PagesError::resume`, a [`restore`](Self::restore)d continuation), or
-    /// `Resume::Start`. A link of another listing or origin is refused by the first page's
-    /// request, before anything is sent. Add `concord-pagination` as a direct dependency and use `concord_pagination::Resume`. `Resume::Start` repeats the original list request with its configured query parameters; `Resume::At(key)` takes this listing's `NextLink` from a returned page's `next` or `restore`.
-    pub fn pages_from(&self, from: Resume<NextLink>) -> GitHubPages<R::Item> {
         let factory = self.clone();
-        Pages::new(from, move |key| factory.fetch(key))
+        Pages::new(Resume::Start, move |key| factory.fetch(key))
     }
 
     /// The items of this listing from its first page, one at a time ([`PageItems`] over
@@ -401,21 +394,20 @@ where
     }
 }
 
-impl<Op: Clone, R: Listing> LinkPages<Op, R> {
-    /// Pages of `operation` (a generated list operation with its filters set), prepared with
-    /// `prepare` (its generated `prepare` method, for example `GitHubRepoIssues::prepare`).
+impl<Op: LinkContinuation<R> + Clone + Send, R: Listing + Send> LinkPages<Op, R> {
+    /// Pages of a declared Link-paged operation with its filters set.
+    /// The operation itself retains its decoder and dispatch identity.
     pub fn new(
         repo: &RepoContext,
         operation_id: &'static str,
         parent: Option<u64>,
         operation: Op,
-        prepare: fn(Op) -> Result<Prepared<R>, concord::Error>,
     ) -> Self {
         Self {
             context: repo.context().clone(),
             binding: Binding::new(operation_id, repo.repo().clone(), parent),
             operation,
-            prepare,
+            output: PhantomData,
         }
     }
 
@@ -470,7 +462,7 @@ impl<Op: Clone, R: Listing> LinkPages<Op, R> {
             return Err(GitHubError::ForeignLink { meta: None });
         }
         url.set_fragment(None);
-        let prepared = (self.prepare)(self.operation.clone())?;
+        let prepared = self.operation.clone().prepare()?;
         // The repository comes from the stored binding; the path must name the same collection.
         let found = self.binding_of(prepared.request().url(), &url);
         if found.operation != self.binding.operation || found.parent != self.binding.parent {
@@ -534,14 +526,18 @@ impl<Op: Clone, R: Listing> LinkPages<Op, R> {
     }
 
     /// Fetches the first page (`None`) or a linked page. The returned future owns everything it
-    /// needs (the operation is prepared now, without I/O), so the factory can be used from a
+    /// needs (the configured operation is cloned, without I/O), so the factory can be used from a
     /// `FnMut(Option<NextLink>) -> Future` closure.
     pub fn fetch(
         &self,
         key: Option<NextLink>,
     ) -> impl Future<Output = Result<LinkPage<R::Item>, GitHubError>> + use<Op, R> {
-        let prepared = (self.prepare)(self.operation.clone());
-        fetch_page(self.context.clone(), self.binding.clone(), prepared, key)
+        fetch_page(
+            self.context.clone(),
+            self.binding.clone(),
+            self.operation.clone(),
+            key,
+        )
     }
 }
 
@@ -573,13 +569,17 @@ fn repo_part<'a, 'b>(segments: &'b [&'a str]) -> Option<(RepoPart<'a>, &'b [&'a 
     }
 }
 
-async fn fetch_page<R: Listing>(
+async fn fetch_page<Op, R>(
     context: GitHubContext,
     binding: Binding,
-    prepared: Result<Prepared<R>, concord::Error>,
+    endpoint: Op,
     key: Option<NextLink>,
-) -> Result<LinkPage<R::Item>, GitHubError> {
-    let prepared = prepared?;
+) -> Result<LinkPage<R::Item>, GitHubError>
+where
+    Op: LinkContinuation<R> + Clone + Send,
+    R: Listing + Send,
+{
+    let prepared = endpoint.clone().prepare()?;
     // The URL this request goes to, without a fragment (never sent): a `next` equal to it, also
     // without its fragment, does not advance.
     let mut requested = match &key {
@@ -598,13 +598,15 @@ async fn fetch_page<R: Listing>(
             return Err(GitHubError::ForeignLink { meta: None });
         }
     }
-    let WithMeta { value, meta } = send_edited(prepared, |request| {
-        if let Some(key) = key {
-            *request.url_mut() = key.url;
+    // Both branches enter the same SDK policy with the original endpoint identity.
+    let WithMeta { value, meta } = match key {
+        None => KeepMeta.send(endpoint).await?,
+        Some(key) => {
+            KeepMeta
+                .send(endpoint.follow(NextUrl::from_url(key.url)))
+                .await?
         }
-        Ok(())
-    })
-    .await?;
+    };
     // The continuation comes from the full response, before the items are moved out.
     let next = match meta.links() {
         Err(error) => {

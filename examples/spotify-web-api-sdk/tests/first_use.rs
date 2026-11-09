@@ -12,7 +12,7 @@ use concord_sdk_spotify_web_api::{
     WebApiConfig,
     concord::{self, ErrorKind},
     concord_pagination::{Outcome, Resume},
-    pages, pages_from,
+    pages,
 };
 use concord_testserver::{Recorded, Reply, TestServer};
 use serde_json::{Value, json};
@@ -231,7 +231,8 @@ async fn search_select_and_retrieve_artist() {
     );
 
     let before_resume = server.requests().len();
-    let rest = pages_from(search.clone(), failed)
+    let rest = pages(search.clone())
+        .starting_at(failed)
         .max_pages(NonZeroUsize::new(1).unwrap())
         .items()
         .collect_complete()
@@ -290,7 +291,8 @@ async fn search_select_and_retrieve_artist() {
         .unwrap();
     assert!(accepted.is_empty());
     // An explicit resume does validate the same response's offset.
-    let bad_page = pages_from(api.search_artists("bad-offset"), Resume::At(0))
+    let bad_page = pages(api.search_artists("bad-offset"))
+        .starting_at(Resume::At(0))
         .items()
         .collect_complete()
         .await
@@ -555,7 +557,8 @@ async fn list_select_and_fetch_authorized_users_playlist() {
     assert_eq!(session.refresh_token().unwrap().expose(), CODE_REFRESH);
 
     // The fixture now allows access; retry is a deliberate caller action, using the same token.
-    let rest = pages_from(listing, failed)
+    let rest = pages(listing)
+        .starting_at(failed)
         .max_pages(NonZeroUsize::new(1).unwrap())
         .items()
         .collect_complete()
@@ -603,7 +606,8 @@ async fn list_select_and_fetch_authorized_users_playlist() {
         .set_limit(playlist.tracks.limit)
         .set_market(Market::country("FR").unwrap());
     let mut entries = playlist.tracks.items;
-    let incomplete = pages_from(items_request.clone(), Resume::At(offset))
+    let incomplete = pages(items_request.clone())
+        .starting_at(Resume::At(offset))
         .items()
         .collect_complete()
         .await
@@ -641,7 +645,8 @@ async fn list_select_and_fetch_authorized_users_playlist() {
 
     let before_resume = server.requests().len();
     entries.extend(
-        pages_from(items_request, failed)
+        pages(items_request)
+            .starting_at(failed)
             .max_pages(NonZeroUsize::new(1).unwrap())
             .items()
             .collect_complete()

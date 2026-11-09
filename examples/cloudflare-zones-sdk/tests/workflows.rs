@@ -262,7 +262,8 @@ async fn success_false_mid_listing_surfaces_errors_and_keeps_the_prefix() {
     // The caller resumes from the failed page once Cloudflare answers again.
     failing.store(false, Ordering::SeqCst);
     let rest = list
-        .pages_from(failed)
+        .pages()
+        .starting_at(failed)
         .items()
         .collect_complete()
         .await
@@ -354,7 +355,8 @@ async fn a_page_without_paging_info_or_from_elsewhere_stops_the_walk() {
     let error = cf
         .zones()
         .list()
-        .pages_from(from)
+        .pages()
+        .starting_at(from)
         .next_page()
         .await
         .unwrap_err();

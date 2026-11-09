@@ -457,7 +457,8 @@ async fn a_round_staged_at_a_page_boundary_resumes_in_a_new_process() {
         .restore_next(&saved_next)
         .expect("restore next link");
     let rest = listing
-        .pages_from(Resume::At(next))
+        .pages()
+        .starting_at(Resume::At(next))
         .collect_complete()
         .await
         .expect("rest of the round");
@@ -577,7 +578,8 @@ async fn a_failed_page_keeps_the_prefix_and_resumes_from_the_failed_link() {
     // The application waits (not modelled) and resumes from the failed page.
     let resume = incomplete.error.resume().cloned().expect("resume point");
     let rest = listing
-        .pages_from(resume)
+        .pages()
+        .starting_at(resume)
         .collect_complete()
         .await
         .expect("rest of round");
@@ -1276,7 +1278,8 @@ async fn b_a_page_cap_is_bounded_and_resumable() {
         panic!("{:?}", incomplete.error)
     };
     let rest = listing
-        .pages_from(resume.clone())
+        .pages()
+        .starting_at(resume.clone())
         .items()
         .collect_complete()
         .await
@@ -1498,7 +1501,8 @@ async fn b_a_member_listing_resumes_from_a_stored_continuation_with_its_header()
         .expect("listing");
     let next = listing.restore_next(&saved).expect("restore continuation");
     let rest = listing
-        .pages_from(Resume::At(next))
+        .pages()
+        .starting_at(Resume::At(next))
         .items()
         .collect_complete()
         .await

@@ -30,6 +30,10 @@ mod kw {
     syn::custom_keyword!(params);
     syn::custom_keyword!(limit);
     syn::custom_keyword!(operations);
+    syn::custom_keyword!(page);
+    syn::custom_keyword!(next);
+    syn::custom_keyword!(link);
+    syn::custom_keyword!(url);
 }
 
 /// HTTP methods accepted as endpoint keywords.
@@ -565,6 +569,8 @@ pub struct Owner {
     /// `#[cfg(..)]` and `#[deprecated..]` on scopes and endpoints.
     pub cfgs: Vec<Attribute>,
     pub deprecated: Option<Attribute>,
+    /// `#[read]` on a scope or endpoint: it (every endpoint below it) only reads.
+    pub read: Option<Attribute>,
     pub name: Ident,
     pub params: Vec<Param>,
     pub stmts: Stmts,
@@ -593,6 +599,29 @@ pub struct Stmts {
     /// `/// docs` `operations Name;` on the client: the generated enum of its endpoints, whose
     /// variant each generated `send()` passes to the send policy.
     pub operations: Option<Operations>,
+    /// `page next link;` or `page next url a?.b;` on an endpoint: where the provider issues the
+    /// next page's URL.
+    pub next: Option<NextStmt>,
+}
+
+/// `page next ...;` on an endpoint.
+pub struct NextStmt {
+    pub span: Span,
+    pub source: NextSource,
+}
+
+/// Where the provider issues the next page's URL.
+pub enum NextSource {
+    /// `page next link;`: the `Link` header's `rel="next"` target.
+    Link,
+    /// `page next url a?.b;`: a field of the decoded output, `?` stepping into an `Option`.
+    Url(Vec<NextStep>),
+}
+
+/// One field of a `page next url` path.
+pub struct NextStep {
+    pub field: Ident,
+    pub optional: bool,
 }
 
 /// `/// docs` `operations Name;` on the client.
@@ -738,6 +767,7 @@ impl Parse for Api {
                 docs,
                 cfgs: Vec::new(),
                 deprecated: None,
+                read: None,
                 name,
                 params,
                 stmts,
@@ -1079,6 +1109,58 @@ fn parse_owner_body(
             stmts.send = Some((ty, kw.span, output));
             continue;
         }
+        if input.peek(kw::page) && !input.peek2(Token![::]) {
+            let kw: kw::page = input.parse()?;
+            if let Some(first) = children.first() {
+                let first: &Owner = first;
+                return Err(syn::Error::new(
+                    kw.span,
+                    format!(
+                        "owner statements (`page`, `path`, `query`, ...) must precede child declarations (first child: `{}`)",
+                        first.name
+                    ),
+                ));
+            }
+            let expected = "expected `page next link;` or `page next url <field path>;`";
+            if !input.peek(kw::next) {
+                return Err(input.error(expected));
+            }
+            input.parse::<kw::next>()?;
+            let source = if input.peek(kw::link) {
+                input.parse::<kw::link>()?;
+                NextSource::Link
+            } else if input.peek(kw::url) {
+                input.parse::<kw::url>()?;
+                let mut steps = Vec::new();
+                loop {
+                    if !input.peek(Ident::peek_any) {
+                        return Err(input.error(
+                            "expected a field of the output: `page next url links?.pages?.next;`",
+                        ));
+                    }
+                    let field = Ident::parse_any(input)?;
+                    let optional = input.peek(Token![?]);
+                    if optional {
+                        input.parse::<Token![?]>()?;
+                    }
+                    steps.push(NextStep { field, optional });
+                    if !input.peek(Token![.]) {
+                        break;
+                    }
+                    input.parse::<Token![.]>()?;
+                }
+                NextSource::Url(steps)
+            } else {
+                return Err(input.error(expected));
+            };
+            input.parse::<Token![;]>()?;
+            let stmt = NextStmt {
+                span: kw.span,
+                source,
+            };
+            set_once(&mut stmts.next, stmt, kw.span, "page next")?;
+            continue;
+        }
         if input.peek(kw::limit) && !input.peek2(Token![::]) {
             let kw: kw::limit = input.parse()?;
             if let Some(first) = children.first() {
@@ -1355,15 +1437,31 @@ impl ParseAnyIdent for Ident {
     }
 }
 
-/// Children accept docs, `#[cfg(..)]` (whole subtree) and `#[deprecated..]`
-/// (navigation method only); every other attribute is still rejected.
-fn child_attrs(
-    attrs: Vec<Attribute>,
-) -> syn::Result<(Vec<Attribute>, Vec<Attribute>, Option<Attribute>)> {
-    let (mut docs, mut cfgs, mut deprecated) = (Vec::new(), Vec::new(), None);
+/// Children accept docs, `#[cfg(..)]` (whole subtree), `#[deprecated..]` (navigation method
+/// only) and `#[read]` (whole subtree); every other attribute is still rejected.
+type ChildAttrs = (
+    Vec<Attribute>,
+    Vec<Attribute>,
+    Option<Attribute>,
+    Option<Attribute>,
+);
+
+fn child_attrs(attrs: Vec<Attribute>) -> syn::Result<ChildAttrs> {
+    let (mut docs, mut cfgs, mut deprecated, mut read) = (Vec::new(), Vec::new(), None, None);
     for attr in attrs {
         if attr.path().is_ident("cfg") {
             cfgs.push(attr);
+        } else if attr.path().is_ident("read") {
+            if !matches!(attr.meta, syn::Meta::Path(_)) {
+                return Err(syn::Error::new(
+                    attr.span(),
+                    "`#[read]` takes no arguments: it states that every endpoint it covers only reads",
+                ));
+            }
+            if read.is_some() {
+                return Err(syn::Error::new(attr.span(), "duplicate `#[read]`"));
+            }
+            read = Some(attr);
         } else if attr.path().is_ident("deprecated") {
             if deprecated.is_some() {
                 return Err(syn::Error::new(attr.span(), "duplicate `#[deprecated]`"));
@@ -1374,16 +1472,16 @@ fn child_attrs(
         } else {
             return Err(syn::Error::new(
                 attr.span(),
-                "unsupported attribute on a scope or endpoint; documentation comments, `#[cfg(..)]` and `#[deprecated]` are accepted",
+                "unsupported attribute on a scope or endpoint; documentation comments, `#[cfg(..)]`, `#[deprecated]` and `#[read]` are accepted",
             ));
         }
     }
-    Ok((docs, cfgs, deprecated))
+    Ok((docs, cfgs, deprecated, read))
 }
 
 fn parse_child(input: ParseStream<'_>) -> syn::Result<Owner> {
     let attrs = input.call(Attribute::parse_outer)?;
-    let (docs, cfgs, deprecated) = child_attrs(attrs)?;
+    let (docs, cfgs, deprecated, read) = child_attrs(attrs)?;
     if input.peek(kw::scope) {
         input.parse::<kw::scope>()?;
         let name: Ident = input.parse()?;
@@ -1402,6 +1500,7 @@ fn parse_child(input: ParseStream<'_>) -> syn::Result<Owner> {
             docs,
             cfgs,
             deprecated,
+            read,
             name,
             params,
             stmts,
@@ -1473,6 +1572,7 @@ fn parse_child(input: ParseStream<'_>) -> syn::Result<Owner> {
         docs,
         cfgs,
         deprecated,
+        read,
         name,
         params,
         stmts,

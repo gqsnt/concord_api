@@ -1,4 +1,4 @@
-error: unsupported attribute on a scope or endpoint; documentation comments, `#[cfg(..)]` and `#[deprecated]` are accepted
+error: unsupported attribute on a scope or endpoint; documentation comments, `#[cfg(..)]`, `#[deprecated]` and `#[read]` are accepted
  --> tests/ui/endpoint_attribute_unsupported.rs:5:9
   |
 5 |         #[inline]

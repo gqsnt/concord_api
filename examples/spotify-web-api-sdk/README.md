@@ -54,10 +54,9 @@ let playlists = pages(api.me().playlists().set_limit(50)).items().collect_comple
     .map_err(|incomplete| incomplete.error)?;
 let playlist = api.playlist(playlists[0].id.clone()).get().send().await?;
 if let Some(offset) = playlist.tracks.next_offset()? {
-    let rest = concord_sdk_spotify_web_api::pages_from(
-        api.playlist(playlist.id.clone()).items().set_limit(playlist.tracks.limit),
-        concord_sdk_spotify_web_api::concord_pagination::Resume::At(offset),
-    ).items().collect_complete().await.map_err(|i| i.error)?;
+    let rest = pages(api.playlist(playlist.id.clone()).items().set_limit(playlist.tracks.limit))
+        .starting_at(concord_sdk_spotify_web_api::concord_pagination::Resume::At(offset))
+        .items().collect_complete().await.map_err(|i| i.error)?;
 }
 
 // Persist the refresh token after use: the provider may have rotated it.
@@ -74,7 +73,7 @@ declared request **without** `Authorization` (the session adds it when sending).
 with `concord-pagination`: `offset + limit` while the provider returns a `next` link, each page
 checked to start at the requested offset. It reads nothing until polled, has no page cap unless
 you set `max_pages`, and a failed page ends it with `PagesError::Provider { failed, .. }`:
-`pages_from(first, failed)` resumes there.
+`pages(first).starting_at(failed)` resumes there.
 
 Use `concord_sdk_spotify_web_api::concord_pagination::Resume` for the position. `Resume::Start`
 repeats `first` unchanged, including its configured offset and limit; `Resume::At(key)` takes

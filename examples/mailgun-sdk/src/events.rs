@@ -1,6 +1,6 @@
-use crate::{Error, InputError, LinkError, MailgunDomainEvents, MessageId, Metadata, SendPolicy};
+use crate::{Error, InputError, LinkError, MailgunDomainEvents, MessageId, Metadata};
 use concord::{
-    QueryPairs, QueryPairsWriter,
+    Follow, NextUrl, QueryPairs, QueryPairsWriter, UrlContinuation,
     reqwest::{Url, header::HeaderValue},
 };
 use concord_pagination::{Page, Pages, Resume};
@@ -227,9 +227,17 @@ pub fn delivery_status(id: &MessageId, recipient: &str, events: &[Event]) -> Del
 #[derive(Clone, concord::Debug)]
 #[sensitive]
 pub struct EventCursor {
-    url: String,
+    url: NextUrl,
     original: Url,
     credential: Option<HeaderValue>,
+}
+impl EventCursor {
+    fn check_context(&self, original: &Url, credential: &Option<HeaderValue>) -> Result<(), Error> {
+        if self.original != *original || self.credential != *credential {
+            return Err(Error::Link(LinkError::Context));
+        }
+        Ok(())
+    }
 }
 
 /// Bounded event chain using the shared pagination engine; failed/bounded reads keep their prefix.
@@ -251,11 +259,8 @@ impl MailgunDomainEvents {
         let prepared = self.clone().prepare()?;
         let original = prepared.request().url().clone();
         let credential = prepared.request().headers().get("authorization").cloned();
-        if from
-            .key()
-            .is_some_and(|key| key.original != original || key.credential != credential)
-        {
-            return Err(Error::Link(LinkError::Context));
+        if let Some(key) = from.key() {
+            key.check_context(&original, &credential)?;
         }
         let mut seen = HashSet::new();
         Ok(Pages::new(from, move |cursor: Option<EventCursor>| {
@@ -264,32 +269,36 @@ impl MailgunDomainEvents {
             let credential = credential.clone();
             let target = cursor
                 .as_ref()
-                .map_or_else(|| original.to_string(), |c| c.url.clone());
+                .map_or_else(|| original.to_string(), |c| c.url.expose().to_owned());
             let fresh = seen.insert(target.clone());
             async move {
+                if let Some(cursor) = &cursor {
+                    cursor.check_context(&original, &credential)?;
+                }
                 if !fresh {
                     return Err(Error::Link(LinkError::Cycle));
                 }
                 let response = match cursor {
                     None => op.send().await?,
-                    Some(_) => {
+                    Some(cursor) => {
                         trusted_link(&original, &target)?;
-                        SendPolicy::execute(op.prepare()?.follow(&target)?).await?
+                        op.follow(cursor.url).send().await?
                     }
                 };
-                let EventPage { items, paging } = response.value;
-                let next = if items.is_empty() {
+                let next = if response.value.items.is_empty() {
                     None
                 } else {
-                    let url = trusted_link(&original, &paging.next)?;
+                    let next = Self::next_url(&response.value).ok().flatten();
+                    let next = next.ok_or(Error::Link(LinkError::Untrusted))?;
+                    let url = trusted_link(&original, next.expose())?;
                     Some(EventCursor {
-                        url: url.to_string(),
+                        url: NextUrl::from_url(url),
                         original,
                         credential,
                     })
                 };
                 Ok(Page {
-                    items,
+                    items: response.value.items,
                     next,
                     meta: response.meta,
                 })

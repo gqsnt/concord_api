@@ -26,11 +26,11 @@ impl Error {
     pub fn outcome_unknown(&self) -> bool {
         match self {
             Self::Concord(error) => {
-                error.operation().and_then(|op| op.method()) == Some("POST")
+                error.operation().is_some_and(|op| !op.is_read())
                     && error.delivery() != concord::Delivery::NotSent
             }
             Self::Provider(error) => {
-                error.meta.operation().and_then(|op| op.method()) == Some("POST")
+                error.meta.operation().is_some_and(|op| !op.is_read())
                     && (error.meta.status().is_server_error()
                         || error.meta.status().is_redirection())
             }

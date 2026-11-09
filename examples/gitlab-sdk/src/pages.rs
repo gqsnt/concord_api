@@ -15,14 +15,14 @@
 //!
 //! - **Same endpoint, GitLab's URL.** A linked page is the same generated endpoint (same
 //!   `PRIVATE-TOKEN` and `Accept` headers, same decoder, same Concord operation name in errors)
-//!   sent to the link: the listing is prepared, then its URL is replaced (`Prepared::follow`,
-//!   which also refuses another origin itself).
+//!   sent to the link through the client's send policy (`Follow::follow`, which also refuses
+//!   another origin itself).
 //! - **The token stays on the API.** A link on another origin (scheme, host, port) is
 //!   [`PaginationProblem::ForeignLink`] and is not requested. A link that is not a project issue
 //!   collection under the API's base path (`.../projects/<one segment>/issues`) is
 //!   [`PaginationProblem::OtherCollection`].
-//! - **Continuation before items.** The `Link` header is read before the body: a malformed one is
-//!   an error, never "last page". A `next` equal to the URL just requested is
+//! - **Continuation before items.** The `Link` header is checked before the page's items are
+//!   returned: a malformed one is an error, never "last page". A `next` equal to the URL just requested is
 //!   [`PaginationProblem::NotAdvancing`]. No `next` while `x-next-page` names a page is
 //!   [`PaginationProblem::MissingNextLink`].
 //! - **Metadata.** Every page keeps its [`ResponseMeta`] (request id, `x-page`, `x-total`, ...);
@@ -36,18 +36,16 @@
 //! between offset pages (duplicated or skipped). A traversal is a best-effort enumeration, not a
 //! snapshot.
 
-use std::future::Future;
 use std::sync::Arc;
 
-use concord::Prepared;
 use concord::reqwest::Url;
+use concord::{Follow, NextUrl};
 use concord_pagination::{Page, PageItems, Pages, Resume};
 
 use crate::api::GitLabProjectIssues;
 use crate::error::{GitLabError, PaginationProblem};
 use crate::meta::ResponseMeta;
 use crate::models::Issue;
-use crate::send::{api_error, decode};
 
 /// The page GitLab linked to (`rel="next"`): the key of the next request, and where an interrupted
 /// traversal resumes. `Debug` withholds the URL.
@@ -93,15 +91,7 @@ impl GitLabProjectIssues {
     /// # Ok(()) }
     /// ```
     pub fn pages(self) -> IssuePages {
-        self.pages_from(Resume::Start)
-    }
-
-    /// [`pages`](Self::pages) from `from`: `Resume::Start`, or a [`NextPage`] of this same listing
-    /// (a `PagesError`'s `resume()`). A continuation of another project or collection is refused
-    /// before anything is sent ([`PaginationProblem::ContinuationMismatch`]). The link's own query
-    /// carries GitLab's filters; the listing's setters only decide the first page. Add `concord-pagination` as a direct dependency and use `concord_pagination::Resume`. `Resume::Start` repeats the original issues request, including its configured filters and page; `Resume::At(key)` takes this listing's `NextPage` from a returned page's `next`.
-    pub fn pages_from(self, from: Resume<NextPage>) -> IssuePages {
-        Pages::new(from, move |key| fetch(self.clone(), key))
+        Pages::new(Resume::Start, move |key| fetch(self.clone(), key))
     }
 
     /// Every issue of this listing, one at a time (the [`pages`](Self::pages) rules).
@@ -110,46 +100,32 @@ impl GitLabProjectIssues {
     }
 }
 
-/// Fetches the first page (`None`) or a linked page. The listing is prepared now (no I/O), so the
-/// returned future owns everything it needs.
-fn fetch(
-    listing: GitLabProjectIssues,
-    key: Option<NextPage>,
-) -> impl Future<Output = Result<IssuePage, GitLabError>> + Send + 'static {
-    let prepared = listing.prepare();
-    fetch_prepared(prepared, key)
-}
-
-async fn fetch_prepared(
-    prepared: Result<Prepared<Vec<Issue>>, concord::Error>,
-    key: Option<NextPage>,
-) -> Result<IssuePage, GitLabError> {
-    let mut prepared = prepared?;
+/// Fetches the first page (`None`) or a linked page, both through the client's send policy.
+async fn fetch(op: GitLabProjectIssues, key: Option<NextPage>) -> Result<IssuePage, GitLabError> {
     // The first page's URL: the API origin, the base path and this listing's collection path.
-    let first = prepared.request().url().clone();
+    let first = op.clone().prepare()?.request().url().clone();
     let listing: Arc<str> = first.path().into();
     let refused = |problem| GitLabError::Pagination {
         problem,
         meta: None,
     };
-    if let Some(key) = key {
-        if key.listing != listing {
-            return Err(refused(PaginationProblem::ContinuationMismatch));
+    let (page, requested) = match key {
+        None => (op.send().await?, first.clone()),
+        Some(key) => {
+            if key.listing != listing {
+                return Err(refused(PaginationProblem::ContinuationMismatch));
+            }
+            // A key only comes from a checked response, but the caller can pass any.
+            check_link(&first, &key.url).map_err(refused)?;
+            let mut requested = key.url.clone();
+            requested.set_fragment(None);
+            (
+                op.follow(NextUrl::from_url(key.url)).send().await?,
+                requested,
+            )
         }
-        // A key only comes from a checked response, but the caller can pass any.
-        check_link(&first, &key.url).map_err(refused)?;
-        prepared = prepared.follow(key.url.as_str())?;
-    }
-    let mut requested = prepared.request().url().clone();
-    requested.set_fragment(None);
-
-    let received = prepared.receive().await?;
-    let meta = ResponseMeta::capture(&received);
-    if !received.status().is_success() {
-        return Err(api_error(received, meta).await);
-    }
-    // The continuation, from the full response head, before the body is read.
-    let next = match next_link(&first, &requested, &meta) {
+    };
+    let next = match next_link(&first, &requested, &page.meta) {
         Ok(next) => next.map(|url| NextPage {
             url,
             listing: listing.clone(),
@@ -157,11 +133,10 @@ async fn fetch_prepared(
         Err(problem) => {
             return Err(GitLabError::Pagination {
                 problem,
-                meta: Some(Box::new(meta)),
+                meta: Some(Box::new(page.meta)),
             });
         }
     };
-    let page = decode(received, meta).await?;
     Ok(Page {
         items: page.value,
         next,

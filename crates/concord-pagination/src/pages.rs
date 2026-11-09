@@ -7,9 +7,11 @@
 //! configured cap while the provider has a next page, and a provider failure, are errors
 //! ([`PagesError`]), so a plain `while let Some(..) = ..?` loop cannot read a silent prefix.
 
+use std::collections::HashSet;
 use std::convert::Infallible;
 use std::fmt;
 use std::future::{Future, poll_fn};
+use std::hash::Hash;
 use std::num::NonZeroUsize;
 use std::pin::Pin;
 use std::task::{Context, Poll, ready};
@@ -19,7 +21,8 @@ use std::task::{Context, Poll, ready};
 use futures_util::stream::{FusedStream, Stream};
 
 use crate::sequential::{
-    ItemCheckpoint, ItemsProgress, ItemsReport, Sequential, SequentialReport, sequential,
+    ItemCheckpoint, ItemsProgress, ItemsReport, KeyAdmission, Sequential, SequentialReport,
+    sequential,
 };
 use crate::types::{Budget, Outcome, Page, Progress, Resume};
 
@@ -35,6 +38,9 @@ trait Chain<T, K, M, E>: Send {
     fn position(&self) -> Option<&Resume<K>>;
     fn counters(&self) -> Progress;
     fn limit(&mut self, pages: u64);
+    fn start(&mut self, from: Resume<K>);
+    fn guard(&mut self, admit: KeyAdmission<K>);
+    fn outcome(&self) -> Option<Outcome>;
     fn into_items(self: Box<Self>) -> Box<dyn ItemChain<T, K, E>>;
     fn report(self: Box<Self>) -> SequentialReport<K>;
 }
@@ -47,6 +53,7 @@ trait ItemChain<T, K, E>: Send {
     fn position(&self) -> Option<&ItemCheckpoint<K>>;
     fn counters(&self) -> ItemsProgress;
     fn limit(&mut self, pages: u64);
+    fn outcome(&self) -> Option<Outcome>;
     fn report(self: Box<Self>) -> ItemsReport<K, T>;
 }
 
@@ -73,6 +80,18 @@ where
 
     fn limit(&mut self, pages: u64) {
         self.set_budget(pages);
+    }
+
+    fn start(&mut self, from: Resume<K>) {
+        self.set_start(from);
+    }
+
+    fn guard(&mut self, admit: KeyAdmission<K>) {
+        self.set_key_admission(admit);
+    }
+
+    fn outcome(&self) -> Option<Outcome> {
+        self.natural_outcome()
     }
 
     fn into_items(self: Box<Self>) -> Box<dyn ItemChain<T, K, E>> {
@@ -113,6 +132,10 @@ where
         self.set_budget(pages);
     }
 
+    fn outcome(&self) -> Option<Outcome> {
+        self.chain().natural_outcome()
+    }
+
     fn report(self: Box<Self>) -> ItemsReport<K, T> {
         (*self).finish()
     }
@@ -128,12 +151,20 @@ fn step<V, E, K: Clone>(
     polled: Option<Result<V, E>>,
     page: Option<&Resume<K>>,
     progress: Progress,
+    outcome: Option<Outcome>,
 ) -> Result<Option<V>, PagesError<E, K>> {
     let (outcome, result) = match (polled, page) {
         (Some(Ok(value)), _) => return Ok(Some(value)),
         // The engine checks for the provider's last page before its budget: a cap reached on
         // the last page is exhaustion.
         (None, None) => (Outcome::Exhausted, Ok(None)),
+        (None, Some(resume)) if outcome == Some(Outcome::Repeated) => (
+            Outcome::Repeated,
+            Err(PagesError::Repeated {
+                resume: resume.clone(),
+                progress,
+            }),
+        ),
         (None, Some(resume)) => (
             Outcome::Bounded,
             Err(PagesError::Bounded {
@@ -199,8 +230,9 @@ fn after_end<V, E, K: Clone>(
 ///   exhaustion, `Ok(None)`);
 /// - `Err(`[`PagesError::Provider`]`)` with the factory's own error, moved and typed, when a
 ///   page fails; a dependent chain cannot continue after it;
-/// - after a `Bounded` or `Provider` error, `Err(`[`PagesError::Ended`]`)` on every later call,
-///   never `Ok(None)`.
+/// - `Err(`[`PagesError::Repeated`]`)` before requesting a key twice when
+///   [`refuse_repeated_keys`](Self::refuse_repeated_keys) is enabled;
+/// - after any error, `Err(`[`PagesError::Ended`]`)` on every later call.
 ///
 /// There is no cap unless you set one. Every error carries the counters and the page to
 /// continue from.
@@ -262,6 +294,7 @@ fn after_end<V, E, K: Clone>(
 pub struct Pages<T, K, M = (), E = Infallible> {
     chain: Box<dyn Chain<T, K, M, E>>,
     ended: Option<Outcome>,
+    polled: bool,
 }
 
 impl<T, K, M, E> Pages<T, K, M, E>
@@ -283,11 +316,50 @@ where
         Self {
             chain: Box::new(chain),
             ended: None,
+            polled: false,
         }
+    }
+
+    /// Refuses a key already requested by this traversal, before calling the factory.
+    /// The accepted prefix and refused position accompany [`PagesError::Repeated`].
+    /// Storage grows with distinct requested keys; [`max_pages`](Self::max_pages) bounds it.
+    ///
+    /// # Panics
+    /// Panics at the caller when used after the first poll, including a pending poll.
+    #[track_caller]
+    pub fn refuse_repeated_keys(mut self) -> Self
+    where
+        K: Eq + Hash,
+    {
+        assert!(
+            !self.polled,
+            "Pages::refuse_repeated_keys must be called before the first poll"
+        );
+        let mut seen = HashSet::new();
+        self.chain
+            .guard(Box::new(move |key| seen.insert(key.clone())));
+        self
     }
 }
 
 impl<T, K: Clone, M, E> Pages<T, K, M, E> {
+    /// Selects the first page: [`Resume::Start`] for the original request, or
+    /// [`Resume::At`] with a key from an earlier traversal of the same listing.
+    /// The last selection wins; caps and key guards carry over. Selection calls nothing.
+    /// Apply this before [`items`](Self::items) or [`item_events`](Self::item_events).
+    ///
+    /// # Panics
+    /// Panics at the caller when used after the first poll, including a pending poll.
+    #[track_caller]
+    pub fn starting_at(mut self, from: Resume<K>) -> Self {
+        assert!(
+            !self.polled,
+            "Pages::starting_at must be called before the first poll"
+        );
+        self.chain.start(from);
+        self
+    }
+
     /// At most `max` page requests by this traversal, counting those already made, failed ones
     /// included. Reaching it while the provider has a next page ends the traversal with
     /// [`PagesError::Bounded`]. Set it before reading: a traversal that already ended stays
@@ -305,6 +377,7 @@ impl<T, K: Clone, M, E> Pages<T, K, M, E> {
     }
 
     fn poll_page(&mut self, cx: &mut Context<'_>) -> Next<Page<T, K, M>, E, K> {
+        self.polled = true;
         if let Some(outcome) = self.ended {
             return Poll::Ready(after_end(
                 outcome,
@@ -318,6 +391,7 @@ impl<T, K: Clone, M, E> Pages<T, K, M, E> {
             polled,
             self.chain.position(),
             self.chain.counters(),
+            self.chain.outcome(),
         ))
     }
 
@@ -524,7 +598,8 @@ impl<T, K, M, E> fmt::Debug for Pages<T, K, M, E> {
 /// [`next`](Self::next) follows the rules of [`Pages::next_page`]: `Ok(None)` only once every
 /// item of the provider's last page was returned; empty pages with a next key are passed
 /// through; a cap reached while the provider has more is [`PagesError::Bounded`], a failed page
-/// [`PagesError::Provider`], and every call after either is [`PagesError::Ended`]. A page is
+/// [`PagesError::Provider`], a refused key [`PagesError::Repeated`]. After an error, further calls
+/// return [`PagesError::Ended`]. A page is
 /// fetched only once the previous page's items were all returned (no read-ahead), and a pending
 /// call can be dropped without losing the page in flight.
 ///
@@ -565,6 +640,7 @@ impl<T, K: Clone, E> PageItems<T, K, E> {
             polled,
             self.chain.page(),
             self.chain.counters().pages,
+            self.chain.outcome(),
         ))
     }
 
@@ -622,7 +698,8 @@ impl<T, K, E> fmt::Debug for PageItems<T, K, E> {
 ///
 /// It yields `Ok(item)` for each item. At provider exhaustion it ends (`None`). When the cap
 /// is reached while the provider has more, or a page fails, it yields that typed `Err`
-/// ([`PagesError::Bounded`] or [`PagesError::Provider`]) and then ends: a `None` after an `Err`
+/// ([`PagesError::Bounded`], [`PagesError::Repeated`] or [`PagesError::Provider`]) and then ends.
+/// A `None` after an `Err`
 /// does **not** prove the listing complete. Only a stream that ended without an `Err` read
 /// everything. After its end it keeps returning `None` ([`FusedStream`]).
 ///
@@ -708,11 +785,18 @@ pub enum PagesError<E, K> {
         /// The page chain's counters.
         progress: Progress,
     },
-    /// A call after a `Provider` or `Bounded` error: the traversal had already ended, and this
-    /// is not the end of the listing.
+    /// A key already requested by this traversal was refused before factory admission.
+    #[non_exhaustive]
+    Repeated {
+        /// The refused page position.
+        resume: Resume<K>,
+        /// Counters, unchanged by the refusal.
+        progress: Progress,
+    },
+    /// A call after a `Provider`, `Bounded` or `Repeated` error returns the earlier outcome.
     #[non_exhaustive]
     Ended {
-        /// How it ended: [`Outcome::Failed`] or [`Outcome::Bounded`].
+        /// How it ended: [`Outcome::Failed`], [`Outcome::Bounded`] or [`Outcome::Repeated`].
         outcome: Outcome,
         /// The page to continue from (the failed page, or the first page not read).
         resume: Option<Resume<K>>,
@@ -744,11 +828,12 @@ impl<E, K> PagesError<E, K> {
     }
 
     /// How the traversal ended: [`Outcome::Failed`] for `Provider`, [`Outcome::Bounded`] for
-    /// `Bounded`, the earlier outcome for `Ended`.
+    /// `Bounded`, [`Outcome::Repeated`] for `Repeated`, the earlier outcome for `Ended`.
     pub fn outcome(&self) -> Outcome {
         match self {
             Self::Provider { .. } => Outcome::Failed,
             Self::Bounded { .. } => Outcome::Bounded,
+            Self::Repeated { .. } => Outcome::Repeated,
             Self::Ended { outcome, .. } => *outcome,
         }
     }
@@ -757,7 +842,7 @@ impl<E, K> PagesError<E, K> {
     pub fn resume(&self) -> Option<&Resume<K>> {
         match self {
             Self::Provider { failed, .. } => Some(failed),
-            Self::Bounded { resume, .. } => Some(resume),
+            Self::Bounded { resume, .. } | Self::Repeated { resume, .. } => Some(resume),
             Self::Ended { resume, .. } => resume.as_ref(),
         }
     }
@@ -767,6 +852,7 @@ impl<E, K> PagesError<E, K> {
         match self {
             Self::Provider { progress, .. }
             | Self::Bounded { progress, .. }
+            | Self::Repeated { progress, .. }
             | Self::Ended { progress, .. } => *progress,
         }
     }
@@ -784,6 +870,11 @@ impl<E, K> fmt::Debug for PagesError<E, K> {
                 .finish_non_exhaustive(),
             Self::Bounded { resume, progress } => f
                 .debug_struct("Bounded")
+                .field("resume", resume)
+                .field("progress", progress)
+                .finish(),
+            Self::Repeated { resume, progress } => f
+                .debug_struct("Repeated")
                 .field("resume", resume)
                 .field("progress", progress)
                 .finish(),
@@ -814,6 +905,9 @@ impl<E, K> fmt::Display for PagesError<E, K> {
             Self::Bounded { .. } => {
                 f.write_str("page cap reached while the provider had more pages")
             }
+            Self::Repeated { .. } => {
+                f.write_str("a page key was already requested by this traversal")
+            }
             Self::Ended { outcome, .. } => write!(f, "the traversal had already ended: {outcome}"),
         }
     }
@@ -823,7 +917,7 @@ impl<E: std::error::Error + 'static, K> std::error::Error for PagesError<E, K> {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         match self {
             Self::Provider { error, .. } => Some(error),
-            Self::Bounded { .. } | Self::Ended { .. } => None,
+            Self::Bounded { .. } | Self::Repeated { .. } | Self::Ended { .. } => None,
         }
     }
 }

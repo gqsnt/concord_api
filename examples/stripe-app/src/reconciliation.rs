@@ -9,7 +9,7 @@
 //!
 //! # Traversal policy
 //!
-//! - Every list is a dependent cursor chain ([`CursorList::pages_from`], `concord_pagination`'s
+//! - Every list is a dependent cursor chain ([`concord_pagination::Pages::starting_at`], `concord_pagination`'s
 //!   `Pages`): the next request is built only from the previous page's last id; pages are
 //!   fetched one at a time, and child chains run one after another inside the parent walk.
 //!   Nothing is fetched in parallel and no cursor is derived from a count.
@@ -428,7 +428,7 @@ where
     <R::Item as Object>::Id: Send + 'static,
     F: AsyncFnMut(StripePage<R::Item>, &mut ReconciliationReport),
 {
-    let mut pages = list.pages_from(from).max_pages(budget);
+    let mut pages = list.pages().starting_at(from).max_pages(budget);
     let (outcome, resume, error) = loop {
         match pages.next_page().await {
             Ok(Some(page)) => {

@@ -129,7 +129,8 @@ async fn cap_after_consecutive_empty_pages_keeps_the_exact_unread_link_for_a_new
         .unwrap();
     let restored = restored_listing.restore_next(&saved).unwrap();
     let remaining = restored_listing
-        .pages_from(Resume::At(restored))
+        .pages()
+        .starting_at(Resume::At(restored))
         .max_pages(NonZeroUsize::new(1).unwrap())
         .collect_complete()
         .await
@@ -195,7 +196,7 @@ async fn failure_after_empty_delta_pages_preserves_the_prefix_and_typed_error() 
     );
     assert_eq!(server.requests().len(), 4); // no automatic retry or reset
 
-    let mut retry = listing.pages_from(failed.clone());
+    let mut retry = listing.pages().starting_at(failed.clone());
     assert!(matches!(
         retry.next_page().await,
         Err(PagesError::Provider { .. })
@@ -272,7 +273,8 @@ async fn limited_unknown_members_survive_a_cap_and_continue_from_a_saved_link() 
         .unwrap();
     let restored = later.restore_next(&saved).unwrap();
     let tail = later
-        .pages_from(Resume::At(restored))
+        .pages()
+        .starting_at(Resume::At(restored))
         .items()
         .collect_complete()
         .await

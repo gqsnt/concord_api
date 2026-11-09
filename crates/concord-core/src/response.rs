@@ -37,8 +37,9 @@ pub struct Operation(Ident);
 #[derive(Clone, Copy)]
 enum Ident {
     Endpoint(&'static EndpointMeta),
-    /// A declared endpoint named by its generated `Endpoint::operation()` (no request built).
-    Declared(&'static str, &'static str),
+    /// A declared endpoint named by its generated `Endpoint::operation()` (no request built):
+    /// name, method and whether it only reads.
+    Declared(&'static str, &'static str, bool),
     Label(&'static str),
 }
 
@@ -47,8 +48,8 @@ impl Operation {
         Self(Ident::Endpoint(meta))
     }
 
-    pub(crate) fn declared(name: &'static str, method: &'static str) -> Self {
-        Self(Ident::Declared(name, method))
+    pub(crate) fn declared(name: &'static str, method: &'static str, read: bool) -> Self {
+        Self(Ident::Declared(name, method, read))
     }
 
     /// A static label for a response that no declared endpoint produced (a signed URL fetched
@@ -61,7 +62,7 @@ impl Operation {
     pub fn name(&self) -> &'static str {
         match self.0 {
             Ident::Endpoint(meta) => meta.name,
-            Ident::Declared(name, _) | Ident::Label(name) => name,
+            Ident::Declared(name, ..) | Ident::Label(name) => name,
         }
     }
 
@@ -69,8 +70,19 @@ impl Operation {
     pub fn method(&self) -> Option<&'static str> {
         match self.0 {
             Ident::Endpoint(meta) => Some(meta.method),
-            Ident::Declared(_, method) => Some(method),
+            Ident::Declared(_, method, _) => Some(method),
             Ident::Label(_) => None,
+        }
+    }
+
+    /// Whether the declared endpoint only reads provider state: `GET`, `HEAD` and `OPTIONS` do,
+    /// other methods do not, unless the endpoint or a scope above it is declared `#[read]`. A
+    /// label is `false`. A fact of the declaration, not a permission to resend.
+    pub fn is_read(&self) -> bool {
+        match self.0 {
+            Ident::Endpoint(meta) => meta.read,
+            Ident::Declared(_, _, read) => read,
+            Ident::Label(_) => false,
         }
     }
 

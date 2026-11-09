@@ -4,6 +4,7 @@ use std::fmt;
 use std::future::{Future, poll_fn};
 use std::marker::PhantomData;
 use std::pin::Pin;
+use std::sync::Mutex;
 use std::task::{Context, Poll};
 
 use crate::types::{Budget, Outcome, Page, Progress, Resume};
@@ -13,6 +14,8 @@ type Types<T, M, E> = fn() -> (T, M, E);
 
 /// What a chain's `poll` returns.
 type Polled<T, K, M, E> = Poll<Option<Result<Page<T, K, M>, E>>>;
+
+pub(crate) type KeyAdmission<K> = Box<dyn FnMut(&K) -> bool + Send>;
 
 /// Starts a dependent chain at `from`, admitting at most `budget` pages.
 ///
@@ -70,6 +73,7 @@ where
         in_flight: None,
         ended: None,
         failed: None,
+        admit_key: None,
         _types: PhantomData,
     }
 }
@@ -90,6 +94,9 @@ pub struct Sequential<K, T, M, E, F, Fut> {
     in_flight: Option<Pin<Box<Fut>>>,
     ended: Option<Outcome>,
     failed: Option<Resume<K>>,
+    // Exclusive access polls the guard; Mutex preserves Sequential's Sync auto trait
+    // even when the optional guard captures a Send key. This mutex is never locked.
+    admit_key: Option<Mutex<KeyAdmission<K>>>,
     _types: PhantomData<Types<T, M, E>>,
 }
 
@@ -118,6 +125,13 @@ where
             };
             if self.admitted >= self.budget {
                 self.ended = Some(Outcome::Bounded);
+                return Poll::Ready(None);
+            }
+            if let Resume::At(key) = position
+                && let Some(admit) = &mut self.admit_key
+                && !admit.get_mut().expect("exclusive guard access")(key)
+            {
+                self.ended = Some(Outcome::Repeated);
                 return Poll::Ready(None);
             }
             // Charged at admission: a failing page still counts.
@@ -160,6 +174,14 @@ where
         self.budget = pages;
     }
 
+    pub(crate) fn set_start(&mut self, from: Resume<K>) {
+        self.position = Some(from);
+    }
+
+    pub(crate) fn set_key_admission(&mut self, admit: KeyAdmission<K>) {
+        self.admit_key = Some(Mutex::new(admit));
+    }
+
     /// Counters (pages admitted, emitted, failed).
     pub fn progress(&self) -> Progress {
         Progress {
@@ -175,7 +197,7 @@ where
 
     /// The outcome the chain would report now without dropping anything, or `None` while it can
     /// still make progress.
-    fn natural_outcome(&self) -> Option<Outcome> {
+    pub(crate) fn natural_outcome(&self) -> Option<Outcome> {
         if let Some(outcome) = self.ended {
             return Some(outcome);
         }
@@ -253,8 +275,8 @@ impl<K, T, M, E, F, Fut> fmt::Debug for Sequential<K, T, M, E, F, Fut> {
 /// How a sequential chain ended ([`Sequential::finish`]).
 ///
 /// Outcomes: [`Outcome::Exhausted`] (the last page had no next key), [`Outcome::Bounded`] (the
-/// budget was used while a next key existed), [`Outcome::Failed`] (a page failed) or
-/// [`Outcome::Stopped`] (finished early).
+/// budget was used while a next key existed), [`Outcome::Repeated`] (the admission guard refused
+/// a repeated key), [`Outcome::Failed`] (a page failed) or [`Outcome::Stopped`] (finished early).
 #[non_exhaustive]
 pub struct SequentialReport<K> {
     /// How the chain ended.

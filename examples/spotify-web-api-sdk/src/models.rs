@@ -282,7 +282,7 @@ pub struct Playlist {
     #[serde(default)]
     pub followers: Option<Followers>,
     /// The first page of items. Continue with [`Paging::next_offset`] and
-    /// [`crate::pages_from`] over `playlist(id).items()`.
+    /// [`concord_pagination::Pages::starting_at`] over `playlist(id).items()`.
     pub tracks: Paging<PlaylistItem>,
     /// The Spotify URI (`spotify:playlist:..`).
     pub uri: String,

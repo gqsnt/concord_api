@@ -1,7 +1,5 @@
 //! The SDK's client: site and keys checked once, reads and posting named.
 
-use std::collections::HashSet;
-
 use concord::reqwest;
 use concord_pagination::{Page, Pages, Resume};
 
@@ -148,31 +146,16 @@ impl DatadogEvents {
     /// Workflow 2: every page of a search, following `meta.page.after` with the same body.
     /// Nothing is sent until the traversal is read. A cursor set on `request` is replaced.
     ///
-    /// Besides the provider's own errors, a page whose cursor is empty or was already
-    /// requested ends the traversal with [`Error::Protocol`] (following it would restart or
-    /// loop). There is no page cap unless you set one (`max_pages`).
+    /// Empty cursors return [`Error::Protocol`]; repeated keys return
+    /// [`PagesError::Repeated`](concord_pagination::PagesError::Repeated) before admission.
+    /// Set a page cap with `max_pages` and resume with `starting_at`.
     pub fn search_pages(&self, request: SearchRequest) -> SearchPages {
-        self.search_pages_from(request, Resume::Start)
-    }
-
-    /// [`search_pages`](Self::search_pages) from a checkpoint (`PagesError::resume()` or
-    /// `checkpoint()` of an earlier traversal of the same `request`, site and keys). A cursor
-    /// is not a snapshot: events added meanwhile may shift pages. Use `concord_sdk_datadog_events::pagination::Resume` for the position. `Resume::Start` repeats the same search body without a cursor; `Resume::At(key)` takes the `Cursor` projected from `meta.page.after` into a returned page's `next`.
-    pub fn search_pages_from(&self, request: SearchRequest, from: Resume<Cursor>) -> SearchPages {
         let client = self.clone();
-        let mut requested = HashSet::new();
-        Pages::new(from, move |cursor: Option<Cursor>| {
-            let repeated = cursor
-                .as_ref()
-                .is_some_and(|cursor| !requested.insert(cursor.clone()));
+        Pages::new(Resume::Start, move |cursor: Option<Cursor>| {
             let operation = client.search(request.clone().maybe_cursor(cursor));
-            async move {
-                if repeated {
-                    return Err(Error::Protocol(ProtocolError::RepeatedCursor));
-                }
-                project(operation.send().await?)
-            }
+            async move { project(operation.send().await?) }
         })
+        .refuse_repeated_keys()
     }
 }
 

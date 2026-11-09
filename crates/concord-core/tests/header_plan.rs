@@ -14,6 +14,7 @@ use concord_core::reqwest::header::HeaderName;
 static META: EndpointMeta = EndpointMeta {
     name: "Plan.endpoint",
     method: "GET",
+    read: true,
     labels: 0,
     sensitive_labels: &[],
     segments: 0,

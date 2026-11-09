@@ -744,7 +744,8 @@ async fn a_cap_with_more_pages_is_an_error_and_on_the_last_page_is_the_end() {
     assert_eq!(server.requests().len(), 2, "the cap is not exceeded");
 
     let rest = comments
-        .pages_from(resume)
+        .pages()
+        .starting_at(resume)
         .items()
         .collect_complete()
         .await
@@ -872,4 +873,103 @@ async fn a_foreign_next_link_is_an_error_not_an_end() {
     );
     elsewhere.shutdown().await;
     api.shutdown().await;
+}
+
+#[tokio::test]
+async fn a_guarded_link_walk_refuses_a_longer_cycle_with_its_binding_and_prefix() {
+    for fragments in [false, true] {
+        let server = TestServer::start(move |r: &Recorded| {
+            let (id, next) = if r.target.contains("page=A") {
+                (2, "B")
+            } else if r.target.contains("page=B") {
+                (3, "A")
+            } else {
+                (1, "A")
+            };
+            let fragment = if fragments { if id == 3 { "#second" } else { "#first" } } else { "" };
+            gh_json(200, &comments_json(&[id], 7, "octo-org/hello-world")).header(
+                "link",
+                format!("<http://{}/repositories/42/issues/7/comments?page={next}&cursor=F1_GITHUB_CANARY{fragment}>; rel=\"next\"", r.host),
+            )
+        }).await;
+        let github = context(server.addr(), TOKEN_A);
+        let repo = github.repo(RepoRef::new("octo-org", "hello-world"));
+        let listing = repo.issue_comment_pages(IssueNumber(7), |op| op);
+        let partial = listing
+            .pages()
+            .refuse_repeated_keys()
+            .collect_complete()
+            .await
+            .unwrap_err();
+        assert_eq!(
+            partial
+                .collected
+                .iter()
+                .flat_map(ids)
+                .collect::<Vec<_>>(),
+            [1, 2, 3]
+        );
+        assert!(matches!(partial.error, PagesError::Repeated { .. }));
+        let progress = partial.error.progress();
+        assert_eq!(
+            (progress.admitted, progress.succeeded, progress.failed),
+            (3, 3, 0)
+        );
+        let key = partial.error.resume().unwrap().key().unwrap();
+        assert_eq!(key.binding(), listing.binding());
+        assert_eq!(key.raw_url().fragment(), None);
+        assert!(!format!("{partial} {partial:?}").contains("F1_GITHUB_CANARY"));
+        for page in &partial.collected {
+            assert_eq!(
+                page.meta.response.request_id(),
+                Some("0000:1111:2222:3333:4444")
+            );
+        }
+        assert_eq!(server.requests().len(), 3);
+        for request in server.requests() {
+            assert_api_headers(&request, TOKEN_A);
+        }
+        server.shutdown().await;
+    }
+}
+
+#[tokio::test]
+async fn starting_at_a_restored_link_preserves_headers_metadata_and_binding_refusal() {
+    let server = TestServer::start(|_: &Recorded| {
+        gh_json(200, &comments_json(&[7], 7, "octo-org/hello-world"))
+    })
+    .await;
+    let github = context(server.addr(), TOKEN_A);
+    let repo = github.repo(RepoRef::new("octo-org", "hello-world"));
+    let listing = repo.issue_comment_pages(IssueNumber(7), |op| op);
+    let restored = listing
+        .restore(&stored(
+            listing.binding(),
+            format!(
+                "{}/repositories/42/issues/7/comments?page=3",
+                api_base(server.addr())
+            ),
+        ))
+        .unwrap();
+    let mut pages = listing.pages().starting_at(Resume::At(restored.clone()));
+    assert_eq!(server.requests().len(), 0);
+    let page = pages.next_page().await.unwrap().unwrap();
+    assert_eq!(ids(&page), [7]);
+    assert_eq!(
+        page.meta.response.request_id(),
+        Some("0000:1111:2222:3333:4444")
+    );
+    assert_api_headers(&server.requests()[0], TOKEN_A);
+    assert!(pages.next_page().await.unwrap().is_none());
+    let other = repo.issue_comment_pages(IssueNumber(8), |op| op);
+    let mut foreign = other.pages().starting_at(Resume::At(restored));
+    assert!(matches!(
+        foreign.next_page().await,
+        Err(PagesError::Provider {
+            error: GitHubError::ContinuationMismatch { .. },
+            ..
+        })
+    ));
+    assert_eq!(server.requests().len(), 1);
+    server.shutdown().await;
 }

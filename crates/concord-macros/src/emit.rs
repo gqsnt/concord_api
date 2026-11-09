@@ -144,7 +144,11 @@ fn operations_enum(k: &TokenStream, model: &Model, vis: &syn::Visibility) -> Tok
             /// another client with the same dotted name and method (a client of the same name in
             /// another module or crate) is indistinguishable and maps to that variant.
             #[inline] pub fn from_operation(operation: #k::Operation) -> ::core::option::Option<Self> {
-                Self::ALL.iter().copied().find(|op| op.operation() == operation)
+                // Paths, not methods: the caller's module may have no prelude.
+                ::core::iter::Iterator::find(
+                    &mut ::core::iter::Iterator::copied(Self::ALL.iter()),
+                    |op| op.operation() == operation,
+                )
             }
         }
     }
@@ -1970,10 +1974,12 @@ fn emit_owner(
             output,
             incoming,
             body,
+            next,
         } => {
             let incoming = *incoming;
             let op_name = lit(&owner.dotted);
             let op_method = lit(&method.to_string());
+            let read = model.is_read(index);
             // The name and method spelled out, so a caller can match an `Operation` by name
             // without naming this type.
             let operation_doc = lit(&format!(
@@ -2051,15 +2057,31 @@ fn emit_owner(
                 _ => (None, None),
             };
             // `Sends<O>` for an endpoint whose client names a send policy (its `send()` future is
-            // already `Send`); none otherwise.
+            // already `Send`); without a policy, only for an endpoint with `page next`, so that a
+            // followed page has the endpoint's own default send.
             let mut sends_impl = TokenStream::new();
             let send_fn = match policy {
-                None => quote! {
-                    #send_docs
-                    #[inline] pub async fn send(self) -> ::core::result::Result<#out, #k::Error> {
-                        self.prepare()?.send().await
+                None => {
+                    if next.is_some() {
+                        sends_impl = quote! {
+                            impl #k::Sends<::core::result::Result<#out, #k::Error>> for #ty {
+                                #[inline] fn send(self) -> impl ::core::future::Future<Output = ::core::result::Result<#out, #k::Error>> + ::core::marker::Send {
+                                    #ty::send(self)
+                                }
+                                #[inline] fn __send_followed(self, __target: #k::NextUrl) -> impl ::core::future::Future<Output = ::core::result::Result<#out, #k::Error>> + ::core::marker::Send {
+                                    let __followed = #k::__private::followed(self, __target);
+                                    async move { #k::Endpoint::prepare(__followed)?.send().await }
+                                }
+                            }
+                        };
                     }
-                },
+                    quote! {
+                        #send_docs
+                        #[inline] pub async fn send(self) -> ::core::result::Result<#out, #k::Error> {
+                            self.prepare()?.send().await
+                        }
+                    }
+                }
                 Some(policy) => {
                     // `send value;`: clone the client value; `send Type;`: `Type::default()`.
                     let (policy_ty, policy_init, shown) = match model.send_value() {
@@ -2151,10 +2173,20 @@ fn emit_owner(
                         None => quote_spanned!(at=> #policy_ty: #k::#policy_trait_at<#trait_args>),
                     };
                     let call = quote!(<#policy_ty as #k::#policy_trait<#trait_args>>::send(&__policy, #variant_arg self).await);
+                    // The same policy call with the endpoint followed to a provider URL.
+                    let send_followed = quote! {
+                        let __policy: #policy_ty = #policy_init;
+                        let __followed = #k::__private::followed(self, __target);
+                        async move { <#policy_ty as #k::#policy_trait<#trait_args>>::send(&__policy, #variant_arg __followed).await }
+                    };
+                    let (this, target) = (quote!(self), quote!(__target));
                     sends_impl = quote_spanned! {at=>
                         impl #k::Sends<#send_output> for #ty where #sends_bound {
                             #[inline] fn send(self) -> impl ::core::future::Future<Output = #send_output> + ::core::marker::Send {
                                 #ty::send(self)
+                            }
+                            #[inline] fn __send_followed(#this, #target: #k::NextUrl) -> impl ::core::future::Future<Output = #send_output> + ::core::marker::Send {
+                                #send_followed
                             }
                         }
                     };
@@ -2186,6 +2218,7 @@ fn emit_owner(
             };
             let shapes = shapes_static(k, model, index);
             let limit = limit_const(model, index, output.as_ref());
+            let follow_impls = next.as_ref().map(|next| next_impls(k, ty, &out, next));
             quote! {
                 #shapes
 
@@ -2209,7 +2242,7 @@ fn emit_owner(
 
                     #[doc = #operation_doc]
                     #[inline] pub fn operation() -> #k::Operation {
-                        #k::__private::declared(#op_name, #op_method)
+                        #k::__private::declared(#op_name, #op_method, #read)
                     }
 
                     /// Builds the native request without sending it.
@@ -2238,6 +2271,8 @@ fn emit_owner(
                     }
                 }
 
+                #follow_impls
+
                 impl ::core::fmt::Debug for #ty {
                     #[inline] fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
                         let mut __d = f.debug_struct(#type_label);
@@ -2247,6 +2282,71 @@ fn emit_owner(
                 }
             }
         }
+    }
+}
+
+/// `page next ...;`: the endpoint can be followed to a provider-issued URL, and says where the
+/// URL is. A `page next url` path reads fields of the output by reference, each `?` stepping into
+/// an `Option` (absent ends the path); the last field is the URL text.
+fn next_impls(
+    k: &TokenStream,
+    ty: &Ident,
+    out: &TokenStream,
+    next: &crate::syntax::NextSource,
+) -> TokenStream {
+    let source = match next {
+        crate::syntax::NextSource::Link => quote!(impl #k::LinkContinuation<#out> for #ty {}),
+        crate::syntax::NextSource::Url(steps) => {
+            // Every local is spanned in the declaration (one hygiene context), so a type error
+            // points at the path token that caused it.
+            let first = steps
+                .first()
+                .map_or_else(Span::call_site, |s| s.field.span());
+            let value = Ident::new("__value", first);
+            let label = syn::Lifetime::new("'__next", first);
+            let mut lets = TokenStream::new();
+            let mut place = quote!(#value);
+            for (i, step) in steps.iter().enumerate() {
+                let field = &step.field;
+                let at = field.span();
+                let field_place = quote_spanned!(at=> #place.#field);
+                if step.optional {
+                    let bound = Ident::new(&format!("__next{i}"), at);
+                    lets.extend(quote_spanned! {at=>
+                        let ::core::option::Option::Some(#bound) =
+                            ::core::option::Option::as_ref(&#field_place)
+                        else {
+                            break #label ::core::option::Option::None;
+                        };
+                    });
+                    place = quote!(#bound);
+                } else {
+                    place = field_place;
+                }
+            }
+            let at = steps
+                .last()
+                .map_or_else(Span::call_site, |s| s.field.span());
+            // `String` or `Option<String>`: std's own conversions to `Option<&String>`.
+            let text = quote_spanned!(at=> ::core::convert::From::from(&#place));
+            quote! {
+                impl #k::UrlContinuation<#out> for #ty {
+                    #[inline] fn next_url(
+                        #value: &#out,
+                    ) -> ::core::result::Result<::core::option::Option<#k::NextUrl>, #k::NextUrlError> {
+                        let __text: ::core::option::Option<&::std::string::String> = #label: {
+                            #lets
+                            #text
+                        };
+                        #k::__private::next_url(__text.map(::std::string::String::as_str))
+                    }
+                }
+            }
+        }
+    };
+    quote! {
+        impl #k::Follow<#out> for #ty {}
+        #source
     }
 }
 
@@ -3234,6 +3334,7 @@ fn prepare_body(
 
     let name = lit(&owner.dotted);
     let method_str = lit(&method.to_string());
+    let read = model.is_read(index);
     let label_count = composed.labels.len();
     let segment_count = composed.segments.len() + usize::from(composed.trailing_slash);
     let root = format_ident!("__o0");
@@ -3292,6 +3393,7 @@ fn prepare_body(
         static __META: #k::__private::EndpointMeta = #k::__private::EndpointMeta {
             name: #name,
             method: #method_str,
+            read: #read,
             labels: #label_count,
             sensitive_labels: &[#(#sensitive_labels),*],
             segments: #segment_count,
@@ -4204,7 +4306,7 @@ mod tests {
         );
         // The generated `operation()` returns that name and method.
         assert!(
-            docs.contains("declared (\"Api.repo.remove\" , \"DELETE\")"),
+            docs.contains("declared (\"Api.repo.remove\" , \"DELETE\" , false)"),
             "{docs}"
         );
     }
@@ -4704,5 +4806,45 @@ mod tests {
             .map(|item| quote!(#item).to_string())
             .collect();
         assert_eq!(rest, base);
+    }
+
+    /// The read fact is resolved at expansion: the method's default, `#[read]` on an endpoint or
+    /// an enclosing scope, written into both the endpoint's metadata and its `operation()`.
+    #[test]
+    fn read_facts_reach_both_operation_forms() {
+        let with = docs(quote! {
+            pub client Api {
+                base "http://x.test";
+                GET ping();
+                POST create();
+                #[read] POST search();
+                #[read]
+                scope account {
+                    POST balance();
+                    GET status();
+                }
+            }
+        });
+        let compact = with.replace(' ', "");
+        for (name, method, read) in [
+            ("Api.ping", "GET", true),
+            ("Api.create", "POST", false),
+            ("Api.search", "POST", true),
+            ("Api.account.balance", "POST", true),
+            ("Api.account.status", "GET", true),
+        ] {
+            assert!(
+                compact.contains(&format!(
+                    "declared(\"{name}\",\"{method}\",{read})"
+                )),
+                "{name}: {with}"
+            );
+            assert!(
+                compact.contains(&format!(
+                    "name:\"{name}\",method:\"{method}\",read:{read},"
+                )),
+                "{name}: {with}"
+            );
+        }
     }
 }

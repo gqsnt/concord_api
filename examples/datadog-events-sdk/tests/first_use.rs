@@ -464,7 +464,8 @@ async fn caller_searches_pages_and_handles_incomplete_results() {
         "cap must not fetch its next page"
     );
     let resumed = events
-        .search_pages_from(search_request(), resume)
+        .search_pages(search_request())
+        .starting_at(resume)
         .max_pages(NonZeroUsize::new(2).unwrap())
         .collect_complete()
         .await
@@ -535,7 +536,8 @@ async fn caller_searches_pages_and_handles_incomplete_results() {
     assert_eq!(resume.key().unwrap().as_str(), AFTER);
     assert_eq!(limited.requests().len(), 2, "429 must not trigger a retry");
     let recovered = events
-        .search_pages_from(search_request(), resume)
+        .search_pages(search_request())
+        .starting_at(resume)
         .items()
         .collect_complete()
         .await
@@ -581,14 +583,21 @@ async fn caller_searches_pages_and_handles_incomplete_results() {
             assert!(result.is_err(), "expected {failure} error, got {result:?}");
             result.unwrap_err()
         };
-        let error = failed.provider_error().unwrap();
         match failure {
-            "empty" => assert!(matches!(error, Error::Protocol(ProtocolError::EmptyCursor))),
-            "repeated" => assert!(matches!(
-                error,
-                Error::Protocol(ProtocolError::RepeatedCursor)
+            "empty" => assert!(matches!(
+                failed.provider_error().unwrap(),
+                Error::Protocol(ProtocolError::EmptyCursor)
             )),
+            "repeated" => {
+                assert!(matches!(failed, PagesError::Repeated { .. }));
+                assert!(failed.provider_error().is_none());
+                assert_eq!(
+                    (failed.progress().admitted, failed.progress().failed),
+                    (2, 0)
+                );
+            }
             _ => {
+                let error = failed.provider_error().unwrap();
                 let Error::Concord { source, .. } = error else {
                     panic!("expected decode error");
                 };

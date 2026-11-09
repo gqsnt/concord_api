@@ -64,7 +64,7 @@ pub use models::{
     Paging, Playable, Playlist, PlaylistItem, SimplifiedArtist, SimplifiedPlaylist, SpotifyId,
     Track,
 };
-pub use pages::{Listed, Listing, pages, pages_from};
+pub use pages::{Listed, Listing, pages};
 pub use session::{ERROR_BODY_LIMIT, Session, SessionOptions};
 
 /// Successful documents are read up to this many bytes (a playlist with its first 100 items fits

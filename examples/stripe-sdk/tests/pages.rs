@@ -348,7 +348,8 @@ async fn a_cap_with_more_pages_is_an_error_and_on_the_last_page_is_the_end() {
 
     let list = CursorList::forward(customers(&stripe)).unwrap();
     let rest = list
-        .pages_from(resume)
+        .pages()
+        .starting_at(resume)
         .items()
         .collect_complete()
         .await
@@ -412,7 +413,7 @@ async fn a_failed_second_page_keeps_the_first_pages_items() {
 
     let other =
         CursorList::forward(customers(&stripe).set_email("x@example.test".to_owned())).unwrap();
-    let mut pages = other.pages_from(Resume::At(cursor));
+    let mut pages = other.pages().starting_at(Resume::At(cursor));
     let Err(PagesError::Provider { error, .. }) = pages.next_page().await else {
         panic!("a cursor of another list is refused")
     };

@@ -136,6 +136,8 @@ pub enum Kind {
         /// `-> stream` without an item: `send()` returns the unread `Incoming` body.
         incoming: bool,
         body: Option<Body>,
+        /// `page next ...;`: where the provider issues the next page's URL.
+        next: Option<syntax::NextSource>,
     },
 }
 
@@ -215,6 +217,8 @@ pub struct Owner {
     pub groups: Vec<Ident>,
     /// `limit EXPR;` declared here: the finite body bound for typed outputs at and below.
     pub limit: Option<syn::Expr>,
+    /// `#[read]` written here (scopes and endpoints): every endpoint at and below only reads.
+    pub read: Option<Attribute>,
 }
 
 impl Owner {
@@ -758,6 +762,28 @@ impl Model {
             Kind::Client { operations, .. } => operations.as_ref(),
             _ => None,
         }
+    }
+
+    /// Whether the endpoint `index` only reads: its method is `GET`, `HEAD` or `OPTIONS`, or it or
+    /// an enclosing scope is `#[read]`.
+    pub fn is_read(&self, index: usize) -> bool {
+        let read_method = match &self.owners[index].kind {
+            Kind::Endpoint { method, .. } => READ_METHODS.contains(&plain(method).as_str()),
+            _ => false,
+        };
+        read_method || self.read_owner(index).is_some()
+    }
+
+    /// The nearest owner from `index` (inclusive) up to the client written `#[read]`.
+    fn read_owner(&self, index: usize) -> Option<usize> {
+        let mut cur = Some(index);
+        while let Some(o) = cur {
+            if self.owners[o].read.is_some() {
+                return Some(o);
+            }
+            cur = self.owners[o].parent;
+        }
+        None
     }
 
     /// The variant of the generated operation enum for the endpoint `index`: the endpoint's path
@@ -1878,6 +1904,7 @@ impl Model {
 
     fn check_names(&self, errors: &mut Errors) {
         self.check_operations(errors);
+        self.check_reads(errors);
         // Generated type names.
         let mut types: BTreeMap<String, &Ident> = BTreeMap::new();
         let client = &self.owners[0];
@@ -2079,7 +2106,56 @@ impl Model {
             }
         }
     }
+
+    /// `#[read]` states what the method does not: an endpoint whose method already reads, an
+    /// endpoint or scope below another `#[read]`, or a scope with no endpoint whose method writes
+    /// is an error at the attribute.
+    fn check_reads(&self, errors: &mut Errors) {
+        for (index, owner) in self.owners.iter().enumerate() {
+            let Some(attr) = &owner.read else {
+                continue;
+            };
+            let outer = owner.parent.and_then(|p| self.read_owner(p));
+            let message = if let Some(outer) = outer {
+                format!(
+                    "`#[read]` on `{}` is redundant: `{}` above it is already `#[read]`",
+                    owner.dotted, self.owners[outer].dotted
+                )
+            } else if let Kind::Endpoint { method, .. } = &owner.kind {
+                if !READ_METHODS.contains(&plain(method).as_str()) {
+                    continue;
+                }
+                format!(
+                    "`#[read]` on `{}` is redundant: a `{method}` endpoint already reads",
+                    owner.dotted
+                )
+            } else if self.has_write_method_below(index) {
+                continue;
+            } else {
+                format!(
+                    "`#[read]` on `{}` is redundant: every endpoint below it already reads by its method",
+                    owner.dotted
+                )
+            };
+            errors.push(syn::Error::new(attr.span(), message));
+        }
+    }
+
+    /// Whether an endpoint at or below `index` has a method other than `GET`, `HEAD`, `OPTIONS`.
+    fn has_write_method_below(&self, index: usize) -> bool {
+        let owner = &self.owners[index];
+        match &owner.kind {
+            Kind::Endpoint { method, .. } => !READ_METHODS.contains(&plain(method).as_str()),
+            _ => owner
+                .children
+                .iter()
+                .any(|&c| self.has_write_method_below(c)),
+        }
+    }
 }
+
+/// Methods that only read by default; any other method is not a read unless `#[read]` says so.
+const READ_METHODS: [&str; 3] = ["GET", "HEAD", "OPTIONS"];
 
 fn is_pchar(c: char) -> bool {
     c.is_ascii_alphanumeric() || "-._~!$&'()*+,;=:@".contains(c)
@@ -2270,6 +2346,38 @@ fn flatten(
         }
         Some(expr)
     });
+    let next = owner.stmts.next.take().and_then(|stmt| {
+        let OwnerKind::Endpoint {
+            method,
+            output,
+            body,
+        } = &owner.kind
+        else {
+            errors.push(syn::Error::new(
+                stmt.span,
+                "`page next` is an endpoint statement: it says where one endpoint's response names its next page",
+            ));
+            return None;
+        };
+        if method != "GET" || body.is_some() {
+            errors.push(syn::Error::new(
+                stmt.span,
+                "`page next` is declared on a `GET` endpoint without a body: a followed page repeats the request at the provider's URL",
+            ));
+            return None;
+        }
+        if matches!(stmt.source, syntax::NextSource::Url(_)) {
+            let finite = output.as_ref().is_some_and(|o| o.ty.is_some() && o.stream.is_none());
+            if !finite {
+                errors.push(syn::Error::new(
+                    stmt.span,
+                    "`page next url` names a field of the typed output: declare `-> T`",
+                ));
+                return None;
+            }
+        }
+        Some(stmt.source)
+    });
     let kind = match owner.kind {
         OwnerKind::Client { vis, base } => match base {
             Some(base) => {
@@ -2349,6 +2457,7 @@ fn flatten(
             Kind::Endpoint {
                 method,
                 incoming,
+                next,
                 body: body.and_then(|b| {
                     endpoint_body(
                         b,
@@ -2440,6 +2549,7 @@ fn flatten(
         response,
         groups: owner.groups,
         limit,
+        read: owner.read,
     });
     stmts.push(owner.stmts);
 
