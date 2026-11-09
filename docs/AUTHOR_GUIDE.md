@@ -2149,8 +2149,20 @@ fn main() {
 
 ## 11. Changing a declaration
 
-The generated methods follow the declaration (§9), so some edits change the caller's code. What
-each edit does to code that calls the endpoint:
+The generated methods follow the declaration (§9), so some edits change the caller's code.
+For client and scope (handle) values:
+
+| Edit | Calling code |
+|---|---|
+| Add an optional or initialized value (`x?: T`, `x: T = e`) | unchanged construction; `set_x` and the getter `x()` are new; optional values also get `maybe_x`. Handle value types must be `Clone` (§2) |
+| Add a required value (`x: T`) | breaks: a new `{Client}Config` field or scope argument; `set_x` exists only with `mut x: T` |
+| Required → optional (`x: T` → `x?: T`) | breaks: the Config field or scope argument goes; callers write `.set_x(v)`; `maybe_x` is new |
+| Optional → required | breaks: a new Config field or scope argument; `maybe_x` disappears; `set_x` also disappears unless the required value is declared `mut x: T` |
+| Required → initialized (`x: T` → `x: T = e`) | breaks: the Config field or scope argument goes; `set_x(v)` is available to replace the initializer |
+| Remove `mut` (`mut x: T` → `x: T`) | breaks: `set_x` disappears; the value is fixed at construction |
+| Reorder required values | client Config field order does not affect callers; scope arguments break if the types differ, or **silently swap the values** if the types are equal: rename instead |
+
+For endpoint inputs and other declaration edits:
 
 | Edit | Calling code |
 |---|---|

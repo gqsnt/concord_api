@@ -40,13 +40,17 @@ Written before any test code. "Wire" = what `examples/testserver`'s `Recorded` w
 
 - Caller builds `reqwest::Client` (via `concord_sdk_usgs_earthquake_catalog::concord::reqwest`)
   with a timeout, `redirect::Policy::none()`, `retry::never()`, then
-  `concord::BaseUrl::parse((server.url()).as_ref()).map(|origin| Usgs::new(http, concord_sdk_usgs_earthquake_catalog::UsgsConfig { origin: origin }))?` (base without `/fdsnws/event/1`) and
+  `Usgs::new(http).with_base_url(server.url())?` (base without `/fdsnws/event/1`) and
   `api.catalog()`. No I/O until a `send()`/`next_page()`/`next()`.
 - Filter: `Window::new(start, end)?.min_magnitude(Magnitude::new(2.5)?).with_page_size(PageSize::new(2)?)`.
   Start given as `2024-03-01T02:00:00+02:00` should normalize to UTC on the wire.
 - No secrets exist in this public-data slice: no `authorization` header, no API key. The
   event ID is declared "sensitive", so it should be absent from `Debug`/`Display` of errors
   and endpoint values, but present on the wire.
+
+Current construction note: the setup above is historical. Today `Usgs::new` takes
+`UsgsConfig { origin: FixtureOrigin::parse(&server.url())? }` alongside `http`; import both
+types from `concord_sdk_usgs_earthquake_catalog`. `FixtureOrigin` checks for a loopback fixture.
 
 ### Workflow 1 — GeoJSON window, then one event
 
@@ -124,7 +128,7 @@ Failures:
 `tests/first_use.rs`, an initial `first_call` test (since replaced by the full file): a
 `TestServer` answering every request with one hand-written FeatureCollection, a reqwest client
 with `redirect::Policy::none()` and `retry::never()` (copied from the README), then
-`concord::BaseUrl::parse((server.url()).as_ref()).map(|origin| Usgs::new(http, concord_sdk_usgs_earthquake_catalog::UsgsConfig { origin: origin }))?.catalog().query(&Window::new(..)?).geojson().send().await?`.
+`Usgs::new(http).with_base_url(server.url())?.catalog().query(&Window::new(..)?).geojson().send().await?`.
 
 - It compiled and passed on the **first attempt**; no source lookup and no extra imports beyond
   `{concord::reqwest, Usgs, Window}` and `concord_testserver::{Reply, TestServer}`.
@@ -133,6 +137,10 @@ with `redirect::Policy::none()` and `retry::never()` (copied from the README), t
   signature does not show.
 - Observed raw target: `/fdsnws/event/1/query?nodata=404&starttime=2024-03-01T00%3A00%3A00Z&endtime=2024-03-02T00%3A00%3A00Z&limit=500&orderby=time-asc&eventtype=earthquake&offset=1&format=geojson`
   (no `minmagnitude` when unset; `limit=500` sent by default, as the scope docs say).
+
+Current construction note: the successful call above records the original API. Today begin with
+`Usgs::new(http, UsgsConfig { origin: FixtureOrigin::parse(&server.url())? })`, then use the same
+catalog/query chain.
 
 ## The application (`tests/first_use.rs`)
 

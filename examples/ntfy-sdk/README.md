@@ -16,6 +16,9 @@ ntfy **v2.37.2** (see [PROVENANCE.md](PROVENANCE.md)). Each generated `send()` n
 
 ## Construction
 
+`Ntfy::new` requires an explicit `NtfyConfig.origin`: parse `https://ntfy.sh` or your self-hosted
+server's URL with `concord::BaseUrl::parse` to select the server.
+
 ```rust,no_run
 use concord::reqwest;
 use concord_sdk_ntfy::{AccessToken, Ntfy, NtfyTopic, Topic};

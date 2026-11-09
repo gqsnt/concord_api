@@ -10,9 +10,10 @@
 //!
 //! # Construction
 //!
-//! [`Ntfy::new`] takes your `reqwest::Client` (timeouts, proxies and TLS are configured there).
-//! The base URL is `https://ntfy.sh`; a checked Config origin points the client at a self-hosted
-//! server. Protected topics need an [`AccessToken`] ([`Ntfy::with_token`], sent as
+//! [`Ntfy::new`] takes your `reqwest::Client` (timeouts, proxies and TLS are configured there)
+//! and an [`NtfyConfig`] with an explicit `origin`. Parse `https://ntfy.sh` or your self-hosted
+//! server's URL with [`concord::BaseUrl::parse`] to select the server. Protected topics need an
+//! [`AccessToken`] ([`Ntfy::with_token`], sent as
 //! `Authorization: Bearer …`, flagged sensitive and withheld from every `Debug`).
 //!
 //! ```
