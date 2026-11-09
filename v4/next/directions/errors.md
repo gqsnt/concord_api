@@ -98,6 +98,8 @@ hand-write the split.
 
 ## Review
 
+### Round 1
+
 Source: [direction review](/home/canarit/projects/Concord_Next/work/reviews/direction-errors-review-1.md).
 
 VERDICT: ACCEPT_WITH_FIXES
@@ -143,3 +145,25 @@ NOT CHECKED:
 - No builds, tests, mutation tests, clippy, rustdoc or performance measurements executed, as instructed. The hygiene finding follows from the generated tokens; its reproducer was not compiled.
 - M8 remains unmeasured. No exhaustive migration assessment across all 55 SDKs.
 - No edits or network operations performed.
+
+### Fixes after round 1
+
+From the [direction source's fix section](/home/canarit/projects/Concord_Next/work/design/directions/errors.md): Codex fix commit `4c43a3f2` gives generated optional-source bindings mixed-site hygiene inside an anonymous const. `ambient_constants_never_shadow_the_generated_bindings` guards the original collision. The split fixture's document type now withholds its title and checks ordinary/alternate Display and Debug; restoring derived Debug fails the new assertion. Routing assertions remain. The derive delegates to SDK payload formatting, so extracted provider fields need their own redaction.
+
+Recorded limits: Salesforce's `failure_as::<IgnoreContentType<Json>, ApiErrorBody>` still repeats the declared codec/document pair; no cheap API reads that declaration for a raw response. A1's diagnostics and generated-doc wording/budget remain. The review below supersedes the earlier hygiene-completeness claim.
+
+### Round 2 (last)
+
+Source: [REJECT](/home/canarit/projects/Concord_Next/work/reviews/direction-errors-review-2.md), reviewed `12605058..4c43a3f2`. Codex `gpt-6.1-sol`; independent session, same provider.
+
+CHARTER: C1=y C2=n C3=y C4=n C5=n C6=y C7=y C8=y C9=n
+
+**REJECT. Two blocking limits remain for P4.** The round-1 hygiene fix introduced both regressions:
+
+- [blocking] Shielding imports capture authored formatter hooks. Valid `#[display(with = error)]` resolves to the imported identity function instead of the author's hook. Scope shielding to generated names and add a compile-pass case for a hook named `error`.
+- [blocking] Aliasing every field panics on an unused raw identifier such as `r#type`, through `Ident::new("__field_r#type", …)`. Alias only referenced fields, generate valid names independently of raw spelling, and add compile-pass coverage.
+- [non-blocking] Salesforce still restates the declared codec/document pair. Typed access to declared handling is needed before claiming C2 compliance.
+- [non-blocking] Declaration-wide spans, undeclared `D` in suggestions, private names and unsupported-conversion errors remain. Improve authored spans and actionable diagnostics with fixtures.
+- [non-blocking] Generated docs still name `concord::Error` where execution returns `Error<D>` and retain the wording/budget limit. Resolve the type, shorten wording and add emitter assertions.
+
+The original ambient-constant collision and split-fixture secrecy are fixed. Saved fix logs substantiate **576 passed, 4 ignored, 139 trybuild cases**, **493 SDK/dependent/control tests passed**, and clean clippy. These are the later fix selection's results; earlier totals above describe the original selection. Glue remains **−173 on 4 SDKs**; that result does not resolve the two derive correctness failures. Reviewers did not execute builds, tests, mutations, rustdoc or performance measurements; the new failures follow from static expansion analysis.

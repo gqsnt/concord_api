@@ -1,0 +1,10 @@
+# Direction index
+
+A direction combines several ideas and spikes them on the SDKs that show them best. It tests how the ideas compose, what disappears together, and which costs or limits remain. Classifier glue and hand-counted source are separate measures; rows use the final reviewed cohort where available. The ops-paging row remains for the coordinator to complete.
+
+| Direction | Ideas | Glue Δ (classifier) | Net source Δ (hand) | Concepts added | Breaking changes (count/summary) | Review outcome (r1 → r2) | Main limit |
+|---|---|---|---|---|---|---|---|
+| [errors](errors.md) | A1 + A2 | −173 on 4 SDKs; −211 whole merged tree | −188 on 4 SDKs | Provider-conversion attribute; source; failure_as; inherited A1/A2 concepts | Auth source gains a level; variant From replacement; inherited generic, policy and SDK API changes | ACCEPT_WITH_FIXES → REJECT | Two blocking P4 regressions: authored hook capture and unused raw-field panic; duplicated pairing and diagnostic/doc limits remain. |
+| [construction](construction.md) | C1 + C2 + G1 | 2,994 → 3,007 (round 2; earlier +14 superseded) | not measured (pre-fix hand ledger: ≈0 glue) | mut; value-backed base; BaseUrl; getters | 117 setters removed / 4 retained; 38 construction sites changed/deleted, 12 added; 20 calls still fail; checked configs, getters and prepared-host/validation changes | REJECT → ACCEPT_WITH_FIXES | DigitalOcean/Sentry destination gaps; Mastodon unmigrated; T4 migration prose stale; no full-workspace gate. |
+| [sdk-types](sdk-types.md) | D1 + I1 | −333 | −605 | Two derives; sensitive/public helpers; optional facade path | 47 Serialize additions; 24 numeric formatting branches; complete Debug text/shape/presence changes in record; 0 application-call edits | ACCEPT_WITH_FIXES → ACCEPT_WITH_FIXES | C5 private Serialize diagnostic; unmarked Debug fields remain visible and scalar serialization can fail at runtime. |
+| [ops-paging](/home/canarit/projects/Concord_Next/work/design/directions/ops-paging.md) | F3 + E1 + F1 | −400 over 18 SDKs; F1 alone −147 | −445 SDK source lines | — | — | review in progress | review in progress |
