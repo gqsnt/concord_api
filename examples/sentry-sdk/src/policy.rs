@@ -1,5 +1,8 @@
-use crate::{ERROR_BODY_LIMIT, Error, HttpClass, Problem, ProviderError, RateLimits, Response};
-use concord::{Endpoint, Json, SendWith};
+use crate::{
+    ERROR_BODY_LIMIT, Error, HttpClass, Problem, ProviderError, RateLimits, Response,
+    SentryOperation,
+};
+use concord::{Endpoint, Json, SendOperation};
 use concord_ratelimit::{Budget, Lease, Limiter, Mode, Observation, TokioClock};
 use concord_retry::{Decision, Policy, Replay, Retry, StopReason, concord::ReplayMode};
 use std::{
@@ -45,7 +48,7 @@ impl Default for Settings {
 /// Reuse across tokens for the same caller; construct separately for different callers.
 #[derive(Clone)]
 pub struct SendPolicy {
-    limiter: Limiter<&'static str>,
+    limiter: Limiter<SentryOperation>,
     settings: Settings,
 }
 impl fmt::Debug for SendPolicy {
@@ -65,10 +68,10 @@ impl SendPolicy {
             return Err(Error::Configuration("window and timeout must be positive"));
         }
         let limiter = Limiter::new(
-            NonZeroUsize::new(keys().len()).unwrap(),
+            NonZeroUsize::new(SentryOperation::ALL.len()).unwrap(),
             TokioClock::default(),
         );
-        for key in keys() {
+        for &key in SentryOperation::ALL {
             limiter.set_budget(
                 key,
                 Budget {
@@ -82,32 +85,51 @@ impl SendPolicy {
     }
 }
 
-/// One admission bucket per endpoint; the paged reads are keys 0 and 2.
-fn keys() -> [&'static str; 5] {
-    [
-        crate::SentryOrganizationIssues::operation().name(),
-        crate::SentryOrganizationIssueGet::operation().name(),
-        crate::SentryOrganizationIssueEvents::operation().name(),
-        crate::SentryOrganizationIssueEvent::operation().name(),
-        crate::SentryOrganizationIssueUpdateStatus::operation().name(),
-    ]
+/// Every Sentry rule the policy keys on the operation besides its admission bucket (one per
+/// operation).
+struct Class {
+    /// A write may have been applied when it got no answer or a 5xx: only its documented
+    /// rate-limit rejection (429) is repeated.
+    write: bool,
+    /// A cursor listing: its `Link` header gives `Response::next_cursor`.
+    paged: bool,
+}
+impl Class {
+    /// No wildcard arm: an endpoint added to the declaration without a class here does not
+    /// compile (E0004, naming its `SentryOperation` variant).
+    fn of(operation: SentryOperation) -> Self {
+        use SentryOperation as Op;
+        match operation {
+            Op::OrganizationIssues | Op::OrganizationIssueEvents => Self {
+                write: false,
+                paged: true,
+            },
+            Op::OrganizationIssueGet | Op::OrganizationIssueEvent => Self {
+                write: false,
+                paged: false,
+            },
+            Op::OrganizationIssueUpdateStatus => Self {
+                write: true,
+                paged: false,
+            },
+        }
+    }
 }
 struct Attempt {
-    _lease: Lease<&'static str>,
+    _lease: Lease<SentryOperation>,
     rates: RateLimits,
     scheduling_error: Option<&'static str>,
 }
 
-impl<T: Send> SendWith<T> for SendPolicy {
+impl<T: Send> SendOperation<T, SentryOperation> for SendPolicy {
     type Output = Result<Response<T>, Error>;
-    async fn send<E: Endpoint<T> + Send>(&self, endpoint: E) -> Self::Output {
-        let key = E::operation().name();
-        if !keys().contains(&key) {
-            return Err(Error::Configuration("unsupported operation"));
-        }
-        // A write may have been applied when it got no answer or a 5xx: only its documented
-        // rate-limit rejection (429) is repeated.
-        let write = E::operation().method() != Some("GET");
+    async fn send<E: Endpoint<T> + Send>(
+        &self,
+        operation: SentryOperation,
+        endpoint: E,
+    ) -> Self::Output {
+        let key = operation;
+        let Class { write, paged } = Class::of(operation);
         let prepared = endpoint.prepare()?;
         let current = prepared.request().url().clone();
         let settings = self.settings;
@@ -250,7 +272,7 @@ impl<T: Send> SendWith<T> for SendPolicy {
                 meta: Box::new(received.meta()),
             })
         } else {
-            let next_cursor = if key == keys()[0] || key == keys()[2] {
+            let next_cursor = if paged {
                 crate::pagination::next_cursor(received.head().headers(), &current).map_err(
                     |reason| Error::Pagination {
                         reason,

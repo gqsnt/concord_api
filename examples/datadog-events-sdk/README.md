@@ -135,7 +135,10 @@ than 100 characters. `source(..)` writes `source_type_name`; the SDK leaves sour
 to the provider. Dates, priority and other optional fields are outside this posting contract.
 
 The result is [`EventAcceptance`]: the optional provider status and raw event object, including
-`id_str` when supplied. HTTP **202** is required. No lookup, indexing poll or search follows a
+`id_str` when supplied. HTTP **202** is required. The post is told apart from the reads by
+its operation, not its method (the search is a `POST` read): an exhaustive `match` over the
+generated `DatadogApiOperation` (`src/api.rs`), so an endpoint added to the declaration does
+not compile until it is classified there. No lookup, indexing poll or search follows a
 post; a v1 ID is not promised to identify a v2 search result. An aggregation key groups events
 and is **not an idempotency key**. A post is never automatically replayed: its JSON body is
 non-replayable even with a caller-supplied reqwest retry policy.
@@ -176,6 +179,10 @@ which is what the documentation prescribes. A cap reached while pages remain is
 cursor to continue with [`DatadogEvents::search_pages_from`]. `items().collect_complete()`
 returns every event or an `Incomplete` holding the events collected so far and the error; note
 that `items()` drops page metadata, warnings included.
+
+Use `concord_sdk_datadog_events::pagination::Resume` for the position. `Resume::Start` repeats
+the same search body without a cursor; `Resume::At(key)` takes the `Cursor` projected from
+`meta.page.after` into a returned page's `next`.
 
 ## Failure semantics
 

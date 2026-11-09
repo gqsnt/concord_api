@@ -1,6 +1,8 @@
 //! The client's send policy: what every generated `send()` does. The policy is the
 //! [`Connection`] itself (`send connection;`), so the realm of the path and the token applied to
 //! the request come from one value.
+//! For either official HTTPS host, this connection also selects the environment host before
+//! token acquisition. Other destinations, including loopback fixtures, are kept unchanged.
 //!
 //! - **Reads** (`GET`): the connection's access token is applied; a 401 discards exactly that
 //!   token, acquires one fresh token and sends the read once more. A second 401 is
@@ -29,7 +31,10 @@ impl<T: Send + 'static> SendWith<T> for Connection {
 
     async fn send<E: Endpoint<T> + Send>(&self, endpoint: E) -> Self::Output {
         let operation = E::operation();
-        let (client, request, decoder) = endpoint.prepare()?.into_parts();
+        let (client, mut request, decoder) = endpoint.prepare()?.into_parts();
+        // `set_connection` can change environments while the generated base is a snapshot.
+        // Select the matching official host before acquiring or applying the access token.
+        self.select_environment(&mut request);
         if operation.method() == Some("GET") {
             self.read(&client, request, decoder).await
         } else {
@@ -40,6 +45,22 @@ impl<T: Send + 'static> SendWith<T> for Connection {
 }
 
 impl Connection {
+    fn select_environment(&self, request: &mut reqwest::Request) {
+        if request.url().scheme() == "https"
+            && matches!(
+                request.url().host_str(),
+                Some("quickbooks.api.intuit.com" | "sandbox-quickbooks.api.intuit.com")
+            )
+        {
+            let base = reqwest::Url::parse(self.environment().base_url())
+                .expect("the documented environment base is valid");
+            request
+                .url_mut()
+                .set_host(base.host_str())
+                .expect("the documented environment host is valid");
+        }
+    }
+
     async fn read<T>(
         &self,
         client: &reqwest::Client,
@@ -158,4 +179,92 @@ fn fault_in(error: &concord::Error) -> Option<ProviderError> {
         .downcast_ref::<FaultInSuccess>()?
         .0;
     Some(ProviderError::in_success(error.head_meta()?, fault.clone()))
+}
+
+#[cfg(test)]
+mod environment_tests {
+    use super::*;
+    use crate::{Environment, OAuthApp, QuickBooks, RealmId, RefreshToken};
+
+    fn connection(environment: Environment, realm: &str) -> Connection {
+        OAuthApp::new(
+            environment,
+            "synthetic-client",
+            "synthetic-secret",
+            "https://app.example.test/callback",
+        )
+        .unwrap()
+        .connection(
+            RealmId::new(realm).unwrap(),
+            RefreshToken::new("synthetic-refresh").unwrap(),
+        )
+    }
+
+    #[test]
+    fn coordinated_replacement_keeps_the_validated_fixture_origin() {
+        let after = connection(Environment::Production, "222");
+        let api = QuickBooks::connect(
+            reqwest::Client::new(),
+            connection(Environment::Sandbox, "111"),
+        )
+        .with_base_url("http://127.0.0.1:1234")
+        .unwrap()
+        .set_connection(after);
+        let prepared = api
+            .customer(crate::EntityId::new("29").unwrap())
+            .read()
+            .prepare()
+            .unwrap();
+        let (_, request, _) = prepared.into_parts();
+        assert_eq!(
+            request.url().as_str(),
+            "http://127.0.0.1:1234/v3/company/222/customer/29?minorversion=75"
+        );
+    }
+
+    #[test]
+    fn environment_selection_preserves_everything_except_the_official_https_host() {
+        for environment in [Environment::Sandbox, Environment::Production] {
+            let connection = connection(environment, "222");
+            for (origin, official_https) in [
+                ("https://quickbooks.api.intuit.com:8443", true),
+                ("https://sandbox-quickbooks.api.intuit.com:8443", true),
+                ("http://quickbooks.api.intuit.com:8443", false),
+                ("http://sandbox-quickbooks.api.intuit.com:8443", false),
+                ("http://127.0.0.1:8443", false),
+                ("http://[::1]:8443", false),
+                ("https://fixture.example.test:8443", false),
+                ("https://quickbooks.api.intuit.com.example.test:8443", false),
+                (
+                    "https://sandbox-quickbooks.api.intuit.com.example.test:8443",
+                    false,
+                ),
+            ] {
+                let suffix = "/prefix/v3/company/222/query?minorversion=75&query=SELECT%20%2A";
+                let original = reqwest::Client::new()
+                    .post(format!("{origin}{suffix}"))
+                    .header("x-fixture", "unchanged")
+                    .body("synthetic body")
+                    .timeout(std::time::Duration::from_secs(7))
+                    .build()
+                    .unwrap();
+                let mut request = original.try_clone().unwrap();
+                connection.select_environment(&mut request);
+                let expected_url = if official_https {
+                    format!("{}:8443{suffix}", environment.base_url())
+                } else {
+                    format!("{origin}{suffix}")
+                };
+                assert_eq!(request.url().as_str(), expected_url);
+                assert_eq!(request.method(), original.method());
+                assert_eq!(request.version(), original.version());
+                assert_eq!(request.headers(), original.headers());
+                assert_eq!(request.timeout(), original.timeout());
+                assert_eq!(
+                    request.body().unwrap().as_bytes(),
+                    original.body().unwrap().as_bytes()
+                );
+            }
+        }
+    }
 }

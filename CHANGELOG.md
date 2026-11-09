@@ -1,5 +1,58 @@
 # Changelog
 
+## Unreleased — after the desirability loop (candidate)
+
+Not released: the version stays 4.2.0 and nothing is published. The `concord-*` crates change
+additively (`operations`, `SendOperation`), by one fix (T3) and in generated documentation. The
+example SDK crates are not published (`publish = false`). What the loop tried and decided: [`v4/desirability/SUMMARY.md`](v4/desirability/SUMMARY.md); its records
+are on the [archive branch](https://github.com/gqsnt/concord_api/tree/archive/desirability-loop-1/v4/desirability).
+
+### Added
+
+- **`operations Name;` and `concord::SendOperation<T, Name>`** (H08): an opt-in client statement
+  generates an enum with one variant per endpoint, and each generated `send()` passes its variant
+  to the policy, so an exhaustive `match` fails to build (E0004) when an endpoint is added.
+- **H08 adopters:** Strava, Sentry, Kraken, PayPal, Zendesk, Square and Datadog classify through
+  the enum, GitHub without a policy; five public policies now implement `SendOperation` instead of
+  `SendWith` ([migration](docs/MIGRATION.md#sdk-send-policies-take-the-endpoints-operation-h08)).
+- **Secret canaries in all 55 SDKs** (`checks/canary`, `examples/*/tests/canary.rs`): planted
+  secrets must not appear in `Debug`, `Display` or error chains of reachable public values.
+- **`tools/glue`**: static counters of SDK glue (forwarders, wrapper structs, redaction impls,
+  declaration lines per endpoint).
+
+### Changed
+
+- **Charter** (`v4/PRODUCT.md`): what Concord is, rules C1–C9, and glue as the measured deficit;
+  the current-scope list of behaviors core does not implement is kept.
+- **Generated docs state the contract first** (H04): the composed default request, the declared
+  `send()` result and the operation on every request type; the base-URL wording is the
+  baseline's again (H04r).
+- **Generated docs state request composition** (H16s): query order, path-hole encoding and header
+  provenance; 76 SDK-local notes name custom format constants and wrapper or policy headers.
+- **Resume guidance** (H09c): 38 public `Resume`-taking items in 27 SDKs and the Kubernetes app
+  state their import path and `Resume::Start` / `Resume::At(key)`.
+
+### Fixed
+
+- **Seven SDK secret leaks found by the canaries:** Dropbox `NamespaceId` and `PathRoot` `Debug`,
+  Airtable `ListOptions` `Debug`, Shopify `ProductsQuery` `Debug`, USGS `EventId` `Debug`, the
+  ClickHouse header-auth user in `Credentials` `Debug`, and Salesforce SOQL text (now
+  `#[sensitive]`).
+- **A dropped `send()` stops polling its streamed upload body** (T3): `concord-core` guards
+  streamed bodies (it names `http-body` directly); the drop waits for a poll active on another
+  thread, so a blocking body source can hold it.
+- **QuickBooks sends to the current connection's environment after `set_connection`** (T4)
+  ([migration](docs/MIGRATION.md#quickbooks-environment-replacement-t4)).
+- **33 send-result statements in 25 files corrected against the source** (T5).
+
+### Maintenance
+
+- **Intermittent test failures repaired** (T2, T3 sweep): the test server keeps accepting after a
+  failed accept; 64 "refused" sites hold a never-listening socket; timeout and stalled-body tests
+  run on tokio's paused clock. Test-only.
+- **CI caches compiled dependencies** (`Swatinem/rust-cache` v2.9.3) and drops restored gate
+  outputs before the gate.
+
 ## Unreleased — interface consolidation (candidate)
 
 Not released: the version is unchanged (4.2.0) and no release has been decided. Records:

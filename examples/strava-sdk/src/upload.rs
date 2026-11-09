@@ -79,6 +79,9 @@ impl fmt::Debug for UploadFile {
         f.write_str("UploadFile(<one-shot>)")
     }
 }
+/// `Encode::CONTENT_TYPE` is `None`; `encode_body` binds
+/// `content-type: multipart/form-data; boundary=<boundary>` from reqwest's `Form::boundary()`.
+///
 /// Runtime multipart format using reqwest's streaming encoder through Concord's ordinary hook.
 /// Concord's built-in multipart format requires in-memory parts and cannot carry this source.
 pub struct StreamMultipart;

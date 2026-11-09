@@ -38,6 +38,9 @@ pub struct PageInfo {
     pub warnings: Vec<Warning>,
 }
 
+/// Sends `dd-api-key` and `dd-application-key` from the two supplied `Credentials` values
+/// verbatim through the generated declaration.
+///
 /// A Datadog Events client for one site and one pair of keys.
 ///
 /// Cheap to clone; clones share the `reqwest::Client`'s connection pool. Transport settings
@@ -154,7 +157,7 @@ impl DatadogEvents {
 
     /// [`search_pages`](Self::search_pages) from a checkpoint (`PagesError::resume()` or
     /// `checkpoint()` of an earlier traversal of the same `request`, site and keys). A cursor
-    /// is not a snapshot: events added meanwhile may shift pages.
+    /// is not a snapshot: events added meanwhile may shift pages. Use `concord_sdk_datadog_events::pagination::Resume` for the position. `Resume::Start` repeats the same search body without a cursor; `Resume::At(key)` takes the `Cursor` projected from `meta.page.after` into a returned page's `next`.
     pub fn search_pages_from(&self, request: SearchRequest, from: Resume<Cursor>) -> SearchPages {
         let client = self.clone();
         let mut requested = HashSet::new();

@@ -4,7 +4,7 @@ Status: **proposals, not decisions.** Nothing here changes Concord until the own
 (rule 7). Prototypes on `sdk50/x50-*` branches are compiled measurements, not adoption.
 
 **At SDK50 close (2026-11-07):** these proposals and the prototypes are **inputs to the
-desirability loop's hypothesis queue** (`v4/desirability/QUEUE.md`, created after PR #5 merges),
+desirability loop's hypothesis queue** ([`QUEUE.md`](https://github.com/gqsnt/concord_api/blob/archive/desirability-loop-1/v4/desirability/QUEUE.md) on the archive branch),
 where each is pre-registered, measured and decided under the owner's instruction "finish → merge
 PR #5 → loop". None of them was decided here. Mapping: Tier 1 → H04 (docs), Tier 2 → H11
 (adoption), P1 → H09a, P2 → H10, P3 → H09b, M1/M2 → H06, M4 → H08, the removal table → H13,

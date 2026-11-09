@@ -1,7 +1,7 @@
 //! Response metadata kept with typed values: GitHub's request id, rate-limit headers, the
 //! entity tag and the pagination links.
 //!
-//! Concord's `send()` returns the decoded value only. GitHub puts information an application
+//! Concord's `send().await?` returns the decoded value only. GitHub puts information an application
 //! needs in headers (`x-github-request-id` for support requests, `x-ratelimit-*` to pace itself,
 //! `ETag` for conditional refreshes, `Link` for pagination), so this module sends through
 //! Concord's response boundary: `Prepared::receive` (or `Decoder::execute` for a request edited

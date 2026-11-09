@@ -22,6 +22,8 @@ pub struct GraphqlRequest<V> {
     operation_name: &'static str,
     variables: V,
 }
+/// `Encode::CONTENT_TYPE` sends `content-type: application/json` with the body.
+///
 /// Encodes a fixed query and variables as JSON.
 pub struct Graphql;
 impl<V: Serialize> Encode<GraphqlRequest<V>> for Graphql {
@@ -356,7 +358,7 @@ impl Linear {
         })
     }
     /// Traverse issue pages from the start or a saved cursor. Inspect every page's diagnostics.
-    /// A page cap can be set with `max_pages`; its error includes a resume point.
+    /// A page cap can be set with `max_pages`; its error includes a resume point. Add `concord-pagination` as a direct dependency and use `concord_pagination::Resume`. `Resume::Start` repeats the issues query with `first` and no `after`; `Resume::At(key)` takes the `String` end cursor from `pageInfo.endCursor` in a returned page's `next`.
     pub fn issues(
         &self,
         first: u32,

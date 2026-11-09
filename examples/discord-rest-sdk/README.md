@@ -1,5 +1,10 @@
 # concord-sdk-discord-rest
 
+For `DiscordChannel::history_from`, use `concord_sdk_discord_rest::pagination::Resume` for the
+position. `Resume::Start` repeats the channel's newest-message page with `limit`;
+`Resume::At(key)` takes the `MessageId` in a returned page's `next` (its oldest message),
+listing messages before that ID.
+
 A bounded Discord REST (API v10) slice built with Concord, for a bot token:
 
 | Operation | Route | SDK call |

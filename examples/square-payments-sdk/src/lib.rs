@@ -1,7 +1,7 @@
 //! A bounded Square Payments slice: create, retrieve and cursor-page payments,
 //! plus delayed capture (authorize, then complete or cancel).
 //!
-//! Every generated `send()` makes one application attempt and returns [`Error`].
+//! Every generated `send()` makes one application attempt and returns [`Error`] on failure.
 //! Retain a clone of a create operation before sending: after a timeout, explicitly
 //! sending that unchanged clone reuses the caller's key and body. Never replace
 //! the key to resolve an unknown outcome. A complete or cancel whose outcome is
@@ -13,7 +13,7 @@
 use std::{fmt, num::NonZeroUsize, time::Duration};
 
 pub use concord;
-use concord::{Endpoint, Json, SendWith, reqwest};
+use concord::{Endpoint, Json, SendOperation, SendWith, reqwest};
 pub use concord_auth::{CredentialError, bearer};
 pub use concord_pagination::{Pages, PagesError, Resume};
 use reqwest::header::{AUTHORIZATION, HeaderValue};
@@ -54,6 +54,9 @@ concord::api! {
         format Json;
         limit SUCCESS_BODY_LIMIT;
         send SquarePolicy -> Result<_, Error>;
+        /// Every Square operation; [`Error::create_outcome_unknown`] decides per operation
+        /// whether a replay rule written for create applies.
+        operations SquareOperation;
 
         /// Payments belonging to the account identified by the Bearer token.
         scope payments {
@@ -114,13 +117,28 @@ impl<T: Send> SendWith<T> for SquarePolicy {
     }
 }
 
+/// The client declares `operations SquareOperation;`, so each generated `send()` hands its
+/// variant to the policy; this policy treats every operation alike and sends as
+/// [`SendWith`].
+impl<T: Send> SendOperation<T, SquareOperation> for SquarePolicy {
+    type Output = <Self as SendWith<T>>::Output;
+
+    fn send<E: Endpoint<T> + Send>(
+        &self,
+        _operation: SquareOperation,
+        endpoint: E,
+    ) -> impl Future<Output = Self::Output> + Send {
+        SendWith::send(self, endpoint)
+    }
+}
+
 impl SquarePaymentsList {
     /// Walks the listing with a mandatory page bound and explicit start/resume position.
     ///
     /// The position replaces any cursor on this template. Keep the same account,
     /// base URL and limit when resuming. Empty pages with a cursor continue;
     /// an absent or empty cursor completes. A cap or failed page is an error,
-    /// preserving the continuation through [`PagesError`]. Nothing is retried.
+    /// preserving the continuation through [`PagesError`]. Nothing is retried. Use `concord_sdk_square_payments::Resume` for the position. `Resume::Start` repeats the payments listing without `cursor`, replacing the template cursor; `Resume::At(key)` takes the `String` response cursor in a returned page's `next`.
     pub fn pages(
         self,
         from: Resume<String>,

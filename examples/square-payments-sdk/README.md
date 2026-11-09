@@ -119,7 +119,9 @@ Complete and cancel carry no idempotency key. A timeout, unreadable success,
 `payments().get(id)` and act on its `status` (`APPROVED`, `COMPLETED`,
 `CANCELED`). The SDK sends each complete/cancel once and never resends it.
 `create_outcome_unknown()` stays true only for create, so a replay rule written
-for create does not fire for complete/cancel.
+for create does not fire for complete/cancel. Which operation that is comes from
+an exhaustive `match` over the generated `SquareOperation` (`src/error.rs`): an
+endpoint added to the declaration does not compile until it is classified there.
 
 ```no_run
 use concord_sdk_square_payments::{CompletePayment, CreatePayment, Error, Money, Square};
@@ -163,6 +165,10 @@ also bounds a looping provider cursor. Square listings are eventually consistent
 not snapshots; changing records can cause duplicates or gaps. This slice leaves
 Square's time-range and main-location defaults in effect and exposes only cursor
 and limit. Square's default/max page size is 100; larger limits use its default.
+
+Use `concord_sdk_square_payments::Resume` for the position. `Resume::Start` repeats the payments
+listing without `cursor`, replacing the template cursor; `Resume::At(key)` takes the `String`
+response cursor in a returned page's `next`.
 
 ## Diagnostics and scope
 

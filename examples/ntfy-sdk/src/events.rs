@@ -8,7 +8,7 @@
 //! | `subscribe_sse` (`GET /<topic>/sse`) | `text/event-stream` | [`SseFormat`] | Concord's SSE reader (`concord::sse::SseReader`), [`MAX_EVENT_BYTES`] per event |
 //! | `subscribe_json`, `poll` (`GET /<topic>/json`) | `application/x-ndjson` | [`NdjsonFormat`] | Concord's NDJSON reader (`concord::jsonl::Ndjson`) |
 //!
-//! Both carry the same JSON message ([`Event`]) and return the same [`Events`]. ntfy's envelope is
+//! Both carry the same JSON message ([`Event`]) and yield the same [`Events`] after `.send().await?`. ntfy's envelope is
 //! the JSON object: in SSE, the `data` payload is that object and its `event` member names the
 //! kind (ntfy writes an SSE `event:` line only for some kinds, so the SSE event type is not used).
 //! The SSE reader frames events; this crate decodes each `data` itself, so that malformed JSON
@@ -83,6 +83,8 @@ impl Incremental<Event> for SseFormat {
     }
 }
 
+/// Its `Incremental::ACCEPT` delegates to `Ndjson`: `accept: application/x-ndjson`.
+///
 /// The format of `GET /<topic>/json` (subscription and poll): Concord's NDJSON reader
 /// (`application/x-ndjson` or `application/ndjson`, charset absent or UTF-8, blank lines skipped,
 /// a line at most [`MAX_EVENT_BYTES`]), wrapped as [`Events`] with the head's truncation flag.
@@ -112,7 +114,7 @@ impl Incremental<Event> for NdjsonFormat {
 }
 
 /// The events of one subscription or poll response, read as the body arrives: what the generated
-/// `send()` of `subscribe_sse`, `subscribe_json` and `poll` returns once the response head was
+/// `send()` of `subscribe_sse`, `subscribe_json` and `poll` returns on success once the response head was
 /// accepted (nothing of the body is read before the first [`next`](Self::next)).
 ///
 /// - [`next`](Self::next) returns every event in order — `open`, `keepalive`, `message`, and kinds

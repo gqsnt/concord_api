@@ -11,7 +11,7 @@
 //!
 //! CSV endpoints (`results`, `successful_results`, ...) are declared `-> stream` without an item:
 //! their dialect is chosen per job at run time, which a static format type cannot express, so
-//! their `send()` returns the unread 2xx body ([`concord::Incoming`]; a non-2xx status is a
+//! their `send().await?` returns the unread 2xx body ([`concord::Incoming`]; a non-2xx status is a
 //! `Status` error) with the endpoint's identity, and the SDK opens it with a runtime
 //! [`concord::csv::CsvReader`] built from the job's dialect ([`crate::csv`]). Every reader error
 //! then names the declared endpoint. Nothing is drained or buffered.
@@ -79,11 +79,11 @@ concord::api! {
             headers { "sforce-query-options" = "batchSize={batch_size}"; }
 
             /// Runs a SOQL statement returning Accounts.
-            GET accounts(query q: Soql) -> QueryResponse<Account>;
+            GET accounts(#[sensitive] query q: Soql) -> QueryResponse<Account>;
             /// Runs a SOQL statement returning Contacts.
-            GET contacts(query q: Soql) -> QueryResponse<Contact>;
+            GET contacts(#[sensitive] query q: Soql) -> QueryResponse<Contact>;
             /// Runs a SOQL statement returning dynamic records.
-            GET dynamic(query q: Soql) -> QueryResponse<DynamicRecord>;
+            GET dynamic(#[sensitive] query q: Soql) -> QueryResponse<DynamicRecord>;
             /// The next batch of an Account query (`nextRecordsUrl`'s locator).
             GET more_accounts(#[sensitive] locator: QueryLocator) -> QueryResponse<Account> {
                 path "{locator}";

@@ -43,7 +43,9 @@ fn present_offset<'de, D: serde::Deserializer<'de>>(
 }
 
 /// List options applied unchanged to every page. Formula evaluation is Airtable's responsibility.
-#[derive(Clone, Debug, Default)]
+///
+/// `Debug` withholds the formula, which the declaration sends as a `#[sensitive]` query value.
+#[derive(Clone, Default)]
 pub struct ListOptions {
     /// Optional filter expression passed verbatim as `filterByFormula`.
     pub filter_by_formula: Option<String>,
@@ -56,6 +58,21 @@ pub struct ListOptions {
     pub max_records: Option<u32>,
     /// Optional view name or ID.
     pub view: Option<String>,
+}
+
+impl fmt::Debug for ListOptions {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("ListOptions")
+            .field(
+                "filter_by_formula",
+                &self.filter_by_formula.as_ref().map(|_| "<redacted>"),
+            )
+            .field("fields", &self.fields)
+            .field("page_size", &self.page_size)
+            .field("max_records", &self.max_records)
+            .field("view", &self.view)
+            .finish()
+    }
 }
 
 /// Successful value and the response head, including status, headers and operation identity.
@@ -269,6 +286,8 @@ mod limit_tests {
 /// Lazy page traversal, with per-page HTTP metadata. `items()` exposes item traversal and streaming.
 pub type RecordPages = Pages<Record, String, ResponseMeta, Error>;
 
+/// Sends `authorization: Bearer <token>` from the constructor's raw token.
+///
 /// Airtable client. The provided HTTP client controls timeouts and redirect policy.
 #[derive(Clone, Debug)]
 pub struct Client {
@@ -329,7 +348,7 @@ impl Client {
             .await
     }
     /// Traverse lazily from the start or a saved offset, under a required page cap.
-    /// Resume only with the same base, table, options, credentials and origin.
+    /// Resume only with the same base, table, options, credentials and origin. Use `concord_sdk_airtable::pagination::Resume` for the position. `Resume::Start` repeats the table listing without an offset; `Resume::At(key)` takes the opaque `String` offset in a returned page's `next`.
     pub fn list_pages(
         &self,
         base: impl Into<String>,

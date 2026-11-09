@@ -99,6 +99,10 @@ Changing data between numbered pages can cause gaps or duplicates. The generated
 single-page endpoint also exposes `before`, `after`, `page` and `per_page` setters;
 it is the low-level path and leaves numeric validation to the provider.
 
+Use `concord_sdk_strava::pagination::Resume` for the position. `Resume::Start` repeats page 1 of
+the athlete's activities with `per_page`; `Resume::At(key)` takes the `u32` page number in a
+returned page's `next`.
+
 ```no_run
 use concord_sdk_strava::{DataType, Error, PollPolicy, Session, UploadFile, concord::reqwest};
 use std::{num::NonZeroUsize, time::Duration};

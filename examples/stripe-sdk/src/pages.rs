@@ -423,7 +423,7 @@ where
     /// [`pages`](Self::pages) from `from`: a cursor of this list (a bounded or failed
     /// traversal's `PagesError::resume`, [`continue_from`](Self::continue_from),
     /// [`after_embedded`](Self::after_embedded)), or `Resume::Start`. A cursor of another list
-    /// or direction is refused by the first page's request, before anything is sent.
+    /// or direction is refused by the first page's request, before anything is sent. Add `concord-pagination` as a direct dependency and use `concord_pagination::Resume`. `Resume::Start` repeats the original cursor-free list request in this list's direction; `Resume::At(key)` takes this list's `Cursor<<R::Item as Object>::Id>` from a returned page's `next`, `continue_from` or `after_embedded`.
     pub fn pages_from(
         &self,
         from: Resume<Cursor<<R::Item as Object>::Id>>,

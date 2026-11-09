@@ -445,6 +445,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "concord-check-canary"
+version = "0.0.0"
+dependencies = [
+ "concord-example-testserver",
+]
+
+[[package]]
 name = "concord-check-core-concepts"
 version = "0.0.0"
 dependencies = [
@@ -619,6 +626,7 @@ name = "concord-core"
 version = "4.2.0"
 dependencies = [
  "bytes",
+ "http-body",
  "percent-encoding",
  "reqwest",
  "tokio",
@@ -683,6 +691,7 @@ name = "concord-example-github-sdk"
 version = "0.0.0"
 dependencies = [
  "concord",
+ "concord-check-canary",
  "concord-example-testserver",
  "concord-pagination",
  "serde",
@@ -707,6 +716,7 @@ name = "concord-example-kubernetes-sdk"
 version = "0.0.0"
 dependencies = [
  "concord",
+ "concord-check-canary",
  "concord-example-testserver",
  "concord-pagination",
  "serde",
@@ -729,6 +739,7 @@ name = "concord-example-native"
 version = "0.0.0"
 dependencies = [
  "concord",
+ "concord-example-testserver",
  "concord-ratelimit",
  "concord-retry",
  "futures-core",
@@ -788,6 +799,7 @@ name = "concord-example-salesforce-sdk"
 version = "0.0.0"
 dependencies = [
  "concord",
+ "concord-check-canary",
  "concord-example-testserver",
  "concord-pagination",
  "futures-core",
@@ -833,6 +845,7 @@ name = "concord-example-shopify-sdk"
 version = "0.0.0"
 dependencies = [
  "concord",
+ "concord-check-canary",
  "concord-example-testserver",
  "concord-pagination",
  "serde",
@@ -857,6 +870,7 @@ name = "concord-example-stripe-sdk"
 version = "0.0.0"
 dependencies = [
  "concord",
+ "concord-check-canary",
  "concord-example-testserver",
  "concord-pagination",
  "serde",
@@ -961,6 +975,7 @@ name = "concord-sdk-adyen-checkout"
 version = "0.1.0"
 dependencies = [
  "concord",
+ "concord-check-canary",
  "concord-example-testserver",
  "concord-retry",
  "serde",
@@ -973,6 +988,7 @@ name = "concord-sdk-airtable"
 version = "0.0.0"
 dependencies = [
  "concord",
+ "concord-check-canary",
  "concord-example-testserver",
  "concord-pagination",
  "futures-util",
@@ -989,6 +1005,7 @@ dependencies = [
  "aws-sigv4",
  "aws-smithy-runtime-api",
  "concord",
+ "concord-check-canary",
  "concord-example-testserver",
  "concord-pagination",
  "hmac",
@@ -1004,6 +1021,7 @@ name = "concord-sdk-anthropic-messages"
 version = "0.0.0"
 dependencies = [
  "concord",
+ "concord-check-canary",
  "concord-example-testserver",
  "concord-retry",
  "serde",
@@ -1016,6 +1034,7 @@ name = "concord-sdk-arxiv"
 version = "0.1.0"
 dependencies = [
  "concord",
+ "concord-check-canary",
  "concord-codecs",
  "concord-example-testserver",
  "concord-pagination",
@@ -1030,6 +1049,7 @@ version = "0.0.0"
 dependencies = [
  "concord",
  "concord-auth",
+ "concord-check-canary",
  "concord-example-testserver",
  "concord-retry",
  "futures-core",
@@ -1048,6 +1068,7 @@ version = "0.0.0"
 dependencies = [
  "concord",
  "concord-auth",
+ "concord-check-canary",
  "concord-example-testserver",
  "futures-core",
  "serde",
@@ -1061,6 +1082,7 @@ version = "0.0.0"
 dependencies = [
  "concord",
  "concord-auth",
+ "concord-check-canary",
  "concord-example-testserver",
  "concord-pagination",
  "concord-retry",
@@ -1075,6 +1097,7 @@ name = "concord-sdk-datadog-events"
 version = "0.0.0"
 dependencies = [
  "concord",
+ "concord-check-canary",
  "concord-example-testserver",
  "concord-pagination",
  "serde",
@@ -1088,6 +1111,7 @@ version = "0.0.0"
 dependencies = [
  "concord",
  "concord-auth",
+ "concord-check-canary",
  "concord-example-testserver",
  "concord-pagination",
  "serde",
@@ -1100,6 +1124,7 @@ name = "concord-sdk-discord-rest"
 version = "0.0.0"
 dependencies = [
  "concord",
+ "concord-check-canary",
  "concord-example-testserver",
  "concord-pagination",
  "serde",
@@ -1114,6 +1139,7 @@ dependencies = [
  "base64",
  "concord",
  "concord-auth",
+ "concord-check-canary",
  "concord-example-testserver",
  "concord-pagination",
  "serde",
@@ -1127,6 +1153,7 @@ name = "concord-sdk-dropbox"
 version = "0.0.0"
 dependencies = [
  "concord",
+ "concord-check-canary",
  "concord-example-testserver",
  "concord-pagination",
  "futures-util",
@@ -1141,6 +1168,7 @@ version = "0.0.0"
 dependencies = [
  "concord",
  "concord-auth",
+ "concord-check-canary",
  "concord-example-testserver",
  "concord-pagination",
  "serde",
@@ -1153,6 +1181,7 @@ name = "concord-sdk-europe-pmc"
 version = "0.0.0"
 dependencies = [
  "concord",
+ "concord-check-canary",
  "concord-codecs",
  "concord-example-testserver",
  "concord-pagination",
@@ -1169,6 +1198,7 @@ dependencies = [
  "bigdecimal",
  "chrono",
  "concord",
+ "concord-check-canary",
  "concord-example-testserver",
  "serde",
  "serde_json",
@@ -1180,6 +1210,7 @@ name = "concord-sdk-fred"
 version = "0.0.0"
 dependencies = [
  "concord",
+ "concord-check-canary",
  "concord-codecs",
  "concord-example-testserver",
  "concord-pagination",
@@ -1197,6 +1228,7 @@ name = "concord-sdk-gitlab"
 version = "0.0.0"
 dependencies = [
  "concord",
+ "concord-check-canary",
  "concord-example-testserver",
  "concord-pagination",
  "serde",
@@ -1209,6 +1241,7 @@ name = "concord-sdk-google-drive"
 version = "0.0.0"
 dependencies = [
  "concord",
+ "concord-check-canary",
  "concord-example-testserver",
  "concord-pagination",
  "futures-util",
@@ -1225,6 +1258,7 @@ dependencies = [
  "bytes",
  "concord",
  "concord-auth",
+ "concord-check-canary",
  "concord-example-testserver",
  "concord-pagination",
  "serde",
@@ -1238,6 +1272,7 @@ version = "0.0.0"
 dependencies = [
  "concord",
  "concord-auth",
+ "concord-check-canary",
  "concord-example-testserver",
  "concord-pagination",
  "concord-retry",
@@ -1252,6 +1287,7 @@ version = "0.0.0"
 dependencies = [
  "base64",
  "concord",
+ "concord-check-canary",
  "concord-example-testserver",
  "concord-pagination",
  "concord-retry",
@@ -1267,6 +1303,7 @@ name = "concord-sdk-linear"
 version = "0.0.0"
 dependencies = [
  "concord",
+ "concord-check-canary",
  "concord-example-testserver",
  "concord-pagination",
  "serde",
@@ -1280,6 +1317,7 @@ version = "0.0.0"
 dependencies = [
  "concord",
  "concord-auth",
+ "concord-check-canary",
  "concord-example-testserver",
  "concord-pagination",
  "concord-retry",
@@ -1297,6 +1335,7 @@ version = "0.0.0"
 dependencies = [
  "concord",
  "concord-auth",
+ "concord-check-canary",
  "concord-example-testserver",
  "serde",
  "serde_json",
@@ -1308,6 +1347,7 @@ name = "concord-sdk-mediawiki-action-api"
 version = "4.2.0"
 dependencies = [
  "concord",
+ "concord-check-canary",
  "concord-example-testserver",
  "concord-pagination",
  "serde",
@@ -1320,6 +1360,7 @@ name = "concord-sdk-microsoft-graph"
 version = "0.0.0"
 dependencies = [
  "concord",
+ "concord-check-canary",
  "concord-example-testserver",
  "concord-pagination",
  "futures-util",
@@ -1334,6 +1375,7 @@ version = "0.0.0"
 dependencies = [
  "chrono",
  "concord",
+ "concord-check-canary",
  "concord-example-testserver",
  "serde",
  "tokio",
@@ -1344,6 +1386,7 @@ name = "concord-sdk-nasa-neows"
 version = "0.0.0"
 dependencies = [
  "concord",
+ "concord-check-canary",
  "concord-example-testserver",
  "serde",
  "tokio",
@@ -1354,6 +1397,7 @@ name = "concord-sdk-notion"
 version = "0.0.0"
 dependencies = [
  "concord",
+ "concord-check-canary",
  "concord-example-testserver",
  "concord-pagination",
  "futures-util",
@@ -1367,6 +1411,7 @@ name = "concord-sdk-ntfy"
 version = "0.0.0"
 dependencies = [
  "concord",
+ "concord-check-canary",
  "concord-example-testserver",
  "serde",
  "serde_json",
@@ -1378,6 +1423,7 @@ name = "concord-sdk-open-library"
 version = "0.0.0"
 dependencies = [
  "concord",
+ "concord-check-canary",
  "concord-example-testserver",
  "serde",
  "serde_json",
@@ -1389,6 +1435,7 @@ name = "concord-sdk-open-meteo"
 version = "0.0.0"
 dependencies = [
  "concord",
+ "concord-check-canary",
  "concord-example-testserver",
  "serde",
  "tokio",
@@ -1399,6 +1446,7 @@ name = "concord-sdk-openai"
 version = "0.0.0"
 dependencies = [
  "concord",
+ "concord-check-canary",
  "concord-example-testserver",
  "serde",
  "serde_json",
@@ -1411,6 +1459,7 @@ version = "0.0.0"
 dependencies = [
  "concord",
  "concord-auth",
+ "concord-check-canary",
  "concord-example-testserver",
  "concord-retry",
  "serde",
@@ -1423,6 +1472,7 @@ name = "concord-sdk-pokeapi"
 version = "0.0.0"
 dependencies = [
  "concord",
+ "concord-check-canary",
  "concord-example-testserver",
  "serde",
  "serde_json",
@@ -1434,6 +1484,7 @@ name = "concord-sdk-postmark"
 version = "0.0.0"
 dependencies = [
  "concord",
+ "concord-check-canary",
  "concord-example-testserver",
  "serde",
  "serde_json",
@@ -1446,6 +1497,7 @@ version = "0.0.0"
 dependencies = [
  "concord",
  "concord-auth",
+ "concord-check-canary",
  "concord-example-testserver",
  "concord-pagination",
  "serde",
@@ -1459,6 +1511,7 @@ version = "0.0.0"
 dependencies = [
  "concord",
  "concord-auth",
+ "concord-check-canary",
  "concord-example-testserver",
  "concord-pagination",
  "serde",
@@ -1472,6 +1525,7 @@ version = "0.1.0"
 dependencies = [
  "concord",
  "concord-auth",
+ "concord-check-canary",
  "concord-example-testserver",
  "concord-pagination",
  "concord-ratelimit",
@@ -1486,6 +1540,7 @@ name = "concord-sdk-slack"
 version = "0.0.0"
 dependencies = [
  "concord",
+ "concord-check-canary",
  "concord-example-testserver",
  "concord-pagination",
  "futures-util",
@@ -1499,6 +1554,7 @@ name = "concord-sdk-snowflake"
 version = "0.0.0"
 dependencies = [
  "concord",
+ "concord-check-canary",
  "concord-example-testserver",
  "concord-pagination",
  "flate2",
@@ -1513,6 +1569,7 @@ version = "0.0.0"
 dependencies = [
  "concord",
  "concord-auth",
+ "concord-check-canary",
  "concord-example-testserver",
  "concord-pagination",
  "concord-retry",
@@ -1527,6 +1584,7 @@ version = "0.0.0"
 dependencies = [
  "concord",
  "concord-auth",
+ "concord-check-canary",
  "concord-example-testserver",
  "concord-pagination",
  "serde",
@@ -1540,6 +1598,7 @@ version = "0.1.0"
 dependencies = [
  "concord",
  "concord-auth",
+ "concord-check-canary",
  "concord-example-testserver",
  "concord-pagination",
  "concord-ratelimit",
@@ -1557,6 +1616,7 @@ version = "0.0.0"
 dependencies = [
  "concord",
  "concord-auth",
+ "concord-check-canary",
  "concord-example-testserver",
  "serde",
  "tokio",
@@ -1568,6 +1628,7 @@ version = "0.0.0"
 dependencies = [
  "chrono",
  "concord",
+ "concord-check-canary",
  "concord-codecs",
  "concord-example-testserver",
  "concord-pagination",
@@ -1582,6 +1643,7 @@ name = "concord-sdk-world-bank"
 version = "0.0.0"
 dependencies = [
  "concord",
+ "concord-check-canary",
  "concord-example-testserver",
  "concord-pagination",
  "serde",
@@ -1595,6 +1657,7 @@ version = "0.0.0"
 dependencies = [
  "concord",
  "concord-auth",
+ "concord-check-canary",
  "concord-example-testserver",
  "concord-pagination",
  "concord-ratelimit",
@@ -1610,6 +1673,7 @@ version = "0.0.0"
 dependencies = [
  "concord",
  "concord-auth",
+ "concord-check-canary",
  "concord-codecs",
  "concord-example-testserver",
  "concord-pagination",

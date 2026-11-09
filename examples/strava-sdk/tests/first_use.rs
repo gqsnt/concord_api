@@ -4,7 +4,7 @@
 //! Workflow 2: upload a one-shot activity file, poll the returned upload id, read the activity.
 //! Live provider calls: NOT_RUN. Every request goes to `examples/testserver` on 127.0.0.1.
 
-use concord_example_testserver::{Recorded, Reply, TestServer};
+use concord_example_testserver::{Recorded, Reply, TestServer, paused};
 use concord_sdk_strava::concord::{ErrorKind, FieldError, reqwest};
 use concord_sdk_strava::pagination::{PagesError, Resume};
 use concord_sdk_strava::{
@@ -1301,18 +1301,22 @@ async fn w2_upload_timeout_is_ambiguous_and_never_replayed() -> Res {
         ),
     })
     .await;
+    let timeout = Duration::from_millis(400);
     let session = connect(
         &server,
         stored_tokens(ACCESS, REFRESH, now() + 21_600, 21_600),
-        Duration::from_millis(400),
+        timeout,
     );
     let api = session.client();
     let started = Instant::now();
-    let err = api
-        .uploads()
-        .upload_and_poll(morning_ride(), policy(3))
+    // Paused clock: the 400 ms timeout fires only once the server holds the POST.
+    tokio::time::pause();
+    let uploads = api.uploads();
+    let upload = uploads.upload_and_poll(morning_ride(), policy(3));
+    let err = paused::time_out(&server, |r| r.method == "POST", timeout, upload)
         .await
         .unwrap_err();
+    tokio::time::resume();
     assert!(
         started.elapsed() < Duration::from_secs(3),
         "bounded by the session timeout"

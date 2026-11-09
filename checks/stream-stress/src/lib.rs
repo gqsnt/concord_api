@@ -11,7 +11,10 @@
 //! What is measured, and its scope:
 //!
 //! - **records / bytes**: records delivered by the reader and decoded body bytes it consumed;
-//!   bytes the generator produced; bytes the server handed to its socket or received.
+//!   bytes the generator produced; bytes the server handed to its socket or received. An upload
+//!   counts the bytes of request-body chunks the server received completely: the transport sends
+//!   each body frame as one chunk, so a chunk cut off when a failed upload drops its connection,
+//!   or still arriving when the send returns, is not counted.
 //! - **first record**: time from sending the request to the first record, compared with the time
 //!   the server finished producing the body (a whole-body buffering reader could not deliver a
 //!   record before the server finished).
@@ -571,7 +574,7 @@ pub async fn upload(format: Format, scenario: &str, plan: UploadPlan) -> Measure
     } else {
         0
     };
-    m.bytes_consumed = server.request_body_bytes();
+    m.bytes_consumed = server.request_chunk_bytes();
     let per_record = upload_record_bytes(format);
     m.bytes_generated = header + m.source_polls_total.unwrap_or(0) * per_record;
     m.records_delivered = m.bytes_consumed.saturating_sub(header) / per_record;

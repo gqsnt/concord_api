@@ -18,7 +18,7 @@
 //! - [`list`] — the chunked-list adapter for `concord-pagination` (opaque `continue`, consistent
 //!   snapshot check, typed `410 Expired`).
 //! - [`watch`] — typed watch events: every watch endpoint is declared
-//!   `-> stream WatchEvent<T>`, so its `send()` returns the open [`watch::WatchStream`] without
+//!   `-> stream WatchEvent<T>`, so its `send().await?` returns the open [`watch::WatchStream`] without
 //!   reading the body (one connection; reconnection and resync are the caller's workflow).
 //!
 //! # Example

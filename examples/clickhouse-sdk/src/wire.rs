@@ -23,8 +23,9 @@ concord::api! {
     pub client ClickHouseHttp(
         /// `Authorization: Basic ..` (HTTP Basic authentication), flagged sensitive.
         #[sensitive] header("authorization") authorization?: HeaderValue,
-        /// `X-ClickHouse-User` (header authentication).
-        header("x-clickhouse-user") user?: String,
+        /// `X-ClickHouse-User` (header authentication); a credential like the key, so sensitive
+        /// (Basic authentication withholds the user too).
+        #[sensitive] header("x-clickhouse-user") user?: String,
         /// `X-ClickHouse-Key` (header authentication).
         #[sensitive] header("x-clickhouse-key") key?: String,
         /// The default database of the request (`X-ClickHouse-Database`).

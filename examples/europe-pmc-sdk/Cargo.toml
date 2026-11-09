@@ -15,6 +15,7 @@ roxmltree = "=0.21.2"
 serde = { workspace = true, features = ["derive"] }
 
 [dev-dependencies]
+concord-check-canary = { path = "../../checks/canary" }
 concord-testserver = { package = "concord-example-testserver", path = "../testserver" }
 tokio = { workspace = true, features = ["macros", "rt", "time"] }
 

@@ -17,6 +17,8 @@ reqwest-defaults = ["reqwest/default"]
 
 [dependencies]
 bytes.workspace = true
+# Already in reqwest's graph: a streamed request body is wrapped so that dropping the call ends it.
+http-body.workspace = true
 percent-encoding.workspace = true
 reqwest.workspace = true
 url.workspace = true

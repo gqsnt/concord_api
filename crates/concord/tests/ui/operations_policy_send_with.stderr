@@ -1,0 +1,50 @@
+error[E0277]: the send policy `Policy` does not send a `()` output identified by `StoreOperation`
+  --> tests/ui/operations_policy_send_with.rs:16:1
+   |
+16 | / concord::api! {
+17 | |     pub client Store {
+18 | |         base "http://x.test";
+19 | |         send Policy;
+...  |
+23 | | }
+   | |_^ the client declares `operations` and `send`: it needs `Policy: SendOperation<(), StoreOperation>`
+   |
+help: the trait `SendOperation<(), StoreOperation>` is not implemented for `Policy`
+  --> tests/ui/operations_policy_send_with.rs:7:1
+   |
+ 7 | pub struct Policy;
+   | ^^^^^^^^^^^^^^^^^
+   = note: a client with `operations Name;` passes each endpoint's `Name` variant to its policy: implement `concord::SendOperation<T, Name>` (usually generically over `T`) instead of `SendWith<T>`, and classify the operation with a `match` without a wildcard arm
+   = note: this error originates in the macro `concord::api` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0277]: the send policy `Policy` does not send a `()` output identified by `StoreOperation`
+  --> tests/ui/operations_policy_send_with.rs:16:1
+   |
+16 | / concord::api! {
+17 | |     pub client Store {
+18 | |         base "http://x.test";
+19 | |         send Policy;
+...  |
+23 | | }
+   | |_^ the client declares `operations` and `send`: it needs `Policy: SendOperation<(), StoreOperation>`
+   |
+help: the trait `SendOperation<(), StoreOperation>` is not implemented for `Policy`
+  --> tests/ui/operations_policy_send_with.rs:7:1
+   |
+ 7 | pub struct Policy;
+   | ^^^^^^^^^^^^^^^^^
+   = note: a client with `operations Name;` passes each endpoint's `Name` variant to its policy: implement `concord::SendOperation<T, Name>` (usually generically over `T`) instead of `SendWith<T>`, and classify the operation with a `match` without a wildcard arm
+   = note: this error originates in the macro `concord::api` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0277]: the send policy `Policy` does not send a `()` output identified by `StoreOperation`
+  --> tests/ui/operations_policy_send_with.rs:19:14
+   |
+19 |         send Policy;
+   |              ^^^^^^ the client declares `operations` and `send`: it needs `Policy: SendOperation<(), StoreOperation>`
+   |
+help: the trait `SendOperation<(), StoreOperation>` is not implemented for `Policy`
+  --> tests/ui/operations_policy_send_with.rs:7:1
+   |
+ 7 | pub struct Policy;
+   | ^^^^^^^^^^^^^^^^^
+   = note: a client with `operations Name;` passes each endpoint's `Name` variant to its policy: implement `concord::SendOperation<T, Name>` (usually generically over `T`) instead of `SendWith<T>`, and classify the operation with a `match` without a wildcard arm

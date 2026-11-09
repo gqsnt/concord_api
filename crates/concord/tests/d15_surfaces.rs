@@ -56,9 +56,7 @@ concord::api! {
 /// nothing could leak. Kept to document why the TLS variant below exists.
 #[tokio::test]
 async fn adv_1_plain_http_scenario_has_no_positive_control() {
-    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
-    let port = listener.local_addr().unwrap().port();
-    drop(listener);
+    let port = support::refused_addr().port();
     let http = reqwest::Client::builder()
         .resolve(
             "t0psecret.hidden.example.test",
@@ -162,9 +160,7 @@ async fn s07_runtime_base_is_shown_but_not_echoed_by_errors() {
         .unwrap_err();
     assert!(!format!("{bad} {bad:?}").contains("PRIVATE"), "{bad}");
 
-    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
-    let addr = listener.local_addr().unwrap();
-    drop(listener);
+    let addr = support::refused_addr();
     let api = Based::new(reqwest::Client::new())
         .with_base_url(format!("http://{addr}/u/PRIVATE"))
         .unwrap();
@@ -276,9 +272,7 @@ async fn s08_classification_without_printing() {
         .unwrap();
     assert_eq!(class(&api.ping().send().await.unwrap_err()), "5xx");
 
-    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
-    let addr = listener.local_addr().unwrap();
-    drop(listener);
+    let addr = support::refused_addr();
     let refused = Based::new(reqwest::Client::new())
         .with_base_url(format!("http://{addr}"))
         .unwrap();

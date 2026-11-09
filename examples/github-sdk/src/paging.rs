@@ -66,8 +66,13 @@ use crate::models::{
     Artifact, ArtifactList, Job, JobList, Workflow, WorkflowList, WorkflowRun, WorkflowRunList,
 };
 
-/// GitHub operation ids, used as the operation part of a [`Binding`].
+/// GitHub operation ids, used as the operation part of a [`Binding`]. Which declared operation is
+/// a listing, and with which id, is decided in one place: an exhaustive `match` over
+/// [`GitHubOperation`](crate::api::GitHubOperation), so a new endpoint does not compile until it
+/// is classified.
 pub mod operation {
+    use crate::api::GitHubOperation;
+
     /// `issues/list-for-repo`
     pub const ISSUES: &str = "issues/list-for-repo";
     /// `issues/list-comments`
@@ -100,25 +105,48 @@ pub mod operation {
     /// operation is none of these ids.
     pub const UNRECOGNIZED: &str = "unrecognized-collection";
 
-    const LISTINGS: [&str; 13] = [
-        ISSUES,
-        ISSUE_COMMENTS,
-        REPO_COMMENTS,
-        LABELS,
-        PULLS,
-        PULL_REVIEWS,
-        PULL_FILES,
-        WORKFLOWS,
-        RUNS,
-        WORKFLOW_RUNS,
-        RUN_JOBS,
-        ARTIFACTS,
-        RUN_ARTIFACTS,
-    ];
+    /// The GitHub operation id of a declared Link-paged listing (`Some`), `None` for any other
+    /// operation: the one table of listing ids ([`listing`] is derived from it). No wildcard arm:
+    /// an endpoint added to the declaration without a decision here does not compile (E0004,
+    /// naming its `GitHubOperation` variant).
+    ///
+    /// `workflow_runs` ([`WORKFLOW_RUNS`]) is a listing and keeps its id (a continuation that
+    /// names it is recognized), but has no ready-made `RepoContext` factory: it is addressed by a
+    /// workflow file name or id, while a [`Binding`](super::Binding)'s parent is a number.
+    pub(crate) fn listing_id(operation: GitHubOperation) -> Option<&'static str> {
+        use GitHubOperation as Op;
+        match operation {
+            Op::RepoLabels => Some(LABELS),
+            Op::RepoIssues => Some(ISSUES),
+            Op::RepoIssueComments => Some(ISSUE_COMMENTS),
+            Op::RepoRepoComments => Some(REPO_COMMENTS),
+            Op::RepoPulls => Some(PULLS),
+            Op::RepoPullReviews => Some(PULL_REVIEWS),
+            Op::RepoPullFiles => Some(PULL_FILES),
+            Op::RepoActionsWorkflows => Some(WORKFLOWS),
+            Op::RepoActionsRuns => Some(RUNS),
+            Op::RepoActionsWorkflowRuns => Some(WORKFLOW_RUNS),
+            Op::RepoActionsRunJobs => Some(RUN_JOBS),
+            Op::RepoActionsArtifacts => Some(ARTIFACTS),
+            Op::RepoActionsRunArtifacts => Some(RUN_ARTIFACTS),
+            Op::RepoGet
+            | Op::RepoIssue
+            | Op::RepoComment
+            | Op::RepoPull
+            | Op::RepoPullReview
+            | Op::RepoActionsRun
+            | Op::RepoActionsJob
+            | Op::RepoActionsArtifact
+            | Op::RepoActionsDownloadArtifact => None,
+        }
+    }
 
     /// The listing operation id equal to `id`.
     pub(super) fn listing(id: &str) -> Option<&'static str> {
-        LISTINGS.into_iter().find(|listing| *listing == id)
+        GitHubOperation::ALL
+            .iter()
+            .filter_map(|&op| listing_id(op))
+            .find(|listing| *listing == id)
     }
 }
 
@@ -365,7 +393,7 @@ where
     /// [`pages`](Self::pages) from `from`: a link of this listing (a bounded or failed
     /// traversal's `PagesError::resume`, a [`restore`](Self::restore)d continuation), or
     /// `Resume::Start`. A link of another listing or origin is refused by the first page's
-    /// request, before anything is sent.
+    /// request, before anything is sent. Add `concord-pagination` as a direct dependency and use `concord_pagination::Resume`. `Resume::Start` repeats the original list request with its configured query parameters; `Resume::At(key)` takes this listing's `NextLink` from a returned page's `next` or `restore`.
     pub fn pages_from(&self, from: Resume<NextLink>) -> GitHubPages<R::Item> {
         let factory = self.clone();
         Pages::new(from, move |key| factory.fetch(key))

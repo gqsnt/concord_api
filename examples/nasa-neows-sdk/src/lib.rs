@@ -141,7 +141,7 @@ impl RateLimit {
 /// A successful value with the quota reported on its response.
 #[derive(Clone, Debug)]
 pub struct Metered<T> {
-    /// The decoded value, as `send()` returns it.
+    /// The decoded value, as `send().await?` returns it.
     pub value: T,
     /// The response's quota headers.
     pub rate_limit: RateLimit,

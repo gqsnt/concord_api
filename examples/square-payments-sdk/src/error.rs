@@ -40,7 +40,18 @@ impl Error {
     /// for `payments().create(..)` only, false for complete and cancel.
     /// This does not grant permission to change a replay's key/body.
     pub fn create_outcome_unknown(&self) -> bool {
-        self.operation() == Some(SquarePaymentsCreate::operation()) && self.outcome_unknown()
+        // No wildcard arm: a new operation decides here whether a replay rule written for create
+        // applies to it (E0004, naming its `SquareOperation` variant, otherwise).
+        match self.operation().and_then(SquareOperation::from_operation) {
+            Some(SquareOperation::PaymentsCreate) => self.outcome_unknown(),
+            Some(
+                SquareOperation::PaymentsGet
+                | SquareOperation::PaymentsList
+                | SquareOperation::PaymentsComplete
+                | SquareOperation::PaymentsCancel,
+            )
+            | None => false,
+        }
     }
 
     /// The declared operation that failed, when known.

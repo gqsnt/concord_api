@@ -1827,7 +1827,7 @@ decorated request from an SDK method named `prepare` keep compiling and fail onl
 `S3Client::prepare(op)` returning a signed request) and say so in the migration notes.
 
 If the declaration stays private behind the SDK's own client, do not re-export its generated
-`{Client}Config` as the SDK's construction type: its generated docs link to the hidden client and
+`{Client}Config` as the SDK's construction type: its generated docs name the hidden client and
 its `set_*` methods (observed in the Dropbox SDK). Re-export the declared client too, or give the
 SDK's constructor a configuration type of its own.
 
@@ -1836,6 +1836,134 @@ If the SDK's public API names Concord types (`concord::Error`, `ResponseMeta`, `
 without adding a `concord` dependency of its own that must stay at the same version (observed in
 the Snowflake first-use run, where telling a dropped body from a bad document needed
 `concord::ErrorKind`).
+
+### 5.14 Classifying every operation: `operations Name;`
+
+A send policy often treats operations differently: which need a write scope, which quota bucket
+each one is charged to, which are retried, signed or paged. Written as comparisons with
+`operation()`, a table of names or a check of the URL path, that classification is a second edit
+whenever an endpoint is added, and forgetting it still compiles: the new endpoint falls into a
+default, or is refused at run time. The client statement `operations Name;` lets the compiler ask
+for that edit:
+
+- `api!` generates `Name`, an enum with one variant per endpoint (at the client's visibility,
+  `#[non_exhaustive]`). A variant is named by the endpoint's path below the client in
+  UpperCamelCase — `items.get` is `ItemsGet`, the endpoint type `StoreItemsGet` without the
+  client's name — and carries the endpoint's own and inherited `#[cfg]`s. `Name::ALL` lists the
+  variants in declaration order, `op.operation()` is the endpoint's `concord::Operation`, and
+  `Name::from_operation(op)` maps an `Operation` back (from an error's or a response's
+  `operation()`) by its declared identity: endpoint, dotted name (`Store.items.get`) and method,
+  as `Operation`'s `==`. A label or another name or method is `None`; an operation of another
+  client with the same dotted name and method — a client of the same name in another module or
+  crate — is indistinguishable and maps to the variant.
+- With `send`, every generated `send()` calls `concord::SendOperation<T, Name>::send` with its
+  endpoint's variant and the endpoint, where a client without the statement calls
+  `SendWith<T>::send`. The policy implements `SendOperation<T, Name>` instead of `SendWith<T>`;
+  everything else is as in §5.13 (the policy value, `send P -> Template;`, `concord::Sends`,
+  `prepare()` bypassing the policy).
+
+The rule to remember: **classify with a `match` over `Name` without a wildcard arm**. An endpoint
+added later and not classified is then a compile error of the SDK, at that `match`, naming the
+variant and pointing at the new endpoint:
+
+```rust
+use concord::{Endpoint, Json, SendOperation};
+
+#[derive(Debug)]
+pub enum Error { Concord(concord::Error), ReadOnly }
+impl From<concord::Error> for Error {
+    fn from(e: concord::Error) -> Self { Self::Concord(e) }
+}
+
+/// Refuses writes for a read-only credential.
+#[derive(Clone)]
+pub struct Policy { read_only: bool }
+
+impl<T: Send> SendOperation<T, StoreOperation> for Policy {
+    type Output = Result<T, Error>;
+    async fn send<E: Endpoint<T> + Send>(
+        &self,
+        operation: StoreOperation,
+        endpoint: E,
+    ) -> Self::Output {
+        // No `_ =>` arm: a new endpoint must be classified here.
+        let write = match operation {
+            StoreOperation::ItemsList | StoreOperation::ItemsGet => false,
+            StoreOperation::ItemsCreate | StoreOperation::ItemsRemove => true,
+        };
+        if write && self.read_only {
+            return Err(Error::ReadOnly);
+        }
+        Ok(endpoint.prepare()?.send().await?)
+    }
+}
+
+concord::api! {
+    pub client Store(policy: Policy) {
+        base "https://store.example.com";
+        format Json;
+        send policy -> Result<_, Error>;
+        operations StoreOperation;
+        scope items {
+            path "items";
+            GET list() -> Vec<u64>;
+            GET get(id: u64) -> u64 { path "{id}"; }
+            POST create();
+            DELETE remove(id: u64) { path "{id}"; }
+        }
+    }
+}
+
+fn main() {
+    assert_eq!(StoreOperation::ALL.len(), 4);
+    assert_eq!(StoreOperation::ItemsGet.operation(), StoreItemsGet::operation());
+    let store = Store::new(
+        concord::reqwest::Client::new(),
+        StoreConfig { policy: Policy { read_only: true } },
+    );
+    let _ = store.items().remove(7); // `send()` would return `Err(Error::ReadOnly)`
+}
+```
+
+The same declaration with `DELETE remove` added after the policy was written. Excerpt of
+`crates/concord/tests/ui/operations_policy_unclassified.stderr`:
+
+```text
+error[E0004]: non-exhaustive patterns: `StoreOperation::ItemsRemove` not covered
+  --> tests/ui/operations_policy_unclassified.rs:16:28
+   |
+16 |         let _write = match operation {
+   |                            ^^^^^^^^^ pattern `StoreOperation::ItemsRemove` not covered
+   |
+note: `StoreOperation` defined here
+  --> tests/ui/operations_policy_unclassified.rs:28:20
+   |
+28 |         operations StoreOperation;
+   |                    ^^^^^^^^^^^^^^
+...
+34 |             DELETE remove(id: u64) { path "{id}"; }
+   |                    ------ not covered
+```
+
+What it does and does not do:
+
+- It catches an **omitted** classification only. A new arm copied from a sibling that does not
+  fit (a write classified as a read) compiles: the enum identifies the operation, the SDK's
+  `match` decides what it means.
+- Every `match` over `Name` in the SDK is checked the same way: the policy's, an error's wording
+  chosen per operation (`error.operation().and_then(Name::from_operation)`), a run-time list of
+  buckets built from `Name::ALL`.
+- Outside the crate that declares the client, the enum is `#[non_exhaustive]`: a `match` there
+  needs a wildcard arm, and adding an endpoint is not a breaking change for the SDK's callers.
+  Classify in the declaring crate.
+- Without `send`, the statement generates the enum only.
+- A policy that still implements only `SendWith<T>` is reported at the `send` statement: "the
+  send policy `Policy` does not send a `()` output identified by `StoreOperation`"
+  (`operations_policy_send_with.stderr`).
+- `operations` is a client statement, written once, before the children; `Name` must not be a
+  type the declaration already generates, the client's config struct or a parameter group. An
+  endpoint whose variant would be `Self` or `ALL` must be renamed.
+- A client without the statement generates exactly what it did before.
 
 ## 6. Wire formatting: `Display` and newtypes
 
@@ -2018,6 +2146,7 @@ fn main() {
 | `client Forge` | `Forge`; `ForgeConfig` when the client has a required value |
 | `scope repo` under `Forge` | `ForgeRepo`, reached with `forge.repo(..)` |
 | `GET list_issues` under `scope repo` | `ForgeRepoListIssues`, reached with `repo.list_issues(..)` |
+| `operations ForgeOperation;` on the client | the enum `ForgeOperation`; `GET list_issues` under `scope repo` is its variant `RepoListIssues` (§5.14) |
 | value `x` | `set_x`; `maybe_x` when optional |
 
 - Within one generated type, navigation methods, value controls and the built-ins (`new`,

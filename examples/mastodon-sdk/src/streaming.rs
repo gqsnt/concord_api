@@ -211,7 +211,7 @@ impl Incremental<StreamEvent> for PublicStreamFormat {
 /// A public or hashtag stream, read as the body arrives: what the generated `send()` of
 /// [`PublicStreamRequest`](crate::PublicStreamRequest),
 /// [`HashtagStreamRequest`](crate::HashtagStreamRequest) or
-/// [`LocalHashtagStreamRequest`](crate::LocalHashtagStreamRequest) returns once the response head was
+/// [`LocalHashtagStreamRequest`](crate::LocalHashtagStreamRequest) returns on success once the response head was
 /// accepted (nothing of the body is read before the first [`next`](Self::next)).
 ///
 /// - [`next`](Self::next) returns the events in order; heartbeats and comments are skipped. Every

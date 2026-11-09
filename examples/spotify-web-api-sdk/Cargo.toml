@@ -16,9 +16,10 @@ serde = { workspace = true, features = ["derive"] }
 tokio = { workspace = true, features = ["time"] }
 
 [dev-dependencies]
+concord-check-canary = { path = "../../checks/canary" }
 concord-testserver = { package = "concord-example-testserver", path = "../testserver" }
 serde_json.workspace = true
-tokio = { workspace = true, features = ["macros", "rt-multi-thread", "time"] }
+tokio = { workspace = true, features = ["macros", "rt-multi-thread", "time", "test-util"] }
 
 [lints]
 workspace = true

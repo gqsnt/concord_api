@@ -4,7 +4,7 @@
 //! Task 2: search and page the domain's events for that ID, then inspect delivery.
 //! Every request goes to a loopback fixture; the real Mailgun API is never called.
 
-use concord_example_testserver::{Body, Recorded, Reply, TestServer};
+use concord_example_testserver::{Body, Recorded, Reply, TestServer, paused};
 use concord_sdk_mailgun::concord::ErrorKind;
 use concord_sdk_mailgun::concord::bytes::Bytes;
 use concord_sdk_mailgun::pagination::{PagesError, Resume};
@@ -439,16 +439,26 @@ async fn provider_statuses_are_typed_and_never_replayed() {
 
 #[tokio::test]
 async fn ambiguous_sends_are_reported_and_never_replayed() {
-    let cases: [(&str, ScriptedReply, ErrorKind); 5] = [
+    // How the 500 ms timeout may fire, on the paused clock: never (the answer ends the send), once
+    // the server holds the send, or once it has written the head of a stalled body.
+    #[derive(Clone, Copy, PartialEq)]
+    enum Late {
+        Never,
+        Head,
+        Body,
+    }
+    let cases: [(&str, ScriptedReply, ErrorKind, Late); 5] = [
         (
             "connection closed after the request",
             Reply::hang_up,
             ErrorKind::Transport,
+            Late::Never,
         ),
         (
             "no response head before the timeout",
             || Reply::json(200, accepted_body()).delay(Duration::from_secs(5)),
             ErrorKind::Transport,
+            Late::Head,
         ),
         (
             "200 body stalls",
@@ -458,20 +468,34 @@ async fn ambiguous_sends_are_reported_and_never_replayed() {
                     .with_body(Body::Stall)
             },
             ErrorKind::Transport,
+            Late::Body,
         ),
         (
             "200 body is truncated JSON",
             || Reply::json(200, r#"{"id":"<2026110709"#),
             ErrorKind::Decode,
+            Late::Never,
         ),
         (
             "200 body has no id",
             || Reply::json(200, r#"{"message":"Queued. Thank you."}"#),
             ErrorKind::Decode,
+            Late::Never,
         ),
     ];
-    for (label, reply, kind) in cases {
-        let (error, server) = send_failure(reply, Duration::from_millis(500)).await;
+    for (label, reply, kind, late) in cases {
+        let timeout = Duration::from_millis(500);
+        let server = TestServer::start(move |_: &Recorded| reply()).await;
+        let domain = client(&server, timeout);
+        tokio::time::pause();
+        let send = domain.send_message(report_email(buffered_report())).send();
+        let error = match late {
+            Late::Never => paused::drive(send).await,
+            Late::Head => paused::time_out(&server, |_| true, timeout, send).await,
+            Late::Body => paused::time_out_in_body(&server, |_| true, timeout, send).await,
+        }
+        .expect_err("scripted failure");
+        tokio::time::resume();
         assert_redacted(&format!("{error:?} {error}"));
         let Error::AmbiguousSend(inner) = &error else {
             panic!("{label}: expected AmbiguousSend, got {error:?}")

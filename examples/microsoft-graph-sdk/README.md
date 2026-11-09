@@ -204,6 +204,10 @@ associated staged prefix too. These bindings prevent accidental context/selectio
 mixing, not malicious modification or mixing application staging from separate
 rounds of the same query. They are not signed capabilities.
 
+Use `concord_sdk_microsoft_graph::pagination::Resume` for the position. `Resume::Start` repeats
+this listing's original first request, including a delta start; `Resume::At(key)` takes this
+listing's `NextLink` from a returned page's `next` or `restore_next`.
+
 The `.items().into_stream()` adapter implements standard Rust `Stream` and emits
 an error before ending. A stream's `None` after an error does not imply completion.
 Canceling a pending `next_page()` keeps its request in flight for the next call;

@@ -41,7 +41,7 @@ impl Kraken {
     /// point; `collect_complete` keeps every completed page in `Incomplete`.
     /// Nothing is retried. Resume with the same options: a resume point belongs
     /// to its filters. Without a fixed `end`, newer trades shift offsets during a
-    /// walk, so a trade can appear on two pages (merge by trade id).
+    /// walk, so a trade can appear on two pages (merge by trade id). Use `concord_sdk_kraken_spot_rest::Resume` for the position. `Resume::Start` repeats trade history from offset 0 with `ofs` omitted, replacing `options.ofs`; `Resume::At(key)` takes the `u64` trade offset in a returned page's `next`.
     pub fn trade_history(
         &self,
         options: TradesHistoryOptions,

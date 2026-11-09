@@ -1,7 +1,9 @@
 //! One policy shared by the generated public and private endpoint send paths.
 
-use crate::{ApiFailure, Credentials, Envelope, Error, HttpFailure, LocalError, Nonces};
-use concord::{Decoder, Endpoint, Json, ResponseMeta, SendWith, reqwest};
+use crate::{
+    ApiFailure, Credentials, Envelope, Error, HttpFailure, KrakenOperation, LocalError, Nonces,
+};
+use concord::{Decoder, Endpoint, Json, ResponseMeta, SendOperation, reqwest};
 use std::fmt;
 
 /// Maximum successful response body, in bytes. Oversized reads fail explicitly.
@@ -25,6 +27,10 @@ impl<T> fmt::Debug for Response<T> {
     }
 }
 
+/// For private operations, sets `api-key` to the configured credentials' key and
+/// `api-sign` to `Credentials::signature(path, nonce, payload)` (Base64 HMAC-SHA512).
+/// Public operations add neither header. Generated `prepare()` bypasses these edits.
+///
 /// Cheaply cloned signing state. Public requests send no credentials and use no nonce.
 #[derive(Clone)]
 pub struct Policy {
@@ -51,18 +57,37 @@ impl Policy {
     /// Prefer generated `send()` normally. This explicit escape supports inspection
     /// or controlled scheduling; sending these out of order can cause InvalidNonce.
     /// Generated `prepare()` alone is unsigned and does not run this policy.
+    /// An endpoint whose declared name and method are not one of `Kraken`'s is refused
+    /// (`SigningInput`). The identity is textual: an endpoint of another client with the same
+    /// dotted name and method (a client also named `Kraken`) is indistinguishable and is signed
+    /// as Kraken's.
     pub fn prepare_signed<T, E: Endpoint<Envelope<T>>>(
         &self,
         endpoint: E,
     ) -> Result<Signed<T>, Error> {
+        let operation =
+            KrakenOperation::from_operation(E::operation()).ok_or(LocalError::SigningInput)?;
+        self.sign(operation, endpoint)
+    }
+
+    fn sign<T, E: Endpoint<Envelope<T>>>(
+        &self,
+        operation: KrakenOperation,
+        endpoint: E,
+    ) -> Result<Signed<T>, Error> {
         let (client, mut request, decoder) = endpoint.prepare()?.into_parts();
+        // The exact path sent, a base URL's path prefix included: right when the verifier sees
+        // that path. A proxy that strips its mount before forwarding to Kraken (which verifies
+        // `/0/private/...`) invalidates the signature (README, "Signing and nonces").
         let path = request.url().path();
-        match (request.method().as_str(), path) {
-            ("GET", "/0/public/AssetPairs" | "/0/public/Ticker") => {}
-            (
-                "POST",
-                "/0/private/Balance" | "/0/private/OpenOrders" | "/0/private/TradesHistory",
-            ) => {
+        // Signed or public per declared operation, whatever the base URL's path. No wildcard
+        // arm: an endpoint added to the declaration without a decision here does not compile
+        // (E0004, naming its `KrakenOperation` variant).
+        match operation {
+            KrakenOperation::PublicPairs | KrakenOperation::PublicTicker => {}
+            KrakenOperation::AccountBalances
+            | KrakenOperation::AccountOpenOrders
+            | KrakenOperation::AccountTradesHistory => {
                 let credentials = self
                     .credentials
                     .as_ref()
@@ -84,7 +109,6 @@ impl Policy {
                 request.headers_mut().insert("api-sign", signature);
                 *request.body_mut() = Some(reqwest::Body::from(payload));
             }
-            _ => return Err(LocalError::SigningInput.into()),
         }
         Ok(Signed {
             client,
@@ -143,9 +167,13 @@ impl<T> Signed<T> {
     }
 }
 
-impl<T: Send> SendWith<Envelope<T>> for Policy {
+impl<T: Send> SendOperation<Envelope<T>, KrakenOperation> for Policy {
     type Output = Result<Response<T>, Error>;
-    async fn send<E: Endpoint<Envelope<T>> + Send>(&self, endpoint: E) -> Self::Output {
-        self.prepare_signed(endpoint)?.send().await
+    async fn send<E: Endpoint<Envelope<T>> + Send>(
+        &self,
+        operation: KrakenOperation,
+        endpoint: E,
+    ) -> Self::Output {
+        self.sign(operation, endpoint)?.send().await
     }
 }

@@ -57,7 +57,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 }
 ```
 
-| Method | Request | `send()` returns |
+| Method | Request | Success value |
 |---|---|---|
 | `public_timeline()` + `set_local`, `set_remote`, `set_only_media`, `set_max_id`, `set_since_id`, `set_min_id`, `set_limit` | `GET /api/v1/timelines/public` | `Vec<Status>` |
 | `hashtag_timeline(tag)` + `set_any`, `set_all`, `set_none` and all public timeline setters | `GET /api/v1/timelines/tag/{hashtag}` | `Vec<Status>` |

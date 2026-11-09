@@ -95,7 +95,7 @@ impl Registry {
         self.catalog_from(options, Resume::Start)
     }
 
-    /// [`catalog`](Self::catalog) resumed at `from` (a `PagesError`'s `resume()`).
+    /// [`catalog`](Self::catalog) resumed at `from` (a `PagesError`'s `resume()`). Add `concord-pagination` as a direct dependency and use `concord_pagination::Resume`. `Resume::Start` repeats the first catalog request with `options`, including `last` if set; `Resume::At(key)` takes the catalog's `NextLink` from `Link: rel="next"` in a returned page's `next`.
     pub fn catalog_from(&self, options: ListOptions, from: Resume<NextLink>) -> CatalogPages {
         let registry = self.clone();
         Pages::new(from, move |key| {
@@ -110,7 +110,7 @@ impl Repository {
         self.tags_from(options, Resume::Start)
     }
 
-    /// [`tags`](Self::tags) resumed at `from`.
+    /// [`tags`](Self::tags) resumed at `from`. Add `concord-pagination` as a direct dependency and use `concord_pagination::Resume`. `Resume::Start` repeats the first tags request with `options`, including `last` if set; `Resume::At(key)` takes the repository's `NextLink` from `Link: rel="next"` in a returned page's `next`.
     pub fn tags_from(&self, options: ListOptions, from: Resume<NextLink>) -> TagPages {
         let repository = self.clone();
         Pages::new(from, move |key| {

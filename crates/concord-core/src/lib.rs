@@ -7,14 +7,15 @@
 //! or the standard formats: a statement names your format by its path exactly as it names
 //! `concord::Json`, and the generated code calls the same traits.
 //!
-//! This crate knows no format. It depends on reqwest, `bytes`, `url` and `percent-encoding`;
-//! nothing here parses JSON or forms.
+//! This crate knows no format. It depends on reqwest, `bytes`, `url`, `percent-encoding` and
+//! `http-body` (already reqwest's); nothing here parses JSON or forms.
 //!
 //! `__private` is support code for `api!` expansions, not a public API: its names and signatures
 //! may change in any release.
 
 pub use {bytes, reqwest};
 
+mod cancel;
 mod codec;
 mod error;
 pub mod field;
@@ -34,6 +35,6 @@ pub use codec::{
 pub use error::{Delivery, Error, ErrorKind};
 pub use header::ToHeaderValue;
 pub use names::{HeaderNameError, HeaderNameErrors};
-pub use prepared::{Decoder, Endpoint, Prepared, SendWith, Sends};
+pub use prepared::{Decoder, Endpoint, Prepared, SendOperation, SendWith, Sends};
 pub use response::{Incoming, Operation, Received, ResponseMeta};
 pub use value::{IntoValue, QueryPairs, QueryPairsWriter};

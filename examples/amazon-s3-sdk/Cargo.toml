@@ -18,8 +18,9 @@ httpdate = "1.0.3"
 percent-encoding.workspace = true
 
 [dev-dependencies]
+concord-check-canary = { path = "../../checks/canary" }
 concord-example-testserver = { path = "../testserver" }
-tokio = { workspace = true, features = ["macros", "rt", "rt-multi-thread", "time", "sync"] }
+tokio = { workspace = true, features = ["macros", "rt", "rt-multi-thread", "time", "sync", "test-util"] }
 hmac = "0.13.0"
 sha2 = "0.11.1"
 

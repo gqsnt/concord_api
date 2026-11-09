@@ -9,11 +9,12 @@ publish = false
 
 [dependencies]
 bytes.workspace = true
-tokio = { workspace = true, features = ["macros", "rt", "net", "io-util", "time", "sync"] }
+# `test-util`: the paused-clock helpers (`paused`) move Tokio's virtual time.
+tokio = { workspace = true, features = ["macros", "rt", "net", "io-util", "time", "sync", "test-util"] }
 
 [dev-dependencies]
 reqwest = { workspace = true }
-tokio = { workspace = true, features = ["macros", "rt", "rt-multi-thread", "net", "io-util", "time", "sync"] }
+tokio = { workspace = true, features = ["macros", "rt", "rt-multi-thread", "net", "io-util", "time", "sync", "test-util"] }
 
 [lints]
 workspace = true

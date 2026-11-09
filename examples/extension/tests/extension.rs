@@ -560,12 +560,10 @@ async fn x05_a_native_edit_adds_a_header_before_one_execution() {
     assert_eq!(server.connections(), 1);
 }
 
-/// A loopback address nothing listens on: bound, then closed.
+/// A loopback address nothing listens on (held for the whole process, so no other server can
+/// take it).
 fn closed_port() -> std::net::SocketAddr {
-    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
-    let addr = listener.local_addr().unwrap();
-    drop(listener);
-    addr
+    concord_example_fixture::refused_addr()
 }
 
 #[tokio::test]

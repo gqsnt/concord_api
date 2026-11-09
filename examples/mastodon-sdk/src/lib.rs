@@ -39,7 +39,7 @@
 //!
 //! # Operations
 //!
-//! | Method | Request | `send()` returns |
+//! | Method | Request | Success value |
 //! |---|---|---|
 //! | [`public_timeline`](Mastodon::public_timeline) + `set_local`, `set_remote`, `set_only_media`, `set_max_id`, `set_since_id`, `set_min_id`, `set_limit` | `GET /api/v1/timelines/public` | `Vec<`[`Status`]`>` |
 //! | [`hashtag_timeline`](Mastodon::hashtag_timeline) + `set_any`, `set_all`, `set_none` and the public timeline setters | `GET /api/v1/timelines/tag/{hashtag}` | `Vec<`[`Status`]`>` |
@@ -139,6 +139,8 @@ impl Mastodon {
         Self { api, instance }
     }
 
+    /// Sets `authorization: Bearer <token>` from `AccessToken`, built by `concord_auth::bearer`.
+    ///
     /// The same client sending `token` on every request, to this instance and to the streaming
     /// host it advertises. Request values created earlier keep their credentials.
     #[must_use]
@@ -188,7 +190,7 @@ impl Mastodon {
     }
 
     /// The public timeline stream on `host` (`GET /api/v1/streaming/public`), with this client's
-    /// token. `send()` returns the open [`PublicStream`] once the head is accepted.
+    /// token. `send().await?` returns the open [`PublicStream`] once the head is accepted.
     ///
     /// # Errors
     ///
@@ -199,7 +201,7 @@ impl Mastodon {
     }
 
     /// The `hashtag` stream on the advertised host (`GET /api/v1/streaming/hashtag?tag=…`).
-    /// `send()` returns [`PublicStream`], sharing its framing and terminal-disconnect rules.
+    /// `send().await?` returns [`PublicStream`], sharing its framing and terminal-disconnect rules.
     /// Requires a user token with `read:statuses`; nothing is reconnected or replayed.
     ///
     /// # Errors

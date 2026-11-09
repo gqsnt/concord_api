@@ -229,7 +229,7 @@ impl<R: QueryRecord + Send> QueryPages<R> {
     /// traversal returned) as an ordinary listing: [`Pages::next_page`] is `Ok(None)` only after
     /// the batch with `done: true`; a failed batch is a [`concord_pagination::PagesError`]
     /// carrying the [`SfError`] and the locator to retry. No page cap unless you set one
-    /// ([`Pages::max_pages`]). Each page is one [`fetch`](Self::fetch).
+    /// ([`Pages::max_pages`]). Each page is one [`fetch`](Self::fetch). Add `concord-pagination` as a direct dependency and use `concord_pagination::Resume`. `Resume::Start` repeats the SOQL statement's first batch with its configured batch size; `Resume::At(key)` takes the `QueryLocator` validated from `nextRecordsUrl` in a returned page's `next`.
     pub fn into_pages(
         self,
         from: Resume<QueryLocator>,

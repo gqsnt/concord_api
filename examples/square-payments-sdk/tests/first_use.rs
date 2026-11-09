@@ -4,7 +4,7 @@
 //! sandbox, plus one test for the failure shapes predicted in `FIRST_USE.md`.
 //! Live provider calls: NOT_RUN.
 
-use concord_example_testserver::{Recorded, Reply, TestServer};
+use concord_example_testserver::{Recorded, Reply, TestServer, paused};
 use concord_sdk_square_payments::concord::{Delivery, ErrorKind};
 use concord_sdk_square_payments::{
     CreatePayment, CredentialError, Error, InputError, Money, PagesError, Payment, Resume, Square,
@@ -191,7 +191,9 @@ async fn charge(api: &Square, body: CreatePayment) -> Result<Charge, Error> {
     }
 }
 
-#[tokio::test]
+// Paused clock: the 400 ms timeout fires only once the server holds the first create (committed);
+// the replay and every later call complete while virtual time stands still.
+#[tokio::test(start_paused = true)]
 async fn workflow_1_create_with_caller_key_replay_after_timeout_then_retrieve() -> Result {
     let state = Arc::new(Mutex::new(SquareSandbox {
         by_key: HashMap::new(),
@@ -204,7 +206,8 @@ async fn workflow_1_create_with_caller_key_replay_after_timeout_then_retrieve() 
         TestServer::start(move |request: &Recorded| sandbox_reply(&state, &delay_first, request))
             .await
     };
-    let api = client(&server.url(), Duration::from_millis(400))?;
+    let timeout = Duration::from_millis(400);
+    let api = client(&server.url(), timeout)?;
     assert_redacted(&format!("{api:?}"), &[TOKEN]);
 
     // Local validation happens before any request exists.
@@ -239,7 +242,8 @@ async fn workflow_1_create_with_caller_key_replay_after_timeout_then_retrieve() 
     // 1. Create: the first send times out after Square committed; the routine replays once.
     let body = CreatePayment::new(key, SOURCE, usd(1000))?;
     assert_redacted(&format!("{body:?}"), &[key, SOURCE]);
-    let charged = charge(&api, body).await?;
+    let charged =
+        paused::time_out(&server, |r| r.method == "POST", timeout, charge(&api, body)).await?;
     let first = charged.replayed_after.expect("the first send timed out");
     let Error::Concord(concord) = &first else {
         panic!("timeout is a Concord error")
@@ -288,7 +292,9 @@ async fn workflow_1_create_with_caller_key_replay_after_timeout_then_retrieve() 
     assert_eq!(created.status, "COMPLETED");
 
     // 2. Retrieve the payment that the replay reported.
-    let inspected = api.payments().get(&created.id).send().await?.payment;
+    let inspected = paused::drive(api.payments().get(&created.id).send())
+        .await?
+        .payment;
     assert_eq!(inspected, created);
     let get = server.requests().pop().unwrap();
     assert_eq!(get.method, "GET");
@@ -300,7 +306,7 @@ async fn workflow_1_create_with_caller_key_replay_after_timeout_then_retrieve() 
     // 3. A mismatched replay — a restarted process rebuilt the body with another amount
     //    under the persisted key — is an error the routine surfaces, not a new charge.
     let rebuilt = CreatePayment::new(key, SOURCE, usd(1500))?;
-    let mismatch = match charge(&api, rebuilt).await {
+    let mismatch = match paused::drive(charge(&api, rebuilt)).await {
         Err(error) => error,
         Ok(_) => panic!("a changed body under a used key must not succeed"),
     };
@@ -330,10 +336,7 @@ async fn workflow_1_create_with_caller_key_replay_after_timeout_then_retrieve() 
     assert_eq!(state.lock().unwrap().payments.len(), 1);
 
     // An ID is exactly one path segment.
-    let missing = api
-        .payments()
-        .get("R2B3/../refunds")
-        .send()
+    let missing = paused::drive(api.payments().get("R2B3/../refunds").send())
         .await
         .unwrap_err();
     assert_eq!(

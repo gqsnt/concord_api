@@ -43,6 +43,9 @@ concord::api! {
         format Json;
         limit BODY_LIMIT;
         send policy -> Result<Response<_>, Error>;
+        /// Every Sentry operation, as the send policy classifies it (admission bucket, writes,
+        /// paging).
+        operations SentryOperation;
 
         /// Organization id or slug, encoded as one segment.
         scope organization(organization: String) {
@@ -77,6 +80,8 @@ concord::api! {
 }
 
 impl Sentry {
+    /// Sends `authorization: Bearer <token>`, built by `concord_auth::bearer`.
+    ///
     /// Construct with a validated token. Clones of the policy share caller/endpoint quotas.
     pub fn with_token(
         http: reqwest::Client,

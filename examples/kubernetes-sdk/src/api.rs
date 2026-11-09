@@ -49,7 +49,7 @@ concord::api! {
     /// List endpoints share one parameter group, [`ListOptions`] (`labelSelector`,
     /// `fieldSelector`, `limit`, `continue`, `resourceVersion`, `resourceVersionMatch`,
     /// `timeoutSeconds`); the `continue` value is `#[sensitive]`. Watch endpoints share
-    /// [`WatchOptions`]. Watch endpoints are `-> stream WatchEvent<T>`: their `send()`
+    /// [`WatchOptions`]. Watch endpoints are `-> stream WatchEvent<T>`: their `send().await?`
     /// returns the open [`crate::watch::WatchStream`] without reading the body;
     /// [`crate::watch::open`] opens the same declared operation with a caller-configured reader.
     pub client Kube(

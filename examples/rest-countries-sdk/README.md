@@ -142,7 +142,7 @@ rule. Unknown well-formed values reach the provider; the SDK does not invent ISO
 
 Every call accepts `set_response_fields(Fields)` (allowlist), `set_response_fields_omit(Fields)`
 (blocklist, applied after the allowlist), `set_limit(NonZeroU32)` and `set_offset(u64)`, and
-returns a `CountryPage`: `countries` (`data.objects`), `meta` (`total`, `count`, `limit`,
+returns a `CountryPage` on success: `countries` (`data.objects`), `meta` (`total`, `count`, `limit`,
 `offset`, `more`, `request_id`) and `demo` (the provider's `_demo` notice when the demo key
 was used, meaning the records are a sample).
 

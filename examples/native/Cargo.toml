@@ -23,7 +23,9 @@ reqwest = { workspace = true, features = ["stream"] }
 futures-core = "0.3.34"
 
 [dev-dependencies]
-tokio = { workspace = true, features = ["macros", "rt", "rt-multi-thread", "net", "io-util", "sync", "time"] }
+# Only for its paused-clock helpers (`paused`); these tests keep their own loopback server.
+concord-example-testserver = { path = "../testserver" }
+tokio = { workspace = true, features = ["macros", "rt", "rt-multi-thread", "net", "io-util", "sync", "time", "test-util"] }
 
 [lints]
 workspace = true

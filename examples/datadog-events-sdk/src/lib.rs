@@ -11,7 +11,8 @@ mod site;
 
 pub use api::{
     DD_API_KEY, DD_APPLICATION_KEY, DatadogApi, DatadogApiConfig, DatadogApiEvents,
-    DatadogApiEventsList, DatadogApiEventsPost, DatadogApiEventsSearch, SendPolicy,
+    DatadogApiEventsList, DatadogApiEventsPost, DatadogApiEventsSearch, DatadogApiOperation,
+    SendPolicy,
 };
 pub use client::{DatadogEvents, PageInfo, SearchPages};
 pub use credentials::Credentials;

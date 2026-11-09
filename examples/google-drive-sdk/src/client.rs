@@ -37,6 +37,9 @@ impl Default for ClientConfig {
     }
 }
 
+/// Sends `authorization: Bearer <token>` from the constructor's raw bearer token.
+/// Upload-specific header sources are documented on the upload wrappers.
+///
 /// Public developer entry point. OAuth tokens are injected; no token minting or refreshing.
 ///
 /// The client builds a transport with redirects and automatic retries disabled. Credentials
@@ -168,7 +171,7 @@ impl DriveClient {
     }
 
     /// Traverse files within a required page budget. An incomplete search is a typed error,
-    /// rather than successful exhaustion. Options and origin must match a restored cursor.
+    /// rather than successful exhaustion. Options and origin must match a restored cursor. Use `concord_sdk_google_drive::pagination::Resume` for the position. `Resume::Start` repeats the files listing with `options` and no page token; `Resume::At(key)` takes the `PageToken` from `nextPageToken` in a returned page's `next`.
     pub fn files(
         &self,
         options: ListOptions,

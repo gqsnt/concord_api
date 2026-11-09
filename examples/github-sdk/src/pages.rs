@@ -196,3 +196,92 @@ impl RepoContext {
         )
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use crate::api::{
+        GitHubOperation, GitHubRepoActionsArtifacts, GitHubRepoActionsRunArtifacts,
+        GitHubRepoActionsRunJobs, GitHubRepoActionsRuns, GitHubRepoActionsWorkflows,
+        GitHubRepoIssueComments, GitHubRepoIssues, GitHubRepoLabels, GitHubRepoPullFiles,
+        GitHubRepoPullReviews, GitHubRepoPulls, GitHubRepoRepoComments,
+    };
+    use crate::ids::{IssueNumber, PullNumber, RunId};
+    use crate::paging::operation::listing_id;
+    use crate::{GitHubConfig, GitHubContext, RepoRef};
+
+    /// The ready-made factories pass their operation id by hand: each must be the one
+    /// `listing_id` gives the endpoint they prepare.
+    #[test]
+    fn every_factory_binds_the_listing_id_of_its_endpoint() {
+        let github = GitHubContext::new(Default::default(), GitHubConfig { token: "t".into() });
+        let repo = github.repo(RepoRef::new("octo-org", "hello-world"));
+        let id = |operation: concord::Operation| {
+            GitHubOperation::from_operation(operation).and_then(listing_id)
+        };
+        let h = repo.handle();
+        let a = repo.actions();
+        let bound = [
+            (
+                repo.issue_pages(h.issues()).binding().operation(),
+                id(GitHubRepoIssues::operation()),
+            ),
+            (
+                repo.issue_comment_pages(IssueNumber(1), |op| op)
+                    .binding()
+                    .operation(),
+                id(GitHubRepoIssueComments::operation()),
+            ),
+            (
+                repo.repo_comment_pages(h.repo_comments())
+                    .binding()
+                    .operation(),
+                id(GitHubRepoRepoComments::operation()),
+            ),
+            (
+                repo.label_pages(h.labels()).binding().operation(),
+                id(GitHubRepoLabels::operation()),
+            ),
+            (
+                repo.pull_pages(h.pulls()).binding().operation(),
+                id(GitHubRepoPulls::operation()),
+            ),
+            (
+                repo.pull_review_pages(PullNumber(1), |op| op)
+                    .binding()
+                    .operation(),
+                id(GitHubRepoPullReviews::operation()),
+            ),
+            (
+                repo.pull_file_pages(PullNumber(1), |op| op)
+                    .binding()
+                    .operation(),
+                id(GitHubRepoPullFiles::operation()),
+            ),
+            (
+                repo.workflow_pages(a.workflows()).binding().operation(),
+                id(GitHubRepoActionsWorkflows::operation()),
+            ),
+            (
+                repo.run_pages(a.runs()).binding().operation(),
+                id(GitHubRepoActionsRuns::operation()),
+            ),
+            (
+                repo.run_job_pages(RunId(1), |op| op).binding().operation(),
+                id(GitHubRepoActionsRunJobs::operation()),
+            ),
+            (
+                repo.run_artifact_pages(RunId(1), |op| op)
+                    .binding()
+                    .operation(),
+                id(GitHubRepoActionsRunArtifacts::operation()),
+            ),
+            (
+                repo.artifact_pages(a.artifacts()).binding().operation(),
+                id(GitHubRepoActionsArtifacts::operation()),
+            ),
+        ];
+        for (factory, declared) in bound {
+            assert_eq!(Some(factory), declared);
+        }
+    }
+}

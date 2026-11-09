@@ -2,7 +2,7 @@
 //! one consumer workflow. Loopback fixtures only; the real Adyen API is never called.
 mod common;
 use common::*;
-use concord_example_testserver::{Recorded, Reply, TestServer};
+use concord_example_testserver::{Recorded, Reply, TestServer, paused};
 use concord_sdk_adyen_checkout::{concord::ErrorKind, *};
 use serde_json::{Value, json};
 use std::{
@@ -341,7 +341,9 @@ async fn capture_replay_follows_the_existing_guarantee_rules() {
 // Consumer: an application authorises a payment, then captures part of it later.
 // ---------------------------------------------------------------------------------------------
 
-#[tokio::test]
+// Paused clock (the SDK's deadline is a Tokio timer): the 300 ms deadline fires only once the
+// server holds the first capture; the payment and the replay complete while time stands still.
+#[tokio::test(start_paused = true)]
 async fn consumer_partial_capture_after_timeout_is_retried_identically_and_never_changed() {
     let captures = AtomicUsize::new(0);
     let server = TestServer::start(move |r: &Recorded| match r.path() {
@@ -354,12 +356,11 @@ async fn consumer_partial_capture_after_timeout_is_retried_identically_and_never
         other => panic!("unexpected route {other}"),
     })
     .await;
-    let checkout = api(&server, retry_policy(3, Duration::from_millis(300))).v71();
+    let deadline = Duration::from_millis(300);
+    let checkout = api(&server, retry_policy(3, deadline)).v71();
 
     // Manual capture is configured for the merchant account; the payment request is unchanged.
-    let authorised = checkout
-        .payments("payment-key", payment())
-        .send()
+    let authorised = paused::drive(checkout.payments("payment-key", payment()).send())
         .await
         .unwrap();
     assert_eq!(authorised.value.state(), PaymentState::Authorised);
@@ -377,7 +378,10 @@ async fn consumer_partial_capture_after_timeout_is_retried_identically_and_never
     let capture_op = checkout
         .payment(psp.clone())
         .captures("capture-key", request.clone());
-    let timed_out = capture_op.clone().send().await.unwrap_err();
+    let late = |r: &Recorded| r.path() == CAPTURE_PATH;
+    let timed_out = paused::time_out(&server, late, deadline, capture_op.clone().send())
+        .await
+        .unwrap_err();
     let evidence = timed_out.reconciliation().unwrap();
     assert_eq!(evidence.reason, ReconciliationReason::Deadline);
     assert_eq!(
@@ -391,7 +395,7 @@ async fn consumer_partial_capture_after_timeout_is_retried_identically_and_never
     );
 
     // The application decides to retry: the same operation, key and bytes.
-    let receipt = capture_op.send().await.unwrap();
+    let receipt = paused::drive(capture_op.send()).await.unwrap();
     assert_eq!(receipt.meta.status().as_u16(), 201);
     assert_eq!(receipt.value.psp_reference, CAPTURE_PSP);
     assert_eq!(receipt.value.payment_psp_reference, psp);

@@ -1,6 +1,6 @@
 //! Connected workflows against loopback fixtures.
 use concord::reqwest;
-use concord_example_testserver::{Gate, Reply, TestServer};
+use concord_example_testserver::{Gate, Reply, TestServer, paused};
 use concord_pagination::Resume;
 use concord_sdk_hubspot_crm::{CreateContact, Error, Filter, FilterGroup, HubSpot, SearchRequest};
 use std::{
@@ -188,7 +188,7 @@ async fn concurrent_refresh_is_single_flight_and_replacement_is_used_next() {
     server.shutdown().await;
 }
 
-#[tokio::test]
+#[tokio::test(start_paused = true)]
 async fn timed_out_create_is_uncertain_and_never_replayed() {
     let server = TestServer::start(|r| {
         if r.path().contains("/oauth/") {
@@ -199,11 +199,18 @@ async fn timed_out_create_is_uncertain_and_never_replayed() {
         }
     })
     .await;
-    let hub = client(&server.url(), Duration::from_millis(100));
-    assert!(matches!(
-        hub.create(CreateContact::default()).await,
-        Err(Error::CreateUncertain)
-    ));
+    let timeout = Duration::from_millis(100);
+    let hub = client(&server.url(), timeout);
+    // Paused clock: the token request and the delivery of the create complete in frozen time; the
+    // 100 ms timeout fires only once the server holds the create (it answers 300 ms later).
+    let create = paused::time_out(
+        &server,
+        |r| r.path() == "/crm/v3/objects/contacts",
+        timeout,
+        hub.create(CreateContact::default()),
+    )
+    .await;
+    assert!(matches!(create, Err(Error::CreateUncertain)));
     assert_eq!(
         server
             .requests()

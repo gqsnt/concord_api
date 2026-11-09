@@ -627,6 +627,11 @@ impl Session {
     /// Uploads one file to `target`'s bucket with `b2_upload_file`: its exact length as
     /// `Content-Length`, its SHA-1 as `X-Bz-Content-Sha1`, its percent-encoded name as
     /// `X-Bz-File-Name`.
+    /// The prepared headers are `authorization` (the upload token, verbatim),
+    /// `x-bz-file-name` (the encoded name), `x-bz-content-sha1` (the SHA-1 hex text), and,
+    /// when supplied, `x-bz-info-src_last_modified_millis` (decimal milliseconds).
+    /// The declared `Encoded` request format preserves the file's runtime `content-type`;
+    /// the declared `Json` output adds `accept: application/json` even for this binary upload.
     ///
     /// The first attempt uses the target's upload URL, or obtains one if the target is retired.
     /// An attempt that is not stored retires the URL (B2: valid "until the endpoint rejects an

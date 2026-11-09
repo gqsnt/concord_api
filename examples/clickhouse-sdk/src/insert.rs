@@ -22,6 +22,10 @@ use crate::wire::ClickHouseHttp;
 /// The SDK writes the statement itself from validated identifiers:
 /// `` INSERT INTO `db`.`t` (`a`, `b`) FORMAT JSONEachRow `` in the `query` URL parameter, the
 /// rows as the `POST` body. Nothing in the statement comes from row data.
+/// The declared `Encoded` request format preserves the writer's runtime `content-type`:
+/// `application/x-ndjson` for JSONEachRow or `text/csv; header=present` for CSVWithNames.
+/// The untyped response adds no `accept`; reqwest supplies its client default at execution
+/// (`*/*` by default). Credentials and database headers follow [`crate::ClickHouse`].
 ///
 /// An insert is **not** transactional: ClickHouse writes it in blocks. When the body fails after
 /// it started (the source fails, a row cannot be serialized, the connection breaks), part of

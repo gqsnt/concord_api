@@ -109,13 +109,16 @@ async fn status_errors_are_not_retried() {
     assert_eq!(server.requests().len(), 1);
 }
 
-#[tokio::test]
+// Paused clock: the 200 ms timeout fires only once the server has received the request and is
+// holding its delayed reply.
+#[tokio::test(start_paused = true)]
 async fn timeouts_are_not_retried_by_this_predicate() {
     let server =
         Server::reply(Reply::json(200, r#"{"id":5,"name":"Pen"}"#).delay(Duration::from_secs(3)))
             .await;
+    let timeout = Duration::from_millis(200);
     let http = concord::reqwest::Client::builder()
-        .timeout(Duration::from_millis(200))
+        .timeout(timeout)
         .build()
         .unwrap();
     let api = concord_example_native::api::Inventory::new(
@@ -126,7 +129,11 @@ async fn timeouts_are_not_retried_by_this_predicate() {
     )
     .with_base_url(format!("http://{}/v1", server.addr))
     .unwrap();
-    let error = item_with_retry(&api, 5, 3).await.unwrap_err();
+    let received = || server.requests().len() == 1 && server.in_flight() == 1;
+    let call = item_with_retry(&api, 5, 3);
+    let error = concord_example_testserver::paused::time_out_when(received, timeout, call)
+        .await
+        .unwrap_err();
     assert!(error.transport().unwrap().is_timeout());
     assert_eq!(server.requests().len(), 1);
 }

@@ -75,6 +75,8 @@ concord::api! {
 }
 
 impl Checkout {
+    /// Sends `x-api-key` with the supplied API key verbatim.
+    ///
     /// Constructs a test-environment client with redirects and reqwest retries disabled.
     ///
     /// `policy` must be shared for all credentials belonging to one company. Its ledger is

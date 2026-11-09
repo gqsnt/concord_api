@@ -50,6 +50,11 @@ value. `pages(from, cap)` requires a page bound. Hitting it with more data yield
 only with the same organization, issue, query and page size. Multi-page cycles end at the cap.
 An empty page with results=true continues. Page bounds count logical calls; retries count separately.
 
+For both issue and event `pages` methods, use `concord_sdk_sentry::Resume` for the position.
+`Resume::Start` repeats the operation's first page without `cursor`, replacing its cursor;
+`Resume::At(key)` takes the `String` cursor parsed from the next Link into a returned page's
+`next`.
+
 ## Status updates
 
 `issue.update_status(change).send()` sends `PUT .../organizations/{org}/issues/{issue}/` with a

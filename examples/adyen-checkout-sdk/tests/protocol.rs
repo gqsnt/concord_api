@@ -1,7 +1,7 @@
 //! Wire-level Checkout contracts and hostile response fixtures.
 mod common;
 use common::*;
-use concord_example_testserver::{Body, Recorded, Reply, TestServer};
+use concord_example_testserver::{Body, Recorded, Reply, TestServer, paused};
 use concord_sdk_adyen_checkout::{concord::ErrorKind, *};
 use std::{num::NonZeroUsize, time::Duration};
 
@@ -438,7 +438,9 @@ async fn lost_assurance_on_a_transient_error_prevents_replay_before_body_consump
     server.shutdown().await;
 }
 
-#[tokio::test]
+// Paused clock: the 50 ms timeout fires only once the server has written the head, so it ends the
+// stalled body and never the wait for the head (which the policy would retry).
+#[tokio::test(start_paused = true)]
 async fn stalled_final_bodies_are_bounded_by_transport_timeout_without_restarting() {
     for status in [200, 422] {
         let server = TestServer::start(move |r: &Recorded| {
@@ -447,10 +449,11 @@ async fn stalled_final_bodies_are_bounded_by_transport_timeout_without_restartin
                 .with_body(Body::Stall)
         })
         .await;
+        let timeout = Duration::from_millis(50);
         let http = concord::reqwest::Client::builder()
             .redirect(concord::reqwest::redirect::Policy::none())
             .retry(concord::reqwest::retry::never())
-            .timeout(Duration::from_millis(50))
+            .timeout(timeout)
             .build()
             .unwrap();
         let api = Checkout::new(
@@ -462,10 +465,9 @@ async fn stalled_final_bodies_are_bounded_by_transport_timeout_without_restartin
         )
         .with_base_url(server.url())
         .unwrap();
-        let error = api
-            .v71()
-            .payments("key", payment())
-            .send()
+        let v71 = api.v71();
+        let send = v71.payments("key", payment()).send();
+        let error = paused::time_out_in_body(&server, |_| true, timeout, send)
             .await
             .unwrap_err();
         match error {

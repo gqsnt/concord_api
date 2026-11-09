@@ -185,7 +185,7 @@ impl<T: Send + 'static> Listing<T> {
     }
 
     /// Resumes from a next-page checkpoint. Links are checked again before sending.
-    /// `Resume::Start` repeats this listing's original first request, including a delta start.
+    /// `Resume::Start` repeats this listing's original first request, including a delta start. Use `concord_sdk_microsoft_graph::pagination::Resume` for the position. `Resume::Start` repeats this listing's original first request, including a delta start; `Resume::At(key)` takes this listing's `NextLink` from a returned page's `next` or `restore_next`.
     pub fn pages_from(&self, from: Resume<NextLink>) -> GraphPages<T> {
         let listing = self.clone();
         Pages::new(from, move |key: Option<NextLink>| {

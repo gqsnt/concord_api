@@ -2,7 +2,7 @@
 //! All credentials and contacts are synthetic; all network traffic is loopback.
 
 use concord::{ErrorKind, reqwest};
-use concord_example_testserver::{Gate, Recorded, Reply, TestServer};
+use concord_example_testserver::{Gate, Recorded, Reply, TestServer, paused};
 use concord_pagination::{Outcome, PagesError, Resume};
 use concord_sdk_hubspot_crm::{CreateContact, Error, Filter, FilterGroup, HubSpot, SearchRequest};
 use serde_json::{Value, json};
@@ -710,8 +710,18 @@ async fn create_timeout_remains_uncertain() {
         _ => panic!("unexpected fixture route"),
     })
     .await;
-    let sdk = client(&server, Duration::from_millis(200));
-    let error = tokio::time::timeout(Duration::from_secs(3), sdk.create(create_input()))
+    let timeout = Duration::from_millis(200);
+    let sdk = client(&server, timeout);
+    // Paused clock: the token request, the delivery of the create and the reconciling read
+    // complete in frozen time; the 200 ms timeout fires only once the server holds the create.
+    tokio::time::pause();
+    let create = paused::time_out(
+        &server,
+        |r| r.path() == CONTACTS,
+        timeout,
+        sdk.create(create_input()),
+    );
+    let error = tokio::time::timeout(Duration::from_secs(3), create)
         .await
         .expect("caller timeout must be bounded")
         .unwrap_err();
@@ -721,7 +731,8 @@ async fn create_timeout_remains_uncertain() {
     assert_eq!(server.requests().len(), 2);
     // This ID is independent fixture knowledge; CreateUncertain supplied no ID.
     // The real application would need its own reconciliation strategy before retrying.
-    let reconciled = sdk.get("90202").await.unwrap();
+    let reconciled = paused::drive(sdk.get("90202")).await.unwrap();
+    tokio::time::resume();
     assert_eq!(reconciled.id, "90202");
     assert_eq!(
         reconciled.properties["email"].as_deref(),

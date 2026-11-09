@@ -1,6 +1,6 @@
 //! Sending an operation and keeping Stripe's response metadata and error documents.
 //!
-//! Every generated operation keeps its ordinary `send()` (Concord's typed value, nothing else).
+//! Every generated operation keeps its ordinary `send()` (Concord's typed value on success, nothing else).
 //! [`send`] is the SDK's alternative for callers that need what Stripe puts around the value:
 //! the `Request-Id`, `Idempotent-Replayed`, `Stripe-Should-Retry` and
 //! `Stripe-Rate-Limited-Reason` headers, and for a non-2xx status the typed error document

@@ -127,6 +127,12 @@ in this slice.
   page size and format (not checked across runs). A missing `referenceList` reads as empty;
   an empty page is accepted only where no records remain (for example a zero hit count).
 
+For both `pages` methods, use `concord_sdk_europe_pmc::concord_pagination::Resume` for the
+position. Search `Resume::Start` repeats the first search page with `cursorMark=*`;
+`Resume::At(key)` takes the `Cursor` from `nextCursorMark` in a returned page's `next`.
+References `Resume::Start` repeats page 1 of the publication's references; `Resume::At(key)`
+takes the `PageNumber` in a returned page's `next`.
+
 ## Failure semantics
 
 `Error::InvalidInput` refuses local inputs before I/O. `Error::Call` keeps Concord's

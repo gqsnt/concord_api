@@ -30,6 +30,8 @@ use std::fmt;
 use concord::{CodecError, Encode, reqwest};
 use serde::ser::{self, Impossible, Serialize, SerializeMap, Serializer};
 
+/// `Encode::CONTENT_TYPE` sends `content-type: application/x-www-form-urlencoded` with the body.
+///
 /// The request format of every Stripe write in this SDK: bracketed form encoding.
 pub struct StripeForm;
 

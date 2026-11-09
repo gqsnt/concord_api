@@ -249,12 +249,10 @@ async fn edited_timeout_before_and_after_the_head() {
 
 const SECRET: &str = "SYNTHETIC-SECRET";
 
-/// A loopback port nobody listens on: connecting is refused at once, deterministically.
-async fn refused_port() -> SocketAddr {
-    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
-    let addr = listener.local_addr().unwrap();
-    drop(listener);
-    addr
+/// A loopback port nobody listens on (held for the whole process): connecting is refused,
+/// deterministically.
+fn refused_port() -> SocketAddr {
+    support::refused_addr()
 }
 
 /// A signed URL: the edit appends a secret query value.
@@ -283,7 +281,7 @@ async fn archived_receive<T>(
 /// archived pattern, on the same request, prints the secret.
 #[tokio::test]
 async fn m02_transport_failure_is_converted_and_does_not_print_the_url() {
-    let addr = refused_port().await;
+    let addr = refused_port();
     let api = api_at(addr);
 
     let error = send_with_meta(api.item(7).prepare().unwrap(), &keep(), sign)

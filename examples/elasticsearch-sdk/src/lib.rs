@@ -15,7 +15,7 @@
 //!   write as [`Error::VersionConflict`]. An uncertain write is never retried by this SDK.
 //!
 //! The wire declaration is [`ElasticsearchApi`]; its generated `send()` returns this crate's
-//! [`Error`] through [`SendPolicy`]. See the crate README for the contract, failure semantics
+//! [`Error`] on failure through [`SendPolicy`]. See the crate README for the contract, failure semantics
 //! and what is excluded.
 
 pub mod bulk;
@@ -160,6 +160,8 @@ pub struct Elasticsearch {
 }
 
 impl Elasticsearch {
+    /// Sends `authorization: ApiKey <key>` from the supplied `ApiKey`.
+    ///
     /// A client for the deployment at `base_url` (scheme, host, port and any path prefix).
     pub fn new(http: reqwest::Client, base_url: &str, api_key: ApiKey) -> Result<Self, Error> {
         let api = ElasticsearchApi::new(

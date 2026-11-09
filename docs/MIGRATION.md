@@ -1,9 +1,13 @@
 # Migration
 
-Eight paths, newest first: the interface consolidation (unreleased candidate), 4.1 to 4.2 (a
-maintenance release; summary in the [changelog](../CHANGELOG.md)), then the two parts of 4.1.0
-(the modular V4), then older ones:
+Ten paths, newest first: the QuickBooks environment repair (T4) and the SDK send policies that
+take an operation (H08), the interface consolidation (unreleased candidate), 4.1 to 4.2 (a maintenance release; summary in the [changelog](../CHANGELOG.md)), then
+the two parts of 4.1.0 (the modular V4), then older ones:
 
+- [QuickBooks environment replacement (T4)](#quickbooks-environment-replacement-t4) — no source
+  change; a replacement connection selects its environment's official HTTPS host on send.
+- [SDK send policies take the endpoint's operation (H08)](#sdk-send-policies-take-the-endpoints-operation-h08)
+  — calls are unchanged; code that names `SendWith` on five SDK policies names `SendOperation`.
 - [To the consolidated interface](#to-the-consolidated-interface) — additive: existing code
   compiles (one rare exception: a generated name, below); the new response, body, stream and
   pagination boundaries, declared limits and send results, parameter groups and `query(..)` values
@@ -30,6 +34,48 @@ maintenance release; summary in the [changelog](../CHANGELOG.md)), then the two 
 Code blocks marked "does not compile" show the old form. Every other Rust block in this file is
 compiled and run as a doctest of `examples/quickstart` (`cargo test --doc -p
 concord-example-quickstart`).
+
+## QuickBooks environment replacement (T4)
+
+In `quickbooks-online-sdk`, `QuickBooks::connect(http, sandbox_connection)` followed by
+`set_connection(production_connection)` now sends to `quickbooks.api.intuit.com`; the reverse
+switch sends to `sandbox-quickbooks.api.intuit.com`. Previously the generated base snapshot kept
+the old environment's host while the realm and token source changed. Call sites need no change.
+
+The connection's send policy reselects only the host of requests to either official HTTPS host,
+before token acquisition. Same-environment calls and loopback fixture origins keep their wire
+behavior. `prepare()` remains token-free and shows the generated base snapshot; native execution
+of that request bypasses this policy. Scopes and requests already created keep their original
+connection and destination.
+
+## SDK send policies take the endpoint's operation (H08)
+
+Six example SDKs now declare `operations Name;` on their client, so each generated `send()` passes the endpoint's
+variant of a generated operation enum to the send policy, and the policy classifies it with an exhaustive `match` (an
+endpoint left out is a build error, not a run-time refusal). Their public policy types therefore implement
+`concord::SendOperation<T, Name>`; all but Square's no longer implement `concord::SendWith<T>`:
+
+| SDK | Public policy type | Operation enum |
+|---|---|---|
+| Kraken Spot REST | `Policy` | `KrakenOperation` |
+| PayPal | `Session` | `PayPalOperation` |
+| Sentry | `SendPolicy` | `SentryOperation` |
+| Square Payments | `SquarePolicy` | `SquareOperation` |
+| Strava | `Session` | `StravaOperation` |
+| Zendesk Support | `SendPolicy` | `ZendeskOperation` |
+
+(`SquarePolicy` ignores the variant: it keeps `SendWith` and forwards `SendOperation` to it, so code naming `SendWith`
+on it still compiles. Datadog Events also adopted, but its policy type is private; GitHub adopted without a send
+policy.)
+
+- **Ordinary calls are unchanged:** `api.endpoint(..).send().await` and `prepare()` keep their syntax and results.
+- **Code that names the trait** breaks: a generic bound `P: SendWith<T>` on one of these policies becomes
+  `P: SendOperation<T, Name>`, and a direct `SendWith::send(&policy, endpoint)` becomes
+  `SendOperation::send(&policy, Name::Variant, endpoint)` with the endpoint's own variant (the generated enum has one
+  variant per endpoint).
+- An SDK author adopting `operations` writes `impl<T> SendOperation<T, Name> for Policy` with a `match operation { .. }`
+  without a wildcard arm; see `AUTHOR_GUIDE.md` and the `SendOperation` rustdoc. A client without `operations` keeps
+  `SendWith`.
 
 ## To the consolidated interface
 

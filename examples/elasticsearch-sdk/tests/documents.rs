@@ -3,7 +3,7 @@
 mod common;
 
 use common::*;
-use concord_example_testserver::{Body, Recorded, Reply, TestServer};
+use concord_example_testserver::{Body, Recorded, Reply, TestServer, paused};
 use concord_sdk_elasticsearch::{
     ApiKey, DocumentId, DocumentSource, DocumentVersion, Elasticsearch, Error, GetDocument,
     IndexName, IndexResult, Invalid, Protocol,
@@ -200,7 +200,9 @@ async fn conflict_is_typed_even_if_its_error_body_is_unreadable_and_is_never_ret
     }
 }
 
-#[tokio::test]
+// Paused clock: the 300 ms timeout fires only once the server holds the PUT, after writing its head
+// when it stalls the body, so it ends the body and never the wait for the head.
+#[tokio::test(start_paused = true)]
 async fn timed_out_conditional_write_is_uncertain_before_or_after_the_head_and_sent_once() {
     for after_head in [false, true] {
         let server = TestServer::start(move |_: &Recorded| -> Reply {
@@ -213,23 +215,28 @@ async fn timed_out_conditional_write_is_uncertain_before_or_after_the_head_and_s
             }
         })
         .await;
+        let timeout = Duration::from_millis(300);
         let http = reqwest::Client::builder()
             .no_proxy()
             .retry(reqwest::retry::never())
             .redirect(reqwest::redirect::Policy::none())
-            .timeout(Duration::from_millis(300))
+            .timeout(timeout)
             .build()
             .unwrap();
         let es = Elasticsearch::new(http, &server.url(), ApiKey::new(KEY).unwrap()).unwrap();
-        let error = es
-            .conditional_index(
-                "products",
-                "1567",
-                DocumentVersion::new(362, 2).unwrap(),
-                &json!({"tags":["droid"]}),
-            )
-            .await
-            .unwrap_err();
+        let document = json!({"tags":["droid"]});
+        let write = es.conditional_index(
+            "products",
+            "1567",
+            DocumentVersion::new(362, 2).unwrap(),
+            &document,
+        );
+        let error = if after_head {
+            paused::time_out_in_body(&server, |_| true, timeout, write).await
+        } else {
+            paused::time_out(&server, |_| true, timeout, write).await
+        }
+        .unwrap_err();
         assert!(error.is_uncertain());
         let inner = error.concord().unwrap();
         assert_eq!(inner.kind(), ErrorKind::Transport);

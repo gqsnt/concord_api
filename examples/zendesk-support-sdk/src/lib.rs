@@ -55,6 +55,9 @@ concord::api! {
         format Json;
         limit PAGE_BODY_LIMIT;
         send policy -> Result<_, Error>;
+        /// Every Zendesk operation, as the [`SendPolicy`] classifies it (read or write, and
+        /// whether a `409` is a collision).
+        operations ZendeskOperation;
 
         /// The ticket collection.
         scope tickets {
@@ -103,6 +106,8 @@ concord::api! {
 }
 
 impl Zendesk {
+    /// Sends `authorization: Bearer <oauth_token>`, built by `concord_auth::bearer`.
+    ///
     /// A client for `https://{subdomain}.zendesk.com/api/v2` with an OAuth access token and the
     /// default [`SendPolicy`]. Obtaining and refreshing the token is the application's.
     ///

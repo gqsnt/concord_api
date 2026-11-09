@@ -8,7 +8,7 @@ use concord_sdk_europe_pmc::{
     concord::{ErrorKind, bytes::Bytes},
     concord_pagination::{Outcome, PagesError, Resume},
 };
-use concord_testserver::{Body, Recorded, Reply, TestServer};
+use concord_testserver::{Body, Recorded, Reply, TestServer, paused};
 use std::{num::NonZeroUsize, time::Duration};
 use support::*;
 
@@ -132,10 +132,13 @@ async fn an_xml_default_is_refused_on_json_references_before_its_body_is_read() 
         .await;
         let api = api(&server);
         let mut pages = refs(&api).pages(format, Resume::Start, cap(3)).unwrap();
-        let failed = tokio::time::timeout(Duration::from_secs(1), pages.next_page())
-            .await
-            .unwrap()
-            .unwrap_err();
+        // Clock frozen while the call runs: the bound fails only a call that waits for something
+        // that never comes (then reported as stuck).
+        let failed =
+            tokio::time::timeout(Duration::from_secs(1), paused::frozen(pages.next_page()))
+                .await
+                .unwrap()
+                .unwrap_err();
         let error = failed.provider_error().unwrap();
         assert_eq!(
             error.call_error().unwrap().kind(),

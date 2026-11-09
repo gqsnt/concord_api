@@ -8,7 +8,7 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use concord::stream::ReadErrorKind;
-use concord_example_testserver::{Body, Recorded, Reply, TestServer};
+use concord_example_testserver::{Body, Recorded, Reply, TestServer, paused};
 use concord_sdk_clickhouse::{
     CallContext, ClickHouse, Credentials, Error, Identifier, LateSource, Outcome, OutputFormat,
     Query, QueryId, Table, stream,
@@ -325,9 +325,11 @@ async fn wrong_format_or_media_type_is_refused_without_waiting_for_body() {
         })
         .await;
         let api = client(&server);
+        // Clock frozen while the call runs: the bound fails only a call that waits for something
+        // that never comes (then reported as stuck).
         let error = tokio::time::timeout(
             Duration::from_secs(1),
-            api.select(query(), format(false)).rows::<StockRow>(),
+            paused::frozen(api.select(query(), format(false)).rows::<StockRow>()),
         )
         .await
         .expect("head refusal must not read stalled body")

@@ -685,10 +685,8 @@ async fn unknown_event_types_pass_through() {
 
 #[tokio::test]
 async fn no_answer_is_a_transport_error_whose_delivery_is_unknown() {
-    // A refused connection: a port nobody listens on any more.
-    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
-    let closed = format!("http://{}", listener.local_addr().unwrap());
-    drop(listener);
+    // A refused connection: a port nobody listens on.
+    let closed = concord_example_testserver::refused_url();
     let refused = Anthropic::new(
         http_client().unwrap(),
         AnthropicConfig {

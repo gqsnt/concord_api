@@ -130,7 +130,7 @@ impl DiscordChannel {
         self.history_from(Resume::Start, limit)
     }
 
-    /// [`history`](Self::history) from a position: `Resume::At(id)` lists messages before `id`.
+    /// [`history`](Self::history) from a position: `Resume::At(id)` lists messages before `id`. Use `concord_sdk_discord_rest::pagination::Resume` for the position. `Resume::Start` repeats the channel's newest-message page with `limit`; `Resume::At(key)` takes the `MessageId` in a returned page's `next` (its oldest message), listing messages before that ID.
     pub fn history_from(&self, from: Resume<MessageId>, limit: MessageLimit) -> MessageHistory {
         let channel = self.clone();
         Pages::new(from, move |before: Option<MessageId>| {

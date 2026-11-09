@@ -19,6 +19,7 @@ zip = { version = "=2.4.2", default-features = false, features = ["deflate-flate
 flate2 = { version = "=1.1.10", default-features = false, features = ["rust_backend"] }
 
 [dev-dependencies]
+concord-check-canary = { path = "../../checks/canary" }
 concord-example-testserver = { path = "../testserver" }
 tokio = { workspace = true, features = ["macros", "rt-multi-thread", "time"] }
 

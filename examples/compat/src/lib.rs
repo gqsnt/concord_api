@@ -36,6 +36,9 @@ pub struct Envelope {
     pub error: Option<String>,
 }
 
+/// Uses the default `Decode::ACCEPT = None`: delegating JSON decoding does not
+/// inherit `Json`'s `accept: application/json` suggestion.
+///
 /// Checks the synthetic envelope after JSON decoding.
 pub struct Checked;
 impl Decode<Envelope> for Checked {
@@ -82,6 +85,8 @@ pub struct Order {
     /// Order number.
     pub order: u32,
 }
+/// `Encode::CONTENT_TYPE` sends `content-type: application/x-www-form-urlencoded` with the body.
+///
 /// A synthetic bracket-key convention, explicitly implemented by the caller.
 pub struct Brackets;
 impl Encode<Nested> for Brackets {
@@ -224,6 +229,8 @@ concord::api! {
     }
 }
 
+/// Its `Decode::ACCEPT` delegates to `Json`: `accept: application/json`.
+///
 /// A response format for an endpoint that answers either JSON or nothing (`200` with a document,
 /// `204 No Content` without). JSON itself has no empty document and `Json` requires a JSON
 /// `Content-Type`, so this policy is the application's own: a `204` needs no `Content-Type` and

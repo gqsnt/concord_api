@@ -79,9 +79,9 @@ impl fmt::Debug for Credentials {
         match &self.0 {
             Auth::None => f.write_str("Credentials::None"),
             Auth::Basic(_) => f.write_str("Credentials::Basic(<redacted>)"),
-            Auth::Headers { user, .. } => f
+            Auth::Headers { .. } => f
                 .debug_struct("Credentials::Headers")
-                .field("user", user)
+                .field("user", &"<redacted>")
                 .field("key", &"<redacted>")
                 .finish(),
         }
@@ -137,6 +137,12 @@ impl CallContext {
 /// A ClickHouse server's HTTP interface.
 ///
 /// Cheap to clone (one reference count); every operation takes `&self`.
+///
+/// Prepared header names are lowercase: Basic credentials use `authorization: Basic <base64>`;
+/// header credentials use `x-clickhouse-user` and `x-clickhouse-key` with the supplied values.
+/// A configured database uses `x-clickhouse-database`. The untyped select/insert/command
+/// streams add no format `accept`, and `Text` on ping suggests none. At execution reqwest
+/// fills a missing `accept` from client defaults (`*/*` by default).
 ///
 /// ```
 /// use concord_sdk_clickhouse::{ClickHouse, Credentials, Identifier};
@@ -201,6 +207,8 @@ impl ClickHouse {
 
     /// A read-only query whose rows arrive in `format` (`GET`, so the server refuses a statement
     /// that modifies data).
+    /// Sends `x-clickhouse-format: CSVWithNames` or `x-clickhouse-format: JSONEachRow`
+    /// according to [`OutputFormat`]. There is no body or format-added `content-type` or `accept`.
     pub fn select(&self, query: Query, format: OutputFormat) -> Select {
         Select {
             api: self.api.clone(),
@@ -214,6 +222,7 @@ impl ClickHouse {
 
     /// An insert into `table`; choose the body with
     /// [`json_each_row`](Insert::json_each_row) or [`csv_with_names`](Insert::csv_with_names).
+    /// The upload carries its runtime `content-type`; the untyped response adds no `accept`.
     pub fn insert(&self, table: Table) -> Insert {
         Insert::new(self.api.clone(), table)
     }
@@ -221,6 +230,8 @@ impl ClickHouse {
     /// Asks the server to stop the queries with this ID: `KILL QUERY WHERE query_id =
     /// {id:String} ASYNC` (the ID is a bound value, not SQL text). Returns the server's rows
     /// (`kill_status`, `query_id`), possibly none; `ASYNC` does not wait for the query to stop.
+    /// Sends `x-clickhouse-format: JSONEachRow` and `content-type: text/plain; charset=utf-8`
+    /// from the declared `Text` request format. The untyped response adds no `accept`.
     ///
     /// Stopping to read (dropping [`Rows`]) does not cancel the query on the server; this does,
     /// within the server's rules (a read-only user can stop only its own queries).
