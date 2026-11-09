@@ -35,7 +35,7 @@ the token to another host), so callers cannot reach the generated endpoint value
 | digitalocean | `DigitalOcean::with_base_url` | non-production origins only through `for_fixture` (loopback) |
 | discord-rest | `Discord::set_token`, `set_limiter` | one rate limiter per bot token |
 | mastodon | (generated client kept private) | the token is bound to its instance |
-| quickbooks-online | `QuickBooks::new`, `with_base_url` | the connection's environment selects the host |
+| quickbooks-online | `QuickBooks::with_base_url` | a request to any origin other than the two official hosts carries the connection's token (T4 already makes `send()` pick the connection's environment host, so `new` and `set_connection` are correct) |
 | salesforce | `SalesforceApi::new`, `with_base_url`, `set_version` | FM3, FM4 |
 | sentry | `Sentry::set_authorization`, `set_policy`, `with_base_url` | admission state belongs to one caller and deployment |
 | shopify | `ShopifyAdminShop::set_shop` | FM1 |
