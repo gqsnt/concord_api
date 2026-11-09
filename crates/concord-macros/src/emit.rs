@@ -1022,7 +1022,7 @@ struct Summary {
     /// The same result, shortened for the navigation entry.
     result_short: String,
     default_request: String,
-    /// The declared base and path, subdomain labels and what `with_base_url` replaces.
+    /// Actual-URL caveats and subdomain labels.
     url: Vec<String>,
     /// Query keys and headers (SDK-specific; on the navigation entry too).
     sent: Vec<String>,
@@ -1281,19 +1281,6 @@ fn summary_parts(model: &Model, endpoint: usize, method: &Ident) -> Option<Summa
         shown.join(", ")
     };
     let content_type = KeyName::Lit("content-type".to_owned());
-    let mut path = String::new();
-    for &(o, i) in &composed.segments {
-        path.push('/');
-        path.push_str(&model.owners[o].segments[i].text);
-    }
-    if composed.trailing_slash {
-        path.push('/');
-    }
-    let path = if path.is_empty() {
-        "none".to_owned()
-    } else {
-        format!("`{path}`")
-    };
     // Ordinary execution first; the wire output below belongs to prepared execution.
     let policy = match &model.owners[0].kind {
         Kind::Client { send, .. } => send.as_ref(),
@@ -1340,18 +1327,27 @@ fn summary_parts(model: &Model, endpoint: usize, method: &Ident) -> Option<Summa
             }
         }
     };
-    let mut url_lines = vec![format!(" Declared base: `{base}`. Declared path: {path}.")];
+    // What a caller can do with the base: `controls` may withhold `with_base_url`.
+    let (base_note, actual_url) = match model.owners[0].with_base_url {
+        Access::Public => (
+            "the declared base URL; the client's `with_base_url` replaces it",
+            " Construction or a send policy may select or restrict the actual URL.",
+        ),
+        Access::Crate => (
+            "the declared base URL; the crate that declares the client chooses the base: its `with_base_url` is not public",
+            " A send policy may select or restrict the actual URL.",
+        ),
+        Access::Removed => (
+            "the declared base URL; the client has no `with_base_url`",
+            " A send policy may select or restrict the actual URL.",
+        ),
+    };
+    let mut url_lines = vec![actual_url.to_owned()];
     if !labels.is_empty() {
         url_lines.push(format!(
             " Declared subdomain labels: `{labels}`, prepended to the base host; a replacement base must then have a domain name."
         ));
     }
-    // What a caller can do with the base: `controls` may withhold `with_base_url`.
-    url_lines.push(match model.owners[0].with_base_url {
-        Access::Public => " `with_base_url` replaces the whole base, including its path; declared paths are appended. Construction or a send policy may select or restrict the actual URL.",
-        Access::Crate => " The crate that declares the client chooses the base (its `with_base_url` is not public): construction may replace the declared base, including its path; declared paths are appended. A send policy may select or restrict the actual URL.",
-        Access::Removed => " The client has no `with_base_url`: requests go to the declared base. A send policy may select or restrict the actual URL.",
-    }.to_owned());
     let mut sent = vec![" Request composition below describes `prepare()`, before transport defaults or send-policy edits. A send policy can transform the prepared URL, query or headers; see the SDK's policy and wrapper notes.".to_owned()];
     sent.extend(query_for_docs(model, endpoint, composed));
     if composed.segments.iter().any(|&(o, i)| {
@@ -1552,7 +1548,7 @@ fn summary_parts(model: &Model, endpoint: usize, method: &Ident) -> Option<Summa
     Some(Summary {
         result,
         result_short,
-        default_request: format!(" Default request: `{method} {url}`."),
+        default_request: format!(" Default request: `{method} {url}` ({base_note})."),
         url: url_lines,
         sent,
         body,
@@ -1575,7 +1571,7 @@ fn paragraphs(groups: Vec<Vec<String>>) -> TokenStream {
 }
 
 /// The request an endpoint builds, as rustdoc derived from the resolved model, for the request
-/// type: the result of `send()` first, then the URL (default request, declared base and path),
+/// type: the result of `send()` first, then the URL (default request and actual-URL caveats),
 /// the query and header keys it may send, the body, the response handling and the identity.
 fn request_summary(model: &Model, endpoint: usize, method: &Ident) -> TokenStream {
     let Some(s) = summary_parts(model, endpoint, method) else {
@@ -1891,8 +1887,8 @@ fn emit_owner(
             let new_vis = access_vis(owner.new).unwrap_or_else(|| quote!(pub));
             let with_base_url = access_vis(owner.with_base_url).map(|base_vis| {
                 quote! {
-                    /// Replaces the whole declared base URL, including its path (for example
-                    /// with a staging or local server). It must be an `http`/`https` URL with a
+                    /// Replaces the declared base URL (for example with a staging server or a
+                    /// local test server). It must be an `http`/`https` URL with a
                     /// host, no port 0 and no user information, query or fragment; otherwise
                     /// returns `concord::Error`.
                     /// Declared paths are appended to its path. With `subdomain` labels the host
@@ -3498,7 +3494,9 @@ mod tests {
             docs.find(needle)
                 .unwrap_or_else(|| panic!("{needle} missing in {docs}"))
         };
-        let request = at("Default request: `POST http://x.test/items`.");
+        let request = at(
+            "Default request: `POST http://x.test/items` (the declared base URL; the client's `with_base_url` replaces it).",
+        );
         let query = at("Query in wire order");
         let headers = at("Headers (when present): `x-trace`.");
         let body = at("Body (`item`)");
@@ -3784,18 +3782,19 @@ mod tests {
                 }
             }
         });
-        // The default request is on the request type and its navigation entry; the declared
-        // base and path, and what `with_base_url` replaces, on the request type only.
+        // The default request and baseline base-URL parenthetical are on the request type and
+        // its navigation entry; the actual-URL caveat is on the request type only.
         for (expected, count) in [
             (
-                "Declared base: `https://x.test/api/`. Declared path: none.",
-                1,
+                "Default request: `GET https://x.test/api/` (the declared base URL; the client's `with_base_url` replaces it).",
+                2,
             ),
-            ("Default request: `GET https://x.test/api/`.", 2),
-            ("Declared path: `/v1/items/`.", 1),
-            ("Default request: `GET https://x.test/api/v1/items/`.", 2),
             (
-                "`with_base_url` replaces the whole base, including its path; declared paths are appended.",
+                "Default request: `GET https://x.test/api/v1/items/` (the declared base URL; the client's `with_base_url` replaces it).",
+                2,
+            ),
+            (
+                "Construction or a send policy may select or restrict the actual URL.",
                 2,
             ),
         ] {
@@ -3825,7 +3824,7 @@ mod tests {
                 1,
             ),
             (
-                "Default request: `GET https://s{n}.{region}.api.example.test/api/objects/{key}`.",
+                "Default request: `GET https://s{n}.{region}.api.example.test/api/objects/{key}` (the declared base URL; the client's `with_base_url` replaces it).",
                 2,
             ),
         ] {
@@ -3964,7 +3963,7 @@ mod tests {
                 ))
                 .unwrap();
             assert!(
-                result < summary.find("Declared base:").unwrap(),
+                result < summary.find("Default request:").unwrap(),
                 "{summary}"
             );
             assert!(
@@ -4026,7 +4025,7 @@ mod tests {
                 "{docs}"
             );
             assert!(
-                docs.find(&result).unwrap() < docs.find("Declared base:").unwrap(),
+                docs.find(&result).unwrap() < docs.rfind("Default request:").unwrap(),
                 "{docs}"
             );
             assert!(
@@ -4178,7 +4177,7 @@ mod tests {
             "Create one item.",
             "`POST` endpoint `Api.items.create`.",
             result,
-            "Default request: `POST https://x.test/api/items`.",
+            "Default request: `POST https://x.test/api/items` (the declared base URL; the client's `with_base_url` replaces it).",
             "1. `dry_run` from caller value `Api.items.create.dry_run` (optional).",
             "Headers (when present): `x-trace`.",
             "Base URL, body and response handling: `ApiItemsCreate`.",
@@ -4186,8 +4185,7 @@ mod tests {
             assert!(entry.contains(expected), "{expected} missing in {entry}");
         }
         for absent in [
-            "Declared base:",
-            "`with_base_url` replaces",
+            "Construction or a send policy may select or restrict the actual URL.",
             "Body (`item`)",
             "Prepared execution",
             "`prepare()` bypasses",
@@ -4198,8 +4196,8 @@ mod tests {
         // The request type keeps the full description, its result first.
         for expected in [
             result,
-            "Default request: `POST https://x.test/api/items`.",
-            "Declared base: `https://x.test/api`. Declared path: `/items`.",
+            "Default request: `POST https://x.test/api/items` (the declared base URL; the client's `with_base_url` replaces it).",
+            "Construction or a send policy may select or restrict the actual URL.",
             "Body (`item`): `Item`",
             "Prepared execution: `Item`",
             "`prepare()` bypasses the policy",
@@ -4438,7 +4436,7 @@ mod tests {
                         if method.sig.ident == "with_base_url" {
                             checked.push("with_base_url");
                             assert!(text.contains(
-                                "Replaces the whole declared base URL, including its path"
+                                "Replaces the declared base URL (for example with a staging server or a local test server)."
                             ));
                             assert!(text.contains("otherwise returns `concord::Error`"));
                             assert!(text.contains(
@@ -4877,7 +4875,7 @@ mod tests {
             (text("ApiGet"), text("ApiConfig"))
         };
         let (public, config) = summary(quote!());
-        assert!(public.contains("`with_base_url` replaces the whole base, including its path"));
+        assert!(public.contains("Default request: `GET http://x.test` (the declared base URL; the client's `with_base_url` replaces it)."));
         assert!(config.contains(
             "Optional values are set afterwards with the client's `set_*` and `maybe_*` methods."
         ));
@@ -4887,14 +4885,14 @@ mod tests {
             pub(crate) maybe_region;
         }));
         assert!(crate_only.contains(
-            "The crate that declares the client chooses the base (its `with_base_url` is not public)"
+            "Default request: `GET http://x.test` (the declared base URL; the crate that declares the client chooses the base: its `with_base_url` is not public)."
         ));
         assert!(!crate_only.contains("`with_base_url` replaces"));
         assert!(!config.contains("set afterwards"), "{config}");
         let (removed, _) = summary(quote!(controls { remove with_base_url; }));
         assert!(
             removed
-                .contains("The client has no `with_base_url`: requests go to the declared base.")
+                .contains("Default request: `GET http://x.test` (the declared base URL; the client has no `with_base_url`).")
         );
     }
 
