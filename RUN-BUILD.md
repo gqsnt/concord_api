@@ -85,8 +85,8 @@ Names both strangers looked for and did not find. I added none: each is your cal
 1. **The editor.** Open a file with `concord::api! { … }` in your editor: completion, go-to-definition and errors under the right tokens. No agent can see that.
 2. **A real call with your key.** `api/real-gen` holds Riot and the others as descriptions that compile. Nothing here ever called a real server.
 3. **Before any upload:** the licence (`MIT OR Apache-2.0` is the usual choice; no `license` line is set), the `repository` line, whether the crate names are free, and `publish = false` in `api/Cargo.toml` and in each crate that sets it itself.
-4. **The branch.** `main` is still the paper as it was before the build. `build` holds everything. Moving `main` is a merge that I did not do: say the word.
-5. **The size of the history.** By my mistake three late commits tracked the build output of the small bench crate (`api/tools/measure/target`, 640 MB). It is untracked and ignored now, but those commits still hold it, so `.git` is 400 MB. Removing it means rewriting those commits of `build`: your call.
+4. **The branch and GitHub: done on your word (D275).** Local `main` is the build. On `gqsnt/concord_api`, `main` is V4's history plus one commit, "Concord 5.0.0-rc.1"; the other 54 branches are deleted; a mirror of the repository as it was is in `~/projects/concord_api_backup.git`.
+5. **The size of the local history.** By my mistake three late commits tracked the build output of the small bench crate (640 MB). It is untracked and ignored now, and none of it went to GitHub (one commit there, 13 MB). The local `.git` is 400 MB; rewriting those local commits is your call.
 6. **The six contracts with no named test** (`build/MATRIX.md`) and the ideas of section 5.
 
 ## 7. The last run
