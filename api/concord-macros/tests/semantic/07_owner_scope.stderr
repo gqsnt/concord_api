@@ -1,0 +1,13 @@
+error: ambiguous input owner
+       label: this owner name is already in use
+       help: choose a distinct scope name and update every qualified reference to this scope's inputs
+ --> tests/semantic/07_owner_scope.rs:2:72
+  |
+2 |     client Workshop { base "https://workshop.test"; read Reader; scope client { GET fetch(); } }
+  |                                                                        ^^^^^^
+
+error: this owner is declared here
+ --> tests/semantic/07_owner_scope.rs:2:12
+  |
+2 |     client Workshop { base "https://workshop.test"; read Reader; scope client { GET fetch(); } }
+  |            ^^^^^^^^

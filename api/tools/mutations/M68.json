@@ -1,0 +1,9 @@
+{
+  "id": "M68",
+  "area": "pages",
+  "contract": "docs/contracts.md C8.4-C8.7",
+  "description": "Let an identical finished page request be sent again",
+  "file": "concord-core/src/__private/page.rs",
+  "find": "                            if same_page_request(",
+  "replace": "                            if false && same_page_request("
+}

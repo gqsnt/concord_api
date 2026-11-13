@@ -1,7 +1,0 @@
-{
-  "errors": [
-    {
-      "message": "The leaders field is available only on paid plans and cannot be used as a search, filter, or lookup field on your current plan. Request broader country data to receive the fallback value. Go to https://restcountries.com/plans to make updates to your account."
-    }
-  ]
-}

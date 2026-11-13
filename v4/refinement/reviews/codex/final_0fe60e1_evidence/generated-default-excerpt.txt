@@ -1,8 +1,0 @@
-resent).
-Initially  Some("fr".to_owned()) , evaluated once when this request is created.
-Sent as: query parameter  locale  (one occurrence per item).
-Per call:  maybe_locale(None)  (the default) keeps the inherited  locale ;  set_locale(v)  replaces it with one occurrence per item of  v , and with nothing at all when  v  has no items (for example  None  or an empty collection).
-When  locale  is absent, the inherited  locale  query parameter is sent unchanged ( override ... else inherit  in  Defaults.search ). 
- Source pub fn  maybe_locale (self, value:  Option < Option < String >>) -> Self Sets whether  locale  is present:  Some(v)  is  set_locale(v) ;  None  makes it absent (the initial value is not used).
-Initially  Some("fr".to_owned()) , evaluated once when this request is created.
-Sen

@@ -1,0 +1,13 @@
+error: this URL input must supply one required value
+       label: an optional input cannot fill this hole
+       help: declare `zone: String`, without `?`
+ --> tests/semantic/13_host.rs:2:98
+  |
+2 |     client Workshop { base "https://workshop.test"; read Reader; GET fetch(zone?: String) { base "https://{zone}.workshop.test"; } }
+  |                                                                                                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+error: this input is marked optional here
+ --> tests/semantic/13_host.rs:2:80
+  |
+2 |     client Workshop { base "https://workshop.test"; read Reader; GET fetch(zone?: String) { base "https://{zone}.workshop.test"; } }
+  |                                                                                ^

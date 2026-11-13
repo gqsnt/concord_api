@@ -1,5 +1,0 @@
-error: value `x` is in both parameter groups `A` and `B` included here; keep it in one
- --> tests/ui/param_group_two_groups_same_value.rs:6:25
-  |
-6 |         GET list(..A, ..B) { path "items"; }
-  |                         ^

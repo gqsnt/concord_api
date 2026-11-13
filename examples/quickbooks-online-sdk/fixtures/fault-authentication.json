@@ -1,9 +1,0 @@
-{
-  "Fault": {
-    "Error": [
-      { "Message": "Access token invalid or expired", "Detail": "synthetic detail", "code": "3200", "element": "" }
-    ],
-    "type": "AuthenticationFault"
-  },
-  "time": "2026-11-07T10:00:00.000-08:00"
-}

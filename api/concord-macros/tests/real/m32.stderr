@@ -1,0 +1,7 @@
+error: this HEAD result needs a success arm
+       label: no arm supplies the declared result
+       help: in this `status` block, add a success arm returning the declared result without reading a body
+  --> tests/real/m32.rs:33:47
+   |
+33 |             HEAD exists(id: String, ..output) -> bool {
+   |                                               ^^^^^^^

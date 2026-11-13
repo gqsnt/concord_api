@@ -1,0 +1,7 @@
+error: `problem` cannot be overridden or removed
+       label: `override` and `remove` stand inside a block, before an entry or an arm
+       help: write `problem Issue read Reader;`
+ --> tests/semantic/24_problem_remove.rs:2:23
+  |
+2 |     client Workshop { remove problem Issue read Reader; }
+  |                       ^^^^^^

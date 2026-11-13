@@ -1,0 +1,9 @@
+{
+  "id": "M43",
+  "area": "errors",
+  "contract": "docs/contracts.md C5/C6",
+  "description": "Change no-arm message by one word",
+  "file": "concord-core/src/error.rs",
+  "find": "                }\n                MismatchFailure::NoArm => f.write_str(\"no arm takes this status\"),\n                MismatchFailure::NextPage => f.write_str(\"the next page cannot be asked\"),\n",
+  "replace": "                }\n                MismatchFailure::NoArm => f.write_str(\"no arm takes this answer\"),\n                MismatchFailure::NextPage => f.write_str(\"the next page cannot be asked\"),\n"
+}

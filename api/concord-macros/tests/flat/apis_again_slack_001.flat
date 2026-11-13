@@ -1,0 +1,253 @@
+middleware Cooldown :: default () @slack:9:20
+endpoint slack.auth_test POST -> AuthIdentity
+input client.token: Secret @Slack:2:22
+base "https://slack.com/api" @slack:3:9
+path text="auth.test" cross_base=false @slack.auth_test:23:18
+header wire=0 "authorization" = "Bearer {token}" ; cross_base=false @slack:4:19
+body_function form @slack.auth_test:24:18
+read Json @slack:5:14
+arm 200 {body} => slack_response (body) ? @slack:7:18
+problem SlackProblem @slack:6:9
+problem_read Json @slack:5:14
+endpoint slack.conversations.list GET -> SlackPage < Conversation >
+input client.token: Secret @Slack:2:22
+input list.types?: Vec < String > @list:27:22
+input list.exclude_archived?: bool @list:27:43
+input list.limit?: u16 @page:11:19
+input list.cursor?: String @page:11:32
+input list.team_id?: String @workspace:15:24
+base "https://slack.com/api" @slack:3:9
+path text="conversations.list" cross_base=false @slack.conversations.list:28:22
+query wire=0 limit ; cross_base=false @slack.conversations.list part=page:12:21
+query wire=1 cursor ; cross_base=false @slack.conversations.list part=page:12:28
+query wire=2 team_id ; cross_base=false @slack.conversations.list part=workspace:16:21
+query wire=3 "types" = types . as_ref () . map (| v | v . join (",")) ; cross_base=false @slack.conversations.list:29:25
+query wire=4 exclude_archived ; cross_base=false @slack.conversations.list:29:72
+header wire=0 "authorization" = "Bearer {token}" ; cross_base=false @slack:4:19
+read Json @slack:5:14
+arm 200 {body} => slack_response (body) ? @slack:7:18
+problem SlackProblem @slack:6:9
+problem_read Json @slack:5:14
+paginate by_cursor (cursor , SlackPage :: next_cursor) @slack.conversations.list part=page:13:22
+endpoint slack.conversations.history GET -> SlackPage < Message >
+input client.token: Secret @Slack:2:22
+input history.channel: String @history:31:25
+input history.oldest?: String @history:31:42
+input history.latest?: String @history:31:59
+input history.inclusive?: bool @history:31:76
+input history.include_all_metadata?: bool @history:31:94
+input history.limit?: u16 @page:11:19
+input history.cursor?: String @page:11:32
+base "https://slack.com/api" @slack:3:9
+path text="conversations.history" cross_base=false @slack.conversations.history:32:22
+query wire=0 limit ; cross_base=false @slack.conversations.history part=page:12:21
+query wire=1 cursor ; cross_base=false @slack.conversations.history part=page:12:28
+query wire=2 channel ; cross_base=false @slack.conversations.history:33:25
+query wire=3 oldest ; cross_base=false @slack.conversations.history:33:34
+query wire=4 latest ; cross_base=false @slack.conversations.history:33:42
+query wire=5 inclusive ; cross_base=false @slack.conversations.history:33:50
+query wire=6 include_all_metadata ; cross_base=false @slack.conversations.history:33:61
+header wire=0 "authorization" = "Bearer {token}" ; cross_base=false @slack:4:19
+read Json @slack:5:14
+arm 200 {body} => slack_response (body) ? @slack:7:18
+problem SlackProblem @slack:6:9
+problem_read Json @slack:5:14
+paginate by_cursor (cursor , SlackPage :: next_cursor) @slack.conversations.history part=page:13:22
+endpoint slack.conversations.info GET -> ChannelInfo
+input client.token: Secret @Slack:2:22
+input info.channel: String @info:35:22
+input info.include_locale?: bool @info:35:39
+input info.include_num_members?: bool @info:35:62
+base "https://slack.com/api" @slack:3:9
+path text="conversations.info" cross_base=false @slack.conversations.info:36:22
+query wire=0 channel ; cross_base=false @slack.conversations.info:37:25
+query wire=1 include_locale ; cross_base=false @slack.conversations.info:37:34
+query wire=2 include_num_members ; cross_base=false @slack.conversations.info:37:50
+header wire=0 "authorization" = "Bearer {token}" ; cross_base=false @slack:4:19
+read Json @slack:5:14
+arm 200 {body} => slack_response (body) ? @slack:7:18
+problem SlackProblem @slack:6:9
+problem_read Json @slack:5:14
+endpoint slack.conversations.join POST -> ChannelInfo
+input client.token: Secret @Slack:2:22
+input join.channel: String @join:39:23
+base "https://slack.com/api" @slack:3:9
+path text="conversations.join" cross_base=false @slack.conversations.join:40:22
+header wire=0 "authorization" = "Bearer {token}" ; cross_base=false @slack:4:19
+body_function form @slack.conversations.join:41:22
+body_entry channel ; @slack.conversations.join:41:29
+read Json @slack:5:14
+arm 200 {body} => slack_response (body) ? @slack:7:18
+problem SlackProblem @slack:6:9
+problem_read Json @slack:5:14
+endpoint slack.chat.post_message POST -> MessageReceipt
+input client.token: Secret @Slack:2:22
+input post_message.channel: String @post_message:45:31
+input post_message.thread_ts?: String @post_message:45:48
+input post_message.reply_broadcast?: bool @post_message:45:68
+input post_message.unfurl_links?: bool @post_message:45:92
+input post_message.unfurl_media?: bool @post_message:45:113
+input post_message.text?: String @content:18:22
+input post_message.blocks?: Vec < Block > @content:18:37
+input post_message.attachments?: Vec < Attachment > @content:18:58
+base "https://slack.com/api" @slack:3:9
+path text="chat.postMessage" cross_base=false @slack.chat.post_message:46:22
+header wire=0 "authorization" = "Bearer {token}" ; cross_base=false @slack:4:19
+body_function json @slack.chat.post_message part=content:19:18
+body_entry text ; @slack.chat.post_message part=content:19:25
+body_entry blocks ; @slack.chat.post_message part=content:19:31
+body_entry attachments ; @slack.chat.post_message part=content:19:39
+body_entry channel ; @slack.chat.post_message:47:29
+body_entry thread_ts ; @slack.chat.post_message:47:38
+body_entry reply_broadcast ; @slack.chat.post_message:47:49
+body_entry unfurl_links ; @slack.chat.post_message:47:66
+body_entry unfurl_media ; @slack.chat.post_message:47:80
+read Json @slack:5:14
+arm 200 {body} => slack_response (body) ? @slack:7:18
+problem SlackProblem @slack:6:9
+problem_read Json @slack:5:14
+endpoint slack.chat.update POST -> MessageReceipt
+input client.token: Secret @Slack:2:22
+input update.channel: String @update:49:25
+input update.ts: String @update:49:42
+input update.text?: String @content:18:22
+input update.blocks?: Vec < Block > @content:18:37
+input update.attachments?: Vec < Attachment > @content:18:58
+base "https://slack.com/api" @slack:3:9
+path text="chat.update" cross_base=false @slack.chat.update:50:22
+header wire=0 "authorization" = "Bearer {token}" ; cross_base=false @slack:4:19
+body_function json @slack.chat.update part=content:19:18
+body_entry text ; @slack.chat.update part=content:19:25
+body_entry blocks ; @slack.chat.update part=content:19:31
+body_entry attachments ; @slack.chat.update part=content:19:39
+body_entry channel ; @slack.chat.update:51:29
+body_entry ts ; @slack.chat.update:51:38
+read Json @slack:5:14
+arm 200 {body} => slack_response (body) ? @slack:7:18
+problem SlackProblem @slack:6:9
+problem_read Json @slack:5:14
+endpoint slack.chat.delete POST -> DeletedMessage
+input client.token: Secret @Slack:2:22
+input delete.channel: String @delete:53:25
+input delete.ts: String @delete:53:42
+base "https://slack.com/api" @slack:3:9
+path text="chat.delete" cross_base=false @slack.chat.delete:54:22
+header wire=0 "authorization" = "Bearer {token}" ; cross_base=false @slack:4:19
+body_function form @slack.chat.delete:55:22
+body_entry channel ; @slack.chat.delete:55:29
+body_entry ts ; @slack.chat.delete:55:38
+read Json @slack:5:14
+arm 200 {body} => slack_response (body) ? @slack:7:18
+problem SlackProblem @slack:6:9
+problem_read Json @slack:5:14
+endpoint slack.reactions_add POST -> Acknowledged
+input client.token: Secret @Slack:2:22
+input reactions_add.channel: String @reactions_add:58:28
+input reactions_add.timestamp: String @reactions_add:58:45
+input reactions_add.name: String @reactions_add:58:64
+base "https://slack.com/api" @slack:3:9
+path text="reactions.add" cross_base=false @slack.reactions_add:59:18
+header wire=0 "authorization" = "Bearer {token}" ; cross_base=false @slack:4:19
+body_function form @slack.reactions_add:60:18
+body_entry channel ; @slack.reactions_add:60:25
+body_entry timestamp ; @slack.reactions_add:60:34
+body_entry name ; @slack.reactions_add:60:45
+read Json @slack:5:14
+arm 200 {body} => slack_response (body) ? @slack:7:18
+problem SlackProblem @slack:6:9
+problem_read Json @slack:5:14
+endpoint slack.users.list GET -> SlackPage < User >
+input client.token: Secret @Slack:2:22
+input list.include_locale?: bool @list:63:22
+input list.limit?: u16 @page:11:19
+input list.cursor?: String @page:11:32
+input list.team_id?: String @workspace:15:24
+base "https://slack.com/api" @slack:3:9
+path text="users.list" cross_base=false @slack.users.list:64:22
+query wire=0 limit ; cross_base=false @slack.users.list part=page:12:21
+query wire=1 cursor ; cross_base=false @slack.users.list part=page:12:28
+query wire=2 team_id ; cross_base=false @slack.users.list part=workspace:16:21
+query wire=3 include_locale ; cross_base=false @slack.users.list:65:25
+header wire=0 "authorization" = "Bearer {token}" ; cross_base=false @slack:4:19
+read Json @slack:5:14
+arm 200 {body} => slack_response (body) ? @slack:7:18
+problem SlackProblem @slack:6:9
+problem_read Json @slack:5:14
+paginate by_cursor (cursor , SlackPage :: next_cursor) @slack.users.list part=page:13:22
+endpoint slack.users.info GET -> UserInfo
+input client.token: Secret @Slack:2:22
+input info.user?: String @info:67:22
+input info.include_locale?: bool @info:67:37
+base "https://slack.com/api" @slack:3:9
+path text="users.info" cross_base=false @slack.users.info:68:22
+query wire=0 user ; cross_base=false @slack.users.info:69:25
+query wire=1 include_locale ; cross_base=false @slack.users.info:69:31
+header wire=0 "authorization" = "Bearer {token}" ; cross_base=false @slack:4:19
+read Json @slack:5:14
+arm 200 {body} => slack_response (body) ? @slack:7:18
+problem SlackProblem @slack:6:9
+problem_read Json @slack:5:14
+endpoint slack.files.get_upload_url_external POST -> UploadTicket
+input client.token: Secret @Slack:2:22
+input get_upload_url_external.filename: String @get_upload_url_external:73:42
+input get_upload_url_external.length: u64 @get_upload_url_external:73:60
+input get_upload_url_external.alt_txt?: String @get_upload_url_external:73:73
+input get_upload_url_external.snippet_type?: String @get_upload_url_external:73:91
+base "https://slack.com/api" @slack:3:9
+path text="files.getUploadURLExternal" cross_base=false @slack.files.get_upload_url_external:74:22
+header wire=0 "authorization" = "Bearer {token}" ; cross_base=false @slack:4:19
+body_function form @slack.files.get_upload_url_external:75:22
+body_entry filename ; @slack.files.get_upload_url_external:75:29
+body_entry length ; @slack.files.get_upload_url_external:75:39
+body_entry alt_txt ; @slack.files.get_upload_url_external:75:47
+body_entry snippet_type ; @slack.files.get_upload_url_external:75:56
+read Json @slack:5:14
+arm 200 {body} => slack_response (body) ? @slack:7:18
+problem SlackProblem @slack:6:9
+problem_read Json @slack:5:14
+endpoint slack.files.complete_upload_external POST -> CompletedFiles
+input client.token: Secret @Slack:2:22
+input complete_upload_external.uploads: Vec < UploadedFile > @complete_upload_external:78:43
+input complete_upload_external.channel_id?: String @complete_upload_external:78:71
+input complete_upload_external.initial_comment?: String @complete_upload_external:78:92
+input complete_upload_external.thread_ts?: String @complete_upload_external:78:118
+idle_timeout Duration :: from_secs (300) @slack.files.complete_upload_external:81:30
+base "https://slack.com/api" @slack:3:9
+path text="files.completeUploadExternal" cross_base=false @slack.files.complete_upload_external:79:22
+header wire=0 "authorization" = "Bearer {token}" ; cross_base=false @slack:4:19
+body_function json @slack.files.complete_upload_external:80:22
+body_entry "files" = uploads ; @slack.files.complete_upload_external:80:29
+body_entry channel_id ; @slack.files.complete_upload_external:80:48
+body_entry initial_comment ; @slack.files.complete_upload_external:80:60
+body_entry thread_ts ; @slack.files.complete_upload_external:80:77
+read Json @slack:5:14
+arm 200 {body} => slack_response (body) ? @slack:7:18
+problem SlackProblem @slack:6:9
+problem_read Json @slack:5:14
+endpoint slack.files.upload POST -> ()
+input client.token: Secret @Slack:2:22
+input upload.upload_base: Base @upload:84:25
+input upload.file: Body @upload:84:44
+base upload_base @slack.files.upload:85:17
+body file @slack.files.upload:87:22
+read Json @slack:5:14
+arm 200 {} => () @slack.files.upload:88:35
+arm 2xx {} => Err (concord :: mismatch ("byte upload did not return HTTP 200")) ? @slack.files.upload:88:46
+problem SlackProblem @slack:6:9
+problem_read Json @slack:5:14
+endpoint slack.views_open POST -> OpenedView
+input client.token: Secret @Slack:2:22
+input views_open.view: Modal @views_open:91:25
+input views_open.trigger_id?: String @views_open:91:38
+input views_open.interactivity_pointer?: String @views_open:91:59
+base "https://slack.com/api" @slack:3:9
+path text="views.open" cross_base=false @slack.views_open:92:18
+header wire=0 "authorization" = "Bearer {token}" ; cross_base=false @slack:4:19
+body_function json @slack.views_open:93:18
+body_entry view ; @slack.views_open:93:25
+body_entry trigger_id ; @slack.views_open:93:31
+body_entry interactivity_pointer ; @slack.views_open:93:43
+read Json @slack:5:14
+arm 200 {body} => slack_response (body) ? @slack:7:18
+problem SlackProblem @slack:6:9
+problem_read Json @slack:5:14

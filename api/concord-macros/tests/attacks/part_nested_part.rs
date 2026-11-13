@@ -1,0 +1,1 @@
+part p() { part q() {} }

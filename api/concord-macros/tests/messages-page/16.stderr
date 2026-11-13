@@ -1,0 +1,7 @@
+error: statements must precede children
+       label: statement appears after a child
+       help: move `read Json;` before the first child
+ --> tests/messages-page/16.rs:2:53
+  |
+2 | client Tasks { base "https://a.example"; GET get(); read Json; }
+  |                                                     ^^^^

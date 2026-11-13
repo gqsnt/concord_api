@@ -1,0 +1,7 @@
+error: `Self` has no meaning in a description
+       label: `Self` is not the enclosing type here
+       help: write the path of the type
+ --> tests/messages-page/10_self.rs:2:71
+  |
+2 | client Tasks { base "https://a.example"; read Json; GET list() -> Vec<Self>; }
+  |                                                                       ^^^^

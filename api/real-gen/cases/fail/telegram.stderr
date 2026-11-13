@@ -1,0 +1,40 @@
+error[E0277]: the trait bound `Secret: serde::Serialize` is not satisfied
+   --> telegram.rs:133:25
+    |
+133 |               body params(json!({
+    |  _________________________^
+134 | |                 "url": url, "secret_token": secret_token, "max_connections": max_connections,
+135 | |                 "allowed_updates": allowed_updates, "drop_pending_updates": drop_pending_updates
+136 | |             }));
+    | |              ^
+    | |              |
+    | |______________the trait `Serialize` is not implemented for `Secret`
+    |                required by a bound introduced by this call
+    |
+    = note: for local types consider adding `#[derive(serde::Serialize)]` to your `Secret` type
+    = note: for types from other crates check whether the crate offers a `serde` feature flag
+    = help: the following other types implement trait `Serialize`:
+              &'a T
+              &'a mut T
+              ()
+              (T,)
+              (T0, T1)
+              (T0, T1, T2)
+              (T0, T1, T2, T3)
+              (T0, T1, T2, T3, T4)
+            and 157 others
+    = note: required for `std::option::Option<Secret>` to implement `Serialize`
+    = note: 2 redundant requirements hidden
+    = note: required for `&&std::option::Option<Secret>` to implement `Serialize`
+note: required by a bound in `to_value`
+   --> /home/canarit/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde_json-1.0.154/src/value/mod.rs:997:8
+    |
+995 | pub fn to_value<T>(value: T) -> Result<Value, Error>
+    |        -------- required by a bound in this function
+996 | where
+997 |     T: Serialize,
+    |        ^^^^^^^^^ required by this bound in `to_value`
+    = note: this error originates in the macro `$crate::json_internal` which comes from the expansion of the macro `json` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+For more information about this error, try `rustc --explain E0277`.
+error: could not compile `real-page-telegram-fail` (lib) due to 1 previous error

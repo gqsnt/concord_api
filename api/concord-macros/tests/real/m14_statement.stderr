@@ -1,0 +1,7 @@
+error: unsupported attribute on `headers`
+       label: this statement takes no attributes
+       help: remove `# [doc = " Sent with every request."]` from this statement
+ --> tests/real/m14_statement.rs:4:9
+  |
+4 |         /// Sent with every request.
+  |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^

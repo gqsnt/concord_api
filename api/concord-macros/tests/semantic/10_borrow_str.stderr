@@ -1,0 +1,7 @@
+error: input types must own their data
+       label: borrowed input type
+       help: write `label: String`; callers may still pass references
+ --> tests/semantic/10_borrow_str.rs:2:83
+  |
+2 |     client Workshop { base "https://workshop.test"; read Reader; GET fetch(label: &str) { query { label; } } }
+  |                                                                                   ^^^^

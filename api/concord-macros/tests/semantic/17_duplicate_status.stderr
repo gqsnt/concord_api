@@ -1,0 +1,13 @@
+error: duplicate `status` statement
+       label: this node already declares `status`
+       help: consolidate these blocks into one, retaining every intended entry or arm and resolving repeated keys
+ --> tests/semantic/17_duplicate_status.rs:2:58
+  |
+2 |     client Workshop { GET fetch() { status { 410 => () } status { 410 => () } } }
+  |                                                          ^^^^^^
+
+error: the first `status` statement is here
+ --> tests/semantic/17_duplicate_status.rs:2:37
+  |
+2 |     client Workshop { GET fetch() { status { 410 => () } status { 410 => () } } }
+  |                                     ^^^^^^

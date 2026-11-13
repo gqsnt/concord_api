@@ -1,9 +1,0 @@
-{
-  "data": {
-    "objects": [
-      { "names": { "common": "Austria" }, "codes": { "alpha_2": "AT" }, "memberships": { "eu": true } },
-      { "names": { "common": "Belgium" }, "codes": { "alpha_2": "BE" }, "memberships": { "eu": true } }
-    ],
-    "meta": { "total": 3, "count": 2, "limit": 2, "offset": 0, "more": true }
-  }
-}

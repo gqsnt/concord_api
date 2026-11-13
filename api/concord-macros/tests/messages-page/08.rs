@@ -1,0 +1,4 @@
+concord::api! {
+client Tasks { base "https://a.example"; GET one2(); GET one_2(); }
+}
+fn main() {}

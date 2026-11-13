@@ -1,9 +1,0 @@
-{
-  "Fault": {
-    "Error": [
-      { "Message": "An application error has occurred while processing your request", "Detail": "System Failure Error: synthetic", "code": "10000", "element": "" }
-    ],
-    "type": "SystemFault"
-  },
-  "time": "2026-11-07T10:00:02.000-08:00"
-}

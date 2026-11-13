@@ -1,0 +1,13 @@
+error: query pair `code` is already set above
+       label: replacement requires `override`
+       help: write `override "code" = code;`
+ --> tests/semantic/21_short_query.rs:2:119
+  |
+2 |     client Workshop { base "https://workshop.test"; read Reader; query { "code" = 1; } GET fetch(code: u32) { query { code; } } }
+  |                                                                                                                       ^^^^
+
+error: the inherited query pair is set here
+ --> tests/semantic/21_short_query.rs:2:74
+  |
+2 |     client Workshop { base "https://workshop.test"; read Reader; query { "code" = 1; } GET fetch(code: u32) { query { code; } } }
+  |                                                                          ^^^^^^

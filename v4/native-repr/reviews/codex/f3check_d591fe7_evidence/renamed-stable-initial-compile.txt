@@ -1,8 +1,0 @@
-   Compiling f3check-renamed v0.0.0 (/home/canarit/projects/concord_v4_native_work/snapshots/f3check-d591fe7/target/probes/renamed)
-error: expected identifier
- --> src/lib.rs:7:23
-  |
-7 |         POST absolute(::c4::Text b: String) -> ::c4::Text String;
-  |                       ^
-
-error: could not compile `f3check-renamed` (lib test) due to 1 previous error

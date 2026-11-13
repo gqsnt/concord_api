@@ -1,8 +1,0 @@
-{
-  "scope": "openid",
-  "access_token": "A21AASyntheticAccessTokenShort-3333333333",
-  "token_type": "Bearer",
-  "app_id": "APP-SYNTHETIC00000000",
-  "expires_in": 30,
-  "nonce": "synthetic"
-}

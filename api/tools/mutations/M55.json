@@ -1,0 +1,9 @@
+{
+  "id": "M55",
+  "area": "request-building",
+  "contract": "docs/contracts.md C2.6 / C10.3",
+  "description": "Reverse query pairs on the wire",
+  "file": "concord-core/src/__private/build.rs",
+  "find": "        for NamedEntry { key, value } in &self.query {\n            let Entry { values, secret }",
+  "replace": "        for NamedEntry { key, value } in self.query.iter().rev() {\n            let Entry { values, secret }"
+}

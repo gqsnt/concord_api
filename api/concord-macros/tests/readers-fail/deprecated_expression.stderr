@@ -1,0 +1,11 @@
+error: use of deprecated function `old_key`
+ --> tests/readers-fail/deprecated_expression.rs:8:37
+  |
+8 |         GET get() { query { "key" = old_key(); } }
+  |                                     ^^^^^^^
+  |
+note: the lint level is defined here
+ --> tests/readers-fail/deprecated_expression.rs:1:9
+  |
+1 | #![deny(deprecated)]
+  |         ^^^^^^^^^^

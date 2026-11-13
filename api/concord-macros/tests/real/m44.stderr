@@ -1,0 +1,13 @@
+error: `override 2xx` leaves the inherited arm `200` in place
+       label: an exact arm from above still takes `200`
+       help: also write `override 200 { body } => slack_response(body)?`, or `remove 200`
+  --> tests/real/m44.rs:25:22
+   |
+25 |             status { override 2xx { body } => auth_reply(body)? }
+   |                      ^^^^^^^^^^^^
+
+error: the inherited `200` arm is here
+ --> tests/real/m44.rs:7:18
+  |
+7 |         status { 200 { body } => slack_response(body)? }
+  |                  ^^^

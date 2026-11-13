@@ -1,8 +1,0 @@
-{
-  "data": {
-    "objects": [
-      { "names": { "common": "Japan" }, "codes": { "alpha_2": "JP" }, "flag": { "emoji": "🇯🇵" } }
-    ],
-    "meta": { "total": 1, "count": 1, "limit": 25, "offset": 0, "more": false }
-  }
-}

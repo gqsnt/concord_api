@@ -1,5 +1,0 @@
-error: expected `scope`, an HTTP method (GET, POST, PUT, PATCH, DELETE, HEAD, OPTIONS) or an owner statement (`path`, `subdomain`, `query`, `headers`, `request`, `response`), found `FETCH`
- --> tests/ui/unknown_method.rs:4:9
-  |
-4 |         FETCH list();
-  |         ^^^^^

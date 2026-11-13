@@ -1,0 +1,4 @@
+concord::api! {
+client Tasks { base "https://a.example"; read Json; part page(start?: u32) { query { start; } paginate by_link(); } GET list(..page) -> Vec<Task> { paginate by_link(); } }
+}
+fn main() {}

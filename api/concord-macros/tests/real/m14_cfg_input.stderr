@@ -1,0 +1,7 @@
+error: unsupported attribute on an input
+       label: an input takes doc comments only
+       help: remove this attribute; retain its intended wire name ("queue") in the existing placement, updating that entry rather than adding another
+  --> tests/real/m14_cfg_input.rs:39:24
+   |
+39 |         part tft_queue(#[cfg(feature = "tft")] queue?: TftQueue) {
+   |                        ^^^^^^^^^^^^^^^^^^^^^^^

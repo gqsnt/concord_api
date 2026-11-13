@@ -1,0 +1,970 @@
+middleware ObserveQuota (quota . clone ()) @github:13:20
+endpoint github.rate_limit GET -> RateLimits
+input client.user_agent: String @Github:2:23
+input client.quota: QuotaLog @Github:2:43
+input client.token?: Secret @Github:2:60
+base "https://api.github.com" @github:3:9
+path text="rate_limit" cross_base=false @github.rate_limit:26:47
+header wire=0 "user-agent" = user_agent ; cross_base=false @github:5:13
+header wire=1 "accept" = "application/vnd.github+json" ; cross_base=false @github:6:13
+header wire=2 "x-github-api-version" = "2026-03-10" ; cross_base=false @github:7:13
+header wire=3 "authorization" = "Bearer {token}" ; cross_base=false @github:8:13
+read Json @github:10:14
+problem GithubProblem @github:11:9
+problem_read Json @github:10:14
+endpoint github.repository GET -> Repository
+input client.user_agent: String @Github:2:23
+input client.quota: QuotaLog @Github:2:43
+input client.token?: Secret @Github:2:60
+input repository.id: u64 @repository:27:24
+base "https://api.github.com" @github:3:9
+path text="repositories/" cross_base=false @github.repository:27:54
+path hole={id} cross_base=false @github.repository:27:54
+header wire=0 "user-agent" = user_agent ; cross_base=false @github:5:13
+header wire=1 "accept" = "application/vnd.github+json" ; cross_base=false @github:6:13
+header wire=2 "x-github-api-version" = "2026-03-10" ; cross_base=false @github:7:13
+header wire=3 "authorization" = "Bearer {token}" ; cross_base=false @github:8:13
+read Json @github:10:14
+problem GithubProblem @github:11:9
+problem_read Json @github:10:14
+endpoint github.user.get GET -> User
+input client.user_agent: String @Github:2:23
+input client.quota: QuotaLog @Github:2:43
+input client.token?: Secret @Github:2:60
+base "https://api.github.com" @github:3:9
+path text="user" cross_base=false @github.user:30:18
+header wire=0 "user-agent" = user_agent ; cross_base=false @github:5:13
+header wire=1 "accept" = "application/vnd.github+json" ; cross_base=false @github:6:13
+header wire=2 "x-github-api-version" = "2026-03-10" ; cross_base=false @github:7:13
+header wire=3 "authorization" = "Bearer {token}" ; cross_base=false @github:8:13
+read Json @github:10:14
+problem GithubProblem @github:11:9
+problem_read Json @github:10:14
+endpoint github.user.repos GET -> Vec < Repository >
+input client.user_agent: String @Github:2:23
+input client.quota: QuotaLog @Github:2:43
+input client.token?: Secret @Github:2:60
+input repos.visibility?: Visibility @repos:34:17
+input repos.affiliation?: Vec < String > @repos:34:42
+input repos.kind?: UserRepoType @repos:35:17
+input repos.since?: String @repos:35:38
+input repos.before?: String @repos:35:54
+input repos.sort?: RepoSort @repo_order:19:25
+input repos.direction?: Direction @repo_order:19:42
+input repos.per_page?: u32 @page:15:19
+input repos.page?: u32 @page:15:35
+base "https://api.github.com" @github:3:9
+path text="user" cross_base=false @github.user:30:18
+path text="repos" cross_base=false @github.user.repos:38:22
+query wire=0 sort ; cross_base=false @github.user.repos part=repo_order:20:21
+query wire=1 direction ; cross_base=false @github.user.repos part=repo_order:20:27
+query wire=2 per_page ; cross_base=false @github.user.repos part=page:16:21
+query wire=3 page ; cross_base=false @github.user.repos part=page:16:31
+query wire=4 visibility ; cross_base=false @github.user.repos:40:21
+query wire=5 "affiliation" = affiliation . as_ref () . map (| v | v . join (",")) ; cross_base=false @github.user.repos:41:21
+query wire=6 "type" = checked_repo_kind (kind , visibility , affiliation) ? ; cross_base=false @github.user.repos:42:21
+query wire=7 since ; cross_base=false @github.user.repos:43:21
+query wire=8 before ; cross_base=false @github.user.repos:43:28
+header wire=0 "user-agent" = user_agent ; cross_base=false @github:5:13
+header wire=1 "accept" = "application/vnd.github+json" ; cross_base=false @github:6:13
+header wire=2 "x-github-api-version" = "2026-03-10" ; cross_base=false @github:7:13
+header wire=3 "authorization" = "Bearer {token}" ; cross_base=false @github:8:13
+read Json @github:10:14
+problem GithubProblem @github:11:9
+problem_read Json @github:10:14
+paginate by_link () @github.user.repos part=page:17:22
+endpoint github.user.create_repo POST -> Repository
+input client.user_agent: String @Github:2:23
+input client.quota: QuotaLog @Github:2:43
+input client.token?: Secret @Github:2:60
+input create_repo.repo: NewRepository @create_repo:46:30
+base "https://api.github.com" @github:3:9
+path text="user" cross_base=false @github.user:30:18
+path text="repos" cross_base=false @github.user.create_repo:47:22
+header wire=0 "user-agent" = user_agent ; cross_base=false @github:5:13
+header wire=1 "accept" = "application/vnd.github+json" ; cross_base=false @github:6:13
+header wire=2 "x-github-api-version" = "2026-03-10" ; cross_base=false @github:7:13
+header wire=3 "authorization" = "Bearer {token}" ; cross_base=false @github:8:13
+body json (repo) @github.user.create_repo:48:22
+read Json @github:10:14
+problem GithubProblem @github:11:9
+problem_read Json @github:10:14
+endpoint github.users.get GET -> User
+input client.user_agent: String @Github:2:23
+input client.quota: QuotaLog @Github:2:43
+input client.token?: Secret @Github:2:60
+input users.username: String @users:52:21
+base "https://api.github.com" @github:3:9
+path text="users/" cross_base=false @github.users:53:18
+path hole={username} cross_base=false @github.users:53:18
+header wire=0 "user-agent" = user_agent ; cross_base=false @github:5:13
+header wire=1 "accept" = "application/vnd.github+json" ; cross_base=false @github:6:13
+header wire=2 "x-github-api-version" = "2026-03-10" ; cross_base=false @github:7:13
+header wire=3 "authorization" = "Bearer {token}" ; cross_base=false @github:8:13
+read Json @github:10:14
+problem GithubProblem @github:11:9
+problem_read Json @github:10:14
+endpoint github.users.repos GET -> Vec < Repository >
+input client.user_agent: String @Github:2:23
+input client.quota: QuotaLog @Github:2:43
+input client.token?: Secret @Github:2:60
+input users.username: String @users:52:21
+input repos.kind?: PublicRepoType @repos:55:23
+input repos.sort?: RepoSort @repo_order:19:25
+input repos.direction?: Direction @repo_order:19:42
+input repos.per_page?: u32 @page:15:19
+input repos.page?: u32 @page:15:35
+base "https://api.github.com" @github:3:9
+path text="users/" cross_base=false @github.users:53:18
+path hole={username} cross_base=false @github.users:53:18
+path text="repos" cross_base=false @github.users.repos:56:22
+query wire=0 sort ; cross_base=false @github.users.repos part=repo_order:20:21
+query wire=1 direction ; cross_base=false @github.users.repos part=repo_order:20:27
+query wire=2 per_page ; cross_base=false @github.users.repos part=page:16:21
+query wire=3 page ; cross_base=false @github.users.repos part=page:16:31
+query wire=4 "type" = kind ; cross_base=false @github.users.repos:57:25
+header wire=0 "user-agent" = user_agent ; cross_base=false @github:5:13
+header wire=1 "accept" = "application/vnd.github+json" ; cross_base=false @github:6:13
+header wire=2 "x-github-api-version" = "2026-03-10" ; cross_base=false @github:7:13
+header wire=3 "authorization" = "Bearer {token}" ; cross_base=false @github:8:13
+read Json @github:10:14
+problem GithubProblem @github:11:9
+problem_read Json @github:10:14
+paginate by_link () @github.users.repos part=page:17:22
+endpoint github.orgs.repos GET -> Vec < Repository >
+input client.user_agent: String @Github:2:23
+input client.quota: QuotaLog @Github:2:43
+input client.token?: Secret @Github:2:60
+input orgs.org: String @orgs:61:20
+input repos.kind?: OrgRepoType @repos:63:23
+input repos.sort?: RepoSort @repo_order:19:25
+input repos.direction?: Direction @repo_order:19:42
+input repos.per_page?: u32 @page:15:19
+input repos.page?: u32 @page:15:35
+base "https://api.github.com" @github:3:9
+path text="orgs/" cross_base=false @github.orgs:62:18
+path hole={org} cross_base=false @github.orgs:62:18
+path text="repos" cross_base=false @github.orgs.repos:64:22
+query wire=0 sort ; cross_base=false @github.orgs.repos part=repo_order:20:21
+query wire=1 direction ; cross_base=false @github.orgs.repos part=repo_order:20:27
+query wire=2 per_page ; cross_base=false @github.orgs.repos part=page:16:21
+query wire=3 page ; cross_base=false @github.orgs.repos part=page:16:31
+query wire=4 "type" = kind ; cross_base=false @github.orgs.repos:65:25
+header wire=0 "user-agent" = user_agent ; cross_base=false @github:5:13
+header wire=1 "accept" = "application/vnd.github+json" ; cross_base=false @github:6:13
+header wire=2 "x-github-api-version" = "2026-03-10" ; cross_base=false @github:7:13
+header wire=3 "authorization" = "Bearer {token}" ; cross_base=false @github:8:13
+read Json @github:10:14
+problem GithubProblem @github:11:9
+problem_read Json @github:10:14
+paginate by_link () @github.orgs.repos part=page:17:22
+endpoint github.orgs.create_repo POST -> Repository
+input client.user_agent: String @Github:2:23
+input client.quota: QuotaLog @Github:2:43
+input client.token?: Secret @Github:2:60
+input orgs.org: String @orgs:61:20
+input create_repo.repo: NewRepository @create_repo:67:30
+base "https://api.github.com" @github:3:9
+path text="orgs/" cross_base=false @github.orgs:62:18
+path hole={org} cross_base=false @github.orgs:62:18
+path text="repos" cross_base=false @github.orgs.create_repo:68:22
+header wire=0 "user-agent" = user_agent ; cross_base=false @github:5:13
+header wire=1 "accept" = "application/vnd.github+json" ; cross_base=false @github:6:13
+header wire=2 "x-github-api-version" = "2026-03-10" ; cross_base=false @github:7:13
+header wire=3 "authorization" = "Bearer {token}" ; cross_base=false @github:8:13
+body json (repo) @github.orgs.create_repo:69:22
+read Json @github:10:14
+problem GithubProblem @github:11:9
+problem_read Json @github:10:14
+endpoint github.repo.get GET -> Repository
+input client.user_agent: String @Github:2:23
+input client.quota: QuotaLog @Github:2:43
+input client.token?: Secret @Github:2:60
+input repo.owner: String @repo:73:20
+input repo.name: String @repo:73:35
+base "https://api.github.com" @github:3:9
+path text="repos/" cross_base=false @github.repo:74:18
+path hole={owner} cross_base=false @github.repo:74:18
+path text="/" cross_base=false @github.repo:74:18
+path hole={name} cross_base=false @github.repo:74:18
+header wire=0 "user-agent" = user_agent ; cross_base=false @github:5:13
+header wire=1 "accept" = "application/vnd.github+json" ; cross_base=false @github:6:13
+header wire=2 "x-github-api-version" = "2026-03-10" ; cross_base=false @github:7:13
+header wire=3 "authorization" = "Bearer {token}" ; cross_base=false @github:8:13
+read Json @github:10:14
+problem GithubProblem @github:11:9
+problem_read Json @github:10:14
+endpoint github.repo.get_if_changed GET -> Option < Repository >
+input client.user_agent: String @Github:2:23
+input client.quota: QuotaLog @Github:2:43
+input client.token?: Secret @Github:2:60
+input repo.owner: String @repo:73:20
+input repo.name: String @repo:73:35
+input get_if_changed.etag: String @get_if_changed:78:32
+base "https://api.github.com" @github:3:9
+path text="repos/" cross_base=false @github.repo:74:18
+path hole={owner} cross_base=false @github.repo:74:18
+path text="/" cross_base=false @github.repo:74:18
+path hole={name} cross_base=false @github.repo:74:18
+header wire=0 "user-agent" = user_agent ; cross_base=false @github:5:13
+header wire=1 "accept" = "application/vnd.github+json" ; cross_base=false @github:6:13
+header wire=2 "x-github-api-version" = "2026-03-10" ; cross_base=false @github:7:13
+header wire=3 "authorization" = "Bearer {token}" ; cross_base=false @github:8:13
+header wire=4 "if-none-match" = etag ; cross_base=false @github.repo.get_if_changed:79:27
+read Json @github:10:14
+arm 304 {} => None @github.repo.get_if_changed:80:26
+problem GithubProblem @github:11:9
+problem_read Json @github:10:14
+endpoint github.repo.contributor_stats GET -> Option < Vec < ContributorStats > >
+input client.user_agent: String @Github:2:23
+input client.quota: QuotaLog @Github:2:43
+input client.token?: Secret @Github:2:60
+input repo.owner: String @repo:73:20
+input repo.name: String @repo:73:35
+base "https://api.github.com" @github:3:9
+path text="repos/" cross_base=false @github.repo:74:18
+path hole={owner} cross_base=false @github.repo:74:18
+path text="/" cross_base=false @github.repo:74:18
+path hole={name} cross_base=false @github.repo:74:18
+path text="stats/contributors" cross_base=false @github.repo.contributor_stats:84:22
+header wire=0 "user-agent" = user_agent ; cross_base=false @github:5:13
+header wire=1 "accept" = "application/vnd.github+json" ; cross_base=false @github:6:13
+header wire=2 "x-github-api-version" = "2026-03-10" ; cross_base=false @github:7:13
+header wire=3 "authorization" = "Bearer {token}" ; cross_base=false @github:8:13
+read Json @github:10:14
+arm 202 {} => None @github.repo.contributor_stats:85:26
+arm 204 {} => Some (Vec :: new ()) @github.repo.contributor_stats:85:39
+problem GithubProblem @github:11:9
+problem_read Json @github:10:14
+endpoint github.repo.contents_root GET -> Vec < ContentEntry >
+input client.user_agent: String @Github:2:23
+input client.quota: QuotaLog @Github:2:43
+input client.token?: Secret @Github:2:60
+input repo.owner: String @repo:73:20
+input repo.name: String @repo:73:35
+input contents_root.reference?: String @at_ref:22:21
+base "https://api.github.com" @github:3:9
+path text="repos/" cross_base=false @github.repo:74:18
+path hole={owner} cross_base=false @github.repo:74:18
+path text="/" cross_base=false @github.repo:74:18
+path hole={name} cross_base=false @github.repo:74:18
+path text="contents" cross_base=false @github.repo.contents_root:88:69
+query wire=0 "ref" = reference ; cross_base=false @github.repo.contents_root part=at_ref:23:21
+header wire=0 "user-agent" = user_agent ; cross_base=false @github:5:13
+header wire=1 "accept" = "application/vnd.github+json" ; cross_base=false @github:6:13
+header wire=2 "x-github-api-version" = "2026-03-10" ; cross_base=false @github:7:13
+header wire=3 "authorization" = "Bearer {token}" ; cross_base=false @github:8:13
+read Json @github:10:14
+problem GithubProblem @github:11:9
+problem_read Json @github:10:14
+endpoint github.repo.issues.list GET -> Vec < Issue >
+input client.user_agent: String @Github:2:23
+input client.quota: QuotaLog @Github:2:43
+input client.token?: Secret @Github:2:60
+input repo.owner: String @repo:73:20
+input repo.name: String @repo:73:35
+input list.milestone?: String @list:95:21
+input list.state?: IssueState @list:95:41
+input list.assignee?: String @list:95:61
+input list.kind?: String @list:96:21
+input list.creator?: String @list:96:36
+input list.mentioned?: String @list:96:54
+input list.issue_field_values?: String @list:97:21
+input list.labels?: Vec < String > @list:97:50
+input list.sort?: IssueSort @list:98:21
+input list.direction?: Direction @list:98:39
+input list.since?: String @list:98:62
+input list.per_page?: u32 @page:15:19
+input list.page?: u32 @page:15:35
+base "https://api.github.com" @github:3:9
+path text="repos/" cross_base=false @github.repo:74:18
+path hole={owner} cross_base=false @github.repo:74:18
+path text="/" cross_base=false @github.repo:74:18
+path hole={name} cross_base=false @github.repo:74:18
+path text="issues" cross_base=false @github.repo.issues:91:22
+query wire=0 per_page ; cross_base=false @github.repo.issues.list part=page:16:21
+query wire=1 page ; cross_base=false @github.repo.issues.list part=page:16:31
+query wire=2 milestone ; cross_base=false @github.repo.issues.list:102:25
+query wire=3 state ; cross_base=false @github.repo.issues.list:102:36
+query wire=4 assignee ; cross_base=false @github.repo.issues.list:102:43
+query wire=5 "type" = kind ; cross_base=false @github.repo.issues.list:102:53
+query wire=6 creator ; cross_base=false @github.repo.issues.list:102:68
+query wire=7 mentioned ; cross_base=false @github.repo.issues.list:102:77
+query wire=8 issue_field_values ; cross_base=false @github.repo.issues.list:103:25
+query wire=9 "labels" = labels . as_ref () . map (| v | v . join (",")) ; cross_base=false @github.repo.issues.list:104:25
+query wire=10 sort ; cross_base=false @github.repo.issues.list:105:25
+query wire=11 direction ; cross_base=false @github.repo.issues.list:105:31
+query wire=12 since ; cross_base=false @github.repo.issues.list:105:42
+header wire=0 "user-agent" = user_agent ; cross_base=false @github:5:13
+header wire=1 "accept" = "application/vnd.github+json" ; cross_base=false @github:6:13
+header wire=2 "x-github-api-version" = "2026-03-10" ; cross_base=false @github:7:13
+header wire=3 "authorization" = "Bearer {token}" ; cross_base=false @github:8:13
+read Json @github:10:14
+problem GithubProblem @github:11:9
+problem_read Json @github:10:14
+paginate by_link () @github.repo.issues.list part=page:17:22
+endpoint github.repo.issues.create POST -> Issue
+input client.user_agent: String @Github:2:23
+input client.quota: QuotaLog @Github:2:43
+input client.token?: Secret @Github:2:60
+input repo.owner: String @repo:73:20
+input repo.name: String @repo:73:35
+input create.issue: NewIssue @create:108:29
+base "https://api.github.com" @github:3:9
+path text="repos/" cross_base=false @github.repo:74:18
+path hole={owner} cross_base=false @github.repo:74:18
+path text="/" cross_base=false @github.repo:74:18
+path hole={name} cross_base=false @github.repo:74:18
+path text="issues" cross_base=false @github.repo.issues:91:22
+header wire=0 "user-agent" = user_agent ; cross_base=false @github:5:13
+header wire=1 "accept" = "application/vnd.github+json" ; cross_base=false @github:6:13
+header wire=2 "x-github-api-version" = "2026-03-10" ; cross_base=false @github:7:13
+header wire=3 "authorization" = "Bearer {token}" ; cross_base=false @github:8:13
+body json (issue) @github.repo.issues.create:108:62
+read Json @github:10:14
+problem GithubProblem @github:11:9
+problem_read Json @github:10:14
+endpoint github.repo.issues.comment.get GET -> Comment
+input client.user_agent: String @Github:2:23
+input client.quota: QuotaLog @Github:2:43
+input client.token?: Secret @Github:2:60
+input repo.owner: String @repo:73:20
+input repo.name: String @repo:73:35
+input comment.id: u64 @comment:110:31
+base "https://api.github.com" @github:3:9
+path text="repos/" cross_base=false @github.repo:74:18
+path hole={owner} cross_base=false @github.repo:74:18
+path text="/" cross_base=false @github.repo:74:18
+path hole={name} cross_base=false @github.repo:74:18
+path text="issues" cross_base=false @github.repo.issues:91:22
+path text="comments/" cross_base=false @github.repo.issues.comment:111:26
+path hole={id} cross_base=false @github.repo.issues.comment:111:26
+header wire=0 "user-agent" = user_agent ; cross_base=false @github:5:13
+header wire=1 "accept" = "application/vnd.github+json" ; cross_base=false @github:6:13
+header wire=2 "x-github-api-version" = "2026-03-10" ; cross_base=false @github:7:13
+header wire=3 "authorization" = "Bearer {token}" ; cross_base=false @github:8:13
+read Json @github:10:14
+problem GithubProblem @github:11:9
+problem_read Json @github:10:14
+endpoint github.repo.issues.comment.update PATCH -> Comment
+input client.user_agent: String @Github:2:23
+input client.quota: QuotaLog @Github:2:43
+input client.token?: Secret @Github:2:60
+input repo.owner: String @repo:73:20
+input repo.name: String @repo:73:35
+input comment.id: u64 @comment:110:31
+input update.body: String @update:113:34
+base "https://api.github.com" @github:3:9
+path text="repos/" cross_base=false @github.repo:74:18
+path hole={owner} cross_base=false @github.repo:74:18
+path text="/" cross_base=false @github.repo:74:18
+path hole={name} cross_base=false @github.repo:74:18
+path text="issues" cross_base=false @github.repo.issues:91:22
+path text="comments/" cross_base=false @github.repo.issues.comment:111:26
+path hole={id} cross_base=false @github.repo.issues.comment:111:26
+header wire=0 "user-agent" = user_agent ; cross_base=false @github:5:13
+header wire=1 "accept" = "application/vnd.github+json" ; cross_base=false @github:6:13
+header wire=2 "x-github-api-version" = "2026-03-10" ; cross_base=false @github:7:13
+header wire=3 "authorization" = "Bearer {token}" ; cross_base=false @github:8:13
+body json (serde_json :: json ! ({ "body" : body })) @github.repo.issues.comment.update:114:30
+read Json @github:10:14
+problem GithubProblem @github:11:9
+problem_read Json @github:10:14
+endpoint github.repo.issues.comment.delete DELETE -> ()
+input client.user_agent: String @Github:2:23
+input client.quota: QuotaLog @Github:2:43
+input client.token?: Secret @Github:2:60
+input repo.owner: String @repo:73:20
+input repo.name: String @repo:73:35
+input comment.id: u64 @comment:110:31
+base "https://api.github.com" @github:3:9
+path text="repos/" cross_base=false @github.repo:74:18
+path hole={owner} cross_base=false @github.repo:74:18
+path text="/" cross_base=false @github.repo:74:18
+path hole={name} cross_base=false @github.repo:74:18
+path text="issues" cross_base=false @github.repo.issues:91:22
+path text="comments/" cross_base=false @github.repo.issues.comment:111:26
+path hole={id} cross_base=false @github.repo.issues.comment:111:26
+header wire=0 "user-agent" = user_agent ; cross_base=false @github:5:13
+header wire=1 "accept" = "application/vnd.github+json" ; cross_base=false @github:6:13
+header wire=2 "x-github-api-version" = "2026-03-10" ; cross_base=false @github:7:13
+header wire=3 "authorization" = "Bearer {token}" ; cross_base=false @github:8:13
+read Json @github:10:14
+problem GithubProblem @github:11:9
+problem_read Json @github:10:14
+endpoint github.repo.issues.issue.get GET -> Issue
+input client.user_agent: String @Github:2:23
+input client.quota: QuotaLog @Github:2:43
+input client.token?: Secret @Github:2:60
+input repo.owner: String @repo:73:20
+input repo.name: String @repo:73:35
+input issue.number: u64 @issue:119:29
+base "https://api.github.com" @github:3:9
+path text="repos/" cross_base=false @github.repo:74:18
+path hole={owner} cross_base=false @github.repo:74:18
+path text="/" cross_base=false @github.repo:74:18
+path hole={name} cross_base=false @github.repo:74:18
+path text="issues" cross_base=false @github.repo.issues:91:22
+path hole={number} cross_base=false @github.repo.issues.issue:120:26
+header wire=0 "user-agent" = user_agent ; cross_base=false @github:5:13
+header wire=1 "accept" = "application/vnd.github+json" ; cross_base=false @github:6:13
+header wire=2 "x-github-api-version" = "2026-03-10" ; cross_base=false @github:7:13
+header wire=3 "authorization" = "Bearer {token}" ; cross_base=false @github:8:13
+read Json @github:10:14
+problem GithubProblem @github:11:9
+problem_read Json @github:10:14
+endpoint github.repo.issues.issue.update PATCH -> Issue
+input client.user_agent: String @Github:2:23
+input client.quota: QuotaLog @Github:2:43
+input client.token?: Secret @Github:2:60
+input repo.owner: String @repo:73:20
+input repo.name: String @repo:73:35
+input issue.number: u64 @issue:119:29
+input update.changes: EditIssue @update:122:34
+base "https://api.github.com" @github:3:9
+path text="repos/" cross_base=false @github.repo:74:18
+path hole={owner} cross_base=false @github.repo:74:18
+path text="/" cross_base=false @github.repo:74:18
+path hole={name} cross_base=false @github.repo:74:18
+path text="issues" cross_base=false @github.repo.issues:91:22
+path hole={number} cross_base=false @github.repo.issues.issue:120:26
+header wire=0 "user-agent" = user_agent ; cross_base=false @github:5:13
+header wire=1 "accept" = "application/vnd.github+json" ; cross_base=false @github:6:13
+header wire=2 "x-github-api-version" = "2026-03-10" ; cross_base=false @github:7:13
+header wire=3 "authorization" = "Bearer {token}" ; cross_base=false @github:8:13
+body json (changes) @github.repo.issues.issue.update:122:70
+read Json @github:10:14
+problem GithubProblem @github:11:9
+problem_read Json @github:10:14
+endpoint github.repo.issues.issue.comments GET -> Vec < Comment >
+input client.user_agent: String @Github:2:23
+input client.quota: QuotaLog @Github:2:43
+input client.token?: Secret @Github:2:60
+input repo.owner: String @repo:73:20
+input repo.name: String @repo:73:35
+input issue.number: u64 @issue:119:29
+input comments.since?: String @comments:123:34
+input comments.per_page?: u32 @page:15:19
+input comments.page?: u32 @page:15:35
+base "https://api.github.com" @github:3:9
+path text="repos/" cross_base=false @github.repo:74:18
+path hole={owner} cross_base=false @github.repo:74:18
+path text="/" cross_base=false @github.repo:74:18
+path hole={name} cross_base=false @github.repo:74:18
+path text="issues" cross_base=false @github.repo.issues:91:22
+path hole={number} cross_base=false @github.repo.issues.issue:120:26
+path text="comments" cross_base=false @github.repo.issues.issue.comments:124:30
+query wire=0 per_page ; cross_base=false @github.repo.issues.issue.comments part=page:16:21
+query wire=1 page ; cross_base=false @github.repo.issues.issue.comments part=page:16:31
+query wire=2 since ; cross_base=false @github.repo.issues.issue.comments:125:33
+header wire=0 "user-agent" = user_agent ; cross_base=false @github:5:13
+header wire=1 "accept" = "application/vnd.github+json" ; cross_base=false @github:6:13
+header wire=2 "x-github-api-version" = "2026-03-10" ; cross_base=false @github:7:13
+header wire=3 "authorization" = "Bearer {token}" ; cross_base=false @github:8:13
+read Json @github:10:14
+problem GithubProblem @github:11:9
+problem_read Json @github:10:14
+paginate by_link () @github.repo.issues.issue.comments part=page:17:22
+endpoint github.repo.issues.issue.create_comment POST -> Comment
+input client.user_agent: String @Github:2:23
+input client.quota: QuotaLog @Github:2:43
+input client.token?: Secret @Github:2:60
+input repo.owner: String @repo:73:20
+input repo.name: String @repo:73:35
+input issue.number: u64 @issue:119:29
+input create_comment.body: String @create_comment:127:41
+base "https://api.github.com" @github:3:9
+path text="repos/" cross_base=false @github.repo:74:18
+path hole={owner} cross_base=false @github.repo:74:18
+path text="/" cross_base=false @github.repo:74:18
+path hole={name} cross_base=false @github.repo:74:18
+path text="issues" cross_base=false @github.repo.issues:91:22
+path hole={number} cross_base=false @github.repo.issues.issue:120:26
+path text="comments" cross_base=false @github.repo.issues.issue.create_comment:128:30
+header wire=0 "user-agent" = user_agent ; cross_base=false @github:5:13
+header wire=1 "accept" = "application/vnd.github+json" ; cross_base=false @github:6:13
+header wire=2 "x-github-api-version" = "2026-03-10" ; cross_base=false @github:7:13
+header wire=3 "authorization" = "Bearer {token}" ; cross_base=false @github:8:13
+body json (serde_json :: json ! ({ "body" : body })) @github.repo.issues.issue.create_comment:129:30
+read Json @github:10:14
+problem GithubProblem @github:11:9
+problem_read Json @github:10:14
+endpoint github.repo.pulls.list GET -> Vec < Pull >
+input client.user_agent: String @Github:2:23
+input client.quota: QuotaLog @Github:2:43
+input client.token?: Secret @Github:2:60
+input repo.owner: String @repo:73:20
+input repo.name: String @repo:73:35
+input list.state?: IssueState @list:137:21
+input list.head?: String @list:137:41
+input list.base?: String @list:137:56
+input list.sort?: PullSort @list:138:21
+input list.direction?: Direction @list:138:38
+input list.per_page?: u32 @page:15:19
+input list.page?: u32 @page:15:35
+base "https://api.github.com" @github:3:9
+path text="repos/" cross_base=false @github.repo:74:18
+path hole={owner} cross_base=false @github.repo:74:18
+path text="/" cross_base=false @github.repo:74:18
+path hole={name} cross_base=false @github.repo:74:18
+path text="pulls" cross_base=false @github.repo.pulls:135:22
+query wire=0 per_page ; cross_base=false @github.repo.pulls.list part=page:16:21
+query wire=1 page ; cross_base=false @github.repo.pulls.list part=page:16:31
+query wire=2 state ; cross_base=false @github.repo.pulls.list:140:29
+query wire=3 head ; cross_base=false @github.repo.pulls.list:140:36
+query wire=4 base ; cross_base=false @github.repo.pulls.list:140:42
+query wire=5 sort ; cross_base=false @github.repo.pulls.list:140:48
+query wire=6 direction ; cross_base=false @github.repo.pulls.list:140:54
+header wire=0 "user-agent" = user_agent ; cross_base=false @github:5:13
+header wire=1 "accept" = "application/vnd.github+json" ; cross_base=false @github:6:13
+header wire=2 "x-github-api-version" = "2026-03-10" ; cross_base=false @github:7:13
+header wire=3 "authorization" = "Bearer {token}" ; cross_base=false @github:8:13
+read Json @github:10:14
+problem GithubProblem @github:11:9
+problem_read Json @github:10:14
+paginate by_link () @github.repo.pulls.list part=page:17:22
+endpoint github.repo.pulls.create POST -> Pull
+input client.user_agent: String @Github:2:23
+input client.quota: QuotaLog @Github:2:43
+input client.token?: Secret @Github:2:60
+input repo.owner: String @repo:73:20
+input repo.name: String @repo:73:35
+input create.pull: NewPull @create:142:29
+base "https://api.github.com" @github:3:9
+path text="repos/" cross_base=false @github.repo:74:18
+path hole={owner} cross_base=false @github.repo:74:18
+path text="/" cross_base=false @github.repo:74:18
+path hole={name} cross_base=false @github.repo:74:18
+path text="pulls" cross_base=false @github.repo.pulls:135:22
+header wire=0 "user-agent" = user_agent ; cross_base=false @github:5:13
+header wire=1 "accept" = "application/vnd.github+json" ; cross_base=false @github:6:13
+header wire=2 "x-github-api-version" = "2026-03-10" ; cross_base=false @github:7:13
+header wire=3 "authorization" = "Bearer {token}" ; cross_base=false @github:8:13
+body json (pull) @github.repo.pulls.create:142:59
+read Json @github:10:14
+problem GithubProblem @github:11:9
+problem_read Json @github:10:14
+endpoint github.repo.pulls.pull.get GET -> Pull
+input client.user_agent: String @Github:2:23
+input client.quota: QuotaLog @Github:2:43
+input client.token?: Secret @Github:2:60
+input repo.owner: String @repo:73:20
+input repo.name: String @repo:73:35
+input pull.number: u64 @pull:144:28
+base "https://api.github.com" @github:3:9
+path text="repos/" cross_base=false @github.repo:74:18
+path hole={owner} cross_base=false @github.repo:74:18
+path text="/" cross_base=false @github.repo:74:18
+path hole={name} cross_base=false @github.repo:74:18
+path text="pulls" cross_base=false @github.repo.pulls:135:22
+path hole={number} cross_base=false @github.repo.pulls.pull:145:26
+header wire=0 "user-agent" = user_agent ; cross_base=false @github:5:13
+header wire=1 "accept" = "application/vnd.github+json" ; cross_base=false @github:6:13
+header wire=2 "x-github-api-version" = "2026-03-10" ; cross_base=false @github:7:13
+header wire=3 "authorization" = "Bearer {token}" ; cross_base=false @github:8:13
+read Json @github:10:14
+problem GithubProblem @github:11:9
+problem_read Json @github:10:14
+endpoint github.repo.pulls.pull.diff GET -> Bytes
+input client.user_agent: String @Github:2:23
+input client.quota: QuotaLog @Github:2:43
+input client.token?: Secret @Github:2:60
+input repo.owner: String @repo:73:20
+input repo.name: String @repo:73:35
+input pull.number: u64 @pull:144:28
+base "https://api.github.com" @github:3:9
+path text="repos/" cross_base=false @github.repo:74:18
+path hole={owner} cross_base=false @github.repo:74:18
+path text="/" cross_base=false @github.repo:74:18
+path hole={name} cross_base=false @github.repo:74:18
+path text="pulls" cross_base=false @github.repo.pulls:135:22
+path hole={number} cross_base=false @github.repo.pulls.pull:145:26
+header wire=0 "user-agent" = user_agent ; cross_base=false @github:5:13
+header wire=2 "x-github-api-version" = "2026-03-10" ; cross_base=false @github:7:13
+header wire=3 "authorization" = "Bearer {token}" ; cross_base=false @github:8:13
+header wire=1 "accept" = "application/vnd.github.diff" ; cross_base=false @github.repo.pulls.pull.diff:148:35
+read Binary @github.repo.pulls.pull.diff:149:30
+problem GithubProblem @github:11:9
+problem_read Json @github:10:14
+endpoint github.repo.pulls.pull.files GET -> Vec < PullFile >
+input client.user_agent: String @Github:2:23
+input client.quota: QuotaLog @Github:2:43
+input client.token?: Secret @Github:2:60
+input repo.owner: String @repo:73:20
+input repo.name: String @repo:73:35
+input pull.number: u64 @pull:144:28
+input files.per_page?: u32 @page:15:19
+input files.page?: u32 @page:15:35
+base "https://api.github.com" @github:3:9
+path text="repos/" cross_base=false @github.repo:74:18
+path hole={owner} cross_base=false @github.repo:74:18
+path text="/" cross_base=false @github.repo:74:18
+path hole={name} cross_base=false @github.repo:74:18
+path text="pulls" cross_base=false @github.repo.pulls:135:22
+path hole={number} cross_base=false @github.repo.pulls.pull:145:26
+path text="files" cross_base=false @github.repo.pulls.pull.files:151:63
+query wire=0 per_page ; cross_base=false @github.repo.pulls.pull.files part=page:16:21
+query wire=1 page ; cross_base=false @github.repo.pulls.pull.files part=page:16:31
+header wire=0 "user-agent" = user_agent ; cross_base=false @github:5:13
+header wire=1 "accept" = "application/vnd.github+json" ; cross_base=false @github:6:13
+header wire=2 "x-github-api-version" = "2026-03-10" ; cross_base=false @github:7:13
+header wire=3 "authorization" = "Bearer {token}" ; cross_base=false @github:8:13
+read Json @github:10:14
+problem GithubProblem @github:11:9
+problem_read Json @github:10:14
+paginate by_link () @github.repo.pulls.pull.files part=page:17:22
+endpoint github.repo.pulls.pull.is_merged GET -> bool
+input client.user_agent: String @Github:2:23
+input client.quota: QuotaLog @Github:2:43
+input client.token?: Secret @Github:2:60
+input repo.owner: String @repo:73:20
+input repo.name: String @repo:73:35
+input pull.number: u64 @pull:144:28
+base "https://api.github.com" @github:3:9
+path text="repos/" cross_base=false @github.repo:74:18
+path hole={owner} cross_base=false @github.repo:74:18
+path text="/" cross_base=false @github.repo:74:18
+path hole={name} cross_base=false @github.repo:74:18
+path text="pulls" cross_base=false @github.repo.pulls:135:22
+path hole={number} cross_base=false @github.repo.pulls.pull:145:26
+path text="merge" cross_base=false @github.repo.pulls.pull.is_merged:154:30
+header wire=0 "user-agent" = user_agent ; cross_base=false @github:5:13
+header wire=1 "accept" = "application/vnd.github+json" ; cross_base=false @github:6:13
+header wire=2 "x-github-api-version" = "2026-03-10" ; cross_base=false @github:7:13
+header wire=3 "authorization" = "Bearer {token}" ; cross_base=false @github:8:13
+read Json @github:10:14
+arm 204 {} => true @github.repo.pulls.pull.is_merged:155:34
+arm 404 {} => false @github.repo.pulls.pull.is_merged:155:47
+problem GithubProblem @github:11:9
+problem_read Json @github:10:14
+endpoint github.repo.pulls.pull.merge PUT -> MergeResult
+input client.user_agent: String @Github:2:23
+input client.quota: QuotaLog @Github:2:43
+input client.token?: Secret @Github:2:60
+input repo.owner: String @repo:73:20
+input repo.name: String @repo:73:35
+input pull.number: u64 @pull:144:28
+input merge.options: MergePull @merge:157:31
+idempotent false @github.repo.pulls.pull.merge:160:25
+base "https://api.github.com" @github:3:9
+path text="repos/" cross_base=false @github.repo:74:18
+path hole={owner} cross_base=false @github.repo:74:18
+path text="/" cross_base=false @github.repo:74:18
+path hole={name} cross_base=false @github.repo:74:18
+path text="pulls" cross_base=false @github.repo.pulls:135:22
+path hole={number} cross_base=false @github.repo.pulls.pull:145:26
+path text="merge" cross_base=false @github.repo.pulls.pull.merge:158:30
+header wire=0 "user-agent" = user_agent ; cross_base=false @github:5:13
+header wire=1 "accept" = "application/vnd.github+json" ; cross_base=false @github:6:13
+header wire=2 "x-github-api-version" = "2026-03-10" ; cross_base=false @github:7:13
+header wire=3 "authorization" = "Bearer {token}" ; cross_base=false @github:8:13
+body json (options) @github.repo.pulls.pull.merge:159:30
+read Json @github:10:14
+problem GithubProblem @github:11:9
+problem_read Json @github:10:14
+endpoint github.repo.contents.get GET -> Contents
+input client.user_agent: String @Github:2:23
+input client.quota: QuotaLog @Github:2:43
+input client.token?: Secret @Github:2:60
+input repo.owner: String @repo:73:20
+input repo.name: String @repo:73:35
+input contents.path: String @contents:165:28
+input get.reference?: String @at_ref:22:21
+base "https://api.github.com" @github:3:9
+path text="repos/" cross_base=false @github.repo:74:18
+path hole={owner} cross_base=false @github.repo:74:18
+path text="/" cross_base=false @github.repo:74:18
+path hole={name} cross_base=false @github.repo:74:18
+path text="contents/" cross_base=false @github.repo.contents:166:22
+path hole={*path} cross_base=false @github.repo.contents:166:22
+query wire=0 "ref" = reference ; cross_base=false @github.repo.contents.get part=at_ref:23:21
+header wire=0 "user-agent" = user_agent ; cross_base=false @github:5:13
+header wire=1 "accept" = "application/vnd.github+json" ; cross_base=false @github:6:13
+header wire=2 "x-github-api-version" = "2026-03-10" ; cross_base=false @github:7:13
+header wire=3 "authorization" = "Bearer {token}" ; cross_base=false @github:8:13
+read Json @github:10:14
+problem GithubProblem @github:11:9
+problem_read Json @github:10:14
+endpoint github.repo.contents.raw GET -> Bytes
+input client.user_agent: String @Github:2:23
+input client.quota: QuotaLog @Github:2:43
+input client.token?: Secret @Github:2:60
+input repo.owner: String @repo:73:20
+input repo.name: String @repo:73:35
+input contents.path: String @contents:165:28
+input raw.reference?: String @at_ref:22:21
+base "https://api.github.com" @github:3:9
+path text="repos/" cross_base=false @github.repo:74:18
+path hole={owner} cross_base=false @github.repo:74:18
+path text="/" cross_base=false @github.repo:74:18
+path hole={name} cross_base=false @github.repo:74:18
+path text="contents/" cross_base=false @github.repo.contents:166:22
+path hole={*path} cross_base=false @github.repo.contents:166:22
+query wire=0 "ref" = reference ; cross_base=false @github.repo.contents.raw part=at_ref:23:21
+header wire=0 "user-agent" = user_agent ; cross_base=false @github:5:13
+header wire=2 "x-github-api-version" = "2026-03-10" ; cross_base=false @github:7:13
+header wire=3 "authorization" = "Bearer {token}" ; cross_base=false @github:8:13
+header wire=1 "accept" = "application/vnd.github.raw+json" ; cross_base=false @github.repo.contents.raw:170:31
+read Binary . limit (100 * concord :: MIB) @github.repo.contents.raw:171:26
+problem GithubProblem @github:11:9
+problem_read Json @github:10:14
+endpoint github.repo.contents.create_or_update PUT -> ContentWrite
+input client.user_agent: String @Github:2:23
+input client.quota: QuotaLog @Github:2:43
+input client.token?: Secret @Github:2:60
+input repo.owner: String @repo:73:20
+input repo.name: String @repo:73:35
+input contents.path: String @contents:165:28
+input create_or_update.change: PutContent @create_or_update:174:38
+idempotent false @github.repo.contents.create_or_update:176:21
+base "https://api.github.com" @github:3:9
+path text="repos/" cross_base=false @github.repo:74:18
+path hole={owner} cross_base=false @github.repo:74:18
+path text="/" cross_base=false @github.repo:74:18
+path hole={name} cross_base=false @github.repo:74:18
+path text="contents/" cross_base=false @github.repo.contents:166:22
+path hole={*path} cross_base=false @github.repo.contents:166:22
+header wire=0 "user-agent" = user_agent ; cross_base=false @github:5:13
+header wire=1 "accept" = "application/vnd.github+json" ; cross_base=false @github:6:13
+header wire=2 "x-github-api-version" = "2026-03-10" ; cross_base=false @github:7:13
+header wire=3 "authorization" = "Bearer {token}" ; cross_base=false @github:8:13
+body json (change) @github.repo.contents.create_or_update:175:26
+read Json @github:10:14
+problem GithubProblem @github:11:9
+problem_read Json @github:10:14
+endpoint github.repo.releases.list GET -> Vec < Release >
+input client.user_agent: String @Github:2:23
+input client.quota: QuotaLog @Github:2:43
+input client.token?: Secret @Github:2:60
+input repo.owner: String @repo:73:20
+input repo.name: String @repo:73:35
+input list.per_page?: u32 @page:15:19
+input list.page?: u32 @page:15:35
+base "https://api.github.com" @github:3:9
+path text="repos/" cross_base=false @github.repo:74:18
+path hole={owner} cross_base=false @github.repo:74:18
+path text="/" cross_base=false @github.repo:74:18
+path hole={name} cross_base=false @github.repo:74:18
+path text="releases" cross_base=false @github.repo.releases:181:22
+query wire=0 per_page ; cross_base=false @github.repo.releases.list part=page:16:21
+query wire=1 page ; cross_base=false @github.repo.releases.list part=page:16:31
+header wire=0 "user-agent" = user_agent ; cross_base=false @github:5:13
+header wire=1 "accept" = "application/vnd.github+json" ; cross_base=false @github:6:13
+header wire=2 "x-github-api-version" = "2026-03-10" ; cross_base=false @github:7:13
+header wire=3 "authorization" = "Bearer {token}" ; cross_base=false @github:8:13
+read Json @github:10:14
+problem GithubProblem @github:11:9
+problem_read Json @github:10:14
+paginate by_link () @github.repo.releases.list part=page:17:22
+endpoint github.repo.releases.create POST -> Release
+input client.user_agent: String @Github:2:23
+input client.quota: QuotaLog @Github:2:43
+input client.token?: Secret @Github:2:60
+input repo.owner: String @repo:73:20
+input repo.name: String @repo:73:35
+input create.release: NewRelease @create:183:29
+base "https://api.github.com" @github:3:9
+path text="repos/" cross_base=false @github.repo:74:18
+path hole={owner} cross_base=false @github.repo:74:18
+path text="/" cross_base=false @github.repo:74:18
+path hole={name} cross_base=false @github.repo:74:18
+path text="releases" cross_base=false @github.repo.releases:181:22
+header wire=0 "user-agent" = user_agent ; cross_base=false @github:5:13
+header wire=1 "accept" = "application/vnd.github+json" ; cross_base=false @github:6:13
+header wire=2 "x-github-api-version" = "2026-03-10" ; cross_base=false @github:7:13
+header wire=3 "authorization" = "Bearer {token}" ; cross_base=false @github:8:13
+body json (release) @github.repo.releases.create:183:68
+read Json @github:10:14
+problem GithubProblem @github:11:9
+problem_read Json @github:10:14
+endpoint github.repo.releases.latest GET -> Release
+input client.user_agent: String @Github:2:23
+input client.quota: QuotaLog @Github:2:43
+input client.token?: Secret @Github:2:60
+input repo.owner: String @repo:73:20
+input repo.name: String @repo:73:35
+base "https://api.github.com" @github:3:9
+path text="repos/" cross_base=false @github.repo:74:18
+path hole={owner} cross_base=false @github.repo:74:18
+path text="/" cross_base=false @github.repo:74:18
+path hole={name} cross_base=false @github.repo:74:18
+path text="releases" cross_base=false @github.repo.releases:181:22
+path text="latest" cross_base=false @github.repo.releases.latest:184:48
+header wire=0 "user-agent" = user_agent ; cross_base=false @github:5:13
+header wire=1 "accept" = "application/vnd.github+json" ; cross_base=false @github:6:13
+header wire=2 "x-github-api-version" = "2026-03-10" ; cross_base=false @github:7:13
+header wire=3 "authorization" = "Bearer {token}" ; cross_base=false @github:8:13
+read Json @github:10:14
+problem GithubProblem @github:11:9
+problem_read Json @github:10:14
+endpoint github.repo.releases.by_tag GET -> Release
+input client.user_agent: String @Github:2:23
+input client.quota: QuotaLog @Github:2:43
+input client.token?: Secret @Github:2:60
+input repo.owner: String @repo:73:20
+input repo.name: String @repo:73:35
+input by_tag.tag: String @by_tag:185:28
+base "https://api.github.com" @github:3:9
+path text="repos/" cross_base=false @github.repo:74:18
+path hole={owner} cross_base=false @github.repo:74:18
+path text="/" cross_base=false @github.repo:74:18
+path hole={name} cross_base=false @github.repo:74:18
+path text="releases" cross_base=false @github.repo.releases:181:22
+path text="tags/" cross_base=false @github.repo.releases.by_tag:185:59
+path hole={tag} cross_base=false @github.repo.releases.by_tag:185:59
+header wire=0 "user-agent" = user_agent ; cross_base=false @github:5:13
+header wire=1 "accept" = "application/vnd.github+json" ; cross_base=false @github:6:13
+header wire=2 "x-github-api-version" = "2026-03-10" ; cross_base=false @github:7:13
+header wire=3 "authorization" = "Bearer {token}" ; cross_base=false @github:8:13
+read Json @github:10:14
+problem GithubProblem @github:11:9
+problem_read Json @github:10:14
+endpoint github.repo.releases.release.get GET -> Release
+input client.user_agent: String @Github:2:23
+input client.quota: QuotaLog @Github:2:43
+input client.token?: Secret @Github:2:60
+input repo.owner: String @repo:73:20
+input repo.name: String @repo:73:35
+input release.id: u64 @release:187:31
+base "https://api.github.com" @github:3:9
+path text="repos/" cross_base=false @github.repo:74:18
+path hole={owner} cross_base=false @github.repo:74:18
+path text="/" cross_base=false @github.repo:74:18
+path hole={name} cross_base=false @github.repo:74:18
+path text="releases" cross_base=false @github.repo.releases:181:22
+path hole={id} cross_base=false @github.repo.releases.release:188:26
+header wire=0 "user-agent" = user_agent ; cross_base=false @github:5:13
+header wire=1 "accept" = "application/vnd.github+json" ; cross_base=false @github:6:13
+header wire=2 "x-github-api-version" = "2026-03-10" ; cross_base=false @github:7:13
+header wire=3 "authorization" = "Bearer {token}" ; cross_base=false @github:8:13
+read Json @github:10:14
+problem GithubProblem @github:11:9
+problem_read Json @github:10:14
+endpoint github.repo.releases.release.delete DELETE -> ()
+input client.user_agent: String @Github:2:23
+input client.quota: QuotaLog @Github:2:43
+input client.token?: Secret @Github:2:60
+input repo.owner: String @repo:73:20
+input repo.name: String @repo:73:35
+input release.id: u64 @release:187:31
+base "https://api.github.com" @github:3:9
+path text="repos/" cross_base=false @github.repo:74:18
+path hole={owner} cross_base=false @github.repo:74:18
+path text="/" cross_base=false @github.repo:74:18
+path hole={name} cross_base=false @github.repo:74:18
+path text="releases" cross_base=false @github.repo.releases:181:22
+path hole={id} cross_base=false @github.repo.releases.release:188:26
+header wire=0 "user-agent" = user_agent ; cross_base=false @github:5:13
+header wire=1 "accept" = "application/vnd.github+json" ; cross_base=false @github:6:13
+header wire=2 "x-github-api-version" = "2026-03-10" ; cross_base=false @github:7:13
+header wire=3 "authorization" = "Bearer {token}" ; cross_base=false @github:8:13
+read Json @github:10:14
+problem GithubProblem @github:11:9
+problem_read Json @github:10:14
+endpoint github.repo.releases.release.assets GET -> Vec < Asset >
+input client.user_agent: String @Github:2:23
+input client.quota: QuotaLog @Github:2:43
+input client.token?: Secret @Github:2:60
+input repo.owner: String @repo:73:20
+input repo.name: String @repo:73:35
+input release.id: u64 @release:187:31
+input assets.per_page?: u32 @page:15:19
+input assets.page?: u32 @page:15:35
+base "https://api.github.com" @github:3:9
+path text="repos/" cross_base=false @github.repo:74:18
+path hole={owner} cross_base=false @github.repo:74:18
+path text="/" cross_base=false @github.repo:74:18
+path hole={name} cross_base=false @github.repo:74:18
+path text="releases" cross_base=false @github.repo.releases:181:22
+path hole={id} cross_base=false @github.repo.releases.release:188:26
+path text="assets" cross_base=false @github.repo.releases.release.assets:191:61
+query wire=0 per_page ; cross_base=false @github.repo.releases.release.assets part=page:16:21
+query wire=1 page ; cross_base=false @github.repo.releases.release.assets part=page:16:31
+header wire=0 "user-agent" = user_agent ; cross_base=false @github:5:13
+header wire=1 "accept" = "application/vnd.github+json" ; cross_base=false @github:6:13
+header wire=2 "x-github-api-version" = "2026-03-10" ; cross_base=false @github:7:13
+header wire=3 "authorization" = "Bearer {token}" ; cross_base=false @github:8:13
+read Json @github:10:14
+problem GithubProblem @github:11:9
+problem_read Json @github:10:14
+paginate by_link () @github.repo.releases.release.assets part=page:17:22
+endpoint github.repo.releases.release.asset POST -> Asset
+input client.user_agent: String @Github:2:23
+input client.quota: QuotaLog @Github:2:43
+input client.token?: Secret @Github:2:60
+input repo.owner: String @repo:73:20
+input repo.name: String @repo:73:35
+input release.id: u64 @release:187:31
+input asset.name: String @asset:194:25
+input asset.file: concord :: Body @asset:194:39
+input asset.size: u64 @asset:194:60
+input asset.label?: String @asset:194:71
+base "https://uploads.github.com" @github.repo.releases.release.asset:196:25
+path text="repos/" cross_base=true @github.repo:74:18
+path hole={owner} cross_base=true @github.repo:74:18
+path text="/" cross_base=true @github.repo:74:18
+path hole={name} cross_base=true @github.repo:74:18
+path text="releases" cross_base=true @github.repo.releases:181:22
+path hole={id} cross_base=true @github.repo.releases.release:188:26
+path text="assets" cross_base=false @github.repo.releases.release.asset:197:30
+query wire=0 name ; cross_base=false @github.repo.releases.release.asset:202:33
+query wire=1 label ; cross_base=false @github.repo.releases.release.asset:202:39
+header wire=0 "user-agent" = user_agent ; cross_base=true @github:5:13
+header wire=1 "accept" = "application/vnd.github+json" ; cross_base=true @github:6:13
+header wire=2 "x-github-api-version" = "2026-03-10" ; cross_base=true @github:7:13
+header wire=3 "authorization" = "Bearer {client.token}" ; cross_base=false @github.repo.releases.release.asset:199:29
+header wire=4 "content-length" = size ; cross_base=false @github.repo.releases.release.asset:200:29
+body file @github.repo.releases.release.asset:203:30
+read Json @github:10:14
+problem GithubProblem @github:11:9
+problem_read Json @github:10:14
+endpoint github.search.repositories GET -> SearchPage < Repository >
+input client.user_agent: String @Github:2:23
+input client.quota: QuotaLog @Github:2:43
+input client.token?: Secret @Github:2:60
+input repositories.q: String @repositories:212:30
+input repositories.sort?: String @repositories:212:41
+input repositories.order?: Direction @repositories:212:56
+input repositories.per_page?: u32 @page:15:19
+input repositories.page?: u32 @page:15:35
+base "https://api.github.com" @github:3:9
+path text="search" cross_base=false @github.search:210:18
+path text="repositories" cross_base=false @github.search.repositories:214:22
+query wire=0 per_page ; cross_base=false @github.search.repositories part=page:16:21
+query wire=1 page ; cross_base=false @github.search.repositories part=page:16:31
+query wire=2 q ; cross_base=false @github.search.repositories:215:25
+query wire=3 sort ; cross_base=false @github.search.repositories:215:28
+query wire=4 order ; cross_base=false @github.search.repositories:215:34
+header wire=0 "user-agent" = user_agent ; cross_base=false @github:5:13
+header wire=1 "accept" = "application/vnd.github+json" ; cross_base=false @github:6:13
+header wire=2 "x-github-api-version" = "2026-03-10" ; cross_base=false @github:7:13
+header wire=3 "authorization" = "Bearer {token}" ; cross_base=false @github:8:13
+read Json @github:10:14
+problem GithubProblem @github:11:9
+problem_read Json @github:10:14
+paginate by_link () @github.search.repositories part=page:17:22
+endpoint github.search.issues GET -> SearchPage < Issue >
+input client.user_agent: String @Github:2:23
+input client.quota: QuotaLog @Github:2:43
+input client.token?: Secret @Github:2:60
+input issues.q: String @issues:217:24
+input issues.sort?: String @issues:217:35
+input issues.order?: Direction @issues:217:50
+input issues.per_page?: u32 @page:15:19
+input issues.page?: u32 @page:15:35
+base "https://api.github.com" @github:3:9
+path text="search" cross_base=false @github.search:210:18
+path text="issues" cross_base=false @github.search.issues:219:22
+query wire=0 per_page ; cross_base=false @github.search.issues part=page:16:21
+query wire=1 page ; cross_base=false @github.search.issues part=page:16:31
+query wire=2 q ; cross_base=false @github.search.issues:220:25
+query wire=3 sort ; cross_base=false @github.search.issues:220:28
+query wire=4 order ; cross_base=false @github.search.issues:220:34
+header wire=0 "user-agent" = user_agent ; cross_base=false @github:5:13
+header wire=1 "accept" = "application/vnd.github+json" ; cross_base=false @github:6:13
+header wire=2 "x-github-api-version" = "2026-03-10" ; cross_base=false @github:7:13
+header wire=3 "authorization" = "Bearer {token}" ; cross_base=false @github:8:13
+read Json @github:10:14
+problem GithubProblem @github:11:9
+problem_read Json @github:10:14
+paginate by_link () @github.search.issues part=page:17:22

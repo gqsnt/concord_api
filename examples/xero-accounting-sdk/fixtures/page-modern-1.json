@@ -1,5 +1,0 @@
-{
-  "Status": "OK",
-  "pagination": {"page": 1, "pageSize": 1, "pageCount": 2, "itemCount": 2},
-  "Invoices": [{"InvoiceID": "11111111-1111-4111-8111-111111111111", "Type": "ACCREC", "Status": "AUTHORISED", "InvoiceNumber": "INV-SYNTHETIC-1"}]
-}

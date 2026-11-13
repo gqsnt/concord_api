@@ -1,0 +1,7 @@
+error: keywords and raw identifiers cannot name inputs
+       label: choose another Rust name
+       help: rename this input to `type_value` and update its references in the existing placements and expressions, retaining their wire keys
+ --> tests/messages-page/04.rs:2:51
+  |
+2 | client Tasks { base "https://a.example"; GET list(r#type: String) { query { r#type; } } }
+  |                                                   ^^^^^^

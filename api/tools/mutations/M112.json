@@ -1,0 +1,9 @@
+{
+  "id": "M112",
+  "area": "writers",
+  "contract": "A62",
+  "description": "Repeat the format error as WriteError Display",
+  "file": "concord-core/src/body.rs",
+  "find": "f.write_str(\"the body could not be written\")",
+  "replace": "self.source.fmt(f)"
+}

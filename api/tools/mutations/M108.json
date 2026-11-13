@@ -1,0 +1,9 @@
+{
+  "id": "M108",
+  "area": "entries",
+  "contract": "A61 C2.14",
+  "description": "Wrap Entries in a Serde newtype again",
+  "file": "concord-core/src/body.rs",
+  "find": "EntryMap(self).serialize(serializer)",
+  "replace": "serializer.serialize_newtype_struct(\"__concord_body_entries\", &EntryMap(self))"
+}

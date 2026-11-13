@@ -1,0 +1,13 @@
+error: two declarations generate method `get`
+       label: conflicts with the optional input
+       help: rename this child to `fetch_get`
+ --> tests/messages-page/02.rs:2:87
+  |
+2 | client Tasks { base "https://a.example"; scope things(get?: u32) { query { get; } GET get(); } }
+  |                                                                                       ^^^
+
+error: the optional input is declared here
+ --> tests/messages-page/02.rs:2:55
+  |
+2 | client Tasks { base "https://a.example"; scope things(get?: u32) { query { get; } GET get(); } }
+  |                                                       ^^^

@@ -1,0 +1,12 @@
+{
+  "id": "M134",
+  "area": "public-api",
+  "contract": "N2",
+  "description": "Reintroduce the unused public depth-state accessor",
+  "file": "concord-core/src/body.rs",
+  "find": "    /// Consume this view, transferring its recorded input name and the format's error.",
+  "replace": "    /// Legacy depth state.\n    pub fn has_entry_depth_error(&self) -> bool { self.context.input.borrow().is_some() }\n    /// Consume this view, transferring its recorded input name and the format's error.",
+  "checks": [
+    "surface"
+  ]
+}

@@ -1,0 +1,1017 @@
+middleware Quota :: new () @riot:17:20
+endpoint riot.champion_rotations GET -> ChampionRotations
+input client.key: Secret @Riot:9:9
+input champion_rotations.route: Platform @champion_rotations:46:32
+base "https://{route}.api.riotgames.com" @riot.champion_rotations:47:13
+path text="lol/platform/v3/champion-rotations" cross_base=false @riot.champion_rotations:48:18
+header wire=0 "x-riot-token" = key ; cross_base=false @riot:11:19
+read Json @riot:12:14
+problem RiotProblem @riot:13:9
+problem_read Json @riot:12:14
+endpoint riot.lol_status GET -> PlatformData
+input client.key: Secret @Riot:9:9
+input lol_status.route: Platform @lol_status:51:24
+base "https://{route}.api.riotgames.com" @riot.lol_status:52:13
+path text="lol/status/v4/platform-data" cross_base=false @riot.lol_status:53:18
+header wire=0 "x-riot-token" = key ; cross_base=false @riot:11:19
+read Json @riot:12:14
+problem RiotProblem @riot:13:9
+problem_read Json @riot:12:14
+endpoint riot.tft_status GET -> PlatformData
+input client.key: Secret @Riot:9:9
+input tft_status.route: Platform @tft_status:56:24
+base "https://{route}.api.riotgames.com" @riot.tft_status:57:13
+path text="tft/status/v1/platform-data" cross_base=false @riot.tft_status:58:18
+header wire=0 "x-riot-token" = key ; cross_base=false @riot:11:19
+read Json @riot:12:14
+problem RiotProblem @riot:13:9
+problem_read Json @riot:12:14
+endpoint riot.third_party_code GET -> Option < String >
+input client.key: Secret @Riot:9:9
+input third_party_code.route: Platform @third_party_code:62:30
+input third_party_code.summoner_id: SummonerId @third_party_code:62:47
+base "https://{route}.api.riotgames.com" @riot.third_party_code:63:13
+path text="lol/platform/v4/third-party-code/by-summoner/" cross_base=false @riot.third_party_code:64:18
+path hole={summoner_id} cross_base=false @riot.third_party_code:64:18
+header wire=0 "x-riot-token" = key ; cross_base=false @riot:11:19
+read Json @riot:12:14
+arm 404 {} => None @riot.third_party_code:65:22
+problem RiotProblem @riot:13:9
+problem_read Json @riot:12:14
+endpoint riot.account.by_puuid GET -> Option < Account >
+input client.key: Secret @Riot:9:9
+input account.route: Region @account:72:23
+input by_puuid.puuid: Puuid @by_puuid:77:26
+base "https://{route}.api.riotgames.com" @riot.account:73:13
+path text="riot/account/v1" cross_base=false @riot.account:74:18
+path text="accounts/by-puuid/" cross_base=false @riot.account.by_puuid:78:22
+path hole={puuid} cross_base=false @riot.account.by_puuid:78:22
+header wire=0 "x-riot-token" = key ; cross_base=false @riot:11:19
+read Json @riot:12:14
+arm 404 {} => None @riot.account.by_puuid:79:26
+problem RiotProblem @riot:13:9
+problem_read Json @riot:12:14
+endpoint riot.account.by_riot_id GET -> Option < Account >
+input client.key: Secret @Riot:9:9
+input account.route: Region @account:72:23
+input by_riot_id.game_name: String @by_riot_id:82:28
+input by_riot_id.tag_line: String @by_riot_id:82:47
+base "https://{route}.api.riotgames.com" @riot.account:73:13
+path text="riot/account/v1" cross_base=false @riot.account:74:18
+path text="accounts/by-riot-id/" cross_base=false @riot.account.by_riot_id:83:22
+path hole={game_name} cross_base=false @riot.account.by_riot_id:83:22
+path text="/" cross_base=false @riot.account.by_riot_id:83:22
+path hole={tag_line} cross_base=false @riot.account.by_riot_id:83:22
+header wire=0 "x-riot-token" = key ; cross_base=false @riot:11:19
+read Json @riot:12:14
+arm 404 {} => None @riot.account.by_riot_id:84:26
+problem RiotProblem @riot:13:9
+problem_read Json @riot:12:14
+endpoint riot.account.me GET -> Account
+input client.key: Secret @Riot:9:9
+input account.route: Region @account:72:23
+input me.access_token: Secret @player:20:21
+base "https://{route}.api.riotgames.com" @riot.account:73:13
+path text="riot/account/v1" cross_base=false @riot.account:74:18
+path text="accounts/me" cross_base=false @riot.account.me:87:48
+header wire=1 "authorization" = "Bearer {access_token}" ; cross_base=false @riot.account.me part=player:21:46
+read Json @riot:12:14
+problem RiotProblem @riot:13:9
+problem_read Json @riot:12:14
+endpoint riot.account.active_shard GET -> Option < ActiveShard >
+input client.key: Secret @Riot:9:9
+input account.route: Region @account:72:23
+input active_shard.game: Game @active_shard:89:30
+input active_shard.puuid: Puuid @active_shard:89:42
+base "https://{route}.api.riotgames.com" @riot.account:73:13
+path text="riot/account/v1" cross_base=false @riot.account:74:18
+path text="active-shards/by-game/" cross_base=false @riot.account.active_shard:90:22
+path hole={game} cross_base=false @riot.account.active_shard:90:22
+path text="/by-puuid/" cross_base=false @riot.account.active_shard:90:22
+path hole={puuid} cross_base=false @riot.account.active_shard:90:22
+header wire=0 "x-riot-token" = key ; cross_base=false @riot:11:19
+read Json @riot:12:14
+arm 404 {} => None @riot.account.active_shard:91:26
+problem RiotProblem @riot:13:9
+problem_read Json @riot:12:14
+endpoint riot.account.active_region GET -> Option < ActiveRegion >
+input client.key: Secret @Riot:9:9
+input account.route: Region @account:72:23
+input active_region.game: Game @active_region:94:31
+input active_region.puuid: Puuid @active_region:94:43
+base "https://{route}.api.riotgames.com" @riot.account:73:13
+path text="riot/account/v1" cross_base=false @riot.account:74:18
+path text="region/by-game/" cross_base=false @riot.account.active_region:95:22
+path hole={game} cross_base=false @riot.account.active_region:95:22
+path text="/by-puuid/" cross_base=false @riot.account.active_region:95:22
+path hole={puuid} cross_base=false @riot.account.active_region:95:22
+header wire=0 "x-riot-token" = key ; cross_base=false @riot:11:19
+read Json @riot:12:14
+arm 404 {} => None @riot.account.active_region:96:26
+problem RiotProblem @riot:13:9
+problem_read Json @riot:12:14
+endpoint riot.matches.ids GET -> Vec < MatchId >
+input client.key: Secret @Riot:9:9
+input matches.route: Region @matches:101:23
+input ids.puuid: Puuid @ids:106:21
+input ids.start?: u32 @history:25:22
+input ids.count?: u32 @history:25:35
+input ids.start_time?: i64 @history:25:48
+input ids.end_time?: i64 @history:25:66
+input ids.queue?: i32 @lol_filter:30:25
+input ids.kind?: MatchType @lol_filter:30:38
+base "https://{route}.api.riotgames.com" @riot.matches:102:13
+path text="lol/match/v5/matches" cross_base=false @riot.matches:103:18
+path text="by-puuid/" cross_base=false @riot.matches.ids:107:22
+path hole={puuid} cross_base=false @riot.matches.ids:107:22
+path text="/ids" cross_base=false @riot.matches.ids:107:22
+query wire=0 start ; cross_base=false @riot.matches.ids part=history:26:21
+query wire=1 count ; cross_base=false @riot.matches.ids part=history:26:28
+query wire=2 "startTime" = start_time ; cross_base=false @riot.matches.ids part=history:26:35
+query wire=3 "endTime" = end_time ; cross_base=false @riot.matches.ids part=history:26:61
+query wire=4 queue ; cross_base=false @riot.matches.ids part=lol_filter:31:21
+query wire=5 "type" = kind ; cross_base=false @riot.matches.ids part=lol_filter:31:28
+header wire=0 "x-riot-token" = key ; cross_base=false @riot:11:19
+read Json @riot:12:14
+problem RiotProblem @riot:13:9
+problem_read Json @riot:12:14
+paginate by_offset_limit (start , count) @riot.matches.ids part=history:27:22
+endpoint riot.matches.get GET -> Option < Match >
+input client.key: Secret @Riot:9:9
+input matches.route: Region @matches:101:23
+input get.id: MatchId @get:110:21
+base "https://{route}.api.riotgames.com" @riot.matches:102:13
+path text="lol/match/v5/matches" cross_base=false @riot.matches:103:18
+path hole={id} cross_base=false @riot.matches.get:111:22
+header wire=0 "x-riot-token" = key ; cross_base=false @riot:11:19
+read Json @riot:12:14
+arm 404 {} => None @riot.matches.get:112:26
+problem RiotProblem @riot:13:9
+problem_read Json @riot:12:14
+endpoint riot.matches.timeline GET -> Option < Timeline >
+input client.key: Secret @Riot:9:9
+input matches.route: Region @matches:101:23
+input timeline.id: MatchId @timeline:115:26
+base "https://{route}.api.riotgames.com" @riot.matches:102:13
+path text="lol/match/v5/matches" cross_base=false @riot.matches:103:18
+path hole={id} cross_base=false @riot.matches.timeline:116:22
+path text="/timeline" cross_base=false @riot.matches.timeline:116:22
+header wire=0 "x-riot-token" = key ; cross_base=false @riot:11:19
+read Json @riot:12:14
+arm 404 {} => None @riot.matches.timeline:117:26
+problem RiotProblem @riot:13:9
+problem_read Json @riot:12:14
+endpoint riot.matches.replays GET -> Replays
+input client.key: Secret @Riot:9:9
+input matches.route: Region @matches:101:23
+input replays.puuid: Puuid @replays:120:25
+base "https://{route}.api.riotgames.com" @riot.matches:102:13
+path text="lol/match/v5/matches" cross_base=false @riot.matches:103:18
+path text="by-puuid/" cross_base=false @riot.matches.replays:120:57
+path hole={puuid} cross_base=false @riot.matches.replays:120:57
+path text="/replays" cross_base=false @riot.matches.replays:120:57
+header wire=0 "x-riot-token" = key ; cross_base=false @riot:11:19
+read Json @riot:12:14
+problem RiotProblem @riot:13:9
+problem_read Json @riot:12:14
+endpoint riot.tft_matches.ids GET -> Vec < TftMatchId >
+input client.key: Secret @Riot:9:9
+input tft_matches.route: Region @tft_matches:124:27
+input ids.puuid: Puuid @ids:128:21
+input ids.start?: u32 @history:25:22
+input ids.count?: u32 @history:25:35
+input ids.start_time?: i64 @history:25:48
+input ids.end_time?: i64 @history:25:66
+base "https://{route}.api.riotgames.com" @riot.tft_matches:125:13
+path text="tft/match/v1/matches" cross_base=false @riot.tft_matches:126:18
+path text="by-puuid/" cross_base=false @riot.tft_matches.ids:128:72
+path hole={puuid} cross_base=false @riot.tft_matches.ids:128:72
+path text="/ids" cross_base=false @riot.tft_matches.ids:128:72
+query wire=0 start ; cross_base=false @riot.tft_matches.ids part=history:26:21
+query wire=1 count ; cross_base=false @riot.tft_matches.ids part=history:26:28
+query wire=2 "startTime" = start_time ; cross_base=false @riot.tft_matches.ids part=history:26:35
+query wire=3 "endTime" = end_time ; cross_base=false @riot.tft_matches.ids part=history:26:61
+header wire=0 "x-riot-token" = key ; cross_base=false @riot:11:19
+read Json @riot:12:14
+problem RiotProblem @riot:13:9
+problem_read Json @riot:12:14
+paginate by_offset_limit (start , count) @riot.tft_matches.ids part=history:27:22
+endpoint riot.tft_matches.get GET -> Option < TftMatch >
+input client.key: Secret @Riot:9:9
+input tft_matches.route: Region @tft_matches:124:27
+input get.id: TftMatchId @get:129:21
+base "https://{route}.api.riotgames.com" @riot.tft_matches:125:13
+path text="tft/match/v1/matches" cross_base=false @riot.tft_matches:126:18
+path hole={id} cross_base=false @riot.tft_matches.get:130:22
+header wire=0 "x-riot-token" = key ; cross_base=false @riot:11:19
+read Json @riot:12:14
+arm 404 {} => None @riot.tft_matches.get:131:26
+problem RiotProblem @riot:13:9
+problem_read Json @riot:12:14
+endpoint riot.rso_matches.ids GET -> Vec < MatchId >
+input client.key: Secret @Riot:9:9
+input rso_matches.route: Region @rso_matches:137:27
+input rso_matches.access_token: Secret @player:20:21
+input ids.start?: u32 @history:25:22
+input ids.count?: u32 @history:25:35
+input ids.start_time?: i64 @history:25:48
+input ids.end_time?: i64 @history:25:66
+input ids.queue?: i32 @lol_filter:30:25
+input ids.kind?: MatchType @lol_filter:30:38
+base "https://{route}.api.riotgames.com" @riot.rso_matches:138:13
+path text="lol/rso-match/v1/matches" cross_base=false @riot.rso_matches:139:18
+path text="ids" cross_base=false @riot.rso_matches.ids:141:69
+query wire=0 start ; cross_base=false @riot.rso_matches.ids part=history:26:21
+query wire=1 count ; cross_base=false @riot.rso_matches.ids part=history:26:28
+query wire=2 "startTime" = start_time ; cross_base=false @riot.rso_matches.ids part=history:26:35
+query wire=3 "endTime" = end_time ; cross_base=false @riot.rso_matches.ids part=history:26:61
+query wire=4 queue ; cross_base=false @riot.rso_matches.ids part=lol_filter:31:21
+query wire=5 "type" = kind ; cross_base=false @riot.rso_matches.ids part=lol_filter:31:28
+header wire=1 "authorization" = "Bearer {access_token}" ; cross_base=false @riot.rso_matches part=player:21:46
+read Json @riot:12:14
+problem RiotProblem @riot:13:9
+problem_read Json @riot:12:14
+paginate by_offset_limit (start , count) @riot.rso_matches.ids part=history:27:22
+endpoint riot.rso_matches.get GET -> Option < Match >
+input client.key: Secret @Riot:9:9
+input rso_matches.route: Region @rso_matches:137:27
+input rso_matches.access_token: Secret @player:20:21
+input get.id: MatchId @get:142:21
+base "https://{route}.api.riotgames.com" @riot.rso_matches:138:13
+path text="lol/rso-match/v1/matches" cross_base=false @riot.rso_matches:139:18
+path hole={id} cross_base=false @riot.rso_matches.get:143:22
+header wire=1 "authorization" = "Bearer {access_token}" ; cross_base=false @riot.rso_matches part=player:21:46
+read Json @riot:12:14
+arm 404 {} => None @riot.rso_matches.get:144:26
+problem RiotProblem @riot:13:9
+problem_read Json @riot:12:14
+endpoint riot.rso_matches.timeline GET -> Option < Timeline >
+input client.key: Secret @Riot:9:9
+input rso_matches.route: Region @rso_matches:137:27
+input rso_matches.access_token: Secret @player:20:21
+input timeline.id: MatchId @timeline:146:26
+base "https://{route}.api.riotgames.com" @riot.rso_matches:138:13
+path text="lol/rso-match/v1/matches" cross_base=false @riot.rso_matches:139:18
+path hole={id} cross_base=false @riot.rso_matches.timeline:147:22
+path text="/timeline" cross_base=false @riot.rso_matches.timeline:147:22
+header wire=1 "authorization" = "Bearer {access_token}" ; cross_base=false @riot.rso_matches part=player:21:46
+read Json @riot:12:14
+arm 404 {} => None @riot.rso_matches.timeline:148:26
+problem RiotProblem @riot:13:9
+problem_read Json @riot:12:14
+endpoint riot.tournament.register_provider POST -> ProviderId
+input client.key: Secret @Riot:9:9
+input tournament.api: TournamentApi @tournament:155:26
+input register_provider.provider: NewProvider @register_provider:160:36
+base "https://americas.api.riotgames.com" @riot.tournament:156:13
+path text="lol/" cross_base=false @riot.tournament:157:18
+path hole={api} cross_base=false @riot.tournament:157:18
+path text="/v5" cross_base=false @riot.tournament:157:18
+path text="providers" cross_base=false @riot.tournament.register_provider:161:22
+header wire=0 "x-riot-token" = key ; cross_base=false @riot:11:19
+body json (provider) @riot.tournament.register_provider:162:22
+read Json @riot:12:14
+problem RiotProblem @riot:13:9
+problem_read Json @riot:12:14
+endpoint riot.tournament.create POST -> TournamentId
+input client.key: Secret @Riot:9:9
+input tournament.api: TournamentApi @tournament:155:26
+input create.registration: NewTournament @create:164:25
+base "https://americas.api.riotgames.com" @riot.tournament:156:13
+path text="lol/" cross_base=false @riot.tournament:157:18
+path hole={api} cross_base=false @riot.tournament:157:18
+path text="/v5" cross_base=false @riot.tournament:157:18
+path text="tournaments" cross_base=false @riot.tournament.create:165:22
+header wire=0 "x-riot-token" = key ; cross_base=false @riot:11:19
+body json (registration) @riot.tournament.create:166:22
+read Json @riot:12:14
+problem RiotProblem @riot:13:9
+problem_read Json @riot:12:14
+endpoint riot.tournament.create_codes POST -> Vec < TournamentCode >
+input client.key: Secret @Riot:9:9
+input tournament.api: TournamentApi @tournament:155:26
+input create_codes.tournament_id: TournamentId @create_codes:169:31
+input create_codes.settings: CodeSettings @create_codes:169:60
+input create_codes.count?: u32 @create_codes:169:84
+base "https://americas.api.riotgames.com" @riot.tournament:156:13
+path text="lol/" cross_base=false @riot.tournament:157:18
+path hole={api} cross_base=false @riot.tournament:157:18
+path text="/v5" cross_base=false @riot.tournament:157:18
+path text="codes" cross_base=false @riot.tournament.create_codes:172:22
+query wire=0 "tournamentId" = tournament_id ; cross_base=false @riot.tournament.create_codes:173:25
+query wire=1 count ; cross_base=false @riot.tournament.create_codes:173:57
+header wire=0 "x-riot-token" = key ; cross_base=false @riot:11:19
+body json (settings) @riot.tournament.create_codes:174:22
+read Json @riot:12:14
+problem RiotProblem @riot:13:9
+problem_read Json @riot:12:14
+endpoint riot.tournament.code GET -> Option < CodeDetails >
+input client.key: Secret @Riot:9:9
+input tournament.api: TournamentApi @tournament:155:26
+input code.code: TournamentCode @code:176:22
+base "https://americas.api.riotgames.com" @riot.tournament:156:13
+path text="lol/" cross_base=false @riot.tournament:157:18
+path hole={api} cross_base=false @riot.tournament:157:18
+path text="/v5" cross_base=false @riot.tournament:157:18
+path text="codes/" cross_base=false @riot.tournament.code:177:22
+path hole={code} cross_base=false @riot.tournament.code:177:22
+header wire=0 "x-riot-token" = key ; cross_base=false @riot:11:19
+read Json @riot:12:14
+arm 404 {} => None @riot.tournament.code:178:26
+problem RiotProblem @riot:13:9
+problem_read Json @riot:12:14
+endpoint riot.tournament.lobby_events GET -> LobbyEvents
+input client.key: Secret @Riot:9:9
+input tournament.api: TournamentApi @tournament:155:26
+input lobby_events.code: TournamentCode @lobby_events:180:30
+base "https://americas.api.riotgames.com" @riot.tournament:156:13
+path text="lol/" cross_base=false @riot.tournament:157:18
+path hole={api} cross_base=false @riot.tournament:157:18
+path text="/v5" cross_base=false @riot.tournament:157:18
+path text="lobby-events/by-code/" cross_base=false @riot.tournament.lobby_events:180:74
+path hole={code} cross_base=false @riot.tournament.lobby_events:180:74
+header wire=0 "x-riot-token" = key ; cross_base=false @riot:11:19
+read Json @riot:12:14
+problem RiotProblem @riot:13:9
+problem_read Json @riot:12:14
+endpoint riot.tournament.update_code PUT -> ()
+input client.key: Secret @Riot:9:9
+input tournament.api: TournamentApi @tournament:155:26
+input update_code.code: TournamentCode @update_code:182:29
+input update_code.update: CodeUpdate @update_code:182:51
+base "https://americas.api.riotgames.com" @riot.tournament:156:13
+path text="lol/" cross_base=false @riot.tournament:157:18
+path hole={api} cross_base=false @riot.tournament:157:18
+path text="/v5" cross_base=false @riot.tournament:157:18
+path text="codes/" cross_base=false @riot.tournament.update_code:183:22
+path hole={code} cross_base=false @riot.tournament.update_code:183:22
+header wire=0 "x-riot-token" = key ; cross_base=false @riot:11:19
+body json (update) @riot.tournament.update_code:184:22
+read Json @riot:12:14
+problem RiotProblem @riot:13:9
+problem_read Json @riot:12:14
+endpoint riot.tournament.games GET -> Vec < TournamentGame >
+input client.key: Secret @Riot:9:9
+input tournament.api: TournamentApi @tournament:155:26
+input games.code: TournamentCode @games:187:23
+base "https://americas.api.riotgames.com" @riot.tournament:156:13
+path text="lol/" cross_base=false @riot.tournament:157:18
+path hole={api} cross_base=false @riot.tournament:157:18
+path text="/v5" cross_base=false @riot.tournament:157:18
+path text="games/by-code/" cross_base=false @riot.tournament.games:187:75
+path hole={code} cross_base=false @riot.tournament.games:187:75
+header wire=0 "x-riot-token" = key ; cross_base=false @riot:11:19
+read Json @riot:12:14
+problem RiotProblem @riot:13:9
+problem_read Json @riot:12:14
+endpoint riot.champion_mastery.by_puuid GET -> Vec < ChampionMastery >
+input client.key: Secret @Riot:9:9
+input champion_mastery.route: Platform @champion_mastery:193:32
+input by_puuid.puuid: Puuid @by_puuid:198:26
+base "https://{route}.api.riotgames.com" @riot.champion_mastery:194:13
+path text="lol/champion-mastery/v4" cross_base=false @riot.champion_mastery:195:18
+path text="champion-masteries/by-puuid/" cross_base=false @riot.champion_mastery.by_puuid:199:22
+path hole={puuid} cross_base=false @riot.champion_mastery.by_puuid:199:22
+header wire=0 "x-riot-token" = key ; cross_base=false @riot:11:19
+read Json @riot:12:14
+problem RiotProblem @riot:13:9
+problem_read Json @riot:12:14
+endpoint riot.champion_mastery.by_champion GET -> Option < ChampionMastery >
+input client.key: Secret @Riot:9:9
+input champion_mastery.route: Platform @champion_mastery:193:32
+input by_champion.puuid: Puuid @by_champion:202:29
+input by_champion.champion: ChampionId @by_champion:202:43
+base "https://{route}.api.riotgames.com" @riot.champion_mastery:194:13
+path text="lol/champion-mastery/v4" cross_base=false @riot.champion_mastery:195:18
+path text="champion-masteries/by-puuid/" cross_base=false @riot.champion_mastery.by_champion:203:22
+path hole={puuid} cross_base=false @riot.champion_mastery.by_champion:203:22
+path text="/by-champion/" cross_base=false @riot.champion_mastery.by_champion:203:22
+path hole={champion} cross_base=false @riot.champion_mastery.by_champion:203:22
+header wire=0 "x-riot-token" = key ; cross_base=false @riot:11:19
+read Json @riot:12:14
+arm 404 {} => None @riot.champion_mastery.by_champion:204:26
+problem RiotProblem @riot:13:9
+problem_read Json @riot:12:14
+endpoint riot.champion_mastery.top GET -> Vec < ChampionMastery >
+input client.key: Secret @Riot:9:9
+input champion_mastery.route: Platform @champion_mastery:193:32
+input top.puuid: Puuid @top:207:21
+input top.count?: u32 @top:207:35
+base "https://{route}.api.riotgames.com" @riot.champion_mastery:194:13
+path text="lol/champion-mastery/v4" cross_base=false @riot.champion_mastery:195:18
+path text="champion-masteries/by-puuid/" cross_base=false @riot.champion_mastery.top:208:22
+path hole={puuid} cross_base=false @riot.champion_mastery.top:208:22
+path text="/top" cross_base=false @riot.champion_mastery.top:208:22
+query wire=0 count ; cross_base=false @riot.champion_mastery.top:209:25
+header wire=0 "x-riot-token" = key ; cross_base=false @riot:11:19
+read Json @riot:12:14
+problem RiotProblem @riot:13:9
+problem_read Json @riot:12:14
+endpoint riot.champion_mastery.score GET -> i32
+input client.key: Secret @Riot:9:9
+input champion_mastery.route: Platform @champion_mastery:193:32
+input score.puuid: Puuid @score:212:23
+base "https://{route}.api.riotgames.com" @riot.champion_mastery:194:13
+path text="lol/champion-mastery/v4" cross_base=false @riot.champion_mastery:195:18
+path text="scores/by-puuid/" cross_base=false @riot.champion_mastery.score:212:51
+path hole={puuid} cross_base=false @riot.champion_mastery.score:212:51
+header wire=0 "x-riot-token" = key ; cross_base=false @riot:11:19
+read Json @riot:12:14
+problem RiotProblem @riot:13:9
+problem_read Json @riot:12:14
+endpoint riot.champion_mastery.by_summoner GET -> Vec < ChampionMastery >
+input client.key: Secret @Riot:9:9
+input champion_mastery.route: Platform @champion_mastery:193:32
+input by_summoner.summoner_id: SummonerId @by_summoner:216:29
+base "https://{route}.api.riotgames.com" @riot.champion_mastery:194:13
+path text="lol/champion-mastery/v4" cross_base=false @riot.champion_mastery:195:18
+path text="champion-masteries/by-summoner/" cross_base=false @riot.champion_mastery.by_summoner:217:22
+path hole={summoner_id} cross_base=false @riot.champion_mastery.by_summoner:217:22
+header wire=0 "x-riot-token" = key ; cross_base=false @riot:11:19
+read Json @riot:12:14
+problem RiotProblem @riot:13:9
+problem_read Json @riot:12:14
+endpoint riot.champion_mastery.by_summoner_champion GET -> Option < ChampionMastery >
+input client.key: Secret @Riot:9:9
+input champion_mastery.route: Platform @champion_mastery:193:32
+input by_summoner_champion.summoner_id: SummonerId @by_summoner_champion:220:38
+input by_summoner_champion.champion: ChampionId @by_summoner_champion:220:63
+base "https://{route}.api.riotgames.com" @riot.champion_mastery:194:13
+path text="lol/champion-mastery/v4" cross_base=false @riot.champion_mastery:195:18
+path text="champion-masteries/by-summoner/" cross_base=false @riot.champion_mastery.by_summoner_champion:223:22
+path hole={summoner_id} cross_base=false @riot.champion_mastery.by_summoner_champion:223:22
+path text="/by-champion/" cross_base=false @riot.champion_mastery.by_summoner_champion:223:22
+path hole={champion} cross_base=false @riot.champion_mastery.by_summoner_champion:223:22
+header wire=0 "x-riot-token" = key ; cross_base=false @riot:11:19
+read Json @riot:12:14
+arm 404 {} => None @riot.champion_mastery.by_summoner_champion:224:26
+problem RiotProblem @riot:13:9
+problem_read Json @riot:12:14
+endpoint riot.champion_mastery.top_by_summoner GET -> Vec < ChampionMastery >
+input client.key: Secret @Riot:9:9
+input champion_mastery.route: Platform @champion_mastery:193:32
+input top_by_summoner.summoner_id: SummonerId @top_by_summoner:227:33
+input top_by_summoner.count?: u32 @top_by_summoner:227:58
+base "https://{route}.api.riotgames.com" @riot.champion_mastery:194:13
+path text="lol/champion-mastery/v4" cross_base=false @riot.champion_mastery:195:18
+path text="champion-masteries/by-summoner/" cross_base=false @riot.champion_mastery.top_by_summoner:228:22
+path hole={summoner_id} cross_base=false @riot.champion_mastery.top_by_summoner:228:22
+path text="/top" cross_base=false @riot.champion_mastery.top_by_summoner:228:22
+query wire=0 count ; cross_base=false @riot.champion_mastery.top_by_summoner:229:25
+header wire=0 "x-riot-token" = key ; cross_base=false @riot:11:19
+read Json @riot:12:14
+problem RiotProblem @riot:13:9
+problem_read Json @riot:12:14
+endpoint riot.champion_mastery.score_by_summoner GET -> i32
+input client.key: Secret @Riot:9:9
+input champion_mastery.route: Platform @champion_mastery:193:32
+input score_by_summoner.summoner_id: SummonerId @score_by_summoner:232:35
+base "https://{route}.api.riotgames.com" @riot.champion_mastery:194:13
+path text="lol/champion-mastery/v4" cross_base=false @riot.champion_mastery:195:18
+path text="scores/by-summoner/" cross_base=false @riot.champion_mastery.score_by_summoner:233:22
+path hole={summoner_id} cross_base=false @riot.champion_mastery.score_by_summoner:233:22
+header wire=0 "x-riot-token" = key ; cross_base=false @riot:11:19
+read Json @riot:12:14
+problem RiotProblem @riot:13:9
+problem_read Json @riot:12:14
+endpoint riot.clash.players GET -> Vec < ClashPlayer >
+input client.key: Secret @Riot:9:9
+input clash.route: Platform @clash:238:21
+input players.puuid: Puuid @players:243:25
+base "https://{route}.api.riotgames.com" @riot.clash:239:13
+path text="lol/clash/v1" cross_base=false @riot.clash:240:18
+path text="players/by-puuid/" cross_base=false @riot.clash.players:243:66
+path hole={puuid} cross_base=false @riot.clash.players:243:66
+header wire=0 "x-riot-token" = key ; cross_base=false @riot:11:19
+read Json @riot:12:14
+problem RiotProblem @riot:13:9
+problem_read Json @riot:12:14
+endpoint riot.clash.players_by_summoner GET -> Vec < ClashPlayer >
+input client.key: Secret @Riot:9:9
+input clash.route: Platform @clash:238:21
+input players_by_summoner.summoner_id: SummonerId @players_by_summoner:245:37
+base "https://{route}.api.riotgames.com" @riot.clash:239:13
+path text="lol/clash/v1" cross_base=false @riot.clash:240:18
+path text="players/by-summoner/" cross_base=false @riot.clash.players_by_summoner:246:22
+path hole={summoner_id} cross_base=false @riot.clash.players_by_summoner:246:22
+header wire=0 "x-riot-token" = key ; cross_base=false @riot:11:19
+read Json @riot:12:14
+problem RiotProblem @riot:13:9
+problem_read Json @riot:12:14
+endpoint riot.clash.team GET -> Option < ClashTeam >
+input client.key: Secret @Riot:9:9
+input clash.route: Platform @clash:238:21
+input team.id: ClashTeamId @team:248:22
+base "https://{route}.api.riotgames.com" @riot.clash:239:13
+path text="lol/clash/v1" cross_base=false @riot.clash:240:18
+path text="teams/" cross_base=false @riot.clash.team:249:22
+path hole={id} cross_base=false @riot.clash.team:249:22
+header wire=0 "x-riot-token" = key ; cross_base=false @riot:11:19
+read Json @riot:12:14
+arm 404 {} => None @riot.clash.team:250:26
+problem RiotProblem @riot:13:9
+problem_read Json @riot:12:14
+endpoint riot.clash.tournaments GET -> Vec < ClashTournament >
+input client.key: Secret @Riot:9:9
+input clash.route: Platform @clash:238:21
+base "https://{route}.api.riotgames.com" @riot.clash:239:13
+path text="lol/clash/v1" cross_base=false @riot.clash:240:18
+path text="tournaments" cross_base=false @riot.clash.tournaments:253:62
+header wire=0 "x-riot-token" = key ; cross_base=false @riot:11:19
+read Json @riot:12:14
+problem RiotProblem @riot:13:9
+problem_read Json @riot:12:14
+endpoint riot.clash.tournament_by_team GET -> Option < ClashTournament >
+input client.key: Secret @Riot:9:9
+input clash.route: Platform @clash:238:21
+input tournament_by_team.team: ClashTeamId @tournament_by_team:254:36
+base "https://{route}.api.riotgames.com" @riot.clash:239:13
+path text="lol/clash/v1" cross_base=false @riot.clash:240:18
+path text="tournaments/by-team/" cross_base=false @riot.clash.tournament_by_team:255:22
+path hole={team} cross_base=false @riot.clash.tournament_by_team:255:22
+header wire=0 "x-riot-token" = key ; cross_base=false @riot:11:19
+read Json @riot:12:14
+arm 404 {} => None @riot.clash.tournament_by_team:256:26
+problem RiotProblem @riot:13:9
+problem_read Json @riot:12:14
+endpoint riot.clash.tournament GET -> Option < ClashTournament >
+input client.key: Secret @Riot:9:9
+input clash.route: Platform @clash:238:21
+input tournament.id: ClashTournamentId @tournament:258:28
+base "https://{route}.api.riotgames.com" @riot.clash:239:13
+path text="lol/clash/v1" cross_base=false @riot.clash:240:18
+path text="tournaments/" cross_base=false @riot.clash.tournament:259:22
+path hole={id} cross_base=false @riot.clash.tournament:259:22
+header wire=0 "x-riot-token" = key ; cross_base=false @riot:11:19
+read Json @riot:12:14
+arm 404 {} => None @riot.clash.tournament:260:26
+problem RiotProblem @riot:13:9
+problem_read Json @riot:12:14
+endpoint riot.league.challenger GET -> LeagueList
+input client.key: Secret @Riot:9:9
+input league.route: Platform @league:265:22
+input challenger.queue: Queue @challenger:269:28
+base "https://{route}.api.riotgames.com" @riot.league:266:13
+path text="lol/league/v4" cross_base=false @riot.league:267:18
+path text="challengerleagues/by-queue/" cross_base=false @riot.league.challenger:269:63
+path hole={queue} cross_base=false @riot.league.challenger:269:63
+header wire=0 "x-riot-token" = key ; cross_base=false @riot:11:19
+read Json @riot:12:14
+problem RiotProblem @riot:13:9
+problem_read Json @riot:12:14
+endpoint riot.league.grandmaster GET -> LeagueList
+input client.key: Secret @Riot:9:9
+input league.route: Platform @league:265:22
+input grandmaster.queue: Queue @grandmaster:270:29
+base "https://{route}.api.riotgames.com" @riot.league:266:13
+path text="lol/league/v4" cross_base=false @riot.league:267:18
+path text="grandmasterleagues/by-queue/" cross_base=false @riot.league.grandmaster:270:64
+path hole={queue} cross_base=false @riot.league.grandmaster:270:64
+header wire=0 "x-riot-token" = key ; cross_base=false @riot:11:19
+read Json @riot:12:14
+problem RiotProblem @riot:13:9
+problem_read Json @riot:12:14
+endpoint riot.league.master GET -> LeagueList
+input client.key: Secret @Riot:9:9
+input league.route: Platform @league:265:22
+input master.queue: Queue @master:271:24
+base "https://{route}.api.riotgames.com" @riot.league:266:13
+path text="lol/league/v4" cross_base=false @riot.league:267:18
+path text="masterleagues/by-queue/" cross_base=false @riot.league.master:271:59
+path hole={queue} cross_base=false @riot.league.master:271:59
+header wire=0 "x-riot-token" = key ; cross_base=false @riot:11:19
+read Json @riot:12:14
+problem RiotProblem @riot:13:9
+problem_read Json @riot:12:14
+endpoint riot.league.get GET -> Option < LeagueList >
+input client.key: Secret @Riot:9:9
+input league.route: Platform @league:265:22
+input get.id: LeagueId @get:272:21
+base "https://{route}.api.riotgames.com" @riot.league:266:13
+path text="lol/league/v4" cross_base=false @riot.league:267:18
+path text="leagues/" cross_base=false @riot.league.get:273:22
+path hole={id} cross_base=false @riot.league.get:273:22
+header wire=0 "x-riot-token" = key ; cross_base=false @riot:11:19
+read Json @riot:12:14
+arm 404 {} => None @riot.league.get:274:26
+problem RiotProblem @riot:13:9
+problem_read Json @riot:12:14
+endpoint riot.league.by_puuid GET -> Vec < LeagueEntry >
+input client.key: Secret @Riot:9:9
+input league.route: Platform @league:265:22
+input by_puuid.puuid: Puuid @by_puuid:277:26
+base "https://{route}.api.riotgames.com" @riot.league:266:13
+path text="lol/league/v4" cross_base=false @riot.league:267:18
+path text="entries/by-puuid/" cross_base=false @riot.league.by_puuid:277:67
+path hole={puuid} cross_base=false @riot.league.by_puuid:277:67
+header wire=0 "x-riot-token" = key ; cross_base=false @riot:11:19
+read Json @riot:12:14
+problem RiotProblem @riot:13:9
+problem_read Json @riot:12:14
+endpoint riot.league.by_summoner GET -> Vec < LeagueEntry >
+input client.key: Secret @Riot:9:9
+input league.route: Platform @league:265:22
+input by_summoner.summoner_id: SummonerId @by_summoner:279:29
+base "https://{route}.api.riotgames.com" @riot.league:266:13
+path text="lol/league/v4" cross_base=false @riot.league:267:18
+path text="entries/by-summoner/" cross_base=false @riot.league.by_summoner:280:22
+path hole={summoner_id} cross_base=false @riot.league.by_summoner:280:22
+header wire=0 "x-riot-token" = key ; cross_base=false @riot:11:19
+read Json @riot:12:14
+problem RiotProblem @riot:13:9
+problem_read Json @riot:12:14
+endpoint riot.league.entries GET -> Vec < LeagueEntry >
+input client.key: Secret @Riot:9:9
+input league.route: Platform @league:265:22
+input entries.queue: Queue @entries:283:25
+input entries.tier: Tier @entries:283:39
+input entries.division: Division @entries:283:51
+input entries.page?: u32 @ladder:34:21
+base "https://{route}.api.riotgames.com" @riot.league:266:13
+path text="lol/league/v4" cross_base=false @riot.league:267:18
+path text="entries/" cross_base=false @riot.league.entries:284:22
+path hole={queue} cross_base=false @riot.league.entries:284:22
+path text="/" cross_base=false @riot.league.entries:284:22
+path hole={tier} cross_base=false @riot.league.entries:284:22
+path text="/" cross_base=false @riot.league.entries:284:22
+path hole={division} cross_base=false @riot.league.entries:284:22
+query wire=0 page ; cross_base=false @riot.league.entries part=ladder:35:21
+header wire=0 "x-riot-token" = key ; cross_base=false @riot:11:19
+read Json @riot:12:14
+problem RiotProblem @riot:13:9
+problem_read Json @riot:12:14
+paginate by_page (page , 1) @riot.league.entries part=ladder:36:22
+endpoint riot.league_exp.entries GET -> Vec < LeagueEntry >
+input client.key: Secret @Riot:9:9
+input league_exp.route: Platform @league_exp:289:26
+input entries.queue: Queue @entries:293:25
+input entries.tier: Tier @entries:293:39
+input entries.division: Division @entries:293:51
+input entries.page?: u32 @ladder:34:21
+base "https://{route}.api.riotgames.com" @riot.league_exp:290:13
+path text="lol/league-exp/v4" cross_base=false @riot.league_exp:291:18
+path text="entries/" cross_base=false @riot.league_exp.entries:294:22
+path hole={queue} cross_base=false @riot.league_exp.entries:294:22
+path text="/" cross_base=false @riot.league_exp.entries:294:22
+path hole={tier} cross_base=false @riot.league_exp.entries:294:22
+path text="/" cross_base=false @riot.league_exp.entries:294:22
+path hole={division} cross_base=false @riot.league_exp.entries:294:22
+query wire=0 page ; cross_base=false @riot.league_exp.entries part=ladder:35:21
+header wire=0 "x-riot-token" = key ; cross_base=false @riot:11:19
+read Json @riot:12:14
+problem RiotProblem @riot:13:9
+problem_read Json @riot:12:14
+paginate by_page (page , 1) @riot.league_exp.entries part=ladder:36:22
+endpoint riot.challenges.config GET -> Vec < ChallengeConfig >
+input client.key: Secret @Riot:9:9
+input challenges.route: Platform @challenges:299:26
+base "https://{route}.api.riotgames.com" @riot.challenges:300:13
+path text="lol/challenges/v1" cross_base=false @riot.challenges:301:18
+path text="challenges/config" cross_base=false @riot.challenges.config:303:57
+header wire=0 "x-riot-token" = key ; cross_base=false @riot:11:19
+read Json @riot:12:14
+problem RiotProblem @riot:13:9
+problem_read Json @riot:12:14
+endpoint riot.challenges.percentiles GET -> HashMap < ChallengeId , Percentiles >
+input client.key: Secret @Riot:9:9
+input challenges.route: Platform @challenges:299:26
+base "https://{route}.api.riotgames.com" @riot.challenges:300:13
+path text="lol/challenges/v1" cross_base=false @riot.challenges:301:18
+path text="challenges/percentiles" cross_base=false @riot.challenges.percentiles:305:75
+header wire=0 "x-riot-token" = key ; cross_base=false @riot:11:19
+read Json @riot:12:14
+problem RiotProblem @riot:13:9
+problem_read Json @riot:12:14
+endpoint riot.challenges.challenge_config GET -> Option < ChallengeConfig >
+input client.key: Secret @Riot:9:9
+input challenges.route: Platform @challenges:299:26
+input challenge_config.id: ChallengeId @challenge_config:306:34
+base "https://{route}.api.riotgames.com" @riot.challenges:300:13
+path text="lol/challenges/v1" cross_base=false @riot.challenges:301:18
+path text="challenges/" cross_base=false @riot.challenges.challenge_config:307:22
+path hole={id} cross_base=false @riot.challenges.challenge_config:307:22
+path text="/config" cross_base=false @riot.challenges.challenge_config:307:22
+header wire=0 "x-riot-token" = key ; cross_base=false @riot:11:19
+read Json @riot:12:14
+arm 404 {} => None @riot.challenges.challenge_config:308:26
+problem RiotProblem @riot:13:9
+problem_read Json @riot:12:14
+endpoint riot.challenges.challenge_percentiles GET -> Percentiles
+input client.key: Secret @Riot:9:9
+input challenges.route: Platform @challenges:299:26
+input challenge_percentiles.id: ChallengeId @challenge_percentiles:310:39
+base "https://{route}.api.riotgames.com" @riot.challenges:300:13
+path text="lol/challenges/v1" cross_base=false @riot.challenges:301:18
+path text="challenges/" cross_base=false @riot.challenges.challenge_percentiles:311:22
+path hole={id} cross_base=false @riot.challenges.challenge_percentiles:311:22
+path text="/percentiles" cross_base=false @riot.challenges.challenge_percentiles:311:22
+header wire=0 "x-riot-token" = key ; cross_base=false @riot:11:19
+read Json @riot:12:14
+problem RiotProblem @riot:13:9
+problem_read Json @riot:12:14
+endpoint riot.challenges.leaderboard GET -> Vec < ApexPlayer >
+input client.key: Secret @Riot:9:9
+input challenges.route: Platform @challenges:299:26
+input leaderboard.id: ChallengeId @leaderboard:314:29
+input leaderboard.level: ApexLevel @leaderboard:314:46
+input leaderboard.limit?: u32 @leaderboard:314:64
+base "https://{route}.api.riotgames.com" @riot.challenges:300:13
+path text="lol/challenges/v1" cross_base=false @riot.challenges:301:18
+path text="challenges/" cross_base=false @riot.challenges.leaderboard:315:22
+path hole={id} cross_base=false @riot.challenges.leaderboard:315:22
+path text="/leaderboards/by-level/" cross_base=false @riot.challenges.leaderboard:315:22
+path hole={level} cross_base=false @riot.challenges.leaderboard:315:22
+query wire=0 limit ; cross_base=false @riot.challenges.leaderboard:316:25
+header wire=0 "x-riot-token" = key ; cross_base=false @riot:11:19
+read Json @riot:12:14
+problem RiotProblem @riot:13:9
+problem_read Json @riot:12:14
+endpoint riot.challenges.player GET -> Option < PlayerChallenges >
+input client.key: Secret @Riot:9:9
+input challenges.route: Platform @challenges:299:26
+input player.puuid: Puuid @player:318:24
+base "https://{route}.api.riotgames.com" @riot.challenges:300:13
+path text="lol/challenges/v1" cross_base=false @riot.challenges:301:18
+path text="player-data/" cross_base=false @riot.challenges.player:319:22
+path hole={puuid} cross_base=false @riot.challenges.player:319:22
+header wire=0 "x-riot-token" = key ; cross_base=false @riot:11:19
+read Json @riot:12:14
+arm 404 {} => None @riot.challenges.player:320:26
+problem RiotProblem @riot:13:9
+problem_read Json @riot:12:14
+endpoint riot.spectator.active_game GET -> Option < CurrentGame >
+input client.key: Secret @Riot:9:9
+input spectator.route: Platform @spectator:325:25
+input active_game.puuid: Puuid @active_game:330:29
+base "https://{route}.api.riotgames.com" @riot.spectator:326:13
+path text="lol/spectator/v5" cross_base=false @riot.spectator:327:18
+path text="active-games/by-summoner/" cross_base=false @riot.spectator.active_game:331:22
+path hole={puuid} cross_base=false @riot.spectator.active_game:331:22
+header wire=0 "x-riot-token" = key ; cross_base=false @riot:11:19
+read Json @riot:12:14
+arm 404 {} => None @riot.spectator.active_game:332:26
+problem RiotProblem @riot:13:9
+problem_read Json @riot:12:14
+endpoint riot.spectator.featured_games GET -> FeaturedGames
+input client.key: Secret @Riot:9:9
+input spectator.route: Platform @spectator:325:25
+base "https://{route}.api.riotgames.com" @riot.spectator:326:13
+path text="lol/spectator/v5" cross_base=false @riot.spectator:327:18
+path text="featured-games" cross_base=false @riot.spectator.featured_games:334:58
+header wire=0 "x-riot-token" = key ; cross_base=false @riot:11:19
+read Json @riot:12:14
+problem RiotProblem @riot:13:9
+problem_read Json @riot:12:14
+endpoint riot.spectator_tft.active_game GET -> Option < CurrentGame >
+input client.key: Secret @Riot:9:9
+input spectator_tft.route: Platform @spectator_tft:338:29
+input active_game.puuid: Puuid @active_game:343:29
+base "https://{route}.api.riotgames.com" @riot.spectator_tft:339:13
+path text="lol/spectator/tft/v5" cross_base=false @riot.spectator_tft:340:18
+path text="active-games/by-puuid/" cross_base=false @riot.spectator_tft.active_game:344:22
+path hole={puuid} cross_base=false @riot.spectator_tft.active_game:344:22
+header wire=0 "x-riot-token" = key ; cross_base=false @riot:11:19
+read Json @riot:12:14
+arm 404 {} => None @riot.spectator_tft.active_game:345:26
+problem RiotProblem @riot:13:9
+problem_read Json @riot:12:14
+endpoint riot.spectator_tft.featured_games GET -> FeaturedGames
+input client.key: Secret @Riot:9:9
+input spectator_tft.route: Platform @spectator_tft:338:29
+base "https://{route}.api.riotgames.com" @riot.spectator_tft:339:13
+path text="lol/spectator/tft/v5" cross_base=false @riot.spectator_tft:340:18
+path text="featured-games" cross_base=false @riot.spectator_tft.featured_games:348:58
+header wire=0 "x-riot-token" = key ; cross_base=false @riot:11:19
+read Json @riot:12:14
+problem RiotProblem @riot:13:9
+problem_read Json @riot:12:14
+endpoint riot.summoner.by_puuid GET -> Option < Summoner >
+input client.key: Secret @Riot:9:9
+input summoner.route: Platform @summoner:352:24
+input by_puuid.puuid: Puuid @by_puuid:357:26
+base "https://{route}.api.riotgames.com" @riot.summoner:353:13
+path text="lol/summoner/v4/summoners" cross_base=false @riot.summoner:354:18
+path text="by-puuid/" cross_base=false @riot.summoner.by_puuid:358:22
+path hole={puuid} cross_base=false @riot.summoner.by_puuid:358:22
+header wire=0 "x-riot-token" = key ; cross_base=false @riot:11:19
+read Json @riot:12:14
+arm 404 {} => None @riot.summoner.by_puuid:359:26
+problem RiotProblem @riot:13:9
+problem_read Json @riot:12:14
+endpoint riot.summoner.me GET -> Summoner
+input client.key: Secret @Riot:9:9
+input summoner.route: Platform @summoner:352:24
+input me.access_token: Secret @player:20:21
+base "https://{route}.api.riotgames.com" @riot.summoner:353:13
+path text="lol/summoner/v4/summoners" cross_base=false @riot.summoner:354:18
+path text="me" cross_base=false @riot.summoner.me:361:49
+header wire=1 "authorization" = "Bearer {access_token}" ; cross_base=false @riot.summoner.me part=player:21:46
+read Json @riot:12:14
+problem RiotProblem @riot:13:9
+problem_read Json @riot:12:14
+endpoint riot.summoner.by_id GET -> Option < Summoner >
+input client.key: Secret @Riot:9:9
+input summoner.route: Platform @summoner:352:24
+input by_id.id: SummonerId @by_id:363:23
+base "https://{route}.api.riotgames.com" @riot.summoner:353:13
+path text="lol/summoner/v4/summoners" cross_base=false @riot.summoner:354:18
+path hole={id} cross_base=false @riot.summoner.by_id:364:22
+header wire=0 "x-riot-token" = key ; cross_base=false @riot:11:19
+read Json @riot:12:14
+arm 404 {} => None @riot.summoner.by_id:365:26
+problem RiotProblem @riot:13:9
+problem_read Json @riot:12:14
+endpoint riot.summoner.by_account GET -> Option < Summoner >
+input client.key: Secret @Riot:9:9
+input summoner.route: Platform @summoner:352:24
+input by_account.account_id: AccountId @by_account:368:28
+base "https://{route}.api.riotgames.com" @riot.summoner:353:13
+path text="lol/summoner/v4/summoners" cross_base=false @riot.summoner:354:18
+path text="by-account/" cross_base=false @riot.summoner.by_account:369:22
+path hole={account_id} cross_base=false @riot.summoner.by_account:369:22
+header wire=0 "x-riot-token" = key ; cross_base=false @riot:11:19
+read Json @riot:12:14
+arm 404 {} => None @riot.summoner.by_account:370:26
+problem RiotProblem @riot:13:9
+problem_read Json @riot:12:14
+endpoint riot.summoner.by_name GET -> Option < Summoner >
+input client.key: Secret @Riot:9:9
+input summoner.route: Platform @summoner:352:24
+input by_name.name: String @by_name:373:25
+base "https://{route}.api.riotgames.com" @riot.summoner:353:13
+path text="lol/summoner/v4/summoners" cross_base=false @riot.summoner:354:18
+path text="by-name/" cross_base=false @riot.summoner.by_name:374:22
+path hole={name} cross_base=false @riot.summoner.by_name:374:22
+header wire=0 "x-riot-token" = key ; cross_base=false @riot:11:19
+read Json @riot:12:14
+arm 404 {} => None @riot.summoner.by_name:375:26
+problem RiotProblem @riot:13:9
+problem_read Json @riot:12:14
+endpoint riot.tft_league.challenger GET -> TftLeagueList
+input client.key: Secret @Riot:9:9
+input tft_league.route: Platform @tft_league:380:26
+input challenger.queue?: TftQueue @tft_queue:39:24
+base "https://{route}.api.riotgames.com" @riot.tft_league:381:13
+path text="tft/league/v1" cross_base=false @riot.tft_league:382:18
+path text="challenger" cross_base=false @riot.tft_league.challenger:384:65
+query wire=0 queue ; cross_base=false @riot.tft_league.challenger part=tft_queue:40:21
+header wire=0 "x-riot-token" = key ; cross_base=false @riot:11:19
+read Json @riot:12:14
+problem RiotProblem @riot:13:9
+problem_read Json @riot:12:14
+endpoint riot.tft_league.grandmaster GET -> TftLeagueList
+input client.key: Secret @Riot:9:9
+input tft_league.route: Platform @tft_league:380:26
+input grandmaster.queue?: TftQueue @tft_queue:39:24
+base "https://{route}.api.riotgames.com" @riot.tft_league:381:13
+path text="tft/league/v1" cross_base=false @riot.tft_league:382:18
+path text="grandmaster" cross_base=false @riot.tft_league.grandmaster:385:66
+query wire=0 queue ; cross_base=false @riot.tft_league.grandmaster part=tft_queue:40:21
+header wire=0 "x-riot-token" = key ; cross_base=false @riot:11:19
+read Json @riot:12:14
+problem RiotProblem @riot:13:9
+problem_read Json @riot:12:14
+endpoint riot.tft_league.master GET -> TftLeagueList
+input client.key: Secret @Riot:9:9
+input tft_league.route: Platform @tft_league:380:26
+input master.queue?: TftQueue @tft_queue:39:24
+base "https://{route}.api.riotgames.com" @riot.tft_league:381:13
+path text="tft/league/v1" cross_base=false @riot.tft_league:382:18
+path text="master" cross_base=false @riot.tft_league.master:386:61
+query wire=0 queue ; cross_base=false @riot.tft_league.master part=tft_queue:40:21
+header wire=0 "x-riot-token" = key ; cross_base=false @riot:11:19
+read Json @riot:12:14
+problem RiotProblem @riot:13:9
+problem_read Json @riot:12:14
+endpoint riot.tft_league.get GET -> Option < TftLeagueList >
+input client.key: Secret @Riot:9:9
+input tft_league.route: Platform @tft_league:380:26
+input get.id: LeagueId @get:387:21
+base "https://{route}.api.riotgames.com" @riot.tft_league:381:13
+path text="tft/league/v1" cross_base=false @riot.tft_league:382:18
+path text="leagues/" cross_base=false @riot.tft_league.get:388:22
+path hole={id} cross_base=false @riot.tft_league.get:388:22
+header wire=0 "x-riot-token" = key ; cross_base=false @riot:11:19
+read Json @riot:12:14
+arm 404 {} => None @riot.tft_league.get:389:26
+problem RiotProblem @riot:13:9
+problem_read Json @riot:12:14
+endpoint riot.tft_league.by_puuid GET -> Vec < TftLeagueEntry >
+input client.key: Secret @Riot:9:9
+input tft_league.route: Platform @tft_league:380:26
+input by_puuid.puuid: Puuid @by_puuid:392:26
+base "https://{route}.api.riotgames.com" @riot.tft_league:381:13
+path text="tft/league/v1" cross_base=false @riot.tft_league:382:18
+path text="by-puuid/" cross_base=false @riot.tft_league.by_puuid:392:70
+path hole={puuid} cross_base=false @riot.tft_league.by_puuid:392:70
+header wire=0 "x-riot-token" = key ; cross_base=false @riot:11:19
+read Json @riot:12:14
+problem RiotProblem @riot:13:9
+problem_read Json @riot:12:14
+endpoint riot.tft_league.by_summoner GET -> Vec < TftLeagueEntry >
+input client.key: Secret @Riot:9:9
+input tft_league.route: Platform @tft_league:380:26
+input by_summoner.summoner_id: SummonerId @by_summoner:394:29
+base "https://{route}.api.riotgames.com" @riot.tft_league:381:13
+path text="tft/league/v1" cross_base=false @riot.tft_league:382:18
+path text="entries/by-summoner/" cross_base=false @riot.tft_league.by_summoner:395:22
+path hole={summoner_id} cross_base=false @riot.tft_league.by_summoner:395:22
+header wire=0 "x-riot-token" = key ; cross_base=false @riot:11:19
+read Json @riot:12:14
+problem RiotProblem @riot:13:9
+problem_read Json @riot:12:14
+endpoint riot.tft_league.entries GET -> Vec < TftLeagueEntry >
+input client.key: Secret @Riot:9:9
+input tft_league.route: Platform @tft_league:380:26
+input entries.tier: Tier @entries:397:25
+input entries.division: Division @entries:397:37
+input entries.queue?: TftQueue @tft_queue:39:24
+input entries.page?: u32 @ladder:34:21
+base "https://{route}.api.riotgames.com" @riot.tft_league:381:13
+path text="tft/league/v1" cross_base=false @riot.tft_league:382:18
+path text="entries/" cross_base=false @riot.tft_league.entries:398:22
+path hole={tier} cross_base=false @riot.tft_league.entries:398:22
+path text="/" cross_base=false @riot.tft_league.entries:398:22
+path hole={division} cross_base=false @riot.tft_league.entries:398:22
+query wire=0 queue ; cross_base=false @riot.tft_league.entries part=tft_queue:40:21
+query wire=1 page ; cross_base=false @riot.tft_league.entries part=ladder:35:21
+header wire=0 "x-riot-token" = key ; cross_base=false @riot:11:19
+read Json @riot:12:14
+problem RiotProblem @riot:13:9
+problem_read Json @riot:12:14
+paginate by_page (page , 1) @riot.tft_league.entries part=ladder:36:22
+endpoint riot.tft_league.top_rated GET -> Vec < TopRated >
+input client.key: Secret @Riot:9:9
+input tft_league.route: Platform @tft_league:380:26
+input top_rated.queue: RatedQueue @top_rated:401:27
+base "https://{route}.api.riotgames.com" @riot.tft_league:381:13
+path text="tft/league/v1" cross_base=false @riot.tft_league:382:18
+path text="rated-ladders/" cross_base=false @riot.tft_league.top_rated:401:70
+path hole={queue} cross_base=false @riot.tft_league.top_rated:401:70
+path text="/top" cross_base=false @riot.tft_league.top_rated:401:70
+header wire=0 "x-riot-token" = key ; cross_base=false @riot:11:19
+read Json @riot:12:14
+problem RiotProblem @riot:13:9
+problem_read Json @riot:12:14
+endpoint riot.tft_summoner.by_puuid GET -> Option < Summoner >
+input client.key: Secret @Riot:9:9
+input tft_summoner.route: Platform @tft_summoner:405:28
+input by_puuid.puuid: Puuid @by_puuid:409:26
+base "https://{route}.api.riotgames.com" @riot.tft_summoner:406:13
+path text="tft/summoner/v1/summoners" cross_base=false @riot.tft_summoner:407:18
+path text="by-puuid/" cross_base=false @riot.tft_summoner.by_puuid:410:22
+path hole={puuid} cross_base=false @riot.tft_summoner.by_puuid:410:22
+header wire=0 "x-riot-token" = key ; cross_base=false @riot:11:19
+read Json @riot:12:14
+arm 404 {} => None @riot.tft_summoner.by_puuid:411:26
+problem RiotProblem @riot:13:9
+problem_read Json @riot:12:14
+endpoint riot.tft_summoner.me GET -> Summoner
+input client.key: Secret @Riot:9:9
+input tft_summoner.route: Platform @tft_summoner:405:28
+input me.access_token: Secret @player:20:21
+base "https://{route}.api.riotgames.com" @riot.tft_summoner:406:13
+path text="tft/summoner/v1/summoners" cross_base=false @riot.tft_summoner:407:18
+path text="me" cross_base=false @riot.tft_summoner.me:413:49
+header wire=1 "authorization" = "Bearer {access_token}" ; cross_base=false @riot.tft_summoner.me part=player:21:46
+read Json @riot:12:14
+problem RiotProblem @riot:13:9
+problem_read Json @riot:12:14
+endpoint riot.tft_summoner.by_id GET -> Option < Summoner >
+input client.key: Secret @Riot:9:9
+input tft_summoner.route: Platform @tft_summoner:405:28
+input by_id.id: SummonerId @by_id:415:23
+base "https://{route}.api.riotgames.com" @riot.tft_summoner:406:13
+path text="tft/summoner/v1/summoners" cross_base=false @riot.tft_summoner:407:18
+path hole={id} cross_base=false @riot.tft_summoner.by_id:416:22
+header wire=0 "x-riot-token" = key ; cross_base=false @riot:11:19
+read Json @riot:12:14
+arm 404 {} => None @riot.tft_summoner.by_id:417:26
+problem RiotProblem @riot:13:9
+problem_read Json @riot:12:14
+endpoint riot.tft_summoner.by_account GET -> Option < Summoner >
+input client.key: Secret @Riot:9:9
+input tft_summoner.route: Platform @tft_summoner:405:28
+input by_account.account_id: AccountId @by_account:420:28
+base "https://{route}.api.riotgames.com" @riot.tft_summoner:406:13
+path text="tft/summoner/v1/summoners" cross_base=false @riot.tft_summoner:407:18
+path text="by-account/" cross_base=false @riot.tft_summoner.by_account:421:22
+path hole={account_id} cross_base=false @riot.tft_summoner.by_account:421:22
+header wire=0 "x-riot-token" = key ; cross_base=false @riot:11:19
+read Json @riot:12:14
+arm 404 {} => None @riot.tft_summoner.by_account:422:26
+problem RiotProblem @riot:13:9
+problem_read Json @riot:12:14
+endpoint riot.tft_summoner.by_name GET -> Option < Summoner >
+input client.key: Secret @Riot:9:9
+input tft_summoner.route: Platform @tft_summoner:405:28
+input by_name.name: String @by_name:425:25
+base "https://{route}.api.riotgames.com" @riot.tft_summoner:406:13
+path text="tft/summoner/v1/summoners" cross_base=false @riot.tft_summoner:407:18
+path text="by-name/" cross_base=false @riot.tft_summoner.by_name:426:22
+path hole={name} cross_base=false @riot.tft_summoner.by_name:426:22
+header wire=0 "x-riot-token" = key ; cross_base=false @riot:11:19
+read Json @riot:12:14
+arm 404 {} => None @riot.tft_summoner.by_name:427:26
+problem RiotProblem @riot:13:9
+problem_read Json @riot:12:14

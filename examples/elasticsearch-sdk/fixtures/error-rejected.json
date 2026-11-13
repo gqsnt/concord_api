@@ -1,7 +1,0 @@
-{
-  "error": {
-    "type": "es_rejected_execution_exception",
-    "reason": "rejected execution of synthetic bulk request"
-  },
-  "status": 429
-}

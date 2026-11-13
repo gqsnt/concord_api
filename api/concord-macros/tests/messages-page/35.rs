@@ -1,0 +1,4 @@
+concord::api! {
+client Tasks { base "https://a.example"; part page(limit?: u32) { query { limit; } } GET list(..pages); GET other(..page); }
+}
+fn main() {}

@@ -1,5 +1,0 @@
-error: cannot remove query key `page`: no enclosing owner sets it
- --> tests/ui/remove_without_target.rs:4:27
-  |
-4 |         scope s { query { remove "page"; } GET list(); }
-  |                           ^^^^^^

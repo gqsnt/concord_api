@@ -1,0 +1,13 @@
+error: an arm binds body, headers or status
+       label: name `both` is bound twice
+       help: give these fields distinct binding names and update their uses in this arm's expression
+ --> tests/semantic/34_duplicate_binding.rs:2:118
+  |
+2 |     client Workshop { base "https://workshop.test"; read Reader; GET fetch() { status { 201 { headers: both, status: both } => () } } }
+  |                                                                                                                      ^^^^
+
+error: the first `both` binding is here
+ --> tests/semantic/34_duplicate_binding.rs:2:104
+  |
+2 |     client Workshop { base "https://workshop.test"; read Reader; GET fetch() { status { 201 { headers: both, status: both } => () } } }
+  |                                                                                                        ^^^^

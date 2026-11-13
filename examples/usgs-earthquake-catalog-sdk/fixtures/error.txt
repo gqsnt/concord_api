@@ -1,1 +1,0 @@
-Synthetic service refusal. Submitted URI: https://fixture.invalid/query?token=secret-provider-body

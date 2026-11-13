@@ -1,0 +1,7 @@
+error: `call` is reserved by Concord
+       label: conflicts with a generated method
+       help: rename this input to `call_value`; update its references in the existing query placements and expressions, retaining the wire keys and fixed text for call
+ --> tests/semantic/03_reserved_client_call.rs:2:21
+  |
+2 |     client Workshop(call?: String) { base "https://names.test"; query { call; } GET fetch(); }
+  |                     ^^^^

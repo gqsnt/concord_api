@@ -1,0 +1,7 @@
+error: invalid API name
+       label: expected lower snake case
+       help: rename it to `fetch_record` and update its references, retaining existing wire names
+ --> tests/semantic/05_endpoint.rs:2:70
+  |
+2 |     client Workshop { base "https://workshop.test"; read Reader; GET fetch__record(); }
+  |                                                                      ^^^^^^^^^^^^^

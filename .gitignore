@@ -1,8 +1,6 @@
-/target
-**/target/
-**/wip/
-**/__pycache__/
-*.py[cod]
-.DS_Store
-.idea/
-/concord_v2_1
+proto/target/
+proto/target-check/
+api/target/
+build/MATRIX.md
+/.cargo/
+target/

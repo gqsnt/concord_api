@@ -1,0 +1,7 @@
+error: no status arm `410` above to override
+       label: nothing is set above for this key
+       help: write `410 =>()`
+ --> tests/semantic/22_arm.rs:2:89
+  |
+2 |     client Workshop { base "https://workshop.test"; read Reader; GET fetch() { status { override 410 => () } } }
+  |                                                                                         ^^^^^^^^

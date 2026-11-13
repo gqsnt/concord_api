@@ -1,0 +1,13 @@
+error: `paginate` is written in the part `page` and in this endpoint
+       label: the statements of a part count as this node's own
+       help: consolidate these contributions, retaining the intended value or body function and every input placement; use compatible parts or remove inputs that are no longer needed
+ --> tests/messages-page/38.rs:2:149
+  |
+2 | ...art; } paginate by_link(); } GET list(..page) -> Vec<Task> { paginate by_link(); } }
+  |                                                                 ^^^^^^^^
+
+error: the part `page` writes it here
+ --> tests/messages-page/38.rs:2:95
+  |
+2 | client Tasks { base "https://a.example"; read Json; part page(start?: u32) { query { start; } paginate by_link(); } GET list(..page) ...
+  |                                                                                               ^^^^^^^^

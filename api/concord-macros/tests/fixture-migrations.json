@@ -1,0 +1,23 @@
+{
+  "corpus/3-language_001.rs": 4,
+  "corpus/3-language_003.rs": 3,
+  "corpus/5-response_005.rs": 1,
+  "corpus/6-behaviour_003.rs": 1,
+  "corpus/6-behaviour_005.rs": 2,
+  "corpus/6-behaviour_006.rs": 2,
+  "corpus/6-behaviour_007.rs": 1,
+  "corpus/apis_github_001.rs": 69,
+  "corpus/apis_riot_001.rs": 24,
+  "corpus/apis_s3_001.rs": 34,
+  "corpus/apis_stripe_001.rs": 81,
+  "corpus/schematic_006.rs": 3,
+  "corpus/tour_001.rs": 1,
+  "corpus/tour_002.rs": 1,
+  "corpus/tour_004.rs": 2,
+  "corpus/tour_005.rs": 3,
+  "corpus/tour_012.rs": 1,
+  "attacks/middleware_optional_input.rs": 1,
+  "attacks/optional_child_collision.rs": 1,
+  "attacks/optional_reserved.rs": 1,
+  "attacks/url_optional.rs": 1
+}

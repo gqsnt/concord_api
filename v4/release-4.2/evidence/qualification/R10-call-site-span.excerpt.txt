@@ -1,8 +1,0 @@
-== R10-call-site-span (parens with the fragment's span)
-error: unnecessary parentheses around type
-error: unnecessary parentheses around type
-error: unnecessary parentheses around type
-error: unnecessary parentheses around type
-error: could not compile `concord` (test "forwarded_types") due to 4 previous errors
-exit=101
-restored-bytes-verified

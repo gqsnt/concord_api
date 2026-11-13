@@ -1,0 +1,7 @@
+error: invalid API name
+       label: expected lower snake case
+       help: rename it to `by_riot_id` and update its references, retaining existing wire names
+  --> tests/real/m05_endpoint.rs:82:17
+   |
+82 |             GET byRiotId(game_name: String, tag_line: String) -> Option<Account> {
+   |                 ^^^^^^^^

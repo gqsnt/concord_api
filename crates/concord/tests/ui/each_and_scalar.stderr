@@ -1,5 +1,0 @@
-error: `tags` is used both with and without `each`
- --> tests/ui/each_and_scalar.rs:4:74
-  |
-4 |         GET list(tags: Vec<String>) { query { "tag" = each tags; "all" = tags; } }
-  |                                                                          ^^^^

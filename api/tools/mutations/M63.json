@@ -1,0 +1,9 @@
+{
+  "id": "M63",
+  "area": "value-writing",
+  "contract": "docs/contracts.md C2.4 / C8.4",
+  "description": "Lose the secret mark in the generated secret adapter",
+  "file": "concord-core/src/__private/value.rs",
+  "find": "to.store(self.0.__serialize(TextWriter::ROOT), true);",
+  "replace": "to.store(self.0.__serialize(TextWriter::ROOT), false);"
+}

@@ -1,0 +1,353 @@
+endpoint shapes.again POST -> Item
+input again.id: u64 @again:8:9
+idempotent true @shapes.again:11:9
+base "https://shapes.example.com" @shapes:3:5
+path text="again/" cross_base=false @shapes.again:10:14
+path hole={id} cross_base=false @shapes.again:10:14
+read Json @shapes:2:10
+problem ShapesProblem @shapes:4:5
+problem_read Json @shapes:2:10
+endpoint shapes.replace PUT -> Item
+input replace.id: u64 @replace:16:9
+input replace.item: Item @replace:18:9
+idempotent false @shapes.replace:22:9
+base "https://shapes.example.com" @shapes:3:5
+path text="items/" cross_base=false @shapes.replace:20:14
+path hole={id} cross_base=false @shapes.replace:20:14
+body json (item) @shapes.replace:21:14
+read Json @shapes:2:10
+problem ShapesProblem @shapes:4:5
+problem_read Json @shapes:2:10
+endpoint shapes.order POST -> Item
+input order.trace: Trace @order:27:9
+idle_timeout trace . idle_timeout () @shapes.order:32:22
+idempotent trace . idempotent () @shapes.order:31:9
+base "https://shapes.example.com" @shapes:3:5
+path text="order" cross_base=false @shapes.order:29:14
+query wire=0 "step" = trace . note ("query") ; cross_base=false @shapes.order:30:17
+read Json @shapes:2:10
+problem ShapesProblem @shapes:4:5
+problem_read Json @shapes:2:10
+endpoint shapes.upload POST -> Item
+input upload.body: concord :: Body @upload:37:9
+base "https://shapes.example.com" @shapes:3:5
+path text="upload" cross_base=false @shapes.upload:39:14
+body body @shapes.upload:40:14
+read Json @shapes:2:10
+problem ShapesProblem @shapes:4:5
+problem_read Json @shapes:2:10
+endpoint shapes.outcome GET -> Result < Item , Conflict >
+input outcome.id: u64 @outcome:45:9
+base "https://shapes.example.com" @shapes:3:5
+path text="outcome/" cross_base=false @shapes.outcome:47:14
+path hole={id} cross_base=false @shapes.outcome:47:14
+read Json @shapes:2:10
+arm 409 {body} => Err (body) @shapes.outcome:48:18
+problem ShapesProblem @shapes:4:5
+problem_read Json @shapes:2:10
+endpoint shapes.ping HEAD -> ()
+base "https://shapes.example.com" @shapes:3:5
+path text="ping" cross_base=false @shapes.ping:52:14
+read Json @shapes:2:10
+problem ShapesProblem @shapes:4:5
+problem_read Json @shapes:2:10
+endpoint shapes.present HEAD -> bool
+input present.id: u64 @present:57:9
+base "https://shapes.example.com" @shapes:3:5
+path text="items/" cross_base=false @shapes.present:59:14
+path hole={id} cross_base=false @shapes.present:59:14
+read Json @shapes:2:10
+arm 204 {} => true @shapes.present:60:18
+arm 404 {} => false @shapes.present:60:31
+problem ShapesProblem @shapes:4:5
+problem_read Json @shapes:2:10
+endpoint shapes.create POST -> Receipt
+input create.item: Item @create:65:9
+base "https://shapes.example.com" @shapes:3:5
+path text="items" cross_base=false @shapes.create:67:14
+body json (item) @shapes.create:68:14
+read Json @shapes:2:10
+arm 201 {headers, status} => Receipt { status : status . as_u16 () , location : Some (headers . require ("location") ? . to_owned ()) , } @shapes.create:70:13
+arm 202 {status: code} => Receipt { status : code . as_u16 () , location : None } @shapes.create:74:13
+arm 3xx {} => Err (concord :: mismatch ("a redirect is not a receipt")) ? @shapes.create:75:13
+problem ShapesProblem @shapes:4:5
+problem_read Json @shapes:2:10
+endpoint shapes.hosted GET -> Item
+input hosted.tenant: String @hosted:81:9
+base "https://{tenant}.shapes.example.com" @shapes.hosted:83:9
+path text="tenant" cross_base=false @shapes.hosted:84:14
+read Json @shapes:2:10
+problem ShapesProblem @shapes:4:5
+problem_read Json @shapes:2:10
+endpoint shapes.search GET -> Vec < Item >
+input search.ratio: f64 @search:89:9
+input search.filter?: Filter @search:91:9
+base "https://shapes.example.com" @shapes:3:5
+path text="search" cross_base=false @shapes.search:93:14
+query wire=0 ratio ; cross_base=false @shapes.search:94:17
+query wire=1 filter ; cross_base=false @shapes.search:94:24
+read Json @shapes:2:10
+problem ShapesProblem @shapes:4:5
+problem_read Json @shapes:2:10
+endpoint shapes.measured POST -> Item
+input measured.item: Item @measured:99:9
+input measured.length: u64 @measured:101:9
+base "https://shapes.example.com" @shapes:3:5
+path text="measured" cross_base=false @shapes.measured:103:14
+header wire=0 "content-length" = length ; cross_base=false @shapes.measured:104:19
+body checked (item) @shapes.measured:105:14
+read Json @shapes:2:10
+problem ShapesProblem @shapes:4:5
+problem_read Json @shapes:2:10
+endpoint shapes.parsed GET -> Item
+input parsed.raw: String @parsed:110:9
+base "https://shapes.example.com" @shapes:3:5
+path text="parsed" cross_base=false @shapes.parsed:112:14
+query wire=0 "n" = raw . parse :: < u32 > () ? ; cross_base=false @shapes.parsed:113:17
+read Json @shapes:2:10
+problem ShapesProblem @shapes:4:5
+problem_read Json @shapes:2:10
+endpoint shapes.counts GET -> Tally
+base "https://shapes.example.com" @shapes:3:5
+path text="counts" cross_base=false @shapes.counts:117:14
+read Json @shapes:2:10
+problem ShapesProblem @shapes:4:5
+problem_read Json @shapes:2:10
+endpoint shapes.strict GET -> Item
+base "https://shapes.example.com" @shapes:3:5
+path text="strict" cross_base=false @shapes.strict:121:14
+read Json . strict () @shapes.strict:122:14
+problem ShapesProblem @shapes:4:5
+problem_read Json @shapes:2:10
+endpoint shapes.long_message GET -> Item
+base "https://shapes.example.com" @shapes:3:5
+path text="long-message" cross_base=false @shapes.long_message:126:14
+read Chatty @shapes.long_message:127:14
+problem ShapesProblem @shapes:4:5
+problem_read Json @shapes:2:10
+endpoint shapes.wrapped.get GET -> Item
+input get.id: u64 @get:136:13
+base "https://shapes.example.com" @shapes:3:5
+path text="wrapped" cross_base=false @shapes.wrapped:131:14
+path hole={id} cross_base=false @shapes.wrapped.get:138:18
+read Json @shapes:2:10
+arm 2xx {body} => unpack (body) ? @shapes.wrapped:132:18
+problem ShapesProblem @shapes:4:5
+problem_read Json @shapes:2:10
+endpoint shapes.wrapped.raw GET -> Envelope < Item >
+input raw.id: u64 @raw:143:13
+base "https://shapes.example.com" @shapes:3:5
+path text="wrapped" cross_base=false @shapes.wrapped:131:14
+path text="raw/" cross_base=false @shapes.wrapped.raw:145:18
+path hole={id} cross_base=false @shapes.wrapped.raw:145:18
+read Json @shapes:2:10
+problem ShapesProblem @shapes:4:5
+problem_read Json @shapes:2:10
+endpoint shapes.wrapped.find GET -> Option < Item >
+input find.id: u64 @find:151:13
+base "https://shapes.example.com" @shapes:3:5
+path text="wrapped" cross_base=false @shapes.wrapped:131:14
+path text="find/" cross_base=false @shapes.wrapped.find:153:18
+path hole={id} cross_base=false @shapes.wrapped.find:153:18
+read Json @shapes:2:10
+arm 404 {} => None @shapes.wrapped.find:154:68
+arm 2xx {body} => Some (unpack (body) ?) @shapes.wrapped.find:154:31
+problem ShapesProblem @shapes:4:5
+problem_read Json @shapes:2:10
+endpoint shapes.wrapped.touch HEAD -> ()
+input touch.id: u64 @touch:159:13
+base "https://shapes.example.com" @shapes:3:5
+path text="wrapped" cross_base=false @shapes.wrapped:131:14
+path text="touch/" cross_base=false @shapes.wrapped.touch:161:18
+path hole={id} cross_base=false @shapes.wrapped.touch:161:18
+read Json @shapes:2:10
+arm 202 {} => Err (concord :: mismatch ("an accepted touch is not done")) ? @shapes.wrapped.touch:163:26
+arm 404 {} => () @shapes.wrapped.touch:164:17
+problem ShapesProblem @shapes:4:5
+problem_read Json @shapes:2:10
+endpoint shapes.wrapped.holds HEAD -> bool
+input holds.id: u64 @holds:170:13
+base "https://shapes.example.com" @shapes:3:5
+path text="wrapped" cross_base=false @shapes.wrapped:131:14
+path text="holds/" cross_base=false @shapes.wrapped.holds:172:18
+path hole={id} cross_base=false @shapes.wrapped.holds:172:18
+read Json @shapes:2:10
+arm 204 {} => true @shapes.wrapped.holds:173:31
+arm 404 {} => false @shapes.wrapped.holds:173:44
+problem ShapesProblem @shapes:4:5
+problem_read Json @shapes:2:10
+endpoint shapes.noted GET -> Item
+input noted.trace: Trace @noted:179:9
+base "https://shapes.example.com" @shapes:3:5
+path text="noted" cross_base=false @shapes.noted:181:14
+read { trace . note ("read") ; Json } @shapes.noted:182:14
+problem ShapesProblem @shapes:4:5
+problem_read Json @shapes:2:10
+endpoint shapes.titled GET -> Item
+input titled.id: u64 @titled:187:9
+input titled.title: String @titled:189:9
+base "https://shapes.example.com" @shapes:3:5
+path text="titled/" cross_base=false @shapes.titled:191:14
+path hole={id} cross_base=false @shapes.titled:191:14
+read Json @shapes:2:10
+arm 404 {} => Item { id : * id , title : title . clone () } @shapes.titled:192:18
+problem ShapesProblem @shapes:4:5
+problem_read Json @shapes:2:10
+endpoint shapes.held GET -> Result < Item , Conflict >
+input held.body: u64 @held:197:9
+base "https://shapes.example.com" @shapes:3:5
+path text="held/" cross_base=false @shapes.held:199:14
+path hole={body} cross_base=false @shapes.held:199:14
+read Json @shapes:2:10
+arm 409 {body: answer} => { let conflict : Conflict = answer ; Err (Conflict { message : format ! ("item {body}: {}" , conflict . message) }) } @shapes.held:201:13
+problem ShapesProblem @shapes:4:5
+problem_read Json @shapes:2:10
+endpoint shapes.refusal GET -> Item
+input refusal.id: u64 @refusal:210:9
+base "https://shapes.example.com" @shapes:3:5
+path text="refusal/" cross_base=false @shapes.refusal:212:14
+path hole={id} cross_base=false @shapes.refusal:212:14
+read Json @shapes:2:10
+arm 4xx {body} => Err :: < _ , ShapesProblem > (body) ? @shapes.refusal:213:18
+problem ShapesProblem @shapes:4:5
+problem_read Json @shapes:2:10
+endpoint shapes.guarded GET -> Batch
+input guarded.path_key: Secret @guarded:218:9
+input guarded.query_key?: Secret @guarded:220:9
+input guarded.header_key?: Secret @guarded:222:9
+input guarded.cursor?: String @guarded:224:9
+base "https://shapes.example.com" @shapes:3:5
+path text="guarded/" cross_base=false @shapes.guarded:226:14
+path hole={path_key} cross_base=false @shapes.guarded:226:14
+query wire=0 "key" = query_key ; cross_base=false @shapes.guarded:227:17
+query wire=1 cursor ; cross_base=false @shapes.guarded:227:36
+header wire=0 "x-key" = header_key ; cross_base=false @shapes.guarded:228:19
+read Json @shapes:2:10
+problem ShapesProblem @shapes:4:5
+problem_read Json @shapes:2:10
+paginate next_batch (cursor) @shapes.guarded:229:18
+endpoint shapes.headed GET -> Batch
+input headed.cursor?: String @headed:234:9
+base "https://shapes.example.com" @shapes:3:5
+path text="headed" cross_base=false @shapes.headed:236:14
+header wire=0 "x-cursor" = cursor ; cross_base=false @shapes.headed:237:19
+read Json @shapes:2:10
+problem ShapesProblem @shapes:4:5
+problem_read Json @shapes:2:10
+paginate next_batch (cursor) @shapes.headed:238:18
+endpoint shapes.posted POST -> Batch
+input posted.token?: Secret @posted:243:9
+input posted.cursor?: String @posted:245:9
+base "https://shapes.example.com" @shapes:3:5
+path text="posted" cross_base=false @shapes.posted:247:14
+body_function json @shapes.posted:248:14
+body_entry token ; @shapes.posted:248:21
+body_entry cursor ; @shapes.posted:248:28
+read Json @shapes:2:10
+problem ShapesProblem @shapes:4:5
+problem_read Json @shapes:2:10
+paginate next_batch (cursor) @shapes.posted:249:18
+endpoint shapes.streamed POST -> Batch
+input streamed.file: concord :: Body @streamed:254:9
+input streamed.cursor?: String @streamed:256:9
+base "https://shapes.example.com" @shapes:3:5
+path text="streamed" cross_base=false @shapes.streamed:258:14
+query wire=0 cursor ; cross_base=false @shapes.streamed:259:17
+body file @shapes.streamed:260:14
+read Json @shapes:2:10
+problem ShapesProblem @shapes:4:5
+problem_read Json @shapes:2:10
+paginate next_batch (cursor) @shapes.streamed:261:18
+endpoint shapes.renewed POST -> Batch
+input renewed.cursor?: String @renewed:266:9
+base "https://shapes.example.com" @shapes:3:5
+path text="renewed" cross_base=false @shapes.renewed:268:14
+query wire=0 cursor ; cross_base=false @shapes.renewed:269:17
+body fresh_stream () @shapes.renewed:270:14
+read Json @shapes:2:10
+problem ShapesProblem @shapes:4:5
+problem_read Json @shapes:2:10
+paginate next_batch (cursor) @shapes.renewed:271:18
+endpoint shapes.keyed_host GET -> Batch
+input keyed_host.host_key: Secret @keyed_host:276:9
+input keyed_host.cursor?: String @keyed_host:278:9
+base "https://{host_key}.shapes.example.com" @shapes.keyed_host:280:9
+path text="keyed" cross_base=false @shapes.keyed_host:281:14
+query wire=0 cursor ; cross_base=false @shapes.keyed_host:282:17
+read Json @shapes:2:10
+problem ShapesProblem @shapes:4:5
+problem_read Json @shapes:2:10
+paginate next_batch (cursor) @shapes.keyed_host:283:18
+endpoint shapes.roaming GET -> Batch
+input roaming.tenant: String @roaming:288:9
+input roaming.cursor?: String @roaming:290:9
+base "https://{tenant}.shapes.example.com" @shapes.roaming:292:9
+path text="roaming" cross_base=false @shapes.roaming:293:14
+query wire=0 cursor ; cross_base=false @shapes.roaming:294:17
+read Json @shapes:2:10
+problem ShapesProblem @shapes:4:5
+problem_read Json @shapes:2:10
+paginate move | call , page | page . value () . next . clone () . map (| next | tenant . set (call , next)) @shapes.roaming:295:18
+endpoint shapes.offset GET -> Vec < Item >
+input offset.start?: u32 @offset:300:9
+base "https://shapes.example.com" @shapes:3:5
+path text="offset" cross_base=false @shapes.offset:302:14
+query wire=0 start ; cross_base=false @shapes.offset:303:17
+read Json @shapes:2:10
+problem ShapesProblem @shapes:4:5
+problem_read Json @shapes:2:10
+paginate by_offset (start) @shapes.offset:304:18
+endpoint shapes.numbered GET -> Vec < Item >
+input numbered.page?: u32 @numbered:309:9
+base "https://shapes.example.com" @shapes:3:5
+path text="numbered" cross_base=false @shapes.numbered:311:14
+query wire=0 page ; cross_base=false @shapes.numbered:312:17
+read Json @shapes:2:10
+problem ShapesProblem @shapes:4:5
+problem_read Json @shapes:2:10
+paginate by_page (page , 1) @shapes.numbered:313:18
+endpoint shapes.addressed GET -> Batch
+base "https://shapes.example.com" @shapes:3:5
+path text="addressed" cross_base=false @shapes.addressed:317:14
+read Json @shapes:2:10
+problem ShapesProblem @shapes:4:5
+problem_read Json @shapes:2:10
+paginate by_next_url (Batch :: next_url) @shapes.addressed:318:18
+endpoint shapes.remove DELETE -> ()
+input remove.id: u64 @remove:323:9
+base "https://shapes.example.com" @shapes:3:5
+path text="items/" cross_base=false @shapes.remove:325:14
+path hole={id} cross_base=false @shapes.remove:325:14
+read Json @shapes:2:10
+arm 202 {} => Err (concord :: mismatch ("an accepted removal is not done")) ? @shapes.remove:327:13
+arm 404 {} => () @shapes.remove:328:13
+problem ShapesProblem @shapes:4:5
+problem_read Json @shapes:2:10
+endpoint shapes.settled GET -> Result < Item , Conflict >
+input settled.id: u64 @settled:334:9
+base "https://shapes.example.com" @shapes:3:5
+path text="settled/" cross_base=false @shapes.settled:336:14
+path hole={id} cross_base=false @shapes.settled:336:14
+read Json @shapes:2:10
+arm 202 {} => Err (Conflict { message : "pending" . to_owned () }) @shapes.settled:337:18
+problem ShapesProblem @shapes:4:5
+problem_read Json @shapes:2:10
+endpoint shapes.part GET -> Option < concord :: ByteStream >
+input part.id: u64 @part:342:9
+base "https://shapes.example.com" @shapes:3:5
+path text="parts/" cross_base=false @shapes.part:344:14
+path hole={id} cross_base=false @shapes.part:344:14
+read Stream @shapes.part:345:14
+arm 204 {} => None @shapes.part:346:18
+arm 404 {} => None @shapes.part:346:31
+problem ShapesProblem @shapes:4:5
+problem_read Json @shapes:2:10
+endpoint shapes.sealed.file GET -> concord :: ByteStream
+input file.id: u64 @file:355:13
+base "https://shapes.example.com" @shapes:3:5
+path text="sealed" cross_base=false @shapes.sealed:350:14
+path hole={id} cross_base=false @shapes.sealed.file:357:18
+read Stream @shapes.sealed.file:358:18
+arm 2xx {body, headers} => unseal (body , headers) ? @shapes.sealed:351:18
+problem ShapesProblem @shapes:4:5
+problem_read Json @shapes:2:10

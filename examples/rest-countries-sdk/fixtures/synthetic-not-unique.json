@@ -1,9 +1,0 @@
-{
-  "data": {
-    "objects": [
-      { "names": { "common": "Synthetic A" }, "codes": { "alpha_2": "ZZ" } },
-      { "names": { "common": "Synthetic B" }, "codes": { "alpha_2": "ZZ" } }
-    ],
-    "meta": { "total": 2, "count": 2, "limit": 25, "offset": 0, "more": false }
-  }
-}

@@ -1,0 +1,20 @@
+endpoint tasks.list GET -> Vec < Task >
+input list.done?: bool @list:7:9
+base "https://tasks.example.com/api/tasks" @tasks:2:5
+query wire=0 done ; cross_base=false @tasks.list:9:17
+read Json @tasks:3:10
+endpoint tasks.create POST -> Task
+input create.task: NewTask @create:14:9
+base "https://tasks.example.com/api/tasks" @tasks:2:5
+body json (task) @tasks.create:16:14
+read Json @tasks:3:10
+endpoint tasks.get GET -> Task
+input get.id: u64 @get:21:9
+base "https://tasks.example.com/api/tasks" @tasks:2:5
+path hole={id} cross_base=false @tasks.get:23:14
+read Json @tasks:3:10
+endpoint tasks.delete DELETE -> ()
+input delete.id: u64 @delete:28:9
+base "https://tasks.example.com/api/tasks" @tasks:2:5
+path hole={id} cross_base=false @tasks.delete:30:14
+read Json @tasks:3:10

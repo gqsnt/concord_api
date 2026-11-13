@@ -1,0 +1,301 @@
+middleware KubeWarnings @kubernetes:8:20
+endpoint kubernetes.pods.list GET -> KubeList < Pod >
+input client.cluster: Base @Kubernetes:2:27
+input client.token: Secret @Kubernetes:2:42
+input list.label_selector?: String @selectors:10:24
+input list.field_selector?: String @selectors:10:49
+input list.limit?: u32 @page:13:19
+input list.continuation?: String @page:13:32
+input list.resource_version?: String @page:14:19
+input list.resource_version_match?: String @page:14:46
+base cluster @kubernetes:3:9
+path text="api/v1/pods" cross_base=false @kubernetes.pods:36:18
+query wire=0 "labelSelector" = label_selector ; cross_base=false @kubernetes.pods.list part=selectors:11:21
+query wire=1 "fieldSelector" = field_selector ; cross_base=false @kubernetes.pods.list part=selectors:11:55
+query wire=2 limit ; cross_base=false @kubernetes.pods.list part=page:16:17
+query wire=3 "continue" = continuation ; cross_base=false @kubernetes.pods.list part=page:16:24
+query wire=4 "resourceVersion" = resource_version ; cross_base=false @kubernetes.pods.list part=page:17:17
+query wire=5 "resourceVersionMatch" = resource_version_match ; cross_base=false @kubernetes.pods.list part=page:17:55
+header wire=0 "authorization" = "Bearer {token}" ; cross_base=false @kubernetes:4:19
+header wire=1 "accept" = "application/json" ; cross_base=false @kubernetes:4:55
+read Json @kubernetes:5:14
+problem Status @kubernetes:6:9
+problem_read Json @kubernetes:5:14
+paginate move | call , answer | answer . value () . next_token () . map (| next | { call . continuation (next) . resource_version (None :: < String >) . resource_version_match (None :: < String >) }) @kubernetes.pods.list part=page:19:22
+endpoint kubernetes.pods.watch GET -> ByteStream
+input client.cluster: Base @Kubernetes:2:27
+input client.token: Secret @Kubernetes:2:42
+input watch.label_selector?: String @selectors:10:24
+input watch.field_selector?: String @selectors:10:49
+input watch.resource_version?: String @watching:24:23
+input watch.allow_watch_bookmarks?: bool @watching:24:50
+input watch.timeout_seconds?: u32 @watching:24:80
+base cluster @kubernetes:3:9
+path text="api/v1/pods" cross_base=false @kubernetes.pods:36:18
+query wire=0 "labelSelector" = label_selector ; cross_base=false @kubernetes.pods.watch part=selectors:11:21
+query wire=1 "fieldSelector" = field_selector ; cross_base=false @kubernetes.pods.watch part=selectors:11:55
+query wire=2 "watch" = true ; cross_base=false @kubernetes.pods.watch part=watching:26:17
+query wire=3 "resourceVersion" = resource_version ; cross_base=false @kubernetes.pods.watch part=watching:26:33
+query wire=4 "allowWatchBookmarks" = allow_watch_bookmarks ; cross_base=false @kubernetes.pods.watch part=watching:27:17
+query wire=5 "timeoutSeconds" = timeout_seconds ; cross_base=false @kubernetes.pods.watch part=watching:27:64
+header wire=0 "authorization" = "Bearer {token}" ; cross_base=false @kubernetes:4:19
+header wire=1 "accept" = "application/json" ; cross_base=false @kubernetes:4:55
+read Stream @kubernetes.pods.watch part=watching:29:18
+problem Status @kubernetes:6:9
+problem_read Json @kubernetes:5:14
+endpoint kubernetes.namespaces.pods.list GET -> KubeList < Pod >
+input client.cluster: Base @Kubernetes:2:27
+input client.token: Secret @Kubernetes:2:42
+input namespaces.namespace: String @namespaces:41:26
+input list.label_selector?: String @selectors:10:24
+input list.field_selector?: String @selectors:10:49
+input list.limit?: u32 @page:13:19
+input list.continuation?: String @page:13:32
+input list.resource_version?: String @page:14:19
+input list.resource_version_match?: String @page:14:46
+base cluster @kubernetes:3:9
+path text="api/v1/namespaces/" cross_base=false @kubernetes.namespaces:42:18
+path hole={namespace} cross_base=false @kubernetes.namespaces:42:18
+path text="pods" cross_base=false @kubernetes.namespaces.pods:44:22
+query wire=0 "labelSelector" = label_selector ; cross_base=false @kubernetes.namespaces.pods.list part=selectors:11:21
+query wire=1 "fieldSelector" = field_selector ; cross_base=false @kubernetes.namespaces.pods.list part=selectors:11:55
+query wire=2 limit ; cross_base=false @kubernetes.namespaces.pods.list part=page:16:17
+query wire=3 "continue" = continuation ; cross_base=false @kubernetes.namespaces.pods.list part=page:16:24
+query wire=4 "resourceVersion" = resource_version ; cross_base=false @kubernetes.namespaces.pods.list part=page:17:17
+query wire=5 "resourceVersionMatch" = resource_version_match ; cross_base=false @kubernetes.namespaces.pods.list part=page:17:55
+header wire=0 "authorization" = "Bearer {token}" ; cross_base=false @kubernetes:4:19
+header wire=1 "accept" = "application/json" ; cross_base=false @kubernetes:4:55
+read Json @kubernetes:5:14
+problem Status @kubernetes:6:9
+problem_read Json @kubernetes:5:14
+paginate move | call , answer | answer . value () . next_token () . map (| next | { call . continuation (next) . resource_version (None :: < String >) . resource_version_match (None :: < String >) }) @kubernetes.namespaces.pods.list part=page:19:22
+endpoint kubernetes.namespaces.pods.get GET -> Pod
+input client.cluster: Base @Kubernetes:2:27
+input client.token: Secret @Kubernetes:2:42
+input namespaces.namespace: String @namespaces:41:26
+input get.name: String @get:46:25
+input get.resource_version?: String @get:46:39
+base cluster @kubernetes:3:9
+path text="api/v1/namespaces/" cross_base=false @kubernetes.namespaces:42:18
+path hole={namespace} cross_base=false @kubernetes.namespaces:42:18
+path text="pods" cross_base=false @kubernetes.namespaces.pods:44:22
+path hole={name} cross_base=false @kubernetes.namespaces.pods.get:47:26
+query wire=0 "resourceVersion" = resource_version ; cross_base=false @kubernetes.namespaces.pods.get:48:29
+header wire=0 "authorization" = "Bearer {token}" ; cross_base=false @kubernetes:4:19
+header wire=1 "accept" = "application/json" ; cross_base=false @kubernetes:4:55
+read Json @kubernetes:5:14
+problem Status @kubernetes:6:9
+problem_read Json @kubernetes:5:14
+endpoint kubernetes.namespaces.pods.create POST -> Pod
+input client.cluster: Base @Kubernetes:2:27
+input client.token: Secret @Kubernetes:2:42
+input namespaces.namespace: String @namespaces:41:26
+input create.pod: Pod @create:50:29
+input create.dry_run?: String @writing:31:22
+base cluster @kubernetes:3:9
+path text="api/v1/namespaces/" cross_base=false @kubernetes.namespaces:42:18
+path hole={namespace} cross_base=false @kubernetes.namespaces:42:18
+path text="pods" cross_base=false @kubernetes.namespaces.pods:44:22
+query wire=0 "dryRun" = dry_run ; cross_base=false @kubernetes.namespaces.pods.create part=writing:32:21
+header wire=0 "authorization" = "Bearer {token}" ; cross_base=false @kubernetes:4:19
+header wire=1 "accept" = "application/json" ; cross_base=false @kubernetes:4:55
+body json (pod) @kubernetes.namespaces.pods.create:50:64
+read Json @kubernetes:5:14
+problem Status @kubernetes:6:9
+problem_read Json @kubernetes:5:14
+endpoint kubernetes.namespaces.pods.replace PUT -> Pod
+input client.cluster: Base @Kubernetes:2:27
+input client.token: Secret @Kubernetes:2:42
+input namespaces.namespace: String @namespaces:41:26
+input replace.name: String @replace:51:29
+input replace.pod: Pod @replace:51:43
+input replace.dry_run?: String @writing:31:22
+base cluster @kubernetes:3:9
+path text="api/v1/namespaces/" cross_base=false @kubernetes.namespaces:42:18
+path hole={namespace} cross_base=false @kubernetes.namespaces:42:18
+path text="pods" cross_base=false @kubernetes.namespaces.pods:44:22
+path hole={name} cross_base=false @kubernetes.namespaces.pods.replace:52:26
+query wire=0 "dryRun" = dry_run ; cross_base=false @kubernetes.namespaces.pods.replace part=writing:32:21
+header wire=0 "authorization" = "Bearer {token}" ; cross_base=false @kubernetes:4:19
+header wire=1 "accept" = "application/json" ; cross_base=false @kubernetes:4:55
+body json (pod) @kubernetes.namespaces.pods.replace:53:26
+read Json @kubernetes:5:14
+problem Status @kubernetes:6:9
+problem_read Json @kubernetes:5:14
+endpoint kubernetes.namespaces.pods.delete DELETE -> ()
+input client.cluster: Base @Kubernetes:2:27
+input client.token: Secret @Kubernetes:2:42
+input namespaces.namespace: String @namespaces:41:26
+input delete.name: String @delete:56:31
+input delete.options: DeleteOptions @delete:56:45
+input delete.dry_run?: String @writing:31:22
+idempotent false @kubernetes.namespaces.pods.delete:59:21
+base cluster @kubernetes:3:9
+path text="api/v1/namespaces/" cross_base=false @kubernetes.namespaces:42:18
+path hole={namespace} cross_base=false @kubernetes.namespaces:42:18
+path text="pods" cross_base=false @kubernetes.namespaces.pods:44:22
+path hole={name} cross_base=false @kubernetes.namespaces.pods.delete:57:26
+query wire=0 "dryRun" = dry_run ; cross_base=false @kubernetes.namespaces.pods.delete part=writing:32:21
+header wire=0 "authorization" = "Bearer {token}" ; cross_base=false @kubernetes:4:19
+header wire=1 "accept" = "application/json" ; cross_base=false @kubernetes:4:55
+body json (options) @kubernetes.namespaces.pods.delete:58:26
+read Json @kubernetes:5:14
+problem Status @kubernetes:6:9
+problem_read Json @kubernetes:5:14
+endpoint kubernetes.namespaces.pods.patch_json PATCH -> Pod
+input client.cluster: Base @Kubernetes:2:27
+input client.token: Secret @Kubernetes:2:42
+input namespaces.namespace: String @namespaces:41:26
+input patch_json.name: String @patch_json:61:34
+input patch_json.patch: Vec < Value > @patch_json:61:48
+input patch_json.dry_run?: String @writing:31:22
+base cluster @kubernetes:3:9
+path text="api/v1/namespaces/" cross_base=false @kubernetes.namespaces:42:18
+path hole={namespace} cross_base=false @kubernetes.namespaces:42:18
+path text="pods" cross_base=false @kubernetes.namespaces.pods:44:22
+path hole={name} cross_base=false @kubernetes.namespaces.pods.patch_json:62:26
+query wire=0 "dryRun" = dry_run ; cross_base=false @kubernetes.namespaces.pods.patch_json part=writing:32:21
+header wire=0 "authorization" = "Bearer {token}" ; cross_base=false @kubernetes:4:19
+header wire=1 "accept" = "application/json" ; cross_base=false @kubernetes:4:55
+header wire=2 "content-type" = "application/json-patch+json" ; cross_base=false @kubernetes.namespaces.pods.patch_json:63:31
+body json (patch) @kubernetes.namespaces.pods.patch_json:64:26
+read Json @kubernetes:5:14
+problem Status @kubernetes:6:9
+problem_read Json @kubernetes:5:14
+endpoint kubernetes.namespaces.pods.patch_merge PATCH -> Pod
+input client.cluster: Base @Kubernetes:2:27
+input client.token: Secret @Kubernetes:2:42
+input namespaces.namespace: String @namespaces:41:26
+input patch_merge.name: String @patch_merge:66:35
+input patch_merge.patch: Value @patch_merge:66:49
+input patch_merge.dry_run?: String @writing:31:22
+base cluster @kubernetes:3:9
+path text="api/v1/namespaces/" cross_base=false @kubernetes.namespaces:42:18
+path hole={namespace} cross_base=false @kubernetes.namespaces:42:18
+path text="pods" cross_base=false @kubernetes.namespaces.pods:44:22
+path hole={name} cross_base=false @kubernetes.namespaces.pods.patch_merge:67:26
+query wire=0 "dryRun" = dry_run ; cross_base=false @kubernetes.namespaces.pods.patch_merge part=writing:32:21
+header wire=0 "authorization" = "Bearer {token}" ; cross_base=false @kubernetes:4:19
+header wire=1 "accept" = "application/json" ; cross_base=false @kubernetes:4:55
+header wire=2 "content-type" = "application/merge-patch+json" ; cross_base=false @kubernetes.namespaces.pods.patch_merge:68:31
+body json (patch) @kubernetes.namespaces.pods.patch_merge:69:26
+read Json @kubernetes:5:14
+problem Status @kubernetes:6:9
+problem_read Json @kubernetes:5:14
+endpoint kubernetes.namespaces.pods.patch_strategic PATCH -> Pod
+input client.cluster: Base @Kubernetes:2:27
+input client.token: Secret @Kubernetes:2:42
+input namespaces.namespace: String @namespaces:41:26
+input patch_strategic.name: String @patch_strategic:71:39
+input patch_strategic.patch: Value @patch_strategic:71:53
+input patch_strategic.dry_run?: String @writing:31:22
+base cluster @kubernetes:3:9
+path text="api/v1/namespaces/" cross_base=false @kubernetes.namespaces:42:18
+path hole={namespace} cross_base=false @kubernetes.namespaces:42:18
+path text="pods" cross_base=false @kubernetes.namespaces.pods:44:22
+path hole={name} cross_base=false @kubernetes.namespaces.pods.patch_strategic:72:26
+query wire=0 "dryRun" = dry_run ; cross_base=false @kubernetes.namespaces.pods.patch_strategic part=writing:32:21
+header wire=0 "authorization" = "Bearer {token}" ; cross_base=false @kubernetes:4:19
+header wire=1 "accept" = "application/json" ; cross_base=false @kubernetes:4:55
+header wire=2 "content-type" = "application/strategic-merge-patch+json" ; cross_base=false @kubernetes.namespaces.pods.patch_strategic:73:31
+body json (patch) @kubernetes.namespaces.pods.patch_strategic:74:26
+read Json @kubernetes:5:14
+problem Status @kubernetes:6:9
+problem_read Json @kubernetes:5:14
+endpoint kubernetes.namespaces.pods.watch GET -> ByteStream
+input client.cluster: Base @Kubernetes:2:27
+input client.token: Secret @Kubernetes:2:42
+input namespaces.namespace: String @namespaces:41:26
+input watch.label_selector?: String @selectors:10:24
+input watch.field_selector?: String @selectors:10:49
+input watch.resource_version?: String @watching:24:23
+input watch.allow_watch_bookmarks?: bool @watching:24:50
+input watch.timeout_seconds?: u32 @watching:24:80
+base cluster @kubernetes:3:9
+path text="api/v1/namespaces/" cross_base=false @kubernetes.namespaces:42:18
+path hole={namespace} cross_base=false @kubernetes.namespaces:42:18
+path text="pods" cross_base=false @kubernetes.namespaces.pods:44:22
+query wire=0 "labelSelector" = label_selector ; cross_base=false @kubernetes.namespaces.pods.watch part=selectors:11:21
+query wire=1 "fieldSelector" = field_selector ; cross_base=false @kubernetes.namespaces.pods.watch part=selectors:11:55
+query wire=2 "watch" = true ; cross_base=false @kubernetes.namespaces.pods.watch part=watching:26:17
+query wire=3 "resourceVersion" = resource_version ; cross_base=false @kubernetes.namespaces.pods.watch part=watching:26:33
+query wire=4 "allowWatchBookmarks" = allow_watch_bookmarks ; cross_base=false @kubernetes.namespaces.pods.watch part=watching:27:17
+query wire=5 "timeoutSeconds" = timeout_seconds ; cross_base=false @kubernetes.namespaces.pods.watch part=watching:27:64
+header wire=0 "authorization" = "Bearer {token}" ; cross_base=false @kubernetes:4:19
+header wire=1 "accept" = "application/json" ; cross_base=false @kubernetes:4:55
+read Stream @kubernetes.namespaces.pods.watch part=watching:29:18
+problem Status @kubernetes:6:9
+problem_read Json @kubernetes:5:14
+endpoint kubernetes.namespaces.pods.log GET -> ByteStream
+input client.cluster: Base @Kubernetes:2:27
+input client.token: Secret @Kubernetes:2:42
+input namespaces.namespace: String @namespaces:41:26
+input log.name: String @log:77:25
+input log.container?: String @log:77:39
+input log.follow?: bool @log:77:59
+input log.previous?: bool @log:78:25
+input log.tail_lines?: i64 @log:78:42
+input log.timestamps?: bool @log:78:60
+base cluster @kubernetes:3:9
+path text="api/v1/namespaces/" cross_base=false @kubernetes.namespaces:42:18
+path hole={namespace} cross_base=false @kubernetes.namespaces:42:18
+path text="pods" cross_base=false @kubernetes.namespaces.pods:44:22
+path hole={name} cross_base=false @kubernetes.namespaces.pods.log:79:26
+path text="/log" cross_base=false @kubernetes.namespaces.pods.log:79:26
+query wire=0 container ; cross_base=false @kubernetes.namespaces.pods.log:80:29
+query wire=1 follow ; cross_base=false @kubernetes.namespaces.pods.log:80:40
+query wire=2 previous ; cross_base=false @kubernetes.namespaces.pods.log:80:48
+query wire=3 "tailLines" = tail_lines ; cross_base=false @kubernetes.namespaces.pods.log:80:58
+query wire=4 timestamps ; cross_base=false @kubernetes.namespaces.pods.log:80:84
+header wire=0 "authorization" = "Bearer {token}" ; cross_base=false @kubernetes:4:19
+header wire=1 "accept" = "text/plain" ; cross_base=false @kubernetes.namespaces.pods.log:81:31
+read Stream @kubernetes.namespaces.pods.log:82:26
+problem Status @kubernetes:6:9
+problem_read Json @kubernetes:5:14
+endpoint kubernetes.deployments.status GET -> Deployment
+input client.cluster: Base @Kubernetes:2:27
+input client.token: Secret @Kubernetes:2:42
+input deployments.namespace: String @deployments:86:27
+input deployments.name: String @deployments:86:46
+base cluster @kubernetes:3:9
+path text="apis/apps/v1/namespaces/" cross_base=false @kubernetes.deployments:87:18
+path hole={namespace} cross_base=false @kubernetes.deployments:87:18
+path text="/deployments/" cross_base=false @kubernetes.deployments:87:18
+path hole={name} cross_base=false @kubernetes.deployments:87:18
+path text="status" cross_base=false @kubernetes.deployments.status:88:47
+header wire=0 "authorization" = "Bearer {token}" ; cross_base=false @kubernetes:4:19
+header wire=1 "accept" = "application/json" ; cross_base=false @kubernetes:4:55
+read Json @kubernetes:5:14
+problem Status @kubernetes:6:9
+problem_read Json @kubernetes:5:14
+endpoint kubernetes.deployments.scale GET -> Scale
+input client.cluster: Base @Kubernetes:2:27
+input client.token: Secret @Kubernetes:2:42
+input deployments.namespace: String @deployments:86:27
+input deployments.name: String @deployments:86:46
+base cluster @kubernetes:3:9
+path text="apis/apps/v1/namespaces/" cross_base=false @kubernetes.deployments:87:18
+path hole={namespace} cross_base=false @kubernetes.deployments:87:18
+path text="/deployments/" cross_base=false @kubernetes.deployments:87:18
+path hole={name} cross_base=false @kubernetes.deployments:87:18
+path text="scale" cross_base=false @kubernetes.deployments.scale:89:41
+header wire=0 "authorization" = "Bearer {token}" ; cross_base=false @kubernetes:4:19
+header wire=1 "accept" = "application/json" ; cross_base=false @kubernetes:4:55
+read Json @kubernetes:5:14
+problem Status @kubernetes:6:9
+problem_read Json @kubernetes:5:14
+endpoint kubernetes.get_crontab GET -> CronTab
+input client.cluster: Base @Kubernetes:2:27
+input client.token: Secret @Kubernetes:2:42
+input get_crontab.namespace: String @get_crontab:92:25
+input get_crontab.name: String @get_crontab:92:44
+base cluster @kubernetes:3:9
+path text="apis/stable.example.com/v1/namespaces/" cross_base=false @kubernetes.get_crontab:93:18
+path hole={namespace} cross_base=false @kubernetes.get_crontab:93:18
+path text="/crontabs/" cross_base=false @kubernetes.get_crontab:93:18
+path hole={name} cross_base=false @kubernetes.get_crontab:93:18
+header wire=0 "authorization" = "Bearer {token}" ; cross_base=false @kubernetes:4:19
+header wire=1 "accept" = "application/json" ; cross_base=false @kubernetes:4:55
+read Json @kubernetes:5:14
+problem Status @kubernetes:6:9
+problem_read Json @kubernetes:5:14

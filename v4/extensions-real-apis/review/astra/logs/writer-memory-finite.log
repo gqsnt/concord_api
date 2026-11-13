@@ -1,4 +1,0 @@
-    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.04s
-     Running `../target/debug/writer_memory`
-finite refusal: a CSV record exceeds the configured size (record 1, limit 64)
-stream=false, limit=64 bytes, input=16777216 bytes, before VmHWM=20192 KiB, after=52732 KiB, growth=32540 KiB

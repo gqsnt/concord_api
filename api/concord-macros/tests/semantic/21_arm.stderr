@@ -1,0 +1,13 @@
+error: status arm `410` is already set above
+       label: replacement requires `override`
+       help: write `override 410 =>()`
+ --> tests/semantic/21_arm.rs:2:110
+  |
+2 |     client Workshop { base "https://workshop.test"; read Reader; status { 410 => () } GET fetch() { status { 410 => () } } }
+  |                                                                                                              ^^^
+
+error: the inherited status arm is here
+ --> tests/semantic/21_arm.rs:2:75
+  |
+2 |     client Workshop { base "https://workshop.test"; read Reader; status { 410 => () } GET fetch() { status { 410 => () } } }
+  |                                                                           ^^^

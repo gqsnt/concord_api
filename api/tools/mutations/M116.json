@@ -1,0 +1,12 @@
+{
+  "id": "M116",
+  "area": "hygiene",
+  "contract": "release-maintenance",
+  "description": "Restore a stale dead-code exemption",
+  "file": "concord-core/src/error.rs",
+  "find": "pub(crate) enum BuildFailure {",
+  "replace": "#[allow(dead_code)]\npub(crate) enum BuildFailure {",
+  "checks": [
+    "surface"
+  ]
+}

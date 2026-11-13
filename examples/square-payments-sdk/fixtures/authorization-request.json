@@ -1,6 +1,0 @@
-{
-  "source_id": "cnon:synthetic-payment-token",
-  "idempotency_key": "caller-key-001",
-  "amount_money": { "amount": 1000, "currency": "USD" },
-  "autocomplete": false
-}

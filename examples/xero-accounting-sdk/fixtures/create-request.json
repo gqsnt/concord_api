@@ -1,3 +1,0 @@
-{
-  "Invoices": [{"Type": "ACCREC", "Status": "DRAFT", "Contact": {"ContactID": "cccccccc-cccc-4ccc-8ccc-cccccccccccc"}, "LineItems": [{"Description": "Synthetic consulting", "Quantity": 1, "UnitAmount": 12.34}]}]
-}

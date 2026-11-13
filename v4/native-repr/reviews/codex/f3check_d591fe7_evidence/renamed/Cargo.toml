@@ -1,8 +1,0 @@
-[package]
-name = "f3check-renamed"
-version = "0.0.0"
-edition = "2024"
-[dependencies]
-c4 = { package = "concord", path = "/home/canarit/projects/concord_v4_native_work/snapshots/f3check-d591fe7/crates/concord", default-features = false, features = ["json"] }
-tokio = { version = "=1.54.1", features = ["macros", "rt", "time"] }
-[workspace]

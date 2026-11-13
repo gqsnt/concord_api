@@ -1,0 +1,9 @@
+{
+  "id": "M95",
+  "area": "multipart",
+  "contract": "docs/contracts.md C2.16 / docs/crate.md multipart / RFC 7578 section 4.1",
+  "description": "Accept a boundary that occurs in memory parts or their headers",
+  "file": "concord-extras/src/multipart.rs",
+  "find": "            if self.parts.iter().all(|part| {\n                !contains(part.header.as_bytes(), value.as_bytes())\n                    && part\n                        .body\n                        .as_bytes()\n                        .is_none_or(|bytes| !contains(bytes, value.as_bytes()))\n            }) {",
+  "replace": "            if true {"
+}

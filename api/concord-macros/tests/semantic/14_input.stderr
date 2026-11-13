@@ -1,0 +1,7 @@
+error: unsupported attribute on an input
+       label: an input takes doc comments only
+       help: remove this attribute; retain its intended wire name ("code") in the existing placement, updating that entry rather than adding another
+ --> tests/semantic/14_input.rs:2:76
+  |
+2 |     client Workshop { base "https://workshop.test"; read Reader; GET fetch(#[serde(default)] code: u32) { query { code; } } }
+  |                                                                            ^^^^^^^^^^^^^^^^^

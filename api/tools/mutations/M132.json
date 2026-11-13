@@ -1,0 +1,9 @@
+{
+  "id": "M132",
+  "area": "reader",
+  "contract": "A72",
+  "description": "Ignore the announcement when growing the joined buffer",
+  "file": "concord-core/src/read.rs",
+  "find": "let ceiling = announced\n                                .filter(|size| *size >= needed)\n                                .unwrap_or(limit)\n                                .min(limit);",
+  "replace": "let ceiling = limit;"
+}

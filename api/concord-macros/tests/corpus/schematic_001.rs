@@ -1,0 +1,1 @@
+part name(inputs) { }

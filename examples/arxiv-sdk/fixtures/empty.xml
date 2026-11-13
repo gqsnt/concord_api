@@ -1,5 +1,0 @@
-<!-- SYNTHETIC: a well-formed zero-match page. -->
-<feed xmlns="http://www.w3.org/2005/Atom" xmlns:o="http://a9.com/-/spec/opensearch/1.1/">
-  <id>urn:synthetic:empty</id><title>Empty</title><updated>2026-01-02T00:00:00Z</updated>
-  <o:totalResults>0</o:totalResults><o:startIndex>0</o:startIndex><o:itemsPerPage>10</o:itemsPerPage>
-</feed>

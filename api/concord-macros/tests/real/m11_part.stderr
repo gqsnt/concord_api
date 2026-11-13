@@ -1,0 +1,15 @@
+error: unknown input `route`
+       label: no input with this name
+       help: a part sees only its own inputs and the client's; correct this reference, or move the placement to the scope or endpoint that owns the input and remove any unnecessary part or spread
+  --> tests/real/m11_part.rs:19:32
+   |
+19 |         part regional() { base "https://{route}.api.riotgames.com"; }
+   |                                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+error: input `route` is never used
+       label: no placement or behaviour uses this input
+       help: place this input in the intended path, base, query, headers, body or behaviour, or remove its declaration
+  --> tests/real/m11_part.rs:74:23
+   |
+74 |         scope account(route: Region, ..regional) {
+   |                       ^^^^^

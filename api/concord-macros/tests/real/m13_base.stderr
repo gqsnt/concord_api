@@ -1,0 +1,13 @@
+error: this URL input must supply one required value
+       label: an optional input cannot supply the base
+       help: declare `url: Base`, without `?`
+  --> tests/real/m13_base.rs:50:18
+   |
+50 |             base url;
+   |                  ^^^
+
+error: this input is marked optional here
+  --> tests/real/m13_base.rs:49:25
+   |
+49 |         scope bucket(url?: Base) {
+   |                         ^

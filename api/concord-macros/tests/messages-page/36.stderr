@@ -1,0 +1,7 @@
+error: part `keyed` is never used
+       label: no scope or endpoint names `..keyed`
+       help: add `..keyed` to a signature, or remove the part
+ --> tests/messages-page/36.rs:2:47
+  |
+2 | client Tasks { base "https://a.example"; part keyed(k: String) { headers { "idempotency-key" = k; } } GET list(); }
+  |                                               ^^^^^

@@ -1,7 +1,0 @@
-[
-  {"status":500,"errorCode":"synthetic-internal","errorType":"internal","message":"synthetic-provider-secret"},
-  {"status":422,"errorCode":"synthetic-validation","errorType":"validation","message":"synthetic-provider-secret"},
-  {"status":403,"errorCode":"synthetic-security","errorType":"security","message":"synthetic-provider-secret"},
-  {"status":400,"errorCode":"synthetic-configuration","errorType":"configuration","message":"synthetic-provider-secret"},
-  {"status":400,"errorCode":"synthetic-future","errorType":"future-category","message":"synthetic-provider-secret"}
-]

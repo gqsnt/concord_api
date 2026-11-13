@@ -1,0 +1,12 @@
+{
+  "id": "M118",
+  "area": "test-metadata",
+  "contract": "A51 A52",
+  "description": "Mislabel helper hygiene as crate version pairing",
+  "file": "concord-core/src/__private/call.rs",
+  "find": "fn a51_a52_every_helper_is_hygienic",
+  "replace": "fn c10_9_a51_a52_every_helper_is_hygienic",
+  "checks": [
+    "surface"
+  ]
+}

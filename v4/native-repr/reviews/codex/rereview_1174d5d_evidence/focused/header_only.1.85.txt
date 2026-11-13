@@ -1,2 +1,0 @@
-    Checking focused-rereview v0.0.0 (/home/canarit/projects/concord_v4_native_work/snapshots/rereview-1174d5d/target/probes/focused)
-    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.14s

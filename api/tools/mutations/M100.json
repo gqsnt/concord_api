@@ -1,0 +1,9 @@
+{
+  "id": "M100",
+  "area": "entries",
+  "contract": "docs/contracts.md C2.14 / docs/engine.md section 2.1 Entries",
+  "description": "Count omitted None entries in the serialized map length",
+  "file": "concord-core/src/body.rs",
+  "find": "serializer.serialize_map(Some(present.len()))?",
+  "replace": "serializer.serialize_map(Some(self.0.entries.len()))?"
+}

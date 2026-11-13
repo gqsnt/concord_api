@@ -1,0 +1,7 @@
+error: keywords and raw identifiers cannot name parts
+       label: choose another Rust name
+       help: rename the part in `r#loop` to `loop_value`
+ --> tests/semantic/04_part_keyword.rs:2:71
+  |
+2 |     client Workshop { base "https://workshop.test"; read Reader; part r#loop() {} GET fetch(..r#loop); }
+  |                                                                       ^^^^^^

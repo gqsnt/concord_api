@@ -1,9 +1,0 @@
-{
-  "Fault": {
-    "Error": [
-      { "Message": "Permission Denied", "Detail": "synthetic detail", "code": "5020", "element": "" }
-    ],
-    "type": "AuthorizationFault"
-  },
-  "time": "2026-11-07T10:00:03.000-08:00"
-}

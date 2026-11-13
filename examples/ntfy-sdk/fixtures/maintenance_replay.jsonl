@@ -1,2 +1,0 @@
-{"id":"synMsg000001","time":1767225601,"expires":1767268801,"event":"message","topic":"alerts","title":"Backup","message":"Backup successful 😀","tags":["floppy_disk"],"priority":4,"unknown_future_field":{"nested":[1,2]}}
-{"id":"synMsg000002","time":1767225640,"expires":1767268840,"event":"message","topic":"alerts","message":"Disk full"}

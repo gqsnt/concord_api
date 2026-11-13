@@ -1,0 +1,9 @@
+{
+  "id": "M21",
+  "area": "core-readers",
+  "contract": "docs/contracts.md C5/C6",
+  "description": "Do not bound reader details or their allocation",
+  "file": "concord-core/src/read.rs",
+  "find": "pub fn details(message: String) -> String {\n    const MARK: &str = \" \u2026 [cut]\";\n",
+  "replace": "pub fn details(message: String) -> String {\n    return message;\n    const MARK: &str = \" \u2026 [cut]\";\n"
+}

@@ -1,0 +1,9 @@
+{
+  "id": "M36",
+  "area": "clocks",
+  "contract": "docs/contracts.md C7",
+  "description": "Forget to record known outcomes for cancellation",
+  "file": "concord-core/src/__private/run.rs",
+  "find": "    fn record(&self, evidence: KnownOutcome<'_>) {\n        *self\n",
+  "replace": "    fn record(&self, evidence: KnownOutcome<'_>) {\n        return;\n        *self\n"
+}

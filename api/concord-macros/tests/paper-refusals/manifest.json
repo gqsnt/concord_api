@@ -1,0 +1,12 @@
+[
+  {
+    "page": "apis/again/kubernetes.md",
+    "line": 405,
+    "end_line": 405,
+    "kind": "scope",
+    "region": "inline",
+    "source": "scope custom<T: Resource>(namespace: String) { path \"apis/{T::GROUP}/{T::VERSION}/namespaces/{namespace}/{T::PLURAL}\"; GET list(..listing) -> List<T>; }",
+    "extracted": "paper-refusals/generic_scope.rs",
+    "reason": "An explicitly wished-for generic scope; scope type parameters are outside the grammar."
+  }
+]

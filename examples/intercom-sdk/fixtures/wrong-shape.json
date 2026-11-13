@@ -1,7 +1,0 @@
-{
-  "type": "contact",
-  "id": {
-    "echo": "SYNTHETIC_SECRET"
-  },
-  "role": "user"
-}

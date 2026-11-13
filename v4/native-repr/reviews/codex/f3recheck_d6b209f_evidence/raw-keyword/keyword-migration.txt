@@ -1,2 +1,0 @@
-   0  /home/canarit/projects/concord_v4_native_work/snapshots/f3recheck-d6b209f/target/probes/raw-keyword/keyword-migrated.rs
-kept: `via r#type` (write `self::type` or the word yourself)

@@ -1,0 +1,9 @@
+{
+  "id": "M48",
+  "area": "core-readers",
+  "contract": "docs/contracts.md C5",
+  "description": "Remove core early-EOF detection",
+  "file": "concord-core/src/read.rs",
+  "find": "                self.body = None;\n                if self.announced.is_some_and(|length| self.received < length) {\n                    Poll::Ready(Some(Err(BodyFailure::Transport(TransportError::new(\n",
+  "replace": "                self.body = None;\n                if false {\n                    Poll::Ready(Some(Err(BodyFailure::Transport(TransportError::new(\n"
+}

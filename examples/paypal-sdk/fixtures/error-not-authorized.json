@@ -1,8 +1,0 @@
-{
-  "name": "NOT_AUTHORIZED",
-  "message": "Authorization failed due to insufficient permissions.",
-  "debug_id": "synthdebug403",
-  "details": [
-    { "issue": "PERMISSION_DENIED", "description": "You do not have permission to access or perform operations on this resource." }
-  ]
-}

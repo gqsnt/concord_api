@@ -1,0 +1,7 @@
+error: no header `x-riot-token` above to override
+       label: nothing is set above for this key
+       help: write `"x-riot-token" = client.key;`
+   --> tests/real/m22_removed.rs:143:27
+    |
+143 |                 headers { override "x-riot-token" = client.key; }
+    |                           ^^^^^^^^

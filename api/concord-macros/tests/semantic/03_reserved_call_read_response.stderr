@@ -1,0 +1,7 @@
+error: `read_response` is reserved by Concord
+       label: conflicts with a generated method
+       help: rename this input to `read_response_value`; update its references in the existing query placements and expressions, retaining the wire keys and fixed text for read_response
+ --> tests/semantic/03_reserved_call_read_response.rs:2:76
+  |
+2 |     client Workshop { base "https://workshop.test"; read Reader; GET fetch(read_response?: String) { query { read_response; } } }
+  |                                                                            ^^^^^^^^^^^^^

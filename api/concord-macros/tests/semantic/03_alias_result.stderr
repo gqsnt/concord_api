@@ -1,0 +1,7 @@
+error: `result` is reserved by Concord
+       label: conflicts with a generated type alias
+       help: rename this child to `result_item`
+ --> tests/semantic/03_alias_result.rs:2:70
+  |
+2 |     client Workshop { base "https://workshop.test"; read Reader; GET result(); }
+  |                                                                      ^^^^^^

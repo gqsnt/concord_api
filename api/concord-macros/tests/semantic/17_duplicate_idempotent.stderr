@@ -1,0 +1,13 @@
+error: duplicate `idempotent` statement
+       label: this node already declares `idempotent`
+       help: keep one declaration of this behaviour, choosing its intended value
+ --> tests/semantic/17_duplicate_idempotent.rs:2:49
+  |
+2 |     client Workshop { GET fetch() { idempotent; idempotent; } }
+  |                                                 ^^^^^^^^^^
+
+error: the first `idempotent` statement is here
+ --> tests/semantic/17_duplicate_idempotent.rs:2:37
+  |
+2 |     client Workshop { GET fetch() { idempotent; idempotent; } }
+  |                                     ^^^^^^^^^^

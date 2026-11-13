@@ -1,5 +1,0 @@
-{
-  "Status": "OK",
-  "Pagination": {"page": 2, "pageSize": 1, "pageCount": 2, "itemCount": 2},
-  "Invoices": [{"InvoiceID": "22222222-2222-4222-8222-222222222222", "Type": "ACCREC", "Status": "DRAFT", "InvoiceNumber": "INV-SYNTHETIC-2"}]
-}

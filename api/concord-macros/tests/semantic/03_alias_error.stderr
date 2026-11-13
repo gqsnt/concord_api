@@ -1,0 +1,7 @@
+error: `error` is reserved by Concord
+       label: conflicts with a generated type alias
+       help: rename this child to `error_item`
+ --> tests/semantic/03_alias_error.rs:2:72
+  |
+2 |     client Workshop { base "https://workshop.test"; read Reader; scope error { GET fetch(); } }
+  |                                                                        ^^^^^

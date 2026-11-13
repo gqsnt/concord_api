@@ -1,3 +1,0 @@
-self-test: 11 cases ok
-kept: `via text` (write `self::text` or the word yourself)
-kept: `via r#json` (write `self::json` or the word yourself)

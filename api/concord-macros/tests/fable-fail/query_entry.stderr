@@ -1,0 +1,11 @@
+error[E0425]: cannot find value `key` in this scope
+ --> tests/fable-fail/query_entry.rs:3:34
+  |
+3 | GET get() { query { "endpoint" = key.len().to_string(); } } } }
+  |                                  ^^^
+  |
+help: the binding `key` is available in a different scope in the same function
+ --> tests/fable-fail/query_entry.rs:2:9
+  |
+2 | query { "client" = key; }
+  |         ^^^^^^^^

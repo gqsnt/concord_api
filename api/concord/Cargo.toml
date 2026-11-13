@@ -1,0 +1,49 @@
+[package]
+name = "concord"
+edition.workspace = true
+version.workspace = true
+rust-version = "1.96"
+publish.workspace = true
+description = "Typed HTTP API clients from one nested description. The crate to depend on: the macro, the engine and the shipped readers, writers and pagers."
+readme = "README.md"
+autobenches = false # The opt-in tools/measure package owns the counting allocator harness.
+keywords = ["http", "client", "api", "rest", "macro"]
+categories = ["web-programming::http-client", "api-bindings"]
+include = ["/src/**", "/README.md", "/CHANGELOG.md", "/LICENSE*"]
+
+# docs.rs builds the pages with every feature on: `cargo doc --all-features`.
+[package.metadata.docs.rs]
+all-features = true
+
+[lints]
+workspace = true
+
+[dependencies]
+# Exact versions (`=x.y.z`): concord-core and concord-macros must be the same release (C10.9).
+# concord-extras is pinned too: a release candidate promises no compatibility with another one.
+concord-core = { path = "../concord-core", version = "=5.0.0-rc.1", default-features = false }
+concord-macros = { path = "../concord-macros", version = "=5.0.0-rc.1" }
+concord-extras = { path = "../concord-extras", version = "=5.0.0-rc.1", default-features = false }
+
+[features]
+default = ["json", "form", "rustls", "http2", "system-proxy"]
+# `json(x)` and `Json`.
+json = ["concord-extras/json"]
+# `form(x)`.
+form = ["concord-extras/form"]
+# A `tower` service as a transport: `concord::tower::Tower`.
+tower = ["concord-extras/tower"]
+multipart = ["concord-extras/multipart"]
+# The TLS stack is the application's choice.
+rustls = ["concord-core/rustls"]
+http2 = ["concord-core/http2"]
+system-proxy = ["concord-core/system-proxy"]
+
+[dev-dependencies]
+# The front-page example and `examples/` run against fake(), without a network socket.
+# `test-util`: `examples/bookshop` runs on virtual time (`start_paused`).
+tokio = { workspace = true, features = ["test-util"] }
+# `examples/errors.rs` reads the API's problem into a type of its own.
+serde.workspace = true
+# `examples/bookshop` plays the server with `Script`, a transport with virtual time.
+concord-testkit = { path = "../concord-testkit" }

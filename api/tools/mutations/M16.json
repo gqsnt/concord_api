@@ -1,0 +1,9 @@
+{
+  "id": "M16",
+  "area": "core-readers",
+  "contract": "docs/contracts.md C5",
+  "description": "Reject a body exactly at its byte limit",
+  "file": "concord-core/src/read.rs",
+  "find": "if piece.len() > limit.saturating_sub(length) {",
+  "replace": "if piece.len() >= limit.saturating_sub(length) {"
+}

@@ -1,0 +1,48 @@
+[package]
+name = "concord-core"
+edition.workspace = true
+version.workspace = true
+rust-version = "1.96"
+publish.workspace = true
+description = "The core of Concord: the traits and the engine that runs a call. No format, no scheme, no pager. Depend on `concord` instead."
+readme = "README.md"
+keywords = ["http", "client", "api", "rest"]
+categories = ["web-programming::http-client"]
+include = ["/src/**", "/README.md", "/CHANGELOG.md", "/LICENSE*"]
+autobenches = false # The opt-in tools/measure package owns the allocator harness.
+
+# docs.rs builds the pages with every feature on: `cargo doc --all-features`.
+[package.metadata.docs.rs]
+all-features = true
+
+[lints]
+workspace = true
+
+[dependencies]
+reqwest.workspace = true
+# The trait only: how a value is written as text in a path, a query or a header. No format.
+serde.workspace = true
+bytes.workspace = true
+http.workspace = true
+# Typed HTTP parser/user-body failures; already used by reqwest.
+hyper = { version = "1", default-features = false }
+tracing = { version = "0.1", default-features = false, features = ["std"] }
+erased-serde = "0.4"
+futures-util = { version = "0.3", default-features = false, features = ["std"] }
+futures-core.workspace = true
+tokio = { version = "1", default-features = false, features = ["time"] }
+
+[features]
+# Nothing by default: a crate that only extends Concord must not choose the application's
+# TLS stack or proxy settings. The facade `concord` holds the defaults.
+default = []
+# The TLS stack is the application's choice. (A `native-tls` feature belongs here too; its crates are not in the offline registry of this machine.)
+rustls = ["reqwest/rustls"]
+http2 = ["reqwest/http2"]
+# The proxy settings of the system (macOS, Windows), as `reqwest` reads them by default.
+system-proxy = ["reqwest/system-proxy"]
+
+[dev-dependencies]
+proptest = { version = "1.12", default-features = false, features = ["std"] }
+concord-testkit = { path = "../concord-testkit" }
+concord-core = { path = "." }

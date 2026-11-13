@@ -1,1 +1,0 @@
-Synthetic gateway failure, not a Graph JSON envelope.

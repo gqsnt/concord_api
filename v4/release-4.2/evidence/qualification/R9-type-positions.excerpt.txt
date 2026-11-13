@@ -1,5 +1,0 @@
-== R9-type-positions
-error: unnecessary parentheses around type
-error: unnecessary parentheses around type
-exit=101
-restored-bytes-verified

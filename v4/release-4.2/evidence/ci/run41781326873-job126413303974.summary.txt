@@ -1,7 +1,0 @@
-Complete job name: nightly-clone
-head: 9c3229458bafb3f3441d5b76bb176961b2a118f9  dirty: 0 file(s)
-rustc: rustc 1.99.1 (58cf8f9c3 2026-10-13)
-PASS  nightly-clone-compat
-      verify-nightly-clone-compat: 16 passed, 0 failed
-﻿2026-11-04T05:47:20.6940263Z Cleaning up orphan processes
-##[warning]Node.js 20 is deprecated. The following actions target Node.js 20 but are being forced to run on Node.js 24: actions/checkout@v4. For more information see: https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/

@@ -1,0 +1,9 @@
+{
+  "id": "M44",
+  "area": "core-readers",
+  "contract": "docs/contracts.md C5",
+  "description": "Reject refusal body exactly at 64 KiB as cut",
+  "file": "concord-core/src/__private/answer.rs",
+  "find": "                body.extend_from_slice(piece.get(..piece.len().min(available)).unwrap_or_default());\n                if piece.len() > available {\n                    break Kept::Cut;\n",
+  "replace": "                body.extend_from_slice(piece.get(..piece.len().min(available)).unwrap_or_default());\n                if piece.len() >= available {\n                    break Kept::Cut;\n"
+}

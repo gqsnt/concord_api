@@ -1,5 +1,0 @@
-error: `query(..)` is an endpoint value: its pairs are not known to the requests of other endpoints
- --> tests/ui/query_pairs_on_scope.rs:9:21
-  |
-9 |         scope items(query(..) filter: Filter) {
-  |                     ^^^^^

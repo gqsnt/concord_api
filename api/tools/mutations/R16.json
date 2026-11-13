@@ -1,0 +1,9 @@
+{
+  "id": "R16",
+  "area": "retry",
+  "contract": "C3.6 C4.7",
+  "description": "raw 400 skips retry",
+  "file": "concord-core/src/__private/run.rs",
+  "find": "response.status().as_u16() < 400",
+  "replace": "response.status().as_u16() <= 400"
+}

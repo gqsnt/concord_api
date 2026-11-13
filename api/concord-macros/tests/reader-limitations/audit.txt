@@ -1,0 +1,53 @@
+P4.4 point 5: macro.md read against the final writer; the page was not edited.
+
+Section 4, Hygiene: "... a `const` or a `static` of the author's module with
+  the same spelling changes nothing."
+Does not hold on stable Rust. constants.rs records E0530 and constant patterns
+with mixed_site bindings. This cannot be done as written (COMMON-WRITER rule 4).
+
+Section 4, read row: "Does not compile there, and nor does `.await`." (the ? column)
+The ? claim is too strong after A53 puts adaptation outside the closure.
+reader_question.probe implements Reader<Local> for Result<(), ()>; its reader
+expression uses ? and compiles. Rust cannot express the needed negative Try
+bound while returning the author's unadapted type. Await remains rejected.
+
+Section 4, read row: "For each answer that it reads, inside a closure that is
+  not `async`; the hidden helper `reader::<T, _>(...)` takes what it gives."
+The problem-reader expression is evaluated before refused() decides whether
+its evidence is complete. reader_factory.probe records factories=1, reads=0
+on a cut refusal. Making this lazy needs an engine helper taking a reader
+factory; the writer cannot supply a reference to an unevaluated reader.
+
+Section 4, middleware row: "Only the required inputs of the client are bound
+  there (an optional input is set after `new`)..."
+The implementation also binds optional inputs (None) and puts them in the
+client view. Direct uses are still refused by message 40.
+
+Section 5, endpoint row: "One line of the core's hidden macro `call_methods!`,
+  which adds what every call has..."
+And: "`call_methods!` adds `__prepare_if_none_match`."
+These methods are written inline by write/call.rs so the writer owns their docs.
+
+Section 8: the table, "about 132 for each", "under a fifth of a second for
+500 endpoints", and the open question are historical P4.1 measurements, not
+measurements of this output. P4.4 mixed-shape measurements (warm dependencies):
+100: expansion .079002 s, check 2.474714 s, build 3.678123 s, 37497 lines.
+500: expansion .384244 s, check 12.828345 s, build 18.342354 s, 187849 lines.
+200 inputs: expansion .018227 s, check .369594 s, build .449394 s, 4416 lines.
+The shapes differ from Astra's plain endpoint series; no >500 run was made.
+
+Section 11: "Why the check of a large client grows faster than its size is not
+  known yet."
+We identified and removed the quadratic output for wide inputs: each entry
+used to repeat every input binding; consecutive facts of an origin now share
+one environment. Macro lookups are indexed. This does not establish why the
+old 500-to-2000 endpoint check series was superlinear. The stipulated shape
+still copies inherited flat facts into every endpoint and qualifies tree paths.
+
+Other unfinished request (Opus 1): no second error for one bad Rust type is not
+achievable by this syntax-only macro with the fixed concrete C1.11 bounds.
+Rc<String> still produces 12 reports; by_offset(42u32) produces three Slot
+reports. Snapshots record them without claiming the one-error contract.
+
+Both .probe files were compiled and run with rustc 1.99 against the gated
+libconcord rlib; both exit 0. Commands/logs: api/target/p44-audit/.

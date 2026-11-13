@@ -1,5 +1,0 @@
-error: parameter group `CList` has the name of a type this declaration generates; rename the group
- --> tests/ui/param_group_type_name_collision.rs:4:16
-  |
-4 |         params CList(query limit?: u32);
-  |                ^^^^^

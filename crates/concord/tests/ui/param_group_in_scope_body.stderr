@@ -1,5 +1,0 @@
-error: parameter groups (`params Name(..);`) are declared on the client
- --> tests/ui/param_group_in_scope_body.rs:5:13
-  |
-5 |             params Paging(query limit?: u32);
-  |             ^^^^^^

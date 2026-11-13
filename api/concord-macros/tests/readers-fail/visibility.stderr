@@ -1,0 +1,27 @@
+error[E0603]: struct `Relative` is private
+  --> tests/readers-fail/visibility.rs:13:32
+   |
+13 |     let _ = outer::restricted::Relative::new();
+   |                                ^^^^^^^^ private struct
+   |
+note: the struct `Relative` is defined here
+  --> tests/readers-fail/visibility.rs:3:9
+   |
+ 3 |         concord::api! {
+   |         ^^^^^^^^^^^^^
+   = note: this error originates in the macro `concord::api` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0603]: module `relative` is private
+  --> tests/readers-fail/visibility.rs:14:38
+   |
+14 |     let _: Option<outer::restricted::relative::middle::Inner> = None;
+   |                                      ^^^^^^^^          ----- struct `Inner` is not publicly re-exported
+   |                                      |
+   |                                      private module
+   |
+note: the module `relative` is defined here
+  --> tests/readers-fail/visibility.rs:3:9
+   |
+ 3 |         concord::api! {
+   |         ^^^^^^^^^^^^^
+   = note: this error originates in the macro `concord::api` (in Nightly builds, run with -Z macro-backtrace for more info)

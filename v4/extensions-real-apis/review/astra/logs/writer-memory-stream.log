@@ -1,4 +1,0 @@
-    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.04s
-     Running `../target/debug/writer_memory stream`
-streamed refusal: request or response body error
-stream=true, limit=64 bytes, input=16777216 bytes, before VmHWM=20196 KiB, after=52844 KiB, growth=32648 KiB

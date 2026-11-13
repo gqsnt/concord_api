@@ -1,0 +1,9 @@
+{
+  "id": "M140",
+  "area": "build",
+  "contract": "C2.9 A76",
+  "description": "Blame the body rather than its invalid content-type label",
+  "file": "concord-core/src/__private/build.rs",
+  "find": "http::header::CONTENT_TYPE,\n                    header_value(label).map_err(|_| fail(BuildFailure::Header(\"content-type\")))?,",
+  "replace": "http::header::CONTENT_TYPE,\n                    header_value(label).map_err(|_| fail(BuildFailure::Body))?,"
+}

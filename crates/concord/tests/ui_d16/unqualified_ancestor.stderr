@@ -1,5 +1,0 @@
-error: `value` is not a value of `Api.outer.leaf`; to use the value of an enclosing owner, write `client.value`
- --> tests/ui_d16/unqualified_ancestor.rs:4:50
-  |
-4 |         scope outer { GET leaf() { query { "v" = value; } } }
-  |                                                  ^^^^^

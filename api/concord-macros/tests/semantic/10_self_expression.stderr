@@ -1,0 +1,7 @@
+error: `Self` has no meaning in a description
+       label: `Self` is not the enclosing type here
+       help: write the path of the type
+ --> tests/semantic/10_self_expression.rs:2:94
+  |
+2 |     client Workshop { base "https://workshop.test"; read Reader; GET fetch() { body { let _: Self = make(); make() }; } }
+  |                                                                                              ^^^^

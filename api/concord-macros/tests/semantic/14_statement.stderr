@@ -1,0 +1,7 @@
+error: unsupported attribute on `path`
+       label: this statement takes no attributes
+       help: remove `# [doc = "why"]` from this statement
+ --> tests/semantic/14_statement.rs:2:80
+  |
+2 |     client Workshop { base "https://workshop.test"; read Reader; GET fetch() { #[doc="why"] path "records"; } }
+  |                                                                                ^^^^^^^^^^^^

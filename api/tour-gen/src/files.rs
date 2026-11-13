@@ -1,0 +1,78 @@
+concord::api! {
+/// A client for documents, file contents, and file search.
+///
+/// # Example
+///
+/// ```no_run
+/// use tour::{DocId, Files};
+///
+/// # async fn example() -> tour::files::Result<()> {
+/// let files = Files::new("key");
+/// let exists = files.exists(DocId::from("readme")).await?;
+/// # Ok(())
+/// # }
+/// ```
+///
+pub client Files(
+    /// The key used to sign every request.
+    key: Secret,
+) {
+    read Json;
+    base "https://files.example.com";
+    headers { "authorization" = "Bearer {client.key}"; "x-client" = "tour".to_owned(); }
+    /// Signs every request with the client key.
+    middleware Signed::new(key.clone());
+    /// Is it there?
+    HEAD exists(
+        /// The identifier of the document to check.
+        id: DocId,
+    ) -> bool {
+        path "{id}";
+        status { 2xx => true, 404 => false }
+    }
+    /// Plain text, not JSON.
+    GET readme(
+        /// The repository whose README should be read.
+        repo: String,
+    ) -> String {
+        path "{repo}/readme";
+        read Text;
+    }
+    /// A large file, as it comes.
+    GET download(
+        /// The identifier of the file to download.
+        id: FileId,
+    ) -> concord::ByteStream {
+        path "files/{id}";
+        read Stream;
+        idle_timeout std::time::Duration::from_secs(120);
+    }
+    /// An upload, on another host.
+    PUT upload(
+        /// The name under which to store the file.
+        name: String,
+        /// The file contents and their content type.
+        file: concord::Body,
+    ) {
+        base "https://uploads.example.com";
+        headers { override "authorization" = "Bearer {client.key}"; }
+        path "files/{name}";
+        body file;
+        idempotent false;
+    }
+    /// A body made of several inputs. A `cursor` that was not set is left out.
+    POST search(
+        /// The text to search for.
+        text: String,
+        /// Continue the search after this cursor.
+        cursor?: String,
+    ) -> Page {
+        path "search";
+        body json { text; cursor; }
+    }
+POST grant(grant_type: String, client_id: String, client_secret: Secret) {
+    path "oauth/token";
+    body form { grant_type; client_id; client_secret; }
+}
+}
+}

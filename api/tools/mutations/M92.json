@@ -1,0 +1,9 @@
+{
+  "id": "M92",
+  "area": "multipart",
+  "contract": "build/ANSWERS.md A50 / docs/contracts.md C2.16",
+  "description": "Accept carriage returns in multipart field and file names instead of failing finish",
+  "file": "concord-extras/src/multipart.rs",
+  "find": "if name.chars().any(char::is_control) {",
+  "replace": "if name.chars().any(|ch| ch.is_control() && ch != '\\r') {"
+}

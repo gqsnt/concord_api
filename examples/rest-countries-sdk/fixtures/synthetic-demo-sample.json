@@ -1,9 +1,0 @@
-{
-  "data": {
-    "objects": [
-      { "names": { "common": "Canada" }, "codes": { "alpha_2": "CA" } }
-    ],
-    "meta": { "total": 1, "count": 1, "limit": 25, "offset": 0, "more": false },
-    "_demo": { "message": "Synthetic stand-in for the undocumented demo notice block." }
-  }
-}

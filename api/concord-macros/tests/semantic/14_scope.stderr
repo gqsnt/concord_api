@@ -1,0 +1,7 @@
+error: unsupported attribute on a scope
+       label: a scope takes doc comments, #[cfg], #[deprecated] and #[doc(hidden)] only
+       help: remove `# [repr(C)]` from this scope
+ --> tests/semantic/14_scope.rs:2:66
+  |
+2 |     client Workshop { base "https://workshop.test"; read Reader; #[repr(C)] scope fragment { GET fetch(); } }
+  |                                                                  ^^^^^^^^^^

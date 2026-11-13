@@ -1,0 +1,9 @@
+{
+  "id": "M17",
+  "area": "core-readers",
+  "contract": "docs/contracts.md C5",
+  "description": "Retain the chunk that crosses the reader limit",
+  "file": "concord-core/src/read.rs",
+  "find": "                    if piece.len() > limit.saturating_sub(length) {\n                        return Err(ReadError::limited(joined.map_or(first, Bytes::from)));\n",
+  "replace": "                    if piece.len() > limit.saturating_sub(length) {\n                        let mut kept = joined.unwrap_or_else(|| first.to_vec());\n                        kept.extend_from_slice(&piece);\n                        return Err(ReadError::limited(kept.into()));\n"
+}

@@ -1,0 +1,14 @@
+error[E0283]: type annotations needed
+ --> tests/fable-fail/bare_none.rs:2:35
+  |
+2 | fn main() { let _ = B::new().go().milestone(None); }
+  |                                   ^^^^^^^^^ cannot infer type for enum `Option<_>`
+  |
+  = note: multiple `impl`s satisfying `Option<_>: concord::arg::Arg<Option<Option<u64>>>` found in the `concord_core` crate:
+          - impl<T> concord::arg::Arg<Option<T>> for T;
+          - impl<T> concord::arg::Arg<T> for T;
+note: required by a bound in `_::<impl Go>::milestone`
+ --> tests/fable-fail/bare_none.rs:1:73
+  |
+1 | concord::api! { client B { base "https://b.example"; POST go(milestone?:Option<u64>) {query {milestone;}} } }
+  |                                                                         ^^^^^^ required by this bound in `_::<impl Go>::milestone`

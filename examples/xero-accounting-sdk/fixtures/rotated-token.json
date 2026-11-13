@@ -1,7 +1,0 @@
-{
-  "access_token": "synthetic-access-new",
-  "refresh_token": "synthetic-refresh-new",
-  "token_type": "Bearer",
-  "expires_in": 1800,
-  "scope": "offline_access accounting.invoices"
-}

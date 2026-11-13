@@ -1,0 +1,7 @@
+error: path segments must be nonempty
+       label: leading or doubled slash
+       help: remove leading or repeated slashes while keeping the path's segments and holes; omit an empty path statement
+ --> tests/messages-page/25.rs:2:59
+  |
+2 | client Tasks { base "https://a.example"; GET get() { path "/a//b"; } }
+  |                                                           ^^^^^^^

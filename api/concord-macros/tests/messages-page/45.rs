@@ -1,0 +1,4 @@
+concord::api! {
+client Tasks { base "https://a.example"; GET get() -> u64 { status { 600 => 1 } } }
+}
+fn main() {}

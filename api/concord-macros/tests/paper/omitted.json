@@ -1,0 +1,93 @@
+[
+  {
+    "page": "3-language.md",
+    "line": 292,
+    "kind": "scope",
+    "reason": "explicit ellipsis (abbreviated sketch)",
+    "source": "scope matches(..regional) { path \"lol/match/v5/matches\"; \u2026 }"
+  },
+  {
+    "page": "3-language.md",
+    "line": 293,
+    "kind": "scope",
+    "reason": "explicit ellipsis (abbreviated sketch)",
+    "source": "scope account(..regional) { path \"riot/account/v1/accounts\"; \u2026 }"
+  },
+  {
+    "page": "3-language.md",
+    "line": 310,
+    "kind": "part",
+    "reason": "metasyntactic signature (not a description)",
+    "source": "part name(inputs) { }"
+  },
+  {
+    "page": "3-language.md",
+    "line": 350,
+    "kind": "client",
+    "reason": "explicit ellipsis (abbreviated sketch)",
+    "source": "client Gitlab(url: Base, token: Secret) { base url; path \"api/v4\"; \u2026 }"
+  },
+  {
+    "page": "5-response.md",
+    "line": 205,
+    "kind": "client",
+    "reason": "explicit ellipsis (abbreviated sketch)",
+    "source": "pub client Riot(key: Secret) {\n    headers { \"x-riot-token\" = key; }\n    read Json;\n    problem RiotProblem;\n    \u2026\n}"
+  },
+  {
+    "page": "5-response.md",
+    "line": 245,
+    "kind": "client",
+    "reason": "explicit ellipsis (abbreviated sketch)",
+    "source": "pub client Vault {\n    base \"https://api.vault.example\";\n    read Json;\n    problem VaultProblem;\n    status { 2xx { body } => Reply::into_result(body)? }\n    \u2026\n}"
+  },
+  {
+    "page": "6-behaviour.md",
+    "line": 285,
+    "kind": "client",
+    "reason": "explicit ellipsis (abbreviated sketch)",
+    "source": "pub client Stripe(key: Secret) {\n    \u2026\n    part page(limit?: u32, starting_after?: String) {\n        query { limit; starting_after; }\n        paginate by_cursor(starting_after, List::next_cursor);\n    }\n\n    scope customers {\n        path \"v1/customers\";\n        GET list(email?: String, ..page) -> List<Customer> { query { email; } }\n    }\n}"
+  },
+  {
+    "page": "apis/riot.md",
+    "line": 662,
+    "kind": "scope",
+    "reason": "explicit ellipsis (abbreviated sketch)",
+    "source": "scope platform(route) { scope league { \u2026 } }"
+  },
+  {
+    "page": "apis/riot.md",
+    "line": 662,
+    "kind": "scope",
+    "reason": "explicit ellipsis (abbreviated sketch)",
+    "source": "scope league { \u2026 }"
+  },
+  {
+    "page": "apis/riot.md",
+    "line": 677,
+    "kind": "scope",
+    "reason": "explicit ellipsis (abbreviated sketch)",
+    "source": "scope league(..platform) { path \"lol/league/v4\"; \u2026 }"
+  },
+  {
+    "page": "apis/slack.md",
+    "line": 399,
+    "kind": "scope",
+    "reason": "explicit ellipsis (abbreviated sketch)",
+    "source": "scope chat { prefix \"chat.\"; POST post_message(\u2026) { path \"postMessage\"; } }"
+  },
+  {
+    "page": "apis/slack.md",
+    "line": 399,
+    "kind": "POST",
+    "reason": "explicit ellipsis (abbreviated sketch)",
+    "source": "POST post_message(\u2026) { path \"postMessage\"; }"
+  },
+  {
+    "page": "apis/again/kubernetes.md",
+    "line": 403,
+    "kind": "client",
+    "reason": "explicit ellipsis (abbreviated sketch)",
+    "source": "pub client Kubernetes(server: Base, ca: Certificate) { base server; trust ca; \u2026 }"
+  }
+]

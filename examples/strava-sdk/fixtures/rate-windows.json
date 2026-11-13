@@ -1,6 +1,0 @@
-[
-  {"overall_limit":"200,2000","overall_usage":"200,1500","read_limit":"100,1000","read_usage":"80,800","overall_short":true,"overall_daily":false,"read_short":false,"read_daily":false},
-  {"overall_limit":"200,2000","overall_usage":"10,2000","read_limit":"100,1000","read_usage":"5,1000","overall_short":false,"overall_daily":true,"read_short":false,"read_daily":true},
-  {"overall_limit":"200,2000","overall_usage":"201,2001","read_limit":"100,1000","read_usage":"101,1001","overall_short":true,"overall_daily":true,"read_short":true,"read_daily":true},
-  {"overall_limit":"200,2000","overall_usage":"30,100","read_limit":"100,1000","read_usage":"100,900","overall_short":false,"overall_daily":false,"read_short":true,"read_daily":false}
-]

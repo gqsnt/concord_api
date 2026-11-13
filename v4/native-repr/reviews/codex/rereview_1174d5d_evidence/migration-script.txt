@@ -1,5 +1,0 @@
-   1  /home/canarit/projects/concord_v4_native_work/snapshots/rereview-1174d5d/target/probes/migration/qualified.rs
-   1  /home/canarit/projects/concord_v4_native_work/snapshots/rereview-1174d5d/target/probes/migration/scoped_import.rs
-   1  /home/canarit/projects/concord_v4_native_work/snapshots/rereview-1174d5d/target/probes/migration/disabled_import.rs
-   1  /home/canarit/projects/concord_v4_native_work/snapshots/rereview-1174d5d/target/probes/migration/commented_import.rs
-self-test: 9 cases ok

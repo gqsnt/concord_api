@@ -1,0 +1,7 @@
+error: `with_extra` is reserved by Concord
+       label: conflicts with a generated method
+       help: rename this child to `extra_item`
+ --> tests/semantic/03_child_handle_with_extra.rs:2:85
+  |
+2 |     client Workshop { base "https://workshop.test"; read Reader; scope branch { GET with_extra(); } }
+  |                                                                                     ^^^^^^^^^^

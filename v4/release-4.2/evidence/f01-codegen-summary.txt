@@ -1,8 +1,0 @@
-base -p concord-example-riot --lib bytes=419496 bounds=19
-base -p concord-example-quickstart --lib bytes=64799 bounds=3
-base -p concord --test synthetic_sdk --profile test bytes=5276529 bounds=80
-base -p concord-clone-compat --lib bytes=9492 bounds=1
-cand -p concord-example-riot --lib bytes=419706 bounds=23
-cand -p concord-example-quickstart --lib bytes=64799 bounds=3
-cand -p concord --test synthetic_sdk --profile test bytes=5276529 bounds=80
-cand -p concord-clone-compat --lib bytes=9492 bounds=1

@@ -1,8 +1,0 @@
-{
-  "scope": "openid",
-  "access_token": "A21AASyntheticAccessTokenMac-2222222222",
-  "token_type": "MAC",
-  "app_id": "APP-SYNTHETIC00000000",
-  "expires_in": 32400,
-  "nonce": "synthetic"
-}

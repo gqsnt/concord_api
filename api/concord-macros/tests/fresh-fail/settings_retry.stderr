@@ -1,0 +1,6 @@
+error: expected a statement, part, scope or HTTP method
+       help: configure retries with `with_retry` on the client or the call
+ --> tests/fresh-fail/settings_retry.rs:1:70
+  |
+1 | concord::api! { client C { base "https://settings.test"; GET get() { retry concord::Retry::standard(); } } }
+  |                                                                      ^^^^^

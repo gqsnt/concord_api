@@ -1,0 +1,6 @@
+error: expected a statement, part, scope or HTTP method
+       help: place credentials in the appropriate `headers` entries
+ --> tests/fresh-fail/settings_auth.rs:1:70
+  |
+1 | concord::api! { client C { base "https://settings.test"; GET get() { auth key; } } }
+  |                                                                      ^^^^

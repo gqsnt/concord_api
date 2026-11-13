@@ -1,7 +1,0 @@
-{
-  "merchantAccount": "TestMerchant",
-  "amount": {"currency": "EUR", "value": 1000},
-  "countryCode": "NL",
-  "shopperLocale": "nl-NL",
-  "channel": "Web"
-}

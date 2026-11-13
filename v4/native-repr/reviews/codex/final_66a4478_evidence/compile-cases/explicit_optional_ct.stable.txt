@@ -1,8 +1,0 @@
-    Checking independent-compile v0.0.0 (/home/canarit/projects/concord_v4_native_work/snapshots/final-66a4478/target/probes/compile-work)
-error: body `b` has the media type "application/custom" (written on the body), and the `content-type` header set by `Api` reaches this endpoint: both would set `Content-Type`; keep one: remove the media type from the body, or add `remove "content-type";` to this endpoint's `headers` block
- --> src/lib.rs:2:101
-  |
-2 | wire::api! { pub client Api(header("content-type") ct?: HV) { base "http://127.0.0.1";  POST p(json("application/custom") b?: String)...
-  |                                                                                                     ^^^^^^^^^^^^^^^^^^^^
-
-error: could not compile `independent-compile` (lib) due to 1 previous error

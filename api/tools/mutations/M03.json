@@ -1,0 +1,9 @@
+{
+  "id": "M03",
+  "area": "calls",
+  "contract": "docs/contracts.md C3/C9",
+  "description": "Reverse caller middleware insertion order",
+  "file": "concord-core/src/__private/client.rs",
+  "find": ".insert(self.caller_middlewares, Arc::new(middleware));",
+  "replace": ".insert(0, Arc::new(middleware));"
+}

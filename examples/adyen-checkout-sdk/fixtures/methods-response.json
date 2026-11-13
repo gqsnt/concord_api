@@ -1,6 +1,0 @@
-{
-  "paymentMethods": [
-    {"name": "iDEAL", "type": "ideal", "issuers": [{"id": "1121", "name": "Test Issuer"}]},
-    {"name": "Cards", "type": "scheme", "brands": ["visa", "mc"]}
-  ]
-}

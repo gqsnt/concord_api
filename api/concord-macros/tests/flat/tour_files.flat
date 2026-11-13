@@ -1,0 +1,68 @@
+middleware Signed :: new (key . clone ()) @files:9:16
+endpoint files.exists HEAD -> bool
+input client.key: Secret @Files:3:5
+input exists.id: DocId @exists:13:9
+base "https://files.example.com" @files:6:5
+path hole={id} cross_base=false @files.exists:15:14
+header wire=0 "authorization" = "Bearer {client.key}" ; cross_base=false @files:7:15
+header wire=1 "x-client" = "tour" . to_owned () ; cross_base=false @files:7:56
+read Json @files:5:10
+arm 404 {} => false @files.exists:16:31
+arm 2xx {} => true @files.exists:16:18
+endpoint files.readme GET -> String
+input client.key: Secret @Files:3:5
+input readme.repo: String @readme:21:9
+base "https://files.example.com" @files:6:5
+path hole={repo} cross_base=false @files.readme:23:14
+path text="/readme" cross_base=false @files.readme:23:14
+header wire=0 "authorization" = "Bearer {client.key}" ; cross_base=false @files:7:15
+header wire=1 "x-client" = "tour" . to_owned () ; cross_base=false @files:7:56
+read Text @files.readme:24:14
+endpoint files.download GET -> concord :: ByteStream
+input client.key: Secret @Files:3:5
+input download.id: FileId @download:29:9
+idle_timeout std :: time :: Duration :: from_secs (120) @files.download:33:22
+base "https://files.example.com" @files:6:5
+path text="files/" cross_base=false @files.download:31:14
+path hole={id} cross_base=false @files.download:31:14
+header wire=0 "authorization" = "Bearer {client.key}" ; cross_base=false @files:7:15
+header wire=1 "x-client" = "tour" . to_owned () ; cross_base=false @files:7:56
+read Stream @files.download:32:14
+endpoint files.upload PUT -> ()
+input client.key: Secret @Files:3:5
+input upload.name: String @upload:38:9
+input upload.file: concord :: Body @upload:40:9
+idempotent false @files.upload:46:9
+base "https://uploads.example.com" @files.upload:42:9
+path text="files/" cross_base=false @files.upload:44:14
+path hole={name} cross_base=false @files.upload:44:14
+header wire=1 "x-client" = "tour" . to_owned () ; cross_base=true @files:7:56
+header wire=0 "authorization" = "Bearer {client.key}" ; cross_base=false @files.upload:43:19
+body file @files.upload:45:14
+read Json @files:5:10
+endpoint files.search POST -> Page
+input client.key: Secret @Files:3:5
+input search.text: String @search:51:9
+input search.cursor?: String @search:53:9
+base "https://files.example.com" @files:6:5
+path text="search" cross_base=false @files.search:55:14
+header wire=0 "authorization" = "Bearer {client.key}" ; cross_base=false @files:7:15
+header wire=1 "x-client" = "tour" . to_owned () ; cross_base=false @files:7:56
+body_function json @files.search:56:14
+body_entry text ; @files.search:56:21
+body_entry cursor ; @files.search:56:27
+read Json @files:5:10
+endpoint files.grant POST -> ()
+input client.key: Secret @Files:3:5
+input grant.grant_type: String @grant:58:12
+input grant.client_id: String @grant:58:32
+input grant.client_secret: Secret @grant:58:51
+base "https://files.example.com" @files:6:5
+path text="oauth/token" cross_base=false @files.grant:59:10
+header wire=0 "authorization" = "Bearer {client.key}" ; cross_base=false @files:7:15
+header wire=1 "x-client" = "tour" . to_owned () ; cross_base=false @files:7:56
+body_function form @files.grant:60:10
+body_entry grant_type ; @files.grant:60:17
+body_entry client_id ; @files.grant:60:29
+body_entry client_secret ; @files.grant:60:40
+read Json @files:5:10

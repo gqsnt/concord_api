@@ -1,0 +1,7 @@
+error: invalid client name
+       label: expected upper camel case with a non-keyword module name
+       help: write `client GitHubApi`
+ --> tests/real/m06_snake.rs:2:16
+  |
+2 |     pub client GitHub_Api(user_agent: String, quota: QuotaLog, token?: Secret) {
+  |                ^^^^^^^^^^

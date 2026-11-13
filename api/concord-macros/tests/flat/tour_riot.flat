@@ -1,0 +1,60 @@
+endpoint riot.account.by_riot_id GET -> Option < Account >
+input client.key: Secret @Riot:3:5
+input account.route: AccountRoute @account:11:9
+input by_riot_id.game_name: String @by_riot_id:18:13
+input by_riot_id.tag_line: String @by_riot_id:20:13
+base "https://{route}.api.riotgames.com" @riot.account:13:9
+path text="riot/account/v1/accounts" cross_base=false @riot.account:14:14
+path text="by-riot-id/" cross_base=false @riot.account.by_riot_id:22:18
+path hole={game_name} cross_base=false @riot.account.by_riot_id:22:18
+path text="/" cross_base=false @riot.account.by_riot_id:22:18
+path hole={tag_line} cross_base=false @riot.account.by_riot_id:22:18
+header wire=0 "x-riot-token" = key ; cross_base=false @riot:5:15
+read Json @riot:6:10
+arm 404 {} => None @riot.account.by_riot_id:23:22
+problem RiotProblem @riot:7:5
+problem_read Json @riot:6:10
+endpoint riot.account.me GET -> Account
+input client.key: Secret @Riot:3:5
+input account.route: AccountRoute @account:11:9
+input me.access_token: Secret @me:29:13
+base "https://{route}.api.riotgames.com" @riot.account:13:9
+path text="riot/account/v1/accounts" cross_base=false @riot.account:14:14
+path text="me" cross_base=false @riot.account.me:31:18
+header wire=1 "authorization" = "Bearer {access_token}" ; cross_base=false @riot.account.me:32:46
+read Json @riot:6:10
+problem RiotProblem @riot:7:5
+problem_read Json @riot:6:10
+endpoint riot.matches.ids GET -> Vec < MatchId >
+input client.key: Secret @Riot:3:5
+input matches.route: MatchRoute @matches:38:9
+input ids.puuid: Puuid @ids:45:13
+input ids.start?: u32 @ids:47:13
+input ids.count?: u32 @ids:49:13
+input ids.queue?: i32 @ids:51:13
+input ids.start_time?: i64 @ids:53:13
+base "https://{route}.api.riotgames.com" @riot.matches:40:9
+path text="lol/match/v5/matches" cross_base=false @riot.matches:41:14
+path text="by-puuid/" cross_base=false @riot.matches.ids:55:18
+path hole={puuid} cross_base=false @riot.matches.ids:55:18
+path text="/ids" cross_base=false @riot.matches.ids:55:18
+query wire=0 start ; cross_base=false @riot.matches.ids:56:21
+query wire=1 count ; cross_base=false @riot.matches.ids:56:28
+query wire=2 queue ; cross_base=false @riot.matches.ids:56:35
+query wire=3 "startTime" = start_time ; cross_base=false @riot.matches.ids:56:42
+header wire=0 "x-riot-token" = key ; cross_base=false @riot:5:15
+read Json @riot:6:10
+problem RiotProblem @riot:7:5
+problem_read Json @riot:6:10
+paginate by_offset_limit (start , count) @riot.matches.ids:57:22
+endpoint riot.matches.get GET -> Match
+input client.key: Secret @Riot:3:5
+input matches.route: MatchRoute @matches:38:9
+input get.id: MatchId @get:62:13
+base "https://{route}.api.riotgames.com" @riot.matches:40:9
+path text="lol/match/v5/matches" cross_base=false @riot.matches:41:14
+path hole={id} cross_base=false @riot.matches.get:64:18
+header wire=0 "x-riot-token" = key ; cross_base=false @riot:5:15
+read Json @riot:6:10
+problem RiotProblem @riot:7:5
+problem_read Json @riot:6:10

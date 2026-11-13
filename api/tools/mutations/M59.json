@@ -1,0 +1,9 @@
+{
+  "id": "M59",
+  "area": "request-building",
+  "contract": "docs/contracts.md C2.12",
+  "description": "Accept a Content-Length that disagrees with memory body bytes",
+  "file": "concord-core/src/__private/build.rs",
+  "find": "!= Some(length as u64)",
+  "replace": "!= Some(length as u64) && false"
+}

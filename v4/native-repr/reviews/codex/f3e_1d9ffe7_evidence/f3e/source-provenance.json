@@ -1,9 +1,0 @@
-{
-  "original_commit_claimed_by_manifest": "1d9ffe73960c3cb33792e1b916c66105f7e56dd7",
-  "original_commit_object_available": false,
-  "snapshot_head": "9fa9229024288ec61774ebdffec09a3fec23c537",
-  "manifest_original_tree": "2d99fd0763e8d089a20cbebb466e73288c3bc573",
-  "reconstructed_manifest_tree": "2d99fd0763e8d089a20cbebb466e73288c3bc573",
-  "tree_matches": true,
-  "note": "Every original file blob was independently checked against manifest by prepare.py; tree reconstructed without writing Git objects. Original commit object is unavailable locally."
-}

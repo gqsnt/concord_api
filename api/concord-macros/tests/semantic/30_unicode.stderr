@@ -1,0 +1,7 @@
+error: invalid header name
+       label: expected a nonempty ASCII HTTP token
+       help: choose the intended nonempty ASCII HTTP header name, retaining this entry's value
+ --> tests/semantic/30_unicode.rs:2:90
+  |
+2 |     client Workshop { base "https://workshop.test"; read Reader; GET fetch() { headers { "naïve" = "v"; } } }
+  |                                                                                          ^^^^^^^

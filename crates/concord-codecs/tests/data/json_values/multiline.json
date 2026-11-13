@@ -1,5 +1,0 @@
-{
-  "type": "ADDED",
-  "object": {"id": "x"}
-}
-{ "type": "DELETED", "object": {"id": "x"} }

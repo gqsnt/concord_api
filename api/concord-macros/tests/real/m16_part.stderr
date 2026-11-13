@@ -1,0 +1,7 @@
+error: statements must precede parts
+       label: statement appears after a part
+       help: move `idle_timeout Duration::from_secs(10);` before the first part
+  --> tests/real/m16_part.rs:43:9
+   |
+43 |         idle_timeout Duration::from_secs(10);
+   |         ^^^^^^^^^^^^

@@ -1,2 +1,0 @@
-"sf__Id";"sf__Error";LastName;FirstName;Email;Loyalty_Tier__c;Description
-"";"INVALID_EMAIL_ADDRESS:Email: invalid email address: not-an-email:Email --";Hopper;Grace;not-an-email;;

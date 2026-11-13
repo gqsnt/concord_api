@@ -1,0 +1,7 @@
+error: part `spare` is never used
+       label: no scope or endpoint names `..spare`
+       help: add `..spare` to a signature, or remove the part
+ --> tests/semantic/36_unused.rs:2:71
+  |
+2 |     client Workshop { base "https://workshop.test"; read Reader; part spare() {} GET fetch(); }
+  |                                                                       ^^^^^

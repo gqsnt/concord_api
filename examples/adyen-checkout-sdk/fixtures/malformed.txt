@@ -1,1 +1,0 @@
-{"resultCode": "synthetic-body-secret", not JSON}

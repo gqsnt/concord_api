@@ -1,3 +1,0 @@
-{"id":"replayed01","time":1700000200,"event":"message","topic":"first-use","message":"Still cached","expires":1700043400}
-
-{"id":"replayed02","time":1700000201,"event":"message","topic":"first-use","message":"Restored 🦀","priority":4,"tags":["backup"],"expires":1700043401}

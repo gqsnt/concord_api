@@ -1,0 +1,4 @@
+concord::api! {
+client Tasks(user_agent: String) { base "https://a.example"; headers { user_agent; } GET get(); }
+}
+fn main() {}

@@ -1,5 +1,0 @@
-{
-  "batchcomplete": true,
-  "continue": {"cmcontinue": "page|café & /+|2", "continue": "-||", "futureoffset": 7},
-  "query": {"categorymembers": [{"pageid": 1, "ns": 0, "title": "Rust"}]}
-}

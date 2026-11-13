@@ -1,0 +1,7 @@
+error: `problem` requires the client
+       label: problem types are declared on the client
+       help: declare the intended problem type on the client; consolidate it with an existing problem declaration
+ --> tests/semantic/20_problem_scope.rs:2:83
+  |
+2 |     client Workshop { base "https://workshop.test"; read Reader; scope fragment { problem Issue; } }
+  |                                                                                   ^^^^^^^

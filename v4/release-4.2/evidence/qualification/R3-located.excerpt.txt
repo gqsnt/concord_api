@@ -1,6 +1,0 @@
-== R3-located: cargo +1.99.1 test --locked -p concord --test forwarded_types
-error[E0308]: mismatched types
-error[E0308]: mismatched types
-error[E0308]: mismatched types
-exit=101
-restored-bytes-verified

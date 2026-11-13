@@ -1,0 +1,4 @@
+concord::api! {
+client Tasks { base "https://a.example"; headers { "accept" = "a/b"; } GET get() { headers { "accept" = "…"; } } }
+}
+fn main() {}

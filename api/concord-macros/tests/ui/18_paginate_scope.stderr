@@ -1,0 +1,7 @@
+error: `body` requires an endpoint
+       label: `body` stands on an endpoint, not on a scope
+       help: place this behaviour on an endpoint, consolidating it with any statement supplied there or by a part
+ --> tests/ui/18_paginate_scope.rs:4:13
+  |
+4 |             body pack_submission(job);
+  |             ^^^^

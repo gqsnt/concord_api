@@ -1,0 +1,71 @@
+error: nothing says how this answer is read
+       label: no `read` on the client or the problem line
+       help: supply a reader on the client or after the problem type, before the semicolon
+ --> tests/real/m33_arm.rs:3:17
+  |
+3 |         problem crate::model::S3Problem;
+  |                 ^^^^^^^^^^^^^^^^^^^^^^^
+
+error: nothing says how this answer is read
+       label: no `read` here or above
+       help: supply the intended reader on this endpoint or an ancestor
+  --> tests/real/m33_arm.rs:38:11
+   |
+38 |         ) -> BucketsPage {
+   |           ^^^^^^^^^^^^^^
+
+error: nothing says how this answer is read
+       label: no `read` here or above
+       help: supply the intended reader on this endpoint or an ancestor
+  --> tests/real/m33_arm.rs:63:15
+   |
+63 |             ) -> ObjectsPage {
+   |               ^^^^^^^^^^^^^^
+
+error: nothing says how this answer is read
+       label: no `read` here or above
+       help: supply the intended reader on this endpoint or an ancestor
+  --> tests/real/m33_arm.rs:75:53
+   |
+75 |             POST delete_objects(batch: DeleteBatch) -> DeleteResult {
+   |                                                     ^^^^^^^^^^^^^^^
+
+error: nothing says how this answer is read
+       label: no `read` here or above
+       help: supply the intended reader on this endpoint or an ancestor
+  --> tests/real/m33_arm.rs:82:15
+   |
+82 |             ) -> UploadsPage {
+   |               ^^^^^^^^^^^^^^
+
+error: nothing says how this answer is read
+       label: no `read` here or above
+       help: supply the intended reader on this endpoint or an ancestor
+   --> tests/real/m33_arm.rs:127:36
+    |
+127 |                     status { 2xx { body } => copy_ok(body)? }
+    |                                    ^^^^
+
+error: nothing says how this answer is read
+       label: no `read` here or above
+       help: supply the intended reader on this endpoint or an ancestor
+   --> tests/real/m33_arm.rs:133:63
+    |
+133 |                 POST create_multipart_upload(..write_headers) -> InitiatedUpload {
+    |                                                               ^^^^^^^^^^^^^^^^^^
+
+error: nothing says how this answer is read
+       label: no `read` here or above
+       help: supply the intended reader on this endpoint or an ancestor
+   --> tests/real/m33_arm.rs:148:40
+    |
+148 |                         status { 2xx { body } => complete_ok(body)? }
+    |                                        ^^^^
+
+error: nothing says how this answer is read
+       label: no `read` here or above
+       help: supply the intended reader on this endpoint or an ancestor
+   --> tests/real/m33_arm.rs:153:23
+    |
+153 |                     ) -> PartsPage {
+    |                       ^^^^^^^^^^^^

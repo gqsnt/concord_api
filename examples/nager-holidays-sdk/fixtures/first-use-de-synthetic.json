@@ -1,5 +1,0 @@
-[
-  {"date":"2027-01-01","name":"Synthetic national day","countryCode":"DE","nationalHoliday":true,"subdivisionCodes":null,"holidayTypes":["Public","Bank"]},
-  {"date":"2027-02-02","name":"Synthetic regional day","countryCode":"DE","nationalHoliday":false,"subdivisionCodes":["DE-BY"],"holidayTypes":["Bank"]},
-  {"date":"2027-03-03","name":"Synthetic observance","countryCode":"DE","nationalHoliday":true,"subdivisionCodes":[],"holidayTypes":["Observance","FutureKind"]}
-]

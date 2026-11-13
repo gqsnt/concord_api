@@ -1,0 +1,7 @@
+error: `headers` cannot be overridden or removed
+       label: `override` and `remove` stand inside a block, before an entry or an arm
+       help: write `headers { override "accept" = "application/vnd.github.diff"; }`
+   --> tests/real/m24_block.rs:148:25
+    |
+148 |                         override headers { "accept" = "application/vnd.github.diff"; }
+    |                         ^^^^^^^^

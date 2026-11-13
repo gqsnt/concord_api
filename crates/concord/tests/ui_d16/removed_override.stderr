@@ -1,5 +1,0 @@
-error: cannot override query key `k`: `Api.outer` removes it; introduce it again with `"k" = ...`
- --> tests/ui_d16/removed_override.rs:7:48
-  |
-7 |             scope inner { GET leaf() { query { override "k" = "bad"; } } }
-  |                                                ^^^^^^^^

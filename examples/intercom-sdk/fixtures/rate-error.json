@@ -1,9 +1,0 @@
-{
-  "type": "error.list",
-  "errors": [
-    {
-      "code": "rate_limit_exceeded",
-      "message": "Synthetic quota exhausted"
-    }
-  ]
-}

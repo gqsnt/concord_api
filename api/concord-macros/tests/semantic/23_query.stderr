@@ -1,0 +1,7 @@
+error: no inherited query pair `mode` to remove
+       label: this query pair is absent
+       help: delete `remove "mode";`
+ --> tests/semantic/23_query.rs:2:88
+  |
+2 |     client Workshop { base "https://workshop.test"; read Reader; GET fetch() { query { remove "mode"; } } }
+  |                                                                                        ^^^^^^

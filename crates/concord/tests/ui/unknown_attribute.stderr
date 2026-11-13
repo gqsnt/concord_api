@@ -1,5 +1,0 @@
-error: unsupported attribute; values accept documentation comments and `#[sensitive]`
- --> tests/ui/unknown_attribute.rs:4:17
-  |
-4 |         GET one(#[serde(rename = "x")] query x: String);
-  |                 ^

@@ -1,0 +1,15 @@
+error: a part cannot hold `path`
+       label: `path`, `problem`, `middleware` and children belong to the tree
+       help: place this behaviour on the appropriate tree node; consolidate it with any existing statement there
+ --> tests/fable-fail/path_part.rs:1:83
+  |
+1 | concord::api! { client Leak { base "https://path.test"; part tagged(tag:String) { path "{route}/{tag}"; } scope matches(route:String)...
+  |                                                                                   ^^^^
+
+error: unknown input `route`
+       label: no input with this name
+       help: a part sees only its own inputs and the client's; correct this reference, or move the placement to the scope or endpoint that owns the input and remove any unnecessary part or spread
+ --> tests/fable-fail/path_part.rs:1:88
+  |
+1 | concord::api! { client Leak { base "https://path.test"; part tagged(tag:String) { path "{route}/{tag}"; } scope matches(route:String)...
+  |                                                                                        ^^^^^^^^^^^^^^^

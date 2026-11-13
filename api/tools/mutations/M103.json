@@ -1,0 +1,9 @@
+{
+  "id": "M103",
+  "area": "allocation",
+  "contract": "A59 C5.4",
+  "description": "Report a reservation failure as a decoding mismatch instead of class Body",
+  "file": "concord-core/src/read.rs",
+  "find": "    failure.kind = ReadKind::Transport(Box::new(ReadTransport {\n        status: stream.status,\n        headers: stream.headers.clone(),\n        info: stream.info.clone(),\n        failure: BodyFailure::Transport(TransportError::new(Class::Body).with_source(error)),\n    }));\n",
+  "replace": "    failure.kind = ReadKind::Decode;\n    let _ = (stream, error);\n"
+}

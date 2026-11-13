@@ -1,0 +1,9 @@
+{
+  "id": "M139",
+  "area": "transport",
+  "contract": "C6.2 C4.2 A75",
+  "description": "Miss typed parser and upload failures on request errors",
+  "file": "concord-core/src/transport.rs",
+  "find": "if error.is_request() && request_failure.is_none()",
+  "replace": "if !error.is_request() && request_failure.is_none()"
+}

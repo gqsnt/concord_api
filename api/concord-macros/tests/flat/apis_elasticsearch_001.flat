@@ -1,0 +1,298 @@
+middleware TraceRequests @elasticsearch:8:20
+endpoint elasticsearch.index.index_document PUT -> WriteReply
+input client.url: Base @Elasticsearch:2:30
+input client.bulk_url: Base @Elasticsearch:2:41
+input client.authorization: Secret @Elasticsearch:2:57
+input index.name: String @index:18:21
+input index_document.id: String @index_document:20:32
+input index_document.document: Value @index_document:20:44
+input index_document.pretty?: bool @output:10:21
+input index_document.filter_path?: Vec < String > @output:10:36
+input index_document.refresh?: Refresh @write_options:13:28
+input index_document.routing?: String @write_options:13:47
+idempotent false @elasticsearch.index.index_document:23:17
+base url @elasticsearch:3:9
+path hole={name} cross_base=false @elasticsearch.index:19:18
+path text="_doc/" cross_base=false @elasticsearch.index.index_document:21:22
+path hole={id} cross_base=false @elasticsearch.index.index_document:21:22
+query wire=0 pretty ; cross_base=false @elasticsearch.index.index_document part=output:11:21
+query wire=1 "filter_path" = filter_path . as_ref () . map (| p | p . join (",")) ; cross_base=false @elasticsearch.index.index_document part=output:11:29
+query wire=2 refresh ; cross_base=false @elasticsearch.index.index_document part=write_options:14:21
+query wire=3 routing ; cross_base=false @elasticsearch.index.index_document part=write_options:14:30
+header wire=0 "authorization" = authorization ; cross_base=false @elasticsearch:4:19
+body json (document) @elasticsearch.index.index_document:22:22
+read Json @elasticsearch:5:14
+problem EsProblem @elasticsearch:6:9
+problem_read Json @elasticsearch:5:14
+endpoint elasticsearch.index.index_auto POST -> WriteReply
+input client.url: Base @Elasticsearch:2:30
+input client.bulk_url: Base @Elasticsearch:2:41
+input client.authorization: Secret @Elasticsearch:2:57
+input index.name: String @index:18:21
+input index_auto.document: Value @index_auto:25:29
+input index_auto.pretty?: bool @output:10:21
+input index_auto.filter_path?: Vec < String > @output:10:36
+input index_auto.refresh?: Refresh @write_options:13:28
+input index_auto.routing?: String @write_options:13:47
+base url @elasticsearch:3:9
+path hole={name} cross_base=false @elasticsearch.index:19:18
+path text="_doc" cross_base=false @elasticsearch.index.index_auto:26:22
+query wire=0 pretty ; cross_base=false @elasticsearch.index.index_auto part=output:11:21
+query wire=1 "filter_path" = filter_path . as_ref () . map (| p | p . join (",")) ; cross_base=false @elasticsearch.index.index_auto part=output:11:29
+query wire=2 refresh ; cross_base=false @elasticsearch.index.index_auto part=write_options:14:21
+query wire=3 routing ; cross_base=false @elasticsearch.index.index_auto part=write_options:14:30
+header wire=0 "authorization" = authorization ; cross_base=false @elasticsearch:4:19
+body json (document) @elasticsearch.index.index_auto:27:22
+read Json @elasticsearch:5:14
+problem EsProblem @elasticsearch:6:9
+problem_read Json @elasticsearch:5:14
+endpoint elasticsearch.index.get GET -> GetReply
+input client.url: Base @Elasticsearch:2:30
+input client.bulk_url: Base @Elasticsearch:2:41
+input client.authorization: Secret @Elasticsearch:2:57
+input index.name: String @index:18:21
+input get.id: String @get:29:21
+input get.pretty?: bool @output:10:21
+input get.filter_path?: Vec < String > @output:10:36
+base url @elasticsearch:3:9
+path hole={name} cross_base=false @elasticsearch.index:19:18
+path text="_doc/" cross_base=false @elasticsearch.index.get:30:22
+path hole={id} cross_base=false @elasticsearch.index.get:30:22
+query wire=0 pretty ; cross_base=false @elasticsearch.index.get part=output:11:21
+query wire=1 "filter_path" = filter_path . as_ref () . map (| p | p . join (",")) ; cross_base=false @elasticsearch.index.get part=output:11:29
+header wire=0 "authorization" = authorization ; cross_base=false @elasticsearch:4:19
+read Json @elasticsearch:5:14
+arm 404 {body} => document_404 :: < GetReply > (body) ? @elasticsearch.index.get:31:26
+problem EsProblem @elasticsearch:6:9
+problem_read Json @elasticsearch:5:14
+endpoint elasticsearch.index.exists HEAD -> bool
+input client.url: Base @Elasticsearch:2:30
+input client.bulk_url: Base @Elasticsearch:2:41
+input client.authorization: Secret @Elasticsearch:2:57
+input index.name: String @index:18:21
+input exists.id: String @exists:33:25
+input exists.pretty?: bool @output:10:21
+input exists.filter_path?: Vec < String > @output:10:36
+base url @elasticsearch:3:9
+path hole={name} cross_base=false @elasticsearch.index:19:18
+path text="_doc/" cross_base=false @elasticsearch.index.exists:34:22
+path hole={id} cross_base=false @elasticsearch.index.exists:34:22
+query wire=0 pretty ; cross_base=false @elasticsearch.index.exists part=output:11:21
+query wire=1 "filter_path" = filter_path . as_ref () . map (| p | p . join (",")) ; cross_base=false @elasticsearch.index.exists part=output:11:29
+header wire=0 "authorization" = authorization ; cross_base=false @elasticsearch:4:19
+read Json @elasticsearch:5:14
+arm 404 {} => false @elasticsearch.index.exists:35:39
+arm 2xx {} => true @elasticsearch.index.exists:35:26
+problem EsProblem @elasticsearch:6:9
+problem_read Json @elasticsearch:5:14
+endpoint elasticsearch.index.update POST -> WriteReply
+input client.url: Base @Elasticsearch:2:30
+input client.bulk_url: Base @Elasticsearch:2:41
+input client.authorization: Secret @Elasticsearch:2:57
+input index.name: String @index:18:21
+input update.id: String @update:38:25
+input update.patch: Value @update:38:37
+input update.pretty?: bool @output:10:21
+input update.filter_path?: Vec < String > @output:10:36
+input update.refresh?: Refresh @write_options:13:28
+input update.routing?: String @write_options:13:47
+base url @elasticsearch:3:9
+path hole={name} cross_base=false @elasticsearch.index:19:18
+path text="_update/" cross_base=false @elasticsearch.index.update:39:22
+path hole={id} cross_base=false @elasticsearch.index.update:39:22
+query wire=0 pretty ; cross_base=false @elasticsearch.index.update part=output:11:21
+query wire=1 "filter_path" = filter_path . as_ref () . map (| p | p . join (",")) ; cross_base=false @elasticsearch.index.update part=output:11:29
+query wire=2 refresh ; cross_base=false @elasticsearch.index.update part=write_options:14:21
+query wire=3 routing ; cross_base=false @elasticsearch.index.update part=write_options:14:30
+header wire=0 "authorization" = authorization ; cross_base=false @elasticsearch:4:19
+body json (patch) @elasticsearch.index.update:40:22
+read Json @elasticsearch:5:14
+problem EsProblem @elasticsearch:6:9
+problem_read Json @elasticsearch:5:14
+endpoint elasticsearch.index.delete_document DELETE -> WriteReply
+input client.url: Base @Elasticsearch:2:30
+input client.bulk_url: Base @Elasticsearch:2:41
+input client.authorization: Secret @Elasticsearch:2:57
+input index.name: String @index:18:21
+input delete_document.id: String @delete_document:42:36
+input delete_document.pretty?: bool @output:10:21
+input delete_document.filter_path?: Vec < String > @output:10:36
+input delete_document.refresh?: Refresh @write_options:13:28
+input delete_document.routing?: String @write_options:13:47
+idempotent false @elasticsearch.index.delete_document:45:17
+base url @elasticsearch:3:9
+path hole={name} cross_base=false @elasticsearch.index:19:18
+path text="_doc/" cross_base=false @elasticsearch.index.delete_document:43:22
+path hole={id} cross_base=false @elasticsearch.index.delete_document:43:22
+query wire=0 pretty ; cross_base=false @elasticsearch.index.delete_document part=output:11:21
+query wire=1 "filter_path" = filter_path . as_ref () . map (| p | p . join (",")) ; cross_base=false @elasticsearch.index.delete_document part=output:11:29
+query wire=2 refresh ; cross_base=false @elasticsearch.index.delete_document part=write_options:14:21
+query wire=3 routing ; cross_base=false @elasticsearch.index.delete_document part=write_options:14:30
+header wire=0 "authorization" = authorization ; cross_base=false @elasticsearch:4:19
+read Json @elasticsearch:5:14
+arm 404 {body} => document_404 :: < WriteReply > (body) ? @elasticsearch.index.delete_document:44:26
+problem EsProblem @elasticsearch:6:9
+problem_read Json @elasticsearch:5:14
+endpoint elasticsearch.index.create PUT -> IndexAck
+input client.url: Base @Elasticsearch:2:30
+input client.bulk_url: Base @Elasticsearch:2:41
+input client.authorization: Secret @Elasticsearch:2:57
+input index.name: String @index:18:21
+input create.settings: Value @create:47:24
+input create.pretty?: bool @output:10:21
+input create.filter_path?: Vec < String > @output:10:36
+idempotent false @elasticsearch.index.create:49:17
+base url @elasticsearch:3:9
+path hole={name} cross_base=false @elasticsearch.index:19:18
+query wire=0 pretty ; cross_base=false @elasticsearch.index.create part=output:11:21
+query wire=1 "filter_path" = filter_path . as_ref () . map (| p | p . join (",")) ; cross_base=false @elasticsearch.index.create part=output:11:29
+header wire=0 "authorization" = authorization ; cross_base=false @elasticsearch:4:19
+body json (settings) @elasticsearch.index.create:48:22
+read Json @elasticsearch:5:14
+problem EsProblem @elasticsearch:6:9
+problem_read Json @elasticsearch:5:14
+endpoint elasticsearch.index.delete DELETE -> IndexAck
+input client.url: Base @Elasticsearch:2:30
+input client.bulk_url: Base @Elasticsearch:2:41
+input client.authorization: Secret @Elasticsearch:2:57
+input index.name: String @index:18:21
+input delete.pretty?: bool @output:10:21
+input delete.filter_path?: Vec < String > @output:10:36
+idempotent false @elasticsearch.index.delete:51:51
+base url @elasticsearch:3:9
+path hole={name} cross_base=false @elasticsearch.index:19:18
+query wire=0 pretty ; cross_base=false @elasticsearch.index.delete part=output:11:21
+query wire=1 "filter_path" = filter_path . as_ref () . map (| p | p . join (",")) ; cross_base=false @elasticsearch.index.delete part=output:11:29
+header wire=0 "authorization" = authorization ; cross_base=false @elasticsearch:4:19
+read Json @elasticsearch:5:14
+problem EsProblem @elasticsearch:6:9
+problem_read Json @elasticsearch:5:14
+endpoint elasticsearch.indices.search GET -> SearchPage
+input client.url: Base @Elasticsearch:2:30
+input client.bulk_url: Base @Elasticsearch:2:41
+input client.authorization: Secret @Elasticsearch:2:57
+input indices.targets: String @indices:55:23
+input search.request: Value @search:57:24
+input search.pretty?: bool @output:10:21
+input search.filter_path?: Vec < String > @output:10:36
+idempotent true @elasticsearch.indices.search:60:17
+base url @elasticsearch:3:9
+path hole={targets} cross_base=false @elasticsearch.indices:56:18
+path text="_search" cross_base=false @elasticsearch.indices.search:58:22
+query wire=0 pretty ; cross_base=false @elasticsearch.indices.search part=output:11:21
+query wire=1 "filter_path" = filter_path . as_ref () . map (| p | p . join (",")) ; cross_base=false @elasticsearch.indices.search part=output:11:29
+header wire=0 "authorization" = authorization ; cross_base=false @elasticsearch:4:19
+body json (request) @elasticsearch.indices.search:59:22
+read Json @elasticsearch:5:14
+problem EsProblem @elasticsearch:6:9
+problem_read Json @elasticsearch:5:14
+endpoint elasticsearch.indices.count GET -> CountReply
+input client.url: Base @Elasticsearch:2:30
+input client.bulk_url: Base @Elasticsearch:2:41
+input client.authorization: Secret @Elasticsearch:2:57
+input indices.targets: String @indices:55:23
+input count.request: Value @count:62:23
+input count.pretty?: bool @output:10:21
+input count.filter_path?: Vec < String > @output:10:36
+base url @elasticsearch:3:9
+path hole={targets} cross_base=false @elasticsearch.indices:56:18
+path text="_count" cross_base=false @elasticsearch.indices.count:63:22
+query wire=0 pretty ; cross_base=false @elasticsearch.indices.count part=output:11:21
+query wire=1 "filter_path" = filter_path . as_ref () . map (| p | p . join (",")) ; cross_base=false @elasticsearch.indices.count part=output:11:29
+header wire=0 "authorization" = authorization ; cross_base=false @elasticsearch:4:19
+body json (request) @elasticsearch.indices.count:64:22
+read Json @elasticsearch:5:14
+problem EsProblem @elasticsearch:6:9
+problem_read Json @elasticsearch:5:14
+endpoint elasticsearch.indices.open_pit POST -> OpenedPit
+input client.url: Base @Elasticsearch:2:30
+input client.bulk_url: Base @Elasticsearch:2:41
+input client.authorization: Secret @Elasticsearch:2:57
+input indices.targets: String @indices:55:23
+input open_pit.keep_alive: String @open_pit:66:27
+input open_pit.pretty?: bool @output:10:21
+input open_pit.filter_path?: Vec < String > @output:10:36
+base url @elasticsearch:3:9
+path hole={targets} cross_base=false @elasticsearch.indices:56:18
+path text="_pit" cross_base=false @elasticsearch.indices.open_pit:67:22
+query wire=0 pretty ; cross_base=false @elasticsearch.indices.open_pit part=output:11:21
+query wire=1 "filter_path" = filter_path . as_ref () . map (| p | p . join (",")) ; cross_base=false @elasticsearch.indices.open_pit part=output:11:29
+query wire=2 keep_alive ; cross_base=false @elasticsearch.indices.open_pit:68:25
+header wire=0 "authorization" = authorization ; cross_base=false @elasticsearch:4:19
+read Json @elasticsearch:5:14
+problem EsProblem @elasticsearch:6:9
+problem_read Json @elasticsearch:5:14
+endpoint elasticsearch.bulk POST -> BulkReply
+input client.url: Base @Elasticsearch:2:30
+input client.bulk_url: Base @Elasticsearch:2:41
+input client.authorization: Secret @Elasticsearch:2:57
+input bulk.lines: Vec < Value > @bulk:72:19
+input bulk.pretty?: bool @output:10:21
+input bulk.filter_path?: Vec < String > @output:10:36
+input bulk.refresh?: Refresh @write_options:13:28
+input bulk.routing?: String @write_options:13:47
+base client.bulk_url @elasticsearch.bulk:73:13
+path text="_bulk" cross_base=false @elasticsearch.bulk:75:18
+query wire=0 pretty ; cross_base=false @elasticsearch.bulk part=output:11:21
+query wire=1 "filter_path" = filter_path . as_ref () . map (| p | p . join (",")) ; cross_base=false @elasticsearch.bulk part=output:11:29
+query wire=2 refresh ; cross_base=false @elasticsearch.bulk part=write_options:14:21
+query wire=3 routing ; cross_base=false @elasticsearch.bulk part=write_options:14:30
+header wire=0 "authorization" = client . authorization ; cross_base=false @elasticsearch.bulk:74:23
+body ndjson (lines) @elasticsearch.bulk:76:18
+read Json @elasticsearch:5:14
+problem EsProblem @elasticsearch:6:9
+problem_read Json @elasticsearch:5:14
+endpoint elasticsearch.search_pit POST -> SearchPage
+input client.url: Base @Elasticsearch:2:30
+input client.bulk_url: Base @Elasticsearch:2:41
+input client.authorization: Secret @Elasticsearch:2:57
+input search_pit.query: Value @search_pit:80:25
+input search_pit.pit_id: String @search_pit:80:39
+input search_pit.keep_alive: String @search_pit:80:55
+input search_pit.size?: u32 @search_pit:81:25
+input search_pit.cursor?: PitCursor @search_pit:81:37
+input search_pit.pretty?: bool @search_pit:81:57
+idempotent true @elasticsearch.search_pit:86:13
+base url @elasticsearch:3:9
+path text="_search" cross_base=false @elasticsearch.search_pit:82:18
+query wire=0 pretty ; cross_base=false @elasticsearch.search_pit:83:21
+header wire=0 "authorization" = authorization ; cross_base=false @elasticsearch:4:19
+body json (pit_body (query , pit_id , keep_alive , size , cursor)) @elasticsearch.search_pit:84:18
+read Json @elasticsearch:5:14
+problem EsProblem @elasticsearch:6:9
+problem_read Json @elasticsearch:5:14
+paginate pit_after (cursor) @elasticsearch.search_pit:85:22
+endpoint elasticsearch.close_pit DELETE -> ClosedPit
+input client.url: Base @Elasticsearch:2:30
+input client.bulk_url: Base @Elasticsearch:2:41
+input client.authorization: Secret @Elasticsearch:2:57
+input close_pit.id: String @close_pit:88:26
+input close_pit.pretty?: bool @output:10:21
+input close_pit.filter_path?: Vec < String > @output:10:36
+idempotent false @elasticsearch.close_pit:91:13
+base url @elasticsearch:3:9
+path text="_pit" cross_base=false @elasticsearch.close_pit:89:18
+query wire=0 pretty ; cross_base=false @elasticsearch.close_pit part=output:11:21
+query wire=1 "filter_path" = filter_path . as_ref () . map (| p | p . join (",")) ; cross_base=false @elasticsearch.close_pit part=output:11:29
+header wire=0 "authorization" = authorization ; cross_base=false @elasticsearch:4:19
+body json (j ! ({ "id" : id })) @elasticsearch.close_pit:90:18
+read Json @elasticsearch:5:14
+problem EsProblem @elasticsearch:6:9
+problem_read Json @elasticsearch:5:14
+endpoint elasticsearch.cat_indices GET -> CatReply
+input client.url: Base @Elasticsearch:2:30
+input client.bulk_url: Base @Elasticsearch:2:41
+input client.authorization: Secret @Elasticsearch:2:57
+input cat_indices.format?: CatFormat @cat_indices:93:25
+input cat_indices.pretty?: bool @output:10:21
+input cat_indices.filter_path?: Vec < String > @output:10:36
+base url @elasticsearch:3:9
+path text="_cat/indices" cross_base=false @elasticsearch.cat_indices:94:18
+query wire=0 pretty ; cross_base=false @elasticsearch.cat_indices part=output:11:21
+query wire=1 "filter_path" = filter_path . as_ref () . map (| p | p . join (",")) ; cross_base=false @elasticsearch.cat_indices part=output:11:29
+query wire=2 format ; cross_base=false @elasticsearch.cat_indices:95:21
+header wire=0 "authorization" = authorization ; cross_base=false @elasticsearch:4:19
+read Text @elasticsearch.cat_indices:96:18
+arm 2xx {body} => cat_reply (body , format) ? @elasticsearch.cat_indices:97:22
+problem EsProblem @elasticsearch:6:9
+problem_read Json @elasticsearch:5:14

@@ -1,7 +1,0 @@
-baseline: pass
-killed    clear-native-flag (old `set_sensitive(declaration)`): h7_inherited_composition, h6_native_sensitivity_without_marker, forwarded_forms, h4_each_order_and_flags
-killed    owner-Debug ignores native flag: generated_debug_of_every_owner, h6_native_sensitivity_without_marker
-killed    text policy relaxed to http's (obs-text accepted): generated_debug_of_every_owner, h9_scalars
-killed    literal not lowered to a static: h1_h4_client_values_on_the_wire
-killed    Prepared Debug prints sensitive values: h7_inherited_composition, h6_native_sensitivity_without_marker
-restored: pass

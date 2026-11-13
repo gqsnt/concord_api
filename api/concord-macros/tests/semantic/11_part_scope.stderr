@@ -1,0 +1,7 @@
+error: unknown input `outer.region`
+       label: a part sees its own inputs and client inputs only
+       help: a part can use only its own inputs and the client's; move this placement to the scope or endpoint that owns the input
+ --> tests/semantic/11_part_scope.rs:2:104
+  |
+2 |     client Workshop { base "https://workshop.test"; read Reader; part route() { headers { "x-region" = "{outer.region}"; } } scope ou...
+  |                                                                                                        ^^^^^^^^^^^^^^^^

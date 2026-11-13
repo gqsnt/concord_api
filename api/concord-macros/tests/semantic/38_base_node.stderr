@@ -1,0 +1,13 @@
+error: `base` is written in the part `one` and in this endpoint
+       label: the statements of a part count as this node's own
+       help: consolidate these contributions, retaining the intended value or body function and every input placement; use compatible parts or remove inputs that are no longer needed
+ --> tests/semantic/38_base_node.rs:2:126
+  |
+2 |     client Workshop { base "https://workshop.test"; read Reader; part one() { base "https://part.test"; } GET fetch(..one) { base "ht...
+  |                                                                                                                              ^^^^
+
+error: the part `one` writes it here
+ --> tests/semantic/38_base_node.rs:2:79
+  |
+2 |     client Workshop { base "https://workshop.test"; read Reader; part one() { base "https://part.test"; } GET fetch(..one) { base "ht...
+  |                                                                               ^^^^

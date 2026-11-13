@@ -1,0 +1,13 @@
+error: part `one` is named twice in this signature
+       label: a part is named once by one node
+       help: keep one `..one` spread
+ --> tests/semantic/38_twice.rs:2:98
+  |
+2 |     client Workshop { base "https://workshop.test"; read Reader; part one() {} GET fetch(..one,..one); }
+  |                                                                                                  ^^^
+
+error: the first `..one` is here
+ --> tests/semantic/38_twice.rs:2:92
+  |
+2 |     client Workshop { base "https://workshop.test"; read Reader; part one() {} GET fetch(..one,..one); }
+  |                                                                                            ^^^

@@ -1,7 +1,0 @@
-{
-  "access_token": "synthetic-access-rotated",
-  "token_type": "Bearer",
-  "expires_in": 3600,
-  "refresh_token": "synthetic-refresh-2",
-  "scope": "playlist-read-private playlist-read-collaborative"
-}

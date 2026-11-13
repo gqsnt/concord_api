@@ -1,0 +1,7 @@
+error: a path cannot contain a query
+       label: query begins here
+       help: merge every query pair with the existing query entries from this node, its parts and ancestors; resolve repeated keys deliberately and decode URL escapes; retain the path before the question mark
+   --> tests/real/m28.rs:107:22
+    |
+107 |                 path "by-puuid/{puuid}/ids?start=0&count=100";
+    |                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^

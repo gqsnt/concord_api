@@ -1,9 +1,0 @@
-{
-  "Fault": {
-    "Error": [
-      { "Message": "Object Not Found", "Detail": "synthetic detail", "code": "610", "element": "" }
-    ],
-    "type": "ValidationFault"
-  },
-  "time": "2026-11-07T10:00:01.000-08:00"
-}

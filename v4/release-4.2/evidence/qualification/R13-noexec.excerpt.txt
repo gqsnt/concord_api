@@ -1,8 +1,0 @@
-== R13-noexec
-FAIL: test_set_noexec (test_check_ci.Fails.test_set_noexec) (option='-n')
-FAIL: test_set_noexec (test_check_ci.Fails.test_set_noexec) (option='-o noexec')
-FAIL: test_set_noexec (test_check_ci.Fails.test_set_noexec) (option='-en')
-FAIL: test_set_noexec (test_check_ci.Fails.test_set_noexec) (option='-eo noexec')
-FAIL: test_set_unmodelled_option (test_check_ci.Fails.test_set_unmodelled_option)
-exit=1
-restored-bytes-verified

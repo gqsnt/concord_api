@@ -1,0 +1,7 @@
+error: unsupported attribute on an endpoint
+       label: an endpoint takes doc comments, #[cfg], #[deprecated] and #[doc(hidden)] only
+       help: remove `# [inline]` from this endpoint
+ --> tests/semantic/14_endpoint.rs:2:66
+  |
+2 |     client Workshop { base "https://workshop.test"; read Reader; #[inline] GET fetch(); }
+  |                                                                  ^^^^^^^^^

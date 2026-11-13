@@ -1,8 +1,0 @@
-[
-  {
-    "expected_field": "file\\name",
-    "actual_field": "filename",
-    "expected_filename": "report\\q.csv",
-    "actual_filename": "reportq.csv"
-  }
-]

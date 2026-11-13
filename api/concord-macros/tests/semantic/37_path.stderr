@@ -1,0 +1,7 @@
+error: a part cannot hold `path`
+       label: `path`, `problem`, `middleware` and children belong to the tree
+       help: place this behaviour on the appropriate tree node; consolidate it with any existing statement there
+ --> tests/semantic/37_path.rs:2:84
+  |
+2 |     client Workshop { base "https://workshop.test"; read Reader; part fragment() { path "records"; } GET fetch(..fragment); }
+  |                                                                                    ^^^^

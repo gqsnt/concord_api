@@ -1,0 +1,5 @@
+error: expected an expression
+ --> tests/real/damage_part_input.rs:5:38
+  |
+5 |         GET child(..supplied) { body ; }
+  |                                      ^

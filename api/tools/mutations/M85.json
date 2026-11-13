@@ -1,0 +1,9 @@
+{
+  "id": "M85",
+  "area": "shipped-readers",
+  "contract": "docs/contracts.md C5.4 / docs/crate.md Binary.limit",
+  "description": "Ignore a Binary reader limit override",
+  "file": "concord-extras/src/read.rs",
+  "find": "        body.bytes(self.limit.unwrap_or(LIMIT)).await",
+  "replace": "        body.bytes(LIMIT).await"
+}

@@ -1,0 +1,52 @@
+concord::api! {
+    /// The Riot Games API (League of Legends subset).
+    pub client Riot(
+        /// The API key. Sent on every request unless an endpoint removes it.
+        key: Secret,
+    ) {
+        headers { "x-riot-token" = key; }
+        read Json;
+        problem RiotProblem;
+
+        /// Accounts (regional routing).
+        scope account(route: AccountRoute) {
+            base "https://{route}.api.riotgames.com";
+            path "riot/account/v1/accounts";
+
+            /// The account behind a Riot ID (`name#tag`). `None` when there is no such player.
+            GET by_riot_id(game_name: String, tag_line: String) -> Option<Account> {
+                path "by-riot-id/{game_name}/{tag_line}";
+                status { 404 => None }
+            }
+
+            /// The account of a signed-in player.
+            /// Uses the player's own token instead of the API key.
+            GET me(access_token: Secret) -> Account {
+                path "me";
+                headers { remove "x-riot-token"; "authorization" = "Bearer {access_token}"; }
+            }
+        }
+
+        /// Matches (regional routing).
+        scope matches(route: MatchRoute) {
+            base "https://{route}.api.riotgames.com";
+            path "lol/match/v5/matches";
+
+            /// Match ids of a player, newest first.
+            GET ids(
+                puuid: Puuid,
+                start?: u32,
+                count?: u32,
+                queue?: i32,
+                start_time?: i64,
+            ) -> Vec<MatchId> {
+                path "by-puuid/{puuid}/ids";
+                query { start; count; queue; "startTime" = start_time; }
+                paginate offset_limit(start, count);
+            }
+
+            /// One match.
+            GET get(id: MatchId) -> Match { path "{id}"; }
+        }
+    }
+}

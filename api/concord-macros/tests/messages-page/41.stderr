@@ -1,0 +1,7 @@
+error: a header name cannot be written with `_`
+       label: this entry would send a header named `user_agent`
+       help: write `"user-agent" = user_agent;`
+ --> tests/messages-page/41.rs:2:72
+  |
+2 | client Tasks(user_agent: String) { base "https://a.example"; headers { user_agent; } GET get(); }
+  |                                                                        ^^^^^^^^^^

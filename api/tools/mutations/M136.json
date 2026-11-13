@@ -1,0 +1,12 @@
+{
+  "id": "M136",
+  "area": "docs",
+  "contract": "macro.md 9.6",
+  "description": "Expose blanket Arg implementations in generated docs",
+  "file": "concord-core/src/arg.rs",
+  "find": "    #[doc(hidden)]\n    pub trait Arg<T>",
+  "replace": "    pub trait Arg<T>",
+  "checks": [
+    "docs-pages"
+  ]
+}

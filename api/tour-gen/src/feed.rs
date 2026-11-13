@@ -1,0 +1,46 @@
+concord::api! {
+/// A client for a feed whose pages are linked by cursors.
+///
+/// # Example
+///
+/// ```no_run
+/// use tour::Feed;
+///
+/// # async fn example() -> tour::feed::Result<()> {
+/// let feed = Feed::new();
+/// let mut pages = feed.by_cursor().pages();
+/// while let Some(page) = pages.try_next().await? {
+///     for entry in page { println!("{}", entry.name); }
+/// }
+/// # Ok(())
+/// # }
+/// ```
+///
+pub client Feed {
+    read Json;
+    base "https://feed.example.com";
+    /// List feed entries using the cursor returned by the server.
+    GET list(
+        /// Continue after this cursor.
+        starting_after?: String,
+    ) -> Page {
+        path "items";
+        query { starting_after; }
+        paginate move |call, page| page.value().next_cursor().map(|cursor| call.starting_after(cursor));
+    }
+    /// List feed entries with an ordinary cursor pager.
+    GET by_cursor(
+        /// Continue after this cursor.
+        starting_after?: String,
+    ) -> Page {
+        path "cursor-items";
+        query { starting_after; }
+        paginate by_cursor(starting_after, page_cursor);
+    }
+    /// List feed entries by following the next Link header.
+    GET linked() -> Page {
+        path "linked-items";
+        paginate by_link();
+    }
+}
+}

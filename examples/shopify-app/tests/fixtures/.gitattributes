@@ -1,3 +1,0 @@
-# Fixtures are compared byte for byte (sha256 in MANIFEST.json, byte positions in the tests):
-# never convert line endings on checkout.
-* -text

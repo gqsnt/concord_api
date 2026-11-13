@@ -1,0 +1,4 @@
+concord::api! {
+client Tasks { base "https://a.example"; scope items(start?: u32) { query { start; } paginate by_offset(start); GET list(); } }
+}
+fn main() {}

@@ -1,0 +1,9 @@
+{
+  "id": "M78",
+  "area": "shipped-pagers",
+  "contract": "docs/contracts.md C8.6 by_offset_limit",
+  "description": "Stop on a full page as well as a short page",
+  "file": "concord-extras/src/page.rs",
+  "find": "if got < asked {",
+  "replace": "if got <= asked {"
+}

@@ -1,5 +1,0 @@
-error: `a` is not an enclosing owner of `Api.b.two`; qualify with `client` or the name of an enclosing scope
- --> tests/ui/qualified_non_ancestor.rs:5:45
-  |
-5 |         scope b { GET two() { query { "x" = a.x; } } }
-  |                                             ^

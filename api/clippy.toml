@@ -1,0 +1,12 @@
+# These exceptions apply to test functions and #[cfg(test)] modules only.
+allow-unwrap-in-tests = true
+allow-expect-in-tests = true
+allow-panic-in-tests = true
+allow-dbg-in-tests = true
+allow-print-in-tests = true
+allow-indexing-slicing-in-tests = true
+
+# Clippy has no allow-todo-in-tests or allow-unimplemented-in-tests setting.
+# Test modules needing either use:
+# #[allow(clippy::todo, clippy::unimplemented)]
+# Integration test crates can use the corresponding #![allow(...)] attribute.

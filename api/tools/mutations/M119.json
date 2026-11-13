@@ -1,0 +1,12 @@
+{
+  "id": "M119",
+  "area": "test-metadata",
+  "contract": "C2.3",
+  "description": "Mislabel literal path tests as query serialization",
+  "file": "concord-core/src/__private/build.rs",
+  "find": "fn c2_3_literal_segments_borrow",
+  "replace": "fn c2_5_literal_segments_borrow",
+  "checks": [
+    "surface"
+  ]
+}

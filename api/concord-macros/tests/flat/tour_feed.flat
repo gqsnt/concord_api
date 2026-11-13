@@ -1,0 +1,19 @@
+endpoint feed.list GET -> Page
+input list.starting_after?: String @list:7:9
+base "https://feed.example.com" @feed:3:5
+path text="items" cross_base=false @feed.list:9:14
+query wire=0 starting_after ; cross_base=false @feed.list:10:17
+read Json @feed:2:10
+paginate move | call , page | page . value () . next_cursor () . map (| cursor | call . starting_after (cursor)) @feed.list:11:18
+endpoint feed.by_cursor GET -> Page
+input by_cursor.starting_after?: String @by_cursor:16:9
+base "https://feed.example.com" @feed:3:5
+path text="cursor-items" cross_base=false @feed.by_cursor:18:14
+query wire=0 starting_after ; cross_base=false @feed.by_cursor:19:17
+read Json @feed:2:10
+paginate by_cursor (starting_after , page_cursor) @feed.by_cursor:20:18
+endpoint feed.linked GET -> Page
+base "https://feed.example.com" @feed:3:5
+path text="linked-items" cross_base=false @feed.linked:24:14
+read Json @feed:2:10
+paginate by_link () @feed.linked:25:18

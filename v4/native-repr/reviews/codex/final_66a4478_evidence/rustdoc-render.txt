@@ -1,6 +1,0 @@
-[3:3:1102/081302.754272:ERROR:third_party/crashpad/crashpad/util/file/file_io_posix.cc:208] open /home/canarit/.config/google-chrome/Crash Reports/settings.dat: Read-only file system (30)
-[3:3:1102/081302.755602:ERROR:third_party/crashpad/crashpad/util/file/file_io_posix.cc:208] open /home/canarit/.config/google-chrome/Crash Reports/settings.dat: Read-only file system (30)
-[3:3:1102/081302.761713:FATAL:sandbox/linux/suid/client/setuid_sandbox_host.cc:172] The SUID sandbox helper binary was found, but is not configured correctly. Rather than run without sandboxing I'm aborting now. You need to make sure that /opt/google/chrome/chrome-sandbox is owned by root and has mode 4755.
-[1102/081302.767303:ERROR:third_party/crashpad/crashpad/util/file/file_io_posix.cc:208] open /home/canarit/.config/google-chrome/Crash Reports/settings.dat: Read-only file system (30)
-[1102/081302.767803:ERROR:third_party/crashpad/crashpad/util/file/file_io_posix.cc:153] open /home/canarit/.config/google-chrome/Crash Reports/new/d2082657-7aa9-412f-a837-1ec8565e95b6.dmp: Read-only file system (30)
-[1102/081302.767815:ERROR:third_party/crashpad/crashpad/handler/linux/crash_report_exception_handler.cc:209] PrepareNewCrashReport failed

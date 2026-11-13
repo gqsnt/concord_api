@@ -1,0 +1,300 @@
+middleware Signed :: new (credentials . clone () , region . clone ()) @object_store:6:20
+endpoint object_store.list_buckets GET -> BucketsPage
+input client.region: String @ObjectStore:2:28
+input client.credentials: Credentials @ObjectStore:2:44
+input list_buckets.max_buckets?: u32 @list_buckets:38:13
+input list_buckets.continuation_token?: String @list_buckets:38:32
+input list_buckets.prefix?: String @list_buckets:38:61
+base "https://s3.amazonaws.com" @object_store.list_buckets:40:13
+query wire=0 "max-buckets" = max_buckets ; cross_base=false @object_store.list_buckets:42:17
+query wire=1 "continuation-token" = continuation_token ; cross_base=false @object_store.list_buckets:43:17
+query wire=2 prefix ; cross_base=false @object_store.list_buckets:44:17
+read Xml @object_store:3:14
+problem crate :: model :: S3Problem @object_store:4:9
+problem_read Xml @object_store:3:14
+paginate by_cursor (continuation_token , BucketsPage :: next) @object_store.list_buckets:46:22
+endpoint object_store.bucket.head HEAD -> ()
+input client.region: String @ObjectStore:2:28
+input client.credentials: Credentials @ObjectStore:2:44
+input bucket.url: Base @bucket:49:22
+base url @object_store.bucket:50:13
+read Xml @object_store:3:14
+problem crate :: model :: S3Problem @object_store:4:9
+problem_read Xml @object_store:3:14
+endpoint object_store.bucket.create PUT -> ()
+input client.region: String @ObjectStore:2:28
+input client.credentials: Credentials @ObjectStore:2:44
+input bucket.url: Base @bucket:49:22
+input create.configuration?: CreateBucketConfiguration @create:55:24
+idempotent false @object_store.bucket.create:57:17
+base url @object_store.bucket:50:13
+body create_bucket_body (configuration) @object_store.bucket.create:56:22
+read Xml @object_store:3:14
+problem crate :: model :: S3Problem @object_store:4:9
+problem_read Xml @object_store:3:14
+endpoint object_store.bucket.delete DELETE -> ()
+input client.region: String @ObjectStore:2:28
+input client.credentials: Credentials @ObjectStore:2:44
+input bucket.url: Base @bucket:49:22
+base url @object_store.bucket:50:13
+read Xml @object_store:3:14
+problem crate :: model :: S3Problem @object_store:4:9
+problem_read Xml @object_store:3:14
+endpoint object_store.bucket.list_objects GET -> ObjectsPage
+input client.region: String @ObjectStore:2:28
+input client.credentials: Credentials @ObjectStore:2:44
+input bucket.url: Base @bucket:49:22
+input list_objects.max_keys?: u32 @list_objects:62:17
+input list_objects.continuation_token?: String @list_objects:62:33
+input list_objects.start_after?: String @list_objects:63:17
+input list_objects.fetch_owner?: bool @list_objects:63:39
+input list_objects.prefix?: String @listing:33:22
+input list_objects.delimiter?: String @listing:33:39
+base url @object_store.bucket:50:13
+query wire=0 prefix ; cross_base=false @object_store.bucket.list_objects part=listing:34:21
+query wire=1 delimiter ; cross_base=false @object_store.bucket.list_objects part=listing:34:29
+query wire=2 "list-type" = "2" ; cross_base=false @object_store.bucket.list_objects:66:21
+query wire=3 "encoding-type" = "url" ; cross_base=false @object_store.bucket.list_objects:67:21
+query wire=4 "max-keys" = max_keys ; cross_base=false @object_store.bucket.list_objects:68:21
+query wire=5 "continuation-token" = continuation_token ; cross_base=false @object_store.bucket.list_objects:69:21
+query wire=6 "start-after" = start_after ; cross_base=false @object_store.bucket.list_objects:70:21
+query wire=7 "fetch-owner" = fetch_owner ; cross_base=false @object_store.bucket.list_objects:71:21
+read Xml @object_store:3:14
+problem crate :: model :: S3Problem @object_store:4:9
+problem_read Xml @object_store:3:14
+paginate checked_cursor (continuation_token , ObjectsPage :: next) @object_store.bucket.list_objects:73:26
+endpoint object_store.bucket.delete_objects POST -> DeleteResult
+input client.region: String @ObjectStore:2:28
+input client.credentials: Credentials @ObjectStore:2:44
+input bucket.url: Base @bucket:49:22
+input delete_objects.batch: DeleteBatch @delete_objects:76:33
+base url @object_store.bucket:50:13
+query wire=0 "delete" = "" ; cross_base=false @object_store.bucket.delete_objects:77:25
+body crate :: wire :: xml (batch) @object_store.bucket.delete_objects:78:22
+read Xml @object_store:3:14
+problem crate :: model :: S3Problem @object_store:4:9
+problem_read Xml @object_store:3:14
+endpoint object_store.bucket.list_multipart_uploads GET -> UploadsPage
+input client.region: String @ObjectStore:2:28
+input client.credentials: Credentials @ObjectStore:2:44
+input bucket.url: Base @bucket:49:22
+input list_multipart_uploads.max_uploads?: u32 @list_multipart_uploads:81:17
+input list_multipart_uploads.key_marker?: String @list_multipart_uploads:81:36
+input list_multipart_uploads.upload_id_marker?: String @list_multipart_uploads:82:17
+input list_multipart_uploads.prefix?: String @listing:33:22
+input list_multipart_uploads.delimiter?: String @listing:33:39
+base url @object_store.bucket:50:13
+query wire=0 prefix ; cross_base=false @object_store.bucket.list_multipart_uploads part=listing:34:21
+query wire=1 delimiter ; cross_base=false @object_store.bucket.list_multipart_uploads part=listing:34:29
+query wire=2 "uploads" = "" ; cross_base=false @object_store.bucket.list_multipart_uploads:85:21
+query wire=3 "encoding-type" = "url" ; cross_base=false @object_store.bucket.list_multipart_uploads:86:21
+query wire=4 "max-uploads" = max_uploads ; cross_base=false @object_store.bucket.list_multipart_uploads:87:21
+query wire=5 "key-marker" = key_marker ; cross_base=false @object_store.bucket.list_multipart_uploads:88:21
+query wire=6 "upload-id-marker" = upload_id_marker ; cross_base=false @object_store.bucket.list_multipart_uploads:89:21
+read Xml @object_store:3:14
+problem crate :: model :: S3Problem @object_store:4:9
+problem_read Xml @object_store:3:14
+paginate uploads_after (key_marker , upload_id_marker) @object_store.bucket.list_multipart_uploads:91:26
+endpoint object_store.bucket.object.get GET -> ByteStream
+input client.region: String @ObjectStore:2:28
+input client.credentials: Credentials @ObjectStore:2:44
+input bucket.url: Base @bucket:49:22
+input object.key: String @object:94:26
+input get.range?: String @get:97:25
+input get.version_id?: String @version:8:22
+input get.if_match?: String @conditions:12:13
+input get.if_modified_since?: String @conditions:13:13
+input get.if_unmodified_since?: String @conditions:14:13
+base url @object_store.bucket:50:13
+path hole={*key} cross_base=false @object_store.bucket.object:95:22
+query wire=0 "versionId" = version_id ; cross_base=false @object_store.bucket.object.get part=version:9:21
+header wire=0 "if-match" = if_match ; cross_base=false @object_store.bucket.object.get part=conditions:17:17
+header wire=1 "if-modified-since" = if_modified_since ; cross_base=false @object_store.bucket.object.get part=conditions:18:17
+header wire=2 "if-unmodified-since" = if_unmodified_since ; cross_base=false @object_store.bucket.object.get part=conditions:19:17
+header wire=3 "range" = range ; cross_base=false @object_store.bucket.object.get:98:31
+read Stream @object_store.bucket.object.get:99:26
+problem crate :: model :: S3Problem @object_store:4:9
+problem_read Xml @object_store:3:14
+endpoint object_store.bucket.object.get_if_changed GET -> Option < ByteStream >
+input client.region: String @ObjectStore:2:28
+input client.credentials: Credentials @ObjectStore:2:44
+input bucket.url: Base @bucket:49:22
+input object.key: String @object:94:26
+input get_if_changed.etag: String @get_if_changed:102:21
+input get_if_changed.range?: String @get_if_changed:102:35
+input get_if_changed.version_id?: String @version:8:22
+input get_if_changed.if_match?: String @conditions:12:13
+input get_if_changed.if_modified_since?: String @conditions:13:13
+input get_if_changed.if_unmodified_since?: String @conditions:14:13
+base url @object_store.bucket:50:13
+path hole={*key} cross_base=false @object_store.bucket.object:95:22
+query wire=0 "versionId" = version_id ; cross_base=false @object_store.bucket.object.get_if_changed part=version:9:21
+header wire=0 "if-match" = if_match ; cross_base=false @object_store.bucket.object.get_if_changed part=conditions:17:17
+header wire=1 "if-modified-since" = if_modified_since ; cross_base=false @object_store.bucket.object.get_if_changed part=conditions:18:17
+header wire=2 "if-unmodified-since" = if_unmodified_since ; cross_base=false @object_store.bucket.object.get_if_changed part=conditions:19:17
+header wire=3 "if-none-match" = etag ; cross_base=false @object_store.bucket.object.get_if_changed:104:31
+header wire=4 "range" = range ; cross_base=false @object_store.bucket.object.get_if_changed:104:55
+read Stream @object_store.bucket.object.get_if_changed:105:26
+arm 304 {} => None @object_store.bucket.object.get_if_changed:106:30
+problem crate :: model :: S3Problem @object_store:4:9
+problem_read Xml @object_store:3:14
+endpoint object_store.bucket.object.head HEAD -> http :: HeaderMap
+input client.region: String @ObjectStore:2:28
+input client.credentials: Credentials @ObjectStore:2:44
+input bucket.url: Base @bucket:49:22
+input object.key: String @object:94:26
+input head.version_id?: String @version:8:22
+input head.if_match?: String @conditions:12:13
+input head.if_modified_since?: String @conditions:13:13
+input head.if_unmodified_since?: String @conditions:14:13
+base url @object_store.bucket:50:13
+path hole={*key} cross_base=false @object_store.bucket.object:95:22
+query wire=0 "versionId" = version_id ; cross_base=false @object_store.bucket.object.head part=version:9:21
+header wire=0 "if-match" = if_match ; cross_base=false @object_store.bucket.object.head part=conditions:17:17
+header wire=1 "if-modified-since" = if_modified_since ; cross_base=false @object_store.bucket.object.head part=conditions:18:17
+header wire=2 "if-unmodified-since" = if_unmodified_since ; cross_base=false @object_store.bucket.object.head part=conditions:19:17
+read Xml @object_store:3:14
+arm 2xx {headers} => headers . as_map () . clone () @object_store.bucket.object.head:109:30
+problem crate :: model :: S3Problem @object_store:4:9
+problem_read Xml @object_store:3:14
+endpoint object_store.bucket.object.put PUT -> String
+input client.region: String @ObjectStore:2:28
+input client.credentials: Credentials @ObjectStore:2:44
+input bucket.url: Base @bucket:49:22
+input object.key: String @object:94:26
+input put.file: Body @put:112:25
+input put.size: u64 @put:112:37
+input put.content_type?: String @write_headers:23:13
+input put.cache_control?: String @write_headers:24:13
+input put.storage_class?: String @write_headers:25:13
+idempotent false @object_store.bucket.object.put:116:21
+base url @object_store.bucket:50:13
+path hole={*key} cross_base=false @object_store.bucket.object:95:22
+header wire=0 "content-type" = content_type ; cross_base=false @object_store.bucket.object.put part=write_headers:28:17
+header wire=1 "cache-control" = cache_control ; cross_base=false @object_store.bucket.object.put part=write_headers:29:17
+header wire=2 "x-amz-storage-class" = storage_class ; cross_base=false @object_store.bucket.object.put part=write_headers:30:17
+header wire=3 "content-length" = size ; cross_base=false @object_store.bucket.object.put:113:31
+body file @object_store.bucket.object.put:114:26
+read Xml @object_store:3:14
+arm 2xx {headers} => headers . require ("etag") ? . to_owned () @object_store.bucket.object.put:115:30
+problem crate :: model :: S3Problem @object_store:4:9
+problem_read Xml @object_store:3:14
+endpoint object_store.bucket.object.copy_from PUT -> CopyResult
+input client.region: String @ObjectStore:2:28
+input client.credentials: Credentials @ObjectStore:2:44
+input bucket.url: Base @bucket:49:22
+input object.key: String @object:94:26
+input copy_from.source_bucket: String @copy_from:119:21
+input copy_from.source_key: String @copy_from:119:44
+input copy_from.source_version?: String @copy_from:120:21
+input copy_from.source_if_match?: String @copy_from:120:46
+input copy_from.metadata_directive?: String @copy_from:121:21
+input copy_from.content_type?: String @write_headers:23:13
+input copy_from.cache_control?: String @write_headers:24:13
+input copy_from.storage_class?: String @write_headers:25:13
+idempotent false @object_store.bucket.object.copy_from:129:21
+base url @object_store.bucket:50:13
+path hole={*key} cross_base=false @object_store.bucket.object:95:22
+header wire=0 "content-type" = content_type ; cross_base=false @object_store.bucket.object.copy_from part=write_headers:28:17
+header wire=1 "cache-control" = cache_control ; cross_base=false @object_store.bucket.object.copy_from part=write_headers:29:17
+header wire=2 "x-amz-storage-class" = storage_class ; cross_base=false @object_store.bucket.object.copy_from part=write_headers:30:17
+header wire=3 "x-amz-copy-source" = copy_source (source_bucket , source_key , source_version) ; cross_base=false @object_store.bucket.object.copy_from:124:25
+header wire=4 "x-amz-copy-source-if-match" = source_if_match ; cross_base=false @object_store.bucket.object.copy_from:125:25
+header wire=5 "x-amz-metadata-directive" = metadata_directive ; cross_base=false @object_store.bucket.object.copy_from:126:25
+read Xml @object_store:3:14
+arm 2xx {body} => copy_ok (body) ? @object_store.bucket.object.copy_from:128:30
+problem crate :: model :: S3Problem @object_store:4:9
+problem_read Xml @object_store:3:14
+endpoint object_store.bucket.object.delete DELETE -> ()
+input client.region: String @ObjectStore:2:28
+input client.credentials: Credentials @ObjectStore:2:44
+input bucket.url: Base @bucket:49:22
+input object.key: String @object:94:26
+input delete.version_id?: String @version:8:22
+idempotent version_id . as_ref () . is_some_and (| id | id != "null") @object_store.bucket.object.delete:132:21
+base url @object_store.bucket:50:13
+path hole={*key} cross_base=false @object_store.bucket.object:95:22
+query wire=0 "versionId" = version_id ; cross_base=false @object_store.bucket.object.delete part=version:9:21
+read Xml @object_store:3:14
+problem crate :: model :: S3Problem @object_store:4:9
+problem_read Xml @object_store:3:14
+endpoint object_store.bucket.object.create_multipart_upload POST -> InitiatedUpload
+input client.region: String @ObjectStore:2:28
+input client.credentials: Credentials @ObjectStore:2:44
+input bucket.url: Base @bucket:49:22
+input object.key: String @object:94:26
+input create_multipart_upload.content_type?: String @write_headers:23:13
+input create_multipart_upload.cache_control?: String @write_headers:24:13
+input create_multipart_upload.storage_class?: String @write_headers:25:13
+base url @object_store.bucket:50:13
+path hole={*key} cross_base=false @object_store.bucket.object:95:22
+query wire=0 "uploads" = "" ; cross_base=false @object_store.bucket.object.create_multipart_upload:135:29
+header wire=0 "content-type" = content_type ; cross_base=false @object_store.bucket.object.create_multipart_upload part=write_headers:28:17
+header wire=1 "cache-control" = cache_control ; cross_base=false @object_store.bucket.object.create_multipart_upload part=write_headers:29:17
+header wire=2 "x-amz-storage-class" = storage_class ; cross_base=false @object_store.bucket.object.create_multipart_upload part=write_headers:30:17
+read Xml @object_store:3:14
+problem crate :: model :: S3Problem @object_store:4:9
+problem_read Xml @object_store:3:14
+endpoint object_store.bucket.object.upload.upload_part PUT -> String
+input client.region: String @ObjectStore:2:28
+input client.credentials: Credentials @ObjectStore:2:44
+input bucket.url: Base @bucket:49:22
+input object.key: String @object:94:26
+input upload.upload_id: String @upload:138:30
+input upload_part.part_number: u32 @upload_part:141:37
+input upload_part.file: Body @upload_part:141:55
+input upload_part.size: u64 @upload_part:141:67
+base url @object_store.bucket:50:13
+path hole={*key} cross_base=false @object_store.bucket.object:95:22
+query wire=0 "uploadId" = upload_id ; cross_base=false @object_store.bucket.object.upload:139:29
+query wire=1 "partNumber" = part_number ; cross_base=false @object_store.bucket.object.upload.upload_part:142:33
+header wire=0 "content-length" = size ; cross_base=false @object_store.bucket.object.upload.upload_part:143:35
+body file @object_store.bucket.object.upload.upload_part:144:30
+read Xml @object_store:3:14
+arm 2xx {headers} => headers . require ("etag") ? . to_owned () @object_store.bucket.object.upload.upload_part:145:34
+problem crate :: model :: S3Problem @object_store:4:9
+problem_read Xml @object_store:3:14
+endpoint object_store.bucket.object.upload.complete POST -> CompleteResult
+input client.region: String @ObjectStore:2:28
+input client.credentials: Credentials @ObjectStore:2:44
+input bucket.url: Base @bucket:49:22
+input object.key: String @object:94:26
+input upload.upload_id: String @upload:138:30
+input complete.parts: CompleteUpload @complete:147:35
+base url @object_store.bucket:50:13
+path hole={*key} cross_base=false @object_store.bucket.object:95:22
+query wire=0 "uploadId" = upload_id ; cross_base=false @object_store.bucket.object.upload:139:29
+body crate :: wire :: xml (parts) @object_store.bucket.object.upload.complete:148:30
+read Xml @object_store:3:14
+arm 2xx {body} => complete_ok (body) ? @object_store.bucket.object.upload.complete:149:34
+problem crate :: model :: S3Problem @object_store:4:9
+problem_read Xml @object_store:3:14
+endpoint object_store.bucket.object.upload.abort DELETE -> ()
+input client.region: String @ObjectStore:2:28
+input client.credentials: Credentials @ObjectStore:2:44
+input bucket.url: Base @bucket:49:22
+input object.key: String @object:94:26
+input upload.upload_id: String @upload:138:30
+base url @object_store.bucket:50:13
+path hole={*key} cross_base=false @object_store.bucket.object:95:22
+query wire=0 "uploadId" = upload_id ; cross_base=false @object_store.bucket.object.upload:139:29
+read Xml @object_store:3:14
+problem crate :: model :: S3Problem @object_store:4:9
+problem_read Xml @object_store:3:14
+endpoint object_store.bucket.object.upload.list_parts GET -> PartsPage
+input client.region: String @ObjectStore:2:28
+input client.credentials: Credentials @ObjectStore:2:44
+input bucket.url: Base @bucket:49:22
+input object.key: String @object:94:26
+input upload.upload_id: String @upload:138:30
+input list_parts.max_parts?: u32 @list_parts:153:25
+input list_parts.part_number_marker?: u32 @list_parts:153:42
+base url @object_store.bucket:50:13
+path hole={*key} cross_base=false @object_store.bucket.object:95:22
+query wire=0 "uploadId" = upload_id ; cross_base=false @object_store.bucket.object.upload:139:29
+query wire=1 "max-parts" = max_parts ; cross_base=false @object_store.bucket.object.upload.list_parts:156:29
+query wire=2 "part-number-marker" = part_number_marker ; cross_base=false @object_store.bucket.object.upload.list_parts:157:29
+read Xml @object_store:3:14
+problem crate :: model :: S3Problem @object_store:4:9
+problem_read Xml @object_store:3:14
+paginate checked_cursor (part_number_marker , PartsPage :: next) @object_store.bucket.object.upload.list_parts:159:34

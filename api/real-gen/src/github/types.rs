@@ -1,0 +1,38 @@
+type ProbeProblem = GithubProblem;
+model!(Asset);
+model!(Comment);
+model!(ContentEntry);
+model!(ContentWrite);
+model!(Contents);
+model!(ContributorStats);
+model!(Direction);
+model!(EditIssue);
+model!(GithubProblem);
+model!(Issue);
+model!(IssueSort);
+model!(IssueState);
+model!(MergePull);
+model!(MergeResult);
+model!(NewIssue);
+model!(NewPull);
+model!(NewRelease);
+model!(NewRepository);
+model!(OrgRepoType);
+model!(PublicRepoType);
+model!(Pull);
+model!(PullFile);
+model!(PullSort);
+model!(PutContent);
+model!(QuotaLog);
+model!(RateLimits);
+model!(Release);
+model!(RepoSort);
+model!(Repository);
+model!(SearchPage<T>);
+model!(User);
+model!(UserRepoType);
+model!(Visibility);
+/// Inert middleware `Quota`.
+pub type Quota = Stub;
+/// Inert middleware `Cooldown`.
+pub type Cooldown = Stub;

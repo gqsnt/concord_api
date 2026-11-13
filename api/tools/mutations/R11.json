@@ -1,0 +1,9 @@
+{
+  "id": "R11",
+  "area": "retry",
+  "contract": "A56",
+  "description": "reseed each retry number with first-attempt entropy",
+  "file": "concord-core/src/__private/run.rs",
+  "find": "random(&random_state, n)",
+  "replace": "random(&random_state, 1)"
+}

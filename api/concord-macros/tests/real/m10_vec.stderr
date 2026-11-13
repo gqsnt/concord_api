@@ -1,0 +1,7 @@
+error: input types must own their data
+       label: borrowed input type
+       help: write `types?: Vec<String>`; callers may still pass references
+  --> tests/real/m10_vec.rs:29:29
+   |
+29 |                 types?: Vec<&str>,
+   |                             ^^^^

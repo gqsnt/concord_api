@@ -1,7 +1,0 @@
-OpenAI Codex v0.166.0
-model: gpt-6-astra
-provider: openai
-approval: never
-sandbox: workspace-write [workdir, /tmp, $TMPDIR] (network access enabled)
-reasoning effort: xhigh
-session id: 01a1a9c5-f8a3-7de1-b95f-ec8783721e8a

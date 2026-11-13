@@ -1,5 +1,0 @@
-error: `left` is not an enclosing owner of `Api.right.leaf`; qualify with `client` or the name of an enclosing scope
- --> tests/ui_d16/non_ancestor.rs:5:54
-  |
-5 |         scope right { GET leaf() { query { "value" = left.value; } } }
-  |                                                      ^^^^

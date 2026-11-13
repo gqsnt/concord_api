@@ -1,7 +1,0 @@
-{
-  "batchcomplete": true,
-  "query": {"categorymembers": [
-    {"pageid": 2, "ns": 14, "title": "Category:Rust language"},
-    {"pageid": 3, "ns": 6, "title": "File:Rust.svg"}
-  ]}
-}

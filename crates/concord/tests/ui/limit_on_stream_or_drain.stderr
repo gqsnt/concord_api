@@ -1,5 +1,0 @@
-error: `limit` bounds a finite typed output (`-> T`): a drained body is not buffered, and a stream reader (`-> stream`) has its own limits
- --> tests/ui/limit_on_stream_or_drain.rs:4:37
-  |
-4 |         DELETE remove() { path "x"; limit 1024; }
-  |                                     ^^^^^

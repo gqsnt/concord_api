@@ -1,0 +1,7 @@
+error: input `limit` is never used
+       label: no placement or behaviour uses this input
+       help: place this input in the intended path, base, query, headers, body or behaviour, or remove its declaration
+   --> tests/real/m09.rs:314:64
+    |
+314 |             GET leaderboard(id: ChallengeId, level: ApexLevel, limit?: u32) -> Vec<ApexPlayer> {
+    |                                                                ^^^^^

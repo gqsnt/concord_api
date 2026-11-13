@@ -1,6 +1,0 @@
-== R20-control-prefixes: python3 -I -B -m unittest discover -s scripts/tests -p test_check_ci.py
-FAIL: test_control_command_behind_prefixes (test_check_ci.Fails.test_control_command_behind_prefixes) (line='builtin exit 0')
-FAIL: test_control_command_behind_prefixes (test_check_ci.Fails.test_control_command_behind_prefixes) (line='command exit 0')
-FAIL: test_control_command_behind_prefixes (test_check_ci.Fails.test_control_command_behind_prefixes) (line='REVIEW_OPTION=1 exit 0')
-FAIL: test_control_command_behind_prefixes (test_check_ci.Fails.test_control_command_behind_prefixes) (line='builtin exec true')
-FAILED (failures=4)

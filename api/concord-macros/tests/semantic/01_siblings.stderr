@@ -1,0 +1,29 @@
+error: duplicate child name `fetch`
+       label: already declared in this block
+       help: give this endpoint a distinct name, or remove the duplicate declaration
+ --> tests/semantic/01_siblings.rs:2:41
+  |
+2 |     client Workshop { GET fetch(); POST fetch(); }
+  |                                         ^^^^^
+
+error: the first child is here
+ --> tests/semantic/01_siblings.rs:2:27
+  |
+2 |     client Workshop { GET fetch(); POST fetch(); }
+  |                           ^^^^^
+
+error: no `base` in reach of this endpoint
+       label: no `base` here or above
+       help: set the intended base URL on this endpoint or an ancestor
+ --> tests/semantic/01_siblings.rs:2:27
+  |
+2 |     client Workshop { GET fetch(); POST fetch(); }
+  |                           ^^^^^
+
+error: no `base` in reach of this endpoint
+       label: no `base` here or above
+       help: set the intended base URL on this endpoint or an ancestor
+ --> tests/semantic/01_siblings.rs:2:41
+  |
+2 |     client Workshop { GET fetch(); POST fetch(); }
+  |                                         ^^^^^

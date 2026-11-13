@@ -1,5 +1,0 @@
-== R19-written-delimiters: cargo +1.99.1 test --locked -p concord-macros documented_initializers
-test emit::tests::documented_initializers_keep_forwarded_grouping ... FAILED
-test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 16 filtered out; finished in 0.00s
-exit=101
-restored-bytes-verified

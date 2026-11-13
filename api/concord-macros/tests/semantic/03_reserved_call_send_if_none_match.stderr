@@ -1,0 +1,7 @@
+error: `send_if_none_match` is reserved by Concord
+       label: conflicts with a generated method
+       help: rename this input to `send_if_none_match_value`; update its references in the existing query placements and expressions, retaining the wire keys and fixed text for send_if_none_match
+ --> tests/semantic/03_reserved_call_send_if_none_match.rs:2:76
+  |
+2 |     client Workshop { base "https://workshop.test"; read Reader; GET fetch(send_if_none_match?: String) { query { send_if_none_match;...
+  |                                                                            ^^^^^^^^^^^^^^^^^^

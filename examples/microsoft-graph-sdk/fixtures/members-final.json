@@ -1,7 +1,0 @@
-{
-  "value":[
-    {"@odata.type":"#microsoft.graph.user", "id":"user-c", "displayName":"Cora Example"},
-    {"@odata.type":"#microsoft.graph.group", "id":"group-nested", "displayName":"Not traversed"},
-    {"@odata.type":"#microsoft.graph.orgContact", "id":"contact-one", "displayName":"Example Contact"}
-  ]
-}

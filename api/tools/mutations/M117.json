@@ -1,0 +1,12 @@
+{
+  "id": "M117",
+  "area": "hygiene",
+  "contract": "release-maintenance",
+  "description": "Keep the test-only path reference in production",
+  "file": "concord-core/src/base.rs",
+  "find": "#[cfg(test)]\n    pub(crate) fn join_path",
+  "replace": "pub(crate) fn join_path",
+  "checks": [
+    "surface"
+  ]
+}

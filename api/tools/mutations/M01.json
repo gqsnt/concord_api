@@ -1,0 +1,9 @@
+{
+  "id": "M01",
+  "area": "calls",
+  "contract": "docs/contracts.md C3",
+  "description": "Build an ordinary call twice",
+  "file": "concord-core/src/__private/call.rs",
+  "find": "    fn send_full(self) -> Sending<Answer<Self::Value>, Self::Problem> {\n        Sending::new(async move { self.prepare()?.send().await })\n    }\n",
+  "replace": "    fn send_full(self) -> Sending<Answer<Self::Value>, Self::Problem> {\n        Sending::new(async move { let _ = self.request()?; self.prepare()?.send().await })\n    }\n"
+}

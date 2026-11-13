@@ -1,0 +1,7 @@
+error: an arm binds body, headers or status
+       label: no such part of an answer
+       help: write `404 { body: bodi } => document_404::<GetReply>(bodi)?`
+  --> tests/real/m34_bodi.rs:31:32
+   |
+31 |                 status { 404 { bodi } => document_404::<GetReply>(bodi)? }
+   |                                ^^^^

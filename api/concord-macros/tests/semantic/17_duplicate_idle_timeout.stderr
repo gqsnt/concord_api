@@ -1,0 +1,13 @@
+error: duplicate `idle_timeout` statement
+       label: this node already declares `idle_timeout`
+       help: keep one declaration of this behaviour, choosing its intended value
+ --> tests/semantic/17_duplicate_idle_timeout.rs:2:59
+  |
+2 |     client Workshop { GET fetch() { idle_timeout clock(); idle_timeout clock(); } }
+  |                                                           ^^^^^^^^^^^^
+
+error: the first `idle_timeout` statement is here
+ --> tests/semantic/17_duplicate_idle_timeout.rs:2:37
+  |
+2 |     client Workshop { GET fetch() { idle_timeout clock(); idle_timeout clock(); } }
+  |                                     ^^^^^^^^^^^^

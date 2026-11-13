@@ -1,1 +1,0 @@
-{"data":{"issues":null},"errors":[{"message":"Synthetic connection failure","path":["issues"],"locations":[{"line":1,"column":46}],"extensions":{"code":"SYNTHETIC_CONNECTION_ERROR"}}],"extensions":{"trace":"synthetic-null-connection"}}

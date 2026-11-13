@@ -1,0 +1,7 @@
+error: invalid API name
+       label: expected lower snake case
+       help: rename it to `bad_name` and update its references, retaining existing wire names
+ --> tests/semantic/05_input.rs:2:76
+  |
+2 |     client Workshop { base "https://workshop.test"; read Reader; GET fetch(Bad__Name: u8) { query { "wire" = Bad__Name; } } }
+  |                                                                            ^^^^^^^^^

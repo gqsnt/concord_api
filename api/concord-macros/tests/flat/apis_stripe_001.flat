@@ -1,0 +1,860 @@
+endpoint stripe.customers.create POST -> Customer
+input client.key: Secret @Stripe:5:9
+input client.account?: AccountId @Stripe:7:9
+input client.version?: String @Stripe:9:9
+input create.customer: NewCustomer @create:80:25
+input create.idempotency_key?: String @write:69:13
+input create.expand?: Vec < String > @write:71:13
+idempotent true @stripe.customers.create part=write:74:13
+base "https://api.stripe.com" @stripe:11:9
+path text="v1" cross_base=false @stripe:12:14
+path text="customers" cross_base=false @stripe.customers:78:18
+header wire=0 "authorization" = "Bearer {key}" ; cross_base=false @stripe:14:13
+header wire=1 "stripe-version" = version . as_deref () . unwrap_or (API_VERSION) ; cross_base=false @stripe:15:13
+header wire=2 "stripe-account" = account ; cross_base=false @stripe:16:13
+header wire=3 "idempotency-key" = idempotency_key . clone () . unwrap_or_else (new_idempotency_key) ; cross_base=false @stripe.customers.create part=write:73:23
+body stripe_form (customer , expand) @stripe.customers.create:80:76
+read Json @stripe:18:14
+problem StripeProblem @stripe:19:9
+problem_read Json @stripe:18:14
+endpoint stripe.customers.retrieve GET -> Option < Customer >
+input client.key: Secret @Stripe:5:9
+input client.account?: AccountId @Stripe:7:9
+input client.version?: String @Stripe:9:9
+input retrieve.id: CustomerId @retrieve:83:26
+input retrieve.expand?: Vec < String > @expanded:59:13
+base "https://api.stripe.com" @stripe:11:9
+path text="v1" cross_base=false @stripe:12:14
+path text="customers" cross_base=false @stripe.customers:78:18
+path hole={id} cross_base=false @stripe.customers.retrieve:84:22
+query wire=0 "expand[]" = expand ; cross_base=false @stripe.customers.retrieve part=expanded:61:21
+header wire=0 "authorization" = "Bearer {key}" ; cross_base=false @stripe:14:13
+header wire=1 "stripe-version" = version . as_deref () . unwrap_or (API_VERSION) ; cross_base=false @stripe:15:13
+header wire=2 "stripe-account" = account ; cross_base=false @stripe:16:13
+read Json @stripe:18:14
+arm 200 {body} => MaybeDeleted :: live (body) @stripe.customers.retrieve:85:26
+problem StripeProblem @stripe:19:9
+problem_read Json @stripe:18:14
+endpoint stripe.customers.update POST -> Customer
+input client.key: Secret @Stripe:5:9
+input client.account?: AccountId @Stripe:7:9
+input client.version?: String @Stripe:9:9
+input update.id: CustomerId @update:87:25
+input update.changes: UpdateCustomer @update:87:41
+input update.idempotency_key?: String @write:69:13
+input update.expand?: Vec < String > @write:71:13
+idempotent true @stripe.customers.update part=write:74:13
+base "https://api.stripe.com" @stripe:11:9
+path text="v1" cross_base=false @stripe:12:14
+path text="customers" cross_base=false @stripe.customers:78:18
+path hole={id} cross_base=false @stripe.customers.update:88:22
+header wire=0 "authorization" = "Bearer {key}" ; cross_base=false @stripe:14:13
+header wire=1 "stripe-version" = version . as_deref () . unwrap_or (API_VERSION) ; cross_base=false @stripe:15:13
+header wire=2 "stripe-account" = account ; cross_base=false @stripe:16:13
+header wire=3 "idempotency-key" = idempotency_key . clone () . unwrap_or_else (new_idempotency_key) ; cross_base=false @stripe.customers.update part=write:73:23
+body stripe_form (changes , expand) @stripe.customers.update:89:22
+read Json @stripe:18:14
+problem StripeProblem @stripe:19:9
+problem_read Json @stripe:18:14
+endpoint stripe.customers.delete DELETE -> Deleted < CustomerId >
+input client.key: Secret @Stripe:5:9
+input client.account?: AccountId @Stripe:7:9
+input client.version?: String @Stripe:9:9
+input delete.id: CustomerId @delete:91:27
+base "https://api.stripe.com" @stripe:11:9
+path text="v1" cross_base=false @stripe:12:14
+path text="customers" cross_base=false @stripe.customers:78:18
+path hole={id} cross_base=false @stripe.customers.delete:91:73
+header wire=0 "authorization" = "Bearer {key}" ; cross_base=false @stripe:14:13
+header wire=1 "stripe-version" = version . as_deref () . unwrap_or (API_VERSION) ; cross_base=false @stripe:15:13
+header wire=2 "stripe-account" = account ; cross_base=false @stripe:16:13
+read Json @stripe:18:14
+problem StripeProblem @stripe:19:9
+problem_read Json @stripe:18:14
+endpoint stripe.customers.list GET -> List < Customer >
+input client.key: Secret @Stripe:5:9
+input client.account?: AccountId @Stripe:7:9
+input client.version?: String @Stripe:9:9
+input list.email?: String @list:92:22
+input list.limit?: u32 @listed:24:13
+input list.starting_after?: String @listed:26:13
+input list.ending_before?: String @listed:28:13
+input list.created_gte?: i64 @listed:30:13
+input list.created_lt?: i64 @listed:32:13
+input list.expand?: Vec < String > @expanded:59:13
+base "https://api.stripe.com" @stripe:11:9
+path text="v1" cross_base=false @stripe:12:14
+path text="customers" cross_base=false @stripe.customers:78:18
+query wire=0 limit ; cross_base=false @stripe.customers.list part=listed:35:17
+query wire=1 starting_after ; cross_base=false @stripe.customers.list part=listed:35:24
+query wire=2 ending_before ; cross_base=false @stripe.customers.list part=listed:35:40
+query wire=3 "created[gte]" = created_gte ; cross_base=false @stripe.customers.list part=listed:36:17
+query wire=4 "created[lt]" = created_lt ; cross_base=false @stripe.customers.list part=listed:37:17
+query wire=5 "expand[]" = expand ; cross_base=false @stripe.customers.list part=expanded:61:21
+query wire=6 email ; cross_base=false @stripe.customers.list:92:88
+header wire=0 "authorization" = "Bearer {key}" ; cross_base=false @stripe:14:13
+header wire=1 "stripe-version" = version . as_deref () . unwrap_or (API_VERSION) ; cross_base=false @stripe:15:13
+header wire=2 "stripe-account" = account ; cross_base=false @stripe:16:13
+read Json @stripe:18:14
+problem StripeProblem @stripe:19:9
+problem_read Json @stripe:18:14
+paginate by_object_id (starting_after , ending_before) @stripe.customers.list part=listed:39:22
+endpoint stripe.customers.search GET -> SearchResult < Customer >
+input client.key: Secret @Stripe:5:9
+input client.account?: AccountId @Stripe:7:9
+input client.version?: String @Stripe:9:9
+input search.query: String @found:46:13
+input search.limit?: u32 @found:48:13
+input search.page?: String @found:50:13
+input search.expand?: Vec < String > @expanded:59:13
+base "https://api.stripe.com" @stripe:11:9
+path text="v1" cross_base=false @stripe:12:14
+path text="customers" cross_base=false @stripe.customers:78:18
+path text="search" cross_base=false @stripe.customers.search:93:78
+query wire=0 query ; cross_base=false @stripe.customers.search part=found:52:21
+query wire=1 limit ; cross_base=false @stripe.customers.search part=found:52:28
+query wire=2 page ; cross_base=false @stripe.customers.search part=found:52:35
+query wire=3 "expand[]" = expand ; cross_base=false @stripe.customers.search part=expanded:61:21
+header wire=0 "authorization" = "Bearer {key}" ; cross_base=false @stripe:14:13
+header wire=1 "stripe-version" = version . as_deref () . unwrap_or (API_VERSION) ; cross_base=false @stripe:15:13
+header wire=2 "stripe-account" = account ; cross_base=false @stripe:16:13
+read Json @stripe:18:14
+problem StripeProblem @stripe:19:9
+problem_read Json @stripe:18:14
+paginate by_cursor (page , SearchResult :: next_token) @stripe.customers.search part=found:53:22
+endpoint stripe.payment_intents.create POST -> PaymentIntent
+input client.key: Secret @Stripe:5:9
+input client.account?: AccountId @Stripe:7:9
+input client.version?: String @Stripe:9:9
+input create.intent: NewPaymentIntent @create:99:25
+input create.idempotency_key?: String @write:69:13
+input create.expand?: Vec < String > @write:71:13
+idempotent true @stripe.payment_intents.create part=write:74:13
+base "https://api.stripe.com" @stripe:11:9
+path text="v1" cross_base=false @stripe:12:14
+path text="payment_intents" cross_base=false @stripe.payment_intents:97:18
+header wire=0 "authorization" = "Bearer {key}" ; cross_base=false @stripe:14:13
+header wire=1 "stripe-version" = version . as_deref () . unwrap_or (API_VERSION) ; cross_base=false @stripe:15:13
+header wire=2 "stripe-account" = account ; cross_base=false @stripe:16:13
+header wire=3 "idempotency-key" = idempotency_key . clone () . unwrap_or_else (new_idempotency_key) ; cross_base=false @stripe.payment_intents.create part=write:73:23
+body stripe_form (intent , expand) @stripe.payment_intents.create:99:84
+read Json @stripe:18:14
+problem StripeProblem @stripe:19:9
+problem_read Json @stripe:18:14
+endpoint stripe.payment_intents.retrieve GET -> PaymentIntent
+input client.key: Secret @Stripe:5:9
+input client.account?: AccountId @Stripe:7:9
+input client.version?: String @Stripe:9:9
+input retrieve.id: PaymentIntentId @retrieve:100:26
+input retrieve.expand?: Vec < String > @expanded:59:13
+base "https://api.stripe.com" @stripe:11:9
+path text="v1" cross_base=false @stripe:12:14
+path text="payment_intents" cross_base=false @stripe.payment_intents:97:18
+path hole={id} cross_base=false @stripe.payment_intents.retrieve:100:83
+query wire=0 "expand[]" = expand ; cross_base=false @stripe.payment_intents.retrieve part=expanded:61:21
+header wire=0 "authorization" = "Bearer {key}" ; cross_base=false @stripe:14:13
+header wire=1 "stripe-version" = version . as_deref () . unwrap_or (API_VERSION) ; cross_base=false @stripe:15:13
+header wire=2 "stripe-account" = account ; cross_base=false @stripe:16:13
+read Json @stripe:18:14
+problem StripeProblem @stripe:19:9
+problem_read Json @stripe:18:14
+endpoint stripe.payment_intents.update POST -> PaymentIntent
+input client.key: Secret @Stripe:5:9
+input client.account?: AccountId @Stripe:7:9
+input client.version?: String @Stripe:9:9
+input update.id: PaymentIntentId @update:101:25
+input update.changes: UpdatePaymentIntent @update:101:46
+input update.idempotency_key?: String @write:69:13
+input update.expand?: Vec < String > @write:71:13
+idempotent true @stripe.payment_intents.update part=write:74:13
+base "https://api.stripe.com" @stripe:11:9
+path text="v1" cross_base=false @stripe:12:14
+path text="payment_intents" cross_base=false @stripe.payment_intents:97:18
+path hole={id} cross_base=false @stripe.payment_intents.update:102:22
+header wire=0 "authorization" = "Bearer {key}" ; cross_base=false @stripe:14:13
+header wire=1 "stripe-version" = version . as_deref () . unwrap_or (API_VERSION) ; cross_base=false @stripe:15:13
+header wire=2 "stripe-account" = account ; cross_base=false @stripe:16:13
+header wire=3 "idempotency-key" = idempotency_key . clone () . unwrap_or_else (new_idempotency_key) ; cross_base=false @stripe.payment_intents.update part=write:73:23
+body stripe_form (changes , expand) @stripe.payment_intents.update:103:22
+read Json @stripe:18:14
+problem StripeProblem @stripe:19:9
+problem_read Json @stripe:18:14
+endpoint stripe.payment_intents.confirm POST -> Result < PaymentIntent , Declined >
+input client.key: Secret @Stripe:5:9
+input client.account?: AccountId @Stripe:7:9
+input client.version?: String @Stripe:9:9
+input confirm.id: PaymentIntentId @confirm:107:26
+input confirm.params?: ConfirmPaymentIntent @confirm:107:47
+input confirm.idempotency_key?: String @write:69:13
+input confirm.expand?: Vec < String > @write:71:13
+idempotent true @stripe.payment_intents.confirm part=write:74:13
+base "https://api.stripe.com" @stripe:11:9
+path text="v1" cross_base=false @stripe:12:14
+path text="payment_intents" cross_base=false @stripe.payment_intents:97:18
+path hole={id} cross_base=false @stripe.payment_intents.confirm:108:22
+path text="/confirm" cross_base=false @stripe.payment_intents.confirm:108:22
+header wire=0 "authorization" = "Bearer {key}" ; cross_base=false @stripe:14:13
+header wire=1 "stripe-version" = version . as_deref () . unwrap_or (API_VERSION) ; cross_base=false @stripe:15:13
+header wire=2 "stripe-account" = account ; cross_base=false @stripe:16:13
+header wire=3 "idempotency-key" = idempotency_key . clone () . unwrap_or_else (new_idempotency_key) ; cross_base=false @stripe.payment_intents.confirm part=write:73:23
+body stripe_form (params , expand) @stripe.payment_intents.confirm:109:22
+read Json @stripe:18:14
+arm 402 {body} => Err (body) @stripe.payment_intents.confirm:110:26
+problem StripeProblem @stripe:19:9
+problem_read Json @stripe:18:14
+endpoint stripe.payment_intents.capture POST -> PaymentIntent
+input client.key: Secret @Stripe:5:9
+input client.account?: AccountId @Stripe:7:9
+input client.version?: String @Stripe:9:9
+input capture.id: PaymentIntentId @capture:112:26
+input capture.params?: CapturePaymentIntent @capture:112:47
+input capture.idempotency_key?: String @write:69:13
+input capture.expand?: Vec < String > @write:71:13
+idempotent true @stripe.payment_intents.capture part=write:74:13
+base "https://api.stripe.com" @stripe:11:9
+path text="v1" cross_base=false @stripe:12:14
+path text="payment_intents" cross_base=false @stripe.payment_intents:97:18
+path hole={id} cross_base=false @stripe.payment_intents.capture:113:22
+path text="/capture" cross_base=false @stripe.payment_intents.capture:113:22
+header wire=0 "authorization" = "Bearer {key}" ; cross_base=false @stripe:14:13
+header wire=1 "stripe-version" = version . as_deref () . unwrap_or (API_VERSION) ; cross_base=false @stripe:15:13
+header wire=2 "stripe-account" = account ; cross_base=false @stripe:16:13
+header wire=3 "idempotency-key" = idempotency_key . clone () . unwrap_or_else (new_idempotency_key) ; cross_base=false @stripe.payment_intents.capture part=write:73:23
+body stripe_form (params , expand) @stripe.payment_intents.capture:114:22
+read Json @stripe:18:14
+problem StripeProblem @stripe:19:9
+problem_read Json @stripe:18:14
+endpoint stripe.payment_intents.cancel POST -> PaymentIntent
+input client.key: Secret @Stripe:5:9
+input client.account?: AccountId @Stripe:7:9
+input client.version?: String @Stripe:9:9
+input cancel.id: PaymentIntentId @cancel:116:25
+input cancel.params?: CancelPaymentIntent @cancel:116:46
+input cancel.idempotency_key?: String @write:69:13
+input cancel.expand?: Vec < String > @write:71:13
+idempotent true @stripe.payment_intents.cancel part=write:74:13
+base "https://api.stripe.com" @stripe:11:9
+path text="v1" cross_base=false @stripe:12:14
+path text="payment_intents" cross_base=false @stripe.payment_intents:97:18
+path hole={id} cross_base=false @stripe.payment_intents.cancel:117:22
+path text="/cancel" cross_base=false @stripe.payment_intents.cancel:117:22
+header wire=0 "authorization" = "Bearer {key}" ; cross_base=false @stripe:14:13
+header wire=1 "stripe-version" = version . as_deref () . unwrap_or (API_VERSION) ; cross_base=false @stripe:15:13
+header wire=2 "stripe-account" = account ; cross_base=false @stripe:16:13
+header wire=3 "idempotency-key" = idempotency_key . clone () . unwrap_or_else (new_idempotency_key) ; cross_base=false @stripe.payment_intents.cancel part=write:73:23
+body stripe_form (params , expand) @stripe.payment_intents.cancel:118:22
+read Json @stripe:18:14
+problem StripeProblem @stripe:19:9
+problem_read Json @stripe:18:14
+endpoint stripe.payment_intents.list GET -> List < PaymentIntent >
+input client.key: Secret @Stripe:5:9
+input client.account?: AccountId @Stripe:7:9
+input client.version?: String @Stripe:9:9
+input list.customer?: CustomerId @list:120:22
+input list.limit?: u32 @listed:24:13
+input list.starting_after?: String @listed:26:13
+input list.ending_before?: String @listed:28:13
+input list.created_gte?: i64 @listed:30:13
+input list.created_lt?: i64 @listed:32:13
+input list.expand?: Vec < String > @expanded:59:13
+base "https://api.stripe.com" @stripe:11:9
+path text="v1" cross_base=false @stripe:12:14
+path text="payment_intents" cross_base=false @stripe.payment_intents:97:18
+query wire=0 limit ; cross_base=false @stripe.payment_intents.list part=listed:35:17
+query wire=1 starting_after ; cross_base=false @stripe.payment_intents.list part=listed:35:24
+query wire=2 ending_before ; cross_base=false @stripe.payment_intents.list part=listed:35:40
+query wire=3 "created[gte]" = created_gte ; cross_base=false @stripe.payment_intents.list part=listed:36:17
+query wire=4 "created[lt]" = created_lt ; cross_base=false @stripe.payment_intents.list part=listed:37:17
+query wire=5 "expand[]" = expand ; cross_base=false @stripe.payment_intents.list part=expanded:61:21
+query wire=6 customer ; cross_base=false @stripe.payment_intents.list:120:100
+header wire=0 "authorization" = "Bearer {key}" ; cross_base=false @stripe:14:13
+header wire=1 "stripe-version" = version . as_deref () . unwrap_or (API_VERSION) ; cross_base=false @stripe:15:13
+header wire=2 "stripe-account" = account ; cross_base=false @stripe:16:13
+read Json @stripe:18:14
+problem StripeProblem @stripe:19:9
+problem_read Json @stripe:18:14
+paginate by_object_id (starting_after , ending_before) @stripe.payment_intents.list part=listed:39:22
+endpoint stripe.payment_intents.search GET -> SearchResult < PaymentIntent >
+input client.key: Secret @Stripe:5:9
+input client.account?: AccountId @Stripe:7:9
+input client.version?: String @Stripe:9:9
+input search.query: String @found:46:13
+input search.limit?: u32 @found:48:13
+input search.page?: String @found:50:13
+input search.expand?: Vec < String > @expanded:59:13
+base "https://api.stripe.com" @stripe:11:9
+path text="v1" cross_base=false @stripe:12:14
+path text="payment_intents" cross_base=false @stripe.payment_intents:97:18
+path text="search" cross_base=false @stripe.payment_intents.search:121:83
+query wire=0 query ; cross_base=false @stripe.payment_intents.search part=found:52:21
+query wire=1 limit ; cross_base=false @stripe.payment_intents.search part=found:52:28
+query wire=2 page ; cross_base=false @stripe.payment_intents.search part=found:52:35
+query wire=3 "expand[]" = expand ; cross_base=false @stripe.payment_intents.search part=expanded:61:21
+header wire=0 "authorization" = "Bearer {key}" ; cross_base=false @stripe:14:13
+header wire=1 "stripe-version" = version . as_deref () . unwrap_or (API_VERSION) ; cross_base=false @stripe:15:13
+header wire=2 "stripe-account" = account ; cross_base=false @stripe:16:13
+read Json @stripe:18:14
+problem StripeProblem @stripe:19:9
+problem_read Json @stripe:18:14
+paginate by_cursor (page , SearchResult :: next_token) @stripe.payment_intents.search part=found:53:22
+endpoint stripe.refunds.create POST -> Refund
+input client.key: Secret @Stripe:5:9
+input client.account?: AccountId @Stripe:7:9
+input client.version?: String @Stripe:9:9
+input create.refund: NewRefund @create:128:25
+input create.idempotency_key?: String @write:69:13
+input create.expand?: Vec < String > @write:71:13
+idempotent true @stripe.refunds.create part=write:74:13
+base "https://api.stripe.com" @stripe:11:9
+path text="v1" cross_base=false @stripe:12:14
+path text="refunds" cross_base=false @stripe.refunds:125:18
+header wire=0 "authorization" = "Bearer {key}" ; cross_base=false @stripe:14:13
+header wire=1 "stripe-version" = version . as_deref () . unwrap_or (API_VERSION) ; cross_base=false @stripe:15:13
+header wire=2 "stripe-account" = account ; cross_base=false @stripe:16:13
+header wire=3 "idempotency-key" = idempotency_key . clone () . unwrap_or_else (new_idempotency_key) ; cross_base=false @stripe.refunds.create part=write:73:23
+body stripe_form (refund , expand) @stripe.refunds.create:128:70
+read Json @stripe:18:14
+problem StripeProblem @stripe:19:9
+problem_read Json @stripe:18:14
+endpoint stripe.refunds.retrieve GET -> Refund
+input client.key: Secret @Stripe:5:9
+input client.account?: AccountId @Stripe:7:9
+input client.version?: String @Stripe:9:9
+input retrieve.id: RefundId @retrieve:129:26
+input retrieve.expand?: Vec < String > @expanded:59:13
+base "https://api.stripe.com" @stripe:11:9
+path text="v1" cross_base=false @stripe:12:14
+path text="refunds" cross_base=false @stripe.refunds:125:18
+path hole={id} cross_base=false @stripe.refunds.retrieve:129:69
+query wire=0 "expand[]" = expand ; cross_base=false @stripe.refunds.retrieve part=expanded:61:21
+header wire=0 "authorization" = "Bearer {key}" ; cross_base=false @stripe:14:13
+header wire=1 "stripe-version" = version . as_deref () . unwrap_or (API_VERSION) ; cross_base=false @stripe:15:13
+header wire=2 "stripe-account" = account ; cross_base=false @stripe:16:13
+read Json @stripe:18:14
+problem StripeProblem @stripe:19:9
+problem_read Json @stripe:18:14
+endpoint stripe.refunds.update POST -> Refund
+input client.key: Secret @Stripe:5:9
+input client.account?: AccountId @Stripe:7:9
+input client.version?: String @Stripe:9:9
+input update.id: RefundId @update:130:25
+input update.changes: UpdateRefund @update:130:39
+input update.idempotency_key?: String @write:69:13
+input update.expand?: Vec < String > @write:71:13
+idempotent true @stripe.refunds.update part=write:74:13
+base "https://api.stripe.com" @stripe:11:9
+path text="v1" cross_base=false @stripe:12:14
+path text="refunds" cross_base=false @stripe.refunds:125:18
+path hole={id} cross_base=false @stripe.refunds.update:131:22
+header wire=0 "authorization" = "Bearer {key}" ; cross_base=false @stripe:14:13
+header wire=1 "stripe-version" = version . as_deref () . unwrap_or (API_VERSION) ; cross_base=false @stripe:15:13
+header wire=2 "stripe-account" = account ; cross_base=false @stripe:16:13
+header wire=3 "idempotency-key" = idempotency_key . clone () . unwrap_or_else (new_idempotency_key) ; cross_base=false @stripe.refunds.update part=write:73:23
+body stripe_form (changes , expand) @stripe.refunds.update:132:22
+read Json @stripe:18:14
+problem StripeProblem @stripe:19:9
+problem_read Json @stripe:18:14
+endpoint stripe.refunds.cancel POST -> Refund
+input client.key: Secret @Stripe:5:9
+input client.account?: AccountId @Stripe:7:9
+input client.version?: String @Stripe:9:9
+input cancel.id: RefundId @cancel:135:25
+input cancel.idempotency_key?: String @write:69:13
+input cancel.expand?: Vec < String > @write:71:13
+idempotent true @stripe.refunds.cancel part=write:74:13
+base "https://api.stripe.com" @stripe:11:9
+path text="v1" cross_base=false @stripe:12:14
+path text="refunds" cross_base=false @stripe.refunds:125:18
+path hole={id} cross_base=false @stripe.refunds.cancel:136:22
+path text="/cancel" cross_base=false @stripe.refunds.cancel:136:22
+header wire=0 "authorization" = "Bearer {key}" ; cross_base=false @stripe:14:13
+header wire=1 "stripe-version" = version . as_deref () . unwrap_or (API_VERSION) ; cross_base=false @stripe:15:13
+header wire=2 "stripe-account" = account ; cross_base=false @stripe:16:13
+header wire=3 "idempotency-key" = idempotency_key . clone () . unwrap_or_else (new_idempotency_key) ; cross_base=false @stripe.refunds.cancel part=write:73:23
+body stripe_form (& () , expand) @stripe.refunds.cancel:137:22
+read Json @stripe:18:14
+problem StripeProblem @stripe:19:9
+problem_read Json @stripe:18:14
+endpoint stripe.refunds.list GET -> List < Refund >
+input client.key: Secret @Stripe:5:9
+input client.account?: AccountId @Stripe:7:9
+input client.version?: String @Stripe:9:9
+input list.charge?: ChargeId @list:139:22
+input list.payment_intent?: PaymentIntentId @list:139:41
+input list.limit?: u32 @listed:24:13
+input list.starting_after?: String @listed:26:13
+input list.ending_before?: String @listed:28:13
+input list.created_gte?: i64 @listed:30:13
+input list.created_lt?: i64 @listed:32:13
+input list.expand?: Vec < String > @expanded:59:13
+base "https://api.stripe.com" @stripe:11:9
+path text="v1" cross_base=false @stripe:12:14
+path text="refunds" cross_base=false @stripe.refunds:125:18
+query wire=0 limit ; cross_base=false @stripe.refunds.list part=listed:35:17
+query wire=1 starting_after ; cross_base=false @stripe.refunds.list part=listed:35:24
+query wire=2 ending_before ; cross_base=false @stripe.refunds.list part=listed:35:40
+query wire=3 "created[gte]" = created_gte ; cross_base=false @stripe.refunds.list part=listed:36:17
+query wire=4 "created[lt]" = created_lt ; cross_base=false @stripe.refunds.list part=listed:37:17
+query wire=5 "expand[]" = expand ; cross_base=false @stripe.refunds.list part=expanded:61:21
+query wire=6 charge ; cross_base=false @stripe.refunds.list:140:25
+query wire=7 payment_intent ; cross_base=false @stripe.refunds.list:140:33
+header wire=0 "authorization" = "Bearer {key}" ; cross_base=false @stripe:14:13
+header wire=1 "stripe-version" = version . as_deref () . unwrap_or (API_VERSION) ; cross_base=false @stripe:15:13
+header wire=2 "stripe-account" = account ; cross_base=false @stripe:16:13
+read Json @stripe:18:14
+problem StripeProblem @stripe:19:9
+problem_read Json @stripe:18:14
+paginate by_object_id (starting_after , ending_before) @stripe.refunds.list part=listed:39:22
+endpoint stripe.subscriptions.create POST -> Subscription
+input client.key: Secret @Stripe:5:9
+input client.account?: AccountId @Stripe:7:9
+input client.version?: String @Stripe:9:9
+input create.subscription: NewSubscription @create:147:25
+input create.idempotency_key?: String @write:69:13
+input create.expand?: Vec < String > @write:71:13
+idempotent true @stripe.subscriptions.create part=write:74:13
+base "https://api.stripe.com" @stripe:11:9
+path text="v1" cross_base=false @stripe:12:14
+path text="subscriptions" cross_base=false @stripe.subscriptions:145:18
+header wire=0 "authorization" = "Bearer {key}" ; cross_base=false @stripe:14:13
+header wire=1 "stripe-version" = version . as_deref () . unwrap_or (API_VERSION) ; cross_base=false @stripe:15:13
+header wire=2 "stripe-account" = account ; cross_base=false @stripe:16:13
+header wire=3 "idempotency-key" = idempotency_key . clone () . unwrap_or_else (new_idempotency_key) ; cross_base=false @stripe.subscriptions.create part=write:73:23
+body stripe_form (subscription , expand) @stripe.subscriptions.create:147:88
+read Json @stripe:18:14
+problem StripeProblem @stripe:19:9
+problem_read Json @stripe:18:14
+endpoint stripe.subscriptions.retrieve GET -> Subscription
+input client.key: Secret @Stripe:5:9
+input client.account?: AccountId @Stripe:7:9
+input client.version?: String @Stripe:9:9
+input retrieve.id: SubscriptionId @retrieve:148:26
+input retrieve.expand?: Vec < String > @expanded:59:13
+base "https://api.stripe.com" @stripe:11:9
+path text="v1" cross_base=false @stripe:12:14
+path text="subscriptions" cross_base=false @stripe.subscriptions:145:18
+path hole={id} cross_base=false @stripe.subscriptions.retrieve:148:81
+query wire=0 "expand[]" = expand ; cross_base=false @stripe.subscriptions.retrieve part=expanded:61:21
+header wire=0 "authorization" = "Bearer {key}" ; cross_base=false @stripe:14:13
+header wire=1 "stripe-version" = version . as_deref () . unwrap_or (API_VERSION) ; cross_base=false @stripe:15:13
+header wire=2 "stripe-account" = account ; cross_base=false @stripe:16:13
+read Json @stripe:18:14
+problem StripeProblem @stripe:19:9
+problem_read Json @stripe:18:14
+endpoint stripe.subscriptions.update POST -> Subscription
+input client.key: Secret @Stripe:5:9
+input client.account?: AccountId @Stripe:7:9
+input client.version?: String @Stripe:9:9
+input update.id: SubscriptionId @update:149:25
+input update.changes: UpdateSubscription @update:149:45
+input update.idempotency_key?: String @write:69:13
+input update.expand?: Vec < String > @write:71:13
+idempotent true @stripe.subscriptions.update part=write:74:13
+base "https://api.stripe.com" @stripe:11:9
+path text="v1" cross_base=false @stripe:12:14
+path text="subscriptions" cross_base=false @stripe.subscriptions:145:18
+path hole={id} cross_base=false @stripe.subscriptions.update:150:22
+header wire=0 "authorization" = "Bearer {key}" ; cross_base=false @stripe:14:13
+header wire=1 "stripe-version" = version . as_deref () . unwrap_or (API_VERSION) ; cross_base=false @stripe:15:13
+header wire=2 "stripe-account" = account ; cross_base=false @stripe:16:13
+header wire=3 "idempotency-key" = idempotency_key . clone () . unwrap_or_else (new_idempotency_key) ; cross_base=false @stripe.subscriptions.update part=write:73:23
+body stripe_form (changes , expand) @stripe.subscriptions.update:151:22
+read Json @stripe:18:14
+problem StripeProblem @stripe:19:9
+problem_read Json @stripe:18:14
+endpoint stripe.subscriptions.cancel DELETE -> Subscription
+input client.key: Secret @Stripe:5:9
+input client.account?: AccountId @Stripe:7:9
+input client.version?: String @Stripe:9:9
+input cancel.id: SubscriptionId @cancel:155:27
+input cancel.invoice_now?: bool @cancel:155:47
+input cancel.prorate?: bool @cancel:155:67
+input cancel.expand?: Vec < String > @expanded:59:13
+base "https://api.stripe.com" @stripe:11:9
+path text="v1" cross_base=false @stripe:12:14
+path text="subscriptions" cross_base=false @stripe.subscriptions:145:18
+path hole={id} cross_base=false @stripe.subscriptions.cancel:156:22
+query wire=0 "expand[]" = expand ; cross_base=false @stripe.subscriptions.cancel part=expanded:61:21
+query wire=1 invoice_now ; cross_base=false @stripe.subscriptions.cancel:157:25
+query wire=2 prorate ; cross_base=false @stripe.subscriptions.cancel:157:38
+header wire=0 "authorization" = "Bearer {key}" ; cross_base=false @stripe:14:13
+header wire=1 "stripe-version" = version . as_deref () . unwrap_or (API_VERSION) ; cross_base=false @stripe:15:13
+header wire=2 "stripe-account" = account ; cross_base=false @stripe:16:13
+read Json @stripe:18:14
+problem StripeProblem @stripe:19:9
+problem_read Json @stripe:18:14
+endpoint stripe.subscriptions.list GET -> List < Subscription >
+input client.key: Secret @Stripe:5:9
+input client.account?: AccountId @Stripe:7:9
+input client.version?: String @Stripe:9:9
+input list.customer?: CustomerId @list:160:22
+input list.price?: PriceId @list:160:45
+input list.status?: SubscriptionFilter @list:160:62
+input list.limit?: u32 @listed:24:13
+input list.starting_after?: String @listed:26:13
+input list.ending_before?: String @listed:28:13
+input list.created_gte?: i64 @listed:30:13
+input list.created_lt?: i64 @listed:32:13
+input list.expand?: Vec < String > @expanded:59:13
+base "https://api.stripe.com" @stripe:11:9
+path text="v1" cross_base=false @stripe:12:14
+path text="subscriptions" cross_base=false @stripe.subscriptions:145:18
+query wire=0 limit ; cross_base=false @stripe.subscriptions.list part=listed:35:17
+query wire=1 starting_after ; cross_base=false @stripe.subscriptions.list part=listed:35:24
+query wire=2 ending_before ; cross_base=false @stripe.subscriptions.list part=listed:35:40
+query wire=3 "created[gte]" = created_gte ; cross_base=false @stripe.subscriptions.list part=listed:36:17
+query wire=4 "created[lt]" = created_lt ; cross_base=false @stripe.subscriptions.list part=listed:37:17
+query wire=5 "expand[]" = expand ; cross_base=false @stripe.subscriptions.list part=expanded:61:21
+query wire=6 customer ; cross_base=false @stripe.subscriptions.list:161:25
+query wire=7 price ; cross_base=false @stripe.subscriptions.list:161:35
+query wire=8 status ; cross_base=false @stripe.subscriptions.list:161:42
+header wire=0 "authorization" = "Bearer {key}" ; cross_base=false @stripe:14:13
+header wire=1 "stripe-version" = version . as_deref () . unwrap_or (API_VERSION) ; cross_base=false @stripe:15:13
+header wire=2 "stripe-account" = account ; cross_base=false @stripe:16:13
+read Json @stripe:18:14
+problem StripeProblem @stripe:19:9
+problem_read Json @stripe:18:14
+paginate by_object_id (starting_after , ending_before) @stripe.subscriptions.list part=listed:39:22
+endpoint stripe.invoices.create POST -> Invoice
+input client.key: Secret @Stripe:5:9
+input client.account?: AccountId @Stripe:7:9
+input client.version?: String @Stripe:9:9
+input create.invoice: NewInvoice @create:168:25
+input create.idempotency_key?: String @write:69:13
+input create.expand?: Vec < String > @write:71:13
+idempotent true @stripe.invoices.create part=write:74:13
+base "https://api.stripe.com" @stripe:11:9
+path text="v1" cross_base=false @stripe:12:14
+path text="invoices" cross_base=false @stripe.invoices:166:18
+header wire=0 "authorization" = "Bearer {key}" ; cross_base=false @stripe:14:13
+header wire=1 "stripe-version" = version . as_deref () . unwrap_or (API_VERSION) ; cross_base=false @stripe:15:13
+header wire=2 "stripe-account" = account ; cross_base=false @stripe:16:13
+header wire=3 "idempotency-key" = idempotency_key . clone () . unwrap_or_else (new_idempotency_key) ; cross_base=false @stripe.invoices.create part=write:73:23
+body stripe_form (invoice , expand) @stripe.invoices.create:168:73
+read Json @stripe:18:14
+problem StripeProblem @stripe:19:9
+problem_read Json @stripe:18:14
+endpoint stripe.invoices.retrieve GET -> Invoice
+input client.key: Secret @Stripe:5:9
+input client.account?: AccountId @Stripe:7:9
+input client.version?: String @Stripe:9:9
+input retrieve.id: InvoiceId @retrieve:169:26
+input retrieve.expand?: Vec < String > @expanded:59:13
+base "https://api.stripe.com" @stripe:11:9
+path text="v1" cross_base=false @stripe:12:14
+path text="invoices" cross_base=false @stripe.invoices:166:18
+path hole={id} cross_base=false @stripe.invoices.retrieve:169:71
+query wire=0 "expand[]" = expand ; cross_base=false @stripe.invoices.retrieve part=expanded:61:21
+header wire=0 "authorization" = "Bearer {key}" ; cross_base=false @stripe:14:13
+header wire=1 "stripe-version" = version . as_deref () . unwrap_or (API_VERSION) ; cross_base=false @stripe:15:13
+header wire=2 "stripe-account" = account ; cross_base=false @stripe:16:13
+read Json @stripe:18:14
+problem StripeProblem @stripe:19:9
+problem_read Json @stripe:18:14
+endpoint stripe.invoices.update POST -> Invoice
+input client.key: Secret @Stripe:5:9
+input client.account?: AccountId @Stripe:7:9
+input client.version?: String @Stripe:9:9
+input update.id: InvoiceId @update:170:25
+input update.changes: UpdateInvoice @update:170:40
+input update.idempotency_key?: String @write:69:13
+input update.expand?: Vec < String > @write:71:13
+idempotent true @stripe.invoices.update part=write:74:13
+base "https://api.stripe.com" @stripe:11:9
+path text="v1" cross_base=false @stripe:12:14
+path text="invoices" cross_base=false @stripe.invoices:166:18
+path hole={id} cross_base=false @stripe.invoices.update:171:22
+header wire=0 "authorization" = "Bearer {key}" ; cross_base=false @stripe:14:13
+header wire=1 "stripe-version" = version . as_deref () . unwrap_or (API_VERSION) ; cross_base=false @stripe:15:13
+header wire=2 "stripe-account" = account ; cross_base=false @stripe:16:13
+header wire=3 "idempotency-key" = idempotency_key . clone () . unwrap_or_else (new_idempotency_key) ; cross_base=false @stripe.invoices.update part=write:73:23
+body stripe_form (changes , expand) @stripe.invoices.update:172:22
+read Json @stripe:18:14
+problem StripeProblem @stripe:19:9
+problem_read Json @stripe:18:14
+endpoint stripe.invoices.delete DELETE -> Deleted < InvoiceId >
+input client.key: Secret @Stripe:5:9
+input client.account?: AccountId @Stripe:7:9
+input client.version?: String @Stripe:9:9
+input delete.id: InvoiceId @delete:175:27
+base "https://api.stripe.com" @stripe:11:9
+path text="v1" cross_base=false @stripe:12:14
+path text="invoices" cross_base=false @stripe.invoices:166:18
+path hole={id} cross_base=false @stripe.invoices.delete:175:71
+header wire=0 "authorization" = "Bearer {key}" ; cross_base=false @stripe:14:13
+header wire=1 "stripe-version" = version . as_deref () . unwrap_or (API_VERSION) ; cross_base=false @stripe:15:13
+header wire=2 "stripe-account" = account ; cross_base=false @stripe:16:13
+read Json @stripe:18:14
+problem StripeProblem @stripe:19:9
+problem_read Json @stripe:18:14
+endpoint stripe.invoices.list GET -> List < Invoice >
+input client.key: Secret @Stripe:5:9
+input client.account?: AccountId @Stripe:7:9
+input client.version?: String @Stripe:9:9
+input list.customer?: CustomerId @list:177:17
+input list.subscription?: SubscriptionId @list:178:17
+input list.status?: InvoiceStatus @list:179:17
+input list.collection_method?: CollectionMethod @list:180:17
+input list.limit?: u32 @listed:24:13
+input list.starting_after?: String @listed:26:13
+input list.ending_before?: String @listed:28:13
+input list.created_gte?: i64 @listed:30:13
+input list.created_lt?: i64 @listed:32:13
+input list.expand?: Vec < String > @expanded:59:13
+base "https://api.stripe.com" @stripe:11:9
+path text="v1" cross_base=false @stripe:12:14
+path text="invoices" cross_base=false @stripe.invoices:166:18
+query wire=0 limit ; cross_base=false @stripe.invoices.list part=listed:35:17
+query wire=1 starting_after ; cross_base=false @stripe.invoices.list part=listed:35:24
+query wire=2 ending_before ; cross_base=false @stripe.invoices.list part=listed:35:40
+query wire=3 "created[gte]" = created_gte ; cross_base=false @stripe.invoices.list part=listed:36:17
+query wire=4 "created[lt]" = created_lt ; cross_base=false @stripe.invoices.list part=listed:37:17
+query wire=5 "expand[]" = expand ; cross_base=false @stripe.invoices.list part=expanded:61:21
+query wire=6 customer ; cross_base=false @stripe.invoices.list:184:25
+query wire=7 subscription ; cross_base=false @stripe.invoices.list:184:35
+query wire=8 status ; cross_base=false @stripe.invoices.list:184:49
+query wire=9 collection_method ; cross_base=false @stripe.invoices.list:184:57
+header wire=0 "authorization" = "Bearer {key}" ; cross_base=false @stripe:14:13
+header wire=1 "stripe-version" = version . as_deref () . unwrap_or (API_VERSION) ; cross_base=false @stripe:15:13
+header wire=2 "stripe-account" = account ; cross_base=false @stripe:16:13
+read Json @stripe:18:14
+problem StripeProblem @stripe:19:9
+problem_read Json @stripe:18:14
+paginate by_object_id (starting_after , ending_before) @stripe.invoices.list part=listed:39:22
+endpoint stripe.invoices.finalize POST -> Invoice
+input client.key: Secret @Stripe:5:9
+input client.account?: AccountId @Stripe:7:9
+input client.version?: String @Stripe:9:9
+input finalize.id: InvoiceId @finalize:186:27
+input finalize.params?: FinalizeInvoice @finalize:186:42
+input finalize.idempotency_key?: String @write:69:13
+input finalize.expand?: Vec < String > @write:71:13
+idempotent true @stripe.invoices.finalize part=write:74:13
+base "https://api.stripe.com" @stripe:11:9
+path text="v1" cross_base=false @stripe:12:14
+path text="invoices" cross_base=false @stripe.invoices:166:18
+path hole={id} cross_base=false @stripe.invoices.finalize:187:22
+path text="/finalize" cross_base=false @stripe.invoices.finalize:187:22
+header wire=0 "authorization" = "Bearer {key}" ; cross_base=false @stripe:14:13
+header wire=1 "stripe-version" = version . as_deref () . unwrap_or (API_VERSION) ; cross_base=false @stripe:15:13
+header wire=2 "stripe-account" = account ; cross_base=false @stripe:16:13
+header wire=3 "idempotency-key" = idempotency_key . clone () . unwrap_or_else (new_idempotency_key) ; cross_base=false @stripe.invoices.finalize part=write:73:23
+body stripe_form (params , expand) @stripe.invoices.finalize:188:22
+read Json @stripe:18:14
+problem StripeProblem @stripe:19:9
+problem_read Json @stripe:18:14
+endpoint stripe.invoices.pay POST -> Result < Invoice , Declined >
+input client.key: Secret @Stripe:5:9
+input client.account?: AccountId @Stripe:7:9
+input client.version?: String @Stripe:9:9
+input pay.id: InvoiceId @pay:191:22
+input pay.params?: PayInvoice @pay:191:37
+input pay.idempotency_key?: String @write:69:13
+input pay.expand?: Vec < String > @write:71:13
+idempotent true @stripe.invoices.pay part=write:74:13
+base "https://api.stripe.com" @stripe:11:9
+path text="v1" cross_base=false @stripe:12:14
+path text="invoices" cross_base=false @stripe.invoices:166:18
+path hole={id} cross_base=false @stripe.invoices.pay:192:22
+path text="/pay" cross_base=false @stripe.invoices.pay:192:22
+header wire=0 "authorization" = "Bearer {key}" ; cross_base=false @stripe:14:13
+header wire=1 "stripe-version" = version . as_deref () . unwrap_or (API_VERSION) ; cross_base=false @stripe:15:13
+header wire=2 "stripe-account" = account ; cross_base=false @stripe:16:13
+header wire=3 "idempotency-key" = idempotency_key . clone () . unwrap_or_else (new_idempotency_key) ; cross_base=false @stripe.invoices.pay part=write:73:23
+body stripe_form (params , expand) @stripe.invoices.pay:193:22
+read Json @stripe:18:14
+arm 402 {body} => Err (body) @stripe.invoices.pay:194:26
+problem StripeProblem @stripe:19:9
+problem_read Json @stripe:18:14
+endpoint stripe.invoices.void POST -> Invoice
+input client.key: Secret @Stripe:5:9
+input client.account?: AccountId @Stripe:7:9
+input client.version?: String @Stripe:9:9
+input void.id: InvoiceId @void:196:23
+input void.idempotency_key?: String @write:69:13
+input void.expand?: Vec < String > @write:71:13
+idempotent true @stripe.invoices.void part=write:74:13
+base "https://api.stripe.com" @stripe:11:9
+path text="v1" cross_base=false @stripe:12:14
+path text="invoices" cross_base=false @stripe.invoices:166:18
+path hole={id} cross_base=false @stripe.invoices.void:197:22
+path text="/void" cross_base=false @stripe.invoices.void:197:22
+header wire=0 "authorization" = "Bearer {key}" ; cross_base=false @stripe:14:13
+header wire=1 "stripe-version" = version . as_deref () . unwrap_or (API_VERSION) ; cross_base=false @stripe:15:13
+header wire=2 "stripe-account" = account ; cross_base=false @stripe:16:13
+header wire=3 "idempotency-key" = idempotency_key . clone () . unwrap_or_else (new_idempotency_key) ; cross_base=false @stripe.invoices.void part=write:73:23
+body stripe_form (& () , expand) @stripe.invoices.void:198:22
+read Json @stripe:18:14
+problem StripeProblem @stripe:19:9
+problem_read Json @stripe:18:14
+endpoint stripe.invoices.mark_uncollectible POST -> Invoice
+input client.key: Secret @Stripe:5:9
+input client.account?: AccountId @Stripe:7:9
+input client.version?: String @Stripe:9:9
+input mark_uncollectible.id: InvoiceId @mark_uncollectible:200:37
+input mark_uncollectible.idempotency_key?: String @write:69:13
+input mark_uncollectible.expand?: Vec < String > @write:71:13
+idempotent true @stripe.invoices.mark_uncollectible part=write:74:13
+base "https://api.stripe.com" @stripe:11:9
+path text="v1" cross_base=false @stripe:12:14
+path text="invoices" cross_base=false @stripe.invoices:166:18
+path hole={id} cross_base=false @stripe.invoices.mark_uncollectible:201:22
+path text="/mark_uncollectible" cross_base=false @stripe.invoices.mark_uncollectible:201:22
+header wire=0 "authorization" = "Bearer {key}" ; cross_base=false @stripe:14:13
+header wire=1 "stripe-version" = version . as_deref () . unwrap_or (API_VERSION) ; cross_base=false @stripe:15:13
+header wire=2 "stripe-account" = account ; cross_base=false @stripe:16:13
+header wire=3 "idempotency-key" = idempotency_key . clone () . unwrap_or_else (new_idempotency_key) ; cross_base=false @stripe.invoices.mark_uncollectible part=write:73:23
+body stripe_form (& () , expand) @stripe.invoices.mark_uncollectible:202:22
+read Json @stripe:18:14
+problem StripeProblem @stripe:19:9
+problem_read Json @stripe:18:14
+endpoint stripe.invoices.send POST -> Invoice
+input client.key: Secret @Stripe:5:9
+input client.account?: AccountId @Stripe:7:9
+input client.version?: String @Stripe:9:9
+input send.id: InvoiceId @send:206:23
+input send.idempotency_key?: String @write:69:13
+input send.expand?: Vec < String > @write:71:13
+idempotent true @stripe.invoices.send part=write:74:13
+base "https://api.stripe.com" @stripe:11:9
+path text="v1" cross_base=false @stripe:12:14
+path text="invoices" cross_base=false @stripe.invoices:166:18
+path hole={id} cross_base=false @stripe.invoices.send:207:22
+path text="/send" cross_base=false @stripe.invoices.send:207:22
+header wire=0 "authorization" = "Bearer {key}" ; cross_base=false @stripe:14:13
+header wire=1 "stripe-version" = version . as_deref () . unwrap_or (API_VERSION) ; cross_base=false @stripe:15:13
+header wire=2 "stripe-account" = account ; cross_base=false @stripe:16:13
+header wire=3 "idempotency-key" = idempotency_key . clone () . unwrap_or_else (new_idempotency_key) ; cross_base=false @stripe.invoices.send part=write:73:23
+body stripe_form (& () , expand) @stripe.invoices.send:208:22
+read Json @stripe:18:14
+problem StripeProblem @stripe:19:9
+problem_read Json @stripe:18:14
+endpoint stripe.balance GET -> Balance
+input client.key: Secret @Stripe:5:9
+input client.account?: AccountId @Stripe:7:9
+input client.version?: String @Stripe:9:9
+base "https://api.stripe.com" @stripe:11:9
+path text="v1" cross_base=false @stripe:12:14
+path text="balance" cross_base=false @stripe.balance:213:41
+header wire=0 "authorization" = "Bearer {key}" ; cross_base=false @stripe:14:13
+header wire=1 "stripe-version" = version . as_deref () . unwrap_or (API_VERSION) ; cross_base=false @stripe:15:13
+header wire=2 "stripe-account" = account ; cross_base=false @stripe:16:13
+read Json @stripe:18:14
+problem StripeProblem @stripe:19:9
+problem_read Json @stripe:18:14
+endpoint stripe.balance_transactions.retrieve GET -> BalanceTransaction
+input client.key: Secret @Stripe:5:9
+input client.account?: AccountId @Stripe:7:9
+input client.version?: String @Stripe:9:9
+input retrieve.id: BalanceTransactionId @retrieve:218:26
+input retrieve.expand?: Vec < String > @expanded:59:13
+base "https://api.stripe.com" @stripe:11:9
+path text="v1" cross_base=false @stripe:12:14
+path text="balance_transactions" cross_base=false @stripe.balance_transactions:216:18
+path hole={id} cross_base=false @stripe.balance_transactions.retrieve:218:93
+query wire=0 "expand[]" = expand ; cross_base=false @stripe.balance_transactions.retrieve part=expanded:61:21
+header wire=0 "authorization" = "Bearer {key}" ; cross_base=false @stripe:14:13
+header wire=1 "stripe-version" = version . as_deref () . unwrap_or (API_VERSION) ; cross_base=false @stripe:15:13
+header wire=2 "stripe-account" = account ; cross_base=false @stripe:16:13
+read Json @stripe:18:14
+problem StripeProblem @stripe:19:9
+problem_read Json @stripe:18:14
+endpoint stripe.balance_transactions.list GET -> List < BalanceTransaction >
+input client.key: Secret @Stripe:5:9
+input client.account?: AccountId @Stripe:7:9
+input client.version?: String @Stripe:9:9
+input list.payout?: PayoutId @list:220:17
+input list.source?: String @list:221:17
+input list.kind?: String @list:223:17
+input list.currency?: Currency @list:224:17
+input list.limit?: u32 @listed:24:13
+input list.starting_after?: String @listed:26:13
+input list.ending_before?: String @listed:28:13
+input list.created_gte?: i64 @listed:30:13
+input list.created_lt?: i64 @listed:32:13
+input list.expand?: Vec < String > @expanded:59:13
+base "https://api.stripe.com" @stripe:11:9
+path text="v1" cross_base=false @stripe:12:14
+path text="balance_transactions" cross_base=false @stripe.balance_transactions:216:18
+query wire=0 limit ; cross_base=false @stripe.balance_transactions.list part=listed:35:17
+query wire=1 starting_after ; cross_base=false @stripe.balance_transactions.list part=listed:35:24
+query wire=2 ending_before ; cross_base=false @stripe.balance_transactions.list part=listed:35:40
+query wire=3 "created[gte]" = created_gte ; cross_base=false @stripe.balance_transactions.list part=listed:36:17
+query wire=4 "created[lt]" = created_lt ; cross_base=false @stripe.balance_transactions.list part=listed:37:17
+query wire=5 "expand[]" = expand ; cross_base=false @stripe.balance_transactions.list part=expanded:61:21
+query wire=6 payout ; cross_base=false @stripe.balance_transactions.list:228:25
+query wire=7 source ; cross_base=false @stripe.balance_transactions.list:228:33
+query wire=8 "type" = kind ; cross_base=false @stripe.balance_transactions.list:228:41
+query wire=9 currency ; cross_base=false @stripe.balance_transactions.list:228:56
+header wire=0 "authorization" = "Bearer {key}" ; cross_base=false @stripe:14:13
+header wire=1 "stripe-version" = version . as_deref () . unwrap_or (API_VERSION) ; cross_base=false @stripe:15:13
+header wire=2 "stripe-account" = account ; cross_base=false @stripe:16:13
+read Json @stripe:18:14
+problem StripeProblem @stripe:19:9
+problem_read Json @stripe:18:14
+paginate by_object_id (starting_after , ending_before) @stripe.balance_transactions.list part=listed:39:22
+endpoint stripe.events.retrieve GET -> Event
+input client.key: Secret @Stripe:5:9
+input client.account?: AccountId @Stripe:7:9
+input client.version?: String @Stripe:9:9
+input retrieve.id: EventId @retrieve:236:26
+base "https://api.stripe.com" @stripe:11:9
+path text="v1" cross_base=false @stripe:12:14
+path text="events" cross_base=false @stripe.events:234:18
+path hole={id} cross_base=false @stripe.events.retrieve:236:55
+header wire=0 "authorization" = "Bearer {key}" ; cross_base=false @stripe:14:13
+header wire=1 "stripe-version" = version . as_deref () . unwrap_or (API_VERSION) ; cross_base=false @stripe:15:13
+header wire=2 "stripe-account" = account ; cross_base=false @stripe:16:13
+read Json @stripe:18:14
+problem StripeProblem @stripe:19:9
+problem_read Json @stripe:18:14
+endpoint stripe.events.list GET -> List < Event >
+input client.key: Secret @Stripe:5:9
+input client.account?: AccountId @Stripe:7:9
+input client.version?: String @Stripe:9:9
+input list.kind?: String @list:239:17
+input list.types?: Vec < String > @list:241:17
+input list.delivery_success?: bool @list:242:17
+input list.limit?: u32 @listed:24:13
+input list.starting_after?: String @listed:26:13
+input list.ending_before?: String @listed:28:13
+input list.created_gte?: i64 @listed:30:13
+input list.created_lt?: i64 @listed:32:13
+base "https://api.stripe.com" @stripe:11:9
+path text="v1" cross_base=false @stripe:12:14
+path text="events" cross_base=false @stripe.events:234:18
+query wire=0 limit ; cross_base=false @stripe.events.list part=listed:35:17
+query wire=1 starting_after ; cross_base=false @stripe.events.list part=listed:35:24
+query wire=2 ending_before ; cross_base=false @stripe.events.list part=listed:35:40
+query wire=3 "created[gte]" = created_gte ; cross_base=false @stripe.events.list part=listed:36:17
+query wire=4 "created[lt]" = created_lt ; cross_base=false @stripe.events.list part=listed:37:17
+query wire=5 "type" = kind ; cross_base=false @stripe.events.list:245:25
+query wire=6 "types[]" = types ; cross_base=false @stripe.events.list:245:40
+query wire=7 delivery_success ; cross_base=false @stripe.events.list:245:59
+header wire=0 "authorization" = "Bearer {key}" ; cross_base=false @stripe:14:13
+header wire=1 "stripe-version" = version . as_deref () . unwrap_or (API_VERSION) ; cross_base=false @stripe:15:13
+header wire=2 "stripe-account" = account ; cross_base=false @stripe:16:13
+read Json @stripe:18:14
+problem StripeProblem @stripe:19:9
+problem_read Json @stripe:18:14
+paginate by_object_id (starting_after , ending_before) @stripe.events.list part=listed:39:22
+endpoint stripe.create_file POST -> StripeFile
+input client.key: Secret @Stripe:5:9
+input client.account?: AccountId @Stripe:7:9
+input client.version?: String @Stripe:9:9
+input create_file.purpose: FilePurpose @create_file:251:26
+input create_file.file: Upload @create_file:251:48
+input create_file.idempotency_key?: String @write:69:13
+input create_file.expand?: Vec < String > @write:71:13
+idempotent true @stripe.create_file part=write:74:13
+base "https://files.stripe.com" @stripe.create_file:252:13
+path text="v1" cross_base=true @stripe:12:14
+path text="files" cross_base=false @stripe.create_file:253:18
+header wire=1 "stripe-version" = version . as_deref () . unwrap_or (API_VERSION) ; cross_base=true @stripe:15:13
+header wire=2 "stripe-account" = account ; cross_base=true @stripe:16:13
+header wire=3 "idempotency-key" = idempotency_key . clone () . unwrap_or_else (new_idempotency_key) ; cross_base=false @stripe.create_file part=write:73:23
+header wire=0 "authorization" = "Bearer {client.key}" ; cross_base=false @stripe.create_file:254:23
+body multipart (purpose , file , expand) @stripe.create_file:255:18
+read Json @stripe:18:14
+problem StripeProblem @stripe:19:9
+problem_read Json @stripe:18:14

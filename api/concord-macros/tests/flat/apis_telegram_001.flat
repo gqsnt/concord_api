@@ -1,0 +1,190 @@
+endpoint telegram.get_me GET -> User
+input client.token: Secret @Telegram:5:9
+base "https://api.telegram.org/bot{token}" @telegram:7:9
+path text="getMe" cross_base=false @telegram.get_me:25:37
+read Json @telegram:8:14
+arm 2xx {body} => Reply :: into_result (body) ? @telegram:10:18
+problem TgProblem @telegram:9:9
+problem_read Json @telegram:8:14
+endpoint telegram.get_updates GET -> Vec < Update >
+input client.token: Secret @Telegram:5:9
+input get_updates.offset?: i64 @get_updates:29:25
+input get_updates.limit?: u32 @get_updates:29:39
+input get_updates.timeout?: u32 @get_updates:29:52
+input get_updates.allowed_updates?: Vec < UpdateKind > @get_updates:29:67
+base "https://api.telegram.org/bot{token}" @telegram:7:9
+path text="getUpdates" cross_base=false @telegram.get_updates:30:18
+query wire=0 offset ; cross_base=false @telegram.get_updates:31:21
+query wire=1 limit ; cross_base=false @telegram.get_updates:31:29
+query wire=2 timeout ; cross_base=false @telegram.get_updates:31:36
+query wire=3 "allowed_updates" = allowed_updates . as_ref () . map (AsJson) ; cross_base=false @telegram.get_updates:31:45
+read Json @telegram:8:14
+arm 2xx {body} => Reply :: into_result (body) ? @telegram:10:18
+problem TgProblem @telegram:9:9
+problem_read Json @telegram:8:14
+endpoint telegram.post_message POST -> Message
+input client.token: Secret @Telegram:5:9
+input post_message.chat_id: ChatId @post_message:35:27
+input post_message.text: String @post_message:35:44
+input post_message.link_preview_options?: LinkPreviewOptions @post_message:35:58
+input post_message.parse_mode?: ParseMode @formatted:13:24
+input post_message.entities?: Vec < MessageEntity > @formatted:13:48
+input post_message.message_thread_id?: i64 @delivery:17:13
+input post_message.disable_notification?: bool @delivery:18:13
+input post_message.protect_content?: bool @delivery:19:13
+input post_message.reply_parameters?: ReplyParameters @delivery:20:13
+input post_message.reply_markup?: ReplyMarkup @delivery:21:13
+base "https://api.telegram.org/bot{token}" @telegram:7:9
+path text="sendMessage" cross_base=false @telegram.post_message:37:18
+body params (json ! ({ "chat_id" : chat_id , "text" : text , "link_preview_options" : link_preview_options , "parse_mode" : parse_mode , "entities" : entities , "message_thread_id" : message_thread_id , "disable_notification" : disable_notification , "protect_content" : protect_content , "reply_parameters" : reply_parameters , "reply_markup" : reply_markup })) @telegram.post_message:38:18
+read Json @telegram:8:14
+arm 2xx {body} => Reply :: into_result (body) ? @telegram:10:18
+problem TgProblem @telegram:9:9
+problem_read Json @telegram:8:14
+endpoint telegram.post_photo POST -> Message
+input client.token: Secret @Telegram:5:9
+input post_photo.chat_id: ChatId @post_photo:48:25
+input post_photo.photo: InputFile @post_photo:48:42
+input post_photo.caption?: String @post_photo:48:60
+input post_photo.parse_mode?: ParseMode @formatted:13:24
+input post_photo.entities?: Vec < MessageEntity > @formatted:13:48
+input post_photo.message_thread_id?: i64 @delivery:17:13
+input post_photo.disable_notification?: bool @delivery:18:13
+input post_photo.protect_content?: bool @delivery:19:13
+input post_photo.reply_parameters?: ReplyParameters @delivery:20:13
+input post_photo.reply_markup?: ReplyMarkup @delivery:21:13
+base "https://api.telegram.org/bot{token}" @telegram:7:9
+path text="sendPhoto" cross_base=false @telegram.post_photo:49:18
+body upload ("photo" , photo , json ! ({ "chat_id" : chat_id , "caption" : caption , "parse_mode" : parse_mode , "caption_entities" : entities , "message_thread_id" : message_thread_id , "disable_notification" : disable_notification , "protect_content" : protect_content , "reply_parameters" : reply_parameters , "reply_markup" : reply_markup })) @telegram.post_photo:50:18
+read Json @telegram:8:14
+arm 2xx {body} => Reply :: into_result (body) ? @telegram:10:18
+problem TgProblem @telegram:9:9
+problem_read Json @telegram:8:14
+endpoint telegram.post_document POST -> Message
+input client.token: Secret @Telegram:5:9
+input post_document.chat_id: ChatId @post_document:60:28
+input post_document.document: InputFile @post_document:60:45
+input post_document.caption?: String @post_document:60:66
+input post_document.disable_content_type_detection?: bool @post_document:61:28
+input post_document.parse_mode?: ParseMode @formatted:13:24
+input post_document.entities?: Vec < MessageEntity > @formatted:13:48
+input post_document.message_thread_id?: i64 @delivery:17:13
+input post_document.disable_notification?: bool @delivery:18:13
+input post_document.protect_content?: bool @delivery:19:13
+input post_document.reply_parameters?: ReplyParameters @delivery:20:13
+input post_document.reply_markup?: ReplyMarkup @delivery:21:13
+base "https://api.telegram.org/bot{token}" @telegram:7:9
+path text="sendDocument" cross_base=false @telegram.post_document:62:18
+body upload ("document" , document , json ! ({ "chat_id" : chat_id , "caption" : caption , "disable_content_type_detection" : disable_content_type_detection , "parse_mode" : parse_mode , "caption_entities" : entities , "message_thread_id" : message_thread_id , "disable_notification" : disable_notification , "protect_content" : protect_content , "reply_parameters" : reply_parameters , "reply_markup" : reply_markup })) @telegram.post_document:63:18
+read Json @telegram:8:14
+arm 2xx {body} => Reply :: into_result (body) ? @telegram:10:18
+problem TgProblem @telegram:9:9
+problem_read Json @telegram:8:14
+endpoint telegram.edit_message_text POST -> Message
+input client.token: Secret @Telegram:5:9
+input edit_message_text.chat_id: ChatId @edit_message_text:74:32
+input edit_message_text.message_id: i64 @edit_message_text:74:49
+input edit_message_text.text: String @edit_message_text:74:66
+input edit_message_text.reply_markup?: InlineKeyboardMarkup @edit_message_text:75:32
+input edit_message_text.parse_mode?: ParseMode @formatted:13:24
+input edit_message_text.entities?: Vec < MessageEntity > @formatted:13:48
+base "https://api.telegram.org/bot{token}" @telegram:7:9
+path text="editMessageText" cross_base=false @telegram.edit_message_text:76:18
+body params (json ! ({ "chat_id" : chat_id , "message_id" : message_id , "text" : text , "reply_markup" : reply_markup , "parse_mode" : parse_mode , "entities" : entities })) @telegram.edit_message_text:77:18
+read Json @telegram:8:14
+arm 2xx {body} => Reply :: into_result (body) ? @telegram:10:18
+problem TgProblem @telegram:9:9
+problem_read Json @telegram:8:14
+endpoint telegram.edit_inline_message_text POST -> bool
+input client.token: Secret @Telegram:5:9
+input edit_inline_message_text.inline_message_id: String @edit_inline_message_text:84:39
+input edit_inline_message_text.text: String @edit_inline_message_text:84:66
+input edit_inline_message_text.reply_markup?: InlineKeyboardMarkup @edit_inline_message_text:85:39
+input edit_inline_message_text.parse_mode?: ParseMode @formatted:13:24
+input edit_inline_message_text.entities?: Vec < MessageEntity > @formatted:13:48
+base "https://api.telegram.org/bot{token}" @telegram:7:9
+path text="editMessageText" cross_base=false @telegram.edit_inline_message_text:86:18
+body params (json ! ({ "inline_message_id" : inline_message_id , "text" : text , "reply_markup" : reply_markup , "parse_mode" : parse_mode , "entities" : entities })) @telegram.edit_inline_message_text:87:18
+read Json @telegram:8:14
+arm 2xx {body} => Reply :: into_result (body) ? @telegram:10:18
+problem TgProblem @telegram:9:9
+problem_read Json @telegram:8:14
+endpoint telegram.delete_message POST -> bool
+input client.token: Secret @Telegram:5:9
+input delete_message.chat_id: ChatId @delete_message:94:29
+input delete_message.message_id: i64 @delete_message:94:46
+base "https://api.telegram.org/bot{token}" @telegram:7:9
+path text="deleteMessage" cross_base=false @telegram.delete_message:95:18
+body params (json ! ({ "chat_id" : chat_id , "message_id" : message_id })) @telegram.delete_message:96:18
+read Json @telegram:8:14
+arm 2xx {body} => Reply :: into_result (body) ? @telegram:10:18
+problem TgProblem @telegram:9:9
+problem_read Json @telegram:8:14
+endpoint telegram.answer_callback_query POST -> bool
+input client.token: Secret @Telegram:5:9
+input answer_callback_query.callback_query_id: String @answer_callback_query:100:36
+input answer_callback_query.text?: String @answer_callback_query:100:63
+input answer_callback_query.show_alert?: bool @answer_callback_query:100:78
+input answer_callback_query.url?: String @answer_callback_query:101:36
+input answer_callback_query.cache_time?: u32 @answer_callback_query:101:50
+base "https://api.telegram.org/bot{token}" @telegram:7:9
+path text="answerCallbackQuery" cross_base=false @telegram.answer_callback_query:102:18
+body params (json ! ({ "callback_query_id" : callback_query_id , "text" : text , "show_alert" : show_alert , "url" : url , "cache_time" : cache_time })) @telegram.answer_callback_query:103:18
+read Json @telegram:8:14
+arm 2xx {body} => Reply :: into_result (body) ? @telegram:10:18
+problem TgProblem @telegram:9:9
+problem_read Json @telegram:8:14
+endpoint telegram.get_chat GET -> ChatFullInfo
+input client.token: Secret @Telegram:5:9
+input get_chat.chat_id: ChatId @get_chat:110:22
+base "https://api.telegram.org/bot{token}" @telegram:7:9
+path text="getChat" cross_base=false @telegram.get_chat:111:18
+query wire=0 chat_id ; cross_base=false @telegram.get_chat:112:21
+read Json @telegram:8:14
+arm 2xx {body} => Reply :: into_result (body) ? @telegram:10:18
+problem TgProblem @telegram:9:9
+problem_read Json @telegram:8:14
+endpoint telegram.get_file GET -> File
+input client.token: Secret @Telegram:5:9
+input get_file.file_id: String @get_file:116:22
+base "https://api.telegram.org/bot{token}" @telegram:7:9
+path text="getFile" cross_base=false @telegram.get_file:117:18
+query wire=0 file_id ; cross_base=false @telegram.get_file:118:21
+read Json @telegram:8:14
+arm 2xx {body} => Reply :: into_result (body) ? @telegram:10:18
+problem TgProblem @telegram:9:9
+problem_read Json @telegram:8:14
+endpoint telegram.download GET -> ByteStream
+input client.token: Secret @Telegram:5:9
+input download.file_path: String @download:122:22
+base "https://api.telegram.org/file/bot{client.token}" @telegram.download:123:13
+path hole={*file_path} cross_base=false @telegram.download:124:18
+read Stream @telegram.download:125:18
+problem TgProblem @telegram:9:9
+problem_read Json @telegram:8:14
+endpoint telegram.set_webhook POST -> bool
+input client.token: Secret @Telegram:5:9
+input set_webhook.url: String @set_webhook:130:26
+input set_webhook.secret_token?: Secret @set_webhook:130:39
+input set_webhook.max_connections?: u32 @set_webhook:130:62
+input set_webhook.allowed_updates?: Vec < UpdateKind > @set_webhook:131:26
+input set_webhook.drop_pending_updates?: bool @set_webhook:131:61
+idempotent drop_pending_updates != & Some (true) @telegram.set_webhook:137:13
+base "https://api.telegram.org/bot{token}" @telegram:7:9
+path text="setWebhook" cross_base=false @telegram.set_webhook:132:18
+body params (json ! ({ "url" : url , "secret_token" : secret_token , "max_connections" : max_connections , "allowed_updates" : allowed_updates , "drop_pending_updates" : drop_pending_updates })) @telegram.set_webhook:133:18
+read Json @telegram:8:14
+arm 2xx {body} => Reply :: into_result (body) ? @telegram:10:18
+problem TgProblem @telegram:9:9
+problem_read Json @telegram:8:14
+endpoint telegram.delete_webhook POST -> bool
+input client.token: Secret @Telegram:5:9
+input delete_webhook.drop_pending_updates?: bool @delete_webhook:141:29
+idempotent drop_pending_updates != & Some (true) @telegram.delete_webhook:144:13
+base "https://api.telegram.org/bot{token}" @telegram:7:9
+path text="deleteWebhook" cross_base=false @telegram.delete_webhook:142:18
+body params (json ! ({ "drop_pending_updates" : drop_pending_updates })) @telegram.delete_webhook:143:18
+read Json @telegram:8:14
+arm 2xx {body} => Reply :: into_result (body) ? @telegram:10:18
+problem TgProblem @telegram:9:9
+problem_read Json @telegram:8:14

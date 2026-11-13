@@ -1,9 +1,0 @@
-{
-  "Fault": {
-    "Error": [
-      { "Message": "Business Validation Error", "Detail": "synthetic detail that must never be printed", "code": "6000", "element": "" }
-    ],
-    "type": "ValidationFault"
-  },
-  "time": "2026-11-07T15:58:09.000-08:00"
-}

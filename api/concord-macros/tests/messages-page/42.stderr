@@ -1,0 +1,7 @@
+error: `host` cannot be set in `headers`
+       label: the host comes from the `base`
+       help: remove this host header and put its intended host in the base
+ --> tests/messages-page/42.rs:2:63
+  |
+2 | client Tasks(h: String) { base "https://a.example"; headers { "host" = h; } GET get(); }
+  |                                                               ^^^^^^

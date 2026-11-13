@@ -1,4 +1,0 @@
-{
-  "@odata.deltaLink":"{{BASE}}/users/microsoft.graph.delta?$deltatoken=synthetic%2Bcheckpoint%2Fone%3D",
-  "value":[{"id":"user-c", "displayName":"Cora Example", "mail":"cora@example.invalid"}]
-}

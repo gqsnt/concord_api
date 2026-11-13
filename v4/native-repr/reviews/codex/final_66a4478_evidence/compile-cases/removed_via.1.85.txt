@@ -1,8 +1,0 @@
-    Checking independent-compile v0.0.0 (/home/canarit/projects/concord_v4_native_work/snapshots/final-66a4478/target/probes/compile-work)
-error: `via` was removed: the format comes before the name, `text p: String` (or `body p: String` under a `request text;` default on the client or an enclosing scope)
- --> src/lib.rs:2:79
-  |
-2 | wire::api! { pub client Api { base "http://127.0.0.1";  POST p(body p: String via wire::Text); } }
-  |                                                                               ^^^
-
-error: could not compile `independent-compile` (lib) due to 1 previous error

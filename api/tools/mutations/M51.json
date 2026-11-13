@@ -1,0 +1,9 @@
+{
+  "id": "M51",
+  "area": "request-building",
+  "contract": "docs/contracts.md C2.6",
+  "description": "Percent-encode the unreserved tilde",
+  "file": "concord-core/src/__private/build.rs",
+  "find": "matches!(byte, b'-' | b'.' | b'_' | b'~')",
+  "replace": "matches!(byte, b'-' | b'.' | b'_')"
+}

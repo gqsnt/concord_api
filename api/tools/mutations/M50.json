@@ -1,0 +1,9 @@
+{
+  "id": "M50",
+  "area": "calls",
+  "contract": "docs/contracts.md C3/C7",
+  "description": "Prepare send_full eagerly before its first poll",
+  "file": "concord-core/src/__private/call.rs",
+  "find": "    fn send_full(self) -> Sending<Answer<Self::Value>, Self::Problem> {\n        Sending::new(async move { self.prepare()?.send().await })\n    }\n",
+  "replace": "    fn send_full(self) -> Sending<Answer<Self::Value>, Self::Problem> {\n        let prepared = self.prepare();\n        Sending::new(async move { prepared?.send().await })\n    }\n"
+}

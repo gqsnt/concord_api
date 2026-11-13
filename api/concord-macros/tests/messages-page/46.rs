@@ -1,0 +1,4 @@
+concord::api! {
+client Tasks { base "https://a.example"; read Json; status { 2xx { body } => unpack(body) } GET find() -> Option<u64>; }
+}
+fn main() {}

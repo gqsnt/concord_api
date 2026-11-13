@@ -1,0 +1,8 @@
+error[E0308]: mismatched types
+ --> tests/reader-spans/18_idle.rs:2:14
+  |
+1 | / concord::api! { client C { base "https://span.test"; GET get() {
+2 | | idle_timeout 42;
+  | |              ^^ expected `Duration`, found integer
+3 | | } } }
+  | |_____- expected `Duration` because of return type

@@ -1,0 +1,7 @@
+error: invalid method name
+       label: a method name is an HTTP token, with no space
+       help: write `METHOD "LOCK2" acquire(lock_id: LockId);`
+ --> tests/ui/19_invalid_method.rs:3:16
+  |
+3 |         METHOD "LOCK/2" acquire(lock_id: LockId);
+  |                ^^^^^^^^

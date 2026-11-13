@@ -1,8 +1,0 @@
-{
-  "merchantAccount": "TestMerchant",
-  "paymentPspReference": "8812345678901234",
-  "pspReference": "9913140798220028",
-  "reference": "order-sdk31-capture-1",
-  "status": "received",
-  "amount": {"currency": "EUR", "value": 600}
-}

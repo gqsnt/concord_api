@@ -1,0 +1,7 @@
+error: paths cannot be overridden or removed
+       label: each path adds segments
+       help: write `path "assets";` and change the ancestor's path if needed
+   --> tests/real/m24_path.rs:197:25
+    |
+197 |                         override path "assets";
+    |                         ^^^^^^^^

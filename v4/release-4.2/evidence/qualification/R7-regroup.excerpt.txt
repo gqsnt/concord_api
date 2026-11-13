@@ -1,4 +1,0 @@
-== R7-regroup: cargo +1.99.1 test --locked -p concord --test forwarded_types
-error[E0277]: `Payload<6>` is not accepted for a value of type `Payload<5>`
-exit=101
-restored-bytes-verified

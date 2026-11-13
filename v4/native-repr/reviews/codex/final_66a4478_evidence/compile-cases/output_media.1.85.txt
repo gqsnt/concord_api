@@ -1,8 +1,0 @@
-    Checking independent-compile v0.0.0 (/home/canarit/projects/concord_v4_native_work/snapshots/final-66a4478/target/probes/compile-work)
-error: an output takes no media type: Concord sends no `Accept` and does not check the response `Content-Type`; to send an `Accept` header, declare it (`headers { "accept" = "..."; }`)
- --> src/lib.rs:2:73
-  |
-2 | wire::api! { pub client Api { base "http://127.0.0.1";  GET p() -> json("text/plain") String; } }
-  |                                                                         ^^^^^^^^^^^^
-
-error: could not compile `independent-compile` (lib) due to 1 previous error

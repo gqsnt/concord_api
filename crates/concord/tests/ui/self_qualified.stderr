@@ -1,5 +1,0 @@
-error: `a` is the current owner; write the bare name `x`
- --> tests/ui/self_qualified.rs:4:35
-  |
-4 |         scope a(x: String) { path "{a.x}"; GET one(); }
-  |                                   ^^^^^^^

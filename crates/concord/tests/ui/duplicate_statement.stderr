@@ -1,5 +1,0 @@
-error: duplicate `path` statement; each owner declares it at most once
- --> tests/ui/duplicate_statement.rs:5:9
-  |
-5 |         path "b";
-  |         ^^^^

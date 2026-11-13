@@ -1,0 +1,7 @@
+error: `problem` requires the client
+       label: problem types are declared on the client
+       help: declare the intended problem type on the client; consolidate it with an existing problem declaration
+ --> tests/messages-page/20.rs:2:67
+  |
+2 | client Tasks { base "https://a.example"; read Json; scope items { problem E; GET list(); } }
+  |                                                                   ^^^^^^^

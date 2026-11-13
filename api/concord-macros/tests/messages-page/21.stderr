@@ -1,0 +1,13 @@
+error: header `accept` is already set above
+       label: replacement requires `override`
+       help: write `override "accept" = "…";`
+ --> tests/messages-page/21.rs:2:94
+  |
+2 | client Tasks { base "https://a.example"; headers { "accept" = "a/b"; } GET get() { headers { "accept" = "…"; } } }
+  |                                                                                              ^^^^^^^^
+
+error: the inherited header is set here
+ --> tests/messages-page/21.rs:2:52
+  |
+2 | client Tasks { base "https://a.example"; headers { "accept" = "a/b"; } GET get() { headers { "accept" = "…"; } } }
+  |                                                    ^^^^^^^^

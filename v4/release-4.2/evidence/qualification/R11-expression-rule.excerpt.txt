@@ -1,5 +1,0 @@
-== R11-expression-rule: cargo +1.99.1 test --locked -p concord --test forwarded_types
-error[E0308]: mismatched types
-error: could not compile `concord` (test "forwarded_types") due to 5 previous errors
-exit=101
-restored-bytes-verified

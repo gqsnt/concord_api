@@ -1,8 +1,0 @@
-{
-  "name": "RESOURCE_CONFLICT",
-  "message": "The server has detected a conflict while processing this request.",
-  "debug_id": "synthdebug409",
-  "details": [
-    { "issue": "PREVIOUS_REQUEST_IN_PROGRESS", "description": "A previous request on this resource is currently in progress. Please wait for some time and try again." }
-  ]
-}

@@ -1,0 +1,7 @@
+error: nothing says how this answer is read
+       label: no `read` here or above
+       help: supply the intended reader on this endpoint or an ancestor
+ --> tests/semantic/33_arrow.rs:2:65
+  |
+2 |     client Workshop { base "https://workshop.test"; GET fetch() -> Record; }
+  |                                                                 ^^^^^^^^^

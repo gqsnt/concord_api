@@ -1,0 +1,7 @@
+error: `rate` is optional, and a middleware is made in `new`
+       label: only the required inputs of the client are set when `new` runs
+       help: declare `rate: u16`, without `?`
+ --> tests/semantic/40_optional.rs:2:82
+  |
+2 |     client Workshop(rate?: u16) { base "https://workshop.test"; middleware Quota(rate); GET fetch(); }
+  |                                                                                  ^^^^

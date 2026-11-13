@@ -1,0 +1,4 @@
+concord::api! {
+client Tasks { base "https://a.example"; read Json; GET get() -> Task { status { 200 { bodi } => bodi } } }
+}
+fn main() {}

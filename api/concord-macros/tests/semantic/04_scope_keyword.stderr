@@ -1,0 +1,7 @@
+error: keywords and raw identifiers cannot name scopes
+       label: choose another Rust name
+       help: rename the scope in `r#mod` to `mod_value`
+ --> tests/semantic/04_scope_keyword.rs:2:72
+  |
+2 |     client Workshop { base "https://workshop.test"; read Reader; scope r#mod { GET fetch(); } }
+  |                                                                        ^^^^^

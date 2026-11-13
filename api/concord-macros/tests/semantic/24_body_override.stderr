@@ -1,0 +1,7 @@
+error: `body` cannot be overridden or removed
+       label: `override` and `remove` stand inside a block, before an entry or an arm
+       help: write `body make();`
+ --> tests/semantic/24_body_override.rs:2:80
+  |
+2 |     client Workshop { base "https://workshop.test"; read Reader; GET fetch() { override body make(); } }
+  |                                                                                ^^^^^^^^

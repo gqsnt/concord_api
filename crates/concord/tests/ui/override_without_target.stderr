@@ -1,5 +1,0 @@
-error: cannot override query key `pgae`: no enclosing owner sets it
- --> tests/ui/override_without_target.rs:4:40
-  |
-4 |         GET list(page?: u32) { query { override "pgae" = page; } }
-  |                                        ^^^^^^^^

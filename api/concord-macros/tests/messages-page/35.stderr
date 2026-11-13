@@ -1,0 +1,7 @@
+error: no part named `pages`
+       label: not declared in the client block
+       help: did you mean `..page`? check the inputs and statements of that part
+ --> tests/messages-page/35.rs:2:97
+  |
+2 | client Tasks { base "https://a.example"; part page(limit?: u32) { query { limit; } } GET list(..pages); GET other(..page); }
+  |                                                                                                 ^^^^^

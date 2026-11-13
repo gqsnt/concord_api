@@ -1,0 +1,7 @@
+error: expected an HTTP method before the endpoint name
+       label: endpoint method is missing
+       help: write `GET fetch();`
+ --> tests/semantic/15_method.rs:2:66
+  |
+2 |     client Workshop { base "https://workshop.test"; read Reader; fetch(); }
+  |                                                                  ^^^^^

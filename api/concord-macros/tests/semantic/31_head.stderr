@@ -1,0 +1,7 @@
+error: a HEAD response has no readable body
+       label: this arm asks for the body
+       help: remove the body binding and rewrite this arm's expression to compute its result from status and headers only
+ --> tests/semantic/31_head.rs:2:104
+  |
+2 |     client Workshop { base "https://workshop.test"; read Reader; HEAD fetch() -> bool { status { 2xx { body } => true } } }
+  |                                                                                                        ^^^^

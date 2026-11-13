@@ -1,0 +1,13 @@
+error: duplicate `paginate` statement
+       label: this node already declares `paginate`
+       help: keep one declaration of this behaviour, choosing its intended value
+ --> tests/semantic/17_duplicate_paginate.rs:2:53
+  |
+2 |     client Workshop { GET fetch() { paginate pager; paginate pager; } }
+  |                                                     ^^^^^^^^
+
+error: the first `paginate` statement is here
+ --> tests/semantic/17_duplicate_paginate.rs:2:37
+  |
+2 |     client Workshop { GET fetch() { paginate pager; paginate pager; } }
+  |                                     ^^^^^^^^

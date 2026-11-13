@@ -1,5 +1,0 @@
-error: `query(..)` cannot be `#[sensitive]`: its keys are only known at run time, so Concord could not redact them; declare sensitive parameters with their key (`#[sensitive] query("k") x: T`)
- --> tests/ui/query_pairs_sensitive.rs:9:31
-  |
-9 |         GET list(#[sensitive] query(..) filter: Filter) { path "items"; }
-  |                               ^^^^^

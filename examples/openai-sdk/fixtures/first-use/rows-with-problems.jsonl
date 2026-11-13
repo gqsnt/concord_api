@@ -1,4 +1,0 @@
-{"id":"batch_req_kept","custom_id":"kept","response":{"status_code":200,"body":{"text":"valid before malformed row"}},"error":null}
-not-json
-{"id":"batch_req_duplicate","custom_id":"kept","response":{"status_code":200,"body":{"text":"duplicate"}},"error":null}
-{"id":"batch_req_tail","custom_id":"tail","response":{"status_code":200,"body":{"text":"valid after malformed row"}},"error":null}

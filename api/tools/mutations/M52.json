@@ -1,0 +1,9 @@
+{
+  "id": "M52",
+  "area": "request-building",
+  "contract": "docs/contracts.md C2.6",
+  "description": "Write lower-case hex digits in encoded input bytes",
+  "file": "concord-core/src/__private/build.rs",
+  "find": "let _ = write!(encoded, \"%{byte:02X}\");",
+  "replace": "let _ = write!(encoded, \"%{byte:02x}\");"
+}

@@ -1,0 +1,5 @@
+error: expected an expression
+  --> tests/real/m04_plain.rs:31:37
+   |
+31 |             query { queue; "type" = type; }
+   |                                     ^^^^

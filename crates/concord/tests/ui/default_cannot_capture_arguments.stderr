@@ -1,7 +1,0 @@
-error[E0434]: can't capture dynamic environment in a fn item
- --> tests/ui/default_cannot_capture_arguments.rs:4:39
-  |
-4 |         GET item(id: u64, copy: u64 = id) { path "items/{id}/{copy}"; }
-  |                                       ^^
-  |
-  = help: use the `|| { ... }` closure form instead

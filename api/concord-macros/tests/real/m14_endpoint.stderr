@@ -1,0 +1,7 @@
+error: unsupported attribute on an endpoint
+       label: an endpoint takes doc comments, #[cfg], #[deprecated] and #[doc(hidden)] only
+       help: remove `# [allow(clippy::too_many_arguments)]` from this endpoint
+  --> tests/real/m14_endpoint.rs:94:17
+   |
+94 |                 #[allow(clippy::too_many_arguments)]
+   |                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^

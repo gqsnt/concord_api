@@ -1,7 +1,0 @@
-{
-    "error": {
-        "status": 429,
-        "message": "Too many requests",
-        "reason": "QUOTA_EXCEEDED"
-    }
-}

@@ -1,0 +1,4 @@
+concord::api! {
+client Tasks { base "https://a.example"; read Json; status { 2xx { body } => Reply::into_result(body)? } DELETE archive(); }
+}
+fn main() {}

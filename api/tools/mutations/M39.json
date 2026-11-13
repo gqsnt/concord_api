@@ -1,0 +1,9 @@
+{
+  "id": "M39",
+  "area": "clocks",
+  "contract": "docs/contracts.md C7",
+  "description": "Swap description and client idle precedence",
+  "file": "concord-core/src/__private/client.rs",
+  "find": "        self.idle_timeout\n            .or(self.description_idle_timeout)\n            .or(core.idle_timeout)\n            .unwrap_or(Duration::from_secs(30))\n",
+  "replace": "        self.idle_timeout\n            .or(core.idle_timeout)\n            .or(self.description_idle_timeout)\n            .unwrap_or(Duration::from_secs(30))\n"
+}

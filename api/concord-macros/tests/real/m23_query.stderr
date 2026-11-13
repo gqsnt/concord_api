@@ -1,0 +1,7 @@
+error: no inherited query pair `expand[]` to remove
+       label: this query pair is absent
+       help: delete `remove "expand[]";`
+   --> tests/real/m23_query.rs:236:71
+    |
+236 |             GET retrieve(id: EventId) -> Event { path "{id}"; query { remove "expand[]"; } }
+    |                                                                       ^^^^^^

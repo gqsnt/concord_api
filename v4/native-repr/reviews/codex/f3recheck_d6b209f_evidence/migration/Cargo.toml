@@ -1,7 +1,0 @@
-[package]
-name="migration-rereview"
-version="0.0.0"
-edition="2024"
-[dependencies]
-concord={path="/home/canarit/projects/concord_v4_native_work/snapshots/f3recheck-d6b209f/crates/concord",default-features=false}
-[workspace]

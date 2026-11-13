@@ -1,5 +1,0 @@
-error: `else inherit` never applies: this source is always present
- --> tests/ui/else_inherit_needs_optional_source.rs:5:49
-  |
-5 |         GET page(page_locale: String) { query { override "locale" = page_locale else inherit; } }
-  |                                                 ^^^^^^^^

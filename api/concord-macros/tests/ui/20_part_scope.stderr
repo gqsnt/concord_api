@@ -1,0 +1,7 @@
+error: `part` requires the client
+       label: parts are declared on the client
+       help: declare parts on the client; retain only permitted part statements and place tree behaviour on the appropriate scope or endpoint
+ --> tests/ui/20_part_scope.rs:4:13
+  |
+4 |             part own(limit?: u32) { query { limit; } }
+  |             ^^^^

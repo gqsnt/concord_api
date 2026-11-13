@@ -1,0 +1,15 @@
+error: no `base` in reach of this endpoint
+       label: no `base` here or above
+       help: set the intended base URL on this endpoint or an ancestor
+ --> tests/semantic/10_self_problem.rs:2:58
+  |
+2 |     client Workshop { problem Vec<Self> read Reader; GET fetch(); }
+  |                                                          ^^^^^
+
+error: `Self` has no meaning in a description
+       label: `Self` is not the enclosing type here
+       help: write the path of the type
+ --> tests/semantic/10_self_problem.rs:2:35
+  |
+2 |     client Workshop { problem Vec<Self> read Reader; GET fetch(); }
+  |                                   ^^^^

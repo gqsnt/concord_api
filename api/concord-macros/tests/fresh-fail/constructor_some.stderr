@@ -1,0 +1,12 @@
+error[E0308]: mismatched types
+ --> tests/fresh-fail/constructor_some.rs:1:131
+  |
+1 | ...on<u32> { status { 404 => None, 200 => Some } } } }
+  |                                           ^^^^ expected `Option<u32>`, found enum constructor
+  |
+  = note:          expected enum `Option<u32>`
+          found enum constructor `fn(_) -> Option<_> {Option::<_>::Some}`
+help: use parentheses to construct this tuple variant
+  |
+1 | concord::api! { client C { base "https://books.test"; read concord::Json; GET get() -> Option<u32> { status { 404 => None, 200 => Some(/* value */) } } } }
+  |                                                                                                                                       +++++++++++++

@@ -1,0 +1,7 @@
+error: no status arm `404` above to override
+       label: nothing is set above for this key
+       help: write `404 { body } => document_404::<GetReply>(body)?`
+  --> tests/real/m22_arm.rs:31:26
+   |
+31 |                 status { override 404 { body } => document_404::<GetReply>(body)? }
+   |                          ^^^^^^^^

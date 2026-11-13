@@ -1,0 +1,7 @@
+error: path segments must be nonempty
+       label: leading or doubled slash
+       help: remove doubled slashes in the base's path, retaining its scheme, host, segments and holes
+ --> tests/real/m25_base.rs:8:14
+  |
+8 |         base "https://slack.com//api";                 // `/api` here: a `path` would follow the upload host
+  |              ^^^^^^^^^^^^^^^^^^^^^^^^

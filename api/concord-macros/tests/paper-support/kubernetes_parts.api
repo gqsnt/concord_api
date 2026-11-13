@@ -1,0 +1,11 @@
+part selectors(label_selector?: String, field_selector?: String) {
+            query { "labelSelector" = label_selector; "fieldSelector" = field_selector; }
+        }
+part watching(resource_version?: String, allow_watch_bookmarks?: bool, timeout_seconds?: u32) {
+            query {
+                "watch" = "true"; "resourceVersion" = resource_version;
+                "allowWatchBookmarks" = allow_watch_bookmarks; "timeoutSeconds" = timeout_seconds;
+            }
+            read WatchLines;
+            idle_timeout Duration::from_secs(u64::from(timeout_seconds.unwrap_or(3600)) + 60);
+        }

@@ -1,0 +1,9 @@
+{
+  "id": "M69",
+  "area": "pages",
+  "contract": "docs/contracts.md C8.5 / docs/engine.md section 7",
+  "description": "Lose an in-flight page when a pending try_next is dropped",
+  "file": "concord-core/src/__private/page.rs",
+  "find": "                            self.state = State::Flying {\n                                call,\n                                sent,\n                                endpoint,\n                                tries,\n                                exchange,\n                            };\n                            return Poll::Pending;",
+  "replace": "                            return Poll::Pending;"
+}

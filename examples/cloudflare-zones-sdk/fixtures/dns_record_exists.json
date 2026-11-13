@@ -1,6 +1,0 @@
-{
-  "success": false,
-  "errors": [{ "code": 81057, "message": "The record already exists." }],
-  "messages": [{ "code": 1000, "message": "Synthetic duplicate create refusal" }],
-  "result": ["unexpected result shape must not hide provider errors"]
-}

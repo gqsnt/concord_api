@@ -1,0 +1,13 @@
+error: an arm from above reads the body for an `Option` after the arrow
+       label: a `null` in the body would be a `None`, with no word
+       help: add `status { override 202 { body } => Some(unpack(body)) }` to this endpoint
+ --> tests/semantic/46_scope_arm.rs:2:129
+  |
+2 |     client Workshop { base "https://part.test"; read Reader; scope branch { status { 202 { body } => unpack(body) } GET fetch() -> Op...
+  |                                                                                                                                 ^^
+
+error: the inherited `202` arm reads the body here
+ --> tests/semantic/46_scope_arm.rs:2:86
+  |
+2 |     client Workshop { base "https://part.test"; read Reader; scope branch { status { 202 { body } => unpack(body) } GET fetch() -> Op...
+  |                                                                                      ^^^

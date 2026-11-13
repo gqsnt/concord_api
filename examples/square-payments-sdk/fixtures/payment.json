@@ -1,8 +1,0 @@
-{
-  "payment": {
-    "id": "synthetic-payment-001",
-    "amount_money": { "amount": 1000, "currency": "USD" },
-    "status": "COMPLETED",
-    "source_type": "CARD"
-  }
-}

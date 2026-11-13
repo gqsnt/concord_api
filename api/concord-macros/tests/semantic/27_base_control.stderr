@@ -1,0 +1,7 @@
+error: forbidden character in fixed path text
+       label: this character must come from an encoded value
+       help: move the forbidden fixed text into an input hole at this position; retain the other path text and holes
+ --> tests/semantic/27_base_control.rs:2:28
+  |
+2 |     client Workshop { base "https://base.test/a\tb"; GET fetch(); }
+  |                            ^^^^^^^^^^^^^^^^^^^^^^^^

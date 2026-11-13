@@ -1,0 +1,9 @@
+{
+  "id": "M127",
+  "area": "writers",
+  "contract": "A49 C2.14",
+  "description": "Lose the body-template hole name at the depth limit",
+  "file": "concord-core/src/__private/value.rs",
+  "find": "return Err(WriteFailure::Depth);",
+  "replace": "return Err(WriteFailure::Shape);"
+}

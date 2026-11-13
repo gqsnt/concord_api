@@ -1,0 +1,7 @@
+error: `paginate` requires an endpoint
+       label: `paginate` stands on an endpoint, not on a scope
+       help: place this behaviour on an endpoint, consolidating it with any statement supplied there or by a part
+ --> tests/messages-page/18.rs:2:86
+  |
+2 | client Tasks { base "https://a.example"; scope items(start?: u32) { query { start; } paginate by_offset(start); GET list(); } }
+  |                                                                                      ^^^^^^^^

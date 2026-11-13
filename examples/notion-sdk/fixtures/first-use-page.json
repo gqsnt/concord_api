@@ -1,1 +1,0 @@
-{"object":"page","id":"page-beta","properties":{"Name":{"id":"title","type":"title","title":[{"type":"text","text":{"content":"Launch plan","link":null},"plain_text":"Launch plan"}]},"Priority":{"id":"p","type":"select","select":{"id":"option-done","name":"Done","color":"green"}}}}

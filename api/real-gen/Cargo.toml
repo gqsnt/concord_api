@@ -1,0 +1,15 @@
+[package]
+name = "real-gen"
+edition.workspace = true
+version.workspace = true
+publish = false
+
+[lints]
+workspace = true
+
+[dependencies]
+concord = { path = "../concord", features = ["multipart"] }
+serde.workspace = true
+serde_json.workspace = true
+bytes.workspace = true
+

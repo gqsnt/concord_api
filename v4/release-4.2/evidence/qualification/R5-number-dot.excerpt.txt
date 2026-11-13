@@ -1,7 +1,0 @@
-== R5-number-dot: cargo +1.99.1 test --locked -p concord-macros
-test syntax::tests::separate_punctuation_stays_separate ... FAILED
-  left: "Foo<{ f(1.max(2), 1...2, 1..=3, 1.5.max(2)) }>"
- right: "Foo<{ f(1 .max(2), 1. ..2, 1..=3, 1.5.max(2)) }>"
-test result: FAILED. 16 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.25s
-exit=101
-restored-bytes-verified

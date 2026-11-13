@@ -1,7 +1,0 @@
-{
-  "error": {
-    "type": "security_exception",
-    "reason": "unable to authenticate with provided credentials (synthetic)"
-  },
-  "status": 401
-}

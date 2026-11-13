@@ -1,6 +1,0 @@
-== R14-lifetime (parenthesize every non-path fragment of several tokens)
-error: expected type, found lifetime
-error: expected one of `,` or `>`, found `str`
-error: could not compile `concord` (test "forwarded_types") due to 2 previous errors
-exit=101
-restored-bytes-verified

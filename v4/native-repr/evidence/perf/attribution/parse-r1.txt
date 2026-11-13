@@ -1,4 +1,0 @@
-body_encode/json/100B/concord/prepare
-                        time:   [461.53 ns 462.00 ns 462.50 ns]
-body_encode/bytes/100B/concord/prepare
-                        time:   [187.50 ns 188.00 ns 188.54 ns]

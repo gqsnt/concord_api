@@ -1,0 +1,13 @@
+error: duplicate header `x-q` in this block
+       label: a key is written once in one node
+       help: consolidate these entries into one intended value, retaining every needed input placement or removing declarations that are no longer needed
+ --> tests/semantic/38_headers_block.rs:2:101
+  |
+2 |     client Workshop { base "https://workshop.test"; read Reader; GET fetch() { headers { "x-q" = 1; "x-q" = 2; } } }
+  |                                                                                                     ^^^^^
+
+error: the first header `x-q` is here
+ --> tests/semantic/38_headers_block.rs:2:90
+  |
+2 |     client Workshop { base "https://workshop.test"; read Reader; GET fetch() { headers { "x-q" = 1; "x-q" = 2; } } }
+  |                                                                                          ^^^^^

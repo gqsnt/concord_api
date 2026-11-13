@@ -1,0 +1,7 @@
+error: `body` requires an endpoint
+       label: `body` stands on an endpoint, not on a client
+       help: place this behaviour on an endpoint, consolidating it with any statement supplied there or by a part
+ --> tests/semantic/18_body_client.rs:2:23
+  |
+2 |     client Workshop { body make(); }
+  |                       ^^^^

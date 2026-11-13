@@ -1,0 +1,66 @@
+[
+  {
+    "page": "3-language.md",
+    "line": 232,
+    "kind": "part",
+    "reason": "metasyntactic signature (not a description)",
+    "source": "part name(inputs) { }",
+    "extracted": "corpus/schematic_001.rs"
+  },
+  {
+    "page": "3-language.md",
+    "line": 271,
+    "kind": "POST",
+    "reason": "explicit ellipsis (abbreviated sketch)",
+    "source": "POST upload_asset(\u2026) { base \"https://uploads.github.com\"; \u2026 }",
+    "extracted": "corpus/schematic_002.rs"
+  },
+  {
+    "page": "3-language.md",
+    "line": 272,
+    "kind": "client",
+    "reason": "explicit ellipsis (abbreviated sketch)",
+    "source": "client Gitlab(url: Base, token: Secret) { base url; path \"api/v4\"; \u2026 }",
+    "extracted": "corpus/schematic_003.rs"
+  },
+  {
+    "page": "5-response.md",
+    "line": 197,
+    "kind": "client",
+    "reason": "explicit ellipsis (abbreviated sketch)",
+    "source": "pub client Riot(key: Secret) {\n    headers { \"x-riot-token\" = key; }\n    read Json;\n    problem RiotProblem;\n    \u2026\n}",
+    "extracted": "corpus/schematic_004.rs"
+  },
+  {
+    "page": "5-response.md",
+    "line": 237,
+    "kind": "client",
+    "reason": "explicit ellipsis (abbreviated sketch)",
+    "source": "pub client Vault {\n    base \"https://api.vault.example\";\n    read Json;\n    problem VaultProblem;\n    status { 2xx { body } => Reply::into_result(body)? }\n    \u2026\n}",
+    "extracted": "corpus/schematic_005.rs"
+  },
+  {
+    "page": "6-behaviour.md",
+    "line": 262,
+    "kind": "client",
+    "reason": "explicit ellipsis (abbreviated sketch)",
+    "source": "pub client Stripe(key: Secret) {\n    \u2026\n    part page(limit?: u32, starting_after?: String) {\n        query { limit; starting_after; }\n        paginate cursor(starting_after, List::next_cursor);\n    }\n\n    scope customers {\n        path \"v1/customers\";\n        GET list(email?: String, ..page) -> List<Customer> { query { email; } }\n    }\n}",
+    "extracted": "corpus/schematic_006.rs"
+  },
+  {
+    "page": "apis/s3.md",
+    "line": 839,
+    "kind": "client",
+    "reason": "explicit ellipsis (abbreviated sketch)",
+    "source": "pub client S3(region: Region, signer: Signer) { transport SigV4::new(signer); \u2026 }",
+    "extracted": "corpus/schematic_007.rs"
+  },
+  {
+    "page": "apis/s3.md",
+    "line": 842,
+    "kind": "PUT",
+    "reason": "explicit ellipsis (abbreviated sketch)",
+    "source": "PUT put(\u2026, metadata: BTreeMap<String, String>) { headers { \"x-amz-meta-*\" = metadata; } }",
+    "extracted": "corpus/schematic_008.rs"
+  }
+]

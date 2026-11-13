@@ -1,0 +1,7 @@
+error: invalid client name
+       label: expected upper camel case with a non-keyword module name
+       help: write `client Riot`
+ --> tests/real/m06.rs:7:16
+  |
+7 |     pub client riot(
+  |                ^^^^

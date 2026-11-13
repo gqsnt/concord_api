@@ -1,0 +1,7 @@
+error: path segments must be nonempty
+       label: leading or doubled slash
+       help: remove doubled slashes in the base's path, retaining its scheme, host, segments and holes
+ --> tests/semantic/25_base_empty.rs:2:28
+  |
+2 |     client Workshop { base "https://base.test/a//b"; GET fetch(); }
+  |                            ^^^^^^^^^^^^^^^^^^^^^^^^

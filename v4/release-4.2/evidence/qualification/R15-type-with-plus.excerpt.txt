@@ -1,5 +1,0 @@
-== R15-type-with-plus: cargo +1.99.1 test --locked -p concord --test forwarded_types
-error: ambiguous `+` in a type
-error: could not compile `concord` (test "forwarded_types") due to 1 previous error
-exit=101
-restored-bytes-verified

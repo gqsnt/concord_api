@@ -1,0 +1,7 @@
+error: a `{*…}` hole must be a whole segment
+       label: `{*code}` stands outside a path
+       help: write `"{code}"` with a `{code}` hole
+ --> tests/semantic/29_body_make.rs:2:115
+  |
+2 |     client Workshop { base "https://workshop.test"; read Reader; GET fetch(code: String) { body make { "x-code" = "{*code}"; } } }
+  |                                                                                                                   ^^^^^^^^^

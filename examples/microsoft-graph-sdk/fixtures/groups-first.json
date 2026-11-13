@@ -1,5 +1,0 @@
-{
-  "@odata.context":"{{BASE}}/$metadata#groups",
-  "@odata.nextLink":"{{BASE}}/groups?$skiptoken=synthetic%2Bgroups%3D",
-  "value":[{"id":"group-one", "displayName":"Example Engineering", "mail":null, "mailEnabled":false, "securityEnabled":true, "groupTypes":[]}]
-}

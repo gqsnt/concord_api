@@ -1,0 +1,6 @@
+error: expected a statement, part, scope or HTTP method
+       help: set the request URL with the `base` statement
+ --> tests/fresh-fail/settings_base_url.rs:1:70
+  |
+1 | concord::api! { client C { base "https://settings.test"; GET get() { base_url "https://other.test"; } } }
+  |                                                                      ^^^^^^^^

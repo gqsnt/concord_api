@@ -1,0 +1,4 @@
+concord::api! {
+client Tasks { base "https://a.example"; scope things(get?: u32) { query { get; } GET get(); } }
+}
+fn main() {}

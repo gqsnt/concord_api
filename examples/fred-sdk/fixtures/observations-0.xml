@@ -1,4 +1,0 @@
-<observations count="3" offset="0" limit="2">
-  <observation realtime_start="2026-01-01" realtime_end="2026-01-01" date="2000-01-01" value="2.5000"/>
-  <observation realtime_start="2026-01-01" realtime_end="2026-01-01" date="2001-01-01" value="."/>
-</observations>

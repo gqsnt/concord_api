@@ -1,5 +1,0 @@
-error: value `unused` is never used; place it (`query`, `header("..")`) or reference it from `path`, `subdomain`, `query` or `headers`
- --> tests/ui/unused_value_keeps_the_client.rs:5:35
-  |
-5 |     pub client Api(token: String, unused: String) {
-  |                                   ^^^^^^

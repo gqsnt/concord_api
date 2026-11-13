@@ -1,0 +1,12 @@
+{
+  "id": "M105",
+  "area": "allocation",
+  "contract": "A63",
+  "description": "Allocate a Vec for a scalar template entry",
+  "file": "concord-core/src/__private/build.rs",
+  "find": "Shape::One(text)\n        },",
+  "replace": "Shape::List(vec![text])\n        },",
+  "checks": [
+    "allocations"
+  ]
+}

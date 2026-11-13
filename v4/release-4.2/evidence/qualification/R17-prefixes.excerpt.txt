@@ -1,7 +1,0 @@
-== R17-prefixes: python3 -I -B -m unittest discover -s scripts/tests -p test_check_ci.py
-FAIL: test_set_noexec_behind_prefixes (test_check_ci.Fails.test_set_noexec_behind_prefixes) (line='builtin set -n')
-FAIL: test_set_noexec_behind_prefixes (test_check_ci.Fails.test_set_noexec_behind_prefixes) (line='command set -o noexec')
-FAIL: test_set_noexec_behind_prefixes (test_check_ci.Fails.test_set_noexec_behind_prefixes) (line='command -p set -n')
-FAIL: test_set_noexec_behind_prefixes (test_check_ci.Fails.test_set_noexec_behind_prefixes)
-exit=1
-restored-bytes-verified

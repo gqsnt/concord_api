@@ -1,0 +1,1 @@
+GET g() { middleware A; }

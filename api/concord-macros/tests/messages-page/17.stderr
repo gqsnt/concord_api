@@ -1,0 +1,13 @@
+error: duplicate `body` statement
+       label: this node already declares `body`
+       help: keep one declaration of this behaviour, choosing its intended value
+ --> tests/messages-page/17.rs:2:85
+  |
+2 | client Tasks { base "https://a.example"; POST create(task: Task) { body json(task); body json(task); } }
+  |                                                                                     ^^^^
+
+error: the first `body` statement is here
+ --> tests/messages-page/17.rs:2:68
+  |
+2 | client Tasks { base "https://a.example"; POST create(task: Task) { body json(task); body json(task); } }
+  |                                                                    ^^^^

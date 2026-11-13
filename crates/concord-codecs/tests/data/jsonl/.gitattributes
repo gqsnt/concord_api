@@ -1,4 +1,0 @@
-# Seeds are exact bytes (CRLF, a byte order mark, a missing final LF): never normalize them.
-* -text
-PROVENANCE.md text eol=lf
-.gitattributes text eol=lf
