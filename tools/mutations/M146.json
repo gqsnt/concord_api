@@ -1,0 +1,9 @@
+{
+  "id": "M146",
+  "area": "transport",
+  "contract": "C8.6",
+  "description": "mistake a different placeholder path for no URL",
+  "file": "concord-core/src/transport.rs",
+  "find": "if response.url().as_str() != \"http://no.url.provided.local/\"",
+  "replace": "if response.url().host_str() != Some(\"no.url.provided.local\")"
+}

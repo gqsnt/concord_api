@@ -1,0 +1,7 @@
+error: ancestor inputs require their owner's name
+       label: `tenant` belongs to the client
+       help: write `{client.tenant}`
+ --> tests/diagnostics/catalogue/12.rs:2:75
+  |
+2 | client Tasks(tenant: String) { base "https://a.example"; GET get() { path "{tenant}"; } }
+  |                                                                           ^^^^^^^^^^

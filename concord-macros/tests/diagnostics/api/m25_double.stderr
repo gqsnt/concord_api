@@ -1,0 +1,7 @@
+error: path segments must be nonempty
+       label: leading or doubled slash
+       help: remove leading or repeated slashes while keeping the path's segments and holes; omit an empty path statement
+   --> tests/diagnostics/api/m25_double.rs:103:18
+    |
+103 |             path "lol/match/v5//matches";
+    |                  ^^^^^^^^^^^^^^^^^^^^^^^

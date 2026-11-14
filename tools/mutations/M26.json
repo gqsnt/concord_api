@@ -1,0 +1,9 @@
+{
+  "id": "M26",
+  "area": "errors",
+  "contract": "C6.2",
+  "description": "Change one word of transport timeout text",
+  "file": "concord-core/src/error.rs",
+  "find": "            Self::Transport(Class::Timeout, _) => {\n                f.write_str(\"a timeout was reported by the transport\")\n            }\n",
+  "replace": "            Self::Transport(Class::Timeout, _) => {\n                f.write_str(\"a timeout was reported by the network\")\n            }\n"
+}

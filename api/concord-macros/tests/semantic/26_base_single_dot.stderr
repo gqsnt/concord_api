@@ -1,7 +1,0 @@
-error: dot segments are forbidden in paths
-       label: `.` is a dot segment
-       help: write the intended base without dot segments, retaining its scheme, host and other path segments
- --> tests/semantic/26_base_single_dot.rs:2:28
-  |
-2 |     client Workshop { base "https://base.test/a/./b"; GET fetch(); }
-  |                            ^^^^^^^^^^^^^^^^^^^^^^^^^

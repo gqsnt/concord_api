@@ -1,0 +1,7 @@
+error: `host` cannot be set in `headers`
+       label: the host comes from the `base`
+       help: remove this host header and put its intended host in the base
+ --> tests/diagnostics/rules/42_HOST.rs:2:90
+  |
+2 |     client Workshop { base "https://workshop.test"; read Reader; GET fetch() { headers { "HOST" = "host.test"; } } }
+  |                                                                                          ^^^^^^

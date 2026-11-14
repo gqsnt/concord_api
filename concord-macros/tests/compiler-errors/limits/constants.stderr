@@ -1,0 +1,601 @@
+error[E0530]: let bindings cannot shadow constants
+  --> tests/compiler-errors/limits/constants.rs:16:12
+   |
+ 9 | const __client: u16 = 24;
+   | ------------------------- the constant `__client` is defined here
+...
+16 |     client Hygienic {
+   |            ^^^^^^^^ cannot be named the same as a constant
+   |
+   = note: this error originates in the macro `::concord::api` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0530]: let bindings cannot shadow constants
+  --> tests/compiler-errors/limits/constants.rs:15:1
+   |
+ 6 |   const __draft: u16 = 21;
+   |   ------------------------ the constant `__draft` is defined here
+...
+15 | / ::concord::api! {
+16 | |     client Hygienic {
+17 | |         base "https://hygiene.test";
+18 | |         read ::concord::Json;
+...  |
+21 | | }
+   | |_^ cannot be named the same as a constant
+   |
+   = note: this error originates in the macro `::concord::api` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0308]: mismatched types
+  --> tests/compiler-errors/limits/constants.rs:19:13
+   |
+ 4 | const __response: u16 = 19;
+   | --------------------- constant defined here
+...
+19 |         GET get() -> u16 { query { "value" = __value; } status { 404 => __status } }
+   |             ^^^
+   |             |
+   |             expected `Response`, found `u16`
+   |             `__response` is interpreted as a constant, not a new binding
+   |
+   = note: this error originates in the macro `::concord::api` (in Nightly builds, run with -Z macro-backtrace for more info)
+help: introduce a new binding instead
+   |
+19 -         GET get() -> u16 { query { "value" = __value; } status { 404 => __status } }
+19 +         GET other___response() -> u16 { query { "value" = __value; } status { 404 => __status } }
+   |
+
+error[E0308]: mismatched types
+  --> tests/compiler-errors/limits/constants.rs:19:13
+   |
+ 5 | const __info: u16 = 20;
+   | ----------------- constant defined here
+...
+19 |         GET get() -> u16 { query { "value" = __value; } status { 404 => __status } }
+   |             ^^^
+   |             |
+   |             expected `TryInfo`, found `u16`
+   |             `__info` is interpreted as a constant, not a new binding
+   |
+   = note: this error originates in the macro `::concord::api` (in Nightly builds, run with -Z macro-backtrace for more info)
+help: introduce a new binding instead
+   |
+19 -         GET get() -> u16 { query { "value" = __value; } status { 404 => __status } }
+19 +         GET other___info() -> u16 { query { "value" = __value; } status { 404 => __status } }
+   |
+
+error[E0599]: no method named `url` found for type `u16` in the current scope
+  --> tests/compiler-errors/limits/constants.rs:19:13
+   |
+19 |         GET get() -> u16 { query { "value" = __value; } status { 404 => __status } }
+   |             ^^^ method not found in `u16`
+   |
+   = note: this error originates in the macro `::concord::api` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0599]: no method named `status` found for type `u16` in the current scope
+  --> tests/compiler-errors/limits/constants.rs:19:13
+   |
+19 |         GET get() -> u16 { query { "value" = __value; } status { 404 => __status } }
+   |             ^^^ method not found in `u16`
+   |
+   = note: this error originates in the macro `::concord::api` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0599]: no method named `headers` found for type `u16` in the current scope
+  --> tests/compiler-errors/limits/constants.rs:19:13
+   |
+19 |         GET get() -> u16 { query { "value" = __value; } status { 404 => __status } }
+   |             ^^^ method not found in `u16`
+   |
+   = note: this error originates in the macro `::concord::api` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0308]: mismatched types
+  --> tests/compiler-errors/limits/constants.rs:19:13
+   |
+ 3 | const __headers: u16 = 18;
+   | -------------------- constant defined here
+...
+19 |         GET get() -> u16 { query { "value" = __value; } status { 404 => __status } }
+   |             ^^^
+   |             |
+   |             expected `Headers`, found `u16`
+   |             `__headers` is interpreted as a constant, not a new binding
+   |
+   = note: this error originates in the macro `::concord::api` (in Nightly builds, run with -Z macro-backtrace for more info)
+help: introduce a new binding instead
+   |
+19 -         GET get() -> u16 { query { "value" = __value; } status { 404 => __status } }
+19 +         GET other___headers() -> u16 { query { "value" = __value; } status { 404 => __status } }
+   |
+
+error[E0599]: no method named `as_u16` found for type `u16` in the current scope
+  --> tests/compiler-errors/limits/constants.rs:15:1
+   |
+15 |   ::concord::api! {
+   |  _^
+16 | |     client Hygienic {
+17 | |         base "https://hygiene.test";
+18 | |         read ::concord::Json;
+...  |
+21 | | }
+   | |_^ method not found in `u16`
+   |
+   = note: this error originates in the macro `::concord::api` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0308]: mismatched types
+  --> tests/compiler-errors/limits/constants.rs:19:73
+   |
+10 | const __arm: u16 = 25;
+   | ---------------- constant defined here
+...
+19 |         GET get() -> u16 { query { "value" = __value; } status { 404 => __status } }
+   |                                                                         ^^^^^^^^
+   |                                                                         |
+   |                                                                         expected closure, found `u16`
+   |                                                                         `__arm` is interpreted as a constant, not a new binding
+   |
+   = note: expected closure `{closure@$DIR/tests/compiler-errors/limits/constants.rs:19:73: 19:81}`
+                 found type `u16`
+   = note: this error originates in the macro `::concord::api` (in Nightly builds, run with -Z macro-backtrace for more info)
+help: introduce a new binding instead
+   |
+19 -         GET get() -> u16 { query { "value" = __value; } status { 404 => __status } }
+19 +         GET get() -> u16 { query { "value" = __value; } status { 404 => other___arm } }
+   |
+
+error[E0618]: expected function, found `u16`
+  --> tests/compiler-errors/limits/constants.rs:19:73
+   |
+10 | const __arm: u16 = 25;
+   | ---------------- `__arm` defined here
+...
+19 |         GET get() -> u16 { query { "value" = __value; } status { 404 => __status } }
+   |                                                                         ^^^^^^^^ call expression requires function
+   |
+   = note: this error originates in the macro `::concord::api` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0308]: arguments to this function are incorrect
+  --> tests/compiler-errors/limits/constants.rs:19:73
+   |
+19 |         GET get() -> u16 { query { "value" = __value; } status { 404 => __status } }
+   |                                                                         ^^^^^^^^
+   |                                                                         |
+   |                                                                         expected `StatusCode`, found `u16`
+   |                                                                         expected `&Headers`, found `&u16`
+   |                                                                         expected `&TryInfo`, found `&u16`
+   |
+   = note: expected reference `&Headers`
+              found reference `&u16`
+   = note: expected reference `&TryInfo`
+              found reference `&u16`
+note: function defined here
+  --> $WORKSPACE/concord-core/src/__private/answer.rs
+   |
+   | pub fn arm<A, P>(
+   |        ^^^
+   = note: this error originates in the macro `::concord::api` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0599]: no method named `is_success` found for type `u16` in the current scope
+  --> tests/compiler-errors/limits/constants.rs:15:1
+   |
+15 |   ::concord::api! {
+   |  _^
+16 | |     client Hygienic {
+17 | |         base "https://hygiene.test";
+18 | |         read ::concord::Json;
+...  |
+21 | | }
+   | |_^ method not found in `u16`
+   |
+   = note: this error originates in the macro `::concord::api` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0277]: the trait bound `concord::read::Incoming: From<u16>` is not satisfied
+  --> tests/compiler-errors/limits/constants.rs:18:14
+   |
+18 |         read ::concord::Json;
+   |              ^ the trait `From<u16>` is not implemented for `concord::read::Incoming`
+   |
+help: the trait `From<u16>` is not implemented for `concord::read::Incoming`
+      but trait `From<concord::reqwest::Response>` is implemented for it
+  --> $WORKSPACE/concord-core/src/read.rs
+   |
+   | impl From<reqwest::Response> for Incoming {
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   = help: for that trait implementation, expected `concord::reqwest::Response`, found `u16`
+   = note: required for `u16` to implement `Into<concord::read::Incoming>`
+note: required by a bound in `concord::__private::read_body`
+  --> $WORKSPACE/concord-core/src/__private/answer.rs
+   |
+   | pub fn read_body<'a, T, P, R>(
+   |        --------- required by a bound in this function
+   |     reader: &'a R,
+   |     response: impl Into<Incoming> + Send + 'a,
+   |                    ^^^^^^^^^^^^^^ required by this bound in `read_body`
+   = note: this error originates in the macro `::concord::api` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0308]: mismatched types
+  --> tests/compiler-errors/limits/constants.rs:18:14
+   |
+18 |         read ::concord::Json;
+   |              ^
+   |              |
+   |              expected `&TryInfo`, found `&u16`
+   |              arguments to this function are incorrect
+   |
+   = note: expected reference `&TryInfo`
+              found reference `&u16`
+note: function defined here
+  --> $WORKSPACE/concord-core/src/__private/answer.rs
+   |
+   | pub fn read_body<'a, T, P, R>(
+   |        ^^^^^^^^^
+   = note: this error originates in the macro `::concord::api` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0277]: the trait bound `concord::read::Incoming: From<u16>` is not satisfied
+  --> tests/compiler-errors/limits/constants.rs:15:1
+   |
+15 | / ::concord::api! {
+16 | |     client Hygienic {
+17 | |         base "https://hygiene.test";
+18 | |         read ::concord::Json;
+...  |
+21 | | }
+   | |_^ the trait `From<u16>` is not implemented for `concord::read::Incoming`
+   |
+help: the trait `From<u16>` is not implemented for `concord::read::Incoming`
+      but trait `From<concord::reqwest::Response>` is implemented for it
+  --> $WORKSPACE/concord-core/src/read.rs
+   |
+   | impl From<reqwest::Response> for Incoming {
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   = help: for that trait implementation, expected `concord::reqwest::Response`, found `u16`
+   = note: required for `u16` to implement `Into<concord::read::Incoming>`
+note: required by a bound in `concord::__private::refused_plain`
+  --> $WORKSPACE/concord-core/src/__private/answer.rs
+   |
+   | pub fn refused_plain<'a, P: Send + 'a>(
+   |        ------------- required by a bound in this function
+   |     response: impl Into<Incoming> + Send + 'a,
+   |                    ^^^^^^^^^^^^^^ required by this bound in `refused_plain`
+   = note: this error originates in the macro `::concord::api` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0308]: mismatched types
+  --> tests/compiler-errors/limits/constants.rs:15:1
+   |
+15 | / ::concord::api! {
+16 | |     client Hygienic {
+17 | |         base "https://hygiene.test";
+18 | |         read ::concord::Json;
+...  |
+21 | | }
+   | | ^
+   | | |
+   | |_expected `&TryInfo`, found `&u16`
+   |   arguments to this function are incorrect
+   |
+   = note: expected reference `&TryInfo`
+              found reference `&u16`
+note: function defined here
+  --> $WORKSPACE/concord-core/src/__private/answer.rs
+   |
+   | pub fn refused_plain<'a, P: Send + 'a>(
+   |        ^^^^^^^^^^^^^
+   = note: this error originates in the macro `::concord::api` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0308]: arguments to this function are incorrect
+  --> tests/compiler-errors/limits/constants.rs:19:13
+   |
+19 |         GET get() -> u16 { query { "value" = __value; } status { 404 => __status } }
+   |             ^^^
+   |             |
+   |             expected `StatusCode`, found `u16`
+   |             expected `Headers`, found `u16`
+   |
+note: associated function defined here
+  --> $WORKSPACE/concord-core/src/answer.rs
+   |
+   |     pub fn new(status: http::StatusCode, headers: Headers, value: T) -> Answer<T> {
+   |            ^^^
+   = note: this error originates in the macro `::concord::api` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0308]: mismatched types
+  --> tests/compiler-errors/limits/constants.rs:18:14
+   |
+ 7 | const __value: u16 = 22;
+   | ------------------ constant defined here
+...
+18 |         read ::concord::Json;
+   |              ^
+   |              |
+   |              expected type parameter `__R`, found `u16`
+   |              expected due to this
+   |              `__value` is interpreted as a constant, not a new binding
+   |
+   = note: expected type parameter `__R`
+                        found type `u16`
+   = note: this error originates in the macro `::concord::api` (in Nightly builds, run with -Z macro-backtrace for more info)
+help: introduce a new binding instead
+   |
+18 -         read ::concord::Json;
+18 +         read other___value:concord::Json;
+   |
+
+error[E0308]: mismatched types
+  --> tests/compiler-errors/limits/constants.rs:18:14
+   |
+18 |         read ::concord::Json;
+   |              ^
+   |              |
+   |              expected type parameter `__R`, found `u16`
+   |              arguments to this function are incorrect
+   |
+   = note: expected type parameter `__R`
+                        found type `u16`
+help: the return type of this call is `u16` due to the type of the argument passed
+  --> tests/compiler-errors/limits/constants.rs:18:14
+   |
+18 |         read ::concord::Json;
+   |              ^ this argument influences the return type of `reader`
+note: function defined here
+  --> $WORKSPACE/concord-core/src/__private/answer.rs
+   |
+   | pub fn reader<T, R: Reader<T>>(reader: R) -> CheckedReader<T, R> {
+   |        ^^^^^^
+   = note: this error originates in the macro `::concord::api` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0308]: mismatched types
+  --> tests/compiler-errors/limits/constants.rs:16:12
+   |
+13 | const __retry: u16 = 28;
+   | ------------------ constant defined here
+...
+16 |     client Hygienic {
+   |            ^^^^^^^^
+   |            |
+   |            expected `Retry`, found `u16`
+   |            expected due to this
+   |            `__retry` is interpreted as a constant, not a new binding
+   |
+   = note: expected struct `concord::Retry`
+                found type `u16`
+   = note: this error originates in the macro `::concord::api` (in Nightly builds, run with -Z macro-backtrace for more info)
+help: introduce a new binding instead
+   |
+16 -     client Hygienic {
+16 +     client other___retry {
+   |
+
+error[E0308]: mismatched types
+  --> tests/compiler-errors/limits/constants.rs:16:12
+   |
+16 |     client Hygienic {
+   |            ^^^^^^^^
+   |            |
+   |            expected `Retry`, found `u16`
+   |            arguments to this method are incorrect
+   |
+   = note: expected struct `concord::Retry`
+                found type `u16`
+note: method defined here
+  --> $WORKSPACE/concord-core/src/__private/client.rs
+   |
+   |     pub fn with_retry(mut self, retry: Retry<P>) -> Core<P> {
+   |            ^^^^^^^^^^
+   = note: this error originates in the macro `::concord::api` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0308]: mismatched types
+  --> tests/compiler-errors/limits/constants.rs:16:12
+   |
+14 | const __timeout: u16 = 29;
+   | -------------------- constant defined here
+15 | ::concord::api! {
+16 |     client Hygienic {
+   |            ^^^^^^^^
+   |            |
+   |            expected `Duration`, found `u16`
+   |            expected due to this
+   |            `__timeout` is interpreted as a constant, not a new binding
+   |
+   = note: this error originates in the macro `::concord::api` (in Nightly builds, run with -Z macro-backtrace for more info)
+help: introduce a new binding instead
+   |
+16 -     client Hygienic {
+16 +     client other___timeout {
+   |
+
+error[E0308]: mismatched types
+  --> tests/compiler-errors/limits/constants.rs:16:12
+   |
+16 |     client Hygienic {
+   |            ^^^^^^^^
+   |            |
+   |            expected `Duration`, found `u16`
+   |            arguments to this method are incorrect
+   |
+note: method defined here
+  --> $WORKSPACE/concord-core/src/__private/client.rs
+   |
+   |     pub fn with_timeout(mut self, timeout: Duration) -> Core<P> {
+   |            ^^^^^^^^^^^^
+   = note: this error originates in the macro `::concord::api` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0308]: mismatched types
+  --> tests/compiler-errors/limits/constants.rs:16:12
+   |
+16 |     client Hygienic {
+   |            ^^^^^^^^
+   |            |
+   |            expected `Duration`, found `u16`
+   |            arguments to this method are incorrect
+   |
+note: method defined here
+  --> $WORKSPACE/concord-core/src/__private/client.rs
+   |
+   |     pub fn with_idle_timeout(mut self, timeout: Duration) -> Core<P> {
+   |            ^^^^^^^^^^^^^^^^^
+   = note: this error originates in the macro `::concord::api` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0308]: mismatched types
+  --> tests/compiler-errors/limits/constants.rs:15:1
+   |
+12 |   const __take: u16 = 27;
+   |   ----------------- constant defined here
+...
+15 | / ::concord::api! {
+16 | |     client Hygienic {
+17 | |         base "https://hygiene.test";
+18 | |         read ::concord::Json;
+...  |
+21 | | }
+   | | ^
+   | | |
+   | | expected `bool`, found `u16`
+   | |_expected due to this
+   |   `__take` is interpreted as a constant, not a new binding
+   |
+   = note: this error originates in the macro `::concord::api` (in Nightly builds, run with -Z macro-backtrace for more info)
+help: introduce a new binding instead
+   |
+15 - ::concord::api! {
+16 -     client Hygienic {
+17 -         base "https://hygiene.test";
+18 -         read ::concord::Json;
+19 -         GET get() -> u16 { query { "value" = __value; } status { 404 => __status } }
+20 -     }
+21 - }
+15 + other___take
+   |
+
+error[E0308]: mismatched types
+  --> tests/compiler-errors/limits/constants.rs:15:1
+   |
+ 6 |   const __draft: u16 = 21;
+   |   ------------------ constant defined here
+...
+15 | / ::concord::api! {
+16 | |     client Hygienic {
+17 | |         base "https://hygiene.test";
+18 | |         read ::concord::Json;
+...  |
+21 | | }
+   | | ^
+   | | |
+   | |_expected `Draft`, found `u16`
+   |   `__draft` is interpreted as a constant, not a new binding
+   |
+   = note: this error originates in the macro `::concord::api` (in Nightly builds, run with -Z macro-backtrace for more info)
+help: introduce a new binding instead
+   |
+15 - ::concord::api! {
+16 -     client Hygienic {
+17 -         base "https://hygiene.test";
+18 -         read ::concord::Json;
+19 -         GET get() -> u16 { query { "value" = __value; } status { 404 => __status } }
+20 -     }
+21 - }
+15 + other___draft
+   |
+
+error[E0308]: mismatched types
+  --> tests/compiler-errors/limits/constants.rs:15:1
+   |
+15 | / ::concord::api! {
+16 | |     client Hygienic {
+17 | |         base "https://hygiene.test";
+18 | |         read ::concord::Json;
+...  |
+21 | | }
+   | |_^ expected `bool`, found `u16`
+   |
+   = note: this error originates in the macro `::concord::api` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0599]: no method named `finish_for_send` found for type `u16` in the current scope
+  --> tests/compiler-errors/limits/constants.rs:15:1
+   |
+15 |   ::concord::api! {
+   |  _^
+16 | |     client Hygienic {
+17 | |         base "https://hygiene.test";
+18 | |         read ::concord::Json;
+...  |
+21 | | }
+   | |_^ method not found in `u16`
+   |
+   = note: this error originates in the macro `::concord::api` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0599]: no method named `finish` found for type `u16` in the current scope
+  --> tests/compiler-errors/limits/constants.rs:15:1
+   |
+15 |   ::concord::api! {
+   |  _^
+16 | |     client Hygienic {
+17 | |         base "https://hygiene.test";
+18 | |         read ::concord::Json;
+...  |
+21 | | }
+   | |_^ method not found in `u16`
+   |
+   = note: this error originates in the macro `::concord::api` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0308]: mismatched types
+  --> tests/compiler-errors/limits/constants.rs:15:1
+   |
+11 |   const __run: u16 = 26;
+   |   ---------------- constant defined here
+...
+15 | / ::concord::api! {
+16 | |     client Hygienic {
+17 | |         base "https://hygiene.test";
+18 | |         read ::concord::Json;
+...  |
+21 | | }
+   | | ^
+   | | |
+   | |_expected `Run`, found `u16`
+   |   `__run` is interpreted as a constant, not a new binding
+   |
+   = note: this error originates in the macro `::concord::api` (in Nightly builds, run with -Z macro-backtrace for more info)
+help: introduce a new binding instead
+   |
+15 - ::concord::api! {
+16 -     client Hygienic {
+17 -         base "https://hygiene.test";
+18 -         read ::concord::Json;
+19 -         GET get() -> u16 { query { "value" = __value; } status { 404 => __status } }
+20 -     }
+21 - }
+15 + other___run
+   |
+
+error[E0599]: no method named `prepare` found for type `u16` in the current scope
+  --> tests/compiler-errors/limits/constants.rs:15:1
+   |
+15 |   ::concord::api! {
+   |  _^
+16 | |     client Hygienic {
+17 | |         base "https://hygiene.test";
+18 | |         read ::concord::Json;
+...  |
+21 | | }
+   | |_^ method not found in `u16`
+   |
+   = note: this error originates in the macro `::concord::api` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0308]: arguments to this method are incorrect
+  --> tests/compiler-errors/limits/constants.rs:15:1
+   |
+15 | / ::concord::api! {
+16 | |     client Hygienic {
+17 | |         base "https://hygiene.test";
+18 | |         read ::concord::Json;
+...  |
+21 | | }
+   | | ^
+   | | |
+   | |_expected `Response`, found `u16`
+   |   expected `TryInfo`, found `u16`
+   |
+note: method defined here
+  --> tests/compiler-errors/limits/constants.rs:19:13
+   |
+19 |         GET get() -> u16 { query { "value" = __value; } status { 404 => __status } }
+   |             ^^^
+   = note: this error originates in the macro `::concord::api` (in Nightly builds, run with -Z macro-backtrace for more info)

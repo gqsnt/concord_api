@@ -1,7 +1,0 @@
-error: `send_raw` is reserved by Concord
-       label: conflicts with a generated method
-       help: rename this input to `send_raw_value`; update its references in the existing query placements and expressions, retaining the wire keys and fixed text for send_raw
- --> tests/semantic/03_reserved_call_send_raw.rs:2:76
-  |
-2 |     client Workshop { base "https://workshop.test"; read Reader; GET fetch(send_raw?: String) { query { send_raw; } } }
-  |                                                                            ^^^^^^^^

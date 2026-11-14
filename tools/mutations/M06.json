@@ -1,0 +1,9 @@
+{
+  "id": "M06",
+  "area": "retry",
+  "contract": "C3.6, C4.1",
+  "description": "Raw sends ignore non-idempotent method or mark",
+  "file": "concord-core/src/__private/run.rs",
+  "find": "        options,\n        idempotent,\n        request,\n        |response: reqwest::Response, _| async move {",
+  "replace": "        options,\n        Idempotent::Yes,\n        request,\n        |response: reqwest::Response, _| async move {"
+}

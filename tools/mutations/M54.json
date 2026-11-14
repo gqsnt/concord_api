@@ -1,0 +1,9 @@
+{
+  "id": "M54",
+  "area": "request-building",
+  "contract": "C8.2, C8.4",
+  "description": "Forget which query keys contain a secret",
+  "file": "concord-core/src/__private/build.rs",
+  "find": "secret_query.push(*key);",
+  "replace": "let _ = key;"
+}

@@ -1,0 +1,7 @@
+error: no inherited status arm `410` to remove
+       label: this arm is absent
+       help: delete `remove 410`
+ --> tests/diagnostics/rules/23_arm.rs:2:89
+  |
+2 |     client Workshop { base "https://workshop.test"; read Reader; GET fetch() { status { remove 410 } } }
+  |                                                                                         ^^^^^^

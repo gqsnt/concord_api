@@ -1,0 +1,9 @@
+{
+  "id": "M79",
+  "area": "shipped-pagers",
+  "contract": "C8.6",
+  "description": "Skip the next page number",
+  "file": "concord-extras/src/page.rs",
+  "find": "at.checked_add(1)",
+  "replace": "at.checked_add(2)"
+}

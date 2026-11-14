@@ -1,0 +1,61 @@
+error: no `base` in reach of this endpoint
+       label: no `base` here or above
+       help: set the intended base URL on this endpoint or an ancestor
+ --> tests/diagnostics/rules/43_multiple.rs:2:143
+  |
+2 | ...{ "Host" = "v"; "bad key" = "v"; } status { 601 => () } } GET other(); }
+  |                                                                  ^^^^^
+
+error: this URL input must supply one required value
+       label: an optional input cannot fill this hole
+       help: declare `id: u32`, without `?`
+ --> tests/diagnostics/rules/43_multiple.rs:2:64
+  |
+2 |     client Workshop { GET fetch(unused: &str, id?: u32) { path "/{id}"; headers { "Host" = "v"; "bad key" = "v"; } status { 601 => ()...
+  |                                                                ^^^^^^^
+
+error: this input is marked optional here
+ --> tests/diagnostics/rules/43_multiple.rs:2:49
+  |
+2 |     client Workshop { GET fetch(unused: &str, id?: u32) { path "/{id}"; headers { "Host" = "v"; "bad key" = "v"; } status { 601 => ()...
+  |                                                 ^
+
+error: path segments must be nonempty
+       label: leading or doubled slash
+       help: remove leading or repeated slashes while keeping the path's segments and holes; omit an empty path statement
+ --> tests/diagnostics/rules/43_multiple.rs:2:64
+  |
+2 |     client Workshop { GET fetch(unused: &str, id?: u32) { path "/{id}"; headers { "Host" = "v"; "bad key" = "v"; } status { 601 => ()...
+  |                                                                ^^^^^^^
+
+error: `host` cannot be set in `headers`
+       label: the host comes from the `base`
+       help: remove this host header and put its intended host in the base
+ --> tests/diagnostics/rules/43_multiple.rs:2:83
+  |
+2 |     client Workshop { GET fetch(unused: &str, id?: u32) { path "/{id}"; headers { "Host" = "v"; "bad key" = "v"; } status { 601 => ()...
+  |                                                                                   ^^^^^^
+
+error: invalid header name
+       label: expected a nonempty ASCII HTTP token
+       help: choose the intended nonempty ASCII HTTP header name, retaining this entry's value
+ --> tests/diagnostics/rules/43_multiple.rs:2:97
+  |
+2 |     client Workshop { GET fetch(unused: &str, id?: u32) { path "/{id}"; headers { "Host" = "v"; "bad key" = "v"; } status { 601 => ()...
+  |                                                                                                 ^^^^^^^^^
+
+error: invalid status key `601`
+       label: a key is 100 to 599, or 1xx to 5xx
+       help: choose the intended exact status from 100 to 599 or class from 1xx to 5xx
+ --> tests/diagnostics/rules/43_multiple.rs:2:125
+  |
+2 |     client Workshop { GET fetch(unused: &str, id?: u32) { path "/{id}"; headers { "Host" = "v"; "bad key" = "v"; } status { 601 => ()...
+  |                                                                                                                             ^^^
+
+error: input types must own their data
+       label: borrowed input type
+       help: write `unused: String`; callers may still pass references
+ --> tests/diagnostics/rules/43_multiple.rs:2:41
+  |
+2 |     client Workshop { GET fetch(unused: &str, id?: u32) { path "/{id}"; headers { "Host" = "v"; "bad key" = "v"; } status { 601 => ()...
+  |                                         ^^^^

@@ -1,0 +1,7 @@
+error: part `locale` is never used
+       label: no scope or endpoint names `..locale`
+       help: add `..locale` to a signature, or remove the part
+  --> tests/diagnostics/api/m36.rs:44:14
+   |
+44 |         part locale(locale?: String) {
+   |              ^^^^^^

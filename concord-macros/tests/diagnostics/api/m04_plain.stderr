@@ -1,0 +1,5 @@
+error: expected an expression
+  --> tests/diagnostics/api/m04_plain.rs:31:37
+   |
+31 |             query { queue; "type" = type; }
+   |                                     ^^^^

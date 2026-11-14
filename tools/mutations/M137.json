@@ -1,0 +1,9 @@
+{
+  "id": "M137",
+  "area": "reader",
+  "contract": "C5.4",
+  "description": "Let an understated announcement disable geometric growth",
+  "file": "concord-core/src/read.rs",
+  "find": ".filter(|size| *size >= needed)",
+  "replace": ".filter(|_| true)"
+}

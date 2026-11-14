@@ -1,0 +1,105 @@
+use concord::read::Stream;
+use concord::{json, ByteStream, Json, Secret};
+use std::time::Duration;
+
+concord::api! {
+    /// The Telegram Bot API: messages, files, and updates by long poll or by webhook.
+    pub client Telegram(token: Secret) {
+        base "https://api.telegram.org/bot{token}";
+        read Json;
+        problem TgProblem;
+        status { 2xx { body } => telegram_result(body)? }
+
+        part formatted(parse_mode?: ParseMode, entities?: Vec<MessageEntity>) {
+            body json { parse_mode; entities; }
+        }
+
+        GET get_me() -> User { path "getMe"; }
+
+        /// One batch of updates. With nothing new, Telegram holds the request for `timeout`
+        /// seconds: a long poll. Asking again with the same offset is the next poll.
+        GET get_updates(
+            offset?: i64, limit?: u8, timeout?: u32, allowed_updates?: Vec<String>,
+        ) -> Vec<Update> {
+            path "getUpdates";
+            query {
+                offset; limit; timeout;
+                "allowed_updates" = allowed_updates.as_ref().map(serde_json::to_string).transpose()?;
+            }
+            idle_timeout Duration::from_secs(u64::from(timeout.unwrap_or(0)) + 10);
+            idempotent false;
+        }
+
+        POST send_message(
+            chat_id: ChatId, text: String, disable_notification?: bool,
+            reply_markup?: ReplyMarkup, ..formatted,
+        ) -> Message {
+            path "sendMessage";
+            body json { chat_id; text; disable_notification; reply_markup; }
+        }
+
+        /// Give `chat_id` and `message_id`, or `inline_message_id`: Telegram checks it.
+        POST edit_message_text(
+            text: String, chat_id?: ChatId, message_id?: i64,
+            inline_message_id?: String, reply_markup?: InlineKeyboardMarkup, ..formatted,
+        ) -> EditedMessage {
+            path "editMessageText";
+            body json { text; chat_id; message_id; inline_message_id; reply_markup; }
+        }
+
+        POST delete_message(chat_id: ChatId, message_id: i64) -> bool {
+            path "deleteMessage";
+            body json { chat_id; message_id; }
+        }
+
+        /// A photo that Telegram has already, by its `file_id`, or one on the web, by its URL.
+        POST send_photo(chat_id: ChatId, photo: String, caption?: String, ..formatted) -> Message {
+            path "sendPhoto";
+            body json { chat_id; photo; caption; }
+        }
+
+        /// A new file, from its bytes.
+        POST send_document(chat_id: ChatId, document: InputFile, caption?: String) -> Message {
+            path "sendDocument";
+            body upload(chat_id, caption, "document", document);
+        }
+
+        GET get_file(file_id: String) -> File {
+            path "getFile";
+            query { file_id; }
+        }
+
+        /// The bytes of a file: on the same host, under another prefix, and not in an envelope.
+        GET download_file(file_path: String) -> ByteStream {
+            base "https://api.telegram.org/file/bot{client.token}";
+            path "{*file_path}";
+            read Stream;
+            status { remove 2xx }
+        }
+
+        POST set_webhook(
+            url: String, secret_token?: Secret, allowed_updates?: Vec<String>,
+            drop_pending_updates?: bool,
+        ) -> bool {
+            path "setWebhook";
+            body json { url; secret_token; allowed_updates; drop_pending_updates; }
+        }
+
+        POST delete_webhook(drop_pending_updates?: bool) -> bool {
+            path "deleteWebhook";
+            body json { drop_pending_updates; }
+        }
+
+        POST answer_callback_query(
+            callback_query_id: String, text?: String, show_alert?: bool, cache_time?: u32,
+        ) -> bool {
+            path "answerCallbackQuery";
+            body json { callback_query_id; text; show_alert; cache_time; }
+        }
+
+        GET get_chat(chat_id: ChatId) -> ChatFullInfo {
+            path "getChat";
+            query { chat_id; }
+        }
+    }
+}

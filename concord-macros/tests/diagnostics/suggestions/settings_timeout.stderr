@@ -1,0 +1,6 @@
+error: expected a statement, part, scope or HTTP method
+       help: configure the timeout with `with_timeout` on the client or the call
+ --> tests/diagnostics/suggestions/settings_timeout.rs:1:70
+  |
+1 | concord::api! { client C { base "https://settings.test"; GET get() { timeout 5s; } } }
+  |                                                                      ^^^^^^^

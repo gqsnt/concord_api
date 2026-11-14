@@ -1,0 +1,9 @@
+{
+  "id": "M74",
+  "area": "pages",
+  "contract": "C8.4",
+  "description": "Keep secret query pairs in page identity",
+  "file": "concord-core/src/__private/page.rs",
+  "find": "                    !secret\n                })",
+  "replace": "                    true\n                })"
+}

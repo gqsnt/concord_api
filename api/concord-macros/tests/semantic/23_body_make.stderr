@@ -1,7 +1,0 @@
-error: no inherited body entry `mode` to remove
-       label: a body inherits no entries
-       help: delete `remove "mode";`
- --> tests/semantic/23_body_make.rs:2:92
-  |
-2 |     client Workshop { base "https://workshop.test"; read Reader; GET fetch() { body make { remove "mode"; } } }
-  |                                                                                            ^^^^^^

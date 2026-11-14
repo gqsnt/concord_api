@@ -1,0 +1,13 @@
+error: an arm binds body, headers or status
+       label: field `headers` is written twice
+       help: bind each answer field once; retain the bindings used by this arm's expression
+ --> tests/diagnostics/rules/34_duplicate_field.rs:2:104
+  |
+2 |     client Workshop { base "https://workshop.test"; read Reader; GET fetch() { status { 201 { headers, headers: other } => () } } }
+  |                                                                                                        ^^^^^^^
+
+error: the first `headers` field is here
+ --> tests/diagnostics/rules/34_duplicate_field.rs:2:95
+  |
+2 |     client Workshop { base "https://workshop.test"; read Reader; GET fetch() { status { 201 { headers, headers: other } => () } } }
+  |                                                                                               ^^^^^^^

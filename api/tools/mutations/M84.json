@@ -1,9 +1,0 @@
-{
-  "id": "M84",
-  "area": "shipped-readers",
-  "contract": "docs/contracts.md C5.11 / docs/crate.md Text",
-  "description": "Replace invalid UTF-8 instead of failing Text decoding",
-  "file": "concord-extras/src/read.rs",
-  "find": "Err(error) => Err(ReadError::not_the_type(bytes).with_details(error.to_string())),",
-  "replace": "Err(_error) => Ok(String::from_utf8_lossy(&bytes).into_owned()),"
-}

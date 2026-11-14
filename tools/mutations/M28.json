@@ -1,0 +1,9 @@
+{
+  "id": "M28",
+  "area": "errors",
+  "contract": "C6.1",
+  "description": "map_problem drops body evidence",
+  "file": "concord-core/src/error.rs",
+  "find": "    pub fn map_problem<F>(self, map: impl FnOnce(E) -> F) -> Error<F> {\n        self.map_optional_problem(|problem| problem.map(map))\n    }\n",
+  "replace": "    pub fn map_problem<F>(self, map: impl FnOnce(E) -> F) -> Error<F> {\n        let mut result = self.map_optional_problem(|problem| problem.map(map));\n        result.inner.body = None;\n        result\n    }\n"
+}

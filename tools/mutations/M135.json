@@ -1,0 +1,12 @@
+{
+  "id": "M135",
+  "area": "docs",
+  "contract": "docs/internals/macro.md#the-generated-documentation",
+  "description": "Lose the facade Arg trait page through a glob export",
+  "file": "concord-api/src/lib.rs",
+  "find": "    #[doc(inline)]\n    pub use concord_core::arg::Arg;",
+  "replace": "    pub use concord_core::arg::*;",
+  "checks": [
+    "docs-pages"
+  ]
+}

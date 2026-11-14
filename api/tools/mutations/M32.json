@@ -1,9 +1,0 @@
-{
-  "id": "M32",
-  "area": "errors",
-  "contract": "docs/contracts.md C6",
-  "description": "Classify explicit arm mismatch as refusal",
-  "file": "concord-core/src/error.rs",
-  "find": "                };\n                let mut error = Error::mismatch(endpoint, tries, status, headers, failure);\n                error.inner.reason = Some(reason);\n",
-  "replace": "                };\n                let mut error = Error::refused(endpoint, tries, status, headers, None);\n                error.inner.reason = Some(reason);\n"
-}

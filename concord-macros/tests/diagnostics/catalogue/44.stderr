@@ -1,0 +1,13 @@
+error: `override 2xx` leaves the inherited arm `200` in place
+       label: an exact arm from above still takes `200`
+       help: also write `override 200 { body } => body`, or `remove 200`
+ --> tests/diagnostics/catalogue/44.rs:2:113
+  |
+2 | client Tasks { base "https://a.example"; read Json; status { 200 { body } => body } GET get() -> u64 { status { override 2xx => 1 } } }
+  |                                                                                                                 ^^^^^^^^^^^^
+
+error: the inherited `200` arm is here
+ --> tests/diagnostics/catalogue/44.rs:2:62
+  |
+2 | client Tasks { base "https://a.example"; read Json; status { 200 { body } => body } GET get() -> u64 { status { override 2xx => 1 } } }
+  |                                                              ^^^

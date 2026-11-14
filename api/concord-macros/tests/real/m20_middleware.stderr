@@ -1,7 +1,0 @@
-error: `middleware` requires the client
-       label: middlewares are declared on the client
-       help: move `middleware PathStyle;` into the client block
-  --> tests/real/m20_middleware.rs:51:13
-   |
-51 |             middleware PathStyle;
-   |             ^^^^^^^^^^

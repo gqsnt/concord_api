@@ -1,0 +1,7 @@
+error: `part` requires the client
+       label: parts are declared on the client
+       help: declare parts on the client; retain only permitted part statements and place tree behaviour on the appropriate scope or endpoint
+  --> tests/diagnostics/api/m20_part.rs:75:13
+   |
+75 |             part by_game(game: Game) { path "by-game/{game}"; }
+   |             ^^^^

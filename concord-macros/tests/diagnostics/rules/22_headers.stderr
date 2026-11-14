@@ -1,0 +1,7 @@
+error: no header `x-mode` above to override
+       label: nothing is set above for this key
+       help: write `"x-mode" = 1;`
+ --> tests/diagnostics/rules/22_headers.rs:2:90
+  |
+2 |     client Workshop { base "https://workshop.test"; read Reader; GET fetch() { headers { override "x-mode" = 1; } } }
+  |                                                                                          ^^^^^^^^

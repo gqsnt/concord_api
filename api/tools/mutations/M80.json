@@ -1,9 +1,0 @@
-{
-  "id": "M80",
-  "area": "shipped-pagers",
-  "contract": "docs/contracts.md C8.6 by_cursor",
-  "description": "Keep the previous cursor instead of the returned cursor",
-  "file": "concord-extras/src/page.rs",
-  "find": "next(answer.value()).map(|value| input.set(call, value))",
-  "replace": "next(answer.value()).map(|_value| call.clone())"
-}

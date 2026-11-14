@@ -1,7 +1,0 @@
-error: a `{*…}` hole must be a whole segment
-       label: `{*path}` shares its segment with `.md`
-       help: write `path "contents/{path}.md";`; a `{path}` hole may share its segment
-   --> tests/real/m29.rs:166:22
-    |
-166 |                 path "contents/{*path}.md";
-    |                      ^^^^^^^^^^^^^^^^^^^^^

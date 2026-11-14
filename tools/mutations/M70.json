@@ -1,0 +1,9 @@
+{
+  "id": "M70",
+  "area": "pages",
+  "contract": "C8.6, C10.10",
+  "description": "Ignore answered_from when a pager returns the next call",
+  "file": "concord-core/src/__private/page.rs",
+  "find": "Some(url) => next.answered_from(url.clone()),",
+  "replace": "Some(_url) => next,"
+}

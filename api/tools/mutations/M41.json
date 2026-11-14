@@ -1,9 +1,0 @@
-{
-  "id": "M41",
-  "area": "transport",
-  "contract": "docs/contracts.md C9",
-  "description": "First with_transport wins",
-  "file": "concord-core/src/__private/client.rs",
-  "find": "    pub fn with_transport(mut self, transport: impl Transport) -> Core<P> {\n        self.transport = Some(Arc::new(transport));\n        self\n",
-  "replace": "    pub fn with_transport(mut self, transport: impl Transport) -> Core<P> {\n        if self.transport.is_none() { self.transport = Some(Arc::new(transport)); }\n        self\n"
-}

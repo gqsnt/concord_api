@@ -1,0 +1,7 @@
+error: a path cannot contain a query
+       label: query begins here
+       help: write `path "records"; query { "sort" = "new"; }`
+ --> tests/diagnostics/rules/28_query.rs:2:85
+  |
+2 |     client Workshop { base "https://workshop.test"; read Reader; GET fetch() { path "records?sort=new"; } }
+  |                                                                                     ^^^^^^^^^^^^^^^^^^

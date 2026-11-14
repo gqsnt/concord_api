@@ -1,0 +1,12 @@
+{
+  "id": "M113",
+  "area": "public-api",
+  "contract": "C2.14",
+  "description": "Hide the body-writer extension door again",
+  "file": "concord-core/src/body.rs",
+  "find": "pub struct Bounded<",
+  "replace": "#[doc(hidden)]\npub struct Bounded<",
+  "checks": [
+    "surface"
+  ]
+}

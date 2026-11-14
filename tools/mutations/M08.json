@@ -1,0 +1,9 @@
+{
+  "id": "M08",
+  "area": "retry",
+  "contract": "C4.1",
+  "description": "Ignore idempotent true",
+  "file": "concord-core/src/retry.rs",
+  "find": "    // 4. A listed not-applied status permits a POST, without permitting connection retries.\n    let may_repeat = mark == Idempotent::Yes\n        || mark == Idempotent::ByMethod\n",
+  "replace": "    // 4. A listed not-applied status permits a POST, without permitting connection retries.\n    let may_repeat = false\n        || mark == Idempotent::ByMethod\n"
+}

@@ -1,0 +1,35 @@
+[workspace]
+resolver = "2"
+members = ["concord-core", "concord-macros", "concord-extras", "concord-api", "tests/tour", "concord-testkit", "tests/conformance", "tests/tour-gen", "tests/conformance-gen", "tests/real-apis"]
+
+[workspace.package]
+edition = "2021"
+version = "5.0.0-rc.1"
+publish = false
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/gqsnt/concord_api"
+rust-version = "1.96"
+
+[workspace.lints.rust]
+unsafe_code = "forbid"
+missing_docs = "deny"
+
+[workspace.lints.clippy]
+unwrap_used = "deny"
+expect_used = "deny"
+panic = "deny"
+todo = "deny"
+unimplemented = "deny"
+dbg_macro = "deny"
+print_stdout = "deny"
+print_stderr = "deny"
+indexing_slicing = "deny"
+
+[workspace.dependencies]
+reqwest = { version = "0.13", default-features = false, features = ["stream"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+bytes = "1"
+http = "1"
+futures-core = "0.3"
+tokio = { version = "1", features = ["macros", "rt", "time"] }

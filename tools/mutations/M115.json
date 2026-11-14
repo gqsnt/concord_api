@@ -1,0 +1,12 @@
+{
+  "id": "M115",
+  "area": "packaging",
+  "contract": "C10.9",
+  "description": "Allow extras and core to drift to different releases",
+  "file": "concord-extras/Cargo.toml",
+  "find": "version = \"=5.0.0-rc.1\"",
+  "replace": "version = \"5.0.0-rc.1\"",
+  "checks": [
+    "surface"
+  ]
+}

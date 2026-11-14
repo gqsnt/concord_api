@@ -1,9 +1,0 @@
-{
-  "id": "M88",
-  "area": "base",
-  "contract": "docs/contracts.md C2.2 / docs/engine.md section 2.1",
-  "description": "Allow encoded slashes in the Base path prefix",
-  "file": "concord-core/src/base.rs",
-  "find": "b' ' | b'/' | b'\\\\' | b'?' | b'#' | b'%'",
-  "replace": "b' ' | b'\\\\' | b'?' | b'#' | b'%'"
-}

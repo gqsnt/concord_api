@@ -1,5 +1,0 @@
-error: expression is too long: exceeds the parser limit of 256 operators
- --> tests/fable-fail/flat_too_long.rs:1:2422
-  |
-1 | ... + 1usize + 1usize + 1usize + 1usize + 1usize + 1usize + 1usize + 1usize + 1usize + 1usize + 1usize + 1usize + 1usize + 1usize + 1...
-  |                                                                    ^

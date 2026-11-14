@@ -1,0 +1,9 @@
+{
+  "id": "M131",
+  "area": "writers",
+  "contract": "C6.3",
+  "description": "Retain the repeating WriteError wrapper in a Build chain",
+  "file": "concord-core/src/error.rs",
+  "find": "        let source = loop {\n            match source.downcast::<crate::body::WriteError>() {\n                Ok(writer) => source = writer.into_source(),\n                Err(format) => break format,\n            }\n        };\n",
+  "replace": "        let source = source;\n"
+}

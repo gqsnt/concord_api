@@ -1,0 +1,326 @@
+# Engineering rules
+
+*[Concord](../../README.md) · [docs](../README.md) · internals · previous: [the macro](macro.md)*
+
+For someone who changes Concord: the rules that the code base keeps, why each one exists, and the check that holds it. How a call runs and how a description becomes code: [the engine](engine.md) and [the macro](macro.md). The crates and their public surface: [the crates](../reference/crates.md).
+
+## The code base
+
+| Folder | What it is |
+|---|---|
+| `concord-core` | The traits and the engine. No format, no scheme, no pager. |
+| `concord-macros` | `api!`. |
+| `concord-extras` | What is shipped: `json`, `form`, `multipart`, the readers, the pagers, `basic`, `tower`. Written with the public traits and helpers of the core; only the `tower` adapter also uses a hidden helper of the engine, for the URL of an answer. |
+| `concord-api` | The facade that people depend on (package `concord-api`, library `concord`). |
+| `concord-testkit` | For tests: a scripted local server, and a scripted transport with virtual time. |
+| `tests/tour` | The test clients, written by hand as the macro writes them: `Tasks` and `Riot` of [the tour](../guide/tour.md), and `Files`, `Feed`, `Shapes`. |
+| `tests/tour-gen` | The same clients, written by the macro. |
+| `tests/conformance`, `tests/conformance-gen` | The tests of [the contracts](../reference/contracts.md): the same test files, on the clients of `tour` and of `tour-gen`. |
+| `tests/real-apis` | Descriptions of real APIs, compiled. |
+| `tools` | The checks behind `just`. |
+
+## The checks
+
+Every check runs offline, from the root of the repository, through [`justfile`](../../justfile).
+
+| Recipe | What it runs |
+|---|---|
+| `just` | Lists the recipes. |
+| `just gate` | `just props`, then in order: `fmt`, `check`, `lint`, `test`, `doc`, `msrv`, `features`, `todo`, `matrix`, `links`. It stops at the first failure. |
+| `just fmt` | `cargo fmt --all --check`. |
+| `just check` | `cargo check` of the workspace, all targets, without and with the features `tower` and `multipart`. |
+| `just lint` | Clippy on the workspace, all targets, with those features. Every warning is an error. |
+| `just test` | `cargo nextest run` on the workspace, then the doc tests. With `CONCORD_SKIP_SOCKETS=1`, the tests that need local sockets are skipped, and the count of skipped tests is printed. |
+| `just doc` | `cargo doc --no-deps`, with `RUSTDOCFLAGS=-D warnings`: a warning of `rustdoc`, such as a broken link, fails. |
+| `just msrv` | `cargo +1.96 check` of the workspace. |
+| `just features` | The facade with no default feature, then with each feature alone, then with all. |
+| `just todo` | Counts the `todo!()` of each crate. It only counts; Clippy refuses them (below). |
+| `just matrix` | [`tools/matrix.py`](../../tools/matrix.py): the table of each contract and the tests whose names carry its number. `just matrix --strict` fails for a contract with neither a test nor a reason in [`tools/NO-TEST.md`](../../tools/NO-TEST.md). |
+| `just links` | [`tools/links.py`](../../tools/links.py): every relative link of a page names a file that exists, and every link to a heading names a heading of that page. |
+| `just props` | The property tests (`prop_*`) of `concord-core` and `concord-extras`, 256 cases each. `PROPTEST_CASES=4096 just props` runs more. |
+| `just mutants` | [`tools/mutate.py`](../../tools/mutate.py): the mutation check (below). Slow; not in the gate. |
+| `just panics` | [`tools/panics.py`](../../tools/panics.py): every place in the library that could panic (below). |
+| `just features-all` | Every subset of features of the facade, and each package alone, on stable and on Rust 1.96. |
+| `just docs-audit` | `concord-api`, `concord-core`, `concord-extras` and `concord-testkit` with strict `rustdoc`, and a list of doc comments that only repeat a name. |
+| `just doc-examples` | The test `pages` of `tests/real-apis`, which runs [`tools/doc_examples.py`](../../tools/doc_examples.py) `--check`: each whole description of the guide, the reference overview, the root `README.md` and the example pages is the same as its copy in `tests/real-apis`, and compiles; the other blocks of the example pages are compared word for word. `just test` runs it too. |
+| `just package` | [`tools/package.py`](../../tools/package.py): each published crate as a stranger receives it (below). |
+| `just bench` | The measures of cost (below). Not in the gate. |
+| `just release` | `gate`, `docs-audit`, `doc-examples`, `panics`, `package`, `features-all` and `mutants`, in this order. It stops at the first failure. |
+
+## Rules that a check holds
+
+### No `unsafe` code
+
+`unsafe_code = "forbid"`, in `[workspace.lints.rust]` of [`Cargo.toml`](../../Cargo.toml).
+
+**Why.** Concord builds requests and reads answers. Nothing of it needs `unsafe`, and `forbid` cannot be allowed again inside a module.
+
+**Check.** The compiler, in every crate that takes the lints of the workspace (`[lints] workspace = true`): `concord-core`, `concord-macros`, `concord-extras`, `concord-api`, `concord-testkit`, `tests/tour`, `tests/tour-gen` and `tests/real-apis`.
+
+### The library does not panic
+
+The runtime never panics on any input or any answer. Outside the helpers for tests, the one panic that the library documents is a send polled outside a Tokio runtime (see [the engine](engine.md)). The helpers `reply` and `reply_with` panic on a status outside 100 to 999, or on a header that is not valid (see [testing a client](../guide/testing.md)).
+
+**Why.** A client runs inside a server, and an answer is input from outside. A panic there takes down a task that is not Concord's.
+
+**Check.** Clippy refuses `unwrap_used`, `expect_used`, `panic`, `todo`, `unimplemented` and `indexing_slicing` (`[workspace.lints.clippy]`). [`clippy.toml`](../../clippy.toml) allows the first ones in tests only. `just panics` lists every place in `concord-core`, `concord-extras` and `concord-api` that could still panic: a panic operation, indexing or slicing, arithmetic, a numeric `as` cast, and every `allow` or `expect` attribute. Each one needs a `// PANIC-SAFETY:` comment on its line or the line above, which says why it cannot panic; one without it fails the recipe. With `--compiler` (as the recipe runs it), the type-aware diagnostics of Clippy are checked the same way.
+
+### The library prints nothing
+
+Clippy refuses `print_stdout`, `print_stderr` and `dbg_macro`.
+
+**Why.** A library does not choose where its output goes. What Concord says goes through one log event, `retry`, at the level debug (see [a drop](engine.md#a-drop)), and through its errors.
+
+**Check.** `just lint`.
+
+### Every public item is documented
+
+`missing_docs = "deny"`.
+
+**Why.** docs.rs is the front door of a crate. A public item with no line is a question that every user has to ask.
+
+**Check.** The compiler; `just doc`, where a warning of `rustdoc` fails; `just docs-audit`, for a line that only repeats the name. The rules for the documentation that the macro writes are in [the macro](macro.md#the-generated-documentation). `just doc` builds the pages of `tests/tour` and `tests/tour-gen` too, so a generated client documents with no warning.
+
+### An error prints names, never values
+
+Every `Debug` of Concord's own types prints names and no value. `Debug` of an error prints the same names as a struct, so `fn main() -> Result<…>` is as safe as a log line. The printed line holds no URL and no chain of sources. `source()` is the cause, when there is one to give ([C6.1](../reference/contracts.md)): the HTTP library's error with its URL taken out (none for an error about a status or about decoding: its class is enough), the failure of the author's own code in a Build error, or a cause that Concord makes from the place and the kind of a body that did not read; never a value of the answer, since a reader hands no cause of its own. Everything that an error keeps from an answer is bounded: 64 KiB of the body, 1 KiB of a reader's own message. A caller matches with `e.kind()`, `e.class()`, `e.is_status(404)`, `e.is_timeout()`, `e.problem()`, `e.retry_after()`. The printed lines, with their one pattern, are in the messages, [2. When a request is built or answered](../reference/messages.md#2-when-a-request-is-built-or-answered).
+
+**Why.** An error goes to a log, and a log is read by people who must not see a key, a token or the body of an answer.
+
+**Check.** The tests of C6 in `tests/conformance`: one produces each line that a client of `tests/tour` can produce through the public surface, and compares it whole; another makes each kind of failure and looks for a secret, a body or a query value in `Display`, `Debug`, the chain of `source()` and the logs.
+
+### Wrong use does not compile
+
+| The mistake | What happens |
+|---|---|
+| A required input is forgotten | It is an argument: the call does not compile. |
+| A call is built and never sent | A warning: calls and what they return are `#[must_use]`. |
+| A call is sent twice | It does not compile: sending takes the call. `clone()` first, on purpose. A body that is a stream is shared by the clones: the second send is a Build error, and nothing is sent ([C2.15](../reference/contracts.md)). |
+| A secret is printed with `{:?}` | It prints `Secret(…)`. It has no `Display`. |
+| An argument of a type that only looks close | The set of accepted arguments is sealed (`concord::arg::Arg`): a type from outside cannot add one. |
+| An arm gives another type than the arrow | It does not compile: an arm is a closure with the arrow's type. |
+| A `HEAD` with an arrow and no arm for a 2xx | It does not compile: there is nothing to read. |
+| An endpoint with no arrow under an arm that reads the body | It does not compile: it gets an arrow, or removes the arm. |
+| An exact status under an inherited class arm, without `override` | It does not compile: arms are compared by what they take. |
+| `.items()` on a page that is an `Option` or a `Result` | It does not compile: they have no `IntoItems`, and no error of the API is lost in an iterator. |
+| A paged call awaited directly | It does not compile (`is not a future`): `.send()` for one page, `.pages()` for all. |
+| A key of the API on an entry inherited under another `base` | It does not compile until the entry is written again, or removed: a secret is bound to the `base` in reach where it is written ([C8.9](../reference/contracts.md)). |
+| A struct that holds a `Secret`, given to `json(…)` | It does not compile: a `Secret` has no `Serialize`. As an entry of a body, a `Secret` is written as its text. |
+| A reader that gives its decoder's error, which can quote the body, as the cause | It cannot: a reader hands Concord no cause, and Concord makes `source()` from the place and the kind ([C5.11](../reference/contracts.md)). |
+| `headers { user_agent; }`, or a `host` header | It does not compile: write `"user-agent" = user_agent;`; the host is the `base`. |
+| An optional input of the client in a `middleware` expression | It does not compile: a middleware is made in `new`, before any option is set. |
+| An endpoint with no `base` in reach | It does not compile. |
+| `Self` in a type of a description | It does not compile: the macro says to write the path of the type. |
+| An envelope arm from above (`2xx { body } => unpack(body)`) over an endpoint whose arrow is an `Option` or a `Result` | It does not compile: a `null` would be a `None` with no word. The endpoint writes the arm itself, or removes it ([message 46](../reference/messages.md)). |
+| A type that is not `Clone` as an input | A compile error on the type, in the signature. |
+| A `match` on the kind of an error with no `_` arm | It does not compile: the enums are `#[non_exhaustive]`. |
+| A client of a signed API made without its signer | It cannot be made: the description says `middleware Signed::new(key.clone());`, and `new` makes the signer. Nothing removes it, and `with_transport` goes under it. |
+
+**Why.** A mistake that compiles is found by a user, in production. A mistake that does not compile is found by the author, at once.
+
+**Check.** The compiler, through the types of the core, and the 46 messages of the macro ([the messages](../reference/messages.md)). The compile-fail cases in `concord-macros/tests` (`trybuild`, on stable Rust) hold each message where the compiler prints it, and a test of contract C1.18 (its name starts with `c1_18_`) runs each case of the messages page through the macro and compares its three lines with the page, word for word.
+
+### Every contract has a test that carries its number
+
+A test whose name starts with `c<n>_<m>_` runs the contract C*n*.*m* of [the contracts](../reference/contracts.md).
+
+**Why.** The contracts say what the code must do. A number in a test name ties each line of that page to the code that holds it, and a test that fails names the line that broke.
+
+**Check.** `just matrix` writes the table of contracts and their tests; `just matrix --strict` fails for a contract that has neither a test nor a reason in [`tools/NO-TEST.md`](../../tools/NO-TEST.md), which names the tests that hold a contract under other numbers.
+
+### The hand-written clients and the generated clients agree
+
+`tests/tour` holds the test clients written by hand, as the macro writes them; `tests/tour-gen` holds the same clients written by the macro. `tests/conformance` and `tests/conformance-gen` run the same test files on each.
+
+**Why.** The hand-written form is the model of what the macro must write, in a form that a person can read and change. Two forms that pass the same tests cannot drift apart.
+
+**Check.** `just test`.
+
+### The tests catch faults
+
+Each file of [`tools/mutations/`](../../tools/mutations) is one mutation: a small change to the code that breaks a promise.
+
+**Why.** A test suite that passes says nothing about the faults it would miss. A mutation that no test catches is a missing test.
+
+**Check.** `just mutants` writes each mutation into a copy of the code, one at a time, and runs the tests. A mutant is caught when it does not compile, fails a test, or reaches a time limit; one that survives fails the recipe. A mutation that needs local sockets runs unless `CONCORD_SKIP_SOCKETS=1` is set; with it, such a mutation is skipped. `just props` adds the property tests.
+
+### Threads, and what a drop does
+
+| What | `Send` | `Sync` | `'static` | If it is dropped |
+|---|---|---|---|---|
+| A client, a handle | yes | yes | yes | — |
+| A call | yes | yes | yes | Nothing was built, nothing was sent. |
+| `Sending` (a call on its way) | yes | — | yes | **Not cancel safe**, like any request. Dropped in the transport: the request may have reached the server. Dropped between two tries, or while a body is read: nothing more goes out. After a drop Concord starts no further try ([a drop](engine.md#a-drop)). |
+| `Pages::try_next`, `Items::try_next` | yes | — | — | **Cancel safe.** The exchange in flight lives in the value and goes on with the next `try_next`. Nothing is lost, nothing is sent twice. After an error they are over, as a stream too. |
+| `ByteStream::try_next` | yes | — | — | **Cancel safe.** No piece is lost. |
+| `Reader::read`, `Transport::send` (yours) | must be | — | — | Your future is dropped with the call. |
+
+The two clocks are `tokio` timers, so a test that pauses time controls them ([the two clocks](engine.md#the-two-clocks)). Concord needs a `tokio` runtime, as `reqwest` does, and starts no task of its own.
+
+**Why.** A client is shared between tasks, and a `select!` drops futures. What a drop does must be known before it happens.
+
+**Check.** `Send`, `Sync` and `Unpin` of the public types are asserted in [`concord-core/src/lib.rs`](../../concord-core/src/lib.rs), so a change that loses one does not compile. The clocks and the cancel safety of pages are tested on paused time ([C7.6, C7.7](../reference/contracts.md) and [C8.5](../reference/contracts.md)).
+
+### Rust 1.96 is enough
+
+Each published crate says `rust-version = "1.96"`.
+
+**Why.** A library should not force its users onto the newest compiler.
+
+**Check.** `just msrv`, and `just features-all`, which also builds every subset of features on 1.96.
+
+### A feature adds, and changes nothing else
+
+`json` and `form` (on by default) bring `serde_json` and `serde_urlencoded`; `tower` adds an adapter, and `multipart` a writer of bodies. The TLS stack is a feature too: the application chooses it, not the library.
+
+**Why.** Two crates in one program may turn on different features of Concord. Cargo joins them, and neither may break.
+
+**Check.** `just features`, and `just features-all`.
+
+### Each published crate builds alone
+
+**Why.** In a workspace, a feature of a dependency that another crate turned on can hide a missing one. A user gets the package, not the workspace.
+
+**Check.** `just package`: each crate that is never published says `publish = false`; each published package holds only what its `include` takes; each one is unpacked outside the workspace and checked with its default features, with none and with all.
+
+### The cost is stated
+
+| | |
+|---|---|
+| One call, built | The inputs are moved in. A reference given as an argument is cloned once. |
+| One request, built | One `reqwest::Request`. Nothing of the tree is looked up: what an endpoint inherits was worked out when the macro ran. |
+| One try | One copy of the request (`try_clone`), one boxed future for the transport. |
+| One page | One clone of the call. |
+| An error | One allocation; a `Result` that holds it is one pointer wider than its value. |
+| Generated code for one endpoint | Its size and its compile time: [size and compile time](macro.md#size-and-compile-time). The methods that are the same for every call come from one macro of the core (`call_methods!`). |
+| What is shared | The transport, retry, the clocks, reading and the error are functions of the runtime, written once and called by every endpoint. |
+
+**The budget:** Concord adds less than 2 µs and less than 25 allocations to building a plain `GET`, over building the same `reqwest::Request` by hand. Measured on a client that `concord::api!` writes, it adds 1.07 µs and 23 allocations.
+
+**Why.** A user who adopts a layer must know what it costs.
+
+**Check.** `just bench`. The measures, with their conditions: [what a call costs](engine.md#what-a-call-costs).
+
+## Rules of the surface
+
+These rules shape the public surface. A test holds a part of some of them; the rest are kept when the surface changes.
+
+### One concept, one job
+
+The core has no format, no scheme and no pager, and no `auth` at all: a credential is a value, and a signature is a middleware. A middleware is what a request goes through; a transport is what really sends it. There is one way to give an HTTP client (`with_transport`), no `Deref` on an answer, two helpers on the error (`is_timeout`, `is_status`), and pages are typed by what they give, not by the call. Each public module has one sentence on [the crates](../reference/crates.md).
+
+### Layers with clean seams
+
+Description → generated code → core → middlewares → transport → `reqwest`, and the shipped pieces beside the core, in a crate of their own. The seams are the public traits: `Reader`, `Middleware`, `Transport`, a body as a function, a pager as a function with `Slot` and `Call`. What generated code calls is a hidden module with no promise of stability, as in `serde` and `tokio`. **Extending uses the same pieces as the library:** `concord-extras` is another crate, which can use only what your crate can use, and the macro knows none of its items. A pager of your own is one of its tests.
+
+### The domain's own words and types
+
+| Reused as it is | From |
+|---|---|
+| `Request`, `Response`, `Client`, `ClientBuilder`, `Body` (in a fake) | `reqwest` |
+| `StatusCode`, `HeaderMap`, `Method` | `http` |
+| `Bytes` | `bytes` |
+| `Serialize`, `Deserialize`; `json!`, `Value` | `serde`, `serde_json` |
+| `Stream` | `futures-core` |
+| `Service` (behind a feature) | `tower-service` |
+
+The three crates that are in public signatures are re-exported as they are: `concord::reqwest`, `concord::http`, `concord::bytes`. Someone who writes a transport names the same `reqwest` as Concord, and a generated client needs no dependency of its own on them.
+
+| New | Why it is not something that exists |
+|---|---|
+| `Secret` | `reqwest` has no type for "may go on the wire, may not be printed", and it must be replaceable in place. |
+| `Body` | `reqwest::Body` does not carry its content type, and cannot be made again. |
+| `Headers` | A view of `HeaderMap` that reads text, and `require`. `as_map()` gives the `HeaderMap`. |
+| `Answer<T>` | A value with its status and headers. `reqwest::Response` is the unread one. |
+| `Error<E>` | `reqwest::Error` prints URLs, drops the body of a refusal, and knows nothing of the API's own problem. |
+| `Reader`, `Middleware`, `Transport` | One method each. `tower::Service` was considered for the transport and left as an adapter: every fake would carry `poll_ready`. |
+| `Http` | A `reqwest::Client` that follows no redirect, whatever settings of yours it takes: a `3xx` is an answer ([Concord's own HTTP client](../reference/crates.md#concords-own-http-client)). |
+| `Retry`, `Pages`, `Items`, `IntoItems` | `reqwest` 0.13 has a retry of its own, with a budget; it has no wait between tries, does not read `Retry-After`, and cannot know which endpoint is idempotent. It stays on, below Concord's, in `Http` and in a `reqwest::Client` of yours. No shared type exists for pages, nor a trait for "a list of items" that `Option` and `Result` do not have. |
+
+### It composes with the ecosystem
+
+`concord::tower::Tower<S>` (feature `tower`): a `tower` service is a transport. `Pages`, `Items` and `ByteStream` are `futures` streams. `reqwest::Client` is a transport.
+
+### Explicit, with safe defaults
+
+| | Default | The knob |
+|---|---|---|
+| Trying again | Off. | `with_retry(Retry::standard())` |
+| Silence | 30 seconds, watched in the transport until the head, and while a body is read ([the two clocks](engine.md#the-two-clocks)). A middleware's time is not silence. | `idle_timeout …;` in the description (a long poll); `with_idle_timeout(…)` |
+| The whole call | No limit. | `with_timeout(…)` |
+| Connecting | 30 seconds. | `concord::Http::with(…)`, or your own HTTP client. |
+| A body read whole | At most 10 MiB. | `read Json.limit(…);` |
+| What an error keeps | At most 64 KiB of the body, and 1 KiB of a reader's own message. | — |
+| A redirect | Not followed: a `3xx` is an answer. | An arm; or your own HTTP client. |
+| Cookies, `Referer` | None. | `Http::with(…)`, or your own HTTP client. |
+| Decompression | None: a body is given as it came. | `concord::Http::with(…)`, or your own HTTP client. |
+| `Accept` | Not written. | `headers { "accept" = "…"; }` |
+| The label of an answer | Not checked. | `read Json.strict();` |
+| Who you are | Nothing, until the description places a credential. | An entry of `headers`, of `query` or of a body. A signature is a middleware of the description. |
+| How an answer is read | Nothing: there is no format by default, and an endpoint that reads a body with no reader in reach does not compile. | `read Json;` on the client |
+| The proxy settings of the environment | Read, as `reqwest` does. | `Http::with(…)`, or your own HTTP client. |
+
+Nothing else is ambient: no file is read, no global state is kept.
+
+### It can grow for years
+
+| | The policy |
+|---|---|
+| Versions | Semantic versions. A change that breaks a description, a call or a trait of an extension is a major version. A new major version of `reqwest` is a new major version of Concord: its types are in almost every signature. |
+| `reqwest`, `http`, `bytes`, `serde` | They are in the public surface, so their major versions are Concord's. `tower-service` and `futures-core` are behind a feature or used for one trait: the same holds for them. `tokio` is used for its timer only and is in no public signature: its new major version is not one of Concord's. |
+| Enums | `Kind`, `Class`, `Kept` are `#[non_exhaustive]`. Every other type has private fields. |
+| Traits to implement | `Reader`, `Middleware`, `Transport`, `IntoItems`, and `Slot` for the places of a call: a new method always comes with a default. |
+| Traits not to implement | `Arg`, `IntoBody` and `IntoNext` are sealed, so a case can be added. `page::Call` is written by the macro for every call, and by nobody else. |
+| A call | An option of the API keeps its own name (Telegram's `send_message` too). Concord's own names are a closed list, and the prefix `with_`. Concord adds no name to a call, a handle or a client in a minor version, unless it starts with `with_`: it cannot collide. |
+| The language | A new statement or a new method word is an addition. What compiles keeps its meaning. A new reader, writer or pager is not a change of the language at all: the macro knows none, so it is an item added to `concord-extras`, or to your crate. |
+| The crates | `concord-core`, `concord-macros`, `concord-extras`, `concord-api` and `concord-testkit` have one version and are released together. People depend on `concord-api`, which depends on the core and the macro at exact versions: the macro and the engine that it writes for are always a pair. |
+| `Retry::standard()` | Its numbers are part of the contract. |
+| Features | Additive (see [a feature adds](#a-feature-adds-and-changes-nothing-else)). |
+| Threads | `Send`, `Sync` and `Unpin` of the public types are asserted in the crate (see [threads](#threads-and-what-a-drop-does)). |
+
+### One way to say one thing
+
+[The grammar](../reference/grammar.md) is on one page, with a table of what is not regular and why. One irregularity is kept and named: in `paginate`, the name of an input is a place, not a value.
+
+### The generated client is ordinary Rust
+
+A generated type has one name, its place in the tree. The documentation that the macro writes follows [ten rules](macro.md#the-generated-documentation), and builds with no warning (`just doc`). The size and the compile time of a generated client: [size and compile time](macro.md#size-and-compile-time).
+
+### Messages teach
+
+Each of the 46 messages of the macro says what it points at and what to write instead ([the messages](../reference/messages.md)). How the macro says them on stable Rust: [where a message points](macro.md#where-a-message-points) and [the messages that are `rustc`'s](macro.md#the-messages-that-are-rustcs).
+
+### No cliffs
+
+Each step is one more thing to learn, never a rewrite.
+
+| The need | What is written | Lines |
+|---|---|---|
+| A plain endpoint | `GET get(id: u64) -> Task { path "{id}"; }` | 1 |
+| An optional filter | `done?: bool` and `query { done; }` | 2 |
+| A status that means something | `status { 404 => None }` | 1 |
+| How answers are read | `read Json;`, once on the client | 1 |
+| Another format, a large body | `read Text;`, `read Stream;` | 1 |
+| Who you are | `headers { "authorization" = "Bearer {token}"; }` | 1 |
+| Pages | `paginate by_cursor(after, Page::next);`, then `.pages()` | 1 |
+| A body made of inputs | `body json { chat_id; text; }` | 1 |
+| A long poll | `idle_timeout Duration::from_secs(60);` on the endpoint | 1 |
+| An upload of files | `body multipart().file(…).finish();` (feature `multipart`) | 1 |
+| A body in a format of your own | `body xml(task);` and a function | about 5 |
+| A pager of your own | `paginate keyset(after);` and a function | about 10 |
+| A signature, a token that is renewed | `middleware Signed::new(key.clone());` and a type with `Middleware` | about 15 |
+| A format to read of your own | `read Xml;` and a type with `Reader` | about 10 |
+| One request changed by hand | `.edit_request(\|request\| …)` | 1 |
+| The raw answer | `.send_raw()` | 1 |
+| A conditional `GET` | `.send_if_none_match(etag)` | 1 |
+| Sending it yourself, reading it with the description | `.request()?`, your client, then `.read_response(response)` | 2 |
+| Everything by hand | `.into_request()`, then `reqwest` | — |
+
+### Tools keep working
+
+| Tool | What is known |
+|---|---|
+| `rustfmt` | It leaves the inside of `api! { }` alone: the language is not Rust syntax. With `rustfmt` 1.10.0, on a file with a description and a badly formatted function, the function is formatted and the description comes back byte for byte. A description is formatted by hand, in the style of the tour. There is no formatter for descriptions. |
+| `rust-analyzer` | Not verified. The types and the Rust expressions in a description keep their own tokens and spans; what the macro does for an editor is in [the editor](macro.md#the-editor). |
+| `cargo expand` | The generated code reads like `tests/tour`: a type at its place in the tree, one function for one request, the author's expressions as written. |
+| A generator from OpenAPI | None exists. The grammar is regular and small: a description is a tree of nodes with statements. Behaviours (a reader, a pager) stay written by a person. |

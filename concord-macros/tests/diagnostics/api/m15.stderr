@@ -1,0 +1,7 @@
+error: expected an HTTP method before the endpoint name
+       label: endpoint method is missing
+       help: write `GET champion_rotations(route: Platform) -> ChampionRotations { base "https://{route}.api.riotgames.com"; path "lol/platform/v3/champion-rotations"; }`
+  --> tests/diagnostics/api/m15.rs:46:9
+   |
+46 |         champion_rotations(route: Platform) -> ChampionRotations {
+   |         ^^^^^^^^^^^^^^^^^^

@@ -1,0 +1,23 @@
+[package]
+name = "conformance"
+edition.workspace = true
+version.workspace = true
+publish = false
+description = "Concord contract conformance tests. Never published."
+
+[dev-dependencies]
+concord = { package = "concord-api", path = "../../concord-api", features = ["tower", "multipart"] }
+concord-testkit = { path = "../../concord-testkit" }
+tour = { path = "../tour" }
+# `net`: a port that is bound and refuses connections (`common::engine::refusing_port`).
+tokio = { workspace = true, features = ["net"] }
+serde.workspace = true
+serde_json.workspace = true
+reqwest.workspace = true
+http.workspace = true
+bytes.workspace = true
+futures-core.workspace = true
+# `c6_misuse.rs`: what is logged, by Concord (`tracing`) and by the HTTP library (`tracing`
+# and `log`), is captured and searched for values. Both crates are already in the lock.
+tracing = { version = "0.1", default-features = false, features = ["std"] }
+log = "0.4"

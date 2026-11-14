@@ -1,7 +1,0 @@
-error: `paginate` requires an endpoint
-       label: a scope cannot name a part holding `paginate`
-       help: move `..ladder` into the endpoint signature
-   --> tests/real/m18_spread.rs:265:39
-    |
-265 |         scope league(route: Platform, ..ladder) {
-    |                                       ^

@@ -1,7 +1,0 @@
-error: `Self` has no meaning in a description
-       label: `Self` is not the enclosing type here
-       help: write the path of the type
-  --> tests/real/m10_self.rs:83:64
-   |
-83 |             GET retrieve(id: CustomerId, ..expanded) -> Option<Self> {
-   |                                                                ^^^^

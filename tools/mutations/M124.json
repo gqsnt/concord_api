@@ -1,0 +1,12 @@
+{
+  "id": "M124",
+  "area": "public-api",
+  "contract": "docs/internals/engineering.md#explicit-with-safe-defaults",
+  "description": "Discard Retry::unless silently",
+  "file": "concord-core/src/retry.rs",
+  "find": "    #[must_use]\n    pub fn unless",
+  "replace": "    pub fn unless",
+  "checks": [
+    "docs-core"
+  ]
+}

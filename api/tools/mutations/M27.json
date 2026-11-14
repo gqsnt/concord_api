@@ -1,9 +1,0 @@
-{
-  "id": "M27",
-  "area": "errors",
-  "contract": "docs/contracts.md C6",
-  "description": "Truncate fractional clock lengths to whole seconds",
-  "file": "concord-core/src/error.rs",
-  "find": "    write!(f, \"{}\", duration.as_secs())?;\n    if duration.subsec_nanos() != 0 {\n        let fraction = format!(\"{:09}\", duration.subsec_nanos());\n",
-  "replace": "    write!(f, \"{}\", duration.as_secs())?;\n    if false {\n        let fraction = format!(\"{:09}\", duration.subsec_nanos());\n"
-}

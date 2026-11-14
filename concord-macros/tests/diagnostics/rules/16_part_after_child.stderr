@@ -1,0 +1,15 @@
+error: statements must precede children
+       label: part appears after a child
+       help: move `part fragment() {  }` before the first child
+ --> tests/diagnostics/rules/16_part_after_child.rs:2:36
+  |
+2 |     client Workshop { GET fetch(); part fragment() {} }
+  |                                    ^^^^
+
+error: part `fragment` is never used
+       label: no scope or endpoint names `..fragment`
+       help: add `..fragment` to a signature, or remove the part
+ --> tests/diagnostics/rules/16_part_after_child.rs:2:41
+  |
+2 |     client Workshop { GET fetch(); part fragment() {} }
+  |                                         ^^^^^^^^

@@ -1,0 +1,13 @@
+error: `body` is written in the part `formatted` and in this endpoint
+       label: entry bodies join only when they name the same function
+       help: consolidate these contributions, retaining the intended value or body function and every input placement; use compatible parts or remove inputs that are no longer needed
+  --> tests/diagnostics/api/m38_body.rs:36:13
+   |
+36 |             body form { chat_id; text; disable_notification; protect_content; reply_markup; }
+   |             ^^^^
+
+error: the part `formatted` writes its body here
+  --> tests/diagnostics/api/m38_body.rs:10:13
+   |
+10 |             body json { parse_mode; entities; }
+   |             ^^^^

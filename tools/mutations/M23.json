@@ -1,0 +1,9 @@
+{
+  "id": "M23",
+  "area": "core-readers",
+  "contract": "C5.11",
+  "description": "Change variant path marker",
+  "file": "concord-core/src/read.rs",
+  "find": "                PlacePiece::Key => f.write_str(\"[key]\")?,\n                PlacePiece::Variant => f.write_str(\"[variant]\")?,\n            }\n",
+  "replace": "                PlacePiece::Key => f.write_str(\"[key]\")?,\n                PlacePiece::Variant => f.write_str(\"[wrong]\")?,\n            }\n"
+}

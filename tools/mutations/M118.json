@@ -1,0 +1,12 @@
+{
+  "id": "M118",
+  "area": "test-metadata",
+  "contract": "docs/internals/engineering.md#every-contract-has-a-test-that-carries-its-number",
+  "description": "Mislabel helper hygiene as crate version pairing",
+  "file": "concord-core/src/__private/call.rs",
+  "find": "fn every_helper_is_hygienic",
+  "replace": "fn c10_9_every_helper_is_hygienic",
+  "checks": [
+    "surface"
+  ]
+}

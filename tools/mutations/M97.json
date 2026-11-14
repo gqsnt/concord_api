@@ -1,0 +1,9 @@
+{
+  "id": "M97",
+  "area": "entries",
+  "contract": "C2.14",
+  "description": "Write top-level None entries to the body map",
+  "file": "concord-core/src/body.rs",
+  "find": ".filter(|(_, value)| !value.as_ref().is_none(human_readable))",
+  "replace": ".filter(|_| true)"
+}

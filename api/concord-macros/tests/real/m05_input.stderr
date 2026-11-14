@@ -1,7 +1,0 @@
-error: invalid API name
-       label: expected lower snake case
-       help: rename it to `payment_intent` and update its references, retaining existing wire names
-   --> tests/real/m05_input.rs:139:41
-    |
-139 |             GET list(charge?: ChargeId, paymentIntent?: PaymentIntentId, ..listed, ..expanded) -> List<Refund> {
-    |                                         ^^^^^^^^^^^^^

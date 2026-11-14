@@ -1,0 +1,7 @@
+error: ancestor inputs require their owner's name
+       label: a short entry names an input of this node
+       help: write `"region" = client.region;`
+ --> tests/diagnostics/rules/12_ancestor_short.rs:2:90
+  |
+2 |     client Workshop(region: String) { base "https://regions.test"; GET fetch() { query { region; } } }
+  |                                                                                          ^^^^^^

@@ -1,0 +1,9 @@
+{
+  "id": "M56",
+  "area": "request-building",
+  "contract": "C8.6",
+  "description": "Allow at_url to move to another origin before edits",
+  "file": "concord-core/src/__private/build.rs",
+  "find": "if replacement.origin() != request.url().origin() {",
+  "replace": "if false && replacement.origin() != request.url().origin() {"
+}

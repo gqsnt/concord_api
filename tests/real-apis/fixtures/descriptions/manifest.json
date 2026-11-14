@@ -1,0 +1,135 @@
+[
+  {
+    "page": "README.md",
+    "block": 1,
+    "fixture": "tests/real-apis/fixtures/descriptions/readme_001.api",
+    "compiled": "tests/real-apis/src/guide/readme_001.rs",
+    "client": "Tasks"
+  },
+  {
+    "page": "README.md",
+    "block": 3,
+    "fixture": "tests/real-apis/fixtures/descriptions/readme_002.api",
+    "compiled": "tests/real-apis/src/guide/readme_002.rs",
+    "client": "Tasks"
+  },
+  {
+    "page": "docs/reference/overview.md",
+    "block": 1,
+    "fixture": "tests/real-apis/fixtures/descriptions/reference_overview_001.api",
+    "compiled": "tests/real-apis/src/guide/reference_overview_001.rs",
+    "client": "Tasks"
+  },
+  {
+    "page": "docs/guide/credentials.md",
+    "block": 1,
+    "fixture": "tests/real-apis/fixtures/descriptions/guide_credentials_001.api",
+    "compiled": "tests/real-apis/src/guide/guide_credentials_001.rs",
+    "client": "Vault"
+  },
+  {
+    "page": "docs/guide/describing-an-api.md",
+    "block": 1,
+    "fixture": "tests/real-apis/fixtures/descriptions/guide_describing-an-api_001.api",
+    "compiled": "tests/real-apis/src/guide/guide_describing-an-api_001.rs",
+    "client": "Riot"
+  },
+  {
+    "page": "docs/guide/describing-an-api.md",
+    "block": 9,
+    "fixture": "tests/real-apis/fixtures/descriptions/guide_describing-an-api_002.api",
+    "compiled": "tests/real-apis/src/guide/guide_describing-an-api_002.rs",
+    "client": "Stripe"
+  },
+  {
+    "page": "docs/guide/describing-an-api.md",
+    "block": 12,
+    "fixture": "tests/real-apis/fixtures/descriptions/guide_describing-an-api_003.api",
+    "compiled": "tests/real-apis/src/guide/guide_describing-an-api_003.rs",
+    "client": "Vault"
+  },
+  {
+    "page": "docs/guide/testing.md",
+    "block": 6,
+    "fixture": "tests/real-apis/fixtures/descriptions/guide_testing_001.api",
+    "compiled": "tests/real-apis/src/guide/guide_testing_001.rs",
+    "client": "Stations"
+  },
+  {
+    "page": "docs/guide/tour.md",
+    "block": 1,
+    "fixture": "tests/real-apis/fixtures/descriptions/guide_tour_001.api",
+    "compiled": "tests/real-apis/src/guide/guide_tour_001.rs",
+    "client": "Tasks"
+  },
+  {
+    "page": "docs/guide/tour.md",
+    "block": 3,
+    "fixture": "tests/real-apis/fixtures/descriptions/guide_tour_002.api",
+    "compiled": "tests/real-apis/src/guide/guide_tour_002.rs",
+    "client": "Riot"
+  },
+  {
+    "page": "docs/guide/tour.md",
+    "block": 9,
+    "fixture": "tests/real-apis/fixtures/descriptions/guide_tour_003.api",
+    "compiled": "tests/real-apis/src/guide/guide_tour_003.rs",
+    "client": "Stripe"
+  },
+  {
+    "page": "docs/examples/elasticsearch.md",
+    "block": 1,
+    "fixture": "tests/real-apis/fixtures/descriptions/examples_elasticsearch_001.api",
+    "compiled": "tests/real-apis/src/elasticsearch/description.rs",
+    "client": "Elasticsearch"
+  },
+  {
+    "page": "docs/examples/github.md",
+    "block": 1,
+    "fixture": "tests/real-apis/fixtures/descriptions/examples_github_001.api",
+    "compiled": "tests/real-apis/src/github/description.rs",
+    "client": "Github"
+  },
+  {
+    "page": "docs/examples/kubernetes.md",
+    "block": 1,
+    "fixture": "tests/real-apis/fixtures/descriptions/examples_kubernetes_001.api",
+    "compiled": "tests/real-apis/src/kubernetes/description.rs",
+    "client": "Kubernetes"
+  },
+  {
+    "page": "docs/examples/riot.md",
+    "block": 1,
+    "fixture": "tests/real-apis/fixtures/descriptions/examples_riot_001.api",
+    "compiled": "tests/real-apis/src/riot/description.rs",
+    "client": "Riot"
+  },
+  {
+    "page": "docs/examples/s3.md",
+    "block": 1,
+    "fixture": "tests/real-apis/fixtures/descriptions/examples_s3_001.api",
+    "compiled": "tests/real-apis/src/s3/description.rs",
+    "client": "ObjectStore"
+  },
+  {
+    "page": "docs/examples/slack.md",
+    "block": 1,
+    "fixture": "tests/real-apis/fixtures/descriptions/examples_slack_001.api",
+    "compiled": "tests/real-apis/src/slack/description.rs",
+    "client": "Slack"
+  },
+  {
+    "page": "docs/examples/stripe.md",
+    "block": 1,
+    "fixture": "tests/real-apis/fixtures/descriptions/examples_stripe_001.api",
+    "compiled": "tests/real-apis/src/stripe/description.rs",
+    "client": "Stripe"
+  },
+  {
+    "page": "docs/examples/telegram.md",
+    "block": 1,
+    "fixture": "tests/real-apis/fixtures/descriptions/examples_telegram_001.api",
+    "compiled": "tests/real-apis/src/telegram/description.rs",
+    "client": "Telegram"
+  }
+]

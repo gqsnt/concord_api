@@ -1,0 +1,7 @@
+error: nothing says how this answer is read
+       label: no `read` here or above
+       help: supply the intended reader on this endpoint or an ancestor
+ --> tests/compiler-errors/spans/20_arm.rs:1:64
+  |
+1 | concord::api! { client C { base "https://span.test"; GET get() -> u32 {
+  |                                                                ^^^^^^

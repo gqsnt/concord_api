@@ -1,9 +1,0 @@
-{
-  "id": "M22",
-  "area": "core-readers",
-  "contract": "docs/contracts.md C5/C6",
-  "description": "Change map-key path marker",
-  "file": "concord-core/src/read.rs",
-  "find": "                PlacePiece::Index(index) => write!(f, \"[{index}]\")?,\n                PlacePiece::Key => f.write_str(\"[key]\")?,\n                PlacePiece::Variant => f.write_str(\"[variant]\")?,\n",
-  "replace": "                PlacePiece::Index(index) => write!(f, \"[{index}]\")?,\n                PlacePiece::Key => f.write_str(\"[wrong]\")?,\n                PlacePiece::Variant => f.write_str(\"[variant]\")?,\n"
-}

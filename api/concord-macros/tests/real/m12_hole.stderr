@@ -1,7 +1,0 @@
-error: ancestor inputs require their owner's name
-       label: `token` belongs to the client
-       help: write `{client.token}`
-   --> tests/real/m12_hole.rs:199:56
-    |
-199 | ...                   override "authorization" = "Bearer {token}";
-    |                                                  ^^^^^^^^^^^^^^^^

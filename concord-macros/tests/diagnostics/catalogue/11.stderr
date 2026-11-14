@@ -1,0 +1,7 @@
+error: unknown input `idd`
+       label: no input with this name
+       help: correct this input name, or declare the intended input in this signature and place every declared input
+ --> tests/diagnostics/catalogue/11.rs:2:69
+  |
+2 | client Tasks { base "https://a.example"; GET get(id: String) { path "{idd}"; } }
+  |                                                                     ^^^^^^^

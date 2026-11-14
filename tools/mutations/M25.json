@@ -1,0 +1,9 @@
+{
+  "id": "M25",
+  "area": "errors",
+  "contract": "C6.1",
+  "description": "tries accessor off by one",
+  "file": "concord-core/src/error.rs",
+  "find": "    pub fn tries(&self) -> u32 {\n        self.inner.tries\n    }\n",
+  "replace": "    pub fn tries(&self) -> u32 {\n        self.inner.tries + 1\n    }\n"
+}

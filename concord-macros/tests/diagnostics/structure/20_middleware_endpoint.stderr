@@ -1,0 +1,7 @@
+error: `middleware` requires the client
+       label: middlewares are declared on the client
+       help: move `middleware MyLayer::new(config);` into the client block
+ --> tests/diagnostics/structure/20_middleware_endpoint.rs:4:13
+  |
+4 |             middleware MyLayer::new(config);
+  |             ^^^^^^^^^^

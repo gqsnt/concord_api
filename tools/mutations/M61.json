@@ -1,0 +1,9 @@
+{
+  "id": "M61",
+  "area": "request-building",
+  "contract": "C2.6",
+  "description": "Treat slash as unreserved in path and query holes",
+  "file": "concord-core/src/__private/build.rs",
+  "find": "matches!(byte, b'-' | b'.' | b'_' | b'~')",
+  "replace": "matches!(byte, b'-' | b'.' | b'_' | b'~' | b'/')"
+}

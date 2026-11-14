@@ -1,0 +1,7 @@
+error: `new` is reserved by Concord
+       label: conflicts with a generated method
+       help: rename this child to `new_item`
+ --> tests/diagnostics/rules/03_child_client_new.rs:2:70
+  |
+2 |     client Workshop { base "https://workshop.test"; read Reader; GET new(); }
+  |                                                                      ^^^

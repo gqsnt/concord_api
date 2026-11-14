@@ -1,7 +1,0 @@
-error: `per_second` is optional, and a middleware is made in `new`
-       label: only the required inputs of the client are set when `new` runs
-       help: declare `per_second: u32`, without `?`
- --> tests/messages-page/40.rs:2:82
-  |
-2 | client Tasks(per_second?: u32) { base "https://a.example"; middleware Limit::new(per_second); GET get(); }
-  |                                                                                  ^^^^^^^^^^

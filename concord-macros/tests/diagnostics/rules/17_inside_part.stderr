@@ -1,0 +1,13 @@
+error: duplicate `read` statement
+       label: this node already declares `read`
+       help: keep one declaration of this behaviour, choosing its intended value
+ --> tests/diagnostics/rules/17_inside_part.rs:2:53
+  |
+2 |     client Workshop { part fragment() { read First; read Second; } GET fetch(..fragment); }
+  |                                                     ^^^^
+
+error: the first `read` statement is here
+ --> tests/diagnostics/rules/17_inside_part.rs:2:41
+  |
+2 |     client Workshop { part fragment() { read First; read Second; } GET fetch(..fragment); }
+  |                                         ^^^^

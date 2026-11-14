@@ -1,0 +1,16 @@
+error: this function depends on never type fallback being `()`
+ --> tests/compiler-errors/spans/21_arm_inference.rs:2:5
+  |
+2 | GET get() -> u32 {
+  |     ^^^
+  |
+  = help: specify the types explicitly
+note: in edition 2024, the requirement `for<'de> !: serde_core::de::Deserialize<'de>` will fail
+ --> tests/compiler-errors/spans/21_arm_inference.rs:1:59
+  |
+1 | concord::api! { client C { base "https://span.test"; read concord::Json;
+  |                                                           ^^^^^^^
+  = warning: this was previously accepted by the compiler but is being phased out; it will become a hard error in Rust 2024 and in a future release in all editions!
+  = note: for more information, see <https://doc.rust-lang.org/edition-guide/rust-2024/never-type-fallback.html>
+  = note: `#[deny(dependency_on_unit_never_type_fallback)]` (part of `#[deny(rust_2024_compatibility)]`) on by default
+  = note: this error originates in the macro `concord::api` (in Nightly builds, run with -Z macro-backtrace for more info)

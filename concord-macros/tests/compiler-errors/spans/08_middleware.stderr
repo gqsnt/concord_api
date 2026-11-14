@@ -1,0 +1,13 @@
+error[E0277]: `{integer}` is not a middleware
+ --> tests/compiler-errors/spans/08_middleware.rs:2:12
+  |
+2 | middleware 42;
+  |            ^^ the trait `Middleware` is not implemented for `{integer}`
+  |
+  = note: implement concord::Middleware with handle(request, info, next); next.send(request, info) sends on
+note: required by a bound in `concord::__private::Core::<P>::add_middleware`
+ --> $WORKSPACE/concord-core/src/__private/client.rs
+  |
+  |     pub fn add_middleware(mut self, middleware: impl Middleware) -> Core<P> {
+  |                                                      ^^^^^^^^^^ required by this bound in `Core::<P>::add_middleware`
+  = note: this error originates in the macro `concord::api` (in Nightly builds, run with -Z macro-backtrace for more info)

@@ -1,0 +1,7 @@
+error: a path cannot contain a query
+       label: query begins here
+       help: write `path "items"; query { "count" = "5"; }`
+ --> tests/diagnostics/catalogue/28.rs:2:59
+  |
+2 | client Tasks { base "https://a.example"; GET get() { path "items?count=5"; } }
+  |                                                           ^^^^^^^^^^^^^^^

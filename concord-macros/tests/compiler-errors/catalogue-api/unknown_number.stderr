@@ -1,0 +1,13 @@
+error[E0308]: mismatched types
+ --> tests/compiler-errors/catalogue-api/unknown_number.rs:6:55
+  |
+6 |     diagnostics.raise(proc_macro2::Span::call_site(), 99);
+  |                 -----                                 ^^ expected `Message`, found integer
+  |                 |
+  |                 arguments to this method are incorrect
+  |
+note: method defined here
+ --> tests/compiler-errors/catalogue-api/../../../src/diag.rs
+  |
+  |     pub(crate) fn raise(&mut self, span: Span, message: Message) {
+  |                   ^^^^^                        ----------------

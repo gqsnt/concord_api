@@ -1,0 +1,7 @@
+error: statements must precede children
+       label: statement appears after a child
+       help: move `read Reader;` before the first child
+ --> tests/diagnostics/rules/16_after_child.rs:2:36
+  |
+2 |     client Workshop { GET fetch(); read Reader; }
+  |                                    ^^^^

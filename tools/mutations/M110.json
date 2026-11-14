@@ -1,0 +1,12 @@
+{
+  "id": "M110",
+  "area": "public-api",
+  "contract": "docs/internals/engineering.md#it-can-grow-for-years",
+  "description": "Expose getrandom in MultipartError again",
+  "file": "concord-extras/src/multipart.rs",
+  "find": "    Randomness,",
+  "replace": "    Randomness(getrandom::Error),",
+  "checks": [
+    "surface"
+  ]
+}

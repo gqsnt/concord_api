@@ -1,9 +1,0 @@
-{
-  "id": "M57",
-  "area": "request-building",
-  "contract": "docs/contracts.md C8.2",
-  "description": "Retain old secret query pairs in an at_url URL",
-  "file": "concord-core/src/__private/build.rs",
-  "find": "if !secret {\n                        kept.push(part.to_owned());",
-  "replace": "if true {\n                        kept.push(part.to_owned());"
-}

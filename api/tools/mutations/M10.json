@@ -1,9 +1,0 @@
-{
-  "id": "M10",
-  "area": "retry",
-  "contract": "docs/contracts.md C4",
-  "description": "Keep exponential backoff ceiling at one second",
-  "file": "concord-core/src/retry.rs",
-  "find": "    }\n    let ceiling = (2u64.saturating_pow(n.saturating_sub(1))).min(60);\n    let random = if random.is_finite() {\n",
-  "replace": "    }\n    let ceiling = 1;\n    let random = if random.is_finite() {\n"
-}

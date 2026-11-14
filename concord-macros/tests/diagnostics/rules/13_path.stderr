@@ -1,0 +1,13 @@
+error: this URL input must supply one required value
+       label: an optional input cannot fill this hole
+       help: declare `code: String`, without `?`
+ --> tests/diagnostics/rules/13_path.rs:2:98
+  |
+2 |     client Workshop { base "https://workshop.test"; read Reader; GET fetch(code?: String) { path "records/{code}"; } }
+  |                                                                                                  ^^^^^^^^^^^^^^^^
+
+error: this input is marked optional here
+ --> tests/diagnostics/rules/13_path.rs:2:80
+  |
+2 |     client Workshop { base "https://workshop.test"; read Reader; GET fetch(code?: String) { path "records/{code}"; } }
+  |                                                                                ^

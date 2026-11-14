@@ -1,0 +1,7 @@
+error: forbidden character in fixed path text
+       label: this character must come from an encoded value
+       help: move the forbidden fixed text into an input hole at this position; retain the other path text and holes
+ --> tests/diagnostics/catalogue/27.rs:2:59
+  |
+2 | client Tasks { base "https://a.example"; GET get() { path "my files"; } }
+  |                                                           ^^^^^^^^^^

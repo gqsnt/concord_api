@@ -1,0 +1,9 @@
+{
+  "id": "M86",
+  "area": "shipped-readers",
+  "contract": "C5.11",
+  "description": "Do not skip a UTF-8 BOM before JSON",
+  "file": "concord-extras/src/json_decode.rs",
+  "find": "let bytes = bytes.strip_prefix(b\"\\xef\\xbb\\xbf\").unwrap_or(bytes);",
+  "replace": "let bytes = bytes;"
+}

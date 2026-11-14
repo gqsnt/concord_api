@@ -1,7 +1,0 @@
-error: a part cannot hold a child
-       label: `path`, `problem`, `middleware` and children belong to the tree
-       help: move `nested` into the scope that names the part
- --> tests/semantic/37_scope.rs:2:84
-  |
-2 |     client Workshop { base "https://workshop.test"; read Reader; part fragment() { scope nested {} } GET fetch(..fragment); }
-  |                                                                                    ^^^^^

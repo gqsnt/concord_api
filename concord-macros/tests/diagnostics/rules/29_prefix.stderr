@@ -1,0 +1,7 @@
+error: a `{*…}` hole must be a whole segment
+       label: `{*key}` shares its segment with `pre`
+       help: write `path "objects/pre{key}";`; a `{key}` hole may share its segment
+ --> tests/diagnostics/rules/29_prefix.rs:2:96
+  |
+2 |     client Workshop { base "https://workshop.test"; read Reader; GET fetch(key: String) { path "objects/pre{*key}"; } }
+  |                                                                                                ^^^^^^^^^^^^^^^^^^^

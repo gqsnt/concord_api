@@ -1,7 +1,0 @@
-error: unsupported attribute on a part
-       label: a part takes doc comments only
-       help: put `# [cfg(feature = "search")]` on a scope or endpoint
-  --> tests/real/m14_part.rs:44:9
-   |
-44 |         #[cfg(feature = "search")]
-   |         ^^^^^^^^^^^^^^^^^^^^^^^^^^

@@ -1,9 +1,0 @@
-{
-  "id": "M66",
-  "area": "value-writing",
-  "contract": "docs/contracts.md C2.4 / C2.6",
-  "description": "Reverse serialized sequence elements",
-  "file": "concord-core/src/__private/value.rs",
-  "find": "                self.0.push(text);",
-  "replace": "                self.0.insert(0, text);"
-}

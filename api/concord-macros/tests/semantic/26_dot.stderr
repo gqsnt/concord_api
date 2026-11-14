@@ -1,7 +1,0 @@
-error: dot segments are forbidden in paths
-       label: `.` is a dot segment
-       help: write the intended path without dot segments, preserving the other segments and holes
- --> tests/semantic/26_dot.rs:2:85
-  |
-2 |     client Workshop { base "https://workshop.test"; read Reader; GET fetch() { path "records/./meta"; } }
-  |                                                                                     ^^^^^^^^^^^^^^^^

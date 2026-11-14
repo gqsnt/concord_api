@@ -1,0 +1,15 @@
+error: no `base` in reach of this endpoint
+       label: no `base` here or above
+       help: set the intended base URL on this endpoint or an ancestor
+ --> tests/diagnostics/rules/14_client.rs:2:41
+  |
+2 |     #[deprecated] client Workshop { GET fetch(); }
+  |                                         ^^^^^
+
+error: unsupported attribute on the client
+       label: a client takes doc comments and #[cfg] only
+       help: put `# [deprecated]` on a scope or endpoint
+ --> tests/diagnostics/rules/14_client.rs:2:5
+  |
+2 |     #[deprecated] client Workshop { GET fetch(); }
+  |     ^^^^^^^^^^^^^

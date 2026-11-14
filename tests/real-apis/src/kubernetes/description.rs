@@ -1,0 +1,171 @@
+use std::time::Duration;
+use concord::read::Stream;
+use concord::{json, Base, Json, Secret, Text};
+
+concord::api! {
+    /// The Kubernetes API of one cluster (a subset): pods, two subresources of a deployment, custom resources.
+    /// The cluster's certificate is a fact of the connection: build the client with `connect` or `in_cluster`.
+    pub client Kubernetes(
+        /// The API server: `https://10.0.0.1:6443`, or a proxy with a prefix (`https://rancher.example/k8s/clusters/c-1`).
+        server: Base,
+        /// A bearer token. Not set: a client certificate, or the middleware of `in_cluster`, says who you are.
+        token?: Secret,
+    ) {
+        base server;
+        headers { "authorization" = "Bearer {token}"; }
+        read Json;
+        problem Status;
+
+        part selectors(label_selector?: String, field_selector?: String) {
+            query { "labelSelector" = label_selector; "fieldSelector" = field_selector; }
+        }
+        /// A list in pages of `limit`, the next one asked with the `continue` token (a Rust keyword).
+        part listing(limit?: u32, continue_token?: String, resource_version?: String, resource_version_match?: VersionMatch) {
+            query {
+                limit; "continue" = continue_token;
+                "resourceVersion" = resource_version; "resourceVersionMatch" = resource_version_match;
+            }
+            // not `by_cursor`: it keeps the version, and the server refuses one beside a token (unsure)
+            paginate move |call, page| page.value().next_token()
+                .map(|token| call.continue_token(token).resource_version(None).resource_version_match(None));
+        }
+        /// A watch: an answer that does not end, one event on each line. The server ends it after
+        /// `timeout_seconds`, or after 30 to 60 minutes when it is not set (unsure).
+        part watching(resource_version?: String, allow_watch_bookmarks?: bool, timeout_seconds?: u32) {
+            query {
+                "watch" = "true"; "resourceVersion" = resource_version;
+                "allowWatchBookmarks" = allow_watch_bookmarks; "timeoutSeconds" = timeout_seconds;
+            }
+            read WatchLines;
+            idle_timeout Duration::from_secs(u64::from(timeout_seconds.unwrap_or(3600)) + 60);
+        }
+        /// What every write takes.
+        part write(dry_run?: bool, field_manager?: String, field_validation?: FieldValidation) {
+            query {
+                "dryRun" = dry_run.and_then(|on| on.then_some("All"));
+                "fieldManager" = field_manager; "fieldValidation" = field_validation;
+            }
+        }
+        /// A patch. Its kind is its `Content-Type`, which the body carries.
+        part patching(patch: Patch, force?: bool) {
+            body patch.to_body();
+            query { force; }
+            idempotent patch.is_idempotent();
+        }
+        part logs(
+            container?: String, previous?: bool, timestamps?: bool,
+            since_seconds?: i64, tail_lines?: i64, limit_bytes?: i64,
+        ) {
+            query {
+                container; previous; timestamps;
+                "sinceSeconds" = since_seconds; "tailLines" = tail_lines; "limitBytes" = limit_bytes;
+            }
+        }
+
+        /// The core group.
+        scope core_v1 {
+            path "api/v1";
+
+            /// The pods of one namespace.
+            scope pods(namespace: String) {
+                path "namespaces/{namespace}/pods";
+
+                GET list(..selectors, ..listing) -> List<Pod>;
+                GET watch(..selectors, ..watching) -> Watch<Pod>;
+                POST create(pod: Pod, ..write) -> Pod { body json(pod); }
+
+                /// `None` when there is no such pod, or no such namespace.
+                GET get(name: String) -> Option<Pod> {
+                    path "{name}";
+                    status { 404 => None }
+                }
+                /// `Err`: the pod changed since the `resourceVersion` in `pod`. Read it again.
+                PUT replace(name: String, pod: Pod, ..write) -> Result<Pod, Status> {
+                    path "{name}";
+                    body json(pod);
+                    status { 409 { body } => Err(body) }
+                }
+                PATCH patch(name: String, ..patching, ..write) -> Pod { path "{name}"; }
+
+                /// The pod while it stops, or a `Status` once it is gone. `preconditions`: only this `uid`,
+                /// or only this version. (`fieldManager` is not a parameter of a delete: no `..write`.)
+                DELETE delete(name: String, grace_period_seconds?: i64, propagation_policy?: Propagation,
+                              preconditions?: Preconditions, dry_run?: bool) -> Deleted<Pod> {
+                    path "{name}";
+                    query { "dryRun" = dry_run.and_then(|on| on.then_some("All")); }
+                    body json {
+                        "gracePeriodSeconds" = grace_period_seconds;
+                        "propagationPolicy" = propagation_policy;
+                        preconditions;
+                    }
+                }
+
+                /// The log, whole: plain text, 10 MiB at most.
+                GET log(name: String, ..logs) -> String {
+                    path "{name}/log";
+                    read Text;
+                }
+                /// The log as it is written, until the container stops.
+                GET follow_log(name: String, ..logs) -> concord::ByteStream {
+                    path "{name}/log";
+                    query { "follow" = "true"; }
+                    read Stream;
+                    idle_timeout Duration::from_secs(24 * 60 * 60);      // a quiet container is not a dead server
+                }
+            }
+
+            /// The pods of every namespace: the same two reads, under another parent.
+            scope all_pods {
+                path "pods";
+                GET list(..selectors, ..listing) -> List<Pod>;
+                GET watch(..selectors, ..watching) -> Watch<Pod>;
+            }
+        }
+
+        /// The group `apps`.
+        scope apps_v1 {
+            path "apis/apps/v1";
+
+            scope deployments(namespace: String) {
+                path "namespaces/{namespace}/deployments";
+
+                /// The deployment as its controller reports it.
+                scope status(name: String) {
+                    path "{name}/status";
+                    GET get() -> Deployment;
+                    PUT replace(deployment: Deployment, ..write) -> Result<Deployment, Status> {
+                        body json(deployment);
+                        status { 409 { body } => Err(body) }
+                    }
+                }
+                /// How many replicas: a `Scale` of `autoscaling/v1`.
+                scope scale(name: String) {
+                    path "{name}/scale";
+                    GET get() -> Scale;
+                    /// `desired`: an input may not be named `scale` under the scope `scale`.
+                    PUT replace(desired: Scale, ..write) -> Result<Scale, Status> {
+                        body json(desired);
+                        status { 409 { body } => Err(body) }
+                    }
+                    PATCH patch(..patching, ..write) -> Scale;
+                }
+            }
+        }
+
+        /// The objects of a custom resource, as JSON: its group, its version, the plural of its kind.
+        scope custom(group: String, version: String, plural: String) {
+            path "apis/{group}/{version}";
+
+            scope namespaced(namespace: String) {
+                path "namespaces/{namespace}/{custom.plural}";
+
+                GET list(..selectors, ..listing) -> List<DynamicObject>;
+                /// `None`: no such object; also when the resource is not installed.
+                GET get(name: String) -> Option<DynamicObject> {
+                    path "{name}";
+                    status { 404 => None }
+                }
+            }
+        }
+    }
+}

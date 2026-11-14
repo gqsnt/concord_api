@@ -1,9 +1,0 @@
-{
-  "id": "M83",
-  "area": "shipped-readers",
-  "contract": "docs/contracts.md C5.11 / docs/crate.md Json.strict",
-  "description": "Read a wrong-labelled body in strict JSON mode",
-  "file": "concord-extras/src/read.rs",
-  "find": "if self.strict && !json_decode::is_json(label.as_deref()) {",
-  "replace": "if false && self.strict && !json_decode::is_json(label.as_deref()) {"
-}

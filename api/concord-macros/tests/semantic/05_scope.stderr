@@ -1,7 +1,0 @@
-error: invalid API name
-       label: expected lower snake case
-       help: rename it to `bad_name` and update its references, retaining existing wire names
- --> tests/semantic/05_scope.rs:2:72
-  |
-2 |     client Workshop { base "https://workshop.test"; read Reader; scope Bad__Name { GET fetch(); } }
-  |                                                                        ^^^^^^^^^

@@ -1,0 +1,9 @@
+{
+  "id": "M81",
+  "area": "shipped-pagers",
+  "contract": "C8.6",
+  "description": "Ignore the returned next URL",
+  "file": "concord-extras/src/page.rs",
+  "find": ".map(|url| call.at_url(concord_core::page::fragmentless(url.as_ref())))",
+  "replace": ".map(|_url| call.clone())"
+}

@@ -1,0 +1,7 @@
+error: invalid client name
+       label: expected upper camel case with a non-keyword module name
+       help: write `client MatchValue`
+ --> tests/diagnostics/rules/06_match.rs:2:12
+  |
+2 |     client Match { base "https://names.test"; GET fetch(); }
+  |            ^^^^^

@@ -1,0 +1,7 @@
+error: `middleware` requires the client
+       label: middlewares are declared on the client
+       help: move `middleware Layer;` into the client block
+ --> tests/diagnostics/rules/20_middleware_scope.rs:2:83
+  |
+2 |     client Workshop { base "https://workshop.test"; read Reader; scope fragment { middleware Layer; } }
+  |                                                                                   ^^^^^^^^^^

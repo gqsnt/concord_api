@@ -1,0 +1,9 @@
+{
+  "id": "M53",
+  "area": "request-building",
+  "contract": "C2.7, C8.4",
+  "description": "Drop the sensitive mark of a secret header",
+  "file": "concord-core/src/__private/build.rs",
+  "find": "value.set_sensitive(secret);",
+  "replace": "value.set_sensitive(false);"
+}

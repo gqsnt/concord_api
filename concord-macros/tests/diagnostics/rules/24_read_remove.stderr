@@ -1,0 +1,7 @@
+error: `read` cannot be overridden or removed
+       label: `override` and `remove` stand inside a block, before an entry or an arm
+       help: write `read Reader;`
+ --> tests/diagnostics/rules/24_read_remove.rs:2:80
+  |
+2 |     client Workshop { base "https://workshop.test"; read Reader; GET fetch() { remove read Reader; } }
+  |                                                                                ^^^^^^

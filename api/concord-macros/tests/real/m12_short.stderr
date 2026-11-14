@@ -1,7 +1,0 @@
-error: ancestor inputs require their owner's name
-       label: a short entry names an input of this node
-       help: write `"upload_id" = upload.upload_id;`
-   --> tests/real/m12_short.rs:142:61
-    |
-142 |                         query { "partNumber" = part_number; upload.upload_id; }
-    |                                                             ^^^^^^

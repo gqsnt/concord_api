@@ -1,9 +1,0 @@
-{
-  "id": "M138",
-  "area": "build",
-  "contract": "C2.3 C2.6 A74",
-  "description": "Allow URLs beyond the HTTP layer byte limit",
-  "file": "concord-core/src/__private/build.rs",
-  "find": "const MAX_URL_LENGTH: usize = 65_534;",
-  "replace": "const MAX_URL_LENGTH: usize = usize::MAX;"
-}

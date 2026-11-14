@@ -1,7 +1,0 @@
-error: invalid API name
-       label: expected lower snake case
-       help: rename it to `mark_uncollectible` and update its references, retaining existing wire names
-   --> tests/real/m05_double.rs:200:18
-    |
-200 |             POST mark__uncollectible(id: InvoiceId, ..write) -> Invoice {
-    |                  ^^^^^^^^^^^^^^^^^^^

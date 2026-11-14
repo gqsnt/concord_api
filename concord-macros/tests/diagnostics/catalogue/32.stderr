@@ -1,0 +1,7 @@
+error: this HEAD result needs a success arm
+       label: no arm supplies the declared result
+       help: add a status block with a success arm returning the declared result without reading a body
+ --> tests/diagnostics/catalogue/32.rs:2:56
+  |
+2 | client Tasks { base "https://a.example"; HEAD exists() -> bool; }
+  |                                                        ^^^^^^^

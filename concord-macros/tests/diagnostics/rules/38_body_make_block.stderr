@@ -1,0 +1,13 @@
+error: duplicate body entry `q` in this block
+       label: a key is written once in one node
+       help: consolidate these entries into one intended value, retaining every needed input placement or removing declarations that are no longer needed
+ --> tests/diagnostics/rules/38_body_make_block.rs:2:101
+  |
+2 |     client Workshop { base "https://workshop.test"; read Reader; GET fetch() { body make { "q" = 1; "q" = 2; } } }
+  |                                                                                                     ^^^
+
+error: the first body entry `q` is here
+ --> tests/diagnostics/rules/38_body_make_block.rs:2:92
+  |
+2 |     client Workshop { base "https://workshop.test"; read Reader; GET fetch() { body make { "q" = 1; "q" = 2; } } }
+  |                                                                                            ^^^

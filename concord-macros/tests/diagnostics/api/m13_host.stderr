@@ -1,0 +1,13 @@
+error: this URL input must supply one required value
+       label: an optional input cannot fill this hole
+       help: declare `route: Platform`, without `?`
+  --> tests/diagnostics/api/m13_host.rs:47:18
+   |
+47 |             base "https://{route}.api.riotgames.com";
+   |                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+error: this input is marked optional here
+  --> tests/diagnostics/api/m13_host.rs:46:37
+   |
+46 |         GET champion_rotations(route?: Platform) -> ChampionRotations {
+   |                                     ^

@@ -1,7 +1,0 @@
-error: a `{*…}` hole must be a whole segment
-       label: `{*code}` stands outside a path
-       help: write `"{code}"` with a `{code}` hole
- --> tests/semantic/29_headers.rs:2:113
-  |
-2 |     client Workshop { base "https://workshop.test"; read Reader; GET fetch(code: String) { headers { "x-code" = "{*code}"; } } }
-  |                                                                                                                 ^^^^^^^^^

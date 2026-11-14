@@ -1,7 +1,0 @@
-error: no inherited status arm `200` to remove
-       label: only the `2xx` class arm is set above
-       help: an exact removal cannot exclude a member of a class; write an overriding exact arm with the intended fields and expression
-  --> tests/real/m23_class.rs:22:65
-   |
-22 |             GET test() -> Identity { path "auth.test"; status { remove 200 } }
-   |                                                                 ^^^^^^

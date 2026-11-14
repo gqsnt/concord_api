@@ -1,0 +1,7 @@
+error: unknown input `missing`
+       label: no input with this name
+       help: correct this input name, or declare the intended input in this signature and place every declared input
+ --> tests/compiler-errors/bindings/recovery.rs:6:30
+  |
+6 |         GET refused() { path "{missing}"; }
+  |                              ^^^^^^^^^^^

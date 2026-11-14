@@ -1,0 +1,7 @@
+error: expected an HTTP method before the endpoint name
+       label: endpoint method is missing
+       help: write `GET list();`
+ --> tests/diagnostics/catalogue/15.rs:2:42
+  |
+2 | client Tasks { base "https://a.example"; list(); }
+  |                                          ^^^^

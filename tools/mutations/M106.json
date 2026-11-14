@@ -1,0 +1,12 @@
+{
+  "id": "M106",
+  "area": "allocation",
+  "contract": "docs/internals/engineering.md#the-cost-is-stated",
+  "description": "Collect intermediate query pairs again",
+  "file": "concord-core/src/__private/build.rs",
+  "find": "            for value in values {\n                query_pair(&mut encoded_query, key, value);\n            }",
+  "replace": "            let pairs = values.into_iter().map(|value| (key, value)).collect::<Vec<_>>();\n            for (key, value) in pairs {\n                query_pair(&mut encoded_query, key, value);\n            }",
+  "checks": [
+    "allocations"
+  ]
+}

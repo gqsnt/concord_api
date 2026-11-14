@@ -1,0 +1,9 @@
+{
+  "id": "M24",
+  "area": "core-readers",
+  "contract": "C5.11",
+  "description": "Keep 33 path pieces instead of 32",
+  "file": "concord-core/src/read.rs",
+  "find": "    fn push(mut self, piece: PlacePiece) -> Self {\n        if self.pieces.len() < 32 {\n            self.pieces.push(piece);\n",
+  "replace": "    fn push(mut self, piece: PlacePiece) -> Self {\n        if self.pieces.len() < 33 {\n            self.pieces.push(piece);\n"
+}

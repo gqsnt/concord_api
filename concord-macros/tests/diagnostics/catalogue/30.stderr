@@ -1,0 +1,7 @@
+error: invalid header name
+       label: expected a nonempty ASCII HTTP token
+       help: choose the intended nonempty ASCII HTTP header name, retaining this entry's value
+ --> tests/diagnostics/catalogue/30.rs:2:52
+  |
+2 | client Tasks { base "https://a.example"; headers { "bad header" = "v"; } GET get(); }
+  |                                                    ^^^^^^^^^^^^

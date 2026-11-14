@@ -1,0 +1,9 @@
+{
+  "id": "M93",
+  "area": "multipart",
+  "contract": "C2.16",
+  "description": "Omit the terminal double dash of the closing boundary",
+  "file": "concord-extras/src/multipart.rs",
+  "find": "parts.push(Body::from(format!(\"--{boundary}--\\r\\n\")));",
+  "replace": "parts.push(Body::from(format!(\"--{boundary}\\r\\n\")));"
+}

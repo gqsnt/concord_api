@@ -1,0 +1,12 @@
+{
+  "id": "M128",
+  "area": "docs",
+  "contract": "C5.11",
+  "description": "Replace the reader contract with a tautology",
+  "file": "concord-core/src/read.rs",
+  "find": "    /// Consume the Incoming body once and return the declared value or a ReadError.\n    /// Use [`Incoming::bytes`] with an explicit byte limit for buffered formats,\n    /// or [`Incoming::stream`] to hand chunks on. Preserve stream failures with `?`;\n    /// report decoding failures with [`ReadError::not_the_type`] and safe schema places.\n    /// Body waits carry the call's clocks; only the whole-call clock bounds your\n    /// reader's own work between body reads. Do not retain or print response values\n    /// in an error source; optional decoder text belongs in [`ReadError::with_details`].\n",
+  "replace": "    /// Read the value.\n",
+  "checks": [
+    "surface"
+  ]
+}

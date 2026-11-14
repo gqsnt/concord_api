@@ -1,7 +1,0 @@
-error: no inherited status arm `410` to remove
-       label: only the `4xx` class arm is set above
-       help: an exact removal cannot exclude a member of a class; write an overriding exact arm with the intended fields and expression
- --> tests/semantic/23_class_member.rs:2:110
-  |
-2 |     client Workshop { base "https://workshop.test"; read Reader; status { 4xx => () } GET fetch() { status { remove 410 } } }
-  |                                                                                                              ^^^^^^

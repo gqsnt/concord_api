@@ -1,0 +1,7 @@
+error: a `{*…}` hole must be a whole segment
+       label: `{*key}` shares its segment with `.json`
+       help: write `path "files/{key}.json";`; a `{key}` hole may share its segment
+ --> tests/diagnostics/catalogue/29.rs:2:70
+  |
+2 | client Tasks { base "https://a.example"; GET get(key: String) { path "files/{*key}.json"; } }
+  |                                                                      ^^^^^^^^^^^^^^^^^^^

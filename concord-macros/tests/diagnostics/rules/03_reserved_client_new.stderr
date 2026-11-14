@@ -1,0 +1,7 @@
+error: `new` is reserved by Concord
+       label: conflicts with a generated method
+       help: rename this input to `new_value`; update its references in the existing query placements and expressions, retaining the wire keys and fixed text for new
+ --> tests/diagnostics/rules/03_reserved_client_new.rs:2:21
+  |
+2 |     client Workshop(new?: String) { base "https://names.test"; query { new; } GET fetch(); }
+  |                     ^^^

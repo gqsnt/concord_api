@@ -1,0 +1,9 @@
+{
+  "id": "M02",
+  "area": "calls",
+  "contract": "C3.1",
+  "description": "Build a raw call twice",
+  "file": "concord-core/src/__private/call.rs",
+  "find": "                $crate::Sending::new(async move {\n                    <$call as $crate::__private::Call>::prepare(self)?.send_raw().await\n",
+  "replace": "                $crate::Sending::new(async move {\n                    let _ = self.__build_request(true)?;\n                    <$call as $crate::__private::Call>::prepare(self)?.send_raw().await\n"
+}

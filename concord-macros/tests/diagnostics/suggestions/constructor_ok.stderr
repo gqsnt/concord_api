@@ -1,0 +1,12 @@
+error[E0308]: mismatched types
+ --> tests/diagnostics/suggestions/constructor_ok.rs:1:126
+  |
+1 | concord::api! { client C { base "https://books.test"; read concord::Json; GET get() -> Result<u32, String> { status { 200 => Ok } } } }
+  |                                                                                                                              ^^ expected `Result<u32, String>`, found enum constructor
+  |
+  = note:          expected enum `std::result::Result<u32, String>`
+          found enum constructor `fn(_) -> std::result::Result<_, _> {std::result::Result::<_, _>::Ok}`
+help: use parentheses to construct this tuple variant
+  |
+1 | concord::api! { client C { base "https://books.test"; read concord::Json; GET get() -> Result<u32, String> { status { 200 => Ok(/* value */) } } } }
+  |                                                                                                                                +++++++++++++

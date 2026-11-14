@@ -1,7 +1,0 @@
-error: `with_budget` is reserved by Concord
-       label: conflicts with a generated method
-       help: rename this input to `budget_value`; update its references in the existing query placements and expressions, retaining the wire keys and fixed text for with_budget
- --> tests/semantic/03_prefix_optional.rs:2:76
-  |
-2 |     client Workshop { base "https://workshop.test"; read Reader; GET fetch(with_budget?: u8) { query { with_budget; } } }
-  |                                                                            ^^^^^^^^^^^

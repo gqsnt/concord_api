@@ -1,0 +1,9 @@
+{
+  "id": "M33",
+  "area": "clocks",
+  "contract": "C7.6",
+  "description": "Transport idle clock never fires",
+  "file": "concord-core/src/middleware.rs",
+  "find": "                timer.as_mut().reset(end);\n                if timer.as_mut().poll(cx).is_ready() {\n                    return Poll::Ready(Err(TransportError::clock(run.idle_timeout())));\n",
+  "replace": "                timer.as_mut().reset(end);\n                if timer.as_mut().poll(cx).is_ready() && false {\n                    return Poll::Ready(Err(TransportError::clock(run.idle_timeout())));\n"
+}

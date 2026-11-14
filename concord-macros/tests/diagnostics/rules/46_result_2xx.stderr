@@ -1,0 +1,13 @@
+error: an arm from above reads the body for a `Result` after the arrow
+       label: an inherited success arm bypasses the Result success reading rule
+       help: add `status { override 2xx { body } => Ok(unpack(body)) }` to this endpoint
+ --> tests/diagnostics/rules/46_result_2xx.rs:2:118
+  |
+2 |     client Workshop { base "https://workshop.test"; read Reader; status { 2xx { body } => unpack(body) } GET fetch() -> Result<Record...
+  |                                                                                                                      ^^
+
+error: this inherited success arm reads the body
+ --> tests/diagnostics/rules/46_result_2xx.rs:2:75
+  |
+2 |     client Workshop { base "https://workshop.test"; read Reader; status { 2xx { body } => unpack(body) } GET fetch() -> Result<Record...
+  |                                                                           ^^^

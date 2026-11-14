@@ -1,0 +1,7 @@
+error: paths cannot be overridden or removed
+       label: each path adds segments
+       help: write `path "items";` and change the ancestor's path if needed
+ --> tests/diagnostics/catalogue/24.rs:2:54
+  |
+2 | client Tasks { base "https://a.example"; GET get() { override path "items"; } }
+  |                                                      ^^^^^^^^

@@ -1,9 +1,0 @@
-{
-  "id": "M49",
-  "area": "core-readers",
-  "contract": "docs/contracts.md C5",
-  "description": "Keep mismatch bytes as a slice of the transport allocation",
-  "file": "concord-core/src/read.rs",
-  "find": "        ReadError {\n            body: Bytes::copy_from_slice(\n                // PANIC-SAFETY: 64 KiB fits usize on supported 32/64-bit targets; the subtraction is saturating.\n                body.get(..body.len().min(64 * crate::KIB))\n                    .unwrap_or_default(),\n            ),\n            // PANIC-SAFETY: 64 KiB fits usize on supported 32/64-bit targets; the subtraction is saturating.\n            kept: Some(if body.len() > 64 * crate::KIB {\n                Kept::Cut",
-  "replace": "        ReadError {\n            body: body.slice(..body.len().min(64 * crate::KIB)),\n            // PANIC-SAFETY: 64 KiB fits usize on supported 32/64-bit targets; the subtraction is saturating.\n            kept: Some(if body.len() > 64 * crate::KIB {\n                Kept::Cut"
-}

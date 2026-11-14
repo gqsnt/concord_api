@@ -1,0 +1,22 @@
+error[E0277]: a secret does not follow a change of base
+ --> tests/compiler-errors/spans/10_header_gate.rs:2:21
+  |
+1 | / concord::api! { client C(key:concord::Secret) { base "https://one.test";
+2 | | headers { "x-key" = key; }
+  | |                     ^^^ this inherited entry holds a Secret
+3 | | GET get() { base "https://two.test"; } } }
+  | |__________________________________________- required by a bound introduced by this call
+  |
+  = help: the trait `concord::__private::InheritAcrossBase` is not implemented for `concord::__private::SecretValue<'_, &&Secret>`
+  = note: write this entry again with override, or remove it, under the new base
+help: the trait `concord::__private::InheritAcrossBase` is implemented for `&T`
+ --> $WORKSPACE/concord-core/src/__private/value.rs
+  |
+  | impl<T: serde::Serialize + ?Sized> InheritAcrossBase for &T {}
+  | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+note: required by a bound in `concord::__private::inherited`
+ --> $WORKSPACE/concord-core/src/__private/value.rs
+  |
+  | pub fn inherited<V: InheritAcrossBase>(value: V) -> V {
+  |                     ^^^^^^^^^^^^^^^^^ required by this bound in `inherited`
+  = note: this error originates in the macro `concord::api` (in Nightly builds, run with -Z macro-backtrace for more info)

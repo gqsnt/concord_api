@@ -1,0 +1,9 @@
+{
+  "id": "M09",
+  "area": "retry",
+  "contract": "C4.3",
+  "description": "Zero random backoff",
+  "file": "concord-core/src/__private/run.rs",
+  "find": "    (hash.finish() >> 11) as f64 / ((1u64 << 53) - 1) as f64",
+  "replace": "    0.0"
+}

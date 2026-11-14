@@ -1,0 +1,9 @@
+{
+  "id": "M64",
+  "area": "value-writing",
+  "contract": "C2.4, C2.8",
+  "description": "Serialize None as the literal text None",
+  "file": "concord-core/src/__private/value.rs",
+  "find": "fn serialize_none(self) -> Result<Shape, WriteFailure> {\n        Ok(Shape::Nothing)",
+  "replace": "fn serialize_none(self) -> Result<Shape, WriteFailure> {\n        Ok(Shape::One(\"None\".to_owned()))"
+}

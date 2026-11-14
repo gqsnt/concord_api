@@ -1,7 +1,0 @@
-error: `at_url` is reserved by Concord
-       label: conflicts with a generated method
-       help: rename this input to `at_url_value`; update its references in the existing query placements and expressions, retaining the wire keys and fixed text for at_url
- --> tests/semantic/03_reserved_call_at_url.rs:2:76
-  |
-2 |     client Workshop { base "https://workshop.test"; read Reader; GET fetch(at_url?: String) { query { at_url; } } }
-  |                                                                            ^^^^^^

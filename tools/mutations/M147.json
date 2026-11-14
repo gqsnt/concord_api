@@ -1,0 +1,9 @@
+{
+  "id": "M147",
+  "area": "middleware",
+  "contract": "C8.6",
+  "description": "omit response URL attachment at the transport boundary",
+  "file": "concord-core/src/middleware.rs",
+  "find": ".map(|response| crate::transport::__response_at(response, url))",
+  "replace": ".map(|response| { let _ = url; response })"
+}

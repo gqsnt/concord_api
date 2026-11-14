@@ -1,9 +1,0 @@
-{
-  "id": "M58",
-  "area": "request-building",
-  "contract": "docs/contracts.md C2.8",
-  "description": "Write an empty query or header value for a whole-entry None",
-  "file": "concord-core/src/__private/value.rs",
-  "find": "Self::Nothing => (None, Vec::new()),",
-  "replace": "Self::Nothing => (Some(String::new()), Vec::new()),"
-}

@@ -1,0 +1,9 @@
+{
+  "id": "M94",
+  "area": "multipart",
+  "contract": "C2.16",
+  "description": "Miss a streaming boundary collision split across chunks",
+  "file": "concord-extras/src/multipart.rs",
+  "find": "let count = kept.len().saturating_sub(boundary.len() - 1);",
+  "replace": "let count = kept.len();"
+}

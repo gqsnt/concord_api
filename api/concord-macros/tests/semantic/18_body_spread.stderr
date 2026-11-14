@@ -1,7 +1,0 @@
-error: `body` requires an endpoint
-       label: a scope cannot name a part holding `body`
-       help: move `..fragment` into the endpoint signature
- --> tests/semantic/18_body_spread.rs:2:112
-  |
-2 |     client Workshop { base "https://workshop.test"; read Reader; part fragment() { body make(); } scope branch(..fragment) { GET fetc...
-  |                                                                                                                ^

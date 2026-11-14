@@ -1,0 +1,7 @@
+error: no query pair `mode` above to override
+       label: nothing is set above for this key
+       help: write `"mode" = 2;`
+ --> tests/diagnostics/rules/22_after_removal.rs:2:145
+  |
+2 | ...; } scope s { query { remove "mode"; } GET fetch() { query { override "mode" = 2; } } } }
+  |                                                                 ^^^^^^^^

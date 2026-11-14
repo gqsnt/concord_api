@@ -1,0 +1,13 @@
+error: `top3` and `top_3` both generate the type `Top3`
+       label: generated names collide
+       help: rename `top_3` to `top_3_other`
+   --> tests/diagnostics/api/m08.rs:214:17
+    |
+214 |             GET top_3(puuid: Puuid) -> Vec<ChampionMastery> { path "champion-masteries/by-puuid/{puuid}/top"; query { "count" = 3; } }
+    |                 ^^^^^
+
+error: the first generated name is here
+   --> tests/diagnostics/api/m08.rs:213:17
+    |
+213 |             GET top3(puuid: Puuid) -> Vec<ChampionMastery> { path "champion-masteries/by-puuid/{puuid}/top"; }
+    |                 ^^^^

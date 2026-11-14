@@ -1,0 +1,13 @@
+error: ambiguous input owner
+       label: this owner name is already in use
+       help: choose a distinct scope name and update every qualified reference to this scope's inputs
+   --> tests/diagnostics/api/m07_scope.rs:119:23
+    |
+119 |                 scope issues(number: u64) {
+    |                       ^^^^^^
+
+error: this owner is declared here
+  --> tests/diagnostics/api/m07_scope.rs:90:19
+   |
+90 |             scope issues {
+   |                   ^^^^^^

@@ -1,7 +1,0 @@
-error: ancestor inputs require their owner's name
-       label: `region` belongs to the client
-       help: write `{client.region}`
- --> tests/semantic/12_ancestor_hole.rs:2:87
-  |
-2 |     client Workshop(region: String) { base "https://regions.test"; GET fetch() { path "{region}"; } }
-  |                                                                                       ^^^^^^^^^^

@@ -1,0 +1,8 @@
+concord::api! {
+pub client Stations {
+        base "https://api.test";
+        read Json;
+        GET list() -> Vec<String>;
+        HEAD exists() -> bool { status { 2xx => true, 404 => false } idempotent false; }
+    }
+}

@@ -1,0 +1,9 @@
+{
+  "id": "M129",
+  "area": "allocation",
+  "contract": "C5.4",
+  "description": "Bypass the capped reservation in the actual reader",
+  "file": "concord-core/src/read.rs",
+  "find": "join_capacity(needed, announced).min(limit)",
+  "replace": "announced.unwrap_or(needed).max(needed).min(limit)"
+}

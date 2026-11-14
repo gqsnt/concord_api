@@ -1,7 +1,0 @@
-error: a `{*…}` hole must be a whole segment
-       label: `{*zone}` stands outside a path
-       help: write `"https://{zone}.workshop.test"` with a `{zone}` hole
- --> tests/semantic/29_base.rs:2:97
-  |
-2 |     client Workshop { base "https://workshop.test"; read Reader; GET fetch(zone: String) { base "https://{*zone}.workshop.test"; } }
-  |                                                                                                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^

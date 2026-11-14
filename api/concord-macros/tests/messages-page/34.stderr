@@ -1,7 +1,0 @@
-error: an arm binds body, headers or status
-       label: no such part of an answer
-       help: write `200 { body: bodi } => bodi`
- --> tests/messages-page/34.rs:2:88
-  |
-2 | client Tasks { base "https://a.example"; read Json; GET get() -> Task { status { 200 { bodi } => bodi } } }
-  |                                                                                        ^^^^

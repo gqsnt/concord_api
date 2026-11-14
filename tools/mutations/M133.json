@@ -1,0 +1,12 @@
+{
+  "id": "M133",
+  "area": "public-api",
+  "contract": "C2.14",
+  "description": "Allow taking the same Bounded input name twice",
+  "file": "concord-core/src/body.rs",
+  "find": "    pub fn error(self, source: impl std::error::Error + Send + Sync + 'static) -> WriteError {\n        WriteError {\n            input: self.context.input.into_inner(),\n            source: Box::new(source),\n        }\n    }",
+  "replace": "    pub fn error(&self, source: impl std::error::Error + Send + Sync + 'static) -> WriteError {\n        WriteError {\n            input: self.context.input.borrow_mut().take(),\n            source: Box::new(source),\n        }\n    }",
+  "checks": [
+    "docs-core"
+  ]
+}

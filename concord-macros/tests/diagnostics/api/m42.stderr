@@ -1,0 +1,7 @@
+error: `host` cannot be set in `headers`
+       label: the host comes from the `base`
+       help: remove this host header and put its intended host in the base
+  --> tests/diagnostics/api/m42.rs:98:48
+   |
+98 |                     headers { "range" = range; "Host" = "my-bucket.s3.amazonaws.com"; }
+   |                                                ^^^^^^

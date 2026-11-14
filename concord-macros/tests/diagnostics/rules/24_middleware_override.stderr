@@ -1,0 +1,7 @@
+error: `middleware` cannot be overridden or removed
+       label: `override` and `remove` stand inside a block, before an entry or an arm
+       help: write `middleware Layer;`
+ --> tests/diagnostics/rules/24_middleware_override.rs:2:23
+  |
+2 |     client Workshop { override middleware Layer; }
+  |                       ^^^^^^^^

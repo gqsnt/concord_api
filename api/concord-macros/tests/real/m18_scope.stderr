@@ -1,7 +1,0 @@
-error: `paginate` requires an endpoint
-       label: `paginate` stands on an endpoint, not on a scope
-       help: place this behaviour on an endpoint, consolidating it with any statement supplied there or by a part
-  --> tests/real/m18_scope.rs:79:13
-   |
-79 |             paginate by_object_id(starting_after, ending_before);
-   |             ^^^^^^^^

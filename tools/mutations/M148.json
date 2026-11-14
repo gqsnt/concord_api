@@ -1,0 +1,9 @@
+{
+  "id": "M148",
+  "area": "retry",
+  "contract": "C10.6",
+  "description": "Log the retry wait as a debug Duration instead of whole milliseconds",
+  "file": "concord-core/src/__private/run.rs",
+  "find": "let wait_ms = wait.as_millis();",
+  "replace": "let wait_ms = tracing::field::debug(wait);"
+}

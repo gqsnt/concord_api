@@ -1,0 +1,7 @@
+error: `Self` has no meaning in a description
+       label: `Self` is not the enclosing type here
+       help: write the path of the type
+ --> tests/compiler-errors/expressions/self_expr.rs:1:78
+  |
+1 | concord::api! { client D { base "https://d.example"; GET g() { query { "e" = Self::__ENDPOINT; } } } }
+  |                                                                              ^^^^

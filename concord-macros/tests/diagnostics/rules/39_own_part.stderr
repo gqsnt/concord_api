@@ -1,0 +1,13 @@
+error: an arm in reach reads a body, and this endpoint has no arrow
+       label: the body would be read into nothing
+       help: declare the intended result type after an arrow, or stop the arms in reach from reading a body
+ --> tests/diagnostics/rules/39_own_part.rs:2:124
+  |
+2 |     client Workshop { base "https://part.test"; read Reader; part answer() { status { 202 { body } => unpack(body) } } GET fetch(..an...
+  |                                                                                                                            ^^^^^
+
+error: this arm reads the body
+ --> tests/diagnostics/rules/39_own_part.rs:2:93
+  |
+2 |     client Workshop { base "https://part.test"; read Reader; part answer() { status { 202 { body } => unpack(body) } } GET fetch(..an...
+  |                                                                                             ^^^^

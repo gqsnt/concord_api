@@ -1,0 +1,12 @@
+{
+  "id": "M121",
+  "area": "public-api",
+  "contract": "docs/internals/engineering.md#explicit-with-safe-defaults",
+  "description": "Discard Retry::not_applied_on silently",
+  "file": "concord-core/src/retry.rs",
+  "find": "    #[must_use]\n    pub fn not_applied_on",
+  "replace": "    pub fn not_applied_on",
+  "checks": [
+    "docs-core"
+  ]
+}

@@ -1,7 +1,0 @@
-error: invalid status key `600`
-       label: a key is 100 to 599, or 1xx to 5xx
-       help: choose the intended exact status from 100 to 599 or class from 1xx to 5xx
- --> tests/real/damage_arm.rs:4:18
-  |
-4 |         status { 600 { bodi } => body }
-  |                  ^^^

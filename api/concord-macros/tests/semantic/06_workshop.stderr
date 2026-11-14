@@ -1,7 +1,0 @@
-error: invalid client name
-       label: expected upper camel case with a non-keyword module name
-       help: write `client Workshop`
- --> tests/semantic/06_workshop.rs:2:12
-  |
-2 |     client workshop { base "https://names.test"; GET fetch(); }
-  |            ^^^^^^^^

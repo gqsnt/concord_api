@@ -1,0 +1,7 @@
+error: `idempotent` requires an endpoint
+       label: `idempotent` stands on an endpoint, not on a client
+       help: place this behaviour on an endpoint, consolidating it with any statement supplied there or by a part
+ --> tests/diagnostics/rules/18_idempotent_client.rs:2:23
+  |
+2 |     client Workshop { idempotent; }
+  |                       ^^^^^^^^^^

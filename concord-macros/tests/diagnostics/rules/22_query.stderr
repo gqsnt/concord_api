@@ -1,0 +1,7 @@
+error: no query pair `mode` above to override
+       label: nothing is set above for this key
+       help: write `"mode" = 1;`
+ --> tests/diagnostics/rules/22_query.rs:2:88
+  |
+2 |     client Workshop { base "https://workshop.test"; read Reader; GET fetch() { query { override "mode" = 1; } } }
+  |                                                                                        ^^^^^^^^

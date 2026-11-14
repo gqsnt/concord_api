@@ -1,0 +1,98 @@
+use concord::{by_cursor, form, json, Json, Secret};
+use std::time::Duration;
+
+concord::api! {
+    /// The Slack Web API: conversations, messages, reactions, users, files and views.
+    pub client Slack(token: Secret) {
+        base "https://slack.com/api";
+        headers { "authorization" = "Bearer {token}"; }
+        read Json;
+        problem SlackProblem;
+        status { 2xx { body } => slack_response(body)? }
+
+        part page(limit?: u16, cursor?: String) {
+            query { limit; cursor; }
+            paginate by_cursor(cursor, SlackPage::next_cursor);
+        }
+        part workspace(team_id?: String) {
+            query { team_id; }
+        }
+        part content(text?: String, blocks?: Vec<Block>, attachments?: Vec<Attachment>) {
+            body json { text; blocks; attachments; }
+        }
+
+        POST auth_test() -> AuthIdentity {
+            path "auth.test";
+            body form { }
+        }
+        scope conversations {
+            GET list(
+                types?: Vec<String>, exclude_archived?: bool, ..page, ..workspace,
+            ) -> SlackPage<Conversation> {
+                path "conversations.list";
+                query { "types" = types.as_ref().map(|v| v.join(",")); exclude_archived; }
+            }
+            GET history(
+                channel: String, oldest?: String, latest?: String, inclusive?: bool, ..page,
+            ) -> SlackPage<Message> {
+                path "conversations.history";
+                query { channel; oldest; latest; inclusive; }
+            }
+            GET info(channel: String, include_num_members?: bool) -> ChannelInfo {
+                path "conversations.info";
+                query { channel; include_num_members; }
+            }
+            POST join(channel: String) -> ChannelInfo {
+                path "conversations.join";
+                body form { channel; }
+            }
+        }
+        scope chat {
+            POST post_message(
+                channel: String, thread_ts?: String, reply_broadcast?: bool,
+                unfurl_links?: bool, ..content,
+            ) -> MessageReceipt {
+                path "chat.postMessage";
+                body json { channel; thread_ts; reply_broadcast; unfurl_links; }
+            }
+            POST update(channel: String, ts: String, ..content) -> MessageReceipt {
+                path "chat.update";
+                body json { channel; ts; }
+            }
+            POST delete(channel: String, ts: String) -> MessageReceipt {
+                path "chat.delete";
+                body form { channel; ts; }
+            }
+        }
+        POST reactions_add(channel: String, timestamp: String, name: String) -> Acknowledged {
+            path "reactions.add";
+            body form { channel; timestamp; name; }
+        }
+        scope users {
+            GET list(..page, ..workspace) -> SlackPage<User> { path "users.list"; }
+            GET info(user: String) -> UserInfo {
+                path "users.info";
+                query { user; }
+            }
+        }
+        scope files {
+            /// The first step of an upload: Slack gives the URL where the bytes go.
+            POST get_upload_url_external(filename: String, length: u64, alt_txt?: String) -> UploadTicket {
+                path "files.getUploadURLExternal";
+                body form { filename; length; alt_txt; }
+            }
+            /// The last step. Slack answers when the file is processed, which can take minutes.
+            POST complete_upload_external(
+                uploads: Vec<UploadedFile>, channel_id?: String, initial_comment?: String,
+            ) -> CompletedFiles {
+                path "files.completeUploadExternal";
+                body json { "files" = uploads; channel_id; initial_comment; }
+                idle_timeout Duration::from_secs(300);
+            }
+        }
+        POST views_open(view: Modal, trigger_id: String) -> OpenedView {
+            path "views.open";
+            body json { view; trigger_id; }
+        }
+    }
+}

@@ -1,9 +1,0 @@
-{
-  "id": "M42",
-  "area": "transport",
-  "contract": "docs/contracts.md C9/C6",
-  "description": "Do not strip URLs from reqwest sources",
-  "file": "concord-core/src/transport.rs",
-  "find": "        } else {\n            failure.with_source(error.without_url())\n        }\n",
-  "replace": "        } else {\n            failure.with_source(error)\n        }\n"
-}

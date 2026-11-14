@@ -1,0 +1,7 @@
+error: `Self` has no meaning in a description
+       label: `Self` is not the enclosing type here
+       help: write the path of the type
+ --> tests/diagnostics/rules/10_self_output.rs:2:85
+  |
+2 |     client Workshop { base "https://workshop.test"; read Reader; GET fetch() -> Vec<Self>; }
+  |                                                                                     ^^^^

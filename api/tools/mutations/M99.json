@@ -1,9 +1,0 @@
-{
-  "id": "M99",
-  "area": "entries",
-  "contract": "docs/contracts.md C2.14 / docs/engine.md section 2.1 Entries",
-  "description": "Probe None using human-readable mode even for a binary writer",
-  "file": "concord-core/src/body.rs",
-  "find": "        let human_readable = serializer.is_human_readable();",
-  "replace": "        let human_readable = true;"
-}

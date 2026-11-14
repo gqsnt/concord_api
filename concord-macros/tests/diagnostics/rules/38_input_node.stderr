@@ -1,0 +1,27 @@
+error: input `code` is declared in the part `one` and in this node
+       label: the inputs of a part count as this node's own
+       help: rename one `code` input, or do not name `..one`
+ --> tests/diagnostics/rules/38_input_node.rs:2:116
+  |
+2 |     client Workshop { base "https://workshop.test"; read Reader; part one(code: u32) { query { code; } } GET fetch(code: u32,..one) {...
+  |                                                                                                                    ^^^^
+
+error: the part `one` declares this input here
+ --> tests/diagnostics/rules/38_input_node.rs:2:75
+  |
+2 |     client Workshop { base "https://workshop.test"; read Reader; part one(code: u32) { query { code; } } GET fetch(code: u32,..one) {...
+  |                                                                           ^^^^
+
+error: query pair `code` is written in the part `one` and in this node
+       label: the statements of a part count as this node's own
+       help: consolidate these contributions, retaining the intended value or body function and every input placement; use compatible parts or remove inputs that are no longer needed
+ --> tests/diagnostics/rules/38_input_node.rs:2:143
+  |
+2 | ... u32) { query { code; } } GET fetch(code: u32,..one) { query { code; } } }
+  |                                                                   ^^^^
+
+error: the part `one` writes `code` here
+ --> tests/diagnostics/rules/38_input_node.rs:2:96
+  |
+2 |     client Workshop { base "https://workshop.test"; read Reader; part one(code: u32) { query { code; } } GET fetch(code: u32,..one) {...
+  |                                                                                                ^^^^

@@ -1,9 +1,0 @@
-{
-  "id": "M90",
-  "area": "base",
-  "contract": "docs/contracts.md C2.2",
-  "description": "Strip the trailing slash stored by Base",
-  "file": "concord-core/src/base.rs",
-  "find": "Ok(Base { text: url.into() })",
-  "replace": "Ok(Base { text: url.as_str().trim_end_matches('/').to_owned() })"
-}

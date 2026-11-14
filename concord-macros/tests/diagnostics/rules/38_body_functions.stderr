@@ -1,0 +1,13 @@
+error: `body` is written in the part `one` and in this endpoint
+       label: entry bodies join only when they name the same function
+       help: consolidate these contributions, retaining the intended value or body function and every input placement; use compatible parts or remove inputs that are no longer needed
+ --> tests/diagnostics/rules/38_body_functions.rs:2:124
+  |
+2 |     client Workshop { base "https://workshop.test"; read Reader; part one() { body make { "a" = 1; } } POST fetch(..one) { body other...
+  |                                                                                                                            ^^^^
+
+error: the part `one` writes its body here
+ --> tests/diagnostics/rules/38_body_functions.rs:2:79
+  |
+2 |     client Workshop { base "https://workshop.test"; read Reader; part one() { body make { "a" = 1; } } POST fetch(..one) { body other...
+  |                                                                               ^^^^

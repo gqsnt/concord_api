@@ -1,0 +1,13 @@
+error: duplicate `headers` statement
+       label: this node already declares `headers`
+       help: consolidate these blocks into one, retaining every intended entry or arm and resolving repeated keys
+  --> tests/diagnostics/api/m17_headers.rs:11:9
+   |
+11 |         headers { "x-request-source" = "concord"; }
+   |         ^^^^^^^
+
+error: the first `headers` statement is here
+ --> tests/diagnostics/api/m17_headers.rs:4:9
+  |
+4 |         headers {
+  |         ^^^^^^^

@@ -1,0 +1,9 @@
+{
+  "id": "M91",
+  "area": "base",
+  "contract": "C10.7",
+  "description": "Expose the configured Base URL through Debug",
+  "file": "concord-core/src/base.rs",
+  "find": "        f.write_str(\"Base(..)\")",
+  "replace": "        f.write_str(&self.text)"
+}

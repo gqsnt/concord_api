@@ -1,0 +1,11 @@
+error[E0425]: cannot find value `route` in this scope
+ --> tests/compiler-errors/expressions/query_part.rs:2:64
+  |
+2 | part tagged(tag: String) { query { "tag" = format!("{tag}-{}", route.len()); } }
+  |                                                                ^^^^^
+  |
+help: the binding `route` is available in a different scope in the same function
+ --> tests/compiler-errors/expressions/query_part.rs:3:40
+  |
+3 | scope matches(route: String) { query { "route" = route; }
+  |                                        ^^^^^^^

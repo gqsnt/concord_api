@@ -1,0 +1,9 @@
+{
+  "id": "M101",
+  "area": "allocation",
+  "contract": "C5.4",
+  "description": "Trust the full announced join capacity again",
+  "file": "concord-core/src/read.rs",
+  "find": "announced.unwrap_or(needed).min(ceiling).max(needed)",
+  "replace": "announced.unwrap_or(needed).max(needed)"
+}

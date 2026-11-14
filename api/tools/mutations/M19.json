@@ -1,9 +1,0 @@
-{
-  "id": "M19",
-  "area": "core-readers",
-  "contract": "docs/contracts.md C5",
-  "description": "Refuse rather than mismatch an uncovered HEAD success",
-  "file": "concord-core/src/__private/answer.rs",
-  "find": "            evidence(response.into().with_info(info), KnownKind::NoArm).await;\n        Error::mismatch(\n            info.endpoint(),\n            info.number(),\n            status,\n            headers,\n            MismatchFailure::NoArm,\n        )\n        .with_body(&body, kept)\n",
-  "replace": "            evidence(response.into().with_info(info), KnownKind::NoArm).await;\n        Error::refused(info.endpoint(), info.number(), status, headers, None)\n        .with_body(&body, kept)\n"
-}

@@ -1,9 +1,0 @@
-{
-  "id": "M05",
-  "area": "calls",
-  "contract": "docs/contracts.md C3",
-  "description": "Alter replayed request body bytes",
-  "file": "concord-core/src/__private/run.rs",
-  "find": "        let Some(this) = this else {\n            return Err(run.timeout_error(n));\n        };\n        let url = this.url().clone();",
-  "replace": "        let Some(mut this) = this else {\n            return Err(run.timeout_error(n));\n        };\n        if n > 0 && this.body().is_some_and(|body| body.as_bytes().is_some()) { *this.body_mut() = Some(reqwest::Body::from(\"changed\")); }\n        let url = this.url().clone();"
-}

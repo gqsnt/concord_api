@@ -1,0 +1,13 @@
+error: this URL input must supply one required value
+       label: an optional input cannot fill this hole
+       help: declare `id: String`, without `?`
+ --> tests/diagnostics/catalogue/13.rs:2:70
+  |
+2 | client Tasks { base "https://a.example"; GET get(id?: String) { path "{id}"; } }
+  |                                                                      ^^^^^^
+
+error: this input is marked optional here
+ --> tests/diagnostics/catalogue/13.rs:2:52
+  |
+2 | client Tasks { base "https://a.example"; GET get(id?: String) { path "{id}"; } }
+  |                                                    ^

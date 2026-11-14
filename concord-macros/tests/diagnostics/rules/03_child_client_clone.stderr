@@ -1,0 +1,7 @@
+error: `clone` is reserved by Concord
+       label: conflicts with a generated method
+       help: rename this child to `clone_item`
+ --> tests/diagnostics/rules/03_child_client_clone.rs:2:70
+  |
+2 |     client Workshop { base "https://workshop.test"; read Reader; GET clone(); }
+  |                                                                      ^^^^^

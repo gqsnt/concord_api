@@ -1,7 +1,0 @@
-error: `clone` is reserved by Concord
-       label: conflicts with a generated method
-       help: rename this input to `clone_value`; update its references in the existing query placements and expressions, retaining the wire keys and fixed text for clone
- --> tests/semantic/03_reserved_client_clone.rs:2:21
-  |
-2 |     client Workshop(clone?: String) { base "https://names.test"; query { clone; } GET fetch(); }
-  |                     ^^^^^

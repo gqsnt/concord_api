@@ -1,0 +1,9 @@
+{
+  "id": "M40",
+  "area": "transport",
+  "contract": "C6.2",
+  "description": "TransportError connect gets Other class",
+  "file": "concord-core/src/transport.rs",
+  "find": "    pub fn connect() -> TransportError {\n        TransportError::new(Class::Connect)\n    }\n",
+  "replace": "    pub fn connect() -> TransportError {\n        TransportError::new(Class::Other)\n    }\n"
+}

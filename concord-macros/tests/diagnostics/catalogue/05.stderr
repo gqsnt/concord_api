@@ -1,0 +1,7 @@
+error: invalid API name
+       label: expected lower snake case
+       help: rename it to `get_item` and update its references, retaining existing wire names
+ --> tests/diagnostics/catalogue/05.rs:2:46
+  |
+2 | client Tasks { base "https://a.example"; GET get__item(); }
+  |                                              ^^^^^^^^^

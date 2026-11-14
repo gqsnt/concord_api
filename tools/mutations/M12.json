@@ -1,0 +1,9 @@
+{
+  "id": "M12",
+  "area": "retry",
+  "contract": "C4.7",
+  "description": "Evaluate when rules after the first Some",
+  "file": "concord-core/src/retry.rs",
+  "find": "    // 6. First custom wait wins; otherwise consult the standard table.\n    let asked = policy.when.iter().find_map(|rule| rule(&tried));\n    decision.rule_wait = asked;\n",
+  "replace": "    // 6. First custom wait wins; otherwise consult the standard table.\n    let asked = policy.when.iter().fold(None, |first, rule| { let next = rule(&tried); first.or(next) });\n    decision.rule_wait = asked;\n"
+}

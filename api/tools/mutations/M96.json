@@ -1,9 +1,0 @@
-{
-  "id": "M96",
-  "area": "multipart",
-  "contract": "docs/contracts.md C2.16 / docs/crate.md multipart / RFC 7578 section 4.1",
-  "description": "Lose the last eight random bits of a streaming boundary",
-  "file": "concord-extras/src/multipart.rs",
-  "find": "random.iter().map(|byte| format!(\"{byte:02x}\")).collect()",
-  "replace": "random.iter().take(15).map(|byte| format!(\"{byte:02x}\")).collect()"
-}

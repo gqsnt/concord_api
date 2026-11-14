@@ -1,0 +1,21 @@
+error: duplicate part name `common`
+       label: already declared in this block
+       help: keep one declaration of this part and retain its intended inputs and statements
+ --> tests/diagnostics/rules/01_parts.rs:2:45
+  |
+2 |     client Workshop { part common() {} part common() {} GET fetch(..common); }
+  |                                             ^^^^^^
+
+error: the first part is here
+ --> tests/diagnostics/rules/01_parts.rs:2:28
+  |
+2 |     client Workshop { part common() {} part common() {} GET fetch(..common); }
+  |                            ^^^^^^
+
+error: no `base` in reach of this endpoint
+       label: no `base` here or above
+       help: set the intended base URL on this endpoint or an ancestor
+ --> tests/diagnostics/rules/01_parts.rs:2:61
+  |
+2 |     client Workshop { part common() {} part common() {} GET fetch(..common); }
+  |                                                             ^^^^^

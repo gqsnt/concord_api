@@ -1,0 +1,7 @@
+error: statements must precede parts
+       label: statement appears after a part
+       help: move `read Reader;` before the first part
+ --> tests/diagnostics/rules/16_after_part.rs:2:42
+  |
+2 |     client Workshop { part fragment() {} read Reader; GET fetch(..fragment); }
+  |                                          ^^^^

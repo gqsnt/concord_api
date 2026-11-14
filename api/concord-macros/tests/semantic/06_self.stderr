@@ -1,7 +1,0 @@
-error: invalid client name
-       label: expected upper camel case with a non-keyword module name
-       help: write `client SelfValue`
- --> tests/semantic/06_self.rs:2:12
-  |
-2 |     client Self { base "https://names.test"; GET fetch(); }
-  |            ^^^^

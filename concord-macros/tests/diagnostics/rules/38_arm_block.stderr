@@ -1,0 +1,13 @@
+error: duplicate status arm `410` in this block
+       label: a key is written once in one node
+       help: consolidate these arms into one intended arm, retaining every needed input reference or removing declarations that are no longer needed
+ --> tests/diagnostics/rules/38_arm_block.rs:2:100
+  |
+2 |     client Workshop { base "https://workshop.test"; read Reader; GET fetch() { status { 410 => (), 410 => () } } }
+  |                                                                                                    ^^^
+
+error: the first status arm `410` is here
+ --> tests/diagnostics/rules/38_arm_block.rs:2:89
+  |
+2 |     client Workshop { base "https://workshop.test"; read Reader; GET fetch() { status { 410 => (), 410 => () } } }
+  |                                                                                         ^^^

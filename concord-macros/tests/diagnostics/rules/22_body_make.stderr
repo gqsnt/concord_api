@@ -1,0 +1,7 @@
+error: no body entry `mode` above to override
+       label: a body inherits no entries
+       help: write `"mode" = 1;`
+ --> tests/diagnostics/rules/22_body_make.rs:2:92
+  |
+2 |     client Workshop { base "https://workshop.test"; read Reader; GET fetch() { body make { override "mode" = 1; } } }
+  |                                                                                            ^^^^^^^^

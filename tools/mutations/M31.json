@@ -1,0 +1,9 @@
+{
+  "id": "M31",
+  "area": "errors",
+  "contract": "C6.3",
+  "description": "details stops after first source",
+  "file": "concord-core/src/error.rs",
+  "find": "            write!(f, \"\\ncaused by: {cause}\")?;\n            source = cause.source();\n        }\n",
+  "replace": "            write!(f, \"\\ncaused by: {cause}\")?;\n            source = None;\n        }\n"
+}

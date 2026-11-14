@@ -1,0 +1,7 @@
+error: `Self` has no meaning in a description
+       label: `Self` is not the enclosing type here
+       help: write the path of the type
+ --> tests/diagnostics/rules/10_self_body_function.rs:2:87
+  |
+2 |     client Workshop { base "https://workshop.test"; read Reader; POST fetch() { body <Self as Maker>::make { "key" = 1; } } }
+  |                                                                                       ^^^^

@@ -1,0 +1,13 @@
+error: header `x-mode` is already set above
+       label: replacement requires `override`
+       help: write `override "X-Mode" = "two";`
+ --> tests/diagnostics/rules/21_header.rs:2:120
+  |
+2 |     client Workshop { base "https://workshop.test"; read Reader; headers { "x-mode" = "one"; } GET fetch() { headers { "X-Mode" = "tw...
+  |                                                                                                                        ^^^^^^^^
+
+error: the inherited header is set here
+ --> tests/diagnostics/rules/21_header.rs:2:76
+  |
+2 |     client Workshop { base "https://workshop.test"; read Reader; headers { "x-mode" = "one"; } GET fetch() { headers { "X-Mode" = "tw...
+  |                                                                            ^^^^^^^^

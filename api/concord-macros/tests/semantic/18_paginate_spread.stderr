@@ -1,7 +1,0 @@
-error: `paginate` requires an endpoint
-       label: a scope cannot name a part holding `paginate`
-       help: move `..fragment` into the endpoint signature
- --> tests/semantic/18_paginate_spread.rs:2:115
-  |
-2 |     client Workshop { base "https://workshop.test"; read Reader; part fragment() { paginate pager; } scope branch(..fragment) { GET f...
-  |                                                                                                                   ^

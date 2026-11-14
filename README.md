@@ -1,4 +1,4 @@
-# Concord V5
+# Concord
 
 Concord turns one nested description of an HTTP API into a typed Rust client over `reqwest`.
 
@@ -19,45 +19,106 @@ concord::api! {
 let open = Tasks::new().list().done(false).await?;
 ```
 
-The signature is for the user; the block is for the wire. `json` and `Json` are ordinary Rust items: the macro knows no format, and a reader or a writer of yours takes the same place.
+The first line of an endpoint (its signature) is what a caller sees; the block under it says how it goes on the wire. `Json` reads an answer and `json` writes a body: both are ordinary Rust items, the macro knows no format, and a function or a type of yours takes the same place.
 
-## Where it stands
+## What you get
 
-| | |
-|---|---|
-| The design | Finished on paper, in [`docs/`](docs). The whole contract on one page: [docs/5.0.md](docs/5.0.md). |
-| The library | Built in [`api/`](api), as five crates of version `5.0.0-rc.1`. Not published: every crate says `publish = false`. |
-| The crates | `concord-core` (the engine), `concord-macros` (`api!`), `concord-extras` (`json`, `form`, `multipart`, the readers, the pagers, `basic`, `tower`), `concord-testkit` (for tests), and `concord`, the facade. |
-| The clients of the tour | Written by the macro in [`api/tour-gen`](api/tour-gen/src), and by hand in [`api/tour`](api/tour/src). Both pass the same tests. |
-| The contracts | 99, of which 93 hold with a test that carries their number and 6 hold with no test yet ([docs/contracts.md](docs/contracts.md)). |
-| The messages | 46 at compile time, each compared with [docs/messages.md](docs/messages.md) by a test; 52 lines at run time, of which a test produces each one that a client of the tour can give. |
-| The gates | Every milestone, M0 to M6, is passed. The last run of `just release --with-sockets` (13 November 2026) passed whole: the gate (1,587 tests, the doc tests, the docs, Rust 1.96, the features), the list of places that could panic, the five packages, 554 feature checks, and 147 of 147 mutations caught. The report is [RUN-BUILD.md](RUN-BUILD.md). |
-| Only the owner | Check the editor inside `api! { }`. Make a real call, with a key: no test calls a real API. Choose the licence, the repository and the names of the crates, before any upload. |
+- **Typed inputs and answers.** Each endpoint is a method; a required input is an argument, an optional one is a method with its name. [Describe an API](docs/guide/describing-an-api.md)
+- **The API's errors as your own type.** `problem MyProblem;` once, and `error.problem()` gives it, typed, for every endpoint. [The API's own error](docs/guide/responses-and-errors.md#the-apis-own-error)
+- **Retries that never repeat a `POST` by accident.** Off until you ask; then only a request that may be repeated goes out again. [Retries](docs/guide/retries.md)
+- **Pages as a stream.** One line in the description, then `.pages()` or `.pages().items()`. [Pages](docs/guide/pages.md)
+- **Secrets that never appear in an error or a log.** An input of type `Secret` goes on the wire, and nowhere else. [What Concord promises](docs/guide/promises.md)
+- **Tests with no network.** `with_transport(fake(…))` puts a function in place of the network; a test kit adds a local server and virtual time. [Testing a client](docs/guide/testing.md)
 
-## Read
+## Install
 
-| Page | What it answers |
-|---|---|
-| [The tour](docs/tour.md) | Ten minutes, code first. Then chapters [1](docs/1-why.md) to [9](docs/9-background.md). |
-| [5.0 on one page](docs/5.0.md) | What a description may say, what a caller gets, what Concord promises. |
-| [The grammar](docs/grammar.md), [the rules](docs/rules.md) | The language, and the things a user cannot guess. |
-| [The contracts](docs/contracts.md), [the cases](docs/cases.md) | What the engine and the generated code must hold, and every case with its one outcome. |
-| [The engine](docs/engine.md), [the macro](docs/macro.md) | How a call runs, and how a description becomes code; what a call costs, and the size of a client. |
-| [The crates](docs/crate.md), [engineering](docs/engineering.md) | The public surface, and the properties it is held to. |
-| [Real APIs](docs/apis/README.md) | Eight APIs written in the language. |
-| [DECISIONS.md](DECISIONS.md) | Who decided what, in order. |
+Concord is a release candidate, and it is **not on crates.io yet**. Depend on the repository:
 
-A signature in `api/` wins over a page; `docs/` wins over the rest.
-
-## Build and test
-
-From `api/`, offline, with Rust 1.96 or later (some tests open a socket on `127.0.0.1`):
-
-```bash
-cargo test --offline --workspace --features concord/tower,concord/multipart
-just gate        # the properties, format, check, lints, tests, docs, Rust 1.96, features, TODOs, the matrix
+```toml
+[dependencies]
+concord-api = { git = "https://github.com/gqsnt/concord_api" }
+serde = { version = "1", features = ["derive"] }
+tokio = { version = "1", features = ["macros", "rt"] }
 ```
 
-The working material of the design (the runs, the experiments, the prototype, the briefs and reports of the agents that built the library) is not in this repository. Where a page names one of those files, the name is kept as plain text.
+After the first upload, the first line becomes `concord-api = "5.0.0-rc.1"`.
 
-Licensed under either of Apache License, Version 2.0 ([LICENSE-APACHE](LICENSE-APACHE)) or MIT license ([LICENSE-MIT](LICENSE-MIT)) at your option.
+The package is `concord-api`; in your code the library is `concord` (`concord::api!`). The name `concord` is taken on crates.io by another project.
+
+## Quick start
+
+One description, one call. `tasks.example.com` stands for your API; here a function takes the place of the network, so the program runs as it is, with no server:
+
+```rust
+use concord::{fake, json, reply, Json};
+use serde::{Deserialize, Serialize};
+
+#[derive(Debug, Deserialize)]
+struct Task {
+    id: u64,
+    title: String,
+    done: bool,
+}
+
+// An input is `Clone`: a call can be cloned and sent again.
+#[derive(Clone, Serialize)]
+struct NewTask {
+    title: String,
+}
+
+concord::api! {
+    client Tasks {
+        base "https://tasks.example.com/api/tasks";
+        read Json;
+
+        POST create(task: NewTask) -> Task {
+            body json(task);
+        }
+    }
+}
+
+#[tokio::main(flavor = "current_thread")]
+async fn main() -> tasks::Result<()> {
+    // A function takes the place of the network: it gets the request, and gives the answer.
+    // Against your real API, write `Tasks::new()` alone.
+    let tasks = Tasks::new().with_transport(fake(|request| {
+        assert_eq!(request.url().as_str(), "https://tasks.example.com/api/tasks");
+        Ok(reply(201, r#"{ "id": 7, "title": "Write the docs", "done": false }"#))
+    }));
+
+    let task = tasks.create(NewTask { title: "Write the docs".into() }).await?;
+    println!("task {} ({}) is {}", task.id, task.title, if task.done { "done" } else { "open" });
+    Ok(())
+}
+```
+
+It prints `task 7 (Write the docs) is open`. Without `with_transport`, `Tasks::new()` sends with `concord::Http`, Concord's own `reqwest` client. `.await` sends the call, and every endpoint of the client fails with one type, `tasks::Error`. A longer form of it is an example of the repository: `cargo run -p concord-api --example quickstart`. The same fake inside `#[tokio::test]` is a test: [testing a client](docs/guide/testing.md).
+
+## Where to go next
+
+- [Concord in ten minutes](docs/guide/tour.md): the whole library, code first.
+- [The documentation](docs/README.md): every page, by what you want to do.
+- The language, with an example for each statement: the page of [`concord::api!`](https://docs.rs/concord-api/latest/concord/macro.api.html) on docs.rs (after the first upload; until then, [its source](concord-macros/src/reference.md)).
+- [Real APIs](docs/examples/README.md) written in the language: GitHub, Stripe, Riot, Slack and more.
+- [Troubleshooting](docs/guide/troubleshooting.md): when it does not compile, or a call failed.
+- Examples to run, with no network: `cargo run -p concord-api --example bookshop` (also `quickstart`, `pages`, `errors`).
+
+Five crates share one version. You depend on `concord-api`, and on `concord-testkit` in your tests; the others come with it. What each one holds: [the crates](docs/reference/crates.md).
+
+## Requirements
+
+Rust 1.96 or later. Tokio 1.x: sending a call needs a Tokio runtime with time and IO; building clients and calls needs none.
+
+## Known limits
+
+- A release candidate, not on crates.io yet.
+- No test calls a real API: every test runs against a fake, a script or a local server.
+- Editor support inside `api! { }` (completion, go to definition) has not been checked.
+
+What Concord leaves outside (a blocking form, a browser with `wasm`, the flows that get an OAuth token, rate limiting), and what can change without breaking you: [scope and limits](docs/design/scope.md).
+
+## Licence
+
+Under either of the [Apache License, Version 2.0](LICENSE-APACHE) or the [MIT license](LICENSE-MIT), at your option.
+
+Changes, and what changed from Concord 4: [CHANGELOG.md](CHANGELOG.md). To work on Concord: [CONTRIBUTING.md](CONTRIBUTING.md).

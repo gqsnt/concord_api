@@ -1,0 +1,9 @@
+{
+  "id": "M142",
+  "area": "reader",
+  "contract": "C5.4",
+  "description": "count empty frames as one received byte",
+  "file": "concord-core/src/read.rs",
+  "find": "self.received.saturating_add(bytes.len() as u64)",
+  "replace": "self.received.saturating_add(bytes.len().max(1) as u64)"
+}

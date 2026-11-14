@@ -1,0 +1,163 @@
+use concord::http::HeaderMap;
+use concord::read::Stream;
+use concord::{by_cursor, Base, Body, ByteStream};
+
+concord::api! {
+    /// An object store that speaks S3: buckets, objects, and uploads in several parts.
+    pub client ObjectStore(region: String, credentials: Credentials) {
+        read Xml;
+        problem S3Problem;
+        /// Signs every request: each page, each try.
+        middleware Signed::new(credentials.clone(), region.clone());
+
+        part version(version_id?: String) {
+            query { "versionId" = version_id; }
+        }
+        part conditions(
+            if_match?: String,
+            if_modified_since?: String,
+            if_unmodified_since?: String,
+        ) {
+            headers {
+                "if-match" = if_match;
+                "if-modified-since" = if_modified_since;
+                "if-unmodified-since" = if_unmodified_since;
+            }
+        }
+        part write_headers(
+            content_type?: String,
+            cache_control?: String,
+            storage_class?: String,
+        ) {
+            headers {
+                "content-type" = content_type;
+                "cache-control" = cache_control;
+                "x-amz-storage-class" = storage_class;
+            }
+        }
+        part listing(prefix?: String, delimiter?: String) {
+            query { prefix; delimiter; }
+        }
+
+        GET list_buckets(
+            max_buckets?: u32, continuation_token?: String, prefix?: String,
+        ) -> BucketsPage {
+            base "https://s3.amazonaws.com";
+            query {
+                "max-buckets" = max_buckets;
+                "continuation-token" = continuation_token;
+                prefix;
+            }
+            paginate by_cursor(continuation_token, BucketsPage::next);
+        }
+
+        scope bucket(url: Base) {
+            base url;
+
+            /// An error keeps its status and the `x-amz-bucket-region` header.
+            HEAD head();
+            /// In `us-east-1`, no configuration; anywhere else, its `LocationConstraint`.
+            PUT create(configuration?: CreateBucketConfiguration) {
+                body create_bucket_body(configuration);
+                idempotent false;
+            }
+            DELETE delete();
+
+            GET list_objects(
+                max_keys?: u32, continuation_token?: String,
+                start_after?: String, fetch_owner?: bool, ..listing,
+            ) -> ObjectsPage {
+                query {
+                    "list-type" = "2";
+                    "encoding-type" = "url";
+                    "max-keys" = max_keys;
+                    "continuation-token" = continuation_token;
+                    "start-after" = start_after;
+                    "fetch-owner" = fetch_owner;
+                }
+                paginate checked_cursor(continuation_token, ObjectsPage::next);
+            }
+            /// A key that could not be deleted is in `DeleteResult.errors`, under a `200`.
+            POST delete_objects(batch: DeleteBatch) -> DeleteResult {
+                query { "delete" = ""; }
+                body xml(batch);
+            }
+            GET list_multipart_uploads(
+                max_uploads?: u32, key_marker?: String,
+                upload_id_marker?: String, ..listing,
+            ) -> UploadsPage {
+                query {
+                    "uploads" = "";
+                    "encoding-type" = "url";
+                    "max-uploads" = max_uploads;
+                    "key-marker" = key_marker;
+                    "upload-id-marker" = upload_id_marker;
+                }
+                paginate uploads_after(key_marker, upload_id_marker);
+            }
+
+            scope object(key: String) {
+                path "{*key}";
+
+                GET get(range?: String, ..version, ..conditions) -> ByteStream {
+                    headers { "range" = range; }
+                    read Stream;
+                }
+                HEAD head(..version, ..conditions) -> HeaderMap {
+                    status { 2xx { headers } => headers.as_map().clone() }
+                }
+                /// The value is the ETag; `send_full()` keeps the other headers too.
+                PUT put(file: Body, size: u64, ..write_headers) -> String {
+                    headers { "content-length" = size; }
+                    body file;
+                    status { 2xx { headers } => headers.require("etag")?.to_owned() }
+                    idempotent false;
+                }
+                PUT copy_from(
+                    source_bucket: String, source_key: String,
+                    source_version?: String, source_if_match?: String,
+                    metadata_directive?: String, ..write_headers,
+                ) -> CopyResult {
+                    headers {
+                        "x-amz-copy-source" = copy_source(source_bucket, source_key, source_version);
+                        "x-amz-copy-source-if-match" = source_if_match;
+                        "x-amz-metadata-directive" = metadata_directive;
+                    }
+                    status { 2xx { body } => copy_ok(body)? }
+                    idempotent false;
+                }
+                DELETE delete(..version) {
+                    idempotent version_id.as_ref().is_some_and(|id| id != "null");
+                }
+                POST create_multipart_upload(..write_headers) -> InitiatedUpload {
+                    query { "uploads" = ""; }
+                }
+
+                scope upload(upload_id: String) {
+                    query { "uploadId" = upload_id; }
+
+                    PUT upload_part(part_number: u32, file: Body, size: u64) -> String {
+                        query { "partNumber" = part_number; }
+                        headers { "content-length" = size; }
+                        body file;
+                        status { 2xx { headers } => headers.require("etag")?.to_owned() }
+                    }
+                    POST complete(parts: CompleteUpload) -> CompleteResult {
+                        body xml(parts);
+                        status { 2xx { body } => complete_ok(body)? }
+                    }
+                    DELETE abort();
+                    GET list_parts(
+                        max_parts?: u32, part_number_marker?: u32,
+                    ) -> PartsPage {
+                        query {
+                            "max-parts" = max_parts;
+                            "part-number-marker" = part_number_marker;
+                        }
+                        paginate checked_cursor(part_number_marker, PartsPage::next);
+                    }
+                }
+            }
+        }
+    }
+}

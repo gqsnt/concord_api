@@ -1,0 +1,15 @@
+error: unsupported attribute on an input
+       label: an input takes doc comments only
+       help: remove this attribute; retain its intended wire name ("startTime") in the existing placement, updating that entry rather than adding another
+  --> tests/diagnostics/api/m14_serde.rs:25:48
+   |
+25 | ...   part history(start?: u32, count?: u32, #[serde(rename = "startTime")] start_time?: i64, #[serde(rename = "endTime")] end_time?...
+   |                                              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+error: unsupported attribute on an input
+       label: an input takes doc comments only
+       help: remove this attribute; retain its intended wire name ("endTime") in the existing placement, updating that entry rather than adding another
+  --> tests/diagnostics/api/m14_serde.rs:25:97
+   |
+25 | ...   part history(start?: u32, count?: u32, #[serde(rename = "startTime")] start_time?: i64, #[serde(rename = "endTime")] end_time?...
+   |                                                                                               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^

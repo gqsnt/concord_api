@@ -1,0 +1,9 @@
+{
+  "id": "M111",
+  "area": "writers",
+  "contract": "C6.2",
+  "description": "Wrap JSON errors with serde_json hidden I/O constructor",
+  "file": "concord-extras/src/body.rs",
+  "find": "serde_json::to_vec(&value).map_err(|error| value.error(error))?",
+  "replace": "serde_json::to_vec(&value).map_err(|error| value.error(serde_json::Error::io(std::io::Error::other(error))))?"
+}

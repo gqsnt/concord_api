@@ -1,0 +1,7 @@
+error: invalid method name
+       label: a method name is an HTTP token, with no space
+       help: write `METHOD "LISTVERSIONS" versions() -> VersionsPage { query { "versions" = ""; } }`
+  --> tests/diagnostics/api/m19.rs:60:20
+   |
+60 |             METHOD "LIST VERSIONS" versions() -> VersionsPage { query { "versions" = ""; } }
+   |                    ^^^^^^^^^^^^^^^

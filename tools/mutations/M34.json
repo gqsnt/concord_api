@@ -1,0 +1,9 @@
+{
+  "id": "M34",
+  "area": "clocks",
+  "contract": "C7.6",
+  "description": "Total clock never fires",
+  "file": "concord-core/src/__private/run.rs",
+  "find": "            }\n            timer.as_mut().poll(cx).map(|()| Err(()))\n        })\n",
+  "replace": "            }\n            let _ = timer.as_mut().poll(cx); Poll::Pending\n        })\n"
+}

@@ -1,0 +1,7 @@
+error: unsupported attribute on an input
+       label: an input takes doc comments only
+       help: remove this attribute; retain its intended wire name ("id") in the existing placement, updating that entry rather than adding another
+ --> tests/diagnostics/catalogue/14.rs:2:50
+  |
+2 | client Tasks { base "https://a.example"; GET get(#[serde(rename = "id")] item_id: String) { query { item_id; } } }
+  |                                                  ^^^^^^^^^^^^^^^^^^^^^^^

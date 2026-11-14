@@ -1,0 +1,9 @@
+{
+  "id": "M77",
+  "area": "shipped-pagers",
+  "contract": "C8.6",
+  "description": "Advance the offset by one rather than by item count",
+  "file": "concord-extras/src/page.rs",
+  "find": "at.checked_add(got as u64)",
+  "replace": "at.checked_add(1)"
+}

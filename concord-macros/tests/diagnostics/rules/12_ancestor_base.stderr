@@ -1,0 +1,7 @@
+error: ancestor inputs require their owner's name
+       label: `server` belongs to the client
+       help: write `base client.server;`
+ --> tests/diagnostics/rules/12_ancestor_base.rs:2:56
+  |
+2 |     client Workshop(server: Base) { GET fetch() { base server; } }
+  |                                                        ^^^^^^

@@ -1,0 +1,7 @@
+error: a `{*…}` hole must be a whole segment
+       label: `{*prefix}` stands outside a path
+       help: write `"{prefix}"` with a `{prefix}` hole
+  --> tests/diagnostics/api/m29_query.rs:34:32
+   |
+34 |             query { "prefix" = "{*prefix}"; delimiter; }
+   |                                ^^^^^^^^^^^

@@ -1,7 +1,0 @@
-error: no part named `not_declared`
-       label: not declared in the client block
-       help: declare the intended part in the client block, or correct this spread's name
- --> tests/semantic/35_unknown.rs:2:78
-  |
-2 |     client Workshop { base "https://workshop.test"; read Reader; GET fetch(..not_declared); }
-  |                                                                              ^^^^^^^^^^^^

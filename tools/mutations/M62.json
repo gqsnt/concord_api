@@ -1,0 +1,9 @@
+{
+  "id": "M62",
+  "area": "request-building",
+  "contract": "C2.8",
+  "description": "Stop checking later template holes after the first None",
+  "file": "concord-core/src/__private/build.rs",
+  "find": "Shape::Nothing => absent = true,",
+  "replace": "Shape::Nothing => { absent = true; break; },"
+}

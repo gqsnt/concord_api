@@ -1,7 +1,0 @@
-error: keywords and raw identifiers cannot name inputs
-       label: choose another Rust name
-       help: rename this input to `for_value` and update its references in the existing placements and expressions, retaining their wire keys
- --> tests/semantic/04_keyword_for.rs:2:76
-  |
-2 |     client Workshop { base "https://workshop.test"; read Reader; GET fetch(for: String) { query { for; } } }
-  |                                                                            ^^^

@@ -1,9 +1,0 @@
-{
-  "id": "R03",
-  "area": "reader",
-  "contract": "C5.3",
-  "description": "grow the join buffer by one byte beyond needed",
-  "file": "concord-core/src/read.rs",
-  "find": "needed.max(bytes.capacity().saturating_mul(2).min(ceiling))",
-  "replace": "needed.saturating_add(1).min(ceiling).max(needed)"
-}

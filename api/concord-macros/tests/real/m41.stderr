@@ -1,7 +1,0 @@
-error: a header name cannot be written with `_`
-       label: this entry would send a header named `if_match`
-       help: write `"if-match" = if_match;`
-  --> tests/real/m41.rs:17:17
-   |
-17 |                 if_match;
-   |                 ^^^^^^^^

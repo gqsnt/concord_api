@@ -1,0 +1,7 @@
+error: no `base` in reach of this endpoint
+       label: no `base` here or above
+       help: set the intended base URL on this endpoint or an ancestor
+ --> tests/diagnostics/rules/43_no_base.rs:2:27
+  |
+2 |     client Workshop { GET fetch(); }
+  |                           ^^^^^

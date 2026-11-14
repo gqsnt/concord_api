@@ -1,0 +1,7 @@
+error: no inherited status arm `404` to remove
+       label: this arm is absent
+       help: delete `remove 404`
+ --> tests/diagnostics/catalogue/23.rs:2:63
+  |
+2 | client Tasks { base "https://a.example"; GET get() { status { remove 404 } } }
+  |                                                               ^^^^^^

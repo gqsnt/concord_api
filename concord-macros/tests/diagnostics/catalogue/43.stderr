@@ -1,0 +1,7 @@
+error: no `base` in reach of this endpoint
+       label: no `base` here or above
+       help: set the intended base URL on this endpoint or an ancestor
+ --> tests/diagnostics/catalogue/43.rs:2:20
+  |
+2 | client Tasks { GET list(); }
+  |                    ^^^^

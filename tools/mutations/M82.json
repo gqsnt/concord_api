@@ -1,0 +1,9 @@
+{
+  "id": "M82",
+  "area": "shipped-pagers",
+  "contract": "C8.6",
+  "description": "Follow Link fields with an anchor",
+  "file": "concord-extras/src/page.rs",
+  "find": "        if !anchored\n",
+  "replace": "        if true\n"
+}

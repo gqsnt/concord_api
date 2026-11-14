@@ -1,0 +1,7 @@
+error: paths cannot be overridden or removed
+       label: each path adds segments
+       help: write `path "records";` and change the ancestor's path if needed
+ --> tests/diagnostics/rules/24_path_override.rs:2:80
+  |
+2 |     client Workshop { base "https://workshop.test"; read Reader; GET fetch() { override path "records"; } }
+  |                                                                                ^^^^^^^^

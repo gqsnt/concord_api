@@ -1,0 +1,7 @@
+error: an arm binds body, headers or status
+       label: no such part of an answer
+       help: write `2xx { headers: header } => header.require("etag")?.to_owned()`
+   --> tests/diagnostics/api/m34.rs:115:36
+    |
+115 |                     status { 2xx { header } => header.require("etag")?.to_owned() }
+    |                                    ^^^^^^

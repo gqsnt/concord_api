@@ -1,0 +1,9 @@
+{
+  "id": "M47",
+  "area": "core-readers",
+  "contract": "C5.4",
+  "description": "Define a MiB as 1000 squared bytes",
+  "file": "concord-core/src/lib.rs",
+  "find": "pub const MIB: usize = 1024 * 1024;",
+  "replace": "pub const MIB: usize = 1000 * 1000;"
+}

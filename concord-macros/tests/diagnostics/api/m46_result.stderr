@@ -1,0 +1,13 @@
+error: an arm from above reads the body for a `Result` after the arrow
+       label: an inherited success arm bypasses the Result success reading rule
+       help: add `status { override 2xx { body } => Ok(Reply::into_result(body)?) }` to this endpoint
+  --> tests/diagnostics/api/m46_result.rs:74:15
+   |
+74 |             ) -> Result<Posted, PostRefused> {
+   |               ^^
+
+error: this inherited success arm reads the body
+  --> tests/diagnostics/api/m46_result.rs:12:18
+   |
+12 |         status { 2xx { body } => Reply::into_result(body)? }     // `ok: false` is a Refused error
+   |                  ^^^

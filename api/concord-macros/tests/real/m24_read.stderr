@@ -1,7 +1,0 @@
-error: `read` cannot be overridden or removed
-       label: `override` and `remove` stand inside a block, before an entry or an arm
-       help: write `read Binary;`
-   --> tests/real/m24_read.rs:149:25
-    |
-149 |                         override read Binary;
-    |                         ^^^^^^^^

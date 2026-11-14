@@ -1,0 +1,9 @@
+{
+  "id": "M98",
+  "area": "entries",
+  "contract": "C2.14",
+  "description": "Reverse body entry order",
+  "file": "concord-core/src/body.rs",
+  "find": "        for (key, value) in present {",
+  "replace": "        for (key, value) in present.into_iter().rev() {"
+}

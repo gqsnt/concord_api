@@ -1,0 +1,9 @@
+{
+  "id": "M30",
+  "area": "errors",
+  "contract": "C6.3",
+  "description": "details omits evidence state",
+  "file": "concord-core/src/error.rs",
+  "find": "        } else if let Some(body) = error.body() {\n            f.write_str(\"\\nbody (\")?;\n            match error.kept() {\n                Some(Kept::Complete) => write!(f, \"complete, {} bytes\", body.len())?,\n                Some(Kept::Cut) => f.write_str(\"cut at 64 KiB\")?,\n                Some(Kept::Interrupted) => write!(f, \"interrupted, {} bytes\", body.len())?,\n                None => write!(f, \"{} bytes\", body.len())?,\n            }\n            write!(f, \"): {}\", String::from_utf8_lossy(body))?;\n        }\n",
+  "replace": "        } else if let Some(body) = error.body() {\n            write!(f, \"\\nbody: {}\", String::from_utf8_lossy(body))?;\n        }\n"
+}

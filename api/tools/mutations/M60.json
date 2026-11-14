@@ -1,9 +1,0 @@
-{
-  "id": "M60",
-  "area": "request-building",
-  "contract": "docs/contracts.md C2.9",
-  "description": "Let the body label overwrite an explicit Content-Type",
-  "file": "concord-core/src/__private/build.rs",
-  "find": "                body_label = None;",
-  "replace": "                // Keep the body label for the final insertion."
-}

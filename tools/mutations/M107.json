@@ -1,0 +1,12 @@
+{
+  "id": "M107",
+  "area": "allocation",
+  "contract": "docs/internals/engineering.md#the-cost-is-stated",
+  "description": "Regrow the query String instead of reserving its known size",
+  "file": "concord-core/src/__private/build.rs",
+  "find": "String::with_capacity(query_capacity);",
+  "replace": "{ let _ = query_capacity; String::new() };",
+  "checks": [
+    "allocations"
+  ]
+}

@@ -1,0 +1,15 @@
+error[E0308]: mismatched types
+ --> tests/compiler-errors/expressions/arm_return.rs:1:148
+  |
+1 | ...} status {404 => {if *flag {return 17;} 18}}} } }
+  |                     ------------------^^------
+  |                     |                 |
+  |                     |                 expected `Result<u32, Fail<()>>`, found integer
+  |                     expected `std::result::Result<u32, Fail<()>>` because of return type
+  |
+  = note: expected enum `std::result::Result<u32, Fail<()>>`
+             found type `{integer}`
+help: try wrapping the expression in `Ok`
+  |
+1 | concord::api! { client A { base "https://a.example"; read concord::Json; GET arm(flag:bool) -> u32 {query {flag;} status {404 => {if *flag {return Ok(17);} 18}}} } }
+  |                                                                                                                                                    +++  +

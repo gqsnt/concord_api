@@ -1,0 +1,9 @@
+{
+  "id": "M87",
+  "area": "shipped-readers",
+  "contract": "C5.11",
+  "description": "Accept trailing data after a valid JSON value",
+  "file": "concord-extras/src/json_decode.rs",
+  "find": "        Ok(value) => decoder\n            .end()\n            .map(|()| value)\n            .map_err(|source| Failure::new(source, Place::root(), label)),",
+  "replace": "        Ok(value) => Ok(value),"
+}

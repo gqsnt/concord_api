@@ -1,0 +1,7 @@
+error: invalid status key `2XX`
+       label: a key is 100 to 599, or 1xx to 5xx
+       help: choose the intended exact status from 100 to 599 or class from 1xx to 5xx
+ --> tests/diagnostics/rules/45_2XX.rs:2:89
+  |
+2 |     client Workshop { base "https://workshop.test"; read Reader; GET fetch() { status { 2XX => () } } }
+  |                                                                                         ^^^

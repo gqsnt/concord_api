@@ -1,9 +1,0 @@
-{
-  "id": "R17",
-  "area": "clocks",
-  "contract": "A57",
-  "description": "reverse body clock tie priority",
-  "file": "concord-core/src/__private/run.rs",
-  "find": "if end <= idle_end",
-  "replace": "if end < idle_end"
-}

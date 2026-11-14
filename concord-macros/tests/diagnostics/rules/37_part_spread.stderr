@@ -1,0 +1,23 @@
+error: no `base` in reach of this endpoint
+       label: no `base` here or above
+       help: set the intended base URL on this endpoint or an ancestor
+ --> tests/diagnostics/rules/37_part_spread.rs:2:60
+  |
+2 |     client Workshop { part one(..two) {} part two() {} GET fetch(..one); }
+  |                                                            ^^^^^
+
+error: a part cannot hold a part spread
+       label: a part names no other part
+       help: move `..two` into a scope or endpoint signature
+ --> tests/diagnostics/rules/37_part_spread.rs:2:34
+  |
+2 |     client Workshop { part one(..two) {} part two() {} GET fetch(..one); }
+  |                                  ^^^
+
+error: part `two` is never used
+       label: no scope or endpoint names `..two`
+       help: add `..two` to a signature, or remove the part
+ --> tests/diagnostics/rules/37_part_spread.rs:2:47
+  |
+2 |     client Workshop { part one(..two) {} part two() {} GET fetch(..one); }
+  |                                               ^^^

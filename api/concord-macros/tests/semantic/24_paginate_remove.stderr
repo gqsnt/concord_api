@@ -1,7 +1,0 @@
-error: `paginate` cannot be overridden or removed
-       label: `override` and `remove` stand inside a block, before an entry or an arm
-       help: write `paginate pager;`
- --> tests/semantic/24_paginate_remove.rs:2:80
-  |
-2 |     client Workshop { base "https://workshop.test"; read Reader; GET fetch() { remove paginate pager; } }
-  |                                                                                ^^^^^^

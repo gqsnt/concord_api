@@ -1,9 +1,0 @@
-{
-  "id": "M14",
-  "area": "retry",
-  "contract": "docs/contracts.md C4",
-  "description": "Ignore Retry-After when sleeping",
-  "file": "concord-core/src/retry.rs",
-  "find": "    let wait = asked\n        .max(after)\n        .max(Duration::from_secs(ceiling).mul_f64(random));\n",
-  "replace": "    let wait = asked\n        .max(Duration::from_secs(ceiling).mul_f64(random));\n"
-}

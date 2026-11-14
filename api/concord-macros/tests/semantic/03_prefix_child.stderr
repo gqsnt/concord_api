@@ -1,7 +1,0 @@
-error: `with_budget` is reserved by Concord
-       label: conflicts with a generated method
-       help: rename this child to `budget_item`
- --> tests/semantic/03_prefix_child.rs:2:70
-  |
-2 |     client Workshop { base "https://workshop.test"; read Reader; GET with_budget(); }
-  |                                                                      ^^^^^^^^^^^

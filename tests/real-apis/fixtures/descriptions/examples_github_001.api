@@ -1,0 +1,220 @@
+/// The GitHub REST API: users, repositories, issues, pull requests, contents, releases, search.
+    pub client Github(user_agent: String, quota: QuotaLog, token?: Secret) {
+        base "https://api.github.com";
+        headers {
+            "user-agent" = user_agent;
+            "accept" = "application/vnd.github+json";
+            "x-github-api-version" = "2026-03-10";
+            "authorization" = "Bearer {token}";
+        }
+        read Json;
+        problem GithubProblem;
+        /// Keeps the rate-limit headers of every answer: each page, each try.
+        middleware ObserveQuota(quota.clone());
+
+        part page(per_page?: u32, page?: u32) {
+            query { per_page; page; }
+            paginate by_link();
+        }
+        part repo_order(sort?: RepoSort, direction?: Direction) {
+            query { sort; direction; }
+        }
+        part at_ref(reference?: String) {
+            query { "ref" = reference; }
+        }
+
+        GET rate_limit() -> RateLimits { path "rate_limit"; }
+        GET repository(id: u64) -> Repository { path "repositories/{id}"; }
+
+        scope user {
+            path "user";
+            GET get() -> User;
+            /// `kind` cannot go with `visibility` or `affiliation`: such a call is not sent.
+            GET repos(
+                visibility?: Visibility, affiliation?: Vec<String>,
+                kind?: UserRepoType, since?: String, before?: String,
+                ..repo_order, ..page
+            ) -> Vec<Repository> {
+                path "repos";
+                query {
+                    visibility;
+                    "affiliation" = affiliation.as_ref().map(|v| v.join(","));
+                    "type" = checked_repo_kind(kind, visibility, affiliation)?;
+                    since; before;
+                }
+            }
+            POST create_repo(repo: NewRepository) -> Repository {
+                path "repos";
+                body json(repo);
+            }
+        }
+
+        scope users(username: String) {
+            path "users/{username}";
+            GET get() -> User;
+            GET repos(kind?: PublicRepoType, ..repo_order, ..page) -> Vec<Repository> {
+                path "repos";
+                query { "type" = kind; }
+            }
+        }
+
+        scope orgs(org: String) {
+            path "orgs/{org}";
+            GET repos(kind?: OrgRepoType, ..repo_order, ..page) -> Vec<Repository> {
+                path "repos";
+                query { "type" = kind; }
+            }
+            POST create_repo(repo: NewRepository) -> Repository {
+                path "repos";
+                body json(repo);
+            }
+        }
+
+        scope repo(owner: String, name: String) {
+            path "repos/{owner}/{name}";
+            /// A repository that moved answers `301`, an error with its `Location`: see `get_moved`.
+            GET get() -> Repository;
+            /// `None`: GitHub is still counting (`202`). Ask again later.
+            GET contributor_stats() -> Option<Vec<ContributorStats>> {
+                path "stats/contributors";
+                status { 202 => None, 204 => Some(Vec::new()) }
+            }
+            /// The root folder of the repository. Not paged: at most 1,000 entries.
+            GET contents_root(..at_ref) -> Vec<ContentEntry> { path "contents"; }
+
+            scope issues {
+                path "issues";
+                /// Pull requests too. `milestone`, `assignee` and `kind` take `"*"` and `"none"`;
+                /// `since` is a UTC time (ISO 8601); an issue has every one of the `labels`.
+                GET list(
+                    milestone?: String, state?: IssueState, assignee?: String,
+                    kind?: String, creator?: String, mentioned?: String,
+                    issue_field_values?: String, labels?: Vec<String>,
+                    sort?: IssueSort, direction?: Direction, since?: String,
+                    ..page
+                ) -> Vec<Issue> {
+                    query {
+                        milestone; state; assignee; "type" = kind; creator; mentioned;
+                        issue_field_values;
+                        "labels" = labels.as_ref().map(|v| v.join(","));
+                        sort; direction; since;
+                    }
+                }
+                POST create(issue: NewIssue) -> Issue { body json(issue); }
+
+                scope comment(id: u64) {
+                    path "comments/{id}";
+                    GET get() -> Comment;
+                    PATCH update(body: String) -> Comment { body json { body; } }
+                    DELETE delete();
+                }
+
+                scope issue(number: u64) {
+                    path "{number}";
+                    GET get() -> Issue;
+                    /// A field not set is left as it is; `.milestone(None::<u64>)` clears it (`null`).
+                    PATCH update(
+                        title?: String, body?: Option<String>, state?: IssueState,
+                        milestone?: Option<u64>, labels?: Vec<String>, assignees?: Vec<String>,
+                    ) -> Issue {
+                        body json { title; body; state; milestone; labels; assignees; }
+                    }
+                    GET comments(since?: String, ..page) -> Vec<Comment> {
+                        path "comments";
+                        query { since; }
+                    }
+                    POST create_comment(body: String) -> Comment {
+                        path "comments";
+                        body json { body; }
+                    }
+                }
+            }
+
+            scope pulls {
+                path "pulls";
+                GET list(
+                    state?: IssueState, head?: String, base?: String,
+                    sort?: PullSort, direction?: Direction, ..page
+                ) -> Vec<Pull> {
+                    query { state; head; base; sort; direction; }
+                }
+                POST create(pull: NewPull) -> Pull { body json(pull); }
+
+                scope pull(number: u64) {
+                    path "{number}";
+                    GET get() -> Pull;
+                    GET diff() -> Bytes {
+                        headers { override "accept" = "application/vnd.github.diff"; }
+                        read Binary;
+                    }
+                    GET files(..page) -> Vec<PullFile> { path "files"; }
+                    /// `404` is GitHub's "no". A pull request that you cannot see is a `404` too.
+                    GET is_merged() -> bool {
+                        path "merge";
+                        status { 204 => true, 404 => false }
+                    }
+                    PUT merge(options: MergePull) -> MergeResult {
+                        path "merge";
+                        body json(options);
+                        idempotent false;
+                    }
+                }
+            }
+
+            scope contents(path: String) {
+                path "contents/{*path}";
+                GET get(..at_ref) -> Contents;
+                /// The bytes of a file, as they are: not always UTF-8.
+                GET raw(..at_ref) -> Bytes {
+                    headers { override "accept" = "application/vnd.github.raw+json"; }
+                    read Binary.limit(100 * concord::MIB);
+                }
+                /// `content` is base64; `sha` is required to replace a file that exists.
+                PUT create_or_update(change: PutContent) -> ContentWrite {
+                    body json(change);
+                    idempotent false;
+                }
+            }
+
+            scope releases {
+                path "releases";
+                GET list(..page) -> Vec<Release>;
+                POST create(release: NewRelease) -> Release { body json(release); }
+                GET latest() -> Release { path "latest"; }
+                GET by_tag(tag: String) -> Release { path "tags/{tag}"; }
+
+                scope release(id: u64) {
+                    path "{id}";
+                    GET get() -> Release;
+                    DELETE delete();
+                    GET assets(..page) -> Vec<Asset> { path "assets"; }
+                    /// On the upload host. The body carries its media type; `size` is its length.
+                    POST asset(name: String, file: Body, size: u64, label?: String) -> Asset {
+                        base "https://uploads.github.com";
+                        path "assets";
+                        headers {
+                            override "authorization" = "Bearer {client.token}";
+                            "content-length" = size;
+                        }
+                        query { name; label; }
+                        body file;
+                    }
+                }
+            }
+        }
+
+        scope search {
+            path "search";
+            /// `q` is GitHub's search text, as you would type it.
+            GET repositories(q: String, sort?: String, order?: Direction, ..page)
+                -> SearchPage<Repository> {
+                path "repositories";
+                query { q; sort; order; }
+            }
+            GET issues(q: String, sort?: String, order?: Direction, ..page)
+                -> SearchPage<Issue> {
+                path "issues";
+                query { q; sort; order; }
+            }
+        }
+    }

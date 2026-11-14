@@ -1,9 +1,0 @@
-{
-  "id": "M137",
-  "area": "reader",
-  "contract": "A72 linear growth",
-  "description": "Let an understated announcement disable geometric growth",
-  "file": "concord-core/src/read.rs",
-  "find": ".filter(|size| *size >= needed)",
-  "replace": ".filter(|_| true)"
-}

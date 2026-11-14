@@ -1,7 +1,0 @@
-error: invalid method name
-       label: a method name is an HTTP token, with no space
-       help: write `METHOD "PROPFIND" find();`
- --> tests/messages-page/19.rs:2:49
-  |
-2 | client Tasks { base "https://a.example"; METHOD "PROP FIND" find(); }
-  |                                                 ^^^^^^^^^^^

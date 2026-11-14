@@ -1,0 +1,5 @@
+error[E0425]: cannot find value `key` in this scope
+ --> tests/compiler-errors/expressions/body_entry.rs:1:146
+  |
+1 | ...ey; } POST get() { body concord::json { "endpoint"=key.len().to_string(); } } } }
+  |                                                       ^^^ not found in this scope

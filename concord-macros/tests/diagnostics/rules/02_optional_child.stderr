@@ -1,0 +1,13 @@
+error: two declarations generate method `fetch`
+       label: conflicts with the optional input
+       help: rename this child to `fetch_fetch`
+ --> tests/diagnostics/rules/02_optional_child.rs:2:115
+  |
+2 |     client Workshop { base "https://workshop.test"; read Reader; scope records(fetch?: u8) { query { fetch; } GET fetch(); } }
+  |                                                                                                                   ^^^^^
+
+error: the optional input is declared here
+ --> tests/diagnostics/rules/02_optional_child.rs:2:80
+  |
+2 |     client Workshop { base "https://workshop.test"; read Reader; scope records(fetch?: u8) { query { fetch; } GET fetch(); } }
+  |                                                                                ^^^^^

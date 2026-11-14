@@ -1,9 +1,0 @@
-{
-  "id": "M76",
-  "area": "pages",
-  "contract": "docs/contracts.md C8.7",
-  "description": "End items at an empty page even if its pager continues",
-  "file": "concord-core/src/page.rs",
-  "find": "Poll::Ready(Some(Ok(page))) => self.items = page.into_items().into_iter(),",
-  "replace": "Poll::Ready(Some(Ok(page))) => { if page.count() == 0 { return Poll::Ready(None); } self.items = page.into_items().into_iter(); },"
-}

@@ -1,9 +1,0 @@
-{
-  "id": "M11",
-  "area": "retry",
-  "contract": "docs/contracts.md C4",
-  "description": "Allow a retry wait ending exactly at timeout",
-  "file": "concord-core/src/retry.rs",
-  "find": "        .max(Duration::from_secs(ceiling).mul_f64(random));\n    if time_left.is_some_and(|left| wait >= left) {\n        return decision;\n",
-  "replace": "        .max(Duration::from_secs(ceiling).mul_f64(random));\n    if time_left.is_some_and(|left| wait > left) {\n        return decision;\n"
-}

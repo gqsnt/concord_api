@@ -1,0 +1,9 @@
+{
+  "id": "M04",
+  "area": "calls",
+  "contract": "C3.4",
+  "description": "Reverse description middleware order",
+  "file": "concord-core/src/__private/client.rs",
+  "find": "    pub fn add_middleware(mut self, middleware: impl Middleware) -> Core<P> {\n        self.middlewares.push(Arc::new(middleware));\n        self\n",
+  "replace": "    pub fn add_middleware(mut self, middleware: impl Middleware) -> Core<P> {\n        self.middlewares.insert(0, Arc::new(middleware));\n        self\n"
+}

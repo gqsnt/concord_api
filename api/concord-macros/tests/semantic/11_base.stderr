@@ -1,7 +1,0 @@
-error: unknown input `missing_base`
-       label: no input with this name
-       help: correct this input name, or declare the intended input in this signature and place every declared input
- --> tests/semantic/11_base.rs:2:85
-  |
-2 |     client Workshop { base "https://workshop.test"; read Reader; GET fetch() { base missing_base; } }
-  |                                                                                     ^^^^^^^^^^^^

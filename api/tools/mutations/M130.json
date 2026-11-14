@@ -1,9 +1,0 @@
-{
-  "id": "M130",
-  "area": "query",
-  "contract": "C2.8 N3",
-  "description": "Emit an empty query value for a borrowed whole-entry None",
-  "file": "concord-core/src/__private/value.rs",
-  "find": "Shape::Nothing => (None, [].as_slice()),",
-  "replace": "Shape::Nothing => ({ static EMPTY: String = String::new(); Some(&EMPTY) }, [].as_slice()),"
-}

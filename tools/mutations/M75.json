@@ -1,0 +1,9 @@
+{
+  "id": "M75",
+  "area": "pages",
+  "contract": "C8.7",
+  "description": "Reverse items within each page",
+  "file": "concord-core/src/page.rs",
+  "find": "Poll::Ready(Some(Ok(page))) => self.items = page.into_items().into_iter(),",
+  "replace": "Poll::Ready(Some(Ok(page))) => { let mut items = page.into_items(); items.reverse(); self.items = items.into_iter(); },"
+}

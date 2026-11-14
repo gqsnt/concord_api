@@ -1,0 +1,7 @@
+error: `paginate` requires an endpoint
+       label: `paginate` stands on an endpoint, not on a scope
+       help: place this behaviour on an endpoint, consolidating it with any statement supplied there or by a part
+ --> tests/diagnostics/rules/18_paginate_scope.rs:2:40
+  |
+2 |     client Workshop { scope fragment { paginate pager; } }
+  |                                        ^^^^^^^^

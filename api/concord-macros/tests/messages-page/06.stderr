@@ -1,7 +1,0 @@
-error: invalid client name
-       label: expected upper camel case with a non-keyword module name
-       help: write `client Tasks`
- --> tests/messages-page/06.rs:2:8
-  |
-2 | client tasks { base "https://a.example"; GET get(); }
-  |        ^^^^^

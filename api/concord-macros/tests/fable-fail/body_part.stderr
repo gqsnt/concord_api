@@ -1,7 +1,0 @@
-error[E0425]: cannot find value `route` in this scope
- --> tests/fable-fail/body_part.rs:3:74
-  |
-2 | part placed(route:String) { body concord::json { "route"=route; } }
-  |             ----- a field by that name exists in `Self`
-3 | part tagged(tag:String) { body concord::json { "tag"=format!("{tag}-{}", route.len()); } }
-  |                                                                          ^^^^^

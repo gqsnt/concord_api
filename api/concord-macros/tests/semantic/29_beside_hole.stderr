@@ -1,7 +1,0 @@
-error: a `{*…}` hole must be a whole segment
-       label: `{*rest}` shares its segment with `{prefix}`
-       help: write `path "{prefix}{rest}";`; a `{rest}` hole may share its segment
- --> tests/semantic/29_beside_hole.rs:2:113
-  |
-2 |     client Workshop { base "https://workshop.test"; read Reader; GET fetch(prefix: String, rest: String) { path "{prefix}{*rest}"; } }
-  |                                                                                                                 ^^^^^^^^^^^^^^^^^

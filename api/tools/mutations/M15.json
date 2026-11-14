@@ -1,9 +1,0 @@
-{
-  "id": "M15",
-  "area": "retry",
-  "contract": "docs/contracts.md C4",
-  "description": "Leak the abandoned retry outcome instead of dropping it",
-  "file": "concord-core/src/__private/run.rs",
-  "find": "        drop(result);\n        run.clear();",
-  "replace": "        std::mem::forget(result);\n        run.clear();"
-}

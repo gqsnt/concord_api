@@ -1,0 +1,7 @@
+error: `region` is optional, and a middleware is made in `new`
+       label: only the required inputs of the client are set when `new` runs
+       help: declare `region: String`, without `?`
+ --> tests/diagnostics/api/m40.rs:6:53
+  |
+6 |         middleware Signed::new(credentials.clone(), region.clone());
+  |                                                     ^^^^^^

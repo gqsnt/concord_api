@@ -1,9 +1,0 @@
-{
-  "id": "M38",
-  "area": "clocks",
-  "contract": "docs/contracts.md C7",
-  "description": "Remove HTTP connect timeout",
-  "file": "concord-core/src/transport.rs",
-  "find": "        let builder = reqwest::Client::builder()\n            .connect_timeout(std::time::Duration::from_secs(30))\n            .referer(false)\n",
-  "replace": "        let builder = reqwest::Client::builder()\n            .referer(false)\n"
-}

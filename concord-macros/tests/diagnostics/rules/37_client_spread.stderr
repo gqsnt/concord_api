@@ -1,0 +1,23 @@
+error: the client cannot name a part
+       label: parts are named by scopes and endpoints only
+       help: move `..fragment` into a scope or endpoint signature
+ --> tests/diagnostics/rules/37_client_spread.rs:2:23
+  |
+2 |     client Workshop(..fragment) { part fragment() {} GET fetch(); }
+  |                       ^^^^^^^^
+
+error: no `base` in reach of this endpoint
+       label: no `base` here or above
+       help: set the intended base URL on this endpoint or an ancestor
+ --> tests/diagnostics/rules/37_client_spread.rs:2:58
+  |
+2 |     client Workshop(..fragment) { part fragment() {} GET fetch(); }
+  |                                                          ^^^^^
+
+error: part `fragment` is never used
+       label: no scope or endpoint names `..fragment`
+       help: add `..fragment` to a signature, or remove the part
+ --> tests/diagnostics/rules/37_client_spread.rs:2:40
+  |
+2 |     client Workshop(..fragment) { part fragment() {} GET fetch(); }
+  |                                        ^^^^^^^^

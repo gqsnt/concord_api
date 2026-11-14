@@ -1,0 +1,9 @@
+{
+  "id": "M89",
+  "area": "base",
+  "contract": "C2.2",
+  "description": "Allow raw backslashes and controls to reach URL normalization",
+  "file": "concord-core/src/base.rs",
+  "find": "if text.bytes().any(|b| b == b'\\\\' || b.is_ascii_control()) {",
+  "replace": "if false {"
+}

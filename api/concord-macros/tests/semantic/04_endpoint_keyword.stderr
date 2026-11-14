@@ -1,7 +1,0 @@
-error: keywords and raw identifiers cannot name endpoints
-       label: choose another Rust name
-       help: rename the endpoint in `r#fn` to `fn_value`
- --> tests/semantic/04_endpoint_keyword.rs:2:70
-  |
-2 |     client Workshop { base "https://workshop.test"; read Reader; GET r#fn(); }
-  |                                                                      ^^^^

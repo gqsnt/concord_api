@@ -1,7 +1,0 @@
-error: input types must own their data
-       label: borrowed input type
-       help: write `id: String`; callers may still pass references
- --> tests/messages-page/10.rs:2:54
-  |
-2 | client Tasks { base "https://a.example"; GET get(id: &str) { path "{id}"; } }
-  |                                                      ^^^^

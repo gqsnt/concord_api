@@ -1,0 +1,12 @@
+{
+  "id": "M104",
+  "area": "allocation",
+  "contract": "docs/internals/engineering.md#the-cost-is-stated",
+  "description": "Allocate a Vec for every scalar entry again",
+  "file": "concord-core/src/__private/build.rs",
+  "find": "values: shape,",
+  "replace": "values: match shape { Shape::One(text) => Shape::List(vec![text]), other => other },",
+  "checks": [
+    "allocations"
+  ]
+}

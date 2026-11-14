@@ -1,9 +1,0 @@
-{
-  "id": "M37",
-  "area": "clocks",
-  "contract": "docs/contracts.md C7",
-  "description": "Use a fresh default transport cell on every client clone",
-  "file": "concord-core/src/__private/client.rs",
-  "find": "            transport: self.transport.clone(),\n            default_transport: self.default_transport.clone(),\n        }\n",
-  "replace": "            transport: self.transport.clone(),\n            default_transport: Arc::new(std::sync::OnceLock::new()),\n        }\n"
-}

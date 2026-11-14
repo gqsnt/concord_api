@@ -1,9 +1,0 @@
-{
-  "id": "M35",
-  "area": "clocks",
-  "contract": "docs/contracts.md C7",
-  "description": "Restart the outer total clock for every bounded wait",
-  "file": "concord-core/src/__private/run.rs",
-  "find": "        let work = std::pin::pin!(work);\n        let timer = std::pin::pin!(tokio::time::sleep_until(end));\n        let (mut work, mut timer) = (work, timer);\n",
-  "replace": "        let work = std::pin::pin!(work);\n        let timer = std::pin::pin!(tokio::time::sleep(self.total.map(|(_, length)| length).unwrap_or_default()));\n        let (mut work, mut timer) = (work, timer);\n"
-}

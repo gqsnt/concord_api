@@ -1,7 +1,0 @@
-error: this HEAD result needs a success arm
-       label: no arm supplies the declared result
-       help: add a status block with a success arm returning the declared result without reading a body
- --> tests/semantic/32_head.rs:2:79
-  |
-2 |     client Workshop { base "https://workshop.test"; read Reader; HEAD fetch() -> u8; }
-  |                                                                               ^^^^^

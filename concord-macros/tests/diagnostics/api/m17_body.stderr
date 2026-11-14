@@ -1,0 +1,13 @@
+error: duplicate `body` statement
+       label: this node already declares `body`
+       help: keep one declaration of this behaviour, choosing its intended value
+  --> tests/diagnostics/api/m17_body.rs:37:13
+   |
+37 |             body json { disable_notification; protect_content; reply_markup; }
+   |             ^^^^
+
+error: the first `body` statement is here
+  --> tests/diagnostics/api/m17_body.rs:36:13
+   |
+36 |             body json { chat_id; text; }
+   |             ^^^^

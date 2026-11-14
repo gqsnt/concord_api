@@ -1,7 +1,0 @@
-error: no header `accept-encoding` above to override
-       label: nothing is set above for this key
-       help: write `"accept-encoding" = "identity";`
-   --> tests/real/m22_header.rs:170:86
-    |
-170 |                     headers { override "accept" = "application/vnd.github.raw+json"; override "accept-encoding" = "identity"; }
-    |                                                                                      ^^^^^^^^

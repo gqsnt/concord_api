@@ -1,9 +1,0 @@
-{
-  "id": "M65",
-  "area": "value-writing",
-  "contract": "docs/contracts.md C2.4",
-  "description": "Round exact float midpoint ties away from zero",
-  "file": "concord-core/src/__private/value.rs",
-  "find": "if coefficient % 2 == 1 && decimal_midpoint(coefficient, scale, binary, binary_exp) {",
-  "replace": "if false && coefficient % 2 == 1 && decimal_midpoint(coefficient, scale, binary, binary_exp) {"
-}

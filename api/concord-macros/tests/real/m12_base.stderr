@@ -1,7 +1,0 @@
-error: ancestor inputs require their owner's name
-       label: `bulk_url` belongs to the client
-       help: write `base client.bulk_url;`
-  --> tests/real/m12_base.rs:73:18
-   |
-73 |             base bulk_url;
-   |                  ^^^^^^^^

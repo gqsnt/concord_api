@@ -1,0 +1,13 @@
+error: header `accept` is already set above
+       label: replacement requires `override`
+       help: write `override "accept" = "application/vnd.github.diff";`
+   --> tests/diagnostics/api/m21_header.rs:148:35
+    |
+148 |                         headers { "accept" = "application/vnd.github.diff"; }
+    |                                   ^^^^^^^^
+
+error: the inherited header is set here
+ --> tests/diagnostics/api/m21_header.rs:6:13
+  |
+6 |             "accept" = "application/vnd.github+json";
+  |             ^^^^^^^^

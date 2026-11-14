@@ -1,7 +1,0 @@
-error: path segments must be nonempty
-       label: leading or doubled slash
-       help: remove leading or repeated slashes while keeping the path's segments and holes; omit an empty path statement
-  --> tests/real/m25_leading.rs:48:18
-   |
-48 |             path "/lol/platform/v3/champion-rotations";
-   |                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^

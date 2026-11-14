@@ -1,7 +1,0 @@
-error: `body` requires an endpoint
-       label: `body` stands on an endpoint, not on a scope
-       help: place this behaviour on an endpoint, consolidating it with any statement supplied there or by a part
- --> tests/semantic/18_body_scope.rs:2:40
-  |
-2 |     client Workshop { scope fragment { body make(); } }
-  |                                        ^^^^

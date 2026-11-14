@@ -1,0 +1,13 @@
+error: status arm `200` is already set above
+       label: replacement requires `override`
+       help: write `override 200 { body } => body`
+  --> tests/diagnostics/api/m21_class.rs:79:22
+   |
+79 |             status { 200 { body } => body }
+   |                      ^^^
+
+error: the inherited status arm is here
+ --> tests/diagnostics/api/m21_class.rs:6:18
+  |
+6 |         status { 2xx { body } => telegram_result(body)? }
+  |                  ^^^

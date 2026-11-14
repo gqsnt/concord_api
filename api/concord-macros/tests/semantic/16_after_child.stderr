@@ -1,7 +1,0 @@
-error: statements must precede children
-       label: statement appears after a child
-       help: move `read Reader;` before the first child
- --> tests/semantic/16_after_child.rs:2:36
-  |
-2 |     client Workshop { GET fetch(); read Reader; }
-  |                                    ^^^^

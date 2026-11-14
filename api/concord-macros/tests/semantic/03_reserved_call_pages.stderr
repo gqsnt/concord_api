@@ -1,7 +1,0 @@
-error: `pages` is reserved by Concord
-       label: conflicts with a generated method
-       help: rename this input to `pages_value`; update its references in the existing query placements and expressions, retaining the wire keys and fixed text for pages
- --> tests/semantic/03_reserved_call_pages.rs:2:76
-  |
-2 |     client Workshop { base "https://workshop.test"; read Reader; GET fetch(pages?: String) { query { pages; } } }
-  |                                                                            ^^^^^

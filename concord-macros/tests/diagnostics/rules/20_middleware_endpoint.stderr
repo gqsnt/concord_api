@@ -1,0 +1,7 @@
+error: `middleware` requires the client
+       label: middlewares are declared on the client
+       help: move `middleware Layer;` into the client block
+ --> tests/diagnostics/rules/20_middleware_endpoint.rs:2:80
+  |
+2 |     client Workshop { base "https://workshop.test"; read Reader; GET fetch() { middleware Layer; } }
+  |                                                                                ^^^^^^^^^^

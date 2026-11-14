@@ -1,0 +1,9 @@
+{
+  "id": "M102",
+  "area": "allocation",
+  "contract": "C5.4",
+  "description": "Use an infallible join reservation again",
+  "file": "concord-core/src/read.rs",
+  "find": "bytes.try_reserve_exact(capacity.saturating_sub(bytes.len()))",
+  "replace": "{ bytes.reserve_exact(capacity.saturating_sub(bytes.len())); Ok(()) }"
+}

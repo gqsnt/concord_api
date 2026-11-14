@@ -1,9 +1,0 @@
-{
-  "id": "M45",
-  "area": "transport",
-  "contract": "docs/contracts.md C9/C6",
-  "description": "Keep unsafe status or decode reqwest sources",
-  "file": "concord-core/src/transport.rs",
-  "find": "        }\n        if error.is_status() || error.is_decode() {\n            failure\n",
-  "replace": "        }\n        if false {\n            failure\n"
-}

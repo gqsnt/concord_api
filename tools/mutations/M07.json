@@ -1,0 +1,9 @@
+{
+  "id": "M07",
+  "area": "retry",
+  "contract": "C4.1",
+  "description": "Permit an unmarked POST to retry",
+  "file": "concord-core/src/retry.rs",
+  "find": "                http::Method::GET\n                    | http::Method::HEAD\n",
+  "replace": "                http::Method::GET\n                    | http::Method::POST\n                    | http::Method::HEAD\n"
+}

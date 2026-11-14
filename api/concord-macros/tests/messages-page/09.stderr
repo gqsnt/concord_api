@@ -1,7 +1,0 @@
-error: input `count` is never used
-       label: no placement or behaviour uses this input
-       help: place this input in the intended path, base, query, headers, body or behaviour, or remove its declaration
- --> tests/messages-page/09.rs:2:51
-  |
-2 | client Tasks { base "https://a.example"; GET list(count: u32); }
-  |                                                   ^^^^^

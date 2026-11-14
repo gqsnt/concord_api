@@ -1,0 +1,13 @@
+error: duplicate child name `get`
+       label: already declared in this block
+       help: give this endpoint a distinct name, or remove the duplicate declaration
+ --> tests/diagnostics/catalogue/01.rs:2:57
+  |
+2 | client Tasks { base "https://a.example"; GET get(); GET get(); }
+  |                                                         ^^^
+
+error: the first child is here
+ --> tests/diagnostics/catalogue/01.rs:2:46
+  |
+2 | client Tasks { base "https://a.example"; GET get(); GET get(); }
+  |                                              ^^^

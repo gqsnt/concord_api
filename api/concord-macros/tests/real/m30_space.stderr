@@ -1,7 +1,0 @@
-error: invalid header name
-       label: expected a nonempty ASCII HTTP token
-       help: choose the intended nonempty ASCII HTTP header name, retaining this entry's value
-  --> tests/real/m30_space.rs:30:17
-   |
-30 |                 "x-amz storage-class" = storage_class;
-   |                 ^^^^^^^^^^^^^^^^^^^^^

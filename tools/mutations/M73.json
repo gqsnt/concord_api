@@ -1,0 +1,9 @@
+{
+  "id": "M73",
+  "area": "pages",
+  "contract": "C8.4",
+  "description": "Compare sensitive header values as page progress",
+  "file": "concord-core/src/__private/page.rs",
+  "find": "            if !value.is_sensitive()",
+  "replace": "            if true"
+}

@@ -1,0 +1,12 @@
+{
+  "id": "M125",
+  "area": "public-api",
+  "contract": "docs/internals/engineering.md#explicit-with-safe-defaults",
+  "description": "Discard Multipart::text silently",
+  "file": "concord-extras/src/multipart.rs",
+  "find": "    #[must_use]\n    pub fn text",
+  "replace": "    pub fn text",
+  "checks": [
+    "docs-extras"
+  ]
+}

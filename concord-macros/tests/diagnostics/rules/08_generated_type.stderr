@@ -1,0 +1,13 @@
+error: `sha2` and `sha_2` both generate the type `Sha2`
+       label: generated names collide
+       help: rename `sha_2` to `sha_2_other`
+ --> tests/diagnostics/rules/08_generated_type.rs:2:82
+  |
+2 |     client Workshop { base "https://workshop.test"; read Reader; GET sha2(); GET sha_2(); }
+  |                                                                                  ^^^^^
+
+error: the first generated name is here
+ --> tests/diagnostics/rules/08_generated_type.rs:2:70
+  |
+2 |     client Workshop { base "https://workshop.test"; read Reader; GET sha2(); GET sha_2(); }
+  |                                                                      ^^^^

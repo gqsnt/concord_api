@@ -1,0 +1,9 @@
+{
+  "id": "M29",
+  "area": "errors",
+  "contract": "C10.7",
+  "description": "Debug exposes custom arm reason",
+  "file": "concord-core/src/error.rs",
+  "find": "            .field(\"message\", &format_args!(\"{self}\"))\n            .finish_non_exhaustive()\n",
+  "replace": "            .field(\"message\", &format_args!(\"{self}\"))\n            .field(\"reason\", &self.inner.reason)\n            .finish_non_exhaustive()\n"
+}

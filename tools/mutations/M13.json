@@ -1,0 +1,9 @@
+{
+  "id": "M13",
+  "area": "retry",
+  "contract": "C4.3",
+  "description": "Treat past HTTP dates as absent instead of zero",
+  "file": "concord-core/src/retry.rs",
+  "find": "            } else {\n                http_date::parse(text, now).map(|date| date.duration_since(now).unwrap_or_default())\n            }\n",
+  "replace": "            } else {\n                http_date::parse(text, now).and_then(|date| date.duration_since(now).ok())\n            }\n"
+}

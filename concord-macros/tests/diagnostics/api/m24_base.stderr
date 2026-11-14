@@ -1,0 +1,7 @@
+error: `base` cannot be overridden or removed
+       label: `override` and `remove` stand inside a block, before an entry or an arm
+       help: write `base "https://uploads.github.com";`
+   --> tests/diagnostics/api/m24_base.rs:196:25
+    |
+196 |                         override base "https://uploads.github.com";
+    |                         ^^^^^^^^

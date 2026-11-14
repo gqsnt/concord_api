@@ -1,0 +1,7 @@
+error: statements must precede children
+       label: statement appears after a child
+       help: move `idle_timeout Duration::from_secs(60);` before the first child
+   --> tests/diagnostics/api/m16_child.rs:162:9
+    |
+162 |         idle_timeout Duration::from_secs(60);
+    |         ^^^^^^^^^^^^

@@ -1,0 +1,13 @@
+error: this URL input must supply one required value
+       label: an optional input cannot supply the base
+       help: declare `server: Base`, without `?`
+ --> tests/diagnostics/rules/13_base.rs:2:98
+  |
+2 |     client Workshop { base "https://workshop.test"; read Reader; GET fetch(server?: Base) { base server; } }
+  |                                                                                                  ^^^^^^
+
+error: this input is marked optional here
+ --> tests/diagnostics/rules/13_base.rs:2:82
+  |
+2 |     client Workshop { base "https://workshop.test"; read Reader; GET fetch(server?: Base) { base server; } }
+  |                                                                                  ^

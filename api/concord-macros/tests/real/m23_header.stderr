@@ -1,7 +1,0 @@
-error: no inherited header `authorization` to remove
-       label: this header is absent
-       help: delete `remove "authorization";`
-   --> tests/real/m23_header.rs:334:86
-    |
-334 |             GET featured_games() -> FeaturedGames { path "featured-games"; headers { remove "authorization"; } }
-    |                                                                                      ^^^^^^

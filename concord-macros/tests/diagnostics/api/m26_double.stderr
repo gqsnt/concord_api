@@ -1,0 +1,7 @@
+error: dot segments are forbidden in paths
+       label: `..` is a dot segment
+       help: write the intended path without dot segments, preserving the other segments and holes
+   --> tests/diagnostics/api/m26_double.rs:340:18
+    |
+340 |             path "lol/spectator/../spectator/tft/v5";
+    |                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^

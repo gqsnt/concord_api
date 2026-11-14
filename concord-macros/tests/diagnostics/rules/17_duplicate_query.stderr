@@ -1,0 +1,13 @@
+error: duplicate `query` statement
+       label: this node already declares `query`
+       help: consolidate these blocks into one, retaining every intended entry or arm and resolving repeated keys
+ --> tests/diagnostics/rules/17_duplicate_query.rs:2:56
+  |
+2 |     client Workshop { GET fetch() { query { "q" = 1; } query { "q" = 1; } } }
+  |                                                        ^^^^^
+
+error: the first `query` statement is here
+ --> tests/diagnostics/rules/17_duplicate_query.rs:2:37
+  |
+2 |     client Workshop { GET fetch() { query { "q" = 1; } query { "q" = 1; } } }
+  |                                     ^^^^^

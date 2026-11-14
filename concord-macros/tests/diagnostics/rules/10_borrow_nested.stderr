@@ -1,0 +1,7 @@
+error: input types must own their data
+       label: borrowed input type
+       help: write `label: Vec<String>`; callers may still pass references
+ --> tests/diagnostics/rules/10_borrow_nested.rs:2:87
+  |
+2 |     client Workshop { base "https://workshop.test"; read Reader; GET fetch(label: Vec<&str>) { query { label; } } }
+  |                                                                                       ^^^^

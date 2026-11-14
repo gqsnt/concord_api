@@ -1,7 +1,0 @@
-error: invalid status key `2XX`
-       label: a key is 100 to 599, or 1xx to 5xx
-       help: choose the intended exact status from 100 to 599 or class from 1xx to 5xx
-  --> tests/real/m45.rs:12:18
-   |
-12 |         status { 2XX { body } => Reply::into_result(body)? }     // `ok: false` is a Refused error
-   |                  ^^^

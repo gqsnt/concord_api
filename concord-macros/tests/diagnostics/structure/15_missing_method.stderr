@@ -1,0 +1,7 @@
+error: expected an HTTP method before the endpoint name
+       label: endpoint method is missing
+       help: write `GET status() -> Health;`
+ --> tests/diagnostics/structure/15_missing_method.rs:3:9
+  |
+3 |         status() -> Health;
+  |         ^^^^^^
